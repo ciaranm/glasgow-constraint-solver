@@ -63,6 +63,16 @@ namespace gcs
     {
         return Integer{ a.raw_value * b.raw_value };
     }
+
+    [[ nodiscard ]] inline auto operator- (Integer a) -> Integer
+    {
+        return Integer{ -a.raw_value };
+    }
+
+    [[ nodiscard ]] inline auto operator "" _i (unsigned long long v) -> Integer
+    {
+        return Integer(v);
+    }
 }
 
 #endif

@@ -19,13 +19,13 @@ auto main(int, char * []) -> int
     Problem p;
 
     vector<IntegerVariableID> xs;
-    xs.push_back(p.allocate_integer_variable(Integer{ 1 }, Integer{ 5 }));
-    xs.push_back(p.allocate_integer_variable(Integer{ 1 }, Integer{ 5 }));
-    xs.push_back(p.allocate_integer_variable(Integer{ 1 }, Integer{ 5 }));
-    xs.push_back(p.allocate_integer_variable(Integer{ 1 }, Integer{ 5 }));
+    xs.push_back(p.allocate_integer_variable(1_i, 5_i));
+    xs.push_back(p.allocate_integer_variable(1_i, 5_i));
+    xs.push_back(p.allocate_integer_variable(1_i, 5_i));
+    xs.push_back(p.allocate_integer_variable(1_i, 5_i));
 
     for (auto & x : xs)
-        p.cnf({ x != Integer{ 3 } });
+        p.cnf({ x != 3_i });
 
     p.all_different(xs);
 
