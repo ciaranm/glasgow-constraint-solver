@@ -5,6 +5,9 @@
 
 using namespace gcs;
 
+using std::chrono::duration_cast;
+using std::chrono::microseconds;
+using std::chrono::steady_clock;
 using std::max;
 using std::nullopt;
 
@@ -48,8 +51,12 @@ namespace
 auto gcs::solve(const Problem & problem, SolutionCallback callback) -> Stats
 {
     Stats stats;
+    auto start_time = steady_clock::now();
+
     State state = problem.create_initial_state();
     solve_with_state(0, stats, problem, state, callback);
+
+    stats.solve_time = duration_cast<microseconds>(steady_clock::now() - start_time);
     return stats;
 }
 

@@ -3,6 +3,8 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_STATS_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_STATS_HH 1
 
+#include <chrono>
+
 namespace gcs
 {
     struct Stats
@@ -10,6 +12,8 @@ namespace gcs
         unsigned long long recursions;
         unsigned long long solutions;
         unsigned long long max_depth;
+
+        std::chrono::microseconds solve_time;
     };
 }
 
