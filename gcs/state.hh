@@ -17,6 +17,9 @@ namespace gcs
             struct Imp;
             std::unique_ptr<Imp> _imp;
 
+            [[ nodiscard ]] auto infer_boolean(const LiteralFromBooleanVariable & lit) -> bool;
+            [[ nodiscard ]] auto infer_integer(const LiteralFromIntegerVariable & lit) -> bool;
+
         public:
             explicit State();
             State(State &&);
