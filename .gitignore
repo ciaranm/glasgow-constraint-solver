@@ -1,0 +1,8 @@
+intermediate
+perf.data
+perf.data.old
+*.log
+*.opb
+*.a
+/sum_all_different
+/sudoku
