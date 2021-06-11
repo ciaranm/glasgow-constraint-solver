@@ -49,7 +49,7 @@ auto Problem::cnf(vector<Literal> && c) -> void
     _imp->cnfs.push_back(move(c));
 }
 
-auto Problem::lin_le(std::vector<std::pair<Integer, IntegerVariableID> > & coeff_vars, Integer value) -> void
+auto Problem::lin_le(vector<pair<Integer, IntegerVariableID> > && coeff_vars, Integer value) -> void
 {
     _imp->lin_les.emplace_back(move(coeff_vars), value);
 }
@@ -162,7 +162,7 @@ auto Problem::propagate_lin_les(State & state) const -> Inference
     return Inference::NoChange;
 }
 
-auto Problem::find_branching_variable(State & state) const -> std::optional<IntegerVariableID>
+auto Problem::find_branching_variable(State & state) const -> optional<IntegerVariableID>
 {
     optional<IntegerVariableID> result = nullopt;
     Integer sz{ 0 };
