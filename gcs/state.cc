@@ -9,7 +9,9 @@
 
 using namespace gcs;
 
+using std::make_shared;
 using std::move;
+using std::set;
 using std::vector;
 using std::visit;
 
@@ -127,6 +129,21 @@ auto State::infer_integer(const LiteralFromIntegerVariable & ilit) -> Inference
                         else if (svar.bits.none())
                             return Inference::Contradiction;
                         return Inference::Change;
+                    },
+                    [&] (IntegerSetVariable & svar) -> Inference {
+                        // Knock out the value
+                        if (1 == svar.values->size())
+                            return Inference::Contradiction;
+                        else if (2 == svar.values->size()) {
+                            integer_variable(ilit.var) = IntegerConstant{ ilit.value == *svar.values->begin() ? *next(svar.values->begin()) : *svar.values->begin() };
+                            return Inference::Change;
+                        }
+                        else {
+                            auto new_values = make_shared<set<Integer> >(*svar.values);
+                            new_values->erase(ilit.value);
+                            svar.values = new_values;
+                            return Inference::Change;
+                        }
                     }
                 }, integer_variable(ilit.var));
 

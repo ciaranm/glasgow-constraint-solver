@@ -6,7 +6,9 @@
 #include <gcs/bits.hh>
 #include <gcs/integer.hh>
 
+#include <memory>
 #include <optional>
+#include <set>
 #include <variant>
 
 namespace gcs
@@ -56,7 +58,17 @@ namespace gcs
         }
     };
 
-    using IntegerVariable = std::variant<IntegerConstant, IntegerRangeVariable, IntegerSmallSetVariable>;
+    struct IntegerSetVariable
+    {
+        std::shared_ptr<const std::set<Integer> > values;
+
+        explicit IntegerSetVariable(std::shared_ptr<const std::set<Integer> > v) :
+            values(v)
+        {
+        }
+    };
+
+    using IntegerVariable = std::variant<IntegerConstant, IntegerRangeVariable, IntegerSmallSetVariable, IntegerSetVariable>;
 
     [[ nodiscard ]] auto lower_bound(const IntegerVariable &) -> Integer;
     [[ nodiscard ]] auto upper_bound(const IntegerVariable &) -> Integer;
