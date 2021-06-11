@@ -4,7 +4,8 @@ TARGET_DIR := ./
 SUBMAKEFILES := \
     gcs/gcs.mk \
     examples/sum_all_different/sum_all_different.mk \
-    examples/sudoku/sudoku.mk
+    examples/sudoku/sudoku.mk \
+    examples/money/money.mk
 
 CXX := g++-10
 override CXXFLAGS += -O3 -march=native -std=c++20 -Isrc/ -W -Wall -g -ggdb3 -pthread
