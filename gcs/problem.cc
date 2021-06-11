@@ -54,6 +54,18 @@ auto Problem::lin_le(vector<pair<Integer, IntegerVariableID> > && coeff_vars, In
     _imp->lin_les.emplace_back(move(coeff_vars), value);
 }
 
+auto Problem::lin_eq(vector<pair<Integer, IntegerVariableID> > && coeff_vars, Integer value) -> void
+{
+    vector<pair<Integer, IntegerVariableID> > inv_coeff_vars;
+    inv_coeff_vars.reserve(coeff_vars.size());
+
+    for (auto & [ c, v ] : coeff_vars)
+        inv_coeff_vars.emplace_back(-c, v);
+
+    lin_le(move(inv_coeff_vars), -value);
+    lin_le(move(coeff_vars), value);
+}
+
 auto Problem::all_different(const vector<IntegerVariableID> & vars) -> void
 {
     // for each distinct pair of variables...

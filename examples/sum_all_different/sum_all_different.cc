@@ -31,13 +31,8 @@ auto main(int, char * []) -> int
 
     vector<pair<Integer, IntegerVariableID> > xs_le_14;
     for (auto & x : xs)
-        xs_le_14.emplace_back(Integer{ 1 }, x);
-    p.lin_le(xs_le_14, Integer{ 14 });
-
-    vector<pair<Integer, IntegerVariableID> > xs_ge_14;
-    for (auto & x : xs)
-        xs_ge_14.emplace_back(Integer{ -1 }, x);
-    p.lin_le(xs_ge_14, Integer{ -14 });
+        xs_le_14.emplace_back(1_i, x);
+    p.lin_eq(move(xs_le_14), 14_i);
 
     auto stats = solve(p, [&] (const State & s) -> bool {
             cout << "[";

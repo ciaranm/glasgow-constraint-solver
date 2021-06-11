@@ -34,7 +34,8 @@ namespace gcs
 
             auto cnf(std::vector<Literal> && lits) -> void;
             auto all_different(const std::vector<IntegerVariableID> & vars) -> void;
-            auto lin_le(std::vector<std::pair<Integer, IntegerVariableID> > & coeff_vars, Integer value) -> void;
+            auto lin_le(std::vector<std::pair<Integer, IntegerVariableID> > && coeff_vars, Integer value) -> void;
+            auto lin_eq(std::vector<std::pair<Integer, IntegerVariableID> > && coeff_vars, Integer value) -> void;
 
             [[ nodiscard ]] auto create_initial_state() const -> State;
             [[ nodiscard ]] auto propagate(State &) const -> bool;
