@@ -5,6 +5,7 @@
 
 #include <gcs/problem.hh>
 #include <gcs/state.hh>
+#include <gcs/stats.hh>
 
 #include <functional>
 
@@ -12,7 +13,7 @@ namespace gcs
 {
     using SolutionCallback = std::function<auto (const State &) -> bool>;
 
-    auto solve(const Problem &, SolutionCallback callback) -> void;
+    auto solve(const Problem &, SolutionCallback callback) -> Stats;
 }
 
 #endif

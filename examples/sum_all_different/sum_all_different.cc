@@ -39,7 +39,7 @@ auto main(int, char * []) -> int
         xs_ge_14.emplace_back(Integer{ -1 }, x);
     p.lin_le(xs_ge_14, Integer{ -14 });
 
-    solve(p, [&] (const State & s) -> bool {
+    auto stats = solve(p, [&] (const State & s) -> bool {
             cout << "[";
             for (auto & x : xs)
                 cout << " " << s.value_of(x)->raw_value;
@@ -47,6 +47,9 @@ auto main(int, char * []) -> int
 
             return true;
             });
+
+    cout << "recursions: " << stats.recursions << endl;
+    cout << "max depth:  " << stats.max_depth << endl;
 
     return EXIT_SUCCESS;
 }

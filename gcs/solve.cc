@@ -5,15 +5,20 @@
 
 using namespace gcs;
 
+using std::max;
 using std::nullopt;
 
 namespace
 {
-    auto solve_with_state(int depth, const Problem & problem, State & state, SolutionCallback & callback) -> bool
+    auto solve_with_state(unsigned long long depth, Stats & stats, const Problem & problem, State & state, SolutionCallback & callback) -> bool
     {
+        stats.max_depth = max(stats.max_depth, depth);
+        ++stats.recursions;
+
         if (problem.propagate(state)) {
             auto branch_var = problem.find_branching_variable(state);
             if (branch_var == nullopt) {
+                ++stats.solutions;
                 if (! callback(state))
                     return false;
             }
@@ -23,7 +28,7 @@ namespace
                     if (in_domain(state.integer_variable(*branch_var), lower)) {
                         auto new_state = state.clone();
                         if (new_state.infer(*branch_var == lower)) {
-                            if (! solve_with_state(depth + 1, problem, new_state, callback))
+                            if (! solve_with_state(depth + 1, stats, problem, new_state, callback))
                                 return false;
                         }
                         else
@@ -37,9 +42,11 @@ namespace
     }
 }
 
-auto gcs::solve(const Problem & problem, SolutionCallback callback) -> void
+auto gcs::solve(const Problem & problem, SolutionCallback callback) -> Stats
 {
+    Stats stats;
     State state = problem.create_initial_state();
-    solve_with_state(0, problem, state, callback);
+    solve_with_state(0, stats, problem, state, callback);
+    return stats;
 }
 

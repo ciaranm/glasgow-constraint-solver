@@ -74,7 +74,7 @@ auto main(int argc, char * argv[]) -> int
             if (predefs[x][y] != 0)
                 p.cnf({ grid[x][y] == Integer{ predefs[x][y] } });
 
-    solve(p, [&] (const State & s) -> bool {
+    auto stats = solve(p, [&] (const State & s) -> bool {
             for (int x = 0 ; x < 9 ; ++x) {
                 for (int y = 0 ; y < 9 ; ++y)
                     cout << s.value_of(grid[x][y])->raw_value << " ";
@@ -84,6 +84,9 @@ auto main(int argc, char * argv[]) -> int
 
             return true;
             });
+
+    cout << "recursions: " << stats.recursions << endl;
+    cout << "max depth:  " << stats.max_depth << endl;
 
     return EXIT_SUCCESS;
 }
