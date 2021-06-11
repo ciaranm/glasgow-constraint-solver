@@ -77,17 +77,32 @@ auto Problem::create_initial_state() const -> State
 
 auto Problem::propagate(State & state) const -> bool
 {
-    if (! propagate_cnfs(state))
-        return false;
+    for (bool keep_going = true ; keep_going ; ) {
+        keep_going = false;
 
-    if (! propagate_lin_les(state))
-        return false;
+        switch (propagate_cnfs(state)) {
+            case Inference::NoChange:      break;
+            case Inference::Change:        keep_going = true; break;
+            case Inference::Contradiction: return false;
+        }
+
+        if (keep_going)
+            continue;
+
+        switch (propagate_lin_les(state)) {
+            case Inference::NoChange:      break;
+            case Inference::Change:        keep_going = true; break;
+            case Inference::Contradiction: return false;
+        }
+    }
 
     return true;
 }
 
-auto Problem::propagate_cnfs(State & state) const -> bool
+auto Problem::propagate_cnfs(State & state) const -> Inference
 {
+    bool changed = false;
+
     for (auto & clause : _imp->cnfs) {
         vector<Literal> nonfalsified_literals;
 
@@ -119,17 +134,20 @@ auto Problem::propagate_cnfs(State & state) const -> bool
         }
 
         if (nonfalsified_literals.size() == 0)
-            return false;
+            return Inference::Contradiction;
         else if (nonfalsified_literals.size() == 1) {
-            if (! state.infer(nonfalsified_literals[0]))
-                return false;
+            switch (state.infer(nonfalsified_literals[0])) {
+                case Inference::Contradiction: return Inference::Contradiction;
+                case Inference::NoChange:      break;
+                case Inference::Change:        changed = true; break;
+            }
         }
     }
 
-    return true;
+    return changed ? Inference::Change : Inference::NoChange;
 }
 
-auto Problem::propagate_lin_les(State & state) const -> bool
+auto Problem::propagate_lin_les(State & state) const -> Inference
 {
     for (auto & ineq : _imp->lin_les) {
         Integer lower{ 0 };
@@ -138,10 +156,10 @@ auto Problem::propagate_lin_les(State & state) const -> bool
             lower += (coeff >= Integer{ 0 }) ? (coeff * lower_bound(state.integer_variable(var))) : (coeff * upper_bound(state.integer_variable(var)));
 
         if (lower > ineq.second)
-            return false;
+            return Inference::Contradiction;
     }
 
-    return true;
+    return Inference::NoChange;
 }
 
 auto Problem::find_branching_variable(State & state) const -> std::optional<IntegerVariableID>

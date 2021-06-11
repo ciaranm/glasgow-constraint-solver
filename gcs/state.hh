@@ -11,14 +11,21 @@
 
 namespace gcs
 {
+    enum class Inference
+    {
+        NoChange,
+        Change,
+        Contradiction
+    };
+
     class State
     {
         private:
             struct Imp;
             std::unique_ptr<Imp> _imp;
 
-            [[ nodiscard ]] auto infer_boolean(const LiteralFromBooleanVariable & lit) -> bool;
-            [[ nodiscard ]] auto infer_integer(const LiteralFromIntegerVariable & lit) -> bool;
+            [[ nodiscard ]] auto infer_boolean(const LiteralFromBooleanVariable & lit) -> Inference;
+            [[ nodiscard ]] auto infer_integer(const LiteralFromIntegerVariable & lit) -> Inference;
 
         public:
             explicit State();
@@ -37,7 +44,7 @@ namespace gcs
 
             [[ nodiscard ]] auto value_of(const IntegerVariableID var) const -> std::optional<Integer>;
 
-            [[ nodiscard ]] auto infer(const Literal & lit) -> bool;
+            [[ nodiscard ]] auto infer(const Literal & lit) -> Inference;
     };
 }
 

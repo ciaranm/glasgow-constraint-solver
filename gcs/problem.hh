@@ -20,8 +20,8 @@ namespace gcs
             struct Imp;
             std::unique_ptr<Imp> _imp;
 
-            [[ nodiscard ]] auto propagate_cnfs(State &) const -> bool;
-            [[ nodiscard ]] auto propagate_lin_les(State &) const -> bool;
+            [[ nodiscard ]] auto propagate_cnfs(State &) const -> Inference;
+            [[ nodiscard ]] auto propagate_lin_les(State &) const -> Inference;
 
         public:
             Problem();
