@@ -29,10 +29,10 @@ auto main(int, char * []) -> int
 
     p.all_different(xs);
 
-    vector<pair<Integer, IntegerVariableID> > xs_le_14;
+    Linear sum_xs;
     for (auto & x : xs)
-        xs_le_14.emplace_back(1_i, x);
-    p.lin_eq(move(xs_le_14), 14_i);
+        sum_xs.emplace_back(1_i, x);
+    p.lin_eq(move(sum_xs), 14_i);
 
     auto stats = solve(p, [&] (const State & s) -> bool {
             cout << "[";

@@ -26,8 +26,8 @@ struct Problem::Imp
     State initial_state;
     optional<IntegerVariableID> last_integer_var;
 
-    list<vector<Literal> > cnfs;
-    list<pair<vector<pair<Integer, IntegerVariableID> >, Integer> > lin_les;
+    list<Literals> cnfs;
+    list<pair<Linear, Integer> > lin_les;
 };
 
 Problem::Problem() :
@@ -44,19 +44,19 @@ auto Problem::allocate_integer_variable(Integer lower, Integer upper) -> Integer
     return *(_imp->last_integer_var = make_optional(_imp->initial_state.allocate_integer_variable(lower, upper)));
 }
 
-auto Problem::cnf(vector<Literal> && c) -> void
+auto Problem::cnf(Literals && c) -> void
 {
     _imp->cnfs.push_back(move(c));
 }
 
-auto Problem::lin_le(vector<pair<Integer, IntegerVariableID> > && coeff_vars, Integer value) -> void
+auto Problem::lin_le(Linear && coeff_vars, Integer value) -> void
 {
     _imp->lin_les.emplace_back(move(coeff_vars), value);
 }
 
-auto Problem::lin_eq(vector<pair<Integer, IntegerVariableID> > && coeff_vars, Integer value) -> void
+auto Problem::lin_eq(Linear && coeff_vars, Integer value) -> void
 {
-    vector<pair<Integer, IntegerVariableID> > inv_coeff_vars;
+    Linear inv_coeff_vars;
     inv_coeff_vars.reserve(coeff_vars.size());
 
     for (auto & [ c, v ] : coeff_vars)
@@ -116,7 +116,7 @@ auto Problem::propagate_cnfs(State & state) const -> Inference
     bool changed = false;
 
     for (auto & clause : _imp->cnfs) {
-        vector<Literal> nonfalsified_literals;
+        Literals nonfalsified_literals;
 
         for (auto & lit : clause) {
             if (visit(overloaded {

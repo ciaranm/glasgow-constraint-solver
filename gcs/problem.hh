@@ -14,6 +14,9 @@
 
 namespace gcs
 {
+    using Literals = std::vector<Literal>;
+    using Linear = std::vector<std::pair<Integer, IntegerVariableID> >;
+
     class Problem
     {
         private:
@@ -32,10 +35,10 @@ namespace gcs
 
             auto allocate_integer_variable(Integer lower, Integer upper) -> IntegerVariableID;
 
-            auto cnf(std::vector<Literal> && lits) -> void;
+            auto cnf(Literals && lits) -> void;
             auto all_different(const std::vector<IntegerVariableID> & vars) -> void;
-            auto lin_le(std::vector<std::pair<Integer, IntegerVariableID> > && coeff_vars, Integer value) -> void;
-            auto lin_eq(std::vector<std::pair<Integer, IntegerVariableID> > && coeff_vars, Integer value) -> void;
+            auto lin_le(Linear && coeff_vars, Integer value) -> void;
+            auto lin_eq(Linear && coeff_vars, Integer value) -> void;
 
             [[ nodiscard ]] auto create_initial_state() const -> State;
             [[ nodiscard ]] auto propagate(State &) const -> bool;
