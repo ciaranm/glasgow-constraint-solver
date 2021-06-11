@@ -98,7 +98,11 @@ auto State::infer(const Literal & lit) -> bool
                                             return true;
                                         }
                                         else {
-                                            // Holey domain, convert to set
+                                            // Holey domain, convert to set.
+                                            // This should handle larger ranges.
+                                            if (rvar.upper >= Integer{ Bits::number_of_bits })
+                                                throw UnimplementedException{ };
+
                                             IntegerSmallSetVariable svar{ Integer{ 0 }, Bits{ 0 } };
                                             for (Integer v = rvar.lower ; v <= rvar.upper ; ++v)
                                                 if (v != ilit.value)
