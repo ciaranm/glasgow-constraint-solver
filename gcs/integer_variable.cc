@@ -8,6 +8,7 @@ using namespace gcs;
 using std::make_optional;
 using std::nullopt;
 using std::optional;
+using std::visit;
 
 auto gcs::lower_bound(const IntegerVariable & var) -> Integer
 {
@@ -59,6 +60,15 @@ auto gcs::optional_single_value(const IntegerVariable & var) -> optional<Integer
                 else
                     return nullopt;
             },
+            }, var);
+}
+
+auto gcs::domain_size(const IntegerVariable & var) -> Integer
+{
+    return visit(overloaded {
+            [] (const IntegerConstant &)           { return Integer{ 1 }; },
+            [] (const IntegerRangeVariable & r)    { return r.upper - r.lower + Integer{ 1 }; },
+            [] (const IntegerSmallSetVariable & s) { return Integer{ s.bits.popcount() }; }
             }, var);
 }
 

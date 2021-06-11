@@ -146,13 +146,18 @@ auto Problem::propagate_lin_les(State & state) const -> bool
 
 auto Problem::find_branching_variable(State & state) const -> std::optional<IntegerVariableID>
 {
-    if (! _imp->last_integer_var)
-        return nullopt;
+    optional<IntegerVariableID> result = nullopt;
+    Integer sz{ 0 };
 
-    for (IntegerVariableID var{ 0 } ; var <= *_imp->last_integer_var ; ++var.index)
-        if (nullopt == optional_single_value(state.integer_variable(var)))
-            return var;
+    if (_imp->last_integer_var)
+        for (IntegerVariableID var{ 0 } ; var <= *_imp->last_integer_var ; ++var.index) {
+            Integer s = domain_size(state.integer_variable(var));
+            if (s > Integer{ 1 } && (nullopt == result || s < sz)) {
+                result = var;
+                sz = s;
+            }
+        }
 
-    return nullopt;
+    return result;
 }
 

@@ -62,6 +62,7 @@ namespace gcs
     [[ nodiscard ]] auto upper_bound(const IntegerVariable &) -> Integer;
     [[ nodiscard ]] auto in_domain(const IntegerVariable &, Integer) -> bool;
     [[ nodiscard ]] auto optional_single_value(const IntegerVariable &) -> std::optional<Integer>;
+    [[ nodiscard ]] auto domain_size(const IntegerVariable &) -> Integer;
 }
 
 #endif
