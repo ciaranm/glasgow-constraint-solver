@@ -9,6 +9,7 @@
 #include <memory>
 #include <optional>
 #include <set>
+#include <string>
 #include <variant>
 
 namespace gcs
@@ -75,6 +76,8 @@ namespace gcs
     [[ nodiscard ]] auto in_domain(const IntegerVariable &, Integer) -> bool;
     [[ nodiscard ]] auto optional_single_value(const IntegerVariable &) -> std::optional<Integer>;
     [[ nodiscard ]] auto domain_size(const IntegerVariable &) -> Integer;
+
+    [[ nodiscard ]] auto debug_string(const IntegerVariable &) -> std::string;
 }
 
 #endif

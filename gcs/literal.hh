@@ -7,6 +7,7 @@
 #include <gcs/integer_variable.hh>
 #include <gcs/boolean_variable.hh>
 
+#include <string>
 #include <variant>
 
 namespace gcs
@@ -45,6 +46,8 @@ namespace gcs
     };
 
     using Literal = std::variant<LiteralFromIntegerVariable, LiteralFromBooleanVariable>;
+
+    [[ nodiscard ]] auto debug_string(const Literal &) -> std::string;
 }
 
 #endif
