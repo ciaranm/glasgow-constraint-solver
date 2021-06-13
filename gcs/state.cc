@@ -227,7 +227,7 @@ auto State::infer_integer(const LiteralFromIntegerVariable & ilit) -> Inference
 
 auto State::infer(const Literal & lit) -> Inference
 {
-    auto result = visit(overloaded {
+    return visit(overloaded {
             [&] (const LiteralFromBooleanVariable & blit) -> Inference {
                 return infer_boolean(blit);
             },
@@ -235,7 +235,5 @@ auto State::infer(const Literal & lit) -> Inference
                 return infer_integer(ilit);
             }
             }, lit);
-
-    return result;
 }
 
