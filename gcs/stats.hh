@@ -9,9 +9,9 @@ namespace gcs
 {
     struct Stats
     {
-        unsigned long long recursions;
-        unsigned long long solutions;
-        unsigned long long max_depth;
+        unsigned long long recursions = 0;
+        unsigned long long solutions = 0;
+        unsigned long long max_depth = 0;
 
         std::chrono::microseconds solve_time;
     };
