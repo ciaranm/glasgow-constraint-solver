@@ -42,9 +42,14 @@ namespace gcs
             [[ nodiscard ]] auto integer_variable(const IntegerVariableID) -> IntegerVariable &;
             [[ nodiscard ]] auto integer_variable(const IntegerVariableID) const -> const IntegerVariable &;
 
-            [[ nodiscard ]] auto value_of(const IntegerVariableID var) const -> std::optional<Integer>;
-
             [[ nodiscard ]] auto infer(const Literal & lit) -> Inference;
+
+            [[ nodiscard ]] auto lower_bound(const IntegerVariableID) const -> Integer;
+            [[ nodiscard ]] auto upper_bound(const IntegerVariableID) const -> Integer;
+            [[ nodiscard ]] auto in_domain(const IntegerVariableID, Integer) const -> bool;
+            [[ nodiscard ]] auto optional_single_value(const IntegerVariableID) const -> std::optional<Integer>;
+            [[ nodiscard ]] auto domain_size(const IntegerVariableID) const -> Integer;
+
     };
 }
 

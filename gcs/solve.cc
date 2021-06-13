@@ -26,9 +26,9 @@ namespace
                     return false;
             }
             else {
-                auto lower = lower_bound(state.integer_variable(*branch_var)), upper = upper_bound(state.integer_variable(*branch_var));
+                auto lower = state.lower_bound(*branch_var), upper = state.upper_bound(*branch_var);
                 for ( ; lower <= upper ; ++lower) {
-                    if (in_domain(state.integer_variable(*branch_var), lower)) {
+                    if (state.in_domain(*branch_var, lower)) {
                         auto new_state = state.clone();
                         switch (new_state.infer(*branch_var == lower)) {
                             case Inference::NoChange:

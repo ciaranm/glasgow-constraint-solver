@@ -69,13 +69,19 @@ namespace gcs
         }
     };
 
-    using IntegerVariable = std::variant<IntegerConstant, IntegerRangeVariable, IntegerSmallSetVariable, IntegerSetVariable>;
+    struct IntegerOffsetVariable
+    {
+        IntegerVariableID var;
+        Integer offset;
 
-    [[ nodiscard ]] auto lower_bound(const IntegerVariable &) -> Integer;
-    [[ nodiscard ]] auto upper_bound(const IntegerVariable &) -> Integer;
-    [[ nodiscard ]] auto in_domain(const IntegerVariable &, Integer) -> bool;
-    [[ nodiscard ]] auto optional_single_value(const IntegerVariable &) -> std::optional<Integer>;
-    [[ nodiscard ]] auto domain_size(const IntegerVariable &) -> Integer;
+        explicit IntegerOffsetVariable(IntegerVariableID v, Integer o) :
+            var(v),
+            offset(o)
+        {
+        }
+    };
+
+    using IntegerVariable = std::variant<IntegerConstant, IntegerRangeVariable, IntegerSmallSetVariable, IntegerSetVariable, IntegerOffsetVariable>;
 
     [[ nodiscard ]] auto debug_string(const IntegerVariable &) -> std::string;
 }

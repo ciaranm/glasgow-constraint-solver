@@ -39,9 +39,19 @@ Problem::~Problem()
 {
 }
 
+auto Problem::initial_state() -> State &
+{
+    return _imp->initial_state;
+}
+
+auto Problem::initial_state() const -> const State &
+{
+    return _imp->initial_state;
+}
+
 auto Problem::allocate_integer_variable(Integer lower, Integer upper) -> IntegerVariableID
 {
-    return *(_imp->last_integer_var = make_optional(_imp->initial_state.allocate_integer_variable(lower, upper)));
+    return *(_imp->last_integer_var = make_optional(initial_state().allocate_integer_variable(lower, upper)));
 }
 
 auto Problem::cnf(Literals && c) -> void
@@ -76,10 +86,10 @@ auto Problem::all_different(const vector<IntegerVariableID> & vars) -> void
     for (decltype(vars.size()) v = 0 ; v < vars.size() ; ++v)
         for (auto w = v + 1 ; w < vars.size() ; ++w) {
             // for each value in both domains...
-            auto lower = max(lower_bound(_imp->initial_state.integer_variable(vars[v])), lower_bound(_imp->initial_state.integer_variable(vars[w])));
-            auto upper = min(upper_bound(_imp->initial_state.integer_variable(vars[v])), upper_bound(_imp->initial_state.integer_variable(vars[w])));
+            auto lower = max(initial_state().lower_bound(vars[v]), initial_state().lower_bound(vars[w]));
+            auto upper = min(initial_state().upper_bound(vars[v]), initial_state().upper_bound(vars[w]));
             for ( ; lower <= upper ; ++lower)
-                if (in_domain(_imp->initial_state.integer_variable(vars[v]), lower) && in_domain(_imp->initial_state.integer_variable(vars[w]), lower)) {
+                if (initial_state().in_domain(vars[v], lower) && initial_state().in_domain(vars[w], lower)) {
                     // can't have both variables taking that value
                     cnf({ vars[v] != lower, vars[w] != lower });
                 }
@@ -99,20 +109,20 @@ auto Problem::element(IntegerVariableID var, IntegerVariableID idx_var, const st
 
     // var <= max(upper(vars)), var >= min(lower(vars))
     // ...and this should really be just over vars that idx_var might cover
-    auto max_upper = upper_bound(_imp->initial_state.integer_variable(*max_element(vars.begin(), vars.end(), [&] (const IntegerVariableID & v, const IntegerVariableID & w) {
-                    return upper_bound(_imp->initial_state.integer_variable(v)) < upper_bound(_imp->initial_state.integer_variable(w));
-                    })));
-    auto min_lower = lower_bound(_imp->initial_state.integer_variable(*min_element(vars.begin(), vars.end(), [&] (const IntegerVariableID & v, const IntegerVariableID & w) {
-                    return lower_bound(_imp->initial_state.integer_variable(v)) < lower_bound(_imp->initial_state.integer_variable(w));
-                    })));
+    auto max_upper = initial_state().upper_bound(*max_element(vars.begin(), vars.end(), [&] (const IntegerVariableID & v, const IntegerVariableID & w) {
+                return initial_state().upper_bound(v) < initial_state().upper_bound(w);
+                }));
+    auto min_lower = initial_state().lower_bound(*min_element(vars.begin(), vars.end(), [&] (const IntegerVariableID & v, const IntegerVariableID & w) {
+                return initial_state().lower_bound(v) < initial_state().lower_bound(w);
+                }));
     cnf({ var < max_upper + 1_i });
     cnf({ var >= min_lower });
 
     // for each v in vars
     for (decltype(vars.size()) v = 0 ; v != vars.size() ; ++v) {
         // idx_var == i -> var == vars[i]
-        auto lower = min(lower_bound(_imp->initial_state.integer_variable(vars[v])), lower_bound(_imp->initial_state.integer_variable(var)));
-        auto upper = max(upper_bound(_imp->initial_state.integer_variable(vars[v])), upper_bound(_imp->initial_state.integer_variable(var)));
+        auto lower = min(initial_state().lower_bound(vars[v]), initial_state().lower_bound(var));
+        auto upper = max(initial_state().upper_bound(vars[v]), initial_state().upper_bound(var));
         for ( ; lower <= upper ; ++lower) {
             cnf({ idx_var != Integer(v), vars[v] != lower, var == lower });
         }
@@ -121,7 +131,7 @@ auto Problem::element(IntegerVariableID var, IntegerVariableID idx_var, const st
 
 auto Problem::create_initial_state() const -> State
 {
-    return _imp->initial_state.clone();
+    return initial_state().clone();
 }
 
 auto Problem::propagate(State & state) const -> bool
@@ -159,16 +169,15 @@ auto Problem::propagate_cnfs(State & state) const -> Inference
             if (visit(overloaded {
                         [&] (const LiteralFromBooleanVariable &) -> bool { throw UnimplementedException{ }; },
                         [&] (const LiteralFromIntegerVariable & ilit) -> bool {
-                            IntegerVariable & var = state.integer_variable(ilit.var);
                             switch (ilit.state) {
                                 case LiteralFromIntegerVariable::Equal:
-                                    return in_domain(var, ilit.value);
+                                    return state.in_domain(ilit.var, ilit.value);
                                 case LiteralFromIntegerVariable::Less:
-                                    return lower_bound(var) < ilit.value;
+                                    return state.lower_bound(ilit.var) < ilit.value;
                                 case LiteralFromIntegerVariable::GreaterEqual:
-                                     return upper_bound(var) >= ilit.value;
+                                     return state.upper_bound(ilit.var) >= ilit.value;
                                 case LiteralFromIntegerVariable::NotEqual: {
-                                    auto single_value = optional_single_value(var);
+                                    auto single_value = state.optional_single_value(ilit.var);
                                     return (nullopt == single_value || *single_value != ilit.value);
                                 }
                             }
@@ -204,7 +213,7 @@ auto Problem::propagate_lin_les(State & state) const -> Inference
         Integer lower{ 0 };
 
         for (auto & [ coeff, var ] : ineq.first)
-            lower += (coeff >= 0_i) ? (coeff * lower_bound(state.integer_variable(var))) : (coeff * upper_bound(state.integer_variable(var)));
+            lower += (coeff >= 0_i) ? (coeff * state.lower_bound(var)) : (coeff * state.upper_bound(var));
 
         // Feasibility check: if each variable takes its best value, can we satisfy the inequality?
         if (lower > ineq.second)
@@ -218,7 +227,7 @@ auto Problem::propagate_lin_les(State & state) const -> Inference
             Integer lower_without_me{ 0 };
             for (auto & [ other_coeff, other_var ] : ineq.first)
                 if (var != other_var)
-                    lower_without_me += (other_coeff >= 0_i) ? (other_coeff * lower_bound(state.integer_variable(other_var))) : (other_coeff * upper_bound(state.integer_variable(other_var)));
+                    lower_without_me += (other_coeff >= 0_i) ? (other_coeff * state.lower_bound(other_var)) : (other_coeff * state.upper_bound(other_var));
 
             Integer remainder = ineq.second - lower_without_me;
             switch (coeff >= 0_i ? state.infer(var < (1_i + remainder / coeff)) : state.infer(var >= remainder / coeff)) {
@@ -239,7 +248,7 @@ auto Problem::find_branching_variable(State & state) const -> optional<IntegerVa
 
     if (_imp->last_integer_var)
         for (IntegerVariableID var{ 0 } ; var <= *_imp->last_integer_var ; ++var.index) {
-            Integer s = domain_size(state.integer_variable(var));
+            Integer s = state.domain_size(var);
             if (s > Integer{ 1 } && (nullopt == result || s < sz)) {
                 result = var;
                 sz = s;

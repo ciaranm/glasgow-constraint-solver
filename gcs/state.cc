@@ -9,8 +9,11 @@
 
 using namespace gcs;
 
+using std::make_optional;
 using std::make_shared;
 using std::move;
+using std::nullopt;
+using std::optional;
 using std::set;
 using std::vector;
 using std::visit;
@@ -52,11 +55,6 @@ auto State::integer_variable(const IntegerVariableID i) const -> const IntegerVa
     return _imp->integer_variables[i.index];
 }
 
-auto State::value_of(const IntegerVariableID i) const -> std::optional<Integer>
-{
-    return optional_single_value(integer_variable(i));
-}
-
 auto State::infer_boolean(const LiteralFromBooleanVariable &) -> Inference
 {
     throw UnimplementedException{ };
@@ -68,9 +66,9 @@ auto State::infer_integer(const LiteralFromIntegerVariable & ilit) -> Inference
         case LiteralFromIntegerVariable::Equal:
             // Has to be equal. If the value isn't in the domain, we've found a
             // contradiction, otherwise update to a constant value.
-            if (! in_domain(integer_variable(ilit.var), ilit.value))
+            if (! in_domain(ilit.var, ilit.value))
                 return Inference::NoChange;
-            else if (optional_single_value(integer_variable(ilit.var)))
+            else if (optional_single_value(ilit.var))
                 return Inference::NoChange;
             else {
                 integer_variable(ilit.var) = IntegerConstant{ ilit.value };
@@ -80,7 +78,7 @@ auto State::infer_integer(const LiteralFromIntegerVariable & ilit) -> Inference
         case LiteralFromIntegerVariable::NotEqual:
             // If the value isn't in the domain, we don't need to do anything.
             // Otherwise...
-            if (! in_domain(integer_variable(ilit.var), ilit.value))
+            if (! in_domain(ilit.var, ilit.value))
                 return Inference::NoChange;
 
             return visit(overloaded {
@@ -144,6 +142,9 @@ auto State::infer_integer(const LiteralFromIntegerVariable & ilit) -> Inference
                             svar.values = new_values;
                             return Inference::Change;
                         }
+                    },
+                    [&] (IntegerOffsetVariable & ovar) -> Inference {
+                        return infer_integer(LiteralFromIntegerVariable{ ovar.var, ilit.state, ilit.value - ovar.offset });
                     }
                 }, integer_variable(ilit.var));
 
@@ -175,11 +176,14 @@ auto State::infer_integer(const LiteralFromIntegerVariable & ilit) -> Inference
                         if (pc_after == 0)
                             return Inference::Contradiction;
                         if (pc_after == 1)
-                            integer_variable(ilit.var) = IntegerConstant{ *optional_single_value(integer_variable(ilit.var)) };
+                            integer_variable(ilit.var) = IntegerConstant{ *optional_single_value(ilit.var) };
                         return pc_before == pc_after ? Inference::NoChange : Inference::Change;
                     },
                     [&] (IntegerSetVariable &) -> Inference {
                         throw UnimplementedException{ };
+                    },
+                    [&] (IntegerOffsetVariable & ovar) -> Inference {
+                        return infer_integer(LiteralFromIntegerVariable{ ovar.var, ilit.state, ilit.value - ovar.offset });
                     }
                 }, integer_variable(ilit.var));
             break;
@@ -212,11 +216,14 @@ auto State::infer_integer(const LiteralFromIntegerVariable & ilit) -> Inference
                         if (pc_after == 0)
                             return Inference::Contradiction;
                         if (pc_after == 1)
-                            integer_variable(ilit.var) = IntegerConstant{ *optional_single_value(integer_variable(ilit.var)) };
+                            integer_variable(ilit.var) = IntegerConstant{ *optional_single_value(ilit.var) };
                         return pc_before == pc_after ? Inference::NoChange : Inference::Change;
                     },
                     [&] (IntegerSetVariable &) -> Inference {
                         throw UnimplementedException{ };
+                    },
+                    [&] (IntegerOffsetVariable & ovar) -> Inference {
+                        return infer_integer(LiteralFromIntegerVariable{ ovar.var, ilit.state, ilit.value - ovar.offset });
                     }
                 }, integer_variable(ilit.var));
             break;
@@ -236,4 +243,87 @@ auto State::infer(const Literal & lit) -> Inference
             }
             }, lit);
 }
+
+auto State::lower_bound(const IntegerVariableID var) const -> Integer
+{
+    return visit(overloaded {
+            [] (const IntegerRangeVariable & v) { return v.lower; },
+            [] (const IntegerConstant & v) { return v.value; },
+            [] (const IntegerSmallSetVariable & v) { return v.lower + Integer{ v.bits.countr_zero() }; },
+            [] (const IntegerSetVariable & v) { return *v.values->begin(); },
+            [&] (const IntegerOffsetVariable & v) { return lower_bound(v.var) + v.offset; }
+            }, integer_variable(var));
+}
+
+auto State::upper_bound(const IntegerVariableID var) const -> Integer
+{
+    return visit(overloaded {
+            [] (const IntegerRangeVariable & v) { return v.upper; },
+            [] (const IntegerConstant & v) { return v.value; },
+            [] (const IntegerSmallSetVariable & v) { return v.lower + Integer{ Bits::number_of_bits } - Integer{ v.bits.countl_zero() }; },
+            [] (const IntegerSetVariable & v) { return *v.values->rbegin(); },
+            [&] (const IntegerOffsetVariable & v) { return upper_bound(v.var) + v.offset; }
+            }, integer_variable(var));
+}
+
+auto State::in_domain(const IntegerVariableID var, const Integer val) const -> bool
+{
+    return visit(overloaded {
+            [val] (const IntegerRangeVariable & v) { return val >= v.lower && val <= v.upper; },
+            [val] (const IntegerConstant & v) { return val == v.value; },
+            [val] (const IntegerSmallSetVariable & v) {
+                if (val < v.lower || val > (v.lower + Integer{ Bits::number_of_bits - 1 }))
+                    return false;
+                else
+                    return v.bits.test((val - v.lower).raw_value);
+            },
+            [val] (const IntegerSetVariable & v) { return v.values->end() != v.values->find(val); },
+            [&] (const IntegerOffsetVariable & v) { return in_domain(v.var, val - v.offset); }
+            }, integer_variable(var));
+}
+
+auto State::optional_single_value(const IntegerVariableID var) const -> optional<Integer>
+{
+    return visit(overloaded {
+            [] (const IntegerRangeVariable & v) -> optional<Integer> {
+                if (v.lower == v.upper)
+                    return make_optional(v.lower);
+                else
+                    return nullopt;
+            },
+            [] (const IntegerConstant & v) -> optional<Integer> {
+                return make_optional(v.value);
+            },
+            [] (const IntegerSmallSetVariable & v) -> optional<Integer> {
+                if (v.bits.has_single_bit())
+                    return make_optional(v.lower + Integer{ v.bits.countr_zero() });
+                else
+                    return nullopt;
+            },
+            [] (const IntegerSetVariable & v) -> optional<Integer> {
+                if (1 == v.values->size())
+                    return make_optional(*v.values->begin());
+                else
+                    return nullopt;
+            },
+            [&] (const IntegerOffsetVariable & v) {
+                auto result = optional_single_value(v.var);
+                if (result)
+                    *result += v.offset;
+                return result;
+            }
+            }, integer_variable(var));
+}
+
+auto State::domain_size(const IntegerVariableID var) const -> Integer
+{
+    return visit(overloaded {
+            [] (const IntegerConstant &)           { return Integer{ 1 }; },
+            [] (const IntegerRangeVariable & r)    { return r.upper - r.lower + Integer{ 1 }; },
+            [] (const IntegerSmallSetVariable & s) { return Integer{ s.bits.popcount() }; },
+            [] (const IntegerSetVariable & s)      { return Integer(s.values->size()); },
+            [&] (const IntegerOffsetVariable & o)  { return domain_size(o.var); }
+            }, integer_variable(var));
+}
+
 

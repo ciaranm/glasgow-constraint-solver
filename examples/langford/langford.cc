@@ -37,11 +37,11 @@ auto main(int, char * []) -> int
     auto stats = solve(p, [&] (const State & state) -> bool {
             cout << "solution: ";
             for (auto & s : solution)
-                cout << state.value_of(s)->raw_value << " ";
+                cout << state.optional_single_value(s)->raw_value << " ";
             cout << endl;
             cout << "position: ";
             for (auto & s : position)
-                cout << state.value_of(s)->raw_value << " ";
+                cout << state.optional_single_value(s)->raw_value << " ";
             cout << endl;
             cout << endl;
 

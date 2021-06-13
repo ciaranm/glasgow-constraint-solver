@@ -37,7 +37,7 @@ auto main(int, char * []) -> int
     auto stats = solve(p, [&] (const State & s) -> bool {
             cout << "[";
             for (auto & x : xs)
-                cout << " " << s.value_of(x)->raw_value;
+                cout << " " << s.optional_single_value(x)->raw_value;
             cout << " ]" << endl;
 
             return true;

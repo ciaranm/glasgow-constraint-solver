@@ -23,6 +23,9 @@ namespace gcs
             [[ nodiscard ]] auto propagate_cnfs(State &) const -> Inference;
             [[ nodiscard ]] auto propagate_lin_les(State &) const -> Inference;
 
+            [[ nodiscard ]] auto initial_state() -> State &;
+            [[ nodiscard ]] auto initial_state() const -> const State &;
+
         public:
             Problem();
             ~Problem();

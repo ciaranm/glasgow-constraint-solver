@@ -35,9 +35,10 @@ auto main(int, char * []) -> int
                     { -10000_i, m }, { -1000_i, o }, { -100_i, n }, { -10_i, e }, { -1_i, y }, }, 0_i);
 
     auto stats = solve(p, [&] (const State & state) -> bool {
-            cout << " " << state.value_of(s)->raw_value << state.value_of(e)->raw_value << state.value_of(n)->raw_value << state.value_of(d)->raw_value << endl;
-            cout << " " << state.value_of(m)->raw_value << state.value_of(o)->raw_value << state.value_of(r)->raw_value << state.value_of(e)->raw_value << endl;
-            cout << state.value_of(m)->raw_value << state.value_of(o)->raw_value << state.value_of(n)->raw_value << state.value_of(e)->raw_value << state.value_of(y)->raw_value << endl;
+            cout << " " << state.optional_single_value(s)->raw_value << state.optional_single_value(e)->raw_value << state.optional_single_value(n)->raw_value << state.optional_single_value(d)->raw_value << endl;
+            cout << " " << state.optional_single_value(m)->raw_value << state.optional_single_value(o)->raw_value << state.optional_single_value(r)->raw_value << state.optional_single_value(e)->raw_value << endl;
+            cout << state.optional_single_value(m)->raw_value << state.optional_single_value(o)->raw_value << state.optional_single_value(n)->raw_value
+                << state.optional_single_value(e)->raw_value << state.optional_single_value(y)->raw_value << endl;
             cout << endl;
 
             return true;
