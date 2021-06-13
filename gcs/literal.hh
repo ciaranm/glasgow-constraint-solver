@@ -9,6 +9,7 @@
 
 #include <string>
 #include <variant>
+#include <vector>
 
 namespace gcs
 {
@@ -48,6 +49,10 @@ namespace gcs
     using Literal = std::variant<LiteralFromIntegerVariable, LiteralFromBooleanVariable>;
 
     [[ nodiscard ]] auto debug_string(const Literal &) -> std::string;
+
+    using Literals = std::vector<Literal>;
+
+    auto sanitise_literals(Literals &) -> void;
 }
 
 #endif

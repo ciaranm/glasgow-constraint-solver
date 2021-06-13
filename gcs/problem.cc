@@ -46,28 +46,23 @@ auto Problem::allocate_integer_variable(Integer lower, Integer upper) -> Integer
 
 auto Problem::cnf(Literals && c) -> void
 {
+    sanitise_literals(c);
     _imp->cnfs.push_back(move(c));
 }
 
 auto Problem::lin_le(Linear && coeff_vars, Integer value) -> void
 {
-    for (auto & [ c, _ ] : coeff_vars)
-        if (0_i == c)
-            throw UnimplementedException{ };
-
-    for (auto i = coeff_vars.begin() ; i != coeff_vars.end() ; ++i)
-        for (auto j = next(i) ; j != coeff_vars.end() ; ++j)
-            if (i->second == j->second)
-                throw UnimplementedException{ };
-
+    sanitise_linear(coeff_vars);
     _imp->lin_les.emplace_back(move(coeff_vars), value);
 }
 
 auto Problem::lin_eq(Linear && coeff_vars, Integer value) -> void
 {
+    sanitise_linear(coeff_vars);
+
+    // Use input as < constraint, create >= constraint to get equality
     Linear inv_coeff_vars;
     inv_coeff_vars.reserve(coeff_vars.size());
-
     for (auto & [ c, v ] : coeff_vars)
         inv_coeff_vars.emplace_back(-c, v);
 

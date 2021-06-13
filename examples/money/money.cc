@@ -30,9 +30,9 @@ auto main(int, char * []) -> int
     vector<IntegerVariableID> vars{ s, e, n, d, m, o, r, y };
     p.all_different(vars);
 
-    p.lin_eq(Linear{                 {  1000_i, s }, {  100_i + 1_i - 10_i, e }, {  10_i - 100_i, n }, {  1_i, d },
-                                     {  1000_i - 10000_i, m }, {  100_i - 1000_i, o }, {  10_i, r },
-                    { -1_i, y }, }, 0_i);
+    p.lin_eq(Linear{                 {  1000_i, s }, {  100_i, e }, {  10_i, n }, {  1_i, d },
+                                     {  1000_i, m }, {  100_i, o }, {  10_i, r }, {  1_i, e },
+                    { -10000_i, m }, { -1000_i, o }, { -100_i, n }, { -10_i, e }, { -1_i, y }, }, 0_i);
 
     auto stats = solve(p, [&] (const State & state) -> bool {
             cout << " " << state.value_of(s)->raw_value << state.value_of(e)->raw_value << state.value_of(n)->raw_value << state.value_of(d)->raw_value << endl;

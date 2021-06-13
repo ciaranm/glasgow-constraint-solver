@@ -4,19 +4,16 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROBLEM_HH 1
 
 #include <gcs/integer_variable.hh>
+#include <gcs/linear.hh>
 #include <gcs/literal.hh>
 #include <gcs/state.hh>
 
 #include <memory>
 #include <optional>
-#include <utility>
 #include <vector>
 
 namespace gcs
 {
-    using Literals = std::vector<Literal>;
-    using Linear = std::vector<std::pair<Integer, IntegerVariableID> >;
-
     class Problem
     {
         private:

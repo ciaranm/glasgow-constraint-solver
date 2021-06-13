@@ -28,3 +28,23 @@ auto gcs::debug_string(const Literal & lit) -> string
             }, lit);
 }
 
+auto gcs::sanitise_literals(Literals & lits) -> void
+{
+    sort(lits.begin(), lits.end(), [] (const Literal & a, const Literal & b) {
+            return visit(overloaded {
+                    [] (const LiteralFromBooleanVariable & a, const LiteralFromBooleanVariable & b) {
+                        return a.var.index < b.var.index;
+                    },
+                    [] (const LiteralFromIntegerVariable & a, const LiteralFromIntegerVariable & b) {
+                        return a.var.index < b.var.index;
+                    },
+                    [] (const LiteralFromBooleanVariable &, const LiteralFromIntegerVariable &) {
+                        return true;
+                    },
+                    [] (const LiteralFromIntegerVariable &, const LiteralFromBooleanVariable &) {
+                        return false;
+                    }
+                    }, a, b);
+            });
+}
+
