@@ -86,6 +86,39 @@ auto Problem::all_different(const vector<IntegerVariableID> & vars) -> void
         }
 }
 
+auto Problem::element(IntegerVariableID var, IntegerVariableID idx_var, const std::vector<IntegerVariableID> & vars) -> void
+{
+    if (vars.empty()) {
+        cnf( { } );
+        return;
+    }
+
+    // idx_var >= 0, idx_var < vars.size()
+    cnf({ idx_var >= 0_i });
+    cnf({ idx_var < Integer(vars.size()) });
+
+    // var <= max(upper(vars)), var >= min(lower(vars))
+    // ...and this should really be just over vars that idx_var might cover
+    auto max_upper = upper_bound(_imp->initial_state.integer_variable(*max_element(vars.begin(), vars.end(), [&] (const IntegerVariableID & v, const IntegerVariableID & w) {
+                    return upper_bound(_imp->initial_state.integer_variable(v)) < upper_bound(_imp->initial_state.integer_variable(w));
+                    })));
+    auto min_lower = lower_bound(_imp->initial_state.integer_variable(*min_element(vars.begin(), vars.end(), [&] (const IntegerVariableID & v, const IntegerVariableID & w) {
+                    return lower_bound(_imp->initial_state.integer_variable(v)) < lower_bound(_imp->initial_state.integer_variable(w));
+                    })));
+    cnf({ var < max_upper + 1_i });
+    cnf({ var >= min_lower });
+
+    // for each v in vars
+    for (decltype(vars.size()) v = 0 ; v != vars.size() ; ++v) {
+        // idx_var == i -> var == vars[i]
+        auto lower = min(lower_bound(_imp->initial_state.integer_variable(vars[v])), lower_bound(_imp->initial_state.integer_variable(var)));
+        auto upper = max(upper_bound(_imp->initial_state.integer_variable(vars[v])), upper_bound(_imp->initial_state.integer_variable(var)));
+        for ( ; lower <= upper ; ++lower) {
+            cnf({ idx_var != Integer(v), vars[v] != lower, var == lower });
+        }
+    }
+}
+
 auto Problem::create_initial_state() const -> State
 {
     return _imp->initial_state.clone();

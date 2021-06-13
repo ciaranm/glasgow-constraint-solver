@@ -33,9 +33,13 @@ namespace gcs
             auto allocate_integer_variable(Integer lower, Integer upper) -> IntegerVariableID;
 
             auto cnf(Literals && lits) -> void;
-            auto all_different(const std::vector<IntegerVariableID> & vars) -> void;
+
             auto lin_le(Linear && coeff_vars, Integer value) -> void;
             auto lin_eq(Linear && coeff_vars, Integer value) -> void;
+
+            auto all_different(const std::vector<IntegerVariableID> & vars) -> void;
+
+            auto element(IntegerVariableID var, IntegerVariableID idx_var, const std::vector<IntegerVariableID> & vars) -> void;
 
             [[ nodiscard ]] auto create_initial_state() const -> State;
             [[ nodiscard ]] auto propagate(State &) const -> bool;
