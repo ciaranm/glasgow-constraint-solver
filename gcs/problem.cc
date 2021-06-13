@@ -51,6 +51,15 @@ auto Problem::cnf(Literals && c) -> void
 
 auto Problem::lin_le(Linear && coeff_vars, Integer value) -> void
 {
+    for (auto & [ c, _ ] : coeff_vars)
+        if (0_i == c)
+            throw UnimplementedException{ };
+
+    for (auto i = coeff_vars.begin() ; i != coeff_vars.end() ; ++i)
+        for (auto j = next(i) ; j != coeff_vars.end() ; ++j)
+            if (i->second == j->second)
+                throw UnimplementedException{ };
+
     _imp->lin_les.emplace_back(move(coeff_vars), value);
 }
 
@@ -161,17 +170,38 @@ auto Problem::propagate_cnfs(State & state) const -> Inference
 
 auto Problem::propagate_lin_les(State & state) const -> Inference
 {
+    bool changed = false;
+
     for (auto & ineq : _imp->lin_les) {
         Integer lower{ 0 };
 
         for (auto & [ coeff, var ] : ineq.first)
-            lower += (coeff >= Integer{ 0 }) ? (coeff * lower_bound(state.integer_variable(var))) : (coeff * upper_bound(state.integer_variable(var)));
+            lower += (coeff >= 0_i) ? (coeff * lower_bound(state.integer_variable(var))) : (coeff * upper_bound(state.integer_variable(var)));
 
+        // Feasibility check: if each variable takes its best value, can we satisfy the inequality?
         if (lower > ineq.second)
             return Inference::Contradiction;
     }
 
-    return Inference::NoChange;
+    for (auto & ineq : _imp->lin_les) {
+        // Propagation: what's the worst value a variable can take, if every
+        // other variable is given its best value?
+        for (auto & [ coeff, var ] : ineq.first) {
+            Integer lower_without_me{ 0 };
+            for (auto & [ other_coeff, other_var ] : ineq.first)
+                if (var != other_var)
+                    lower_without_me += (other_coeff >= 0_i) ? (other_coeff * lower_bound(state.integer_variable(other_var))) : (other_coeff * upper_bound(state.integer_variable(other_var)));
+
+            Integer remainder = ineq.second - lower_without_me;
+            switch (coeff >= 0_i ? state.infer(var < (1_i + remainder / coeff)) : state.infer(var >= remainder / coeff)) {
+                case Inference::Change:        changed = true; break;
+                case Inference::NoChange:      break;
+                case Inference::Contradiction: return Inference::Contradiction;
+            }
+        }
+    }
+
+    return changed ? Inference::Change : Inference::NoChange;
 }
 
 auto Problem::find_branching_variable(State & state) const -> optional<IntegerVariableID>

@@ -147,8 +147,79 @@ auto State::infer_integer(const LiteralFromIntegerVariable & ilit) -> Inference
                     }
                 }, integer_variable(ilit.var));
 
-        default:
-            throw UnimplementedException{ };
+        case LiteralFromIntegerVariable::Less:
+            return visit(overloaded {
+                    [&] (IntegerConstant & c) -> Inference {
+                        // Ok if the constant is less, otherwise contradiction
+                        return c.value < ilit.value ? Inference::NoChange : Inference::Contradiction;
+                    },
+                    [&] (IntegerRangeVariable & rvar) -> Inference {
+                        bool changed = false;
+                        if (rvar.upper > ilit.value) {
+                            changed = true;
+                            rvar.upper = ilit.value;
+                        }
+                        if (rvar.lower == rvar.upper)
+                            integer_variable(ilit.var) = IntegerConstant{ rvar.lower };
+                        else if (rvar.lower > rvar.upper)
+                            return Inference::Contradiction;
+                        return changed ? Inference::Change : Inference::NoChange;
+                    },
+                    [&] (IntegerSmallSetVariable & svar) -> Inference {
+                        // This should be much smarter...
+                        auto pc_before = svar.bits.popcount();
+                        for (int i = 0 ; i < Bits::number_of_bits ; ++i)
+                            if (svar.lower + Integer{ i } >= ilit.value)
+                                svar.bits.reset(i);
+                        auto pc_after = svar.bits.popcount();
+                        if (pc_after == 0)
+                            return Inference::Contradiction;
+                        if (pc_after == 1)
+                            integer_variable(ilit.var) = IntegerConstant{ *optional_single_value(integer_variable(ilit.var)) };
+                        return pc_before == pc_after ? Inference::NoChange : Inference::Change;
+                    },
+                    [&] (IntegerSetVariable &) -> Inference {
+                        throw UnimplementedException{ };
+                    }
+                }, integer_variable(ilit.var));
+            break;
+
+        case LiteralFromIntegerVariable::GreaterEqual:
+            return visit(overloaded {
+                    [&] (IntegerConstant & c) -> Inference {
+                        // Ok if the constant is greater or equal, otherwise contradiction
+                        return c.value >= ilit.value ? Inference::NoChange : Inference::Contradiction;
+                    },
+                    [&] (IntegerRangeVariable & rvar) -> Inference {
+                        bool changed = false;
+                        if (rvar.lower < ilit.value) {
+                            changed = true;
+                            rvar.lower = ilit.value;
+                        }
+                        if (rvar.lower == rvar.upper)
+                            integer_variable(ilit.var) = IntegerConstant{ rvar.lower };
+                        else if (rvar.lower > rvar.upper)
+                            return Inference::Contradiction;
+                        return changed ? Inference::Change : Inference::NoChange;
+                    },
+                    [&] (IntegerSmallSetVariable & svar) -> Inference {
+                        // This should be much smarter...
+                        auto pc_before = svar.bits.popcount();
+                        for (int i = 0 ; i < Bits::number_of_bits ; ++i)
+                            if (svar.lower + Integer{ i } < ilit.value)
+                                svar.bits.reset(i);
+                        auto pc_after = svar.bits.popcount();
+                        if (pc_after == 0)
+                            return Inference::Contradiction;
+                        if (pc_after == 1)
+                            integer_variable(ilit.var) = IntegerConstant{ *optional_single_value(integer_variable(ilit.var)) };
+                        return pc_before == pc_after ? Inference::NoChange : Inference::Change;
+                    },
+                    [&] (IntegerSetVariable &) -> Inference {
+                        throw UnimplementedException{ };
+                    }
+                }, integer_variable(ilit.var));
+            break;
     }
 
     throw NonExhaustiveSwitch{ };
