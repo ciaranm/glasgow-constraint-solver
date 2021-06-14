@@ -38,6 +38,8 @@ namespace gcs
             [[ nodiscard ]] State clone() const;
 
             auto allocate_integer_variable(Integer lower, Integer upper) -> IntegerVariableID;
+            auto allocate_integer_offset_variable(IntegerVariableID, Integer offset) -> IntegerVariableID;
+            auto allocate_boolean_constant(bool value) -> BooleanVariableID;
 
             [[ nodiscard ]] auto integer_variable(const IntegerVariableID) -> IntegerVariable &;
             [[ nodiscard ]] auto integer_variable(const IntegerVariableID) const -> const IntegerVariable &;
@@ -49,6 +51,8 @@ namespace gcs
             [[ nodiscard ]] auto in_domain(const IntegerVariableID, Integer) const -> bool;
             [[ nodiscard ]] auto optional_single_value(const IntegerVariableID) const -> std::optional<Integer>;
             [[ nodiscard ]] auto domain_size(const IntegerVariableID) const -> Integer;
+
+            [[ nodiscard ]] auto optional_single_value(const BooleanVariableID) const -> std::optional<bool>;
 
     };
 }

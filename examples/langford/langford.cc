@@ -31,7 +31,11 @@ auto main(int, char * []) -> int
         auto i_var = p.allocate_integer_variable(Integer{ i + 1 }, Integer{ i + 1 });
         p.element(i_var, position[i], solution);
         p.element(i_var, position[i + k], solution);
-        p.lin_eq(Linear{ { 1_i, position[i + k] }, { -1_i, position[i] } }, Integer{ i + 2 });
+
+        // position[i + k] = position[i] + i + 2
+        IntegerVariableID position_i_plus_i_plus_2 = p.allocate_integer_offset_variable(position[i], Integer{ i + 2 });
+        p.eq_reif(position[i + k], position_i_plus_i_plus_2, p.allocate_boolean_constant(true));
+        // p.lin_eq(Linear{ { 1_i, position[i + k] }, { -1_i, position_i_plus_i_plus_2 } }, 0_i);
     }
 
     auto stats = solve(p, [&] (const State & state) -> bool {

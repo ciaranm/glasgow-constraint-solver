@@ -54,6 +54,21 @@ auto Problem::allocate_integer_variable(Integer lower, Integer upper) -> Integer
     return *(_imp->last_integer_var = make_optional(initial_state().allocate_integer_variable(lower, upper)));
 }
 
+auto Problem::allocate_integer_offset_variable(IntegerVariableID var, Integer offset) -> IntegerVariableID
+{
+    return *(_imp->last_integer_var = make_optional(initial_state().allocate_integer_offset_variable(var, offset)));
+}
+
+auto Problem::allocate_integer_constant(Integer value) -> IntegerVariableID
+{
+    return *(_imp->last_integer_var = make_optional(initial_state().allocate_integer_variable(value, value)));
+}
+
+auto Problem::allocate_boolean_constant(bool value) -> BooleanVariableID
+{
+    return initial_state().allocate_boolean_constant(value);
+}
+
 auto Problem::cnf(Literals && c) -> void
 {
     sanitise_literals(c);
@@ -129,6 +144,30 @@ auto Problem::element(IntegerVariableID var, IntegerVariableID idx_var, const st
     }
 }
 
+auto Problem::eq_reif(IntegerVariableID v, IntegerVariableID w, BooleanVariableID r) -> void
+{
+    auto lower_common = max(initial_state().lower_bound(v), initial_state().lower_bound(w));
+    auto upper_common = min(initial_state().upper_bound(v), initial_state().upper_bound(w));
+
+    // v < lower_common -> !r, w < lower_common -> !r, v > upper_common -> ! r, w > upper_common -> ! r
+    if (initial_state().lower_bound(v) < lower_common)
+        cnf({ { v >= lower_common }, { ! r } });
+    if (initial_state().lower_bound(w) < lower_common)
+        cnf({ { w >= lower_common }, { ! r } });
+    if (initial_state().upper_bound(v) > upper_common)
+        cnf({ { v < upper_common + 1_i }, { ! r } });
+    if (initial_state().upper_bound(w) > upper_common)
+        cnf({ { w < upper_common + 1_i }, { ! r } });
+
+    // (r and v == c) -> w == c
+    for (auto c = lower_common ; c <= upper_common ; ++c)
+        cnf( { { v != c }, { w == c }, { ! r } });
+
+    // (! r and v == c) -> w != c
+    for (auto c = lower_common ; c <= upper_common ; ++c)
+        cnf( { { + r }, { v != c }, { w != c } } );
+}
+
 auto Problem::create_initial_state() const -> State
 {
     return initial_state().clone();
@@ -167,7 +206,12 @@ auto Problem::propagate_cnfs(State & state) const -> Inference
 
         for (auto & lit : clause) {
             if (visit(overloaded {
-                        [&] (const LiteralFromBooleanVariable &) -> bool { throw UnimplementedException{ }; },
+                        [&] (const LiteralFromBooleanVariable & blit) -> bool {
+                            auto single_value = state.optional_single_value(blit.var);
+                            if (! single_value)
+                                throw UnimplementedException{ };
+                            return *single_value == (blit.state == LiteralFromBooleanVariable::True);
+                        },
                         [&] (const LiteralFromIntegerVariable & ilit) -> bool {
                             switch (ilit.state) {
                                 case LiteralFromIntegerVariable::Equal:

@@ -6,7 +6,8 @@ SUBMAKEFILES := \
     examples/sum_all_different/sum_all_different.mk \
     examples/sudoku/sudoku.mk \
     examples/money/money.mk \
-    examples/langford/langford.mk
+    examples/langford/langford.mk \
+    examples/reif_eq/reif_eq.mk
 
 CXX := g++-10
 override CXXFLAGS += -O3 -march=native -std=c++20 -Isrc/ -W -Wall -g -ggdb3 -pthread

@@ -42,8 +42,23 @@ auto State::clone() const -> State
 
 auto State::allocate_integer_variable(Integer lower, Integer upper) -> IntegerVariableID
 {
-    _imp->integer_variables.push_back(IntegerRangeVariable{ lower, upper });
+    if (lower == upper)
+        _imp->integer_variables.push_back(IntegerConstant{ lower });
+    else
+        _imp->integer_variables.push_back(IntegerRangeVariable{ lower, upper });
+
     return IntegerVariableID{ _imp->integer_variables.size() - 1 };
+}
+
+auto State::allocate_integer_offset_variable(IntegerVariableID var, Integer offset) -> IntegerVariableID
+{
+    _imp->integer_variables.push_back(IntegerOffsetVariable{ var, offset });
+    return IntegerVariableID{ _imp->integer_variables.size() - 1 };
+}
+
+auto State::allocate_boolean_constant(bool value) -> BooleanVariableID
+{
+    return value ? BooleanVariableID{ 1 } : BooleanVariableID{ 0 };
 }
 
 auto State::integer_variable(const IntegerVariableID i) -> IntegerVariable &
@@ -56,9 +71,13 @@ auto State::integer_variable(const IntegerVariableID i) const -> const IntegerVa
     return _imp->integer_variables[i.index];
 }
 
-auto State::infer_boolean(const LiteralFromBooleanVariable &) -> Inference
+auto State::infer_boolean(const LiteralFromBooleanVariable & blit) -> Inference
 {
-    throw UnimplementedException{ };
+    if (blit.var.index == 0 || blit.var.index == 1) {
+        return (blit.var.index == 1) == (blit.state == LiteralFromBooleanVariable::True) ? Inference::NoChange : Inference::Contradiction;
+    }
+    else
+        throw UnimplementedException{ };
 }
 
 auto State::infer_integer(const LiteralFromIntegerVariable & ilit) -> Inference
@@ -329,4 +348,11 @@ auto State::domain_size(const IntegerVariableID var) const -> Integer
             }, integer_variable(var));
 }
 
+auto State::optional_single_value(const BooleanVariableID v) const -> std::optional<bool>
+{
+    if (0 == v.index || 1 == v.index)
+        return make_optional(1 == v.index);
+    else
+        throw UnimplementedException{ };
+}
 

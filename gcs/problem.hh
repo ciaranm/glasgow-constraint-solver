@@ -34,6 +34,9 @@ namespace gcs
             Problem & operator= (const Problem &) = delete;
 
             auto allocate_integer_variable(Integer lower, Integer upper) -> IntegerVariableID;
+            auto allocate_integer_offset_variable(IntegerVariableID, Integer offset) -> IntegerVariableID;
+            auto allocate_integer_constant(Integer value) -> IntegerVariableID;
+            auto allocate_boolean_constant(bool value) -> BooleanVariableID;
 
             auto cnf(Literals && lits) -> void;
 
@@ -43,6 +46,8 @@ namespace gcs
             auto all_different(const std::vector<IntegerVariableID> & vars) -> void;
 
             auto element(IntegerVariableID var, IntegerVariableID idx_var, const std::vector<IntegerVariableID> & vars) -> void;
+
+            auto eq_reif(IntegerVariableID v, IntegerVariableID w, BooleanVariableID r) -> void;
 
             [[ nodiscard ]] auto create_initial_state() const -> State;
             [[ nodiscard ]] auto propagate(State &) const -> bool;

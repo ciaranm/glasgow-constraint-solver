@@ -46,6 +46,16 @@ namespace gcs
         enum { True, False } state;
     };
 
+    [[ nodiscard ]] inline auto operator ! (const BooleanVariableID var) -> LiteralFromBooleanVariable
+    {
+        return LiteralFromBooleanVariable{ var, LiteralFromBooleanVariable::False };
+    }
+
+    [[ nodiscard ]] inline auto operator + (const BooleanVariableID var) -> LiteralFromBooleanVariable
+    {
+        return LiteralFromBooleanVariable{ var, LiteralFromBooleanVariable::True };
+    }
+
     using Literal = std::variant<LiteralFromIntegerVariable, LiteralFromBooleanVariable>;
 
     [[ nodiscard ]] auto debug_string(const Literal &) -> std::string;
