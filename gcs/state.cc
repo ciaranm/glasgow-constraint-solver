@@ -9,6 +9,7 @@
 
 using namespace gcs;
 
+using std::get_if;
 using std::make_optional;
 using std::make_shared;
 using std::move;
@@ -66,7 +67,9 @@ auto State::infer_integer(const LiteralFromIntegerVariable & ilit) -> Inference
         case LiteralFromIntegerVariable::Equal:
             // Has to be equal. If the value isn't in the domain, we've found a
             // contradiction, otherwise update to a constant value.
-            if (! in_domain(ilit.var, ilit.value))
+            if (auto ovar = get_if<IntegerOffsetVariable>(&integer_variable(ilit.var)))
+                return infer_integer(LiteralFromIntegerVariable{ ovar->var, ilit.state, ilit.value - ovar->offset });
+            else if (! in_domain(ilit.var, ilit.value))
                 return Inference::NoChange;
             else if (optional_single_value(ilit.var))
                 return Inference::NoChange;
