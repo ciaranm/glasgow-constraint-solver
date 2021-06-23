@@ -4,6 +4,7 @@
 #include "gcs/exception.hh"
 #include "gcs/state.hh"
 
+#include "util/for_each.hh"
 #include "util/overloaded.hh"
 
 #include <algorithm>
@@ -98,17 +99,16 @@ auto Problem::lin_eq(Linear && coeff_vars, Integer value) -> void
 auto Problem::all_different(const vector<IntegerVariableID> & vars) -> void
 {
     // for each distinct pair of variables...
-    for (decltype(vars.size()) v = 0 ; v < vars.size() ; ++v)
-        for (auto w = v + 1 ; w < vars.size() ; ++w) {
-            // for each value in both domains...
-            auto lower = max(initial_state().lower_bound(vars[v]), initial_state().lower_bound(vars[w]));
-            auto upper = min(initial_state().upper_bound(vars[v]), initial_state().upper_bound(vars[w]));
-            for ( ; lower <= upper ; ++lower)
-                if (initial_state().in_domain(vars[v], lower) && initial_state().in_domain(vars[w], lower)) {
-                    // can't have both variables taking that value
-                    cnf({ vars[v] != lower, vars[w] != lower });
-                }
-        }
+    for_each_distinct_pair(vars, [&] (auto v, auto w) {
+        // for each value in both domains...
+        auto lower = max(initial_state().lower_bound(v), initial_state().lower_bound(w));
+        auto upper = min(initial_state().upper_bound(v), initial_state().upper_bound(w));
+        for ( ; lower <= upper ; ++lower)
+            if (initial_state().in_domain(v, lower) && initial_state().in_domain(w, lower)) {
+                // can't have both variables taking that value
+                cnf({ v != lower, w != lower });
+            }
+    });
 }
 
 auto Problem::element(IntegerVariableID var, IntegerVariableID idx_var, const std::vector<IntegerVariableID> & vars) -> void
@@ -134,14 +134,14 @@ auto Problem::element(IntegerVariableID var, IntegerVariableID idx_var, const st
     cnf({ var >= min_lower });
 
     // for each v in vars
-    for (decltype(vars.size()) v = 0 ; v != vars.size() ; ++v) {
-        // idx_var == i -> var == vars[i]
-        auto lower = min(initial_state().lower_bound(vars[v]), initial_state().lower_bound(var));
-        auto upper = max(initial_state().upper_bound(vars[v]), initial_state().upper_bound(var));
+    for_each_with_index(vars, [&] (auto & v, auto idx) {
+        // idx_var == i -> var == vars[idx]
+        auto lower = min(initial_state().lower_bound(v), initial_state().lower_bound(var));
+        auto upper = max(initial_state().upper_bound(v), initial_state().upper_bound(var));
         for ( ; lower <= upper ; ++lower) {
-            cnf({ idx_var != Integer(v), vars[v] != lower, var == lower });
-        }
-    }
+            cnf({ idx_var != Integer(idx), v != lower, var == lower });
+            }
+    });
 }
 
 auto Problem::eq_reif(IntegerVariableID v, IntegerVariableID w, BooleanVariableID r) -> void
