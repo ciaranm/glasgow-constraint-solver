@@ -3,6 +3,8 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INTEGER_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INTEGER_HH 1
 
+#include <ostream>
+
 namespace gcs
 {
     struct Integer
@@ -77,6 +79,11 @@ namespace gcs
     [[ nodiscard ]] inline auto operator "" _i (unsigned long long v) -> Integer
     {
         return Integer(v);
+    }
+
+    inline auto operator<< (std::ostream & s, Integer i) -> std::ostream &
+    {
+        return s << i.raw_value;
     }
 }
 

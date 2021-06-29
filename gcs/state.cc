@@ -5,6 +5,7 @@
 
 #include "util/overloaded.hh"
 
+#include <string>
 #include <vector>
 
 using namespace gcs;
@@ -16,8 +17,20 @@ using std::move;
 using std::nullopt;
 using std::optional;
 using std::set;
+using std::string;
+using std::to_string;
 using std::vector;
 using std::visit;
+
+VariableDoesNotHaveUniqueValue::VariableDoesNotHaveUniqueValue(const string & w) :
+    _wat(w + " does not have a unique value")
+{
+}
+
+auto VariableDoesNotHaveUniqueValue::what() const noexcept -> const char *
+{
+    return _wat.c_str();
+}
 
 struct State::Imp
 {
@@ -354,5 +367,12 @@ auto State::optional_single_value(const BooleanVariableID v) const -> std::optio
         return make_optional(1 == v.index);
     else
         throw UnimplementedException{ };
+}
+
+auto State::operator() (const IntegerVariableID & i) const -> Integer
+{
+    if (auto result = optional_single_value(i))
+        return *result;
+    throw VariableDoesNotHaveUniqueValue{ "Integer variable " + to_string(i.index) };
 }
 

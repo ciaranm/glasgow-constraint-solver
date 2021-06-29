@@ -6,6 +6,7 @@
 #include <gcs/integer_variable.hh>
 #include <gcs/literal.hh>
 
+#include <exception>
 #include <memory>
 #include <optional>
 
@@ -16,6 +17,18 @@ namespace gcs
         NoChange,
         Change,
         Contradiction
+    };
+
+    class VariableDoesNotHaveUniqueValue :
+        public std::exception
+    {
+        private:
+            std::string _wat;
+
+        public:
+            explicit VariableDoesNotHaveUniqueValue(const std::string &);
+
+            virtual auto what() const noexcept -> const char * override;
     };
 
     class State
@@ -54,6 +67,8 @@ namespace gcs
 
             [[ nodiscard ]] auto optional_single_value(const BooleanVariableID) const -> std::optional<bool>;
 
+            [[ nodiscard ]] auto operator() (const IntegerVariableID &) const -> Integer;
+            [[ nodiscard ]] auto operator() (const BooleanVariableID &) const -> bool;
     };
 }
 

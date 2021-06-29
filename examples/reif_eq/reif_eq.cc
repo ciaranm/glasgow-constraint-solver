@@ -21,7 +21,7 @@ auto main(int, char * []) -> int
     p.eq_reif(a, c, p.allocate_boolean_constant(true));
 
     auto stats = solve(p, [&] (const State & s) -> bool {
-            cout << s.optional_single_value(a)->raw_value << " " << s.optional_single_value(b)->raw_value << " " << s.optional_single_value(c)->raw_value << endl;
+            cout << s(a) << " " << s(b) << " " << s(c) << endl;
 
             return true;
             });
