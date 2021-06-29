@@ -33,10 +33,10 @@ namespace gcs
             Problem(const Problem &) = delete;
             Problem & operator= (const Problem &) = delete;
 
-            auto allocate_integer_variable(Integer lower, Integer upper) -> IntegerVariableID;
-            auto allocate_integer_offset_variable(IntegerVariableID, Integer offset) -> IntegerVariableID;
-            auto allocate_integer_constant(Integer value) -> IntegerVariableID;
-            auto allocate_boolean_constant(bool value) -> BooleanVariableID;
+            auto create_integer_variable(Integer lower, Integer upper) -> IntegerVariableID;
+            auto create_integer_offset_variable(IntegerVariableID, Integer offset) -> IntegerVariableID;
+            auto create_integer_constant(Integer value) -> IntegerVariableID;
+            auto create_boolean_constant(bool value) -> BooleanVariableID;
 
             auto cnf(Literals && lits) -> void;
 

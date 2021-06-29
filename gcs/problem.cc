@@ -50,24 +50,24 @@ auto Problem::initial_state() const -> const State &
     return _imp->initial_state;
 }
 
-auto Problem::allocate_integer_variable(Integer lower, Integer upper) -> IntegerVariableID
+auto Problem::create_integer_variable(Integer lower, Integer upper) -> IntegerVariableID
 {
-    return *(_imp->last_integer_var = make_optional(initial_state().allocate_integer_variable(lower, upper)));
+    return *(_imp->last_integer_var = make_optional(initial_state().create_integer_variable(lower, upper)));
 }
 
-auto Problem::allocate_integer_offset_variable(IntegerVariableID var, Integer offset) -> IntegerVariableID
+auto Problem::create_integer_offset_variable(IntegerVariableID var, Integer offset) -> IntegerVariableID
 {
-    return *(_imp->last_integer_var = make_optional(initial_state().allocate_integer_offset_variable(var, offset)));
+    return *(_imp->last_integer_var = make_optional(initial_state().create_integer_offset_variable(var, offset)));
 }
 
-auto Problem::allocate_integer_constant(Integer value) -> IntegerVariableID
+auto Problem::create_integer_constant(Integer value) -> IntegerVariableID
 {
-    return *(_imp->last_integer_var = make_optional(initial_state().allocate_integer_variable(value, value)));
+    return *(_imp->last_integer_var = make_optional(initial_state().create_integer_variable(value, value)));
 }
 
-auto Problem::allocate_boolean_constant(bool value) -> BooleanVariableID
+auto Problem::create_boolean_constant(bool value) -> BooleanVariableID
 {
-    return initial_state().allocate_boolean_constant(value);
+    return initial_state().create_boolean_constant(value);
 }
 
 auto Problem::cnf(Literals && c) -> void

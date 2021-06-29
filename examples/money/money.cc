@@ -18,14 +18,14 @@ auto main(int, char * []) -> int
 {
     Problem p;
 
-    auto s = p.allocate_integer_variable(1_i, 9_i);
-    auto e = p.allocate_integer_variable(0_i, 9_i);
-    auto n = p.allocate_integer_variable(0_i, 9_i);
-    auto d = p.allocate_integer_variable(0_i, 9_i);
-    auto m = p.allocate_integer_variable(1_i, 9_i);
-    auto o = p.allocate_integer_variable(0_i, 9_i);
-    auto r = p.allocate_integer_variable(0_i, 9_i);
-    auto y = p.allocate_integer_variable(0_i, 9_i);
+    auto s = p.create_integer_variable(1_i, 9_i);
+    auto e = p.create_integer_variable(0_i, 9_i);
+    auto n = p.create_integer_variable(0_i, 9_i);
+    auto d = p.create_integer_variable(0_i, 9_i);
+    auto m = p.create_integer_variable(1_i, 9_i);
+    auto o = p.create_integer_variable(0_i, 9_i);
+    auto r = p.create_integer_variable(0_i, 9_i);
+    auto y = p.create_integer_variable(0_i, 9_i);
 
     vector<IntegerVariableID> vars{ s, e, n, d, m, o, r, y };
     p.all_different(vars);

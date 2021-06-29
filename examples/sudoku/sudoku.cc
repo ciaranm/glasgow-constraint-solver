@@ -42,7 +42,7 @@ auto main(int argc, char * argv[]) -> int
     for (int x = 0 ; x < 9 ; ++x) {
         grid.emplace_back();
         for (int y = 0 ; y < 9 ; ++y)
-            grid[x].push_back(p.allocate_integer_variable(1_i, 9_i));
+            grid[x].push_back(p.create_integer_variable(1_i, 9_i));
     }
 
     for (int x = 0 ; x < 9 ; ++x) {

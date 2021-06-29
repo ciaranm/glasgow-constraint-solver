@@ -15,10 +15,10 @@ auto main(int, char * []) -> int
 {
     Problem p;
 
-    auto a = p.allocate_integer_variable(2_i, 8_i);
-    auto b = p.allocate_integer_variable(3_i, 9_i);
-    auto c = p.allocate_integer_offset_variable(b, 2_i);
-    p.eq_reif(a, c, p.allocate_boolean_constant(true));
+    auto a = p.create_integer_variable(2_i, 8_i);
+    auto b = p.create_integer_variable(3_i, 9_i);
+    auto c = p.create_integer_offset_variable(b, 2_i);
+    p.eq_reif(a, c, p.create_boolean_constant(true));
 
     auto stats = solve(p, [&] (const State & s) -> bool {
             cout << s(a) << " " << s(b) << " " << s(c) << endl;

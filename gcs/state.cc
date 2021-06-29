@@ -53,7 +53,7 @@ auto State::clone() const -> State
     return result;
 }
 
-auto State::allocate_integer_variable(Integer lower, Integer upper) -> IntegerVariableID
+auto State::create_integer_variable(Integer lower, Integer upper) -> IntegerVariableID
 {
     if (lower == upper)
         _imp->integer_variables.push_back(IntegerConstant{ lower });
@@ -63,13 +63,13 @@ auto State::allocate_integer_variable(Integer lower, Integer upper) -> IntegerVa
     return IntegerVariableID{ _imp->integer_variables.size() - 1 };
 }
 
-auto State::allocate_integer_offset_variable(IntegerVariableID var, Integer offset) -> IntegerVariableID
+auto State::create_integer_offset_variable(IntegerVariableID var, Integer offset) -> IntegerVariableID
 {
     _imp->integer_variables.push_back(IntegerOffsetVariable{ var, offset });
     return IntegerVariableID{ _imp->integer_variables.size() - 1 };
 }
 
-auto State::allocate_boolean_constant(bool value) -> BooleanVariableID
+auto State::create_boolean_constant(bool value) -> BooleanVariableID
 {
     return value ? BooleanVariableID{ 1 } : BooleanVariableID{ 0 };
 }

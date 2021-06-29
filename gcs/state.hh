@@ -50,9 +50,9 @@ namespace gcs
 
             [[ nodiscard ]] State clone() const;
 
-            auto allocate_integer_variable(Integer lower, Integer upper) -> IntegerVariableID;
-            auto allocate_integer_offset_variable(IntegerVariableID, Integer offset) -> IntegerVariableID;
-            auto allocate_boolean_constant(bool value) -> BooleanVariableID;
+            auto create_integer_variable(Integer lower, Integer upper) -> IntegerVariableID;
+            auto create_integer_offset_variable(IntegerVariableID, Integer offset) -> IntegerVariableID;
+            auto create_boolean_constant(bool value) -> BooleanVariableID;
 
             [[ nodiscard ]] auto integer_variable(const IntegerVariableID) -> IntegerVariable &;
             [[ nodiscard ]] auto integer_variable(const IntegerVariableID) const -> const IntegerVariable &;
