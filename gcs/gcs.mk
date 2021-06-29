@@ -9,5 +9,6 @@ SOURCES := \
     literal.cc \
     problem.cc \
     state.cc \
+    stats.cc \
     solve.cc
 

@@ -4,6 +4,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_STATS_HH 1
 
 #include <chrono>
+#include <iosfwd>
 
 namespace gcs
 {
@@ -15,6 +16,8 @@ namespace gcs
 
         std::chrono::microseconds solve_time;
     };
+
+    auto operator<< (std::ostream &, const Stats &) -> std::ostream &;
 }
 
 #endif

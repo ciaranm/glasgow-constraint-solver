@@ -26,9 +26,7 @@ auto main(int, char * []) -> int
             return true;
             });
 
-    cout << "recursions: " << stats.recursions << endl;
-    cout << "max depth:  " << stats.max_depth << endl;
-    cout << "solve time: " << (stats.solve_time.count() / 1'000'000.0d) << "s" << endl;
+    cout << stats;
 
     return EXIT_SUCCESS;
 }
