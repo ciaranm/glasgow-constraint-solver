@@ -29,7 +29,7 @@ State::State() :
 {
 }
 
-State::State(State && other) = default;
+State::State(State && other) noexcept = default;
 
 State::~State() = default;
 

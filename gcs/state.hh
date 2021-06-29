@@ -29,7 +29,7 @@ namespace gcs
 
         public:
             explicit State();
-            State(State &&);
+            State(State &&) noexcept;
             ~State();
 
             State(const State &) = delete;
