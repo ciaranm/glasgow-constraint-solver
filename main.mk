@@ -9,8 +9,7 @@ SUBMAKEFILES := \
     examples/langford/langford.mk \
     examples/reif_eq/reif_eq.mk
 
-CXX := g++-10
-override CXXFLAGS += -O3 -march=native -std=c++20 -Isrc/ -W -Wall -g -ggdb3 -pthread
+override CXXFLAGS += -O3 -march=native -std=c++20 -Isrc/ -W -Wall -Wextra -g -ggdb3 -pthread
 
 ifeq ($(shell uname -s), Linux)
 override LDFLAGS += -pthread -lstdc++fs
