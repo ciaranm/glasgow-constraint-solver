@@ -1,5 +1,7 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
+#include <gcs/constraints/all_different.hh>
+#include <gcs/constraints/linear_equality.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
@@ -28,11 +30,11 @@ auto main(int, char * []) -> int
     auto y = p.create_integer_variable(0_i, 9_i);
 
     vector<IntegerVariableID> vars{ s, e, n, d, m, o, r, y };
-    p.all_different(vars);
+    p.post(AllDifferent{ vars });
 
-    p.lin_eq(Linear{                 {  1000_i, s }, {  100_i, e }, {  10_i, n }, {  1_i, d },
-                                     {  1000_i, m }, {  100_i, o }, {  10_i, r }, {  1_i, e },
-                    { -10000_i, m }, { -1000_i, o }, { -100_i, n }, { -10_i, e }, { -1_i, y }, }, 0_i);
+    p.post(LinearEquality{ Linear{                  {  1000_i, s }, {  100_i, e }, {  10_i, n }, {  1_i, d },
+                                                    {  1000_i, m }, {  100_i, o }, {  10_i, r }, {  1_i, e },
+                                   { -10000_i, m }, { -1000_i, o }, { -100_i, n }, { -10_i, e }, { -1_i, y }, }, 0_i });
 
     auto stats = solve(p, [&] (const State & state) -> bool {
             cout << " " << state(s) << state(e) << state(n) << state(d) << endl;

@@ -1,5 +1,7 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
+#include <gcs/constraints/all_different.hh>
+#include <gcs/constraints/equals_reif.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
@@ -49,14 +51,14 @@ auto main(int argc, char * argv[]) -> int
         vector<IntegerVariableID> box;
         for (int y = 0 ; y < 9 ; ++y)
             box.emplace_back(grid[x][y]);
-        p.all_different(box);
+        p.post(AllDifferent{ box });
     }
 
     for (int y = 0 ; y < 9 ; ++y) {
         vector<IntegerVariableID> box;
         for (int x = 0 ; x < 9 ; ++x)
             box.emplace_back(grid[x][y]);
-        p.all_different(box);
+        p.post(AllDifferent{ box });
     }
 
     for (int x = 0 ; x < 3 ; ++x) {
@@ -65,14 +67,14 @@ auto main(int argc, char * argv[]) -> int
             for (int xx = 0 ; xx < 3 ; ++xx)
                 for (int yy = 0 ; yy < 3 ; ++yy)
                     box.emplace_back(grid[3 * x + xx][3 * y + yy]);
-            p.all_different(box);
+            p.post(AllDifferent{ box });
         }
     }
 
     for (int x = 0 ; x < 9 ; ++x)
         for (int y = 0 ; y < 9 ; ++y)
             if (predefs[x][y] != 0)
-                p.cnf({ grid[x][y] == Integer{ predefs[x][y] } });
+                p.post(EqualsReif{ grid[x][y], p.create_integer_constant(Integer{ predefs[x][y] }), p.create_boolean_constant(true) });
 
     auto stats = solve(p, [&] (const State & s) -> bool {
             for (int x = 0 ; x < 9 ; ++x) {

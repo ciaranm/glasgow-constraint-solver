@@ -1,5 +1,8 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
+#include <gcs/constraints/all_different.hh>
+#include <gcs/constraints/element.hh>
+#include <gcs/constraints/equals_reif.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
@@ -25,17 +28,16 @@ auto main(int, char * []) -> int
         solution.push_back(p.create_integer_variable(1_i, Integer{ k }));
     }
 
-    p.all_different(position);
+    p.post(AllDifferent{ position });
 
     for (int i = 0 ; i < k ; ++i) {
         auto i_var = p.create_integer_variable(Integer{ i + 1 }, Integer{ i + 1 });
-        p.element(i_var, position[i], solution);
-        p.element(i_var, position[i + k], solution);
+        p.post(Element{ i_var, position[i], solution });
+        p.post(Element{ i_var, position[i + k], solution });
 
         // position[i + k] = position[i] + i + 2
         IntegerVariableID position_i_plus_i_plus_2 = p.create_integer_offset_variable(position[i], Integer{ i + 2 });
-        p.eq_reif(position[i + k], position_i_plus_i_plus_2, p.create_boolean_constant(true));
-        // p.lin_eq(Linear{ { 1_i, position[i + k] }, { -1_i, position_i_plus_i_plus_2 } }, 0_i);
+        p.post(EqualsReif(position[i + k], position_i_plus_i_plus_2, p.create_boolean_constant(true)));
     }
 
     auto stats = solve(p, [&] (const State & state) -> bool {

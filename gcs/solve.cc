@@ -30,15 +30,9 @@ namespace
                 for ( ; lower <= upper ; ++lower) {
                     if (state.in_domain(*branch_var, lower)) {
                         auto new_state = state.clone();
-                        switch (new_state.infer(*branch_var == lower)) {
-                            case Inference::NoChange:
-                            case Inference::Change:
-                                if (! solve_with_state(depth + 1, stats, problem, new_state, callback))
-                                    return false;
-                                break;
-                            case Inference::Contradiction:
-                                throw UnexpectedException{ "couldn't infer a branch?" };
-                        }
+                        new_state.guess(*branch_var == lower);
+                        if (! solve_with_state(depth + 1, stats, problem, new_state, callback))
+                            return false;
                     }
                 }
             }

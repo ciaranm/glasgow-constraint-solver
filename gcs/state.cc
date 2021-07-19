@@ -5,11 +5,13 @@
 
 #include "util/overloaded.hh"
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
 using namespace gcs;
 
+using std::find;
 using std::get_if;
 using std::make_optional;
 using std::make_shared;
@@ -35,6 +37,7 @@ auto VariableDoesNotHaveUniqueValue::what() const noexcept -> const char *
 struct State::Imp
 {
     vector<IntegerVariable> integer_variables;
+    vector<IntegerVariableID> guessed_integer_variables;
 };
 
 State::State() :
@@ -102,7 +105,7 @@ auto State::infer_integer(const LiteralFromIntegerVariable & ilit) -> Inference
             if (auto ovar = get_if<IntegerOffsetVariable>(&integer_variable(ilit.var)))
                 return infer_integer(LiteralFromIntegerVariable{ ovar->var, ilit.state, ilit.value - ovar->offset });
             else if (! in_domain(ilit.var, ilit.value))
-                return Inference::NoChange;
+                return Inference::Contradiction;
             else if (optional_single_value(ilit.var))
                 return Inference::NoChange;
             else {
@@ -277,6 +280,31 @@ auto State::infer(const Literal & lit) -> Inference
                 return infer_integer(ilit);
             }
             }, lit);
+}
+
+auto State::guess(const Literal & lit) -> void
+{
+    visit(overloaded {
+                [&] (const LiteralFromIntegerVariable & ilit) -> void {
+                    _imp->guessed_integer_variables.push_back(ilit.var);
+                },
+                [&] (const LiteralFromBooleanVariable &) -> void {
+                }
+                }, lit);
+
+    switch (infer(lit)) {
+        case Inference::NoChange:
+        case Inference::Change:
+            return;
+
+        case Inference::Contradiction:
+            throw UnexpectedException{ "couldn't infer a branch variable" };
+    }
+}
+
+auto State::have_guessed(const IntegerVariableID var) const -> bool
+{
+    return _imp->guessed_integer_variables.end() != find(_imp->guessed_integer_variables.begin(), _imp->guessed_integer_variables.end(), var);
 }
 
 auto State::lower_bound(const IntegerVariableID var) const -> Integer

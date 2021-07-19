@@ -20,160 +20,35 @@ using std::move;
 using std::nullopt;
 using std::optional;
 using std::pair;
+using std::to_string;
 using std::vector;
 
-struct Problem::Imp
+struct LowLevelConstraintStore::Imp
 {
-    State initial_state;
-    optional<IntegerVariableID> last_integer_var;
-
     list<Literals> cnfs;
     list<pair<Linear, Integer> > lin_les;
 };
 
-Problem::Problem() :
+LowLevelConstraintStore::LowLevelConstraintStore() :
     _imp(new Imp)
 {
 }
 
-Problem::~Problem()
-{
-}
+LowLevelConstraintStore::~LowLevelConstraintStore() = default;
 
-auto Problem::initial_state() -> State &
-{
-    return _imp->initial_state;
-}
-
-auto Problem::initial_state() const -> const State &
-{
-    return _imp->initial_state;
-}
-
-auto Problem::create_integer_variable(Integer lower, Integer upper) -> IntegerVariableID
-{
-    return *(_imp->last_integer_var = make_optional(initial_state().create_integer_variable(lower, upper)));
-}
-
-auto Problem::create_integer_offset_variable(IntegerVariableID var, Integer offset) -> IntegerVariableID
-{
-    return *(_imp->last_integer_var = make_optional(initial_state().create_integer_offset_variable(var, offset)));
-}
-
-auto Problem::create_integer_constant(Integer value) -> IntegerVariableID
-{
-    return *(_imp->last_integer_var = make_optional(initial_state().create_integer_variable(value, value)));
-}
-
-auto Problem::create_boolean_constant(bool value) -> BooleanVariableID
-{
-    return initial_state().create_boolean_constant(value);
-}
-
-auto Problem::cnf(Literals && c) -> void
+auto LowLevelConstraintStore::cnf(Literals && c) -> void
 {
     sanitise_literals(c);
     _imp->cnfs.push_back(move(c));
 }
 
-auto Problem::lin_le(Linear && coeff_vars, Integer value) -> void
+auto LowLevelConstraintStore::lin_le(Linear && coeff_vars, Integer value) -> void
 {
     sanitise_linear(coeff_vars);
     _imp->lin_les.emplace_back(move(coeff_vars), value);
 }
 
-auto Problem::lin_eq(Linear && coeff_vars, Integer value) -> void
-{
-    sanitise_linear(coeff_vars);
-
-    // Use input as < constraint, create >= constraint to get equality
-    Linear inv_coeff_vars;
-    inv_coeff_vars.reserve(coeff_vars.size());
-    for (auto & [ c, v ] : coeff_vars)
-        inv_coeff_vars.emplace_back(-c, v);
-
-    lin_le(move(inv_coeff_vars), -value);
-    lin_le(move(coeff_vars), value);
-}
-
-auto Problem::all_different(const vector<IntegerVariableID> & vars) -> void
-{
-    // for each distinct pair of variables...
-    for_each_distinct_pair(vars, [&] (auto v, auto w) {
-        // for each value in both domains...
-        auto lower = max(initial_state().lower_bound(v), initial_state().lower_bound(w));
-        auto upper = min(initial_state().upper_bound(v), initial_state().upper_bound(w));
-        for ( ; lower <= upper ; ++lower)
-            if (initial_state().in_domain(v, lower) && initial_state().in_domain(w, lower)) {
-                // can't have both variables taking that value
-                cnf({ v != lower, w != lower });
-            }
-    });
-}
-
-auto Problem::element(IntegerVariableID var, IntegerVariableID idx_var, const std::vector<IntegerVariableID> & vars) -> void
-{
-    if (vars.empty()) {
-        cnf( { } );
-        return;
-    }
-
-    // idx_var >= 0, idx_var < vars.size()
-    cnf({ idx_var >= 0_i });
-    cnf({ idx_var < Integer(vars.size()) });
-
-    // var <= max(upper(vars)), var >= min(lower(vars))
-    // ...and this should really be just over vars that idx_var might cover
-    auto max_upper = initial_state().upper_bound(*max_element(vars.begin(), vars.end(), [&] (const IntegerVariableID & v, const IntegerVariableID & w) {
-                return initial_state().upper_bound(v) < initial_state().upper_bound(w);
-                }));
-    auto min_lower = initial_state().lower_bound(*min_element(vars.begin(), vars.end(), [&] (const IntegerVariableID & v, const IntegerVariableID & w) {
-                return initial_state().lower_bound(v) < initial_state().lower_bound(w);
-                }));
-    cnf({ var < max_upper + 1_i });
-    cnf({ var >= min_lower });
-
-    // for each v in vars
-    for_each_with_index(vars, [&] (auto & v, auto idx) {
-        // idx_var == i -> var == vars[idx]
-        auto lower = min(initial_state().lower_bound(v), initial_state().lower_bound(var));
-        auto upper = max(initial_state().upper_bound(v), initial_state().upper_bound(var));
-        for ( ; lower <= upper ; ++lower) {
-            cnf({ idx_var != Integer(idx), v != lower, var == lower });
-            }
-    });
-}
-
-auto Problem::eq_reif(IntegerVariableID v, IntegerVariableID w, BooleanVariableID r) -> void
-{
-    auto lower_common = max(initial_state().lower_bound(v), initial_state().lower_bound(w));
-    auto upper_common = min(initial_state().upper_bound(v), initial_state().upper_bound(w));
-
-    // v < lower_common -> !r, w < lower_common -> !r, v > upper_common -> ! r, w > upper_common -> ! r
-    if (initial_state().lower_bound(v) < lower_common)
-        cnf({ { v >= lower_common }, { ! r } });
-    if (initial_state().lower_bound(w) < lower_common)
-        cnf({ { w >= lower_common }, { ! r } });
-    if (initial_state().upper_bound(v) > upper_common)
-        cnf({ { v < upper_common + 1_i }, { ! r } });
-    if (initial_state().upper_bound(w) > upper_common)
-        cnf({ { w < upper_common + 1_i }, { ! r } });
-
-    // (r and v == c) -> w == c
-    for (auto c = lower_common ; c <= upper_common ; ++c)
-        cnf( { { v != c }, { w == c }, { ! r } });
-
-    // (! r and v == c) -> w != c
-    for (auto c = lower_common ; c <= upper_common ; ++c)
-        cnf( { { + r }, { v != c }, { w != c } } );
-}
-
-auto Problem::create_initial_state() const -> State
-{
-    return initial_state().clone();
-}
-
-auto Problem::propagate(State & state) const -> bool
+auto LowLevelConstraintStore::propagate(State & state) const -> bool
 {
     for (bool keep_going = true ; keep_going ; ) {
         keep_going = false;
@@ -197,7 +72,7 @@ auto Problem::propagate(State & state) const -> bool
     return true;
 }
 
-auto Problem::propagate_cnfs(State & state) const -> Inference
+auto LowLevelConstraintStore::propagate_cnfs(State & state) const -> Inference
 {
     bool changed = false;
 
@@ -249,7 +124,7 @@ auto Problem::propagate_cnfs(State & state) const -> Inference
     return changed ? Inference::Change : Inference::NoChange;
 }
 
-auto Problem::propagate_lin_les(State & state) const -> Inference
+auto LowLevelConstraintStore::propagate_lin_les(State & state) const -> Inference
 {
     bool changed = false;
 
@@ -285,6 +160,64 @@ auto Problem::propagate_lin_les(State & state) const -> Inference
     return changed ? Inference::Change : Inference::NoChange;
 }
 
+struct Problem::Imp
+{
+    State initial_state;
+    optional<IntegerVariableID> last_integer_var;
+    LowLevelConstraintStore constraints;
+};
+
+Problem::Problem() :
+    _imp(new Imp)
+{
+}
+
+Problem::~Problem()
+{
+}
+
+auto Problem::initial_state() -> State &
+{
+    return _imp->initial_state;
+}
+
+auto Problem::initial_state() const -> const State &
+{
+    return _imp->initial_state;
+}
+
+auto Problem::create_integer_variable(Integer lower, Integer upper) -> IntegerVariableID
+{
+    return *(_imp->last_integer_var = make_optional(initial_state().create_integer_variable(lower, upper)));
+}
+
+auto Problem::create_integer_offset_variable(IntegerVariableID var, Integer offset) -> IntegerVariableID
+{
+    return *(_imp->last_integer_var = make_optional(initial_state().create_integer_offset_variable(var, offset)));
+}
+
+auto Problem::create_integer_constant(Integer value) -> IntegerVariableID
+{
+    return *(_imp->last_integer_var = make_optional(initial_state().create_integer_variable(value, value)));
+}
+
+auto Problem::create_boolean_constant(bool value) -> BooleanVariableID
+{
+    return initial_state().create_boolean_constant(value);
+}
+
+auto Problem::create_initial_state() const -> State
+{
+    return initial_state().clone();
+}
+
+auto Problem::propagate(State & state) const -> bool
+{
+    auto result = _imp->constraints.propagate(state);
+
+    return result;
+}
+
 auto Problem::find_branching_variable(State & state) const -> optional<IntegerVariableID>
 {
     optional<IntegerVariableID> result = nullopt;
@@ -300,5 +233,10 @@ auto Problem::find_branching_variable(State & state) const -> optional<IntegerVa
         }
 
     return result;
+}
+
+auto Problem::post(Constraint && c) -> void
+{
+    move(c).convert_to_low_level(_imp->constraints, initial_state());
 }
 

@@ -59,6 +59,9 @@ namespace gcs
 
             [[ nodiscard ]] auto infer(const Literal & lit) -> Inference;
 
+            auto guess(const Literal & lit) -> void;
+            [[ nodiscard ]] auto have_guessed(const IntegerVariableID) const -> bool;
+
             [[ nodiscard ]] auto lower_bound(const IntegerVariableID) const -> Integer;
             [[ nodiscard ]] auto upper_bound(const IntegerVariableID) const -> Integer;
             [[ nodiscard ]] auto in_domain(const IntegerVariableID, Integer) const -> bool;
