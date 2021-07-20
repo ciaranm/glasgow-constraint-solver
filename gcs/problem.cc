@@ -165,6 +165,7 @@ struct Problem::Imp
     State initial_state;
     optional<IntegerVariableID> last_integer_var;
     LowLevelConstraintStore constraints;
+    optional<vector<IntegerVariableID> > branch_on;
 };
 
 Problem::Problem() :
@@ -223,7 +224,16 @@ auto Problem::find_branching_variable(State & state) const -> optional<IntegerVa
     optional<IntegerVariableID> result = nullopt;
     Integer sz{ 0 };
 
-    if (_imp->last_integer_var)
+    if (_imp->branch_on) {
+        for (auto & var : *_imp->branch_on) {
+            Integer s = state.domain_size(var);
+            if (s > Integer{ 1 } && (nullopt == result || s < sz)) {
+                result = var;
+                sz = s;
+            }
+        }
+    }
+    else if (_imp->last_integer_var) {
         for (IntegerVariableID var{ 0 } ; var <= *_imp->last_integer_var ; ++var.index) {
             Integer s = state.domain_size(var);
             if (s > Integer{ 1 } && (nullopt == result || s < sz)) {
@@ -231,6 +241,7 @@ auto Problem::find_branching_variable(State & state) const -> optional<IntegerVa
                 sz = s;
             }
         }
+    }
 
     return result;
 }
@@ -238,5 +249,12 @@ auto Problem::find_branching_variable(State & state) const -> optional<IntegerVa
 auto Problem::post(Constraint && c) -> void
 {
     move(c).convert_to_low_level(_imp->constraints, initial_state());
+}
+
+auto Problem::branch_on(const std::vector<IntegerVariableID> & v) -> void
+{
+    if (! _imp->branch_on)
+        _imp->branch_on.emplace();
+    _imp->branch_on->insert(_imp->branch_on->end(), v.begin(), v.end());
 }
 

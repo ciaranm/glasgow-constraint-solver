@@ -64,6 +64,8 @@ namespace gcs
             [[ nodiscard ]] auto find_branching_variable(State &) const -> std::optional<IntegerVariableID>;
 
             auto post(Constraint &&) -> void;
+
+            auto branch_on(const std::vector<IntegerVariableID> &) -> void;
     };
 }
 

@@ -12,6 +12,7 @@ SOURCES := \
     state.cc \
     stats.cc \
     solve.cc \
+    constraints/abs.cc \
     constraints/all_different.cc \
     constraints/element.cc \
     constraints/equals_reif.cc \
