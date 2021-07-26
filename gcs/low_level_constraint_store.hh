@@ -5,9 +5,11 @@
 
 #include <gcs/linear.hh>
 #include <gcs/literal.hh>
+#include <gcs/problem.hh>
 #include <gcs/state.hh>
 
 #include <functional>
+#include <vector>
 
 namespace gcs
 {
@@ -24,7 +26,7 @@ namespace gcs
             [[ nodiscard ]] auto propagate_propagators(State &) const -> Inference;
 
         public:
-            LowLevelConstraintStore();
+            explicit LowLevelConstraintStore(Problem * const);
             ~LowLevelConstraintStore();
 
             LowLevelConstraintStore(const LowLevelConstraintStore &) = delete;
@@ -33,6 +35,7 @@ namespace gcs
             auto cnf(Literals && lits) -> void;
             auto lin_le(Linear && coeff_vars, Integer value) -> void;
             auto propagator(PropagationFunction &&) -> void;
+            auto table(std::vector<IntegerVariableID> &&, std::vector<std::vector<Integer> > &&) -> void;
 
             [[ nodiscard ]] auto propagate(State &) const -> bool;
     };

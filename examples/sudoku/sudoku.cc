@@ -1,7 +1,7 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
 #include <gcs/constraints/all_different.hh>
-#include <gcs/constraints/equals.hh>
+#include <gcs/constraints/comparison.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 

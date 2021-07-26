@@ -144,16 +144,21 @@ auto State::infer_integer(const LiteralFromIntegerVariable & ilit) -> Inference
                             return Inference::Change;
                         }
                         else {
-                            // Holey domain, convert to set.
-                            // This should handle larger ranges.
-                            if (rvar.upper >= Integer{ Bits::number_of_bits })
-                                throw UnimplementedException{ };
-
-                            IntegerSmallSetVariable svar{ Integer{ 0 }, Bits{ 0 } };
-                            for (Integer v = rvar.lower ; v <= rvar.upper ; ++v)
-                                if (v != ilit.value)
-                                    svar.bits.set(v.raw_value);
-                            integer_variable(ilit.var) = move(svar);
+                            // Holey domain, convert to set. This should handle offsets...
+                            if (rvar.upper >= Integer{ Bits::number_of_bits }) {
+                                auto values = make_shared<set<Integer> >();
+                                for (Integer v = rvar.lower ; v <= rvar.upper ; ++v)
+                                    if (v != ilit.value)
+                                        values->insert(v);
+                                integer_variable(ilit.var) = IntegerSetVariable{ values };
+                            }
+                            else {
+                                IntegerSmallSetVariable svar{ Integer{ 0 }, Bits{ 0 } };
+                                for (Integer v = rvar.lower ; v <= rvar.upper ; ++v)
+                                    if (v != ilit.value)
+                                        svar.bits.set(v.raw_value);
+                                integer_variable(ilit.var) = move(svar);
+                            }
                             return Inference::Change;
                         }
                     },
@@ -172,6 +177,10 @@ auto State::infer_integer(const LiteralFromIntegerVariable & ilit) -> Inference
                             return Inference::Contradiction;
                         else if (2 == svar.values->size()) {
                             integer_variable(ilit.var) = IntegerConstant{ ilit.value == *svar.values->begin() ? *next(svar.values->begin()) : *svar.values->begin() };
+                            return Inference::Change;
+                        }
+                        else if (svar.values.unique()) {
+                            svar.values->erase(ilit.value);
                             return Inference::Change;
                         }
                         else {

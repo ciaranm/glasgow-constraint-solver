@@ -61,9 +61,9 @@ namespace gcs
 
     struct IntegerSetVariable
     {
-        std::shared_ptr<const std::set<Integer> > values;
+        std::shared_ptr<std::set<Integer> > values;
 
-        explicit IntegerSetVariable(std::shared_ptr<const std::set<Integer> > v) :
+        explicit IntegerSetVariable(std::shared_ptr<std::set<Integer> > v) :
             values(v)
         {
         }

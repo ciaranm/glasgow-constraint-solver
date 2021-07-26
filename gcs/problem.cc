@@ -22,10 +22,15 @@ struct Problem::Imp
     optional<IntegerVariableID> last_integer_var;
     LowLevelConstraintStore constraints;
     optional<vector<IntegerVariableID> > branch_on;
+
+    Imp(Problem * problem) :
+        constraints(problem)
+    {
+    }
 };
 
 Problem::Problem() :
-    _imp(new Imp)
+    _imp(new Imp(this))
 {
 }
 

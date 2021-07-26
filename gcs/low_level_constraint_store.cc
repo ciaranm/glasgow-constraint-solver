@@ -3,6 +3,7 @@
 #include "gcs/low_level_constraint_store.hh"
 #include "gcs/exception.hh"
 #include "util/overloaded.hh"
+#include "util/for_each.hh"
 
 #include <algorithm>
 #include <list>
@@ -17,16 +18,23 @@ using std::move;
 using std::nullopt;
 using std::optional;
 using std::pair;
+using std::vector;
 
 struct LowLevelConstraintStore::Imp
 {
+    Problem * const problem;
     list<Literals> cnfs;
     list<pair<Linear, Integer> > lin_les;
     list<PropagationFunction> propagators;
+
+    Imp(Problem * p) :
+        problem(p)
+    {
+    }
 };
 
-LowLevelConstraintStore::LowLevelConstraintStore() :
-    _imp(new Imp)
+LowLevelConstraintStore::LowLevelConstraintStore(Problem * p) :
+    _imp(new Imp(p))
 {
 }
 
@@ -47,6 +55,17 @@ auto LowLevelConstraintStore::lin_le(Linear && coeff_vars, Integer value) -> voi
 auto LowLevelConstraintStore::propagator(PropagationFunction && f) -> void
 {
     _imp->propagators.push_back(move(f));
+}
+
+auto LowLevelConstraintStore::table(vector<IntegerVariableID> && vars, vector<vector<Integer> > && permitted) -> void
+{
+    auto selector = _imp->problem->create_integer_variable(0_i, Integer(permitted.size() - 1));
+    for_each_with_index(permitted, [&] (auto & tuple, auto & pos) {
+            if (tuple.size() != vars.size())
+                throw UnimplementedException{ };
+            for (decltype(tuple.size()) i = 0 ; i != tuple.size() ; ++i)
+                cnf({ selector != Integer(pos), vars[i] == tuple[i] });
+            });
 }
 
 auto LowLevelConstraintStore::propagate(State & state) const -> bool

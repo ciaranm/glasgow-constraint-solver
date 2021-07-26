@@ -8,7 +8,8 @@ SUBMAKEFILES := \
     examples/money/money.mk \
     examples/langford/langford.mk \
     examples/reif_eq/reif_eq.mk \
-    examples/crystal_maze/crystal_maze.mk
+    examples/crystal_maze/crystal_maze.mk \
+    examples/triangle/triangle.mk
 
 override CXXFLAGS += -O3 -march=native -std=c++20 -Isrc/ -W -Wall -Wextra -g -ggdb3 -pthread
 
