@@ -7,8 +7,12 @@
 #include <gcs/literal.hh>
 #include <gcs/state.hh>
 
+#include <functional>
+
 namespace gcs
 {
+    using PropagationFunction = std::function<auto (State &) -> Inference>;
+
     class LowLevelConstraintStore
     {
         private:
@@ -17,6 +21,7 @@ namespace gcs
 
             [[ nodiscard ]] auto propagate_cnfs(State &) const -> Inference;
             [[ nodiscard ]] auto propagate_lin_les(State &) const -> Inference;
+            [[ nodiscard ]] auto propagate_propagators(State &) const -> Inference;
 
         public:
             LowLevelConstraintStore();
@@ -27,6 +32,7 @@ namespace gcs
 
             auto cnf(Literals && lits) -> void;
             auto lin_le(Linear && coeff_vars, Integer value) -> void;
+            auto propagator(PropagationFunction &&) -> void;
 
             [[ nodiscard ]] auto propagate(State &) const -> bool;
     };

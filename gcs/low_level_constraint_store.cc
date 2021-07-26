@@ -22,6 +22,7 @@ struct LowLevelConstraintStore::Imp
 {
     list<Literals> cnfs;
     list<pair<Linear, Integer> > lin_les;
+    list<PropagationFunction> propagators;
 };
 
 LowLevelConstraintStore::LowLevelConstraintStore() :
@@ -43,6 +44,11 @@ auto LowLevelConstraintStore::lin_le(Linear && coeff_vars, Integer value) -> voi
     _imp->lin_les.emplace_back(move(coeff_vars), value);
 }
 
+auto LowLevelConstraintStore::propagator(PropagationFunction && f) -> void
+{
+    _imp->propagators.push_back(move(f));
+}
+
 auto LowLevelConstraintStore::propagate(State & state) const -> bool
 {
     for (bool keep_going = true ; keep_going ; ) {
@@ -58,6 +64,15 @@ auto LowLevelConstraintStore::propagate(State & state) const -> bool
             continue;
 
         switch (propagate_lin_les(state)) {
+            case Inference::NoChange:      break;
+            case Inference::Change:        keep_going = true; break;
+            case Inference::Contradiction: return false;
+        }
+
+        if (keep_going)
+            continue;
+
+        switch (propagate_propagators(state)) {
             case Inference::NoChange:      break;
             case Inference::Change:        keep_going = true; break;
             case Inference::Contradiction: return false;
@@ -155,4 +170,18 @@ auto LowLevelConstraintStore::propagate_lin_les(State & state) const -> Inferenc
     return changed ? Inference::Change : Inference::NoChange;
 }
 
+auto LowLevelConstraintStore::propagate_propagators(State & state) const -> Inference
+{
+    bool changed = false;
+
+    for (auto & propagator : _imp->propagators) {
+        switch (propagator(state)) {
+            case Inference::Change:        changed = true; break;
+            case Inference::NoChange:      break;
+            case Inference::Contradiction: return Inference::Contradiction;
+        }
+    }
+
+    return changed ? Inference::Change : Inference::NoChange;
+}
 

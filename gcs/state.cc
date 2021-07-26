@@ -389,6 +389,13 @@ auto State::domain_size(const IntegerVariableID var) const -> Integer
             }, integer_variable(var));
 }
 
+auto State::for_each_value(const IntegerVariableID var, std::function<auto (Integer) -> void> f) -> void
+{
+    for (Integer v = lower_bound(var) ; v <= upper_bound(var) ; ++v)
+        if (in_domain(var, v))
+            f(v);
+}
+
 auto State::optional_single_value(const BooleanVariableID v) const -> std::optional<bool>
 {
     if (0 == v.index || 1 == v.index)
