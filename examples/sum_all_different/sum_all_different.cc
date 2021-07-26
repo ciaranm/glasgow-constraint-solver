@@ -2,7 +2,7 @@
 
 #include <gcs/constraints/all_different.hh>
 #include <gcs/constraints/linear_equality.hh>
-#include <gcs/constraints/equals_reif.hh>
+#include <gcs/constraints/equals.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
@@ -29,7 +29,7 @@ auto main(int, char * []) -> int
 
     auto three = p.create_integer_constant(3_i);
     for (auto & x : xs)
-        p.post(EqualsReif(x, three, p.create_boolean_constant(false)));
+        p.post(NotEquals(x, three ));
 
     p.post(AllDifferent{ move(xs) });
 

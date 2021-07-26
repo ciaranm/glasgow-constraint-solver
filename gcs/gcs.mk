@@ -16,6 +16,6 @@ SOURCES := \
     constraints/abs.cc \
     constraints/all_different.cc \
     constraints/element.cc \
-    constraints/equals_reif.cc \
+    constraints/equals.cc \
     constraints/linear_equality.cc
 

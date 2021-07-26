@@ -2,7 +2,7 @@
 
 #include <gcs/constraints/all_different.hh>
 #include <gcs/constraints/element.hh>
-#include <gcs/constraints/equals_reif.hh>
+#include <gcs/constraints/equals.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
@@ -37,7 +37,7 @@ auto main(int, char * []) -> int
 
         // position[i + k] = position[i] + i + 2
         IntegerVariableID position_i_plus_i_plus_2 = p.create_integer_offset_variable(position[i], Integer{ i + 2 });
-        p.post(EqualsReif(position[i + k], position_i_plus_i_plus_2, p.create_boolean_constant(true)));
+        p.post(Equals(position[i + k], position_i_plus_i_plus_2));
     }
 
     auto stats = solve(p, [&] (const State & state) -> bool {

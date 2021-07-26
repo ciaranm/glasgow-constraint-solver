@@ -1,7 +1,7 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
 #include <gcs/constraints/all_different.hh>
-#include <gcs/constraints/equals_reif.hh>
+#include <gcs/constraints/equals.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
@@ -74,7 +74,7 @@ auto main(int argc, char * argv[]) -> int
     for (int x = 0 ; x < 9 ; ++x)
         for (int y = 0 ; y < 9 ; ++y)
             if (predefs[x][y] != 0)
-                p.post(EqualsReif{ grid[x][y], p.create_integer_constant(Integer{ predefs[x][y] }), p.create_boolean_constant(true) });
+                p.post(Equals{ grid[x][y], p.create_integer_constant(Integer{ predefs[x][y] }) });
 
     auto stats = solve(p, [&] (const State & s) -> bool {
             for (int x = 0 ; x < 9 ; ++x) {
