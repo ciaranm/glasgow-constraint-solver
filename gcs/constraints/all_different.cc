@@ -1,7 +1,7 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
 #include <gcs/constraints/all_different.hh>
-#include <gcs/problem.hh>
+#include <gcs/low_level_constraint_store.hh>
 #include <gcs/state.hh>
 
 #include <util/for_each.hh>
@@ -19,7 +19,7 @@ AllDifferent::AllDifferent(const vector<IntegerVariableID> & v) :
 {
 }
 
-auto AllDifferent::convert_to_low_level(LowLevelConstraintStore & problem, const State & initial_state) && -> void
+auto AllDifferent::convert_to_low_level(LowLevelConstraintStore & constraints, const State & initial_state) && -> void
 {
     // for each distinct pair of variables...
     for_each_distinct_pair(_vars, [&] (auto v, auto w) {
@@ -29,7 +29,7 @@ auto AllDifferent::convert_to_low_level(LowLevelConstraintStore & problem, const
         for ( ; lower <= upper ; ++lower)
             if (initial_state.in_domain(v, lower) && initial_state.in_domain(w, lower)) {
                 // can't have both variables taking that value
-                problem.cnf({ v != lower, w != lower });
+                constraints.cnf({ v != lower, w != lower });
             }
     });
 }

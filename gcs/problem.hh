@@ -15,28 +15,6 @@
 
 namespace gcs
 {
-    class LowLevelConstraintStore
-    {
-        private:
-            struct Imp;
-            std::unique_ptr<Imp> _imp;
-
-            [[ nodiscard ]] auto propagate_cnfs(State &) const -> Inference;
-            [[ nodiscard ]] auto propagate_lin_les(State &) const -> Inference;
-
-        public:
-            LowLevelConstraintStore();
-            ~LowLevelConstraintStore();
-
-            LowLevelConstraintStore(const LowLevelConstraintStore &) = delete;
-            LowLevelConstraintStore & operator= (const LowLevelConstraintStore &) = delete;
-
-            auto cnf(Literals && lits) -> void;
-            auto lin_le(Linear && coeff_vars, Integer value) -> void;
-
-            [[ nodiscard ]] auto propagate(State &) const -> bool;
-    };
-
     class Problem
     {
         private:

@@ -8,6 +8,7 @@ SOURCES := \
     integer_variable.cc \
     linear.cc \
     literal.cc \
+    low_level_constraint_store.cc \
     problem.cc \
     state.cc \
     stats.cc \

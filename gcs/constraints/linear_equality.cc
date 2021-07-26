@@ -1,7 +1,7 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
 #include <gcs/constraints/linear_equality.hh>
-#include <gcs/problem.hh>
+#include <gcs/low_level_constraint_store.hh>
 #include <gcs/linear.hh>
 
 using namespace gcs;
@@ -12,7 +12,7 @@ LinearEquality::LinearEquality(Linear && coeff_vars, Integer value) :
 {
 }
 
-auto LinearEquality::convert_to_low_level(LowLevelConstraintStore & p, const State &) && -> void
+auto LinearEquality::convert_to_low_level(LowLevelConstraintStore & constraints, const State &) && -> void
 {
     sanitise_linear(_coeff_vars);
 
@@ -22,7 +22,7 @@ auto LinearEquality::convert_to_low_level(LowLevelConstraintStore & p, const Sta
     for (auto & [ c, v ] : _coeff_vars)
         inv_coeff_vars.emplace_back(-c, v);
 
-    p.lin_le(move(inv_coeff_vars), -_value);
-    p.lin_le(move(_coeff_vars), _value);
+    constraints.lin_le(move(inv_coeff_vars), -_value);
+    constraints.lin_le(move(_coeff_vars), _value);
 }
 
