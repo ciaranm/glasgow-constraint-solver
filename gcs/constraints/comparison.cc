@@ -33,8 +33,9 @@ ComparisonReif::ComparisonReif(const IntegerVariableID v1, const IntegerVariable
 auto ComparisonReif::convert_to_low_level(LowLevelConstraintStore & constraints, const State & initial_state) && -> void
 {
     switch (_op) {
-        case ComparisonOperator::Equals:   return move(*this)._convert_to_low_level_equals(constraints, initial_state);
-        case ComparisonOperator::LessThan: return move(*this)._convert_to_low_level_less_than(constraints, initial_state);
+        case ComparisonOperator::Equals:        return move(*this)._convert_to_low_level_equals(constraints, initial_state);
+        case ComparisonOperator::LessThan:      return move(*this)._convert_to_low_level_less_than(constraints, initial_state, false);
+        case ComparisonOperator::LessThanEqual: return move(*this)._convert_to_low_level_less_than(constraints, initial_state, true);
     }
     throw NonExhaustiveSwitch{ };
 }
@@ -89,7 +90,7 @@ auto ComparisonReif::_convert_to_low_level_equals(LowLevelConstraintStore & cons
     ), _cond);
 }
 
-auto ComparisonReif::_convert_to_low_level_less_than(LowLevelConstraintStore & constraints, const State & initial_state) && -> void
+auto ComparisonReif::_convert_to_low_level_less_than(LowLevelConstraintStore & constraints, const State & initial_state, bool equal) && -> void
 {
     visit(overloaded(
                 [&] (const BooleanVariableID) {
@@ -98,7 +99,7 @@ auto ComparisonReif::_convert_to_low_level_less_than(LowLevelConstraintStore & c
                 [&] (const bool cond) {
                     if (cond) {
                         for (auto v = initial_state.lower_bound(_v2) ; v <= initial_state.upper_bound(_v2) ; ++v)
-                            constraints.cnf( { { _v2 != v }, { _v1 < v } } );
+                            constraints.cnf( { { _v2 != v }, { _v1 < (equal ? v + 1_i : v) } } );
                     }
                     else {
                         throw UnimplementedException{ };

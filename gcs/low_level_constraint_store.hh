@@ -37,6 +37,8 @@ namespace gcs
             auto propagator(PropagationFunction &&) -> void;
             auto table(std::vector<IntegerVariableID> &&, std::vector<std::vector<Integer> > &&) -> void;
 
+            [[ nodiscard ]] auto create_auxilliary_integer_variable(Integer, Integer) -> IntegerVariableID;
+
             [[ nodiscard ]] auto propagate(State &) const -> bool;
     };
 }

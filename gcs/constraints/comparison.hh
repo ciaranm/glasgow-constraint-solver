@@ -14,7 +14,8 @@ namespace gcs
     enum class ComparisonOperator
     {
         Equals,
-        LessThan
+        LessThan,
+        LessThanEqual
     };
 
     class ComparisonReif :
@@ -26,7 +27,7 @@ namespace gcs
             ComparisonOperator _op;
 
             auto _convert_to_low_level_equals(LowLevelConstraintStore &, const State &) && -> void;
-            auto _convert_to_low_level_less_than(LowLevelConstraintStore &, const State &) && -> void;
+            auto _convert_to_low_level_less_than(LowLevelConstraintStore &, const State &, bool equal) && -> void;
 
         public:
             explicit ComparisonReif(const IntegerVariableID v1, const IntegerVariableID v2, bool cond, ComparisonOperator op);
@@ -61,6 +62,16 @@ namespace gcs
         public:
             inline explicit LessThan(const IntegerVariableID v1, const IntegerVariableID v2) :
                 ComparisonReif(v1, v2, true, ComparisonOperator::LessThan)
+            {
+            };
+    };
+
+    class LessThanEqual :
+        public ComparisonReif
+    {
+        public:
+            inline explicit LessThanEqual(const IntegerVariableID v1, const IntegerVariableID v2) :
+                ComparisonReif(v1, v2, true, ComparisonOperator::LessThanEqual)
             {
             };
     };

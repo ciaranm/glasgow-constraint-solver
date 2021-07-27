@@ -59,7 +59,7 @@ auto LowLevelConstraintStore::propagator(PropagationFunction && f) -> void
 
 auto LowLevelConstraintStore::table(vector<IntegerVariableID> && vars, vector<vector<Integer> > && permitted) -> void
 {
-    auto selector = _imp->problem->create_integer_variable(0_i, Integer(permitted.size() - 1));
+    auto selector = create_auxilliary_integer_variable(0_i, Integer(permitted.size() - 1));
     for_each_with_index(permitted, [&] (auto & tuple, auto & pos) {
             if (tuple.size() != vars.size())
                 throw UnimplementedException{ };
@@ -202,5 +202,10 @@ auto LowLevelConstraintStore::propagate_propagators(State & state) const -> Infe
     }
 
     return changed ? Inference::Change : Inference::NoChange;
+}
+
+auto LowLevelConstraintStore::create_auxilliary_integer_variable(Integer l, Integer u) -> IntegerVariableID
+{
+    return _imp->problem->create_integer_variable(l, u);
 }
 

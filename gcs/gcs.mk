@@ -18,5 +18,6 @@ SOURCES := \
     constraints/arithmetic.cc \
     constraints/element.cc \
     constraints/comparison.cc \
-    constraints/linear_equality.cc
+    constraints/linear_equality.cc \
+    constraints/min_max.cc
 
