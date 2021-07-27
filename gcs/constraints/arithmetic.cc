@@ -31,9 +31,8 @@ auto Arithmetic<op_>::convert_to_low_level(LowLevelConstraintStore & store, cons
 
     vector<vector<Integer> > permitted;
 
-    for (auto v1 = initial_state.lower_bound(_v1) ; v1 <= initial_state.upper_bound(_v1) ; ++v1)
-        if (initial_state.in_domain(_v1, v1))
-            for (auto v2 = initial_state.lower_bound(_v2) ; v2 <= initial_state.upper_bound(_v2) ; ++v2)
+    initial_state.for_each_value(_v1, [&] (Integer v1) {
+            initial_state.for_each_value(_v2, [&] (Integer v2) {
                 if ((v2_zero_is_ok || v2 != 0_i) && initial_state.in_domain(_v2, v2)) {
                     Integer r = 0_i;
                     switch (op_) {
@@ -46,6 +45,8 @@ auto Arithmetic<op_>::convert_to_low_level(LowLevelConstraintStore & store, cons
                     if (initial_state.in_domain(_result, r))
                         permitted.push_back(vector{ v1, v2, r });
                 }
+                });
+            });
 
     store.table(vector{ _v1, _v2, _result }, move(permitted));
 }

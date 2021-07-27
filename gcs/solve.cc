@@ -26,15 +26,18 @@ namespace
                     return false;
             }
             else {
-                auto lower = state.lower_bound(*branch_var), upper = state.upper_bound(*branch_var);
-                for ( ; lower <= upper ; ++lower) {
-                    if (state.in_domain(*branch_var, lower)) {
-                        auto new_state = state.clone();
-                        new_state.guess(*branch_var == lower);
-                        if (! solve_with_state(depth + 1, stats, problem, new_state, callback))
-                            return false;
-                    }
-                }
+                bool keep_going = true;
+                state.for_each_value(*branch_var, [&] (Integer val) {
+                        if (keep_going) {
+                            auto new_state = state.clone();
+                            new_state.guess(*branch_var == val);
+                            if (! solve_with_state(depth + 1, stats, problem, new_state, callback))
+                                keep_going = false;
+                        }
+                    });
+
+                if (! keep_going)
+                    return false;
             }
         }
 

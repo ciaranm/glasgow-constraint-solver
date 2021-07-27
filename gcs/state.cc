@@ -391,7 +391,7 @@ auto State::domain_size(const IntegerVariableID var) const -> Integer
             }, integer_variable(var, space));
 }
 
-auto State::for_each_value(const IntegerVariableID var, std::function<auto (Integer) -> void> f) -> void
+auto State::for_each_value(const IntegerVariableID var, std::function<auto (Integer) -> void> f) const -> void
 {
     for (Integer v = lower_bound(var) ; v <= upper_bound(var) ; ++v)
         if (in_domain(var, v))

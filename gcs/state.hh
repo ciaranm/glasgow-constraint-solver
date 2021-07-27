@@ -68,7 +68,7 @@ namespace gcs
             [[ nodiscard ]] auto in_domain(const IntegerVariableID, Integer) const -> bool;
             [[ nodiscard ]] auto optional_single_value(const IntegerVariableID) const -> std::optional<Integer>;
             [[ nodiscard ]] auto domain_size(const IntegerVariableID) const -> Integer;
-            auto for_each_value(const IntegerVariableID, std::function<auto (Integer) -> void>) -> void;
+            auto for_each_value(const IntegerVariableID, std::function<auto (Integer) -> void>) const -> void;
 
             [[ nodiscard ]] auto optional_single_value(const BooleanVariableID) const -> std::optional<bool>;
 
