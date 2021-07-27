@@ -15,10 +15,10 @@ auto gcs::debug_string(const Literal & lit) -> string
     return visit(overloaded {
             [] (const LiteralFromIntegerVariable & ilit) -> string {
                 switch (ilit.state) {
-                    case LiteralFromIntegerVariable::Equal:        return "intvars[" + to_string(ilit.var.index) + "] = " + to_string(ilit.value.raw_value);
-                    case LiteralFromIntegerVariable::NotEqual:     return "intvars[" + to_string(ilit.var.index) + "] != " + to_string(ilit.value.raw_value);
-                    case LiteralFromIntegerVariable::GreaterEqual: return "intvars[" + to_string(ilit.var.index) + "] >= " + to_string(ilit.value.raw_value);
-                    case LiteralFromIntegerVariable::Less:         return "intvars[" + to_string(ilit.var.index) + "] < " + to_string(ilit.value.raw_value);
+                    case LiteralFromIntegerVariable::Equal:        return "intvars[" + debug_string(ilit.var) + "] = " + to_string(ilit.value.raw_value);
+                    case LiteralFromIntegerVariable::NotEqual:     return "intvars[" + debug_string(ilit.var) + "] != " + to_string(ilit.value.raw_value);
+                    case LiteralFromIntegerVariable::GreaterEqual: return "intvars[" + debug_string(ilit.var) + "] >= " + to_string(ilit.value.raw_value);
+                    case LiteralFromIntegerVariable::Less:         return "intvars[" + debug_string(ilit.var) + "] < " + to_string(ilit.value.raw_value);
                 }
                 throw NonExhaustiveSwitch{ };
             },
@@ -36,7 +36,7 @@ auto gcs::sanitise_literals(Literals & lits) -> void
                         return a.var.index < b.var.index;
                     },
                     [] (const LiteralFromIntegerVariable & a, const LiteralFromIntegerVariable & b) {
-                        return a.var.index < b.var.index;
+                        return a.var.index_or_const_value < b.var.index_or_const_value;
                     },
                     [] (const LiteralFromBooleanVariable &, const LiteralFromIntegerVariable &) {
                         return true;

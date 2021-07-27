@@ -32,7 +32,6 @@ namespace gcs
             Problem & operator= (const Problem &) = delete;
 
             auto create_integer_variable(Integer lower, Integer upper) -> IntegerVariableID;
-            auto create_integer_constant(Integer value) -> IntegerVariableID;
             auto create_boolean_constant(bool value) -> BooleanVariableID;
 
             [[ nodiscard ]] auto create_initial_state() const -> State;

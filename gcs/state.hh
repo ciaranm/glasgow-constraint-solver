@@ -41,8 +41,9 @@ namespace gcs
             [[ nodiscard ]] auto infer_boolean(const LiteralFromBooleanVariable & lit) -> Inference;
             [[ nodiscard ]] auto infer_integer(const LiteralFromIntegerVariable & lit) -> Inference;
 
-            [[ nodiscard ]] auto integer_variable(const IntegerVariableID) -> IntegerVariable &;
-            [[ nodiscard ]] auto integer_variable(const IntegerVariableID) const -> const IntegerVariable &;
+            [[ nodiscard ]] auto non_constant_integer_variable(const IntegerVariableID) -> IntegerVariable &;
+            [[ nodiscard ]] auto integer_variable(const IntegerVariableID, IntegerVariable & space) -> IntegerVariable &;
+            [[ nodiscard ]] auto integer_variable(const IntegerVariableID, IntegerVariable & space) const -> const IntegerVariable &;
 
         public:
             explicit State();

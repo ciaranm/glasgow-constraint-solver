@@ -53,11 +53,6 @@ auto Problem::create_integer_variable(Integer lower, Integer upper) -> IntegerVa
     return *(_imp->last_integer_var = make_optional(initial_state().create_integer_variable(lower, upper)));
 }
 
-auto Problem::create_integer_constant(Integer value) -> IntegerVariableID
-{
-    return *(_imp->last_integer_var = make_optional(initial_state().create_integer_variable(value, value)));
-}
-
 auto Problem::create_boolean_constant(bool value) -> BooleanVariableID
 {
     return initial_state().create_boolean_constant(value);
@@ -90,7 +85,7 @@ auto Problem::find_branching_variable(State & state) const -> optional<IntegerVa
         }
     }
     else if (_imp->last_integer_var) {
-        for (IntegerVariableID var{ 0 } ; var <= *_imp->last_integer_var ; ++var.index) {
+        for (IntegerVariableID var{ 0 } ; var <= *_imp->last_integer_var ; ++std::get<unsigned long long>(var.index_or_const_value)) {
             Integer s = state.domain_size(var);
             if (s > Integer{ 1 } && (nullopt == result || s < sz)) {
                 result = var;

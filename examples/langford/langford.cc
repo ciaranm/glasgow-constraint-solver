@@ -37,7 +37,7 @@ auto main(int, char * []) -> int
         p.post(Element{ i_var, position[i + k], solution });
 
         // position[i + k] = position[i] + i + 2
-        p.post(Plus{ position[i + k], p.create_integer_constant(Integer{ i + 2 }), position[i] });
+        p.post(Plus{ position[i + k], constant_variable(Integer{ i + 2 }), position[i] });
     }
 
     auto stats = solve(p, [&] (const State & state) -> bool {

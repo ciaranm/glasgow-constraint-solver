@@ -23,9 +23,9 @@ auto main(int, char * []) -> int
     IntegerVariableID a_squared = p.create_integer_variable(1_i, 100_i), b_squared = p.create_integer_variable(1_i, 100_i), c_squared = p.create_integer_variable(1_i, 100_i);
     p.branch_on(vector{ a, b, c });
 
-    p.post(Power{ a, p.create_integer_constant(2_i), a_squared });
-    p.post(Power{ b, p.create_integer_constant(2_i), b_squared });
-    p.post(Power{ c, p.create_integer_constant(2_i), c_squared });
+    p.post(Power{ a, constant_variable(2_i), a_squared });
+    p.post(Power{ b, constant_variable(2_i), b_squared });
+    p.post(Power{ c, constant_variable(2_i), c_squared });
     p.post(Plus{ a_squared, b_squared, c_squared });
     p.post(LessThan{ a, b });
 

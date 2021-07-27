@@ -27,9 +27,8 @@ auto main(int, char * []) -> int
     xs.push_back(p.create_integer_variable(1_i, 5_i));
     xs.push_back(p.create_integer_variable(1_i, 5_i));
 
-    auto three = p.create_integer_constant(3_i);
     for (auto & x : xs)
-        p.post(NotEquals(x, three ));
+        p.post(NotEquals(x, 3_c ));
 
     p.post(AllDifferent{ move(xs) });
 

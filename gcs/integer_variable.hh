@@ -16,15 +16,30 @@ namespace gcs
 {
     struct IntegerVariableID
     {
-        unsigned long long index;
+        std::variant<unsigned long long, Integer> index_or_const_value;
 
         explicit IntegerVariableID(unsigned long long x) :
-            index(x)
+            index_or_const_value(x)
+        {
+        }
+
+        explicit IntegerVariableID(Integer x) :
+            index_or_const_value(x)
         {
         }
 
         [[ nodiscard ]] auto operator <=> (const IntegerVariableID &) const = default;
     };
+
+    [[ nodiscard ]] inline auto constant_variable(const Integer x) -> IntegerVariableID
+    {
+        return IntegerVariableID(x);
+    }
+
+    [[ nodiscard ]] inline auto operator "" _c (unsigned long long v) -> IntegerVariableID
+    {
+        return constant_variable(Integer(v));
+    }
 
     struct IntegerConstant
     {
@@ -72,6 +87,7 @@ namespace gcs
     using IntegerVariable = std::variant<IntegerConstant, IntegerRangeVariable, IntegerSmallSetVariable, IntegerSetVariable>;
 
     [[ nodiscard ]] auto debug_string(const IntegerVariable &) -> std::string;
+    [[ nodiscard ]] auto debug_string(const IntegerVariableID &) -> std::string;
 }
 
 #endif
