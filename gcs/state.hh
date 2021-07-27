@@ -55,7 +55,6 @@ namespace gcs
             [[ nodiscard ]] State clone() const;
 
             auto create_integer_variable(Integer lower, Integer upper) -> IntegerVariableID;
-            auto create_integer_offset_variable(IntegerVariableID, Integer offset) -> IntegerVariableID;
             auto create_boolean_constant(bool value) -> BooleanVariableID;
 
             [[ nodiscard ]] auto infer(const Literal & lit) -> Inference;

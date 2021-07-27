@@ -30,9 +30,6 @@ auto gcs::debug_string(const IntegerVariable & ivar) -> string
                 for (auto & v : *s.values)
                     result += " " + to_string(v.raw_value);
                 return result;
-            },
-            [] (const IntegerOffsetVariable & s) {
-                return "offset " + to_string(s.offset.raw_value) + " on " + to_string(s.var.index);
             } }, ivar);
 }
 

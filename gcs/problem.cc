@@ -53,11 +53,6 @@ auto Problem::create_integer_variable(Integer lower, Integer upper) -> IntegerVa
     return *(_imp->last_integer_var = make_optional(initial_state().create_integer_variable(lower, upper)));
 }
 
-auto Problem::create_integer_offset_variable(IntegerVariableID var, Integer offset) -> IntegerVariableID
-{
-    return *(_imp->last_integer_var = make_optional(initial_state().create_integer_offset_variable(var, offset)));
-}
-
 auto Problem::create_integer_constant(Integer value) -> IntegerVariableID
 {
     return *(_imp->last_integer_var = make_optional(initial_state().create_integer_variable(value, value)));

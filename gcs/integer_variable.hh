@@ -69,19 +69,7 @@ namespace gcs
         }
     };
 
-    struct IntegerOffsetVariable
-    {
-        IntegerVariableID var;
-        Integer offset;
-
-        explicit IntegerOffsetVariable(IntegerVariableID v, Integer o) :
-            var(v),
-            offset(o)
-        {
-        }
-    };
-
-    using IntegerVariable = std::variant<IntegerConstant, IntegerRangeVariable, IntegerSmallSetVariable, IntegerSetVariable, IntegerOffsetVariable>;
+    using IntegerVariable = std::variant<IntegerConstant, IntegerRangeVariable, IntegerSmallSetVariable, IntegerSetVariable>;
 
     [[ nodiscard ]] auto debug_string(const IntegerVariable &) -> std::string;
 }

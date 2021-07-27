@@ -3,6 +3,7 @@
 #include <gcs/constraints/all_different.hh>
 #include <gcs/constraints/element.hh>
 #include <gcs/constraints/comparison.hh>
+#include <gcs/constraints/arithmetic.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
@@ -36,8 +37,7 @@ auto main(int, char * []) -> int
         p.post(Element{ i_var, position[i + k], solution });
 
         // position[i + k] = position[i] + i + 2
-        IntegerVariableID position_i_plus_i_plus_2 = p.create_integer_offset_variable(position[i], Integer{ i + 2 });
-        p.post(Equals(position[i + k], position_i_plus_i_plus_2));
+        p.post(Plus{ position[i + k], p.create_integer_constant(Integer{ i + 2 }), position[i] });
     }
 
     auto stats = solve(p, [&] (const State & state) -> bool {
