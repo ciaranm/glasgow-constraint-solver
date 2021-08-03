@@ -37,6 +37,7 @@ auto Arithmetic<op_>::convert_to_low_level(LowLevelConstraintStore & store, cons
                     Integer r = 0_i;
                     switch (op_) {
                         case ArithmeticOperator::Plus:  r = v1 + v2; break;
+                        case ArithmeticOperator::Minus: r = v1 - v2; break;
                         case ArithmeticOperator::Times: r = v1 * v2; break;
                         case ArithmeticOperator::Div:   r = v1 / v2; break;
                         case ArithmeticOperator::Mod:   r = v1 % v2; break;
@@ -52,6 +53,7 @@ auto Arithmetic<op_>::convert_to_low_level(LowLevelConstraintStore & store, cons
 }
 
 template class Arithmetic<ArithmeticOperator::Plus>;
+template class Arithmetic<ArithmeticOperator::Minus>;
 template class Arithmetic<ArithmeticOperator::Times>;
 template class Arithmetic<ArithmeticOperator::Div>;
 template class Arithmetic<ArithmeticOperator::Mod>;

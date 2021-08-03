@@ -1,7 +1,7 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
 #include <gcs/constraints/all_different.hh>
-#include <gcs/constraints/linear_equality.hh>
+#include <gcs/constraints/arithmetic.hh>
 #include <gcs/constraints/abs.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
@@ -35,7 +35,7 @@ auto main(int, char * []) -> int
     vector<IntegerVariableID> diffs, abs_diffs;
     for (auto & [ x1, x2 ] : edges) {
         diffs.push_back(p.create_integer_variable(-7_i, 7_i));
-        p.post(LinearEquality{ Linear{ { 1_i, xs[x1] }, { -1_i, xs[x2] }, { 1_i, diffs.back() } }, 0_i });
+        p.post(Minus{ xs[x1], xs[x2], diffs.back() });
 
         abs_diffs.push_back(p.create_integer_variable(2_i, 7_i));
         p.post(Abs{ diffs.back(), abs_diffs.back() });

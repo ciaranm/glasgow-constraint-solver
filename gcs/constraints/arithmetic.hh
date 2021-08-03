@@ -11,6 +11,7 @@ namespace gcs
     enum class ArithmeticOperator
     {
         Plus,
+        Minus,
         Times,
         Div,
         Mod,
@@ -31,6 +32,7 @@ namespace gcs
     };
 
     using Plus = Arithmetic<ArithmeticOperator::Plus>;
+    using Minus = Arithmetic<ArithmeticOperator::Minus>;
     using Times = Arithmetic<ArithmeticOperator::Times>;
     using Div = Arithmetic<ArithmeticOperator::Div>;
     using Mod = Arithmetic<ArithmeticOperator::Mod>;
