@@ -1,6 +1,7 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
 #include <gcs/constraints/element.hh>
+#include <gcs/constraints/comparison.hh>
 #include <gcs/state.hh>
 #include <gcs/low_level_constraint_store.hh>
 #include <gcs/integer.hh>
@@ -44,14 +45,9 @@ auto Element::convert_to_low_level(LowLevelConstraintStore & constraints, const 
     constraints.cnf({ _var < max_upper + 1_i });
     constraints.cnf({ _var >= min_lower });
 
-    // for each v in _vars
     for_each_with_index(_vars, [&] (auto & v, auto idx) {
         // _idx_var == i -> _var == _vars[idx]
-        auto lower = min(initial_state.lower_bound(v), initial_state.lower_bound(_var));
-        auto upper = max(initial_state.upper_bound(v), initial_state.upper_bound(_var));
-        for ( ; lower <= upper ; ++lower) {
-            constraints.cnf({ _idx_var != Integer(idx), v != lower, _var == lower });
-            }
+        ComparisonReif{ _var, v, _idx_var == Integer(idx), false, ComparisonOperator::Equals }.convert_to_low_level(constraints, initial_state);
     });
 }
 

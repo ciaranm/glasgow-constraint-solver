@@ -53,11 +53,6 @@ auto Problem::create_integer_variable(Integer lower, Integer upper) -> IntegerVa
     return *(_imp->last_integer_var = make_optional(initial_state().create_integer_variable(lower, upper)));
 }
 
-auto Problem::create_boolean_constant(bool value) -> BooleanVariableID
-{
-    return initial_state().create_boolean_constant(value);
-}
-
 auto Problem::create_initial_state() const -> State
 {
     return initial_state().clone();

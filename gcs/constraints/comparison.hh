@@ -4,10 +4,9 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_COMPARISON_HH 1
 
 #include <gcs/constraint.hh>
-#include <gcs/boolean_variable.hh>
+#include <gcs/literal.hh>
 #include <gcs/integer_variable.hh>
-
-#include <variant>
+#include <gcs/boolean_variable.hh>
 
 namespace gcs
 {
@@ -23,15 +22,15 @@ namespace gcs
     {
         private:
             IntegerVariableID _v1, _v2;
-            std::variant<bool, BooleanVariableID> _cond;
+            Literal _cond;
+            bool _full_reif;
             ComparisonOperator _op;
 
             auto _convert_to_low_level_equals(LowLevelConstraintStore &, const State &) && -> void;
             auto _convert_to_low_level_less_than(LowLevelConstraintStore &, const State &, bool equal) && -> void;
 
         public:
-            explicit ComparisonReif(const IntegerVariableID v1, const IntegerVariableID v2, bool cond, ComparisonOperator op);
-            explicit ComparisonReif(const IntegerVariableID v1, const IntegerVariableID v2, const BooleanVariableID reif_cond, ComparisonOperator op);
+            explicit ComparisonReif(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond, bool full_reif, ComparisonOperator op);
 
             virtual auto convert_to_low_level(LowLevelConstraintStore &, const State &) && -> void override;
     };
@@ -41,7 +40,7 @@ namespace gcs
     {
         public:
             inline explicit Equals(const IntegerVariableID v1, const IntegerVariableID v2) :
-                ComparisonReif(v1, v2, true, ComparisonOperator::Equals)
+                ComparisonReif(v1, v2, +constant_variable(true), true, ComparisonOperator::Equals)
             {
             };
     };
@@ -51,7 +50,7 @@ namespace gcs
     {
         public:
             inline explicit NotEquals(const IntegerVariableID v1, const IntegerVariableID v2) :
-                ComparisonReif(v1, v2, false, ComparisonOperator::Equals)
+                ComparisonReif(v1, v2, +constant_variable(false), true, ComparisonOperator::Equals)
             {
             };
     };
@@ -61,7 +60,7 @@ namespace gcs
     {
         public:
             inline explicit LessThan(const IntegerVariableID v1, const IntegerVariableID v2) :
-                ComparisonReif(v1, v2, true, ComparisonOperator::LessThan)
+                ComparisonReif(v1, v2, +constant_variable(true), true, ComparisonOperator::LessThan)
             {
             };
     };
@@ -71,7 +70,7 @@ namespace gcs
     {
         public:
             inline explicit LessThanEqual(const IntegerVariableID v1, const IntegerVariableID v2) :
-                ComparisonReif(v1, v2, true, ComparisonOperator::LessThanEqual)
+                ComparisonReif(v1, v2, +constant_variable(true), true, ComparisonOperator::LessThanEqual)
             {
             };
     };

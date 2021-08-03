@@ -33,7 +33,7 @@ auto gcs::sanitise_literals(Literals & lits) -> void
     sort(lits.begin(), lits.end(), [] (const Literal & a, const Literal & b) {
             return visit(overloaded {
                     [] (const LiteralFromBooleanVariable & a, const LiteralFromBooleanVariable & b) {
-                        return a.var.index < b.var.index;
+                        return a.var.index_or_const_value < b.var.index_or_const_value;
                     },
                     [] (const LiteralFromIntegerVariable & a, const LiteralFromIntegerVariable & b) {
                         return a.var.index_or_const_value < b.var.index_or_const_value;
@@ -46,5 +46,33 @@ auto gcs::sanitise_literals(Literals & lits) -> void
                     }
                     }, a, b);
             });
+}
+
+auto gcs::operator ! (const Literal & lit) -> Literal
+{
+    return visit(overloaded {
+            [] (const LiteralFromIntegerVariable & ilit) {
+                switch (ilit.state) {
+                    case LiteralFromIntegerVariable::Equal:
+                        return Literal{ LiteralFromIntegerVariable{ ilit.var, LiteralFromIntegerVariable::NotEqual, ilit.value } };
+                    case LiteralFromIntegerVariable::NotEqual:
+                        return Literal{ LiteralFromIntegerVariable{ ilit.var, LiteralFromIntegerVariable::Equal, ilit.value } };
+                    case LiteralFromIntegerVariable::Less:
+                        return Literal{ LiteralFromIntegerVariable{ ilit.var, LiteralFromIntegerVariable::GreaterEqual, ilit.value } };
+                    case LiteralFromIntegerVariable::GreaterEqual:
+                        return Literal{ LiteralFromIntegerVariable{ ilit.var, LiteralFromIntegerVariable::Less, ilit.value } };
+                }
+                throw NonExhaustiveSwitch{ };
+            },
+            [] (const LiteralFromBooleanVariable & blit) {
+                switch (blit.state) {
+                    case LiteralFromBooleanVariable::True:
+                        return Literal{ LiteralFromBooleanVariable{ blit.var, LiteralFromBooleanVariable::False } };
+                    case LiteralFromBooleanVariable::False:
+                        return Literal{ LiteralFromBooleanVariable{ blit.var, LiteralFromBooleanVariable::True } };
+                }
+                throw NonExhaustiveSwitch{ };
+            }
+            }, lit);
 }
 

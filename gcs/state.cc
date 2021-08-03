@@ -66,11 +66,6 @@ auto State::create_integer_variable(Integer lower, Integer upper) -> IntegerVari
     return IntegerVariableID{ _imp->integer_variables.size() - 1 };
 }
 
-auto State::create_boolean_constant(bool value) -> BooleanVariableID
-{
-    return value ? BooleanVariableID{ 1 } : BooleanVariableID{ 0 };
-}
-
 auto State::non_constant_integer_variable(const IntegerVariableID i) -> IntegerVariable &
 {
     return visit(overloaded {
@@ -97,11 +92,14 @@ auto State::integer_variable(const IntegerVariableID i, IntegerVariable & space)
 
 auto State::infer_boolean(const LiteralFromBooleanVariable & blit) -> Inference
 {
-    if (blit.var.index == 0 || blit.var.index == 1) {
-        return (blit.var.index == 1) == (blit.state == LiteralFromBooleanVariable::True) ? Inference::NoChange : Inference::Contradiction;
-    }
-    else
-        throw UnimplementedException{ };
+    return visit(overloaded {
+            [&] (const unsigned long long) -> Inference {
+                throw UnimplementedException{ };
+            },
+            [&] (bool x) -> Inference {
+                return (x == (blit.state == LiteralFromBooleanVariable::True)) ? Inference::NoChange : Inference::Contradiction;
+            }
+        }, blit.var.index_or_const_value);
 }
 
 auto State::infer_integer(const LiteralFromIntegerVariable & ilit) -> Inference
@@ -413,12 +411,12 @@ auto State::for_each_value(const IntegerVariableID var, std::function<auto (Inte
             f(v);
 }
 
-auto State::optional_single_value(const BooleanVariableID v) const -> std::optional<bool>
+auto State::optional_single_value(const BooleanVariableID v) const -> optional<bool>
 {
-    if (0 == v.index || 1 == v.index)
-        return make_optional(1 == v.index);
-    else
-        throw UnimplementedException{ };
+    return visit(overloaded {
+            [] (bool x) { return make_optional(x); },
+            [] (unsigned long long) -> optional<bool> { throw UnimplementedException{ }; }
+            }, v.index_or_const_value);
 }
 
 auto State::operator() (const IntegerVariableID & i) const -> Integer

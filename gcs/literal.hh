@@ -58,6 +58,8 @@ namespace gcs
 
     using Literal = std::variant<LiteralFromIntegerVariable, LiteralFromBooleanVariable>;
 
+    [[ nodiscard ]] auto operator ! (const Literal &) -> Literal;
+
     [[ nodiscard ]] auto debug_string(const Literal &) -> std::string;
 
     using Literals = std::vector<Literal>;
