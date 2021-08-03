@@ -20,12 +20,24 @@ using std::optional;
 using std::pair;
 using std::vector;
 
+namespace gcs
+{
+    struct Table
+    {
+        IntegerVariableID selector;
+        vector<IntegerVariableID> vars;
+        vector<vector<Integer> > tuples;
+    };
+}
+
 struct LowLevelConstraintStore::Imp
 {
     Problem * const problem;
     list<Literals> cnfs;
     list<pair<Linear, Integer> > lin_les;
+    list<Table> tables;
     list<PropagationFunction> propagators;
+
 
     Imp(Problem * p) :
         problem(p)
@@ -59,13 +71,7 @@ auto LowLevelConstraintStore::propagator(PropagationFunction && f) -> void
 
 auto LowLevelConstraintStore::table(vector<IntegerVariableID> && vars, vector<vector<Integer> > && permitted) -> void
 {
-    auto selector = create_auxilliary_integer_variable(0_i, Integer(permitted.size() - 1));
-    for_each_with_index(permitted, [&] (auto & tuple, auto & pos) {
-            if (tuple.size() != vars.size())
-                throw UnimplementedException{ };
-            for (decltype(tuple.size()) i = 0 ; i != tuple.size() ; ++i)
-                cnf({ selector != Integer(pos), vars[i] == tuple[i] });
-            });
+    _imp->tables.emplace_back(create_auxilliary_integer_variable(0_i, Integer(permitted.size() - 1)), move(vars), move(permitted));
 }
 
 auto LowLevelConstraintStore::propagate(State & state) const -> bool
@@ -91,6 +97,15 @@ auto LowLevelConstraintStore::propagate(State & state) const -> bool
         if (keep_going)
             continue;
 
+        switch (propagate_tables(state)) {
+            case Inference::NoChange:      break;
+            case Inference::Change:        keep_going = true; break;
+            case Inference::Contradiction: return false;
+        }
+
+        if (keep_going)
+            continue;
+
         switch (propagate_propagators(state)) {
             case Inference::NoChange:      break;
             case Inference::Change:        keep_going = true; break;
@@ -99,6 +114,58 @@ auto LowLevelConstraintStore::propagate(State & state) const -> bool
     }
 
     return true;
+}
+
+auto LowLevelConstraintStore::propagate_tables(State & state) const -> Inference
+{
+    bool changed = false, contradiction = false;
+
+    for (auto & table : _imp->tables) {
+        // check whether selectable tuples are still feasible
+        for_each_with_index(table.tuples, [&] (const auto & tuple, auto tuple_idx) {
+            if ((! contradiction) && state.in_domain(table.selector, Integer(tuple_idx))) {
+                bool is_feasible = true;
+                for_each_with_index(table.vars, [&] (IntegerVariableID var, auto idx) {
+                        if (! state.in_domain(var, tuple[idx]))
+                            is_feasible = false;
+                        });
+                if (! is_feasible) {
+                    switch (state.infer(table.selector != Integer(tuple_idx))) {
+                        case Inference::NoChange:      break;
+                        case Inference::Change:        changed = true; break;
+                        case Inference::Contradiction: contradiction = true; break;
+                    }
+                }
+            }
+        });
+
+        if (contradiction)
+            break;
+
+        // check for supports in selectable tuples
+        for_each_with_index(table.vars, [&] (IntegerVariableID var, auto idx) {
+                state.for_each_value(var, [&] (Integer val) {
+                        bool supported = false;
+                        for_each_with_index(table.tuples, [&] (const auto & tuple, auto tuple_idx) {
+                                if (state.in_domain(table.selector, Integer(tuple_idx)) && tuple[idx] == val)
+                                    supported = true;
+                                });
+
+                        if (! supported) {
+                            switch (state.infer(var != val)) {
+                                case Inference::NoChange:      break;
+                                case Inference::Change:        changed = true; break;
+                                case Inference::Contradiction: contradiction = true; break;
+                            }
+                        }
+                    });
+            });
+
+        if (contradiction)
+            break;
+    }
+
+    return contradiction ? Inference::Contradiction : changed ? Inference::Change : Inference::NoChange;
 }
 
 auto LowLevelConstraintStore::propagate_cnfs(State & state) const -> Inference

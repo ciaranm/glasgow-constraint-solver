@@ -24,7 +24,7 @@ auto main(int, char * []) -> int
 {
     Problem p;
 
-    int size = 4;
+    int size = 5;
     vector<vector<IntegerVariableID> > g1, g2;
     vector<IntegerVariableID> g12;
     for (int x = 0 ; x < size ; ++x) {
