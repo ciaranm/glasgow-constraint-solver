@@ -151,7 +151,7 @@ auto State::infer_integer(const LiteralFromIntegerVariable & ilit) -> Inference
                         }
                         else {
                             // Holey domain, convert to set. This should handle offsets...
-                            if (rvar.upper >= Integer{ Bits::number_of_bits }) {
+                            if (rvar.lower < 0_i || rvar.upper >= Integer{ Bits::number_of_bits }) {
                                 auto values = make_shared<set<Integer> >();
                                 for (Integer v = rvar.lower ; v <= rvar.upper ; ++v)
                                     if (v != ilit.value)
