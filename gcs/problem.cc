@@ -38,24 +38,14 @@ Problem::~Problem()
 {
 }
 
-auto Problem::initial_state() -> State &
-{
-    return _imp->initial_state;
-}
-
-auto Problem::initial_state() const -> const State &
-{
-    return _imp->initial_state;
-}
-
 auto Problem::create_integer_variable(Integer lower, Integer upper) -> IntegerVariableID
 {
-    return *(_imp->last_integer_var = make_optional(initial_state().create_integer_variable(lower, upper)));
+    return *(_imp->last_integer_var = make_optional(_imp->initial_state.create_integer_variable(lower, upper)));
 }
 
-auto Problem::create_initial_state() const -> State
+auto Problem::create_state() const -> State
 {
-    return initial_state().clone();
+    return _imp->initial_state.clone();
 }
 
 auto Problem::propagate(State & state) const -> bool
@@ -94,7 +84,7 @@ auto Problem::find_branching_variable(State & state) const -> optional<IntegerVa
 
 auto Problem::post(Constraint && c) -> void
 {
-    move(c).convert_to_low_level(_imp->constraints, initial_state());
+    move(c).convert_to_low_level(_imp->constraints, _imp->initial_state);
 }
 
 auto Problem::branch_on(const std::vector<IntegerVariableID> & v) -> void

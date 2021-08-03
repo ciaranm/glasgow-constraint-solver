@@ -6,6 +6,7 @@
 #include "util/overloaded.hh"
 
 #include <algorithm>
+#include <list>
 #include <string>
 #include <vector>
 
@@ -13,6 +14,7 @@ using namespace gcs;
 
 using std::find;
 using std::get_if;
+using std::list;
 using std::make_optional;
 using std::make_shared;
 using std::move;
@@ -36,13 +38,13 @@ auto VariableDoesNotHaveUniqueValue::what() const noexcept -> const char *
 
 struct State::Imp
 {
-    vector<IntegerVariable> integer_variables;
-    vector<IntegerVariableID> guessed_integer_variables;
+    list<vector<IntegerVariable> > integer_variables;
 };
 
 State::State() :
     _imp(new Imp)
 {
+    _imp->integer_variables.emplace_back();
 }
 
 State::State(State && other) noexcept = default;
@@ -59,17 +61,17 @@ auto State::clone() const -> State
 auto State::create_integer_variable(Integer lower, Integer upper) -> IntegerVariableID
 {
     if (lower == upper)
-        _imp->integer_variables.push_back(IntegerConstant{ lower });
+        _imp->integer_variables.back().push_back(IntegerConstant{ lower });
     else
-        _imp->integer_variables.push_back(IntegerRangeVariable{ lower, upper });
+        _imp->integer_variables.back().push_back(IntegerRangeVariable{ lower, upper });
 
-    return IntegerVariableID{ _imp->integer_variables.size() - 1 };
+    return IntegerVariableID{ _imp->integer_variables.back().size() - 1 };
 }
 
 auto State::non_constant_integer_variable(const IntegerVariableID i) -> IntegerVariable &
 {
     return visit(overloaded {
-            [&] (const unsigned long long index) -> IntegerVariable & { return _imp->integer_variables[index]; },
+            [&] (const unsigned long long index) -> IntegerVariable & { return _imp->integer_variables.back()[index]; },
             [&] (const Integer)                  -> IntegerVariable & { throw UnexpectedException{ "unexpected constant" }; }
             }, i.index_or_const_value);
 }
@@ -77,7 +79,7 @@ auto State::non_constant_integer_variable(const IntegerVariableID i) -> IntegerV
 auto State::integer_variable(const IntegerVariableID i, IntegerVariable & space) -> IntegerVariable &
 {
     return visit(overloaded {
-            [&] (const unsigned long long index) -> IntegerVariable & { return _imp->integer_variables[index]; },
+            [&] (const unsigned long long index) -> IntegerVariable & { return _imp->integer_variables.back()[index]; },
             [&] (const Integer x)                -> IntegerVariable & { space = IntegerConstant{ x }; return space; }
             }, i.index_or_const_value);
 }
@@ -85,7 +87,7 @@ auto State::integer_variable(const IntegerVariableID i, IntegerVariable & space)
 auto State::integer_variable(const IntegerVariableID i, IntegerVariable & space) const -> const IntegerVariable &
 {
     return visit(overloaded {
-            [&] (const unsigned long long index) -> IntegerVariable & { return _imp->integer_variables[index]; },
+            [&] (const unsigned long long index) -> IntegerVariable & { return _imp->integer_variables.back()[index]; },
             [&] (const Integer x)                -> IntegerVariable & { space = IntegerConstant{ x }; return space; }
             }, i.index_or_const_value);
 }
@@ -305,14 +307,6 @@ auto State::infer(const Literal & lit) -> Inference
 
 auto State::guess(const Literal & lit) -> void
 {
-    visit(overloaded {
-                [&] (const LiteralFromIntegerVariable & ilit) -> void {
-                    _imp->guessed_integer_variables.push_back(ilit.var);
-                },
-                [&] (const LiteralFromBooleanVariable &) -> void {
-                }
-                }, lit);
-
     switch (infer(lit)) {
         case Inference::NoChange:
         case Inference::Change:
@@ -321,11 +315,6 @@ auto State::guess(const Literal & lit) -> void
         case Inference::Contradiction:
             throw UnexpectedException{ "couldn't infer a branch variable" };
     }
-}
-
-auto State::have_guessed(const IntegerVariableID var) const -> bool
-{
-    return _imp->guessed_integer_variables.end() != find(_imp->guessed_integer_variables.begin(), _imp->guessed_integer_variables.end(), var);
 }
 
 auto State::lower_bound(const IntegerVariableID var) const -> Integer
@@ -424,5 +413,16 @@ auto State::operator() (const IntegerVariableID & i) const -> Integer
     if (auto result = optional_single_value(i))
         return *result;
     throw VariableDoesNotHaveUniqueValue{ "Integer variable " + debug_string(i) };
+}
+
+auto State::new_epoch() -> Timestamp
+{
+    _imp->integer_variables.push_back(_imp->integer_variables.back());
+    return Timestamp{ _imp->integer_variables.size() - 1 };
+}
+
+auto State::backtrack(Timestamp t) -> void
+{
+    _imp->integer_variables.resize(t.when);
 }
 

@@ -32,6 +32,16 @@ namespace gcs
             virtual auto what() const noexcept -> const char * override;
     };
 
+    struct Timestamp
+    {
+        unsigned long long when;
+
+        explicit Timestamp(unsigned long long w) :
+            when(w)
+        {
+        }
+    };
+
     class State
     {
         private:
@@ -73,6 +83,9 @@ namespace gcs
 
             [[ nodiscard ]] auto operator() (const IntegerVariableID &) const -> Integer;
             [[ nodiscard ]] auto operator() (const BooleanVariableID &) const -> bool;
+
+            [[ nodiscard ]] auto new_epoch() -> Timestamp;
+            auto backtrack(Timestamp) -> void;
     };
 }
 

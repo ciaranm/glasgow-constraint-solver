@@ -21,9 +21,6 @@ namespace gcs
             struct Imp;
             std::unique_ptr<Imp> _imp;
 
-            [[ nodiscard ]] auto initial_state() -> State &;
-            [[ nodiscard ]] auto initial_state() const -> const State &;
-
         public:
             Problem();
             ~Problem();
@@ -33,7 +30,7 @@ namespace gcs
 
             auto create_integer_variable(Integer lower, Integer upper) -> IntegerVariableID;
 
-            [[ nodiscard ]] auto create_initial_state() const -> State;
+            [[ nodiscard ]] auto create_state() const -> State;
             [[ nodiscard ]] auto propagate(State &) const -> bool;
 
             [[ nodiscard ]] auto find_branching_variable(State &) const -> std::optional<IntegerVariableID>;

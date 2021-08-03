@@ -29,10 +29,11 @@ namespace
                 bool keep_going = true;
                 state.for_each_value(*branch_var, [&] (Integer val) {
                         if (keep_going) {
-                            auto new_state = state.clone();
-                            new_state.guess(*branch_var == val);
-                            if (! solve_with_state(depth + 1, stats, problem, new_state, callback))
+                            auto timestamp = state.new_epoch();
+                            state.guess(*branch_var == val);
+                            if (! solve_with_state(depth + 1, stats, problem, state, callback))
                                 keep_going = false;
+                            state.backtrack(timestamp);
                         }
                     });
 
@@ -50,7 +51,7 @@ auto gcs::solve(const Problem & problem, SolutionCallback callback) -> Stats
     Stats stats;
     auto start_time = steady_clock::now();
 
-    State state = problem.create_initial_state();
+    State state = problem.create_state();
     solve_with_state(0, stats, problem, state, callback);
 
     stats.solve_time = duration_cast<microseconds>(steady_clock::now() - start_time);
