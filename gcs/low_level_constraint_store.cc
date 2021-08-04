@@ -7,17 +7,21 @@
 
 #include <algorithm>
 #include <list>
+#include <map>
+#include <set>
 
 using namespace gcs;
 
 using std::list;
 using std::make_optional;
+using std::map;
 using std::max;
 using std::min;
 using std::move;
 using std::nullopt;
 using std::optional;
 using std::pair;
+using std::set;
 using std::vector;
 
 namespace gcs
@@ -36,8 +40,8 @@ struct LowLevelConstraintStore::Imp
     list<Literals> cnfs;
     list<pair<Linear, Integer> > lin_les;
     list<Table> tables;
-    list<PropagationFunction> propagators;
-
+    map<int, PropagationFunction> propagation_functions;
+    map<VariableID, vector<int> > triggers;
 
     Imp(Problem * p) :
         problem(p)
@@ -48,6 +52,9 @@ struct LowLevelConstraintStore::Imp
 LowLevelConstraintStore::LowLevelConstraintStore(Problem * p) :
     _imp(new Imp(p))
 {
+    _imp->propagation_functions.emplace(0, [&] (State & s) { return propagate_cnfs(s); });
+    _imp->propagation_functions.emplace(1, [&] (State & s) { return propagate_lin_les(s); });
+    _imp->propagation_functions.emplace(2, [&] (State & s) { return propagate_tables(s); });
 }
 
 LowLevelConstraintStore::~LowLevelConstraintStore() = default;
@@ -64,9 +71,12 @@ auto LowLevelConstraintStore::lin_le(Linear && coeff_vars, Integer value) -> voi
     _imp->lin_les.emplace_back(move(coeff_vars), value);
 }
 
-auto LowLevelConstraintStore::propagator(PropagationFunction && f) -> void
+auto LowLevelConstraintStore::propagator(PropagationFunction && f, const vector<VariableID> & trigger_vars) -> void
 {
-    _imp->propagators.push_back(move(f));
+    int id = _imp->propagation_functions.size();
+    _imp->propagation_functions.emplace(id, move(f));
+    for (auto & t : trigger_vars)
+        _imp->triggers.try_emplace(t).first->second.push_back(id);
 }
 
 auto LowLevelConstraintStore::table(vector<IntegerVariableID> && vars, vector<vector<Integer> > && permitted) -> void
@@ -76,39 +86,28 @@ auto LowLevelConstraintStore::table(vector<IntegerVariableID> && vars, vector<ve
 
 auto LowLevelConstraintStore::propagate(State & state) const -> bool
 {
-    for (bool keep_going = true ; keep_going ; ) {
-        keep_going = false;
+    set<int> propagation_queue;
 
-        switch (propagate_cnfs(state)) {
+    while (true) {
+        state.extract_changed_variables([&] (VariableID var) {
+                auto t = _imp->triggers.find(var);
+                if (t != _imp->triggers.end())
+                    for (auto & p : t->second)
+                        propagation_queue.insert(p);
+
+                propagation_queue.emplace(0);
+                propagation_queue.emplace(1);
+                propagation_queue.emplace(2);
+                });
+
+        if (propagation_queue.empty())
+            break;
+
+        int propagator_id = *propagation_queue.begin();
+        propagation_queue.erase(propagation_queue.begin());
+        switch (_imp->propagation_functions.find(propagator_id)->second(state)) {
             case Inference::NoChange:      break;
-            case Inference::Change:        keep_going = true; break;
-            case Inference::Contradiction: return false;
-        }
-
-        if (keep_going)
-            continue;
-
-        switch (propagate_lin_les(state)) {
-            case Inference::NoChange:      break;
-            case Inference::Change:        keep_going = true; break;
-            case Inference::Contradiction: return false;
-        }
-
-        if (keep_going)
-            continue;
-
-        switch (propagate_tables(state)) {
-            case Inference::NoChange:      break;
-            case Inference::Change:        keep_going = true; break;
-            case Inference::Contradiction: return false;
-        }
-
-        if (keep_going)
-            continue;
-
-        switch (propagate_propagators(state)) {
-            case Inference::NoChange:      break;
-            case Inference::Change:        keep_going = true; break;
+            case Inference::Change:        break;
             case Inference::Contradiction: return false;
         }
     }
@@ -250,21 +249,6 @@ auto LowLevelConstraintStore::propagate_lin_les(State & state) const -> Inferenc
                 case Inference::NoChange:      break;
                 case Inference::Contradiction: return Inference::Contradiction;
             }
-        }
-    }
-
-    return changed ? Inference::Change : Inference::NoChange;
-}
-
-auto LowLevelConstraintStore::propagate_propagators(State & state) const -> Inference
-{
-    bool changed = false;
-
-    for (auto & propagator : _imp->propagators) {
-        switch (propagator(state)) {
-            case Inference::Change:        changed = true; break;
-            case Inference::NoChange:      break;
-            case Inference::Contradiction: return Inference::Contradiction;
         }
     }
 

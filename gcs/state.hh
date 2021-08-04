@@ -87,6 +87,8 @@ namespace gcs
 
             [[ nodiscard ]] auto new_epoch() -> Timestamp;
             auto backtrack(Timestamp) -> void;
+
+            auto extract_changed_variables(std::function<auto (VariableID) -> void>) -> void;
     };
 }
 

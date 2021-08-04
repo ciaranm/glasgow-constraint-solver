@@ -311,8 +311,9 @@ auto AllDifferent::convert_to_low_level(LowLevelConstraintStore & constraints, c
             }
     });
 
+    vector<VariableID> var_ids{ _vars.begin(), _vars.end() };
     constraints.propagator([vars = move(_vars)] (State & state) -> Inference {
             return propagate_all_different(vars, state);
-            });
+            }, var_ids);
 }
 

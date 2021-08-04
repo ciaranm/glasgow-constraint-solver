@@ -13,6 +13,7 @@
 using namespace gcs;
 
 using std::find;
+using std::function;
 using std::get_if;
 using std::list;
 using std::make_optional;
@@ -41,6 +42,7 @@ auto VariableDoesNotHaveUniqueValue::what() const noexcept -> const char *
 struct State::Imp
 {
     list<vector<IntegerVariable> > integer_variables;
+    set<VariableID> changed;
 };
 
 State::State() :
@@ -57,6 +59,7 @@ auto State::clone() const -> State
 {
     State result;
     result._imp->integer_variables = _imp->integer_variables;
+    result._imp->changed = _imp->changed;
     return result;
 }
 
@@ -433,6 +436,9 @@ auto State::operator() (const IntegerVariableID & i) const -> Integer
 
 auto State::new_epoch() -> Timestamp
 {
+    if (! _imp->changed.empty())
+        throw UnimplementedException{ };
+
     _imp->integer_variables.push_back(_imp->integer_variables.back());
     return Timestamp{ _imp->integer_variables.size() - 1 };
 }
@@ -440,9 +446,18 @@ auto State::new_epoch() -> Timestamp
 auto State::backtrack(Timestamp t) -> void
 {
     _imp->integer_variables.resize(t.when);
+    _imp->changed.clear();
 }
 
-auto State::remember_change(const VariableID) -> void
+auto State::remember_change(const VariableID v) -> void
 {
+    _imp->changed.insert(v);
+}
+
+auto State::extract_changed_variables(function<auto (VariableID) -> void> f) -> void
+{
+    for (auto & c : _imp->changed)
+        f(c);
+    _imp->changed.clear();
 }
 

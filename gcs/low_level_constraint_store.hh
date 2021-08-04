@@ -24,7 +24,6 @@ namespace gcs
             [[ nodiscard ]] auto propagate_cnfs(State &) const -> Inference;
             [[ nodiscard ]] auto propagate_lin_les(State &) const -> Inference;
             [[ nodiscard ]] auto propagate_tables(State &) const -> Inference;
-            [[ nodiscard ]] auto propagate_propagators(State &) const -> Inference;
 
         public:
             explicit LowLevelConstraintStore(Problem * const);
@@ -35,7 +34,7 @@ namespace gcs
 
             auto cnf(Literals && lits) -> void;
             auto lin_le(Linear && coeff_vars, Integer value) -> void;
-            auto propagator(PropagationFunction &&) -> void;
+            auto propagator(PropagationFunction &&, const std::vector<VariableID> & trigger_vars) -> void;
             auto table(std::vector<IntegerVariableID> &&, std::vector<std::vector<Integer> > &&) -> void;
 
             [[ nodiscard ]] auto create_auxilliary_integer_variable(Integer, Integer) -> IntegerVariableID;
