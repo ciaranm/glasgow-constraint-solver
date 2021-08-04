@@ -51,6 +51,8 @@ namespace gcs
             index_or_const_value(x)
         {
         }
+
+        [[ nodiscard ]] auto operator <=> (const BooleanVariableID &) const = default;
     };
 
     [[ nodiscard ]] inline auto constant_variable(bool x) -> BooleanVariableID
@@ -58,7 +60,11 @@ namespace gcs
         return BooleanVariableID(x);
     }
 
+    [[ nodiscard ]] auto debug_string(const BooleanVariableID &) -> std::string;
+
     using VariableID = std::variant<IntegerVariableID, BooleanVariableID>;
+
+    [[ nodiscard ]] auto debug_string(const VariableID &) -> std::string;
 }
 
 #endif

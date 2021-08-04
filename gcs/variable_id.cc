@@ -17,4 +17,19 @@ auto gcs::debug_string(const IntegerVariableID & var) -> string
             }, var.index_or_const_value);
 }
 
+auto gcs::debug_string(const BooleanVariableID & var) -> string
+{
+    return visit(overloaded {
+            [] (unsigned long long x) { return to_string(x); },
+            [] (Integer x)            { return "const " + to_string(x.raw_value); }
+            }, var.index_or_const_value);
+}
+
+auto gcs::debug_string(const VariableID & var) -> string
+{
+    return visit(overloaded{
+            [] (IntegerVariableID v) { return "int " + debug_string(v); },
+            [] (BooleanVariableID v) { return "bool " + debug_string(v); }
+            }, var);
+}
 
