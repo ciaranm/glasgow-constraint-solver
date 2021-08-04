@@ -5,8 +5,7 @@
 
 #include <gcs/constraint.hh>
 #include <gcs/literal.hh>
-#include <gcs/integer_variable.hh>
-#include <gcs/boolean_variable.hh>
+#include <gcs/variable_id.hh>
 
 namespace gcs
 {

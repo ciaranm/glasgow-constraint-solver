@@ -4,7 +4,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_LINEAR_HH 1
 
 #include <gcs/integer.hh>
-#include <gcs/integer_variable.hh>
+#include <gcs/variable_id.hh>
 
 #include <utility>
 #include <vector>

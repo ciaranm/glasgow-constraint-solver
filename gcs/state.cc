@@ -20,9 +20,11 @@ using std::make_shared;
 using std::move;
 using std::nullopt;
 using std::optional;
+using std::pair;
 using std::set;
 using std::string;
 using std::to_string;
+using std::variant;
 using std::vector;
 using std::visit;
 
@@ -65,7 +67,9 @@ auto State::create_integer_variable(Integer lower, Integer upper) -> IntegerVari
     else
         _imp->integer_variables.back().push_back(IntegerRangeVariable{ lower, upper });
 
-    return IntegerVariableID{ _imp->integer_variables.back().size() - 1 };
+    auto result = IntegerVariableID{ _imp->integer_variables.back().size() - 1 };
+    remember_change(result);
+    return result;
 }
 
 auto State::non_constant_integer_variable(const IntegerVariableID i) -> IntegerVariable &
@@ -295,14 +299,26 @@ auto State::infer_integer(const LiteralFromIntegerVariable & ilit) -> Inference
 
 auto State::infer(const Literal & lit) -> Inference
 {
-    return visit(overloaded {
-            [&] (const LiteralFromBooleanVariable & blit) -> Inference {
-                return infer_boolean(blit);
+    auto [ inference, var ] = visit(overloaded {
+            [&] (const LiteralFromBooleanVariable & blit) -> pair<Inference, VariableID> {
+                return pair{ infer_boolean(blit), blit.var };
             },
-            [&] (const LiteralFromIntegerVariable & ilit) -> Inference {
-                return infer_integer(ilit);
+            [&] (const LiteralFromIntegerVariable & ilit) -> pair<Inference, VariableID> {
+                return pair{ infer_integer(ilit), ilit.var };
             }
             }, lit);
+
+    switch (inference) {
+        case Inference::NoChange:
+            break;
+        case Inference::Contradiction:
+            break;
+        case Inference::Change:
+            remember_change(var);
+            break;
+    }
+
+    return inference;
 }
 
 auto State::guess(const Literal & lit) -> void
@@ -424,5 +440,9 @@ auto State::new_epoch() -> Timestamp
 auto State::backtrack(Timestamp t) -> void
 {
     _imp->integer_variables.resize(t.when);
+}
+
+auto State::remember_change(const VariableID) -> void
+{
 }
 

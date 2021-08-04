@@ -33,11 +33,3 @@ auto gcs::debug_string(const IntegerVariable & ivar) -> string
             } }, ivar);
 }
 
-auto gcs::debug_string(const IntegerVariableID & var) -> string
-{
-    return visit(overloaded {
-            [] (unsigned long long x) { return to_string(x); },
-            [] (Integer x)            { return "const " + to_string(x.raw_value); }
-            }, var.index_or_const_value);
-}
-

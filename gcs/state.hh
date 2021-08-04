@@ -55,6 +55,8 @@ namespace gcs
             [[ nodiscard ]] auto integer_variable(const IntegerVariableID, IntegerVariable & space) -> IntegerVariable &;
             [[ nodiscard ]] auto integer_variable(const IntegerVariableID, IntegerVariable & space) const -> const IntegerVariable &;
 
+            auto remember_change(const VariableID) -> void;
+
         public:
             explicit State();
             State(State &&) noexcept;

@@ -13,6 +13,7 @@ SOURCES := \
     state.cc \
     stats.cc \
     solve.cc \
+    variable_id.cc \
     constraints/abs.cc \
     constraints/all_different.cc \
     constraints/arithmetic.cc \
