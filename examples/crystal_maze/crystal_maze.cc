@@ -2,6 +2,7 @@
 
 #include <gcs/constraints/all_different.hh>
 #include <gcs/constraints/arithmetic.hh>
+#include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/abs.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
@@ -32,13 +33,21 @@ auto main(int, char * []) -> int
         { 1, 3 }, { 1, 4 }, { 1, 5 }, { 2, 3 }, { 2, 6 }, { 3, 4 }, { 3, 6 },
         { 3, 7 }, { 4, 5 }, { 4, 6 }, { 4, 7 }, { 5, 7 }, { 6, 7 } };
 
+    bool use_abs = false;
     vector<IntegerVariableID> diffs, abs_diffs;
     for (auto & [ x1, x2 ] : edges) {
         diffs.push_back(p.create_integer_variable(-7_i, 7_i));
-        p.post(Minus{ xs[x1], xs[x2], diffs.back() });
+        if (use_abs) {
+            abs_diffs.push_back(p.create_integer_variable(2_i, 7_i));
+            p.post(Abs{ diffs.back(), abs_diffs.back() });
+        }
+        else {
+            p.post(NotEquals{ diffs.back(), constant_variable(0_i) });
+            p.post(NotEquals{ diffs.back(), constant_variable(1_i) });
+            p.post(NotEquals{ diffs.back(), constant_variable(-1_i) });
+        }
 
-        abs_diffs.push_back(p.create_integer_variable(2_i, 7_i));
-        p.post(Abs{ diffs.back(), abs_diffs.back() });
+        p.post(Minus{ xs[x1], xs[x2], diffs.back() });
     }
 
     auto stats = solve(p, [&] (const State & s) -> bool {
