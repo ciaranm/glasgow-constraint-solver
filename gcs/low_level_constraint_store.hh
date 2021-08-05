@@ -7,6 +7,7 @@
 #include <gcs/literal.hh>
 #include <gcs/problem.hh>
 #include <gcs/state.hh>
+#include <gcs/table.hh>
 
 #include <functional>
 #include <vector>
@@ -23,7 +24,7 @@ namespace gcs
 
             [[ nodiscard ]] auto propagate_cnfs(State &) const -> Inference;
             [[ nodiscard ]] auto propagate_lin_les(State &) const -> Inference;
-            [[ nodiscard ]] auto propagate_tables(State &) const -> Inference;
+            [[ nodiscard ]] auto propagate_table(const Table &, State &) const -> Inference;
 
         public:
             explicit LowLevelConstraintStore(Problem * const);

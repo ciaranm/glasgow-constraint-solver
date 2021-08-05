@@ -24,22 +24,11 @@ using std::pair;
 using std::set;
 using std::vector;
 
-namespace gcs
-{
-    struct Table
-    {
-        IntegerVariableID selector;
-        vector<IntegerVariableID> vars;
-        vector<vector<Integer> > tuples;
-    };
-}
-
 struct LowLevelConstraintStore::Imp
 {
     Problem * const problem;
     list<Literals> cnfs;
     list<pair<Linear, Integer> > lin_les;
-    list<Table> tables;
     map<int, PropagationFunction> propagation_functions;
     map<VariableID, vector<int> > triggers;
 
@@ -54,7 +43,6 @@ LowLevelConstraintStore::LowLevelConstraintStore(Problem * p) :
 {
     _imp->propagation_functions.emplace(0, [&] (State & s) { return propagate_cnfs(s); });
     _imp->propagation_functions.emplace(1, [&] (State & s) { return propagate_lin_les(s); });
-    _imp->propagation_functions.emplace(2, [&] (State & s) { return propagate_tables(s); });
 }
 
 LowLevelConstraintStore::~LowLevelConstraintStore() = default;
@@ -81,7 +69,15 @@ auto LowLevelConstraintStore::propagator(PropagationFunction && f, const vector<
 
 auto LowLevelConstraintStore::table(vector<IntegerVariableID> && vars, vector<vector<Integer> > && permitted) -> void
 {
-    _imp->tables.emplace_back(create_auxilliary_integer_variable(0_i, Integer(permitted.size() - 1)), move(vars), move(permitted));
+    int id = _imp->propagation_functions.size();
+
+    // set up triggers before we move vars away
+    for (auto & t : vars)
+        _imp->triggers.try_emplace(t).first->second.push_back(id);
+
+    _imp->propagation_functions.emplace(id, [&, table = Table{ create_auxilliary_integer_variable(0_i, Integer(permitted.size() - 1)), move(vars), move(permitted) }] (State & state) -> Inference {
+            return propagate_table(table, state);
+            });
 }
 
 auto LowLevelConstraintStore::propagate(State & state) const -> bool
@@ -115,54 +111,49 @@ auto LowLevelConstraintStore::propagate(State & state) const -> bool
     return true;
 }
 
-auto LowLevelConstraintStore::propagate_tables(State & state) const -> Inference
+auto LowLevelConstraintStore::propagate_table(const Table & table, State & state) const -> Inference
 {
     bool changed = false, contradiction = false;
 
-    for (auto & table : _imp->tables) {
-        // check whether selectable tuples are still feasible
-        for_each_with_index(table.tuples, [&] (const auto & tuple, auto tuple_idx) {
-            if ((! contradiction) && state.in_domain(table.selector, Integer(tuple_idx))) {
-                bool is_feasible = true;
-                for_each_with_index(table.vars, [&] (IntegerVariableID var, auto idx) {
-                        if (! state.in_domain(var, tuple[idx]))
-                            is_feasible = false;
-                        });
-                if (! is_feasible) {
-                    switch (state.infer(table.selector != Integer(tuple_idx))) {
-                        case Inference::NoChange:      break;
-                        case Inference::Change:        changed = true; break;
-                        case Inference::Contradiction: contradiction = true; break;
-                    }
+    // check whether selectable tuples are still feasible
+    for_each_with_index(table.tuples, [&] (const auto & tuple, auto tuple_idx) {
+        if ((! contradiction) && state.in_domain(table.selector, Integer(tuple_idx))) {
+            bool is_feasible = true;
+            for_each_with_index(table.vars, [&] (IntegerVariableID var, auto idx) {
+                    if (! state.in_domain(var, tuple[idx]))
+                        is_feasible = false;
+                    });
+            if (! is_feasible) {
+                switch (state.infer(table.selector != Integer(tuple_idx))) {
+                    case Inference::NoChange:      break;
+                    case Inference::Change:        changed = true; break;
+                    case Inference::Contradiction: contradiction = true; break;
                 }
             }
-        });
+        }
+    });
 
-        if (contradiction)
-            break;
+    if (contradiction)
+        return Inference::Contradiction;
 
-        // check for supports in selectable tuples
-        for_each_with_index(table.vars, [&] (IntegerVariableID var, auto idx) {
-                state.for_each_value(var, [&] (Integer val) {
-                        bool supported = false;
-                        for_each_with_index(table.tuples, [&] (const auto & tuple, auto tuple_idx) {
-                                if (state.in_domain(table.selector, Integer(tuple_idx)) && tuple[idx] == val)
-                                    supported = true;
-                                });
+    // check for supports in selectable tuples
+    for_each_with_index(table.vars, [&] (IntegerVariableID var, auto idx) {
+            state.for_each_value(var, [&] (Integer val) {
+                    bool supported = false;
+                    for_each_with_index(table.tuples, [&] (const auto & tuple, auto tuple_idx) {
+                            if (state.in_domain(table.selector, Integer(tuple_idx)) && tuple[idx] == val)
+                                supported = true;
+                            });
 
-                        if (! supported) {
-                            switch (state.infer(var != val)) {
-                                case Inference::NoChange:      break;
-                                case Inference::Change:        changed = true; break;
-                                case Inference::Contradiction: contradiction = true; break;
-                            }
+                    if (! supported) {
+                        switch (state.infer(var != val)) {
+                            case Inference::NoChange:      break;
+                            case Inference::Change:        changed = true; break;
+                            case Inference::Contradiction: contradiction = true; break;
                         }
-                    });
-            });
-
-        if (contradiction)
-            break;
-    }
+                    }
+                });
+        });
 
     return contradiction ? Inference::Contradiction : changed ? Inference::Change : Inference::NoChange;
 }
