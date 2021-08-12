@@ -17,6 +17,8 @@ namespace gcs
         IntegerVariableID var;
         enum { Equal, NotEqual, GreaterEqual, Less } state;
         Integer value;
+
+        [[ nodiscard ]] auto operator<=> (const LiteralFromIntegerVariable &) const = default;
     };
 
     [[ nodiscard ]] inline auto operator == (const IntegerVariableID var, const Integer val) -> LiteralFromIntegerVariable
@@ -43,6 +45,8 @@ namespace gcs
     {
         BooleanVariableID var;
         enum { True, False } state;
+
+        [[ nodiscard ]] auto operator<=> (const LiteralFromBooleanVariable &) const = default;
     };
 
     [[ nodiscard ]] inline auto operator ! (const BooleanVariableID var) -> LiteralFromBooleanVariable
