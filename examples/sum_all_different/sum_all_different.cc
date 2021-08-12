@@ -19,7 +19,7 @@ using std::vector;
 
 auto main(int, char * []) -> int
 {
-    Problem p;
+    Problem p{ Proof{ "sum_all_different.opb", "sum_all_different.veripb" } };
 
     vector<IntegerVariableID> xs;
     xs.push_back(p.create_integer_variable(1_i, 5_i));

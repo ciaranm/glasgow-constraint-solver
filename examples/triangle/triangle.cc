@@ -18,7 +18,7 @@ using std::vector;
 
 auto main(int, char * []) -> int
 {
-    Problem p;
+    Problem p{ Proof{ "triangle.opb", "triangle.veripb" } };
     IntegerVariableID a = p.create_integer_variable(1_i, 10_i), b = p.create_integer_variable(1_i, 10_i), c = p.create_integer_variable(1_i, 10_i);
     IntegerVariableID a_squared = p.create_integer_variable(1_i, 100_i), b_squared = p.create_integer_variable(1_i, 100_i), c_squared = p.create_integer_variable(1_i, 100_i);
     p.branch_on(vector{ a, b, c });
