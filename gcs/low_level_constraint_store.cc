@@ -75,12 +75,23 @@ auto LowLevelConstraintStore::propagator(PropagationFunction && f, const vector<
 auto LowLevelConstraintStore::table(vector<IntegerVariableID> && vars, vector<vector<Integer> > && permitted) -> void
 {
     int id = _imp->propagation_functions.size();
+    auto selector = create_auxilliary_integer_variable(0_i, Integer(permitted.size() - 1), "table", false);
+
+    // cnf encoding, if necessary
+    if (want_nonpropagating()) {
+        for_each_with_index(permitted, [&] (const auto & tuple, auto tuple_idx) {
+                for_each_with_index(vars, [&] (IntegerVariableID var, auto var_idx) {
+                    // selector == tuple_idx -> var == tuple[var_idx]
+                    cnf({ selector != Integer(tuple_idx), var == tuple[var_idx] }, false);
+                });
+            });
+    }
 
     // set up triggers before we move vars away
     for (auto & t : vars)
         _imp->triggers.try_emplace(t).first->second.push_back(id);
 
-    _imp->propagation_functions.emplace(id, [&, table = Table{ create_auxilliary_integer_variable(0_i, Integer(permitted.size() - 1), "table", false), move(vars), move(permitted) }] (State & state) -> Inference {
+    _imp->propagation_functions.emplace(id, [&, table = Table{ selector, move(vars), move(permitted) }] (State & state) -> Inference {
             return propagate_table(table, state);
             });
 }
@@ -129,7 +140,7 @@ auto LowLevelConstraintStore::propagate_table(const Table & table, State & state
                         is_feasible = false;
                     });
             if (! is_feasible) {
-                switch (state.infer(table.selector != Integer(tuple_idx), Justification::Assert)) {
+                switch (state.infer(table.selector != Integer(tuple_idx), Justification::RUP)) {
                     case Inference::NoChange:      break;
                     case Inference::Change:        changed = true; break;
                     case Inference::Contradiction: contradiction = true; break;
@@ -151,7 +162,7 @@ auto LowLevelConstraintStore::propagate_table(const Table & table, State & state
                             });
 
                     if (! supported) {
-                        switch (state.infer(var != val, Justification::Assert)) {
+                        switch (state.infer(var != val, Justification::RUP)) {
                             case Inference::NoChange:      break;
                             case Inference::Change:        changed = true; break;
                             case Inference::Contradiction: contradiction = true; break;
