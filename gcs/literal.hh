@@ -67,7 +67,7 @@ namespace gcs
 
     using Literals = std::vector<Literal>;
 
-    auto sanitise_literals(Literals &) -> void;
+    [[ nodiscard ]] auto sanitise_literals(Literals &) -> bool;
 }
 
 #endif

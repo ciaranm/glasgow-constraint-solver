@@ -62,12 +62,13 @@ auto LowLevelConstraintStore::trim_upper_bound(const State & state, IntegerVaria
 
 auto LowLevelConstraintStore::cnf(Literals && c, bool propagating) -> void
 {
-    sanitise_literals(c);
-    if (_imp->problem->optional_proof())
-        _imp->problem->optional_proof()->cnf(c);
+    if (sanitise_literals(c)) {
+        if (_imp->problem->optional_proof())
+            _imp->problem->optional_proof()->cnf(c);
 
-    if (propagating)
-        _imp->cnfs.emplace_back(move(c));
+        if (propagating)
+            _imp->cnfs.emplace_back(move(c));
+    }
 }
 
 auto LowLevelConstraintStore::lin_le(Linear && coeff_vars, Integer value) -> void
