@@ -299,17 +299,19 @@ namespace
 
 auto AllDifferent::convert_to_low_level(LowLevelConstraintStore & constraints, const State & initial_state) && -> void
 {
-    // for each distinct pair of variables...
-    for_each_distinct_pair(_vars, [&] (auto v, auto w) {
-        // for each value in both domains...
-        auto lower = max(initial_state.lower_bound(v), initial_state.lower_bound(w));
-        auto upper = min(initial_state.upper_bound(v), initial_state.upper_bound(w));
-        for ( ; lower <= upper ; ++lower)
-            if (initial_state.in_domain(v, lower) && initial_state.in_domain(w, lower)) {
-                // can't have both variables taking that value
-                constraints.cnf({ v != lower, w != lower }, true);
-            }
-    });
+    if (constraints.want_nonpropagating()) {
+        // for each distinct pair of variables...
+        for_each_distinct_pair(_vars, [&] (auto v, auto w) {
+            // for each value in both domains...
+            auto lower = max(initial_state.lower_bound(v), initial_state.lower_bound(w));
+            auto upper = min(initial_state.upper_bound(v), initial_state.upper_bound(w));
+            for ( ; lower <= upper ; ++lower)
+                if (initial_state.in_domain(v, lower) && initial_state.in_domain(w, lower)) {
+                    // can't have both variables taking that value
+                    constraints.cnf({ v != lower, w != lower }, false);
+                }
+        });
+    }
 
     vector<VariableID> var_ids{ _vars.begin(), _vars.end() };
     constraints.propagator([vars = move(_vars)] (State & state) -> Inference {
