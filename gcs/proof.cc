@@ -296,7 +296,7 @@ auto Proof::infer(const State & state, const Literal & lit, Justification why) -
             break;
 
         case Justification::Guess:
-            _imp->proof << "* guessing " << proof_variable(lit) << ", trail is [";
+            _imp->proof << "* guessing " << proof_variable(lit) << ", decision stack is [";
             state.for_each_guess([&] (const Literal & lit) {
                     _imp->proof << " " << proof_variable(lit);
                     });
