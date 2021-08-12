@@ -38,7 +38,9 @@ namespace gcs
             auto trim_lower_bound(const State &, IntegerVariableID var, Integer val) -> void;
             auto trim_upper_bound(const State &, IntegerVariableID var, Integer val) -> void;
 
-            auto cnf(Literals && lits, bool propagating) -> void;
+            auto cnf(Literals && lits, bool propagating) -> std::optional<ProofLine>;
+            auto at_most_one(Literals && lits, bool propagating) -> std::optional<ProofLine>;
+
             auto lin_le(Linear && coeff_vars, Integer value) -> void;
             auto propagator(PropagationFunction &&, const std::vector<VariableID> & trigger_vars) -> void;
             auto table(std::vector<IntegerVariableID> &&, std::vector<std::vector<Integer> > &&) -> void;

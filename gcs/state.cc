@@ -9,13 +9,16 @@
 #include <algorithm>
 #include <list>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 using namespace gcs;
 
+using std::decay_t;
 using std::find;
 using std::function;
 using std::get_if;
+using std::is_same_v;
 using std::list;
 using std::make_optional;
 using std::make_shared;
@@ -337,9 +340,34 @@ auto State::infer(const Literal & lit, Justification just) -> Inference
     return inference;
 }
 
+auto State::infer_all(const std::vector<Literal> & lits, Justification just) -> Inference
+{
+    Inference result = Inference::NoChange;
+    for (auto & lit : lits) {
+        switch (infer(lit, just)) {
+            case Inference::NoChange:
+                break;
+            case Inference::Change:
+                result = Inference::Change;
+                break;
+            case Inference::Contradiction:
+                return Inference::Contradiction;
+        }
+
+        // only do justifications once
+        if (_imp->problem->optional_proof())
+            visit([&] (const auto & j) -> void {
+                    if constexpr (is_same_v<decay_t<decltype(j)>, JustifyExplicitly>)
+                        just = JustifyUsingRUP{ };
+                }, just);
+    }
+
+    return result;
+}
+
 auto State::guess(const Literal & lit) -> void
 {
-    switch (infer(lit, Justification::Guess)) {
+    switch (infer(lit, Guess{ })) {
         case Inference::NoChange:
         case Inference::Change:
             _imp->guesses.push_back(lit);

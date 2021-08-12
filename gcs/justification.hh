@@ -3,14 +3,31 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_JUSTIFICATION_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_JUSTIFICATION_HH 1
 
+#include <gcs/proof-fwd.hh>
+
+#include <functional>
+#include <variant>
+
 namespace gcs
 {
-    enum class Justification
+    struct Guess
     {
-        RUP,
-        Guess,
-        Assert
     };
+
+    struct JustifyExplicitly
+    {
+        std::function<auto (Proof &) -> void> add_proof_steps;
+    };
+
+    struct JustifyUsingRUP
+    {
+    };
+
+    struct JustifyUsingAssertion
+    {
+    };
+
+    using Justification = std::variant<Guess, JustifyUsingRUP, JustifyUsingAssertion, JustifyExplicitly>;
 }
 
 #endif

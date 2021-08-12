@@ -39,16 +39,15 @@ auto ProofError::what() const noexcept -> const char *
     return _wat.c_str();
 }
 
-using ProofLine = long long;
-
 struct Proof::Imp
 {
-    unsigned long long model_variables = 0, model_constraints = 0;
+    unsigned long long model_variables = 0;
+    ProofLine model_constraints = 0;
     map<IntegerVariableID, ProofLine> variable_at_least_one_constraints, variable_at_most_one_constraints;
     map<LiteralFromIntegerVariable, string> integer_variables;
     map<LiteralFromBooleanVariable, string> boolean_variables;
     list<IntegerVariableID> solution_variables;
-    ProofLine proof_line;
+    ProofLine proof_line = 0;
 
     string opb_file, proof_file;
     stringstream opb;
@@ -116,12 +115,12 @@ auto Proof::create_integer_variable(IntegerVariableID id, Integer lower, Integer
     }
 
     _imp->opb << ">= 1 ;" << endl;
-    _imp->variable_at_least_one_constraints.emplace(id, _imp->model_constraints++);
+    _imp->variable_at_least_one_constraints.emplace(id, ++_imp->model_constraints);
 
     for (Integer v = lower ; v <= upper ; ++v)
         _imp->opb << "-1 " << name << "_eq_" << value_name(v) << " ";
     _imp->opb << ">= -1 ;" << endl;
-    _imp->variable_at_most_one_constraints.emplace(id, _imp->model_constraints++);
+    _imp->variable_at_most_one_constraints.emplace(id, ++_imp->model_constraints);
 
     if (need_ge) {
         _imp->opb << "* variable " << name << " greater or equal encoding" << endl;
@@ -180,7 +179,7 @@ auto Proof::start_proof() -> void
         throw ProofError{ "Error writing proof file to '" + _imp->proof_file + "'" };
 }
 
-auto Proof::cnf(const Literals & lits) -> void
+auto Proof::cnf(const Literals & lits) -> ProofLine
 {
     for (auto & lit : lits) {
         visit([&] (const auto & lit) {
@@ -188,7 +187,18 @@ auto Proof::cnf(const Literals & lits) -> void
                 }, lit);
     }
     _imp->opb << ">= 1 ;" << endl;
-    ++_imp->model_constraints;
+    return ++_imp->model_constraints;
+}
+
+auto Proof::at_most_one(const Literals & lits) -> ProofLine
+{
+    for (auto & lit : lits) {
+        visit([&] (const auto & lit) {
+                _imp->opb << "-1 " << proof_variable(lit) << " ";
+                }, lit);
+    }
+    _imp->opb << ">= -1 ;" << endl;
+    return ++_imp->model_constraints;
 }
 
 auto Proof::proof_variable(const LiteralFromIntegerVariable & lit) const -> const string &
@@ -274,34 +284,50 @@ auto Proof::assert_contradiction() -> void
 
 auto Proof::infer(const State & state, const Literal & lit, Justification why) -> void
 {
-    switch (why) {
-        case Justification::RUP:
-            _imp->proof << "u";
-            state.for_each_guess([&] (const Literal & lit) {
-                    _imp->proof << " 1 " << proof_variable(! lit);
-                    });
-            _imp->proof << " 1 " << proof_variable(lit);
-            _imp->proof << " >= 1 ;" << endl;
-            ++_imp->proof_line;
-            break;
+    visit(overloaded {
+            [&] (const JustifyUsingRUP &) {
+                _imp->proof << "u";
+                state.for_each_guess([&] (const Literal & lit) {
+                        _imp->proof << " 1 " << proof_variable(! lit);
+                        });
+                _imp->proof << " 1 " << proof_variable(lit);
+                _imp->proof << " >= 1 ;" << endl;
+                ++_imp->proof_line;
+            },
+            [&] (const JustifyUsingAssertion &) {
+                _imp->proof << "a";
+                state.for_each_guess([&] (const Literal & lit) {
+                        _imp->proof << " 1 " << proof_variable(! lit);
+                        });
+                _imp->proof << " 1 " << proof_variable(lit);
+                _imp->proof << " >= 1 ;" << endl;
+                ++_imp->proof_line;
+            },
+            [&] (const JustifyExplicitly & x) {
+                x.add_proof_steps(*this);
+                infer(state, lit, JustifyUsingRUP{ });
+            },
+            [&] (const Guess &) {
+                _imp->proof << "* guessing " << proof_variable(lit) << ", decision stack is [";
+                state.for_each_guess([&] (const Literal & lit) {
+                        _imp->proof << " " << proof_variable(lit);
+                        });
+                _imp->proof << " ]" << endl;
+            }
+        }, why);
+}
 
-        case Justification::Assert:
-            _imp->proof << "a";
-            state.for_each_guess([&] (const Literal & lit) {
-                    _imp->proof << " 1 " << proof_variable(! lit);
-                    });
-            _imp->proof << " 1 " << proof_variable(lit);
-            _imp->proof << " >= 1 ;" << endl;
-            ++_imp->proof_line;
-            break;
+auto Proof::emit_proof_line(const string & s) -> void
+{
+    _imp->proof << s << endl;
+    ++_imp->proof_line;
+}
 
-        case Justification::Guess:
-            _imp->proof << "* guessing " << proof_variable(lit) << ", decision stack is [";
-            state.for_each_guess([&] (const Literal & lit) {
-                    _imp->proof << " " << proof_variable(lit);
-                    });
-            _imp->proof << " ]" << endl;
-            break;
-    }
+auto Proof::constraint_saying_variable_takes_at_least_one_value(IntegerVariableID var) const -> ProofLine
+{
+    auto result = _imp->variable_at_least_one_constraints.find(var);
+    if (result == _imp->variable_at_least_one_constraints.end())
+        throw ProofError("No at least one value constraint exists for " + debug_string(var));
+    return result->second;
 }
 
