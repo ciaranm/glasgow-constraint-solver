@@ -279,7 +279,6 @@ auto Proof::infer(const State & state, const Literal & lit, Justification why) -
 {
     switch (why) {
         case Justification::RUP:
-            _imp->proof << "* infer by RUP" << endl;
             _imp->proof << "u";
             state.for_each_guess([&] (const Literal & lit) {
                     _imp->proof << " 1 " << proof_variable(! lit);
@@ -290,7 +289,6 @@ auto Proof::infer(const State & state, const Literal & lit, Justification why) -
             break;
 
         case Justification::Assert:
-            _imp->proof << "* infer by asserting" << endl;
             _imp->proof << "a";
             state.for_each_guess([&] (const Literal & lit) {
                     _imp->proof << " 1 " << proof_variable(! lit);
