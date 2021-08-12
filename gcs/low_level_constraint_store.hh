@@ -34,11 +34,12 @@ namespace gcs
             LowLevelConstraintStore & operator= (const LowLevelConstraintStore &) = delete;
 
             auto cnf(Literals && lits) -> void;
+
             auto lin_le(Linear && coeff_vars, Integer value) -> void;
             auto propagator(PropagationFunction &&, const std::vector<VariableID> & trigger_vars) -> void;
             auto table(std::vector<IntegerVariableID> &&, std::vector<std::vector<Integer> > &&) -> void;
 
-            [[ nodiscard ]] auto create_auxilliary_integer_variable(Integer, Integer) -> IntegerVariableID;
+            [[ nodiscard ]] auto create_auxilliary_integer_variable(Integer, Integer, const std::string & name, bool need_ge) -> IntegerVariableID;
 
             [[ nodiscard ]] auto propagate(State &) const -> bool;
     };

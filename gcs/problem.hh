@@ -23,12 +23,18 @@ namespace gcs
 
         public:
             Problem();
+            explicit Problem(Proof &&);
+
             ~Problem();
 
             Problem(const Problem &) = delete;
             Problem & operator= (const Problem &) = delete;
 
-            auto create_integer_variable(Integer lower, Integer upper) -> IntegerVariableID;
+            [[ nodiscard ]] auto create_integer_variable(
+                    Integer lower,
+                    Integer upper,
+                    const std::optional<std::string> & name = std::nullopt,
+                    bool need_ge = true) -> IntegerVariableID;
 
             [[ nodiscard ]] auto create_state() const -> State;
             [[ nodiscard ]] auto propagate(State &) const -> bool;

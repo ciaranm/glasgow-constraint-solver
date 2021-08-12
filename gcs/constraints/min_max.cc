@@ -29,7 +29,7 @@ auto ArrayMinMax::convert_to_low_level(LowLevelConstraintStore & constraints, co
             LessThanEqual{ v, _result }.convert_to_low_level(constraints, initial_state);
     }
 
-    auto selector = constraints.create_auxilliary_integer_variable(0_i, Integer(_vars.size() - 1));
+    auto selector = constraints.create_auxilliary_integer_variable(0_i, Integer(_vars.size() - 1), "minmax", false);
     for_each_with_index(_vars, [&] (IntegerVariableID var, auto idx) {
             // (selector == idx /\ var == val) -> result == val
             initial_state.for_each_value(var, [&] (Integer val) {

@@ -15,6 +15,7 @@ using namespace gcs;
 
 using std::cout;
 using std::endl;
+using std::to_string;
 using std::pair;
 using std::vector;
 
@@ -24,7 +25,7 @@ auto main(int, char * []) -> int
 
     vector<IntegerVariableID> xs;
     for (int i = 0 ; i < 8 ; ++i)
-        xs.push_back(p.create_integer_variable(1_i, 8_i));
+        xs.push_back(p.create_integer_variable(1_i, 8_i, "box" + to_string(i)));
 
     p.post(AllDifferent{ xs });
     p.branch_on(xs);
@@ -36,9 +37,9 @@ auto main(int, char * []) -> int
     bool use_abs = false;
     vector<IntegerVariableID> diffs, abs_diffs;
     for (auto & [ x1, x2 ] : edges) {
-        diffs.push_back(p.create_integer_variable(-7_i, 7_i));
+        diffs.push_back(p.create_integer_variable(-7_i, 7_i, "diff" + to_string(x1) + "_" + to_string(x2)));
         if (use_abs) {
-            abs_diffs.push_back(p.create_integer_variable(2_i, 7_i));
+            abs_diffs.push_back(p.create_integer_variable(2_i, 7_i, "absdiff" + to_string(x1) + "_" + to_string(x2)));
             p.post(Abs{ diffs.back(), abs_diffs.back() });
         }
         else {

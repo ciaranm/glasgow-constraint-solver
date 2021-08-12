@@ -22,6 +22,7 @@ using std::nullopt;
 using std::optional;
 using std::pair;
 using std::set;
+using std::string;
 using std::vector;
 
 struct LowLevelConstraintStore::Imp
@@ -75,7 +76,7 @@ auto LowLevelConstraintStore::table(vector<IntegerVariableID> && vars, vector<ve
     for (auto & t : vars)
         _imp->triggers.try_emplace(t).first->second.push_back(id);
 
-    _imp->propagation_functions.emplace(id, [&, table = Table{ create_auxilliary_integer_variable(0_i, Integer(permitted.size() - 1)), move(vars), move(permitted) }] (State & state) -> Inference {
+    _imp->propagation_functions.emplace(id, [&, table = Table{ create_auxilliary_integer_variable(0_i, Integer(permitted.size() - 1), "table", false), move(vars), move(permitted) }] (State & state) -> Inference {
             return propagate_table(table, state);
             });
 }
@@ -246,8 +247,8 @@ auto LowLevelConstraintStore::propagate_lin_les(State & state) const -> Inferenc
     return changed ? Inference::Change : Inference::NoChange;
 }
 
-auto LowLevelConstraintStore::create_auxilliary_integer_variable(Integer l, Integer u) -> IntegerVariableID
+auto LowLevelConstraintStore::create_auxilliary_integer_variable(Integer l, Integer u, const std::string & s, bool need_ge) -> IntegerVariableID
 {
-    return _imp->problem->create_integer_variable(l, u);
+    return _imp->problem->create_integer_variable(l, u, make_optional("aux_" + s), need_ge);
 }
 

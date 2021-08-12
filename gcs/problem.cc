@@ -38,7 +38,7 @@ Problem::~Problem()
 {
 }
 
-auto Problem::create_integer_variable(Integer lower, Integer upper) -> IntegerVariableID
+auto Problem::create_integer_variable(Integer lower, Integer upper, const optional<std::string> & name, bool need_ge) -> IntegerVariableID
 {
     return *(_imp->last_integer_var = make_optional(_imp->initial_state.create_integer_variable(lower, upper)));
 }
