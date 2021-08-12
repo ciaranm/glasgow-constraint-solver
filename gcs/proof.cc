@@ -93,10 +93,7 @@ namespace
 {
     auto value_name(Integer v) -> string
     {
-        if (v < 0_i)
-            return "n" + to_string(-v.raw_value);
-        else
-            return to_string(v.raw_value);
+        return to_string(v.raw_value);
     }
 }
 
