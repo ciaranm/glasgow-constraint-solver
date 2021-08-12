@@ -13,3 +13,6 @@ perf.data.old
 /triangle
 /colour
 /ortho_latin
+/three_all_differents
+*.opb
+*.veripb

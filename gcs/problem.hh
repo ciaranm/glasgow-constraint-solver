@@ -7,8 +7,10 @@
 #include <gcs/variable_id.hh>
 #include <gcs/linear.hh>
 #include <gcs/literal.hh>
+#include <gcs/proof.hh>
 #include <gcs/state.hh>
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -44,6 +46,8 @@ namespace gcs
             auto post(Constraint &&) -> void;
 
             auto branch_on(const std::vector<IntegerVariableID> &) -> void;
+
+            auto optional_proof() const -> std::optional<Proof> &;
     };
 }
 

@@ -5,6 +5,8 @@
 
 #include <gcs/integer_variable.hh>
 #include <gcs/literal.hh>
+#include <gcs/problem-fwd.hh>
+#include <gcs/justification.hh>
 
 #include <exception>
 #include <functional>
@@ -58,7 +60,7 @@ namespace gcs
             auto remember_change(const VariableID) -> void;
 
         public:
-            explicit State();
+            explicit State(const Problem * const problem);
             State(State &&) noexcept;
             ~State();
 
@@ -67,11 +69,12 @@ namespace gcs
 
             [[ nodiscard ]] State clone() const;
 
-            auto create_integer_variable(Integer lower, Integer upper) -> IntegerVariableID;
+            [[ nodiscard ]] auto create_integer_variable(Integer lower, Integer upper) -> IntegerVariableID;
 
-            [[ nodiscard ]] auto infer(const Literal & lit) -> Inference;
+            [[ nodiscard ]] auto infer(const Literal & lit, Justification why) -> Inference;
 
             auto guess(const Literal & lit) -> void;
+            auto for_each_guess(std::function<auto (Literal) -> void>) const -> void;
 
             [[ nodiscard ]] auto lower_bound(const IntegerVariableID) const -> Integer;
             [[ nodiscard ]] auto upper_bound(const IntegerVariableID) const -> Integer;

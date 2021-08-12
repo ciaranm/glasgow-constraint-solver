@@ -38,7 +38,7 @@ auto main(int argc, char * argv[]) -> int
                 }
     }
 
-    Problem p;
+    Problem p{ Proof{ "sudoku.opb", "sudoku.veripb" } };
 
     vector<vector<IntegerVariableID> > grid;
     for (int x = 0 ; x < 9 ; ++x) {

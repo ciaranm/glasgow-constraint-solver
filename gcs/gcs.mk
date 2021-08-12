@@ -10,6 +10,7 @@ SOURCES := \
     literal.cc \
     low_level_constraint_store.cc \
     problem.cc \
+    proof.cc \
     state.cc \
     stats.cc \
     solve.cc \

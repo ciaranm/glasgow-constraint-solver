@@ -21,7 +21,7 @@ using std::vector;
 
 auto main(int, char * []) -> int
 {
-    Problem p;
+    Problem p{ Proof{ "crystal_maze.opb", "crystal_maze.veripb" } };
 
     vector<IntegerVariableID> xs;
     for (int i = 0 ; i < 8 ; ++i)

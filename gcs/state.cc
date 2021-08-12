@@ -1,7 +1,8 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
-#include "gcs/state.hh"
-#include "gcs/exception.hh"
+#include <gcs/state.hh>
+#include <gcs/exception.hh>
+#include <gcs/problem.hh>
 
 #include "util/overloaded.hh"
 
@@ -41,12 +42,20 @@ auto VariableDoesNotHaveUniqueValue::what() const noexcept -> const char *
 
 struct State::Imp
 {
+    const Problem * const problem;
+
     list<vector<IntegerVariable> > integer_variables;
     set<VariableID> changed;
+    list<Literal> guesses;
+
+    Imp(const Problem * const p) :
+        problem(p)
+    {
+    }
 };
 
-State::State() :
-    _imp(new Imp)
+State::State(const Problem * const problem) :
+    _imp(new Imp{ problem })
 {
     _imp->integer_variables.emplace_back();
 }
@@ -57,7 +66,7 @@ State::~State() = default;
 
 auto State::clone() const -> State
 {
-    State result;
+    State result(_imp->problem);
     result._imp->integer_variables = _imp->integer_variables;
     result._imp->changed = _imp->changed;
     return result;
@@ -300,7 +309,7 @@ auto State::infer_integer(const LiteralFromIntegerVariable & ilit) -> Inference
     throw NonExhaustiveSwitch{ };
 }
 
-auto State::infer(const Literal & lit) -> Inference
+auto State::infer(const Literal & lit, Justification just) -> Inference
 {
     auto [ inference, var ] = visit(overloaded {
             [&] (const LiteralFromBooleanVariable & blit) -> pair<Inference, VariableID> {
@@ -315,9 +324,13 @@ auto State::infer(const Literal & lit) -> Inference
         case Inference::NoChange:
             break;
         case Inference::Contradiction:
+            if (_imp->problem->optional_proof())
+                _imp->problem->optional_proof()->infer(*this, lit, just);
             break;
         case Inference::Change:
             remember_change(var);
+            if (_imp->problem->optional_proof())
+                _imp->problem->optional_proof()->infer(*this, lit, just);
             break;
     }
 
@@ -326,9 +339,10 @@ auto State::infer(const Literal & lit) -> Inference
 
 auto State::guess(const Literal & lit) -> void
 {
-    switch (infer(lit)) {
+    switch (infer(lit, Justification::Guess)) {
         case Inference::NoChange:
         case Inference::Change:
+            _imp->guesses.push_back(lit);
             return;
 
         case Inference::Contradiction:
@@ -447,6 +461,7 @@ auto State::backtrack(Timestamp t) -> void
 {
     _imp->integer_variables.resize(t.when);
     _imp->changed.clear();
+    _imp->guesses.pop_back();
 }
 
 auto State::remember_change(const VariableID v) -> void
@@ -459,5 +474,11 @@ auto State::extract_changed_variables(function<auto (VariableID) -> void> f) -> 
     for (auto & c : _imp->changed)
         f(c);
     _imp->changed.clear();
+}
+
+auto State::for_each_guess(std::function<auto (Literal) -> void> f) const -> void
+{
+    for (auto & g : _imp->guesses)
+        f(g);
 }
 

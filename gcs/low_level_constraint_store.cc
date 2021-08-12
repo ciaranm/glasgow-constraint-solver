@@ -51,7 +51,10 @@ LowLevelConstraintStore::~LowLevelConstraintStore() = default;
 auto LowLevelConstraintStore::cnf(Literals && c) -> void
 {
     sanitise_literals(c);
-    _imp->cnfs.push_back(move(c));
+    if (_imp->problem->optional_proof())
+        _imp->problem->optional_proof()->cnf(c);
+
+    _imp->cnfs.emplace_back(move(c));
 }
 
 auto LowLevelConstraintStore::lin_le(Linear && coeff_vars, Integer value) -> void
@@ -125,7 +128,7 @@ auto LowLevelConstraintStore::propagate_table(const Table & table, State & state
                         is_feasible = false;
                     });
             if (! is_feasible) {
-                switch (state.infer(table.selector != Integer(tuple_idx))) {
+                switch (state.infer(table.selector != Integer(tuple_idx), Justification::Assert)) {
                     case Inference::NoChange:      break;
                     case Inference::Change:        changed = true; break;
                     case Inference::Contradiction: contradiction = true; break;
@@ -147,7 +150,7 @@ auto LowLevelConstraintStore::propagate_table(const Table & table, State & state
                             });
 
                     if (! supported) {
-                        switch (state.infer(var != val)) {
+                        switch (state.infer(var != val, Justification::Assert)) {
                             case Inference::NoChange:      break;
                             case Inference::Change:        changed = true; break;
                             case Inference::Contradiction: contradiction = true; break;
@@ -200,7 +203,7 @@ auto LowLevelConstraintStore::propagate_cnfs(State & state) const -> Inference
         if (nonfalsified_literals.size() == 0)
             return Inference::Contradiction;
         else if (nonfalsified_literals.size() == 1) {
-            switch (state.infer(nonfalsified_literals[0])) {
+            switch (state.infer(nonfalsified_literals[0], Justification::RUP)) {
                 case Inference::Contradiction: return Inference::Contradiction;
                 case Inference::NoChange:      break;
                 case Inference::Change:        changed = true; break;
@@ -236,7 +239,7 @@ auto LowLevelConstraintStore::propagate_lin_les(State & state) const -> Inferenc
                     lower_without_me += (other_coeff >= 0_i) ? (other_coeff * state.lower_bound(other_var)) : (other_coeff * state.upper_bound(other_var));
 
             Integer remainder = ineq.second - lower_without_me;
-            switch (coeff >= 0_i ? state.infer(var < (1_i + remainder / coeff)) : state.infer(var >= remainder / coeff)) {
+            switch (coeff >= 0_i ? state.infer(var < (1_i + remainder / coeff), Justification::RUP) : state.infer(var >= remainder / coeff, Justification::RUP)) {
                 case Inference::Change:        changed = true; break;
                 case Inference::NoChange:      break;
                 case Inference::Contradiction: return Inference::Contradiction;

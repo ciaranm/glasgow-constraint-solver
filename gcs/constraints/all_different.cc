@@ -166,7 +166,7 @@ namespace
         if (left_covered.size() != lhs.size()) {
             // nope. we've got a maximum cardinality matching that leaves at least
             // one thing on the left uncovered.
-            return Inference::Contradiction;
+            return state.infer(+constant_variable(false), Justification::Assert);
         }
 
         // we have a matching that uses every variable. however, some edges may
@@ -286,7 +286,7 @@ namespace
             if (used_edges.count(pair{ delete_var_name, delete_value }))
                 continue;
 
-            switch (state.infer(delete_var_name != delete_value)) {
+            switch (state.infer(delete_var_name != delete_value, Justification::Assert)) {
                 case Inference::NoChange:      break;
                 case Inference::Change:        changed = true; break;
                 case Inference::Contradiction: return Inference::Contradiction;

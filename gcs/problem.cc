@@ -19,11 +19,13 @@ using std::vector;
 struct Problem::Imp
 {
     State initial_state;
-    optional<IntegerVariableID> last_integer_var;
     LowLevelConstraintStore constraints;
+    vector<IntegerVariableID> problem_variables;
     optional<vector<IntegerVariableID> > branch_on;
+    optional<Proof> optional_proof;
 
     Imp(Problem * problem) :
+        initial_state(problem),
         constraints(problem)
     {
     }
@@ -34,13 +36,23 @@ Problem::Problem() :
 {
 }
 
+Problem::Problem(Proof && proof) :
+    _imp(new Imp(this))
+{
+    _imp->optional_proof = move(proof);
+}
+
 Problem::~Problem()
 {
 }
 
 auto Problem::create_integer_variable(Integer lower, Integer upper, const optional<std::string> & name, bool need_ge) -> IntegerVariableID
 {
-    return *(_imp->last_integer_var = make_optional(_imp->initial_state.create_integer_variable(lower, upper)));
+    auto result = _imp->initial_state.create_integer_variable(lower, upper);
+    _imp->problem_variables.push_back(result);
+    if (_imp->optional_proof)
+        _imp->optional_proof->create_integer_variable(result, lower, upper, name, need_ge);
+    return result;
 }
 
 auto Problem::create_state() const -> State
@@ -60,22 +72,11 @@ auto Problem::find_branching_variable(State & state) const -> optional<IntegerVa
     optional<IntegerVariableID> result = nullopt;
     Integer sz{ 0 };
 
-    if (_imp->branch_on) {
-        for (auto & var : *_imp->branch_on) {
-            Integer s = state.domain_size(var);
-            if (s > Integer{ 1 } && (nullopt == result || s < sz)) {
-                result = var;
-                sz = s;
-            }
-        }
-    }
-    else if (_imp->last_integer_var) {
-        for (IntegerVariableID var{ 0 } ; var <= *_imp->last_integer_var ; ++std::get<unsigned long long>(var.index_or_const_value)) {
-            Integer s = state.domain_size(var);
-            if (s > Integer{ 1 } && (nullopt == result || s < sz)) {
-                result = var;
-                sz = s;
-            }
+    for (auto & var : (_imp->branch_on ? *_imp->branch_on : _imp->problem_variables)) {
+        Integer s = state.domain_size(var);
+        if (s > Integer{ 1 } && (nullopt == result || s < sz)) {
+            result = var;
+            sz = s;
         }
     }
 
@@ -84,6 +85,8 @@ auto Problem::find_branching_variable(State & state) const -> optional<IntegerVa
 
 auto Problem::post(Constraint && c) -> void
 {
+    if (optional_proof())
+        optional_proof()->posting(c.describe_for_proof());
     move(c).convert_to_low_level(_imp->constraints, _imp->initial_state);
 }
 
@@ -92,5 +95,10 @@ auto Problem::branch_on(const std::vector<IntegerVariableID> & v) -> void
     if (! _imp->branch_on)
         _imp->branch_on.emplace();
     _imp->branch_on->insert(_imp->branch_on->end(), v.begin(), v.end());
+}
+
+auto Problem::optional_proof() const -> std::optional<Proof> &
+{
+    return _imp->optional_proof;
 }
 

@@ -21,6 +21,9 @@ namespace
         if (problem.propagate(state)) {
             auto branch_var = problem.find_branching_variable(state);
             if (branch_var == nullopt) {
+                if (problem.optional_proof())
+                    problem.optional_proof()->solution(state);
+
                 ++stats.solutions;
                 if (! callback(state))
                     return false;
@@ -42,6 +45,9 @@ namespace
             }
         }
 
+        if (problem.optional_proof())
+            problem.optional_proof()->backtrack(state);
+
         return true;
     }
 }
@@ -51,8 +57,13 @@ auto gcs::solve(const Problem & problem, SolutionCallback callback) -> Stats
     Stats stats;
     auto start_time = steady_clock::now();
 
+    if (problem.optional_proof())
+        problem.optional_proof()->start_proof();
+
     State state = problem.create_state();
-    solve_with_state(0, stats, problem, state, callback);
+    if (solve_with_state(0, stats, problem, state, callback))
+        if (problem.optional_proof())
+            problem.optional_proof()->assert_contradiction();
 
     stats.solve_time = duration_cast<microseconds>(steady_clock::now() - start_time);
     return stats;
