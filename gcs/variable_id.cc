@@ -21,7 +21,7 @@ auto gcs::debug_string(const BooleanVariableID & var) -> string
 {
     return visit(overloaded {
             [] (unsigned long long x) { return to_string(x); },
-            [] (Integer x)            { return "const " + to_string(x.raw_value); }
+            [] (bool x)               { return "const " + to_string(x); }
             }, var.index_or_const_value);
 }
 
