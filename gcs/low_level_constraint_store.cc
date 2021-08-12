@@ -48,6 +48,18 @@ LowLevelConstraintStore::LowLevelConstraintStore(Problem * p) :
 
 LowLevelConstraintStore::~LowLevelConstraintStore() = default;
 
+auto LowLevelConstraintStore::trim_lower_bound(const State & state, IntegerVariableID var, Integer val) -> void
+{
+    if (state.lower_bound(var) < val)
+        cnf({ var >= val }, true);
+}
+
+auto LowLevelConstraintStore::trim_upper_bound(const State & state, IntegerVariableID var, Integer val) -> void
+{
+    if (state.upper_bound(var) > val)
+        cnf({ var < val + 1_i }, true);
+}
+
 auto LowLevelConstraintStore::cnf(Literals && c, bool propagating) -> void
 {
     sanitise_literals(c);

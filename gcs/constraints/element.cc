@@ -31,8 +31,8 @@ auto Element::convert_to_low_level(LowLevelConstraintStore & constraints, const 
     }
 
     // _idx_var >= 0, _idx_var < _vars.size()
-    constraints.cnf({ _idx_var >= 0_i }, true);
-    constraints.cnf({ _idx_var < Integer(_vars.size()) }, true);
+    constraints.trim_lower_bound(initial_state, _idx_var, 0_i);
+    constraints.trim_upper_bound(initial_state, _idx_var, Integer(_vars.size()));
 
     // _var <= max(upper(_vars)), _var >= min(lower(_vars))
     // ...and this should really be just over _vars that _idx_var might cover
@@ -42,8 +42,9 @@ auto Element::convert_to_low_level(LowLevelConstraintStore & constraints, const 
     auto min_lower = initial_state.lower_bound(*min_element(_vars.begin(), _vars.end(), [&] (const IntegerVariableID & v, const IntegerVariableID & w) {
                 return initial_state.lower_bound(v) < initial_state.lower_bound(w);
                 }));
-    constraints.cnf({ _var < max_upper + 1_i }, true);
-    constraints.cnf({ _var >= min_lower }, true);
+
+    constraints.trim_lower_bound(initial_state, _var, min_lower);
+    constraints.trim_upper_bound(initial_state, _var, max_upper);
 
     for_each_with_index(_vars, [&] (auto & v, auto idx) {
         // _idx_var == i -> _var == _vars[idx]

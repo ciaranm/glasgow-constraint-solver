@@ -35,6 +35,9 @@ namespace gcs
 
             [[ nodiscard ]] auto want_nonpropagating() const -> bool;
 
+            auto trim_lower_bound(const State &, IntegerVariableID var, Integer val) -> void;
+            auto trim_upper_bound(const State &, IntegerVariableID var, Integer val) -> void;
+
             auto cnf(Literals && lits, bool propagating) -> void;
             auto lin_le(Linear && coeff_vars, Integer value) -> void;
             auto propagator(PropagationFunction &&, const std::vector<VariableID> & trigger_vars) -> void;

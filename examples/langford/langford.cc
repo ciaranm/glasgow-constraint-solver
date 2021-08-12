@@ -22,7 +22,7 @@ auto main(int, char * []) -> int
 {
     int k = 7;
 
-    Problem p;
+    Problem p{ Proof{ "langford.opb", "langford.veripb" } };
     vector<IntegerVariableID> position, solution;
     for (int i = 0 ; i < 2 * k ; ++i) {
         position.push_back(p.create_integer_variable(0_i, Integer{ 2 * k - 1 }));
