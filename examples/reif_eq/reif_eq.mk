@@ -7,9 +7,9 @@ SRC_INCDIRS := ../..
 
 TGT_PREREQS := libglasgow_constraint_solver.a
 ifeq ($(shell uname -s), Linux)
-TGT_LDLIBS := libglasgow_constraint_solver.a $(boost_ldlibs) -lstdc++fs
+TGT_LDLIBS := libglasgow_constraint_solver.a -lstdc++fs
 else
-TGT_LDLIBS := libglasgow_constraint_solver.a $(boost_ldlibs)
+TGT_LDLIBS := libglasgow_constraint_solver.a
 endif
 
 
