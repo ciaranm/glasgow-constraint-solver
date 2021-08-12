@@ -22,8 +22,12 @@ auto gcs::debug_string(const Literal & lit) -> string
                 }
                 throw NonExhaustiveSwitch{ };
             },
-            [] (const LiteralFromBooleanVariable &) -> string {
-                throw UnimplementedException{ };
+            [] (const LiteralFromBooleanVariable & blit) -> string {
+                switch (blit.state) {
+                    case LiteralFromBooleanVariable::True:  return "boolvars[" + debug_string(blit.var) + "]";
+                    case LiteralFromBooleanVariable::False: return "!boolvars[" + debug_string(blit.var) + "]";
+                }
+                throw NonExhaustiveSwitch{ };
             }
             }, lit);
 }
