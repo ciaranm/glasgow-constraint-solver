@@ -26,3 +26,8 @@ auto LinearEquality::convert_to_low_level(LowLevelConstraintStore & constraints,
     constraints.lin_le(move(_coeff_vars), _value);
 }
 
+auto LinearEquality::describe_for_proof() -> std::string
+{
+    return "linear equality";
+}
+

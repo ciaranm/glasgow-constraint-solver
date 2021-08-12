@@ -51,3 +51,8 @@ auto Element::convert_to_low_level(LowLevelConstraintStore & constraints, const 
     });
 }
 
+auto Element::describe_for_proof() -> std::string
+{
+    return "arithmetic";
+}
+

@@ -44,3 +44,8 @@ auto Abs::convert_to_low_level(LowLevelConstraintStore & constraints, const Stat
     }
 }
 
+auto Abs::describe_for_proof() -> std::string
+{
+    return "abs";
+}
+

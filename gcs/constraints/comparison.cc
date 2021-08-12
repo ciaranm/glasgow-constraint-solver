@@ -66,6 +66,11 @@ auto ComparisonReif::_convert_to_low_level_less_than(LowLevelConstraintStore & c
         throw UnimplementedException{ };
 
     for (auto v = initial_state.lower_bound(_v2) ; v <= initial_state.upper_bound(_v2) ; ++v)
-        constraints.cnf( { { ! _cond }, { _v2 != v }, { _v1 < (equal ? v + 1_i : v) } } );
+        constraints.cnf( { { ! _cond }, { _v2 != v }, { _v1 < (equal ? v + 1_i : v) } });
+}
+
+auto ComparisonReif::describe_for_proof() -> std::string
+{
+    return "comparison";
 }
 

@@ -28,6 +28,7 @@ namespace gcs
         public:
             explicit Arithmetic(const IntegerVariableID v1, const IntegerVariableID v2, const IntegerVariableID result);
 
+            virtual auto describe_for_proof() -> std::string override;
             virtual auto convert_to_low_level(LowLevelConstraintStore &, const State &) && -> void override;
     };
 

@@ -31,6 +31,7 @@ namespace gcs
         public:
             explicit ComparisonReif(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond, bool full_reif, ComparisonOperator op);
 
+            virtual auto describe_for_proof() -> std::string override;
             virtual auto convert_to_low_level(LowLevelConstraintStore &, const State &) && -> void override;
     };
 

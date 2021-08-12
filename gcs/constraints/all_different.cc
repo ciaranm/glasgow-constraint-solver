@@ -317,3 +317,8 @@ auto AllDifferent::convert_to_low_level(LowLevelConstraintStore & constraints, c
             }, var_ids);
 }
 
+auto AllDifferent::describe_for_proof() -> std::string
+{
+    return "all different";
+}
+

@@ -19,6 +19,7 @@ namespace gcs
         public:
             explicit ArrayMinMax(const std::vector<IntegerVariableID> & vars, const IntegerVariableID result, bool min);
 
+            virtual auto describe_for_proof() -> std::string override;
             virtual auto convert_to_low_level(LowLevelConstraintStore &, const State &) && -> void override;
     };
 

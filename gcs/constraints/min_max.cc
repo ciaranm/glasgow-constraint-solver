@@ -57,6 +57,11 @@ auto ArrayMinMax::convert_to_low_level(LowLevelConstraintStore & constraints, co
             });
 }
 
+auto ArrayMinMax::describe_for_proof() -> std::string
+{
+    return "array min max";
+}
+
 Min::Min(const IntegerVariableID v1, const IntegerVariableID v2, const IntegerVariableID result) :
     ArrayMinMax(_vs, result, true),
     _vs({ v1, v2 })

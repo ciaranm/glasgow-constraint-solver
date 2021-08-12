@@ -20,6 +20,7 @@ namespace gcs
         public:
             explicit Element(IntegerVariableID var, IntegerVariableID idx_var, const std::vector<IntegerVariableID> & vars);
 
+            virtual auto describe_for_proof() -> std::string override;
             virtual auto convert_to_low_level(LowLevelConstraintStore &, const State &) && -> void override;
     };
 }

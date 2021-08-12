@@ -52,6 +52,12 @@ auto Arithmetic<op_>::convert_to_low_level(LowLevelConstraintStore & store, cons
     store.table(vector{ _v1, _v2, _result }, move(permitted));
 }
 
+template <ArithmeticOperator op_>
+auto Arithmetic<op_>::describe_for_proof() -> std::string
+{
+    return "arithmetic";
+}
+
 template class Arithmetic<ArithmeticOperator::Plus>;
 template class Arithmetic<ArithmeticOperator::Minus>;
 template class Arithmetic<ArithmeticOperator::Times>;

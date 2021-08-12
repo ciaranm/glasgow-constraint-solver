@@ -4,6 +4,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINT_HH 1
 
 #include <functional>
+#include <string>
 
 namespace gcs
 {
@@ -24,6 +25,7 @@ namespace gcs
         public:
             virtual ~Constraint() = 0;
 
+            virtual auto describe_for_proof() -> std::string = 0;
             virtual auto convert_to_low_level(LowLevelConstraintStore &, const State &) && -> void = 0;
     };
 }

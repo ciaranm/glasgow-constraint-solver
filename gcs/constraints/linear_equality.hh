@@ -21,6 +21,7 @@ namespace gcs
         public:
             explicit LinearEquality(Linear && coeff_vars, Integer value);
 
+            virtual auto describe_for_proof() -> std::string override;
             virtual auto convert_to_low_level(LowLevelConstraintStore &, const State &) && -> void override;
     };
 }
