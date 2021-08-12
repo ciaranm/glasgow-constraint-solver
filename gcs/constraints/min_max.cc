@@ -33,11 +33,11 @@ auto ArrayMinMax::convert_to_low_level(LowLevelConstraintStore & constraints, co
     for_each_with_index(_vars, [&] (IntegerVariableID var, auto idx) {
             // (selector == idx /\ var == val) -> result == val
             initial_state.for_each_value(var, [&] (Integer val) {
-                    constraints.cnf({ selector != Integer(idx), var != val, _result == val });
+                    constraints.cnf({ selector != Integer(idx), var != val, _result == val }, true);
                     });
             // (selector == idx /\ result == r) -> var == r
             initial_state.for_each_value(_result, [&] (Integer r) {
-                    constraints.cnf({ selector != Integer(idx), _result != r, var == r });
+                    constraints.cnf({ selector != Integer(idx), _result != r, var == r }, true);
                     });
     });
 
@@ -49,7 +49,7 @@ auto ArrayMinMax::convert_to_low_level(LowLevelConstraintStore & constraints, co
                         // v1 == v2 -> selector != v2
                         initial_state.for_each_value(v1, [&] (Integer val) {
                                 if (initial_state.in_domain(v2, val)) {
-                                    constraints.cnf({ v1 != val, v2 != val, selector != Integer(v2_idx) });
+                                    constraints.cnf({ v1 != val, v2 != val, selector != Integer(v2_idx) }, true);
                                 }
                             });
                     }

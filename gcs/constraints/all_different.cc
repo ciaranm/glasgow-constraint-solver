@@ -307,7 +307,7 @@ auto AllDifferent::convert_to_low_level(LowLevelConstraintStore & constraints, c
         for ( ; lower <= upper ; ++lower)
             if (initial_state.in_domain(v, lower) && initial_state.in_domain(w, lower)) {
                 // can't have both variables taking that value
-                constraints.cnf({ v != lower, w != lower });
+                constraints.cnf({ v != lower, w != lower }, true);
             }
     });
 

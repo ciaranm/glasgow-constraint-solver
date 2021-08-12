@@ -33,8 +33,9 @@ namespace gcs
             LowLevelConstraintStore(const LowLevelConstraintStore &) = delete;
             LowLevelConstraintStore & operator= (const LowLevelConstraintStore &) = delete;
 
-            auto cnf(Literals && lits) -> void;
+            [[ nodiscard ]] auto want_nonpropagating() const -> bool;
 
+            auto cnf(Literals && lits, bool propagating) -> void;
             auto lin_le(Linear && coeff_vars, Integer value) -> void;
             auto propagator(PropagationFunction &&, const std::vector<VariableID> & trigger_vars) -> void;
             auto table(std::vector<IntegerVariableID> &&, std::vector<std::vector<Integer> > &&) -> void;

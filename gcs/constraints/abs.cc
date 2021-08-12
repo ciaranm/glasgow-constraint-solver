@@ -21,26 +21,26 @@ auto Abs::convert_to_low_level(LowLevelConstraintStore & constraints, const Stat
 {
     // _v2 >= 0
     if (initial_state.lower_bound(_v2) < 0_i)
-        constraints.cnf({ _v2 >= 0_i });
+        constraints.cnf({ _v2 >= 0_i }, true);
 
     // _v1 <= upper_bound(_v2)
     if (initial_state.upper_bound(_v1) > initial_state.upper_bound(_v2))
-        constraints.cnf({ _v1 < initial_state.upper_bound(_v2) + 1_i });
+        constraints.cnf({ _v1 < initial_state.upper_bound(_v2) + 1_i }, true);
 
     // _v1 >= -upper_bound(_v2)
     if (initial_state.upper_bound(_v1) < -initial_state.upper_bound(_v2))
-        constraints.cnf({ _v1 >= -initial_state.upper_bound(_v2) });
+        constraints.cnf({ _v1 >= -initial_state.upper_bound(_v2) }, true);
 
     // _v2 <= max(upper_bound(_v1), -lower_bound(_v1))
     auto v2u = max(initial_state.upper_bound(_v1), -initial_state.lower_bound(_v1));
     if (initial_state.upper_bound(_v2) > v2u)
-        constraints.cnf({ _v2 < v2u + 1_i });
+        constraints.cnf({ _v2 < v2u + 1_i }, true);
 
     // _v2 == x <-> _v1 == x || _v1 == -x
     for (auto x = max(0_i, initial_state.lower_bound(_v2)) ; x <= v2u ; ++x) {
-        constraints.cnf({ _v2 != x, _v1 == x, _v1 == -x });
-        constraints.cnf({ _v1 != x, _v2 == x });
-        constraints.cnf({ _v1 != -x, _v2 == x });
+        constraints.cnf({ _v2 != x, _v1 == x, _v1 == -x }, true);
+        constraints.cnf({ _v1 != x, _v2 == x }, true);
+        constraints.cnf({ _v1 != -x, _v2 == x }, true);
     }
 }
 

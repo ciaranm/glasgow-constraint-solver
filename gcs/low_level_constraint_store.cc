@@ -48,13 +48,14 @@ LowLevelConstraintStore::LowLevelConstraintStore(Problem * p) :
 
 LowLevelConstraintStore::~LowLevelConstraintStore() = default;
 
-auto LowLevelConstraintStore::cnf(Literals && c) -> void
+auto LowLevelConstraintStore::cnf(Literals && c, bool propagating) -> void
 {
     sanitise_literals(c);
     if (_imp->problem->optional_proof())
         _imp->problem->optional_proof()->cnf(c);
 
-    _imp->cnfs.emplace_back(move(c));
+    if (propagating)
+        _imp->cnfs.emplace_back(move(c));
 }
 
 auto LowLevelConstraintStore::lin_le(Linear && coeff_vars, Integer value) -> void
@@ -253,5 +254,10 @@ auto LowLevelConstraintStore::propagate_lin_les(State & state) const -> Inferenc
 auto LowLevelConstraintStore::create_auxilliary_integer_variable(Integer l, Integer u, const std::string & s, bool need_ge) -> IntegerVariableID
 {
     return _imp->problem->create_integer_variable(l, u, make_optional("aux_" + s), need_ge);
+}
+
+auto LowLevelConstraintStore::want_nonpropagating() const -> bool
+{
+    return _imp->problem->optional_proof() != nullopt;
 }
 
