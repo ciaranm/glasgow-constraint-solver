@@ -258,16 +258,8 @@ auto Proof::solution(const State & state) -> void
 {
     _imp->proof << "* solution" << endl;
     _imp->proof << "v";
-    for (auto & [ lit, name ] : _imp->integer_variables) {
-        bool want_true = false, show = true;
-        switch (lit.state) {
-            case LiteralFromIntegerVariable::GreaterEqual: want_true = state(lit.var) >= lit.value; break;
-            case LiteralFromIntegerVariable::Equal:        want_true = state(lit.var) == lit.value; break;
-            case LiteralFromIntegerVariable::Less:         show = false; break;
-            case LiteralFromIntegerVariable::NotEqual:     show = false; break;
-        }
-        if (show)
-            _imp->proof << " " << (want_true ? "" : "~") << name;
+    for (auto & var : _imp->solution_variables) {
+        _imp->proof << " " << proof_variable(var == state(var));
     }
 
     _imp->proof << endl;
