@@ -27,7 +27,11 @@ namespace gcs
     {
     };
 
-    using Justification = std::variant<Guess, JustifyUsingRUP, JustifyUsingAssertion, JustifyExplicitly>;
+    struct NoJustificationNeeded
+    {
+    };
+
+    using Justification = std::variant<Guess, JustifyUsingRUP, JustifyUsingAssertion, JustifyExplicitly, NoJustificationNeeded>;
 }
 
 #endif

@@ -324,6 +324,8 @@ auto Proof::infer(const State & state, const Literal & lit, Justification why) -
                         _imp->proof << " " << proof_variable(lit);
                         });
                 _imp->proof << " ]" << endl;
+            },
+            [] (const NoJustificationNeeded &) {
             }
         }, why);
 }

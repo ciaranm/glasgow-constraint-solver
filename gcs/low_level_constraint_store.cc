@@ -182,7 +182,7 @@ auto LowLevelConstraintStore::propagate_table(const Table & table, State & state
                         is_feasible = false;
                     });
             if (! is_feasible) {
-                switch (state.infer(table.selector != Integer(tuple_idx), JustifyUsingRUP{ })) {
+                switch (state.infer(table.selector != Integer(tuple_idx), NoJustificationNeeded{ })) {
                     case Inference::NoChange:      break;
                     case Inference::Change:        changed = true; break;
                     case Inference::Contradiction: contradiction = true; break;
@@ -257,7 +257,7 @@ auto LowLevelConstraintStore::propagate_cnfs(State & state) const -> Inference
         if (nonfalsified_literals.size() == 0)
             return Inference::Contradiction;
         else if (nonfalsified_literals.size() == 1) {
-            switch (state.infer(nonfalsified_literals[0], JustifyUsingRUP{ })) {
+            switch (state.infer(nonfalsified_literals[0], NoJustificationNeeded{ })) {
                 case Inference::Contradiction: return Inference::Contradiction;
                 case Inference::NoChange:      break;
                 case Inference::Change:        changed = true; break;
