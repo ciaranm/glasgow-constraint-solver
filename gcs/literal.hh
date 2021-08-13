@@ -67,6 +67,8 @@ namespace gcs
 
     using Literals = std::vector<Literal>;
 
+    using WeightedLiterals = std::vector<std::pair<Integer, Literal> >;
+
     [[ nodiscard ]] auto sanitise_literals(Literals &) -> bool;
 }
 

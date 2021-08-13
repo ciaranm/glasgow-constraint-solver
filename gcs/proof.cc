@@ -201,6 +201,17 @@ auto Proof::at_most_one(const Literals & lits) -> ProofLine
     return ++_imp->model_constraints;
 }
 
+auto Proof::pseudoboolean(const WeightedLiterals & lits, Integer val) -> ProofLine
+{
+    for (auto & [ w, lit ] : lits) {
+        visit([&] (const auto & lit) {
+                _imp->opb << w << " " << proof_variable(lit) << " ";
+                }, lit);
+    }
+    _imp->opb << ">= " << val << " ;" << endl;
+    return ++_imp->model_constraints;
+}
+
 auto Proof::proof_variable(const LiteralFromIntegerVariable & lit) const -> const string &
 {
     // This might need a design rethink: if we get a constant variable, turn it into either

@@ -86,6 +86,17 @@ auto LowLevelConstraintStore::at_most_one(Literals && lits, bool propagating) ->
         return nullopt;
 }
 
+auto LowLevelConstraintStore::pseudoboolean(WeightedLiterals && lits, Integer val, bool propagating) -> std::optional<ProofLine>
+{
+    if (propagating)
+        throw UnimplementedException{ };
+
+    if (_imp->problem->optional_proof())
+        return _imp->problem->optional_proof()->pseudoboolean(lits, val);
+    else
+        return nullopt;
+}
+
 auto LowLevelConstraintStore::lin_le(Linear && coeff_vars, Integer value) -> void
 {
     sanitise_linear(coeff_vars);
@@ -105,13 +116,16 @@ auto LowLevelConstraintStore::table(vector<IntegerVariableID> && vars, vector<ve
     int id = _imp->propagation_functions.size();
     auto selector = create_auxilliary_integer_variable(0_i, Integer(permitted.size() - 1), "table", false);
 
-    // cnf encoding, if necessary
+    // pb encoding, if necessary
     if (want_nonpropagating()) {
         for_each_with_index(permitted, [&] (const auto & tuple, auto tuple_idx) {
+                // selector == tuple_idx -> /\_i vars[i] == tuple[i]
+                WeightedLiterals lits;
+                lits.emplace_back(Integer(tuple.size()), selector != Integer(tuple_idx));
                 for_each_with_index(vars, [&] (IntegerVariableID var, auto var_idx) {
-                    // selector == tuple_idx -> var == tuple[var_idx]
-                    cnf({ selector != Integer(tuple_idx), var == tuple[var_idx] }, false);
+                        lits.emplace_back(1_i, var == tuple[var_idx]);
                 });
+                pseudoboolean(move(lits), Integer(tuple.size()), false);
             });
     }
 

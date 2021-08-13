@@ -56,6 +56,7 @@ namespace gcs
             auto create_integer_variable(IntegerVariableID, Integer, Integer, const std::optional<std::string> &, bool need_ge) -> void;
             [[ nodiscard ]] auto cnf(const Literals &) -> ProofLine;
             [[ nodiscard ]] auto at_most_one(const Literals &) -> ProofLine;
+            [[ nodiscard ]] auto pseudoboolean(const WeightedLiterals &, Integer) -> ProofLine;
 
             // Proof-related output
             auto start_proof() -> void;
