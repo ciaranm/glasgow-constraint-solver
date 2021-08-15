@@ -18,3 +18,7 @@ High Priority TODO Items
 - Can we isolate innards from user API?
 
 - Linear constraints are a mess.
+
+- Proofs should make use of deletions and levels.
+
+- Better comment names for constraints in the OPB files.
