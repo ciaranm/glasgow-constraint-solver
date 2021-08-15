@@ -151,7 +151,6 @@ auto LowLevelConstraintStore::propagate(State & state) const -> bool
 
                 propagation_queue.emplace(0);
                 propagation_queue.emplace(1);
-                propagation_queue.emplace(2);
                 });
 
         if (propagation_queue.empty())
