@@ -47,6 +47,9 @@ namespace gcs
 
             auto branch_on(const std::vector<IntegerVariableID> &) -> void;
 
+            auto minimise(IntegerVariableID) -> void;
+            auto update_objective(const State &) -> void;
+
             auto optional_proof() const -> std::optional<Proof> &;
     };
 }

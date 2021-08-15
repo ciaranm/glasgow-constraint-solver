@@ -58,8 +58,10 @@ namespace gcs
             [[ nodiscard ]] auto at_most_one(const Literals &) -> ProofLine;
             [[ nodiscard ]] auto pseudoboolean(const WeightedLiterals &, Integer) -> ProofLine;
 
+            auto minimise(IntegerVariableID) -> void;
+
             // Proof-related output
-            auto start_proof() -> void;
+            auto start_proof(State & initial_state) -> void;
 
             auto solution(const State &) -> void;
             auto backtrack(const State &) -> void;

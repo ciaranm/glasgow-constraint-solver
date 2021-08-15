@@ -19,6 +19,7 @@ using std::ifstream;
 using std::getline;
 using std::pair;
 using std::string;
+using std::to_string;
 using std::vector;
 
 auto main(int argc, char * argv[]) -> int
@@ -26,18 +27,10 @@ auto main(int argc, char * argv[]) -> int
     int size = 0;
     vector<pair<int, int> > edges;
     if (1 == argc) {
-        size = 12;
-        edges = {
-        { 0, 1 }, { 0, 4 }, { 0, 7 }, { 0, 9 }, { 0, 10 }, { 0, 11 },
-        { 1, 4 }, { 1, 7 }, { 1, 9 },
-        { 2, 3 }, { 2, 5 }, { 2, 9 }, { 2, 10 },
-        { 3, 5 },
-        { 4, 7 },
-        { 5, 6 }, { 5, 11 },
-        { 6, 8 }, { 6, 10 }, { 6, 11 },
-        { 7, 8 },
-        { 8, 9 }, { 8, 10 }, { 8, 11 },
-        { 9, 10 } };
+        size = 7;
+        // Robert Janczewski, Marek Kubale, Krzysztof Manuszewski, Konrad Piwakowski:
+        // The smallest hard-to-color graph for algorithm DSATUR. Discret. Math. 236(1-3): 151-165 (2001)
+        edges = { { 0, 1 }, { 0, 2 }, { 0, 3 }, { 1, 2 }, { 1, 4 }, { 3, 5 }, { 3, 6 }, { 4, 5 }, { 4, 6 }, { 5, 6 } };
     }
     else if (2 == argc) {
         ifstream inf{ argv[1] };
@@ -78,26 +71,26 @@ auto main(int argc, char * argv[]) -> int
         return EXIT_FAILURE;
     }
 
-    Problem p;
+    Problem p{ Proof{ "colour.opb", "colour.veripb" } };
 
     vector<IntegerVariableID> vertices;
     for (int v = 0 ; v != size ; ++v)
-        vertices.push_back(p.create_integer_variable(0_i, Integer{ size - 1 }));
+        vertices.push_back(p.create_integer_variable(0_i, Integer{ size - 1 }, "vertex" + to_string(v)));
 
     for (auto & [ f, t ] : edges)
         p.post(NotEquals{ vertices[f], vertices[t] });
 
-    p.branch_on(vertices);
-
-    IntegerVariableID colours = p.create_integer_variable(0_i, Integer{ size - 1 });
+    IntegerVariableID colours = p.create_integer_variable(0_i, Integer{ size - 1 }, "colours");
     p.post(ArrayMax{ vertices, colours });
+
+    p.branch_on(vertices);
+    p.minimise(colours);
 
     auto stats = solve(p, [&] (const State & s) -> bool {
             cout << s(colours) + 1_i << " colours:";
             for (auto & v : vertices)
                 cout << " " << s(v);
             cout << endl;
-            p.post(LessThan{ colours, constant_variable(s(colours)) });
 
             return true;
             });

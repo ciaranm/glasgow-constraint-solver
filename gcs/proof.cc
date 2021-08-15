@@ -48,6 +48,8 @@ struct Proof::Imp
     map<LiteralFromBooleanVariable, string> boolean_variables;
     list<IntegerVariableID> solution_variables;
     ProofLine proof_line = 0;
+    optional<IntegerVariableID> objective_variable;
+    optional<Integer> objective_variable_lower, objective_variable_upper;
 
     string opb_file, proof_file;
     stringstream opb;
@@ -158,10 +160,20 @@ auto Proof::create_integer_variable(IntegerVariableID id, Integer lower, Integer
     _imp->solution_variables.push_back(id);
 }
 
-auto Proof::start_proof() -> void
+auto Proof::start_proof(State & initial_state) -> void
 {
     ofstream full_opb{ _imp->opb_file };
     full_opb << "* #variable= " << _imp->model_variables << " #constraint= " << _imp->model_constraints << endl;
+
+    if (_imp->objective_variable) {
+        full_opb << "min:";
+        _imp->objective_variable_lower = initial_state.lower_bound(*_imp->objective_variable);
+        _imp->objective_variable_upper = initial_state.upper_bound(*_imp->objective_variable);
+        for (Integer lower = *_imp->objective_variable_lower ; lower <= *_imp->objective_variable_upper ; ++lower)
+            full_opb << " 1 " << proof_variable(*_imp->objective_variable >= lower);
+        full_opb << " ;" << endl;
+    }
+
     copy(istreambuf_iterator<char>{ _imp->opb }, istreambuf_iterator<char>{}, ostreambuf_iterator<char>{ full_opb });
     _imp->opb.clear();
 
@@ -212,6 +224,11 @@ auto Proof::pseudoboolean(const WeightedLiterals & lits, Integer val) -> ProofLi
     return ++_imp->model_constraints;
 }
 
+auto Proof::minimise(IntegerVariableID var) -> void
+{
+    _imp->objective_variable = var;
+}
+
 auto Proof::proof_variable(const LiteralFromIntegerVariable & lit) const -> const string &
 {
     // This might need a design rethink: if we get a constant variable, turn it into either
@@ -257,9 +274,21 @@ auto Proof::posting(const std::string & s) -> void
 auto Proof::solution(const State & state) -> void
 {
     _imp->proof << "* solution" << endl;
-    _imp->proof << "v";
-    for (auto & var : _imp->solution_variables) {
-        _imp->proof << " " << proof_variable(var == state(var));
+    _imp->proof << (_imp->objective_variable ? "o" : "v");
+
+    for (auto & var : _imp->solution_variables)
+        if ((! _imp->objective_variable) || (var != *_imp->objective_variable))
+            _imp->proof << " " << proof_variable(var == state(var));
+
+    if (_imp->objective_variable) {
+        Integer obj_val = state(*_imp->objective_variable);
+        for (Integer lower = *_imp->objective_variable_lower ; lower <= *_imp->objective_variable_upper ; ++lower)
+            _imp->proof << (obj_val < lower ? string(" ~") : string(" ")) << proof_variable(*_imp->objective_variable >= lower);
+
+        _imp->proof << endl;
+        ++_imp->proof_line;
+
+        _imp->proof << "u 1 " << proof_variable(*_imp->objective_variable < obj_val) << " >= 1 ;" << endl;
     }
 
     _imp->proof << endl;

@@ -13,7 +13,7 @@ using std::nullopt;
 
 namespace
 {
-    auto solve_with_state(unsigned long long depth, Stats & stats, const Problem & problem, State & state, SolutionCallback & callback) -> bool
+    auto solve_with_state(unsigned long long depth, Stats & stats, Problem & problem, State & state, SolutionCallback & callback) -> bool
     {
         stats.max_depth = max(stats.max_depth, depth);
         ++stats.recursions;
@@ -27,6 +27,8 @@ namespace
                 ++stats.solutions;
                 if (! callback(state))
                     return false;
+
+                problem.update_objective(state);
             }
             else {
                 bool keep_going = true;
@@ -52,15 +54,15 @@ namespace
     }
 }
 
-auto gcs::solve(const Problem & problem, SolutionCallback callback) -> Stats
+auto gcs::solve(Problem & problem, SolutionCallback callback) -> Stats
 {
     Stats stats;
     auto start_time = steady_clock::now();
 
-    if (problem.optional_proof())
-        problem.optional_proof()->start_proof();
-
     State state = problem.create_state();
+    if (problem.optional_proof())
+        problem.optional_proof()->start_proof(state);
+
     if (solve_with_state(0, stats, problem, state, callback))
         if (problem.optional_proof())
             problem.optional_proof()->assert_contradiction();

@@ -13,7 +13,7 @@ namespace gcs
 {
     using SolutionCallback = std::function<auto (const State &) -> bool>;
 
-    auto solve(const Problem &, SolutionCallback callback) -> Stats;
+    auto solve(Problem &, SolutionCallback callback) -> Stats;
 }
 
 #endif
