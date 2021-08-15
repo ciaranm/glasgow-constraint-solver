@@ -227,9 +227,9 @@ auto State::infer_integer(const LiteralFromIntegerVariable & ilit) -> Inference
                     },
                     [&] (IntegerRangeVariable & rvar) -> Inference {
                         bool changed = false;
-                        if (rvar.upper > ilit.value) {
+                        if (rvar.upper >= ilit.value) {
                             changed = true;
-                            rvar.upper = ilit.value;
+                            rvar.upper = ilit.value - 1_i;
                         }
                         if (rvar.lower == rvar.upper)
                             non_constant_integer_variable(ilit.var) = IntegerConstant{ rvar.lower };
