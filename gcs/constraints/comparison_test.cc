@@ -6,24 +6,62 @@
 
 #include <cstdlib>
 #include <functional>
+#include <iostream>
 #include <set>
 #include <tuple>
 #include <vector>
 #include <utility>
 
+using std::cerr;
+using std::endl;
 using std::function;
+using std::index_sequence;
+using std::make_index_sequence;
 using std::pair;
 using std::set;
+using std::string;
+using std::to_string;
 using std::tuple;
 using std::vector;
 
 using namespace gcs;
 
+template <typename T_, size_t... i_>
+auto stringify_tuple(const T_ & t, index_sequence<i_...>) -> string
+{
+    string result = "(";
+    (..., (result.append(i_ == 0 ? "" : ", ").append(to_string(get<i_>(t)))));
+    result.append(")");
+    return result;
+}
+
+template <typename... T_>
+auto stringify_tuple(const tuple<T_...> & t) -> string
+{
+    return stringify_tuple(t, make_index_sequence<sizeof...(T_)>());
+}
+
+template <typename P_, typename Q_>
+auto stringify_tuple(const pair<P_, Q_> & t) -> string
+{
+    return stringify_tuple(t, make_index_sequence<2>());
+}
+
 template <typename Results_>
 auto check_results(const Results_ & expected, const Results_ & actual) -> bool
 {
-    if (expected != actual)
+    if (expected != actual) {
+        cerr << "expected:";
+        for (auto & t : expected)
+            cerr << " " << stringify_tuple(t);
+        cerr << endl;
+        cerr << "actual:";
+        for (auto & t : actual)
+            cerr << " " << stringify_tuple(t);
+        cerr << endl;
+
         return false;
+    }
 
     if (0 != system("veripb comparison_test.opb comparison_test.veripb"))
         return false;
@@ -89,6 +127,26 @@ auto main(int, char *[]) -> int
         if (! run_binary_comparison_test<NotEquals>(r1, r2, [] (int a, int b) { return a != b; }))
             return EXIT_FAILURE;
         if (! run_reif_binary_comparison_test<EqualsIff>(r1, r2, [] (int a, int b) { return a == b; }))
+            return EXIT_FAILURE;
+        if (! run_reif_binary_comparison_test<NotEqualsIff>(r1, r2, [] (int a, int b) { return a != b; }))
+            return EXIT_FAILURE;
+
+        if (! run_binary_comparison_test<LessThan>(r1, r2, [] (int a, int b) { return a < b; }))
+            return EXIT_FAILURE;
+        if (! run_binary_comparison_test<LessThanEqual>(r1, r2, [] (int a, int b) { return a <= b; }))
+            return EXIT_FAILURE;
+        if (! run_binary_comparison_test<GreaterThan>(r1, r2, [] (int a, int b) { return a > b; }))
+            return EXIT_FAILURE;
+        if (! run_binary_comparison_test<GreaterThanEqual>(r1, r2, [] (int a, int b) { return a >= b; }))
+            return EXIT_FAILURE;
+
+        if (! run_reif_binary_comparison_test<LessThanIff>(r1, r2, [] (int a, int b) { return a < b; }))
+            return EXIT_FAILURE;
+        if (! run_reif_binary_comparison_test<LessThanEqualIff>(r1, r2, [] (int a, int b) { return a <= b; }))
+            return EXIT_FAILURE;
+        if (! run_reif_binary_comparison_test<GreaterThanIff>(r1, r2, [] (int a, int b) { return a > b; }))
+            return EXIT_FAILURE;
+        if (! run_reif_binary_comparison_test<GreaterThanEqualIff>(r1, r2, [] (int a, int b) { return a >= b; }))
             return EXIT_FAILURE;
     }
 
