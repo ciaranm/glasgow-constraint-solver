@@ -38,6 +38,11 @@ auto ComparisonReif::_convert_to_low_level_equals(LowLevelConstraintStore & cons
     auto lower_common = max(initial_state.lower_bound(_v1), initial_state.lower_bound(_v2));
     auto upper_common = min(initial_state.upper_bound(_v1), initial_state.upper_bound(_v2));
 
+    if (lower_common > upper_common) {
+        constraints.cnf(initial_state, { { ! _cond } }, true);
+        return;
+    }
+
     // _v1 < lower_common -> !cond, _v2 < lower_common -> !cond, _v1 > upper_common -> ! cond, _v2 > upper_common -> ! cond
     if (_full_reif) {
         if (initial_state.lower_bound(_v1) < lower_common)

@@ -3,6 +3,7 @@ TARGET_DIR := ./
 
 SUBMAKEFILES := \
     gcs/gcs.mk \
+    gcs/constraints/comparison_test.mk \
     examples/sum_all_different/sum_all_different.mk \
     examples/sudoku/sudoku.mk \
     examples/money/money.mk \
