@@ -65,11 +65,20 @@ auto ComparisonReif::_convert_to_low_level_less_than(LowLevelConstraintStore & c
     if (! _full_reif)
         throw UnimplementedException{ };
 
-    // v2 == v -> v1 (< or <=) v + 1
+    // cond -> (v2 == v -> v1 op v)
     for (auto v = initial_state.lower_bound(_v2) ; v <= initial_state.upper_bound(_v2) ; ++v) {
         auto bound = equal ? v + 1_i : v;
         if (initial_state.upper_bound(_v1) >= bound)
             constraints.cnf({ { ! _cond }, { _v2 != v }, { _v1 < bound } }, true);
+    }
+
+    // !cond -> exists v. v2 == v /\ v1 !op v
+    for (auto v = initial_state.lower_bound(_v2) ; v <= initial_state.upper_bound(_v2) ; ++v) {
+        auto bound = equal ? v : v + 1_i;
+        if (initial_state.upper_bound(_v1) >= bound)
+            constraints.cnf({ { _cond }, { _v2 != v }, { _v1 >= bound } }, true);
+        else
+            constraints.cnf({ { _cond }, { _v2 != v } }, true);
     }
 }
 

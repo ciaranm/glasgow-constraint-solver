@@ -74,6 +74,16 @@ namespace gcs
             {
             };
     };
+
+    class GreaterThanIff :
+        public ComparisonReif
+    {
+        public:
+            inline explicit GreaterThanIff(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond) :
+                ComparisonReif(v1, v2, ! cond, true, ComparisonOperator::LessThan)
+            {
+            };
+    };
 }
 
 #endif
