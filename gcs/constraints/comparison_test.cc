@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <functional>
 #include <iostream>
+#include <random>
 #include <set>
 #include <tuple>
 #include <vector>
@@ -17,11 +18,14 @@ using std::endl;
 using std::function;
 using std::index_sequence;
 using std::make_index_sequence;
+using std::mt19937;
 using std::pair;
+using std::random_device;
 using std::set;
 using std::string;
 using std::to_string;
 using std::tuple;
+using std::uniform_int_distribution;
 using std::vector;
 
 using namespace gcs;
@@ -48,20 +52,21 @@ auto stringify_tuple(const pair<P_, Q_> & t) -> string
 }
 
 template <typename Results_>
-auto check_results(const Results_ & expected, const Results_ & actual) -> bool
+auto check_results(pair<int, int> v1_range, pair<int, int> v2_range, const string & name, const Results_ & expected, const Results_ & actual) -> bool
 {
+    cerr << name << " " << stringify_tuple(v1_range) << " " << stringify_tuple(v2_range);
     if (expected != actual) {
-        cerr << "expected:";
+        cerr << " expected:";
         for (auto & t : expected)
             cerr << " " << stringify_tuple(t);
-        cerr << endl;
-        cerr << "actual:";
+        cerr << "; actual:";
         for (auto & t : actual)
             cerr << " " << stringify_tuple(t);
         cerr << endl;
 
         return false;
     }
+    cerr << endl;
 
     if (0 != system("veripb comparison_test.opb comparison_test.veripb"))
         return false;
@@ -87,7 +92,7 @@ auto run_binary_comparison_test(pair<int, int> v1_range, pair<int, int> v2_range
             return true;
             });
 
-    return check_results(expected, actual);
+    return check_results(v1_range, v2_range, typeid(Constraint_).name(), expected, actual);
 }
 
 template <typename Constraint_>
@@ -108,7 +113,7 @@ auto run_reif_binary_comparison_test(pair<int, int> v1_range, pair<int, int> v2_
             return true;
             });
 
-    return check_results(expected, actual);
+    return check_results(v1_range, v2_range, typeid(Constraint_).name(), expected, actual);
 }
 
 auto main(int, char *[]) -> int
@@ -120,6 +125,22 @@ auto main(int, char *[]) -> int
         { { 1, 5 }, { 6, 8 } },
         { { 1, 1 }, { 2, 4 } }
     };
+
+    random_device rand_dev;
+    mt19937 rand(rand_dev());
+    for (int x = 0 ; x < 10 ; ++x) {
+        uniform_int_distribution r1_lower_dist(-10, 10);
+        auto r1_lower = r1_lower_dist(rand);
+        uniform_int_distribution r1_upper_dist(r1_lower, r1_lower + 10);
+        auto r1_upper = r1_upper_dist(rand);
+
+        uniform_int_distribution r2_lower_dist(-10, 10);
+        auto r2_lower = r2_lower_dist(rand);
+        uniform_int_distribution r2_upper_dist(r2_lower, r2_lower + 10);
+        auto r2_upper = r2_upper_dist(rand);
+
+        data.emplace_back(pair{ r1_lower, r1_upper }, pair{ r2_lower, r2_upper });
+    }
 
     for (auto & [ r1, r2 ] : data) {
         if (! run_binary_comparison_test<Equals>(r1, r2, [] (int a, int b) { return a == b; }))
