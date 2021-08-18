@@ -12,7 +12,7 @@ LinearEquality::LinearEquality(Linear && coeff_vars, Integer value) :
 {
 }
 
-auto LinearEquality::convert_to_low_level(LowLevelConstraintStore & constraints, const State &) && -> void
+auto LinearEquality::convert_to_low_level(LowLevelConstraintStore & constraints, const State & initial_state) && -> void
 {
     sanitise_linear(_coeff_vars);
 
@@ -22,8 +22,8 @@ auto LinearEquality::convert_to_low_level(LowLevelConstraintStore & constraints,
     for (auto & [ c, v ] : _coeff_vars)
         inv_coeff_vars.emplace_back(-c, v);
 
-    constraints.integer_linear_le(move(inv_coeff_vars), -_value);
-    constraints.integer_linear_le(move(_coeff_vars), _value);
+    constraints.integer_linear_le(initial_state, move(inv_coeff_vars), -_value);
+    constraints.integer_linear_le(initial_state, move(_coeff_vars), _value);
 }
 
 auto LinearEquality::describe_for_proof() -> std::string

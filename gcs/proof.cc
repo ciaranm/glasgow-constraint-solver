@@ -53,7 +53,6 @@ struct Proof::Imp
     list<IntegerVariableID> solution_variables;
     optional<IntegerVariableID> objective_variable;
     optional<Integer> objective_variable_lower, objective_variable_upper;
-    list<pair<Linear, Integer> > pending_integer_linear_les;
 
     string opb_file, proof_file;
     stringstream opb;
@@ -181,38 +180,8 @@ auto Proof::create_integer_variable(IntegerVariableID id, Integer lower, Integer
     _imp->solution_variables.push_back(id);
 }
 
-auto Proof::write_pending_integer_linear_les(State & initial_state) -> void
-{
-    for (auto & [ lin, val ] : _imp->pending_integer_linear_les) {
-        _imp->opb << "* linear le";
-        for (auto & [ coeff, var ] : lin)
-            _imp->opb << " " << coeff << "*" << debug_string(var);
-        _imp->opb << " <= " << val << endl;
-
-        for (auto & [ coeff, var ] : lin) {
-            if (0_i == coeff)
-                continue;
-
-            auto lower = initial_state.lower_bound(var), upper = initial_state.upper_bound(var);
-            if (lower < 0_i || lower > 1_i)
-                throw UnimplementedException{ };
-
-            for ( ; lower <= upper ; ++lower)
-                if (lower != 0_i)
-                    _imp->opb << -coeff << " " << proof_variable(var >= lower) << " ";
-        }
-
-        _imp->opb << ">= " << -val << " ;" << endl;
-        ++_imp->model_constraints;
-    }
-
-    _imp->pending_integer_linear_les.clear();
-}
-
 auto Proof::start_proof(State & initial_state) -> void
 {
-    write_pending_integer_linear_les(initial_state);
-
     ofstream full_opb{ _imp->opb_file };
     full_opb << "* #variable= " << _imp->model_variables << " #constraint= " << _imp->model_constraints << endl;
 
@@ -275,9 +244,28 @@ auto Proof::pseudoboolean_ge(const WeightedLiterals & lits, Integer val) -> Proo
     return ++_imp->model_constraints;
 }
 
-auto Proof::integer_linear_le(const Linear & lits, Integer val) -> void
+auto Proof::integer_linear_le(const State & state, const Linear & lin, Integer val) -> void
 {
-    _imp->pending_integer_linear_les.emplace_back(lits, val);
+    _imp->opb << "* linear le";
+    for (auto & [ coeff, var ] : lin)
+        _imp->opb << " " << coeff << "*" << debug_string(var);
+    _imp->opb << " <= " << val << endl;
+
+    for (auto & [ coeff, var ] : lin) {
+        if (0_i == coeff)
+            continue;
+
+        auto lower = state.lower_bound(var), upper = state.upper_bound(var);
+        if (lower < 0_i || lower > 1_i)
+            throw UnimplementedException{ };
+
+        for ( ; lower <= upper ; ++lower)
+            if (lower != 0_i)
+                _imp->opb << -coeff << " " << proof_variable(var >= lower) << " ";
+    }
+
+    _imp->opb << ">= " << -val << " ;" << endl;
+    ++_imp->model_constraints;
 }
 
 auto Proof::minimise(IntegerVariableID var) -> void

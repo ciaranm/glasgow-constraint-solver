@@ -26,7 +26,7 @@ Element::Element(IntegerVariableID var, IntegerVariableID idx_var, const vector<
 auto Element::convert_to_low_level(LowLevelConstraintStore & constraints, const State & initial_state) && -> void
 {
     if (_vars.empty()) {
-        constraints.cnf({ }, true);
+        constraints.cnf(initial_state, { }, true);
         return;
     }
 

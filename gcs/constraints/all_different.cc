@@ -488,12 +488,12 @@ auto AllDifferent::convert_to_low_level(LowLevelConstraintStore & constraints, c
             for (auto & var : _vars)
                 if (initial_state.in_domain(var, val))
                     lits.emplace_back(var == val);
-            constraint_numbers.emplace(val, nullopt_to_zero(constraints.at_most_one(move(lits), false)));
+            constraint_numbers.emplace(val, nullopt_to_zero(constraints.at_most_one(initial_state, move(lits), false)));
         }
     }
 
     vector<VariableID> var_ids{ _vars.begin(), _vars.end() };
-    constraints.propagator([vars = move(_vars), save_constraint_numbers = move(constraint_numbers)] (State & state) -> Inference {
+    constraints.propagator(initial_state, [vars = move(_vars), save_constraint_numbers = move(constraint_numbers)] (State & state) -> Inference {
             return propagate_all_different(save_constraint_numbers, vars, state);
             }, var_ids);
 }

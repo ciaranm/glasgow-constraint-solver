@@ -42,8 +42,6 @@ namespace gcs
             auto proof_variable(const LiteralFromBooleanVariable &) const -> const std::string &;
             auto proof_variable(const Literal &) const -> const std::string &;
 
-            auto write_pending_integer_linear_les(State &) -> void;
-
         public:
             explicit Proof(const std::string & opb_file, const std::string & proof_file);
             ~Proof();
@@ -60,7 +58,7 @@ namespace gcs
             [[ nodiscard ]] auto cnf(const Literals &) -> ProofLine;
             [[ nodiscard ]] auto at_most_one(const Literals &) -> ProofLine;
             [[ nodiscard ]] auto pseudoboolean_ge(const WeightedLiterals &, Integer) -> ProofLine;
-            auto integer_linear_le(const Linear & coeff_vars, Integer value) -> void;
+            auto integer_linear_le(const State &, const Linear & coeff_vars, Integer value) -> void;
 
             auto minimise(IntegerVariableID) -> void;
 

@@ -51,16 +51,16 @@ LowLevelConstraintStore::~LowLevelConstraintStore() = default;
 auto LowLevelConstraintStore::trim_lower_bound(const State & state, IntegerVariableID var, Integer val) -> void
 {
     if (state.lower_bound(var) < val)
-        cnf({ var >= val }, true);
+        cnf(state, { var >= val }, true);
 }
 
 auto LowLevelConstraintStore::trim_upper_bound(const State & state, IntegerVariableID var, Integer val) -> void
 {
     if (state.upper_bound(var) > val)
-        cnf({ var < val + 1_i }, true);
+        cnf(state, { var < val + 1_i }, true);
 }
 
-auto LowLevelConstraintStore::cnf(Literals && c, bool propagating) -> optional<ProofLine>
+auto LowLevelConstraintStore::cnf(const State &, Literals && c, bool propagating) -> optional<ProofLine>
 {
     optional<ProofLine> result = nullopt;
 
@@ -75,7 +75,7 @@ auto LowLevelConstraintStore::cnf(Literals && c, bool propagating) -> optional<P
     return result;
 }
 
-auto LowLevelConstraintStore::at_most_one(Literals && lits, bool propagating) -> optional<ProofLine>
+auto LowLevelConstraintStore::at_most_one(const State &, Literals && lits, bool propagating) -> optional<ProofLine>
 {
     if (propagating)
         throw UnimplementedException{ };
@@ -86,7 +86,7 @@ auto LowLevelConstraintStore::at_most_one(Literals && lits, bool propagating) ->
         return nullopt;
 }
 
-auto LowLevelConstraintStore::pseudoboolean_ge(WeightedLiterals && lits, Integer val, bool propagating) -> std::optional<ProofLine>
+auto LowLevelConstraintStore::pseudoboolean_ge(const State &, WeightedLiterals && lits, Integer val, bool propagating) -> std::optional<ProofLine>
 {
     if (propagating)
         throw UnimplementedException{ };
@@ -97,17 +97,17 @@ auto LowLevelConstraintStore::pseudoboolean_ge(WeightedLiterals && lits, Integer
         return nullopt;
 }
 
-auto LowLevelConstraintStore::integer_linear_le(Linear && coeff_vars, Integer value) -> void
+auto LowLevelConstraintStore::integer_linear_le(const State & state, Linear && coeff_vars, Integer value) -> void
 {
     sanitise_linear(coeff_vars);
 
     if (_imp->problem->optional_proof())
-        _imp->problem->optional_proof()->integer_linear_le(coeff_vars, value);
+        _imp->problem->optional_proof()->integer_linear_le(state, coeff_vars, value);
 
     _imp->integer_linear_les.emplace_back(move(coeff_vars), value);
 }
 
-auto LowLevelConstraintStore::propagator(PropagationFunction && f, const vector<VariableID> & trigger_vars) -> void
+auto LowLevelConstraintStore::propagator(const State &, PropagationFunction && f, const vector<VariableID> & trigger_vars) -> void
 {
     int id = _imp->propagation_functions.size();
     _imp->propagation_functions.emplace(id, move(f));
@@ -115,7 +115,7 @@ auto LowLevelConstraintStore::propagator(PropagationFunction && f, const vector<
         _imp->triggers.try_emplace(t).first->second.push_back(id);
 }
 
-auto LowLevelConstraintStore::table(vector<IntegerVariableID> && vars, vector<vector<Integer> > && permitted) -> void
+auto LowLevelConstraintStore::table(const State & state, vector<IntegerVariableID> && vars, vector<vector<Integer> > && permitted) -> void
 {
     int id = _imp->propagation_functions.size();
     auto selector = create_auxilliary_integer_variable(0_i, Integer(permitted.size() - 1), "table", false);
@@ -129,7 +129,7 @@ auto LowLevelConstraintStore::table(vector<IntegerVariableID> && vars, vector<ve
                 for_each_with_index(vars, [&] (IntegerVariableID var, auto var_idx) {
                         lits.emplace_back(1_i, var == tuple[var_idx]);
                 });
-                pseudoboolean_ge(move(lits), Integer(tuple.size()), false);
+                pseudoboolean_ge(state, move(lits), Integer(tuple.size()), false);
             });
     }
 

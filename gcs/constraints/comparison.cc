@@ -41,23 +41,23 @@ auto ComparisonReif::_convert_to_low_level_equals(LowLevelConstraintStore & cons
     // _v1 < lower_common -> !cond, _v2 < lower_common -> !cond, _v1 > upper_common -> ! cond, _v2 > upper_common -> ! cond
     if (_full_reif) {
         if (initial_state.lower_bound(_v1) < lower_common)
-            constraints.cnf({ { _v1 >= lower_common }, { ! _cond } }, true);
+            constraints.cnf(initial_state, { { _v1 >= lower_common }, { ! _cond } }, true);
         if (initial_state.lower_bound(_v2) < lower_common)
-            constraints.cnf({ { _v2 >= lower_common }, { ! _cond } }, true);
+            constraints.cnf(initial_state, { { _v2 >= lower_common }, { ! _cond } }, true);
         if (initial_state.upper_bound(_v1) > upper_common)
-            constraints.cnf({ { _v1 < upper_common + 1_i }, { ! _cond } }, true);
+            constraints.cnf(initial_state, { { _v1 < upper_common + 1_i }, { ! _cond } }, true);
         if (initial_state.upper_bound(_v2) > upper_common)
-            constraints.cnf({ { _v2 < upper_common + 1_i }, { ! _cond } }, true);
+            constraints.cnf(initial_state, { { _v2 < upper_common + 1_i }, { ! _cond } }, true);
     }
 
     // (*cond and _v1 == v) -> _v2 == v
     for (auto v = lower_common ; v <= upper_common ; ++v)
-        constraints.cnf( { { _v1 != v }, { _v2 == v }, { ! _cond } }, true);
+        constraints.cnf(initial_state, { { _v1 != v }, { _v2 == v }, { ! _cond } }, true);
 
     // (! *cond and _v1 == v) -> _v2 != v
     if (_full_reif)
         for (auto v = lower_common ; v <= upper_common ; ++v)
-            constraints.cnf( { { _cond }, { _v1 != v }, { _v2 != v } }, true);
+            constraints.cnf(initial_state, { { _cond }, { _v1 != v }, { _v2 != v } }, true);
 }
 
 auto ComparisonReif::_convert_to_low_level_less_than(LowLevelConstraintStore & constraints, const State & initial_state, bool equal) && -> void
@@ -69,16 +69,16 @@ auto ComparisonReif::_convert_to_low_level_less_than(LowLevelConstraintStore & c
     for (auto v = initial_state.lower_bound(_v2) ; v <= initial_state.upper_bound(_v2) ; ++v) {
         auto bound = equal ? v + 1_i : v;
         if (initial_state.upper_bound(_v1) >= bound)
-            constraints.cnf({ { ! _cond }, { _v2 != v }, { _v1 < bound } }, true);
+            constraints.cnf(initial_state, { { ! _cond }, { _v2 != v }, { _v1 < bound } }, true);
     }
 
     // !cond -> exists v. v2 == v /\ v1 !op v
     for (auto v = initial_state.lower_bound(_v2) ; v <= initial_state.upper_bound(_v2) ; ++v) {
         auto bound = equal ? v : v + 1_i;
         if (initial_state.upper_bound(_v1) >= bound)
-            constraints.cnf({ { _cond }, { _v2 != v }, { _v1 >= bound } }, true);
+            constraints.cnf(initial_state, { { _cond }, { _v2 != v }, { _v1 >= bound } }, true);
         else
-            constraints.cnf({ { _cond }, { _v2 != v } }, true);
+            constraints.cnf(initial_state, { { _cond }, { _v2 != v } }, true);
     }
 }
 
