@@ -45,6 +45,16 @@ namespace gcs
             };
     };
 
+    class EqualsIff :
+        public ComparisonReif
+    {
+        public:
+            inline explicit EqualsIff(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond) :
+                ComparisonReif(v1, v2, cond, true, ComparisonOperator::Equals)
+            {
+            };
+    };
+
     class NotEquals :
         public ComparisonReif
     {
