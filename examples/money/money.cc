@@ -18,16 +18,16 @@ using std::vector;
 
 auto main(int, char * []) -> int
 {
-    Problem p;
+    Problem p{ Proof{ "money.opb", "money.veripb" } };
 
-    auto s = p.create_integer_variable(1_i, 9_i);
-    auto e = p.create_integer_variable(0_i, 9_i);
-    auto n = p.create_integer_variable(0_i, 9_i);
-    auto d = p.create_integer_variable(0_i, 9_i);
-    auto m = p.create_integer_variable(1_i, 9_i);
-    auto o = p.create_integer_variable(0_i, 9_i);
-    auto r = p.create_integer_variable(0_i, 9_i);
-    auto y = p.create_integer_variable(0_i, 9_i);
+    auto s = p.create_integer_variable(1_i, 9_i, "s");
+    auto e = p.create_integer_variable(0_i, 9_i, "e");
+    auto n = p.create_integer_variable(0_i, 9_i, "n");
+    auto d = p.create_integer_variable(0_i, 9_i, "d");
+    auto m = p.create_integer_variable(1_i, 9_i, "m");
+    auto o = p.create_integer_variable(0_i, 9_i, "o");
+    auto r = p.create_integer_variable(0_i, 9_i, "r");
+    auto y = p.create_integer_variable(0_i, 9_i, "y");
 
     vector<IntegerVariableID> vars{ s, e, n, d, m, o, r, y };
     p.post(AllDifferent{ vars });

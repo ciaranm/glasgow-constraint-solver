@@ -22,7 +22,7 @@ using std::vector;
 
 auto main(int, char * []) -> int
 {
-    Problem p;
+    Problem p{ Proof{ "ortho_latin.opb", "ortho_latin.veripb" } };
 
     int size = 5;
     vector<vector<IntegerVariableID> > g1, g2;
