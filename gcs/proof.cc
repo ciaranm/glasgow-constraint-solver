@@ -2,6 +2,7 @@
 
 #include <gcs/proof.hh>
 #include <gcs/state.hh>
+#include <gcs/exception.hh>
 
 #include <util/overloaded.hh>
 
@@ -24,6 +25,7 @@ using std::map;
 using std::ofstream;
 using std::ostreambuf_iterator;
 using std::optional;
+using std::pair;
 using std::string;
 using std::stringstream;
 using std::to_string;
@@ -43,13 +45,15 @@ struct Proof::Imp
 {
     unsigned long long model_variables = 0;
     ProofLine model_constraints = 0;
+    ProofLine proof_line = 0;
+
     map<IntegerVariableID, ProofLine> variable_at_least_one_constraints, variable_at_most_one_constraints;
     map<LiteralFromIntegerVariable, string> integer_variables;
     map<LiteralFromBooleanVariable, string> boolean_variables;
     list<IntegerVariableID> solution_variables;
-    ProofLine proof_line = 0;
     optional<IntegerVariableID> objective_variable;
     optional<Integer> objective_variable_lower, objective_variable_upper;
+    list<pair<Linear, Integer> > pending_integer_linear_les;
 
     string opb_file, proof_file;
     stringstream opb;
@@ -132,11 +136,13 @@ auto Proof::create_integer_variable(IntegerVariableID id, Integer lower, Integer
         ++_imp->model_constraints;
 
         for (Integer v = lower ; v <= upper ; ++v) {
+            // x >= v -> x >= v - 1
             if (v != lower) {
                 _imp->opb << "1 ~" << name << "_ge_" << value_name(v) << " 1 " << name << "_ge_" << value_name(v - 1_i) << " >= 1 ;" << endl;
                 ++_imp->model_constraints;
             }
 
+            // x < v -> x < v + 1
             if (v != upper) {
                 _imp->opb << "1 " << name << "_ge_" << value_name(v) << " 1 ~" << name << "_ge_" << value_name(v + 1_i) << " >= 1 ;" << endl;
                 ++_imp->model_constraints;
@@ -152,6 +158,21 @@ auto Proof::create_integer_variable(IntegerVariableID id, Integer lower, Integer
                 ++_imp->model_constraints;
             }
 
+            // x != v && x != v + 1 && ... -> x < v
+            for (Integer v2 = v ; v2 <= upper ; ++v2)
+                _imp->opb << "1 " << name << "_eq_" << value_name(v2) << " ";
+            _imp->opb << "1 ~" << name << "_ge_" << value_name(v) << " >= 1 ;" << endl;
+            ++_imp->model_constraints;
+
+            // (x >= v && x < v + 1) -> x == v
+            if (v != upper) {
+                _imp->opb << "1 ~" << name << "_ge_" << value_name(v)
+                    << " 1 " << name << "_ge_" << value_name(v + 1_i)
+                    << " 1 " + name << "_eq_" << value_name(v)
+                    << " >= 1 ;" << endl;
+                ++_imp->model_constraints;
+            }
+
             _imp->integer_variables.emplace(id >= v, name + "_ge_" + value_name(v));
             _imp->integer_variables.emplace(id < v, "~" + name + "_ge_" + value_name(v));
         }
@@ -160,8 +181,38 @@ auto Proof::create_integer_variable(IntegerVariableID id, Integer lower, Integer
     _imp->solution_variables.push_back(id);
 }
 
+auto Proof::write_pending_integer_linear_les(State & initial_state) -> void
+{
+    for (auto & [ lin, val ] : _imp->pending_integer_linear_les) {
+        _imp->opb << "* linear le";
+        for (auto & [ coeff, var ] : lin)
+            _imp->opb << " " << coeff << "*" << debug_string(var);
+        _imp->opb << " <= " << val << endl;
+
+        for (auto & [ coeff, var ] : lin) {
+            if (0_i == coeff)
+                continue;
+
+            auto lower = initial_state.lower_bound(var), upper = initial_state.upper_bound(var);
+            if (lower < 0_i || lower > 1_i)
+                throw UnimplementedException{ };
+
+            for ( ; lower <= upper ; ++lower)
+                if (lower != 0_i)
+                    _imp->opb << -coeff << " " << proof_variable(var >= lower) << " ";
+        }
+
+        _imp->opb << ">= " << -val << " ;" << endl;
+        ++_imp->model_constraints;
+    }
+
+    _imp->pending_integer_linear_les.clear();
+}
+
 auto Proof::start_proof(State & initial_state) -> void
 {
+    write_pending_integer_linear_les(initial_state);
+
     ofstream full_opb{ _imp->opb_file };
     full_opb << "* #variable= " << _imp->model_variables << " #constraint= " << _imp->model_constraints << endl;
 
@@ -213,7 +264,7 @@ auto Proof::at_most_one(const Literals & lits) -> ProofLine
     return ++_imp->model_constraints;
 }
 
-auto Proof::pseudoboolean(const WeightedLiterals & lits, Integer val) -> ProofLine
+auto Proof::pseudoboolean_ge(const WeightedLiterals & lits, Integer val) -> ProofLine
 {
     for (auto & [ w, lit ] : lits) {
         visit([&] (const auto & lit) {
@@ -222,6 +273,11 @@ auto Proof::pseudoboolean(const WeightedLiterals & lits, Integer val) -> ProofLi
     }
     _imp->opb << ">= " << val << " ;" << endl;
     return ++_imp->model_constraints;
+}
+
+auto Proof::integer_linear_le(const Linear & lits, Integer val) -> void
+{
+    _imp->pending_integer_linear_les.emplace_back(lits, val);
 }
 
 auto Proof::minimise(IntegerVariableID var) -> void

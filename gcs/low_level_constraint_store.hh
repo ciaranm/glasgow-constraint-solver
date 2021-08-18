@@ -23,7 +23,7 @@ namespace gcs
             std::unique_ptr<Imp> _imp;
 
             [[ nodiscard ]] auto propagate_cnfs(State &) const -> Inference;
-            [[ nodiscard ]] auto propagate_lin_les(State &) const -> Inference;
+            [[ nodiscard ]] auto propagate_integer_linear_les(State &) const -> Inference;
             [[ nodiscard ]] auto propagate_table(const Table &, State &) const -> Inference;
 
         public:
@@ -40,9 +40,9 @@ namespace gcs
 
             auto cnf(Literals && lits, bool propagating) -> std::optional<ProofLine>;
             auto at_most_one(Literals && lits, bool propagating) -> std::optional<ProofLine>;
-            auto pseudoboolean(WeightedLiterals && lits, Integer, bool propagating) -> std::optional<ProofLine>;
+            auto pseudoboolean_ge(WeightedLiterals && lits, Integer, bool propagating) -> std::optional<ProofLine>;
 
-            auto lin_le(Linear && coeff_vars, Integer value) -> void;
+            auto integer_linear_le(Linear && coeff_vars, Integer value) -> void;
             auto propagator(PropagationFunction &&, const std::vector<VariableID> & trigger_vars) -> void;
             auto table(std::vector<IntegerVariableID> &&, std::vector<std::vector<Integer> > &&) -> void;
 

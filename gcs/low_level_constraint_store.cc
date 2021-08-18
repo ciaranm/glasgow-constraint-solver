@@ -29,7 +29,7 @@ struct LowLevelConstraintStore::Imp
 {
     Problem * const problem;
     list<Literals> cnfs;
-    list<pair<Linear, Integer> > lin_les;
+    list<pair<Linear, Integer> > integer_linear_les;
     map<int, PropagationFunction> propagation_functions;
     map<VariableID, vector<int> > triggers;
 
@@ -43,7 +43,7 @@ LowLevelConstraintStore::LowLevelConstraintStore(Problem * p) :
     _imp(new Imp(p))
 {
     _imp->propagation_functions.emplace(0, [&] (State & s) { return propagate_cnfs(s); });
-    _imp->propagation_functions.emplace(1, [&] (State & s) { return propagate_lin_les(s); });
+    _imp->propagation_functions.emplace(1, [&] (State & s) { return propagate_integer_linear_les(s); });
 }
 
 LowLevelConstraintStore::~LowLevelConstraintStore() = default;
@@ -75,7 +75,7 @@ auto LowLevelConstraintStore::cnf(Literals && c, bool propagating) -> optional<P
     return result;
 }
 
-auto LowLevelConstraintStore::at_most_one(Literals && lits, bool propagating) -> std::optional<ProofLine>
+auto LowLevelConstraintStore::at_most_one(Literals && lits, bool propagating) -> optional<ProofLine>
 {
     if (propagating)
         throw UnimplementedException{ };
@@ -86,21 +86,25 @@ auto LowLevelConstraintStore::at_most_one(Literals && lits, bool propagating) ->
         return nullopt;
 }
 
-auto LowLevelConstraintStore::pseudoboolean(WeightedLiterals && lits, Integer val, bool propagating) -> std::optional<ProofLine>
+auto LowLevelConstraintStore::pseudoboolean_ge(WeightedLiterals && lits, Integer val, bool propagating) -> std::optional<ProofLine>
 {
     if (propagating)
         throw UnimplementedException{ };
 
     if (_imp->problem->optional_proof())
-        return _imp->problem->optional_proof()->pseudoboolean(lits, val);
+        return _imp->problem->optional_proof()->pseudoboolean_ge(lits, val);
     else
         return nullopt;
 }
 
-auto LowLevelConstraintStore::lin_le(Linear && coeff_vars, Integer value) -> void
+auto LowLevelConstraintStore::integer_linear_le(Linear && coeff_vars, Integer value) -> void
 {
     sanitise_linear(coeff_vars);
-    _imp->lin_les.emplace_back(move(coeff_vars), value);
+
+    if (_imp->problem->optional_proof())
+        _imp->problem->optional_proof()->integer_linear_le(coeff_vars, value);
+
+    _imp->integer_linear_les.emplace_back(move(coeff_vars), value);
 }
 
 auto LowLevelConstraintStore::propagator(PropagationFunction && f, const vector<VariableID> & trigger_vars) -> void
@@ -125,7 +129,7 @@ auto LowLevelConstraintStore::table(vector<IntegerVariableID> && vars, vector<ve
                 for_each_with_index(vars, [&] (IntegerVariableID var, auto var_idx) {
                         lits.emplace_back(1_i, var == tuple[var_idx]);
                 });
-                pseudoboolean(move(lits), Integer(tuple.size()), false);
+                pseudoboolean_ge(move(lits), Integer(tuple.size()), false);
             });
     }
 
@@ -267,11 +271,11 @@ auto LowLevelConstraintStore::propagate_cnfs(State & state) const -> Inference
     return changed ? Inference::Change : Inference::NoChange;
 }
 
-auto LowLevelConstraintStore::propagate_lin_les(State & state) const -> Inference
+auto LowLevelConstraintStore::propagate_integer_linear_les(State & state) const -> Inference
 {
     bool changed = false;
 
-    for (auto & ineq : _imp->lin_les) {
+    for (auto & ineq : _imp->integer_linear_les) {
         Integer lower{ 0 };
 
         for (auto & [ coeff, var ] : ineq.first)
@@ -282,7 +286,7 @@ auto LowLevelConstraintStore::propagate_lin_les(State & state) const -> Inferenc
             return Inference::Contradiction;
     }
 
-    for (auto & ineq : _imp->lin_les) {
+    for (auto & ineq : _imp->integer_linear_les) {
         // Propagation: what's the worst value a variable can take, if every
         // other variable is given its best value?
         for (auto & [ coeff, var ] : ineq.first) {
@@ -292,7 +296,8 @@ auto LowLevelConstraintStore::propagate_lin_les(State & state) const -> Inferenc
                     lower_without_me += (other_coeff >= 0_i) ? (other_coeff * state.lower_bound(other_var)) : (other_coeff * state.upper_bound(other_var));
 
             Integer remainder = ineq.second - lower_without_me;
-            switch (coeff >= 0_i ? state.infer(var < (1_i + remainder / coeff), JustifyUsingRUP{ }) : state.infer(var >= remainder / coeff, JustifyUsingRUP{ })) {
+            switch (coeff >= 0_i ?
+                    state.infer(var < (1_i + remainder / coeff), JustifyUsingRUP{ }) : state.infer(var >= remainder / coeff, JustifyUsingRUP{ })) {
                 case Inference::Change:        changed = true; break;
                 case Inference::NoChange:      break;
                 case Inference::Contradiction: return Inference::Contradiction;

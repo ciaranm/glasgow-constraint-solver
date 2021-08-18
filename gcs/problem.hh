@@ -5,7 +5,6 @@
 
 #include <gcs/constraint.hh>
 #include <gcs/variable_id.hh>
-#include <gcs/linear.hh>
 #include <gcs/literal.hh>
 #include <gcs/proof.hh>
 #include <gcs/state.hh>

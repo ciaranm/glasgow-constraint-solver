@@ -22,8 +22,8 @@ auto LinearEquality::convert_to_low_level(LowLevelConstraintStore & constraints,
     for (auto & [ c, v ] : _coeff_vars)
         inv_coeff_vars.emplace_back(-c, v);
 
-    constraints.lin_le(move(inv_coeff_vars), -_value);
-    constraints.lin_le(move(_coeff_vars), _value);
+    constraints.integer_linear_le(move(inv_coeff_vars), -_value);
+    constraints.integer_linear_le(move(_coeff_vars), _value);
 }
 
 auto LinearEquality::describe_for_proof() -> std::string

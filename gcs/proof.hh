@@ -3,10 +3,11 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROOF_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROOF_HH 1
 
-#include <gcs/variable_id.hh>
 #include <gcs/justification.hh>
+#include <gcs/linear.hh>
 #include <gcs/literal.hh>
 #include <gcs/state-fwd.hh>
+#include <gcs/variable_id.hh>
 
 #include <exception>
 #include <memory>
@@ -41,6 +42,8 @@ namespace gcs
             auto proof_variable(const LiteralFromBooleanVariable &) const -> const std::string &;
             auto proof_variable(const Literal &) const -> const std::string &;
 
+            auto write_pending_integer_linear_les(State &) -> void;
+
         public:
             explicit Proof(const std::string & opb_file, const std::string & proof_file);
             ~Proof();
@@ -56,7 +59,8 @@ namespace gcs
             auto create_integer_variable(IntegerVariableID, Integer, Integer, const std::optional<std::string> &, bool need_ge) -> void;
             [[ nodiscard ]] auto cnf(const Literals &) -> ProofLine;
             [[ nodiscard ]] auto at_most_one(const Literals &) -> ProofLine;
-            [[ nodiscard ]] auto pseudoboolean(const WeightedLiterals &, Integer) -> ProofLine;
+            [[ nodiscard ]] auto pseudoboolean_ge(const WeightedLiterals &, Integer) -> ProofLine;
+            auto integer_linear_le(const Linear & coeff_vars, Integer value) -> void;
 
             auto minimise(IntegerVariableID) -> void;
 
