@@ -15,6 +15,7 @@ perf.data.old
 /ortho_latin
 /three_all_differents
 /skyscrapers
+/arithmetic_test
 /comparison_test
 *.opb
 *.veripb
