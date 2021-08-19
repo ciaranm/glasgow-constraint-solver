@@ -96,12 +96,15 @@ auto run_binary_comparison_test(pair<int, int> v1_range, pair<int, int> v2_range
 }
 
 template <typename Constraint_>
-auto run_reif_binary_comparison_test(pair<int, int> v1_range, pair<int, int> v2_range, const function<auto (int, int) -> bool> & is_satisfing) -> bool
+auto run_reif_binary_comparison_test(pair<int, int> v1_range, pair<int, int> v2_range, const function<auto (int, int) -> bool> & is_satisfing, bool full) -> bool
 {
     set<tuple<int, int, int> > expected, actual;
     for (int v1 = v1_range.first ; v1 <= v1_range.second ; ++v1)
-        for (int v2 = v2_range.first ; v2 <= v2_range.second ; ++v2)
+        for (int v2 = v2_range.first ; v2 <= v2_range.second ; ++v2) {
             expected.emplace(v1, v2, is_satisfing(v1, v2));
+            if (! full)
+                expected.emplace(v1, v2, 0);
+        }
 
     Problem p{ Proof{ "comparison_test.opb", "comparison_test.veripb" } };
     auto v1 = p.create_integer_variable(Integer(v1_range.first), Integer(v1_range.second));
@@ -147,9 +150,11 @@ auto main(int, char *[]) -> int
             return EXIT_FAILURE;
         if (! run_binary_comparison_test<NotEquals>(r1, r2, [] (int a, int b) { return a != b; }))
             return EXIT_FAILURE;
-        if (! run_reif_binary_comparison_test<EqualsIff>(r1, r2, [] (int a, int b) { return a == b; }))
+        if (! run_reif_binary_comparison_test<EqualsIff>(r1, r2, [] (int a, int b) { return a == b; }, true))
             return EXIT_FAILURE;
-        if (! run_reif_binary_comparison_test<NotEqualsIff>(r1, r2, [] (int a, int b) { return a != b; }))
+        if (! run_reif_binary_comparison_test<NotEqualsIff>(r1, r2, [] (int a, int b) { return a != b; }, true))
+            return EXIT_FAILURE;
+        if (! run_reif_binary_comparison_test<EqualsIf>(r1, r2, [] (int a, int b) { return a == b; }, false))
             return EXIT_FAILURE;
 
         if (! run_binary_comparison_test<LessThan>(r1, r2, [] (int a, int b) { return a < b; }))
@@ -161,13 +166,13 @@ auto main(int, char *[]) -> int
         if (! run_binary_comparison_test<GreaterThanEqual>(r1, r2, [] (int a, int b) { return a >= b; }))
             return EXIT_FAILURE;
 
-        if (! run_reif_binary_comparison_test<LessThanIff>(r1, r2, [] (int a, int b) { return a < b; }))
+        if (! run_reif_binary_comparison_test<LessThanIff>(r1, r2, [] (int a, int b) { return a < b; }, true))
             return EXIT_FAILURE;
-        if (! run_reif_binary_comparison_test<LessThanEqualIff>(r1, r2, [] (int a, int b) { return a <= b; }))
+        if (! run_reif_binary_comparison_test<LessThanEqualIff>(r1, r2, [] (int a, int b) { return a <= b; }, true))
             return EXIT_FAILURE;
-        if (! run_reif_binary_comparison_test<GreaterThanIff>(r1, r2, [] (int a, int b) { return a > b; }))
+        if (! run_reif_binary_comparison_test<GreaterThanIff>(r1, r2, [] (int a, int b) { return a > b; }, true))
             return EXIT_FAILURE;
-        if (! run_reif_binary_comparison_test<GreaterThanEqualIff>(r1, r2, [] (int a, int b) { return a >= b; }))
+        if (! run_reif_binary_comparison_test<GreaterThanEqualIff>(r1, r2, [] (int a, int b) { return a >= b; }, true))
             return EXIT_FAILURE;
     }
 
