@@ -460,10 +460,7 @@ namespace
 
         return changed ? Inference::Change : Inference::NoChange;
     }
-}
 
-namespace
-{
     template <typename T_>
     auto nullopt_to_zero(std::optional<T_> && t) -> T_
     {
