@@ -34,7 +34,7 @@ using std::variant;
 using std::vector;
 
 AllDifferent::AllDifferent(const vector<IntegerVariableID> & v) :
-    _vars(move(v))
+    _vars(v)
 {
 }
 
