@@ -17,5 +17,6 @@ perf.data.old
 /skyscrapers
 /arithmetic_test
 /comparison_test
+/abs_test
 *.opb
 *.veripb

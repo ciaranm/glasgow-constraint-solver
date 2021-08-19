@@ -20,27 +20,33 @@ Abs::Abs(const IntegerVariableID v1, const IntegerVariableID v2) :
 auto Abs::convert_to_low_level(LowLevelConstraintStore & constraints, const State & initial_state) && -> void
 {
     // _v2 >= 0
-    if (initial_state.lower_bound(_v2) < 0_i)
-        constraints.cnf(initial_state, { _v2 >= 0_i }, true);
+    constraints.trim_lower_bound(initial_state, _v2, 0_i);
 
     // _v1 <= upper_bound(_v2)
-    if (initial_state.upper_bound(_v1) > initial_state.upper_bound(_v2))
-        constraints.cnf(initial_state, { _v1 < initial_state.upper_bound(_v2) + 1_i }, true);
+    constraints.trim_upper_bound(initial_state, _v1, initial_state.upper_bound(_v2));
 
     // _v1 >= -upper_bound(_v2)
-    if (initial_state.upper_bound(_v1) < -initial_state.upper_bound(_v2))
-        constraints.cnf(initial_state, { _v1 >= -initial_state.upper_bound(_v2) }, true);
+    constraints.trim_lower_bound(initial_state, _v1, -initial_state.upper_bound(_v2));
 
     // _v2 <= max(upper_bound(_v1), -lower_bound(_v1))
     auto v2u = max(initial_state.upper_bound(_v1), -initial_state.lower_bound(_v1));
-    if (initial_state.upper_bound(_v2) > v2u)
-        constraints.cnf(initial_state, { _v2 < v2u + 1_i }, true);
+    constraints.trim_upper_bound(initial_state, _v2, v2u);
 
     // _v2 == x <-> _v1 == x || _v1 == -x
     for (auto x = max(0_i, initial_state.lower_bound(_v2)) ; x <= v2u ; ++x) {
-        constraints.cnf(initial_state, { _v2 != x, _v1 == x, _v1 == -x }, true);
-        constraints.cnf(initial_state, { _v1 != x, _v2 == x }, true);
-        constraints.cnf(initial_state, { _v1 != -x, _v2 == x }, true);
+        if (initial_state.in_domain(_v2, x))
+            constraints.cnf(initial_state, {
+                    _v2 != x,
+                    initial_state.in_domain(_v1, x) ? Literal{ _v1 == x } : +constant_variable(false),
+                    initial_state.in_domain(_v1, -x) ? Literal{ _v1 == -x } : +constant_variable(false) }, true);
+        if (initial_state.in_domain(_v1, x))
+            constraints.cnf(initial_state, {
+                    _v1 != x,
+                    initial_state.in_domain(_v2, x) ? Literal{ _v2 == x } : +constant_variable(false) }, true);
+        if (initial_state.in_domain(_v1, -x))
+            constraints.cnf(initial_state, {
+                    _v1 != -x,
+                    initial_state.in_domain(_v2, x) ? Literal{ _v2 == x } : +constant_variable(false) }, true);
     }
 }
 

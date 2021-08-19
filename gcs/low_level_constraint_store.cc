@@ -50,14 +50,22 @@ LowLevelConstraintStore::~LowLevelConstraintStore() = default;
 
 auto LowLevelConstraintStore::trim_lower_bound(const State & state, IntegerVariableID var, Integer val) -> void
 {
-    if (state.lower_bound(var) < val)
-        cnf(state, { var >= val }, true);
+    if (state.lower_bound(var) < val) {
+        if (state.upper_bound(var) >= val)
+            cnf(state, { var >= val }, true);
+        else
+            cnf(state, { }, true);
+    }
 }
 
 auto LowLevelConstraintStore::trim_upper_bound(const State & state, IntegerVariableID var, Integer val) -> void
 {
-    if (state.upper_bound(var) > val)
-        cnf(state, { var < val + 1_i }, true);
+    if (state.upper_bound(var) > val) {
+        if (state.lower_bound(var) <= val + 1_i)
+            cnf(state, { var < val + 1_i }, true);
+        else
+            cnf(state, { }, true);
+    }
 }
 
 auto LowLevelConstraintStore::cnf(const State &, Literals && c, bool propagating) -> optional<ProofLine>

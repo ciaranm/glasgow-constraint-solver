@@ -5,6 +5,7 @@ SUBMAKEFILES := \
     gcs/gcs.mk \
     gcs/constraints/arithmetic_test.mk \
     gcs/constraints/comparison_test.mk \
+    gcs/constraints/abs_test.mk \
     examples/sum_all_different/sum_all_different.mk \
     examples/sudoku/sudoku.mk \
     examples/money/money.mk \
