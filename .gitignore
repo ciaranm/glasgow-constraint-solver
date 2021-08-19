@@ -18,5 +18,6 @@ perf.data.old
 /arithmetic_test
 /comparison_test
 /abs_test
+/element_test
 *.opb
 *.veripb

@@ -32,7 +32,7 @@ auto Element::convert_to_low_level(LowLevelConstraintStore & constraints, const 
 
     // _idx_var >= 0, _idx_var < _vars.size()
     constraints.trim_lower_bound(initial_state, _idx_var, 0_i);
-    constraints.trim_upper_bound(initial_state, _idx_var, Integer(_vars.size()));
+    constraints.trim_upper_bound(initial_state, _idx_var, Integer(_vars.size()) - 1_i);
 
     // _var <= max(upper(_vars)), _var >= min(lower(_vars))
     // ...and this should really be just over _vars that _idx_var might cover
@@ -48,7 +48,8 @@ auto Element::convert_to_low_level(LowLevelConstraintStore & constraints, const 
 
     for_each_with_index(_vars, [&] (auto & v, auto idx) {
         // _idx_var == i -> _var == _vars[idx]
-        ComparisonReif{ _var, v, _idx_var == Integer(idx), false, ComparisonOperator::Equals }.convert_to_low_level(constraints, initial_state);
+        if (initial_state.in_domain(_idx_var, Integer(idx)))
+            EqualsIf{ _var, v, _idx_var == Integer(idx) }.convert_to_low_level(constraints, initial_state);
     });
 }
 
