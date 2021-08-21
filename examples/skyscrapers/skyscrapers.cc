@@ -44,10 +44,10 @@ auto main(int argc, char * argv[]) -> int
     int size;
     vector<vector<int> > predefs;
     vector<int> north, south, east, west;
-    bool use_table = false;
-    const string usage = " [ 5 | 6 | 7 | 9 ] [ true ]";
+    bool use_table = false, trace = false;
+    const string usage = " [ instance 5 | 6 | 7 | 9 ] [ table false|true ] [ trace false|true ]";
 
-    if (argc > 3) {
+    if (argc > 4) {
         cerr << "Usage: " << argv[0] << usage << endl;
         return EXIT_FAILURE;
     }
@@ -71,6 +71,19 @@ auto main(int argc, char * argv[]) -> int
     if (argc >= 3) {
         if (argv[2] == "true"s)
             use_table = true;
+        else if (argv[2] == "false"s)
+            use_table = false;
+        else {
+            cerr << "Usage: " << argv[0] << usage << endl;
+            return EXIT_FAILURE;
+        }
+    }
+
+    if (argc >= 4) {
+        if (argv[3] == "true"s)
+            trace = true;
+        else if (argv[3] == "false"s)
+            trace = false;
         else {
             cerr << "Usage: " << argv[0] << usage << endl;
             return EXIT_FAILURE;
@@ -303,29 +316,61 @@ auto main(int argc, char * argv[]) -> int
         build_visible_constraints(visible_east, east, false, false);
     }
 
-    auto stats = solve(p, [&] (const State & s) -> bool {
+    auto solution_callback = [&] (const State & s) -> bool {
+        cout << "   ";
+        for (int c = 0 ; c < size ; ++c)
+            cout << " " << (north[c] != 0 ? to_string(north[c]) : " ");
+        cout << endl;
+
+        for (int r = 0 ; r < size ; ++r) {
+            cout << (west[r] != 0 ? to_string(west[r]) : " ") << "  ";
+            for (int c = 0 ; c < size ; ++c)
+                cout << " " << s(grid[r][c]);
+            cout << "  " << (east[r] != 0 ? to_string(east[r]) : "");
+            cout << endl;
+        }
+
+        cout << "   ";
+        for (int c = 0 ; c < size ; ++c)
+            cout << " " << (south[c] != 0 ? to_string(south[c]) : " ");
+        cout << endl;
+
+        cout << endl;
+        return true;
+    };
+
+    auto stats = ! trace ? solve(p, solution_callback) : solve_with_trace(p, solution_callback, [&] (const State & s) -> bool {
+            string pad(size, ' ');
             cout << "   ";
             for (int c = 0 ; c < size ; ++c)
-                cout << " " << (north[c] != 0 ? to_string(north[c]) : " ");
+                cout << " " << (north[c] != 0 ? to_string(north[c]) : " ") << pad;
             cout << endl;
 
             for (int r = 0 ; r < size ; ++r) {
                 cout << (west[r] != 0 ? to_string(west[r]) : " ") << "  ";
                 for (int c = 0 ; c < size ; ++c)
-                    cout << " " << s(grid[r][c]);
+                    if (s.optional_single_value(grid[r][c]))
+                        cout << " " << s(grid[r][c]) << pad;
+                    else {
+                        cout << " ?";
+                        for (Integer i = 1_i ; i <= Integer(size) ; ++i)
+                            if (s.in_domain(grid[r][c], i))
+                                cout << i;
+                            else
+                                cout << ".";
+                    }
                 cout << "  " << (east[r] != 0 ? to_string(east[r]) : "");
                 cout << endl;
             }
 
             cout << "   ";
             for (int c = 0 ; c < size ; ++c)
-                cout << " " << (south[c] != 0 ? to_string(south[c]) : " ");
+                cout << " " << (south[c] != 0 ? to_string(south[c]) : " ") << pad;
             cout << endl;
 
             cout << endl;
             return true;
-            }
-    );
+            });
 
     cout << stats;
 

@@ -13,7 +13,8 @@ using std::nullopt;
 
 namespace
 {
-    auto solve_with_state(unsigned long long depth, Stats & stats, Problem & problem, State & state, SolutionCallback & callback) -> bool
+    auto solve_with_state(unsigned long long depth, Stats & stats, Problem & problem, State & state,
+            SolutionCallback & callback, SolutionCallback & trace) -> bool
     {
         stats.max_depth = max(stats.max_depth, depth);
         ++stats.recursions;
@@ -32,11 +33,15 @@ namespace
             }
             else {
                 bool keep_going = true;
+
+                if (trace && ! trace(state))
+                    keep_going = false;
+
                 state.for_each_value(*branch_var, [&] (Integer val) {
                         if (keep_going) {
                             auto timestamp = state.new_epoch();
                             state.guess(*branch_var == val);
-                            if (! solve_with_state(depth + 1, stats, problem, state, callback))
+                            if (! solve_with_state(depth + 1, stats, problem, state, callback, trace))
                                 keep_going = false;
                             state.backtrack(timestamp);
                         }
@@ -54,7 +59,7 @@ namespace
     }
 }
 
-auto gcs::solve(Problem & problem, SolutionCallback callback) -> Stats
+auto gcs::solve_with_trace(Problem & problem, SolutionCallback callback, SolutionCallback trace) -> Stats
 {
     Stats stats;
     auto start_time = steady_clock::now();
@@ -63,11 +68,16 @@ auto gcs::solve(Problem & problem, SolutionCallback callback) -> Stats
     if (problem.optional_proof())
         problem.optional_proof()->start_proof(state);
 
-    if (solve_with_state(0, stats, problem, state, callback))
+    if (solve_with_state(0, stats, problem, state, callback, trace))
         if (problem.optional_proof())
             problem.optional_proof()->assert_contradiction();
 
     stats.solve_time = duration_cast<microseconds>(steady_clock::now() - start_time);
     return stats;
+}
+
+auto gcs::solve(Problem & problem, SolutionCallback callback) -> Stats
+{
+    return solve_with_trace(problem, callback, SolutionCallback{ });
 }
 

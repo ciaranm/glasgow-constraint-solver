@@ -14,6 +14,8 @@ namespace gcs
     using SolutionCallback = std::function<auto (const State &) -> bool>;
 
     auto solve(Problem &, SolutionCallback callback) -> Stats;
+
+    auto solve_with_trace(Problem &, SolutionCallback callback, SolutionCallback trace) -> Stats;
 }
 
 #endif
