@@ -3,6 +3,7 @@
 #include <gcs/constraints/table.hh>
 #include <gcs/low_level_constraint_store.hh>
 #include <gcs/state.hh>
+#include <gcs/exception.hh>
 
 #include <util/for_each.hh>
 
@@ -29,6 +30,10 @@ Table::Table(const vector<IntegerVariableID> & v, vector<vector<Integer> > && t)
 
 auto Table::convert_to_low_level(LowLevelConstraintStore & constraints, const State & initial_state) && -> void
 {
+    for (auto & tuple : _tuples)
+        if (tuple.size() != _vars.size())
+            throw UnexpectedException{ "table size mismatch" };
+
     constraints.table(initial_state, vector<IntegerVariableID>{ _vars }, move(_tuples));
 }
 
