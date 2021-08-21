@@ -3,7 +3,6 @@
 #include <gcs/constraints/all_different.hh>
 #include <gcs/constraints/arithmetic.hh>
 #include <gcs/constraints/comparison.hh>
-#include <gcs/constraints/min_max.hh>
 #include <gcs/constraints/linear_equality.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
@@ -152,16 +151,15 @@ auto main(int argc, char * argv[]) -> int
                     if (r == (forwards ? 0 : size - 1))
                         p.post(Equals{ *visible_vars[downwards ? r : c][downwards ? c : r], 1_c });
                     else {
-                        IntegerVariableID max_predecessors = p.create_integer_variable(1_i, Integer(size));
-                        vector<IntegerVariableID> predecessors;
-                        if (forwards)
-                            for (int rr = 0 ; rr < r ; ++rr)
-                                predecessors.push_back(grid[downwards ? rr : c][downwards ? c : rr]);
-                        else
-                            for (int rr = size - 1 ; rr > r ; --rr)
-                                predecessors.push_back(grid[downwards ? rr : c][downwards ? c : rr]);
-                        p.post(ArrayMax{ predecessors, max_predecessors });
-                        p.post(GreaterThanIff{ grid[downwards ? r : c][downwards ? c : r], max_predecessors, *visible_vars[downwards ? r : c][downwards ? c : r] == 1_i });
+                        Linear hiding;
+                        for (int rr = (forwards ? 0 : size - 1) ; forwards ? rr < r : rr > r ; forwards ? ++rr : --rr) {
+                            hiding.emplace_back(1_i, p.create_integer_variable(0_i, 1_i));
+                            p.post(GreaterThanIff{ grid[downwards ? r : c][downwards ? c : r], grid[downwards ? rr : c][downwards ? c : rr], hiding.back().second == 0_i });
+                        }
+                        auto how_many_hidden = p.create_integer_variable(0_i, Integer(hiding.size()));
+                        hiding.emplace_back(-1_i, how_many_hidden);
+                        p.post(LinearEquality{ move(hiding), 0_i });
+                        p.post(EqualsIff{ how_many_hidden, constant_variable(0_i), *visible_vars[downwards ? r : c][downwards ? c : r] == 1_i });
                     }
                 }
                 p.post(LinearEquality{ move(how_many_visible), Integer(target[c]) });
