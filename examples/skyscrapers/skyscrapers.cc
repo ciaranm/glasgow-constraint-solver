@@ -142,93 +142,37 @@ auto main(int argc, char * argv[]) -> int
             if (predefs[r][c] != 0)
                 p.post(Equals{ grid[r][c], constant_variable(Integer{ predefs[r][c] }) });
 
-    visible_north.resize(size);
-    for (int c = 0 ; c < size ; ++c) {
-        if (north[c] != 0) {
-            Linear coeff_vars;
-            for (int r = 0 ; r < size ; ++r) {
-                coeff_vars.emplace_back(1_i, *visible_north[r][c]);
-                // visible_north[r][c] <-> (grid[r][c] > max(grid[r][0..c - 1]))
-                if (0 == r)
-                    p.post(Equals{ *visible_north[r][c], 1_c });
-                else {
-                    IntegerVariableID max_predecessors = p.create_integer_variable(1_i, Integer(size));
-                    vector<IntegerVariableID> predecessors;
-                    for (int rr = 0 ; rr < r ; ++rr)
-                        predecessors.push_back(grid[rr][c]);
-                    p.post(ArrayMax{ predecessors, max_predecessors });
-                    p.post(GreaterThanIff{ grid[r][c], max_predecessors, *visible_north[r][c] == 1_i });
+    auto build_visible_constraints = [&] (auto & visible_vars, const auto & target, bool downwards, bool forwards) {
+        visible_vars.resize(size);
+        for (int c = 0 ; c < size ; ++c) {
+            if (target[c] != 0) {
+                Linear how_many_visible;
+                for (int r = 0 ; r < size ; ++r) {
+                    how_many_visible.emplace_back(1_i, *visible_vars[downwards ? r : c][downwards ? c : r]);
+                    if (r == (forwards ? 0 : size - 1))
+                        p.post(Equals{ *visible_vars[downwards ? r : c][downwards ? c : r], 1_c });
+                    else {
+                        IntegerVariableID max_predecessors = p.create_integer_variable(1_i, Integer(size));
+                        vector<IntegerVariableID> predecessors;
+                        if (forwards)
+                            for (int rr = 0 ; rr < r ; ++rr)
+                                predecessors.push_back(grid[downwards ? rr : c][downwards ? c : rr]);
+                        else
+                            for (int rr = size - 1 ; rr > r ; --rr)
+                                predecessors.push_back(grid[downwards ? rr : c][downwards ? c : rr]);
+                        p.post(ArrayMax{ predecessors, max_predecessors });
+                        p.post(GreaterThanIff{ grid[downwards ? r : c][downwards ? c : r], max_predecessors, *visible_vars[downwards ? r : c][downwards ? c : r] == 1_i });
+                    }
                 }
+                p.post(LinearEquality{ move(how_many_visible), Integer(target[c]) });
             }
-            p.post(LinearEquality{ move(coeff_vars), Integer(north[c]) });
         }
-    }
+    };
 
-    visible_south.resize(size);
-    for (int c = 0 ; c < size ; ++c) {
-        if (south[c] != 0) {
-            Linear coeff_vars;
-            for (int r = 0 ; r < size ; ++r) {
-                coeff_vars.emplace_back(1_i, *visible_south[r][c]);
-                // visible_south[r][c] <-> (grid[r][c] > max(grid[r][0..c - 1]))
-                if (size - 1 == r)
-                    p.post(Equals{ *visible_south[r][c], 1_c });
-                else {
-                    IntegerVariableID max_predecessors = p.create_integer_variable(1_i, Integer(size));
-                    vector<IntegerVariableID> predecessors;
-                    for (int rr = size - 1 ; rr > r ; --rr)
-                        predecessors.push_back(grid[rr][c]);
-                    p.post(ArrayMax{ predecessors, max_predecessors });
-                    p.post(GreaterThanIff{ grid[r][c], max_predecessors, *visible_south[r][c] == 1_i });
-                }
-            }
-            p.post(LinearEquality{ move(coeff_vars), Integer(south[c]) });
-        }
-    }
-
-    visible_west.resize(size);
-    for (int r = 0 ; r < size ; ++r) {
-        if (west[r] != 0) {
-            Linear coeff_vars;
-            for (int c = 0 ; c < size ; ++c) {
-                coeff_vars.emplace_back(1_i, *visible_west[r][c]);
-                // visible_west[r][c] <-> (grid[r][c] > max(grid[r][0..c - 1]))
-                if (0 == c)
-                    p.post(Equals{ *visible_west[r][c], 1_c });
-                else {
-                    IntegerVariableID max_predecessors = p.create_integer_variable(1_i, Integer(size));
-                    vector<IntegerVariableID> predecessors;
-                    for (int cc = 0 ; cc < c ; ++cc)
-                        predecessors.push_back(grid[r][cc]);
-                    p.post(ArrayMax{ predecessors, max_predecessors });
-                    p.post(GreaterThanIff{ grid[r][c], max_predecessors, *visible_west[r][c] == 1_i });
-                }
-            }
-            p.post(LinearEquality{ move(coeff_vars), Integer(west[r]) });
-        }
-    }
-
-    visible_east.resize(size);
-    for (int r = 0 ; r < size ; ++r) {
-        if (east[r] != 0) {
-            Linear coeff_vars;
-            for (int c = 0 ; c < size ; ++c) {
-                coeff_vars.emplace_back(1_i, *visible_east[r][c]);
-                // visible_east[r][c] <-> (grid[r][c] > max(grid[r][0..c - 1]))
-                if (size - 1 == c)
-                    p.post(Equals{ *visible_east[r][c], 1_c });
-                else {
-                    IntegerVariableID max_predecessors = p.create_integer_variable(1_i, Integer(size));
-                    vector<IntegerVariableID> predecessors;
-                    for (int cc = size - 1 ; cc > c ; --cc)
-                        predecessors.push_back(grid[r][cc]);
-                    p.post(ArrayMax{ predecessors, max_predecessors });
-                    p.post(GreaterThanIff{ grid[r][c], max_predecessors, *visible_east[r][c] == 1_i });
-                }
-            }
-            p.post(LinearEquality{ move(coeff_vars), Integer(east[r]) });
-        }
-    }
+    build_visible_constraints(visible_north, north, true, true);
+    build_visible_constraints(visible_south, south, true, false);
+    build_visible_constraints(visible_west, west, false, true);
+    build_visible_constraints(visible_east, east, false, false);
 
     auto stats = solve(p, [&] (const State & s) -> bool {
             cout << "   ";
