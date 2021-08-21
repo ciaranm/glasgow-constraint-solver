@@ -25,6 +25,16 @@ using std::set;
 using std::string;
 using std::vector;
 
+namespace gcs
+{
+    struct TableData
+    {
+        IntegerVariableID selector;
+        std::vector<IntegerVariableID> vars;
+        std::vector<std::vector<Integer> > tuples;
+    };
+}
+
 struct LowLevelConstraintStore::Imp
 {
     Problem * const problem;
@@ -145,7 +155,7 @@ auto LowLevelConstraintStore::table(const State & state, vector<IntegerVariableI
     for (auto & t : vars)
         _imp->triggers.try_emplace(t).first->second.push_back(id);
 
-    _imp->propagation_functions.emplace(id, [&, table = Table{ selector, move(vars), move(permitted) }] (State & state) -> Inference {
+    _imp->propagation_functions.emplace(id, [&, table = TableData{ selector, move(vars), move(permitted) }] (State & state) -> Inference {
             return propagate_table(table, state);
             });
 }
@@ -180,7 +190,7 @@ auto LowLevelConstraintStore::propagate(State & state) const -> bool
     return true;
 }
 
-auto LowLevelConstraintStore::propagate_table(const Table & table, State & state) const -> Inference
+auto LowLevelConstraintStore::propagate_table(const TableData & table, State & state) const -> Inference
 {
     bool changed = false, contradiction = false;
 

@@ -7,7 +7,6 @@
 #include <gcs/literal.hh>
 #include <gcs/problem.hh>
 #include <gcs/state.hh>
-#include <gcs/table.hh>
 
 #include <functional>
 #include <vector>
@@ -15,6 +14,8 @@
 namespace gcs
 {
     using PropagationFunction = std::function<auto (State &) -> Inference>;
+
+    struct TableData;
 
     class LowLevelConstraintStore
     {
@@ -24,7 +25,7 @@ namespace gcs
 
             [[ nodiscard ]] auto propagate_cnfs(State &) const -> Inference;
             [[ nodiscard ]] auto propagate_integer_linear_les(State &) const -> Inference;
-            [[ nodiscard ]] auto propagate_table(const Table &, State &) const -> Inference;
+            [[ nodiscard ]] auto propagate_table(const TableData &, State &) const -> Inference;
 
         public:
             explicit LowLevelConstraintStore(Problem * const);

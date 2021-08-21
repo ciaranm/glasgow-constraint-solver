@@ -21,5 +21,6 @@ SOURCES := \
     constraints/element.cc \
     constraints/comparison.cc \
     constraints/linear_equality.cc \
-    constraints/min_max.cc
+    constraints/min_max.cc \
+    constraints/table.cc
 
