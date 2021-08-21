@@ -253,9 +253,16 @@ auto main(int argc, char * argv[]) -> int
             }
             else {
                 for (Integer i = 1_i ; i <= Integer(size) ; ++i) {
-                    head.push_back(i);
-                    build_feasible(head);
-                    head.pop_back();
+                    bool alldiff = true;
+                    for (auto & h : head)
+                        if (h == i)
+                            alldiff = false;
+
+                    if (alldiff) {
+                        head.push_back(i);
+                        build_feasible(head);
+                        head.pop_back();
+                    }
                 }
             }
         };
