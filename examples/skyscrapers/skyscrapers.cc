@@ -34,7 +34,7 @@ auto main(int argc, char * argv[]) -> int
     vector<vector<int> > predefs;
     vector<int> north, south, east, west;
 
-    if (1 == argc) {
+    if (1 == argc || (2 == argc && string(argv[1]) == string("5"))) {
         size = 5;
         predefs = {
             { 0, 0, 0, 0, 0 },
@@ -48,6 +48,39 @@ auto main(int argc, char * argv[]) -> int
         south = { 0, 0, 0, 0, 1 };
         east  = { 4, 0, 2, 0, 0 };
         west  = { 0, 0, 3, 0, 4 };
+    }
+    else if (2 == argc && string(argv[1]) == string("6")) {
+        size = 6;
+        predefs = {
+            { 0, 0, 4, 0, 0, 0 },
+            { 0, 0, 2, 0, 0, 0 },
+            { 0, 0, 0, 0, 2, 0 },
+            { 0, 0, 0, 3, 0, 0 },
+            { 0, 0, 0, 0, 0, 0 },
+            { 0, 0, 0, 0, 0, 1 }
+        };
+
+        north = { 1, 2, 2, 2, 3, 4 };
+        south = { 4, 1, 2, 3, 2, 2 };
+        east  = { 5, 3, 3, 2, 1, 4 };
+        west  = { 1, 3, 2, 3, 3, 2 };
+    }
+    else if (2 == argc && string(argv[1]) == string("7")) {
+        size = 7;
+        predefs = {
+            { 0, 0, 0, 0, 0, 0, 0 },
+            { 0, 0, 3, 0, 0, 0, 0 },
+            { 0, 0, 0, 0, 0, 0, 0 },
+            { 4, 0, 0, 0, 0, 0, 0 },
+            { 0, 0, 0, 0, 0, 0, 0 },
+            { 0, 0, 0, 0, 0, 0, 0 },
+            { 0, 0, 0, 0, 0, 0, 0 }
+        };
+
+        north = { 0, 0, 5, 1, 3, 4, 0 };
+        south = { 0, 4, 0, 4, 4, 0, 3 };
+        east  = { 4, 2, 0, 1, 0, 4, 0 };
+        west  = { 2, 0, 4, 0, 4, 0, 0 };
     }
     else if (2 == argc && string(argv[1]) == string("9")) {
         size = 9;
@@ -69,7 +102,7 @@ auto main(int argc, char * argv[]) -> int
         west  = { 0, 0, 0, 1, 0, 4, 4, 0, 5 };
     }
     else {
-        cerr << "Usage: " << argv[0] << " [ 9 ]" << endl;
+        cerr << "Usage: " << argv[0] << " [ 5 | 6 | 7 | 9 ]" << endl;
         return EXIT_FAILURE;
     }
 
