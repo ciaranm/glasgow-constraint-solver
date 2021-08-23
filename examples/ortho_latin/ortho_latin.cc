@@ -18,13 +18,23 @@ using std::cout;
 using std::endl;
 using std::ifstream;
 using std::pair;
+using std::stoi;
 using std::vector;
 
-auto main(int, char * []) -> int
+auto main(int argc, char * argv[]) -> int
 {
+    int size = 5;
+
+    if (argc > 2) {
+        cerr << "Usage: " << argv[0] << " [ size ]" << endl;
+        return EXIT_FAILURE;
+    }
+
+    if (argc >= 2)
+        size = stoi(argv[1]);
+
     Problem p{ Proof{ "ortho_latin.opb", "ortho_latin.veripb" } };
 
-    int size = 5;
     vector<vector<IntegerVariableID> > g1, g2;
     vector<IntegerVariableID> g12;
     for (int x = 0 ; x < size ; ++x) {
