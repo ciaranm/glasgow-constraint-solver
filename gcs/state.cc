@@ -302,8 +302,23 @@ auto State::infer_integer(const LiteralFromIntegerVariable & ilit) -> Inference
                             non_constant_integer_variable(ilit.var) = IntegerConstant{ *optional_single_value(ilit.var) };
                         return pc_before == pc_after ? Inference::NoChange : Inference::Change;
                     },
-                    [&] (IntegerSetVariable &) -> Inference {
-                        throw UnimplementedException{ };
+                    [&] (IntegerSetVariable & svar) -> Inference {
+                        // This should also be much smarter...
+                        auto erase_to = svar.values->lower_bound(ilit.value);
+                        if (erase_to == svar.values->begin())
+                            return Inference::NoChange;
+
+                         if (! svar.values.unique()) {
+                             svar.values = make_shared<set<Integer> >(*svar.values);
+                             erase_to = svar.values->lower_bound(ilit.value);
+                         }
+
+                         svar.values->erase(svar.values->begin(), erase_to);
+                         if (svar.values->size() == 0)
+                             return Inference::Contradiction;
+                         else if (svar.values->size() == 1)
+                             non_constant_integer_variable(ilit.var) = IntegerConstant{ *optional_single_value(ilit.var) };
+                         return Inference::Change;
                     }
                 }, integer_variable(ilit.var, space));
             break;
