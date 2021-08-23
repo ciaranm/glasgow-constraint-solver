@@ -9,18 +9,42 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <string>
 #include <vector>
 
 using namespace gcs;
 
+using std::cerr;
 using std::cout;
 using std::endl;
+using std::string;
 using std::to_string;
 using std::pair;
 using std::vector;
 
-auto main(int, char * []) -> int
+using namespace std::literals::string_literals;
+
+auto main(int argc, char * argv[]) -> int
 {
+    bool use_abs = false;
+
+    const string usage = " [ abs false|true ]";
+    if (argc > 2) {
+        cerr << "Usage: " << argv[0] << usage << endl;
+        return EXIT_FAILURE;
+    }
+
+    if (argc >= 2) {
+        if (argv[1] == "true"s)
+            use_abs = true;
+        else if (argv[1] == "false"s)
+            use_abs = false;
+        else {
+            cerr << "Usage: " << argv[0] << usage << endl;
+            return EXIT_FAILURE;
+        }
+    }
+
     Problem p{ Proof{ "crystal_maze.opb", "crystal_maze.veripb" } };
 
     vector<IntegerVariableID> xs;
@@ -34,7 +58,6 @@ auto main(int, char * []) -> int
         { 1, 3 }, { 1, 4 }, { 1, 5 }, { 2, 3 }, { 2, 6 }, { 3, 4 }, { 3, 6 },
         { 3, 7 }, { 4, 5 }, { 4, 6 }, { 4, 7 }, { 5, 7 }, { 6, 7 } };
 
-    bool use_abs = false;
     vector<IntegerVariableID> diffs, abs_diffs;
     for (auto & [ x1, x2 ] : edges) {
         diffs.push_back(p.create_integer_variable(-7_i, 7_i, "diff" + to_string(x1) + "_" + to_string(x2)));
