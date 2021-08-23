@@ -14,6 +14,10 @@ namespace gcs
         unsigned long long solutions = 0;
         unsigned long long max_depth = 0;
 
+        unsigned long long n_cnfs = 0;
+        unsigned long long n_integer_linear_les = 0;
+        unsigned long long n_propagators = 0;
+
         std::chrono::microseconds solve_time;
     };
 

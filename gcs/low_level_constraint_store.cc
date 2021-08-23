@@ -336,3 +336,10 @@ auto LowLevelConstraintStore::want_nonpropagating() const -> bool
     return _imp->problem->optional_proof() != nullopt;
 }
 
+auto LowLevelConstraintStore::fill_in_constraint_stats(Stats & stats) const -> void
+{
+    stats.n_cnfs += _imp->cnfs.size();
+    stats.n_integer_linear_les += _imp->integer_linear_les.size();
+    stats.n_propagators += _imp->propagation_functions.size();
+}
+

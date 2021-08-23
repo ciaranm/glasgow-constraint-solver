@@ -121,3 +121,8 @@ auto Problem::update_objective(const State & state) -> void
         post(LessThan{ *_imp->objective_variable, constant_variable(state(*_imp->objective_variable)) });
 }
 
+auto Problem::fill_in_constraint_stats(Stats & stats) const -> void
+{
+    _imp->constraints.fill_in_constraint_stats(stats);
+}
+

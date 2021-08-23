@@ -8,6 +8,7 @@
 #include <gcs/literal.hh>
 #include <gcs/proof.hh>
 #include <gcs/state.hh>
+#include <gcs/stats.hh>
 
 #include <functional>
 #include <memory>
@@ -50,6 +51,8 @@ namespace gcs
             auto update_objective(const State &) -> void;
 
             auto optional_proof() const -> std::optional<Proof> &;
+
+            auto fill_in_constraint_stats(Stats &) const -> void;
     };
 }
 

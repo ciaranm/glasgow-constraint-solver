@@ -11,6 +11,9 @@ using std::ostream;
 
 auto gcs::operator<< (ostream & o, const Stats & s) -> ostream &
 {
+    o << "cnfs: " << s.n_cnfs << '\n';
+    o << "integer linear inequalities: " << s.n_integer_linear_les << '\n';
+    o << "propagators: " << s.n_propagators << '\n';
     o << "recursions: " << s.recursions << '\n';
     o << "max depth:  " << s.max_depth << '\n';
     o << "solutions: "  << s.solutions << '\n';
