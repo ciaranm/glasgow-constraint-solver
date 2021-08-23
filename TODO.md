@@ -50,6 +50,10 @@ Design
 
 - Linear constraints are a mess.
 
+- Have a think about remove Boolean variables, and just using literals
+  everywhere instead. Might not be very useful if we need to introduce float
+  and set variables for MiniZinc, though.
+
 Proofs
 ------
 
