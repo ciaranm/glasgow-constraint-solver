@@ -33,7 +33,7 @@ auto Abs::convert_to_low_level(LowLevelConstraintStore & constraints, const Stat
     constraints.trim_upper_bound(initial_state, _v2, v2u);
 
     // _v2 == x <-> _v1 == x || _v1 == -x
-    for (auto x = max(0_i, initial_state.lower_bound(_v2)) ; x <= v2u ; ++x) {
+    for (auto x = min(max(0_i, initial_state.lower_bound(_v1)), max(0_i, initial_state.lower_bound(_v2))) ; x <= v2u ; ++x) {
         if (initial_state.in_domain(_v2, x))
             constraints.cnf(initial_state, {
                     _v2 != x,
