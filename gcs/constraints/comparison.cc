@@ -79,6 +79,15 @@ auto ComparisonReif::_convert_to_low_level_less_than(LowLevelConstraintStore & c
         }
     }
 
+    // cond -> upper(v1) op upper(v2)
+    auto v2u = initial_state.upper_bound(_v2) + (equal ? 1_i : 0_i);
+    if (! (initial_state.upper_bound(_v1) < v2u)) {
+        if (initial_state.in_domain(_v1, v2u))
+            constraints.cnf(initial_state, { { ! _cond }, { _v1 < v2u } }, true);
+        else
+            constraints.cnf(initial_state, { { ! _cond } }, true);
+    }
+
     // !cond -> exists v. v2 == v /\ v1 !op v
     for (auto v = initial_state.lower_bound(_v2) ; v <= initial_state.upper_bound(_v2) ; ++v) {
         auto bound = equal ? v + 1_i : v;
