@@ -3,10 +3,13 @@
 #include <gcs/problem.hh>
 #include <gcs/constraints/element.hh>
 #include <gcs/solve.hh>
+#include <util/for_each.hh>
 
 #include <cstdlib>
 #include <functional>
 #include <iostream>
+#include <optional>
+#include <random>
 #include <set>
 #include <tuple>
 #include <vector>
@@ -18,11 +21,15 @@ using std::endl;
 using std::function;
 using std::index_sequence;
 using std::make_index_sequence;
+using std::make_optional;
+using std::mt19937;
 using std::pair;
+using std::random_device;
 using std::set;
 using std::string;
 using std::to_string;
 using std::tuple;
+using std::uniform_int_distribution;
 using std::vector;
 
 using namespace gcs;
@@ -49,9 +56,8 @@ auto stringify_tuple(const pair<P_, Q_> & t) -> string
 }
 
 template <typename Results_>
-auto check_results(pair<int, int> var_range, pair<int, int> idx_range, const Results_ & expected, const Results_ & actual) -> bool
+auto check_results(const Results_ & expected, const Results_ & actual) -> bool
 {
-    cerr << "Element " << stringify_tuple(var_range) << " " << stringify_tuple(idx_range);
     if (expected != actual) {
         cerr << " expected: " << expected.size() << endl;
         for (auto & [ v, i, a ] : expected) {
@@ -92,8 +98,63 @@ auto grow(vector<int> & array, const vector<pair<int, int> > & array_range, cons
     }
 }
 
+auto check_idx_gac(IntegerVariableID var, IntegerVariableID idx, const vector<IntegerVariableID> & vars, const State & s) -> bool
+{
+    bool ok = true;
+    s.for_each_value(idx, [&] (Integer idx_val) {
+            bool found_support = false;
+            s.for_each_value(var, [&] (Integer val) {
+                    found_support = found_support || s.in_domain(vars[idx_val.raw_value], val);
+                    });
+
+            if (! found_support) {
+                cerr << "idx missing support: " << idx_val << endl;
+                ok = false;
+            }
+            });
+    return ok;
+}
+
+auto check_var_gac(IntegerVariableID var, IntegerVariableID idx, const vector<IntegerVariableID> & vars, const State & s) -> bool
+{
+    bool ok = true;
+    s.for_each_value(var, [&] (Integer var_val) {
+            bool found_support = false;
+            s.for_each_value(idx, [&] (Integer idx_val) {
+                    found_support = found_support || s.in_domain(vars[idx_val.raw_value], var_val);
+                    });
+
+            if (! found_support) {
+                cerr << "var missing support: " << var_val << endl;
+                ok = false;
+            }
+            });
+    return ok;
+}
+
+auto check_vals_gac(IntegerVariableID var, IntegerVariableID idx, const vector<IntegerVariableID> & vars, const State & s) -> bool
+{
+    bool ok = true;
+    for_each_with_index(vars, [&] (IntegerVariableID avar, auto index) {
+            if (s.optional_single_value(idx) == make_optional(Integer(index))) {
+                s.for_each_value(avar, [&] (Integer aval) {
+                        if (! s.in_domain(var, aval)) {
+                            cerr << "avar missing support: " << aval << endl;
+                            ok = false;
+                        }
+                    });
+                }
+                });
+    return ok;
+}
+
 auto run_element_test(pair<int, int> var_range, pair<int, int> idx_range, const vector<pair<int, int> > & array_range) -> bool
 {
+    cerr << "Element " << stringify_tuple(var_range) << " " << stringify_tuple(idx_range) << " [";
+    for (auto & v : array_range)
+        cerr << " " << stringify_tuple(v);
+    cerr << " ]";
+
     set<tuple<int, int, vector<int> > > expected, actual;
     for (int var = var_range.first ; var <= var_range.second ; ++var)
         for (int idx = idx_range.first ; idx <= idx_range.second ; ++idx)
@@ -113,15 +174,20 @@ auto run_element_test(pair<int, int> var_range, pair<int, int> idx_range, const 
         array.push_back(p.create_integer_variable(Integer(l), Integer(u)));
 
     p.post(Element{ var, idx, array });
-    solve(p, [&] (const State & s) -> bool {
+    bool gac_violated = false;
+    solve_with_trace(p, [&] (const State & s) -> bool {
             vector<int> vals;
             for (auto & a : array)
                 vals.push_back(s(a).raw_value);
             actual.emplace(s(var).raw_value, s(idx).raw_value, vals);
             return true;
+            },
+            [&] (const State & s) -> bool {
+                gac_violated = gac_violated || ! check_idx_gac(var, idx, array, s) || ! check_var_gac(var, idx, array, s) || ! check_vals_gac(var, idx, array, s);
+                return true;
             });
 
-    return check_results(var_range, idx_range, expected, actual);
+    return (! gac_violated) && check_results(expected, actual);
 }
 
 auto main(int, char *[]) -> int
@@ -131,9 +197,36 @@ auto main(int, char *[]) -> int
         { { 1, 2 }, { -2, 2 }, { { 1, 2 }, { 1, 2 } } },
         { { 1, 2 }, { 0, 1 }, { { 1, 2 }, { 1, 2 }, { 1, 2 } } },
         { { -1, 3 }, { 0, 2 }, { { -1, 2 }, { 1, 3 }, { 4, 5 } } },
-        { { 1, 4 }, { 0, 4 }, { { 1, 4 }, { 2, 3 }, { 0, 5 }, { -2, 0 }, { 5, 7 } } }
+        { { 1, 4 }, { 0, 4 }, { { 1, 4 }, { 2, 3 }, { 0, 5 }, { -2, 0 }, { 5, 7 } } },
+        { { -5, 5 }, { -3, 2 }, { { -8, 0 }, { 4, 4 }, { 10, 10 }, { 2, 11 }, { 4, 10 } } }
     };
 
+    random_device rand_dev;
+    mt19937 rand(rand_dev());
+    for (int x = 0 ; x < 10 ; ++x) {
+        uniform_int_distribution var_lower_dist(-10, 10);
+        auto var_lower = var_lower_dist(rand);
+        uniform_int_distribution var_upper_dist(var_lower, var_lower + 10);
+        auto var_upper = var_upper_dist(rand);
+
+        uniform_int_distribution idx_lower_dist(-3, 10);
+        auto idx_lower = idx_lower_dist(rand);
+        uniform_int_distribution idx_upper_dist(idx_lower, idx_lower + 10);
+        auto idx_upper = idx_upper_dist(rand);
+
+        vector<pair<int, int> > values;
+        uniform_int_distribution n_values_dist(1, 5);
+        auto n_values = n_values_dist(rand);
+        for (int i = 0 ; i < n_values ; ++i) {
+            uniform_int_distribution val_lower_dist(-10, 10);
+            auto val_lower = val_lower_dist(rand);
+            uniform_int_distribution val_upper_dist(val_lower, val_lower + 10);
+            auto val_upper = val_upper_dist(rand);
+            values.emplace_back(val_lower, val_upper);
+        }
+
+        data.emplace_back(pair{ var_lower, var_upper }, pair{ idx_lower, idx_upper }, move(values));
+    }
 
     for (auto & [ r1, r2, r3 ] : data) {
         if (! run_element_test(r1, r2, r3))

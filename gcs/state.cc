@@ -43,6 +43,15 @@ auto VariableDoesNotHaveUniqueValue::what() const noexcept -> const char *
     return _wat.c_str();
 }
 
+auto gcs::increase_inference_to(Inference & current, const Inference updated) -> void
+{
+    switch (updated) {
+        case Inference::NoChange:      break;
+        case Inference::Change:        if (current != Inference::Contradiction) current = updated; break;
+        case Inference::Contradiction: current = updated; break;
+    }
+}
+
 struct State::Imp
 {
     const Problem * const problem;

@@ -51,6 +51,17 @@ auto Element::convert_to_low_level(LowLevelConstraintStore & constraints, const 
         if (initial_state.in_domain(_idx_var, Integer(idx)))
             EqualsIf{ _var, v, _idx_var == Integer(idx) }.convert_to_low_level(constraints, initial_state);
     });
+
+    initial_state.for_each_value(_var, [&] (Integer val) {
+            // _var == val -> exists i . _vars[idx] == val
+            Literals options;
+            options.emplace_back(_var != val);
+            for_each_with_index(_vars, [&] (auto & v, auto idx) {
+                    if (initial_state.in_domain(_idx_var, Integer(idx)) && initial_state.in_domain(v, val))
+                        options.emplace_back(v == val);
+            });
+            constraints.cnf(initial_state, move(options), true);
+    });
 }
 
 auto Element::describe_for_proof() -> std::string

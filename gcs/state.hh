@@ -22,6 +22,8 @@ namespace gcs
         Contradiction
     };
 
+    auto increase_inference_to(Inference &, const Inference) -> void;
+
     class VariableDoesNotHaveUniqueValue :
         public std::exception
     {
