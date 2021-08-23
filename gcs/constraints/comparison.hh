@@ -111,7 +111,7 @@ namespace gcs
     {
         public:
             inline explicit GreaterThan(const IntegerVariableID v1, const IntegerVariableID v2) :
-                ComparisonReif(v1, v2, +constant_variable(false), true, ComparisonOperator::LessThanEqual)
+                ComparisonReif(v2, v1, +constant_variable(true), true, ComparisonOperator::LessThan)
             {
             };
     };
@@ -121,7 +121,7 @@ namespace gcs
     {
         public:
             inline explicit GreaterThanEqual(const IntegerVariableID v1, const IntegerVariableID v2) :
-                ComparisonReif(v1, v2, +constant_variable(false), true, ComparisonOperator::LessThan)
+                ComparisonReif(v2, v1, +constant_variable(true), true, ComparisonOperator::LessThanEqual)
             {
             };
     };
@@ -151,7 +151,7 @@ namespace gcs
     {
         public:
             inline explicit GreaterThanIff(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond) :
-                ComparisonReif(v1, v2, ! cond, true, ComparisonOperator::LessThanEqual)
+                ComparisonReif(v2, v1, cond, true, ComparisonOperator::LessThan)
             {
             };
     };
@@ -161,7 +161,7 @@ namespace gcs
     {
         public:
             inline explicit GreaterThanEqualIff(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond) :
-                ComparisonReif(v1, v2, ! cond, true, ComparisonOperator::LessThan)
+                ComparisonReif(v2, v1, cond, true, ComparisonOperator::LessThanEqual)
             {
             };
     };
