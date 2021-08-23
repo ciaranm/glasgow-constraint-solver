@@ -343,7 +343,7 @@ auto State::infer(const Literal & lit, Justification just) -> Inference
             break;
         case Inference::Contradiction:
             if (_imp->problem->optional_proof())
-                _imp->problem->optional_proof()->infer(*this, lit, just);
+                _imp->problem->optional_proof()->infer(*this, +constant_variable(false), just);
             break;
         case Inference::Change:
             remember_change(var);
