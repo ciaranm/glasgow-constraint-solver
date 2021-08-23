@@ -65,13 +65,33 @@ auto check_results(pair<int, int> v1_range, pair<int, int> v2_range, const strin
         cerr << endl;
 
         return false;
-    }
-    cerr << endl;
+     }
+     cerr << endl;
 
-    if (0 != system("veripb comparison_test.opb comparison_test.veripb"))
+    if (0 != system("veripb abs_test.opb abs_test.veripb"))
         return false;
 
     return true;
+}
+
+auto check_gac_oneway(string direction, IntegerVariableID v1, IntegerVariableID v2, const State & s, const function<auto (int, int) -> bool> & is_satisfing) -> bool
+{
+    bool ok = true;
+    s.for_each_value(v1, [&] (Integer val1) {
+            bool found_support = false;
+            s.for_each_value(v2, [&] (Integer val2) {
+                    found_support = found_support || is_satisfing(val1.raw_value, val2.raw_value);
+            });
+            if (! found_support) {
+                cerr << direction << " gac missing support: " << val1 << " from {";
+                s.for_each_value(v2, [&] (Integer val2) {
+                        cerr << " " << val2;
+                        });
+                cerr << " }" << endl;
+                ok = false;
+            }
+            });
+    return ok;
 }
 
 auto run_abs_test(pair<int, int> v1_range, pair<int, int> v2_range, const function<auto (int, int) -> bool> & is_satisfing) -> bool
@@ -86,12 +106,18 @@ auto run_abs_test(pair<int, int> v1_range, pair<int, int> v2_range, const functi
     auto v1 = p.create_integer_variable(Integer(v1_range.first), Integer(v1_range.second));
     auto v2 = p.create_integer_variable(Integer(v2_range.first), Integer(v2_range.second));
     p.post(Abs{ v1, v2 });
-    solve(p, [&] (const State & s) -> bool {
-            actual.emplace(s(v1).raw_value, s(v2).raw_value);
-            return true;
+    bool gac_violated = false;
+    solve_with_trace(p, [&] (const State & s) -> bool {
+                actual.emplace(s(v1).raw_value, s(v2).raw_value);
+                return true;
+            },
+            [&] (const State & s) -> bool {
+                gac_violated = gac_violated || ! check_gac_oneway("forward", v1, v2, s, is_satisfing) || ! check_gac_oneway(
+                        "reverse", v2, v1, s, [&] (int a, int b) { return is_satisfing(b, a); });
+                return true;
             });
 
-    return check_results(v1_range, v2_range, "Abs", expected, actual);
+    return (! gac_violated) && check_results(v1_range, v2_range, "Abs", expected, actual);
 }
 
 auto main(int, char *[]) -> int
