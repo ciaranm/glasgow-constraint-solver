@@ -6,6 +6,8 @@ Code and Infrastructure
 
 - Set up clang-format in a reasonable way.
 
+- Get an include what you use tool, and possibly a using what you use tool, set up.
+
 - Switch to a modern build system.
 
 - Run proof log tests automatically.
