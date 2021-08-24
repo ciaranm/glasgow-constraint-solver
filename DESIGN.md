@@ -1,5 +1,5 @@
 What do we actually need to make a solver?
-------------------------------------------
+==========================================
 
 If we're looking to do as little as possible to get a working but not particularly efficient solver,
 we probably need:
@@ -36,14 +36,14 @@ blowups on large domains. So, whilst I like the idea of variables just being ide
 behind the scenes, index into a state data structure, it's worth thinking carefully about how we
 store this state. The solution I'm going with for now is:
 
-- We have a problem object, which does bookkeeping.
+- We have a Problem object, which does bookkeeping.
 
 - From a user perspective, variables are IDs, which are an opaque, lightweight thing you can copy
   around etc. We can create new ones as needed via our problem object. Also, we can create 'fake'
   variables corresponding to integer constants in an easy way, because this is convenient, and avoids
   having to overload constraints.
 
-- Whenever we've found a solution, we're given a temporary reference to a state object, that can
+- Whenever we've found a solution, we're given a temporary reference to a State object, that can
   be queried using a variable identifier to get its value.
 
 Then there's the question of how variable state is stored. A variable is a set of values, but a set
@@ -129,7 +129,7 @@ we get fairly fast propagators with watches for free (at the slight expense of e
 Backtracking Search
 -------------------
 
-For now, this is boring.
+For now, this is boring. In the future, we'll probably do something like Solution-Biased search.
 
 Sticking it Together
 --------------------
