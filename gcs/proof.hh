@@ -71,6 +71,9 @@ namespace gcs
 
             auto infer(const State & state, const Literal & lit, Justification why) -> void;
 
+            auto enter_proof_level(int depth) -> void;
+            auto forget_proof_level(int depth) -> void;
+
             // Writing proof steps from constraints
             auto emit_proof_line(const std::string &) -> void;
             [[ nodiscard ]] auto constraint_saying_variable_takes_at_least_one_value(IntegerVariableID) const -> ProofLine;

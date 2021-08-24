@@ -19,11 +19,17 @@ namespace
         stats.max_depth = max(stats.max_depth, depth);
         ++stats.recursions;
 
+        if (problem.optional_proof())
+            problem.optional_proof()->enter_proof_level(depth + 1);
+
         if (problem.propagate(state)) {
             auto branch_var = problem.find_branching_variable(state);
             if (branch_var == nullopt) {
-                if (problem.optional_proof())
+                if (problem.optional_proof()) {
+                    problem.optional_proof()->enter_proof_level(0);
                     problem.optional_proof()->solution(state);
+                    problem.optional_proof()->enter_proof_level(depth + 1);
+                }
 
                 ++stats.solutions;
                 if (! callback(state))
@@ -52,8 +58,11 @@ namespace
             }
         }
 
-        if (problem.optional_proof())
+        if (problem.optional_proof()) {
+            problem.optional_proof()->enter_proof_level(depth);
             problem.optional_proof()->backtrack(state);
+            problem.optional_proof()->forget_proof_level(depth + 1);
+        }
 
         return true;
     }

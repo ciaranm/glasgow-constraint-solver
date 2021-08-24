@@ -409,3 +409,13 @@ auto Proof::constraint_saying_variable_takes_at_least_one_value(IntegerVariableI
     return result->second;
 }
 
+auto Proof::enter_proof_level(int depth) -> void
+{
+    _imp->proof << "# " << depth << endl;
+}
+
+auto Proof::forget_proof_level(int depth) -> void
+{
+    _imp->proof << "w " << depth << endl;
+}
+
