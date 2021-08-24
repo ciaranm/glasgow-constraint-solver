@@ -57,7 +57,5 @@ Design
 Proofs
 ------
 
-- Proofs should make use of deletions and levels.
-
 - Better comment names for constraints in the OPB files.
 
