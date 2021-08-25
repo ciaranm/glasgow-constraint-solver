@@ -3,14 +3,16 @@
 #include <gcs/constraints/all_different.hh>
 #include <gcs/low_level_constraint_store.hh>
 #include <gcs/state.hh>
+#include <gcs/exception.hh>
 
 #include <util/for_each.hh>
+#include <util/overloaded.hh>
 
 #include <algorithm>
 #include <functional>
 #include <list>
 #include <map>
-#include <set>
+#include <optional>
 #include <sstream>
 #include <type_traits>
 #include <utility>
@@ -18,6 +20,8 @@
 
 using namespace gcs;
 
+using std::adjacent_find;
+using std::count;
 using std::decay_t;
 using std::endl;
 using std::is_same_v;
@@ -27,11 +31,13 @@ using std::map;
 using std::max;
 using std::min;
 using std::nullopt;
+using std::optional;
 using std::pair;
-using std::set;
+using std::sort;
 using std::stringstream;
 using std::variant;
 using std::vector;
+using std::visit;
 
 AllDifferent::AllDifferent(const vector<IntegerVariableID> & v) :
     _vars(v)
@@ -40,49 +46,66 @@ AllDifferent::AllDifferent(const vector<IntegerVariableID> & v) :
 
 namespace
 {
+    struct Left
+    {
+        vector<IntegerVariableID>::size_type offset;
+
+        [[ nodiscard ]] auto operator<=> (const Left &) const = default;
+    };
+
+    struct Right
+    {
+        vector<Integer>::size_type offset;
+
+        [[ nodiscard ]] auto operator<=> (const Right &) const = default;
+    };
+
     auto build_matching(
-            const set<pair<IntegerVariableID, Integer> > & edges,
-            const set<IntegerVariableID> & lhs,
-            set<IntegerVariableID> & left_covered,
-            set<Integer> & right_covered,
-            set<pair<IntegerVariableID, Integer> > & matching
+            const vector<IntegerVariableID> & vars,
+            const vector<Integer> & vals,
+            const vector<pair<Left, Right> > & edges,
+            vector<uint8_t> & left_covered,
+            vector<uint8_t> & right_covered,
+            vector<optional<Right> > & matching
             ) -> void
     {
         // start with a greedy matching
         for (auto & e : edges) {
-            if ((! left_covered.count(e.first)) && (! right_covered.count(e.second))) {
-                left_covered.insert(e.first);
-                right_covered.insert(e.second);
-                matching.insert(e);
+            if ((! left_covered[e.first.offset]) && (! right_covered[e.second.offset])) {
+                left_covered[e.first.offset] = 1;
+                right_covered[e.second.offset] = 1;
+                matching[e.first.offset] = e.second;
             }
         }
 
         // now augment
         while (true) {
-            set<IntegerVariableID> reached_on_the_left;
-            set<Integer> reached_on_the_right;
+            vector<uint8_t> reached_on_the_left(vars.size(), 0);
+            vector<uint8_t> reached_on_the_right(vals.size(), 0);
 
-            map<Integer, IntegerVariableID> how_we_got_to_on_the_right;
-            map<IntegerVariableID, Integer> how_we_got_to_on_the_left;
+            vector<Left> how_we_got_to_on_the_right(vals.size(), Left{});
+            vector<Right> how_we_got_to_on_the_left(vars.size(), Right{});
 
             // start from exposed variables
-            set_difference(lhs.begin(), lhs.end(), left_covered.begin(), left_covered.end(),
-                    inserter(reached_on_the_left, reached_on_the_left.begin()));
+            for (Left v{ 0 } ; v.offset != vars.size() ; ++v.offset)
+                if (! left_covered[v.offset])
+                    reached_on_the_left[v.offset] = 1;
 
             bool still_searching = true, found_a_path = false;
-            Integer path_endpoint = 0_i;
+            Right path_endpoint{ };
             while (still_searching && ! found_a_path) {
                 still_searching = false;
 
                 // for each potential left-to-right edge that is not in the matching,
                 // that starts with something on the left...
                 for (auto & [ var, val ] : edges) {
-                    if (reached_on_the_left.count(var) && ! matching.count(pair{ var, val })) {
+                    if (reached_on_the_left[var.offset] && matching[var.offset] != val) {
                         // we've found something we can reach on the right
-                        if (reached_on_the_right.insert(val).second) {
-                            how_we_got_to_on_the_right.insert(pair{ val, var });
+                        if (! reached_on_the_right[val.offset]) {
+                            reached_on_the_right[val.offset] = 1;
+                            how_we_got_to_on_the_right[val.offset] = var;
                             // is it exposed?
-                            if (! right_covered.count(val)) {
+                            if (! right_covered[val.offset]) {
                                 found_a_path = true;
                                 path_endpoint = val;
                                 break;
@@ -103,10 +126,11 @@ namespace
                 // now, for each potential right-to-left edge that is in the matching,
                 // that starts with something we've reached on the right...
                 for (auto & [ var, val ] : edges) {
-                    if (reached_on_the_right.count(val) && matching.count(pair{ var, val })) {
+                    if (reached_on_the_right[val.offset] && matching[var.offset] == val) {
                         // we've found something we can reach on the left
-                        if (reached_on_the_left.insert(var).second) {
-                            how_we_got_to_on_the_left.insert(pair{ var, val });
+                        if (! reached_on_the_left[var.offset]) {
+                            reached_on_the_left[var.offset] = 1;
+                            how_we_got_to_on_the_left[var.offset] = val;
                             still_searching = true;
                         }
                     }
@@ -115,27 +139,21 @@ namespace
 
             if (found_a_path) {
                 // we've included another value
-                right_covered.insert(path_endpoint);
+                right_covered[path_endpoint.offset] = 1;
 
                 // reconstruct the augmenting path to figure out how we did it,
                 // going backwards
                 while (true) {
-                    // find how we got to the thing on the right...
-                    auto how_right = how_we_got_to_on_the_right.find(path_endpoint);
-
                     // is the thing on the left exposed?
-                    if (! left_covered.count(how_right->second)) {
-                        left_covered.insert(how_right->second);
-                        matching.insert(pair{ how_right->second, path_endpoint });
+                    if (! left_covered[how_we_got_to_on_the_right[path_endpoint.offset].offset]) {
+                        left_covered[how_we_got_to_on_the_right[path_endpoint.offset].offset] = 1;
+                        matching[how_we_got_to_on_the_right[path_endpoint.offset].offset] = path_endpoint;
                         break;
                     }
                     else {
                         // nope, we must have reached this from the right
-                        auto how_left = how_we_got_to_on_the_left.find(how_right->second);
-                        matching.erase(pair{ how_right->second, how_left->second });
-                        matching.insert(pair{ how_right->second, path_endpoint });
-
-                        path_endpoint = how_left->second;
+                        matching[how_we_got_to_on_the_right[path_endpoint.offset].offset] = path_endpoint;
+                        path_endpoint = how_we_got_to_on_the_left[how_we_got_to_on_the_right[path_endpoint.offset].offset];
                     }
                 }
             }
@@ -145,41 +163,44 @@ namespace
     }
 
     auto prove_matching_is_too_small(
+            const vector<IntegerVariableID> & vars,
+            const vector<Integer> & vals,
             const map<Integer, ProofLine> & constraint_numbers,
             Proof & proof,
-            const set<pair<IntegerVariableID, Integer> > & edges,
-            const set<IntegerVariableID> & lhs,
-            const set<IntegerVariableID> & left_covered,
-            const set<pair<IntegerVariableID, Integer> > & matching
+            const vector<pair<Left, Right> > & edges,
+            const vector<uint8_t> & left_covered,
+            const vector<optional<Right> > & matching
             ) -> void
     {
-        map<Integer, IntegerVariableID> inverse_matching;
-        for (auto & [ l, r ] : matching)
-            inverse_matching.emplace(r, l);
+        vector<optional<Left> > inverse_matching(vals.size(), nullopt);
+        for_each_with_index(matching, [&] (const optional<Right> & r, auto l) {
+            if (r)
+                inverse_matching[r->offset] = Left{ l };
+        });
 
-        set<IntegerVariableID> hall_variables;
-        set<Integer> hall_values;
+        vector<uint8_t> hall_variables(vars.size(), 0);
+        vector<uint8_t> hall_values(vals.size(), 0);
 
         // there must be at least one thing uncovered, and this will
         // necessarily participate in a hall violator
-        for (auto & v : lhs)
-            if (! left_covered.count(v)) {
-                hall_variables.insert(v);
+        for (Left v{ 0 } ; v.offset != vars.size() ; ++v.offset)
+            if (! left_covered[v.offset]) {
+                hall_variables[v.offset] = 1;
                 break;
             }
 
         // either we have found a hall violator, or we have a spare value
         // on the right
         while (true) {
-            set<Integer> n_of_hall_variables;
+            vector<uint8_t> n_of_hall_variables(vals.size(), 0);
             for (auto & [ l, r ] : edges)
-                if (hall_variables.count(l))
-                    n_of_hall_variables.insert(r);
+                if (hall_variables[l.offset])
+                    n_of_hall_variables[r.offset] = 1;
 
             bool is_subset = true;
-            Integer not_subset_witness{ 0_i };
-            for (auto & v : n_of_hall_variables)
-                if (! hall_values.count(v)) {
+            Right not_subset_witness;
+            for (Right v{ 0 } ; v.offset != vals.size() ; ++v.offset)
+                if (n_of_hall_variables[v.offset] && ! hall_values[v.offset]) {
                     is_subset = false;
                     not_subset_witness = v;
                     break;
@@ -191,9 +212,9 @@ namespace
 
             // not_subset_witness must be matched to something not yet in
             // hall_variables
-            IntegerVariableID add_to_hall_variable = inverse_matching.find(not_subset_witness)->second;
-            hall_variables.insert(add_to_hall_variable);
-            hall_values.insert(not_subset_witness);
+            Left add_to_hall_variable = *inverse_matching[not_subset_witness.offset];
+            hall_variables[add_to_hall_variable.offset] = 1;
+            hall_values[not_subset_witness.offset] = 1;
         }
 
         // each variable in the violator has to take at least one value that is
@@ -202,90 +223,123 @@ namespace
         proof_step << "p";
         bool first = true;
         for (auto & v : hall_variables) {
-            proof_step << " " << proof.constraint_saying_variable_takes_at_least_one_value(v);
-            if (! first)
-                proof_step << " +";
-            first = false;
+            if (v) {
+                proof_step << " " << proof.constraint_saying_variable_takes_at_least_one_value(vars[v]);
+                if (! first)
+                    proof_step << " +";
+                first = false;
+            }
         }
 
         // and each value in the component can only be used once
-        for (auto & v : hall_values)
-            proof_step << " " << constraint_numbers.find(v)->second << " +";
+        for (Right v{ 0 } ; v.offset != vals.size() ; ++v.offset)
+            if (hall_values[v.offset])
+                proof_step << " " << constraint_numbers.find(vals[v.offset])->second << " +";
 
         proof_step << " 0";
         proof.emit_proof_line(proof_step.str());
     }
 
-    using Vertex = variant<IntegerVariableID, Integer>;
+    using Vertex = variant<Left, Right>;
+
+    auto vertex_to_offset(
+            const vector<IntegerVariableID> & vars,
+            const vector<Integer> &,
+            Vertex v) -> std::size_t
+    {
+        return visit(overloaded {
+                [&] (const Left & l) { return l.offset; },
+                [&] (const Right & r) { return vars.size() + r.offset; }
+                }, v);
+    }
 
     auto prove_deletion_using_sccs(
+            const vector<IntegerVariableID> & vars,
+            const vector<Integer> & vals,
             const map<Integer, ProofLine> & constraint_numbers,
             Proof & proof,
-            const map<IntegerVariableID, list<Integer> > & edges_out_from_variable,
-            const map<Integer, list<IntegerVariableID> > & edges_out_from_value,
-            const IntegerVariableID delete_variable,
-            const Integer delete_value,
-            const map<Vertex, int> & components
+            const vector<vector<Right> > & edges_out_from_variable,
+            const vector<vector<Left> > & edges_out_from_value,
+            const Left delete_variable,
+            const Right delete_value,
+            const vector<int> & components
             ) -> void
     {
         // we know a hall set exists, but we have to find it. starting
         // from but not including the end of the edge we're deleting,
         // everything reachable forms a hall set.
-        set<Vertex> to_explore, explored;
-        set<IntegerVariableID> hall_left;
-        set<Integer> hall_right;
-        to_explore.insert(delete_value);
-        int care_about_scc = components.find(delete_value)->second;
+        vector<uint8_t> in_to_explore(vars.size() + vals.size(), 0);
+        vector<Vertex> to_explore;
+
+        vector<uint8_t> explored(vars.size() + vals.size(), 0);
+        vector<uint8_t> hall_left(vars.size(), 0);
+        vector<uint8_t> hall_right(vals.size(), 0);
+        bool have_hall_left = false;
+
+        in_to_explore[vertex_to_offset(vars, vals, delete_value)] = 1;
+        to_explore.push_back(delete_value);
+        int care_about_scc = components[vertex_to_offset(vars, vals, delete_value)];
         while (! to_explore.empty()) {
-            Vertex n = *to_explore.begin();
-            to_explore.erase(n);
-            explored.insert(n);
+            Vertex n = to_explore.back();
+            to_explore.pop_back();
+            in_to_explore[vertex_to_offset(vars, vals, n)] = 0;
+            explored[vertex_to_offset(vars, vals, n)] = 1;
 
             visit([&] (const auto & x) -> void {
-                    if constexpr (is_same_v<decay_t<decltype(x)>, IntegerVariableID>) {
-                        hall_left.emplace(x);
-                        auto e = edges_out_from_variable.find(x);
-                        if (e != edges_out_from_variable.end())
-                            for (const auto & t : e->second) {
-                                if (care_about_scc == components.find(t)->second && ! explored.count(t))
-                                    to_explore.insert(t);
+                    if constexpr (is_same_v<decay_t<decltype(x)>, Left>) {
+                        hall_left[x.offset] = 1;
+                        have_hall_left = true;
+                        for (const auto & t : edges_out_from_variable[x.offset]) {
+                            if (care_about_scc == components[vertex_to_offset(vars, vals, t)] && ! explored[vertex_to_offset(vars, vals, t)]) {
+                                if (0 == in_to_explore[vertex_to_offset(vars, vals, t)]) {
+                                    to_explore.push_back(t);
+                                    in_to_explore[vertex_to_offset(vars, vals, t)] = 1;
                                 }
+                            }
                         }
-                        else {
-                            hall_right.emplace(x);
-                            auto e = edges_out_from_value.find(x);
-                            if (e != edges_out_from_value.end())
-                                for (const auto & t : e->second) {
-                                    if (care_about_scc == components.find(t)->second && ! explored.count(t))
-                                        to_explore.insert(t);
+                    }
+                    else {
+                        hall_right[x.offset] = 1;
+                        for (const auto & t : edges_out_from_value[x.offset]) {
+                            if (care_about_scc == components[vertex_to_offset(vars, vals, t)] && ! explored[vertex_to_offset(vars, vals, t)]) {
+                                if (0 == in_to_explore[vertex_to_offset(vars, vals, t)]) {
+                                    to_explore.push_back(t);
+                                    in_to_explore[vertex_to_offset(vars, vals, t)] = 1;
                                 }
+                            }
                         }
-                    }, n);
+                    }
+                }, n);
         }
 
-        if (! hall_left.empty()) {
+        if (have_hall_left) {
             stringstream proof_step;
 
             proof_step << "* all different, found hall set {";
-            for (auto & h : hall_left)
-                proof_step << " " << debug_string(h);
+            for (Left v{ 0 } ; v.offset != vars.size() ; ++v.offset)
+                if (hall_left[v.offset])
+                    proof_step << " " << debug_string(vars[v.offset]);
 
             proof_step << " } having values {";
-            for (auto & w : hall_right)
-                proof_step << " " << w;
-            proof_step << " } and so " << debug_string(delete_variable) << " != " << delete_value << endl;
+            for (Right v{ 0 } ; v.offset != vals.size() ; ++v.offset)
+                if (hall_right[v.offset])
+                    proof_step << " " << vals[v.offset];
+            proof_step << " } and so " << debug_string(vars[delete_variable.offset]) << " != " << vals[delete_value.offset] << endl;
 
             proof_step << "p";
             bool first = true;
-            for (auto & h : hall_left) {
-                proof_step << " " << proof.constraint_saying_variable_takes_at_least_one_value(h);
-                if (! first)
-                    proof_step << " +";
-                first = false;
+            for (Left v{ 0 } ; v.offset != vars.size() ; ++v.offset) {
+                if (hall_left[v.offset]) {
+                    proof_step << " " << proof.constraint_saying_variable_takes_at_least_one_value(vars[v.offset]);
+                    if (! first)
+                        proof_step << " +";
+                    first = false;
+                }
             }
 
-            for (auto & w : hall_right)
-                proof_step << " " << constraint_numbers.find(w)->second << " +";
+            for (Right v{ 0 } ; v.offset != vals.size() ; ++v.offset)
+                if (hall_right[v.offset])
+                    proof_step << " " << constraint_numbers.find(vals[v.offset])->second << " +";
 
             proof_step << " 0";
             proof.emit_proof_line(proof_step.str());
@@ -293,133 +347,156 @@ namespace
     }
 
     auto propagate_all_different(
-            const map<Integer, ProofLine> & constraint_numbers,
             const vector<IntegerVariableID> & vars,
+            const vector<Integer> & vals,
+            const map<Integer, ProofLine> & constraint_numbers,
             State & state) -> Inference
     {
         // find a matching to check feasibility
-        set<IntegerVariableID> lhs{ vars.begin(), vars.end() };
-        set<Integer> rhs;
-        set<pair<IntegerVariableID, Integer> > edges;
+        vector<pair<Left, Right> > edges;
 
-        for (auto & var : vars) {
-            state.for_each_value(var, [&] (Integer val) {
-                rhs.emplace(val);
-                edges.emplace(pair{ var, val });
+        for_each_with_index(vars, [&] (IntegerVariableID var, auto var_idx) {
+            for_each_with_index(vals, [&] (Integer val, auto val_idx) {
+                    if (state.in_domain(var, val))
+                        edges.emplace_back(var_idx, val_idx);
             });
-        }
+        });
 
-        set<IntegerVariableID> left_covered;
-        set<Integer> right_covered;
-        set<pair<IntegerVariableID, Integer> > matching;
+        vector<uint8_t> left_covered(vars.size(), 0);
+        vector<uint8_t> right_covered(vals.size(), 0);
+        vector<optional<Right> > matching(vars.size(), nullopt);
 
-        build_matching(edges, lhs, left_covered, right_covered, matching);
+        build_matching(vars, vals, edges, left_covered, right_covered, matching);
 
         // is our matching big enough?
-        if (left_covered.size() != lhs.size()) {
+        if (left_covered.size() != vars.size()) {
             // nope. we've got a maximum cardinality matching that leaves at least
             // one thing on the left uncovered.
             return state.infer(+constant_variable(false), JustifyExplicitly{ [&] (Proof & proof) -> void {
-                    prove_matching_is_too_small(constraint_numbers, proof, edges, lhs, left_covered, matching);
+                    prove_matching_is_too_small(vars, vals, constraint_numbers, proof, edges, left_covered, matching);
                     } });
         }
 
         // we have a matching that uses every variable. however, some edges may
         // not occur in any maximum cardinality matching, and we can delete
         // these. first we need to build the directed matching graph...
-        map<Vertex, list<Vertex> > edges_out_from;
-        map<IntegerVariableID, list<Integer> > edges_out_from_variable, edges_in_to_variable;
-        map<Integer, list<IntegerVariableID> > edges_out_from_value, edges_in_to_value;
+        vector<vector<Vertex> > edges_out_from(vars.size() + vals.size(), vector<Vertex>{ });
+        vector<vector<Right> > edges_out_from_variable(vars.size()), edges_in_to_variable(vars.size());
+        vector<vector<Left> > edges_out_from_value(vars.size()), edges_in_to_value(vars.size());
 
         for (auto & [ f, t ] : edges)
-            if (matching.count(pair{ f, t })) {
-                edges_out_from[t].push_back(f);
-                edges_out_from_value[t].push_back(f);
-                edges_in_to_variable[f].push_back(t);
+            if (matching[f.offset] == t) {
+                edges_out_from[vertex_to_offset(vars, vals, t)].push_back(f);
+                edges_out_from_value[t.offset].push_back(f);
+                edges_in_to_variable[f.offset].push_back(t);
             }
             else {
-                edges_out_from[f].push_back(t);
-                edges_out_from_variable[f].push_back(t);
-                edges_in_to_value[t].push_back(f);
+                edges_out_from[vertex_to_offset(vars, vals, f)].push_back(t);
+                edges_out_from_variable[f.offset].push_back(t);
+                edges_in_to_value[t.offset].push_back(f);
             }
 
         // now we need to find strongly connected components...
-        map<Vertex, int> indices, lowlinks, components;
-        list<Vertex> stack;
-        set<Vertex> enstackinated;
-        set<Vertex> all_vertices;
-        int next_index = 0, number_of_components = 0;
-
-        for (auto & v : vars) {
-            all_vertices.emplace(v);
-            state.for_each_value(v, [&] (Integer val) {
-                    all_vertices.emplace(val);
-                    });
-        }
+        vector<int> indices(vars.size() + vals.size(), 0), lowlinks(vars.size() + vals.size(), 0), components(vars.size() + vals.size(), 0);
+        vector<Vertex> stack;
+        vector<uint8_t> enstackinated(vars.size() + vals.size());
+        int next_index = 1, number_of_components = 0;
 
         function<auto (Vertex) -> void> scc;
         scc = [&] (Vertex v) -> void {
-            indices.emplace(v, next_index);
-            lowlinks.emplace(v, next_index);
+            indices[vertex_to_offset(vars, vals, v)] = next_index;
+            lowlinks[vertex_to_offset(vars, vals, v)] = next_index;
             ++next_index;
             stack.emplace_back(v);
-            enstackinated.emplace(v);
+            enstackinated[vertex_to_offset(vars, vals, v)] = 1;
 
-            for (auto & w : edges_out_from[v]) {
-                if (! indices.count(w)) {
+            for (auto & w : edges_out_from[vertex_to_offset(vars, vals, v)]) {
+                if (0 == indices[vertex_to_offset(vars, vals, w)]) {
                     scc(w);
-                    lowlinks[v] = min(lowlinks[v], lowlinks[w]);
+                    lowlinks[vertex_to_offset(vars, vals, v)] = min(lowlinks[vertex_to_offset(vars, vals, v)], lowlinks[vertex_to_offset(vars, vals, w)]);
                 }
-                else if (enstackinated.count(w)) {
-                    lowlinks[v] = min(lowlinks[v], lowlinks[w]);
+                else if (enstackinated[vertex_to_offset(vars, vals, w)]) {
+                    lowlinks[vertex_to_offset(vars, vals, v)] = min(lowlinks[vertex_to_offset(vars, vals, v)], lowlinks[vertex_to_offset(vars, vals, w)]);
                 }
             }
 
-            if (lowlinks[v] == indices[v]) {
-                Vertex w = 0_i;
+            if (lowlinks[vertex_to_offset(vars, vals, v)] == indices[vertex_to_offset(vars, vals, v)]) {
+                Vertex w;
                 do {
                     w = stack.back();
                     stack.pop_back();
-                    enstackinated.erase(w);
-                    components.emplace(w, number_of_components);
+                    enstackinated[vertex_to_offset(vars, vals, w)] = 0;
+                    components[vertex_to_offset(vars, vals, w)] = number_of_components;
                 } while (v != w);
                 ++number_of_components;
             }
         };
 
-        for (auto & v : all_vertices)
-            if (! indices.count(v))
+        for (Left v{ 0 } ; v.offset != vars.size() ; ++v.offset)
+            if (0 == indices[vertex_to_offset(vars, vals, v)])
+                scc(v);
+
+        for (Right v{ 0 } ; v.offset != vals.size() ; ++v.offset)
+            if (0 == indices[vertex_to_offset(vars, vals, v)])
                 scc(v);
 
         // every edge in the original matching is used, and so cannot be
         // deleted
-        auto used_edges = matching;
+        vector<vector<uint8_t> > used_edges(vars.size(), vector<uint8_t>(vals.size(), 0));
+        for_each_with_index(matching, [&] (const optional<Right> & r, auto l) {
+                if (r)
+                    used_edges[l][r->offset] = 1;
+                    });
 
         // for each unmatched vertex, bring in everything that could be updated
         // to take it
         {
-            set<Vertex> to_explore{ rhs.begin(), rhs.end() }, explored;
-            for (auto & [ _, t ] : matching)
-                to_explore.erase(t);
+            vector<Vertex> to_explore;
+            vector<uint8_t> in_to_explore(vars.size() + vals.size(), 0);
+
+            vector<uint8_t> explored(vars.size() + vals.size(), 0);
+            for (Right v{ 0 } ; v.offset != vals.size() ; ++v.offset)
+                in_to_explore[vertex_to_offset(vars, vals, v)] = 1;
+
+            for (auto & t : matching)
+                if (t)
+                    in_to_explore[vertex_to_offset(vars, vals, *t)] = 0;
+
+            for (Left v{ 0 } ; v.offset != vars.size() ; ++v.offset)
+                if (in_to_explore[vertex_to_offset(vars, vals, v)])
+                    to_explore.push_back(v);
+
+            for (Right v{ 0 } ; v.offset != vals.size() ; ++v.offset)
+                if (in_to_explore[vertex_to_offset(vars, vals, v)])
+                    to_explore.push_back(v);
 
             while (! to_explore.empty()) {
-                Vertex v = *to_explore.begin();
-                to_explore.erase(v);
-                explored.insert(v);
+                Vertex v = to_explore.back();
+                to_explore.pop_back();
+                in_to_explore[vertex_to_offset(vars, vals, v)] = 0;
+                explored[vertex_to_offset(vars, vals, v)] = 1;
 
                 visit([&] (const auto & x) {
-                        if constexpr (is_same_v<decay_t<decltype(x)>, IntegerVariableID>) {
-                            for (auto & t : edges_in_to_variable[x]) {
-                                used_edges.emplace(x, t);
-                                if (! explored.count(t))
-                                    to_explore.insert(t);
+                        if constexpr (is_same_v<decay_t<decltype(x)>, Left>) {
+                            for (auto & t : edges_in_to_variable[x.offset]) {
+                                used_edges[x.offset][t.offset] = 1;
+                                if (! explored[vertex_to_offset(vars, vals, t)]) {
+                                    if (! in_to_explore[vertex_to_offset(vars, vals, t)]) {
+                                        to_explore.push_back(t);
+                                        in_to_explore[vertex_to_offset(vars, vals, t)] = 1;
+                                    }
+                                }
                             }
                         }
                         else {
-                            for (auto & t : edges_in_to_value[x]) {
-                                used_edges.emplace(t, x);
-                                if (! explored.count(t))
-                                    to_explore.insert(t);
+                            for (auto & t : edges_in_to_value[x.offset]) {
+                                used_edges[t.offset][x.offset] = 1;
+                                if (! explored[vertex_to_offset(vars, vals, t)]) {
+                                    if (! in_to_explore[vertex_to_offset(vars, vals, t)]) {
+                                        to_explore.push_back(t);
+                                        in_to_explore[vertex_to_offset(vars, vals, t)] = 1;
+                                    }
+                                }
                             }
                         }
                         }, v);
@@ -428,11 +505,11 @@ namespace
 
         // every edge that starts and ends in the same component is also used
         for (auto & [ f, t ] : edges)
-            if (components.find(f)->second == components.find(t)->second)
-                used_edges.emplace(f, t);
+            if (components[vertex_to_offset(vars, vals, f)] == components[vertex_to_offset(vars, vals, t)])
+                used_edges[f.offset][t.offset] = 1;
 
         // avoid outputting duplicate proof lines
-        set<int> sccs_already_done;
+        vector<uint8_t> sccs_already_done(number_of_components + 1, 0);
 
         bool changed = false;
 
@@ -440,17 +517,19 @@ namespace
         // justifications, to avoid having to figure out an ordering for nested Hall sets
         vector<Literal> deletions;
         for (auto & [ delete_var_name, delete_value ] : edges) {
-            if (used_edges.count(pair{ delete_var_name, delete_value }))
+            if (used_edges[delete_var_name.offset][delete_value.offset])
                 continue;
-            deletions.emplace_back(delete_var_name != delete_value);
+            deletions.emplace_back(vars[delete_var_name.offset] != vals[delete_value.offset]);
         }
 
         switch (state.infer_all(deletions, JustifyExplicitly{ [&] (Proof & proof) -> void {
                     for (auto & [ delete_var_name, delete_value ] : edges) {
-                            if (used_edges.count(pair{ delete_var_name, delete_value }))
+                            if (used_edges[delete_var_name.offset][delete_value.offset])
                                 continue;
-                            if (sccs_already_done.emplace(components.find(delete_value)->second).second)
-                                prove_deletion_using_sccs(constraint_numbers, proof, edges_out_from_variable, edges_out_from_value, delete_var_name, delete_value, components);
+                            if (! sccs_already_done[components[vertex_to_offset(vars, vals, delete_value)]]) {
+                                sccs_already_done[components[vertex_to_offset(vars, vals, delete_value)]] = 1;
+                                prove_deletion_using_sccs(vars, vals, constraint_numbers, proof, edges_out_from_variable, edges_out_from_value, delete_var_name, delete_value, components);
+                            }
                     }
                 } })) {
             case Inference::NoChange:      break;
@@ -489,9 +568,22 @@ auto AllDifferent::convert_to_low_level(LowLevelConstraintStore & constraints, c
         }
     }
 
-    vector<VariableID> var_ids{ _vars.begin(), _vars.end() };
-    constraints.propagator(initial_state, [vars = move(_vars), save_constraint_numbers = move(constraint_numbers)] (State & state) -> Inference {
-            return propagate_all_different(save_constraint_numbers, vars, state);
+    auto sanitised_vars = move(_vars);
+    sort(sanitised_vars.begin(), sanitised_vars.end());
+    if (sanitised_vars.end() != adjacent_find(sanitised_vars.begin(), sanitised_vars.end()))
+        throw UnexpectedException{ "not sure what to do about duplicate variables in an alldifferent" };
+
+    vector<VariableID> var_ids{ sanitised_vars.begin(), sanitised_vars.end() };
+    vector<Integer> compressed_vals;
+
+    for (auto & var : sanitised_vars)
+        initial_state.for_each_value(var, [&] (Integer val) {
+                if (compressed_vals.end() == find(compressed_vals.begin(), compressed_vals.end(), val))
+                    compressed_vals.push_back(val);
+                });
+
+    constraints.propagator(initial_state, [vars = move(sanitised_vars), vals = move(compressed_vals), save_constraint_numbers = move(constraint_numbers)] (State & state) -> Inference {
+            return propagate_all_different(vars, vals, save_constraint_numbers, state);
             }, var_ids);
 }
 
