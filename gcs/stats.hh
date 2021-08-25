@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <iosfwd>
+#include <vector>
 
 namespace gcs
 {
@@ -19,6 +20,8 @@ namespace gcs
         unsigned long long n_propagators = 0;
 
         std::chrono::microseconds solve_time;
+
+        std::vector<std::chrono::microseconds> propagation_function_times;
     };
 
     auto operator<< (std::ostream &, const Stats &) -> std::ostream &;

@@ -73,8 +73,6 @@ auto gcs::solve_with_trace(Problem & problem, SolutionCallback callback, Solutio
     Stats stats;
     auto start_time = steady_clock::now();
 
-    problem.fill_in_constraint_stats(stats);
-
     State state = problem.create_state();
     if (problem.optional_proof())
         problem.optional_proof()->start_proof(state);
@@ -84,6 +82,8 @@ auto gcs::solve_with_trace(Problem & problem, SolutionCallback callback, Solutio
             problem.optional_proof()->assert_contradiction();
 
     stats.solve_time = duration_cast<microseconds>(steady_clock::now() - start_time);
+    problem.fill_in_constraint_stats(stats);
+
     return stats;
 }
 

@@ -6,12 +6,16 @@
 #include "util/for_each.hh"
 
 #include <algorithm>
+#include <chrono>
 #include <list>
 #include <map>
 #include <set>
 
 using namespace gcs;
 
+using std::chrono::duration_cast;
+using std::chrono::microseconds;
+using std::chrono::steady_clock;
 using std::list;
 using std::make_optional;
 using std::map;
@@ -41,6 +45,7 @@ struct LowLevelConstraintStore::Imp
     list<Literals> cnfs;
     list<pair<Linear, Integer> > integer_linear_les;
     map<int, PropagationFunction> propagation_functions;
+    vector<microseconds> propagation_function_times;
     map<VariableID, vector<int> > triggers;
 
     Imp(Problem * p) :
@@ -53,7 +58,9 @@ LowLevelConstraintStore::LowLevelConstraintStore(Problem * p) :
     _imp(new Imp(p))
 {
     _imp->propagation_functions.emplace(0, [&] (State & s) { return propagate_cnfs(s); });
+    _imp->propagation_function_times.emplace_back();
     _imp->propagation_functions.emplace(1, [&] (State & s) { return propagate_integer_linear_les(s); });
+    _imp->propagation_function_times.emplace_back();
 }
 
 LowLevelConstraintStore::~LowLevelConstraintStore() = default;
@@ -129,6 +136,7 @@ auto LowLevelConstraintStore::propagator(const State &, PropagationFunction && f
 {
     int id = _imp->propagation_functions.size();
     _imp->propagation_functions.emplace(id, move(f));
+    _imp->propagation_function_times.emplace_back();
     for (auto & t : trigger_vars)
         _imp->triggers.try_emplace(t).first->second.push_back(id);
 }
@@ -158,6 +166,7 @@ auto LowLevelConstraintStore::table(const State & state, vector<IntegerVariableI
     _imp->propagation_functions.emplace(id, [&, table = TableData{ selector, move(vars), move(permitted) }] (State & state) -> Inference {
             return propagate_table(table, state);
             });
+    _imp->propagation_function_times.emplace_back();
 }
 
 auto LowLevelConstraintStore::propagate(State & state) const -> bool
@@ -180,7 +189,10 @@ auto LowLevelConstraintStore::propagate(State & state) const -> bool
 
         int propagator_id = *propagation_queue.begin();
         propagation_queue.erase(propagation_queue.begin());
-        switch (_imp->propagation_functions.find(propagator_id)->second(state)) {
+        auto start_time = steady_clock::now();
+        auto inference = _imp->propagation_functions.find(propagator_id)->second(state);
+        _imp->propagation_function_times[propagator_id] += duration_cast<microseconds>(steady_clock::now() - start_time);
+        switch (inference) {
             case Inference::NoChange:      break;
             case Inference::Change:        break;
             case Inference::Contradiction: return false;
@@ -341,5 +353,6 @@ auto LowLevelConstraintStore::fill_in_constraint_stats(Stats & stats) const -> v
     stats.n_cnfs += _imp->cnfs.size();
     stats.n_integer_linear_les += _imp->integer_linear_les.size();
     stats.n_propagators += _imp->propagation_functions.size();
+    stats.propagation_function_times = _imp->propagation_function_times;
 }
 
