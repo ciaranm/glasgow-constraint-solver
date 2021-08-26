@@ -85,13 +85,22 @@ namespace gcs
             };
     };
 
-
     class LessThan :
         public ComparisonReif
     {
         public:
             inline explicit LessThan(const IntegerVariableID v1, const IntegerVariableID v2) :
                 ComparisonReif(v1, v2, +constant_variable(true), true, ComparisonOperator::LessThan)
+            {
+            };
+    };
+
+    class LessThanIf :
+        public ComparisonReif
+    {
+        public:
+            inline explicit LessThanIf(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond) :
+                ComparisonReif(v1, v2, cond, false, ComparisonOperator::LessThan)
             {
             };
     };

@@ -196,6 +196,9 @@ auto main(int, char *[]) -> int
         if (! run_binary_comparison_test<GreaterThanEqual>(r1, r2, [] (int a, int b) { return a >= b; }))
             return EXIT_FAILURE;
 
+        if (! run_reif_binary_comparison_test<LessThanIf>(r1, r2, [] (int a, int b) { return a < b; }, false))
+            return EXIT_FAILURE;
+
         if (! run_reif_binary_comparison_test<LessThanIff>(r1, r2, [] (int a, int b) { return a < b; }, true))
             return EXIT_FAILURE;
         if (! run_reif_binary_comparison_test<LessThanEqualIff>(r1, r2, [] (int a, int b) { return a <= b; }, true))
