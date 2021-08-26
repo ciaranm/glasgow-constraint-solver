@@ -51,6 +51,9 @@ Problem::~Problem()
 
 auto Problem::create_integer_variable(Integer lower, Integer upper, const optional<std::string> & name, bool need_ge) -> IntegerVariableID
 {
+    if (lower > upper)
+        throw UnexpectedException{ "variable has lower bound > upper bound" };
+
     auto result = _imp->initial_state.create_integer_variable(lower, upper);
     _imp->problem_variables.push_back(result);
     if (_imp->optional_proof)
