@@ -4,6 +4,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INTEGER_HH 1
 
 #include <ostream>
+#include <string>
 
 namespace gcs
 {
@@ -14,6 +15,11 @@ namespace gcs
         explicit Integer(long long v) :
             raw_value(v)
         {
+        }
+
+        [[ nodiscard ]] auto to_string() const -> std::string
+        {
+            return std::to_string(raw_value);
         }
 
         [[ nodiscard ]] auto operator<=> (const Integer &) const = default;

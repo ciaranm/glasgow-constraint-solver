@@ -13,7 +13,6 @@ using std::nullopt;
 using std::optional;
 using std::remove_if;
 using std::string;
-using std::to_string;
 using std::unique;
 using std::visit;
 
@@ -22,10 +21,10 @@ auto gcs::debug_string(const Literal & lit) -> string
     return visit(overloaded {
             [] (const LiteralFromIntegerVariable & ilit) -> string {
                 switch (ilit.state) {
-                    case LiteralFromIntegerVariable::Equal:        return "intvars[" + debug_string(ilit.var) + "] = " + to_string(ilit.value.raw_value);
-                    case LiteralFromIntegerVariable::NotEqual:     return "intvars[" + debug_string(ilit.var) + "] != " + to_string(ilit.value.raw_value);
-                    case LiteralFromIntegerVariable::GreaterEqual: return "intvars[" + debug_string(ilit.var) + "] >= " + to_string(ilit.value.raw_value);
-                    case LiteralFromIntegerVariable::Less:         return "intvars[" + debug_string(ilit.var) + "] < " + to_string(ilit.value.raw_value);
+                    case LiteralFromIntegerVariable::Equal:        return "intvars[" + debug_string(ilit.var) + "] = " + ilit.value.to_string();
+                    case LiteralFromIntegerVariable::NotEqual:     return "intvars[" + debug_string(ilit.var) + "] != " + ilit.value.to_string();
+                    case LiteralFromIntegerVariable::GreaterEqual: return "intvars[" + debug_string(ilit.var) + "] >= " + ilit.value.to_string();
+                    case LiteralFromIntegerVariable::Less:         return "intvars[" + debug_string(ilit.var) + "] < " + ilit.value.to_string();
                 }
                 throw NonExhaustiveSwitch{ };
             },
