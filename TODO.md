@@ -54,6 +54,9 @@ Design
   everywhere instead. Might not be very useful if we need to introduce float
   and set variables for MiniZinc, though.
 
+- Go through everywhere that uses Integer::raw\_value and see if it should
+  use something else instead.
+
 Proofs
 ------
 
