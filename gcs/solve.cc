@@ -14,7 +14,8 @@ using std::nullopt;
 namespace
 {
     auto solve_with_state(unsigned long long depth, Stats & stats, Problem & problem, State & state,
-            SolutionCallback & callback, SolutionCallback & trace) -> bool
+            SolutionCallback & callback, SolutionCallback & trace,
+            bool & this_subtree_contains_solution) -> bool
     {
         stats.max_depth = max(stats.max_depth, depth);
         ++stats.recursions;
@@ -32,6 +33,7 @@ namespace
                 }
 
                 ++stats.solutions;
+                this_subtree_contains_solution = true;
                 if (! callback(state))
                     return false;
 
@@ -47,8 +49,15 @@ namespace
                         if (keep_going) {
                             auto timestamp = state.new_epoch();
                             state.guess(*branch_var == val);
-                            if (! solve_with_state(depth + 1, stats, problem, state, callback, trace))
+                            bool child_contains_solution = false;
+                            if (! solve_with_state(depth + 1, stats, problem, state, callback, trace, child_contains_solution))
                                 keep_going = false;
+
+                            if (child_contains_solution)
+                                this_subtree_contains_solution = true;
+                            else
+                                ++stats.failures;
+
                             state.backtrack(timestamp);
                         }
                     });
@@ -77,7 +86,8 @@ auto gcs::solve_with_trace(Problem & problem, SolutionCallback callback, Solutio
     if (problem.optional_proof())
         problem.optional_proof()->start_proof(state);
 
-    if (solve_with_state(0, stats, problem, state, callback, trace))
+    bool child_contains_solution = false;
+    if (solve_with_state(0, stats, problem, state, callback, trace, child_contains_solution))
         if (problem.optional_proof())
             problem.optional_proof()->assert_contradiction();
 
