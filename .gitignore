@@ -19,5 +19,6 @@ perf.data.old
 /comparison_test
 /abs_test
 /element_test
+/stable_matching
 *.opb
 *.veripb
