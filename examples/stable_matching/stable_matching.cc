@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <functional>
 #include <iostream>
 #include <random>
 #include <string>
@@ -19,7 +20,10 @@ using namespace gcs;
 using std::cerr;
 using std::cout;
 using std::endl;
+using std::function;
 using std::mt19937;
+using std::nullopt;
+using std::optional;
 using std::pair;
 using std::shuffle;
 using std::stoi;
@@ -34,11 +38,14 @@ auto main(int argc, char * argv []) -> int
     Problem p{ Proof{ "stable_matching.opb", "stable_matching.veripb" } };
 
     unsigned size = 10;
-    bool use_table = false;
+    unsigned dimensions = 2;
+    bool use_table = false, use_auto_table = false;
     unsigned seed = 0;
-    const string usage = " [ size ] [ table false|true ] [ seed ]";
+    const string usage = " [ size ] [ dimensions ] [ table false|true|auto ] [ seed ] [ scale ]";
 
-    if (argc > 4) {
+    unsigned scale = 1;
+
+    if (argc > 6) {
         cerr << "Usage: " << argv[0] << usage << endl;
         return EXIT_FAILURE;
     }
@@ -46,142 +53,336 @@ auto main(int argc, char * argv []) -> int
     if (argc >= 2)
         size = stoi(argv[1]);
 
-    if (argc >= 3) {
-        if (argv[2] == "true"s)
+    if (argc >= 3)
+        dimensions = stoi(argv[2]);
+
+    if (argc >= 4) {
+        if (argv[3] == "true"s)
             use_table = true;
-        else if (argv[2] == "false"s)
+        else if (argv[3] == "false"s)
             use_table = false;
+        else if (argv[3] == "auto"s)
+            use_auto_table = true;
         else {
             cerr << "Usage: " << argv[0] << usage << endl;
             return EXIT_FAILURE;
         }
     }
 
-    if (argc >= 4)
-        seed = stoi(argv[3]);
+    if (argc >= 5)
+        seed = stoi(argv[4]);
 
-    vector<IntegerVariableID> left, right;
-    for (unsigned i = 0 ; i < size ; ++i) {
-        left.push_back(p.create_integer_variable(0_i, Integer(size - 1), "left" + to_string(i)));
-        right.push_back(p.create_integer_variable(0_i, Integer(size - 1), "right" + to_string(i)));
-    }
+    if (argc >= 6)
+        scale = stoi(argv[5]);
 
-    p.branch_on(left);
+    vector<pair<int, int> > pairings;
+    for (unsigned d1 = 0 ; d1 < dimensions ; ++d1)
+        for (unsigned d2 = d1 + 1 ; d2 < dimensions ; ++d2)
+            pairings.emplace_back(d1, d2);
+
+    vector<vector<IntegerVariableID> > allocations{ pairings.size() * 2 };
+    for_each_with_index(pairings, [&] (auto d, auto dx) {
+        auto [ d1, d2 ] = d;
+        for (unsigned i = 0 ; i < size * scale ; ++i) {
+            allocations[dx * 2].push_back(p.create_integer_variable(0_i, Integer(size * scale - 1), "a" + to_string(d1) + "_" + to_string(d2) + "_" + to_string(i)));
+            allocations[dx * 2 + 1].push_back(p.create_integer_variable(0_i, Integer(size * scale - 1), "a" + to_string(d2) + "_" + to_string(d1) + "_" + to_string(i)));
+        }
+    });
+
+    vector<IntegerVariableID> branch_vars;
+    for_each_with_index(pairings, [&] (auto, auto dx) {
+        for (unsigned i = 0 ; i < size ; ++i)
+            for (unsigned s = 0 ; s < scale ; ++s)
+                branch_vars.push_back(allocations[dx * 2][i + (s * size)]);
+    });
+
+    p.branch_on(branch_vars);
 
     mt19937 rand;
     rand.seed(seed);
-    vector<vector<Integer> > left_prefs(size), right_prefs(size);
-    for (auto & l : left_prefs) {
-        for (Integer i{ 0 } ; i < Integer{ size } ; ++i)
-            l.push_back(i);
-        shuffle(l.begin(), l.end(), rand);
+    vector<vector<vector<Integer> > > prefs{ pairings.size() * 2, vector<vector<Integer> >{ size, vector<Integer> { } } };
+
+    auto make_prefs = [&] (vector<vector<Integer> > & p) {
+        for (auto & l : p) {
+            for (Integer i{ 0 } ; i < Integer{ size } ; ++i)
+                l.push_back(i);
+            shuffle(l.begin(), l.end(), rand);
+        }
+    };
+
+    for_each_with_index(pairings, [&] (auto, auto dx) {
+        make_prefs(prefs[dx * 2]);
+        make_prefs(prefs[dx * 2 + 1]);
+    });
+
+    for (auto & p : prefs) {
+        for (unsigned s = 1 ; s < scale ; ++s) {
+            for (unsigned i = 0 ; i < size ; ++i) {
+                vector<Integer> xp = p[i];
+                for (auto & x : xp)
+                    x += Integer(s * size);
+                p.push_back(move(xp));
+            }
+        }
     }
 
-    for (auto & r : right_prefs) {
-        for (Integer i{ 0 } ; i < Integer{ size } ; ++i)
-            r.push_back(i);
-        shuffle(r.begin(), r.end(), rand);
+    for (auto & p : prefs) {
+        for (unsigned i = 0 ; i < size ; ++i) {
+            for (unsigned s = 0 ; s < scale ; ++s) {
+                for (unsigned t = 0 ; t < scale ; ++t)
+                    if (t != s)
+                        for (unsigned j = 0 ; j < size ; ++j)
+                            p[i + (s * size)].push_back(Integer(j + (t * size)));
+            }
+        }
     }
 
-    vector<vector<unsigned> > left_ranks(size, vector<unsigned>(size)), right_ranks(size, vector<unsigned>(size));
-    for (unsigned l = 0 ; l < size ; ++l)
-        for (unsigned i = 0 ; i < size ; ++i)
-            left_ranks[l][left_prefs[l][i].raw_value] = i;
+    for (auto & p : prefs) {
+        cout << "next pref matrix" << endl;
+        for (auto & r : p) {
+            for (auto & c : r)
+                cout << c << " ";
+            cout << endl;
+        }
+        cout << endl;
+    }
 
-    for (unsigned r = 0 ; r < size ; ++r)
-        for (unsigned i = 0 ; i < size ; ++i)
-            right_ranks[r][right_prefs[r][i].raw_value] = i;
+    size *= scale;
+
+    vector<vector<vector<unsigned> > > ranks{ pairings.size() * 2, vector<vector<unsigned> >{ size, vector<unsigned>(size, 0) } };
+
+    auto make_ranks = [&] (vector<vector<unsigned> > & r, vector<vector<Integer> > & p) {
+        for (unsigned l = 0 ; l < size ; ++l)
+            for (unsigned i = 0 ; i < size ; ++i)
+                r[l][p[l][i].raw_value] = i;
+    };
+
+    for_each_with_index(pairings, [&] (auto, auto dx) {
+        make_ranks(ranks[dx * 2], prefs[dx * 2]);
+        make_ranks(ranks[dx * 2 + 1], prefs[dx * 2 + 1]);
+    });
 
     if (use_table) {
-        // See Ian P. Gent, Robert W. Irving, David F. Manlove, Patrick Prosser, Barbara M. Smith:
-        // A Constraint Programming Approach to the Stable Marriage Problem. CP 2001: 225-239
-        for (Integer l{ 0 } ; l < Integer{ size } ; ++l) {
-            for (Integer r{ 0 } ; r < Integer{ size } ; ++r) {
-                // l -> left_prefs[l_gets] && r -> right_prefs[r_gets] is OK if...
-                vector<IntegerVariableID> vars{ left[l.raw_value], right[r.raw_value] };
-                vector<vector<Integer> > tuples;
-                for (Integer l_gets{ 0 } ; l_gets < Integer{ size } ; ++l_gets) {
-                    for (Integer r_gets{ 0 } ; r_gets < Integer{ size } ; ++r_gets) {
-                        if (left_prefs[l.raw_value][l_gets.raw_value] == r && right_prefs[r.raw_value][r_gets.raw_value] == l) {
-                            // state A
-                            tuples.emplace_back(vector{ l_gets, r_gets });
-                        }
-                        else if (left_prefs[l.raw_value][l_gets.raw_value] == r && right_prefs[r.raw_value][r_gets.raw_value] != l) {
-                            // state I
-                        }
-                        else if (left_prefs[l.raw_value][l_gets.raw_value] != r && right_prefs[r.raw_value][r_gets.raw_value] == l) {
-                            // state I
-                        }
-                        else if (l_gets.raw_value > left_ranks[l.raw_value][r.raw_value] && r_gets.raw_value > right_ranks[r.raw_value][l.raw_value]) {
-                            // state B
-                        }
-                        else {
-                            // state S
-                            tuples.emplace_back(vector{ l_gets, r_gets });
+        auto impose = [&] (
+                vector<IntegerVariableID> & left,
+                vector<IntegerVariableID> & right,
+                vector<vector<Integer> > & left_prefs,
+                vector<vector<Integer> > & right_prefs,
+                vector<vector<unsigned> > & left_ranks,
+                vector<vector<unsigned> > & right_ranks
+                ) {
+            // See Ian P. Gent, Robert W. Irving, David F. Manlove, Patrick Prosser, Barbara M. Smith:
+            // A Constraint Programming Approach to the Stable Marriage Problem. CP 2001: 225-239
+            for (Integer l{ 0 } ; l < Integer{ size } ; ++l) {
+                for (Integer r{ 0 } ; r < Integer{ size } ; ++r) {
+                    // l -> left_prefs[l_gets] && r -> right_prefs[r_gets] is OK if...
+                    vector<IntegerVariableID> vars{ left[l.raw_value], right[r.raw_value] };
+                    vector<vector<Integer> > tuples;
+                    for (Integer l_gets{ 0 } ; l_gets < Integer{ size } ; ++l_gets) {
+                        for (Integer r_gets{ 0 } ; r_gets < Integer{ size } ; ++r_gets) {
+                            if (left_prefs[l.raw_value][l_gets.raw_value] == r && right_prefs[r.raw_value][r_gets.raw_value] == l) {
+                                // state A
+                                tuples.emplace_back(vector{ l_gets, r_gets });
+                            }
+                            else if (left_prefs[l.raw_value][l_gets.raw_value] == r && right_prefs[r.raw_value][r_gets.raw_value] != l) {
+                                // state I
+                            }
+                            else if (left_prefs[l.raw_value][l_gets.raw_value] != r && right_prefs[r.raw_value][r_gets.raw_value] == l) {
+                                // state I
+                            }
+                            else if (l_gets.raw_value > left_ranks[l.raw_value][r.raw_value] && r_gets.raw_value > right_ranks[r.raw_value][l.raw_value]) {
+                                // state B
+                            }
+                            else {
+                                // state S
+                                tuples.emplace_back(vector{ l_gets, r_gets });
+                            }
                         }
                     }
+                    p.post(Table{ move(vars), move(tuples) });
                 }
-                p.post(Table{ move(vars), move(tuples) });
             }
-        }
+        };
+
+        for_each_with_index(pairings, [&] (auto, auto dx) {
+            impose(allocations[dx * 2], allocations[dx * 2 + 1], prefs[dx * 2], prefs[dx * 2 + 1], ranks[dx * 2], ranks[dx * 2 + 1]);
+        });
     }
     else {
-        for (unsigned l = 0 ; l < size ; ++l) {
-            for (unsigned l_pref = 0 ; l_pref < size ; ++l_pref) {
-                auto link = p.create_integer_variable(0_i, 1_i);
-                p.post(EqualsIff{ left[l], constant_variable(Integer(l_pref)), link == 1_i });
-                p.post(EqualsIff{ right[left_prefs[l][l_pref].raw_value], constant_variable(Integer(right_ranks[left_prefs[l][l_pref].raw_value][l])), link == 1_i });
-            }
-        }
-
-        for (unsigned l = 0 ; l < size ; ++l) {
-            for (unsigned r = 0 ; r < size ; ++r) {
-                auto cond = p.create_integer_variable(0_i, 1_i);
-                p.post(GreaterThanIff{ left[l], constant_variable(Integer(left_ranks[l][r])), cond == 1_i });
-                p.post(LessThanIf{ right[r], constant_variable(Integer(right_ranks[r][l])), cond == 1_i });
-            }
-        }
-
-        for (unsigned r = 0 ; r < size ; ++r) {
+        auto impose = [&] (
+                vector<IntegerVariableID> & left,
+                vector<IntegerVariableID> & right,
+                vector<vector<Integer> > & left_prefs,
+                vector<vector<Integer> > &,
+                vector<vector<unsigned> > & left_ranks,
+                vector<vector<unsigned> > & right_ranks
+                ) {
             for (unsigned l = 0 ; l < size ; ++l) {
-                auto cond = p.create_integer_variable(0_i, 1_i);
-                p.post(GreaterThanIff{ right[r], constant_variable(Integer(right_ranks[r][l])), cond == 1_i });
-                p.post(LessThanIf{ left[l], constant_variable(Integer(left_ranks[l][r])), cond == 1_i });
+                for (unsigned l_pref = 0 ; l_pref < size ; ++l_pref) {
+                    auto link = p.create_integer_variable(0_i, 1_i);
+                    p.post(EqualsIff{ left[l], constant_variable(Integer(l_pref)), link == 1_i });
+                    p.post(EqualsIff{ right[left_prefs[l][l_pref].raw_value], constant_variable(Integer(right_ranks[left_prefs[l][l_pref].raw_value][l])), link == 1_i });
+                }
+            }
+
+            for (unsigned l = 0 ; l < size ; ++l) {
+                for (unsigned r = 0 ; r < size ; ++r) {
+                    auto cond = p.create_integer_variable(0_i, 1_i);
+                    p.post(GreaterThanIff{ left[l], constant_variable(Integer(left_ranks[l][r])), cond == 1_i });
+                    p.post(LessThanIf{ right[r], constant_variable(Integer(right_ranks[r][l])), cond == 1_i });
+                }
+            }
+
+            for (unsigned r = 0 ; r < size ; ++r) {
+                for (unsigned l = 0 ; l < size ; ++l) {
+                    auto cond = p.create_integer_variable(0_i, 1_i);
+                    p.post(GreaterThanIff{ right[r], constant_variable(Integer(right_ranks[r][l])), cond == 1_i });
+                    p.post(LessThanIf{ left[l], constant_variable(Integer(left_ranks[l][r])), cond == 1_i });
+                }
+            }
+        };
+
+        for_each_with_index(pairings, [&] (auto, auto dx) {
+            impose(allocations[dx * 2], allocations[dx * 2 + 1], prefs[dx * 2], prefs[dx * 2 + 1], ranks[dx * 2], ranks[dx * 2 + 1]);
+        });
+    }
+
+    if (use_auto_table) {
+        auto autotabulate = [&] (const vector<IntegerVariableID> & restrict_branch_vars) {
+            vector<vector<Integer> > feasible;
+            function<auto (State &) -> void> tabulate = [&] (State & state) {
+                if (p.propagate(state)) {
+                    optional<IntegerVariableID> branch_var = nullopt;
+                    Integer sz{ 0 };
+                    for (auto & var : restrict_branch_vars) {
+                        Integer s = state.domain_size(var);
+                        if (s > Integer{ 1 } && (nullopt == branch_var || s < sz)) {
+                            branch_var = var;
+                            sz = s;
+                        }
+                    }
+
+                    if (! branch_var) {
+                        feasible.emplace_back();
+                        for (auto & v : restrict_branch_vars)
+                            feasible.back().push_back(state(v));
+                    }
+                    else {
+                        state.for_each_value(*branch_var, [&] (Integer val) {
+                            auto timestamp = state.new_epoch();
+                            state.guess(*branch_var == val);
+                            tabulate(state);
+                            state.backtrack(timestamp);
+                        });
+                    }
+                }
+            };
+            State state = p.create_state();
+            tabulate(state);
+            p.post(Table{ restrict_branch_vars, move(feasible) });
+        };
+
+        for (auto & p : pairings) {
+            for (unsigned l = 0 ; l < size ; ++l) {
+                for (unsigned r = 0 ; r < size ; ++r) {
+                    vector<IntegerVariableID> restrict_branch_vars;
+                    restrict_branch_vars.push_back(allocations[p.first][l]);
+                    restrict_branch_vars.push_back(allocations[p.second][r]);
+                    autotabulate(restrict_branch_vars);
+                }
             }
         }
     }
 
-    auto stats = solve(p, [&] (const State & state) -> bool {
-            for_each_with_index(left, [&] (IntegerVariableID l, auto index) {
-                    cout << index << ":";
-                    for (auto & pref : left_prefs[index]) {
-                        cout << " " << pref;
-                        if (left_prefs[index][state(l).raw_value] == pref)
-                            cout << "*";
-                        else
-                            cout << " ";
-                    }
-                    cout << endl;
-                });
-            cout << endl;
+    auto link = [&] (
+            vector<IntegerVariableID> & left_to_right,
+            vector<IntegerVariableID> & right_to_top,
+            vector<IntegerVariableID> & left_to_top,
+            vector<vector<Integer> > & left_prefs_over_right,
+            vector<vector<Integer> > & right_prefs_over_top,
+            vector<vector<Integer> > & left_prefs_over_top
+            ) {
+        for (unsigned l_idx = 0 ; l_idx < size ; ++l_idx) {
+            auto l_goes_to_r = p.create_integer_variable(0_i, Integer(size - 1));
+            vector<IntegerVariableID> left_prefs_over_right_consts;
+            for (auto & p : left_prefs_over_right[l_idx])
+                left_prefs_over_right_consts.push_back(constant_variable(p));
+            p.post(Element{ l_goes_to_r, left_to_right[l_idx], left_prefs_over_right_consts });
 
-            for_each_with_index(right, [&] (IntegerVariableID r, auto index) {
-                    cout << index << ":";
-                    for (auto & pref : right_prefs[index]) {
-                        cout << " " << pref;
-                        if (right_prefs[index][state(r).raw_value] == pref)
-                            cout << "*";
-                        else
-                            cout << " ";
-                    }
-                    cout << endl;
-                });
-            cout << endl;
+            auto l_goes_to_r_goes_to_t = p.create_integer_variable(0_i, Integer(size - 1));
+            auto r_goes_to_t = p.create_integer_variable(0_i, Integer(size - 1));
+            p.post(Element{ r_goes_to_t, l_goes_to_r, right_to_top });
+            vector<IntegerVariableID> right_prefs_over_top_vars;
+            for (unsigned r = 0 ; r < size ; ++r)
+                right_prefs_over_top_vars.push_back(p.create_integer_variable(0_i, Integer(size - 1)));
+            for (unsigned r = 0 ; r < size ; ++r)
+                for (unsigned s = 0 ; s < size ; ++s)
+                    p.post(EqualsIf{ right_prefs_over_top_vars[r], constant_variable(right_prefs_over_top[s][r]), l_goes_to_r == Integer(s) });
+            p.post(Element{ l_goes_to_r_goes_to_t, r_goes_to_t, right_prefs_over_top_vars });
+
+            auto l_goes_to_t = p.create_integer_variable(0_i, Integer(size - 1));
+            vector<IntegerVariableID> left_prefs_over_top_consts;
+            for (auto & p : left_prefs_over_top[l_idx])
+                left_prefs_over_top_consts.push_back(constant_variable(p));
+            p.post(Element{ l_goes_to_t, left_to_top[l_idx], left_prefs_over_top_consts });
+
+            p.post(Equals{ l_goes_to_t, l_goes_to_r_goes_to_t });
+        };
+    };
+
+    for (auto & p1 : pairings)
+        for (auto & p2 : pairings)
+            if (p1.second == p2.first)
+                link(allocations[p1.first * 2], allocations[p1.second * 2], allocations[p2.second * 2],
+                        prefs[p1.first * 2], prefs[p1.second * 2], prefs[p2.second * 2]);
+
+    unsigned n_solution = 0;
+    auto stats = solve(p, [&] (const State & state) -> bool {
+            ++n_solution;
+            cout << "solution " << n_solution << endl << endl;
+
+            auto show = [&] (
+                    vector<IntegerVariableID> & left,
+                    vector<IntegerVariableID> & right,
+                    vector<vector<Integer> > & left_prefs,
+                    vector<vector<Integer> > & right_prefs) {
+                for_each_with_index(left, [&] (IntegerVariableID l, auto index) {
+                        cout << index << ":";
+                        for (auto & pref : left_prefs[index]) {
+                            cout << " " << pref;
+                            if (left_prefs[index][state(l).raw_value] == pref)
+                                cout << "*";
+                            else
+                                cout << " ";
+                        }
+                        cout << endl;
+                    });
+                cout << endl;
+
+                for_each_with_index(right, [&] (IntegerVariableID r, auto index) {
+                        cout << index << ":";
+                        for (auto & pref : right_prefs[index]) {
+                            cout << " " << pref;
+                            if (right_prefs[index][state(r).raw_value] == pref)
+                                cout << "*";
+                            else
+                                cout << " ";
+                        }
+                        cout << endl;
+                    });
+                cout << endl;
+            };
+
+            for_each_with_index(pairings, [&] (auto d, auto dx) {
+                auto [ d1, d2 ] = d;
+                cout << "subproblem " << dx << " between " << d1 << " and " << d2 << endl;
+                show(allocations[dx * 2], allocations[dx * 2 + 1], prefs[dx * 2], prefs[dx * 2 + 1]);
+            });
 
             cout << endl;
 
             return true;
-            });
+    });
 
     cout << stats;
 
