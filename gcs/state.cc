@@ -58,7 +58,7 @@ struct State::Imp
 
     list<vector<IntegerVariable> > integer_variables;
     set<VariableID> changed;
-    list<Literal> guesses;
+    vector<Literal> guesses;
 
     Imp(const Problem * const p) :
         problem(p)
@@ -506,14 +506,14 @@ auto State::new_epoch() -> Timestamp
         throw UnimplementedException{ };
 
     _imp->integer_variables.push_back(_imp->integer_variables.back());
-    return Timestamp{ _imp->integer_variables.size() - 1 };
+    return Timestamp{ _imp->integer_variables.size() - 1, _imp->guesses.size() };
 }
 
 auto State::backtrack(Timestamp t) -> void
 {
     _imp->integer_variables.resize(t.when);
     _imp->changed.clear();
-    _imp->guesses.pop_back();
+    _imp->guesses.erase(_imp->guesses.begin() + t.how_many_guesses, _imp->guesses.end());
 }
 
 auto State::remember_change(const VariableID v) -> void

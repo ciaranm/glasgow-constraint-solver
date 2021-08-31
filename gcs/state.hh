@@ -39,9 +39,11 @@ namespace gcs
     struct Timestamp
     {
         unsigned long long when;
+        unsigned long long how_many_guesses;
 
-        explicit Timestamp(unsigned long long w) :
-            when(w)
+        explicit Timestamp(unsigned long long w, unsigned long long g) :
+            when(w),
+            how_many_guesses(g)
         {
         }
     };
