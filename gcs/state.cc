@@ -200,7 +200,7 @@ auto State::infer_integer(const LiteralFromIntegerVariable & ilit) -> Inference
                     },
                     [&] (IntegerSmallSetVariable & svar) -> Inference {
                         // Knock out the value
-                        svar.bits.reset(ilit.value.raw_value);
+                        svar.bits.reset((ilit.value - svar.lower).raw_value);
                         if (svar.bits.has_single_bit())
                             non_constant_integer_variable(ilit.var) = IntegerConstant{ svar.lower + Integer{ svar.bits.countr_zero() } };
                         else if (svar.bits.none())
@@ -261,13 +261,13 @@ auto State::infer_integer(const LiteralFromIntegerVariable & ilit) -> Inference
                     },
                     [&] (IntegerSetVariable & svar) -> Inference {
                         // This should also be much smarter...
-                        auto erase_from = svar.values->upper_bound(ilit.value);
+                        auto erase_from = svar.values->upper_bound(ilit.value - 1_i);
                         if (erase_from == svar.values->end())
                             return Inference::NoChange;
 
                          if (! svar.values.unique()) {
                              svar.values = make_shared<set<Integer> >(*svar.values);
-                             erase_from = svar.values->upper_bound(ilit.value);
+                             erase_from = svar.values->upper_bound(ilit.value - 1_i);
                          }
 
                          svar.values->erase(erase_from, svar.values->end());
@@ -419,7 +419,7 @@ auto State::upper_bound(const IntegerVariableID var) const -> Integer
     return visit(overloaded {
             [] (const IntegerRangeVariable & v) { return v.upper; },
             [] (const IntegerConstant & v) { return v.value; },
-            [] (const IntegerSmallSetVariable & v) { return v.lower + Integer{ Bits::number_of_bits } - Integer{ v.bits.countl_zero() }; },
+            [] (const IntegerSmallSetVariable & v) { return v.lower + Integer{ Bits::number_of_bits } - Integer{ v.bits.countl_zero() } - 1_i; },
             [] (const IntegerSetVariable & v) { return *v.values->rbegin(); }
             }, integer_variable(var, space));
 }
