@@ -11,15 +11,6 @@ namespace gcs
     class LowLevelConstraintStore;
     class State;
 
-    enum class ConstraintCheckStatus
-    {
-        Satisfied,
-        Unsatisfied,
-        Unsure
-    };
-
-    using ConstraintChecker = std::function<auto (const State &) -> ConstraintCheckStatus>;
-
     class Constraint
     {
         public:
