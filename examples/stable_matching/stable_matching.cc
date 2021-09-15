@@ -39,13 +39,11 @@ auto main(int argc, char * argv []) -> int
 
     unsigned size = 10;
     unsigned dimensions = 2;
-    bool use_table = false, use_auto_table = false;
+    bool use_table = false;
     unsigned seed = 0;
-    const string usage = " [ size ] [ dimensions ] [ table false|true|auto ] [ seed ] [ scale ]";
+    const string usage = " [ size ] [ dimensions ] [ table false|true ] [ seed ]";
 
-    unsigned scale = 1;
-
-    if (argc > 6) {
+    if (argc > 5) {
         cerr << "Usage: " << argv[0] << usage << endl;
         return EXIT_FAILURE;
     }
@@ -61,8 +59,6 @@ auto main(int argc, char * argv []) -> int
             use_table = true;
         else if (argv[3] == "false"s)
             use_table = false;
-        else if (argv[3] == "auto"s)
-            use_auto_table = true;
         else {
             cerr << "Usage: " << argv[0] << usage << endl;
             return EXIT_FAILURE;
@@ -72,9 +68,6 @@ auto main(int argc, char * argv []) -> int
     if (argc >= 5)
         seed = stoi(argv[4]);
 
-    if (argc >= 6)
-        scale = stoi(argv[5]);
-
     vector<pair<int, int> > pairings;
     for (unsigned d1 = 0 ; d1 < dimensions ; ++d1)
         for (unsigned d2 = d1 + 1 ; d2 < dimensions ; ++d2)
@@ -83,17 +76,16 @@ auto main(int argc, char * argv []) -> int
     vector<vector<IntegerVariableID> > allocations{ pairings.size() * 2 };
     for_each_with_index(pairings, [&] (auto d, auto dx) {
         auto [ d1, d2 ] = d;
-        for (unsigned i = 0 ; i < size * scale ; ++i) {
-            allocations[dx * 2].push_back(p.create_integer_variable(0_i, Integer(size * scale - 1), "a" + to_string(d1) + "_" + to_string(d2) + "_" + to_string(i)));
-            allocations[dx * 2 + 1].push_back(p.create_integer_variable(0_i, Integer(size * scale - 1), "a" + to_string(d2) + "_" + to_string(d1) + "_" + to_string(i)));
+        for (unsigned i = 0 ; i < size ; ++i) {
+            allocations[dx * 2].push_back(p.create_integer_variable(0_i, Integer(size - 1), "a" + to_string(d1) + "_" + to_string(d2) + "_" + to_string(i)));
+            allocations[dx * 2 + 1].push_back(p.create_integer_variable(0_i, Integer(size - 1), "a" + to_string(d2) + "_" + to_string(d1) + "_" + to_string(i)));
         }
     });
 
     vector<IntegerVariableID> branch_vars;
     for_each_with_index(pairings, [&] (auto, auto dx) {
         for (unsigned i = 0 ; i < size ; ++i)
-            for (unsigned s = 0 ; s < scale ; ++s)
-                branch_vars.push_back(allocations[dx * 2][i + (s * size)]);
+            branch_vars.push_back(allocations[dx * 2][i]);
     });
 
     p.branch_on(branch_vars);
@@ -114,40 +106,6 @@ auto main(int argc, char * argv []) -> int
         make_prefs(prefs[dx * 2]);
         make_prefs(prefs[dx * 2 + 1]);
     });
-
-    for (auto & p : prefs) {
-        for (unsigned s = 1 ; s < scale ; ++s) {
-            for (unsigned i = 0 ; i < size ; ++i) {
-                vector<Integer> xp = p[i];
-                for (auto & x : xp)
-                    x += Integer(s * size);
-                p.push_back(move(xp));
-            }
-        }
-    }
-
-    for (auto & p : prefs) {
-        for (unsigned i = 0 ; i < size ; ++i) {
-            for (unsigned s = 0 ; s < scale ; ++s) {
-                for (unsigned t = 0 ; t < scale ; ++t)
-                    if (t != s)
-                        for (unsigned j = 0 ; j < size ; ++j)
-                            p[i + (s * size)].push_back(Integer(j + (t * size)));
-            }
-        }
-    }
-
-    for (auto & p : prefs) {
-        cout << "next pref matrix" << endl;
-        for (auto & r : p) {
-            for (auto & c : r)
-                cout << c << " ";
-            cout << endl;
-        }
-        cout << endl;
-    }
-
-    size *= scale;
 
     vector<vector<vector<unsigned> > > ranks{ pairings.size() * 2, vector<vector<unsigned> >{ size, vector<unsigned>(size, 0) } };
 
@@ -245,53 +203,6 @@ auto main(int argc, char * argv []) -> int
         for_each_with_index(pairings, [&] (auto, auto dx) {
             impose(allocations[dx * 2], allocations[dx * 2 + 1], prefs[dx * 2], prefs[dx * 2 + 1], ranks[dx * 2], ranks[dx * 2 + 1]);
         });
-    }
-
-    if (use_auto_table) {
-        auto autotabulate = [&] (const vector<IntegerVariableID> & restrict_branch_vars) {
-            vector<vector<Integer> > feasible;
-            function<auto (State &) -> void> tabulate = [&] (State & state) {
-                if (p.propagate(state)) {
-                    optional<IntegerVariableID> branch_var = nullopt;
-                    Integer sz{ 0 };
-                    for (auto & var : restrict_branch_vars) {
-                        Integer s = state.domain_size(var);
-                        if (s > Integer{ 1 } && (nullopt == branch_var || s < sz)) {
-                            branch_var = var;
-                            sz = s;
-                        }
-                    }
-
-                    if (! branch_var) {
-                        feasible.emplace_back();
-                        for (auto & v : restrict_branch_vars)
-                            feasible.back().push_back(state(v));
-                    }
-                    else {
-                        state.for_each_value(*branch_var, [&] (Integer val) {
-                            auto timestamp = state.new_epoch();
-                            state.guess(*branch_var == val);
-                            tabulate(state);
-                            state.backtrack(timestamp);
-                        });
-                    }
-                }
-            };
-            State state = p.create_state();
-            tabulate(state);
-            p.post(Table{ restrict_branch_vars, move(feasible) });
-        };
-
-        for (auto & p : pairings) {
-            for (unsigned l = 0 ; l < size ; ++l) {
-                for (unsigned r = 0 ; r < size ; ++r) {
-                    vector<IntegerVariableID> restrict_branch_vars;
-                    restrict_branch_vars.push_back(allocations[p.first][l]);
-                    restrict_branch_vars.push_back(allocations[p.second][r]);
-                    autotabulate(restrict_branch_vars);
-                }
-            }
-        }
     }
 
     auto link = [&] (
