@@ -382,7 +382,7 @@ namespace
         // these. first we need to build the directed matching graph...
         vector<vector<Vertex> > edges_out_from(vars.size() + vals.size(), vector<Vertex>{ });
         vector<vector<Right> > edges_out_from_variable(vars.size()), edges_in_to_variable(vars.size());
-        vector<vector<Left> > edges_out_from_value(vars.size()), edges_in_to_value(vars.size());
+        vector<vector<Left> > edges_out_from_value(vals.size()), edges_in_to_value(vals.size());
 
         for (auto & [ f, t ] : edges)
             if (matching[f.offset] == t) {
