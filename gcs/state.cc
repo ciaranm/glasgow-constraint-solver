@@ -364,7 +364,7 @@ auto State::infer(const Literal & lit, Justification just) -> Inference
     return inference;
 }
 
-auto State::infer_all(const std::vector<Literal> & lits, Justification just) -> Inference
+auto State::infer_all(const vector<Literal> & lits, Justification just) -> Inference
 {
     Inference result = Inference::NoChange;
     for (auto & lit : lits) {
@@ -478,7 +478,7 @@ auto State::domain_size(const IntegerVariableID var) const -> Integer
             }, integer_variable(var, space));
 }
 
-auto State::for_each_value(const IntegerVariableID var, std::function<auto (Integer) -> void> f) const -> void
+auto State::for_each_value(const IntegerVariableID var, function<auto (Integer) -> void> f) const -> void
 {
     for (Integer v = lower_bound(var) ; v <= upper_bound(var) ; ++v)
         if (in_domain(var, v))
@@ -528,7 +528,7 @@ auto State::extract_changed_variables(function<auto (VariableID) -> void> f) -> 
     _imp->changed.clear();
 }
 
-auto State::for_each_guess(std::function<auto (Literal) -> void> f) const -> void
+auto State::for_each_guess(function<auto (Literal) -> void> f) const -> void
 {
     for (auto & g : _imp->guesses)
         f(g);
