@@ -42,8 +42,10 @@ namespace gcs
             auto proof_variable(const LiteralFromBooleanVariable &) const -> const std::string &;
             auto proof_variable(const Literal &) const -> const std::string &;
 
+            [[ nodiscard ]] auto xify(std::string &&) -> std::string;
+
         public:
-            explicit Proof(const std::string & opb_file, const std::string & proof_file);
+            explicit Proof(const std::string & opb_file, const std::string & proof_file, bool use_friendly_names = true);
             ~Proof();
 
             auto operator= (const Proof &) -> Proof & = delete;

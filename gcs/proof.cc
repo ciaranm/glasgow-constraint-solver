@@ -12,6 +12,7 @@
 #include <map>
 #include <fstream>
 #include <sstream>
+#include <unordered_map>
 
 using namespace gcs;
 
@@ -29,6 +30,7 @@ using std::pair;
 using std::string;
 using std::stringstream;
 using std::to_string;
+using std::unordered_map;
 using std::visit;
 
 ProofError::ProofError(const string & w) :
@@ -57,25 +59,29 @@ struct Proof::Imp
     string opb_file, proof_file;
     stringstream opb;
     fstream proof;
+
+    bool use_friendly_names;
+    unordered_map<string, string> xification;
 };
 
-Proof::Proof(const string & opb_file, const string & proof_file) :
+Proof::Proof(const string & opb_file, const string & proof_file, bool use_friendly_names) :
     _imp(new Imp)
 {
     _imp->opb_file = opb_file;
     _imp->proof_file = proof_file;
+    _imp->use_friendly_names = use_friendly_names;
 
     _imp->opb << "* convenience true and false variables" << endl;
 
-    _imp->opb << "1 btrue >= 1 ;" << endl;
-    _imp->boolean_variables.emplace(+constant_variable(true), "btrue");
-    _imp->boolean_variables.emplace(!constant_variable(true), "~btrue");
+    _imp->opb << "1 " << xify("btrue") << " >= 1 ;" << endl;
+    _imp->boolean_variables.emplace(+constant_variable(true), xify("btrue"));
+    _imp->boolean_variables.emplace(!constant_variable(true), "~" + xify("btrue"));
     ++_imp->model_constraints;
     ++_imp->model_variables;
 
-    _imp->opb << "1 ~bfalse >= 1 ;" << endl;
-    _imp->boolean_variables.emplace(+constant_variable(false), "bfalse");
-    _imp->boolean_variables.emplace(!constant_variable(false), "~bfalse");
+    _imp->opb << "1 ~" << xify("bfalse") << " >= 1 ;" << endl;
+    _imp->boolean_variables.emplace(+constant_variable(false), xify("bfalse"));
+    _imp->boolean_variables.emplace(!constant_variable(false), "~" + xify("bfalse"));
     ++_imp->model_constraints;
     ++_imp->model_variables;
 }
@@ -91,6 +97,14 @@ auto Proof::operator= (Proof && other) -> Proof &
 {
     _imp = move(other._imp);
     return *this;
+}
+
+[[ nodiscard ]] auto Proof::xify(std::string && s) -> std::string
+{
+    if (_imp->use_friendly_names)
+        return s;
+    else
+        return _imp->xification.try_emplace(s, "x" + to_string(_imp->xification.size() + 1)).first->second;
 }
 
 namespace
@@ -114,16 +128,17 @@ auto Proof::create_integer_variable(IntegerVariableID id, Integer lower, Integer
     _imp->model_variables += (upper - lower + 1_i).raw_value;
 
     for (Integer v = lower ; v <= upper ; ++v) {
-        _imp->opb << "1 " << name << "_eq_" << value_name(v) << " ";
-        _imp->integer_variables.emplace(id == v, name + "_eq_" + value_name(v));
-        _imp->integer_variables.emplace(id != v, "~" + name + "_eq_" + value_name(v));
+        auto x = xify(name + "_eq_" + value_name(v));
+        _imp->opb << "1 " << x << " ";
+        _imp->integer_variables.emplace(id == v, x);
+        _imp->integer_variables.emplace(id != v, "~" + x);
     }
 
     _imp->opb << ">= 1 ;" << endl;
     _imp->variable_at_least_one_constraints.emplace(id, ++_imp->model_constraints);
 
     for (Integer v = lower ; v <= upper ; ++v)
-        _imp->opb << "-1 " << name << "_eq_" << value_name(v) << " ";
+        _imp->opb << "-1 " << xify(name + "_eq_" + value_name(v)) << " ";
     _imp->opb << ">= -1 ;" << endl;
     _imp->variable_at_most_one_constraints.emplace(id, ++_imp->model_constraints);
 
@@ -131,49 +146,49 @@ auto Proof::create_integer_variable(IntegerVariableID id, Integer lower, Integer
         _imp->opb << "* variable " << name << " greater or equal encoding" << endl;
         _imp->model_variables += (upper - lower + 1_i).raw_value;
 
-        _imp->opb << "1 " << name << "_ge_" << value_name(lower) << " >= 1 ;" << endl;
+        _imp->opb << "1 " << xify(name + "_ge_" + value_name(lower)) << " >= 1 ;" << endl;
         ++_imp->model_constraints;
 
         for (Integer v = lower ; v <= upper ; ++v) {
             // x >= v -> x >= v - 1
             if (v != lower) {
-                _imp->opb << "1 ~" << name << "_ge_" << value_name(v) << " 1 " << name << "_ge_" << value_name(v - 1_i) << " >= 1 ;" << endl;
+                _imp->opb << "1 ~" << xify(name + "_ge_" + value_name(v)) << " 1 " << xify(name + "_ge_" + value_name(v - 1_i)) << " >= 1 ;" << endl;
                 ++_imp->model_constraints;
             }
 
             // x < v -> x < v + 1
             if (v != upper) {
-                _imp->opb << "1 " << name << "_ge_" << value_name(v) << " 1 ~" << name << "_ge_" << value_name(v + 1_i) << " >= 1 ;" << endl;
+                _imp->opb << "1 " << xify(name + "_ge_" + value_name(v)) << " 1 ~" << xify(name + "_ge_" + value_name(v + 1_i)) << " >= 1 ;" << endl;
                 ++_imp->model_constraints;
             }
 
             // x == v -> x >= v
-            _imp->opb << "1 ~" << name << "_eq_" << value_name(v) << " 1 " << name << "_ge_" << value_name(v) << " >= 1 ;" << endl;
+            _imp->opb << "1 ~" << xify(name + "_eq_" + value_name(v)) << " 1 " << xify(name + "_ge_" + value_name(v)) << " >= 1 ;" << endl;
             ++_imp->model_constraints;
 
             // x == v -> ! x >= v + 1
             if (v != upper) {
-                _imp->opb << "1 ~" << name << "_eq_" << value_name(v) << " 1 ~" << name << "_ge_" << value_name(v + 1_i) << " >= 1 ;" << endl;
+                _imp->opb << "1 ~" << xify(name + "_eq_" + value_name(v)) << " 1 ~" << xify(name + "_ge_" + value_name(v + 1_i)) << " >= 1 ;" << endl;
                 ++_imp->model_constraints;
             }
 
             // x != v && x != v + 1 && ... -> x < v
             for (Integer v2 = v ; v2 <= upper ; ++v2)
-                _imp->opb << "1 " << name << "_eq_" << value_name(v2) << " ";
-            _imp->opb << "1 ~" << name << "_ge_" << value_name(v) << " >= 1 ;" << endl;
+                _imp->opb << "1 " << xify(name + "_eq_" + value_name(v2)) << " ";
+            _imp->opb << "1 ~" << xify(name + "_ge_" + value_name(v)) << " >= 1 ;" << endl;
             ++_imp->model_constraints;
 
             // (x >= v && x < v + 1) -> x == v
             if (v != upper) {
-                _imp->opb << "1 ~" << name << "_ge_" << value_name(v)
-                    << " 1 " << name << "_ge_" << value_name(v + 1_i)
-                    << " 1 " + name << "_eq_" << value_name(v)
+                _imp->opb << "1 ~" << xify(name + "_ge_" + value_name(v))
+                    << " 1 " << xify(name + "_ge_" + value_name(v + 1_i))
+                    << " 1 " << xify(name + "_eq_" + value_name(v))
                     << " >= 1 ;" << endl;
                 ++_imp->model_constraints;
             }
 
-            _imp->integer_variables.emplace(id >= v, name + "_ge_" + value_name(v));
-            _imp->integer_variables.emplace(id < v, "~" + name + "_ge_" + value_name(v));
+            _imp->integer_variables.emplace(id >= v, xify(name + "_ge_" + value_name(v)));
+            _imp->integer_variables.emplace(id < v, "~" + xify(name + "_ge_" + value_name(v)));
         }
     }
 
