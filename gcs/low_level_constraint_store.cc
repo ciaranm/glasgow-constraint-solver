@@ -143,6 +143,11 @@ auto LowLevelConstraintStore::propagator(const State &, PropagationFunction && f
 
 auto LowLevelConstraintStore::table(const State & state, vector<IntegerVariableID> && vars, vector<vector<Integer> > && permitted) -> void
 {
+    if (permitted.empty()) {
+        cnf(state, { }, true);
+        return;
+    }
+
     int id = _imp->propagation_functions.size();
     auto selector = create_auxilliary_integer_variable(0_i, Integer(permitted.size() - 1), "table", false);
 
