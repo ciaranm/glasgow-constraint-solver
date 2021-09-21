@@ -38,10 +38,6 @@ namespace gcs
             struct Imp;
             std::unique_ptr<Imp> _imp;
 
-            auto proof_variable(const LiteralFromIntegerVariable &) const -> const std::string &;
-            auto proof_variable(const LiteralFromBooleanVariable &) const -> const std::string &;
-            auto proof_variable(const Literal &) const -> const std::string &;
-
             [[ nodiscard ]] auto xify(std::string &&) -> std::string;
 
         public:
@@ -79,6 +75,12 @@ namespace gcs
             // Writing proof steps from constraints
             auto emit_proof_line(const std::string &) -> void;
             [[ nodiscard ]] auto constraint_saying_variable_takes_at_least_one_value(IntegerVariableID) const -> ProofLine;
+
+            auto create_pseudovariable(IntegerVariableID, Integer, Integer, const std::optional<std::string> &) -> void;
+
+            auto proof_variable(const Literal &) const -> const std::string &;
+            auto proof_variable(const LiteralFromIntegerVariable &) const -> const std::string &;
+            auto proof_variable(const LiteralFromBooleanVariable &) const -> const std::string &;
     };
 }
 

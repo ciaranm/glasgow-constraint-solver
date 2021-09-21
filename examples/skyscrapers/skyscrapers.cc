@@ -231,7 +231,7 @@ auto main(int argc, char * argv[]) -> int
                     p.post(EqualsIff{ how_many_hidden, constant_variable(0_i), *visible_vars[downwards ? r : c][downwards ? c : r] == 1_i });
                 }
             }
-            p.post(LinearEquality{ move(how_many_visible), Integer(target[c]) });
+            p.post(LinearEquality{ move(how_many_visible), Integer(target[c]), true });
         }
     };
 

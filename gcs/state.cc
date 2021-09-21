@@ -96,6 +96,14 @@ auto State::create_integer_variable(Integer lower, Integer upper) -> IntegerVari
     return result;
 }
 
+auto State::create_pseudovariable(Integer lower, Integer upper, const optional<string> & name) -> IntegerVariableID
+{
+    auto result = create_integer_variable(lower, upper);
+    if (_imp->problem->optional_proof())
+        _imp->problem->optional_proof()->create_pseudovariable(result, lower, upper, name);
+    return result;
+}
+
 auto State::non_constant_integer_variable(const IntegerVariableID i) -> IntegerVariable &
 {
     return visit(overloaded {
@@ -532,5 +540,11 @@ auto State::for_each_guess(function<auto (Literal) -> void> f) const -> void
 {
     for (auto & g : _imp->guesses)
         f(g);
+}
+
+auto State::add_proof_steps(JustifyExplicitly why) -> void
+{
+    if (_imp->problem->optional_proof())
+        why.add_proof_steps(*_imp->problem->optional_proof());
 }
 

@@ -195,6 +195,22 @@ auto Proof::create_integer_variable(IntegerVariableID id, Integer lower, Integer
     _imp->solution_variables.push_back(id);
 }
 
+auto Proof::create_pseudovariable(IntegerVariableID id, Integer lower, Integer upper, const optional<string> & optional_name) -> void
+{
+    string name = visit(overloaded{
+            [&] (unsigned long long x) { return "iv" + to_string(x); },
+            [&] (Integer x) { return "ic" + to_string(x.raw_value); }
+            }, id.index_or_const_value);
+    if (optional_name)
+        name.append("_" + *optional_name);
+
+    for (Integer v = lower ; v <= upper ; ++v) {
+        auto x = xify(name + "_eq_" + value_name(v));
+        _imp->integer_variables.emplace(id == v, x);
+        _imp->integer_variables.emplace(id != v, "~" + x);
+    }
+}
+
 auto Proof::start_proof(State & initial_state) -> void
 {
     ofstream full_opb{ _imp->opb_file };

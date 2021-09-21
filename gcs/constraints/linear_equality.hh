@@ -17,9 +17,10 @@ namespace gcs
         private:
             Linear _coeff_vars;
             Integer _value;
+            bool _gac;
 
         public:
-            explicit LinearEquality(Linear && coeff_vars, Integer value);
+            explicit LinearEquality(Linear && coeff_vars, Integer value, bool gac = false);
 
             virtual auto describe_for_proof() -> std::string override;
             virtual auto convert_to_low_level(LowLevelConstraintStore &, const State &) && -> void override;

@@ -68,9 +68,11 @@ namespace gcs
             [[ nodiscard ]] State clone() const;
 
             [[ nodiscard ]] auto create_integer_variable(Integer lower, Integer upper) -> IntegerVariableID;
+            [[ nodiscard ]] auto create_pseudovariable(Integer lower, Integer upper, const std::optional<std::string> &) -> IntegerVariableID;
 
             [[ nodiscard ]] auto infer(const Literal & lit, Justification why) -> Inference;
             [[ nodiscard ]] auto infer_all(const std::vector<Literal> & lit, Justification why) -> Inference;
+            auto add_proof_steps(JustifyExplicitly why) -> void;
 
             auto guess(const Literal & lit) -> void;
             auto for_each_guess(std::function<auto (Literal) -> void>) const -> void;
