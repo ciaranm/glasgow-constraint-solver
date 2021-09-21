@@ -6,6 +6,14 @@
 namespace gcs
 {
     class State;
+
+    enum class Inference
+    {
+        NoChange,
+        Change,
+        Contradiction
+    };
+
 }
 
 #endif

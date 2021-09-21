@@ -5,6 +5,7 @@ SRC_INCDIRS := ..
 SOURCES := \
     constraint.cc \
     exception.cc \
+    extensional.cc \
     integer_variable.cc \
     linear.cc \
     literal.cc \

@@ -1,9 +1,10 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
-#include "gcs/low_level_constraint_store.hh"
-#include "gcs/exception.hh"
-#include "util/overloaded.hh"
-#include "util/for_each.hh"
+#include <gcs/low_level_constraint_store.hh>
+#include <gcs/exception.hh>
+#include <gcs/extensional.hh>
+#include <util/overloaded.hh>
+#include <util/for_each.hh>
 
 #include <algorithm>
 #include <chrono>
@@ -28,16 +29,6 @@ using std::pair;
 using std::set;
 using std::string;
 using std::vector;
-
-namespace gcs
-{
-    struct TableData
-    {
-        IntegerVariableID selector;
-        std::vector<IntegerVariableID> vars;
-        std::vector<std::vector<Integer> > tuples;
-    };
-}
 
 struct LowLevelConstraintStore::Imp
 {
@@ -168,8 +159,8 @@ auto LowLevelConstraintStore::table(const State & state, vector<IntegerVariableI
     for (auto & t : vars)
         _imp->triggers.try_emplace(t).first->second.push_back(id);
 
-    _imp->propagation_functions.emplace(id, [&, table = TableData{ selector, move(vars), move(permitted) }] (State & state) -> Inference {
-            return propagate_table(table, state);
+    _imp->propagation_functions.emplace(id, [&, table = ExtensionalData{ selector, move(vars), move(permitted) }] (State & state) -> Inference {
+            return propagate_extensional(table, state);
             });
     _imp->propagation_function_times.emplace_back();
 }
@@ -205,53 +196,6 @@ auto LowLevelConstraintStore::propagate(State & state) const -> bool
     }
 
     return true;
-}
-
-auto LowLevelConstraintStore::propagate_table(const TableData & table, State & state) const -> Inference
-{
-    bool changed = false, contradiction = false;
-
-    // check whether selectable tuples are still feasible
-    for_each_with_index(table.tuples, [&] (const auto & tuple, auto tuple_idx) {
-        if ((! contradiction) && state.in_domain(table.selector, Integer(tuple_idx))) {
-            bool is_feasible = true;
-            for_each_with_index(table.vars, [&] (IntegerVariableID var, auto idx) {
-                    if (! state.in_domain(var, tuple[idx]))
-                        is_feasible = false;
-                    });
-            if (! is_feasible) {
-                switch (state.infer(table.selector != Integer(tuple_idx), NoJustificationNeeded{ })) {
-                    case Inference::NoChange:      break;
-                    case Inference::Change:        changed = true; break;
-                    case Inference::Contradiction: contradiction = true; break;
-                }
-            }
-        }
-    });
-
-    if (contradiction)
-        return Inference::Contradiction;
-
-    // check for supports in selectable tuples
-    for_each_with_index(table.vars, [&] (IntegerVariableID var, auto idx) {
-            state.for_each_value(var, [&] (Integer val) {
-                    bool supported = false;
-                    for_each_with_index(table.tuples, [&] (const auto & tuple, auto tuple_idx) {
-                            if (state.in_domain(table.selector, Integer(tuple_idx)) && tuple[idx] == val)
-                                supported = true;
-                            });
-
-                    if (! supported) {
-                        switch (state.infer(var != val, JustifyUsingRUP{ })) {
-                            case Inference::NoChange:      break;
-                            case Inference::Change:        changed = true; break;
-                            case Inference::Contradiction: contradiction = true; break;
-                        }
-                    }
-                });
-        });
-
-    return contradiction ? Inference::Contradiction : changed ? Inference::Change : Inference::NoChange;
 }
 
 auto LowLevelConstraintStore::propagate_cnfs(State & state) const -> Inference

@@ -3,6 +3,7 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_STATE_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_STATE_HH 1
 
+#include <gcs/state-fwd.hh>
 #include <gcs/integer_variable.hh>
 #include <gcs/literal.hh>
 #include <gcs/problem-fwd.hh>
@@ -15,13 +16,6 @@
 
 namespace gcs
 {
-    enum class Inference
-    {
-        NoChange,
-        Change,
-        Contradiction
-    };
-
     auto increase_inference_to(Inference &, const Inference) -> void;
 
     class VariableDoesNotHaveUniqueValue :
