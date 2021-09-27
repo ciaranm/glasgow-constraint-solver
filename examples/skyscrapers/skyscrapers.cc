@@ -44,8 +44,8 @@ auto main(int argc, char * argv[]) -> int
     int size;
     vector<vector<int> > predefs;
     vector<int> north, south, east, west;
-    bool use_table = false, use_auto_table = false;
-    const string usage = " [ instance 5 | 6 | 7 | 9 ] [ table false|true|auto ]";
+    bool use_table = false;
+    const string usage = " [ instance 5 | 6 | 7 | 9 ] [ table false|true ]";
 
     if (argc > 3) {
         cerr << "Usage: " << argv[0] << usage << endl;
@@ -73,8 +73,6 @@ auto main(int argc, char * argv[]) -> int
             use_table = true;
         else if (argv[2] == "false"s)
             use_table = false;
-        else if (argv[2] == "auto"s)
-            use_auto_table = true;
         else {
             cerr << "Usage: " << argv[0] << usage << endl;
             return EXIT_FAILURE;
@@ -305,63 +303,6 @@ auto main(int argc, char * argv[]) -> int
         build_visible_constraints(visible_south, south, true, false);
         build_visible_constraints(visible_west, west, false, true);
         build_visible_constraints(visible_east, east, false, false);
-    }
-
-    if (use_auto_table) {
-        auto autotabulate = [&] (const vector<IntegerVariableID> & restrict_branch_vars) {
-            vector<vector<Integer> > feasible;
-            Stats stats;
-            auto start_time = steady_clock::now();
-            function<auto (State &) -> void> tabulate = [&] (State & state) {
-                ++stats.recursions;
-                if (p.propagate(state)) {
-                    optional<IntegerVariableID> branch_var = nullopt;
-                    Integer sz{ 0 };
-                    for (auto & var : restrict_branch_vars) {
-                        Integer s = state.domain_size(var);
-                        if (s > Integer{ 1 } && (nullopt == branch_var || s < sz)) {
-                            branch_var = var;
-                            sz = s;
-                        }
-                    }
-
-                    if (! branch_var) {
-                        ++stats.solutions;
-                        feasible.emplace_back();
-                        for (auto & v : restrict_branch_vars)
-                            feasible.back().push_back(state(v));
-                    }
-                    else {
-                        state.for_each_value(*branch_var, [&] (Integer val) {
-                            auto timestamp = state.new_epoch();
-                            state.guess(*branch_var == val);
-                            tabulate(state);
-                            state.backtrack(timestamp);
-                        });
-                    }
-                }
-            };
-            State state = p.create_state();
-            tabulate(state);
-            p.post(Table{ restrict_branch_vars, move(feasible) });
-            stats.solve_time = duration_cast<microseconds>(steady_clock::now() - start_time);
-            cout << stats;
-        };
-
-        for (int r = 0 ; r < size ; ++r)
-            if (west[r] != 0 || east[r] != 0) {
-                cout << "tabulating row " << r + 1 << endl;
-                autotabulate(grid[r]);
-            }
-
-        for (int c = 0 ; c < size ; ++c)
-            if (north[c] != 0 || south[c] != 0) {
-                cout << "tabulating column " << c + 1 << endl;
-                vector<IntegerVariableID> col;
-                for (int r = 0 ; r < size ; ++r)
-                    col.push_back(grid[r][c]);
-                autotabulate(col);
-            }
     }
 
     auto stats = solve(p, [&] (const State & s) -> bool {
