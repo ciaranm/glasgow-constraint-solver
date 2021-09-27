@@ -59,6 +59,8 @@ Design
 - Go through everywhere that uses Integer::raw\_value and see if it should
   use something else instead.
 
+- Some way of handling limits, ctrl+c, etc.
+
 Proofs
 ------
 
