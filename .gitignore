@@ -20,5 +20,6 @@ perf.data.old
 /abs_test
 /element_test
 /stable_matching
+/magic_series
 *.opb
 *.veripb

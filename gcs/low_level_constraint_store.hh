@@ -22,7 +22,6 @@ namespace gcs
             std::unique_ptr<Imp> _imp;
 
             [[ nodiscard ]] auto propagate_cnfs(State &) const -> Inference;
-            [[ nodiscard ]] auto propagate_integer_linear_les(State &) const -> Inference;
 
         public:
             explicit LowLevelConstraintStore(Problem * const);

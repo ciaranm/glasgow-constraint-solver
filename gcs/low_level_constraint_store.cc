@@ -34,7 +34,6 @@ struct LowLevelConstraintStore::Imp
 {
     Problem * const problem;
     list<Literals> cnfs;
-    list<pair<Linear, Integer> > integer_linear_les;
     map<int, PropagationFunction> propagation_functions;
     vector<microseconds> propagation_function_times;
     map<VariableID, vector<int> > triggers;
@@ -49,8 +48,6 @@ LowLevelConstraintStore::LowLevelConstraintStore(Problem * p) :
     _imp(new Imp(p))
 {
     _imp->propagation_functions.emplace(0, [&] (State & s) { return propagate_cnfs(s); });
-    _imp->propagation_function_times.emplace_back();
-    _imp->propagation_functions.emplace(1, [&] (State & s) { return propagate_integer_linear_les(s); });
     _imp->propagation_function_times.emplace_back();
 }
 
@@ -120,7 +117,15 @@ auto LowLevelConstraintStore::integer_linear_le(const State & state, Linear && c
     if (_imp->problem->optional_proof())
         _imp->problem->optional_proof()->integer_linear_le(state, coeff_vars, value);
 
-    _imp->integer_linear_les.emplace_back(move(coeff_vars), value);
+    int id = _imp->propagation_functions.size();
+    for (auto & [ _, v ] : coeff_vars)
+        _imp->triggers.try_emplace(v).first->second.push_back(id);
+
+    _imp->propagation_functions.emplace(id, [&, coeff_vars = move(coeff_vars), value = value] (State & state) -> Inference {
+            return propagate_linear(coeff_vars, value, state);
+    });
+
+    _imp->propagation_function_times.emplace_back();
 }
 
 auto LowLevelConstraintStore::propagator(const State &, PropagationFunction && f, const vector<VariableID> & trigger_vars) -> void
@@ -170,15 +175,14 @@ auto LowLevelConstraintStore::propagate(State & state) const -> bool
     set<int> propagation_queue;
 
     while (true) {
-        state.extract_changed_variables([&] (VariableID var) {
-                auto t = _imp->triggers.find(var);
-                if (t != _imp->triggers.end())
-                    for (auto & p : t->second)
-                        propagation_queue.insert(p);
-
-                propagation_queue.emplace(0);
-                propagation_queue.emplace(1);
-                });
+        if (propagation_queue.empty())
+            state.extract_changed_variables([&] (VariableID var) {
+                    auto t = _imp->triggers.find(var);
+                    if (t != _imp->triggers.end())
+                        for (auto & p : t->second)
+                            propagation_queue.insert(p);
+                    propagation_queue.insert(0);
+                    });
 
         if (propagation_queue.empty())
             break;
@@ -250,43 +254,6 @@ auto LowLevelConstraintStore::propagate_cnfs(State & state) const -> Inference
     return changed ? Inference::Change : Inference::NoChange;
 }
 
-auto LowLevelConstraintStore::propagate_integer_linear_les(State & state) const -> Inference
-{
-    bool changed = false;
-
-    for (auto & ineq : _imp->integer_linear_les) {
-        Integer lower{ 0 };
-
-        for (auto & [ coeff, var ] : ineq.first)
-            lower += (coeff >= 0_i) ? (coeff * state.lower_bound(var)) : (coeff * state.upper_bound(var));
-
-        // Feasibility check: if each variable takes its best value, can we satisfy the inequality?
-        if (lower > ineq.second)
-            return Inference::Contradiction;
-    }
-
-    for (auto & ineq : _imp->integer_linear_les) {
-        // Propagation: what's the worst value a variable can take, if every
-        // other variable is given its best value?
-        for (auto & [ coeff, var ] : ineq.first) {
-            Integer lower_without_me{ 0 };
-            for (auto & [ other_coeff, other_var ] : ineq.first)
-                if (var != other_var)
-                    lower_without_me += (other_coeff >= 0_i) ? (other_coeff * state.lower_bound(other_var)) : (other_coeff * state.upper_bound(other_var));
-
-            Integer remainder = ineq.second - lower_without_me;
-            switch (coeff >= 0_i ?
-                    state.infer(var < (1_i + remainder / coeff), JustifyUsingRUP{ }) : state.infer(var >= remainder / coeff, JustifyUsingRUP{ })) {
-                case Inference::Change:        changed = true; break;
-                case Inference::NoChange:      break;
-                case Inference::Contradiction: return Inference::Contradiction;
-            }
-        }
-    }
-
-    return changed ? Inference::Change : Inference::NoChange;
-}
-
 auto LowLevelConstraintStore::create_auxilliary_integer_variable(Integer l, Integer u, const std::string & s, bool need_ge) -> IntegerVariableID
 {
     return _imp->problem->create_integer_variable(l, u, make_optional("aux_" + s), need_ge);
@@ -300,7 +267,6 @@ auto LowLevelConstraintStore::want_nonpropagating() const -> bool
 auto LowLevelConstraintStore::fill_in_constraint_stats(Stats & stats) const -> void
 {
     stats.n_cnfs += _imp->cnfs.size();
-    stats.n_integer_linear_les += _imp->integer_linear_les.size();
     stats.n_propagators += _imp->propagation_functions.size();
     stats.propagation_function_times = _imp->propagation_function_times;
 }

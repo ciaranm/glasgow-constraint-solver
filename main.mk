@@ -18,7 +18,8 @@ SUBMAKEFILES := \
     examples/ortho_latin/ortho_latin.mk \
     examples/three_all_differents/three_all_differents.mk \
     examples/skyscrapers/skyscrapers.mk \
-    examples/stable_matching/stable_matching.mk
+    examples/stable_matching/stable_matching.mk \
+    examples/magic_series/magic_series.mk
 
 override CXXFLAGS += -O3 -march=native -std=c++20 -Isrc/ -W -Wall -Wextra -g -ggdb3 -pthread
 

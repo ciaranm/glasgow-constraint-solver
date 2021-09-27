@@ -1,6 +1,7 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
-#include "gcs/linear.hh"
+#include <gcs/linear.hh>
+#include <gcs/state.hh>
 
 #include <algorithm>
 
@@ -32,5 +33,39 @@ auto gcs::sanitise_linear(Linear & coeff_vars) -> void
     coeff_vars.erase(remove_if(coeff_vars.begin(), coeff_vars.end(), [] (const CoefficientAndVariable & cv) {
                 return cv.first == 0_i;
                 }), coeff_vars.end());
+}
+
+auto gcs::propagate_linear(const Linear & coeff_vars, Integer value, State & state) -> Inference
+{
+    Integer lower{ 0 };
+
+    for (auto & [ coeff, var ] : coeff_vars)
+        lower += (coeff >= 0_i) ? (coeff * state.lower_bound(var)) : (coeff * state.upper_bound(var));
+
+    // Feasibility check: if each variable takes its best value, can we satisfy the inequality?
+    if (lower > value)
+        return Inference::Contradiction;
+
+    // Propagation: what's the worst value a variable can take, if every
+    // other variable is given its best value?
+    bool changed = false;
+
+    Integer lower_sum{ 0 };
+    for (auto & [ coeff, var ] : coeff_vars)
+        lower_sum += (coeff >= 0_i) ? (coeff * state.lower_bound(var)) : (coeff * state.upper_bound(var));
+
+    for (auto & [ coeff, var ] : coeff_vars) {
+        Integer lower_without_me = lower_sum - ((coeff >= 0_i) ? (coeff * state.lower_bound(var)) : (coeff * state.upper_bound(var)));
+        Integer remainder = value - lower_without_me;
+        switch (coeff >= 0_i ?
+                state.infer(var < (1_i + remainder / coeff), JustifyUsingRUP{ }) : state.infer(var >= remainder / coeff, JustifyUsingRUP{ })) {
+            case Inference::Change:        changed = true; break;
+            case Inference::NoChange:      break;
+            case Inference::Contradiction: return Inference::Contradiction;
+        }
+        lower_sum = lower_without_me + ((coeff >= 0_i) ? (coeff * state.lower_bound(var)) : (coeff * state.upper_bound(var)));
+    }
+
+    return changed ? Inference::Change : Inference::NoChange;
 }
 

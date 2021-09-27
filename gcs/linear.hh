@@ -5,6 +5,7 @@
 
 #include <gcs/integer.hh>
 #include <gcs/variable_id.hh>
+#include <gcs/state-fwd.hh>
 
 #include <utility>
 #include <vector>
@@ -15,6 +16,8 @@ namespace gcs
     using Linear = std::vector<CoefficientAndVariable>;
 
     auto sanitise_linear(Linear &) -> void;
+
+    auto propagate_linear(const Linear &, Integer, State &) -> Inference;
 }
 
 #endif
