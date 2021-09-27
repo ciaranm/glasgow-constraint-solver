@@ -175,16 +175,18 @@ auto run_element_test(pair<int, int> var_range, pair<int, int> idx_range, const 
 
     p.post(Element{ var, idx, array });
     bool gac_violated = false;
-    solve_with_trace(p, [&] (const State & s) -> bool {
-            vector<int> vals;
-            for (auto & a : array)
-                vals.push_back(s(a).raw_value);
-            actual.emplace(s(var).raw_value, s(idx).raw_value, vals);
-            return true;
+    solve_with(p, SolveCallbacks{
+            .solution = [&] (const State & s) -> bool {
+                vector<int> vals;
+                for (auto & a : array)
+                    vals.push_back(s(a).raw_value);
+                actual.emplace(s(var).raw_value, s(idx).raw_value, vals);
+                return true;
             },
-            [&] (const State & s) -> bool {
+            .trace = [&] (const State & s) -> bool {
                 gac_violated = gac_violated || ! check_idx_gac(var, idx, array, s) || ! check_var_gac(var, idx, array, s) || ! check_vals_gac(var, idx, array, s);
                 return true;
+            }
             });
 
     return (! gac_violated) && check_results(expected, actual);

@@ -111,15 +111,17 @@ auto run_binary_comparison_test(pair<int, int> v1_range, pair<int, int> v2_range
     auto v2 = p.create_integer_variable(Integer(v2_range.first), Integer(v2_range.second));
     p.post(Constraint_{ v1, v2 });
     bool gac_violated = false;
-    solve_with_trace(p, [&] (const State & s) -> bool {
-            actual.emplace(s(v1).raw_value, s(v2).raw_value);
-            return true;
+    solve_with(p, SolveCallbacks{
+            .solution = [&] (const State & s) -> bool {
+                actual.emplace(s(v1).raw_value, s(v2).raw_value);
+                return true;
             },
-            [&] (const State & s) -> bool {
+            .trace = [&] (const State & s) -> bool {
                 gac_violated = gac_violated ||
                     ! check_gac_oneway(typeid(Constraint_).name() + " forward"s + " " + stringify_tuple(v1_range) + " " + stringify_tuple(v2_range), v1, v2, s, is_satisfing) ||
                     ! check_gac_oneway(typeid(Constraint_).name() + " reverse"s + " " + stringify_tuple(v1_range) + " " + stringify_tuple(v2_range), v2, v1, s, [&] (int a, int b) { return is_satisfing(b, a); });
                 return true;
+            }
             });
 
     return (! gac_violated) && check_results(v1_range, v2_range, typeid(Constraint_).name(), expected, actual);

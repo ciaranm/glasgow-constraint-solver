@@ -14,8 +14,7 @@ using std::nullopt;
 namespace
 {
     auto solve_with_state(unsigned long long depth, Stats & stats, Problem & problem, State & state,
-            SolutionCallback & callback, SolutionCallback & trace,
-            bool & this_subtree_contains_solution) -> bool
+            SolveCallbacks & callbacks, bool & this_subtree_contains_solution) -> bool
     {
         stats.max_depth = max(stats.max_depth, depth);
         ++stats.recursions;
@@ -24,7 +23,7 @@ namespace
             problem.optional_proof()->enter_proof_level(depth + 1);
 
         if (problem.propagate(state)) {
-            auto branch_var = problem.find_branching_variable(state);
+            auto branch_var = callbacks.branch ? callbacks.branch(state) : problem.find_branching_variable(state);
             if (branch_var == nullopt) {
                 if (problem.optional_proof()) {
                     problem.optional_proof()->enter_proof_level(0);
@@ -34,7 +33,7 @@ namespace
 
                 ++stats.solutions;
                 this_subtree_contains_solution = true;
-                if (! callback(state))
+                if (callbacks.solution && ! callbacks.solution(state))
                     return false;
 
                 problem.update_objective(state);
@@ -42,7 +41,7 @@ namespace
             else {
                 bool keep_going = true;
 
-                if (trace && ! trace(state))
+                if (callbacks.trace && ! callbacks.trace(state))
                     keep_going = false;
 
                 state.for_each_value(*branch_var, [&] (Integer val) {
@@ -50,7 +49,7 @@ namespace
                             auto timestamp = state.new_epoch();
                             state.guess(*branch_var == val);
                             bool child_contains_solution = false;
-                            if (! solve_with_state(depth + 1, stats, problem, state, callback, trace, child_contains_solution))
+                            if (! solve_with_state(depth + 1, stats, problem, state, callbacks, child_contains_solution))
                                 keep_going = false;
 
                             if (child_contains_solution)
@@ -77,7 +76,7 @@ namespace
     }
 }
 
-auto gcs::solve_with_trace(Problem & problem, SolutionCallback callback, SolutionCallback trace) -> Stats
+auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks) -> Stats
 {
     Stats stats;
     auto start_time = steady_clock::now();
@@ -87,7 +86,7 @@ auto gcs::solve_with_trace(Problem & problem, SolutionCallback callback, Solutio
         problem.optional_proof()->start_proof(state);
 
     bool child_contains_solution = false;
-    if (solve_with_state(0, stats, problem, state, callback, trace, child_contains_solution))
+    if (solve_with_state(0, stats, problem, state, callbacks, child_contains_solution))
         if (problem.optional_proof())
             problem.optional_proof()->assert_contradiction();
 
@@ -99,6 +98,6 @@ auto gcs::solve_with_trace(Problem & problem, SolutionCallback callback, Solutio
 
 auto gcs::solve(Problem & problem, SolutionCallback callback) -> Stats
 {
-    return solve_with_trace(problem, callback, SolutionCallback{ });
+    return solve_with(problem, SolveCallbacks{ .solution = callback });
 }
 

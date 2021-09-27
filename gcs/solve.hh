@@ -12,10 +12,19 @@
 namespace gcs
 {
     using SolutionCallback = std::function<auto (const State &) -> bool>;
+    using TraceCallback = std::function<auto (const State &) -> bool>;
+    using BranchCallback = std::function<auto (const State &) -> std::optional<IntegerVariableID> >;
+
+    struct SolveCallbacks
+    {
+        SolutionCallback solution = SolutionCallback{ };
+        TraceCallback trace = TraceCallback{ };
+        BranchCallback branch = BranchCallback{ };
+    };
 
     auto solve(Problem &, SolutionCallback callback) -> Stats;
 
-    auto solve_with_trace(Problem &, SolutionCallback callback, SolutionCallback trace) -> Stats;
+    auto solve_with(Problem &, SolveCallbacks ballbacks) -> Stats;
 }
 
 #endif
