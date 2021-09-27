@@ -248,7 +248,8 @@ auto main(int argc, char * argv []) -> int
                         prefs[p1.first * 2], prefs[p1.second * 2], prefs[p2.second * 2]);
 
     unsigned n_solution = 0;
-    auto stats = solve(p, [&] (const State & state) -> bool {
+    auto stats = solve_with(p, SolveCallbacks{
+        .solution = [&] (const State & state) -> bool {
             ++n_solution;
             cout << "solution " << n_solution << endl << endl;
 
@@ -293,6 +294,10 @@ auto main(int argc, char * argv []) -> int
             cout << endl;
 
             return true;
+        },
+        .guess = [&] (const State & state, IntegerVariableID var) -> vector<Literal> {
+            return vector<Literal>{ var == state.lower_bound(var), var != state.lower_bound(var) };
+        }
     });
 
     cout << stats;

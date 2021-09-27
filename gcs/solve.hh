@@ -8,18 +8,21 @@
 #include <gcs/stats.hh>
 
 #include <functional>
+#include <vector>
 
 namespace gcs
 {
     using SolutionCallback = std::function<auto (const State &) -> bool>;
     using TraceCallback = std::function<auto (const State &) -> bool>;
     using BranchCallback = std::function<auto (const State &) -> std::optional<IntegerVariableID> >;
+    using GuessCallback = std::function<auto (const State &, IntegerVariableID) -> std::vector<Literal> >;
 
     struct SolveCallbacks
     {
         SolutionCallback solution = SolutionCallback{ };
         TraceCallback trace = TraceCallback{ };
         BranchCallback branch = BranchCallback{ };
+        GuessCallback guess = GuessCallback{ };
     };
 
     auto solve(Problem &, SolutionCallback callback) -> Stats;

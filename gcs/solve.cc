@@ -44,10 +44,12 @@ namespace
                 if (callbacks.trace && ! callbacks.trace(state))
                     keep_going = false;
 
-                state.for_each_value(*branch_var, [&] (Integer val) {
+                if (callbacks.guess) {
+                    auto guesses = callbacks.guess(state, *branch_var);
+                    for (auto & guess : guesses) {
                         if (keep_going) {
                             auto timestamp = state.new_epoch();
-                            state.guess(*branch_var == val);
+                            state.guess(guess);
                             bool child_contains_solution = false;
                             if (! solve_with_state(depth + 1, stats, problem, state, callbacks, child_contains_solution))
                                 keep_going = false;
@@ -59,7 +61,26 @@ namespace
 
                             state.backtrack(timestamp);
                         }
-                    });
+                    }
+                }
+                else {
+                    state.for_each_value(*branch_var, [&] (Integer val) {
+                            if (keep_going) {
+                                auto timestamp = state.new_epoch();
+                                state.guess(*branch_var == val);
+                                bool child_contains_solution = false;
+                                if (! solve_with_state(depth + 1, stats, problem, state, callbacks, child_contains_solution))
+                                    keep_going = false;
+
+                                if (child_contains_solution)
+                                    this_subtree_contains_solution = true;
+                                else
+                                    ++stats.failures;
+
+                                state.backtrack(timestamp);
+                            }
+                        });
+                }
 
                 if (! keep_going)
                     return false;
