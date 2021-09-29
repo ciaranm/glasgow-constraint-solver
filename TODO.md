@@ -50,11 +50,13 @@ Design
 
 - Can we isolate innards from user API?
 
-- Linear constraints are a mess.
-
-- Have a think about remove Boolean variables, and just using literals
+- Have a think about removing Boolean variables, and just using literals
   everywhere instead. Might not be very useful if we need to introduce float
   and set variables for MiniZinc, though.
+
+- Can we have an IntegerViewOfLiteral value? Or does this lead to nasty
+  recursion issues? Either way, being able to use reified values directly
+  in linear and extensional constraints might be interesting.
 
 - Go through everywhere that uses Integer::raw\_value and see if it should
   use something else instead.
