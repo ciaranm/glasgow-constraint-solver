@@ -584,7 +584,7 @@ auto AllDifferent::convert_to_low_level(LowLevelConstraintStore & constraints, c
 
     constraints.propagator(initial_state, [vars = move(sanitised_vars), vals = move(compressed_vals), save_constraint_numbers = move(constraint_numbers)] (State & state) -> Inference {
             return propagate_all_different(vars, vals, save_constraint_numbers, state);
-            }, var_ids);
+            }, var_ids, "alldiff");
 }
 
 auto AllDifferent::describe_for_proof() -> std::string

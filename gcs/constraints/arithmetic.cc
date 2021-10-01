@@ -49,7 +49,7 @@ auto Arithmetic<op_>::convert_to_low_level(LowLevelConstraintStore & store, cons
                 });
             });
 
-    store.table(initial_state, vector{ _v1, _v2, _result }, move(permitted));
+    store.table(initial_state, vector{ _v1, _v2, _result }, move(permitted), "arithmetic");
 }
 
 template <ArithmeticOperator op_>

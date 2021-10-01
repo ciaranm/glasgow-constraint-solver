@@ -5,6 +5,8 @@
 
 #include <chrono>
 #include <iosfwd>
+#include <string>
+#include <tuple>
 #include <vector>
 
 namespace gcs
@@ -21,7 +23,7 @@ namespace gcs
 
         std::chrono::microseconds solve_time;
 
-        std::vector<std::chrono::microseconds> propagation_function_times;
+        std::vector<std::tuple<std::chrono::microseconds, unsigned long long, std::string> > propagation_function_calls;
     };
 
     auto operator<< (std::ostream &, const Stats &) -> std::ostream &;

@@ -34,7 +34,7 @@ auto Table::convert_to_low_level(LowLevelConstraintStore & constraints, const St
         if (tuple.size() != _vars.size())
             throw UnexpectedException{ "table size mismatch" };
 
-    constraints.table(initial_state, vector<IntegerVariableID>{ _vars }, move(_tuples));
+    constraints.table(initial_state, vector<IntegerVariableID>{ _vars }, move(_tuples), "table");
 }
 
 auto Table::describe_for_proof() -> string

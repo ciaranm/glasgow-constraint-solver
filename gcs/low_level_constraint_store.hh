@@ -39,8 +39,8 @@ namespace gcs
             auto at_most_one(const State &, Literals && lits, bool propagating) -> std::optional<ProofLine>;
             auto pseudoboolean_ge(const State &, WeightedLiterals && lits, Integer, bool propagating) -> std::optional<ProofLine>;
             auto integer_linear_le(const State &, Linear && coeff_vars, Integer value) -> void;
-            auto table(const State &, std::vector<IntegerVariableID> &&, std::vector<std::vector<Integer> > &&) -> void;
-            auto propagator(const State &, PropagationFunction &&, const std::vector<VariableID> & trigger_vars) -> void;
+            auto table(const State &, std::vector<IntegerVariableID> &&, std::vector<std::vector<Integer> > &&, const std::string & name) -> void;
+            auto propagator(const State &, PropagationFunction &&, const std::vector<VariableID> & trigger_vars, const std::string & name) -> void;
 
             [[ nodiscard ]] auto create_auxilliary_integer_variable(Integer, Integer, const std::string & name, bool need_ge) -> IntegerVariableID;
 

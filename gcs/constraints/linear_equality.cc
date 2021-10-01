@@ -122,7 +122,7 @@ auto LinearEquality::convert_to_low_level(LowLevelConstraintStore & constraints,
                 }
 
                 return propagate_extensional(*data, state);
-                }, trigger_vars);
+                }, trigger_vars, "lin_eq_gac");
     }
 
     constraints.integer_linear_le(initial_state, move(inv_coeff_vars), -_value);

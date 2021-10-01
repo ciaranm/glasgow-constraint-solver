@@ -17,6 +17,7 @@ using namespace gcs;
 using std::chrono::duration_cast;
 using std::chrono::microseconds;
 using std::chrono::steady_clock;
+using std::get;
 using std::list;
 using std::make_optional;
 using std::map;
@@ -28,6 +29,7 @@ using std::optional;
 using std::pair;
 using std::set;
 using std::string;
+using std::tuple;
 using std::vector;
 
 struct LowLevelConstraintStore::Imp
@@ -35,7 +37,9 @@ struct LowLevelConstraintStore::Imp
     Problem * const problem;
     list<Literals> cnfs;
     map<int, PropagationFunction> propagation_functions;
-    vector<microseconds> propagation_function_times;
+    vector<tuple<microseconds, unsigned long long, string> > propagation_function_calls;
+    microseconds total_propagation_time{ 0 };
+    unsigned long long total_propagations = 0;
     map<VariableID, vector<int> > triggers;
 
     Imp(Problem * p) :
@@ -48,7 +52,7 @@ LowLevelConstraintStore::LowLevelConstraintStore(Problem * p) :
     _imp(new Imp(p))
 {
     _imp->propagation_functions.emplace(0, [&] (State & s) { return propagate_cnfs(s); });
-    _imp->propagation_function_times.emplace_back();
+    _imp->propagation_function_calls.emplace_back(microseconds{ 0 }, 0, "cnf");
 }
 
 LowLevelConstraintStore::~LowLevelConstraintStore() = default;
@@ -125,19 +129,19 @@ auto LowLevelConstraintStore::integer_linear_le(const State & state, Linear && c
             return propagate_linear(coeff_vars, value, state);
     });
 
-    _imp->propagation_function_times.emplace_back();
+    _imp->propagation_function_calls.emplace_back(microseconds{ 0 }, 0, "int_lin_le");
 }
 
-auto LowLevelConstraintStore::propagator(const State &, PropagationFunction && f, const vector<VariableID> & trigger_vars) -> void
+auto LowLevelConstraintStore::propagator(const State &, PropagationFunction && f, const vector<VariableID> & trigger_vars, const std::string & name) -> void
 {
     int id = _imp->propagation_functions.size();
     _imp->propagation_functions.emplace(id, move(f));
-    _imp->propagation_function_times.emplace_back();
+    _imp->propagation_function_calls.emplace_back(microseconds{ 0 }, 0, name);
     for (auto & t : trigger_vars)
         _imp->triggers.try_emplace(t).first->second.push_back(id);
 }
 
-auto LowLevelConstraintStore::table(const State & state, vector<IntegerVariableID> && vars, vector<vector<Integer> > && permitted) -> void
+auto LowLevelConstraintStore::table(const State & state, vector<IntegerVariableID> && vars, vector<vector<Integer> > && permitted, const std::string & name) -> void
 {
     if (permitted.empty()) {
         cnf(state, { }, true);
@@ -167,7 +171,7 @@ auto LowLevelConstraintStore::table(const State & state, vector<IntegerVariableI
     _imp->propagation_functions.emplace(id, [&, table = ExtensionalData{ selector, move(vars), move(permitted) }] (State & state) -> Inference {
             return propagate_extensional(table, state);
             });
-    _imp->propagation_function_times.emplace_back();
+    _imp->propagation_function_calls.emplace_back(microseconds{ 0 }, 0, name);
 }
 
 auto LowLevelConstraintStore::propagate(State & state) const -> bool
@@ -191,7 +195,11 @@ auto LowLevelConstraintStore::propagate(State & state) const -> bool
         propagation_queue.erase(propagation_queue.begin());
         auto start_time = steady_clock::now();
         auto inference = _imp->propagation_functions.find(propagator_id)->second(state);
-        _imp->propagation_function_times[propagator_id] += duration_cast<microseconds>(steady_clock::now() - start_time);
+        auto tm = duration_cast<microseconds>(steady_clock::now() - start_time);
+        get<0>(_imp->propagation_function_calls[propagator_id]) += tm;
+        get<1>(_imp->propagation_function_calls[propagator_id])++;
+        _imp->total_propagation_time += tm;
+        _imp->total_propagations++;
         switch (inference) {
             case Inference::NoChange:      break;
             case Inference::Change:        break;
@@ -268,6 +276,7 @@ auto LowLevelConstraintStore::fill_in_constraint_stats(Stats & stats) const -> v
 {
     stats.n_cnfs += _imp->cnfs.size();
     stats.n_propagators += _imp->propagation_functions.size();
-    stats.propagation_function_times = _imp->propagation_function_times;
+    stats.propagation_function_calls = _imp->propagation_function_calls;
+    stats.propagation_function_calls.emplace_back(_imp->total_propagation_time, _imp->total_propagations, "totals");
 }
 
