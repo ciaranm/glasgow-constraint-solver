@@ -33,15 +33,13 @@ auto main(int, char * []) -> int
         series.push_back(p.create_integer_variable(0_i, Integer{ size - 1 }, "series" + to_string(v)));
 
     for (int i = 0 ; i < size ; ++i) {
-        vector<IntegerVariableID> si;
+        Linear coeff_vars;
         for (int j = 0 ; j < size ; ++j) {
-            si.push_back(p.create_integer_variable(0_i, 1_i));
-            p.post(EqualsIff{ series[j], constant_variable(Integer{ i }), si.back() == 1_i });
+            auto series_j_eq_i = p.create_integer_variable(0_i, 1_i);
+            p.post(EqualsIff{ series[j], constant_variable(Integer{ i }), series_j_eq_i == 1_i });
+            coeff_vars.emplace_back(1_i, series_j_eq_i);
         }
 
-        Linear coeff_vars;
-        for (auto & v : si)
-            coeff_vars.emplace_back(1_i, v);
         coeff_vars.emplace_back(-1_i, series[i]);
         p.post(LinearEquality{ move(coeff_vars), 0_i });
     }
