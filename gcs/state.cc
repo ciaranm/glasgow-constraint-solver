@@ -488,9 +488,28 @@ auto State::domain_size(const IntegerVariableID var) const -> Integer
 
 auto State::for_each_value(const IntegerVariableID var, function<auto (Integer) -> void> f) const -> void
 {
-    for (Integer v = lower_bound(var) ; v <= upper_bound(var) ; ++v)
-        if (in_domain(var, v))
-            f(v);
+    IntegerVariable space = IntegerConstant{ 0_i };
+    const IntegerVariable & var_ref = integer_variable(var, space);
+    IntegerVariable var_copy = var_ref;
+
+    visit(overloaded{
+            [&] (const IntegerConstant & c) {
+                f(c.value);
+            },
+            [&] (const IntegerRangeVariable & r) {
+                for (auto v = r.lower ; v <= r.upper ; ++v)
+                    f(v);
+            },
+            [&] (const IntegerSmallSetVariable & r) {
+                for (unsigned b = 0 ; b < Bits::number_of_bits ; ++b)
+                    if (r.bits.test(b))
+                        f(r.lower + Integer{ b });
+            },
+            [&] (const IntegerSetVariable & s) {
+                for (auto & v : *s.values)
+                    f(v);
+            }
+            }, var_copy);
 }
 
 auto State::optional_single_value(const BooleanVariableID v) const -> optional<bool>
