@@ -224,9 +224,9 @@ auto LowLevelConstraintStore::propagate_cnfs(State & state) const -> Inference
     bool changed = false;
 
     for (auto & clause : _imp->cnfs) {
-        Literals nonfalsified_literals;
+        Literals::iterator nonfalsified_literal_1 = clause.end(), nonfalsified_literal_2 = clause.end();
 
-        for (auto & lit : clause) {
+        for (auto lit = clause.begin(), lit_end = clause.end() ; lit != lit_end ; ++lit) {
             if (visit(overloaded {
                         [&] (const LiteralFromBooleanVariable & blit) -> bool {
                             auto single_value = state.optional_single_value(blit.var);
@@ -250,21 +250,29 @@ auto LowLevelConstraintStore::propagate_cnfs(State & state) const -> Inference
 
                             throw NonExhaustiveSwitch{ };
                         }
-                        }, lit))
-                nonfalsified_literals.push_back(lit);
-
-            if (nonfalsified_literals.size() >= 2)
-                break;
+                        }, *lit)) {
+                if (nonfalsified_literal_1 == clause.end())
+                    nonfalsified_literal_1 = lit;
+                else {
+                    nonfalsified_literal_2 = lit;
+                    break;
+                }
+            }
         }
 
-        if (nonfalsified_literals.size() == 0)
+        if (nonfalsified_literal_1 == clause.end())
             return Inference::Contradiction;
-        else if (nonfalsified_literals.size() == 1) {
-            switch (state.infer(nonfalsified_literals[0], NoJustificationNeeded{ })) {
+        else if (nonfalsified_literal_2 == clause.end()) {
+            swap(*nonfalsified_literal_1, clause[0]);
+            switch (state.infer(clause[0], NoJustificationNeeded{ })) {
                 case Inference::Contradiction: return Inference::Contradiction;
                 case Inference::NoChange:      break;
                 case Inference::Change:        changed = true; break;
             }
+        }
+        else {
+            swap(*nonfalsified_literal_1, clause[0]);
+            swap(*nonfalsified_literal_2, clause[1]);
         }
     }
 
