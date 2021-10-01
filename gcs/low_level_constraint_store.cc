@@ -176,23 +176,32 @@ auto LowLevelConstraintStore::table(const State & state, vector<IntegerVariableI
 
 auto LowLevelConstraintStore::propagate(State & state) const -> bool
 {
-    set<int> propagation_queue;
+    set<int> on_queue;
+    list<int> propagation_queue;
 
     while (true) {
-        if (propagation_queue.empty())
-            state.extract_changed_variables([&] (VariableID var) {
-                    auto t = _imp->triggers.find(var);
-                    if (t != _imp->triggers.end())
-                        for (auto & p : t->second)
-                            propagation_queue.insert(p);
-                    propagation_queue.insert(0);
-                    });
+        state.extract_changed_variables([&] (VariableID var) {
+                auto t = _imp->triggers.find(var);
+                if (t != _imp->triggers.end())
+                    for (auto & p : t->second) {
+                        if (! on_queue.count(p)) {
+                            propagation_queue.push_back(p);
+                            on_queue.insert(p);
+                        }
+                    }
+
+                if (! on_queue.count(0)) {
+                    propagation_queue.push_back(0);
+                    on_queue.insert(0);
+                }
+                });
 
         if (propagation_queue.empty())
             break;
 
         int propagator_id = *propagation_queue.begin();
         propagation_queue.erase(propagation_queue.begin());
+        on_queue.erase(propagator_id);
         auto start_time = steady_clock::now();
         auto inference = _imp->propagation_functions.find(propagator_id)->second(state);
         auto tm = duration_cast<microseconds>(steady_clock::now() - start_time);
