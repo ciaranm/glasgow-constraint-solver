@@ -70,6 +70,8 @@ namespace gcs
     using WeightedLiterals = std::vector<std::pair<Integer, Literal> >;
 
     [[ nodiscard ]] auto sanitise_literals(Literals &) -> bool;
+
+    [[ nodiscard ]] auto underlying_variable(const Literal &) -> VariableID;
 }
 
 #endif

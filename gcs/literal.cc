@@ -129,3 +129,11 @@ auto gcs::operator ! (const Literal & lit) -> Literal
             }, lit);
 }
 
+auto gcs::underlying_variable(const Literal & lit) -> VariableID
+{
+    return visit(overloaded {
+            [&] (const LiteralFromIntegerVariable & ilit) -> VariableID { return ilit.var; },
+            [&] (const LiteralFromBooleanVariable & blit) -> VariableID { return blit.var; }
+            }, lit);
+}
+

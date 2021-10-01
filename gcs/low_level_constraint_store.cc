@@ -8,26 +8,24 @@
 
 #include <algorithm>
 #include <chrono>
+#include <deque>
 #include <list>
-#include <map>
-#include <set>
 
 using namespace gcs;
 
 using std::chrono::duration_cast;
 using std::chrono::microseconds;
 using std::chrono::steady_clock;
+using std::deque;
 using std::get;
 using std::list;
 using std::make_optional;
-using std::map;
 using std::max;
 using std::min;
 using std::move;
 using std::nullopt;
 using std::optional;
 using std::pair;
-using std::set;
 using std::string;
 using std::tuple;
 using std::vector;
@@ -36,11 +34,11 @@ struct LowLevelConstraintStore::Imp
 {
     Problem * const problem;
     list<Literals> cnfs;
-    map<int, PropagationFunction> propagation_functions;
+    deque<PropagationFunction> propagation_functions;
     vector<tuple<microseconds, unsigned long long, string> > propagation_function_calls;
     microseconds total_propagation_time{ 0 };
     unsigned long long total_propagations = 0;
-    map<VariableID, vector<int> > triggers;
+    deque<vector<int> > iv_triggers;
 
     Imp(Problem * p) :
         problem(p)
@@ -51,7 +49,7 @@ struct LowLevelConstraintStore::Imp
 LowLevelConstraintStore::LowLevelConstraintStore(Problem * p) :
     _imp(new Imp(p))
 {
-    _imp->propagation_functions.emplace(0, [&] (State & s) { return propagate_cnfs(s); });
+    _imp->propagation_functions.emplace_back([&] (State & s) { return propagate_cnfs(s); });
     _imp->propagation_function_calls.emplace_back(microseconds{ 0 }, 0, "cnf");
 }
 
@@ -123,9 +121,9 @@ auto LowLevelConstraintStore::integer_linear_le(const State & state, Linear && c
 
     int id = _imp->propagation_functions.size();
     for (auto & [ _, v ] : coeff_vars)
-        _imp->triggers.try_emplace(v).first->second.push_back(id);
+        add_trigger(v, id);
 
-    _imp->propagation_functions.emplace(id, [&, coeff_vars = move(coeff_vars), value = value] (State & state) -> Inference {
+    _imp->propagation_functions.emplace_back([&, coeff_vars = move(coeff_vars), value = value] (State & state) -> Inference {
             return propagate_linear(coeff_vars, value, state);
     });
 
@@ -135,10 +133,10 @@ auto LowLevelConstraintStore::integer_linear_le(const State & state, Linear && c
 auto LowLevelConstraintStore::propagator(const State &, PropagationFunction && f, const vector<VariableID> & trigger_vars, const std::string & name) -> void
 {
     int id = _imp->propagation_functions.size();
-    _imp->propagation_functions.emplace(id, move(f));
+    _imp->propagation_functions.emplace_back(move(f));
     _imp->propagation_function_calls.emplace_back(microseconds{ 0 }, 0, name);
     for (auto & t : trigger_vars)
-        _imp->triggers.try_emplace(t).first->second.push_back(id);
+        add_trigger(t, id);
 }
 
 auto LowLevelConstraintStore::table(const State & state, vector<IntegerVariableID> && vars, vector<vector<Integer> > && permitted, const std::string & name) -> void
@@ -166,9 +164,9 @@ auto LowLevelConstraintStore::table(const State & state, vector<IntegerVariableI
 
     // set up triggers before we move vars away
     for (auto & t : vars)
-        _imp->triggers.try_emplace(t).first->second.push_back(id);
+        add_trigger(t, id);
 
-    _imp->propagation_functions.emplace(id, [&, table = ExtensionalData{ selector, move(vars), move(permitted) }] (State & state) -> Inference {
+    _imp->propagation_functions.emplace_back([&, table = ExtensionalData{ selector, move(vars), move(permitted) }] (State & state) -> Inference {
             return propagate_extensional(table, state);
             });
     _imp->propagation_function_calls.emplace_back(microseconds{ 0 }, 0, name);
@@ -176,23 +174,35 @@ auto LowLevelConstraintStore::table(const State & state, vector<IntegerVariableI
 
 auto LowLevelConstraintStore::propagate(State & state) const -> bool
 {
-    set<int> on_queue;
-    list<int> propagation_queue;
+    vector<int> on_queue(_imp->propagation_functions.size(), 0);
+    deque<int> propagation_queue;
 
     while (true) {
         state.extract_changed_variables([&] (VariableID var) {
-                auto t = _imp->triggers.find(var);
-                if (t != _imp->triggers.end())
-                    for (auto & p : t->second) {
-                        if (! on_queue.count(p)) {
-                            propagation_queue.push_back(p);
-                            on_queue.insert(p);
+                visit(overloaded{
+                        [&] (const IntegerVariableID & ivar) {
+                            visit(overloaded{
+                                    [&] (const unsigned long long idx) {
+                                        if (idx < _imp->iv_triggers.size())
+                                            for (auto & p : _imp->iv_triggers[idx])
+                                                if (! on_queue[p]) {
+                                                    propagation_queue.push_back(p);
+                                                    on_queue[p] = 1;
+                                                }
+                                    },
+                                    [&] (const Integer) {
+                                        throw UnimplementedException{ };
+                                    }
+                                }, ivar.index_or_const_value);
+                        },
+                        [&] (const BooleanVariableID &) {
+                            throw UnimplementedException{ };
                         }
-                    }
+                        }, var);
 
-                if (! on_queue.count(0)) {
+                if ((! _imp->cnfs.empty()) && ! on_queue[0]) {
                     propagation_queue.push_back(0);
-                    on_queue.insert(0);
+                    on_queue[0] = 1;
                 }
                 });
 
@@ -201,9 +211,9 @@ auto LowLevelConstraintStore::propagate(State & state) const -> bool
 
         int propagator_id = *propagation_queue.begin();
         propagation_queue.erase(propagation_queue.begin());
-        on_queue.erase(propagator_id);
+        on_queue[propagator_id] = 0;
         auto start_time = steady_clock::now();
-        auto inference = _imp->propagation_functions.find(propagator_id)->second(state);
+        auto inference = _imp->propagation_functions[propagator_id](state);
         auto tm = duration_cast<microseconds>(steady_clock::now() - start_time);
         get<0>(_imp->propagation_function_calls[propagator_id]) += tm;
         get<1>(_imp->propagation_function_calls[propagator_id])++;
@@ -227,30 +237,7 @@ auto LowLevelConstraintStore::propagate_cnfs(State & state) const -> Inference
         Literals::iterator nonfalsified_literal_1 = clause.end(), nonfalsified_literal_2 = clause.end();
 
         for (auto lit = clause.begin(), lit_end = clause.end() ; lit != lit_end ; ++lit) {
-            if (visit(overloaded {
-                        [&] (const LiteralFromBooleanVariable & blit) -> bool {
-                            auto single_value = state.optional_single_value(blit.var);
-                            if (! single_value)
-                                throw UnimplementedException{ };
-                            return *single_value == (blit.state == LiteralFromBooleanVariable::True);
-                        },
-                        [&] (const LiteralFromIntegerVariable & ilit) -> bool {
-                            switch (ilit.state) {
-                                case LiteralFromIntegerVariable::Equal:
-                                    return state.in_domain(ilit.var, ilit.value);
-                                case LiteralFromIntegerVariable::Less:
-                                    return state.lower_bound(ilit.var) < ilit.value;
-                                case LiteralFromIntegerVariable::GreaterEqual:
-                                     return state.upper_bound(ilit.var) >= ilit.value;
-                                case LiteralFromIntegerVariable::NotEqual: {
-                                    auto single_value = state.optional_single_value(ilit.var);
-                                    return (nullopt == single_value || *single_value != ilit.value);
-                                }
-                            }
-
-                            throw NonExhaustiveSwitch{ };
-                        }
-                        }, *lit)) {
+            if (state.literal_is_nonfalsified(*lit)) {
                 if (nonfalsified_literal_1 == clause.end())
                     nonfalsified_literal_1 = lit;
                 else {
@@ -295,5 +282,25 @@ auto LowLevelConstraintStore::fill_in_constraint_stats(Stats & stats) const -> v
     stats.n_propagators += _imp->propagation_functions.size();
     stats.propagation_function_calls = _imp->propagation_function_calls;
     stats.propagation_function_calls.emplace_back(_imp->total_propagation_time, _imp->total_propagations, "totals");
+}
+
+auto LowLevelConstraintStore::add_trigger(VariableID var, int t) -> void
+{
+    visit(overloaded{
+            [&] (const IntegerVariableID & ivar) {
+                visit(overloaded{
+                        [&] (const unsigned long long idx) {
+                            if (_imp->iv_triggers.size() <= idx)
+                                    _imp->iv_triggers.resize(idx + 1);
+                            _imp->iv_triggers[idx].push_back(t);
+                        },
+                        [&] (const Integer) {
+                        }
+                        }, ivar.index_or_const_value);
+            },
+            [&] (const BooleanVariableID &) {
+                throw UnimplementedException{ };
+            }
+            }, var);
 }
 

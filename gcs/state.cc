@@ -567,3 +567,87 @@ auto State::add_proof_steps(JustifyExplicitly why) -> void
         why.add_proof_steps(*_imp->problem->optional_proof());
 }
 
+auto State::literal_is_nonfalsified(const Literal & lit) const -> bool
+{
+    return visit(overloaded {
+        [&] (const LiteralFromBooleanVariable & blit) -> bool {
+            auto single_value = optional_single_value(blit.var);
+            if (! single_value)
+                throw UnimplementedException{ };
+            return *single_value == (blit.state == LiteralFromBooleanVariable::True);
+        },
+        [&] (const LiteralFromIntegerVariable & ilit) -> bool {
+            switch (ilit.state) {
+                case LiteralFromIntegerVariable::Equal:
+                    return in_domain(ilit.var, ilit.value);
+                case LiteralFromIntegerVariable::Less:
+                    return lower_bound(ilit.var) < ilit.value;
+                case LiteralFromIntegerVariable::GreaterEqual:
+                     return upper_bound(ilit.var) >= ilit.value;
+                case LiteralFromIntegerVariable::NotEqual: {
+                    auto single_value = optional_single_value(ilit.var);
+                    return (nullopt == single_value || *single_value != ilit.value);
+                }
+            }
+
+            throw NonExhaustiveSwitch{ };
+        }
+        }, lit);
+}
+
+auto State::test_literal(const Literal & lit) const -> LiteralIs
+{
+    return visit(overloaded {
+        [&] (const LiteralFromBooleanVariable & blit) -> LiteralIs {
+            auto single_value = optional_single_value(blit.var);
+            if (! single_value)
+                return LiteralIs::Undecided;
+            else if (*single_value == (blit.state == LiteralFromBooleanVariable::True))
+                return LiteralIs::DefinitelyTrue;
+            else
+                return LiteralIs::DefinitelyFalse;
+        },
+        [&] (const LiteralFromIntegerVariable & ilit) -> LiteralIs {
+            switch (ilit.state) {
+                case LiteralFromIntegerVariable::Equal:
+                    if (! in_domain(ilit.var, ilit.value))
+                        return LiteralIs::DefinitelyFalse;
+                    else if (optional_single_value(ilit.var))
+                        return LiteralIs::DefinitelyTrue;
+                    else
+                        return LiteralIs::Undecided;
+
+                case LiteralFromIntegerVariable::Less:
+                    if (lower_bound(ilit.var) < ilit.value) {
+                        if (upper_bound(ilit.var) < ilit.value)
+                            return LiteralIs::DefinitelyTrue;
+                        else
+                            return LiteralIs::Undecided;
+                    }
+                    else
+                        return LiteralIs::DefinitelyFalse;
+
+                case LiteralFromIntegerVariable::GreaterEqual:
+                    if (upper_bound(ilit.var) >= ilit.value) {
+                        if (lower_bound(ilit.var) >= ilit.value)
+                            return LiteralIs::DefinitelyTrue;
+                        else
+                            return LiteralIs::Undecided;
+                    }
+                    else
+                        return LiteralIs::DefinitelyFalse;
+
+                case LiteralFromIntegerVariable::NotEqual:
+                    if (! in_domain(ilit.var, ilit.value))
+                        return LiteralIs::DefinitelyTrue;
+                    else if (optional_single_value(ilit.var))
+                        return LiteralIs::DefinitelyFalse;
+                    else
+                        return LiteralIs::Undecided;
+            }
+
+            throw NonExhaustiveSwitch{ };
+        }
+        }, lit);
+}
+

@@ -23,6 +23,8 @@ namespace gcs
 
             [[ nodiscard ]] auto propagate_cnfs(State &) const -> Inference;
 
+            auto add_trigger(VariableID, int) -> void;
+
         public:
             explicit LowLevelConstraintStore(Problem * const);
             ~LowLevelConstraintStore();

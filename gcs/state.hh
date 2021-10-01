@@ -42,6 +42,13 @@ namespace gcs
         }
     };
 
+    enum class LiteralIs
+    {
+        DefinitelyFalse,
+        DefinitelyTrue,
+        Undecided
+    };
+
     class State
     {
         private:
@@ -85,6 +92,9 @@ namespace gcs
             auto for_each_value(const IntegerVariableID, std::function<auto (Integer) -> void>) const -> void;
 
             [[ nodiscard ]] auto optional_single_value(const BooleanVariableID) const -> std::optional<bool>;
+
+            [[ nodiscard ]] auto test_literal(const Literal &) const -> LiteralIs;
+            [[ nodiscard ]] auto literal_is_nonfalsified(const Literal &) const -> bool;
 
             [[ nodiscard ]] auto operator() (const IntegerVariableID &) const -> Integer;
             [[ nodiscard ]] auto operator() (const BooleanVariableID &) const -> bool;
