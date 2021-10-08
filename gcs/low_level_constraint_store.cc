@@ -30,6 +30,15 @@ using std::string;
 using std::tuple;
 using std::vector;
 
+namespace
+{
+    struct TriggerIDs
+    {
+        vector<int> on_change;
+        vector<int> on_instantiated;
+    };
+}
+
 struct LowLevelConstraintStore::Imp
 {
     Problem * const problem;
@@ -38,7 +47,8 @@ struct LowLevelConstraintStore::Imp
     vector<tuple<microseconds, unsigned long long, string> > propagation_function_calls;
     microseconds total_propagation_time{ 0 };
     unsigned long long total_propagations = 0;
-    deque<vector<int> > iv_triggers;
+    deque<TriggerIDs> iv_triggers;
+    bool first = true;
 
     Imp(Problem * p) :
         problem(p)
@@ -121,7 +131,7 @@ auto LowLevelConstraintStore::integer_linear_le(const State & state, Linear && c
 
     int id = _imp->propagation_functions.size();
     for (auto & [ _, v ] : coeff_vars)
-        add_trigger(v, id);
+        trigger_on_change(v, id);
 
     _imp->propagation_functions.emplace_back([&, coeff_vars = move(coeff_vars), value = value] (State & state) -> Inference {
             return propagate_linear(coeff_vars, value, state);
@@ -130,13 +140,16 @@ auto LowLevelConstraintStore::integer_linear_le(const State & state, Linear && c
     _imp->propagation_function_calls.emplace_back(microseconds{ 0 }, 0, "int_lin_le");
 }
 
-auto LowLevelConstraintStore::propagator(const State &, PropagationFunction && f, const vector<VariableID> & trigger_vars, const std::string & name) -> void
+auto LowLevelConstraintStore::propagator(const State &, PropagationFunction && f, const Triggers & triggers, const std::string & name) -> void
 {
     int id = _imp->propagation_functions.size();
     _imp->propagation_functions.emplace_back(move(f));
     _imp->propagation_function_calls.emplace_back(microseconds{ 0 }, 0, name);
-    for (auto & t : trigger_vars)
-        add_trigger(t, id);
+
+    for (auto & v : triggers.on_change)
+        trigger_on_change(v, id);
+    for (auto & v : triggers.on_instantiated)
+        trigger_on_instantiated(v, id);
 }
 
 auto LowLevelConstraintStore::table(const State & state, vector<IntegerVariableID> && vars, vector<vector<Integer> > && permitted, const std::string & name) -> void
@@ -163,8 +176,9 @@ auto LowLevelConstraintStore::table(const State & state, vector<IntegerVariableI
     }
 
     // set up triggers before we move vars away
-    for (auto & t : vars)
-        add_trigger(t, id);
+    for (auto & v : vars)
+        trigger_on_change(v, id);
+    trigger_on_change(selector, id);
 
     _imp->propagation_functions.emplace_back([&, table = ExtensionalData{ selector, move(vars), move(permitted) }] (State & state) -> Inference {
             return propagate_extensional(table, state);
@@ -177,18 +191,34 @@ auto LowLevelConstraintStore::propagate(State & state) const -> bool
     vector<int> on_queue(_imp->propagation_functions.size(), 0);
     deque<int> propagation_queue;
 
+    if (_imp->first) {
+        _imp->first = false;
+        for (unsigned i = 0 ; i != _imp->propagation_functions.size() ; ++i) {
+            propagation_queue.push_back(i);
+            on_queue[i] = 1;
+        }
+    }
+
     while (true) {
         state.extract_changed_variables([&] (VariableID var) {
                 visit(overloaded{
                         [&] (const IntegerVariableID & ivar) {
                             visit(overloaded{
                                     [&] (const unsigned long long idx) {
-                                        if (idx < _imp->iv_triggers.size())
-                                            for (auto & p : _imp->iv_triggers[idx])
+                                        if (idx < _imp->iv_triggers.size()) {
+                                            auto & triggers = _imp->iv_triggers[idx];
+                                            for (auto & p : triggers.on_change)
                                                 if (! on_queue[p]) {
                                                     propagation_queue.push_back(p);
                                                     on_queue[p] = 1;
                                                 }
+                                            if (state.optional_single_value(ivar))
+                                                for (auto & p : triggers.on_instantiated)
+                                                    if (! on_queue[p]) {
+                                                        propagation_queue.push_back(p);
+                                                        on_queue[p] = 1;
+                                                    }
+                                        }
                                     },
                                     [&] (const Integer) {
                                         throw UnimplementedException{ };
@@ -284,7 +314,7 @@ auto LowLevelConstraintStore::fill_in_constraint_stats(Stats & stats) const -> v
     stats.propagation_function_calls.emplace_back(_imp->total_propagation_time, _imp->total_propagations, "totals");
 }
 
-auto LowLevelConstraintStore::add_trigger(VariableID var, int t) -> void
+auto LowLevelConstraintStore::trigger_on_change(VariableID var, int t) -> void
 {
     visit(overloaded{
             [&] (const IntegerVariableID & ivar) {
@@ -292,14 +322,46 @@ auto LowLevelConstraintStore::add_trigger(VariableID var, int t) -> void
                         [&] (const unsigned long long idx) {
                             if (_imp->iv_triggers.size() <= idx)
                                     _imp->iv_triggers.resize(idx + 1);
-                            _imp->iv_triggers[idx].push_back(t);
+                            _imp->iv_triggers[idx].on_change.push_back(t);
                         },
                         [&] (const Integer) {
                         }
                         }, ivar.index_or_const_value);
             },
-            [&] (const BooleanVariableID &) {
-                throw UnimplementedException{ };
+            [&] (const BooleanVariableID & bvar) {
+                visit(overloaded{
+                        [&] (const unsigned long long) {
+                            throw UnimplementedException{ };
+                        },
+                        [&] (const bool) {
+                        }
+                        }, bvar.index_or_const_value);
+            }
+            }, var);
+}
+
+auto LowLevelConstraintStore::trigger_on_instantiated(VariableID var, int t) -> void
+{
+    visit(overloaded{
+            [&] (const IntegerVariableID & ivar) {
+                visit(overloaded{
+                        [&] (const unsigned long long idx) {
+                            if (_imp->iv_triggers.size() <= idx)
+                                    _imp->iv_triggers.resize(idx + 1);
+                            _imp->iv_triggers[idx].on_instantiated.push_back(t);
+                        },
+                        [&] (const Integer) {
+                        }
+                        }, ivar.index_or_const_value);
+            },
+            [&] (const BooleanVariableID & bvar) {
+                visit(overloaded{
+                        [&] (const unsigned long long) {
+                            throw UnimplementedException{ };
+                        },
+                        [&] (const bool) {
+                        }
+                        }, bvar.index_or_const_value);
             }
             }, var);
 }

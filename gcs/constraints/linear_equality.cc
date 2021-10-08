@@ -37,9 +37,9 @@ auto LinearEquality::convert_to_low_level(LowLevelConstraintStore & constraints,
         inv_coeff_vars.emplace_back(-c, v);
 
     if (_gac) {
-        vector<VariableID> trigger_vars;
+        Triggers triggers;
         for (auto & [ _, v ] : _coeff_vars)
-            trigger_vars.push_back(v);
+            triggers.on_change.push_back(v);
 
         optional<ExtensionalData> data;
         constraints.propagator(initial_state, [data = move(data), coeff_vars = _coeff_vars, value = _value] (State & state) mutable -> Inference {
@@ -122,7 +122,7 @@ auto LinearEquality::convert_to_low_level(LowLevelConstraintStore & constraints,
                 }
 
                 return propagate_extensional(*data, state);
-                }, trigger_vars, "lin_eq_gac");
+                }, triggers, "lin_eq_gac");
     }
 
     constraints.integer_linear_le(initial_state, move(inv_coeff_vars), -_value);

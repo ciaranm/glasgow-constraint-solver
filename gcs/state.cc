@@ -91,9 +91,7 @@ auto State::create_integer_variable(Integer lower, Integer upper) -> IntegerVari
     else
         _imp->integer_variables.back().push_back(IntegerRangeVariable{ lower, upper });
 
-    auto result = IntegerVariableID{ _imp->integer_variables.back().size() - 1 };
-    remember_change(result);
-    return result;
+    return IntegerVariableID{ _imp->integer_variables.back().size() - 1 };
 }
 
 auto State::create_pseudovariable(Integer lower, Integer upper, const optional<string> & name) -> IntegerVariableID

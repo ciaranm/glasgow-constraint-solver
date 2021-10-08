@@ -15,6 +15,12 @@ namespace gcs
 {
     using PropagationFunction = std::function<auto (State &) -> Inference>;
 
+    struct Triggers
+    {
+        std::vector<VariableID> on_change;
+        std::vector<VariableID> on_instantiated;
+    };
+
     class LowLevelConstraintStore
     {
         private:
@@ -23,7 +29,8 @@ namespace gcs
 
             [[ nodiscard ]] auto propagate_cnfs(State &) const -> Inference;
 
-            auto add_trigger(VariableID, int) -> void;
+            auto trigger_on_change(VariableID, int id) -> void;
+            auto trigger_on_instantiated(VariableID, int id) -> void;
 
         public:
             explicit LowLevelConstraintStore(Problem * const);
@@ -42,7 +49,7 @@ namespace gcs
             auto pseudoboolean_ge(const State &, WeightedLiterals && lits, Integer, bool propagating) -> std::optional<ProofLine>;
             auto integer_linear_le(const State &, Linear && coeff_vars, Integer value) -> void;
             auto table(const State &, std::vector<IntegerVariableID> &&, std::vector<std::vector<Integer> > &&, const std::string & name) -> void;
-            auto propagator(const State &, PropagationFunction &&, const std::vector<VariableID> & trigger_vars, const std::string & name) -> void;
+            auto propagator(const State &, PropagationFunction &&, const Triggers & trigger_vars, const std::string & name) -> void;
 
             [[ nodiscard ]] auto create_auxilliary_integer_variable(Integer, Integer, const std::string & name, bool need_ge) -> IntegerVariableID;
 

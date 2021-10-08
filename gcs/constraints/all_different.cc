@@ -573,7 +573,8 @@ auto AllDifferent::convert_to_low_level(LowLevelConstraintStore & constraints, c
     if (sanitised_vars.end() != adjacent_find(sanitised_vars.begin(), sanitised_vars.end()))
         throw UnexpectedException{ "not sure what to do about duplicate variables in an alldifferent" };
 
-    vector<VariableID> var_ids{ sanitised_vars.begin(), sanitised_vars.end() };
+    Triggers triggers;
+    triggers.on_change = { sanitised_vars.begin(), sanitised_vars.end() };
     vector<Integer> compressed_vals;
 
     for (auto & var : sanitised_vars)
@@ -584,7 +585,7 @@ auto AllDifferent::convert_to_low_level(LowLevelConstraintStore & constraints, c
 
     constraints.propagator(initial_state, [vars = move(sanitised_vars), vals = move(compressed_vals), save_constraint_numbers = move(constraint_numbers)] (State & state) -> Inference {
             return propagate_all_different(vars, vals, save_constraint_numbers, state);
-            }, var_ids, "alldiff");
+            }, triggers, "alldiff");
 }
 
 auto AllDifferent::describe_for_proof() -> std::string
