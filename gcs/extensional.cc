@@ -10,37 +10,36 @@ auto gcs::propagate_extensional(const ExtensionalData & table, State & state) ->
     bool changed = false, contradiction = false;
 
     // check whether selectable tuples are still feasible
-    for (unsigned tuple_idx = 0 ; tuple_idx < table.tuples.size() ; ++tuple_idx) {
-        if (state.in_domain(table.selector, Integer(tuple_idx))) {
-            bool is_feasible = true;
-            for (unsigned idx = 0 ; idx < table.vars.size() ; ++idx)
-                if (! state.in_domain(table.vars[idx], table.tuples[tuple_idx][idx])) {
-                    is_feasible = false;
-                    break;
-                }
-
-            if (! is_feasible) {
-                switch (state.infer(table.selector != Integer(tuple_idx), NoJustificationNeeded{ })) {
-                    case Inference::NoChange:      break;
-                    case Inference::Change:        changed = true; break;
-                    case Inference::Contradiction: contradiction = true; break;
-                }
+    state.for_each_value_while(table.selector, [&] (Integer tuple_idx) -> bool {
+        bool is_feasible = true;
+        for (unsigned idx = 0 ; idx < table.vars.size() ; ++idx)
+            if (! state.in_domain(table.vars[idx], table.tuples[tuple_idx.raw_value][idx])) {
+                is_feasible = false;
+                break;
             }
 
-            if (contradiction)
-                return Inference::Contradiction;
+        if (! is_feasible) {
+            switch (state.infer(table.selector != Integer(tuple_idx), NoJustificationNeeded{ })) {
+                case Inference::NoChange:      break;
+                case Inference::Change:        changed = true; break;
+                case Inference::Contradiction: contradiction = true; break;
+            }
         }
-    }
+
+        return ! contradiction;
+    });
 
     // check for supports in selectable tuples
     for (unsigned idx = 0 ; idx < table.vars.size() ; ++idx) {
-        state.for_each_value(table.vars[idx], [&] (Integer val) {
+        state.for_each_value_while(table.vars[idx], [&] (Integer val) -> bool {
                 bool supported = false;
-                for (unsigned tuple_idx = 0 ; tuple_idx < table.tuples.size() ; ++tuple_idx)
-                    if (state.in_domain(table.selector, Integer(tuple_idx)) && table.tuples[tuple_idx][idx] == val) {
+                state.for_each_value_while(table.selector, [&] (Integer tuple_idx) -> bool {
+                    if (table.tuples[tuple_idx.raw_value][idx] == val) {
                         supported = true;
-                        break;
+                        return false;
                     }
+                    return true;
+                });
 
                 if (! supported) {
                     switch (state.infer(table.vars[idx] != val, JustifyUsingRUP{ })) {
@@ -49,6 +48,8 @@ auto gcs::propagate_extensional(const ExtensionalData & table, State & state) ->
                         case Inference::Contradiction: contradiction = true; break;
                     }
                 }
+
+                return ! contradiction;
             });
 
         if (contradiction)
