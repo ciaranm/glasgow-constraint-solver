@@ -448,6 +448,17 @@ auto State::in_domain(const IntegerVariableID var, const Integer val) const -> b
             }, integer_variable(var, space));
 }
 
+auto State::domain_has_holes(const IntegerVariableID var) const -> bool
+{
+    IntegerVariable space = IntegerConstant{ 0_i };
+    return visit(overloaded {
+            [] (const IntegerRangeVariable &) { return false; },
+            [] (const IntegerConstant &) { return false; },
+            [] (const IntegerSmallSetVariable &) { return true; },
+            [] (const IntegerSetVariable &) { return true; }
+            }, integer_variable(var, space));
+}
+
 auto State::optional_single_value(const IntegerVariableID var) const -> optional<Integer>
 {
     IntegerVariable space = IntegerConstant{ 0_i };
@@ -488,6 +499,14 @@ auto State::domain_size(const IntegerVariableID var) const -> Integer
 
 auto State::for_each_value(const IntegerVariableID var, function<auto (Integer) -> void> f) const -> void
 {
+    for_each_value_while(var, [&] (Integer v) -> bool {
+            f(v);
+            return true;
+            });
+}
+
+auto State::for_each_value_while(const IntegerVariableID var, function<auto (Integer) -> bool> f) const -> void
+{
     IntegerVariable space = IntegerConstant{ 0_i };
     const IntegerVariable & var_ref = integer_variable(var, space);
     IntegerVariable var_copy = var_ref;
@@ -498,16 +517,19 @@ auto State::for_each_value(const IntegerVariableID var, function<auto (Integer) 
             },
             [&] (const IntegerRangeVariable & r) {
                 for (auto v = r.lower ; v <= r.upper ; ++v)
-                    f(v);
+                    if (! f(v))
+                        break;
             },
             [&] (const IntegerSmallSetVariable & r) {
                 for (unsigned b = 0 ; b < Bits::number_of_bits ; ++b)
                     if (r.bits.test(b))
-                        f(r.lower + Integer{ b });
+                        if (! f(r.lower + Integer{ b }))
+                            break;
             },
             [&] (const IntegerSetVariable & s) {
                 for (auto & v : *s.values)
-                    f(v);
+                    if (! f(v))
+                        break;
             }
             }, var_copy);
 }

@@ -90,6 +90,8 @@ namespace gcs
             [[ nodiscard ]] auto optional_single_value(const IntegerVariableID) const -> std::optional<Integer>;
             [[ nodiscard ]] auto domain_size(const IntegerVariableID) const -> Integer;
             auto for_each_value(const IntegerVariableID, std::function<auto (Integer) -> void>) const -> void;
+            auto for_each_value_while(const IntegerVariableID, std::function<auto (Integer) -> bool>) const -> void;
+            [[ nodiscard ]] auto domain_has_holes(const IntegerVariableID) const -> bool;
 
             [[ nodiscard ]] auto optional_single_value(const BooleanVariableID) const -> std::optional<bool>;
 
