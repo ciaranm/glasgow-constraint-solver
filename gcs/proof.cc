@@ -102,12 +102,9 @@ namespace
     }
 }
 
-auto Proof::create_integer_variable(IntegerVariableID id, Integer lower, Integer upper, const optional<string> & optional_name, bool need_ge) -> void
+auto Proof::create_integer_variable(SimpleIntegerVariableID id, Integer lower, Integer upper, const optional<string> & optional_name, bool need_ge) -> void
 {
-    string name = visit(overloaded{
-            [&] (SimpleIntegerVariableID x) { return "iv" + to_string(x.index); },
-            [&] (ConstantIntegerVariableID x) { return "ic" + to_string(x.const_value.raw_value); }
-            }, id);
+    string name = "iv" + to_string(id.index);
     if (optional_name)
         name.append("_" + *optional_name);
 
@@ -182,12 +179,9 @@ auto Proof::create_integer_variable(IntegerVariableID id, Integer lower, Integer
     _imp->solution_variables.push_back(id);
 }
 
-auto Proof::create_pseudovariable(IntegerVariableID id, Integer lower, Integer upper, const optional<string> & optional_name) -> void
+auto Proof::create_pseudovariable(SimpleIntegerVariableID id, Integer lower, Integer upper, const optional<string> & optional_name) -> void
 {
-    string name = visit(overloaded{
-            [&] (SimpleIntegerVariableID x) { return "iv" + to_string(x.index); },
-            [&] (ConstantIntegerVariableID x) { return "ic" + to_string(x.const_value.raw_value); }
-            }, id);
+    string name = "iv" + to_string(id.index);
     if (optional_name)
         name.append("_" + *optional_name);
 
@@ -298,13 +292,17 @@ auto Proof::proof_variable(const Literal & lit) const -> const string &
     return visit(overloaded{
             [&] (const LiteralFromIntegerVariable & ilit) -> const string & {
                 return visit(overloaded{
-                    [&] (SimpleIntegerVariableID) -> const string & {
+                    [&] (const SimpleIntegerVariableID &) -> const string & {
                         auto it = _imp->integer_variables.find(ilit);
                         if (it == _imp->integer_variables.end())
                             throw ProofError("No variable exists for literal " + debug_string(lit));
                         return it->second;
                     },
-                    [&] (ConstantIntegerVariableID) -> const string & {
+                    [&] (const ViewOfIntegerVariableID & view) -> const string & {
+                        LiteralFromIntegerVariable relit{ view.actual_variable, ilit.state, ilit.value - view.offset };
+                        return proof_variable(relit);
+                    },
+                    [&] (const ConstantIntegerVariableID &) -> const string & {
                         throw UnimplementedException{ };
                     }
                     }, ilit.var);

@@ -52,7 +52,7 @@ namespace gcs
 
             // OPB-related output
             auto posting(const std::string &) -> void;
-            auto create_integer_variable(IntegerVariableID, Integer, Integer, const std::optional<std::string> &, bool need_ge) -> void;
+            auto create_integer_variable(SimpleIntegerVariableID, Integer, Integer, const std::optional<std::string> &, bool need_ge) -> void;
             [[ nodiscard ]] auto cnf(const Literals &) -> ProofLine;
             [[ nodiscard ]] auto at_most_one(const Literals &) -> ProofLine;
             [[ nodiscard ]] auto pseudoboolean_ge(const WeightedLiterals &, Integer) -> ProofLine;
@@ -76,7 +76,7 @@ namespace gcs
             auto emit_proof_line(const std::string &) -> void;
             [[ nodiscard ]] auto constraint_saying_variable_takes_at_least_one_value(IntegerVariableID) const -> ProofLine;
 
-            auto create_pseudovariable(IntegerVariableID, Integer, Integer, const std::optional<std::string> &) -> void;
+            auto create_pseudovariable(SimpleIntegerVariableID, Integer, Integer, const std::optional<std::string> &) -> void;
 
             auto proof_variable(const Literal &) const -> const std::string &;
     };

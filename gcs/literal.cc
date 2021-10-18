@@ -21,10 +21,14 @@ auto gcs::debug_string(const Literal & lit) -> string
     return visit(overloaded {
             [] (const LiteralFromIntegerVariable & ilit) -> string {
                 switch (ilit.state) {
-                    case LiteralFromIntegerVariable::Equal:        return "intvars[" + debug_string(ilit.var) + "] = " + ilit.value.to_string();
-                    case LiteralFromIntegerVariable::NotEqual:     return "intvars[" + debug_string(ilit.var) + "] != " + ilit.value.to_string();
-                    case LiteralFromIntegerVariable::GreaterEqual: return "intvars[" + debug_string(ilit.var) + "] >= " + ilit.value.to_string();
-                    case LiteralFromIntegerVariable::Less:         return "intvars[" + debug_string(ilit.var) + "] < " + ilit.value.to_string();
+                    case LiteralFromIntegerVariable::State::Equal:
+                        return "intvars[" + debug_string(ilit.var) + "] = " + ilit.value.to_string();
+                    case LiteralFromIntegerVariable::State::NotEqual:
+                        return "intvars[" + debug_string(ilit.var) + "] != " + ilit.value.to_string();
+                    case LiteralFromIntegerVariable::State::GreaterEqual:
+                        return "intvars[" + debug_string(ilit.var) + "] >= " + ilit.value.to_string();
+                    case LiteralFromIntegerVariable::State::Less:
+                        return "intvars[" + debug_string(ilit.var) + "] < " + ilit.value.to_string();
                 }
                 throw NonExhaustiveSwitch{ };
             },
@@ -45,12 +49,13 @@ namespace
                 [] (const LiteralFromIntegerVariable & ilit) -> optional<bool> {
                     return visit(overloaded {
                             [&] (SimpleIntegerVariableID) -> optional<bool> { return nullopt; },
+                            [&] (ViewOfIntegerVariableID) -> optional<bool> { return nullopt; },
                             [&] (ConstantIntegerVariableID x) -> optional<bool> {
                                 switch (ilit.state) {
-                                    case LiteralFromIntegerVariable::Equal:        return x.const_value == ilit.value;
-                                    case LiteralFromIntegerVariable::NotEqual:     return x.const_value != ilit.value;
-                                    case LiteralFromIntegerVariable::GreaterEqual: return x.const_value >= ilit.value;
-                                    case LiteralFromIntegerVariable::Less:         return x.const_value < ilit.value;
+                                    case LiteralFromIntegerVariable::State::Equal:        return x.const_value == ilit.value;
+                                    case LiteralFromIntegerVariable::State::NotEqual:     return x.const_value != ilit.value;
+                                    case LiteralFromIntegerVariable::State::GreaterEqual: return x.const_value >= ilit.value;
+                                    case LiteralFromIntegerVariable::State::Less:         return x.const_value < ilit.value;
                                 }
                                 throw NonExhaustiveSwitch{ };
                             }
@@ -103,14 +108,14 @@ auto gcs::operator ! (const Literal & lit) -> Literal
     return visit(overloaded {
             [] (const LiteralFromIntegerVariable & ilit) {
                 switch (ilit.state) {
-                    case LiteralFromIntegerVariable::Equal:
-                        return Literal{ LiteralFromIntegerVariable{ ilit.var, LiteralFromIntegerVariable::NotEqual, ilit.value } };
-                    case LiteralFromIntegerVariable::NotEqual:
-                        return Literal{ LiteralFromIntegerVariable{ ilit.var, LiteralFromIntegerVariable::Equal, ilit.value } };
-                    case LiteralFromIntegerVariable::Less:
-                        return Literal{ LiteralFromIntegerVariable{ ilit.var, LiteralFromIntegerVariable::GreaterEqual, ilit.value } };
-                    case LiteralFromIntegerVariable::GreaterEqual:
-                        return Literal{ LiteralFromIntegerVariable{ ilit.var, LiteralFromIntegerVariable::Less, ilit.value } };
+                case LiteralFromIntegerVariable::State::Equal:
+                    return Literal{ LiteralFromIntegerVariable{ ilit.var, LiteralFromIntegerVariable::State::NotEqual, ilit.value } };
+                case LiteralFromIntegerVariable::State::NotEqual:
+                    return Literal{ LiteralFromIntegerVariable{ ilit.var, LiteralFromIntegerVariable::State::Equal, ilit.value } };
+                case LiteralFromIntegerVariable::State::Less:
+                    return Literal{ LiteralFromIntegerVariable{ ilit.var, LiteralFromIntegerVariable::State::GreaterEqual, ilit.value } };
+                case LiteralFromIntegerVariable::State::GreaterEqual:
+                    return Literal{ LiteralFromIntegerVariable{ ilit.var, LiteralFromIntegerVariable::State::Less, ilit.value } };
                 }
                 throw NonExhaustiveSwitch{ };
             },

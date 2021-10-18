@@ -21,6 +21,20 @@ namespace gcs
         [[ nodiscard ]] auto operator <=> (const SimpleIntegerVariableID &) const = default;
     };
 
+    struct ViewOfIntegerVariableID
+    {
+        SimpleIntegerVariableID actual_variable;
+        Integer offset;
+
+        explicit ViewOfIntegerVariableID(SimpleIntegerVariableID a, Integer o) :
+            actual_variable(a),
+            offset(o)
+        {
+        }
+
+        [[ nodiscard ]] auto operator <=> (const ViewOfIntegerVariableID &) const = default;
+    };
+
     struct ConstantIntegerVariableID
     {
         Integer const_value;
@@ -33,7 +47,11 @@ namespace gcs
         [[ nodiscard ]] auto operator <=> (const ConstantIntegerVariableID &) const = default;
     };
 
-    using IntegerVariableID = std::variant<SimpleIntegerVariableID, ConstantIntegerVariableID>;
+    using IntegerVariableID = std::variant<SimpleIntegerVariableID, ViewOfIntegerVariableID, ConstantIntegerVariableID>;
+
+    // The following is badly named... Maybe a good name will become evident once the variants
+    // gain more items?
+    using DirectIntegerVariableID = std::variant<SimpleIntegerVariableID, ConstantIntegerVariableID>;
 
     [[ nodiscard ]] inline auto constant_variable(const Integer x) -> IntegerVariableID
     {

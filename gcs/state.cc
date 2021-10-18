@@ -17,6 +17,7 @@ using namespace gcs;
 using std::decay_t;
 using std::find;
 using std::function;
+using std::get;
 using std::get_if;
 using std::is_same_v;
 using std::list;
@@ -57,7 +58,7 @@ struct State::Imp
     const Problem * const problem;
 
     list<vector<IntegerVariableState> > integer_variable_states;
-    set<VariableID> changed;
+    set<SimpleIntegerVariableID> changed;
     vector<Literal> guesses;
 
     Imp(const Problem * const p) :
@@ -84,7 +85,7 @@ auto State::clone() const -> State
     return result;
 }
 
-auto State::create_integer_variable(Integer lower, Integer upper) -> IntegerVariableID
+auto State::create_integer_variable(Integer lower, Integer upper) -> SimpleIntegerVariableID
 {
     if (lower == upper)
         _imp->integer_variable_states.back().push_back(IntegerVariableConstantState{ lower });
@@ -94,7 +95,7 @@ auto State::create_integer_variable(Integer lower, Integer upper) -> IntegerVari
     return SimpleIntegerVariableID{ _imp->integer_variable_states.back().size() - 1 };
 }
 
-auto State::create_pseudovariable(Integer lower, Integer upper, const optional<string> & name) -> IntegerVariableID
+auto State::create_pseudovariable(Integer lower, Integer upper, const optional<string> & name) -> SimpleIntegerVariableID
 {
     auto result = create_integer_variable(lower, upper);
     if (_imp->problem->optional_proof())
@@ -102,15 +103,15 @@ auto State::create_pseudovariable(Integer lower, Integer upper, const optional<s
     return result;
 }
 
-auto State::non_constant_state_of(const IntegerVariableID i) -> IntegerVariableState &
+auto State::assign_to_state_of(const DirectIntegerVariableID i) -> IntegerVariableState &
 {
     return visit(overloaded {
             [&] (const SimpleIntegerVariableID & v) -> IntegerVariableState & { return _imp->integer_variable_states.back()[v.index]; },
-            [&] (const ConstantIntegerVariableID &) -> IntegerVariableState & { throw UnexpectedException{ "unexpected constant" }; }
+            [&] (const ConstantIntegerVariableID &) -> IntegerVariableState & { throw UnexpectedException{ "shouldn't have a const here" }; }
             }, i);
 }
 
-auto State::state_of(const IntegerVariableID i, IntegerVariableState & space) -> IntegerVariableState &
+auto State::state_of(const DirectIntegerVariableID i, IntegerVariableState & space) -> IntegerVariableState &
 {
     return visit(overloaded {
             [&] (const SimpleIntegerVariableID & v) -> IntegerVariableState & { return _imp->integer_variable_states.back()[v.index]; },
@@ -118,7 +119,7 @@ auto State::state_of(const IntegerVariableID i, IntegerVariableState & space) ->
             }, i);
 }
 
-auto State::state_of(const IntegerVariableID i, IntegerVariableState & space) const -> const IntegerVariableState &
+auto State::state_of(const DirectIntegerVariableID i, IntegerVariableState & space) const -> const IntegerVariableState &
 {
     return visit(overloaded {
             [&] (const SimpleIntegerVariableID & v) -> const IntegerVariableState & { return _imp->integer_variable_states.back()[v.index]; },
@@ -126,27 +127,39 @@ auto State::state_of(const IntegerVariableID i, IntegerVariableState & space) co
             }, i);
 }
 
-auto State::infer_integer(const LiteralFromIntegerVariable & ilit) -> Inference
+namespace
+{
+    template <typename T_, typename A_>
+    auto generalise(A_ & a) -> T_
+    {
+        return visit([] (auto & x) -> T_ { return x; }, a);
+    }
+}
+
+auto State::infer_literal_from_direct_integer_variable(
+        const DirectIntegerVariableID var,
+        LiteralFromIntegerVariable::State state,
+        Integer value) -> Inference
 {
     IntegerVariableState space = IntegerVariableConstantState{ 0_i };
 
-    switch (ilit.state) {
-        case LiteralFromIntegerVariable::Equal:
+    switch (state) {
+        case LiteralFromIntegerVariable::State::Equal:
             // Has to be equal. If the value isn't in the domain, we've found a
             // contradiction, otherwise update to a constant value.
-            if (! in_domain(ilit.var, ilit.value))
+            if (! in_domain(generalise<IntegerVariableID>(var), value))
                 return Inference::Contradiction;
-            else if (optional_single_value(ilit.var))
+            else if (optional_single_value(generalise<IntegerVariableID>(var)))
                 return Inference::NoChange;
             else {
-                non_constant_state_of(ilit.var) = IntegerVariableConstantState{ ilit.value };
+                assign_to_state_of(var) = IntegerVariableConstantState{ value };
                 return Inference::Change;
             }
 
-        case LiteralFromIntegerVariable::NotEqual:
+        case LiteralFromIntegerVariable::State::NotEqual:
             // If the value isn't in the domain, we don't need to do anything.
             // Otherwise...
-            if (! in_domain(ilit.var, ilit.value))
+            if (! in_domain(generalise<IntegerVariableID>(var), value))
                 return Inference::NoChange;
 
             return visit(overloaded {
@@ -159,18 +172,18 @@ auto State::infer_integer(const LiteralFromIntegerVariable & ilit) -> Inference
                             // Constant equal to the value, problem!
                             return Inference::Contradiction;
                         }
-                        else if (rvar.lower == ilit.value) {
+                        else if (rvar.lower == value) {
                             // Can just bump the bound
                             ++rvar.lower;
                             if (rvar.lower == rvar.upper)
-                                non_constant_state_of(ilit.var) = IntegerVariableConstantState{ rvar.lower };
+                                assign_to_state_of(var) = IntegerVariableConstantState{ rvar.lower };
                             return Inference::Change;
                         }
-                        else if (rvar.upper == ilit.value) {
+                        else if (rvar.upper == value) {
                             --rvar.upper;
 
                             if (rvar.lower == rvar.upper)
-                                non_constant_state_of(ilit.var) = IntegerVariableConstantState{ rvar.lower };
+                                assign_to_state_of(var) = IntegerVariableConstantState{ rvar.lower };
                             return Inference::Change;
                         }
                         else {
@@ -178,25 +191,25 @@ auto State::infer_integer(const LiteralFromIntegerVariable & ilit) -> Inference
                             if (rvar.lower < 0_i || rvar.upper >= Integer{ Bits::number_of_bits }) {
                                 auto values = make_shared<set<Integer> >();
                                 for (Integer v = rvar.lower ; v <= rvar.upper ; ++v)
-                                    if (v != ilit.value)
+                                    if (v != value)
                                         values->insert(v);
-                                non_constant_state_of(ilit.var) = IntegerVariableSetState{ values };
+                                assign_to_state_of(var) = IntegerVariableSetState{ values };
                             }
                             else {
                                 IntegerVariableSmallSetState svar{ Integer{ 0 }, Bits{ 0 } };
                                 for (Integer v = rvar.lower ; v <= rvar.upper ; ++v)
-                                    if (v != ilit.value)
+                                    if (v != value)
                                         svar.bits.set(v.raw_value);
-                                non_constant_state_of(ilit.var) = move(svar);
+                                assign_to_state_of(var) = move(svar);
                             }
                             return Inference::Change;
                         }
                     },
                     [&] (IntegerVariableSmallSetState & svar) -> Inference {
                         // Knock out the value
-                        svar.bits.reset((ilit.value - svar.lower).raw_value);
+                        svar.bits.reset((value - svar.lower).raw_value);
                         if (svar.bits.has_single_bit())
-                            non_constant_state_of(ilit.var) = IntegerVariableConstantState{ svar.lower + Integer{ svar.bits.countr_zero() } };
+                            assign_to_state_of(var) = IntegerVariableConstantState{ svar.lower + Integer{ svar.bits.countr_zero() } };
                         else if (svar.bits.none())
                             return Inference::Contradiction;
                         return Inference::Change;
@@ -206,36 +219,36 @@ auto State::infer_integer(const LiteralFromIntegerVariable & ilit) -> Inference
                         if (1 == svar.values->size())
                             return Inference::Contradiction;
                         else if (2 == svar.values->size()) {
-                            non_constant_state_of(ilit.var) = IntegerVariableConstantState{ ilit.value == *svar.values->begin() ? *next(svar.values->begin()) : *svar.values->begin() };
+                            assign_to_state_of(var) = IntegerVariableConstantState{ value == *svar.values->begin() ? *next(svar.values->begin()) : *svar.values->begin() };
                             return Inference::Change;
                         }
                         else if (svar.values.unique()) {
-                            svar.values->erase(ilit.value);
+                            svar.values->erase(value);
                             return Inference::Change;
                         }
                         else {
                             auto new_values = make_shared<set<Integer> >(*svar.values);
-                            new_values->erase(ilit.value);
+                            new_values->erase(value);
                             svar.values = new_values;
                             return Inference::Change;
                         }
                     }
-                }, state_of(ilit.var, space));
+                }, state_of(var, space));
 
-        case LiteralFromIntegerVariable::Less:
+        case LiteralFromIntegerVariable::State::Less:
             return visit(overloaded {
                     [&] (IntegerVariableConstantState & c) -> Inference {
                         // Ok if the constant is less, otherwise contradiction
-                        return c.value < ilit.value ? Inference::NoChange : Inference::Contradiction;
+                        return c.value < value ? Inference::NoChange : Inference::Contradiction;
                     },
                     [&] (IntegerVariableRangeState & rvar) -> Inference {
                         bool changed = false;
-                        if (rvar.upper >= ilit.value) {
+                        if (rvar.upper >= value) {
                             changed = true;
-                            rvar.upper = ilit.value - 1_i;
+                            rvar.upper = value - 1_i;
                         }
                         if (rvar.lower == rvar.upper)
-                            non_constant_state_of(ilit.var) = IntegerVariableConstantState{ rvar.lower };
+                            assign_to_state_of(var) = IntegerVariableConstantState{ rvar.lower };
                         else if (rvar.lower > rvar.upper)
                             return Inference::Contradiction;
                         return changed ? Inference::Change : Inference::NoChange;
@@ -244,50 +257,50 @@ auto State::infer_integer(const LiteralFromIntegerVariable & ilit) -> Inference
                         // This should be much smarter...
                         auto pc_before = svar.bits.popcount();
                         for (int i = 0 ; i < Bits::number_of_bits ; ++i)
-                            if (svar.lower + Integer{ i } >= ilit.value)
+                            if (svar.lower + Integer{ i } >= value)
                                 svar.bits.reset(i);
                         auto pc_after = svar.bits.popcount();
                         if (pc_after == 0)
                             return Inference::Contradiction;
                         if (pc_after == 1)
-                            non_constant_state_of(ilit.var) = IntegerVariableConstantState{ *optional_single_value(ilit.var) };
+                            assign_to_state_of(var) = IntegerVariableConstantState{ *optional_single_value(generalise<IntegerVariableID>(var)) };
                         return pc_before == pc_after ? Inference::NoChange : Inference::Change;
                     },
                     [&] (IntegerVariableSetState & svar) -> Inference {
                         // This should also be much smarter...
-                        auto erase_from = svar.values->upper_bound(ilit.value - 1_i);
+                        auto erase_from = svar.values->upper_bound(value - 1_i);
                         if (erase_from == svar.values->end())
                             return Inference::NoChange;
 
                          if (! svar.values.unique()) {
                              svar.values = make_shared<set<Integer> >(*svar.values);
-                             erase_from = svar.values->upper_bound(ilit.value - 1_i);
+                             erase_from = svar.values->upper_bound(value - 1_i);
                          }
 
                          svar.values->erase(erase_from, svar.values->end());
                          if (svar.values->size() == 0)
                              return Inference::Contradiction;
                          else if (svar.values->size() == 1)
-                             non_constant_state_of(ilit.var) = IntegerVariableConstantState{ *optional_single_value(ilit.var) };
+                             assign_to_state_of(var) = IntegerVariableConstantState{ *optional_single_value(generalise<IntegerVariableID>(var)) };
                          return Inference::Change;
                     }
-                }, state_of(ilit.var, space));
+                }, state_of(var, space));
             break;
 
-        case LiteralFromIntegerVariable::GreaterEqual:
+        case LiteralFromIntegerVariable::State::GreaterEqual:
             return visit(overloaded {
                     [&] (IntegerVariableConstantState & c) -> Inference {
                         // Ok if the constant is greater or equal, otherwise contradiction
-                        return c.value >= ilit.value ? Inference::NoChange : Inference::Contradiction;
+                        return c.value >= value ? Inference::NoChange : Inference::Contradiction;
                     },
                     [&] (IntegerVariableRangeState & rvar) -> Inference {
                         bool changed = false;
-                        if (rvar.lower < ilit.value) {
+                        if (rvar.lower < value) {
                             changed = true;
-                            rvar.lower = ilit.value;
+                            rvar.lower = value;
                         }
                         if (rvar.lower == rvar.upper)
-                            non_constant_state_of(ilit.var) = IntegerVariableConstantState{ rvar.lower };
+                            assign_to_state_of(var) = IntegerVariableConstantState{ rvar.lower };
                         else if (rvar.lower > rvar.upper)
                             return Inference::Contradiction;
                         return changed ? Inference::Change : Inference::NoChange;
@@ -296,45 +309,64 @@ auto State::infer_integer(const LiteralFromIntegerVariable & ilit) -> Inference
                         // This should be much smarter...
                         auto pc_before = svar.bits.popcount();
                         for (int i = 0 ; i < Bits::number_of_bits ; ++i)
-                            if (svar.lower + Integer{ i } < ilit.value)
+                            if (svar.lower + Integer{ i } < value)
                                 svar.bits.reset(i);
                         auto pc_after = svar.bits.popcount();
                         if (pc_after == 0)
                             return Inference::Contradiction;
                         if (pc_after == 1)
-                            non_constant_state_of(ilit.var) = IntegerVariableConstantState{ *optional_single_value(ilit.var) };
+                            assign_to_state_of(var) = IntegerVariableConstantState{ *optional_single_value(generalise<IntegerVariableID>(var)) };
                         return pc_before == pc_after ? Inference::NoChange : Inference::Change;
                     },
                     [&] (IntegerVariableSetState & svar) -> Inference {
                         // This should also be much smarter...
-                        auto erase_to = svar.values->lower_bound(ilit.value);
+                        auto erase_to = svar.values->lower_bound(value);
                         if (erase_to == svar.values->begin())
                             return Inference::NoChange;
 
                          if (! svar.values.unique()) {
                              svar.values = make_shared<set<Integer> >(*svar.values);
-                             erase_to = svar.values->lower_bound(ilit.value);
+                             erase_to = svar.values->lower_bound(value);
                          }
 
                          svar.values->erase(svar.values->begin(), erase_to);
                          if (svar.values->size() == 0)
                              return Inference::Contradiction;
                          else if (svar.values->size() == 1)
-                             non_constant_state_of(ilit.var) = IntegerVariableConstantState{ *optional_single_value(ilit.var) };
+                             assign_to_state_of(var) = IntegerVariableConstantState{ *optional_single_value(generalise<IntegerVariableID>(var)) };
                          return Inference::Change;
                     }
-                }, state_of(ilit.var, space));
+                }, state_of(var, space));
             break;
     }
 
     throw NonExhaustiveSwitch{ };
 }
 
+namespace
+{
+    auto to_direct(const IntegerVariableID var) -> pair<DirectIntegerVariableID, Integer>
+    {
+        return visit(overloaded{
+                [&] (const SimpleIntegerVariableID & v) -> pair<DirectIntegerVariableID, Integer> {
+                    return pair{ v, 0_i };
+                },
+                [&] (const ConstantIntegerVariableID & v) -> pair<DirectIntegerVariableID, Integer> {
+                    return pair{ v, 0_i };
+                },
+                [&] (const ViewOfIntegerVariableID & v) -> pair<DirectIntegerVariableID, Integer> {
+                    return pair{ v.actual_variable, v.offset };
+                }
+                }, var);
+    }
+}
+
 auto State::infer(const Literal & lit, Justification just) -> Inference
 {
     return visit(overloaded {
             [&] (const LiteralFromIntegerVariable & ilit) -> Inference {
-                switch (infer_integer(ilit)) {
+                auto [ actual_var, offset ] = to_direct(ilit.var);
+                switch (infer_literal_from_direct_integer_variable(actual_var, ilit.state, ilit.value - offset)) {
                     case Inference::NoChange:
                         return Inference::NoChange;
 
@@ -344,7 +376,7 @@ auto State::infer(const Literal & lit, Justification just) -> Inference
                         return Inference::Contradiction;
 
                     case Inference::Change:
-                        remember_change(ilit.var);
+                        remember_change(get<SimpleIntegerVariableID>(actual_var));
                         if (_imp->problem->optional_proof())
                             _imp->problem->optional_proof()->infer(*this, lit, just);
                         return Inference::Change;
@@ -403,57 +435,63 @@ auto State::guess(const Literal & lit) -> void
 
 auto State::lower_bound(const IntegerVariableID var) const -> Integer
 {
+    auto [ actual_var, offset ] = to_direct(var);
     IntegerVariableState space = IntegerVariableConstantState{ 0_i };
     return visit(overloaded {
             [] (const IntegerVariableRangeState & v) { return v.lower; },
             [] (const IntegerVariableConstantState & v) { return v.value; },
             [] (const IntegerVariableSmallSetState & v) { return v.lower + Integer{ v.bits.countr_zero() }; },
             [] (const IntegerVariableSetState & v) { return *v.values->begin(); }
-            }, state_of(var, space));
+            }, state_of(actual_var, space)) + offset;
 }
 
 auto State::upper_bound(const IntegerVariableID var) const -> Integer
 {
+    auto [ actual_var, offset ] = to_direct(var);
     IntegerVariableState space = IntegerVariableConstantState{ 0_i };
     return visit(overloaded {
             [] (const IntegerVariableRangeState & v) { return v.upper; },
             [] (const IntegerVariableConstantState & v) { return v.value; },
             [] (const IntegerVariableSmallSetState & v) { return v.lower + Integer{ Bits::number_of_bits } - Integer{ v.bits.countl_zero() } - 1_i; },
             [] (const IntegerVariableSetState & v) { return *v.values->rbegin(); }
-            }, state_of(var, space));
+            }, state_of(actual_var, space)) + offset;
 }
 
 auto State::in_domain(const IntegerVariableID var, const Integer val) const -> bool
 {
+    auto [ actual_var, offset ] = to_direct(var);
+    auto actual_val = val - offset;
     IntegerVariableState space = IntegerVariableConstantState{ 0_i };
     return visit(overloaded {
-            [val] (const IntegerVariableRangeState & v) { return val >= v.lower && val <= v.upper; },
-            [val] (const IntegerVariableConstantState & v) { return val == v.value; },
-            [val] (const IntegerVariableSmallSetState & v) {
+            [val = actual_val] (const IntegerVariableRangeState & v) { return val >= v.lower && val <= v.upper; },
+            [val = actual_val] (const IntegerVariableConstantState & v) { return val == v.value; },
+            [val = actual_val] (const IntegerVariableSmallSetState & v) {
                 if (val < v.lower || val > (v.lower + Integer{ Bits::number_of_bits - 1 }))
                     return false;
                 else
                     return v.bits.test((val - v.lower).raw_value);
             },
-            [val] (const IntegerVariableSetState & v) { return v.values->end() != v.values->find(val); }
-            }, state_of(var, space));
+            [val = actual_val] (const IntegerVariableSetState & v) { return v.values->end() != v.values->find(val); }
+            }, state_of(actual_var, space));
 }
 
 auto State::domain_has_holes(const IntegerVariableID var) const -> bool
 {
+    auto [ actual_var, _ ] = to_direct(var);
     IntegerVariableState space = IntegerVariableConstantState{ 0_i };
     return visit(overloaded {
             [] (const IntegerVariableRangeState &) { return false; },
             [] (const IntegerVariableConstantState &) { return false; },
             [] (const IntegerVariableSmallSetState &) { return true; },
             [] (const IntegerVariableSetState &) { return true; }
-            }, state_of(var, space));
+            }, state_of(actual_var, space));
 }
 
 auto State::optional_single_value(const IntegerVariableID var) const -> optional<Integer>
 {
+    auto [ actual_var, offset ] = to_direct(var);
     IntegerVariableState space = IntegerVariableConstantState{ 0_i };
-    return visit(overloaded {
+    auto result = visit(overloaded {
             [] (const IntegerVariableRangeState & v) -> optional<Integer> {
                 if (v.lower == v.upper)
                     return make_optional(v.lower);
@@ -474,18 +512,21 @@ auto State::optional_single_value(const IntegerVariableID var) const -> optional
                     return make_optional(*v.values->begin());
                 else
                     return nullopt;
-            } }, state_of(var, space));
+            } }, state_of(actual_var, space));
+
+    return result ? *result + offset : result;
 }
 
 auto State::domain_size(const IntegerVariableID var) const -> Integer
 {
+    auto [ actual_var, _ ] = to_direct(var);
     IntegerVariableState space = IntegerVariableConstantState{ 0_i };
     return visit(overloaded {
             [] (const IntegerVariableConstantState &)   { return Integer{ 1 }; },
             [] (const IntegerVariableRangeState & r)    { return r.upper - r.lower + Integer{ 1 }; },
             [] (const IntegerVariableSmallSetState & s) { return Integer{ s.bits.popcount() }; },
             [] (const IntegerVariableSetState & s)      { return Integer(s.values->size()); }
-            }, state_of(var, space));
+            }, state_of(actual_var, space));
 }
 
 auto State::for_each_value(const IntegerVariableID var, function<auto (Integer) -> void> f) const -> void
@@ -498,28 +539,30 @@ auto State::for_each_value(const IntegerVariableID var, function<auto (Integer) 
 
 auto State::for_each_value_while(const IntegerVariableID var, function<auto (Integer) -> bool> f) const -> void
 {
+    auto [ actual_var, offset ] = to_direct(var);
+
     IntegerVariableState space = IntegerVariableConstantState{ 0_i };
-    const IntegerVariableState & var_ref = state_of(var, space);
+    const IntegerVariableState & var_ref = state_of(actual_var, space);
     IntegerVariableState var_copy = var_ref;
 
     visit(overloaded{
             [&] (const IntegerVariableConstantState & c) {
-                f(c.value);
+                f(c.value + offset);
             },
             [&] (const IntegerVariableRangeState & r) {
                 for (auto v = r.lower ; v <= r.upper ; ++v)
-                    if (! f(v))
+                    if (! f(v + offset))
                         break;
             },
             [&] (const IntegerVariableSmallSetState & r) {
                 for (unsigned b = 0 ; b < Bits::number_of_bits ; ++b)
                     if (r.bits.test(b))
-                        if (! f(r.lower + Integer{ b }))
+                        if (! f(r.lower + Integer{ b } + offset))
                             break;
             },
             [&] (const IntegerVariableSetState & s) {
                 for (auto & v : *s.values)
-                    if (! f(v))
+                    if (! f(v + offset))
                         break;
             }
             }, var_copy);
@@ -548,12 +591,12 @@ auto State::backtrack(Timestamp t) -> void
     _imp->guesses.erase(_imp->guesses.begin() + t.how_many_guesses, _imp->guesses.end());
 }
 
-auto State::remember_change(const VariableID v) -> void
+auto State::remember_change(const SimpleIntegerVariableID v) -> void
 {
     _imp->changed.insert(v);
 }
 
-auto State::extract_changed_variables(function<auto (VariableID) -> void> f) -> void
+auto State::extract_changed_variables(function<auto (SimpleIntegerVariableID) -> void> f) -> void
 {
     for (auto & c : _imp->changed)
         f(c);
@@ -577,13 +620,13 @@ auto State::literal_is_nonfalsified(const Literal & lit) const -> bool
     return visit(overloaded {
         [&] (const LiteralFromIntegerVariable & ilit) -> bool {
             switch (ilit.state) {
-                case LiteralFromIntegerVariable::Equal:
+                case LiteralFromIntegerVariable::State::Equal:
                     return in_domain(ilit.var, ilit.value);
-                case LiteralFromIntegerVariable::Less:
+                case LiteralFromIntegerVariable::State::Less:
                     return lower_bound(ilit.var) < ilit.value;
-                case LiteralFromIntegerVariable::GreaterEqual:
-                     return upper_bound(ilit.var) >= ilit.value;
-                case LiteralFromIntegerVariable::NotEqual: {
+                case LiteralFromIntegerVariable::State::GreaterEqual:
+                    return upper_bound(ilit.var) >= ilit.value;
+                case LiteralFromIntegerVariable::State::NotEqual: {
                     auto single_value = optional_single_value(ilit.var);
                     return (nullopt == single_value || *single_value != ilit.value);
                 }
@@ -601,7 +644,7 @@ auto State::test_literal(const Literal & lit) const -> LiteralIs
     return visit(overloaded {
         [&] (const LiteralFromIntegerVariable & ilit) -> LiteralIs {
             switch (ilit.state) {
-                case LiteralFromIntegerVariable::Equal:
+                case LiteralFromIntegerVariable::State::Equal:
                     if (! in_domain(ilit.var, ilit.value))
                         return LiteralIs::DefinitelyFalse;
                     else if (optional_single_value(ilit.var))
@@ -609,7 +652,7 @@ auto State::test_literal(const Literal & lit) const -> LiteralIs
                     else
                         return LiteralIs::Undecided;
 
-                case LiteralFromIntegerVariable::Less:
+                case LiteralFromIntegerVariable::State::Less:
                     if (lower_bound(ilit.var) < ilit.value) {
                         if (upper_bound(ilit.var) < ilit.value)
                             return LiteralIs::DefinitelyTrue;
@@ -619,7 +662,7 @@ auto State::test_literal(const Literal & lit) const -> LiteralIs
                     else
                         return LiteralIs::DefinitelyFalse;
 
-                case LiteralFromIntegerVariable::GreaterEqual:
+                case LiteralFromIntegerVariable::State::GreaterEqual:
                     if (upper_bound(ilit.var) >= ilit.value) {
                         if (lower_bound(ilit.var) >= ilit.value)
                             return LiteralIs::DefinitelyTrue;
@@ -629,7 +672,7 @@ auto State::test_literal(const Literal & lit) const -> LiteralIs
                     else
                         return LiteralIs::DefinitelyFalse;
 
-                case LiteralFromIntegerVariable::NotEqual:
+                case LiteralFromIntegerVariable::State::NotEqual:
                     if (! in_domain(ilit.var, ilit.value))
                         return LiteralIs::DefinitelyTrue;
                     else if (optional_single_value(ilit.var))

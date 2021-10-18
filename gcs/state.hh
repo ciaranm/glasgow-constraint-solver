@@ -55,13 +55,16 @@ namespace gcs
             struct Imp;
             std::unique_ptr<Imp> _imp;
 
-            [[ nodiscard ]] auto infer_integer(const LiteralFromIntegerVariable & lit) -> Inference;
+            [[ nodiscard ]] auto infer_literal_from_direct_integer_variable(
+                    const DirectIntegerVariableID var,
+                    LiteralFromIntegerVariable::State state,
+                    Integer value) -> Inference;
 
-            [[ nodiscard ]] auto non_constant_state_of(const IntegerVariableID) -> IntegerVariableState &;
-            [[ nodiscard ]] auto state_of(const IntegerVariableID, IntegerVariableState & space) -> IntegerVariableState &;
-            [[ nodiscard ]] auto state_of(const IntegerVariableID, IntegerVariableState & space) const -> const IntegerVariableState &;
+            [[ nodiscard ]] auto assign_to_state_of(const DirectIntegerVariableID) -> IntegerVariableState &;
+            [[ nodiscard ]] auto state_of(const DirectIntegerVariableID, IntegerVariableState & space) -> IntegerVariableState &;
+            [[ nodiscard ]] auto state_of(const DirectIntegerVariableID, IntegerVariableState & space) const -> const IntegerVariableState &;
 
-            auto remember_change(const VariableID) -> void;
+            auto remember_change(const SimpleIntegerVariableID) -> void;
 
         public:
             explicit State(const Problem * const problem);
@@ -73,8 +76,8 @@ namespace gcs
 
             [[ nodiscard ]] State clone() const;
 
-            [[ nodiscard ]] auto create_integer_variable(Integer lower, Integer upper) -> IntegerVariableID;
-            [[ nodiscard ]] auto create_pseudovariable(Integer lower, Integer upper, const std::optional<std::string> &) -> IntegerVariableID;
+            [[ nodiscard ]] auto create_integer_variable(Integer lower, Integer upper) -> SimpleIntegerVariableID;
+            [[ nodiscard ]] auto create_pseudovariable(Integer lower, Integer upper, const std::optional<std::string> &) -> SimpleIntegerVariableID;
 
             [[ nodiscard ]] auto infer(const Literal & lit, Justification why) -> Inference;
             [[ nodiscard ]] auto infer_all(const std::vector<Literal> & lit, Justification why) -> Inference;
@@ -100,7 +103,7 @@ namespace gcs
             [[ nodiscard ]] auto new_epoch() -> Timestamp;
             auto backtrack(Timestamp) -> void;
 
-            auto extract_changed_variables(std::function<auto (VariableID) -> void>) -> void;
+            auto extract_changed_variables(std::function<auto (SimpleIntegerVariableID) -> void>) -> void;
     };
 }
 

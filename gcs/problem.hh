@@ -36,7 +36,7 @@ namespace gcs
                     Integer lower,
                     Integer upper,
                     const std::optional<std::string> & name = std::nullopt,
-                    bool need_ge = true) -> IntegerVariableID;
+                    bool need_ge = true) -> SimpleIntegerVariableID;
 
             [[ nodiscard ]] auto create_state() const -> State;
             [[ nodiscard ]] auto propagate(State &) const -> bool;

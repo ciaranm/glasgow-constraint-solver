@@ -15,7 +15,8 @@ namespace gcs
     struct LiteralFromIntegerVariable
     {
         IntegerVariableID var;
-        enum { Equal, NotEqual, GreaterEqual, Less } state;
+        enum class State { Equal, NotEqual, GreaterEqual, Less };
+        State state;
         Integer value;
 
         [[ nodiscard ]] auto operator<=> (const LiteralFromIntegerVariable &) const = default;
@@ -23,22 +24,22 @@ namespace gcs
 
     [[ nodiscard ]] inline auto operator == (const IntegerVariableID var, const Integer val) -> LiteralFromIntegerVariable
     {
-        return LiteralFromIntegerVariable{ var, LiteralFromIntegerVariable::Equal, val };
+        return LiteralFromIntegerVariable{ var, LiteralFromIntegerVariable::State::Equal, val };
     }
 
     [[ nodiscard ]] inline auto operator != (const IntegerVariableID var, const Integer val) -> LiteralFromIntegerVariable
     {
-        return LiteralFromIntegerVariable{ var, LiteralFromIntegerVariable::NotEqual, val };
+        return LiteralFromIntegerVariable{ var, LiteralFromIntegerVariable::State::NotEqual, val };
     }
 
     [[ nodiscard ]] inline auto operator < (const IntegerVariableID var, const Integer val) -> LiteralFromIntegerVariable
     {
-        return LiteralFromIntegerVariable{ var, LiteralFromIntegerVariable::Less, val };
+        return LiteralFromIntegerVariable{ var, LiteralFromIntegerVariable::State::Less, val };
     }
 
     [[ nodiscard ]] inline auto operator >= (const IntegerVariableID var, const Integer val) -> LiteralFromIntegerVariable
     {
-        return LiteralFromIntegerVariable{ var, LiteralFromIntegerVariable::GreaterEqual, val };
+        return LiteralFromIntegerVariable{ var, LiteralFromIntegerVariable::State::GreaterEqual, val };
     }
 
     struct TrueLiteral

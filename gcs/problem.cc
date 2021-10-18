@@ -49,7 +49,7 @@ Problem::~Problem()
 {
 }
 
-auto Problem::create_integer_variable(Integer lower, Integer upper, const optional<std::string> & name, bool need_ge) -> IntegerVariableID
+auto Problem::create_integer_variable(Integer lower, Integer upper, const optional<std::string> & name, bool need_ge) -> SimpleIntegerVariableID
 {
     if (lower > upper)
         throw UnexpectedException{ "variable has lower bound > upper bound" };
