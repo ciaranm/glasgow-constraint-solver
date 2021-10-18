@@ -4,7 +4,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_STATE_HH 1
 
 #include <gcs/state-fwd.hh>
-#include <gcs/integer_variable.hh>
+#include <gcs/integer_variable_state.hh>
 #include <gcs/literal.hh>
 #include <gcs/problem-fwd.hh>
 #include <gcs/justification.hh>
@@ -57,9 +57,9 @@ namespace gcs
 
             [[ nodiscard ]] auto infer_integer(const LiteralFromIntegerVariable & lit) -> Inference;
 
-            [[ nodiscard ]] auto non_constant_integer_variable(const IntegerVariableID) -> IntegerVariable &;
-            [[ nodiscard ]] auto integer_variable(const IntegerVariableID, IntegerVariable & space) -> IntegerVariable &;
-            [[ nodiscard ]] auto integer_variable(const IntegerVariableID, IntegerVariable & space) const -> const IntegerVariable &;
+            [[ nodiscard ]] auto non_constant_state_of(const IntegerVariableID) -> IntegerVariableState &;
+            [[ nodiscard ]] auto state_of(const IntegerVariableID, IntegerVariableState & space) -> IntegerVariableState &;
+            [[ nodiscard ]] auto state_of(const IntegerVariableID, IntegerVariableState & space) const -> const IntegerVariableState &;
 
             auto remember_change(const VariableID) -> void;
 

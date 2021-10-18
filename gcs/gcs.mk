@@ -6,7 +6,7 @@ SOURCES := \
     constraint.cc \
     exception.cc \
     extensional.cc \
-    integer_variable.cc \
+    integer_variable_state.cc \
     linear.cc \
     literal.cc \
     low_level_constraint_store.cc \
