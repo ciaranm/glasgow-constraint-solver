@@ -18,7 +18,7 @@ namespace gcs
             explicit Abs(const IntegerVariableID v1, const IntegerVariableID v2);
 
             virtual auto describe_for_proof() -> std::string override;
-            virtual auto convert_to_low_level(LowLevelConstraintStore &, const State &) && -> void override;
+            virtual auto install(Propagators &, const State &) && -> void override;
     };
 }
 

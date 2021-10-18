@@ -1,6 +1,6 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
-#include <gcs/low_level_constraint_store.hh>
+#include <gcs/propagators.hh>
 #include <gcs/exception.hh>
 #include <gcs/extensional.hh>
 #include <util/overloaded.hh>
@@ -39,7 +39,7 @@ namespace
     };
 }
 
-struct LowLevelConstraintStore::Imp
+struct Propagators::Imp
 {
     Problem * const problem;
     list<Literals> cnfs;
@@ -56,16 +56,16 @@ struct LowLevelConstraintStore::Imp
     }
 };
 
-LowLevelConstraintStore::LowLevelConstraintStore(Problem * p) :
+Propagators::Propagators(Problem * p) :
     _imp(new Imp(p))
 {
     _imp->propagation_functions.emplace_back([&] (State & s) { return propagate_cnfs(s); });
     _imp->propagation_function_calls.emplace_back(microseconds{ 0 }, 0, "cnf");
 }
 
-LowLevelConstraintStore::~LowLevelConstraintStore() = default;
+Propagators::~Propagators() = default;
 
-auto LowLevelConstraintStore::trim_lower_bound(const State & state, IntegerVariableID var, Integer val) -> void
+auto Propagators::trim_lower_bound(const State & state, IntegerVariableID var, Integer val) -> void
 {
     if (state.lower_bound(var) < val) {
         if (state.upper_bound(var) >= val)
@@ -75,7 +75,7 @@ auto LowLevelConstraintStore::trim_lower_bound(const State & state, IntegerVaria
     }
 }
 
-auto LowLevelConstraintStore::trim_upper_bound(const State & state, IntegerVariableID var, Integer val) -> void
+auto Propagators::trim_upper_bound(const State & state, IntegerVariableID var, Integer val) -> void
 {
     if (state.upper_bound(var) > val) {
         if (state.lower_bound(var) <= val + 1_i)
@@ -85,7 +85,7 @@ auto LowLevelConstraintStore::trim_upper_bound(const State & state, IntegerVaria
     }
 }
 
-auto LowLevelConstraintStore::cnf(const State &, Literals && c, bool propagating) -> optional<ProofLine>
+auto Propagators::cnf(const State &, Literals && c, bool propagating) -> optional<ProofLine>
 {
     optional<ProofLine> result = nullopt;
 
@@ -100,7 +100,7 @@ auto LowLevelConstraintStore::cnf(const State &, Literals && c, bool propagating
     return result;
 }
 
-auto LowLevelConstraintStore::at_most_one(const State &, Literals && lits, bool propagating) -> optional<ProofLine>
+auto Propagators::at_most_one(const State &, Literals && lits, bool propagating) -> optional<ProofLine>
 {
     if (propagating)
         throw UnimplementedException{ };
@@ -111,7 +111,7 @@ auto LowLevelConstraintStore::at_most_one(const State &, Literals && lits, bool 
         return nullopt;
 }
 
-auto LowLevelConstraintStore::pseudoboolean_ge(const State &, WeightedLiterals && lits, Integer val, bool propagating) -> std::optional<ProofLine>
+auto Propagators::pseudoboolean_ge(const State &, WeightedLiterals && lits, Integer val, bool propagating) -> std::optional<ProofLine>
 {
     if (propagating)
         throw UnimplementedException{ };
@@ -122,7 +122,7 @@ auto LowLevelConstraintStore::pseudoboolean_ge(const State &, WeightedLiterals &
         return nullopt;
 }
 
-auto LowLevelConstraintStore::integer_linear_le(const State & state, Linear && coeff_vars, Integer value) -> void
+auto Propagators::integer_linear_le(const State & state, Linear && coeff_vars, Integer value) -> void
 {
     sanitise_linear(coeff_vars);
 
@@ -140,7 +140,7 @@ auto LowLevelConstraintStore::integer_linear_le(const State & state, Linear && c
     _imp->propagation_function_calls.emplace_back(microseconds{ 0 }, 0, "int_lin_le");
 }
 
-auto LowLevelConstraintStore::propagator(const State &, PropagationFunction && f, const Triggers & triggers, const std::string & name) -> void
+auto Propagators::propagator(const State &, PropagationFunction && f, const Triggers & triggers, const std::string & name) -> void
 {
     int id = _imp->propagation_functions.size();
     _imp->propagation_functions.emplace_back(move(f));
@@ -152,7 +152,7 @@ auto LowLevelConstraintStore::propagator(const State &, PropagationFunction && f
         trigger_on_instantiated(v, id);
 }
 
-auto LowLevelConstraintStore::table(const State & state, vector<IntegerVariableID> && vars, vector<vector<Integer> > && permitted, const std::string & name) -> void
+auto Propagators::table(const State & state, vector<IntegerVariableID> && vars, vector<vector<Integer> > && permitted, const std::string & name) -> void
 {
     if (permitted.empty()) {
         cnf(state, { }, true);
@@ -193,7 +193,7 @@ auto LowLevelConstraintStore::table(const State & state, vector<IntegerVariableI
     _imp->propagation_function_calls.emplace_back(microseconds{ 0 }, 0, name);
 }
 
-auto LowLevelConstraintStore::propagate(State & state) const -> bool
+auto Propagators::propagate(State & state) const -> bool
 {
     vector<int> on_queue(_imp->propagation_functions.size(), 0);
     deque<int> propagation_queue;
@@ -263,7 +263,7 @@ auto LowLevelConstraintStore::propagate(State & state) const -> bool
     return true;
 }
 
-auto LowLevelConstraintStore::propagate_cnfs(State & state) const -> Inference
+auto Propagators::propagate_cnfs(State & state) const -> Inference
 {
     bool changed = false;
 
@@ -300,17 +300,17 @@ auto LowLevelConstraintStore::propagate_cnfs(State & state) const -> Inference
     return changed ? Inference::Change : Inference::NoChange;
 }
 
-auto LowLevelConstraintStore::create_auxilliary_integer_variable(Integer l, Integer u, const std::string & s, bool need_ge) -> IntegerVariableID
+auto Propagators::create_auxilliary_integer_variable(Integer l, Integer u, const std::string & s, bool need_ge) -> IntegerVariableID
 {
     return _imp->problem->create_integer_variable(l, u, make_optional("aux_" + s), need_ge);
 }
 
-auto LowLevelConstraintStore::want_nonpropagating() const -> bool
+auto Propagators::want_nonpropagating() const -> bool
 {
     return _imp->problem->optional_proof() != nullopt;
 }
 
-auto LowLevelConstraintStore::fill_in_constraint_stats(Stats & stats) const -> void
+auto Propagators::fill_in_constraint_stats(Stats & stats) const -> void
 {
     stats.n_cnfs += _imp->cnfs.size();
     stats.n_propagators += _imp->propagation_functions.size();
@@ -318,7 +318,7 @@ auto LowLevelConstraintStore::fill_in_constraint_stats(Stats & stats) const -> v
     stats.propagation_function_calls.emplace_back(_imp->total_propagation_time, _imp->total_propagations, "totals");
 }
 
-auto LowLevelConstraintStore::trigger_on_change(VariableID var, int t) -> void
+auto Propagators::trigger_on_change(VariableID var, int t) -> void
 {
     visit(overloaded{
             [&] (const IntegerVariableID & ivar) {
@@ -335,7 +335,7 @@ auto LowLevelConstraintStore::trigger_on_change(VariableID var, int t) -> void
             }, var);
 }
 
-auto LowLevelConstraintStore::trigger_on_instantiated(VariableID var, int t) -> void
+auto Propagators::trigger_on_instantiated(VariableID var, int t) -> void
 {
     visit(overloaded{
             [&] (const IntegerVariableID & ivar) {

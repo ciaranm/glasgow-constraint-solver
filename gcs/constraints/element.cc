@@ -3,7 +3,7 @@
 #include <gcs/constraints/element.hh>
 #include <gcs/constraints/comparison.hh>
 #include <gcs/state.hh>
-#include <gcs/low_level_constraint_store.hh>
+#include <gcs/propagators.hh>
 #include <gcs/integer.hh>
 
 #include <util/for_each.hh>
@@ -23,16 +23,16 @@ Element::Element(IntegerVariableID var, IntegerVariableID idx_var, const vector<
 {
 }
 
-auto Element::convert_to_low_level(LowLevelConstraintStore & constraints, const State & initial_state) && -> void
+auto Element::install(Propagators & propagators, const State & initial_state) && -> void
 {
     if (_vars.empty()) {
-        constraints.cnf(initial_state, { }, true);
+        propagators.cnf(initial_state, { }, true);
         return;
     }
 
     // _idx_var >= 0, _idx_var < _vars.size()
-    constraints.trim_lower_bound(initial_state, _idx_var, 0_i);
-    constraints.trim_upper_bound(initial_state, _idx_var, Integer(_vars.size()) - 1_i);
+    propagators.trim_lower_bound(initial_state, _idx_var, 0_i);
+    propagators.trim_upper_bound(initial_state, _idx_var, Integer(_vars.size()) - 1_i);
 
     // _var <= max(upper(_vars)), _var >= min(lower(_vars))
     // ...and this should really be just over _vars that _idx_var might cover
@@ -43,13 +43,13 @@ auto Element::convert_to_low_level(LowLevelConstraintStore & constraints, const 
                 return initial_state.lower_bound(v) < initial_state.lower_bound(w);
                 }));
 
-    constraints.trim_lower_bound(initial_state, _var, min_lower);
-    constraints.trim_upper_bound(initial_state, _var, max_upper);
+    propagators.trim_lower_bound(initial_state, _var, min_lower);
+    propagators.trim_upper_bound(initial_state, _var, max_upper);
 
     for_each_with_index(_vars, [&] (auto & v, auto idx) {
         // _idx_var == i -> _var == _vars[idx]
         if (initial_state.in_domain(_idx_var, Integer(idx)))
-            EqualsIf{ _var, v, _idx_var == Integer(idx) }.convert_to_low_level(constraints, initial_state);
+            EqualsIf{ _var, v, _idx_var == Integer(idx) }.install(propagators, initial_state);
     });
 
     initial_state.for_each_value(_var, [&] (Integer val) {
@@ -60,7 +60,7 @@ auto Element::convert_to_low_level(LowLevelConstraintStore & constraints, const 
                     if (initial_state.in_domain(_idx_var, Integer(idx)) && initial_state.in_domain(v, val))
                         options.emplace_back(v == val);
             });
-            constraints.cnf(initial_state, move(options), true);
+            propagators.cnf(initial_state, move(options), true);
     });
 }
 

@@ -2,7 +2,7 @@
 
 #include <gcs/constraints/min_max.hh>
 #include <gcs/constraints/comparison.hh>
-#include <gcs/low_level_constraint_store.hh>
+#include <gcs/propagators.hh>
 #include <gcs/exception.hh>
 #include <util/for_each.hh>
 
@@ -15,29 +15,29 @@ ArrayMinMax::ArrayMinMax(const std::vector<IntegerVariableID> & vars, const Inte
 {
 }
 
-auto ArrayMinMax::convert_to_low_level(LowLevelConstraintStore & constraints, const State & initial_state) && -> void
+auto ArrayMinMax::install(Propagators & propagators, const State & initial_state) && -> void
 {
     if (_vars.empty())
         throw UnexpectedException{ "not sure how min and max are defined over an empty array" };
 
     if (_min) {
         for (auto & v : _vars)
-            LessThanEqual{ _result, v }.convert_to_low_level(constraints, initial_state);
+            LessThanEqual{ _result, v }.install(propagators, initial_state);
     }
     else {
         for (auto & v : _vars)
-            LessThanEqual{ v, _result }.convert_to_low_level(constraints, initial_state);
+            LessThanEqual{ v, _result }.install(propagators, initial_state);
     }
 
-    auto selector = constraints.create_auxilliary_integer_variable(0_i, Integer(_vars.size() - 1), "minmax", false);
+    auto selector = propagators.create_auxilliary_integer_variable(0_i, Integer(_vars.size() - 1), "minmax", false);
     for_each_with_index(_vars, [&] (IntegerVariableID var, auto idx) {
             // (selector == idx /\ var == val) -> result == val
             initial_state.for_each_value(var, [&] (Integer val) {
-                    constraints.cnf(initial_state, { selector != Integer(idx), var != val, _result == val }, true);
+                    propagators.cnf(initial_state, { selector != Integer(idx), var != val, _result == val }, true);
                     });
             // (selector == idx /\ result == r) -> var == r
             initial_state.for_each_value(_result, [&] (Integer r) {
-                    constraints.cnf(initial_state, { selector != Integer(idx), _result != r, var == r }, true);
+                    propagators.cnf(initial_state, { selector != Integer(idx), _result != r, var == r }, true);
                     });
     });
 
@@ -49,7 +49,7 @@ auto ArrayMinMax::convert_to_low_level(LowLevelConstraintStore & constraints, co
                         // v1 == v2 -> selector != v2
                         initial_state.for_each_value(v1, [&] (Integer val) {
                                 if (initial_state.in_domain(v2, val)) {
-                                    constraints.cnf(initial_state, { v1 != val, v2 != val, selector != Integer(v2_idx) }, true);
+                                    propagators.cnf(initial_state, { v1 != val, v2 != val, selector != Integer(v2_idx) }, true);
                                 }
                             });
                     }

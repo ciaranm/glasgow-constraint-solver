@@ -8,7 +8,7 @@
 
 namespace gcs
 {
-    class LowLevelConstraintStore;
+    class Propagators;
     class State;
 
     class Constraint
@@ -17,7 +17,7 @@ namespace gcs
             virtual ~Constraint() = 0;
 
             virtual auto describe_for_proof() -> std::string = 0;
-            virtual auto convert_to_low_level(LowLevelConstraintStore &, const State &) && -> void = 0;
+            virtual auto install(Propagators &, const State &) && -> void = 0;
     };
 }
 

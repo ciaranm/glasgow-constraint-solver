@@ -1,7 +1,7 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
-#ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_LOW_LEVEL_CONSTRAINT_STORE_HH
-#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_LOW_LEVEL_CONSTRAINT_STORE_HH 1
+#ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROPAGATORS_HH
+#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROPAGATORS_HH 1
 
 #include <gcs/linear.hh>
 #include <gcs/literal.hh>
@@ -21,7 +21,7 @@ namespace gcs
         std::vector<VariableID> on_instantiated;
     };
 
-    class LowLevelConstraintStore
+    class Propagators
     {
         private:
             struct Imp;
@@ -33,11 +33,11 @@ namespace gcs
             auto trigger_on_instantiated(VariableID, int id) -> void;
 
         public:
-            explicit LowLevelConstraintStore(Problem * const);
-            ~LowLevelConstraintStore();
+            explicit Propagators(Problem * const);
+            ~Propagators();
 
-            LowLevelConstraintStore(const LowLevelConstraintStore &) = delete;
-            LowLevelConstraintStore & operator= (const LowLevelConstraintStore &) = delete;
+            Propagators(const Propagators &) = delete;
+            Propagators & operator= (const Propagators &) = delete;
 
             [[ nodiscard ]] auto want_nonpropagating() const -> bool;
 

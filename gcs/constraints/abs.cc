@@ -1,7 +1,7 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
 #include <gcs/constraints/abs.hh>
-#include <gcs/low_level_constraint_store.hh>
+#include <gcs/propagators.hh>
 #include <gcs/state.hh>
 
 #include <algorithm>
@@ -17,34 +17,34 @@ Abs::Abs(const IntegerVariableID v1, const IntegerVariableID v2) :
 {
 }
 
-auto Abs::convert_to_low_level(LowLevelConstraintStore & constraints, const State & initial_state) && -> void
+auto Abs::install(Propagators & propagators, const State & initial_state) && -> void
 {
     // _v2 >= 0
-    constraints.trim_lower_bound(initial_state, _v2, 0_i);
+    propagators.trim_lower_bound(initial_state, _v2, 0_i);
 
     // _v1 <= upper_bound(_v2)
-    constraints.trim_upper_bound(initial_state, _v1, initial_state.upper_bound(_v2));
+    propagators.trim_upper_bound(initial_state, _v1, initial_state.upper_bound(_v2));
 
     // _v1 >= -upper_bound(_v2)
-    constraints.trim_lower_bound(initial_state, _v1, -initial_state.upper_bound(_v2));
+    propagators.trim_lower_bound(initial_state, _v1, -initial_state.upper_bound(_v2));
 
     // _v2 <= max(upper_bound(_v1), -lower_bound(_v1))
     auto v2u = max(initial_state.upper_bound(_v1), -initial_state.lower_bound(_v1));
-    constraints.trim_upper_bound(initial_state, _v2, v2u);
+    propagators.trim_upper_bound(initial_state, _v2, v2u);
 
     // _v2 == x <-> _v1 == x || _v1 == -x
     for (auto x = min(max(0_i, initial_state.lower_bound(_v1)), max(0_i, initial_state.lower_bound(_v2))) ; x <= v2u ; ++x) {
         if (initial_state.in_domain(_v2, x))
-            constraints.cnf(initial_state, {
+            propagators.cnf(initial_state, {
                     _v2 != x,
                     initial_state.in_domain(_v1, x) ? Literal{ _v1 == x } : FalseLiteral{ },
                     initial_state.in_domain(_v1, -x) ? Literal{ _v1 == -x } : FalseLiteral{ } }, true);
         if (initial_state.in_domain(_v1, x))
-            constraints.cnf(initial_state, {
+            propagators.cnf(initial_state, {
                     _v1 != x,
                     initial_state.in_domain(_v2, x) ? Literal{ _v2 == x } : FalseLiteral{ } }, true);
         if (initial_state.in_domain(_v1, -x))
-            constraints.cnf(initial_state, {
+            propagators.cnf(initial_state, {
                     _v1 != -x,
                     initial_state.in_domain(_v2, x) ? Literal{ _v2 == x } : FalseLiteral{ } }, true);
     }

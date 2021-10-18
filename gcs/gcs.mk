@@ -9,8 +9,8 @@ SOURCES := \
     integer_variable_state.cc \
     linear.cc \
     literal.cc \
-    low_level_constraint_store.cc \
     problem.cc \
+    propagators.cc \
     proof.cc \
     state.cc \
     stats.cc \

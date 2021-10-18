@@ -2,7 +2,7 @@
 
 #include <gcs/constraints/arithmetic.hh>
 #include <gcs/state.hh>
-#include <gcs/low_level_constraint_store.hh>
+#include <gcs/propagators.hh>
 
 #include <cmath>
 #include <tuple>
@@ -25,7 +25,7 @@ Arithmetic<op_>::Arithmetic(const IntegerVariableID v1, const IntegerVariableID 
 }
 
 template <ArithmeticOperator op_>
-auto Arithmetic<op_>::convert_to_low_level(LowLevelConstraintStore & store, const State & initial_state) && -> void
+auto Arithmetic<op_>::install(Propagators & propagators, const State & initial_state) && -> void
 {
     bool v2_zero_is_ok = (op_ != ArithmeticOperator::Div && op_ != ArithmeticOperator::Mod);
 
@@ -49,7 +49,7 @@ auto Arithmetic<op_>::convert_to_low_level(LowLevelConstraintStore & store, cons
                 });
             });
 
-    store.table(initial_state, vector{ _v1, _v2, _result }, move(permitted), "arithmetic");
+    propagators.table(initial_state, vector{ _v1, _v2, _result }, move(permitted), "arithmetic");
 }
 
 template <ArithmeticOperator op_>

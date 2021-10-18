@@ -1,7 +1,7 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
 #include <gcs/constraints/all_different.hh>
-#include <gcs/low_level_constraint_store.hh>
+#include <gcs/propagators.hh>
 #include <gcs/state.hh>
 #include <gcs/exception.hh>
 
@@ -547,10 +547,10 @@ namespace
     }
 }
 
-auto AllDifferent::convert_to_low_level(LowLevelConstraintStore & constraints, const State & initial_state) && -> void
+auto AllDifferent::install(Propagators & propagators, const State & initial_state) && -> void
 {
     map<Integer, ProofLine> constraint_numbers;
-    if (constraints.want_nonpropagating()) {
+    if (propagators.want_nonpropagating()) {
         auto max_upper = initial_state.upper_bound(*max_element(_vars.begin(), _vars.end(), [&] (const IntegerVariableID & v, const IntegerVariableID & w) {
                     return initial_state.upper_bound(v) < initial_state.upper_bound(w);
                     }));
@@ -564,7 +564,7 @@ auto AllDifferent::convert_to_low_level(LowLevelConstraintStore & constraints, c
             for (auto & var : _vars)
                 if (initial_state.in_domain(var, val))
                     lits.emplace_back(var == val);
-            constraint_numbers.emplace(val, nullopt_to_zero(constraints.at_most_one(initial_state, move(lits), false)));
+            constraint_numbers.emplace(val, nullopt_to_zero(propagators.at_most_one(initial_state, move(lits), false)));
         }
     }
 
@@ -583,7 +583,7 @@ auto AllDifferent::convert_to_low_level(LowLevelConstraintStore & constraints, c
                     compressed_vals.push_back(val);
                 });
 
-    constraints.propagator(initial_state, [vars = move(sanitised_vars), vals = move(compressed_vals), save_constraint_numbers = move(constraint_numbers)] (State & state) -> Inference {
+    propagators.propagator(initial_state, [vars = move(sanitised_vars), vals = move(compressed_vals), save_constraint_numbers = move(constraint_numbers)] (State & state) -> Inference {
             return propagate_all_different(vars, vals, save_constraint_numbers, state);
             }, triggers, "alldiff");
 }

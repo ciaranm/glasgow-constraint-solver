@@ -25,14 +25,14 @@ namespace gcs
             bool _full_reif;
             ComparisonOperator _op;
 
-            auto _convert_to_low_level_equals(LowLevelConstraintStore &, const State &) && -> void;
-            auto _convert_to_low_level_less_than(LowLevelConstraintStore &, const State &, bool equal) && -> void;
+            auto _install_equals(Propagators &, const State &) && -> void;
+            auto _install_less_than(Propagators &, const State &, bool equal) && -> void;
 
         public:
             explicit ComparisonReif(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond, bool full_reif, ComparisonOperator op);
 
             virtual auto describe_for_proof() -> std::string override;
-            virtual auto convert_to_low_level(LowLevelConstraintStore &, const State &) && -> void override;
+            virtual auto install(Propagators &, const State &) && -> void override;
     };
 
     class Equals :

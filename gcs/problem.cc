@@ -3,7 +3,7 @@
 #include <gcs/problem.hh>
 #include <gcs/exception.hh>
 #include <gcs/state.hh>
-#include <gcs/low_level_constraint_store.hh>
+#include <gcs/propagators.hh>
 #include <gcs/exception.hh>
 #include <gcs/constraints/comparison.hh>
 
@@ -21,7 +21,7 @@ using std::vector;
 struct Problem::Imp
 {
     State initial_state;
-    LowLevelConstraintStore constraints;
+    Propagators propagators;
     vector<IntegerVariableID> problem_variables;
     optional<vector<IntegerVariableID> > branch_on;
     optional<IntegerVariableID> objective_variable;
@@ -29,7 +29,7 @@ struct Problem::Imp
 
     Imp(Problem * problem) :
         initial_state(problem),
-        constraints(problem)
+        propagators(problem)
     {
     }
 };
@@ -68,7 +68,7 @@ auto Problem::create_state() const -> State
 
 auto Problem::propagate(State & state) const -> bool
 {
-    auto result = _imp->constraints.propagate(state);
+    auto result = _imp->propagators.propagate(state);
 
     return result;
 }
@@ -93,7 +93,7 @@ auto Problem::post(Constraint && c) -> void
 {
     if (optional_proof())
         optional_proof()->posting(c.describe_for_proof());
-    move(c).convert_to_low_level(_imp->constraints, _imp->initial_state);
+    move(c).install(_imp->propagators, _imp->initial_state);
 }
 
 auto Problem::branch_on(const std::vector<IntegerVariableID> & v) -> void
@@ -126,6 +126,6 @@ auto Problem::update_objective(const State & state) -> void
 
 auto Problem::fill_in_constraint_stats(Stats & stats) const -> void
 {
-    _imp->constraints.fill_in_constraint_stats(stats);
+    _imp->propagators.fill_in_constraint_stats(stats);
 }
 

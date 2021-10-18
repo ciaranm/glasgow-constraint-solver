@@ -1,7 +1,7 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
 #include <gcs/constraints/linear_equality.hh>
-#include <gcs/low_level_constraint_store.hh>
+#include <gcs/propagators.hh>
 #include <gcs/linear.hh>
 #include <gcs/extensional.hh>
 
@@ -26,7 +26,7 @@ LinearEquality::LinearEquality(Linear && coeff_vars, Integer value, bool gac) :
 {
 }
 
-auto LinearEquality::convert_to_low_level(LowLevelConstraintStore & constraints, const State & initial_state) && -> void
+auto LinearEquality::install(Propagators & propagators, const State & initial_state) && -> void
 {
     sanitise_linear(_coeff_vars);
 
@@ -42,7 +42,7 @@ auto LinearEquality::convert_to_low_level(LowLevelConstraintStore & constraints,
             triggers.on_change.push_back(v);
 
         optional<ExtensionalData> data;
-        constraints.propagator(initial_state, [data = move(data), coeff_vars = _coeff_vars, value = _value] (State & state) mutable -> Inference {
+        propagators.propagator(initial_state, [data = move(data), coeff_vars = _coeff_vars, value = _value] (State & state) mutable -> Inference {
                 if (! data) {
                     vector<vector<Integer> > permitted;
                     vector<Integer> current;
@@ -125,8 +125,8 @@ auto LinearEquality::convert_to_low_level(LowLevelConstraintStore & constraints,
                 }, triggers, "lin_eq_gac");
     }
 
-    constraints.integer_linear_le(initial_state, move(inv_coeff_vars), -_value);
-    constraints.integer_linear_le(initial_state, move(_coeff_vars), _value);
+    propagators.integer_linear_le(initial_state, move(inv_coeff_vars), -_value);
+    propagators.integer_linear_le(initial_state, move(_coeff_vars), _value);
 }
 
 auto LinearEquality::describe_for_proof() -> std::string

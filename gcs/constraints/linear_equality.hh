@@ -23,7 +23,7 @@ namespace gcs
             explicit LinearEquality(Linear && coeff_vars, Integer value, bool gac = false);
 
             virtual auto describe_for_proof() -> std::string override;
-            virtual auto convert_to_low_level(LowLevelConstraintStore &, const State &) && -> void override;
+            virtual auto install(Propagators &, const State &) && -> void override;
     };
 }
 
