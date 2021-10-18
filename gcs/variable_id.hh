@@ -38,31 +38,7 @@ namespace gcs
 
     [[ nodiscard ]] auto debug_string(const IntegerVariableID &) -> std::string;
 
-    struct BooleanVariableID
-    {
-        std::variant<unsigned long long, bool> index_or_const_value;
-
-        explicit BooleanVariableID(unsigned long long x) :
-            index_or_const_value(x)
-        {
-        }
-
-        explicit BooleanVariableID(bool x) :
-            index_or_const_value(x)
-        {
-        }
-
-        [[ nodiscard ]] auto operator <=> (const BooleanVariableID &) const = default;
-    };
-
-    [[ nodiscard ]] inline auto constant_variable(bool x) -> BooleanVariableID
-    {
-        return BooleanVariableID(x);
-    }
-
-    [[ nodiscard ]] auto debug_string(const BooleanVariableID &) -> std::string;
-
-    using VariableID = std::variant<IntegerVariableID, BooleanVariableID>;
+    using VariableID = std::variant<IntegerVariableID>;
 
     [[ nodiscard ]] auto debug_string(const VariableID &) -> std::string;
 }

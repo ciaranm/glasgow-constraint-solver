@@ -166,12 +166,19 @@ auto LowLevelConstraintStore::table(const State & state, vector<IntegerVariableI
     if (want_nonpropagating()) {
         for_each_with_index(permitted, [&] (const auto & tuple, auto tuple_idx) {
                 // selector == tuple_idx -> /\_i vars[i] == tuple[i]
+                bool infeasible = false;
                 WeightedLiterals lits;
                 lits.emplace_back(Integer(tuple.size()), selector != Integer(tuple_idx));
                 for_each_with_index(vars, [&] (IntegerVariableID var, auto var_idx) {
+                    if (is_literally_false(var == tuple[var_idx]))
+                        infeasible = true;
+                    else if (! is_literally_true(var == tuple[var_idx]))
                         lits.emplace_back(1_i, var == tuple[var_idx]);
                 });
-                pseudoboolean_ge(state, move(lits), Integer(tuple.size()), false);
+                if (infeasible)
+                    cnf(state, { selector != Integer(tuple_idx) }, true);
+                else
+                    pseudoboolean_ge(state, move(lits), Integer(lits.size() - 1), false);
             });
     }
 
@@ -224,9 +231,6 @@ auto LowLevelConstraintStore::propagate(State & state) const -> bool
                                         throw UnimplementedException{ };
                                     }
                                 }, ivar.index_or_const_value);
-                        },
-                        [&] (const BooleanVariableID &) {
-                            throw UnimplementedException{ };
                         }
                         }, var);
 
@@ -327,15 +331,6 @@ auto LowLevelConstraintStore::trigger_on_change(VariableID var, int t) -> void
                         [&] (const Integer) {
                         }
                         }, ivar.index_or_const_value);
-            },
-            [&] (const BooleanVariableID & bvar) {
-                visit(overloaded{
-                        [&] (const unsigned long long) {
-                            throw UnimplementedException{ };
-                        },
-                        [&] (const bool) {
-                        }
-                        }, bvar.index_or_const_value);
             }
             }, var);
 }
@@ -353,15 +348,6 @@ auto LowLevelConstraintStore::trigger_on_instantiated(VariableID var, int t) -> 
                         [&] (const Integer) {
                         }
                         }, ivar.index_or_const_value);
-            },
-            [&] (const BooleanVariableID & bvar) {
-                visit(overloaded{
-                        [&] (const unsigned long long) {
-                            throw UnimplementedException{ };
-                        },
-                        [&] (const bool) {
-                        }
-                        }, bvar.index_or_const_value);
             }
             }, var);
 }

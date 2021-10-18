@@ -28,19 +28,18 @@ auto gcs::debug_string(const Literal & lit) -> string
                 }
                 throw NonExhaustiveSwitch{ };
             },
-            [] (const LiteralFromBooleanVariable & blit) -> string {
-                switch (blit.state) {
-                    case LiteralFromBooleanVariable::True:  return "boolvars[" + debug_string(blit.var) + "]";
-                    case LiteralFromBooleanVariable::False: return "!boolvars[" + debug_string(blit.var) + "]";
-                }
-                throw NonExhaustiveSwitch{ };
+            [] (const TrueLiteral &) -> string {
+                return "true";
+            },
+            [] (const FalseLiteral &) -> string {
+                return "false";
             }
             }, lit);
 }
 
 namespace
 {
-    auto is_definitely_true_or_false(const Literal & lit) -> optional<bool>
+    auto is_literally_true_or_false(const Literal & lit) -> optional<bool>
     {
         return visit(overloaded {
                 [] (const LiteralFromIntegerVariable & ilit) -> optional<bool> {
@@ -57,40 +56,38 @@ namespace
                             }
                             }, ilit.var.index_or_const_value);
                 },
-                [] (const LiteralFromBooleanVariable & blit) -> optional<bool> {
-                    return visit(overloaded {
-                            [&] (unsigned long long) -> optional<bool> { return nullopt; },
-                            [&] (bool b) -> optional<bool> {
-                                return (blit.state == LiteralFromBooleanVariable::True) == b;
-                                }
-                        }, blit.var.index_or_const_value);
+                [] (const TrueLiteral &) -> optional<bool> {
+                    return true;
+                },
+                [] (const FalseLiteral &) -> optional<bool> {
+                    return false;
                 }
                 }, lit);
     }
+}
 
-    auto is_definitely_true(const Literal & lit) -> bool
-    {
-        auto result = is_definitely_true_or_false(lit);
-        return result && *result;
-    }
+auto gcs::is_literally_true(const Literal & lit) -> bool
+{
+    auto result = is_literally_true_or_false(lit);
+    return result && *result;
+}
 
-    auto is_definitely_false(const Literal & lit) -> bool
-    {
-        auto result = is_definitely_true_or_false(lit);
-        return result && ! *result;
-    }
+auto gcs::is_literally_false(const Literal & lit) -> bool
+{
+    auto result = is_literally_true_or_false(lit);
+    return result && ! *result;
 }
 
 auto gcs::sanitise_literals(Literals & lits) -> bool
 {
     // if we've got a literal that is definitely true, the clause is always satisfied,
     // so we can discard the clause
-    if (lits.end() != find_if(lits.begin(), lits.end(), [] (const Literal & lit) -> bool { return is_definitely_true(lit); }))
+    if (lits.end() != find_if(lits.begin(), lits.end(), [] (const Literal & lit) -> bool { return is_literally_true(lit); }))
         return false;
 
     // remove any literals that are definitely false. this might remove everything, in
     // which case we get the empty clause which is false so it's fine.
-    lits.erase(remove_if(lits.begin(), lits.end(), [&] (const Literal & lit) -> bool { return is_definitely_false(lit); }), lits.end());
+    lits.erase(remove_if(lits.begin(), lits.end(), [&] (const Literal & lit) -> bool { return is_literally_false(lit); }), lits.end());
 
     // put these in some kind of order
     sort(lits.begin(), lits.end());
@@ -117,23 +114,14 @@ auto gcs::operator ! (const Literal & lit) -> Literal
                 }
                 throw NonExhaustiveSwitch{ };
             },
-            [] (const LiteralFromBooleanVariable & blit) {
-                switch (blit.state) {
-                    case LiteralFromBooleanVariable::True:
-                        return Literal{ LiteralFromBooleanVariable{ blit.var, LiteralFromBooleanVariable::False } };
-                    case LiteralFromBooleanVariable::False:
-                        return Literal{ LiteralFromBooleanVariable{ blit.var, LiteralFromBooleanVariable::True } };
-                }
-                throw NonExhaustiveSwitch{ };
+            [] (const TrueLiteral &) -> Literal {
+                return FalseLiteral{ };
+            },
+            [] (const FalseLiteral &) -> Literal {
+                return TrueLiteral{ };
             }
             }, lit);
 }
 
-auto gcs::underlying_variable(const Literal & lit) -> VariableID
-{
-    return visit(overloaded {
-            [&] (const LiteralFromIntegerVariable & ilit) -> VariableID { return ilit.var; },
-            [&] (const LiteralFromBooleanVariable & blit) -> VariableID { return blit.var; }
-            }, lit);
-}
+auto gcs::is_literally_false(const Literal &) -> bool;
 

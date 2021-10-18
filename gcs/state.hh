@@ -55,7 +55,6 @@ namespace gcs
             struct Imp;
             std::unique_ptr<Imp> _imp;
 
-            [[ nodiscard ]] auto infer_boolean(const LiteralFromBooleanVariable & lit) -> Inference;
             [[ nodiscard ]] auto infer_integer(const LiteralFromIntegerVariable & lit) -> Inference;
 
             [[ nodiscard ]] auto non_constant_integer_variable(const IntegerVariableID) -> IntegerVariable &;
@@ -93,13 +92,10 @@ namespace gcs
             auto for_each_value_while(const IntegerVariableID, std::function<auto (Integer) -> bool>) const -> void;
             [[ nodiscard ]] auto domain_has_holes(const IntegerVariableID) const -> bool;
 
-            [[ nodiscard ]] auto optional_single_value(const BooleanVariableID) const -> std::optional<bool>;
-
             [[ nodiscard ]] auto test_literal(const Literal &) const -> LiteralIs;
             [[ nodiscard ]] auto literal_is_nonfalsified(const Literal &) const -> bool;
 
             [[ nodiscard ]] auto operator() (const IntegerVariableID &) const -> Integer;
-            [[ nodiscard ]] auto operator() (const BooleanVariableID &) const -> bool;
 
             [[ nodiscard ]] auto new_epoch() -> Timestamp;
             auto backtrack(Timestamp) -> void;

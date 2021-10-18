@@ -372,7 +372,7 @@ namespace
         if (left_covered.size() != vars.size()) {
             // nope. we've got a maximum cardinality matching that leaves at least
             // one thing on the left uncovered.
-            return state.infer(+constant_variable(false), JustifyExplicitly{ [&] (Proof & proof) -> void {
+            return state.infer(FalseLiteral{ }, JustifyExplicitly{ [&] (Proof & proof) -> void {
                     prove_matching_is_too_small(vars, vals, constraint_numbers, proof, edges, left_covered, matching);
                     } });
         }

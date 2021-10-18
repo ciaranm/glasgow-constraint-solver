@@ -40,7 +40,7 @@ namespace gcs
     {
         public:
             inline explicit Equals(const IntegerVariableID v1, const IntegerVariableID v2) :
-                ComparisonReif(v1, v2, +constant_variable(true), true, ComparisonOperator::Equals)
+                ComparisonReif(v1, v2, TrueLiteral{ }, true, ComparisonOperator::Equals)
             {
             };
     };
@@ -70,7 +70,7 @@ namespace gcs
     {
         public:
             inline explicit NotEquals(const IntegerVariableID v1, const IntegerVariableID v2) :
-                ComparisonReif(v1, v2, +constant_variable(false), true, ComparisonOperator::Equals)
+                ComparisonReif(v1, v2, FalseLiteral{ }, true, ComparisonOperator::Equals)
             {
             };
     };
@@ -90,7 +90,7 @@ namespace gcs
     {
         public:
             inline explicit LessThan(const IntegerVariableID v1, const IntegerVariableID v2) :
-                ComparisonReif(v1, v2, +constant_variable(true), true, ComparisonOperator::LessThan)
+                ComparisonReif(v1, v2, TrueLiteral{ }, true, ComparisonOperator::LessThan)
             {
             };
     };
@@ -110,7 +110,7 @@ namespace gcs
     {
         public:
             inline explicit LessThanEqual(const IntegerVariableID v1, const IntegerVariableID v2) :
-                ComparisonReif(v1, v2, +constant_variable(true), true, ComparisonOperator::LessThanEqual)
+                ComparisonReif(v1, v2, TrueLiteral{ }, true, ComparisonOperator::LessThanEqual)
             {
             };
     };
@@ -120,7 +120,7 @@ namespace gcs
     {
         public:
             inline explicit GreaterThan(const IntegerVariableID v1, const IntegerVariableID v2) :
-                ComparisonReif(v2, v1, +constant_variable(true), true, ComparisonOperator::LessThan)
+                ComparisonReif(v2, v1, TrueLiteral{ }, true, ComparisonOperator::LessThan)
             {
             };
     };
@@ -130,7 +130,7 @@ namespace gcs
     {
         public:
             inline explicit GreaterThanEqual(const IntegerVariableID v1, const IntegerVariableID v2) :
-                ComparisonReif(v2, v1, +constant_variable(true), true, ComparisonOperator::LessThanEqual)
+                ComparisonReif(v2, v1, TrueLiteral{ }, true, ComparisonOperator::LessThanEqual)
             {
             };
     };

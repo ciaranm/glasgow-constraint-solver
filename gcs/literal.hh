@@ -41,25 +41,21 @@ namespace gcs
         return LiteralFromIntegerVariable{ var, LiteralFromIntegerVariable::GreaterEqual, val };
     }
 
-    struct LiteralFromBooleanVariable
+    struct TrueLiteral
     {
-        BooleanVariableID var;
-        enum { True, False } state;
-
-        [[ nodiscard ]] auto operator<=> (const LiteralFromBooleanVariable &) const = default;
+        [[ nodiscard ]] auto operator<=> (const TrueLiteral &) const = default;
     };
 
-    [[ nodiscard ]] inline auto operator ! (const BooleanVariableID var) -> LiteralFromBooleanVariable
+    struct FalseLiteral
     {
-        return LiteralFromBooleanVariable{ var, LiteralFromBooleanVariable::False };
-    }
+        [[ nodiscard ]] auto operator<=> (const FalseLiteral &) const = default;
+    };
 
-    [[ nodiscard ]] inline auto operator + (const BooleanVariableID var) -> LiteralFromBooleanVariable
-    {
-        return LiteralFromBooleanVariable{ var, LiteralFromBooleanVariable::True };
-    }
+    using Literal = std::variant<LiteralFromIntegerVariable, TrueLiteral, FalseLiteral>;
 
-    using Literal = std::variant<LiteralFromIntegerVariable, LiteralFromBooleanVariable>;
+    [[ nodiscard ]] auto is_literally_true(const Literal &) -> bool;
+
+    [[ nodiscard ]] auto is_literally_false(const Literal &) -> bool;
 
     [[ nodiscard ]] auto operator ! (const Literal &) -> Literal;
 
@@ -70,8 +66,6 @@ namespace gcs
     using WeightedLiterals = std::vector<std::pair<Integer, Literal> >;
 
     [[ nodiscard ]] auto sanitise_literals(Literals &) -> bool;
-
-    [[ nodiscard ]] auto underlying_variable(const Literal &) -> VariableID;
 }
 
 #endif

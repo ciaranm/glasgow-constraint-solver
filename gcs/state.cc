@@ -126,18 +126,6 @@ auto State::integer_variable(const IntegerVariableID i, IntegerVariable & space)
             }, i.index_or_const_value);
 }
 
-auto State::infer_boolean(const LiteralFromBooleanVariable & blit) -> Inference
-{
-    return visit(overloaded {
-            [&] (const unsigned long long) -> Inference {
-                throw UnimplementedException{ };
-            },
-            [&] (bool x) -> Inference {
-                return (x == (blit.state == LiteralFromBooleanVariable::True)) ? Inference::NoChange : Inference::Contradiction;
-            }
-        }, blit.var.index_or_const_value);
-}
-
 auto State::infer_integer(const LiteralFromIntegerVariable & ilit) -> Inference
 {
     IntegerVariable space = IntegerConstant{ 0_i };
@@ -344,30 +332,35 @@ auto State::infer_integer(const LiteralFromIntegerVariable & ilit) -> Inference
 
 auto State::infer(const Literal & lit, Justification just) -> Inference
 {
-    auto [ inference, var ] = visit(overloaded {
-            [&] (const LiteralFromBooleanVariable & blit) -> pair<Inference, VariableID> {
-                return pair{ infer_boolean(blit), blit.var };
+    return visit(overloaded {
+            [&] (const LiteralFromIntegerVariable & ilit) -> Inference {
+                switch (infer_integer(ilit)) {
+                    case Inference::NoChange:
+                        return Inference::NoChange;
+
+                    case Inference::Contradiction:
+                        if (_imp->problem->optional_proof())
+                            _imp->problem->optional_proof()->infer(*this, FalseLiteral{ }, just);
+                        return Inference::Contradiction;
+
+                    case Inference::Change:
+                        remember_change(ilit.var);
+                        if (_imp->problem->optional_proof())
+                            _imp->problem->optional_proof()->infer(*this, lit, just);
+                        return Inference::Change;
+                }
+
+                throw NonExhaustiveSwitch{ };
             },
-            [&] (const LiteralFromIntegerVariable & ilit) -> pair<Inference, VariableID> {
-                return pair{ infer_integer(ilit), ilit.var };
+            [] (const TrueLiteral &) {
+                return Inference::NoChange;
+            },
+            [&] (const FalseLiteral &) {
+                if (_imp->problem->optional_proof())
+                    _imp->problem->optional_proof()->infer(*this, FalseLiteral{ }, just);
+                return Inference::Contradiction;
             }
             }, lit);
-
-    switch (inference) {
-        case Inference::NoChange:
-            break;
-        case Inference::Contradiction:
-            if (_imp->problem->optional_proof())
-                _imp->problem->optional_proof()->infer(*this, +constant_variable(false), just);
-            break;
-        case Inference::Change:
-            remember_change(var);
-            if (_imp->problem->optional_proof())
-                _imp->problem->optional_proof()->infer(*this, lit, just);
-            break;
-    }
-
-    return inference;
 }
 
 auto State::infer_all(const vector<Literal> & lits, Justification just) -> Inference
@@ -532,14 +525,6 @@ auto State::for_each_value_while(const IntegerVariableID var, function<auto (Int
             }, var_copy);
 }
 
-auto State::optional_single_value(const BooleanVariableID v) const -> optional<bool>
-{
-    return visit(overloaded {
-            [] (bool x) { return make_optional(x); },
-            [] (unsigned long long) -> optional<bool> { throw UnimplementedException{ }; }
-            }, v.index_or_const_value);
-}
-
 auto State::operator() (const IntegerVariableID & i) const -> Integer
 {
     if (auto result = optional_single_value(i))
@@ -590,12 +575,6 @@ auto State::add_proof_steps(JustifyExplicitly why) -> void
 auto State::literal_is_nonfalsified(const Literal & lit) const -> bool
 {
     return visit(overloaded {
-        [&] (const LiteralFromBooleanVariable & blit) -> bool {
-            auto single_value = optional_single_value(blit.var);
-            if (! single_value)
-                throw UnimplementedException{ };
-            return *single_value == (blit.state == LiteralFromBooleanVariable::True);
-        },
         [&] (const LiteralFromIntegerVariable & ilit) -> bool {
             switch (ilit.state) {
                 case LiteralFromIntegerVariable::Equal:
@@ -611,22 +590,15 @@ auto State::literal_is_nonfalsified(const Literal & lit) const -> bool
             }
 
             throw NonExhaustiveSwitch{ };
-        }
+        },
+        [] (const TrueLiteral &) { return true; },
+        [] (const FalseLiteral &) { return false; }
         }, lit);
 }
 
 auto State::test_literal(const Literal & lit) const -> LiteralIs
 {
     return visit(overloaded {
-        [&] (const LiteralFromBooleanVariable & blit) -> LiteralIs {
-            auto single_value = optional_single_value(blit.var);
-            if (! single_value)
-                return LiteralIs::Undecided;
-            else if (*single_value == (blit.state == LiteralFromBooleanVariable::True))
-                return LiteralIs::DefinitelyTrue;
-            else
-                return LiteralIs::DefinitelyFalse;
-        },
         [&] (const LiteralFromIntegerVariable & ilit) -> LiteralIs {
             switch (ilit.state) {
                 case LiteralFromIntegerVariable::Equal:
@@ -667,7 +639,9 @@ auto State::test_literal(const Literal & lit) const -> LiteralIs
             }
 
             throw NonExhaustiveSwitch{ };
-        }
+        },
+        [] (const TrueLiteral &) { return LiteralIs::DefinitelyTrue; },
+        [] (const FalseLiteral &) { return LiteralIs::DefinitelyFalse; }
         }, lit);
 }
 

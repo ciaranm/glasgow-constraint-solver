@@ -51,7 +51,6 @@ struct Proof::Imp
 
     map<IntegerVariableID, ProofLine> variable_at_least_one_constraints, variable_at_most_one_constraints;
     map<LiteralFromIntegerVariable, string> integer_variables;
-    map<LiteralFromBooleanVariable, string> boolean_variables;
     list<IntegerVariableID> solution_variables;
     optional<IntegerVariableID> objective_variable;
     optional<Integer> objective_variable_lower, objective_variable_upper;
@@ -72,18 +71,6 @@ Proof::Proof(const string & opb_file, const string & proof_file, bool use_friend
     _imp->use_friendly_names = use_friendly_names;
 
     _imp->opb << "* convenience true and false variables" << endl;
-
-    _imp->opb << "1 " << xify("btrue") << " >= 1 ;" << endl;
-    _imp->boolean_variables.emplace(+constant_variable(true), xify("btrue"));
-    _imp->boolean_variables.emplace(!constant_variable(true), "~" + xify("btrue"));
-    ++_imp->model_constraints;
-    ++_imp->model_variables;
-
-    _imp->opb << "1 ~" << xify("bfalse") << " >= 1 ;" << endl;
-    _imp->boolean_variables.emplace(+constant_variable(false), xify("bfalse"));
-    _imp->boolean_variables.emplace(!constant_variable(false), "~" + xify("bfalse"));
-    ++_imp->model_constraints;
-    ++_imp->model_variables;
 }
 
 Proof::~Proof() = default;
@@ -304,41 +291,31 @@ auto Proof::minimise(IntegerVariableID var) -> void
     _imp->objective_variable = var;
 }
 
-auto Proof::proof_variable(const LiteralFromIntegerVariable & lit) const -> const string &
+auto Proof::proof_variable(const Literal & lit) const -> const string &
 {
     // This might need a design rethink: if we get a constant variable, turn it into either
     // true or false based upon its condition
     return visit(overloaded{
-            [&] (unsigned long long) -> const string & {
-                auto it = _imp->integer_variables.find(lit);
-                if (it == _imp->integer_variables.end())
-                    throw ProofError("No variable exists for literal " + debug_string(lit));
-                return it->second;
+            [&] (const LiteralFromIntegerVariable & ilit) -> const string & {
+                return visit(overloaded{
+                    [&] (unsigned long long) -> const string & {
+                        auto it = _imp->integer_variables.find(ilit);
+                        if (it == _imp->integer_variables.end())
+                            throw ProofError("No variable exists for literal " + debug_string(lit));
+                        return it->second;
+                    },
+                    [&] (Integer) -> const string & {
+                        throw UnimplementedException{ };
+                    }
+                    }, ilit.var.index_or_const_value);
             },
-            [&] (Integer x) -> const string & {
-                bool want_true = false;
-                switch (lit.state) {
-                    case LiteralFromIntegerVariable::Equal:        want_true = lit.value == x; break;
-                    case LiteralFromIntegerVariable::NotEqual:     want_true = lit.value != x; break;
-                    case LiteralFromIntegerVariable::GreaterEqual: want_true = lit.value >= x; break;
-                    case LiteralFromIntegerVariable::Less:         want_true = lit.value < x; break;
-                }
-                return want_true ? proof_variable(+constant_variable(true)) : proof_variable(!constant_variable(true));
+            [&] (const TrueLiteral &) -> const string & {
+                throw UnimplementedException{ };
+            },
+            [&] (const FalseLiteral &) -> const string & {
+                throw UnimplementedException{ };
             }
-            }, lit.var.index_or_const_value);
-}
-
-auto Proof::proof_variable(const LiteralFromBooleanVariable & lit) const -> const string &
-{
-    auto it = _imp->boolean_variables.find(lit);
-    if (it == _imp->boolean_variables.end())
-        throw ProofError("No variable exists for literal " + debug_string(lit));
-    return it->second;
-}
-
-auto Proof::proof_variable(const Literal & lit) const -> const std::string &
-{
-    return visit([&] (const auto & l) -> const std::string & { return proof_variable(l); }, lit);
+            }, lit);
 }
 
 auto Proof::posting(const std::string & s) -> void
@@ -397,7 +374,8 @@ auto Proof::infer(const State & state, const Literal & lit, Justification why) -
                 state.for_each_guess([&] (const Literal & lit) {
                         _imp->proof << " 1 " << proof_variable(! lit);
                         });
-                _imp->proof << " 1 " << proof_variable(lit);
+                if (! is_literally_false(lit))
+                    _imp->proof << " 1 " << proof_variable(lit);
                 _imp->proof << " >= 1 ;" << endl;
                 ++_imp->proof_line;
             },

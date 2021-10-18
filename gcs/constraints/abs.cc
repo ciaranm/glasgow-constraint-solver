@@ -37,16 +37,16 @@ auto Abs::convert_to_low_level(LowLevelConstraintStore & constraints, const Stat
         if (initial_state.in_domain(_v2, x))
             constraints.cnf(initial_state, {
                     _v2 != x,
-                    initial_state.in_domain(_v1, x) ? Literal{ _v1 == x } : +constant_variable(false),
-                    initial_state.in_domain(_v1, -x) ? Literal{ _v1 == -x } : +constant_variable(false) }, true);
+                    initial_state.in_domain(_v1, x) ? Literal{ _v1 == x } : FalseLiteral{ },
+                    initial_state.in_domain(_v1, -x) ? Literal{ _v1 == -x } : FalseLiteral{ } }, true);
         if (initial_state.in_domain(_v1, x))
             constraints.cnf(initial_state, {
                     _v1 != x,
-                    initial_state.in_domain(_v2, x) ? Literal{ _v2 == x } : +constant_variable(false) }, true);
+                    initial_state.in_domain(_v2, x) ? Literal{ _v2 == x } : FalseLiteral{ } }, true);
         if (initial_state.in_domain(_v1, -x))
             constraints.cnf(initial_state, {
                     _v1 != -x,
-                    initial_state.in_domain(_v2, x) ? Literal{ _v2 == x } : +constant_variable(false) }, true);
+                    initial_state.in_domain(_v2, x) ? Literal{ _v2 == x } : FalseLiteral{ } }, true);
     }
 }
 

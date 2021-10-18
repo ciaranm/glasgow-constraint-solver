@@ -79,8 +79,6 @@ namespace gcs
             auto create_pseudovariable(IntegerVariableID, Integer, Integer, const std::optional<std::string> &) -> void;
 
             auto proof_variable(const Literal &) const -> const std::string &;
-            auto proof_variable(const LiteralFromIntegerVariable &) const -> const std::string &;
-            auto proof_variable(const LiteralFromBooleanVariable &) const -> const std::string &;
     };
 }
 
