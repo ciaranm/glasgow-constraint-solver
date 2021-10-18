@@ -44,17 +44,17 @@ namespace
         return visit(overloaded {
                 [] (const LiteralFromIntegerVariable & ilit) -> optional<bool> {
                     return visit(overloaded {
-                            [&] (unsigned long long) -> optional<bool> { return nullopt; },
-                            [&] (Integer x) -> optional<bool> {
+                            [&] (SimpleIntegerVariableID) -> optional<bool> { return nullopt; },
+                            [&] (ConstantIntegerVariableID x) -> optional<bool> {
                                 switch (ilit.state) {
-                                    case LiteralFromIntegerVariable::Equal:        return x == ilit.value;
-                                    case LiteralFromIntegerVariable::NotEqual:     return x != ilit.value;
-                                    case LiteralFromIntegerVariable::GreaterEqual: return x >= ilit.value;
-                                    case LiteralFromIntegerVariable::Less:         return x < ilit.value;
+                                    case LiteralFromIntegerVariable::Equal:        return x.const_value == ilit.value;
+                                    case LiteralFromIntegerVariable::NotEqual:     return x.const_value != ilit.value;
+                                    case LiteralFromIntegerVariable::GreaterEqual: return x.const_value >= ilit.value;
+                                    case LiteralFromIntegerVariable::Less:         return x.const_value < ilit.value;
                                 }
                                 throw NonExhaustiveSwitch{ };
                             }
-                            }, ilit.var.index_or_const_value);
+                            }, ilit.var);
                 },
                 [] (const TrueLiteral &) -> optional<bool> {
                     return true;

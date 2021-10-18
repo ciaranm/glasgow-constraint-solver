@@ -91,7 +91,7 @@ auto State::create_integer_variable(Integer lower, Integer upper) -> IntegerVari
     else
         _imp->integer_variable_states.back().push_back(IntegerVariableRangeState{ lower, upper });
 
-    return IntegerVariableID{ _imp->integer_variable_states.back().size() - 1 };
+    return SimpleIntegerVariableID{ _imp->integer_variable_states.back().size() - 1 };
 }
 
 auto State::create_pseudovariable(Integer lower, Integer upper, const optional<string> & name) -> IntegerVariableID
@@ -105,25 +105,25 @@ auto State::create_pseudovariable(Integer lower, Integer upper, const optional<s
 auto State::non_constant_state_of(const IntegerVariableID i) -> IntegerVariableState &
 {
     return visit(overloaded {
-            [&] (const unsigned long long index) -> IntegerVariableState & { return _imp->integer_variable_states.back()[index]; },
-            [&] (const Integer)                  -> IntegerVariableState & { throw UnexpectedException{ "unexpected constant" }; }
-            }, i.index_or_const_value);
+            [&] (const SimpleIntegerVariableID & v) -> IntegerVariableState & { return _imp->integer_variable_states.back()[v.index]; },
+            [&] (const ConstantIntegerVariableID &) -> IntegerVariableState & { throw UnexpectedException{ "unexpected constant" }; }
+            }, i);
 }
 
 auto State::state_of(const IntegerVariableID i, IntegerVariableState & space) -> IntegerVariableState &
 {
     return visit(overloaded {
-            [&] (const unsigned long long index) -> IntegerVariableState & { return _imp->integer_variable_states.back()[index]; },
-            [&] (const Integer x)                -> IntegerVariableState & { space = IntegerVariableConstantState{ x }; return space; }
-            }, i.index_or_const_value);
+            [&] (const SimpleIntegerVariableID & v) -> IntegerVariableState & { return _imp->integer_variable_states.back()[v.index]; },
+            [&] (const ConstantIntegerVariableID & v) -> IntegerVariableState & { space = IntegerVariableConstantState{ v.const_value }; return space; }
+            }, i);
 }
 
 auto State::state_of(const IntegerVariableID i, IntegerVariableState & space) const -> const IntegerVariableState &
 {
     return visit(overloaded {
-            [&] (const unsigned long long index) -> IntegerVariableState & { return _imp->integer_variable_states.back()[index]; },
-            [&] (const Integer x)                -> IntegerVariableState & { space = IntegerVariableConstantState{ x }; return space; }
-            }, i.index_or_const_value);
+            [&] (const SimpleIntegerVariableID & v) -> const IntegerVariableState & { return _imp->integer_variable_states.back()[v.index]; },
+            [&] (const ConstantIntegerVariableID & v) -> const IntegerVariableState & { space = IntegerVariableConstantState{ v.const_value }; return space; }
+            }, i);
 }
 
 auto State::infer_integer(const LiteralFromIntegerVariable & ilit) -> Inference

@@ -9,26 +9,35 @@
 
 namespace gcs
 {
-    struct IntegerVariableID
+    struct SimpleIntegerVariableID
     {
-        std::variant<unsigned long long, Integer> index_or_const_value;
+        unsigned long long index;
 
-        explicit IntegerVariableID(unsigned long long x) :
-            index_or_const_value(x)
+        explicit SimpleIntegerVariableID(unsigned long long x) :
+            index(x)
         {
         }
 
-        explicit IntegerVariableID(Integer x) :
-            index_or_const_value(x)
-        {
-        }
-
-        [[ nodiscard ]] auto operator <=> (const IntegerVariableID &) const = default;
+        [[ nodiscard ]] auto operator <=> (const SimpleIntegerVariableID &) const = default;
     };
+
+    struct ConstantIntegerVariableID
+    {
+        Integer const_value;
+
+        explicit ConstantIntegerVariableID(Integer x) :
+            const_value(x)
+        {
+        }
+
+        [[ nodiscard ]] auto operator <=> (const ConstantIntegerVariableID &) const = default;
+    };
+
+    using IntegerVariableID = std::variant<SimpleIntegerVariableID, ConstantIntegerVariableID>;
 
     [[ nodiscard ]] inline auto constant_variable(const Integer x) -> IntegerVariableID
     {
-        return IntegerVariableID(x);
+        return ConstantIntegerVariableID(x);
     }
 
     [[ nodiscard ]] inline auto operator "" _c (unsigned long long v) -> IntegerVariableID

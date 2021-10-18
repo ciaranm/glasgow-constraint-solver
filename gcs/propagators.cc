@@ -211,9 +211,9 @@ auto Propagators::propagate(State & state) const -> bool
                 visit(overloaded{
                         [&] (const IntegerVariableID & ivar) {
                             visit(overloaded{
-                                    [&] (const unsigned long long idx) {
-                                        if (idx < _imp->iv_triggers.size()) {
-                                            auto & triggers = _imp->iv_triggers[idx];
+                                    [&] (const SimpleIntegerVariableID & v) {
+                                        if (v.index < _imp->iv_triggers.size()) {
+                                            auto & triggers = _imp->iv_triggers[v.index];
                                             for (auto & p : triggers.on_change)
                                                 if (! on_queue[p]) {
                                                     propagation_queue.push_back(p);
@@ -227,10 +227,10 @@ auto Propagators::propagate(State & state) const -> bool
                                                     }
                                         }
                                     },
-                                    [&] (const Integer) {
+                                    [&] (const ConstantIntegerVariableID &) {
                                         throw UnimplementedException{ };
                                     }
-                                }, ivar.index_or_const_value);
+                                }, ivar);
                         }
                         }, var);
 
@@ -323,14 +323,14 @@ auto Propagators::trigger_on_change(VariableID var, int t) -> void
     visit(overloaded{
             [&] (const IntegerVariableID & ivar) {
                 visit(overloaded{
-                        [&] (const unsigned long long idx) {
-                            if (_imp->iv_triggers.size() <= idx)
-                                    _imp->iv_triggers.resize(idx + 1);
-                            _imp->iv_triggers[idx].on_change.push_back(t);
+                        [&] (const SimpleIntegerVariableID & v) {
+                            if (_imp->iv_triggers.size() <= v.index)
+                                    _imp->iv_triggers.resize(v.index + 1);
+                            _imp->iv_triggers[v.index].on_change.push_back(t);
                         },
-                        [&] (const Integer) {
+                        [&] (const ConstantIntegerVariableID &) {
                         }
-                        }, ivar.index_or_const_value);
+                        }, ivar);
             }
             }, var);
 }
@@ -340,14 +340,14 @@ auto Propagators::trigger_on_instantiated(VariableID var, int t) -> void
     visit(overloaded{
             [&] (const IntegerVariableID & ivar) {
                 visit(overloaded{
-                        [&] (const unsigned long long idx) {
-                            if (_imp->iv_triggers.size() <= idx)
-                                    _imp->iv_triggers.resize(idx + 1);
-                            _imp->iv_triggers[idx].on_instantiated.push_back(t);
+                        [&] (const SimpleIntegerVariableID & v) {
+                            if (_imp->iv_triggers.size() <= v.index)
+                                    _imp->iv_triggers.resize(v.index + 1);
+                            _imp->iv_triggers[v.index].on_instantiated.push_back(t);
                         },
-                        [&] (const Integer) {
+                        [&] (const ConstantIntegerVariableID &) {
                         }
-                        }, ivar.index_or_const_value);
+                        }, ivar);
             }
             }, var);
 }

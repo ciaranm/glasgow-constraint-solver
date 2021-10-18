@@ -12,9 +12,9 @@ using std::visit;
 auto gcs::debug_string(const IntegerVariableID & var) -> string
 {
     return visit(overloaded {
-            [] (unsigned long long x) { return to_string(x); },
-            [] (Integer x)            { return "const " + to_string(x.raw_value); }
-            }, var.index_or_const_value);
+            [] (SimpleIntegerVariableID x) { return "varidx " + to_string(x.index); },
+            [] (ConstantIntegerVariableID x) { return "const " + to_string(x.const_value.raw_value); }
+            }, var);
 }
 
 auto gcs::debug_string(const VariableID & var) -> string

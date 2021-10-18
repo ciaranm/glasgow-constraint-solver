@@ -105,9 +105,9 @@ namespace
 auto Proof::create_integer_variable(IntegerVariableID id, Integer lower, Integer upper, const optional<string> & optional_name, bool need_ge) -> void
 {
     string name = visit(overloaded{
-            [&] (unsigned long long x) { return "iv" + to_string(x); },
-            [&] (Integer x) { return "ic" + to_string(x.raw_value); }
-            }, id.index_or_const_value);
+            [&] (SimpleIntegerVariableID x) { return "iv" + to_string(x.index); },
+            [&] (ConstantIntegerVariableID x) { return "ic" + to_string(x.const_value.raw_value); }
+            }, id);
     if (optional_name)
         name.append("_" + *optional_name);
 
@@ -185,9 +185,9 @@ auto Proof::create_integer_variable(IntegerVariableID id, Integer lower, Integer
 auto Proof::create_pseudovariable(IntegerVariableID id, Integer lower, Integer upper, const optional<string> & optional_name) -> void
 {
     string name = visit(overloaded{
-            [&] (unsigned long long x) { return "iv" + to_string(x); },
-            [&] (Integer x) { return "ic" + to_string(x.raw_value); }
-            }, id.index_or_const_value);
+            [&] (SimpleIntegerVariableID x) { return "iv" + to_string(x.index); },
+            [&] (ConstantIntegerVariableID x) { return "ic" + to_string(x.const_value.raw_value); }
+            }, id);
     if (optional_name)
         name.append("_" + *optional_name);
 
@@ -298,16 +298,16 @@ auto Proof::proof_variable(const Literal & lit) const -> const string &
     return visit(overloaded{
             [&] (const LiteralFromIntegerVariable & ilit) -> const string & {
                 return visit(overloaded{
-                    [&] (unsigned long long) -> const string & {
+                    [&] (SimpleIntegerVariableID) -> const string & {
                         auto it = _imp->integer_variables.find(ilit);
                         if (it == _imp->integer_variables.end())
                             throw ProofError("No variable exists for literal " + debug_string(lit));
                         return it->second;
                     },
-                    [&] (Integer) -> const string & {
+                    [&] (ConstantIntegerVariableID) -> const string & {
                         throw UnimplementedException{ };
                     }
-                    }, ilit.var.index_or_const_value);
+                    }, ilit.var);
             },
             [&] (const TrueLiteral &) -> const string & {
                 throw UnimplementedException{ };
