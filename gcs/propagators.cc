@@ -59,7 +59,7 @@ struct Propagators::Imp
 Propagators::Propagators(Problem * p) :
     _imp(new Imp(p))
 {
-    _imp->propagation_functions.emplace_back([&] (State & s) { return propagate_cnfs(s); });
+    _imp->propagation_functions.emplace_back([&] (State & s) { return pair{ propagate_cnfs(s), PropagatorState::Enable }; });
     _imp->propagation_function_calls.emplace_back(microseconds{ 0 }, 0, "cnf");
 }
 
@@ -133,7 +133,7 @@ auto Propagators::integer_linear_le(const State & state, Linear && coeff_vars, I
     for (auto & [ _, v ] : coeff_vars)
         trigger_on_change(v, id);
 
-    _imp->propagation_functions.emplace_back([&, coeff_vars = move(coeff_vars), value = value] (State & state) -> Inference {
+    _imp->propagation_functions.emplace_back([&, coeff_vars = move(coeff_vars), value = value] (State & state) {
             return propagate_linear(coeff_vars, value, state);
     });
 
@@ -187,7 +187,8 @@ auto Propagators::table(const State & state, vector<IntegerVariableID> && vars, 
         trigger_on_change(v, id);
     trigger_on_change(selector, id);
 
-    _imp->propagation_functions.emplace_back([&, table = ExtensionalData{ selector, move(vars), move(permitted) }] (State & state) -> Inference {
+    _imp->propagation_functions.emplace_back([&, table = ExtensionalData{ selector, move(vars), move(permitted) }] (
+                State & state) -> pair<Inference, PropagatorState> {
             return propagate_extensional(table, state);
             });
     _imp->propagation_function_calls.emplace_back(microseconds{ 0 }, 0, name);
@@ -211,14 +212,14 @@ auto Propagators::propagate(State & state) const -> bool
             if (v.index < _imp->iv_triggers.size()) {
                 auto & triggers = _imp->iv_triggers[v.index];
                 for (auto & p : triggers.on_change)
-                    if (! on_queue[p]) {
+                    if (! on_queue[p] && state.propagator_is_enabled(p)) {
                         propagation_queue.push_back(p);
                         on_queue[p] = 1;
                     }
 
-                if (state.optional_single_value(v))
+                if (! triggers.on_instantiated.empty() && state.optional_single_value(v))
                     for (auto & p : triggers.on_instantiated)
-                        if (! on_queue[p]) {
+                        if (! on_queue[p] && state.propagator_is_enabled(p)) {
                             propagation_queue.push_back(p);
                             on_queue[p] = 1;
                         }
@@ -237,7 +238,7 @@ auto Propagators::propagate(State & state) const -> bool
         propagation_queue.erase(propagation_queue.begin());
         on_queue[propagator_id] = 0;
         auto start_time = steady_clock::now();
-        auto inference = _imp->propagation_functions[propagator_id](state);
+        auto [ inference, propagator_state ] = _imp->propagation_functions[propagator_id](state);
         auto tm = duration_cast<microseconds>(steady_clock::now() - start_time);
         get<0>(_imp->propagation_function_calls[propagator_id]) += tm;
         get<1>(_imp->propagation_function_calls[propagator_id])++;
@@ -247,6 +248,14 @@ auto Propagators::propagate(State & state) const -> bool
             case Inference::NoChange:      break;
             case Inference::Change:        break;
             case Inference::Contradiction: return false;
+        }
+
+        switch (propagator_state) {
+            case PropagatorState::Enable:
+                break;
+            case PropagatorState::DisableUntilBacktrack:
+                state.disable_propagator(propagator_id);
+                break;
         }
     }
 
@@ -318,8 +327,8 @@ auto Propagators::trigger_on_change(VariableID var, int t) -> void
                                     _imp->iv_triggers.resize(v.index + 1);
                             _imp->iv_triggers[v.index].on_change.push_back(t);
                         },
-                        [&] (const ViewOfIntegerVariableID &) {
-                            throw UnimplementedException{ };
+                        [&] (const ViewOfIntegerVariableID & v) {
+                            trigger_on_change(v.actual_variable, t);
                         },
                         [&] (const ConstantIntegerVariableID &) {
                         }
@@ -338,8 +347,8 @@ auto Propagators::trigger_on_instantiated(VariableID var, int t) -> void
                                     _imp->iv_triggers.resize(v.index + 1);
                             _imp->iv_triggers[v.index].on_instantiated.push_back(t);
                         },
-                        [&] (const ViewOfIntegerVariableID &) {
-                            throw UnimplementedException{ };
+                        [&] (const ViewOfIntegerVariableID & v) {
+                            trigger_on_change(v.actual_variable, t);
                         },
                         [&] (const ConstantIntegerVariableID &) {
                         }

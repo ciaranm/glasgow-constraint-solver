@@ -6,6 +6,7 @@
 #include <gcs/integer.hh>
 #include <gcs/variable_id.hh>
 #include <gcs/state-fwd.hh>
+#include <gcs/propagators-fwd.hh>
 
 #include <utility>
 #include <vector>
@@ -17,7 +18,7 @@ namespace gcs
 
     auto sanitise_linear(Linear &) -> void;
 
-    auto propagate_linear(const Linear &, Integer, State &) -> Inference;
+    auto propagate_linear(const Linear &, Integer, State &) -> std::pair<Inference, PropagatorState>;
 }
 
 #endif

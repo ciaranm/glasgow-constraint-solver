@@ -104,6 +104,9 @@ namespace gcs
             auto backtrack(Timestamp) -> void;
 
             auto extract_changed_variables(std::function<auto (SimpleIntegerVariableID) -> void>) -> void;
+
+            auto disable_propagator(int id) -> void;
+            [[ nodiscard ]] auto propagator_is_enabled(int id) const -> bool;
     };
 }
 

@@ -7,6 +7,7 @@
 
 using namespace gcs;
 
+using std::pair;
 using std::remove_if;
 using std::sort;
 
@@ -35,7 +36,7 @@ auto gcs::sanitise_linear(Linear & coeff_vars) -> void
                 }), coeff_vars.end());
 }
 
-auto gcs::propagate_linear(const Linear & coeff_vars, Integer value, State & state) -> Inference
+auto gcs::propagate_linear(const Linear & coeff_vars, Integer value, State & state) -> pair<Inference, PropagatorState>
 {
     Integer lower{ 0 };
 
@@ -44,7 +45,7 @@ auto gcs::propagate_linear(const Linear & coeff_vars, Integer value, State & sta
 
     // Feasibility check: if each variable takes its best value, can we satisfy the inequality?
     if (lower > value)
-        return Inference::Contradiction;
+        return { Inference::Contradiction, PropagatorState::Enable };
 
     // Propagation: what's the worst value a variable can take, if every
     // other variable is given its best value?
@@ -61,11 +62,11 @@ auto gcs::propagate_linear(const Linear & coeff_vars, Integer value, State & sta
                 state.infer(var < (1_i + remainder / coeff), JustifyUsingRUP{ }) : state.infer(var >= remainder / coeff, JustifyUsingRUP{ })) {
             case Inference::Change:        changed = true; break;
             case Inference::NoChange:      break;
-            case Inference::Contradiction: return Inference::Contradiction;
+            case Inference::Contradiction: return pair{ Inference::Contradiction, PropagatorState::Enable };
         }
         lower_sum = lower_without_me + ((coeff >= 0_i) ? (coeff * state.lower_bound(var)) : (coeff * state.upper_bound(var)));
     }
 
-    return changed ? Inference::Change : Inference::NoChange;
+    return pair{ changed ? Inference::Change : Inference::NoChange, PropagatorState::Enable };
 }
 

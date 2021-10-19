@@ -583,8 +583,9 @@ auto AllDifferent::install(Propagators & propagators, const State & initial_stat
                     compressed_vals.push_back(val);
                 });
 
-    propagators.propagator(initial_state, [vars = move(sanitised_vars), vals = move(compressed_vals), save_constraint_numbers = move(constraint_numbers)] (State & state) -> Inference {
-            return propagate_all_different(vars, vals, save_constraint_numbers, state);
+    propagators.propagator(initial_state, [vars = move(sanitised_vars), vals = move(compressed_vals), save_constraint_numbers = move(constraint_numbers)] (
+                State & state) -> pair<Inference, PropagatorState> {
+            return pair{ propagate_all_different(vars, vals, save_constraint_numbers, state), PropagatorState::Enable };
             }, triggers, "alldiff");
 }
 

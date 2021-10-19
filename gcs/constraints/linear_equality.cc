@@ -16,6 +16,7 @@ using namespace gcs;
 using std::function;
 using std::move;
 using std::optional;
+using std::pair;
 using std::stringstream;
 using std::vector;
 
@@ -42,7 +43,8 @@ auto LinearEquality::install(Propagators & propagators, const State & initial_st
             triggers.on_change.push_back(v);
 
         optional<ExtensionalData> data;
-        propagators.propagator(initial_state, [data = move(data), coeff_vars = _coeff_vars, value = _value] (State & state) mutable -> Inference {
+        propagators.propagator(initial_state, [data = move(data), coeff_vars = _coeff_vars, value = _value] (
+                    State & state) mutable -> pair<Inference, PropagatorState> {
                 if (! data) {
                     vector<vector<Integer> > permitted;
                     vector<Integer> current;

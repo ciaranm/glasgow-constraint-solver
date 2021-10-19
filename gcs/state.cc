@@ -10,10 +10,12 @@
 #include <list>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 using namespace gcs;
 
+using std::cmp_less;
 using std::decay_t;
 using std::find;
 using std::function;
@@ -58,6 +60,7 @@ struct State::Imp
     const Problem * const problem;
 
     list<vector<IntegerVariableState> > integer_variable_states;
+    list<vector<uint8_t> > disabled_propagators;
     set<SimpleIntegerVariableID> changed;
     vector<Literal> guesses;
 
@@ -71,6 +74,7 @@ State::State(const Problem * const problem) :
     _imp(new Imp{ problem })
 {
     _imp->integer_variable_states.emplace_back();
+    _imp->disabled_propagators.emplace_back();
 }
 
 State::State(State && other) noexcept = default;
@@ -81,6 +85,7 @@ auto State::clone() const -> State
 {
     State result(_imp->problem);
     result._imp->integer_variable_states = _imp->integer_variable_states;
+    result._imp->disabled_propagators = _imp->disabled_propagators;
     result._imp->changed = _imp->changed;
     return result;
 }
@@ -581,12 +586,15 @@ auto State::new_epoch() -> Timestamp
         throw UnimplementedException{ };
 
     _imp->integer_variable_states.push_back(_imp->integer_variable_states.back());
+    _imp->disabled_propagators.push_back(_imp->disabled_propagators.back());
+
     return Timestamp{ _imp->integer_variable_states.size() - 1, _imp->guesses.size() };
 }
 
 auto State::backtrack(Timestamp t) -> void
 {
     _imp->integer_variable_states.resize(t.when);
+    _imp->disabled_propagators.resize(t.when);
     _imp->changed.clear();
     _imp->guesses.erase(_imp->guesses.begin() + t.how_many_guesses, _imp->guesses.end());
 }
@@ -686,5 +694,19 @@ auto State::test_literal(const Literal & lit) const -> LiteralIs
         [] (const TrueLiteral &) { return LiteralIs::DefinitelyTrue; },
         [] (const FalseLiteral &) { return LiteralIs::DefinitelyFalse; }
         }, lit);
+}
+
+auto State::disable_propagator(int id) -> void
+{
+    if (cmp_less(_imp->disabled_propagators.back().size(), id + 1))
+        _imp->disabled_propagators.back().resize(id + 1);
+    _imp->disabled_propagators.back()[id] = 1;
+}
+
+auto State::propagator_is_enabled(int id) const -> bool
+{
+    if (cmp_less(_imp->disabled_propagators.back().size(), id + 1))
+        return true;
+    return ! _imp->disabled_propagators.back()[id];
 }
 

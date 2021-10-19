@@ -6,7 +6,9 @@
 #include <gcs/integer.hh>
 #include <gcs/state-fwd.hh>
 #include <gcs/variable_id.hh>
+#include <gcs/propagators-fwd.hh>
 
+#include <utility>
 #include <vector>
 
 namespace gcs
@@ -18,7 +20,7 @@ namespace gcs
         std::vector<std::vector<Integer> > tuples;
     };
 
-    auto propagate_extensional(const ExtensionalData &, State &) -> Inference;
+    auto propagate_extensional(const ExtensionalData &, State &) -> std::pair<Inference, PropagatorState>;
 }
 
 #endif

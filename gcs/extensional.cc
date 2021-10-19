@@ -3,9 +3,11 @@
 #include <gcs/extensional.hh>
 #include <gcs/state.hh>
 
+using std::pair;
+
 using namespace gcs;
 
-auto gcs::propagate_extensional(const ExtensionalData & table, State & state) -> Inference
+auto gcs::propagate_extensional(const ExtensionalData & table, State & state) -> pair<Inference, PropagatorState>
 {
     bool changed = false, contradiction = false;
 
@@ -53,9 +55,9 @@ auto gcs::propagate_extensional(const ExtensionalData & table, State & state) ->
             });
 
         if (contradiction)
-            return Inference::Contradiction;
+            return pair{ Inference::Contradiction, PropagatorState::Enable };
     }
 
-    return contradiction ? Inference::Contradiction : changed ? Inference::Change : Inference::NoChange;
+    return pair{ contradiction ? Inference::Contradiction : changed ? Inference::Change : Inference::NoChange, PropagatorState::Enable };
 }
 

@@ -3,17 +3,19 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROPAGATORS_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROPAGATORS_HH 1
 
+#include <gcs/propagators-fwd.hh>
 #include <gcs/linear.hh>
 #include <gcs/literal.hh>
 #include <gcs/problem.hh>
 #include <gcs/state.hh>
 
 #include <functional>
+#include <utility>
 #include <vector>
 
 namespace gcs
 {
-    using PropagationFunction = std::function<auto (State &) -> Inference>;
+    using PropagationFunction = std::function<auto (State &) -> std::pair<Inference, PropagatorState> >;
 
     struct Triggers
     {
