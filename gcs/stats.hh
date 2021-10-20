@@ -22,8 +22,6 @@ namespace gcs
         unsigned long long n_propagators = 0;
 
         std::chrono::microseconds solve_time;
-
-        std::vector<std::tuple<std::chrono::microseconds, unsigned long long, std::string> > propagation_function_calls;
     };
 
     auto operator<< (std::ostream &, const Stats &) -> std::ostream &;

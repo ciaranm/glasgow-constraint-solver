@@ -60,7 +60,7 @@ struct State::Imp
     const Problem * const problem;
 
     list<vector<IntegerVariableState> > integer_variable_states;
-    list<vector<uint8_t> > disabled_propagators;
+    list<vector<function<auto () -> void> > > on_backtracks;
     set<SimpleIntegerVariableID> changed;
     vector<Literal> guesses;
 
@@ -74,7 +74,7 @@ State::State(const Problem * const problem) :
     _imp(new Imp{ problem })
 {
     _imp->integer_variable_states.emplace_back();
-    _imp->disabled_propagators.emplace_back();
+    _imp->on_backtracks.emplace_back();
 }
 
 State::State(State && other) noexcept = default;
@@ -85,7 +85,7 @@ auto State::clone() const -> State
 {
     State result(_imp->problem);
     result._imp->integer_variable_states = _imp->integer_variable_states;
-    result._imp->disabled_propagators = _imp->disabled_propagators;
+    result._imp->on_backtracks = _imp->on_backtracks;
     result._imp->changed = _imp->changed;
     return result;
 }
@@ -154,7 +154,7 @@ auto State::infer_literal_from_direct_integer_variable(
             // contradiction, otherwise update to a constant value.
             if (! in_domain(generalise<IntegerVariableID>(var), value))
                 return Inference::Contradiction;
-            else if (optional_single_value(generalise<IntegerVariableID>(var)))
+            else if (has_single_value(generalise<IntegerVariableID>(var)))
                 return Inference::NoChange;
             else {
                 assign_to_state_of(var) = IntegerVariableConstantState{ value };
@@ -522,6 +522,18 @@ auto State::optional_single_value(const IntegerVariableID var) const -> optional
     return result ? *result + offset : result;
 }
 
+auto State::has_single_value(const IntegerVariableID var) const -> bool
+{
+    auto [ actual_var, _ ] = to_direct(var);
+    IntegerVariableState space = IntegerVariableConstantState{ 0_i };
+    return visit(overloaded {
+            [] (const IntegerVariableRangeState & v) -> bool { return v.lower == v.upper; },
+            [] (const IntegerVariableConstantState &) -> bool { return true; },
+            [] (const IntegerVariableSmallSetState & v) -> bool { return v.bits.has_single_bit(); },
+            [] (const IntegerVariableSetState & v) -> bool { return 1 == v.values->size(); }
+            }, state_of(actual_var, space));
+}
+
 auto State::domain_size(const IntegerVariableID var) const -> Integer
 {
     auto [ actual_var, _ ] = to_direct(var);
@@ -586,7 +598,7 @@ auto State::new_epoch() -> Timestamp
         throw UnimplementedException{ };
 
     _imp->integer_variable_states.push_back(_imp->integer_variable_states.back());
-    _imp->disabled_propagators.push_back(_imp->disabled_propagators.back());
+    _imp->on_backtracks.emplace_back();
 
     return Timestamp{ _imp->integer_variable_states.size() - 1, _imp->guesses.size() };
 }
@@ -594,9 +606,14 @@ auto State::new_epoch() -> Timestamp
 auto State::backtrack(Timestamp t) -> void
 {
     _imp->integer_variable_states.resize(t.when);
-    _imp->disabled_propagators.resize(t.when);
     _imp->changed.clear();
     _imp->guesses.erase(_imp->guesses.begin() + t.how_many_guesses, _imp->guesses.end());
+
+    while (_imp->on_backtracks.size() > t.when) {
+        for (auto & f : _imp->on_backtracks.back())
+            f();
+        _imp->on_backtracks.pop_back();
+    }
 }
 
 auto State::remember_change(const SimpleIntegerVariableID v) -> void
@@ -655,7 +672,7 @@ auto State::test_literal(const Literal & lit) const -> LiteralIs
                 case LiteralFromIntegerVariable::State::Equal:
                     if (! in_domain(ilit.var, ilit.value))
                         return LiteralIs::DefinitelyFalse;
-                    else if (optional_single_value(ilit.var))
+                    else if (has_single_value(ilit.var))
                         return LiteralIs::DefinitelyTrue;
                     else
                         return LiteralIs::Undecided;
@@ -683,7 +700,7 @@ auto State::test_literal(const Literal & lit) const -> LiteralIs
                 case LiteralFromIntegerVariable::State::NotEqual:
                     if (! in_domain(ilit.var, ilit.value))
                         return LiteralIs::DefinitelyTrue;
-                    else if (optional_single_value(ilit.var))
+                    else if (has_single_value(ilit.var))
                         return LiteralIs::DefinitelyFalse;
                     else
                         return LiteralIs::Undecided;
@@ -696,17 +713,8 @@ auto State::test_literal(const Literal & lit) const -> LiteralIs
         }, lit);
 }
 
-auto State::disable_propagator(int id) -> void
+auto State::on_backtrack(std::function<auto () -> void> f) -> void
 {
-    if (cmp_less(_imp->disabled_propagators.back().size(), id + 1))
-        _imp->disabled_propagators.back().resize(id + 1);
-    _imp->disabled_propagators.back()[id] = 1;
-}
-
-auto State::propagator_is_enabled(int id) const -> bool
-{
-    if (cmp_less(_imp->disabled_propagators.back().size(), id + 1))
-        return true;
-    return ! _imp->disabled_propagators.back()[id];
+    _imp->on_backtracks.back().push_back(move(f));
 }
 

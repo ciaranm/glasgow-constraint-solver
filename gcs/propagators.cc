@@ -44,7 +44,7 @@ struct Propagators::Imp
     Problem * const problem;
     list<Literals> cnfs;
     deque<PropagationFunction> propagation_functions;
-    vector<tuple<microseconds, unsigned long long, string> > propagation_function_calls;
+    vector<uint8_t> propagator_is_disabled;
     microseconds total_propagation_time{ 0 };
     unsigned long long total_propagations = 0;
     deque<TriggerIDs> iv_triggers;
@@ -60,7 +60,7 @@ Propagators::Propagators(Problem * p) :
     _imp(new Imp(p))
 {
     _imp->propagation_functions.emplace_back([&] (State & s) { return pair{ propagate_cnfs(s), PropagatorState::Enable }; });
-    _imp->propagation_function_calls.emplace_back(microseconds{ 0 }, 0, "cnf");
+    _imp->propagator_is_disabled.push_back(0);
 }
 
 Propagators::~Propagators() = default;
@@ -136,15 +136,14 @@ auto Propagators::integer_linear_le(const State & state, Linear && coeff_vars, I
     _imp->propagation_functions.emplace_back([&, coeff_vars = move(coeff_vars), value = value] (State & state) {
             return propagate_linear(coeff_vars, value, state);
     });
-
-    _imp->propagation_function_calls.emplace_back(microseconds{ 0 }, 0, "int_lin_le");
+    _imp->propagator_is_disabled.push_back(0);
 }
 
-auto Propagators::propagator(const State &, PropagationFunction && f, const Triggers & triggers, const std::string & name) -> void
+auto Propagators::propagator(const State &, PropagationFunction && f, const Triggers & triggers, const std::string &) -> void
 {
     int id = _imp->propagation_functions.size();
     _imp->propagation_functions.emplace_back(move(f));
-    _imp->propagation_function_calls.emplace_back(microseconds{ 0 }, 0, name);
+    _imp->propagator_is_disabled.push_back(0);
 
     for (auto & v : triggers.on_change)
         trigger_on_change(v, id);
@@ -152,7 +151,7 @@ auto Propagators::propagator(const State &, PropagationFunction && f, const Trig
         trigger_on_instantiated(v, id);
 }
 
-auto Propagators::table(const State & state, vector<IntegerVariableID> && vars, vector<vector<Integer> > && permitted, const std::string & name) -> void
+auto Propagators::table(const State & state, vector<IntegerVariableID> && vars, vector<vector<Integer> > && permitted, const std::string &) -> void
 {
     if (permitted.empty()) {
         cnf(state, { }, true);
@@ -191,13 +190,14 @@ auto Propagators::table(const State & state, vector<IntegerVariableID> && vars, 
                 State & state) -> pair<Inference, PropagatorState> {
             return propagate_extensional(table, state);
             });
-    _imp->propagation_function_calls.emplace_back(microseconds{ 0 }, 0, name);
+    _imp->propagator_is_disabled.push_back(0);
 }
 
 auto Propagators::propagate(State & state) const -> bool
 {
     vector<int> on_queue(_imp->propagation_functions.size(), 0);
     deque<int> propagation_queue;
+    vector<int> newly_disabled_propagators;
 
     if (_imp->first) {
         _imp->first = false;
@@ -207,19 +207,20 @@ auto Propagators::propagate(State & state) const -> bool
         }
     }
 
-    while (true) {
+    bool contradiction = false;
+    while (! contradiction) {
         state.extract_changed_variables([&] (SimpleIntegerVariableID v) {
             if (v.index < _imp->iv_triggers.size()) {
                 auto & triggers = _imp->iv_triggers[v.index];
                 for (auto & p : triggers.on_change)
-                    if (! on_queue[p] && state.propagator_is_enabled(p)) {
+                    if (! on_queue[p] && ! _imp->propagator_is_disabled[p]) {
                         propagation_queue.push_back(p);
                         on_queue[p] = 1;
                     }
 
-                if (! triggers.on_instantiated.empty() && state.optional_single_value(v))
+                if (! triggers.on_instantiated.empty() && state.has_single_value(v))
                     for (auto & p : triggers.on_instantiated)
-                        if (! on_queue[p] && state.propagator_is_enabled(p)) {
+                        if (! on_queue[p] && ! _imp->propagator_is_disabled[p]) {
                             propagation_queue.push_back(p);
                             on_queue[p] = 1;
                         }
@@ -237,29 +238,36 @@ auto Propagators::propagate(State & state) const -> bool
         int propagator_id = *propagation_queue.begin();
         propagation_queue.erase(propagation_queue.begin());
         on_queue[propagator_id] = 0;
-        auto start_time = steady_clock::now();
         auto [ inference, propagator_state ] = _imp->propagation_functions[propagator_id](state);
-        auto tm = duration_cast<microseconds>(steady_clock::now() - start_time);
-        get<0>(_imp->propagation_function_calls[propagator_id]) += tm;
-        get<1>(_imp->propagation_function_calls[propagator_id])++;
-        _imp->total_propagation_time += tm;
-        _imp->total_propagations++;
+        ++_imp->total_propagations;
         switch (inference) {
             case Inference::NoChange:      break;
             case Inference::Change:        break;
-            case Inference::Contradiction: return false;
+            case Inference::Contradiction: contradiction = true; break;
         }
 
-        switch (propagator_state) {
-            case PropagatorState::Enable:
-                break;
-            case PropagatorState::DisableUntilBacktrack:
-                state.disable_propagator(propagator_id);
-                break;
+        if (! contradiction) {
+            switch (propagator_state) {
+                case PropagatorState::Enable:
+                    break;
+                case PropagatorState::DisableUntilBacktrack:
+                    if (0 == _imp->propagator_is_disabled[propagator_id]) {
+                        _imp->propagator_is_disabled[propagator_id] = 1;
+                        newly_disabled_propagators.push_back(propagator_id);
+                    }
+                    break;
+            }
         }
     }
 
-    return true;
+    if (! newly_disabled_propagators.empty()) {
+        state.on_backtrack([&, to_enable = move(newly_disabled_propagators)] () {
+                for (auto & p : to_enable)
+                    _imp->propagator_is_disabled[p] = 0;
+            });
+    }
+
+    return ! contradiction;
 }
 
 auto Propagators::propagate_cnfs(State & state) const -> Inference
@@ -313,8 +321,6 @@ auto Propagators::fill_in_constraint_stats(Stats & stats) const -> void
 {
     stats.n_cnfs += _imp->cnfs.size();
     stats.n_propagators += _imp->propagation_functions.size();
-    stats.propagation_function_calls = _imp->propagation_function_calls;
-    stats.propagation_function_calls.emplace_back(_imp->total_propagation_time, _imp->total_propagations, "totals");
 }
 
 auto Propagators::trigger_on_change(VariableID var, int t) -> void
@@ -348,7 +354,7 @@ auto Propagators::trigger_on_instantiated(VariableID var, int t) -> void
                             _imp->iv_triggers[v.index].on_instantiated.push_back(t);
                         },
                         [&] (const ViewOfIntegerVariableID & v) {
-                            trigger_on_change(v.actual_variable, t);
+                            trigger_on_instantiated(v.actual_variable, t);
                         },
                         [&] (const ConstantIntegerVariableID &) {
                         }

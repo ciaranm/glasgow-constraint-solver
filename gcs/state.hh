@@ -90,6 +90,7 @@ namespace gcs
             [[ nodiscard ]] auto upper_bound(const IntegerVariableID) const -> Integer;
             [[ nodiscard ]] auto in_domain(const IntegerVariableID, Integer) const -> bool;
             [[ nodiscard ]] auto optional_single_value(const IntegerVariableID) const -> std::optional<Integer>;
+            [[ nodiscard ]] auto has_single_value(const IntegerVariableID) const -> bool;
             [[ nodiscard ]] auto domain_size(const IntegerVariableID) const -> Integer;
             auto for_each_value(const IntegerVariableID, std::function<auto (Integer) -> void>) const -> void;
             auto for_each_value_while(const IntegerVariableID, std::function<auto (Integer) -> bool>) const -> void;
@@ -102,11 +103,9 @@ namespace gcs
 
             [[ nodiscard ]] auto new_epoch() -> Timestamp;
             auto backtrack(Timestamp) -> void;
+            auto on_backtrack(std::function<auto () -> void>) -> void;
 
             auto extract_changed_variables(std::function<auto (SimpleIntegerVariableID) -> void>) -> void;
-
-            auto disable_propagator(int id) -> void;
-            [[ nodiscard ]] auto propagator_is_enabled(int id) const -> bool;
     };
 }
 
