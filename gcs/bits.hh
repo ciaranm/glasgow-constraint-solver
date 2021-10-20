@@ -3,6 +3,7 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_BITS_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_BITS_HH 1
 
+#include <algorithm>
 #include <bit>
 #include <limits>
 
@@ -10,53 +11,65 @@ namespace gcs
 {
     struct Bits
     {
-        unsigned long long raw_value;
+        using BitWord = unsigned long long;
 
-        static constexpr int number_of_bits = std::numeric_limits<decltype(raw_value)>::digits;
+        static const constexpr int n_words = 2;
 
-        explicit Bits(unsigned long long v) :
-            raw_value(v)
+        static const constexpr int bits_per_word = std::numeric_limits<BitWord>::digits;
+
+        static constexpr int number_of_bits = bits_per_word * n_words;
+
+        BitWord data[n_words];
+
+        explicit Bits()
         {
+            std::fill(data, data + n_words, 0);
         }
 
         [[ nodiscard ]] auto popcount() const -> int
         {
-            return std::popcount(raw_value);
+            return std::popcount(data[0]) + std::popcount(data[1]);
         }
 
         [[ nodiscard ]] auto has_single_bit() const -> bool
         {
-            return std::has_single_bit(raw_value);
+            return 1 == popcount();
         }
 
         [[ nodiscard ]] auto countr_zero() const -> int
         {
-            return std::countr_zero(raw_value);
+            int r = std::countr_zero(data[0]);
+            if (r == bits_per_word)
+                r += std::countr_zero(data[1]);
+            return r;
         }
 
         [[ nodiscard ]] auto countl_zero() const -> int
         {
-            return std::countl_zero(raw_value);
+            int r = std::countl_zero(data[1]);
+            if (r == bits_per_word)
+                r += std::countl_zero(data[0]);
+            return r;
         }
 
-        [[ nodiscard ]] auto test(int idx) const -> bool
+        [[ nodiscard ]] auto test(int a) const -> bool
         {
-            return raw_value & (1ull << idx);
+            return data[a / bits_per_word] & (BitWord{ 1 } << (a % bits_per_word));
         }
 
-        auto set(int idx) -> void
+        auto set(int a) -> void
         {
-            raw_value |= (1ull << idx);
+            data[a / bits_per_word] |= (BitWord{ 1 } << (a % bits_per_word));
         }
 
-        auto reset(int idx) -> void
+        auto reset(int a) -> void
         {
-            raw_value &= ~(1ull << idx);
+            data[a / bits_per_word] &= ~(BitWord{ 1 } << (a % bits_per_word));
         }
 
         [[ nodiscard ]] auto none() const -> bool
         {
-            return 0ull == raw_value;
+            return (0ull == data[0]) && (0ull == data[1]);
         }
     };
 }

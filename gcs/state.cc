@@ -201,7 +201,7 @@ auto State::infer_literal_from_direct_integer_variable(
                                 assign_to_state_of(var) = IntegerVariableSetState{ values };
                             }
                             else {
-                                IntegerVariableSmallSetState svar{ Integer{ 0 }, Bits{ 0 } };
+                                IntegerVariableSmallSetState svar{ Integer{ 0 }, Bits{ } };
                                 for (Integer v = rvar.lower ; v <= rvar.upper ; ++v)
                                     if (v != value)
                                         svar.bits.set(v.raw_value);
