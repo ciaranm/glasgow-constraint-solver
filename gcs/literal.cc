@@ -128,5 +128,3 @@ auto gcs::operator ! (const Literal & lit) -> Literal
             }, lit);
 }
 
-auto gcs::is_literally_false(const Literal &) -> bool;
-
