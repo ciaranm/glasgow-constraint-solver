@@ -187,36 +187,54 @@ auto ComparisonReif::_install_equals(Propagators & propagators, const State & in
 
 auto ComparisonReif::_install_less_than(Propagators & propagators, const State & initial_state, bool equal) && -> void
 {
-    // cond -> (v2 == v -> v1 op v)
-    for (auto v = initial_state.lower_bound(_v2) ; v <= initial_state.upper_bound(_v2) ; ++v) {
-        auto bound = equal ? v + 1_i : v;
-        if (initial_state.upper_bound(_v1) >= bound) {
-            if (initial_state.lower_bound(_v1) <= bound)
-                propagators.cnf(initial_state, { { ! _cond }, { _v2 != v }, { _v1 < bound } }, true);
-            else
-                propagators.cnf(initial_state, { { ! _cond }, { _v2 != v } }, true);
-        }
+    bool use_special_less = _full_reif && LiteralIs::DefinitelyTrue == initial_state.test_literal(_cond);
+    bool use_cnf = ! use_special_less;
+
+    if (use_special_less) {
+        Triggers triggers;
+        triggers.on_instantiated = { _v1, _v2 };
+
+        propagators.propagator(initial_state, [v1 = _v1, v2 = _v2, equal = equal] (State & state) -> pair<Inference, PropagatorState> {
+                auto result = Inference::NoChange;
+                increase_inference_to(result, state.infer(v1 < state.upper_bound(v2) + (equal ? 1_i : 0_i), NoJustificationNeeded{ }));
+                if (result != Inference::Contradiction)
+                    increase_inference_to(result, state.infer(v2 >= state.lower_bound(v1) + (equal ? 0_i : 1_i), NoJustificationNeeded{ }));
+                return pair{ result, PropagatorState::Enable };
+                }, triggers, "less");
     }
 
-    // cond -> upper(v1) op upper(v2)
-    auto v2u = initial_state.upper_bound(_v2) + (equal ? 1_i : 0_i);
-    if (! (initial_state.upper_bound(_v1) < v2u)) {
-        if (initial_state.in_domain(_v1, v2u))
-            propagators.cnf(initial_state, { { ! _cond }, { _v1 < v2u } }, true);
-        else
-            propagators.cnf(initial_state, { { ! _cond } }, true);
-    }
-
-    if (_full_reif) {
-        // !cond -> exists v. v2 == v /\ v1 !op v
+    if (use_cnf || propagators.want_nonpropagating()) {
+        // cond -> (v2 == v -> v1 op v)
         for (auto v = initial_state.lower_bound(_v2) ; v <= initial_state.upper_bound(_v2) ; ++v) {
             auto bound = equal ? v + 1_i : v;
             if (initial_state.upper_bound(_v1) >= bound) {
                 if (initial_state.lower_bound(_v1) <= bound)
-                    propagators.cnf(initial_state, { { _cond }, { _v2 != v }, { _v1 >= bound } }, true);
+                    propagators.cnf(initial_state, { { ! _cond }, { _v2 != v }, { _v1 < bound } }, use_cnf);
+                else
+                    propagators.cnf(initial_state, { { ! _cond }, { _v2 != v } }, use_cnf);
             }
+        }
+
+        // cond -> upper(v1) op upper(v2)
+        auto v2u = initial_state.upper_bound(_v2) + (equal ? 1_i : 0_i);
+        if (! (initial_state.upper_bound(_v1) < v2u)) {
+            if (initial_state.in_domain(_v1, v2u))
+                propagators.cnf(initial_state, { { ! _cond }, { _v1 < v2u } }, use_cnf);
             else
-                propagators.cnf(initial_state, { { _cond }, { _v2 != v } }, true);
+                propagators.cnf(initial_state, { { ! _cond } }, use_cnf);
+        }
+
+        if (_full_reif) {
+            // !cond -> exists v. v2 == v /\ v1 !op v
+            for (auto v = initial_state.lower_bound(_v2) ; v <= initial_state.upper_bound(_v2) ; ++v) {
+                auto bound = equal ? v + 1_i : v;
+                if (initial_state.upper_bound(_v1) >= bound) {
+                    if (initial_state.lower_bound(_v1) <= bound)
+                        propagators.cnf(initial_state, { { _cond }, { _v2 != v }, { _v1 >= bound } }, use_cnf);
+                }
+                else
+                    propagators.cnf(initial_state, { { _cond }, { _v2 != v } }, use_cnf);
+            }
         }
     }
 }
