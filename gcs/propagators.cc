@@ -323,6 +323,7 @@ auto Propagators::fill_in_constraint_stats(Stats & stats) const -> void
 {
     stats.n_cnfs += _imp->cnfs.size();
     stats.n_propagators += _imp->propagation_functions.size();
+    stats.propagations += _imp->total_propagations;
 }
 
 auto Propagators::trigger_on_change(VariableID var, int t) -> void
