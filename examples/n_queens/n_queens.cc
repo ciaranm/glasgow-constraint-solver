@@ -40,7 +40,6 @@ auto main(int, char * []) -> int
         }
     }
 
-    unsigned long long nodes = 0;
     auto stats = solve_with(p, SolveCallbacks{
             .solution = [&] (const State & s) -> bool {
                 cout << "solution:";
@@ -50,11 +49,6 @@ auto main(int, char * []) -> int
 
                 return false;
                 },
-            .trace = [&] (const State &) -> bool {
-                if (0 == (++nodes % 1000))
-                    cerr << nodes << endl;
-                return true;
-            },
             .guess = [&] (const State & state, IntegerVariableID var) -> vector<Literal> {
                 return vector<Literal>{ var == state.lower_bound(var), var != state.lower_bound(var) };
             }
