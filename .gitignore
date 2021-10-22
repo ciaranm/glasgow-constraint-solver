@@ -23,5 +23,6 @@ perf.data.old
 /magic_series
 /qap
 /n_queens
+/magic_square
 *.opb
 *.veripb
