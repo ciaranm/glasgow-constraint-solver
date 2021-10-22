@@ -38,17 +38,8 @@ auto gcs::sanitise_linear(Linear & coeff_vars) -> void
 
 auto gcs::propagate_linear(const Linear & coeff_vars, Integer value, State & state) -> pair<Inference, PropagatorState>
 {
-    Integer lower{ 0 };
-
-    for (auto & [ coeff, var ] : coeff_vars)
-        lower += (coeff >= 0_i) ? (coeff * state.lower_bound(var)) : (coeff * state.upper_bound(var));
-
-    // Feasibility check: if each variable takes its best value, can we satisfy the inequality?
-    if (lower > value)
-        return { Inference::Contradiction, PropagatorState::Enable };
-
-    // Propagation: what's the worst value a variable can take, if every
-    // other variable is given its best value?
+    // What's the worst value a variable can take, if every other variable
+    // is given its best value?
     bool changed = false;
 
     Integer lower_sum{ 0 };
