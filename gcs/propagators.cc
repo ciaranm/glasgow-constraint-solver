@@ -209,28 +209,30 @@ auto Propagators::propagate(State & state) const -> bool
 
     bool contradiction = false;
     while (! contradiction) {
-        state.extract_changed_variables([&] (SimpleIntegerVariableID v) {
-            if (v.index < _imp->iv_triggers.size()) {
-                auto & triggers = _imp->iv_triggers[v.index];
-                for (auto & p : triggers.on_change)
-                    if (! on_queue[p] && ! _imp->propagator_is_disabled[p]) {
-                        propagation_queue.push_back(p);
-                        on_queue[p] = 1;
-                    }
-
-                if (! triggers.on_instantiated.empty() && state.has_single_value(v))
-                    for (auto & p : triggers.on_instantiated)
+        if (propagation_queue.empty()) {
+            state.extract_changed_variables([&] (SimpleIntegerVariableID v) {
+                if (v.index < _imp->iv_triggers.size()) {
+                    auto & triggers = _imp->iv_triggers[v.index];
+                    for (auto & p : triggers.on_change)
                         if (! on_queue[p] && ! _imp->propagator_is_disabled[p]) {
                             propagation_queue.push_back(p);
                             on_queue[p] = 1;
                         }
-            }
 
-            if ((! _imp->cnfs.empty()) && ! on_queue[0]) {
-                propagation_queue.push_back(0);
-                on_queue[0] = 1;
-            }
-            });
+                    if (! triggers.on_instantiated.empty() && state.has_single_value(v))
+                        for (auto & p : triggers.on_instantiated)
+                            if (! on_queue[p] && ! _imp->propagator_is_disabled[p]) {
+                                propagation_queue.push_back(p);
+                                on_queue[p] = 1;
+                            }
+                }
+
+                if ((! _imp->cnfs.empty()) && ! on_queue[0]) {
+                    propagation_queue.push_back(0);
+                    on_queue[0] = 1;
+                }
+                });
+        }
 
         if (propagation_queue.empty())
             break;
