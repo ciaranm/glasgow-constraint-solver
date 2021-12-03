@@ -220,7 +220,7 @@ auto main(int argc, char * argv []) -> int
                 left_prefs_over_right_consts.push_back(constant_variable(p));
             p.post(Element{ l_goes_to_r, left_to_right[l_idx], left_prefs_over_right_consts });
 
-            auto l_goes_to_r_goes_to_t = p.create_integer_variable(0_i, Integer(size - 1));
+            auto l_goes_to_t_and_also_r_goes_to_t = p.create_integer_variable(0_i, Integer(size - 1));
             auto r_goes_to_t = p.create_integer_variable(0_i, Integer(size - 1));
             p.post(Element{ r_goes_to_t, l_goes_to_r, right_to_top });
             vector<IntegerVariableID> right_prefs_over_top_vars;
@@ -229,15 +229,12 @@ auto main(int argc, char * argv []) -> int
             for (unsigned r = 0 ; r < size ; ++r)
                 for (unsigned s = 0 ; s < size ; ++s)
                     p.post(EqualsIf{ right_prefs_over_top_vars[r], constant_variable(right_prefs_over_top[s][r]), l_goes_to_r == Integer(s) });
-            p.post(Element{ l_goes_to_r_goes_to_t, r_goes_to_t, right_prefs_over_top_vars });
+            p.post(Element{ l_goes_to_t_and_also_r_goes_to_t, r_goes_to_t, right_prefs_over_top_vars });
 
-            auto l_goes_to_t = p.create_integer_variable(0_i, Integer(size - 1));
             vector<IntegerVariableID> left_prefs_over_top_consts;
             for (auto & p : left_prefs_over_top[l_idx])
                 left_prefs_over_top_consts.push_back(constant_variable(p));
-            p.post(Element{ l_goes_to_t, left_to_top[l_idx], left_prefs_over_top_consts });
-
-            p.post(Equals{ l_goes_to_t, l_goes_to_r_goes_to_t });
+            p.post(Element{ l_goes_to_t_and_also_r_goes_to_t, left_to_top[l_idx], left_prefs_over_top_consts });
         };
     };
 
