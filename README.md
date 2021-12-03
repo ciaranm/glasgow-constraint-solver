@@ -24,8 +24,8 @@ we are using the VeriPB format. You can find out more here:
 Funding Acknowledgements
 ------------------------
 
-This work will be supported by a Royal Academy of Engineering Research Fellowship. Part of this work
-was done while the author was participating in a program at the Simons Institute for the Theory of
+This work is supported by a Royal Academy of Engineering Research Fellowship. Part of this work was
+done while the author was participating in a program at the Simons Institute for the Theory of
 Computing.
 
 <!-- vim: set tw=100 spell spelllang=en : -->

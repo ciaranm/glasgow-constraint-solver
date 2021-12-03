@@ -34,6 +34,8 @@ Constraints
 
 - Test whether constraints achieve GAC.
 
+- Circuit, so we can do all the MiniCP benchmarks.
+
 State
 -----
 
@@ -44,6 +46,8 @@ State
 - Make State backtrackable or fast copyable.
 
 - Change how IntegerSetVariable works so it is trivially copyable.
+
+- Consider a range set of some kind.
 
 Design
 ------
@@ -67,4 +71,8 @@ Proofs
 ------
 
 - Better comment names for constraints in the OPB files.
+
+- A way to handle variables with large domains.
+
+- Do we need the ge encoding at all?
 
