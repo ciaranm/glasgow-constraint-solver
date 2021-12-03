@@ -57,7 +57,7 @@ namespace gcs
 
             [[ nodiscard ]] auto infer_literal_from_direct_integer_variable(
                     const DirectIntegerVariableID var,
-                    LiteralFromIntegerVariable::State state,
+                    LiteralFromIntegerVariable::Operator state,
                     Integer value) -> std::pair<Inference, HowChanged>;
 
             [[ nodiscard ]] auto assign_to_state_of(const DirectIntegerVariableID) -> IntegerVariableState &;
