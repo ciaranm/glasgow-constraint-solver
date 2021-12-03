@@ -31,12 +31,6 @@ auto LinearEquality::install(Propagators & propagators, const State & initial_st
 {
     sanitise_linear(_coeff_vars);
 
-    // Use input as < constraint, create >= constraint to get equality
-    Linear inv_coeff_vars;
-    inv_coeff_vars.reserve(_coeff_vars.size());
-    for (auto & [ c, v ] : _coeff_vars)
-        inv_coeff_vars.emplace_back(-c, v);
-
     if (_gac) {
         Triggers triggers;
         for (auto & [ _, v ] : _coeff_vars)
@@ -127,8 +121,7 @@ auto LinearEquality::install(Propagators & propagators, const State & initial_st
                 }, triggers, "lin_eq_gac");
     }
 
-    propagators.integer_linear_le(initial_state, move(inv_coeff_vars), -_value);
-    propagators.integer_linear_le(initial_state, move(_coeff_vars), _value);
+    propagators.integer_linear_le(initial_state, move(_coeff_vars), _value, true);
 }
 
 auto LinearEquality::describe_for_proof() -> std::string

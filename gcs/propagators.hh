@@ -51,7 +51,7 @@ namespace gcs
             auto cnf(const State &, Literals && lits, bool propagating) -> std::optional<ProofLine>;
             auto at_most_one(const State &, Literals && lits, bool propagating) -> std::optional<ProofLine>;
             auto pseudoboolean_ge(const State &, WeightedLiterals && lits, Integer, bool propagating) -> std::optional<ProofLine>;
-            auto integer_linear_le(const State &, Linear && coeff_vars, Integer value) -> void;
+            auto integer_linear_le(const State &, Linear && coeff_vars, Integer value, bool equality) -> void;
             auto table(const State &, std::vector<IntegerVariableID> &&, std::vector<std::vector<Integer> > &&, const std::string & name) -> void;
             auto propagator(const State &, PropagationFunction &&, const Triggers & trigger_vars, const std::string & name) -> void;
 

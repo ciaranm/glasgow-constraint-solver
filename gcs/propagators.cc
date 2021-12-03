@@ -123,7 +123,7 @@ auto Propagators::pseudoboolean_ge(const State &, WeightedLiterals && lits, Inte
         return nullopt;
 }
 
-auto Propagators::integer_linear_le(const State & state, Linear && coeff_vars, Integer value) -> void
+auto Propagators::integer_linear_le(const State & state, Linear && coeff_vars, Integer value, bool equality) -> void
 {
     sanitise_linear(coeff_vars);
 
@@ -135,7 +135,7 @@ auto Propagators::integer_linear_le(const State & state, Linear && coeff_vars, I
         trigger_on_bounds(v, id);
 
     _imp->propagation_functions.emplace_back([&, coeff_vars = move(coeff_vars), value = value] (State & state) {
-            return propagate_linear(coeff_vars, value, state);
+            return propagate_linear(coeff_vars, value, state, equality);
     });
     _imp->propagator_is_disabled.push_back(0);
 }

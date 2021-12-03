@@ -18,7 +18,7 @@ namespace gcs
 
     auto sanitise_linear(Linear &) -> void;
 
-    auto propagate_linear(const Linear &, Integer, State &) -> std::pair<Inference, PropagatorState>;
+    auto propagate_linear(const Linear &, Integer, State &, bool equality) -> std::pair<Inference, PropagatorState>;
 }
 
 #endif
