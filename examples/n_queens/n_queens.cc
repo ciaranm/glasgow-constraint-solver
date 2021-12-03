@@ -35,8 +35,8 @@ auto main(int, char * []) -> int
     for (int i = 0 ; i < size ; ++i) {
         for (int j = i + 1 ; j < size ; ++j) {
             p.post(NotEquals{ queens[i], queens[j] });
-            p.post(NotEquals{ ViewOfIntegerVariableID{ queens[i], Integer{ j - i } }, queens[j] });
-            p.post(NotEquals{ ViewOfIntegerVariableID{ queens[i], -Integer{ j - i } }, queens[j] });
+            p.post(NotEquals{ queens[i] + Integer{ j - i }, queens[j] });
+            p.post(NotEquals{ queens[i] + -Integer{ j - i }, queens[j] });
         }
     }
 
