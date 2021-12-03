@@ -5,6 +5,7 @@
 
 using namespace gcs;
 
+using std::pair;
 using std::string;
 using std::to_string;
 using std::visit;
@@ -28,6 +29,21 @@ auto gcs::debug_string(const VariableID & var) -> string
 {
     return visit(overloaded{
             [] (IntegerVariableID v) { return "int " + debug_string(v); }
+            }, var);
+}
+
+auto gcs::underlying_direct_variable_and_offset(const IntegerVariableID var) -> pair<DirectIntegerVariableID, Integer>
+{
+    return visit(overloaded{
+            [&] (const SimpleIntegerVariableID & v) -> pair<DirectIntegerVariableID, Integer> {
+                return pair{ v, 0_i };
+            },
+            [&] (const ConstantIntegerVariableID & v) -> pair<DirectIntegerVariableID, Integer> {
+                return pair{ v, 0_i };
+            },
+            [&] (const ViewOfIntegerVariableID & v) -> pair<DirectIntegerVariableID, Integer> {
+                return pair{ v.actual_variable, v.offset };
+            }
             }, var);
 }
 

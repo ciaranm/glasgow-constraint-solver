@@ -49,7 +49,7 @@ struct Proof::Imp
     ProofLine model_constraints = 0;
     ProofLine proof_line = 0;
 
-    map<IntegerVariableID, ProofLine> variable_at_least_one_constraints, variable_at_most_one_constraints;
+    map<DirectIntegerVariableID, ProofLine> variable_at_least_one_constraints, variable_at_most_one_constraints;
     map<LiteralFromIntegerVariable, string> integer_variables;
     list<IntegerVariableID> solution_variables;
     optional<IntegerVariableID> objective_variable;
@@ -414,7 +414,8 @@ auto Proof::emit_proof_line(const string & s) -> void
 
 auto Proof::constraint_saying_variable_takes_at_least_one_value(IntegerVariableID var) const -> ProofLine
 {
-    auto result = _imp->variable_at_least_one_constraints.find(var);
+    auto [ actual_var, _ ] = underlying_direct_variable_and_offset(var);
+    auto result = _imp->variable_at_least_one_constraints.find(actual_var);
     if (result == _imp->variable_at_least_one_constraints.end())
         throw ProofError("No at least one value constraint exists for " + debug_string(var));
     return result->second;

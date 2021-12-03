@@ -384,31 +384,13 @@ auto State::infer_literal_from_direct_integer_variable(
     throw NonExhaustiveSwitch{ };
 }
 
-namespace
-{
-    auto to_direct(const IntegerVariableID var) -> pair<DirectIntegerVariableID, Integer>
-    {
-        return visit(overloaded{
-                [&] (const SimpleIntegerVariableID & v) -> pair<DirectIntegerVariableID, Integer> {
-                    return pair{ v, 0_i };
-                },
-                [&] (const ConstantIntegerVariableID & v) -> pair<DirectIntegerVariableID, Integer> {
-                    return pair{ v, 0_i };
-                },
-                [&] (const ViewOfIntegerVariableID & v) -> pair<DirectIntegerVariableID, Integer> {
-                    return pair{ v.actual_variable, v.offset };
-                }
-                }, var);
-    }
-}
-
 auto State::infer(const Literal & lit, Justification just) -> Inference
 {
     return visit(overloaded {
             [&] (const LiteralFromIntegerVariable & ilit) -> Inference {
-                auto [ actual_var, offset ] = to_direct(ilit.var);
-                auto [ change, how_changed ] = infer_literal_from_direct_integer_variable(actual_var, ilit.state, ilit.value - offset);
-                switch (change) {
+                auto [ actual_var, offset ] = underlying_direct_variable_and_offset(ilit.var);
+                auto [ inference, how_changed ] = infer_literal_from_direct_integer_variable(actual_var, ilit.state, ilit.value - offset);
+                switch (inference) {
                     case Inference::NoChange:
                         return Inference::NoChange;
 
@@ -477,7 +459,7 @@ auto State::guess(const Literal & lit) -> void
 
 auto State::lower_bound(const IntegerVariableID var) const -> Integer
 {
-    auto [ actual_var, offset ] = to_direct(var);
+    auto [ actual_var, offset ] = underlying_direct_variable_and_offset(var);
     IntegerVariableState space = IntegerVariableConstantState{ 0_i };
     return visit(overloaded {
             [] (const IntegerVariableRangeState & v) { return v.lower; },
@@ -489,7 +471,7 @@ auto State::lower_bound(const IntegerVariableID var) const -> Integer
 
 auto State::upper_bound(const IntegerVariableID var) const -> Integer
 {
-    auto [ actual_var, offset ] = to_direct(var);
+    auto [ actual_var, offset ] = underlying_direct_variable_and_offset(var);
     IntegerVariableState space = IntegerVariableConstantState{ 0_i };
     return visit(overloaded {
             [] (const IntegerVariableRangeState & v) { return v.upper; },
@@ -501,7 +483,7 @@ auto State::upper_bound(const IntegerVariableID var) const -> Integer
 
 auto State::in_domain(const IntegerVariableID var, const Integer val) const -> bool
 {
-    auto [ actual_var, offset ] = to_direct(var);
+    auto [ actual_var, offset ] = underlying_direct_variable_and_offset(var);
     auto actual_val = val - offset;
     IntegerVariableState space = IntegerVariableConstantState{ 0_i };
     return visit(overloaded {
@@ -519,7 +501,7 @@ auto State::in_domain(const IntegerVariableID var, const Integer val) const -> b
 
 auto State::domain_has_holes(const IntegerVariableID var) const -> bool
 {
-    auto [ actual_var, _ ] = to_direct(var);
+    auto [ actual_var, _ ] = underlying_direct_variable_and_offset(var);
     IntegerVariableState space = IntegerVariableConstantState{ 0_i };
     return visit(overloaded {
             [] (const IntegerVariableRangeState &) { return false; },
@@ -531,7 +513,7 @@ auto State::domain_has_holes(const IntegerVariableID var) const -> bool
 
 auto State::optional_single_value(const IntegerVariableID var) const -> optional<Integer>
 {
-    auto [ actual_var, offset ] = to_direct(var);
+    auto [ actual_var, offset ] = underlying_direct_variable_and_offset(var);
     IntegerVariableState space = IntegerVariableConstantState{ 0_i };
     auto result = visit(overloaded {
             [] (const IntegerVariableRangeState & v) -> optional<Integer> {
@@ -561,7 +543,7 @@ auto State::optional_single_value(const IntegerVariableID var) const -> optional
 
 auto State::has_single_value(const IntegerVariableID var) const -> bool
 {
-    auto [ actual_var, _ ] = to_direct(var);
+    auto [ actual_var, _ ] = underlying_direct_variable_and_offset(var);
     IntegerVariableState space = IntegerVariableConstantState{ 0_i };
     return visit(overloaded {
             [] (const IntegerVariableRangeState & v) -> bool { return v.lower == v.upper; },
@@ -573,7 +555,7 @@ auto State::has_single_value(const IntegerVariableID var) const -> bool
 
 auto State::domain_size(const IntegerVariableID var) const -> Integer
 {
-    auto [ actual_var, _ ] = to_direct(var);
+    auto [ actual_var, _ ] = underlying_direct_variable_and_offset(var);
     IntegerVariableState space = IntegerVariableConstantState{ 0_i };
     return visit(overloaded {
             [] (const IntegerVariableConstantState &)   { return Integer{ 1 }; },
@@ -593,7 +575,7 @@ auto State::for_each_value(const IntegerVariableID var, function<auto (Integer) 
 
 auto State::for_each_value_while(const IntegerVariableID var, function<auto (Integer) -> bool> f) const -> void
 {
-    auto [ actual_var, offset ] = to_direct(var);
+    auto [ actual_var, offset ] = underlying_direct_variable_and_offset(var);
 
     IntegerVariableState space = IntegerVariableConstantState{ 0_i };
     const IntegerVariableState & var_ref = state_of(actual_var, space);
