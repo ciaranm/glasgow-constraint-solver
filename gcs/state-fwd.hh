@@ -14,6 +14,13 @@ namespace gcs
         Contradiction
     };
 
+    enum class HowChanged
+    {
+        InteriorValuesChanged,
+        BoundsChanged,
+        Instantiated,
+        Dummy = -1
+    };
 }
 
 #endif

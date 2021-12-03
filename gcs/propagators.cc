@@ -35,6 +35,7 @@ namespace
     struct TriggerIDs
     {
         vector<int> on_change;
+        vector<int> on_bounds;
         vector<int> on_instantiated;
     };
 }
@@ -131,7 +132,7 @@ auto Propagators::integer_linear_le(const State & state, Linear && coeff_vars, I
 
     int id = _imp->propagation_functions.size();
     for (auto & [ _, v ] : coeff_vars)
-        trigger_on_change(v, id);
+        trigger_on_bounds(v, id);
 
     _imp->propagation_functions.emplace_back([&, coeff_vars = move(coeff_vars), value = value] (State & state) {
             return propagate_linear(coeff_vars, value, state);
@@ -147,6 +148,8 @@ auto Propagators::propagator(const State &, PropagationFunction && f, const Trig
 
     for (auto & v : triggers.on_change)
         trigger_on_change(v, id);
+    for (auto & v : triggers.on_bounds)
+        trigger_on_bounds(v, id);
     for (auto & v : triggers.on_instantiated)
         trigger_on_instantiated(v, id);
 }
@@ -210,7 +213,7 @@ auto Propagators::propagate(State & state) const -> bool
     bool contradiction = false;
     while (! contradiction) {
         if (propagation_queue.empty()) {
-            state.extract_changed_variables([&] (SimpleIntegerVariableID v) {
+            state.extract_changed_variables([&] (SimpleIntegerVariableID v, HowChanged h) {
                 if (v.index < _imp->iv_triggers.size()) {
                     auto & triggers = _imp->iv_triggers[v.index];
                     for (auto & p : triggers.on_change)
@@ -219,7 +222,14 @@ auto Propagators::propagate(State & state) const -> bool
                             on_queue[p] = 1;
                         }
 
-                    if (! triggers.on_instantiated.empty() && state.has_single_value(v))
+                    if (! triggers.on_bounds.empty() && h != HowChanged::InteriorValuesChanged)
+                        for (auto & p : triggers.on_bounds)
+                            if (! on_queue[p] && ! _imp->propagator_is_disabled[p]) {
+                                propagation_queue.push_back(p);
+                                on_queue[p] = 1;
+                            }
+
+                    if (! triggers.on_instantiated.empty() && h == HowChanged::Instantiated)
                         for (auto & p : triggers.on_instantiated)
                             if (! on_queue[p] && ! _imp->propagator_is_disabled[p]) {
                                 propagation_queue.push_back(p);
@@ -338,6 +348,26 @@ auto Propagators::trigger_on_change(VariableID var, int t) -> void
                         },
                         [&] (const ViewOfIntegerVariableID & v) {
                             trigger_on_change(v.actual_variable, t);
+                        },
+                        [&] (const ConstantIntegerVariableID &) {
+                        }
+                        }, ivar);
+            }
+            }, var);
+}
+
+auto Propagators::trigger_on_bounds(VariableID var, int t) -> void
+{
+    visit(overloaded{
+            [&] (const IntegerVariableID & ivar) {
+                visit(overloaded{
+                        [&] (const SimpleIntegerVariableID & v) {
+                            if (_imp->iv_triggers.size() <= v.index)
+                                    _imp->iv_triggers.resize(v.index + 1);
+                            _imp->iv_triggers[v.index].on_bounds.push_back(t);
+                        },
+                        [&] (const ViewOfIntegerVariableID & v) {
+                            trigger_on_bounds(v.actual_variable, t);
                         },
                         [&] (const ConstantIntegerVariableID &) {
                         }

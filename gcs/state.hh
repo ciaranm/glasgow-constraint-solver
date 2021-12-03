@@ -58,13 +58,13 @@ namespace gcs
             [[ nodiscard ]] auto infer_literal_from_direct_integer_variable(
                     const DirectIntegerVariableID var,
                     LiteralFromIntegerVariable::State state,
-                    Integer value) -> Inference;
+                    Integer value) -> std::pair<Inference, HowChanged>;
 
             [[ nodiscard ]] auto assign_to_state_of(const DirectIntegerVariableID) -> IntegerVariableState &;
             [[ nodiscard ]] auto state_of(const DirectIntegerVariableID, IntegerVariableState & space) -> IntegerVariableState &;
             [[ nodiscard ]] auto state_of(const DirectIntegerVariableID, IntegerVariableState & space) const -> const IntegerVariableState &;
 
-            auto remember_change(const SimpleIntegerVariableID) -> void;
+            auto remember_change(const SimpleIntegerVariableID, HowChanged) -> void;
 
         public:
             explicit State(const Problem * const problem);
@@ -105,7 +105,7 @@ namespace gcs
             auto backtrack(Timestamp) -> void;
             auto on_backtrack(std::function<auto () -> void>) -> void;
 
-            auto extract_changed_variables(std::function<auto (SimpleIntegerVariableID) -> void>) -> void;
+            auto extract_changed_variables(std::function<auto (SimpleIntegerVariableID, HowChanged) -> void>) -> void;
     };
 }
 

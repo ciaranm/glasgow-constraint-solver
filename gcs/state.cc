@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <list>
+#include <map>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -25,6 +26,7 @@ using std::is_same_v;
 using std::list;
 using std::make_optional;
 using std::make_shared;
+using std::map;
 using std::move;
 using std::nullopt;
 using std::optional;
@@ -61,7 +63,7 @@ struct State::Imp
 
     list<vector<IntegerVariableState> > integer_variable_states;
     list<vector<function<auto () -> void> > > on_backtracks;
-    set<SimpleIntegerVariableID> changed;
+    map<SimpleIntegerVariableID, HowChanged> changed;
     vector<Literal> guesses;
 
     Imp(const Problem * const p) :
@@ -144,7 +146,7 @@ namespace
 auto State::infer_literal_from_direct_integer_variable(
         const DirectIntegerVariableID var,
         LiteralFromIntegerVariable::State state,
-        Integer value) -> Inference
+        Integer value) -> pair<Inference, HowChanged>
 {
     IntegerVariableState space = IntegerVariableConstantState{ 0_i };
 
@@ -153,43 +155,49 @@ auto State::infer_literal_from_direct_integer_variable(
             // Has to be equal. If the value isn't in the domain, we've found a
             // contradiction, otherwise update to a constant value.
             if (! in_domain(generalise<IntegerVariableID>(var), value))
-                return Inference::Contradiction;
+                return pair{ Inference::Contradiction, HowChanged::Dummy };
             else if (has_single_value(generalise<IntegerVariableID>(var)))
-                return Inference::NoChange;
+                return pair{ Inference::NoChange, HowChanged::Dummy };
             else {
                 assign_to_state_of(var) = IntegerVariableConstantState{ value };
-                return Inference::Change;
+                return pair{ Inference::Change, HowChanged::Instantiated };
             }
 
         case LiteralFromIntegerVariable::State::NotEqual:
             // If the value isn't in the domain, we don't need to do anything.
             // Otherwise...
             if (! in_domain(generalise<IntegerVariableID>(var), value))
-                return Inference::NoChange;
+                return pair{ Inference::NoChange, HowChanged::Dummy };
 
             return visit(overloaded {
-                    [&] (IntegerVariableConstantState &) -> Inference {
+                    [&] (IntegerVariableConstantState &) -> pair<Inference, HowChanged> {
                         // Constant equal to the value, problem!
-                        return Inference::Contradiction;
+                        return pair{ Inference::Contradiction, HowChanged::Dummy };
                     },
-                    [&] (IntegerVariableRangeState & rvar) -> Inference {
+                    [&] (IntegerVariableRangeState & rvar) -> pair<Inference, HowChanged> {
                         if (rvar.lower == rvar.upper) {
                             // Constant equal to the value, problem!
-                            return Inference::Contradiction;
+                            return pair{ Inference::Contradiction, HowChanged::Dummy };
                         }
                         else if (rvar.lower == value) {
                             // Can just bump the bound
                             ++rvar.lower;
-                            if (rvar.lower == rvar.upper)
+                            if (rvar.lower == rvar.upper) {
                                 assign_to_state_of(var) = IntegerVariableConstantState{ rvar.lower };
-                            return Inference::Change;
+                                return pair{ Inference::Change, HowChanged::Instantiated };
+                            }
+                            else
+                                return pair{ Inference::Change, HowChanged::BoundsChanged };
                         }
                         else if (rvar.upper == value) {
                             --rvar.upper;
 
-                            if (rvar.lower == rvar.upper)
+                            if (rvar.lower == rvar.upper) {
                                 assign_to_state_of(var) = IntegerVariableConstantState{ rvar.lower };
-                            return Inference::Change;
+                                return pair{ Inference::Change, HowChanged::Instantiated };
+                            }
+                            else
+                                return pair{ Inference::Change, HowChanged::BoundsChanged };
                         }
                         else {
                             // Holey domain, convert to set. This should handle offsets...
@@ -207,58 +215,70 @@ auto State::infer_literal_from_direct_integer_variable(
                                         svar.bits.set(v.raw_value);
                                 assign_to_state_of(var) = move(svar);
                             }
-                            return Inference::Change;
+                            return pair{ Inference::Change, HowChanged::InteriorValuesChanged };
                         }
                     },
-                    [&] (IntegerVariableSmallSetState & svar) -> Inference {
+                    [&] (IntegerVariableSmallSetState & svar) -> pair<Inference, HowChanged> {
                         // Knock out the value
+                        bool is_bound = (value == svar.lower + Integer{ svar.bits.countr_zero() }) ||
+                            (value == svar.lower + Integer{ Bits::number_of_bits } - Integer{ svar.bits.countl_zero() } - 1_i);
                         svar.bits.reset((value - svar.lower).raw_value);
-                        if (svar.bits.has_single_bit())
+                        if (svar.bits.has_single_bit()) {
                             assign_to_state_of(var) = IntegerVariableConstantState{ svar.lower + Integer{ svar.bits.countr_zero() } };
+                            return pair{ Inference::Change, HowChanged::Instantiated };
+                        }
                         else if (svar.bits.none())
-                            return Inference::Contradiction;
-                        return Inference::Change;
+                            return pair{ Inference::Contradiction, HowChanged::Dummy };
+                        else if (is_bound)
+                            return pair{ Inference::Change, HowChanged::BoundsChanged };
+                        else
+                            return pair{ Inference::Change, HowChanged::InteriorValuesChanged };
                     },
-                    [&] (IntegerVariableSetState & svar) -> Inference {
+                    [&] (IntegerVariableSetState & svar) -> pair<Inference, HowChanged> {
                         // Knock out the value
+                        bool is_bound = (value == *svar.values->begin() || value == *svar.values->rbegin());
                         if (1 == svar.values->size())
-                            return Inference::Contradiction;
+                            return pair{ Inference::Contradiction, HowChanged::Dummy };
                         else if (2 == svar.values->size()) {
-                            assign_to_state_of(var) = IntegerVariableConstantState{ value == *svar.values->begin() ? *next(svar.values->begin()) : *svar.values->begin() };
-                            return Inference::Change;
+                            assign_to_state_of(var) = IntegerVariableConstantState{
+                                value == *svar.values->begin() ? *next(svar.values->begin()) : *svar.values->begin() };
+                            return pair{ Inference::Change, HowChanged::Instantiated };
                         }
                         else if (svar.values.unique()) {
                             svar.values->erase(value);
-                            return Inference::Change;
+                            return pair{ Inference::Change, is_bound ? HowChanged::BoundsChanged : HowChanged::InteriorValuesChanged };
                         }
                         else {
                             auto new_values = make_shared<set<Integer> >(*svar.values);
                             new_values->erase(value);
                             svar.values = new_values;
-                            return Inference::Change;
+                            return pair{ Inference::Change, is_bound ? HowChanged::BoundsChanged : HowChanged::InteriorValuesChanged };
                         }
                     }
                 }, state_of(var, space));
 
         case LiteralFromIntegerVariable::State::Less:
             return visit(overloaded {
-                    [&] (IntegerVariableConstantState & c) -> Inference {
+                    [&] (IntegerVariableConstantState & c) -> pair<Inference, HowChanged> {
                         // Ok if the constant is less, otherwise contradiction
-                        return c.value < value ? Inference::NoChange : Inference::Contradiction;
+                        return pair{ c.value < value ? Inference::NoChange : Inference::Contradiction, HowChanged::Dummy };
                     },
-                    [&] (IntegerVariableRangeState & rvar) -> Inference {
-                        bool changed = false;
+                    [&] (IntegerVariableRangeState & rvar) -> pair<Inference, HowChanged> {
                         if (rvar.upper >= value) {
-                            changed = true;
                             rvar.upper = value - 1_i;
+                            if (rvar.lower == rvar.upper) {
+                                assign_to_state_of(var) = IntegerVariableConstantState{ rvar.lower };
+                                return pair{ Inference::Change, HowChanged::Instantiated };
+                            }
+                            else if (rvar.lower > rvar.upper)
+                                return pair{ Inference::Contradiction, HowChanged::Dummy };
+                            else
+                                return pair{ Inference::Change, HowChanged::BoundsChanged };
                         }
-                        if (rvar.lower == rvar.upper)
-                            assign_to_state_of(var) = IntegerVariableConstantState{ rvar.lower };
-                        else if (rvar.lower > rvar.upper)
-                            return Inference::Contradiction;
-                        return changed ? Inference::Change : Inference::NoChange;
+                        else
+                            return pair{ Inference::NoChange, HowChanged::Dummy };
                     },
-                    [&] (IntegerVariableSmallSetState & svar) -> Inference {
+                    [&] (IntegerVariableSmallSetState & svar) -> pair<Inference, HowChanged> {
                         // This should be much smarter...
                         auto pc_before = svar.bits.popcount();
                         for (int i = 0 ; i < Bits::number_of_bits ; ++i)
@@ -266,16 +286,20 @@ auto State::infer_literal_from_direct_integer_variable(
                                 svar.bits.reset(i);
                         auto pc_after = svar.bits.popcount();
                         if (pc_after == 0)
-                            return Inference::Contradiction;
-                        if (pc_after == 1)
+                            return pair{ Inference::Contradiction, HowChanged::Dummy };
+                        if (pc_after == 1) {
                             assign_to_state_of(var) = IntegerVariableConstantState{ *optional_single_value(generalise<IntegerVariableID>(var)) };
-                        return pc_before == pc_after ? Inference::NoChange : Inference::Change;
+                            return pair{ Inference::Change, HowChanged::Instantiated };
+                        }
+                        return pc_before == pc_after ?
+                            pair{ Inference::NoChange, HowChanged::Dummy } :
+                            pair{ Inference::Change, HowChanged::BoundsChanged };
                     },
-                    [&] (IntegerVariableSetState & svar) -> Inference {
+                    [&] (IntegerVariableSetState & svar) -> pair<Inference, HowChanged> {
                         // This should also be much smarter...
                         auto erase_from = svar.values->upper_bound(value - 1_i);
                         if (erase_from == svar.values->end())
-                            return Inference::NoChange;
+                            return pair{ Inference::NoChange, HowChanged::Dummy };
 
                          if (! svar.values.unique()) {
                              svar.values = make_shared<set<Integer> >(*svar.values);
@@ -284,33 +308,38 @@ auto State::infer_literal_from_direct_integer_variable(
 
                          svar.values->erase(erase_from, svar.values->end());
                          if (svar.values->size() == 0)
-                             return Inference::Contradiction;
-                         else if (svar.values->size() == 1)
+                             return pair{ Inference::Contradiction, HowChanged::Dummy };
+                         else if (svar.values->size() == 1) {
                              assign_to_state_of(var) = IntegerVariableConstantState{ *optional_single_value(generalise<IntegerVariableID>(var)) };
-                         return Inference::Change;
+                             return pair{ Inference::Change, HowChanged::Instantiated };
+                         }
+                         else
+                             return pair{ Inference::Change, HowChanged::BoundsChanged };
                     }
                 }, state_of(var, space));
             break;
 
         case LiteralFromIntegerVariable::State::GreaterEqual:
             return visit(overloaded {
-                    [&] (IntegerVariableConstantState & c) -> Inference {
+                    [&] (IntegerVariableConstantState & c) -> pair<Inference, HowChanged> {
                         // Ok if the constant is greater or equal, otherwise contradiction
-                        return c.value >= value ? Inference::NoChange : Inference::Contradiction;
+                        return pair{ c.value >= value ? Inference::NoChange : Inference::Contradiction, HowChanged::Dummy };
                     },
-                    [&] (IntegerVariableRangeState & rvar) -> Inference {
-                        bool changed = false;
+                    [&] (IntegerVariableRangeState & rvar) -> pair<Inference, HowChanged> {
                         if (rvar.lower < value) {
-                            changed = true;
                             rvar.lower = value;
+                            if (rvar.lower == rvar.upper) {
+                                assign_to_state_of(var) = IntegerVariableConstantState{ rvar.lower };
+                                return pair{ Inference::Change, HowChanged::Instantiated };
+                            }
+                            else if (rvar.lower > rvar.upper)
+                                return pair{ Inference::Contradiction, HowChanged::Dummy };
+                            else
+                                return pair{ Inference::Change, HowChanged::BoundsChanged };
                         }
-                        if (rvar.lower == rvar.upper)
-                            assign_to_state_of(var) = IntegerVariableConstantState{ rvar.lower };
-                        else if (rvar.lower > rvar.upper)
-                            return Inference::Contradiction;
-                        return changed ? Inference::Change : Inference::NoChange;
+                        return pair{ Inference::NoChange, HowChanged::Dummy };
                     },
-                    [&] (IntegerVariableSmallSetState & svar) -> Inference {
+                    [&] (IntegerVariableSmallSetState & svar) -> pair<Inference, HowChanged> {
                         // This should be much smarter...
                         auto pc_before = svar.bits.popcount();
                         for (int i = 0 ; i < Bits::number_of_bits ; ++i)
@@ -318,16 +347,20 @@ auto State::infer_literal_from_direct_integer_variable(
                                 svar.bits.reset(i);
                         auto pc_after = svar.bits.popcount();
                         if (pc_after == 0)
-                            return Inference::Contradiction;
-                        if (pc_after == 1)
+                            return pair{ Inference::Contradiction, HowChanged::Dummy };
+                        if (pc_after == 1) {
                             assign_to_state_of(var) = IntegerVariableConstantState{ *optional_single_value(generalise<IntegerVariableID>(var)) };
-                        return pc_before == pc_after ? Inference::NoChange : Inference::Change;
+                            return pair{ Inference::Change, HowChanged::Instantiated };
+                        }
+                        return pc_before == pc_after ?
+                            pair{ Inference::NoChange, HowChanged::Dummy } :
+                            pair{ Inference::Change, HowChanged::BoundsChanged };
                     },
-                    [&] (IntegerVariableSetState & svar) -> Inference {
+                    [&] (IntegerVariableSetState & svar) -> pair<Inference, HowChanged> {
                         // This should also be much smarter...
                         auto erase_to = svar.values->lower_bound(value);
                         if (erase_to == svar.values->begin())
-                            return Inference::NoChange;
+                            return pair{ Inference::NoChange, HowChanged::Dummy };
 
                          if (! svar.values.unique()) {
                              svar.values = make_shared<set<Integer> >(*svar.values);
@@ -336,10 +369,13 @@ auto State::infer_literal_from_direct_integer_variable(
 
                          svar.values->erase(svar.values->begin(), erase_to);
                          if (svar.values->size() == 0)
-                             return Inference::Contradiction;
-                         else if (svar.values->size() == 1)
+                             return pair{ Inference::Contradiction, HowChanged::Dummy };
+                         else if (svar.values->size() == 1) {
                              assign_to_state_of(var) = IntegerVariableConstantState{ *optional_single_value(generalise<IntegerVariableID>(var)) };
-                         return Inference::Change;
+                             return pair{ Inference::Change, HowChanged::Instantiated };
+                         }
+                         else
+                             return pair{ Inference::Change, HowChanged::BoundsChanged };
                     }
                 }, state_of(var, space));
             break;
@@ -371,7 +407,8 @@ auto State::infer(const Literal & lit, Justification just) -> Inference
     return visit(overloaded {
             [&] (const LiteralFromIntegerVariable & ilit) -> Inference {
                 auto [ actual_var, offset ] = to_direct(ilit.var);
-                switch (infer_literal_from_direct_integer_variable(actual_var, ilit.state, ilit.value - offset)) {
+                auto [ change, how_changed ] = infer_literal_from_direct_integer_variable(actual_var, ilit.state, ilit.value - offset);
+                switch (change) {
                     case Inference::NoChange:
                         return Inference::NoChange;
 
@@ -381,7 +418,7 @@ auto State::infer(const Literal & lit, Justification just) -> Inference
                         return Inference::Contradiction;
 
                     case Inference::Change:
-                        remember_change(get<SimpleIntegerVariableID>(actual_var));
+                        remember_change(get<SimpleIntegerVariableID>(actual_var), how_changed);
                         if (_imp->problem->optional_proof())
                             _imp->problem->optional_proof()->infer(*this, lit, just);
                         return Inference::Change;
@@ -616,15 +653,34 @@ auto State::backtrack(Timestamp t) -> void
     }
 }
 
-auto State::remember_change(const SimpleIntegerVariableID v) -> void
+auto State::remember_change(const SimpleIntegerVariableID v, HowChanged h) -> void
 {
-    _imp->changed.insert(v);
+    auto [ it, _ ] = _imp->changed.emplace(v, h);
+
+    switch (h) {
+        case HowChanged::InteriorValuesChanged:
+            return;
+
+        case HowChanged::BoundsChanged:
+            if (it->second == HowChanged::InteriorValuesChanged)
+                it->second = HowChanged::BoundsChanged;
+            return;
+
+        case HowChanged::Instantiated:
+            it->second = HowChanged::Instantiated;
+            return;
+
+        case HowChanged::Dummy:
+            break;
+    }
+
+    throw NonExhaustiveSwitch{ };
 }
 
-auto State::extract_changed_variables(function<auto (SimpleIntegerVariableID) -> void> f) -> void
+auto State::extract_changed_variables(function<auto (SimpleIntegerVariableID, HowChanged) -> void> f) -> void
 {
-    for (auto & c : _imp->changed)
-        f(c);
+    for (auto & [ c, h ] : _imp->changed)
+        f(c, h);
     _imp->changed.clear();
 }
 
