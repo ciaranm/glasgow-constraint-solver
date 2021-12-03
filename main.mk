@@ -26,3 +26,5 @@ SUBMAKEFILES := \
 
 override CXXFLAGS += -O3 -march=native -std=c++20 -Isrc/ -W -Wall -Wextra -g -ggdb3 -pthread
 
+boost_ldlibs := -lboost_program_options
+
