@@ -106,6 +106,9 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks) -> Stats
     if (problem.optional_proof())
         problem.optional_proof()->start_proof(state);
 
+    if (callbacks.after_proof_started)
+        callbacks.after_proof_started(state);
+
     bool child_contains_solution = false;
     if (solve_with_state(0, stats, problem, state, callbacks, child_contains_solution))
         if (problem.optional_proof())

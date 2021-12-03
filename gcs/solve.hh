@@ -16,6 +16,7 @@ namespace gcs
     using TraceCallback = std::function<auto (const State &) -> bool>;
     using BranchCallback = std::function<auto (const State &) -> std::optional<IntegerVariableID> >;
     using GuessCallback = std::function<auto (const State &, IntegerVariableID) -> std::vector<Literal> >;
+    using AfterProofStartedCallback = std::function<auto (const State &) -> void>;
 
     struct SolveCallbacks
     {
@@ -23,6 +24,7 @@ namespace gcs
         TraceCallback trace = TraceCallback{ };
         BranchCallback branch = BranchCallback{ };
         GuessCallback guess = GuessCallback{ };
+        AfterProofStartedCallback after_proof_started = AfterProofStartedCallback{ };
     };
 
     auto solve(Problem &, SolutionCallback callback) -> Stats;
