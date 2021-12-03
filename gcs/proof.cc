@@ -58,6 +58,7 @@ struct Proof::Imp
     string opb_file, proof_file;
     stringstream opb;
     fstream proof;
+    bool opb_done = false;
 
     bool use_friendly_names;
     unordered_map<string, string> xification;
@@ -208,6 +209,7 @@ auto Proof::start_proof(State & initial_state) -> void
 
     copy(istreambuf_iterator<char>{ _imp->opb }, istreambuf_iterator<char>{}, ostreambuf_iterator<char>{ full_opb });
     _imp->opb.clear();
+    _imp->opb_done = true;
 
     if (! full_opb)
         throw ProofError{ "Error writing opb file to '" + _imp->opb_file + "'" };
@@ -318,6 +320,8 @@ auto Proof::proof_variable(const Literal & lit) const -> const string &
 
 auto Proof::posting(const std::string & s) -> void
 {
+    if (_imp->opb_done)
+        throw UnexpectedException{ "proof has already started" };
     _imp->opb << "* constraint " << s << endl;
 }
 

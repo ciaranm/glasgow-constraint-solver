@@ -196,11 +196,20 @@ auto Propagators::table(const State & state, vector<IntegerVariableID> && vars, 
     _imp->propagator_is_disabled.push_back(0);
 }
 
-auto Propagators::propagate(State & state) const -> bool
+auto Propagators::propagate(State & state, const optional<IntegerVariableID> & objective_variable,
+        const optional<Integer> & objective_value) const -> bool
 {
     vector<int> on_queue(_imp->propagation_functions.size(), 0);
     deque<int> propagation_queue;
     vector<int> newly_disabled_propagators;
+
+    if (objective_variable && objective_value) {
+        switch (state.infer(*objective_variable < *objective_value, NoJustificationNeeded{ })) {
+            case Inference::NoChange:      break;
+            case Inference::Change:        break;
+            case Inference::Contradiction: return false;
+        }
+    }
 
     if (_imp->first) {
         _imp->first = false;

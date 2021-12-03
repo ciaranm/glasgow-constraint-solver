@@ -57,7 +57,8 @@ namespace gcs
 
             [[ nodiscard ]] auto create_auxilliary_integer_variable(Integer, Integer, const std::string & name, bool need_ge) -> IntegerVariableID;
 
-            [[ nodiscard ]] auto propagate(State &) const -> bool;
+            [[ nodiscard ]] auto propagate(State &, const std::optional<IntegerVariableID> & objective_variable,
+                    const std::optional<Integer> & objective_value) const -> bool;
 
             auto fill_in_constraint_stats(Stats &) const -> void;
     };

@@ -25,6 +25,7 @@ struct Problem::Imp
     vector<IntegerVariableID> problem_variables;
     optional<vector<IntegerVariableID> > branch_on;
     optional<IntegerVariableID> objective_variable;
+    optional<Integer> objective_value;
     optional<Proof> optional_proof;
 
     Imp(Problem * problem) :
@@ -68,7 +69,7 @@ auto Problem::create_state() const -> State
 
 auto Problem::propagate(State & state) const -> bool
 {
-    auto result = _imp->propagators.propagate(state);
+    auto result = _imp->propagators.propagate(state, _imp->objective_variable, _imp->objective_value);
 
     return result;
 }
@@ -121,7 +122,7 @@ auto Problem::minimise(IntegerVariableID var) -> void
 auto Problem::update_objective(const State & state) -> void
 {
     if (_imp->objective_variable)
-        post(LessThan{ *_imp->objective_variable, constant_variable(state(*_imp->objective_variable)) });
+        _imp->objective_value = state(*_imp->objective_variable);
 }
 
 auto Problem::fill_in_constraint_stats(Stats & stats) const -> void
