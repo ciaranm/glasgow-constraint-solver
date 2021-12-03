@@ -5,6 +5,7 @@
 #include <gcs/constraints/linear_equality.hh>
 #include <gcs/constraints/element.hh>
 #include <gcs/constraints/table.hh>
+#include <gcs/constraints/comparison.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
@@ -85,7 +86,10 @@ auto main(int, char * []) -> int
     for (int i = 0 ; i < size ; ++i)
         xs.push_back(p.create_integer_variable(0_i, Integer{ size - 1 }));
 
-    p.post(AllDifferent{ xs });
+    // p.post(AllDifferent{ xs });
+    for (int i = 0 ; i < size ; ++i)
+        for (int j = i + 1 ; j < size ; ++j)
+            p.post(NotEquals{ xs[i], xs[j] });
 
     vector<vector<Integer> > tuples;
     for (int i = 0 ; i < size ; ++i)
