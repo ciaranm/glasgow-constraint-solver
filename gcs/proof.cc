@@ -258,9 +258,10 @@ auto Proof::pseudoboolean_ge(const WeightedLiterals & lits, Integer val) -> Proo
     return ++_imp->model_constraints;
 }
 
-auto Proof::integer_linear_le(const State & state, const Linear & lin, Integer val) -> void
+auto Proof::integer_linear_le(const State & state, const Linear & lin, Integer val, bool equality) -> void
 {
-    _imp->opb << "* linear le";
+    _imp->opb << (equality ? "* linear eq" : "* linear le");
+
     for (auto & [ coeff, var ] : lin)
         _imp->opb << " " << coeff << "*" << debug_string(var);
     _imp->opb << " <= " << val << endl;
@@ -280,6 +281,24 @@ auto Proof::integer_linear_le(const State & state, const Linear & lin, Integer v
 
     _imp->opb << ">= " << -val << " ;" << endl;
     ++_imp->model_constraints;
+
+    if (equality) {
+        for (auto & [ coeff, var ] : lin) {
+            if (0_i == coeff)
+                continue;
+
+            auto lower = state.lower_bound(var), upper = state.upper_bound(var);
+            if (lower < 0_i || lower > 1_i)
+                throw UnimplementedException{ };
+
+            for ( ; lower <= upper ; ++lower)
+                if (lower != 0_i)
+                    _imp->opb << coeff << " " << proof_variable(var >= lower) << " ";
+        }
+
+        _imp->opb << ">= " << val << " ;" << endl;
+        ++_imp->model_constraints;
+    }
 }
 
 auto Proof::minimise(IntegerVariableID var) -> void

@@ -56,7 +56,7 @@ namespace gcs
             [[ nodiscard ]] auto cnf(const Literals &) -> ProofLine;
             [[ nodiscard ]] auto at_most_one(const Literals &) -> ProofLine;
             [[ nodiscard ]] auto pseudoboolean_ge(const WeightedLiterals &, Integer) -> ProofLine;
-            auto integer_linear_le(const State &, const Linear & coeff_vars, Integer value) -> void;
+            auto integer_linear_le(const State &, const Linear & coeff_vars, Integer value, bool equality) -> void;
 
             auto minimise(IntegerVariableID) -> void;
 

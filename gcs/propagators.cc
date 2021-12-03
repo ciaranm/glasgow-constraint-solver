@@ -128,7 +128,7 @@ auto Propagators::integer_linear_le(const State & state, Linear && coeff_vars, I
     sanitise_linear(coeff_vars);
 
     if (_imp->problem->optional_proof())
-        _imp->problem->optional_proof()->integer_linear_le(state, coeff_vars, value);
+        _imp->problem->optional_proof()->integer_linear_le(state, coeff_vars, value, equality);
 
     int id = _imp->propagation_functions.size();
     for (auto & [ _, v ] : coeff_vars)
