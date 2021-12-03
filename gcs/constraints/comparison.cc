@@ -46,7 +46,8 @@ auto ComparisonReif::_install_equals(Propagators & propagators, const State & in
 
     bool use_special_not_equals = _full_reif && LiteralIs::DefinitelyFalse == initial_state.test_literal(_cond);
     bool use_special_equals_iff = _full_reif && LiteralIs::Undecided == initial_state.test_literal(_cond);
-    bool use_cnf = ! (use_special_not_equals || use_special_equals_iff);
+    bool use_special_equals_if = (! _full_reif) && LiteralIs::Undecided == initial_state.test_literal(_cond);
+    bool use_cnf = ! (use_special_not_equals || use_special_equals_iff || use_special_equals_if);
 
     if (use_special_not_equals) {
         Triggers triggers;
@@ -151,7 +152,7 @@ auto ComparisonReif::_install_equals(Propagators & propagators, const State & in
                                     });
 
                             if (! overlap)
-                                return pair{ state.infer(! cond, NoJustificationNeeded{ }), PropagatorState::Enable };
+                                return pair{ state.infer(! cond, NoJustificationNeeded{ }), PropagatorState::DisableUntilBacktrack };
                             else
                                 return pair{ Inference::NoChange, PropagatorState::Enable };
                         }
@@ -161,6 +162,92 @@ auto ComparisonReif::_install_equals(Propagators & propagators, const State & in
 
                 throw NonExhaustiveSwitch{ };
             }, triggers, "equals iff");
+    }
+
+    if (use_special_equals_if) {
+        Triggers triggers;
+        triggers.on_change = { _v1, _v2 };
+        visit(overloaded{
+                [&] (const LiteralFromIntegerVariable & v) { triggers.on_instantiated.push_back(v.var); },
+                [&] (const TrueLiteral &) { },
+                [&] (const FalseLiteral &) { }
+                }, _cond);
+
+        propagators.propagator(initial_state, [v1 = _v1, v2 = _v2, cond = _cond] (State & state) -> pair<Inference, PropagatorState> {
+                switch (state.test_literal(cond)) {
+                    case LiteralIs::DefinitelyTrue: {
+                        // condition is true, force equality
+                        auto value1 = state.optional_single_value(v1);
+                        if (value1)
+                            return pair{ state.infer(v2 == *value1, NoJustificationNeeded{ }), PropagatorState::DisableUntilBacktrack };
+
+                        auto value2 = state.optional_single_value(v2);
+                        if (value2)
+                            return pair{ state.infer(v1 == *value2, NoJustificationNeeded{ }), PropagatorState::DisableUntilBacktrack };
+
+                        auto result = Inference::NoChange;
+
+                        // restrict to intersection
+                        state.for_each_value_while(v1, [&] (Integer val) {
+                                if (! state.in_domain(v2, val))
+                                    increase_inference_to(result, state.infer(v1 != val, NoJustificationNeeded{ }));
+                                return result != Inference::Contradiction;
+                                });
+
+                        state.for_each_value_while(v2, [&] (Integer val) {
+                                if (! state.in_domain(v1, val))
+                                    increase_inference_to(result, state.infer(v2 != val, NoJustificationNeeded{ }));
+                                return result != Inference::Contradiction;
+                                });
+
+                        return pair{ result, PropagatorState::Enable };
+                    }
+                    break;
+
+                    case LiteralIs::DefinitelyFalse: {
+                        return pair{ Inference::NoChange, PropagatorState::Enable };
+                    }
+                    break;
+
+                    case LiteralIs::Undecided: {
+                        // condition is undecided, are we in a situation where it's now forced?
+                        auto value1 = state.optional_single_value(v1);
+                        auto value2 = state.optional_single_value(v2);
+                        if (value1 && value2) {
+                            return pair{ Inference::NoChange, PropagatorState::DisableUntilBacktrack };
+                        }
+                        else if (value1) {
+                            if (! state.in_domain(v2, *value1))
+                                return pair{ state.infer(! cond, NoJustificationNeeded{ }), PropagatorState::DisableUntilBacktrack };
+                            else
+                                return pair{ Inference::NoChange, PropagatorState::Enable };
+                        }
+                        else if (value2) {
+                            if (! state.in_domain(v1, *value2))
+                                return pair{ state.infer(! cond, NoJustificationNeeded{ }), PropagatorState::DisableUntilBacktrack };
+                            else
+                                return pair{ Inference::NoChange, PropagatorState::Enable };
+                        }
+                        else {
+                            // not equals is forced if there's no overlap between domains
+                            bool overlap = false;
+                            state.for_each_value_while(v1, [&] (Integer val) {
+                                    if (state.in_domain(v2, val))
+                                        overlap = true;
+                                    return ! overlap;
+                                    });
+
+                            if (! overlap)
+                                return pair{ state.infer(! cond, NoJustificationNeeded{ }), PropagatorState::DisableUntilBacktrack };
+                            else
+                                return pair{ Inference::NoChange, PropagatorState::Enable };
+                        }
+                    }
+                    break;
+                }
+
+                throw NonExhaustiveSwitch{ };
+            }, triggers, "equals if");
     }
 
     if (use_cnf || propagators.want_nonpropagating()) {
