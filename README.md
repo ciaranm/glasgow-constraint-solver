@@ -10,7 +10,8 @@ Please contact [Ciaran McCreesh](mailto:ciaran.mccreesh@glasgow.ac.uk) with any 
 Compiling
 ---------
 
-To build, type 'make'. You will need a C++20 compiler, such as GCC 10.3.
+To build, type 'make'. You will need a C++20 compiler, such as GCC 10.3, as well as Boost (use
+libboost-dev-all on Ubuntu).
 
 Proof Logging
 -------------
