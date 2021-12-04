@@ -11,6 +11,8 @@
 #include <optional>
 #include <vector>
 
+#include <boost/program_options.hpp>
+
 using namespace gcs;
 
 using std::cerr;
@@ -23,10 +25,57 @@ using std::string;
 using std::to_string;
 using std::vector;
 
-auto main(int, char * []) -> int
+namespace po = boost::program_options;
+
+auto main(int argc, char * argv[]) -> int
 {
-    int size = 88;
-    Problem p; //{ Proof{ "n_queens.opb", "n_queens.veripb" } };
+    po::options_description display_options{ "Program options" };
+    display_options.add_options()
+        ("help", "Display help information")
+        ("prove", "Create a proof");
+
+    po::options_description all_options{ "All options" };
+    all_options.add_options()
+        ("size", po::value<int>()->default_value(88), "Size of the problem to solve")
+        ;
+
+    all_options.add(display_options);
+
+    po::positional_options_description positional_options;
+    positional_options
+        .add("size", -1);
+
+    po::variables_map options_vars;
+
+    try {
+        po::store(po::command_line_parser(argc, argv)
+                .options(all_options)
+                .positional(positional_options)
+                .run(), options_vars);
+        po::notify(options_vars);
+    }
+    catch (const po::error & e) {
+        cerr << "Error: " << e.what() << endl;
+        cerr << "Try " << argv[0] << " --help" << endl;
+        return EXIT_FAILURE;
+    }
+
+    if (options_vars.count("help")) {
+        cout << "Usage: " << argv[0] << " [options] [size]" << endl;
+        cout << endl;
+        cout << display_options << endl;
+        return EXIT_SUCCESS;
+    }
+
+    cout << "Replicating the n-Queens benchmark." << endl;
+    cout << "See Laurent D. Michel, Pierre Schaus, Pascal Van Hentenryck:" << endl;
+    cout << "\"MiniCP: a lightweight solver for constraint programming.\"" << endl;
+    cout << "Math. Program. Comput. 13(1): 133-184 (2021)." << endl;
+    cout << "This should take 49339390 recursions with default options." << endl;
+    cout << endl;
+
+    int size = options_vars["size"].as<int>();
+    Problem p = options_vars.count("prove") ? Problem{ Proof{ "n_queens.opb", "n_queens.veripb" } } : Problem{ };
 
     vector<SimpleIntegerVariableID> queens;
     for (int v = 0 ; v != size ; ++v)
