@@ -481,6 +481,21 @@ auto State::upper_bound(const IntegerVariableID var) const -> Integer
             }, state_of(actual_var, space)) + offset;
 }
 
+auto State::bounds(const IntegerVariableID var) const -> pair<Integer, Integer>
+{
+    auto [ actual_var, offset ] = underlying_direct_variable_and_offset(var);
+    IntegerVariableState space = IntegerVariableConstantState{ 0_i };
+    auto result = visit(overloaded {
+            [] (const IntegerVariableRangeState & v) { return pair{ v.lower, v.upper }; },
+            [] (const IntegerVariableConstantState & v) { return pair{ v.value, v.value }; },
+            [] (const IntegerVariableSmallSetState & v) { return pair{
+                v.lower + Integer{ v.bits.countr_zero() },
+                v.lower + Integer{ Bits::number_of_bits } - Integer{ v.bits.countl_zero() } - 1_i }; },
+            [] (const IntegerVariableSetState & v) { return pair{ *v.values->begin(), *v.values->rbegin() }; }
+            }, state_of(actual_var, space));
+    return pair{ result.first + offset, result.second + offset };
+}
+
 auto State::in_domain(const IntegerVariableID var, const Integer val) const -> bool
 {
     auto [ actual_var, offset ] = underlying_direct_variable_and_offset(var);

@@ -4,12 +4,14 @@
 #include <gcs/state.hh>
 
 #include <algorithm>
+#include <vector>
 
 using namespace gcs;
 
 using std::pair;
 using std::remove_if;
 using std::sort;
+using std::vector;
 
 auto gcs::sanitise_linear(Linear & coeff_vars) -> void
 {
@@ -42,36 +44,61 @@ auto gcs::propagate_linear(const Linear & coeff_vars, Integer value, State & sta
     // is given its best value?
     bool changed = false;
 
-    Integer lower_sum{ 0 }, inv_lower_sum{ 0 };
-    for (auto & [ coeff, var ] : coeff_vars)
-        lower_sum += (coeff >= 0_i) ? (coeff * state.lower_bound(var)) : (coeff * state.upper_bound(var));
-    if (equality)
-    for (auto & [ coeff, var ] : coeff_vars)
-        inv_lower_sum += (-coeff >= 0_i) ? (-coeff * state.lower_bound(var)) : (-coeff * state.upper_bound(var));
+    vector<pair<Integer, Integer> > bounds;
+    bounds.reserve(coeff_vars.size());
 
+    Integer lower_sum{ 0 }, inv_lower_sum{ 0 };
     for (auto & [ coeff, var ] : coeff_vars) {
-        Integer lower_without_me = lower_sum - ((coeff >= 0_i) ? (coeff * state.lower_bound(var)) : (coeff * state.upper_bound(var)));
-        Integer remainder = value - lower_without_me;
-        switch (coeff >= 0_i ?
-                state.infer(var < (1_i + remainder / coeff), JustifyUsingRUP{ }) :
-                state.infer(var >= remainder / coeff, JustifyUsingRUP{ })) {
-            case Inference::Change:        changed = true; break;
-            case Inference::NoChange:      break;
-            case Inference::Contradiction: return pair{ Inference::Contradiction, PropagatorState::Enable };
+        bounds.push_back(state.bounds(var));
+        lower_sum += (coeff >= 0_i) ? (coeff * bounds.back().first) : (coeff * bounds.back().second);
+        inv_lower_sum += (-coeff >= 0_i) ? (-coeff * bounds.back().first) : (-coeff * bounds.back().second);
+    }
+
+    auto infer = [&] (int p, IntegerVariableID var, Integer remainder, Integer coeff) {
+        if (coeff >= 0_i) {
+            if (bounds[p].second >= (1_i + remainder / coeff))
+                return state.infer(var < (1_i + remainder / coeff), JustifyUsingRUP{ });
+            else
+                return Inference::NoChange;
         }
-        lower_sum = lower_without_me + ((coeff >= 0_i) ? (coeff * state.lower_bound(var)) : (coeff * state.upper_bound(var)));
+        else {
+            if (bounds[p].first < remainder / coeff)
+                return state.infer(var >= remainder / coeff, JustifyUsingRUP{ });
+            else
+                return Inference::NoChange;
+        }
+    };
+
+    for (unsigned p = 0, p_end = coeff_vars.size() ; p != p_end ; ++p) {
+        auto & [ coeff, var ] = coeff_vars[p];
+        Integer lower_without_me = lower_sum - ((coeff >= 0_i) ? (coeff * bounds[p].first) : (coeff * bounds[p].second));
+        Integer remainder = value - lower_without_me;
+        switch (infer(p, var, remainder, coeff)) {
+            case Inference::Change:
+                bounds[p] = state.bounds(var); // might be tighter than expected if we had holes
+                changed = true;
+                break;
+            case Inference::NoChange:
+                break;
+            case Inference::Contradiction:
+                return pair{ Inference::Contradiction, PropagatorState::Enable };
+        }
+        lower_sum = lower_without_me + ((coeff >= 0_i) ? (coeff * bounds[p].first) : (coeff * bounds[p].second));
 
         if (equality) {
-            Integer inv_lower_without_me = inv_lower_sum - ((-coeff >= 0_i) ? (-coeff * state.lower_bound(var)) : (-coeff * state.upper_bound(var)));
+            Integer inv_lower_without_me = inv_lower_sum - ((-coeff >= 0_i) ? (-coeff * bounds[p].first) : (-coeff * bounds[p].second));
             Integer inv_remainder = -value - inv_lower_without_me;
-            switch (-coeff >= 0_i ?
-                    state.infer(var < (1_i + inv_remainder / -coeff), JustifyUsingRUP{ }) :
-                    state.infer(var >= inv_remainder / -coeff, JustifyUsingRUP{ })) {
-                case Inference::Change:        changed = true; break;
-                case Inference::NoChange:      break;
-                case Inference::Contradiction: return pair{ Inference::Contradiction, PropagatorState::Enable };
+            switch (infer(p, var, inv_remainder, -coeff)) {
+                case Inference::Change:
+                    bounds[p] = state.bounds(var); // might be tighter than expected if we had holes
+                    changed = true;
+                    break;
+                case Inference::NoChange:
+                    break;
+                case Inference::Contradiction:
+                    return pair{ Inference::Contradiction, PropagatorState::Enable };
             }
-            inv_lower_sum = inv_lower_without_me + ((-coeff >= 0_i) ? (-coeff * state.lower_bound(var)) : (-coeff * state.upper_bound(var)));
+            inv_lower_sum = inv_lower_without_me + ((-coeff >= 0_i) ? (-coeff * bounds[p].first) : (-coeff * bounds[p].second));
         }
     }
 

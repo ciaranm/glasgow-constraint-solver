@@ -88,6 +88,7 @@ namespace gcs
 
             [[ nodiscard ]] auto lower_bound(const IntegerVariableID) const -> Integer;
             [[ nodiscard ]] auto upper_bound(const IntegerVariableID) const -> Integer;
+            [[ nodiscard ]] auto bounds(const IntegerVariableID) const -> std::pair<Integer, Integer>;
             [[ nodiscard ]] auto in_domain(const IntegerVariableID, Integer) const -> bool;
             [[ nodiscard ]] auto optional_single_value(const IntegerVariableID) const -> std::optional<Integer>;
             [[ nodiscard ]] auto has_single_value(const IntegerVariableID) const -> bool;
