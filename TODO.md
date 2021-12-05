@@ -32,6 +32,8 @@ Constraints
 
 - What happens if a variable appears multiple times in the same constraint?
 
+- What if it appears multiple times, but involving views?
+
 - Test whether constraints achieve GAC.
 
 - Circuit, so we can do all the MiniCP benchmarks.
