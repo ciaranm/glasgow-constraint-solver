@@ -74,7 +74,7 @@ auto main(int, char * []) -> int
             if (ww > max_weight)
                 max_weight = ww;
 
-    Problem p; // { Proof{ "qap.opb", "qap.veripb" } };
+    Problem p{ Proof{ "qap.opb", "qap.veripb" } };
 
     vector<IntegerVariableID> weights;
     for (auto & w : weight_consts) {
@@ -108,7 +108,7 @@ auto main(int, char * []) -> int
         }
     }
 
-    auto cost = p.create_integer_variable(0_i, Integer{ size * size * max_weight * max_distance });
+    auto cost = p.create_integer_variable(0_i, 41000_i);
     wcosts.emplace_back(-1_i, cost);
     p.post(LinearEquality{ move(wcosts), 0_i });
 
