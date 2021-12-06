@@ -67,12 +67,17 @@ namespace gcs
 
     [[ nodiscard ]] inline auto constant_variable(const Integer x) -> IntegerVariableID
     {
-        return ConstantIntegerVariableID(x);
+        return ConstantIntegerVariableID{ x };
     }
 
-    [[ nodiscard ]] inline auto operator "" _c (unsigned long long v) -> IntegerVariableID
+    [[ nodiscard ]] inline auto operator "" _c (unsigned long long v) -> ConstantIntegerVariableID
     {
-        return constant_variable(Integer(v));
+        return ConstantIntegerVariableID{ Integer(v) };
+    }
+
+    [[ nodiscard ]] inline auto operator- (ConstantIntegerVariableID a) -> ConstantIntegerVariableID
+    {
+        return ConstantIntegerVariableID{ -a.const_value };
     }
 
     [[ nodiscard ]] auto debug_string(const IntegerVariableID &) -> std::string;
