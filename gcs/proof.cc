@@ -320,7 +320,7 @@ auto Proof::proof_variable(const Literal & lit) const -> const string &
                         return it->second;
                     },
                     [&] (const ViewOfIntegerVariableID & view) -> const string & {
-                        LiteralFromIntegerVariable relit{ view.actual_variable, ilit.state, ilit.value - view.offset };
+                        LiteralFromIntegerVariable relit{ view.actual_variable, ilit.op, ilit.value - view.offset };
                         return proof_variable(relit);
                     },
                     [&] (const ConstantIntegerVariableID &) -> const string & {

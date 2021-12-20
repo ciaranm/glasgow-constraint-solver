@@ -20,7 +20,7 @@ auto gcs::debug_string(const Literal & lit) -> string
 {
     return visit(overloaded {
             [] (const LiteralFromIntegerVariable & ilit) -> string {
-                switch (ilit.state) {
+                switch (ilit.op) {
                     case LiteralFromIntegerVariable::Operator::Equal:
                         return "intvars[" + debug_string(ilit.var) + "] = " + ilit.value.to_string();
                     case LiteralFromIntegerVariable::Operator::NotEqual:
@@ -51,7 +51,7 @@ namespace
                             [&] (SimpleIntegerVariableID) -> optional<bool> { return nullopt; },
                             [&] (ViewOfIntegerVariableID) -> optional<bool> { return nullopt; },
                             [&] (ConstantIntegerVariableID x) -> optional<bool> {
-                                switch (ilit.state) {
+                                switch (ilit.op) {
                                     case LiteralFromIntegerVariable::Operator::Equal:        return x.const_value == ilit.value;
                                     case LiteralFromIntegerVariable::Operator::NotEqual:     return x.const_value != ilit.value;
                                     case LiteralFromIntegerVariable::Operator::GreaterEqual: return x.const_value >= ilit.value;
@@ -107,7 +107,7 @@ auto gcs::operator ! (const Literal & lit) -> Literal
 {
     return visit(overloaded {
             [] (const LiteralFromIntegerVariable & ilit) {
-                switch (ilit.state) {
+                switch (ilit.op) {
                 case LiteralFromIntegerVariable::Operator::Equal:
                     return Literal{ LiteralFromIntegerVariable{ ilit.var, LiteralFromIntegerVariable::Operator::NotEqual, ilit.value } };
                 case LiteralFromIntegerVariable::Operator::NotEqual:

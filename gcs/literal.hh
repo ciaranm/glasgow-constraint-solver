@@ -16,7 +16,7 @@ namespace gcs
     {
         IntegerVariableID var;
         enum class Operator { Equal, NotEqual, GreaterEqual, Less };
-        Operator state;
+        Operator op;
         Integer value;
 
         [[ nodiscard ]] auto operator<=> (const LiteralFromIntegerVariable &) const = default;

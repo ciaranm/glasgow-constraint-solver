@@ -389,7 +389,7 @@ auto State::infer(const Literal & lit, Justification just) -> Inference
     return visit(overloaded {
             [&] (const LiteralFromIntegerVariable & ilit) -> Inference {
                 auto [ actual_var, offset ] = underlying_direct_variable_and_offset(ilit.var);
-                auto [ inference, how_changed ] = infer_literal_from_direct_integer_variable(actual_var, ilit.state, ilit.value - offset);
+                auto [ inference, how_changed ] = infer_literal_from_direct_integer_variable(actual_var, ilit.op, ilit.value - offset);
                 switch (inference) {
                     case Inference::NoChange:
                         return Inference::NoChange;
@@ -697,7 +697,7 @@ auto State::literal_is_nonfalsified(const Literal & lit) const -> bool
 {
     return visit(overloaded {
         [&] (const LiteralFromIntegerVariable & ilit) -> bool {
-            switch (ilit.state) {
+            switch (ilit.op) {
                 case LiteralFromIntegerVariable::Operator::Equal:
                     return in_domain(ilit.var, ilit.value);
                 case LiteralFromIntegerVariable::Operator::Less:
@@ -721,7 +721,7 @@ auto State::test_literal(const Literal & lit) const -> LiteralIs
 {
     return visit(overloaded {
         [&] (const LiteralFromIntegerVariable & ilit) -> LiteralIs {
-            switch (ilit.state) {
+            switch (ilit.op) {
                 case LiteralFromIntegerVariable::Operator::Equal:
                     if (! in_domain(ilit.var, ilit.value))
                         return LiteralIs::DefinitelyFalse;
