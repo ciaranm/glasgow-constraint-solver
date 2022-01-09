@@ -35,8 +35,7 @@ namespace gcs
             [[ nodiscard ]] auto create_integer_variable(
                     Integer lower,
                     Integer upper,
-                    const std::optional<std::string> & name = std::nullopt,
-                    bool need_ge = true) -> SimpleIntegerVariableID;
+                    const std::optional<std::string> & name = std::nullopt) -> SimpleIntegerVariableID;
 
             [[ nodiscard ]] auto create_state() const -> State;
             [[ nodiscard ]] auto propagate(State &) const -> bool;

@@ -103,7 +103,7 @@ namespace
     }
 }
 
-auto Proof::create_integer_variable(SimpleIntegerVariableID id, Integer lower, Integer upper, const optional<string> & optional_name, bool need_ge) -> void
+auto Proof::create_integer_variable(SimpleIntegerVariableID id, Integer lower, Integer upper, const optional<string> & optional_name) -> void
 {
     string name = "iv" + to_string(id.index);
     if (optional_name)
@@ -127,54 +127,52 @@ auto Proof::create_integer_variable(SimpleIntegerVariableID id, Integer lower, I
     _imp->opb << ">= -1 ;" << endl;
     _imp->variable_at_most_one_constraints.emplace(id, ++_imp->model_constraints);
 
-    if (need_ge) {
-        _imp->opb << "* variable " << name << " greater or equal encoding" << endl;
-        _imp->model_variables += (upper - lower + 1_i).raw_value;
+    _imp->opb << "* variable " << name << " greater or equal encoding" << endl;
+    _imp->model_variables += (upper - lower + 1_i).raw_value;
 
-        _imp->opb << "1 " << xify(name + "_ge_" + value_name(lower)) << " >= 1 ;" << endl;
+    _imp->opb << "1 " << xify(name + "_ge_" + value_name(lower)) << " >= 1 ;" << endl;
+    ++_imp->model_constraints;
+
+    for (Integer v = lower ; v <= upper ; ++v) {
+        // x >= v -> x >= v - 1
+        if (v != lower) {
+            _imp->opb << "1 ~" << xify(name + "_ge_" + value_name(v)) << " 1 " << xify(name + "_ge_" + value_name(v - 1_i)) << " >= 1 ;" << endl;
+            ++_imp->model_constraints;
+        }
+
+        // x < v -> x < v + 1
+        if (v != upper) {
+            _imp->opb << "1 " << xify(name + "_ge_" + value_name(v)) << " 1 ~" << xify(name + "_ge_" + value_name(v + 1_i)) << " >= 1 ;" << endl;
+            ++_imp->model_constraints;
+        }
+
+        // x == v -> x >= v
+        _imp->opb << "1 ~" << xify(name + "_eq_" + value_name(v)) << " 1 " << xify(name + "_ge_" + value_name(v)) << " >= 1 ;" << endl;
         ++_imp->model_constraints;
 
-        for (Integer v = lower ; v <= upper ; ++v) {
-            // x >= v -> x >= v - 1
-            if (v != lower) {
-                _imp->opb << "1 ~" << xify(name + "_ge_" + value_name(v)) << " 1 " << xify(name + "_ge_" + value_name(v - 1_i)) << " >= 1 ;" << endl;
-                ++_imp->model_constraints;
-            }
-
-            // x < v -> x < v + 1
-            if (v != upper) {
-                _imp->opb << "1 " << xify(name + "_ge_" + value_name(v)) << " 1 ~" << xify(name + "_ge_" + value_name(v + 1_i)) << " >= 1 ;" << endl;
-                ++_imp->model_constraints;
-            }
-
-            // x == v -> x >= v
-            _imp->opb << "1 ~" << xify(name + "_eq_" + value_name(v)) << " 1 " << xify(name + "_ge_" + value_name(v)) << " >= 1 ;" << endl;
+        // x == v -> ! x >= v + 1
+        if (v != upper) {
+            _imp->opb << "1 ~" << xify(name + "_eq_" + value_name(v)) << " 1 ~" << xify(name + "_ge_" + value_name(v + 1_i)) << " >= 1 ;" << endl;
             ++_imp->model_constraints;
-
-            // x == v -> ! x >= v + 1
-            if (v != upper) {
-                _imp->opb << "1 ~" << xify(name + "_eq_" + value_name(v)) << " 1 ~" << xify(name + "_ge_" + value_name(v + 1_i)) << " >= 1 ;" << endl;
-                ++_imp->model_constraints;
-            }
-
-            // x != v && x != v + 1 && ... -> x < v
-            for (Integer v2 = v ; v2 <= upper ; ++v2)
-                _imp->opb << "1 " << xify(name + "_eq_" + value_name(v2)) << " ";
-            _imp->opb << "1 ~" << xify(name + "_ge_" + value_name(v)) << " >= 1 ;" << endl;
-            ++_imp->model_constraints;
-
-            // (x >= v && x < v + 1) -> x == v
-            if (v != upper) {
-                _imp->opb << "1 ~" << xify(name + "_ge_" + value_name(v))
-                    << " 1 " << xify(name + "_ge_" + value_name(v + 1_i))
-                    << " 1 " << xify(name + "_eq_" + value_name(v))
-                    << " >= 1 ;" << endl;
-                ++_imp->model_constraints;
-            }
-
-            _imp->integer_variables.emplace(id >= v, xify(name + "_ge_" + value_name(v)));
-            _imp->integer_variables.emplace(id < v, "~" + xify(name + "_ge_" + value_name(v)));
         }
+
+        // x != v && x != v + 1 && ... -> x < v
+        for (Integer v2 = v ; v2 <= upper ; ++v2)
+            _imp->opb << "1 " << xify(name + "_eq_" + value_name(v2)) << " ";
+        _imp->opb << "1 ~" << xify(name + "_ge_" + value_name(v)) << " >= 1 ;" << endl;
+        ++_imp->model_constraints;
+
+        // (x >= v && x < v + 1) -> x == v
+        if (v != upper) {
+            _imp->opb << "1 ~" << xify(name + "_ge_" + value_name(v))
+                << " 1 " << xify(name + "_ge_" + value_name(v + 1_i))
+                << " 1 " << xify(name + "_eq_" + value_name(v))
+                << " >= 1 ;" << endl;
+            ++_imp->model_constraints;
+        }
+
+        _imp->integer_variables.emplace(id >= v, xify(name + "_ge_" + value_name(v)));
+        _imp->integer_variables.emplace(id < v, "~" + xify(name + "_ge_" + value_name(v)));
     }
 
     _imp->solution_variables.push_back(id);

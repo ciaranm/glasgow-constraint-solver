@@ -162,7 +162,7 @@ auto Propagators::table(const State & state, vector<IntegerVariableID> && vars, 
     }
 
     int id = _imp->propagation_functions.size();
-    auto selector = create_auxilliary_integer_variable(0_i, Integer(permitted.size() - 1), "table", false);
+    auto selector = create_auxilliary_integer_variable(0_i, Integer(permitted.size() - 1), "table");
 
     // pb encoding, if necessary
     if (want_nonpropagating()) {
@@ -328,9 +328,9 @@ auto Propagators::propagate_cnfs(State & state) const -> Inference
     return changed ? Inference::Change : Inference::NoChange;
 }
 
-auto Propagators::create_auxilliary_integer_variable(Integer l, Integer u, const std::string & s, bool need_ge) -> IntegerVariableID
+auto Propagators::create_auxilliary_integer_variable(Integer l, Integer u, const std::string & s) -> IntegerVariableID
 {
-    return _imp->problem->create_integer_variable(l, u, make_optional("aux_" + s), need_ge);
+    return _imp->problem->create_integer_variable(l, u, make_optional("aux_" + s));
 }
 
 auto Propagators::want_nonpropagating() const -> bool

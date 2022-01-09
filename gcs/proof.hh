@@ -52,7 +52,7 @@ namespace gcs
 
             // OPB-related output
             auto posting(const std::string &) -> void;
-            auto create_integer_variable(SimpleIntegerVariableID, Integer, Integer, const std::optional<std::string> &, bool need_ge) -> void;
+            auto create_integer_variable(SimpleIntegerVariableID, Integer, Integer, const std::optional<std::string> &) -> void;
             [[ nodiscard ]] auto cnf(const Literals &) -> ProofLine;
             [[ nodiscard ]] auto at_most_one(const Literals &) -> ProofLine;
             [[ nodiscard ]] auto pseudoboolean_ge(const WeightedLiterals &, Integer) -> ProofLine;

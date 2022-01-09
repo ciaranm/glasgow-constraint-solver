@@ -55,7 +55,7 @@ namespace gcs
             auto table(const State &, std::vector<IntegerVariableID> &&, std::vector<std::vector<Integer> > &&, const std::string & name) -> void;
             auto propagator(const State &, PropagationFunction &&, const Triggers & trigger_vars, const std::string & name) -> void;
 
-            [[ nodiscard ]] auto create_auxilliary_integer_variable(Integer, Integer, const std::string & name, bool need_ge) -> IntegerVariableID;
+            [[ nodiscard ]] auto create_auxilliary_integer_variable(Integer, Integer, const std::string & name) -> IntegerVariableID;
 
             [[ nodiscard ]] auto propagate(State &, const std::optional<IntegerVariableID> & objective_variable,
                     const std::optional<Integer> & objective_value) const -> bool;

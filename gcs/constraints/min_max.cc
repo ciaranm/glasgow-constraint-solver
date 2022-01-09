@@ -29,7 +29,7 @@ auto ArrayMinMax::install(Propagators & propagators, const State & initial_state
             LessThanEqual{ v, _result }.install(propagators, initial_state);
     }
 
-    auto selector = propagators.create_auxilliary_integer_variable(0_i, Integer(_vars.size() - 1), "minmax", false);
+    auto selector = propagators.create_auxilliary_integer_variable(0_i, Integer(_vars.size() - 1), "minmax");
     for_each_with_index(_vars, [&] (IntegerVariableID var, auto idx) {
             // (selector == idx /\ var == val) -> result == val
             initial_state.for_each_value(var, [&] (Integer val) {
