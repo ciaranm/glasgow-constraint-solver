@@ -7,22 +7,27 @@
 #include <util/overloaded.hh>
 
 #include <algorithm>
+#include <bit>
 #include <iterator>
 #include <list>
 #include <map>
 #include <fstream>
 #include <sstream>
 #include <unordered_map>
+#include <vector>
 
 using namespace gcs;
 
+using std::bit_ceil;
 using std::copy;
+using std::countr_zero;
 using std::endl;
 using std::istreambuf_iterator;
 using std::fstream;
 using std::ios;
 using std::list;
 using std::map;
+using std::min;
 using std::ofstream;
 using std::ostreambuf_iterator;
 using std::optional;
@@ -31,6 +36,7 @@ using std::string;
 using std::stringstream;
 using std::to_string;
 using std::unordered_map;
+using std::vector;
 using std::visit;
 
 ProofError::ProofError(const string & w) :
@@ -109,7 +115,53 @@ auto Proof::create_integer_variable(SimpleIntegerVariableID id, Integer lower, I
     if (optional_name)
         name.append("_" + *optional_name);
 
-    _imp->opb << "* variable " << name << " domain" << endl;
+    _imp->opb << "* variable " << name << " binary encoding" << endl;
+    unsigned n_positive_bits = 0, n_negative_bits = 0;
+    vector<pair<long long, string> > bit_vars;
+    if (upper >= 0_i) {
+        // including zero, just because it gets horrible otherwise
+        // 8 == 1000
+        n_positive_bits = countr_zero(bit_ceil(static_cast<unsigned long long>(upper.raw_value)));
+        for (unsigned b = 0 ; b <= n_positive_bits ; ++b)
+            bit_vars.emplace_back(1ll << b, xify(name + "_b_" + to_string(b)));
+    }
+    if (lower < 0_i) {
+        n_negative_bits = countr_zero(bit_ceil(static_cast<unsigned long long>(-lower.raw_value)));
+        for (unsigned b = 0 ; b <= n_negative_bits ; ++b)
+            bit_vars.emplace_back(-(1ll << b), xify(name + "_b_-" + to_string(b)));
+    }
+    _imp->model_variables += bit_vars.size();
+
+    // lower bound
+    for (auto & [ coeff, var ] : bit_vars)
+        _imp->opb << coeff << " " << var << " ";
+    _imp->opb << ">= " << lower << " ;" << endl;
+    ++_imp->model_constraints;
+
+    // upper bound
+    for (auto & [ coeff, var ] : bit_vars)
+        _imp->opb << -coeff << " " << var << " ";
+    _imp->opb << ">= " << -upper << " ;" << endl;
+    ++_imp->model_constraints;
+
+    // any negative bits set -> no positive bits set
+    if (n_negative_bits != 0 && n_positive_bits != 0) {
+        for (auto & [ coeff, var ] : bit_vars) {
+            if (coeff < 0) {
+                _imp->opb << n_positive_bits << " ~" << var;
+                for (auto & [ other_coeff, other_var ] : bit_vars) {
+                    if (other_coeff >= 0) {
+                        // var -> ! other_var
+                        _imp->opb << " 1 ~" << other_var;
+                    }
+                }
+                _imp->opb << " >= " << n_positive_bits << " ;" << endl;
+                ++_imp->model_constraints;
+            }
+        }
+    }
+
+    _imp->opb << "* variable " << name << " direct encoding" << endl;
     _imp->model_variables += (upper - lower + 1_i).raw_value;
 
     for (Integer v = lower ; v <= upper ; ++v) {
@@ -126,6 +178,20 @@ auto Proof::create_integer_variable(SimpleIntegerVariableID id, Integer lower, I
         _imp->opb << "-1 " << xify(name + "_eq_" + value_name(v)) << " ";
     _imp->opb << ">= -1 ;" << endl;
     _imp->variable_at_most_one_constraints.emplace(id, ++_imp->model_constraints);
+
+    for (Integer v = lower ; v <= upper ; ++v) {
+        auto x = xify(name + "_eq_" + value_name(v));
+        // var -> bits
+        _imp->opb << bit_vars.size() << " ~" << x;
+        for (auto & [ coeff, var ] : bit_vars) {
+            if (coeff < 0)
+                _imp->opb << " 1 " << ((v.raw_value < 0 && (-v.raw_value & -coeff)) ? "" : "~") << var;
+            else
+                _imp->opb << " 1 " << ((v.raw_value >= 0 && (v.raw_value & coeff)) ? "" : "~") << var;
+        }
+        _imp->opb << " >= " << bit_vars.size() << " ;" << endl;
+        ++_imp->model_constraints;
+    }
 
     _imp->opb << "* variable " << name << " greater or equal encoding" << endl;
     _imp->model_variables += (upper - lower + 1_i).raw_value;
