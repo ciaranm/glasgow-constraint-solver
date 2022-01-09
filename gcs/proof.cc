@@ -277,7 +277,7 @@ auto Proof::start_proof(State & initial_state) -> void
 
     _imp->proof.open(_imp->proof_file, ios::out);
 
-    _imp->proof << "pseudo-Boolean proof version 1.0\n";
+    _imp->proof << "pseudo-Boolean proof version 1.2\n";
 
     _imp->proof << "f " << _imp->model_constraints << " 0\n";
     _imp->proof_line += _imp->model_constraints;
