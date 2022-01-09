@@ -12,6 +12,8 @@
 #include <string>
 #include <vector>
 
+#include <boost/program_options.hpp>
+
 using namespace gcs;
 
 using std::cerr;
@@ -24,28 +26,44 @@ using std::vector;
 
 using namespace std::literals::string_literals;
 
+namespace po = boost::program_options;
+
 auto main(int argc, char * argv[]) -> int
 {
-    bool use_abs = false;
+    po::options_description display_options{ "Program options" };
+    display_options.add_options()
+        ("help", "Display help information")
+        ("prove", "Create a proof");
 
-    const string usage = " [ abs false|true ]";
-    if (argc > 2) {
-        cerr << "Usage: " << argv[0] << usage << endl;
+    po::options_description all_options{ "All options" };
+    all_options.add_options()
+        ("abs", "Use abs constraint")
+        ;
+
+    all_options.add(display_options);
+
+    po::variables_map options_vars;
+
+    try {
+        po::store(po::command_line_parser(argc, argv)
+                .options(all_options)
+                .run(), options_vars);
+        po::notify(options_vars);
+    }
+    catch (const po::error & e) {
+        cerr << "Error: " << e.what() << endl;
+        cerr << "Try " << argv[0] << " --help" << endl;
         return EXIT_FAILURE;
     }
 
-    if (argc >= 2) {
-        if (argv[1] == "true"s)
-            use_abs = true;
-        else if (argv[1] == "false"s)
-            use_abs = false;
-        else {
-            cerr << "Usage: " << argv[0] << usage << endl;
-            return EXIT_FAILURE;
-        }
+    if (options_vars.count("help")) {
+        cout << "Usage: " << argv[0] << " [options] [size]" << endl;
+        cout << endl;
+        cout << display_options << endl;
+        return EXIT_SUCCESS;
     }
 
-    Problem p{ Proof{ "crystal_maze.opb", "crystal_maze.veripb" } };
+    Problem p = options_vars.count("prove") ? Problem{ Proof{ "crystal_maze.opb", "crystal_maze.veripb" } } : Problem{ };
 
     vector<IntegerVariableID> xs;
     for (int i = 0 ; i < 8 ; ++i)
@@ -61,7 +79,7 @@ auto main(int argc, char * argv[]) -> int
     vector<IntegerVariableID> diffs, abs_diffs;
     for (auto & [ x1, x2 ] : edges) {
         diffs.push_back(p.create_integer_variable(-7_i, 7_i, "diff" + to_string(x1) + "_" + to_string(x2)));
-        if (use_abs) {
+        if (options_vars.count("abs")) {
             abs_diffs.push_back(p.create_integer_variable(2_i, 7_i, "absdiff" + to_string(x1) + "_" + to_string(x2)));
             p.post(Abs{ diffs.back(), abs_diffs.back() });
         }
