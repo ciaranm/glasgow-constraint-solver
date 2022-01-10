@@ -178,6 +178,7 @@ auto Proof::create_integer_variable(SimpleIntegerVariableID id, Integer lower, I
 
     for (Integer v = lower ; v <= upper ; ++v) {
         auto x = xify(name + "_eq_" + value_name(v));
+
         // var -> bits
         _imp->opb << bit_vars.size() << " ~" << x;
         for (auto & [ coeff, var ] : bit_vars) {
@@ -187,6 +188,17 @@ auto Proof::create_integer_variable(SimpleIntegerVariableID id, Integer lower, I
                 _imp->opb << " 1 " << ((v.raw_value >= 0 && (v.raw_value & coeff)) ? "" : "~") << var;
         }
         _imp->opb << " >= " << bit_vars.size() << " ;\n";
+        ++_imp->model_constraints;
+
+        // bits -> var
+        _imp->opb << "1 " << x;
+        for (auto & [ coeff, var ] : bit_vars) {
+            if (coeff < 0)
+                _imp->opb << " 1 " << ((v.raw_value < 0 && (-v.raw_value & -coeff)) ? "~" : "") << var;
+            else
+                _imp->opb << " 1 " << ((v.raw_value >= 0 && (v.raw_value & coeff)) ? "~" : "") << var;
+        }
+        _imp->opb << " >= 1 ;\n";
         ++_imp->model_constraints;
     }
 
