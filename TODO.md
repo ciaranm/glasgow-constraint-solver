@@ -38,6 +38,8 @@ Constraints
 
 - Circuit, so we can do all the MiniCP benchmarks.
 
+- Rewrite Abs to use multiplier and equality.
+
 State
 -----
 
@@ -68,6 +70,8 @@ Design
   use something else instead.
 
 - Some way of handling limits, ctrl+c, etc.
+
+- Don't generate binary encoding for 0/1 variables.
 
 Proofs
 ------
