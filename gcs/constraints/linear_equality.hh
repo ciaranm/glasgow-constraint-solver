@@ -25,6 +25,20 @@ namespace gcs
             virtual auto describe_for_proof() -> std::string override;
             virtual auto install(Propagators &, const State &) && -> void override;
     };
+
+    class LinearLessEqual :
+        public Constraint
+    {
+        private:
+            Linear _coeff_vars;
+            Integer _value;
+
+        public:
+            explicit LinearLessEqual(Linear && coeff_vars, Integer value);
+
+            virtual auto describe_for_proof() -> std::string override;
+            virtual auto install(Propagators &, const State &) && -> void override;
+    };
 }
 
 #endif

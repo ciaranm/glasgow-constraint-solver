@@ -129,3 +129,20 @@ auto LinearEquality::describe_for_proof() -> std::string
     return "linear equality";
 }
 
+LinearLessEqual::LinearLessEqual(Linear && coeff_vars, Integer value) :
+    _coeff_vars(move(coeff_vars)),
+    _value(value)
+{
+}
+
+auto LinearLessEqual::install(Propagators & propagators, const State & initial_state) && -> void
+{
+    sanitise_linear(_coeff_vars);
+    propagators.integer_linear_le(initial_state, move(_coeff_vars), _value, false);
+}
+
+auto LinearLessEqual::describe_for_proof() -> std::string
+{
+    return "linear less or equal";
+}
+
