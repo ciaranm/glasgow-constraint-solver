@@ -134,7 +134,7 @@ auto Propagators::integer_linear_le(const State & state, Linear && coeff_vars, I
     for (auto & [ _, v ] : coeff_vars)
         trigger_on_bounds(v, id);
 
-    _imp->propagation_functions.emplace_back([&, coeff_vars = move(coeff_vars), value = value] (State & state) {
+    _imp->propagation_functions.emplace_back([&, coeff_vars = move(coeff_vars), value = value, equality = equality] (State & state) {
             return propagate_linear(coeff_vars, value, state, equality);
     });
     _imp->propagator_is_disabled.push_back(0);
