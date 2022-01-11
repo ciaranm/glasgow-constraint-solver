@@ -22,6 +22,7 @@ using std::bit_ceil;
 using std::copy;
 using std::countr_zero;
 using std::istreambuf_iterator;
+using std::flush;
 using std::fstream;
 using std::ios;
 using std::list;
@@ -286,6 +287,7 @@ auto Proof::start_proof(State & initial_state) -> void
 
     if (! full_opb)
         throw ProofError{ "Error writing opb file to '" + _imp->opb_file + "'" };
+    full_opb.close();
 
     _imp->proof.open(_imp->proof_file, ios::out);
 
@@ -458,6 +460,10 @@ auto Proof::assert_contradiction() -> void
     _imp->proof << "u >= 1 ;\n";
     ++_imp->proof_line;
     _imp->proof << "c " << _imp->proof_line << " 0\n";
+
+    // this is mostly for tests: we haven't necessarily destroyed the
+    // Problem before running the verifier.
+    _imp->proof << flush;
 }
 
 auto Proof::infer(const State & state, const Literal & lit, Justification why) -> void
