@@ -37,6 +37,7 @@ auto main(int argc, char * argv[]) -> int
     po::options_description all_options{ "All options" };
     all_options.add_options()
         ("size", po::value<int>()->default_value(88), "Size of the problem to solve")
+        ("all", "Find all solutions")
         ;
 
     all_options.add(display_options);
@@ -96,7 +97,7 @@ auto main(int argc, char * argv[]) -> int
                     cout << " " << s(v);
                 cout << endl;
 
-                return false;
+                return options_vars.count("all");
                 },
             .guess = [&] (const State & state, IntegerVariableID var) -> vector<Literal> {
                 return vector<Literal>{ var == state.lower_bound(var), var != state.lower_bound(var) };
