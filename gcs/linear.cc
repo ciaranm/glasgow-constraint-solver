@@ -57,13 +57,13 @@ auto gcs::propagate_linear(const Linear & coeff_vars, Integer value, State & sta
     auto infer = [&] (int p, IntegerVariableID var, Integer remainder, Integer coeff) {
         if (coeff >= 0_i) {
             if (bounds[p].second >= (1_i + remainder / coeff))
-                return state.infer(var < (1_i + remainder / coeff), JustifyUsingRUP{ });
+                return state.infer(var < (1_i + remainder / coeff), JustifyUsingAssertion{ });
             else
                 return Inference::NoChange;
         }
         else {
             if (bounds[p].first < remainder / coeff)
-                return state.infer(var >= remainder / coeff, JustifyUsingRUP{ });
+                return state.infer(var >= remainder / coeff, JustifyUsingAssertion{ });
             else
                 return Inference::NoChange;
         }
