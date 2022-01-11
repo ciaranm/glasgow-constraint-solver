@@ -24,5 +24,6 @@ perf.data.old
 /qap
 /n_queens
 /magic_square
+/cake
 *.opb
 *.veripb

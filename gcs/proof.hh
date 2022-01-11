@@ -52,13 +52,17 @@ namespace gcs
 
             // OPB-related output
             auto posting(const std::string &) -> void;
-            auto create_integer_variable(SimpleIntegerVariableID, Integer, Integer, const std::optional<std::string> &) -> void;
+            auto create_integer_variable(SimpleIntegerVariableID, Integer, Integer, const std::optional<std::string> &,
+                    bool direct_encoding) -> void;
             [[ nodiscard ]] auto cnf(const Literals &) -> ProofLine;
             [[ nodiscard ]] auto at_most_one(const Literals &) -> ProofLine;
             [[ nodiscard ]] auto pseudoboolean_ge(const WeightedLiterals &, Integer) -> ProofLine;
             auto integer_linear_le(const State &, const Linear & coeff_vars, Integer value, bool equality) -> void;
 
             auto minimise(IntegerVariableID) -> void;
+
+            auto need_proof_variable(const Literal &) -> void;
+            auto need_direct_encoding_for(SimpleIntegerVariableID, Integer) -> void;
 
             // Proof-related output
             auto start_proof(State & initial_state) -> void;

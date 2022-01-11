@@ -37,6 +37,11 @@ namespace gcs
                     Integer upper,
                     const std::optional<std::string> & name = std::nullopt) -> SimpleIntegerVariableID;
 
+            [[ nodiscard ]] auto create_integer_range_variable(
+                    Integer lower,
+                    Integer upper,
+                    const std::optional<std::string> & name = std::nullopt) -> SimpleIntegerVariableID;
+
             [[ nodiscard ]] auto create_state() const -> State;
             [[ nodiscard ]] auto propagate(State &) const -> bool;
 
