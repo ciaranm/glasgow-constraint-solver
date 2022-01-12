@@ -214,7 +214,10 @@ auto ComparisonReif::_install_equals(Propagators & propagators, const State & in
                         auto value1 = state.optional_single_value(v1);
                         auto value2 = state.optional_single_value(v2);
                         if (value1 && value2) {
-                            return pair{ Inference::NoChange, PropagatorState::DisableUntilBacktrack };
+                            if (*value1 != *value2)
+                                return pair{ state.infer(! cond, NoJustificationNeeded{ }), PropagatorState::DisableUntilBacktrack };
+                            else
+                                return pair{ Inference::NoChange, PropagatorState::DisableUntilBacktrack };
                         }
                         else if (value1) {
                             if (! state.in_domain(v2, *value1))
