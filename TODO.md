@@ -53,6 +53,9 @@ State
 
 - Consider a range set of some kind.
 
+- Template out some of the variable representations so we don't pay the price
+  for offsets etc if we aren't using them.
+
 Design
 ------
 
