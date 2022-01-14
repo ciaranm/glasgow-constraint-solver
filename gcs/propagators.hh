@@ -19,9 +19,9 @@ namespace gcs
 
     struct Triggers
     {
-        std::vector<VariableID> on_change;
-        std::vector<VariableID> on_bounds;
-        std::vector<VariableID> on_instantiated;
+        std::vector<VariableID> on_change = { };
+        std::vector<VariableID> on_bounds = { };
+        std::vector<VariableID> on_instantiated = { };
     };
 
     class Propagators
