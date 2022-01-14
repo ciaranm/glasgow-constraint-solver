@@ -291,10 +291,6 @@ auto Proof::need_gevar(SimpleIntegerVariableID id, Integer v) -> void
     auto & bit_vars = _imp->integer_variable_bits.find(id)->second;
 
     // gevar -> bits
-    unsigned long long big_number = 0;
-    for (auto & [ coeff, _ ] : bit_vars)
-        big_number += abs(coeff.raw_value);
-
     _imp->proof << "red ";
     for (auto & [ coeff, var ] : bit_vars)
         _imp->proof << coeff << " " << var << " ";
