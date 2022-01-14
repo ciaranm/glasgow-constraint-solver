@@ -252,10 +252,63 @@ auto Proof::create_integer_variable(SimpleIntegerVariableID id, Integer lower, I
                 ++_imp->model_constraints;
             }
 
-            _imp->direct_integer_variables.emplace(id >= v, xify(name + "_ge_" + value_name(v)));
-            _imp->direct_integer_variables.emplace(id < v, "~" + xify(name + "_ge_" + value_name(v)));
+            auto gevar = xify(name + "_ge_" + value_name(v));
+            _imp->direct_integer_variables.emplace(id >= v, gevar);
+            _imp->direct_integer_variables.emplace(id < v, "~" + gevar);
+
+            // gevar -> bits
+            unsigned long long big_number = 0;
+            for (auto & [ coeff, _ ] : bit_vars)
+                big_number += abs(coeff.raw_value);
+
+            _imp->opb << big_number << " ~" << gevar << " ";
+            for (auto & [ coeff, var ] : bit_vars)
+                _imp->opb << coeff << " " << var << " ";
+            _imp->opb << ">= " << v << " ;\n";
+            ++_imp->model_constraints;
+
+            // !gevar -> bits
+            _imp->opb << big_number << " " << gevar << " ";
+            for (auto & [ coeff, var ] : bit_vars)
+                _imp->opb << -coeff << " " << var << " ";
+            _imp->opb << ">= " << -v << " ;\n";
+            ++_imp->model_constraints;
         }
     }
+}
+
+auto Proof::need_gevar(SimpleIntegerVariableID id, Integer v) -> void
+{
+    if (_imp->direct_integer_variables.count(id >= v))
+        return;
+    _imp->proof << "# 0\n";
+
+    string name = "iv" + to_string(id.index);
+    auto gevar = xify(name + "_ge_" + value_name(v));
+    _imp->direct_integer_variables.emplace(id >= v, gevar);
+    _imp->direct_integer_variables.emplace(id < v, "~" + gevar);
+
+    auto & bit_vars = _imp->integer_variable_bits.find(id)->second;
+
+    // gevar -> bits
+    unsigned long long big_number = 0;
+    for (auto & [ coeff, _ ] : bit_vars)
+        big_number += abs(coeff.raw_value);
+
+    _imp->proof << "red ";
+    for (auto & [ coeff, var ] : bit_vars)
+        _imp->proof << coeff << " " << var << " ";
+    _imp->proof << ">= " << v << " <== " << gevar << " ; " << gevar << " 0\n";
+    ++_imp->proof_line;
+
+    // !gevar -> bits
+    _imp->proof << "red ";
+    for (auto & [ coeff, var ] : bit_vars)
+        _imp->proof << -coeff << " " << var << " ";
+    _imp->proof << ">= " << (-v + 1_i) << " <== ~" << gevar << " ; " << gevar << " 1\n";
+    ++_imp->proof_line;
+
+    _imp->proof << "# " << _imp->active_proof_level << "\n";
 }
 
 auto Proof::need_direct_encoding_for(SimpleIntegerVariableID id, Integer v) -> void
@@ -263,57 +316,25 @@ auto Proof::need_direct_encoding_for(SimpleIntegerVariableID id, Integer v) -> v
     if (_imp->direct_integer_variables.count(id == v))
         return;
 
+    need_gevar(id, v);
+    need_gevar(id, v + 1_i);
+
     _imp->proof << "# 0\n";
 
     string name = "iv" + to_string(id.index);
+
     auto eqvar = xify(name + "_eq_" + value_name(v));
     _imp->direct_integer_variables.emplace(id == v, eqvar);
     _imp->direct_integer_variables.emplace(id != v, "~" + eqvar);
 
-    auto & bit_vars = _imp->integer_variable_bits.find(id)->second;
-
-    // eqvar -> bits
-    _imp->proof << "red " << bit_vars.size() << " ~" << eqvar;
-    for (auto & [ coeff, var ] : bit_vars) {
-        if (coeff < 0_i)
-            _imp->proof << " 1 " << ((v.raw_value < 0 && (-v.raw_value & -coeff.raw_value)) ? "" : "~") << var;
-        else
-            _imp->proof << " 1 " << ((v.raw_value >= 0 && (v.raw_value & coeff.raw_value)) ? "" : "~") << var;
-    }
-    _imp->proof << " >= " << bit_vars.size() << " ; " << eqvar << " 0\n";
+    // eqvar -> ge_v && ! ge_v+1
+    _imp->proof << "red 1 " << proof_variable(id >= v) << " 1 ~" << proof_variable(id >= v + 1_i)
+        << " >= 2 <== " << eqvar << " ; " << eqvar << " 0\n";
     ++_imp->proof_line;
 
-    // bits -> eqvar
-    _imp->proof << "red 1 " << eqvar;
-    for (auto & [ coeff, var ] : bit_vars) {
-        if (coeff < 0_i)
-            _imp->proof << " 1 " << ((v.raw_value < 0 && (-v.raw_value & -coeff.raw_value)) ? "~" : "") << var;
-        else
-            _imp->proof << " 1 " << ((v.raw_value >= 0 && (v.raw_value & coeff.raw_value)) ? "~" : "") << var;
-    }
-    _imp->proof << " >= 1 ; " << eqvar << " 1\n";
-    ++_imp->proof_line;
-
-    auto gevar = xify(name + "_ge_" + value_name(v));
-    _imp->direct_integer_variables.emplace(id >= v, gevar);
-    _imp->direct_integer_variables.emplace(id < v, "~" + gevar);
-
-    // gevar -> bits
-    unsigned long long big_number = 0;
-    for (auto & [ coeff, _ ] : bit_vars)
-        big_number += abs(coeff.raw_value);
-
-    _imp->proof << "red " << big_number << " ~" << gevar << " ";
-    for (auto & [ coeff, var ] : bit_vars)
-        _imp->proof << coeff << " " << var << " ";
-    _imp->proof << ">= " << v << " ; " << gevar << " 0\n";
-    ++_imp->proof_line;
-
-    // !gevar -> bits
-    _imp->proof << "red " << big_number << " " << gevar << " ";
-    for (auto & [ coeff, var ] : bit_vars)
-        _imp->proof << -coeff << " " << var << " ";
-    _imp->proof << ">= " << -v << " ; " << gevar << " 1\n";
+    // ge_v && ! ge_v+1 -> eqvar
+    _imp->proof << "red 1 " << proof_variable(id >= v) << " 1 ~" << proof_variable(id >= v + 1_i)
+        << " >= 1 ==> " << eqvar << " ; " << eqvar << " 1\n";
     ++_imp->proof_line;
 
     _imp->proof << "# " << _imp->active_proof_level << "\n";
@@ -510,6 +531,11 @@ auto Proof::solution(const State & state) -> void
 {
     _imp->proof << "* solution\n";
 
+    for (auto & var : _imp->solution_variables)
+        need_proof_variable(var == state(var));
+
+    _imp->proof << "# 0\n";
+
     if (_imp->objective_variable) {
         Integer obj_val = state(*_imp->objective_variable);
         need_proof_variable(*_imp->objective_variable == obj_val);
@@ -526,14 +552,14 @@ auto Proof::solution(const State & state) -> void
         _imp->proof << " " << proof_variable(*_imp->objective_variable == obj_val);
 
         visit(overloaded {
-                    [&] (const SimpleIntegerVariableID & id) {
-                        auto & bit_vars = _imp->integer_variable_bits.find(id)->second;
-                            for (auto & [ coeff, var ] : bit_vars) {
-                                if (coeff < 0_i)
-                                    _imp->proof << " " << ((obj_val.raw_value < 0 && (-obj_val.raw_value & -coeff.raw_value)) ? "" : "~") << var;
-                                else
-                                    _imp->proof << " " << ((obj_val.raw_value >= 0 && (obj_val.raw_value & coeff.raw_value)) ? "" : "~") << var;
-                            }
+                    [&] (const SimpleIntegerVariableID & var) {
+                        auto & bit_vars = _imp->integer_variable_bits.find(var)->second;
+                        for (auto & [ coeff, var ] : bit_vars) {
+                            if (coeff < 0_i)
+                                _imp->proof << " " << ((obj_val.raw_value < 0 && (-obj_val.raw_value & -coeff.raw_value)) ? "" : "~") << var;
+                            else
+                                _imp->proof << " " << ((obj_val.raw_value >= 0 && (obj_val.raw_value & coeff.raw_value)) ? "" : "~") << var;
+                        }
                     },
                     [&] (const ConstantIntegerVariableID &) {
                         throw UnimplementedException{ };
@@ -553,6 +579,8 @@ auto Proof::solution(const State & state) -> void
         _imp->proof << '\n';
         ++_imp->proof_line;
     }
+
+    _imp->proof << "# " << _imp->active_proof_level << "\n";
 }
 
 auto Proof::backtrack(const State & state) -> void
@@ -580,43 +608,40 @@ auto Proof::assert_contradiction() -> void
 
 auto Proof::infer(const State & state, const Literal & lit, Justification why) -> void
 {
+    auto output_it = [&] (const string & rule) {
+        _imp->proof << rule;
+        state.for_each_guess([&] (const Literal & lit) {
+                _imp->proof << " 1 " << proof_variable(! lit);
+                });
+        if (! is_literally_false(lit))
+            _imp->proof << " 1 " << proof_variable(lit);
+        _imp->proof << " >= 1 ;\n";
+        ++_imp->proof_line;
+    };
+
     visit(overloaded {
             [&] (const JustifyUsingRUP &) {
                 need_proof_variable(lit);
-
-                _imp->proof << "u";
-                state.for_each_guess([&] (const Literal & lit) {
-                        _imp->proof << " 1 " << proof_variable(! lit);
-                        });
-                if (! is_literally_false(lit))
-                    _imp->proof << " 1 " << proof_variable(lit);
-                _imp->proof << " >= 1 ;\n";
-                ++_imp->proof_line;
+                output_it("u");
             },
             [&] (const JustifyUsingAssertion &) {
                 need_proof_variable(lit);
-
-                _imp->proof << "a";
-                state.for_each_guess([&] (const Literal & lit) {
-                        _imp->proof << " 1 " << proof_variable(! lit);
-                        });
-                if (! is_literally_false(lit))
-                    _imp->proof << " 1 " << proof_variable(lit);
-                _imp->proof << " >= 1 ;\n";
-                ++_imp->proof_line;
+                output_it("a");
             },
             [&] (const JustifyExplicitly & x) {
                 x.add_proof_steps(*this);
                 infer(state, lit, JustifyUsingRUP{ });
             },
             [&] (const Guess &) {
+                // we need this because it'll show up in the trail later
+                need_proof_variable(lit);
                 _imp->proof << "* guessing " << proof_variable(lit) << ", decision stack is [";
                 state.for_each_guess([&] (const Literal & lit) {
                         _imp->proof << " " << proof_variable(lit);
                         });
                 _imp->proof << " ]\n";
             },
-            [] (const NoJustificationNeeded &) {
+            [&] (const NoJustificationNeeded &) {
             }
         }, why);
 }

@@ -25,11 +25,8 @@ namespace
         if (problem.propagate(state)) {
             auto branch_var = callbacks.branch ? callbacks.branch(state) : problem.find_branching_variable(state);
             if (branch_var == nullopt) {
-                if (problem.optional_proof()) {
-                    problem.optional_proof()->enter_proof_level(0);
+                if (problem.optional_proof())
                     problem.optional_proof()->solution(state);
-                    problem.optional_proof()->enter_proof_level(depth + 1);
-                }
 
                 ++stats.solutions;
                 this_subtree_contains_solution = true;

@@ -40,6 +40,8 @@ namespace gcs
 
             [[ nodiscard ]] auto xify(std::string &&) -> std::string;
 
+            auto need_gevar(SimpleIntegerVariableID id, Integer v) -> void;
+
         public:
             explicit Proof(const std::string & opb_file, const std::string & proof_file, bool use_friendly_names = true);
             ~Proof();
