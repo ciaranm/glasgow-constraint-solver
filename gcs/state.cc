@@ -5,6 +5,7 @@
 #include <gcs/problem.hh>
 
 #include "util/overloaded.hh"
+#include "util/generalise.hh"
 
 #include <algorithm>
 #include <list>
@@ -132,15 +133,6 @@ auto State::state_of(const DirectIntegerVariableID i, IntegerVariableState & spa
             [&] (const SimpleIntegerVariableID & v) -> const IntegerVariableState & { return _imp->integer_variable_states.back()[v.index]; },
             [&] (const ConstantIntegerVariableID & v) -> const IntegerVariableState & { space = IntegerVariableConstantState{ v.const_value }; return space; }
             }, i);
-}
-
-namespace
-{
-    template <typename T_, typename A_>
-    auto generalise(A_ & a) -> T_
-    {
-        return visit([] (auto & x) -> T_ { return x; }, a);
-    }
 }
 
 auto State::infer_literal_from_direct_integer_variable(
