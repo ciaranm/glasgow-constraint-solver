@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <cstdlib>
 #include <iterator>
 #include <list>
 #include <map>
@@ -27,7 +28,9 @@ using std::flush;
 using std::fstream;
 using std::ios;
 using std::list;
+using std::llabs;
 using std::map;
+using std::max;
 using std::min;
 using std::ofstream;
 using std::ostreambuf_iterator;
@@ -67,7 +70,7 @@ struct Proof::Imp
 
     map<DirectIntegerVariableID, ProofLine> variable_at_least_one_constraints, variable_at_most_one_constraints;
     map<LiteralFromIntegerVariable, string> direct_integer_variables;
-    map<SimpleIntegerVariableID, vector<pair<Integer, string> > > integer_variable_bits;
+    map<SimpleIntegerVariableID, pair<Integer, vector<pair<Integer, string> > > > integer_variable_bits;
     list<IntegerVariableID> solution_variables;
     optional<IntegerVariableID> objective_variable;
 
@@ -117,19 +120,17 @@ auto Proof::create_integer_variable(SimpleIntegerVariableID id, Integer lower, I
         name.append("_" + *optional_name);
 
     _imp->opb << "* variable " << name << " " << lower.raw_value << " .. " << upper.raw_value << " binary encoding\n";
-    int n_positive_bits = 0, n_negative_bits = 0;
-    auto & bit_vars = _imp->integer_variable_bits.emplace(id, vector<pair<Integer, string> >{ }).first->second;
-    if (lower < 0_i) {
-        n_negative_bits = countr_zero(bit_ceil(static_cast<unsigned long long>(-lower.raw_value)));
-        for (int b = 0 ; b <= n_negative_bits ; ++b)
-            bit_vars.emplace_back(-(1ll << b), xify(name + "_b_-" + to_string(b)));
-    }
-    if (upper >= 0_i) {
-        // including zero, just because it gets horrible otherwise
-        n_positive_bits = countr_zero(bit_ceil(static_cast<unsigned long long>(upper.raw_value)));
-        for (int b = 0 ; b <= n_positive_bits ; ++b)
-            bit_vars.emplace_back(1ll << b, xify(name + "_b_" + to_string(b)));
-    }
+    Integer highest_abs_value = Integer{ max(llabs(lower.raw_value), upper.raw_value) };
+    int highest_bit_shift = countr_zero(bit_ceil(static_cast<unsigned long long>(highest_abs_value.raw_value)));
+    Integer highest_bit_coeff = Integer{ 1ll << highest_bit_shift };
+
+    auto & [ negative_bit_coeff, bit_vars ] = _imp->integer_variable_bits.emplace(id, pair{
+            lower < 0_i ? (-highest_bit_coeff * 2_i) : 0_i,
+            vector<pair<Integer, string> >{ } }).first->second;
+    if (0_i != negative_bit_coeff)
+        bit_vars.emplace_back(negative_bit_coeff, xify(name + "_bn_" + to_string(highest_bit_shift + 1)));
+    for (int b = 0 ; b <= highest_bit_shift ; ++b)
+        bit_vars.emplace_back(Integer{ 1ll << b }, xify(name + "_b_" + to_string(b)));
     _imp->model_variables += bit_vars.size();
 
     // lower bound
@@ -144,136 +145,68 @@ auto Proof::create_integer_variable(SimpleIntegerVariableID id, Integer lower, I
     _imp->opb << ">= " << -upper << " ;\n";
     ++_imp->model_constraints;
 
-    // any negative bits set -> no positive bits set
-    if (n_negative_bits != 0 && upper >= 0_i) {
-        for (auto & [ coeff, var ] : bit_vars) {
-            if (coeff < 0_i) {
-                _imp->opb << (n_positive_bits + 1) << " ~" << var;
-                for (auto & [ other_coeff, other_var ] : bit_vars) {
-                    if (other_coeff >= 0_i) {
-                        // var -> ! other_var
-                        _imp->opb << " 1 ~" << other_var;
-                    }
-                }
-                _imp->opb << " >= " << (n_positive_bits + 1) << " ;\n";
-                ++_imp->model_constraints;
-            }
-        }
-    }
-
     _imp->solution_variables.push_back(id);
 
     if (direct_encoding) {
         _imp->opb << "* variable " << name << " direct encoding\n";
-        _imp->model_variables += (upper - lower + 1_i).raw_value;
+
+        for (Integer v = lower ; v <= upper + 1_i ; ++v) {
+            auto gevar = xify(name + "_ge_" + value_name(v));
+            _imp->direct_integer_variables.emplace(id >= v, gevar);
+            _imp->direct_integer_variables.emplace(id < v, "~" + gevar);
+
+            ++_imp->model_variables;
+            _imp->model_constraints += 2;
+
+            // gevar -> bits
+            for (auto & [ coeff, var ] : bit_vars)
+                _imp->opb << coeff << " " << var << " ";
+            _imp->opb << ">= " << v << " <== " << gevar << " ;\n";
+
+            // !gevar -> bits
+            for (auto & [ coeff, var ] : bit_vars)
+                _imp->opb << -coeff << " " << var << " ";
+            _imp->opb << ">= " << (-v + 1_i) << " <== ~" << gevar << " ;\n";
+        }
 
         for (Integer v = lower ; v <= upper ; ++v) {
-            auto x = xify(name + "_eq_" + value_name(v));
-            _imp->opb << "1 " << x << " ";
-            _imp->direct_integer_variables.emplace(id == v, x);
-            _imp->direct_integer_variables.emplace(id != v, "~" + x);
+            auto eqvar = xify(name + "_eq_" + value_name(v));
+            _imp->direct_integer_variables.emplace(id == v, eqvar);
+            _imp->direct_integer_variables.emplace(id != v, "~" + eqvar);
+
+            ++_imp->model_variables;
+            _imp->model_constraints += 2;
+
+            // eqvar -> ge_v && ! ge_v+1
+            _imp->opb << "1 " << proof_variable(id >= v) << " 1 ~" << proof_variable(id >= v + 1_i)
+                << " >= 2 <== " << eqvar << " ;\n";
+
+            // ge_v && ! ge_v+1 -> eqvar
+            _imp->opb << "1 " << proof_variable(id >= v) << " 1 ~" << proof_variable(id >= v + 1_i)
+                << " >= 1 ==> " << eqvar << " ;\n";
         }
+
+        for (Integer v = lower ; v <= upper ; ++v) {
+            _imp->opb << "1 " << proof_variable(id >= v + 1_i) << " >= 1 ==> "  << proof_variable(id >= v) << " ;\n";
+            ++_imp->model_constraints;
+        }
+
+        _imp->opb << "1 " << proof_variable(id >= lower) << " >= 1 ;\n";
+        ++_imp->model_constraints;
+
+        _imp->opb << "1 ~" << proof_variable(id >= upper + 1_i) << " >= 1 ;\n";
+        ++_imp->model_constraints;
+
+        for (Integer v = lower ; v <= upper ; ++v)
+            _imp->opb << "1 " << proof_variable(id == v) << " ";
 
         _imp->opb << ">= 1 ;\n";
         _imp->variable_at_least_one_constraints.emplace(id, ++_imp->model_constraints);
 
         for (Integer v = lower ; v <= upper ; ++v)
-            _imp->opb << "-1 " << xify(name + "_eq_" + value_name(v)) << " ";
+            _imp->opb << "-1 " << proof_variable(id == v) << " ";
         _imp->opb << ">= -1 ;\n";
         _imp->variable_at_most_one_constraints.emplace(id, ++_imp->model_constraints);
-
-        for (Integer v = lower ; v <= upper ; ++v) {
-            auto x = xify(name + "_eq_" + value_name(v));
-
-            // var -> bits
-            _imp->opb << bit_vars.size() << " ~" << x;
-            for (auto & [ coeff, var ] : bit_vars) {
-                if (coeff < 0_i)
-                    _imp->opb << " 1 " << ((v.raw_value < 0 && (-v.raw_value & -coeff.raw_value)) ? "" : "~") << var;
-                else
-                    _imp->opb << " 1 " << ((v.raw_value >= 0 && (v.raw_value & coeff.raw_value)) ? "" : "~") << var;
-            }
-            _imp->opb << " >= " << bit_vars.size() << " ;\n";
-            ++_imp->model_constraints;
-
-            // bits -> var
-            _imp->opb << "1 " << x;
-            for (auto & [ coeff, var ] : bit_vars) {
-                if (coeff < 0_i)
-                    _imp->opb << " 1 " << ((v.raw_value < 0 && (-v.raw_value & -coeff.raw_value)) ? "~" : "") << var;
-                else
-                    _imp->opb << " 1 " << ((v.raw_value >= 0 && (v.raw_value & coeff.raw_value)) ? "~" : "") << var;
-            }
-            _imp->opb << " >= 1 ;\n";
-            ++_imp->model_constraints;
-        }
-
-        _imp->opb << "* variable " << name << " greater or equal encoding\n";
-        _imp->model_variables += (upper - lower + 1_i).raw_value;
-
-        _imp->opb << "1 " << xify(name + "_ge_" + value_name(lower)) << " >= 1 ;\n";
-        ++_imp->model_constraints;
-
-        for (Integer v = lower ; v <= upper ; ++v) {
-            // x >= v -> x >= v - 1
-            if (v != lower) {
-                _imp->opb << "1 ~" << xify(name + "_ge_" + value_name(v)) << " 1 " << xify(name + "_ge_" + value_name(v - 1_i)) << " >= 1 ;\n";
-                ++_imp->model_constraints;
-            }
-
-            // x < v -> x < v + 1
-            if (v != upper) {
-                _imp->opb << "1 " << xify(name + "_ge_" + value_name(v)) << " 1 ~" << xify(name + "_ge_" + value_name(v + 1_i)) << " >= 1 ;\n";
-                ++_imp->model_constraints;
-            }
-
-            // x == v -> x >= v
-            _imp->opb << "1 ~" << xify(name + "_eq_" + value_name(v)) << " 1 " << xify(name + "_ge_" + value_name(v)) << " >= 1 ;\n";
-            ++_imp->model_constraints;
-
-            // x == v -> ! x >= v + 1
-            if (v != upper) {
-                _imp->opb << "1 ~" << xify(name + "_eq_" + value_name(v)) << " 1 ~" << xify(name + "_ge_" + value_name(v + 1_i)) << " >= 1 ;\n";
-                ++_imp->model_constraints;
-            }
-
-            // x != v && x != v + 1 && ... -> x < v
-            for (Integer v2 = v ; v2 <= upper ; ++v2)
-                _imp->opb << "1 " << xify(name + "_eq_" + value_name(v2)) << " ";
-            _imp->opb << "1 ~" << xify(name + "_ge_" + value_name(v)) << " >= 1 ;\n";
-            ++_imp->model_constraints;
-
-            // (x >= v && x < v + 1) -> x == v
-            if (v != upper) {
-                _imp->opb << "1 ~" << xify(name + "_ge_" + value_name(v))
-                    << " 1 " << xify(name + "_ge_" + value_name(v + 1_i))
-                    << " 1 " << xify(name + "_eq_" + value_name(v))
-                    << " >= 1 ;\n";
-                ++_imp->model_constraints;
-            }
-
-            auto gevar = xify(name + "_ge_" + value_name(v));
-            _imp->direct_integer_variables.emplace(id >= v, gevar);
-            _imp->direct_integer_variables.emplace(id < v, "~" + gevar);
-
-            // gevar -> bits
-            unsigned long long big_number = 0;
-            for (auto & [ coeff, _ ] : bit_vars)
-                big_number += abs(coeff.raw_value);
-
-            _imp->opb << big_number << " ~" << gevar << " ";
-            for (auto & [ coeff, var ] : bit_vars)
-                _imp->opb << coeff << " " << var << " ";
-            _imp->opb << ">= " << v << " ;\n";
-            ++_imp->model_constraints;
-
-            // !gevar -> bits
-            _imp->opb << big_number << " " << gevar << " ";
-            for (auto & [ coeff, var ] : bit_vars)
-                _imp->opb << -coeff << " " << var << " ";
-            _imp->opb << ">= " << -v << " ;\n";
-            ++_imp->model_constraints;
-        }
     }
 }
 
@@ -288,7 +221,7 @@ auto Proof::need_gevar(SimpleIntegerVariableID id, Integer v) -> void
     _imp->direct_integer_variables.emplace(id >= v, gevar);
     _imp->direct_integer_variables.emplace(id < v, "~" + gevar);
 
-    auto & bit_vars = _imp->integer_variable_bits.find(id)->second;
+    auto & [ _, bit_vars ] = _imp->integer_variable_bits.find(id)->second;
 
     // gevar -> bits
     _imp->proof << "red ";
@@ -333,6 +266,9 @@ auto Proof::need_direct_encoding_for(SimpleIntegerVariableID id, Integer v) -> v
         << " >= 1 ==> " << eqvar << " ; " << eqvar << " 1\n";
     ++_imp->proof_line;
 
+    _imp->proof << "u 1 " << proof_variable(id >= v + 1_i) << " >= 1 ==> "  << proof_variable(id >= v) << " ;\n";
+    ++_imp->proof_line;
+
     _imp->proof << "# " << _imp->active_proof_level << "\n";
 }
 
@@ -358,7 +294,7 @@ auto Proof::start_proof(State &) -> void
         full_opb << "min: ";
         visit(overloaded {
                 [&] (const SimpleIntegerVariableID & v) {
-                    for (auto & [ bit_value, bit_name ] : _imp->integer_variable_bits.find(v)->second)
+                    for (auto & [ bit_value, bit_name ] : _imp->integer_variable_bits.find(v)->second.second)
                         full_opb << bit_value << " " << bit_name << " ";
                 },
                 [&] (const ConstantIntegerVariableID &) {
@@ -436,7 +372,7 @@ auto Proof::integer_linear_le(const State &, const Linear & lin, Integer val, bo
         for (auto & [ coeff, var ] : lin)
             visit(overloaded {
                     [&] (const SimpleIntegerVariableID & v) {
-                        for (auto & [ bit_value, bit_name ] : _imp->integer_variable_bits.find(v)->second)
+                        for (auto & [ bit_value, bit_name ] : _imp->integer_variable_bits.find(v)->second.second)
                             _imp->opb << (multiplier * coeff * bit_value) << " " << bit_name << " ";
                     },
                     [&] (const ConstantIntegerVariableID &) {
@@ -549,12 +485,22 @@ auto Proof::solution(const State & state) -> void
 
         visit(overloaded {
                     [&] (const SimpleIntegerVariableID & var) {
-                        auto & bit_vars = _imp->integer_variable_bits.find(var)->second;
-                        for (auto & [ coeff, var ] : bit_vars) {
-                            if (coeff < 0_i)
-                                _imp->proof << " " << ((obj_val.raw_value < 0 && (-obj_val.raw_value & -coeff.raw_value)) ? "" : "~") << var;
-                            else
-                                _imp->proof << " " << ((obj_val.raw_value >= 0 && (obj_val.raw_value & coeff.raw_value)) ? "" : "~") << var;
+                        auto & [ negative_bit_coeff, bit_vars ] = _imp->integer_variable_bits.find(var)->second;
+                        if (obj_val.raw_value < 0) {
+                            for (auto & [ coeff, var ] : bit_vars) {
+                                if (coeff < 0_i)
+                                    _imp->proof << " " << var;
+                                else
+                                    _imp->proof << " " << (((obj_val + negative_bit_coeff).raw_value & coeff.raw_value) ? "" : "~") << var;
+                            }
+                        }
+                        else {
+                            for (auto & [ coeff, var ] : bit_vars) {
+                                if (coeff < 0_i)
+                                    _imp->proof << " ~" << var;
+                                else
+                                    _imp->proof << " " << ((obj_val.raw_value & coeff.raw_value) ? "" : "~") << var;
+                            }
                         }
                     },
                     [&] (const ConstantIntegerVariableID &) {
