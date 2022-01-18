@@ -69,10 +69,10 @@ struct Proof::Imp
     ProofLine proof_line = 0;
     int active_proof_level = 0;
 
-    map<DirectIntegerVariableID, ProofLine> variable_at_least_one_constraints, variable_at_most_one_constraints;
+    map<DirectIntegerVariableID, ProofLine> variable_at_least_one_constraints;
     map<LiteralFromIntegerVariable, string> direct_integer_variables;
     map<SimpleIntegerVariableID, pair<Integer, vector<pair<Integer, string> > > > integer_variable_bits;
-    map<SimpleIntegerVariableID, Integer> lower_bounds_for_gevars;
+    map<SimpleIntegerVariableID, pair<Integer, Integer> > bounds_for_gevars;
     list<IntegerVariableID> solution_variables;
     optional<IntegerVariableID> objective_variable;
 
@@ -149,6 +149,8 @@ auto Proof::create_integer_variable(SimpleIntegerVariableID id, Integer lower, I
 
     _imp->solution_variables.push_back(id);
 
+    _imp->bounds_for_gevars.emplace(id, pair{ lower, upper });
+
     if (direct_encoding) {
         _imp->opb << "* variable " << name << " direct encoding\n";
 
@@ -198,20 +200,7 @@ auto Proof::create_integer_variable(SimpleIntegerVariableID id, Integer lower, I
 
         _imp->opb << "1 ~" << proof_variable(id >= upper + 1_i) << " >= 1 ;\n";
         ++_imp->model_constraints;
-
-        for (Integer v = lower ; v <= upper ; ++v)
-            _imp->opb << "1 " << proof_variable(id == v) << " ";
-
-        _imp->opb << ">= 1 ;\n";
-        _imp->variable_at_least_one_constraints.emplace(id, ++_imp->model_constraints);
-
-        for (Integer v = lower ; v <= upper ; ++v)
-            _imp->opb << "-1 " << proof_variable(id == v) << " ";
-        _imp->opb << ">= -1 ;\n";
-        _imp->variable_at_most_one_constraints.emplace(id, ++_imp->model_constraints);
     }
-    else
-        _imp->lower_bounds_for_gevars.emplace(id, lower);
 }
 
 auto Proof::need_gevar(SimpleIntegerVariableID id, Integer v) -> void
@@ -241,8 +230,8 @@ auto Proof::need_gevar(SimpleIntegerVariableID id, Integer v) -> void
     _imp->proof << ">= " << (-v + 1_i) << " <== ~" << gevar << " ; " << gevar << " 1\n";
     ++_imp->proof_line;
 
-    auto lower = _imp->lower_bounds_for_gevars.find(id);
-    if (lower != _imp->lower_bounds_for_gevars.end() && lower->second == v) {
+    auto bounds = _imp->bounds_for_gevars.find(id);
+    if (bounds != _imp->bounds_for_gevars.end() && bounds->second.first == v) {
         _imp->proof << "u 1 " << gevar << " >= 1 ;\n";
         ++_imp->proof_line;
     }
@@ -610,13 +599,35 @@ auto Proof::emit_proof_comment(const string & s) -> void
     _imp->proof << "* " << s << '\n';
 }
 
-auto Proof::constraint_saying_variable_takes_at_least_one_value(IntegerVariableID var) const -> ProofLine
+auto Proof::need_constraint_saying_variable_takes_at_least_one_value(IntegerVariableID var) -> ProofLine
 {
     auto [ actual_var, _ ] = underlying_direct_variable_and_offset(var);
-    auto result = _imp->variable_at_least_one_constraints.find(actual_var);
-    if (result == _imp->variable_at_least_one_constraints.end())
-        throw ProofError("No at least one value constraint exists for " + debug_string(var));
-    return result->second;
+    return visit(overloaded {
+            [&] (const ConstantIntegerVariableID &) -> ProofLine {
+                throw UnimplementedException{ };
+            },
+            [&] (const SimpleIntegerVariableID & var) -> ProofLine {
+                auto result = _imp->variable_at_least_one_constraints.find(var);
+                if (result == _imp->variable_at_least_one_constraints.end()) {
+                    auto [ lower, upper ] = _imp->bounds_for_gevars.find(var)->second;
+                    for (Integer v = lower ; v <= upper ; ++v)
+                        need_proof_variable(var == v);
+
+                    _imp->proof << "# 0\n";
+
+                    _imp->proof << "u ";
+                    for (Integer v = lower ; v <= upper ; ++v)
+                        _imp->proof << "1 " << proof_variable(var == v) << " ";
+
+                    _imp->proof << ">= 1 ;\n";
+                    _imp->variable_at_least_one_constraints.emplace(var, ++_imp->proof_line);
+
+                    _imp->proof << "# " << _imp->active_proof_level << "\n";
+                    result = _imp->variable_at_least_one_constraints.emplace(var, _imp->proof_line).first;
+                }
+                return result->second;
+            }
+    }, actual_var);
 }
 
 auto Proof::enter_proof_level(int depth) -> void

@@ -217,18 +217,22 @@ namespace
             hall_values[not_subset_witness.offset] = 1;
         }
 
+        // we are going to need the at least one value variables
+        vector<ProofLine> at_least_one_constraints;
+        for (auto & v : hall_variables)
+            if (v)
+                at_least_one_constraints.push_back(proof.need_constraint_saying_variable_takes_at_least_one_value(vars[v]));
+
         // each variable in the violator has to take at least one value that is
         // left in its domain...
         stringstream proof_step;
         proof_step << "p";
         bool first = true;
-        for (auto & v : hall_variables) {
-            if (v) {
-                proof_step << " " << proof.constraint_saying_variable_takes_at_least_one_value(vars[v]);
-                if (! first)
-                    proof_step << " +";
-                first = false;
-            }
+        for (auto & c : at_least_one_constraints) {
+            proof_step << " " << c;
+            if (! first)
+                proof_step << " +";
+            first = false;
         }
 
         // and each value in the component can only be used once
@@ -326,15 +330,19 @@ namespace
                     proof_step << " " << vals[v.offset];
             proof_step << " } and so " << debug_string(vars[delete_variable.offset]) << " != " << vals[delete_value.offset] << endl;
 
+            // we are going to need the at least one value variables
+            vector<ProofLine> at_least_one_constraints;
+            for (Left v{ 0 } ; v.offset != vars.size() ; ++v.offset)
+                if (hall_left[v.offset])
+                    at_least_one_constraints.push_back(proof.need_constraint_saying_variable_takes_at_least_one_value(vars[v.offset]));
+
             proof_step << "p";
             bool first = true;
-            for (Left v{ 0 } ; v.offset != vars.size() ; ++v.offset) {
-                if (hall_left[v.offset]) {
-                    proof_step << " " << proof.constraint_saying_variable_takes_at_least_one_value(vars[v.offset]);
-                    if (! first)
-                        proof_step << " +";
-                    first = false;
-                }
+            for (auto & c : at_least_one_constraints) {
+                proof_step << " " << c;
+                if (! first)
+                    proof_step << " +";
+                first = false;
             }
 
             for (Right v{ 0 } ; v.offset != vals.size() ; ++v.offset)
