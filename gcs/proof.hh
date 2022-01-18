@@ -10,6 +10,7 @@
 #include <gcs/variable_id.hh>
 
 #include <exception>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -29,8 +30,6 @@ namespace gcs
 
             virtual auto what() const noexcept -> const char * override;
     };
-
-    using ProofLine = long long;
 
     class Proof
     {
@@ -59,7 +58,7 @@ namespace gcs
             [[ nodiscard ]] auto cnf(const Literals &) -> ProofLine;
             [[ nodiscard ]] auto at_most_one(const Literals &) -> ProofLine;
             [[ nodiscard ]] auto pseudoboolean_ge(const WeightedLiterals &, Integer) -> ProofLine;
-            auto integer_linear_le(const State &, const Linear & coeff_vars, Integer value, bool equality) -> void;
+            auto integer_linear_le(const State &, const Linear & coeff_vars, Integer value, bool equality) -> ProofLine;
 
             auto minimise(IntegerVariableID) -> void;
 
@@ -79,8 +78,11 @@ namespace gcs
             auto forget_proof_level(int depth) -> void;
 
             // Writing proof steps from constraints
-            auto emit_proof_line(const std::string &) -> void;
+            auto emit_proof_line(const std::string &) -> ProofLine;
+            auto emit_proof_comment(const std::string &) -> void;
+            [[ nodiscard ]] auto trail_variables(const State &, Integer coeff) -> std::string;
             [[ nodiscard ]] auto constraint_saying_variable_takes_at_least_one_value(IntegerVariableID) const -> ProofLine;
+            auto for_each_bit_defining_var(IntegerVariableID var, const std::function<auto (Integer, const std::string &) -> void> &) -> void;
 
             auto create_pseudovariable(SimpleIntegerVariableID, Integer, Integer, const std::optional<std::string> &) -> void;
 

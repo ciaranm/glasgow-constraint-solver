@@ -127,15 +127,17 @@ auto Propagators::integer_linear_le(const State & state, Linear && coeff_vars, I
 {
     sanitise_linear(coeff_vars);
 
+    optional<ProofLine> proof_line;
     if (_imp->problem->optional_proof())
-        _imp->problem->optional_proof()->integer_linear_le(state, coeff_vars, value, equality);
+        proof_line = _imp->problem->optional_proof()->integer_linear_le(state, coeff_vars, value, equality);
 
     int id = _imp->propagation_functions.size();
     for (auto & [ _, v ] : coeff_vars)
         trigger_on_bounds(v, id);
 
-    _imp->propagation_functions.emplace_back([&, coeff_vars = move(coeff_vars), value = value, equality = equality] (State & state) {
-            return propagate_linear(coeff_vars, value, state, equality);
+    _imp->propagation_functions.emplace_back([&, coeff_vars = move(coeff_vars), value = value,
+            equality = equality, proof_line = proof_line] (State & state) {
+            return propagate_linear(coeff_vars, value, state, equality, proof_line);
     });
     _imp->propagator_is_disabled.push_back(0);
 }

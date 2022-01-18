@@ -26,6 +26,7 @@ using std::istreambuf_iterator;
 using std::find_if;
 using std::flush;
 using std::fstream;
+using std::function;
 using std::ios;
 using std::list;
 using std::llabs;
@@ -71,6 +72,7 @@ struct Proof::Imp
     map<DirectIntegerVariableID, ProofLine> variable_at_least_one_constraints, variable_at_most_one_constraints;
     map<LiteralFromIntegerVariable, string> direct_integer_variables;
     map<SimpleIntegerVariableID, pair<Integer, vector<pair<Integer, string> > > > integer_variable_bits;
+    map<SimpleIntegerVariableID, Integer> lower_bounds_for_gevars;
     list<IntegerVariableID> solution_variables;
     optional<IntegerVariableID> objective_variable;
 
@@ -208,6 +210,8 @@ auto Proof::create_integer_variable(SimpleIntegerVariableID id, Integer lower, I
         _imp->opb << ">= -1 ;\n";
         _imp->variable_at_most_one_constraints.emplace(id, ++_imp->model_constraints);
     }
+    else
+        _imp->lower_bounds_for_gevars.emplace(id, lower);
 }
 
 auto Proof::need_gevar(SimpleIntegerVariableID id, Integer v) -> void
@@ -236,6 +240,12 @@ auto Proof::need_gevar(SimpleIntegerVariableID id, Integer v) -> void
         _imp->proof << -coeff << " " << var << " ";
     _imp->proof << ">= " << (-v + 1_i) << " <== ~" << gevar << " ; " << gevar << " 1\n";
     ++_imp->proof_line;
+
+    auto lower = _imp->lower_bounds_for_gevars.find(id);
+    if (lower != _imp->lower_bounds_for_gevars.end() && lower->second == v) {
+        _imp->proof << "u 1 " << gevar << " >= 1 ;\n";
+        ++_imp->proof_line;
+    }
 
     _imp->proof << "# " << _imp->active_proof_level << "\n";
 }
@@ -360,7 +370,7 @@ auto Proof::pseudoboolean_ge(const WeightedLiterals & lits, Integer val) -> Proo
     return ++_imp->model_constraints;
 }
 
-auto Proof::integer_linear_le(const State &, const Linear & lin, Integer val, bool equality) -> void
+auto Proof::integer_linear_le(const State &, const Linear & lin, Integer val, bool equality) -> ProofLine
 {
     _imp->opb << (equality ? "* linear eq" : "* linear le");
 
@@ -387,9 +397,10 @@ auto Proof::integer_linear_le(const State &, const Linear & lin, Integer val, bo
         ++_imp->model_constraints;
     };
 
-    output(-1_i);
     if (equality)
         output(1_i);
+    output(-1_i);
+    return _imp->model_constraints;
 }
 
 auto Proof::minimise(IntegerVariableID var) -> void
@@ -588,10 +599,15 @@ auto Proof::infer(const State & state, const Literal & lit, Justification why) -
         }, why);
 }
 
-auto Proof::emit_proof_line(const string & s) -> void
+auto Proof::emit_proof_line(const string & s) -> ProofLine
 {
     _imp->proof << s << '\n';
-    ++_imp->proof_line;
+    return ++_imp->proof_line;
+}
+
+auto Proof::emit_proof_comment(const string & s) -> void
+{
+    _imp->proof << "* " << s << '\n';
 }
 
 auto Proof::constraint_saying_variable_takes_at_least_one_value(IntegerVariableID var) const -> ProofLine
@@ -612,5 +628,32 @@ auto Proof::enter_proof_level(int depth) -> void
 auto Proof::forget_proof_level(int depth) -> void
 {
     _imp->proof << "w " << depth << '\n';
+}
+
+auto Proof::for_each_bit_defining_var(IntegerVariableID var, const function<auto (Integer, const string &) -> void> & callback) -> void
+{
+    visit(overloaded {
+            [&] (const ConstantIntegerVariableID &) {
+                throw UnimplementedException{ };
+            },
+            [&] (const ViewOfIntegerVariableID &) {
+                throw UnimplementedException{ };
+            },
+            [&] (const SimpleIntegerVariableID & var) {
+                auto & [ _, bit_vars ] = _imp->integer_variable_bits.find(var)->second;
+                for (auto & [ coeff, var ] : bit_vars)
+                    callback(coeff, var);
+            }
+            }, var);
+}
+
+auto Proof::trail_variables(const State & state, Integer coeff) -> string
+{
+    stringstream result;
+    state.for_each_guess([&] (const Literal & lit) {
+            result << " " << coeff << " " << proof_variable(! lit);
+            });
+
+    return result.str();
 }
 

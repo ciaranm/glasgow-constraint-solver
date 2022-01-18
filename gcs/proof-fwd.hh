@@ -6,6 +6,8 @@
 namespace gcs
 {
     class Proof;
+
+    using ProofLine = long long;
 }
 
 #endif
