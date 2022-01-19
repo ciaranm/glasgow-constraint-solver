@@ -51,7 +51,7 @@ auto main(int argc, char * argv[]) -> int
     }
 
     if (options_vars.count("help")) {
-        cout << "Usage: " << argv[0] << " [options] [size]" << endl;
+        cout << "Usage: " << argv[0] << " [options]" << endl;
         cout << endl;
         cout << display_options << endl;
         return EXIT_SUCCESS;
