@@ -24,7 +24,8 @@ SUBMAKEFILES := \
     examples/qap/qap.mk \
     examples/n_queens/n_queens.mk \
     examples/magic_square/magic_square.mk \
-    examples/cake/cake.mk
+    examples/cake/cake.mk \
+    examples/odd_even_sum/odd_even_sum.mk
 
 override CXXFLAGS += -O3 -march=native -std=c++20 -Isrc/ -W -Wall -Wextra -g -ggdb3 -pthread
 

@@ -26,5 +26,6 @@ perf.data.old
 /n_queens
 /magic_square
 /cake
+/odd_even_sum
 *.opb
 *.veripb
