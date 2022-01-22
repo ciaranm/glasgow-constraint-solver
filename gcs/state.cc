@@ -685,6 +685,11 @@ auto State::add_proof_steps(JustifyExplicitly why) -> void
         why.add_proof_steps(*_imp->problem->optional_proof());
 }
 
+auto State::want_proofs() const -> bool
+{
+    return _imp->problem->optional_proof() != nullopt;
+}
+
 auto State::literal_is_nonfalsified(const Literal & lit) const -> bool
 {
     return visit(overloaded {

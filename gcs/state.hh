@@ -82,6 +82,7 @@ namespace gcs
             [[ nodiscard ]] auto infer(const Literal & lit, Justification why) -> Inference;
             [[ nodiscard ]] auto infer_all(const std::vector<Literal> & lit, Justification why) -> Inference;
             auto add_proof_steps(JustifyExplicitly why) -> void;
+            [[ nodiscard ]] auto want_proofs() const -> bool;
 
             auto guess(const Literal & lit) -> void;
             auto for_each_guess(std::function<auto (Literal) -> void>) const -> void;
