@@ -9,10 +9,11 @@
 #include <algorithm>
 #include <bit>
 #include <cstdlib>
+#include <fstream>
 #include <iterator>
 #include <list>
 #include <map>
-#include <fstream>
+#include <set>
 #include <sstream>
 #include <unordered_map>
 #include <vector>
@@ -37,6 +38,7 @@ using std::ofstream;
 using std::ostreambuf_iterator;
 using std::optional;
 using std::pair;
+using std::set;
 using std::string;
 using std::stringstream;
 using std::to_string;
@@ -73,6 +75,7 @@ struct Proof::Imp
     map<LiteralFromIntegerVariable, string> direct_integer_variables;
     map<SimpleIntegerVariableID, pair<Integer, vector<pair<Integer, string> > > > integer_variable_bits;
     map<SimpleIntegerVariableID, pair<Integer, Integer> > bounds_for_gevars;
+    map<SimpleIntegerVariableID, set<Integer> > gevars_that_exist;
     list<IntegerVariableID> solution_variables;
     optional<IntegerVariableID> objective_variable;
 
@@ -158,6 +161,7 @@ auto Proof::create_integer_variable(SimpleIntegerVariableID id, Integer lower, I
             auto gevar = xify(name + "_ge_" + value_name(v));
             _imp->direct_integer_variables.emplace(id >= v, gevar);
             _imp->direct_integer_variables.emplace(id < v, "~" + gevar);
+            _imp->gevars_that_exist[id].insert(v);
 
             ++_imp->model_variables;
             _imp->model_constraints += 2;
@@ -207,12 +211,14 @@ auto Proof::need_gevar(SimpleIntegerVariableID id, Integer v) -> void
 {
     if (_imp->direct_integer_variables.count(id >= v))
         return;
+
     _imp->proof << "# 0\n";
 
     string name = "iv" + to_string(id.index);
     auto gevar = xify(name + "_ge_" + value_name(v));
     _imp->direct_integer_variables.emplace(id >= v, gevar);
     _imp->direct_integer_variables.emplace(id < v, "~" + gevar);
+    _imp->gevars_that_exist[id].insert(v);
 
     auto & [ _, bit_vars ] = _imp->integer_variable_bits.find(id)->second;
 
@@ -230,9 +236,26 @@ auto Proof::need_gevar(SimpleIntegerVariableID id, Integer v) -> void
     _imp->proof << ">= " << (-v + 1_i) << " <== ~" << gevar << " ; " << gevar << " 1\n";
     ++_imp->proof_line;
 
+    // is it a lower bound?
     auto bounds = _imp->bounds_for_gevars.find(id);
     if (bounds != _imp->bounds_for_gevars.end() && bounds->second.first == v) {
         _imp->proof << "u 1 " << gevar << " >= 1 ;\n";
+        ++_imp->proof_line;
+    }
+
+    auto & other_gevars = _imp->gevars_that_exist.find(id)->second;
+    auto higher_gevar = other_gevars.upper_bound(v);
+    auto lower_gevar = other_gevars.lower_bound(v - 1_i);
+
+    // implied by the next highest gevar, if there is one
+    if (higher_gevar != other_gevars.end()) {
+        _imp->proof << "u 1 " << proof_variable(id >= *higher_gevar) << " >= 1 ==> "  << proof_variable(id >= v) << " ;\n";
+        ++_imp->proof_line;
+    }
+
+    // implies the next lowest gevar, if there is one
+    if (lower_gevar != other_gevars.end()) {
+        _imp->proof << "u 1 " << proof_variable(id >= v) << " >= 1 ==> "  << proof_variable(id >= *lower_gevar) << " ;\n";
         ++_imp->proof_line;
     }
 
@@ -263,9 +286,6 @@ auto Proof::need_direct_encoding_for(SimpleIntegerVariableID id, Integer v) -> v
     // ge_v && ! ge_v+1 -> eqvar
     _imp->proof << "red 1 " << proof_variable(id >= v) << " 1 ~" << proof_variable(id >= v + 1_i)
         << " >= 1 ==> " << eqvar << " ; " << eqvar << " 1\n";
-    ++_imp->proof_line;
-
-    _imp->proof << "u 1 " << proof_variable(id >= v + 1_i) << " >= 1 ==> "  << proof_variable(id >= v) << " ;\n";
     ++_imp->proof_line;
 
     _imp->proof << "# " << _imp->active_proof_level << "\n";
