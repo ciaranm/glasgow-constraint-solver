@@ -65,8 +65,8 @@ auto gcs::propagate_linear(const Linear & coeff_vars, Integer value, State & sta
         inv_lower_sum += (-coeff >= 0_i) ? (-coeff * bounds.back().first) : (-coeff * bounds.back().second);
     }
 
-    auto justify = [&] (IntegerVariableID change_var, Proof & proof, bool second_constraint_for_equality,
-            Literal inf_lit) -> void {
+    auto justify = [&] (IntegerVariableID change_var, Proof & proof, vector<ProofLine> & to_delete,
+            bool second_constraint_for_equality, Literal inf_lit) -> void {
         vector<pair<Integer, ProofLine> > lines_to_sum;
         lines_to_sum.emplace_back(1_i, second_constraint_for_equality ? * proof_line - 1 : *proof_line);
 
@@ -105,7 +105,9 @@ auto gcs::propagate_linear(const Linear & coeff_vars, Integer value, State & sta
                 step << " >= " << state.lower_bound(var) << " ";
 
             step << ";";
-            lines_to_sum.emplace_back(Integer{ llabs(coeff.raw_value) }, proof.emit_proof_line(step.str()));
+            auto proof_line = proof.emit_proof_line(step.str());
+            lines_to_sum.emplace_back(Integer{ llabs(coeff.raw_value) }, proof_line);
+            to_delete.push_back(proof_line);
         }
 
         stringstream step;
@@ -125,8 +127,8 @@ auto gcs::propagate_linear(const Linear & coeff_vars, Integer value, State & sta
         // lots of conditionals to get the rounding right...
         if (coeff > 0_i && remainder >= 0_i) {
             if (bounds[p].second >= (1_i + remainder / coeff))
-                return state.infer(var < (1_i + remainder / coeff), JustifyExplicitly{ [&] (Proof & proof) {
-                        justify(var, proof, second_constraint_for_equality, var < (1_i + remainder / coeff));
+                return state.infer(var < (1_i + remainder / coeff), JustifyExplicitly{ [&] (Proof & proof, vector<ProofLine> & to_delete) {
+                        justify(var, proof, to_delete, second_constraint_for_equality, var < (1_i + remainder / coeff));
                         }});
             else
                 return Inference::NoChange;
@@ -134,16 +136,16 @@ auto gcs::propagate_linear(const Linear & coeff_vars, Integer value, State & sta
         else if (coeff > 0_i && remainder < 0_i) {
             auto div_with_rounding = -((-remainder + coeff - 1_i) / coeff);
             if (bounds[p].second >= 1_i + div_with_rounding)
-                return state.infer(var < 1_i + div_with_rounding, JustifyExplicitly{ [&] (Proof & proof) {
-                        justify(var, proof, second_constraint_for_equality, var < 1_i + div_with_rounding);
+                return state.infer(var < 1_i + div_with_rounding, JustifyExplicitly{ [&] (Proof & proof, vector<ProofLine> & to_delete) {
+                        justify(var, proof, to_delete, second_constraint_for_equality, var < 1_i + div_with_rounding);
                         }});
             else
                 return Inference::NoChange;
         }
         else if (coeff < 0_i && remainder >= 0_i) {
             if (bounds[p].first < remainder / coeff)
-                return state.infer(var >= remainder / coeff, JustifyExplicitly{ [&] (Proof & proof) {
-                        justify(var, proof, second_constraint_for_equality, var >= remainder / coeff);
+                return state.infer(var >= remainder / coeff, JustifyExplicitly{ [&] (Proof & proof, vector<ProofLine> & to_delete) {
+                        justify(var, proof, to_delete, second_constraint_for_equality, var >= remainder / coeff);
                         } });
             else
                 return Inference::NoChange;
@@ -151,8 +153,8 @@ auto gcs::propagate_linear(const Linear & coeff_vars, Integer value, State & sta
         else if (coeff < 0_i && remainder < 0_i) {
             auto div_with_rounding = (-remainder + -coeff - 1_i) / -coeff;
             if (bounds[p].first < div_with_rounding)
-                return state.infer(var >= div_with_rounding, JustifyExplicitly{ [&] (Proof & proof) {
-                        justify(var, proof, second_constraint_for_equality, var >= div_with_rounding);
+                return state.infer(var >= div_with_rounding, JustifyExplicitly{ [&] (Proof & proof, vector<ProofLine> & to_delete) {
+                        justify(var, proof, to_delete, second_constraint_for_equality, var >= div_with_rounding);
                         } });
             else
                 return Inference::NoChange;

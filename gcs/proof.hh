@@ -78,6 +78,8 @@ namespace gcs
             auto forget_proof_level(int depth) -> void;
 
             // Writing proof steps from constraints
+            auto add_proof_steps(const JustifyExplicitly &, std::vector<ProofLine> & to_delete) -> void;
+            auto delete_proof_lines(const std::vector<ProofLine> & to_delete) -> void;
             auto emit_proof_line(const std::string &) -> ProofLine;
             auto emit_proof_comment(const std::string &) -> void;
             [[ nodiscard ]] auto trail_variables(const State &, Integer coeff) -> std::string;

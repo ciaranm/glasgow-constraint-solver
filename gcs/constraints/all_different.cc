@@ -380,7 +380,7 @@ namespace
         if (left_covered.size() != vars.size()) {
             // nope. we've got a maximum cardinality matching that leaves at least
             // one thing on the left uncovered.
-            return state.infer(FalseLiteral{ }, JustifyExplicitly{ [&] (Proof & proof) -> void {
+            return state.infer(FalseLiteral{ }, JustifyExplicitly{ [&] (Proof & proof, vector<ProofLine> &) -> void {
                     prove_matching_is_too_small(vars, vals, constraint_numbers, proof, edges, left_covered, matching);
                     } });
         }
@@ -530,7 +530,7 @@ namespace
             deletions.emplace_back(vars[delete_var_name.offset] != vals[delete_value.offset]);
         }
 
-        switch (state.infer_all(deletions, JustifyExplicitly{ [&] (Proof & proof) -> void {
+        switch (state.infer_all(deletions, JustifyExplicitly{ [&] (Proof & proof, vector<ProofLine> &) -> void {
                     for (auto & [ delete_var_name, delete_value ] : edges) {
                             if (used_edges[delete_var_name.offset][delete_value.offset])
                                 continue;

@@ -591,8 +591,10 @@ auto Proof::infer(const State & state, const Literal & lit, Justification why) -
                 output_it("a");
             },
             [&] (const JustifyExplicitly & x) {
-                x.add_proof_steps(*this);
+                vector<ProofLine> to_delete;
+                add_proof_steps(x, to_delete);
                 infer(state, lit, JustifyUsingRUP{ });
+                delete_proof_lines(to_delete);
             },
             [&] (const Guess &) {
                 // we need this because it'll show up in the trail later
@@ -686,5 +688,21 @@ auto Proof::trail_variables(const State & state, Integer coeff) -> string
             });
 
     return result.str();
+}
+
+auto Proof::add_proof_steps(const JustifyExplicitly & x, vector<ProofLine> & to_delete) -> void
+{
+    x.add_proof_steps(*this, to_delete);
+}
+
+auto Proof::delete_proof_lines(const vector<ProofLine> & to_delete) -> void
+{
+    if (! to_delete.empty()) {
+        stringstream line;
+        line << "d";
+        for (auto & l : to_delete)
+            line << " " << l;
+        _imp->proof << line.str() << '\n';
+    }
 }
 

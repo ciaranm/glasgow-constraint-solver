@@ -127,7 +127,7 @@ auto Element2DConstantArray::install(Propagators & propagators, const State & in
             if (state.want_proofs() && ! idxsel) {
                 idxsel = make_optional(state.create_pseudovariable(0_i, Integer(vals.size() * vals.begin()->size()), "element2didx"));
 
-                state.add_proof_steps(JustifyExplicitly{ [&] (Proof & proof) {
+                state.add_proof_steps(JustifyExplicitly{ [&] (Proof & proof, vector<ProofLine> & to_delete) {
                     state.for_each_value(idx1, [&] (Integer i1) {
                             state.for_each_value(idx2, [&] (Integer i2) {
                                     Integer idx = i1 * Integer(vals.size()) + i2;
@@ -156,11 +156,11 @@ auto Element2DConstantArray::install(Propagators & propagators, const State & in
                                     stringstream line;
                                     line << "u" << trail.str() << " 1 ~" << proof.proof_variable(idx1 == i1)
                                         << " 1 ~" << proof.proof_variable(idx2 == i2) << " >= 1 ;";
-                                    proof.emit_proof_line(line.str());
+                                    to_delete.push_back(proof.emit_proof_line(line.str()));
                                 });
                             stringstream line;
                             line << "u" << trail.str() << " 1 ~" << proof.proof_variable(idx1 == i1) << " >= 1 ;";
-                            proof.emit_proof_line(line.str());
+                            to_delete.push_back(proof.emit_proof_line(line.str()));
                             });
 
                     stringstream line;
@@ -189,7 +189,7 @@ auto Element2DConstantArray::install(Propagators & propagators, const State & in
                     });
 
             auto inference = Inference::NoChange;
-            auto just = JustifyExplicitly{ [&] (Proof & proof) {
+            auto just = JustifyExplicitly{ [&] (Proof & proof, vector<ProofLine> & to_delete) {
                 stringstream trail;
                 state.for_each_value(idx1, [&] (Integer i1) {
                         state.for_each_value(idx2, [&] (Integer i2) {
@@ -203,16 +203,16 @@ auto Element2DConstantArray::install(Propagators & propagators, const State & in
                                 stringstream line;
                                 line << "u" << trail.str() << " 1 ~" << proof.proof_variable(idx1 == i1)
                                     << " 1 ~" << proof.proof_variable(idx2 == i2) << " >= 1 ;";
-                                proof.emit_proof_line(line.str());
+                                to_delete.push_back(proof.emit_proof_line(line.str()));
                                 });
                         stringstream line;
                         line << "u" << trail.str() << " 1 ~" << proof.proof_variable(idx1 == i1) << " >= 1 ;";
-                        proof.emit_proof_line(line.str());
+                        to_delete.push_back(proof.emit_proof_line(line.str()));
                         });
 
                 stringstream line;
                 line << "u" << trail.str() << " >= 1 ;";
-                proof.emit_proof_line(line.str());
+                to_delete.push_back(proof.emit_proof_line(line.str()));
             } };
 
             increase_inference_to(inference, state.infer(var >= *smallest_seen, just));

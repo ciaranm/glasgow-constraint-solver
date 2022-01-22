@@ -68,7 +68,7 @@ auto LinearEquality::install(Propagators & propagators, const State & initial_st
                     for (auto & [ _, v ] : coeff_vars)
                         vars.push_back(v);
 
-                    state.add_proof_steps(JustifyExplicitly{ [&] (Proof & proof) {
+                    state.add_proof_steps(JustifyExplicitly{ [&] (Proof & proof, vector<ProofLine> &) {
                             for_each_with_index(permitted, [&] (const vector<Integer> & vals, auto idx) {
                                     stringstream line;
                                     line << "red " << coeff_vars.size() << " ~" << proof.proof_variable(sel == Integer(idx));

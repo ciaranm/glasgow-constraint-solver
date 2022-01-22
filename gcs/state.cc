@@ -681,8 +681,11 @@ auto State::for_each_guess(function<auto (Literal) -> void> f) const -> void
 
 auto State::add_proof_steps(JustifyExplicitly why) -> void
 {
-    if (_imp->problem->optional_proof())
-        why.add_proof_steps(*_imp->problem->optional_proof());
+    if (_imp->problem->optional_proof()) {
+        vector<ProofLine> to_delete;
+        _imp->problem->optional_proof()->add_proof_steps(why, to_delete);
+        _imp->problem->optional_proof()->delete_proof_lines(to_delete);
+    }
 }
 
 auto State::want_proofs() const -> bool
