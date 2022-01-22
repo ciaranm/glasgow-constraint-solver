@@ -80,7 +80,7 @@ auto Propagators::trim_lower_bound(const State & state, IntegerVariableID var, I
 auto Propagators::trim_upper_bound(const State & state, IntegerVariableID var, Integer val) -> void
 {
     if (state.upper_bound(var) > val) {
-        if (state.lower_bound(var) <= val + 1_i)
+        if (state.lower_bound(var) <= val)
             cnf(state, { var < val + 1_i }, true);
         else
             cnf(state, { }, true);
