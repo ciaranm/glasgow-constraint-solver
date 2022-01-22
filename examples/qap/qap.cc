@@ -4,7 +4,6 @@
 #include <gcs/constraints/arithmetic.hh>
 #include <gcs/constraints/linear_equality.hh>
 #include <gcs/constraints/element.hh>
-#include <gcs/constraints/table.hh>
 #include <gcs/constraints/comparison.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
@@ -15,6 +14,8 @@
 #include <fstream>
 #include <iostream>
 #include <vector>
+
+#include <boost/program_options.hpp>
 
 using namespace gcs;
 
@@ -30,8 +31,42 @@ using std::string;
 using std::to_string;
 using std::vector;
 
-auto main(int, char * []) -> int
+auto main(int argc, char * argv[]) -> int
 {
+    namespace po = boost::program_options;
+
+    po::options_description display_options{ "Program options" };
+    display_options.add_options()
+        ("help", "Display help information")
+        ("prove", "Create a proof");
+
+    po::options_description all_options{ "All options" };
+
+    all_options.add(display_options);
+
+    po::variables_map options_vars;
+
+    try {
+        po::store(po::command_line_parser(argc, argv)
+                .options(all_options)
+                .run(), options_vars);
+        po::notify(options_vars);
+    }
+    catch (const po::error & e) {
+        cerr << "Error: " << e.what() << endl;
+        cerr << "Try " << argv[0] << " --help" << endl;
+        return EXIT_FAILURE;
+    }
+
+    if (options_vars.count("help")) {
+        cout << "Usage: " << argv[0] << " [options]" << endl;
+        cout << endl;
+        cout << display_options << endl;
+        return EXIT_SUCCESS;
+    }
+
+    Problem p = options_vars.count("prove") ? Problem{ Proof{ "qap.opb", "qap.veripb" } } : Problem{ };
+
     constexpr int size = 12;
 
     array<array<int, size>, size> weight_consts{
@@ -62,6 +97,13 @@ auto main(int, char * []) -> int
         array<int, size>{46,79,54,68,5,0,56,15,39,70,0,18},
         array<int, size>{95,36,63,85,76,34,37,80,33,86,18,0} };
 
+    vector<vector<Integer> > distances_consts_integers;
+    for (int d1 = 0 ; d1 < size ; ++d1) {
+        distances_consts_integers.emplace_back();
+        for (int d2 = 0 ; d2 < size ; ++d2)
+            distances_consts_integers.back().push_back(Integer{ distances_consts[d1][d2] });
+    }
+
     auto max_distance = 0;
     for (auto & d : distances_consts)
         for (auto & dd : d)
@@ -74,41 +116,25 @@ auto main(int, char * []) -> int
             if (ww > max_weight)
                 max_weight = ww;
 
-    Problem p{ Proof{ "qap.opb", "qap.veripb" } };
-
-    vector<IntegerVariableID> weights;
-    for (auto & w : weight_consts) {
-        for (auto & ww : w)
-            weights.push_back(constant_variable(Integer{ ww }));
-    }
-
     vector<IntegerVariableID> xs;
     for (int i = 0 ; i < size ; ++i)
-        xs.push_back(p.create_integer_variable(0_i, Integer{ size - 1 }));
+        xs.push_back(p.create_integer_variable(0_i, Integer{ size - 1 }, "xs" + to_string(i)));
 
     // p.post(AllDifferent{ xs });
     for (int i = 0 ; i < size ; ++i)
         for (int j = i + 1 ; j < size ; ++j)
             p.post(NotEquals{ xs[i], xs[j] });
 
-    vector<vector<Integer> > tuples;
-    for (int i = 0 ; i < size ; ++i)
-        for (int j = 0 ; j < size ; ++j)
-            tuples.emplace_back(vector{ Integer{ i }, Integer{ j }, Integer{ distances_consts[i][j] } });
-
     Linear wcosts;
     for (int i = 0 ; i < size ; ++i) {
         for (int j = 0 ; j < size ; ++j) {
-            auto d_xsi_xsj = p.create_integer_variable(0_i, Integer{ max_distance } + 1_i);
-            vector<IntegerVariableID> vars{ xs[i], xs[j], d_xsi_xsj };
-            auto tuples_copy = tuples;
-            p.post(Table{ vars, move(tuples_copy) });
-
+            auto d_xsi_xsj = p.create_integer_variable(0_i, Integer{ max_distance } + 1_i, "dxs" + to_string(i) + "xs" + to_string(j));
+            p.post(Element2DConstantArray{ d_xsi_xsj, xs[i], xs[j], distances_consts_integers });
             wcosts.emplace_back(Integer{ weight_consts[i][j] }, d_xsi_xsj);
         }
     }
 
-    auto cost = p.create_integer_range_variable(0_i, 100000_i);
+    auto cost = p.create_integer_range_variable(0_i, 100000_i, "cost");
     wcosts.emplace_back(-1_i, cost);
     p.post(LinearEquality{ move(wcosts), 0_i });
 

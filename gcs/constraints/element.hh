@@ -15,10 +15,25 @@ namespace gcs
     {
         private:
             IntegerVariableID _var, _idx_var;
-            const std::vector<IntegerVariableID> & _vars;
+            const std::vector<IntegerVariableID> & _vals;
 
         public:
-            explicit Element(IntegerVariableID var, IntegerVariableID idx_var, const std::vector<IntegerVariableID> & vars);
+            explicit Element(IntegerVariableID var, IntegerVariableID idx_var, const std::vector<IntegerVariableID> & vals);
+
+            virtual auto describe_for_proof() -> std::string override;
+            virtual auto install(Propagators &, const State &) && -> void override;
+    };
+
+    class Element2DConstantArray :
+        public Constraint
+    {
+        private:
+            IntegerVariableID _var, _idx1, _idx2;
+            const std::vector<std::vector<Integer> > & _vals;
+
+        public:
+            explicit Element2DConstantArray(IntegerVariableID var, IntegerVariableID idx1, IntegerVariableID idx2,
+                    const std::vector<std::vector<Integer> > & vals);
 
             virtual auto describe_for_proof() -> std::string override;
             virtual auto install(Propagators &, const State &) && -> void override;
