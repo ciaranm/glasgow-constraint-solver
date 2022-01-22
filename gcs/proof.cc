@@ -328,7 +328,7 @@ auto Proof::start_proof(State &) -> void
     }
 
     copy(istreambuf_iterator<char>{ _imp->opb }, istreambuf_iterator<char>{}, ostreambuf_iterator<char>{ full_opb });
-    _imp->opb.clear();
+    _imp->opb = stringstream{ };
     _imp->opb_done = true;
 
     if (! full_opb)
