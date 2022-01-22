@@ -44,6 +44,7 @@ struct Propagators::Imp
 {
     Problem * const problem;
     list<Literals> cnfs;
+    list<Literal> unary_cnfs;
     deque<PropagationFunction> propagation_functions;
     vector<uint8_t> propagator_is_disabled;
     microseconds total_propagation_time{ 0 };
@@ -94,8 +95,12 @@ auto Propagators::cnf(const State &, Literals && c, bool propagating) -> optiona
         if (_imp->problem->optional_proof())
             result = _imp->problem->optional_proof()->cnf(c);
 
-        if (propagating)
-            _imp->cnfs.emplace_back(move(c));
+        if (propagating) {
+            if (c.size() == 1)
+                _imp->unary_cnfs.push_back(*c.begin());
+            else
+                _imp->cnfs.emplace_back(move(c));
+        }
     }
 
     return result;
@@ -219,6 +224,13 @@ auto Propagators::propagate(State & state, const optional<IntegerVariableID> & o
             propagation_queue.push_back(i);
             on_queue[i] = 1;
         }
+
+        for (auto & lit : _imp->unary_cnfs)
+            switch (state.infer(lit, NoJustificationNeeded{ })) {
+                case Inference::Contradiction: return false;
+                case Inference::NoChange:      break;
+                case Inference::Change:        break;
+            }
     }
 
     bool contradiction = false;
