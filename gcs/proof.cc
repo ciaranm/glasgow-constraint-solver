@@ -244,8 +244,8 @@ auto Proof::need_gevar(SimpleIntegerVariableID id, Integer v) -> void
     }
 
     auto & other_gevars = _imp->gevars_that_exist.find(id)->second;
-    auto higher_gevar = other_gevars.upper_bound(v);
-    auto lower_gevar = other_gevars.lower_bound(v - 1_i);
+    auto this_gevar = other_gevars.find(v);
+    auto higher_gevar = next(this_gevar);
 
     // implied by the next highest gevar, if there is one
     if (higher_gevar != other_gevars.end()) {
@@ -254,8 +254,8 @@ auto Proof::need_gevar(SimpleIntegerVariableID id, Integer v) -> void
     }
 
     // implies the next lowest gevar, if there is one
-    if (lower_gevar != other_gevars.end()) {
-        _imp->proof << "u 1 " << proof_variable(id >= v) << " >= 1 ==> "  << proof_variable(id >= *lower_gevar) << " ;\n";
+    if (this_gevar != other_gevars.begin()) {
+        _imp->proof << "u 1 " << proof_variable(id >= v) << " >= 1 ==> "  << proof_variable(id >= *prev(this_gevar)) << " ;\n";
         ++_imp->proof_line;
     }
 
