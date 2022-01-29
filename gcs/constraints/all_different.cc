@@ -249,9 +249,9 @@ namespace
         const vector<Integer> &,
         Vertex v) -> std::size_t
     {
-        return overloaded(
+        return overloaded{
             [&](const Left & l) { return l.offset; },
-            [&](const Right & r) { return vars.size() + r.offset; })
+            [&](const Right & r) { return vars.size() + r.offset; }}
             .visit(v);
     }
 

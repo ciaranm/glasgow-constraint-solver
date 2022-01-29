@@ -72,10 +72,10 @@ auto ComparisonReif::_install_equals(Propagators & propagators, const State & in
     if (use_special_equals_iff) {
         Triggers triggers;
         triggers.on_change = {_v1, _v2};
-        overloaded(
+        overloaded{
             [&](const LiteralFromIntegerVariable & v) { triggers.on_instantiated.push_back(v.var); },
             [&](const TrueLiteral &) {},
-            [&](const FalseLiteral &) {})
+            [&](const FalseLiteral &) {}}
             .visit(_cond);
 
         propagators.propagator(
@@ -169,10 +169,10 @@ auto ComparisonReif::_install_equals(Propagators & propagators, const State & in
     if (use_special_equals_if) {
         Triggers triggers;
         triggers.on_change = {_v1, _v2};
-        overloaded(
+        overloaded{
             [&](const LiteralFromIntegerVariable & v) { triggers.on_instantiated.push_back(v.var); },
             [&](const TrueLiteral &) {},
-            [&](const FalseLiteral &) {})
+            [&](const FalseLiteral &) {}}
             .visit(_cond);
 
         propagators.propagator(

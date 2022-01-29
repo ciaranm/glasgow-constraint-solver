@@ -310,7 +310,7 @@ auto Proof::start_proof(State &) -> void
 
     if (_imp->objective_variable) {
         full_opb << "min: ";
-        overloaded(
+        overloaded{
             [&](const SimpleIntegerVariableID & v) {
                 for (auto & [bit_value, bit_name] : _imp->integer_variable_bits.find(v)->second.second)
                     full_opb << bit_value << " " << bit_name << " ";
@@ -320,7 +320,7 @@ auto Proof::start_proof(State &) -> void
             },
             [&](const ViewOfIntegerVariableID &) {
                 throw UnimplementedException{};
-            })
+            }}
             .visit(*_imp->objective_variable);
 
         full_opb << " ;\n";
@@ -391,7 +391,7 @@ auto Proof::integer_linear_le(const State &, const Linear & lin, Integer val, bo
 
     auto output = [&](Integer multiplier) {
         for (auto & [coeff, var] : lin)
-            overloaded(
+            overloaded{
                 [&](const SimpleIntegerVariableID & v) {
                     for (auto & [bit_value, bit_name] : _imp->integer_variable_bits.find(v)->second.second)
                         _imp->opb << (multiplier * coeff * bit_value) << " " << bit_name << " ";
@@ -401,7 +401,7 @@ auto Proof::integer_linear_le(const State &, const Linear & lin, Integer val, bo
                 },
                 [&](const ViewOfIntegerVariableID &) {
                     throw UnimplementedException{};
-                })
+                }}
                 .visit(var);
 
         _imp->opb << ">= " << (multiplier * val) << " ;\n";
@@ -423,9 +423,9 @@ auto Proof::proof_variable(const Literal & lit) const -> const string &
 {
     // This might need a design rethink: if we get a constant variable, turn it into either
     // true or false based upon its condition
-    return overloaded(
+    return overloaded{
         [&](const LiteralFromIntegerVariable & ilit) -> const string & {
-            return overloaded(
+            return overloaded{
                 [&](const SimpleIntegerVariableID &) -> const string & {
                     auto it = _imp->direct_integer_variables.find(ilit);
                     if (it == _imp->direct_integer_variables.end())
@@ -438,7 +438,7 @@ auto Proof::proof_variable(const Literal & lit) const -> const string &
                 },
                 [&](const ConstantIntegerVariableID &) -> const string & {
                     throw UnimplementedException{};
-                })
+                }}
                 .visit(ilit.var);
         },
         [&](const TrueLiteral &) -> const string & {
@@ -446,15 +446,15 @@ auto Proof::proof_variable(const Literal & lit) const -> const string &
         },
         [&](const FalseLiteral &) -> const string & {
             throw UnimplementedException{};
-        })
+        }}
         .visit(lit);
 }
 
 auto Proof::need_proof_variable(const Literal & lit) -> void
 {
-    return overloaded(
+    return overloaded{
         [&](const LiteralFromIntegerVariable & ilit) {
-            return overloaded(
+            return overloaded{
                 [&](const SimpleIntegerVariableID & var) {
                     need_direct_encoding_for(var, ilit.value);
                 },
@@ -464,13 +464,13 @@ auto Proof::need_proof_variable(const Literal & lit) -> void
                 },
                 [&](const ConstantIntegerVariableID &) {
                     throw UnimplementedException{};
-                })
+                }}
                 .visit(ilit.var);
         },
         [&](const TrueLiteral &) {
         },
         [&](const FalseLiteral &) {
-        })
+        }}
         .visit(lit);
 }
 
@@ -505,7 +505,7 @@ auto Proof::solution(const State & state) -> void
         Integer obj_val = state(*_imp->objective_variable);
         _imp->proof << " " << proof_variable(*_imp->objective_variable == obj_val);
 
-        overloaded(
+        overloaded{
             [&](const SimpleIntegerVariableID & var) {
                 auto & [negative_bit_coeff, bit_vars] = _imp->integer_variable_bits.find(var)->second;
                 if (obj_val.raw_value < 0) {
@@ -530,7 +530,7 @@ auto Proof::solution(const State & state) -> void
             },
             [&](const ViewOfIntegerVariableID &) {
                 throw UnimplementedException{};
-            })
+            }}
             .visit(*_imp->objective_variable);
 
         _imp->proof << '\n';
@@ -583,7 +583,7 @@ auto Proof::infer(const State & state, const Literal & lit, Justification why) -
         ++_imp->proof_line;
     };
 
-    overloaded(
+    overloaded{
         [&](const JustifyUsingRUP &) {
             need_proof_variable(lit);
             output_it("u");
@@ -608,7 +608,7 @@ auto Proof::infer(const State & state, const Literal & lit, Justification why) -
             _imp->proof << " ]\n";
         },
         [&](const NoJustificationNeeded &) {
-        })
+        }}
         .visit(why);
 }
 
@@ -626,7 +626,7 @@ auto Proof::emit_proof_comment(const string & s) -> void
 auto Proof::need_constraint_saying_variable_takes_at_least_one_value(IntegerVariableID var) -> ProofLine
 {
     auto [actual_var, _] = underlying_direct_variable_and_offset(var);
-    return overloaded(
+    return overloaded{
         [&](const ConstantIntegerVariableID &) -> ProofLine {
             throw UnimplementedException{};
         },
@@ -650,7 +650,7 @@ auto Proof::need_constraint_saying_variable_takes_at_least_one_value(IntegerVari
                 result = _imp->variable_at_least_one_constraints.emplace(var, _imp->proof_line).first;
             }
             return result->second;
-        })
+        }}
         .visit(actual_var);
 }
 
@@ -667,7 +667,7 @@ auto Proof::forget_proof_level(int depth) -> void
 
 auto Proof::for_each_bit_defining_var(IntegerVariableID var, const function<auto(Integer, const string &)->void> & callback) -> void
 {
-    overloaded(
+    overloaded{
         [&](const ConstantIntegerVariableID &) {
             throw UnimplementedException{};
         },
@@ -678,7 +678,7 @@ auto Proof::for_each_bit_defining_var(IntegerVariableID var, const function<auto
             auto & [_, bit_vars] = _imp->integer_variable_bits.find(var)->second;
             for (auto & [coeff, var] : bit_vars)
                 callback(coeff, var);
-        })
+        }}
         .visit(var);
 }
 

@@ -18,7 +18,7 @@ using std::visit;
 
 auto gcs::debug_string(const Literal & lit) -> string
 {
-    return overloaded(
+    return overloaded{
         [](const LiteralFromIntegerVariable & ilit) -> string {
             switch (ilit.op) {
                 using enum LiteralFromIntegerVariable::Operator;
@@ -38,7 +38,7 @@ auto gcs::debug_string(const Literal & lit) -> string
         },
         [](const FalseLiteral &) -> string {
             return "false";
-        })
+        }}
         .visit(lit);
 }
 
@@ -46,9 +46,9 @@ namespace
 {
     auto is_literally_true_or_false(const Literal & lit) -> optional<bool>
     {
-        return overloaded(
+        return overloaded{
             [](const LiteralFromIntegerVariable & ilit) -> optional<bool> {
-                return overloaded(
+                return overloaded{
                     [&](SimpleIntegerVariableID) -> optional<bool> { return nullopt; },
                     [&](ViewOfIntegerVariableID) -> optional<bool> { return nullopt; },
                     [&](ConstantIntegerVariableID x) -> optional<bool> {
@@ -60,7 +60,7 @@ namespace
                         case Less: return x.const_value < ilit.value;
                         }
                         throw NonExhaustiveSwitch{};
-                    })
+                    }}
                     .visit(ilit.var);
             },
             [](const TrueLiteral &) -> optional<bool> {
@@ -68,7 +68,7 @@ namespace
             },
             [](const FalseLiteral &) -> optional<bool> {
                 return false;
-            })
+            }}
             .visit(lit);
     }
 }
@@ -107,7 +107,7 @@ auto gcs::sanitise_literals(Literals & lits) -> bool
 
 auto gcs::operator!(const Literal & lit) -> Literal
 {
-    return overloaded(
+    return overloaded{
         [](const LiteralFromIntegerVariable & ilit) {
             switch (ilit.op) {
                 using enum LiteralFromIntegerVariable::Operator;
@@ -127,6 +127,6 @@ auto gcs::operator!(const Literal & lit) -> Literal
         },
         [](const FalseLiteral &) -> Literal {
             return TrueLiteral{};
-        })
+        }}
         .visit(lit);
 }

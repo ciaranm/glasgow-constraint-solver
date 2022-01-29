@@ -361,9 +361,9 @@ auto Propagators::fill_in_constraint_stats(Stats & stats) const -> void
 
 auto Propagators::trigger_on_change(VariableID var, int t) -> void
 {
-    overloaded(
+    overloaded{
         [&](const IntegerVariableID & ivar) {
-            overloaded(
+            overloaded{
                 [&](const SimpleIntegerVariableID & v) {
                     if (_imp->iv_triggers.size() <= v.index)
                         _imp->iv_triggers.resize(v.index + 1);
@@ -373,17 +373,17 @@ auto Propagators::trigger_on_change(VariableID var, int t) -> void
                     trigger_on_change(v.actual_variable, t);
                 },
                 [&](const ConstantIntegerVariableID &) {
-                })
+                }}
                 .visit(ivar);
-        })
+        }}
         .visit(var);
 }
 
 auto Propagators::trigger_on_bounds(VariableID var, int t) -> void
 {
-    overloaded(
+    overloaded{
         [&](const IntegerVariableID & ivar) {
-            overloaded(
+            overloaded{
                 [&](const SimpleIntegerVariableID & v) {
                     if (_imp->iv_triggers.size() <= v.index)
                         _imp->iv_triggers.resize(v.index + 1);
@@ -393,17 +393,17 @@ auto Propagators::trigger_on_bounds(VariableID var, int t) -> void
                     trigger_on_bounds(v.actual_variable, t);
                 },
                 [&](const ConstantIntegerVariableID &) {
-                })
+                }}
                 .visit(ivar);
-        })
+        }}
         .visit(var);
 }
 
 auto Propagators::trigger_on_instantiated(VariableID var, int t) -> void
 {
-    overloaded(
+    overloaded{
         [&](const IntegerVariableID & ivar) {
-            overloaded(
+            overloaded{
                 [&](const SimpleIntegerVariableID & v) {
                     if (_imp->iv_triggers.size() <= v.index)
                         _imp->iv_triggers.resize(v.index + 1);
@@ -413,8 +413,8 @@ auto Propagators::trigger_on_instantiated(VariableID var, int t) -> void
                     trigger_on_instantiated(v.actual_variable, t);
                 },
                 [&](const ConstantIntegerVariableID &) {
-                })
+                }}
                 .visit(ivar);
-        })
+        }}
         .visit(var);
 }

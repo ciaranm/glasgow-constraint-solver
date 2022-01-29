@@ -11,7 +11,7 @@ using std::visit;
 
 auto gcs::debug_string(const IntegerVariableState & ivar) -> string
 {
-    return overloaded(
+    return overloaded{
         [](const IntegerVariableConstantState & c) {
             return "const " + to_string(c.value.raw_value);
         },
@@ -30,6 +30,6 @@ auto gcs::debug_string(const IntegerVariableState & ivar) -> string
             for (auto & v : *s.values)
                 result += " " + to_string(v.raw_value);
             return result;
-        })
+        }}
         .visit(ivar);
 }

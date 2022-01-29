@@ -40,23 +40,23 @@ gives us a way of writing a ``switch``-like statement on a ``std::variant``, and
 pattern which turns multiple lambdas into a single class with overloaded ``operator()`` methods. In
 canonical C++ it would look something like this:
 ```C++
-    return visit(overloaded {
+    return visit{overloaded {
             [] (const IntegerVariableConstantState &)   { return Integer{ 1 }; },
             [] (const IntegerVariableRangeState & r)    { return r.upper - r.lower + Integer{ 1 }; },
             [] (const IntegerVariableSmallSetState & s) { return Integer{ s.bits.popcount() }; },
             [] (const IntegerVariableSetState & s)      { return Integer(s.values->size()); }
-            }, state_of(actual_var, space));
+            }, state_of(actual_var, space)};
 ```
 
 I can't get ``clang-format`` to do anything even remotely reasonable here, particularly when some of
 the lambdas span multiple lines. This is a common code pattern due to my overuse of
 ``std::variant``, so I've opted to put ``visit`` as a member inside ``overloaded``, allowing:
 ```C++
-    return overloaded(
+    return overloaded{
         [](const IntegerVariableConstantState &) { return Integer{1}; },
         [](const IntegerVariableRangeState & r) { return r.upper - r.lower + Integer{1}; },
         [](const IntegerVariableSmallSetState & s) { return Integer{s.bits.popcount()}; },
-        [](const IntegerVariableSetState & s) { return Integer(s.values->size()); })
+        [](const IntegerVariableSetState & s) { return Integer(s.values->size()); }}
         .visit(state_of(actual_var, space));
 ```
 This isn't ideal, but it'll do for now.
