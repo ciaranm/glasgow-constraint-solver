@@ -117,9 +117,7 @@ auto main(int argc, char * argv[]) -> int
             if (ww > max_weight)
                 max_weight = ww;
 
-    vector<IntegerVariableID> xs;
-    for (int i = 0; i < size; ++i)
-        xs.push_back(p.create_integer_variable(0_i, Integer{size - 1}, "xs" + to_string(i)));
+    auto xs = p.create_integer_variable_vector(size, 0_i, Integer{size - 1}, "xs");
 
     // p.post(AllDifferent{ xs });
     for (int i = 0; i < size; ++i)

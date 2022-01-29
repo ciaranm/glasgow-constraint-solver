@@ -73,9 +73,7 @@ auto main(int argc, char * argv[]) -> int
 
     Problem p{Proof{"colour.opb", "colour.veripb"}};
 
-    vector<IntegerVariableID> vertices;
-    for (int v = 0; v != size; ++v)
-        vertices.push_back(p.create_integer_variable(0_i, Integer{size - 1}, "vertex" + to_string(v)));
+    auto vertices = p.create_integer_variable_vector(size, 0_i, Integer{size - 1}, "vertex");
 
     for (auto & [f, t] : edges)
         p.post(NotEquals{vertices[f], vertices[t]});

@@ -66,10 +66,7 @@ auto main(int argc, char * argv[]) -> int
 
     Problem p = options_vars.count("prove") ? Problem{Proof{"crystal_maze.opb", "crystal_maze.veripb"}} : Problem{};
 
-    vector<IntegerVariableID> xs;
-    for (int i = 0; i < 8; ++i)
-        xs.push_back(p.create_integer_variable(1_i, 8_i, "box" + to_string(i)));
-
+    auto xs = p.create_integer_variable_vector(8, 1_i, 8_i, "box");
     p.post(AllDifferent{xs});
     p.branch_on(xs);
 

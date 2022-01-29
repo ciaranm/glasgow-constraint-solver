@@ -78,9 +78,7 @@ auto main(int argc, char * argv[]) -> int
     int size = options_vars["size"].as<int>();
     Problem p = options_vars.count("prove") ? Problem{Proof{"n_queens.opb", "n_queens.veripb"}} : Problem{};
 
-    vector<SimpleIntegerVariableID> queens;
-    for (int v = 0; v != size; ++v)
-        queens.push_back(p.create_integer_variable(0_i, Integer{size - 1}, "queen" + to_string(v)));
+    auto queens = p.create_integer_variable_vector(size, 0_i, Integer{size - 1}, "queen");
 
     for (int i = 0; i < size; ++i) {
         for (int j = i + 1; j < size; ++j) {

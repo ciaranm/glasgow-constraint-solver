@@ -15,6 +15,9 @@ using std::make_optional;
 using std::move;
 using std::nullopt;
 using std::optional;
+using std::size_t;
+using std::string;
+using std::to_string;
 using std::vector;
 
 struct Problem::Imp
@@ -70,6 +73,19 @@ auto Problem::create_integer_range_variable(Integer lower, Integer upper, const 
     _imp->problem_variables.push_back(result);
     if (_imp->optional_proof)
         _imp->optional_proof->create_integer_variable(result, lower, upper, name, false);
+    return result;
+}
+
+auto Problem::create_integer_variable_vector(
+    size_t how_many,
+    Integer lower,
+    Integer upper,
+    const optional<string> & name) -> std::vector<IntegerVariableID>
+{
+    vector<IntegerVariableID> result;
+    result.reserve(how_many);
+    for (size_t n = 0; n < how_many; ++n)
+        result.push_back(create_integer_variable(lower, upper, name ? make_optional(*name + to_string(n)) : nullopt));
     return result;
 }
 

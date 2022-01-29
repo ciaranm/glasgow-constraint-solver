@@ -79,9 +79,7 @@ auto main(int argc, char * argv[]) -> int
     int size = options_vars["size"].as<int>();
     Problem p = options_vars.count("prove") ? Problem{Proof{"magic_series.opb", "magic_series.veripb"}} : Problem{};
 
-    vector<IntegerVariableID> series;
-    for (int v = 0; v != size; ++v)
-        series.push_back(p.create_integer_variable(0_i, Integer{size - 1}, "series" + to_string(v)));
+    auto series = p.create_integer_variable_vector(size, 0_i, Integer{size - 1}, "series");
 
     for (int i = 0; i < size; ++i) {
         Linear coeff_vars;

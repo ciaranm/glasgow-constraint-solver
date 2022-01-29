@@ -19,13 +19,9 @@ using std::vector;
 auto main(int, char *[]) -> int
 {
     Problem p{Proof{"triangle.opb", "triangle.veripb"}};
-    IntegerVariableID a = p.create_integer_variable(1_i, 10_i);
-    IntegerVariableID b = p.create_integer_variable(1_i, 10_i);
-    IntegerVariableID c = p.create_integer_variable(1_i, 10_i);
-    IntegerVariableID a_squared = p.create_integer_variable(1_i, 100_i);
-    IntegerVariableID b_squared = p.create_integer_variable(1_i, 100_i);
-    IntegerVariableID c_squared = p.create_integer_variable(1_i, 100_i);
-    p.branch_on(vector{a, b, c});
+    auto [a, b, c] = p.create_n_integer_variables<3>(1_i, 10_i);
+    auto [a_squared, b_squared, c_squared] = p.create_n_integer_variables<3>(1_i, 100_i);
+    p.branch_on(vector<IntegerVariableID>{a, b, c});
 
     p.post(Power{a, constant_variable(2_i), a_squared});
     p.post(Power{b, constant_variable(2_i), b_squared});
