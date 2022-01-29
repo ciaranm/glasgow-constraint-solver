@@ -5,4 +5,3 @@
 using namespace gcs;
 
 Constraint::~Constraint() = default;
-

@@ -10,7 +10,7 @@ namespace gcs
     template <typename T_, typename A_>
     auto inline generalise(A_ & a) -> T_
     {
-        return std::visit([] (auto & x) -> T_ { return x; }, a);
+        return std::visit([](auto & x) -> T_ { return x; }, a);
     }
 }
 

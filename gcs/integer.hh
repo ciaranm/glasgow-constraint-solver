@@ -17,33 +17,33 @@ namespace gcs
         {
         }
 
-        [[ nodiscard ]] auto to_string() const -> std::string
+        [[nodiscard]] auto to_string() const -> std::string
         {
             return std::to_string(raw_value);
         }
 
-        [[ nodiscard ]] auto operator<=> (const Integer &) const = default;
+        [[nodiscard]] auto operator<=>(const Integer &) const = default;
 
-        auto operator++ () -> Integer &
+        auto operator++() -> Integer &
         {
             ++raw_value;
             return *this;
         }
 
-        auto operator++ (int) -> Integer
+        auto operator++(int) -> Integer
         {
             Integer old = *this;
             operator++();
             return old;
         }
 
-        auto operator-- () -> Integer &
+        auto operator--() -> Integer &
         {
             --raw_value;
             return *this;
         }
 
-        auto operator-- (int) -> Integer
+        auto operator--(int) -> Integer
         {
             Integer old = *this;
             operator--();
@@ -51,48 +51,48 @@ namespace gcs
         }
     };
 
-    [[ nodiscard ]] inline auto operator+ (Integer a, Integer b) -> Integer
+    [[nodiscard]] inline auto operator+(Integer a, Integer b) -> Integer
     {
-        return Integer{ a.raw_value + b.raw_value };
+        return Integer{a.raw_value + b.raw_value};
     }
 
-    inline auto operator+= (Integer & a, Integer b) -> Integer &
+    inline auto operator+=(Integer & a, Integer b) -> Integer &
     {
         a.raw_value += b.raw_value;
         return a;
     }
 
-    [[ nodiscard ]] inline auto operator- (Integer a, Integer b) -> Integer
+    [[nodiscard]] inline auto operator-(Integer a, Integer b) -> Integer
     {
-        return Integer{ a.raw_value - b.raw_value };
+        return Integer{a.raw_value - b.raw_value};
     }
 
-    [[ nodiscard ]] inline auto operator* (Integer a, Integer b) -> Integer
+    [[nodiscard]] inline auto operator*(Integer a, Integer b) -> Integer
     {
-        return Integer{ a.raw_value * b.raw_value };
+        return Integer{a.raw_value * b.raw_value};
     }
 
-    [[ nodiscard ]] inline auto operator/ (Integer a, Integer b) -> Integer
+    [[nodiscard]] inline auto operator/(Integer a, Integer b) -> Integer
     {
-        return Integer{ a.raw_value / b.raw_value };
+        return Integer{a.raw_value / b.raw_value};
     }
 
-    [[ nodiscard ]] inline auto operator% (Integer a, Integer b) -> Integer
+    [[nodiscard]] inline auto operator%(Integer a, Integer b) -> Integer
     {
-        return Integer{ a.raw_value % b.raw_value };
+        return Integer{a.raw_value % b.raw_value};
     }
 
-    [[ nodiscard ]] inline auto operator- (Integer a) -> Integer
+    [[nodiscard]] inline auto operator-(Integer a) -> Integer
     {
-        return Integer{ -a.raw_value };
+        return Integer{-a.raw_value};
     }
 
-    [[ nodiscard ]] inline auto operator "" _i (unsigned long long v) -> Integer
+    [[nodiscard]] inline auto operator"" _i(unsigned long long v) -> Integer
     {
         return Integer(v);
     }
 
-    inline auto operator<< (std::ostream & s, Integer i) -> std::ostream &
+    inline auto operator<<(std::ostream & s, Integer i) -> std::ostream &
     {
         return s << i.raw_value;
     }

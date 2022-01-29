@@ -10,18 +10,17 @@
 
 namespace gcs
 {
-    class Table :
-        public Constraint
+    class Table : public Constraint
     {
-        private:
-            const std::vector<IntegerVariableID> & _vars;
-            std::vector<std::vector<Integer> > && _tuples;
+    private:
+        const std::vector<IntegerVariableID> & _vars;
+        std::vector<std::vector<Integer>> && _tuples;
 
-        public:
-            explicit Table(const std::vector<IntegerVariableID> & vars, std::vector<std::vector<Integer> > && tuples);
+    public:
+        explicit Table(const std::vector<IntegerVariableID> & vars, std::vector<std::vector<Integer>> && tuples);
 
-            virtual auto describe_for_proof() -> std::string override;
-            virtual auto install(Propagators &, const State &) && -> void override;
+        virtual auto describe_for_proof() -> std::string override;
+        virtual auto install(Propagators &, const State &) && -> void override;
     };
 }
 

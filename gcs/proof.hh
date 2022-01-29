@@ -19,76 +19,75 @@
 
 namespace gcs
 {
-    class ProofError :
-        public std::exception
+    class ProofError : public std::exception
     {
-        private:
-            std::string _wat;
+    private:
+        std::string _wat;
 
-        public:
-            explicit ProofError(const std::string &);
+    public:
+        explicit ProofError(const std::string &);
 
-            virtual auto what() const noexcept -> const char * override;
+        virtual auto what() const noexcept -> const char * override;
     };
 
     class Proof
     {
-        private:
-            struct Imp;
-            std::unique_ptr<Imp> _imp;
+    private:
+        struct Imp;
+        std::unique_ptr<Imp> _imp;
 
-            [[ nodiscard ]] auto xify(std::string &&) -> std::string;
+        [[nodiscard]] auto xify(std::string &&) -> std::string;
 
-            auto need_gevar(SimpleIntegerVariableID id, Integer v) -> void;
+        auto need_gevar(SimpleIntegerVariableID id, Integer v) -> void;
 
-        public:
-            explicit Proof(const std::string & opb_file, const std::string & proof_file, bool use_friendly_names = true);
-            ~Proof();
+    public:
+        explicit Proof(const std::string & opb_file, const std::string & proof_file, bool use_friendly_names = true);
+        ~Proof();
 
-            auto operator= (const Proof &) -> Proof & = delete;
-            Proof(const Proof &) = delete;
+        auto operator=(const Proof &) -> Proof & = delete;
+        Proof(const Proof &) = delete;
 
-            Proof(Proof &&);
-            auto operator= (Proof &&) -> Proof &;
+        Proof(Proof &&);
+        auto operator=(Proof &&) -> Proof &;
 
-            // OPB-related output
-            auto posting(const std::string &) -> void;
-            auto create_integer_variable(SimpleIntegerVariableID, Integer, Integer, const std::optional<std::string> &,
-                    bool direct_encoding) -> void;
-            [[ nodiscard ]] auto cnf(const Literals &) -> ProofLine;
-            [[ nodiscard ]] auto at_most_one(const Literals &) -> ProofLine;
-            [[ nodiscard ]] auto pseudoboolean_ge(const WeightedLiterals &, Integer) -> ProofLine;
-            auto integer_linear_le(const State &, const Linear & coeff_vars, Integer value, bool equality) -> ProofLine;
+        // OPB-related output
+        auto posting(const std::string &) -> void;
+        auto create_integer_variable(SimpleIntegerVariableID, Integer, Integer, const std::optional<std::string> &,
+            bool direct_encoding) -> void;
+        [[nodiscard]] auto cnf(const Literals &) -> ProofLine;
+        [[nodiscard]] auto at_most_one(const Literals &) -> ProofLine;
+        [[nodiscard]] auto pseudoboolean_ge(const WeightedLiterals &, Integer) -> ProofLine;
+        auto integer_linear_le(const State &, const Linear & coeff_vars, Integer value, bool equality) -> ProofLine;
 
-            auto minimise(IntegerVariableID) -> void;
+        auto minimise(IntegerVariableID) -> void;
 
-            auto need_proof_variable(const Literal &) -> void;
-            auto need_direct_encoding_for(SimpleIntegerVariableID, Integer) -> void;
+        auto need_proof_variable(const Literal &) -> void;
+        auto need_direct_encoding_for(SimpleIntegerVariableID, Integer) -> void;
 
-            // Proof-related output
-            auto start_proof(State & initial_state) -> void;
+        // Proof-related output
+        auto start_proof(State & initial_state) -> void;
 
-            auto solution(const State &) -> void;
-            auto backtrack(const State &) -> void;
-            auto assert_contradiction() -> void;
+        auto solution(const State &) -> void;
+        auto backtrack(const State &) -> void;
+        auto assert_contradiction() -> void;
 
-            auto infer(const State & state, const Literal & lit, Justification why) -> void;
+        auto infer(const State & state, const Literal & lit, Justification why) -> void;
 
-            auto enter_proof_level(int depth) -> void;
-            auto forget_proof_level(int depth) -> void;
+        auto enter_proof_level(int depth) -> void;
+        auto forget_proof_level(int depth) -> void;
 
-            // Writing proof steps from constraints
-            auto add_proof_steps(const JustifyExplicitly &, std::vector<ProofLine> & to_delete) -> void;
-            auto delete_proof_lines(const std::vector<ProofLine> & to_delete) -> void;
-            auto emit_proof_line(const std::string &) -> ProofLine;
-            auto emit_proof_comment(const std::string &) -> void;
-            [[ nodiscard ]] auto trail_variables(const State &, Integer coeff) -> std::string;
-            [[ nodiscard ]] auto need_constraint_saying_variable_takes_at_least_one_value(IntegerVariableID) -> ProofLine;
-            auto for_each_bit_defining_var(IntegerVariableID var, const std::function<auto (Integer, const std::string &) -> void> &) -> void;
+        // Writing proof steps from constraints
+        auto add_proof_steps(const JustifyExplicitly &, std::vector<ProofLine> & to_delete) -> void;
+        auto delete_proof_lines(const std::vector<ProofLine> & to_delete) -> void;
+        auto emit_proof_line(const std::string &) -> ProofLine;
+        auto emit_proof_comment(const std::string &) -> void;
+        [[nodiscard]] auto trail_variables(const State &, Integer coeff) -> std::string;
+        [[nodiscard]] auto need_constraint_saying_variable_takes_at_least_one_value(IntegerVariableID) -> ProofLine;
+        auto for_each_bit_defining_var(IntegerVariableID var, const std::function<auto(Integer, const std::string &)->void> &) -> void;
 
-            auto create_pseudovariable(SimpleIntegerVariableID, Integer, Integer, const std::optional<std::string> &) -> void;
+        auto create_pseudovariable(SimpleIntegerVariableID, Integer, Integer, const std::optional<std::string> &) -> void;
 
-            auto proof_variable(const Literal &) const -> const std::string &;
+        auto proof_variable(const Literal &) const -> const std::string &;
     };
 }
 

@@ -23,17 +23,16 @@ namespace
 {
     auto where_does_it_hurt(const source_location & where) -> string
     {
-        return string{ where.file_name() } + ":" + to_string(where.line()) + " in " + string{ where.function_name() };
+        return string{where.file_name()} + ":" + to_string(where.line()) + " in " + string{where.function_name()};
     }
 }
 
 UnimplementedException::UnimplementedException(const source_location & where) :
-    UnexpectedException{ "unimplemented at " + where_does_it_hurt(where) }
+    UnexpectedException{"unimplemented at " + where_does_it_hurt(where)}
 {
 }
 
 NonExhaustiveSwitch::NonExhaustiveSwitch(const source_location & where) :
-    UnexpectedException{ "non-exhaustive at " + where_does_it_hurt(where) }
+    UnexpectedException{"non-exhaustive at " + where_does_it_hurt(where)}
 {
 }
-

@@ -8,17 +8,16 @@
 
 namespace gcs
 {
-    class Abs :
-        public Constraint
+    class Abs : public Constraint
     {
-        private:
-            IntegerVariableID _v1, _v2;
+    private:
+        IntegerVariableID _v1, _v2;
 
-        public:
-            explicit Abs(const IntegerVariableID v1, const IntegerVariableID v2);
+    public:
+        explicit Abs(const IntegerVariableID v1, const IntegerVariableID v2);
 
-            virtual auto describe_for_proof() -> std::string override;
-            virtual auto install(Propagators &, const State &) && -> void override;
+        virtual auto describe_for_proof() -> std::string override;
+        virtual auto install(Propagators &, const State &) && -> void override;
     };
 }
 

@@ -1,7 +1,7 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
-#include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/arithmetic.hh>
+#include <gcs/constraints/comparison.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 #include <util/for_each.hh>
@@ -29,16 +29,15 @@ namespace po = boost::program_options;
 
 auto main(int argc, char * argv[]) -> int
 {
-    po::options_description display_options{ "Program options" };
-    display_options.add_options()
-        ("help", "Display help information")
+    po::options_description display_options{"Program options"};
+    display_options.add_options()            //
+        ("help", "Display help information") //
         ("prove", "Create a proof");
 
-    po::options_description all_options{ "All options" };
-    all_options.add_options()
-        ("size", po::value<int>()->default_value(88), "Size of the problem to solve")
-        ("all", "Find all solutions")
-        ;
+    po::options_description all_options{"All options"};
+    all_options.add_options()                                                         //
+        ("size", po::value<int>()->default_value(88), "Size of the problem to solve") //
+        ("all", "Find all solutions");
 
     all_options.add(display_options);
 
@@ -50,9 +49,10 @@ auto main(int argc, char * argv[]) -> int
 
     try {
         po::store(po::command_line_parser(argc, argv)
-                .options(all_options)
-                .positional(positional_options)
-                .run(), options_vars);
+                      .options(all_options)
+                      .positional(positional_options)
+                      .run(),
+            options_vars);
         po::notify(options_vars);
     }
     catch (const po::error & e) {
@@ -76,36 +76,35 @@ auto main(int argc, char * argv[]) -> int
     cout << endl;
 
     int size = options_vars["size"].as<int>();
-    Problem p = options_vars.count("prove") ? Problem{ Proof{ "n_queens.opb", "n_queens.veripb" } } : Problem{ };
+    Problem p = options_vars.count("prove") ? Problem{Proof{"n_queens.opb", "n_queens.veripb"}} : Problem{};
 
     vector<SimpleIntegerVariableID> queens;
-    for (int v = 0 ; v != size ; ++v)
-        queens.push_back(p.create_integer_variable(0_i, Integer{ size - 1 }, "queen" + to_string(v)));
+    for (int v = 0; v != size; ++v)
+        queens.push_back(p.create_integer_variable(0_i, Integer{size - 1}, "queen" + to_string(v)));
 
-    for (int i = 0 ; i < size ; ++i) {
-        for (int j = i + 1 ; j < size ; ++j) {
-            p.post(NotEquals{ queens[i], queens[j] });
-            p.post(NotEquals{ queens[i] + Integer{ j - i }, queens[j] });
-            p.post(NotEquals{ queens[i] + -Integer{ j - i }, queens[j] });
+    for (int i = 0; i < size; ++i) {
+        for (int j = i + 1; j < size; ++j) {
+            p.post(NotEquals{queens[i], queens[j]});
+            p.post(NotEquals{queens[i] + Integer{j - i}, queens[j]});
+            p.post(NotEquals{queens[i] + -Integer{j - i}, queens[j]});
         }
     }
 
-    auto stats = solve_with(p, SolveCallbacks{
-            .solution = [&] (const State & s) -> bool {
+    auto stats = solve_with(p,
+        SolveCallbacks{
+            .solution = [&](const State & s) -> bool {
                 cout << "solution:";
                 for (auto & v : queens)
                     cout << " " << s(v);
                 cout << endl;
 
                 return options_vars.count("all");
-                },
-            .guess = [&] (const State & state, IntegerVariableID var) -> vector<Literal> {
-                return vector<Literal>{ var == state.lower_bound(var), var != state.lower_bound(var) };
-            }
-            });
+            },
+            .guess = [&](const State & state, IntegerVariableID var) -> vector<Literal> {
+                return vector<Literal>{var == state.lower_bound(var), var != state.lower_bound(var)};
+            }});
 
     cout << stats;
 
     return EXIT_SUCCESS;
 }
-

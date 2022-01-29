@@ -1,11 +1,10 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
-#include <gcs/problem.hh>
-#include <gcs/exception.hh>
-#include <gcs/state.hh>
-#include <gcs/propagators.hh>
-#include <gcs/exception.hh>
 #include <gcs/constraints/comparison.hh>
+#include <gcs/exception.hh>
+#include <gcs/problem.hh>
+#include <gcs/propagators.hh>
+#include <gcs/state.hh>
 
 #include <util/for_each.hh>
 #include <util/overloaded.hh>
@@ -23,7 +22,7 @@ struct Problem::Imp
     State initial_state;
     Propagators propagators;
     vector<IntegerVariableID> problem_variables;
-    optional<vector<IntegerVariableID> > branch_on;
+    optional<vector<IntegerVariableID>> branch_on;
     optional<IntegerVariableID> objective_variable;
     optional<Integer> objective_value;
     optional<Proof> optional_proof;
@@ -53,7 +52,7 @@ Problem::~Problem()
 auto Problem::create_integer_variable(Integer lower, Integer upper, const optional<std::string> & name) -> SimpleIntegerVariableID
 {
     if (lower > upper)
-        throw UnexpectedException{ "variable has lower bound > upper bound" };
+        throw UnexpectedException{"variable has lower bound > upper bound"};
 
     auto result = _imp->initial_state.create_integer_variable(lower, upper);
     _imp->problem_variables.push_back(result);
@@ -65,7 +64,7 @@ auto Problem::create_integer_variable(Integer lower, Integer upper, const option
 auto Problem::create_integer_range_variable(Integer lower, Integer upper, const optional<std::string> & name) -> SimpleIntegerVariableID
 {
     if (lower > upper)
-        throw UnexpectedException{ "variable has lower bound > upper bound" };
+        throw UnexpectedException{"variable has lower bound > upper bound"};
 
     auto result = _imp->initial_state.create_integer_variable(lower, upper);
     _imp->problem_variables.push_back(result);
@@ -89,11 +88,11 @@ auto Problem::propagate(State & state) const -> bool
 auto Problem::find_branching_variable(State & state) const -> optional<IntegerVariableID>
 {
     optional<IntegerVariableID> result = nullopt;
-    Integer sz{ 0 };
+    Integer sz{0};
 
     for (auto & var : (_imp->branch_on ? *_imp->branch_on : _imp->problem_variables)) {
         Integer s = state.domain_size(var);
-        if (s > Integer{ 1 } && (nullopt == result || s < sz)) {
+        if (s > Integer{1} && (nullopt == result || s < sz)) {
             result = var;
             sz = s;
         }
@@ -124,7 +123,7 @@ auto Problem::optional_proof() const -> std::optional<Proof> &
 auto Problem::minimise(IntegerVariableID var) -> void
 {
     if (_imp->objective_variable)
-        throw UnexpectedException{ "not sure how to have multiple objective variables" };
+        throw UnexpectedException{"not sure how to have multiple objective variables"};
     _imp->objective_variable = var;
 
     if (_imp->optional_proof)
@@ -141,4 +140,3 @@ auto Problem::fill_in_constraint_stats(Stats & stats) const -> void
 {
     _imp->propagators.fill_in_constraint_stats(stats);
 }
-

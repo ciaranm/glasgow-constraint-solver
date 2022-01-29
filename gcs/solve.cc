@@ -5,16 +5,16 @@
 
 using namespace gcs;
 
+using std::max;
+using std::nullopt;
 using std::chrono::duration_cast;
 using std::chrono::microseconds;
 using std::chrono::steady_clock;
-using std::max;
-using std::nullopt;
 
 namespace
 {
     auto solve_with_state(unsigned long long depth, Stats & stats, Problem & problem, State & state,
-            SolveCallbacks & callbacks, bool & this_subtree_contains_solution) -> bool
+        SolveCallbacks & callbacks, bool & this_subtree_contains_solution) -> bool
     {
         stats.max_depth = max(stats.max_depth, depth);
         ++stats.recursions;
@@ -61,22 +61,22 @@ namespace
                     }
                 }
                 else {
-                    state.for_each_value(*branch_var, [&] (Integer val) {
-                            if (keep_going) {
-                                auto timestamp = state.new_epoch();
-                                state.guess(*branch_var == val);
-                                bool child_contains_solution = false;
-                                if (! solve_with_state(depth + 1, stats, problem, state, callbacks, child_contains_solution))
-                                    keep_going = false;
+                    state.for_each_value(*branch_var, [&](Integer val) {
+                        if (keep_going) {
+                            auto timestamp = state.new_epoch();
+                            state.guess(*branch_var == val);
+                            bool child_contains_solution = false;
+                            if (! solve_with_state(depth + 1, stats, problem, state, callbacks, child_contains_solution))
+                                keep_going = false;
 
-                                if (child_contains_solution)
-                                    this_subtree_contains_solution = true;
-                                else
-                                    ++stats.failures;
+                            if (child_contains_solution)
+                                this_subtree_contains_solution = true;
+                            else
+                                ++stats.failures;
 
-                                state.backtrack(timestamp);
-                            }
-                        });
+                            state.backtrack(timestamp);
+                        }
+                    });
                 }
 
                 if (! keep_going)
@@ -119,6 +119,5 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks) -> Stats
 
 auto gcs::solve(Problem & problem, SolutionCallback callback) -> Stats
 {
-    return solve_with(problem, SolveCallbacks{ .solution = callback });
+    return solve_with(problem, SolveCallbacks{.solution = callback});
 }
-

@@ -11,33 +11,31 @@
 
 namespace gcs
 {
-    class LinearEquality :
-        public Constraint
+    class LinearEquality : public Constraint
     {
-        private:
-            Linear _coeff_vars;
-            Integer _value;
-            bool _gac;
+    private:
+        Linear _coeff_vars;
+        Integer _value;
+        bool _gac;
 
-        public:
-            explicit LinearEquality(Linear && coeff_vars, Integer value, bool gac = false);
+    public:
+        explicit LinearEquality(Linear && coeff_vars, Integer value, bool gac = false);
 
-            virtual auto describe_for_proof() -> std::string override;
-            virtual auto install(Propagators &, const State &) && -> void override;
+        virtual auto describe_for_proof() -> std::string override;
+        virtual auto install(Propagators &, const State &) && -> void override;
     };
 
-    class LinearLessEqual :
-        public Constraint
+    class LinearLessEqual : public Constraint
     {
-        private:
-            Linear _coeff_vars;
-            Integer _value;
+    private:
+        Linear _coeff_vars;
+        Integer _value;
 
-        public:
-            explicit LinearLessEqual(Linear && coeff_vars, Integer value);
+    public:
+        explicit LinearLessEqual(Linear && coeff_vars, Integer value);
 
-            virtual auto describe_for_proof() -> std::string override;
-            virtual auto install(Propagators &, const State &) && -> void override;
+        virtual auto describe_for_proof() -> std::string override;
+        virtual auto install(Propagators &, const State &) && -> void override;
     };
 }
 

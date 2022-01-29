@@ -4,9 +4,11 @@ High Priority TODO Items
 Code and Infrastructure
 -----------------------
 
-- Set up clang-format in a reasonable way.
+- Go through <a href="TOOLING.md">TOOLING.md</a> and see if any of this is fixable.
 
 - Get an include what you use tool, and possibly a using what you use tool, set up.
+
+- Figure out linting.
 
 - Switch to a modern build system.
 
@@ -74,8 +76,6 @@ Design
 
 - Some way of handling limits, ctrl+c, etc.
 
-- Don't generate binary encoding for 0/1 variables.
-
 Proofs
 ------
 
@@ -83,5 +83,5 @@ Proofs
 
 - A way to handle variables with large domains.
 
-- Do we need the ge encoding at all?
+- Don't generate binary encoding for 0/1 variables.
 

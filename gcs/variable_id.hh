@@ -18,7 +18,7 @@ namespace gcs
         {
         }
 
-        [[ nodiscard ]] auto operator <=> (const SimpleIntegerVariableID &) const = default;
+        [[nodiscard]] auto operator<=>(const SimpleIntegerVariableID &) const = default;
     };
 
     struct ViewOfIntegerVariableID
@@ -32,17 +32,17 @@ namespace gcs
         {
         }
 
-        [[ nodiscard ]] auto operator <=> (const ViewOfIntegerVariableID &) const = default;
+        [[nodiscard]] auto operator<=>(const ViewOfIntegerVariableID &) const = default;
     };
 
-    [[ nodiscard ]] inline auto operator+ (SimpleIntegerVariableID v, Integer o) -> ViewOfIntegerVariableID
+    [[nodiscard]] inline auto operator+(SimpleIntegerVariableID v, Integer o) -> ViewOfIntegerVariableID
     {
-        return ViewOfIntegerVariableID{ v, o };
+        return ViewOfIntegerVariableID{v, o};
     }
 
-    [[ nodiscard ]] inline auto operator- (SimpleIntegerVariableID v, Integer o) -> ViewOfIntegerVariableID
+    [[nodiscard]] inline auto operator-(SimpleIntegerVariableID v, Integer o) -> ViewOfIntegerVariableID
     {
-        return ViewOfIntegerVariableID{ v, -o };
+        return ViewOfIntegerVariableID{v, -o};
     }
 
     struct ConstantIntegerVariableID
@@ -54,7 +54,7 @@ namespace gcs
         {
         }
 
-        [[ nodiscard ]] auto operator <=> (const ConstantIntegerVariableID &) const = default;
+        [[nodiscard]] auto operator<=>(const ConstantIntegerVariableID &) const = default;
     };
 
     using IntegerVariableID = std::variant<SimpleIntegerVariableID, ViewOfIntegerVariableID, ConstantIntegerVariableID>;
@@ -63,28 +63,28 @@ namespace gcs
     // gain more items?
     using DirectIntegerVariableID = std::variant<SimpleIntegerVariableID, ConstantIntegerVariableID>;
 
-    [[ nodiscard ]] auto underlying_direct_variable_and_offset(const IntegerVariableID var) -> std::pair<DirectIntegerVariableID, Integer>;
+    [[nodiscard]] auto underlying_direct_variable_and_offset(const IntegerVariableID var) -> std::pair<DirectIntegerVariableID, Integer>;
 
-    [[ nodiscard ]] inline auto constant_variable(const Integer x) -> IntegerVariableID
+    [[nodiscard]] inline auto constant_variable(const Integer x) -> IntegerVariableID
     {
-        return ConstantIntegerVariableID{ x };
+        return ConstantIntegerVariableID{x};
     }
 
-    [[ nodiscard ]] inline auto operator "" _c (unsigned long long v) -> ConstantIntegerVariableID
+    [[nodiscard]] inline auto operator"" _c(unsigned long long v) -> ConstantIntegerVariableID
     {
-        return ConstantIntegerVariableID{ Integer(v) };
+        return ConstantIntegerVariableID{Integer(v)};
     }
 
-    [[ nodiscard ]] inline auto operator- (ConstantIntegerVariableID a) -> ConstantIntegerVariableID
+    [[nodiscard]] inline auto operator-(ConstantIntegerVariableID a) -> ConstantIntegerVariableID
     {
-        return ConstantIntegerVariableID{ -a.const_value };
+        return ConstantIntegerVariableID{-a.const_value};
     }
 
-    [[ nodiscard ]] auto debug_string(const IntegerVariableID &) -> std::string;
+    [[nodiscard]] auto debug_string(const IntegerVariableID &) -> std::string;
 
     using VariableID = std::variant<IntegerVariableID>;
 
-    [[ nodiscard ]] auto debug_string(const VariableID &) -> std::string;
+    [[nodiscard]] auto debug_string(const VariableID &) -> std::string;
 }
 
 #endif

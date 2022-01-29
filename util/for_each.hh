@@ -10,17 +10,17 @@ namespace gcs
     template <typename T_, typename F_>
     auto for_each_distinct_pair(T_ & c, F_ f) -> void
     {
-        for (auto first = c.begin(), end = c.end() ; first != end ; ++first)
-            for (auto second = std::next(first) ; second != end ; ++second)
+        for (auto first = c.begin(), end = c.end(); first != end; ++first)
+            for (auto second = std::next(first); second != end; ++second)
                 f(*first, *second);
     }
 
     template <typename T_, typename F_>
-    auto for_each_with_index(T_ & c, F_ f) ->  void
+    auto for_each_with_index(T_ & c, F_ f) -> void
     {
-        typename T_::size_type idx{ 0 };
+        typename T_::size_type idx{0};
         auto v = c.begin(), end = c.end();
-        for ( ; v != end ; ++idx, ++v)
+        for (; v != end; ++idx, ++v)
             f(*v, idx);
     }
 }

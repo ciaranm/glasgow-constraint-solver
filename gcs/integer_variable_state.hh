@@ -49,9 +49,9 @@ namespace gcs
 
     struct IntegerVariableSetState
     {
-        std::shared_ptr<std::set<Integer> > values;
+        std::shared_ptr<std::set<Integer>> values;
 
-        explicit IntegerVariableSetState(std::shared_ptr<std::set<Integer> > v) :
+        explicit IntegerVariableSetState(std::shared_ptr<std::set<Integer>> v) :
             values(v)
         {
         }
@@ -63,7 +63,7 @@ namespace gcs
         IntegerVariableSmallSetState,
         IntegerVariableSetState>;
 
-    [[ nodiscard ]] auto debug_string(const IntegerVariableState &) -> std::string;
+    [[nodiscard]] auto debug_string(const IntegerVariableState &) -> std::string;
 }
 
 #endif

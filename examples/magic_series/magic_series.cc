@@ -30,16 +30,15 @@ namespace po = boost::program_options;
 
 auto main(int argc, char * argv[]) -> int
 {
-    po::options_description display_options{ "Program options" };
-    display_options.add_options()
-        ("help", "Display help information")
-        ("prove", "Create a proof")
+    po::options_description display_options{"Program options"};
+    display_options.add_options()            //
+        ("help", "Display help information") //
+        ("prove", "Create a proof")          //
         ("extra-constraints", "Use extra constraints described in the MiniCP paper");
 
-    po::options_description all_options{ "All options" };
-    all_options.add_options()
-        ("size", po::value<int>()->default_value(300), "Size of the problem to solve")
-        ;
+    po::options_description all_options{"All options"};
+    all_options.add_options() //
+        ("size", po::value<int>()->default_value(300), "Size of the problem to solve");
 
     all_options.add(display_options);
 
@@ -51,9 +50,10 @@ auto main(int argc, char * argv[]) -> int
 
     try {
         po::store(po::command_line_parser(argc, argv)
-                .options(all_options)
-                .positional(positional_options)
-                .run(), options_vars);
+                      .options(all_options)
+                      .positional(positional_options)
+                      .run(),
+            options_vars);
         po::notify(options_vars);
     }
     catch (const po::error & e) {
@@ -77,57 +77,56 @@ auto main(int argc, char * argv[]) -> int
     cout << endl;
 
     int size = options_vars["size"].as<int>();
-    Problem p = options_vars.count("prove") ? Problem{ Proof{ "magic_series.opb", "magic_series.veripb" } } : Problem{ };
+    Problem p = options_vars.count("prove") ? Problem{Proof{"magic_series.opb", "magic_series.veripb"}} : Problem{};
 
     vector<IntegerVariableID> series;
-    for (int v = 0 ; v != size ; ++v)
-        series.push_back(p.create_integer_variable(0_i, Integer{ size - 1 }, "series" + to_string(v)));
+    for (int v = 0; v != size; ++v)
+        series.push_back(p.create_integer_variable(0_i, Integer{size - 1}, "series" + to_string(v)));
 
-    for (int i = 0 ; i < size ; ++i) {
+    for (int i = 0; i < size; ++i) {
         Linear coeff_vars;
-        for (int j = 0 ; j < size ; ++j) {
+        for (int j = 0; j < size; ++j) {
             auto series_j_eq_i = p.create_integer_variable(0_i, 1_i);
-            p.post(EqualsIff{ series[j], constant_variable(Integer{ i }), series_j_eq_i == 1_i });
+            p.post(EqualsIff{series[j], constant_variable(Integer{i}), series_j_eq_i == 1_i});
             coeff_vars.emplace_back(1_i, series_j_eq_i);
         }
 
         coeff_vars.emplace_back(-1_i, series[i]);
-        p.post(LinearEquality{ move(coeff_vars), 0_i });
+        p.post(LinearEquality{move(coeff_vars), 0_i});
     }
 
     Linear sum_s;
     for (auto & s : series)
         sum_s.emplace_back(1_i, s);
-    p.post(LinearEquality{ move(sum_s), Integer{ size } });
+    p.post(LinearEquality{move(sum_s), Integer{size}});
 
     // Although this is discussed in the text, it isn't included in the executed
     // benchmarks.
     if (options_vars.count("extra-constraints")) {
         Linear sum_mul_s;
-        for_each_with_index(series, [&] (IntegerVariableID s, auto idx) {
-                sum_mul_s.emplace_back(Integer(idx), s);
-                });
-        p.post(LinearEquality{ move(sum_mul_s), Integer{ size } });
+        for_each_with_index(series, [&](IntegerVariableID s, auto idx) {
+            sum_mul_s.emplace_back(Integer(idx), s);
+        });
+        p.post(LinearEquality{move(sum_mul_s), Integer{size}});
     }
 
     p.branch_on(series);
 
-    auto stats = solve_with(p, SolveCallbacks{
-            .solution = [&] (const State & s) -> bool {
+    auto stats = solve_with(p,
+        SolveCallbacks{
+            .solution = [&](const State & s) -> bool {
                 cout << "solution:";
                 for (auto & v : series)
                     cout << " " << s(v);
                 cout << endl;
 
                 return true;
-                },
-            .guess = [&] (const State & state, IntegerVariableID var) -> vector<Literal> {
-                return vector<Literal>{ var == state.lower_bound(var), var != state.lower_bound(var) };
-            }
-            });
+            },
+            .guess = [&](const State & state, IntegerVariableID var) -> vector<Literal> {
+                return vector<Literal>{var == state.lower_bound(var), var != state.lower_bound(var)};
+            }});
 
     cout << stats;
 
     return EXIT_SUCCESS;
 }
-

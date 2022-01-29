@@ -17,7 +17,7 @@ namespace gcs
 
     struct JustifyExplicitly
     {
-        std::function<auto (Proof &, std::vector<ProofLine> &) -> void> add_proof_steps;
+        std::function<auto(Proof &, std::vector<ProofLine> &)->void> add_proof_steps;
     };
 
     struct JustifyUsingRUP

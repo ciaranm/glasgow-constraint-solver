@@ -16,163 +16,120 @@ namespace gcs
         LessThanEqual
     };
 
-    class ComparisonReif :
-        public Constraint
+    class ComparisonReif : public Constraint
     {
-        private:
-            IntegerVariableID _v1, _v2;
-            Literal _cond;
-            bool _full_reif;
-            ComparisonOperator _op;
+    private:
+        IntegerVariableID _v1, _v2;
+        Literal _cond;
+        bool _full_reif;
+        ComparisonOperator _op;
 
-            auto _install_equals(Propagators &, const State &) && -> void;
-            auto _install_less_than(Propagators &, const State &, bool equal) && -> void;
+        auto _install_equals(Propagators &, const State &) && -> void;
+        auto _install_less_than(Propagators &, const State &, bool equal) && -> void;
 
-        public:
-            explicit ComparisonReif(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond, bool full_reif, ComparisonOperator op);
+    public:
+        explicit ComparisonReif(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond, bool full_reif, ComparisonOperator op);
 
-            virtual auto describe_for_proof() -> std::string override;
-            virtual auto install(Propagators &, const State &) && -> void override;
+        virtual auto describe_for_proof() -> std::string override;
+        virtual auto install(Propagators &, const State &) && -> void override;
     };
 
-    class Equals :
-        public ComparisonReif
+    class Equals : public ComparisonReif
     {
-        public:
-            inline explicit Equals(const IntegerVariableID v1, const IntegerVariableID v2) :
-                ComparisonReif(v1, v2, TrueLiteral{ }, true, ComparisonOperator::Equals)
-            {
-            };
+    public:
+        inline explicit Equals(const IntegerVariableID v1, const IntegerVariableID v2) :
+            ComparisonReif(v1, v2, TrueLiteral{}, true, ComparisonOperator::Equals){};
     };
 
-    class EqualsIf :
-        public ComparisonReif
+    class EqualsIf : public ComparisonReif
     {
-        public:
-            inline explicit EqualsIf(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond) :
-                ComparisonReif(v1, v2, cond, false, ComparisonOperator::Equals)
-            {
-            };
+    public:
+        inline explicit EqualsIf(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond) :
+            ComparisonReif(v1, v2, cond, false, ComparisonOperator::Equals){};
     };
 
-    class EqualsIff :
-        public ComparisonReif
+    class EqualsIff : public ComparisonReif
     {
-        public:
-            inline explicit EqualsIff(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond) :
-                ComparisonReif(v1, v2, cond, true, ComparisonOperator::Equals)
-            {
-            };
+    public:
+        inline explicit EqualsIff(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond) :
+            ComparisonReif(v1, v2, cond, true, ComparisonOperator::Equals){};
     };
 
-    class NotEquals :
-        public ComparisonReif
+    class NotEquals : public ComparisonReif
     {
-        public:
-            inline explicit NotEquals(const IntegerVariableID v1, const IntegerVariableID v2) :
-                ComparisonReif(v1, v2, FalseLiteral{ }, true, ComparisonOperator::Equals)
-            {
-            };
+    public:
+        inline explicit NotEquals(const IntegerVariableID v1, const IntegerVariableID v2) :
+            ComparisonReif(v1, v2, FalseLiteral{}, true, ComparisonOperator::Equals){};
     };
 
-    class NotEqualsIff :
-        public ComparisonReif
+    class NotEqualsIff : public ComparisonReif
     {
-        public:
-            inline explicit NotEqualsIff(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond) :
-                ComparisonReif(v1, v2, ! cond, true, ComparisonOperator::Equals)
-            {
-            };
+    public:
+        inline explicit NotEqualsIff(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond) :
+            ComparisonReif(v1, v2, ! cond, true, ComparisonOperator::Equals){};
     };
 
-    class LessThan :
-        public ComparisonReif
+    class LessThan : public ComparisonReif
     {
-        public:
-            inline explicit LessThan(const IntegerVariableID v1, const IntegerVariableID v2) :
-                ComparisonReif(v1, v2, TrueLiteral{ }, true, ComparisonOperator::LessThan)
-            {
-            };
+    public:
+        inline explicit LessThan(const IntegerVariableID v1, const IntegerVariableID v2) :
+            ComparisonReif(v1, v2, TrueLiteral{}, true, ComparisonOperator::LessThan){};
     };
 
-    class LessThanIf :
-        public ComparisonReif
+    class LessThanIf : public ComparisonReif
     {
-        public:
-            inline explicit LessThanIf(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond) :
-                ComparisonReif(v1, v2, cond, false, ComparisonOperator::LessThan)
-            {
-            };
+    public:
+        inline explicit LessThanIf(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond) :
+            ComparisonReif(v1, v2, cond, false, ComparisonOperator::LessThan){};
     };
 
-    class LessThanEqual :
-        public ComparisonReif
+    class LessThanEqual : public ComparisonReif
     {
-        public:
-            inline explicit LessThanEqual(const IntegerVariableID v1, const IntegerVariableID v2) :
-                ComparisonReif(v1, v2, TrueLiteral{ }, true, ComparisonOperator::LessThanEqual)
-            {
-            };
+    public:
+        inline explicit LessThanEqual(const IntegerVariableID v1, const IntegerVariableID v2) :
+            ComparisonReif(v1, v2, TrueLiteral{}, true, ComparisonOperator::LessThanEqual){};
     };
 
-    class GreaterThan :
-        public ComparisonReif
+    class GreaterThan : public ComparisonReif
     {
-        public:
-            inline explicit GreaterThan(const IntegerVariableID v1, const IntegerVariableID v2) :
-                ComparisonReif(v2, v1, TrueLiteral{ }, true, ComparisonOperator::LessThan)
-            {
-            };
+    public:
+        inline explicit GreaterThan(const IntegerVariableID v1, const IntegerVariableID v2) :
+            ComparisonReif(v2, v1, TrueLiteral{}, true, ComparisonOperator::LessThan){};
     };
 
-    class GreaterThanEqual :
-        public ComparisonReif
+    class GreaterThanEqual : public ComparisonReif
     {
-        public:
-            inline explicit GreaterThanEqual(const IntegerVariableID v1, const IntegerVariableID v2) :
-                ComparisonReif(v2, v1, TrueLiteral{ }, true, ComparisonOperator::LessThanEqual)
-            {
-            };
+    public:
+        inline explicit GreaterThanEqual(const IntegerVariableID v1, const IntegerVariableID v2) :
+            ComparisonReif(v2, v1, TrueLiteral{}, true, ComparisonOperator::LessThanEqual){};
     };
 
-    class LessThanIff :
-        public ComparisonReif
+    class LessThanIff : public ComparisonReif
     {
-        public:
-            inline explicit LessThanIff(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond) :
-                ComparisonReif(v1, v2, cond, true, ComparisonOperator::LessThan)
-            {
-            };
+    public:
+        inline explicit LessThanIff(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond) :
+            ComparisonReif(v1, v2, cond, true, ComparisonOperator::LessThan){};
     };
 
-    class LessThanEqualIff :
-        public ComparisonReif
+    class LessThanEqualIff : public ComparisonReif
     {
-        public:
-            inline explicit LessThanEqualIff(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond) :
-                ComparisonReif(v1, v2, cond, true, ComparisonOperator::LessThanEqual)
-            {
-            };
+    public:
+        inline explicit LessThanEqualIff(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond) :
+            ComparisonReif(v1, v2, cond, true, ComparisonOperator::LessThanEqual){};
     };
 
-    class GreaterThanIff :
-        public ComparisonReif
+    class GreaterThanIff : public ComparisonReif
     {
-        public:
-            inline explicit GreaterThanIff(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond) :
-                ComparisonReif(v2, v1, cond, true, ComparisonOperator::LessThan)
-            {
-            };
+    public:
+        inline explicit GreaterThanIff(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond) :
+            ComparisonReif(v2, v1, cond, true, ComparisonOperator::LessThan){};
     };
 
-    class GreaterThanEqualIff :
-        public ComparisonReif
+    class GreaterThanEqualIff : public ComparisonReif
     {
-        public:
-            inline explicit GreaterThanEqualIff(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond) :
-                ComparisonReif(v2, v1, cond, true, ComparisonOperator::LessThanEqual)
-            {
-            };
+    public:
+        inline explicit GreaterThanEqualIff(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond) :
+            ComparisonReif(v2, v1, cond, true, ComparisonOperator::LessThanEqual){};
     };
 }
 

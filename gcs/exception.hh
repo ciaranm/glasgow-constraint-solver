@@ -9,30 +9,27 @@
 
 namespace gcs
 {
-    class UnexpectedException :
-        public std::exception
+    class UnexpectedException : public std::exception
     {
-        private:
-            std::string _wat;
+    private:
+        std::string _wat;
 
-        public:
-            explicit UnexpectedException(const std::string &);
+    public:
+        explicit UnexpectedException(const std::string &);
 
-            virtual auto what() const noexcept -> const char * override;
+        virtual auto what() const noexcept -> const char * override;
     };
 
-    class NonExhaustiveSwitch :
-        public UnexpectedException
+    class NonExhaustiveSwitch : public UnexpectedException
     {
-        public:
-            explicit NonExhaustiveSwitch(const std::experimental::source_location & = std::experimental::source_location::current());
+    public:
+        explicit NonExhaustiveSwitch(const std::experimental::source_location & = std::experimental::source_location::current());
     };
 
-    class UnimplementedException :
-        public UnexpectedException
+    class UnimplementedException : public UnexpectedException
     {
-        public:
-            explicit UnimplementedException(const std::experimental::source_location & = std::experimental::source_location::current());
+    public:
+        explicit UnimplementedException(const std::experimental::source_location & = std::experimental::source_location::current());
     };
 }
 

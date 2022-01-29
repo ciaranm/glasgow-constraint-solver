@@ -8,53 +8,48 @@
 
 namespace gcs
 {
-    class ArrayMinMax :
-        public Constraint
+    class ArrayMinMax : public Constraint
     {
-        private:
-            const std::vector<IntegerVariableID> & _vars;
-            IntegerVariableID _result;
-            bool _min;
+    private:
+        const std::vector<IntegerVariableID> & _vars;
+        IntegerVariableID _result;
+        bool _min;
 
-        public:
-            explicit ArrayMinMax(const std::vector<IntegerVariableID> & vars, const IntegerVariableID result, bool min);
+    public:
+        explicit ArrayMinMax(const std::vector<IntegerVariableID> & vars, const IntegerVariableID result, bool min);
 
-            virtual auto describe_for_proof() -> std::string override;
-            virtual auto install(Propagators &, const State &) && -> void override;
+        virtual auto describe_for_proof() -> std::string override;
+        virtual auto install(Propagators &, const State &) && -> void override;
     };
 
-    class Min :
-        public ArrayMinMax
+    class Min : public ArrayMinMax
     {
-        private:
-            std::vector<IntegerVariableID> _vs;
+    private:
+        std::vector<IntegerVariableID> _vs;
 
-        public:
-            explicit Min(const IntegerVariableID v1, const IntegerVariableID v2, const IntegerVariableID result);
+    public:
+        explicit Min(const IntegerVariableID v1, const IntegerVariableID v2, const IntegerVariableID result);
     };
 
-    class Max :
-        public ArrayMinMax
+    class Max : public ArrayMinMax
     {
-        private:
-            std::vector<IntegerVariableID> _vs;
+    private:
+        std::vector<IntegerVariableID> _vs;
 
-        public:
-            explicit Max(const IntegerVariableID v1, const IntegerVariableID v2, const IntegerVariableID result);
+    public:
+        explicit Max(const IntegerVariableID v1, const IntegerVariableID v2, const IntegerVariableID result);
     };
 
-    class ArrayMin :
-        public ArrayMinMax
+    class ArrayMin : public ArrayMinMax
     {
-        public:
-            explicit ArrayMin(const std::vector<IntegerVariableID> & vars, const IntegerVariableID result);
+    public:
+        explicit ArrayMin(const std::vector<IntegerVariableID> & vars, const IntegerVariableID result);
     };
 
-    class ArrayMax :
-        public ArrayMinMax
+    class ArrayMax : public ArrayMinMax
     {
-        public:
-            explicit ArrayMax(const std::vector<IntegerVariableID> & vars, const IntegerVariableID result);
+    public:
+        explicit ArrayMax(const std::vector<IntegerVariableID> & vars, const IntegerVariableID result);
     };
 }
 

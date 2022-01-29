@@ -13,11 +13,11 @@ namespace gcs
 
     class Constraint
     {
-        public:
-            virtual ~Constraint() = 0;
+    public:
+        virtual ~Constraint() = 0;
 
-            virtual auto describe_for_proof() -> std::string = 0;
-            virtual auto install(Propagators &, const State &) && -> void = 0;
+        virtual auto describe_for_proof() -> std::string = 0;
+        virtual auto install(Propagators &, const State &) && -> void = 0;
     };
 }
 

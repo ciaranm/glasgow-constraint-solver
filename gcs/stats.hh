@@ -25,7 +25,7 @@ namespace gcs
         std::chrono::microseconds solve_time;
     };
 
-    auto operator<< (std::ostream &, const Stats &) -> std::ostream &;
+    auto operator<<(std::ostream &, const Stats &) -> std::ostream &;
 }
 
 #endif

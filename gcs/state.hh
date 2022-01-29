@@ -3,11 +3,11 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_STATE_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_STATE_HH 1
 
-#include <gcs/state-fwd.hh>
 #include <gcs/integer_variable_state.hh>
+#include <gcs/justification.hh>
 #include <gcs/literal.hh>
 #include <gcs/problem-fwd.hh>
-#include <gcs/justification.hh>
+#include <gcs/state-fwd.hh>
 
 #include <exception>
 #include <functional>
@@ -18,16 +18,15 @@ namespace gcs
 {
     auto increase_inference_to(Inference &, const Inference) -> void;
 
-    class VariableDoesNotHaveUniqueValue :
-        public std::exception
+    class VariableDoesNotHaveUniqueValue : public std::exception
     {
-        private:
-            std::string _wat;
+    private:
+        std::string _wat;
 
-        public:
-            explicit VariableDoesNotHaveUniqueValue(const std::string &);
+    public:
+        explicit VariableDoesNotHaveUniqueValue(const std::string &);
 
-            virtual auto what() const noexcept -> const char * override;
+        virtual auto what() const noexcept -> const char * override;
     };
 
     struct Timestamp
@@ -51,63 +50,63 @@ namespace gcs
 
     class State
     {
-        private:
-            struct Imp;
-            std::unique_ptr<Imp> _imp;
+    private:
+        struct Imp;
+        std::unique_ptr<Imp> _imp;
 
-            [[ nodiscard ]] auto infer_literal_from_direct_integer_variable(
-                    const DirectIntegerVariableID var,
-                    LiteralFromIntegerVariable::Operator state,
-                    Integer value) -> std::pair<Inference, HowChanged>;
+        [[nodiscard]] auto infer_literal_from_direct_integer_variable(
+            const DirectIntegerVariableID var,
+            LiteralFromIntegerVariable::Operator state,
+            Integer value) -> std::pair<Inference, HowChanged>;
 
-            [[ nodiscard ]] auto assign_to_state_of(const DirectIntegerVariableID) -> IntegerVariableState &;
-            [[ nodiscard ]] auto state_of(const DirectIntegerVariableID, IntegerVariableState & space) -> IntegerVariableState &;
-            [[ nodiscard ]] auto state_of(const DirectIntegerVariableID, IntegerVariableState & space) const -> const IntegerVariableState &;
+        [[nodiscard]] auto assign_to_state_of(const DirectIntegerVariableID) -> IntegerVariableState &;
+        [[nodiscard]] auto state_of(const DirectIntegerVariableID, IntegerVariableState & space) -> IntegerVariableState &;
+        [[nodiscard]] auto state_of(const DirectIntegerVariableID, IntegerVariableState & space) const -> const IntegerVariableState &;
 
-            auto remember_change(const SimpleIntegerVariableID, HowChanged) -> void;
+        auto remember_change(const SimpleIntegerVariableID, HowChanged) -> void;
 
-        public:
-            explicit State(const Problem * const problem);
-            State(State &&) noexcept;
-            ~State();
+    public:
+        explicit State(const Problem * const problem);
+        State(State &&) noexcept;
+        ~State();
 
-            State(const State &) = delete;
-            State & operator= (const State &) = delete;
+        State(const State &) = delete;
+        State & operator=(const State &) = delete;
 
-            [[ nodiscard ]] State clone() const;
+        [[nodiscard]] State clone() const;
 
-            [[ nodiscard ]] auto create_integer_variable(Integer lower, Integer upper) -> SimpleIntegerVariableID;
-            [[ nodiscard ]] auto create_pseudovariable(Integer lower, Integer upper, const std::optional<std::string> &) -> SimpleIntegerVariableID;
+        [[nodiscard]] auto create_integer_variable(Integer lower, Integer upper) -> SimpleIntegerVariableID;
+        [[nodiscard]] auto create_pseudovariable(Integer lower, Integer upper, const std::optional<std::string> &) -> SimpleIntegerVariableID;
 
-            [[ nodiscard ]] auto infer(const Literal & lit, Justification why) -> Inference;
-            [[ nodiscard ]] auto infer_all(const std::vector<Literal> & lit, Justification why) -> Inference;
-            auto add_proof_steps(JustifyExplicitly why) -> void;
-            [[ nodiscard ]] auto want_proofs() const -> bool;
+        [[nodiscard]] auto infer(const Literal & lit, Justification why) -> Inference;
+        [[nodiscard]] auto infer_all(const std::vector<Literal> & lit, Justification why) -> Inference;
+        auto add_proof_steps(JustifyExplicitly why) -> void;
+        [[nodiscard]] auto want_proofs() const -> bool;
 
-            auto guess(const Literal & lit) -> void;
-            auto for_each_guess(std::function<auto (Literal) -> void>) const -> void;
+        auto guess(const Literal & lit) -> void;
+        auto for_each_guess(std::function<auto(Literal)->void>) const -> void;
 
-            [[ nodiscard ]] auto lower_bound(const IntegerVariableID) const -> Integer;
-            [[ nodiscard ]] auto upper_bound(const IntegerVariableID) const -> Integer;
-            [[ nodiscard ]] auto bounds(const IntegerVariableID) const -> std::pair<Integer, Integer>;
-            [[ nodiscard ]] auto in_domain(const IntegerVariableID, Integer) const -> bool;
-            [[ nodiscard ]] auto optional_single_value(const IntegerVariableID) const -> std::optional<Integer>;
-            [[ nodiscard ]] auto has_single_value(const IntegerVariableID) const -> bool;
-            [[ nodiscard ]] auto domain_size(const IntegerVariableID) const -> Integer;
-            auto for_each_value(const IntegerVariableID, std::function<auto (Integer) -> void>) const -> void;
-            auto for_each_value_while(const IntegerVariableID, std::function<auto (Integer) -> bool>) const -> void;
-            [[ nodiscard ]] auto domain_has_holes(const IntegerVariableID) const -> bool;
+        [[nodiscard]] auto lower_bound(const IntegerVariableID) const -> Integer;
+        [[nodiscard]] auto upper_bound(const IntegerVariableID) const -> Integer;
+        [[nodiscard]] auto bounds(const IntegerVariableID) const -> std::pair<Integer, Integer>;
+        [[nodiscard]] auto in_domain(const IntegerVariableID, Integer) const -> bool;
+        [[nodiscard]] auto optional_single_value(const IntegerVariableID) const -> std::optional<Integer>;
+        [[nodiscard]] auto has_single_value(const IntegerVariableID) const -> bool;
+        [[nodiscard]] auto domain_size(const IntegerVariableID) const -> Integer;
+        auto for_each_value(const IntegerVariableID, std::function<auto(Integer)->void>) const -> void;
+        auto for_each_value_while(const IntegerVariableID, std::function<auto(Integer)->bool>) const -> void;
+        [[nodiscard]] auto domain_has_holes(const IntegerVariableID) const -> bool;
 
-            [[ nodiscard ]] auto test_literal(const Literal &) const -> LiteralIs;
-            [[ nodiscard ]] auto literal_is_nonfalsified(const Literal &) const -> bool;
+        [[nodiscard]] auto test_literal(const Literal &) const -> LiteralIs;
+        [[nodiscard]] auto literal_is_nonfalsified(const Literal &) const -> bool;
 
-            [[ nodiscard ]] auto operator() (const IntegerVariableID &) const -> Integer;
+        [[nodiscard]] auto operator()(const IntegerVariableID &) const -> Integer;
 
-            [[ nodiscard ]] auto new_epoch() -> Timestamp;
-            auto backtrack(Timestamp) -> void;
-            auto on_backtrack(std::function<auto () -> void>) -> void;
+        [[nodiscard]] auto new_epoch() -> Timestamp;
+        auto backtrack(Timestamp) -> void;
+        auto on_backtrack(std::function<auto()->void>) -> void;
 
-            auto extract_changed_variables(std::function<auto (SimpleIntegerVariableID, HowChanged) -> void>) -> void;
+        auto extract_changed_variables(std::function<auto(SimpleIntegerVariableID, HowChanged)->void>) -> void;
     };
 }
 

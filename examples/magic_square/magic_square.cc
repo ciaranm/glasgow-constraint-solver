@@ -1,4 +1,4 @@
-/* vim: set sw=4 sts=4 et foldmethod=syntax : */
+/* vim : set sw = 4 sts = 4 et foldmethod = syntax : */
 
 #include <gcs/constraints/all_different.hh>
 #include <gcs/constraints/comparison.hh>
@@ -27,16 +27,15 @@ namespace po = boost::program_options;
 
 auto main(int argc, char * argv[]) -> int
 {
-    po::options_description display_options{ "Program options" };
-    display_options.add_options()
-        ("help", "Display help information")
-        ("prove", "Create a proof")
+    po::options_description display_options{"Program options"};
+    display_options.add_options()            //
+        ("help", "Display help information") //
+        ("prove", "Create a proof")          //
         ("all-different", "Use AllDifferent rather than inequalities");
 
-    po::options_description all_options{ "All options" };
-    all_options.add_options()
-        ("size", po::value<int>()->default_value(5), "Size of the problem to solve")
-        ;
+    po::options_description all_options{"All options"};
+    all_options.add_options() //
+        ("size", po::value<int>()->default_value(5), "Size of the problem to solve");
 
     all_options.add(display_options);
 
@@ -48,9 +47,10 @@ auto main(int argc, char * argv[]) -> int
 
     try {
         po::store(po::command_line_parser(argc, argv)
-                .options(all_options)
-                .positional(positional_options)
-                .run(), options_vars);
+                      .options(all_options)
+                      .positional(positional_options)
+                      .run(),
+            options_vars);
         po::notify(options_vars);
     }
     catch (const po::error & e) {
@@ -74,15 +74,15 @@ auto main(int argc, char * argv[]) -> int
     cout << endl;
 
     int size = options_vars["size"].as<int>();
-    Problem p = options_vars.count("prove") ? Problem{ Proof{ "magic_square.opb", "magic_square.veripb" } } : Problem{ };
-    Integer m{ size * (size * size + 1) / 2 };
+    Problem p = options_vars.count("prove") ? Problem{Proof{"magic_square.opb", "magic_square.veripb"}} : Problem{};
+    Integer m{size * (size * size + 1) / 2};
 
-    vector<vector<IntegerVariableID> > grid;
+    vector<vector<IntegerVariableID>> grid;
     vector<IntegerVariableID> grid_flat;
-    for (int x = 0 ; x < size ; ++x) {
+    for (int x = 0; x < size; ++x) {
         grid.emplace_back();
-        for (int y = 0 ; y < size ; ++y) {
-            auto var = p.create_integer_variable(1_i, Integer{ size * size });
+        for (int y = 0; y < size; ++y) {
+            auto var = p.create_integer_variable(1_i, Integer{size * size});
             grid[x].push_back(var);
             grid_flat.push_back(var);
         }
@@ -91,54 +91,53 @@ auto main(int argc, char * argv[]) -> int
     // As far as I can tell, the statistics reported in the paper only make
     // sense for non-GAC all-different.
     if (options_vars.count("all-different")) {
-        p.post(AllDifferent{ grid_flat });
+        p.post(AllDifferent{grid_flat});
     }
     else {
-        for (unsigned x = 0 ; x < grid_flat.size() ; ++x)
-            for (unsigned y = x + 1 ; y < grid_flat.size() ; ++y)
-                p.post(NotEquals{ grid_flat[x], grid_flat[y] });
+        for (unsigned x = 0; x < grid_flat.size(); ++x)
+            for (unsigned y = x + 1; y < grid_flat.size(); ++y)
+                p.post(NotEquals{grid_flat[x], grid_flat[y]});
     }
 
-    for (int x = 0 ; x < size ; ++x) {
+    for (int x = 0; x < size; ++x) {
         Linear coeff_vars;
-        for (int y = 0 ; y < size ; ++y)
+        for (int y = 0; y < size; ++y)
             coeff_vars.emplace_back(1_i, grid[x][y]);
-        p.post(LinearEquality{ move(coeff_vars), m });
+        p.post(LinearEquality{move(coeff_vars), m});
     }
 
-    for (int y = 0 ; y < size ; ++y) {
+    for (int y = 0; y < size; ++y) {
         Linear coeff_vars;
-        for (int x = 0 ; x < size ; ++x)
+        for (int x = 0; x < size; ++x)
             coeff_vars.emplace_back(1_i, grid[x][y]);
-        p.post(LinearEquality{ move(coeff_vars), m });
+        p.post(LinearEquality{move(coeff_vars), m});
     }
 
     Linear coeff_vars1, coeff_vars2;
-    for (int xy = 0 ; xy < size ; ++xy) {
+    for (int xy = 0; xy < size; ++xy) {
         coeff_vars1.emplace_back(1_i, grid[xy][xy]);
         coeff_vars2.emplace_back(1_i, grid[size - xy - 1][xy]);
     }
-    p.post(LinearEquality{ move(coeff_vars1), m });
-    p.post(LinearEquality{ move(coeff_vars2), m });
+    p.post(LinearEquality{move(coeff_vars1), m});
+    p.post(LinearEquality{move(coeff_vars2), m});
 
-    p.post(LessThan{ grid[0][size - 1], grid[size - 1][0] });
-    p.post(LessThan{ grid[0][0], grid[size - 1][size - 1] });
-    p.post(LessThan{ grid[0][0], grid[size - 1][0] });
+    p.post(LessThan{grid[0][size - 1], grid[size - 1][0]});
+    p.post(LessThan{grid[0][0], grid[size - 1][size - 1]});
+    p.post(LessThan{grid[0][0], grid[size - 1][0]});
 
     p.branch_on(grid_flat);
 
     unsigned long long n_solutions = 0;
-    auto stats = solve_with(p, SolveCallbacks{
-            .solution = [&] (const State &) -> bool {
+    auto stats = solve_with(p,
+        SolveCallbacks{
+            .solution = [&](const State &) -> bool {
                 return ++n_solutions < 10000;
             },
-            .guess = [&] (const State & state, IntegerVariableID var) -> vector<Literal> {
-                return vector<Literal>{ var == state.lower_bound(var), var != state.lower_bound(var) };
-            }
-            } );
+            .guess = [&](const State & state, IntegerVariableID var) -> vector<Literal> {
+                return vector<Literal>{var == state.lower_bound(var), var != state.lower_bound(var)};
+            }});
 
     cout << stats;
 
     return EXIT_SUCCESS;
 }
-
