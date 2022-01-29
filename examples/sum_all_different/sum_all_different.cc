@@ -30,7 +30,7 @@ auto main(int, char *[]) -> int
     for (auto & x : xs)
         p.post(NotEquals(x, 3_c));
 
-    p.post(AllDifferent{move(xs)});
+    p.post(AllDifferent{xs});
 
     Linear sum_xs;
     for (auto & x : xs)
