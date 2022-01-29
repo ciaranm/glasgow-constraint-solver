@@ -282,7 +282,7 @@ auto main(int argc, char * argv[]) -> int
         auto start_time = steady_clock::now();
         vector<Integer> head;
         build_feasible(head);
-        cout << "build table time: " << (duration_cast<microseconds>(steady_clock::now() - start_time).count() / 1'000'000.0d) << "s" << endl;
+        cout << "build table time: " << (duration_cast<microseconds>(steady_clock::now() - start_time).count() / 1'000'000.0) << "s" << endl;
 
         for (int r = 0; r < size; ++r) {
             if (west[r] != 0 || east[r] != 0) {

@@ -392,7 +392,7 @@ auto Proof::integer_linear_le(const State &, const Linear & lin, Integer val, bo
     auto output = [&](Integer multiplier) {
         for (auto & [coeff, var] : lin)
             overloaded{
-                [&](const SimpleIntegerVariableID & v) {
+                [&, coeff = coeff](const SimpleIntegerVariableID & v) {
                     for (auto & [bit_value, bit_name] : _imp->integer_variable_bits.find(v)->second.second)
                         _imp->opb << (multiplier * coeff * bit_value) << " " << bit_name << " ";
                 },

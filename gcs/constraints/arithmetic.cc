@@ -58,9 +58,12 @@ auto Arithmetic<op_>::describe_for_proof() -> std::string
     return "arithmetic";
 }
 
-template class Arithmetic<ArithmeticOperator::Plus>;
-template class Arithmetic<ArithmeticOperator::Minus>;
-template class Arithmetic<ArithmeticOperator::Times>;
-template class Arithmetic<ArithmeticOperator::Div>;
-template class Arithmetic<ArithmeticOperator::Mod>;
-template class Arithmetic<ArithmeticOperator::Power>;
+namespace gcs
+{
+    template class Arithmetic<ArithmeticOperator::Plus>;
+    template class Arithmetic<ArithmeticOperator::Minus>;
+    template class Arithmetic<ArithmeticOperator::Times>;
+    template class Arithmetic<ArithmeticOperator::Div>;
+    template class Arithmetic<ArithmeticOperator::Mod>;
+    template class Arithmetic<ArithmeticOperator::Power>;
+}

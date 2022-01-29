@@ -608,21 +608,21 @@ auto State::for_each_value_while(const IntegerVariableID var, function<auto(Inte
     IntegerVariableState var_copy = var_ref;
 
     overloaded{
-        [&](const IntegerVariableConstantState & c) {
+        [&, offset = offset](const IntegerVariableConstantState & c) {
             f(c.value + offset);
         },
-        [&](const IntegerVariableRangeState & r) {
+        [&, offset = offset](const IntegerVariableRangeState & r) {
             for (auto v = r.lower; v <= r.upper; ++v)
                 if (! f(v + offset))
                     break;
         },
-        [&](const IntegerVariableSmallSetState & r) {
+        [&, offset = offset](const IntegerVariableSmallSetState & r) {
             for (unsigned b = 0; b < Bits::number_of_bits; ++b)
                 if (r.bits.test(b))
                     if (! f(r.lower + Integer{b} + offset))
                         break;
         },
-        [&](const IntegerVariableSetState & s) {
+        [&, offset = offset](const IntegerVariableSetState & s) {
             for (auto & v : *s.values)
                 if (! f(v + offset))
                     break;

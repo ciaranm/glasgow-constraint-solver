@@ -364,7 +364,7 @@ namespace
         for_each_with_index(vars, [&](IntegerVariableID var, auto var_idx) {
             for_each_with_index(vals, [&](Integer val, auto val_idx) {
                 if (state.in_domain(var, val))
-                    edges.emplace_back(var_idx, val_idx);
+                    edges.emplace_back(Left{var_idx}, Right{val_idx});
             });
         });
 

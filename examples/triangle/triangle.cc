@@ -29,7 +29,7 @@ auto main(int, char *[]) -> int
     p.post(Plus{a_squared, b_squared, c_squared});
     p.post(LessThan{a, b});
 
-    auto stats = solve(p, [&](const State & state) -> bool {
+    auto stats = solve(p, [&, a = a, b = b, c = c](const State & state) -> bool {
         cout << state(a) << " " << state(b) << " " << state(c) << endl;
         return true;
     });
