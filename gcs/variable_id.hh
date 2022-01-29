@@ -35,16 +35,6 @@ namespace gcs
         [[nodiscard]] auto operator<=>(const ViewOfIntegerVariableID &) const = default;
     };
 
-    [[nodiscard]] inline auto operator+(SimpleIntegerVariableID v, Integer o) -> ViewOfIntegerVariableID
-    {
-        return ViewOfIntegerVariableID{v, o};
-    }
-
-    [[nodiscard]] inline auto operator-(SimpleIntegerVariableID v, Integer o) -> ViewOfIntegerVariableID
-    {
-        return ViewOfIntegerVariableID{v, -o};
-    }
-
     struct ConstantIntegerVariableID
     {
         Integer const_value;
@@ -79,6 +69,10 @@ namespace gcs
     {
         return ConstantIntegerVariableID{-a.const_value};
     }
+
+    [[nodiscard]] auto operator+(IntegerVariableID v, Integer o) -> IntegerVariableID;
+
+    [[nodiscard]] auto operator-(IntegerVariableID v, Integer o) -> IntegerVariableID;
 
     [[nodiscard]] auto debug_string(const IntegerVariableID &) -> std::string;
 

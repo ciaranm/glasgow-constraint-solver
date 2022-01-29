@@ -46,3 +46,21 @@ auto gcs::underlying_direct_variable_and_offset(const IntegerVariableID var) -> 
         })
         .visit(var);
 }
+
+auto gcs::operator+(IntegerVariableID v, Integer o) -> IntegerVariableID
+{
+    return overloaded(
+        [&](const SimpleIntegerVariableID & v) -> IntegerVariableID { return ViewOfIntegerVariableID{v, o}; },
+        [&](const ConstantIntegerVariableID & v) -> IntegerVariableID { return ConstantIntegerVariableID{v.const_value + o}; },
+        [&](const ViewOfIntegerVariableID & v) -> IntegerVariableID { return ViewOfIntegerVariableID{v.actual_variable, v.offset + o}; })
+        .visit(v);
+}
+
+auto gcs::operator-(IntegerVariableID v, Integer o) -> IntegerVariableID
+{
+    return overloaded(
+        [&](const SimpleIntegerVariableID & v) -> IntegerVariableID { return ViewOfIntegerVariableID{v, -o}; },
+        [&](const ConstantIntegerVariableID & v) -> IntegerVariableID { return ConstantIntegerVariableID{v.const_value - o}; },
+        [&](const ViewOfIntegerVariableID & v) -> IntegerVariableID { return ViewOfIntegerVariableID{v.actual_variable, v.offset - o}; })
+        .visit(v);
+}
