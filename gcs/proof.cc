@@ -372,7 +372,7 @@ auto Proof::at_most_one(const Literals & lits) -> ProofLine
 auto Proof::pseudoboolean_ge(const WeightedLiterals & lits, Integer val) -> ProofLine
 {
     for (auto & [w, lit] : lits) {
-        visit([&](const auto & lit) {
+        visit([this, w = w](const auto & lit) {
             _imp->opb << w << " " << proof_variable(lit) << " ";
         },
             lit);
