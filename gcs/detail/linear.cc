@@ -2,6 +2,7 @@
 
 #include <gcs/detail/linear.hh>
 #include <gcs/detail/state.hh>
+#include <gcs/detail/variable_id_utils.hh>
 #include <gcs/exception.hh>
 #include <gcs/proof.hh>
 

@@ -5,6 +5,8 @@
 
 #include <gcs/integer.hh>
 
+#include <string>
+#include <utility>
 #include <variant>
 
 namespace gcs
@@ -53,8 +55,6 @@ namespace gcs
     // gain more items?
     using DirectIntegerVariableID = std::variant<SimpleIntegerVariableID, ConstantIntegerVariableID>;
 
-    [[nodiscard]] auto underlying_direct_variable_and_offset(const IntegerVariableID var) -> std::pair<DirectIntegerVariableID, Integer>;
-
     [[nodiscard]] inline auto constant_variable(const Integer x) -> IntegerVariableID
     {
         return ConstantIntegerVariableID{x};
@@ -74,11 +74,7 @@ namespace gcs
 
     [[nodiscard]] auto operator-(IntegerVariableID v, Integer o) -> IntegerVariableID;
 
-    [[nodiscard]] auto debug_string(const IntegerVariableID &) -> std::string;
-
     using VariableID = std::variant<IntegerVariableID>;
-
-    [[nodiscard]] auto debug_string(const VariableID &) -> std::string;
 }
 
 #endif

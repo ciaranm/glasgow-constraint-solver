@@ -9,43 +9,6 @@ using std::pair;
 using std::string;
 using std::to_string;
 
-auto gcs::debug_string(const IntegerVariableID & var) -> string
-{
-    return overloaded{
-        [](SimpleIntegerVariableID x) {
-            return "varidx " + to_string(x.index);
-        },
-        [](ViewOfIntegerVariableID x) {
-            return "view " + debug_string(VariableID{x.actual_variable}) + " offset " + to_string(x.offset.raw_value);
-        },
-        [](ConstantIntegerVariableID x) {
-            return "const " + to_string(x.const_value.raw_value);
-        }}
-        .visit(var);
-}
-
-auto gcs::debug_string(const VariableID & var) -> string
-{
-    return overloaded{
-        [](IntegerVariableID v) { return "int " + debug_string(v); }}
-        .visit(var);
-}
-
-auto gcs::underlying_direct_variable_and_offset(const IntegerVariableID var) -> pair<DirectIntegerVariableID, Integer>
-{
-    return overloaded{
-        [&](const SimpleIntegerVariableID & v) -> pair<DirectIntegerVariableID, Integer> {
-            return pair{v, 0_i};
-        },
-        [&](const ConstantIntegerVariableID & v) -> pair<DirectIntegerVariableID, Integer> {
-            return pair{v, 0_i};
-        },
-        [&](const ViewOfIntegerVariableID & v) -> pair<DirectIntegerVariableID, Integer> {
-            return pair{v.actual_variable, v.offset};
-        }}
-        .visit(var);
-}
-
 auto gcs::operator+(IntegerVariableID v, Integer o) -> IntegerVariableID
 {
     return overloaded{

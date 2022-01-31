@@ -3,6 +3,7 @@
 #include <gcs/constraints/all_different.hh>
 #include <gcs/detail/propagators.hh>
 #include <gcs/detail/state.hh>
+#include <gcs/detail/variable_id_utils.hh>
 #include <gcs/exception.hh>
 
 #include <util/for_each.hh>

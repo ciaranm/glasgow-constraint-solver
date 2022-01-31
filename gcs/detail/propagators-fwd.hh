@@ -10,6 +10,8 @@ namespace gcs
         Enable,
         DisableUntilBacktrack
     };
+
+    class Propagators;
 }
 
 #endif

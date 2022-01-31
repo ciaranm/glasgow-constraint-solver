@@ -1,6 +1,8 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
+#include <gcs/detail/literal_utils.hh>
 #include <gcs/detail/state.hh>
+#include <gcs/detail/variable_id_utils.hh>
 #include <gcs/exception.hh>
 #include <gcs/proof.hh>
 

@@ -60,19 +60,9 @@ namespace gcs
 
     using Literal = std::variant<LiteralFromIntegerVariable, TrueLiteral, FalseLiteral>;
 
-    [[nodiscard]] auto is_literally_true(const Literal &) -> bool;
-
-    [[nodiscard]] auto is_literally_false(const Literal &) -> bool;
-
     [[nodiscard]] auto operator!(const Literal &) -> Literal;
 
-    [[nodiscard]] auto debug_string(const Literal &) -> std::string;
-
     using Literals = std::vector<Literal>;
-
-    using WeightedLiterals = std::vector<std::pair<Integer, Literal>>;
-
-    [[nodiscard]] auto sanitise_literals(Literals &) -> bool;
 }
 
 #endif

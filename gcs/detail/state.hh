@@ -4,8 +4,8 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_STATE_HH 1
 
 #include <gcs/detail/integer_variable_state.hh>
+#include <gcs/detail/justification.hh>
 #include <gcs/detail/state-fwd.hh>
-#include <gcs/justification.hh>
 #include <gcs/literal.hh>
 #include <gcs/problem-fwd.hh>
 

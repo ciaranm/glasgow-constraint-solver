@@ -3,14 +3,13 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINT_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINT_HH 1
 
-#include <functional>
+#include <gcs/detail/propagators-fwd.hh>
+#include <gcs/detail/state-fwd.hh>
+
 #include <string>
 
 namespace gcs
 {
-    class Propagators;
-    class State;
-
     class Constraint
     {
     public:
