@@ -39,7 +39,7 @@ auto main(int, char *[]) -> int
         p.post(Plus{position[i + k], constant_variable(Integer{i + 2}), position[i]});
     }
 
-    auto stats = solve(p, [&](const State & state) -> bool {
+    auto stats = solve(p, [&](const CurrentState & state) -> bool {
         cout << "solution: ";
         for (auto & s : solution)
             cout << state(s) << " ";

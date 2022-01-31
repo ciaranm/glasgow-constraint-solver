@@ -4,6 +4,7 @@ SRC_INCDIRS := ..
 
 SOURCES := \
     constraint.cc \
+    current_state.cc \
     exception.cc \
     literal.cc \
     problem.cc \

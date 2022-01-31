@@ -35,16 +35,6 @@ using std::string;
 using std::vector;
 using std::visit;
 
-VariableDoesNotHaveUniqueValue::VariableDoesNotHaveUniqueValue(const string & w) :
-    _wat(w + " does not have a unique value")
-{
-}
-
-auto VariableDoesNotHaveUniqueValue::what() const noexcept -> const char *
-{
-    return _wat.c_str();
-}
-
 auto gcs::increase_inference_to(Inference & current, const Inference updated) -> void
 {
     switch (updated) {
@@ -787,3 +777,9 @@ auto State::on_backtrack(std::function<auto()->void> f) -> void
 {
     _imp->on_backtracks.back().push_back(move(f));
 }
+
+auto State::current() -> CurrentState
+{
+    return CurrentState{*this};
+}
+

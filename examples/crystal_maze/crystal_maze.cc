@@ -90,7 +90,7 @@ auto main(int argc, char * argv[]) -> int
         p.post(Minus{xs[x1], xs[x2], diffs.back()});
     }
 
-    auto stats = solve(p, [&](const State & s) -> bool {
+    auto stats = solve(p, [&](const CurrentState & s) -> bool {
         cout << "  " << s(xs[0]) << " " << s(xs[1]) << endl;
         cout << s(xs[2]) << " " << s(xs[3]) << " " << s(xs[4]) << " " << s(xs[5]) << endl;
         cout << "  " << s(xs[6]) << " " << s(xs[7]) << endl;

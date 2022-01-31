@@ -25,7 +25,7 @@ auto main(int, char *[]) -> int
     p.post(AllDifferent{{x, y, z}});
     p.post(AllDifferent{{w, z}});
 
-    auto stats = solve(p, [&](const State & s) -> bool {
+    auto stats = solve(p, [&](const CurrentState & s) -> bool {
         cout << s(w) << " " << s(x) << " " << s(y) << " " << s(z) << endl;
         return true;
     });

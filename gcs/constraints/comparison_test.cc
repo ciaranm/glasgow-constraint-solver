@@ -77,7 +77,8 @@ auto check_results(pair<int, int> v1_range, pair<int, int> v2_range, const strin
     return true;
 }
 
-auto check_gac_oneway(string direction, IntegerVariableID v1, IntegerVariableID v2, const State & s, const function<auto(int, int)->bool> & is_satisfing) -> bool
+auto check_gac_oneway(string direction, IntegerVariableID v1, IntegerVariableID v2, const CurrentState & s,
+        const function<auto(int, int)->bool> & is_satisfing) -> bool
 {
     bool ok = true;
     s.for_each_value(v1, [&](Integer val1) {
@@ -113,11 +114,11 @@ auto run_binary_comparison_test(pair<int, int> v1_range, pair<int, int> v2_range
     bool gac_violated = false;
     solve_with(p,
         SolveCallbacks{
-            .solution = [&](const State & s) -> bool {
+            .solution = [&](const CurrentState & s) -> bool {
                 actual.emplace(s(v1).raw_value, s(v2).raw_value);
                 return true;
             },
-            .trace = [&](const State & s) -> bool {
+            .trace = [&](const CurrentState & s) -> bool {
                 gac_violated = gac_violated ||
                     ! check_gac_oneway(typeid(Constraint_).name() + " forward"s + " " + stringify_tuple(v1_range) + " " + stringify_tuple(v2_range), v1, v2, s, is_satisfing) ||
                     ! check_gac_oneway(typeid(Constraint_).name() + " reverse"s + " " + stringify_tuple(v1_range) + " " + stringify_tuple(v2_range), v2, v1, s, [&](int a, int b) { return is_satisfing(b, a); });
@@ -143,7 +144,7 @@ auto run_reif_binary_comparison_test(pair<int, int> v1_range, pair<int, int> v2_
     auto v2 = p.create_integer_variable(Integer(v2_range.first), Integer(v2_range.second));
     auto v3 = p.create_integer_variable(0_i, 1_i);
     p.post(Constraint_{v1, v2, v3 == 1_i});
-    solve(p, [&](const State & s) -> bool {
+    solve(p, [&](const CurrentState & s) -> bool {
         actual.emplace(s(v1).raw_value, s(v2).raw_value, s(v3).raw_value);
         return true;
     });

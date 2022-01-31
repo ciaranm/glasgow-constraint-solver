@@ -75,7 +75,7 @@ auto main(int argc, char * argv[]) -> int
             if (predefs[x][y] != 0)
                 p.post(Equals{grid[x][y], constant_variable(Integer{predefs[x][y]})});
 
-    auto stats = solve(p, [&](const State & s) -> bool {
+    auto stats = solve(p, [&](const CurrentState & s) -> bool {
         for (int x = 0; x < 9; ++x) {
             for (int y = 0; y < 9; ++y)
                 cout << s(grid[x][y]) << " ";

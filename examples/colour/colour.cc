@@ -83,7 +83,7 @@ auto main(int argc, char * argv[]) -> int
     p.branch_on(vertices);
     p.minimise(colours);
 
-    auto stats = solve(p, [&](const State & s) -> bool {
+    auto stats = solve(p, [&](const CurrentState & s) -> bool {
         cout << s(colours) + 1_i << " colours:";
         for (auto & v : vertices)
             cout << " " << s(v);

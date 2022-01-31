@@ -38,7 +38,7 @@ auto main(int, char *[]) -> int
             { -10000_i, m }, { -1000_i, o }, { -100_i, n }, { -10_i, e }, { -1_i, y }, }, 0_i });
     // clang-format on
 
-    auto stats = solve(p, [&](const State & state) -> bool {
+    auto stats = solve(p, [&](const CurrentState & state) -> bool {
         cout << " " << state(s) << state(e) << state(n) << state(d) << endl;
         cout << " " << state(m) << state(o) << state(r) << state(e) << endl;
         cout << state(m) << state(o) << state(n)

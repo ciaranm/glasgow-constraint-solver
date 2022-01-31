@@ -89,7 +89,7 @@ auto run_arithmetic_test(pair<int, int> v1_range, pair<int, int> v2_range, pair<
     auto v2 = p.create_integer_variable(Integer(v2_range.first), Integer(v2_range.second));
     auto v3 = p.create_integer_variable(Integer(v3_range.first), Integer(v3_range.second));
     p.post(Arithmetic_{v1, v2, v3});
-    solve(p, [&](const State & s) -> bool {
+    solve(p, [&](const CurrentState & s) -> bool {
         actual.emplace(s(v1).raw_value, s(v2).raw_value, s(v3).raw_value);
         return true;
     });

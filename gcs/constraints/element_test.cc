@@ -98,7 +98,7 @@ auto grow(vector<int> & array, const vector<pair<int, int>> & array_range, const
     }
 }
 
-auto check_idx_gac(IntegerVariableID var, IntegerVariableID idx, const vector<IntegerVariableID> & vars, const State & s) -> bool
+auto check_idx_gac(IntegerVariableID var, IntegerVariableID idx, const vector<IntegerVariableID> & vars, const CurrentState & s) -> bool
 {
     bool ok = true;
     s.for_each_value(idx, [&](Integer idx_val) {
@@ -115,7 +115,7 @@ auto check_idx_gac(IntegerVariableID var, IntegerVariableID idx, const vector<In
     return ok;
 }
 
-auto check_var_gac(IntegerVariableID var, IntegerVariableID idx, const vector<IntegerVariableID> & vars, const State & s) -> bool
+auto check_var_gac(IntegerVariableID var, IntegerVariableID idx, const vector<IntegerVariableID> & vars, const CurrentState & s) -> bool
 {
     bool ok = true;
     s.for_each_value(var, [&](Integer var_val) {
@@ -132,11 +132,11 @@ auto check_var_gac(IntegerVariableID var, IntegerVariableID idx, const vector<In
     return ok;
 }
 
-auto check_vals_gac(IntegerVariableID var, IntegerVariableID idx, const vector<IntegerVariableID> & vars, const State & s) -> bool
+auto check_vals_gac(IntegerVariableID var, IntegerVariableID idx, const vector<IntegerVariableID> & vars, const CurrentState & s) -> bool
 {
     bool ok = true;
     for_each_with_index(vars, [&](IntegerVariableID avar, auto index) {
-        if (s.optional_single_value(idx) == make_optional(Integer(index))) {
+        if (s.has_single_value(idx) && s(idx) == Integer(index)) {
             s.for_each_value(avar, [&](Integer aval) {
                 if (! s.in_domain(var, aval)) {
                     cerr << "avar missing support: " << aval << endl;
@@ -176,15 +176,16 @@ auto run_element_test(pair<int, int> var_range, pair<int, int> idx_range, const 
     bool gac_violated = false;
     solve_with(p,
         SolveCallbacks{
-            .solution = [&](const State & s) -> bool {
+            .solution = [&](const CurrentState & s) -> bool {
                 vector<int> vals;
                 for (auto & a : array)
                     vals.push_back(s(a).raw_value);
                 actual.emplace(s(var).raw_value, s(idx).raw_value, vals);
                 return true;
             },
-            .trace = [&](const State & s) -> bool {
-                gac_violated = gac_violated || ! check_idx_gac(var, idx, array, s) || ! check_var_gac(var, idx, array, s) || ! check_vals_gac(var, idx, array, s);
+            .trace = [&](const CurrentState & s) -> bool {
+                gac_violated = gac_violated || ! check_idx_gac(var, idx, array, s) ||
+                    ! check_var_gac(var, idx, array, s) || ! check_vals_gac(var, idx, array, s);
                 return true;
             }});
 

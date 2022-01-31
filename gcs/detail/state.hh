@@ -8,6 +8,7 @@
 #include <gcs/detail/state-fwd.hh>
 #include <gcs/literal.hh>
 #include <gcs/problem-fwd.hh>
+#include <gcs/current_state.hh>
 
 #include <exception>
 #include <functional>
@@ -17,17 +18,6 @@
 namespace gcs
 {
     auto increase_inference_to(Inference &, const Inference) -> void;
-
-    class VariableDoesNotHaveUniqueValue : public std::exception
-    {
-    private:
-        std::string _wat;
-
-    public:
-        explicit VariableDoesNotHaveUniqueValue(const std::string &);
-
-        virtual auto what() const noexcept -> const char * override;
-    };
 
     struct Timestamp
     {
@@ -107,6 +97,8 @@ namespace gcs
         auto on_backtrack(std::function<auto()->void>) -> void;
 
         auto extract_changed_variables(std::function<auto(SimpleIntegerVariableID, HowChanged)->void>) -> void;
+
+        [[nodiscard]] auto current() -> CurrentState;
     };
 }
 

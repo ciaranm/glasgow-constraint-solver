@@ -23,7 +23,7 @@ auto main(int, char *[]) -> int
     p.post(Plus{b, 2_c, c});
     p.post(Equals{a, c});
 
-    auto stats = solve(p, [&](const State & s) -> bool {
+    auto stats = solve(p, [&](const CurrentState & s) -> bool {
         cout << s(a) << " " << s(b) << " " << s(c) << endl;
 
         return true;

@@ -210,7 +210,7 @@ auto main(int, char *[]) -> int
             p.post(LinearLessEqual{move(c), Integer{value}});
         }
 
-        solve(p, [&](const State & s) -> bool {
+        solve(p, [&](const CurrentState & s) -> bool {
             actual.emplace(s(vs[0]).raw_value, s(vs[1]).raw_value, s(vs[2]).raw_value);
             return true;
         });

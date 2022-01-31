@@ -128,10 +128,10 @@ auto main(int argc, char * argv[]) -> int
     unsigned long long n_solutions = 0;
     auto stats = solve_with(p,
         SolveCallbacks{
-            .solution = [&](const State &) -> bool {
+            .solution = [&](const CurrentState &) -> bool {
                 return ++n_solutions < 10000;
             },
-            .guess = [&](const State & state, IntegerVariableID var) -> vector<Literal> {
+            .guess = [&](const CurrentState & state, IntegerVariableID var) -> vector<Literal> {
                 return vector<Literal>{var == state.lower_bound(var), var != state.lower_bound(var)};
             }});
 

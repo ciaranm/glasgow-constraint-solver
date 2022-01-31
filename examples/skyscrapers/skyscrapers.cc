@@ -314,7 +314,7 @@ auto main(int argc, char * argv[]) -> int
         build_visible_constraints(visible_east, east, false, false);
     }
 
-    auto stats = solve(p, [&](const State & s) -> bool {
+    auto stats = solve(p, [&](const CurrentState & s) -> bool {
         cout << "   ";
         for (int c = 0; c < size; ++c)
             cout << " " << (north[c] != 0 ? to_string(north[c]) : " ");

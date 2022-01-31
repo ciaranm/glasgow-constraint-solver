@@ -30,7 +30,7 @@ auto main(int, char *[]) -> int
         sum_xs.emplace_back(1_i, x);
     p.post(LinearEquality{move(sum_xs), 14_i, true});
 
-    auto stats = solve(p, [&](const State & s) -> bool {
+    auto stats = solve(p, [&](const CurrentState & s) -> bool {
         cout << "[";
         for (auto & x : xs)
             cout << " " << s(x);

@@ -86,7 +86,7 @@ auto main(int argc, char * argv[]) -> int
 
     auto stats = solve_with(p,
         SolveCallbacks{
-            .solution = [&](const State & s) -> bool {
+            .solution = [&](const CurrentState & s) -> bool {
                 cout << "solution:";
                 for (auto & v : queens)
                     cout << " " << s(v);
@@ -94,7 +94,7 @@ auto main(int argc, char * argv[]) -> int
 
                 return options_vars.count("all");
             },
-            .guess = [&](const State & state, IntegerVariableID var) -> vector<Literal> {
+            .guess = [&](const CurrentState & state, IntegerVariableID var) -> vector<Literal> {
                 return vector<Literal>{var == state.lower_bound(var), var != state.lower_bound(var)};
             }});
 

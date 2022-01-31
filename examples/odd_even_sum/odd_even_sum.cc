@@ -67,7 +67,7 @@ auto main(int argc, char * argv[]) -> int
 
     p.post(LinearEquality{Linear{{2_i, a}, {2_i, b}, {2_i, c}, {-2_i, d}, {1_i, e}}, 1_i, true});
 
-    auto stats = solve(p, [&](const State & s) -> bool {
+    auto stats = solve(p, [&](const CurrentState & s) -> bool {
         cout << s(a) << " " << s(b) << " " << s(c) << " " << s(d) << " " << s(e) << endl;
         return true;
     });

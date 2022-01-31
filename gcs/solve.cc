@@ -23,14 +23,14 @@ namespace
             problem.optional_proof()->enter_proof_level(depth + 1);
 
         if (problem.propagate(state)) {
-            auto branch_var = callbacks.branch ? callbacks.branch(state) : problem.find_branching_variable(state);
+            auto branch_var = callbacks.branch ? callbacks.branch(state.current()) : problem.find_branching_variable(state);
             if (branch_var == nullopt) {
                 if (problem.optional_proof())
                     problem.optional_proof()->solution(state);
 
                 ++stats.solutions;
                 this_subtree_contains_solution = true;
-                if (callbacks.solution && ! callbacks.solution(state))
+                if (callbacks.solution && ! callbacks.solution(state.current()))
                     return false;
 
                 problem.update_objective(state);
@@ -38,11 +38,11 @@ namespace
             else {
                 bool keep_going = true;
 
-                if (callbacks.trace && ! callbacks.trace(state))
+                if (callbacks.trace && ! callbacks.trace(state.current()))
                     keep_going = false;
 
                 if (callbacks.guess) {
-                    auto guesses = callbacks.guess(state, *branch_var);
+                    auto guesses = callbacks.guess(state.current(), *branch_var);
                     for (auto & guess : guesses) {
                         if (keep_going) {
                             auto timestamp = state.new_epoch();
@@ -104,7 +104,7 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks) -> Stats
         problem.optional_proof()->start_proof(state);
 
     if (callbacks.after_proof_started)
-        callbacks.after_proof_started(state);
+        callbacks.after_proof_started(state.current());
 
     bool child_contains_solution = false;
     if (solve_with_state(0, stats, problem, state, callbacks, child_contains_solution))

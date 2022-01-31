@@ -75,7 +75,7 @@ auto main(int argc, char * argv[]) -> int
 
     p.branch_on(vector<IntegerVariableID>{banana, chocolate});
     p.minimise(loss);
-    auto stats = solve(p, [&](const State & s) -> bool {
+    auto stats = solve(p, [&](const CurrentState & s) -> bool {
         cout << "banana cakes = " << s(banana) << ", chocolate cakes = "
              << s(chocolate) << ", profit = " << s(profit) << endl;
         return true;

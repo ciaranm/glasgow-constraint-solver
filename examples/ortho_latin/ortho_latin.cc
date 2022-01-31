@@ -81,7 +81,7 @@ auto main(int argc, char * argv[]) -> int
         p.post(Equals{g1[x][0], constant_variable(Integer{x})});
     }
 
-    auto stats = solve(p, [&](const State & s) -> bool {
+    auto stats = solve(p, [&](const CurrentState & s) -> bool {
         for (int x = 0; x < size; ++x) {
             for (int y = 0; y < size; ++y)
                 cout << s(g1[x][y]) << "," << s(g2[x][y]) << " ";
