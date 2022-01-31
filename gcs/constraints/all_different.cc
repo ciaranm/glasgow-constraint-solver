@@ -21,14 +21,11 @@
 using namespace gcs;
 
 using std::adjacent_find;
-using std::count;
 using std::decay_t;
 using std::endl;
 using std::function;
 using std::is_same_v;
-using std::list;
 using std::map;
-using std::max;
 using std::min;
 using std::nullopt;
 using std::optional;

@@ -20,7 +20,6 @@ using std::remove_if;
 using std::sort;
 using std::string;
 using std::stringstream;
-using std::to_string;
 using std::vector;
 
 auto gcs::sanitise_linear(Linear & coeff_vars) -> void

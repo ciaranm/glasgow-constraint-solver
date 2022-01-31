@@ -18,11 +18,7 @@ using namespace gcs;
 using std::cerr;
 using std::cout;
 using std::endl;
-using std::nullopt;
-using std::optional;
-using std::pair;
 using std::string;
-using std::to_string;
 using std::vector;
 
 namespace po = boost::program_options;

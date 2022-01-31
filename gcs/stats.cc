@@ -9,7 +9,6 @@
 using namespace gcs;
 
 using std::ostream;
-using std::sort;
 
 auto gcs::operator<<(ostream & o, const Stats & s) -> ostream &
 {

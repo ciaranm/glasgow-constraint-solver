@@ -23,11 +23,7 @@ using std::array;
 using std::cerr;
 using std::cout;
 using std::endl;
-using std::flush;
-using std::getline;
 using std::ifstream;
-using std::pair;
-using std::string;
 using std::to_string;
 using std::vector;
 

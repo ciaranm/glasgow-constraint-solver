@@ -16,7 +16,6 @@ using std::cerr;
 using std::cout;
 using std::endl;
 using std::ifstream;
-using std::pair;
 using std::vector;
 
 auto main(int argc, char * argv[]) -> int

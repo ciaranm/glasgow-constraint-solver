@@ -14,21 +14,15 @@
 using namespace gcs;
 
 using std::deque;
-using std::get;
 using std::list;
 using std::make_optional;
-using std::max;
-using std::min;
 using std::move;
 using std::nullopt;
 using std::optional;
 using std::pair;
 using std::string;
-using std::tuple;
 using std::vector;
-using std::chrono::duration_cast;
 using std::chrono::microseconds;
-using std::chrono::steady_clock;
 
 namespace
 {

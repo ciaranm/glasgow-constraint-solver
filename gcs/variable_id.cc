@@ -8,7 +8,6 @@ using namespace gcs;
 using std::pair;
 using std::string;
 using std::to_string;
-using std::visit;
 
 auto gcs::debug_string(const IntegerVariableID & var) -> string
 {

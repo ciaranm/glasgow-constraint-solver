@@ -13,7 +13,6 @@ using std::max;
 using std::min;
 using std::move;
 using std::pair;
-using std::visit;
 
 ComparisonReif::ComparisonReif(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond, bool full_reif, ComparisonOperator op) :
     _v1(v1),

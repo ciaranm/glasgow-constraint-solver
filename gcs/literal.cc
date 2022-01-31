@@ -14,7 +14,6 @@ using std::optional;
 using std::remove_if;
 using std::string;
 using std::unique;
-using std::visit;
 
 auto gcs::debug_string(const Literal & lit) -> string
 {

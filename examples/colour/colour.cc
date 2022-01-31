@@ -19,7 +19,6 @@ using std::getline;
 using std::ifstream;
 using std::pair;
 using std::string;
-using std::to_string;
 using std::vector;
 
 auto main(int argc, char * argv[]) -> int

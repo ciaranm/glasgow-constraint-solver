@@ -13,7 +13,6 @@ using namespace gcs;
 using std::llroundl;
 using std::move;
 using std::pow;
-using std::tuple;
 using std::vector;
 
 template <ArithmeticOperator op_>
