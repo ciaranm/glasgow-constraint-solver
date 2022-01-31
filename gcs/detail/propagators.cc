@@ -3,6 +3,7 @@
 #include <gcs/exception.hh>
 
 #include <gcs/detail/extensional.hh>
+#include <gcs/detail/linear_utils.hh>
 #include <gcs/detail/propagators.hh>
 
 #include <util/for_each.hh>

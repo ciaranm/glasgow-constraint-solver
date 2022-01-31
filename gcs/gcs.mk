@@ -21,7 +21,7 @@ SOURCES := \
     constraints/table.cc \
     detail/extensional.cc \
     detail/integer_variable_state.cc \
-    detail/linear.cc \
+    detail/linear_utils.cc \
     detail/literal_utils.cc \
     detail/propagators.cc \
     detail/state.cc \

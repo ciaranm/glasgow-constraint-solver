@@ -4,9 +4,9 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROOF_HH 1
 
 #include <gcs/detail/justification.hh>
-#include <gcs/detail/linear.hh>
 #include <gcs/detail/literal_utils.hh>
 #include <gcs/detail/state-fwd.hh>
+#include <gcs/linear.hh>
 #include <gcs/literal.hh>
 #include <gcs/variable_id.hh>
 
