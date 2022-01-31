@@ -72,7 +72,7 @@ auto main(int argc, char * argv[]) -> int
     cout << endl;
 
     int size = options_vars["size"].as<int>();
-    Problem p = options_vars.count("prove") ? Problem{Proof{"magic_square.opb", "magic_square.veripb"}} : Problem{};
+    Problem p = options_vars.count("prove") ? Problem{ProofOptions{"magic_square.opb", "magic_square.veripb"}} : Problem{};
     Integer m{size * (size * size + 1) / 2};
 
     vector<vector<IntegerVariableID>> grid;

@@ -1,10 +1,10 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
 #include <gcs/detail/literal_utils.hh>
+#include <gcs/detail/proof.hh>
 #include <gcs/detail/state.hh>
 #include <gcs/detail/variable_id_utils.hh>
 #include <gcs/exception.hh>
-#include <gcs/proof.hh>
 
 #include <util/overloaded.hh>
 
@@ -88,12 +88,12 @@ struct Proof::Imp
     unordered_map<string, string> xification;
 };
 
-Proof::Proof(const string & opb_file, const string & proof_file, bool use_friendly_names) :
+Proof::Proof(const ProofOptions & proof_options) :
     _imp(new Imp)
 {
-    _imp->opb_file = opb_file;
-    _imp->proof_file = proof_file;
-    _imp->use_friendly_names = use_friendly_names;
+    _imp->opb_file = proof_options.opb_file;
+    _imp->proof_file = proof_options.proof_file;
+    _imp->use_friendly_names = proof_options.use_friendly_names;
 }
 
 Proof::~Proof() = default;

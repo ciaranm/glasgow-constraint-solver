@@ -62,7 +62,7 @@ auto main(int argc, char * argv[]) -> int
         return EXIT_SUCCESS;
     }
 
-    Problem p = options_vars.count("prove") ? Problem{Proof{"qap.opb", "qap.veripb"}} : Problem{};
+    Problem p = options_vars.count("prove") ? Problem{ProofOptions{"qap.opb", "qap.veripb"}} : Problem{};
 
     constexpr int size = 12;
 

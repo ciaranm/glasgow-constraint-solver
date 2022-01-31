@@ -56,7 +56,7 @@ auto main(int argc, char * argv[]) -> int
         return EXIT_SUCCESS;
     }
 
-    Problem p = options_vars.count("prove") ? Problem{Proof{"cake.opb", "cake.veripb"}} : Problem{};
+    Problem p = options_vars.count("prove") ? Problem{ProofOptions{"cake.opb", "cake.veripb"}} : Problem{};
 
     // https://www.minizinc.org/doc-2.5.5/en/modelling.html#an-arithmetic-optimisation-example
     auto banana = p.create_integer_range_variable(0_i, 100_i);

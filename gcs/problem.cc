@@ -42,10 +42,10 @@ Problem::Problem() :
 {
 }
 
-Problem::Problem(Proof && proof) :
+Problem::Problem(const ProofOptions & options) :
     _imp(new Imp(this))
 {
-    _imp->optional_proof = move(proof);
+    _imp->optional_proof = make_optional<Proof>(options);
 }
 
 Problem::~Problem()

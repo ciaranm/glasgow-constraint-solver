@@ -8,6 +8,7 @@
 #include <gcs/detail/state-fwd.hh>
 #include <gcs/linear.hh>
 #include <gcs/literal.hh>
+#include <gcs/proof_options.hh>
 #include <gcs/variable_id.hh>
 
 #include <exception>
@@ -42,7 +43,7 @@ namespace gcs
         auto need_gevar(SimpleIntegerVariableID id, Integer v) -> void;
 
     public:
-        explicit Proof(const std::string & opb_file, const std::string & proof_file, bool use_friendly_names = true);
+        explicit Proof(const ProofOptions &);
         ~Proof();
 
         auto operator=(const Proof &) -> Proof & = delete;

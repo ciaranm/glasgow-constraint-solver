@@ -72,7 +72,7 @@ auto main(int argc, char * argv[]) -> int
     cout << endl;
 
     int size = options_vars["size"].as<int>();
-    Problem p = options_vars.count("prove") ? Problem{Proof{"n_queens.opb", "n_queens.veripb"}} : Problem{};
+    Problem p = options_vars.count("prove") ? Problem{ProofOptions{"n_queens.opb", "n_queens.veripb"}} : Problem{};
 
     auto queens = p.create_integer_variable_vector(size, 0_i, Integer{size - 1}, "queen");
 

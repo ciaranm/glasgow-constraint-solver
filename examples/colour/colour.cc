@@ -70,7 +70,7 @@ auto main(int argc, char * argv[]) -> int
         return EXIT_FAILURE;
     }
 
-    Problem p{Proof{"colour.opb", "colour.veripb"}};
+    Problem p{ProofOptions{"colour.opb", "colour.veripb"}};
 
     auto vertices = p.create_integer_variable_vector(size, 0_i, Integer{size - 1}, "vertex");
 

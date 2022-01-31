@@ -56,7 +56,7 @@ auto main(int argc, char * argv[]) -> int
     }
 
     Problem p = options_vars.count("prove")
-        ? Problem{Proof{"odd_even_sum.opb", "odd_even_sum.veripb"}}
+        ? Problem{ProofOptions{"odd_even_sum.opb", "odd_even_sum.veripb"}}
         : Problem{};
 
     auto a = p.create_integer_variable(0_i, 5_i, "a");

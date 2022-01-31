@@ -3,7 +3,7 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_JUSTIFICATION_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_JUSTIFICATION_HH 1
 
-#include <gcs/proof-fwd.hh>
+#include <gcs/detail/proof-fwd.hh>
 
 #include <functional>
 #include <variant>

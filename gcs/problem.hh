@@ -4,9 +4,9 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROBLEM_HH 1
 
 #include <gcs/constraint.hh>
+#include <gcs/detail/proof.hh>
 #include <gcs/detail/state.hh>
 #include <gcs/literal.hh>
-#include <gcs/proof.hh>
 #include <gcs/stats.hh>
 #include <gcs/variable_id.hh>
 
@@ -28,7 +28,7 @@ namespace gcs
 
     public:
         Problem();
-        explicit Problem(Proof &&);
+        explicit Problem(const ProofOptions &);
 
         ~Problem();
 
@@ -72,7 +72,7 @@ namespace gcs
         auto minimise(IntegerVariableID) -> void;
         auto update_objective(const State &) -> void;
 
-        auto optional_proof() const -> std::optional<Proof> &;
+        [[nodiscard]] auto optional_proof() const -> std::optional<Proof> &;
 
         auto fill_in_constraint_stats(Stats &) const -> void;
     };

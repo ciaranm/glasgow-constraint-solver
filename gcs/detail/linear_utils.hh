@@ -3,10 +3,10 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_DETAIL_LINEAR_UTILS_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_DETAIL_LINEAR_UTILS_HH 1
 
+#include <gcs/detail/proof-fwd.hh>
 #include <gcs/detail/propagators-fwd.hh>
 #include <gcs/detail/state-fwd.hh>
 #include <gcs/linear.hh>
-#include <gcs/proof-fwd.hh>
 
 #include <optional>
 #include <vector>

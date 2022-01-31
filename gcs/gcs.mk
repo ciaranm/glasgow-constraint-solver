@@ -8,7 +8,6 @@ SOURCES := \
     exception.cc \
     literal.cc \
     problem.cc \
-    proof.cc \
     stats.cc \
     solve.cc \
     variable_id.cc \
@@ -24,6 +23,7 @@ SOURCES := \
     detail/integer_variable_state.cc \
     detail/linear_utils.cc \
     detail/literal_utils.cc \
+    detail/proof.cc \
     detail/propagators.cc \
     detail/state.cc \
     detail/variable_id_utils.cc

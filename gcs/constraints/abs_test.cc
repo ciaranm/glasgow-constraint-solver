@@ -103,7 +103,7 @@ auto run_abs_test(pair<int, int> v1_range, pair<int, int> v2_range, const functi
             if (is_satisfing(v1, v2))
                 expected.emplace(v1, v2);
 
-    Problem p{Proof{"abs_test.opb", "abs_test.veripb"}};
+    Problem p{ProofOptions{"abs_test.opb", "abs_test.veripb"}};
     auto v1 = p.create_integer_variable(Integer(v1_range.first), Integer(v1_range.second));
     auto v2 = p.create_integer_variable(Integer(v2_range.first), Integer(v2_range.second));
     p.post(Abs{v1, v2});

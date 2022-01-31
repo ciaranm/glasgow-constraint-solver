@@ -64,7 +64,7 @@ auto main(int argc, char * argv[]) -> int
         return EXIT_SUCCESS;
     }
 
-    Problem p = options_vars.count("prove") ? Problem{Proof{"crystal_maze.opb", "crystal_maze.veripb"}} : Problem{};
+    Problem p = options_vars.count("prove") ? Problem{ProofOptions{"crystal_maze.opb", "crystal_maze.veripb"}} : Problem{};
 
     auto xs = p.create_integer_variable_vector(8, 1_i, 8_i, "box");
     p.post(AllDifferent{xs});

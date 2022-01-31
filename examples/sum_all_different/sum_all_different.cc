@@ -17,7 +17,7 @@ using std::endl;
 
 auto main(int, char *[]) -> int
 {
-    Problem p{Proof{"sum_all_different.opb", "sum_all_different.veripb"}};
+    Problem p{ProofOptions{"sum_all_different.opb", "sum_all_different.veripb"}};
 
     auto xs = p.create_integer_variable_vector(4, 1_i, 5_i, "xs");
     for (auto & x : xs)

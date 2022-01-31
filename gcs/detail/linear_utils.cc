@@ -1,10 +1,10 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
 #include <gcs/detail/linear_utils.hh>
+#include <gcs/detail/proof.hh>
 #include <gcs/detail/state.hh>
 #include <gcs/detail/variable_id_utils.hh>
 #include <gcs/exception.hh>
-#include <gcs/proof.hh>
 
 #include <algorithm>
 #include <cmath>

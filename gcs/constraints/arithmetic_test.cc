@@ -84,7 +84,7 @@ auto run_arithmetic_test(pair<int, int> v1_range, pair<int, int> v2_range, pair<
                 if (is_satisfing(v1, v2, v3))
                     expected.emplace(v1, v2, v3);
 
-    Problem p{Proof{"arithmetic_test.opb", "arithmetic_test.veripb"}};
+    Problem p{ProofOptions{"arithmetic_test.opb", "arithmetic_test.veripb"}};
     auto v1 = p.create_integer_variable(Integer(v1_range.first), Integer(v1_range.second));
     auto v2 = p.create_integer_variable(Integer(v2_range.first), Integer(v2_range.second));
     auto v3 = p.create_integer_variable(Integer(v3_range.first), Integer(v3_range.second));

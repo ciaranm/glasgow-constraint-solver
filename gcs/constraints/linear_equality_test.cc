@@ -194,7 +194,7 @@ auto main(int, char *[]) -> int
                         expected.emplace(v0, v1, v2);
                 }
 
-        Problem p{Proof{"linear_equality_test.opb", "linear_equality_test.veripb"}};
+        Problem p{ProofOptions{"linear_equality_test.opb", "linear_equality_test.veripb"}};
 
         auto vs = vector{
             p.create_integer_range_variable(Integer{v0_range.first}, Integer{v0_range.second}),

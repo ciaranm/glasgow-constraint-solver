@@ -32,7 +32,7 @@ auto main(int argc, char * argv[]) -> int
     if (argc >= 2)
         size = stoi(argv[1]);
 
-    Problem p{Proof{"ortho_latin.opb", "ortho_latin.veripb"}};
+    Problem p{ProofOptions{"ortho_latin.opb", "ortho_latin.veripb"}};
 
     vector<vector<IntegerVariableID>> g1, g2;
     vector<IntegerVariableID> g12;

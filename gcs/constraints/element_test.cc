@@ -165,7 +165,7 @@ auto run_element_test(pair<int, int> var_range, pair<int, int> idx_range, const 
             });
         }
 
-    Problem p{Proof{"element_test.opb", "element_test.veripb"}};
+    Problem p{ProofOptions{"element_test.opb", "element_test.veripb"}};
     auto var = p.create_integer_variable(Integer(var_range.first), Integer(var_range.second));
     auto idx = p.create_integer_variable(Integer(idx_range.first), Integer(idx_range.second));
     vector<IntegerVariableID> array;

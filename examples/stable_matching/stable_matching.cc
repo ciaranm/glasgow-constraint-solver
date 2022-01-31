@@ -33,7 +33,7 @@ using namespace std::literals::string_literals;
 
 auto main(int argc, char * argv[]) -> int
 {
-    Problem p{Proof{"stable_matching.opb", "stable_matching.veripb"}};
+    Problem p{ProofOptions{"stable_matching.opb", "stable_matching.veripb"}};
 
     unsigned size = 10;
     unsigned dimensions = 2;

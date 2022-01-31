@@ -15,7 +15,7 @@ using std::endl;
 
 auto main(int, char *[]) -> int
 {
-    Problem p{Proof{"reif_eq.opb", "reif_eq.veripb"}};
+    Problem p{ProofOptions{"reif_eq.opb", "reif_eq.veripb"}};
 
     auto a = p.create_integer_variable(2_i, 8_i);
     auto b = p.create_integer_variable(3_i, 9_i);

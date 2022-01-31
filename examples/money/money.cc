@@ -17,7 +17,7 @@ using std::vector;
 
 auto main(int, char *[]) -> int
 {
-    Problem p{Proof{"money.opb", "money.veripb"}};
+    Problem p{ProofOptions{"money.opb", "money.veripb"}};
 
     auto s = p.create_integer_variable(1_i, 9_i, "s");
     auto e = p.create_integer_variable(0_i, 9_i, "e");

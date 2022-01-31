@@ -38,7 +38,7 @@ using namespace std::literals::string_literals;
 
 auto main(int argc, char * argv[]) -> int
 {
-    Problem p{Proof{"skyscrapers.opb", "skyscrapers.veripb"}};
+    Problem p{ProofOptions{"skyscrapers.opb", "skyscrapers.veripb"}};
 
     int size;
     vector<vector<int>> predefs;
