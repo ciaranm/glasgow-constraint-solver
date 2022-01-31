@@ -3,6 +3,7 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROPAGATORS_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROPAGATORS_HH 1
 
+#include <gcs/detail/literal_utils.hh>
 #include <gcs/detail/propagators-fwd.hh>
 #include <gcs/detail/state.hh>
 #include <gcs/linear.hh>

@@ -1,7 +1,9 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
-#include "gcs/solve.hh"
-#include "gcs/exception.hh"
+#include <gcs/detail/proof.hh>
+#include <gcs/detail/state.hh>
+#include <gcs/exception.hh>
+#include <gcs/solve.hh>
 
 using namespace gcs;
 

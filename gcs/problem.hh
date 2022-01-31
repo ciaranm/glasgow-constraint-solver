@@ -4,9 +4,10 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROBLEM_HH 1
 
 #include <gcs/constraint.hh>
-#include <gcs/detail/proof.hh>
-#include <gcs/detail/state.hh>
+#include <gcs/detail/proof-fwd.hh>
+#include <gcs/detail/state-fwd.hh>
 #include <gcs/literal.hh>
+#include <gcs/proof_options.hh>
 #include <gcs/stats.hh>
 #include <gcs/variable_id.hh>
 

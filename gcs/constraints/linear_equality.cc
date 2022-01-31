@@ -3,6 +3,7 @@
 #include <gcs/constraints/linear_equality.hh>
 #include <gcs/detail/extensional.hh>
 #include <gcs/detail/linear_utils.hh>
+#include <gcs/detail/proof.hh>
 #include <gcs/detail/propagators.hh>
 
 #include <util/for_each.hh>

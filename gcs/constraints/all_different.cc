@@ -1,6 +1,7 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
 #include <gcs/constraints/all_different.hh>
+#include <gcs/detail/proof.hh>
 #include <gcs/detail/propagators.hh>
 #include <gcs/detail/state.hh>
 #include <gcs/detail/variable_id_utils.hh>
