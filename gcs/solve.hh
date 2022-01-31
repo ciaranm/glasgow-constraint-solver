@@ -3,8 +3,8 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_SOLVE_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_SOLVE_HH 1
 
+#include <gcs/detail/state.hh>
 #include <gcs/problem.hh>
-#include <gcs/state.hh>
 #include <gcs/stats.hh>
 
 #include <functional>

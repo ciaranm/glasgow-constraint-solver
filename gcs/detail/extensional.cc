@@ -1,7 +1,7 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
-#include <gcs/extensional.hh>
-#include <gcs/state.hh>
+#include <gcs/detail/extensional.hh>
+#include <gcs/detail/state.hh>
 
 using std::pair;
 

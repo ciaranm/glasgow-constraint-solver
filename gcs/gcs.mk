@@ -5,14 +5,10 @@ SRC_INCDIRS := ..
 SOURCES := \
     constraint.cc \
     exception.cc \
-    extensional.cc \
-    integer_variable_state.cc \
-    linear.cc \
     literal.cc \
     problem.cc \
-    propagators.cc \
     proof.cc \
-    state.cc \
+    detail/state.cc \
     stats.cc \
     solve.cc \
     variable_id.cc \
@@ -23,5 +19,9 @@ SOURCES := \
     constraints/comparison.cc \
     constraints/linear_equality.cc \
     constraints/min_max.cc \
-    constraints/table.cc
+    constraints/table.cc \
+    detail/extensional.cc \
+    detail/integer_variable_state.cc \
+    detail/linear.cc \
+    detail/propagators.cc \
 

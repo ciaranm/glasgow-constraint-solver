@@ -1,9 +1,9 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
 #include <gcs/constraints/linear_equality.hh>
-#include <gcs/extensional.hh>
-#include <gcs/linear.hh>
-#include <gcs/propagators.hh>
+#include <gcs/detail/extensional.hh>
+#include <gcs/detail/linear.hh>
+#include <gcs/detail/propagators.hh>
 
 #include <util/for_each.hh>
 

@@ -1,6 +1,6 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
-#include <gcs/integer_variable_state.hh>
+#include <gcs/detail/integer_variable_state.hh>
 #include <util/overloaded.hh>
 
 using namespace gcs;

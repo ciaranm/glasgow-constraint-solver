@@ -4,8 +4,8 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_LINEAR_EQUALITY_HH 1
 
 #include <gcs/constraint.hh>
+#include <gcs/detail/linear.hh>
 #include <gcs/integer.hh>
-#include <gcs/linear.hh>
 
 #include <vector>
 

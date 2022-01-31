@@ -2,10 +2,10 @@
 
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/element.hh>
+#include <gcs/detail/propagators.hh>
+#include <gcs/detail/state.hh>
 #include <gcs/exception.hh>
 #include <gcs/integer.hh>
-#include <gcs/propagators.hh>
-#include <gcs/state.hh>
 
 #include <util/for_each.hh>
 

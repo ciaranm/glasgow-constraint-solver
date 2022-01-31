@@ -3,7 +3,7 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INTEGER_VARIABLE_STATE_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INTEGER_VARIABLE_STATE_HH 1
 
-#include <gcs/bits.hh>
+#include <gcs/detail/bits.hh>
 #include <gcs/integer.hh>
 
 #include <memory>

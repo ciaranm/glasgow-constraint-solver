@@ -3,11 +3,11 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_STATE_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_STATE_HH 1
 
-#include <gcs/integer_variable_state.hh>
+#include <gcs/detail/integer_variable_state.hh>
+#include <gcs/detail/state-fwd.hh>
 #include <gcs/justification.hh>
 #include <gcs/literal.hh>
 #include <gcs/problem-fwd.hh>
-#include <gcs/state-fwd.hh>
 
 #include <exception>
 #include <functional>

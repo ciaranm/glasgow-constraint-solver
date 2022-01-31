@@ -1,10 +1,10 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
 #include <gcs/constraints/comparison.hh>
+#include <gcs/detail/propagators.hh>
+#include <gcs/detail/state.hh>
 #include <gcs/exception.hh>
 #include <gcs/problem.hh>
-#include <gcs/propagators.hh>
-#include <gcs/state.hh>
 
 #include <util/for_each.hh>
 #include <util/overloaded.hh>

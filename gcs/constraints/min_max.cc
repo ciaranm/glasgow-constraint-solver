@@ -2,8 +2,9 @@
 
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/min_max.hh>
+#include <gcs/detail/propagators.hh>
 #include <gcs/exception.hh>
-#include <gcs/propagators.hh>
+
 #include <util/for_each.hh>
 
 using namespace gcs;

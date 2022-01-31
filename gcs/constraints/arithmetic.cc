@@ -1,8 +1,8 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
 #include <gcs/constraints/arithmetic.hh>
-#include <gcs/propagators.hh>
-#include <gcs/state.hh>
+#include <gcs/detail/propagators.hh>
+#include <gcs/detail/state.hh>
 
 #include <cmath>
 #include <tuple>
