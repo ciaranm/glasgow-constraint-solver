@@ -26,7 +26,7 @@ auto gcs::debug_string(const IntegerVariableState & ivar) -> string
         },
         [](const IntegerVariableSetState & s) {
             string result = "set";
-            for (auto & v : *s.values)
+            for (const auto & v : *s.values)
                 result += " " + to_string(v.raw_value);
             return result;
         }}

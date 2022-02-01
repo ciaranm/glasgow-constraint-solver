@@ -49,9 +49,7 @@ Problem::Problem(const ProofOptions & options) :
     _imp->optional_proof = make_optional<Proof>(options);
 }
 
-Problem::~Problem()
-{
-}
+Problem::~Problem() = default;
 
 auto Problem::create_integer_variable(Integer lower, Integer upper, const optional<std::string> & name) -> SimpleIntegerVariableID
 {

@@ -58,15 +58,10 @@ struct State::Imp
     list<vector<function<auto()->void>>> on_backtracks;
     map<SimpleIntegerVariableID, HowChanged> changed;
     vector<Literal> guesses;
-
-    Imp(const Problem * const p) :
-        problem(p)
-    {
-    }
 };
 
 State::State(const Problem * const problem) :
-    _imp(new Imp{problem})
+    _imp(new Imp{.problem = problem})
 {
     _imp->integer_variable_states.emplace_back();
     _imp->on_backtracks.emplace_back();
@@ -417,7 +412,7 @@ auto State::infer(const Literal & lit, Justification just) -> Inference
 auto State::infer_all(const vector<Literal> & lits, Justification just) -> Inference
 {
     Inference result = Inference::NoChange;
-    for (auto & lit : lits) {
+    for (const auto & lit : lits) {
         switch (infer(lit, just)) {
         case Inference::NoChange:
             break;
@@ -610,7 +605,7 @@ auto State::for_each_value_while(const IntegerVariableID var, function<auto(Inte
                         break;
         },
         [&, offset = offset](const IntegerVariableSetState & s) {
-            for (auto & v : *s.values)
+            for (const auto & v : *s.values)
                 if (! f(v + offset))
                     break;
         }}

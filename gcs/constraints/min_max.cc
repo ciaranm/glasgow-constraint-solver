@@ -22,11 +22,11 @@ auto ArrayMinMax::install(Propagators & propagators, const State & initial_state
         throw UnexpectedException{"not sure how min and max are defined over an empty array"};
 
     if (_min) {
-        for (auto & v : _vars)
+        for (const auto & v : _vars)
             LessThanEqual{_result, v}.install(propagators, initial_state);
     }
     else {
-        for (auto & v : _vars)
+        for (const auto & v : _vars)
             LessThanEqual{v, _result}.install(propagators, initial_state);
     }
 

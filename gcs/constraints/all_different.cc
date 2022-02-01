@@ -68,7 +68,7 @@ namespace
         vector<optional<Right>> & matching) -> void
     {
         // start with a greedy matching
-        for (auto & e : edges) {
+        for (const auto & e : edges) {
             if ((! left_covered[e.first.offset]) && (! right_covered[e.second.offset])) {
                 left_covered[e.first.offset] = 1;
                 right_covered[e.second.offset] = 1;
@@ -96,7 +96,7 @@ namespace
 
                 // for each potential left-to-right edge that is not in the matching,
                 // that starts with something on the left...
-                for (auto & [var, val] : edges) {
+                for (const auto & [var, val] : edges) {
                     if (reached_on_the_left[var.offset] && matching[var.offset] != val) {
                         // we've found something we can reach on the right
                         if (! reached_on_the_right[val.offset]) {
@@ -123,7 +123,7 @@ namespace
 
                 // now, for each potential right-to-left edge that is in the matching,
                 // that starts with something we've reached on the right...
-                for (auto & [var, val] : edges) {
+                for (const auto & [var, val] : edges) {
                     if (reached_on_the_right[val.offset] && matching[var.offset] == val) {
                         // we've found something we can reach on the left
                         if (! reached_on_the_left[var.offset]) {
@@ -190,7 +190,7 @@ namespace
         // on the right
         while (true) {
             vector<uint8_t> n_of_hall_variables(vals.size(), 0);
-            for (auto & [l, r] : edges)
+            for (const auto & [l, r] : edges)
                 if (hall_variables[l.offset])
                     n_of_hall_variables[r.offset] = 1;
 
@@ -571,7 +571,7 @@ auto AllDifferent::install(Propagators & propagators, const State & initial_stat
         for (Integer val = min_lower; val <= max_upper; ++val) {
             // at most one variable can take it
             Literals lits;
-            for (auto & var : _vars)
+            for (const auto & var : _vars)
                 if (initial_state.in_domain(var, val))
                     lits.emplace_back(var == val);
             constraint_numbers.emplace(val, nullopt_to_zero(propagators.at_most_one(initial_state, move(lits), false)));

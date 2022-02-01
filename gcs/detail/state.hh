@@ -61,9 +61,9 @@ namespace gcs
         ~State();
 
         State(const State &) = delete;
-        State & operator=(const State &) = delete;
+        auto operator=(const State &) -> State & = delete;
 
-        [[nodiscard]] State clone() const;
+        [[nodiscard]] auto clone() -> State const;
 
         [[nodiscard]] auto create_integer_variable(Integer lower, Integer upper) -> SimpleIntegerVariableID;
         [[nodiscard]] auto create_pseudovariable(Integer lower, Integer upper, const std::optional<std::string> &) -> SimpleIntegerVariableID;

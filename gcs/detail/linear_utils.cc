@@ -60,7 +60,7 @@ auto gcs::propagate_linear(const Linear & coeff_vars, Integer value, State & sta
     bounds.reserve(coeff_vars.size());
 
     Integer lower_sum{0}, inv_lower_sum{0};
-    for (auto & [coeff, var] : coeff_vars) {
+    for (const auto & [coeff, var] : coeff_vars) {
         bounds.push_back(state.bounds(var));
         lower_sum += (coeff >= 0_i) ? (coeff * bounds.back().first) : (coeff * bounds.back().second);
         inv_lower_sum += (-coeff >= 0_i) ? (-coeff * bounds.back().first) : (-coeff * bounds.back().second);
@@ -73,13 +73,13 @@ auto gcs::propagate_linear(const Linear & coeff_vars, Integer value, State & sta
 
         stringstream comment;
         comment << "justifying linear " << (equality ? (second_constraint_for_equality ? "second equality" : "equality") : "inequality");
-        for (auto & [coeff, var] : coeff_vars)
+        for (const auto & [coeff, var] : coeff_vars)
             comment << " " << coeff << " * " << debug_string(var);
         comment << " <= " << value << " bounds change on " << debug_string(change_var) << " to infer " << debug_string(inf_lit);
         proof.emit_proof_comment(comment.str());
 
         Integer change_var_coeff = 0_i;
-        for (auto & [coeff, var] : coeff_vars) {
+        for (const auto & [coeff, var] : coeff_vars) {
             if (var == change_var) {
                 change_var_coeff = coeff;
                 continue;
@@ -165,7 +165,7 @@ auto gcs::propagate_linear(const Linear & coeff_vars, Integer value, State & sta
     };
 
     for (unsigned p = 0, p_end = coeff_vars.size(); p != p_end; ++p) {
-        auto & [coeff, var] = coeff_vars[p];
+        const auto & [coeff, var] = coeff_vars[p];
         Integer lower_without_me = lower_sum - ((coeff >= 0_i) ? (coeff * bounds[p].first) : (coeff * bounds[p].second));
         Integer remainder = value - lower_without_me;
         switch (infer(p, var, remainder, coeff, false)) {

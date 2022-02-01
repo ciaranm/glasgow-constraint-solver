@@ -42,7 +42,7 @@ namespace gcs
         ~Propagators();
 
         Propagators(const Propagators &) = delete;
-        Propagators & operator=(const Propagators &) = delete;
+        auto operator=(const Propagators &) -> Propagators & = delete;
 
         [[nodiscard]] auto want_nonpropagating() const -> bool;
 

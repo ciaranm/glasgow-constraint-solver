@@ -49,8 +49,8 @@ namespace gcs
         auto operator=(const Proof &) -> Proof & = delete;
         Proof(const Proof &) = delete;
 
-        Proof(Proof &&);
-        auto operator=(Proof &&) -> Proof &;
+        Proof(Proof &&) noexcept;
+        auto operator=(Proof &&) noexcept -> Proof &;
 
         // OPB-related output
         auto posting(const std::string &) -> void;
@@ -89,7 +89,7 @@ namespace gcs
 
         auto create_pseudovariable(SimpleIntegerVariableID, Integer, Integer, const std::optional<std::string> &) -> void;
 
-        auto proof_variable(const Literal &) const -> const std::string &;
+        [[nodiscard]] auto proof_variable(const Literal &) const -> const std::string &;
     };
 }
 

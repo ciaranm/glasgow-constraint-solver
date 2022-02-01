@@ -88,7 +88,7 @@ Element2DConstantArray::Element2DConstantArray(IntegerVariableID var, IntegerVar
     _vals(vals)
 {
     if (! _vals.empty())
-        for (auto & v : _vals)
+        for (const auto & v : _vals)
             if (v.size() != _vals.begin()->size())
                 throw UnexpectedException{"didn't get a rectangular 2d array, not sure what to do"};
 }

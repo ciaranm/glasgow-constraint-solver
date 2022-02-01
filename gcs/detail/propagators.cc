@@ -151,11 +151,11 @@ auto Propagators::propagator(const State &, PropagationFunction && f, const Trig
     _imp->propagation_functions.emplace_back(move(f));
     _imp->propagator_is_disabled.push_back(0);
 
-    for (auto & v : triggers.on_change)
+    for (const auto & v : triggers.on_change)
         trigger_on_change(v, id);
-    for (auto & v : triggers.on_bounds)
+    for (const auto & v : triggers.on_bounds)
         trigger_on_bounds(v, id);
-    for (auto & v : triggers.on_instantiated)
+    for (const auto & v : triggers.on_instantiated)
         trigger_on_instantiated(v, id);
 }
 
@@ -295,7 +295,7 @@ auto Propagators::propagate(State & state, const optional<IntegerVariableID> & o
 
     if (! newly_disabled_propagators.empty()) {
         state.on_backtrack([&, to_enable = move(newly_disabled_propagators)]() {
-            for (auto & p : to_enable)
+            for (const auto & p : to_enable)
                 _imp->propagator_is_disabled[p] = 0;
         });
     }

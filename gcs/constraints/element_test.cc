@@ -150,7 +150,7 @@ auto check_vals_gac(IntegerVariableID var, IntegerVariableID idx, const vector<I
 auto run_element_test(pair<int, int> var_range, pair<int, int> idx_range, const vector<pair<int, int>> & array_range) -> bool
 {
     cerr << "Element " << stringify_tuple(var_range) << " " << stringify_tuple(idx_range) << " [";
-    for (auto & v : array_range)
+    for (const auto & v : array_range)
         cerr << " " << stringify_tuple(v);
     cerr << " ]";
 
@@ -168,7 +168,7 @@ auto run_element_test(pair<int, int> var_range, pair<int, int> idx_range, const 
     auto var = p.create_integer_variable(Integer(var_range.first), Integer(var_range.second));
     auto idx = p.create_integer_variable(Integer(idx_range.first), Integer(idx_range.second));
     vector<IntegerVariableID> array;
-    for (auto & [l, u] : array_range)
+    for (const auto & [l, u] : array_range)
         array.push_back(p.create_integer_variable(Integer(l), Integer(u)));
 
     p.post(Element{var, idx, array});

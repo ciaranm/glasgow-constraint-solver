@@ -80,8 +80,8 @@ auto check_results(
         cerr << endl;
 
         cerr << "constraints:" << endl;
-        for (auto & [coeffs, val] : constraints) {
-            for (auto & c : coeffs)
+        for (const auto & [coeffs, val] : constraints) {
+            for (const auto & c : coeffs)
                 cerr << c << " ";
             cerr << "<= " << val << endl;
         }

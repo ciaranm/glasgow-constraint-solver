@@ -98,12 +98,12 @@ Proof::Proof(const ProofOptions & proof_options) :
 
 Proof::~Proof() = default;
 
-Proof::Proof(Proof && other) :
+Proof::Proof(Proof && other) noexcept :
     _imp(move(other._imp))
 {
 }
 
-auto Proof::operator=(Proof && other) -> Proof &
+auto Proof::operator=(Proof && other) noexcept -> Proof &
 {
     _imp = move(other._imp);
     return *this;
@@ -347,7 +347,7 @@ auto Proof::start_proof(State &) -> void
 
 auto Proof::cnf(const Literals & lits) -> ProofLine
 {
-    for (auto & lit : lits) {
+    for (const auto & lit : lits) {
         visit([&](const auto & lit) {
             _imp->opb << "1 " << proof_variable(lit) << " ";
         },
@@ -359,7 +359,7 @@ auto Proof::cnf(const Literals & lits) -> ProofLine
 
 auto Proof::at_most_one(const Literals & lits) -> ProofLine
 {
-    for (auto & lit : lits) {
+    for (const auto & lit : lits) {
         visit([&](const auto & lit) {
             _imp->opb << "-1 " << proof_variable(lit) << " ";
         },
@@ -371,7 +371,7 @@ auto Proof::at_most_one(const Literals & lits) -> ProofLine
 
 auto Proof::pseudoboolean_ge(const WeightedLiterals & lits, Integer val) -> ProofLine
 {
-    for (auto & [w, lit] : lits) {
+    for (const auto & [w, lit] : lits) {
         visit([this, w = w](const auto & lit) {
             _imp->opb << w << " " << proof_variable(lit) << " ";
         },
@@ -385,12 +385,12 @@ auto Proof::integer_linear_le(const State &, const Linear & lin, Integer val, bo
 {
     _imp->opb << (equality ? "* linear eq" : "* linear le");
 
-    for (auto & [coeff, var] : lin)
+    for (const auto & [coeff, var] : lin)
         _imp->opb << " " << coeff << "*" << debug_string(var);
     _imp->opb << " <= " << val << '\n';
 
     auto output = [&](Integer multiplier) {
-        for (auto & [coeff, var] : lin)
+        for (const auto & [coeff, var] : lin)
             overloaded{
                 [&, coeff = coeff](const SimpleIntegerVariableID & v) {
                     for (auto & [bit_value, bit_name] : _imp->integer_variable_bits.find(v)->second.second)
@@ -702,7 +702,7 @@ auto Proof::delete_proof_lines(const vector<ProofLine> & to_delete) -> void
     if (! to_delete.empty()) {
         stringstream line;
         line << "d";
-        for (auto & l : to_delete)
+        for (const auto & l : to_delete)
             line << " " << l;
         _imp->proof << line.str() << '\n';
     }
