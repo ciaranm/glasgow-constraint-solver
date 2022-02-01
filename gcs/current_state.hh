@@ -1,7 +1,7 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CURRENT_STATE_HH
-#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CURRENT_STATE_HH 1
+#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CURRENT_STATE_HH
 
 #include <gcs/detail/state-fwd.hh>
 #include <gcs/integer.hh>
@@ -30,7 +30,7 @@ namespace gcs
 
     public:
         explicit CurrentState(State & state);
-        ~CurrentState();
+        ~CurrentState() = default;
 
         CurrentState(const CurrentState &) = delete;
         CurrentState & operator= (const CurrentState &) = delete;

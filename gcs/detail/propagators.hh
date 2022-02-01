@@ -1,7 +1,7 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROPAGATORS_HH
-#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROPAGATORS_HH 1
+#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROPAGATORS_HH
 
 #include <gcs/detail/literal_utils.hh>
 #include <gcs/detail/propagators-fwd.hh>

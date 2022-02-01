@@ -1,7 +1,7 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_STATE_HH
-#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_STATE_HH 1
+#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_STATE_HH
 
 #include <gcs/detail/integer_variable_state.hh>
 #include <gcs/detail/justification.hh>
@@ -63,7 +63,7 @@ namespace gcs
         State(const State &) = delete;
         auto operator=(const State &) -> State & = delete;
 
-        [[nodiscard]] auto clone() -> State const;
+        [[nodiscard]] auto clone() const -> State;
 
         [[nodiscard]] auto create_integer_variable(Integer lower, Integer upper) -> SimpleIntegerVariableID;
         [[nodiscard]] auto create_pseudovariable(Integer lower, Integer upper, const std::optional<std::string> &) -> SimpleIntegerVariableID;

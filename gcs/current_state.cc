@@ -22,8 +22,6 @@ CurrentState::CurrentState(State & state) :
 {
 }
 
-CurrentState::~CurrentState() = default;
-
 auto CurrentState::operator()(const IntegerVariableID & v) const -> Integer
 {
     return _full_state(v);

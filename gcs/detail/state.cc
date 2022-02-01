@@ -54,10 +54,10 @@ struct State::Imp
 {
     const Problem * const problem;
 
-    list<vector<IntegerVariableState>> integer_variable_states;
-    list<vector<function<auto()->void>>> on_backtracks;
-    map<SimpleIntegerVariableID, HowChanged> changed;
-    vector<Literal> guesses;
+    list<vector<IntegerVariableState>> integer_variable_states{};
+    list<vector<function<auto()->void>>> on_backtracks{};
+    map<SimpleIntegerVariableID, HowChanged> changed{};
+    vector<Literal> guesses{};
 };
 
 State::State(const Problem * const problem) :

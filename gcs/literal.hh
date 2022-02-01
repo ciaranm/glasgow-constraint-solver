@@ -1,7 +1,7 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_LITERAL_HH
-#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_LITERAL_HH 1
+#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_LITERAL_HH
 
 #include <gcs/integer.hh>
 #include <gcs/variable_id.hh>
