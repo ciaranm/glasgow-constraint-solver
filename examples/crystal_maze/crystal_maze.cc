@@ -57,14 +57,14 @@ auto main(int argc, char * argv[]) -> int
         return EXIT_FAILURE;
     }
 
-    if (options_vars.count("help")) {
+    if (options_vars.contains("help")) {
         cout << "Usage: " << argv[0] << " [options] [size]" << endl;
         cout << endl;
         cout << display_options << endl;
         return EXIT_SUCCESS;
     }
 
-    Problem p = options_vars.count("prove") ? Problem{ProofOptions{"crystal_maze.opb", "crystal_maze.veripb"}} : Problem{};
+    Problem p = options_vars.contains("prove") ? Problem{ProofOptions{"crystal_maze.opb", "crystal_maze.veripb"}} : Problem{};
 
     auto xs = p.create_integer_variable_vector(8, 1_i, 8_i, "box");
     p.post(AllDifferent{xs});
@@ -76,9 +76,9 @@ auto main(int argc, char * argv[]) -> int
 
     vector<IntegerVariableID> diffs, abs_diffs;
     for (auto & [x1, x2] : edges) {
-        diffs.push_back(p.create_integer_variable(-7_i, 7_i, "diff" + to_string(x1) + "_" + to_string(x2)));
-        if (options_vars.count("abs")) {
-            abs_diffs.push_back(p.create_integer_variable(2_i, 7_i, "absdiff" + to_string(x1) + "_" + to_string(x2)));
+        diffs.emplace_back(p.create_integer_variable(-7_i, 7_i, "diff" + to_string(x1) + "_" + to_string(x2)));
+        if (options_vars.contains("abs")) {
+            abs_diffs.emplace_back(p.create_integer_variable(2_i, 7_i, "absdiff" + to_string(x1) + "_" + to_string(x2)));
             p.post(Abs{diffs.back(), abs_diffs.back()});
         }
         else {

@@ -6,6 +6,8 @@
 #include <gcs/constraint.hh>
 #include <gcs/variable_id.hh>
 
+#include <vector>
+
 namespace gcs
 {
     class ArrayMinMax : public Constraint

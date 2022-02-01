@@ -57,7 +57,7 @@ auto main(int argc, char * argv[]) -> int
         return EXIT_FAILURE;
     }
 
-    if (options_vars.count("help")) {
+    if (options_vars.contains("help")) {
         cout << "Usage: " << argv[0] << " [options] [size]" << endl;
         cout << endl;
         cout << display_options << endl;
@@ -72,7 +72,7 @@ auto main(int argc, char * argv[]) -> int
     cout << endl;
 
     int size = options_vars["size"].as<int>();
-    Problem p = options_vars.count("prove") ? Problem{ProofOptions{"magic_square.opb", "magic_square.veripb"}} : Problem{};
+    Problem p = options_vars.contains("prove") ? Problem{ProofOptions{"magic_square.opb", "magic_square.veripb"}} : Problem{};
     Integer m{size * (size * size + 1) / 2};
 
     vector<vector<IntegerVariableID>> grid;
@@ -88,7 +88,7 @@ auto main(int argc, char * argv[]) -> int
 
     // As far as I can tell, the statistics reported in the paper only make
     // sense for non-GAC all-different.
-    if (options_vars.count("all-different")) {
+    if (options_vars.contains("all-different")) {
         p.post(AllDifferent{grid_flat});
     }
     else {

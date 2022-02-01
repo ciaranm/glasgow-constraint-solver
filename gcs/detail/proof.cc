@@ -208,7 +208,7 @@ auto Proof::create_integer_variable(SimpleIntegerVariableID id, Integer lower, I
 
 auto Proof::need_gevar(SimpleIntegerVariableID id, Integer v) -> void
 {
-    if (_imp->direct_integer_variables.count(id >= v))
+    if (_imp->direct_integer_variables.contains(id >= v))
         return;
 
     _imp->proof << "# 0\n";
@@ -263,7 +263,7 @@ auto Proof::need_gevar(SimpleIntegerVariableID id, Integer v) -> void
 
 auto Proof::need_direct_encoding_for(SimpleIntegerVariableID id, Integer v) -> void
 {
-    if (_imp->direct_integer_variables.count(id == v))
+    if (_imp->direct_integer_variables.contains(id == v))
         return;
 
     need_gevar(id, v);

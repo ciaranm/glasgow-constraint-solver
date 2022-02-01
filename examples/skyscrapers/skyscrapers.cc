@@ -40,7 +40,7 @@ auto main(int argc, char * argv[]) -> int
 {
     Problem p{ProofOptions{"skyscrapers.opb", "skyscrapers.veripb"}};
 
-    int size;
+    int size = 0;
     vector<vector<int>> predefs;
     vector<int> north, south, east, west;
     bool use_table = false;

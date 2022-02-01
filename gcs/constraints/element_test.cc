@@ -21,7 +21,6 @@ using std::endl;
 using std::function;
 using std::index_sequence;
 using std::make_index_sequence;
-using std::make_optional;
 using std::mt19937;
 using std::pair;
 using std::random_device;

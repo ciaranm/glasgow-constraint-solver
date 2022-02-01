@@ -57,7 +57,7 @@ auto main(int argc, char * argv[]) -> int
         return EXIT_FAILURE;
     }
 
-    if (options_vars.count("help")) {
+    if (options_vars.contains("help")) {
         cout << "Usage: " << argv[0] << " [options] [size]" << endl;
         cout << endl;
         cout << display_options << endl;
@@ -72,7 +72,7 @@ auto main(int argc, char * argv[]) -> int
     cout << endl;
 
     int size = options_vars["size"].as<int>();
-    Problem p = options_vars.count("prove") ? Problem{ProofOptions{"n_queens.opb", "n_queens.veripb"}} : Problem{};
+    Problem p = options_vars.contains("prove") ? Problem{ProofOptions{"n_queens.opb", "n_queens.veripb"}} : Problem{};
 
     auto queens = p.create_integer_variable_vector(size, 0_i, Integer{size - 1}, "queen");
 
@@ -92,7 +92,7 @@ auto main(int argc, char * argv[]) -> int
                     cout << " " << s(v);
                 cout << endl;
 
-                return options_vars.count("all");
+                return options_vars.contains("all");
             },
             .guess = [&](const CurrentState & state, IntegerVariableID var) -> vector<Literal> {
                 return vector<Literal>{var == state.lower_bound(var), var != state.lower_bound(var)};

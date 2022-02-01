@@ -48,14 +48,14 @@ auto main(int argc, char * argv[]) -> int
         return EXIT_FAILURE;
     }
 
-    if (options_vars.count("help")) {
+    if (options_vars.contains("help")) {
         cout << "Usage: " << argv[0] << " [options]" << endl;
         cout << endl;
         cout << display_options << endl;
         return EXIT_SUCCESS;
     }
 
-    Problem p = options_vars.count("prove")
+    Problem p = options_vars.contains("prove")
         ? Problem{ProofOptions{"odd_even_sum.opb", "odd_even_sum.veripb"}}
         : Problem{};
 

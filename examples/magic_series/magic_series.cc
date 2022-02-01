@@ -58,7 +58,7 @@ auto main(int argc, char * argv[]) -> int
         return EXIT_FAILURE;
     }
 
-    if (options_vars.count("help")) {
+    if (options_vars.contains("help")) {
         cout << "Usage: " << argv[0] << " [options] [size]" << endl;
         cout << endl;
         cout << display_options << endl;
@@ -73,7 +73,7 @@ auto main(int argc, char * argv[]) -> int
     cout << endl;
 
     int size = options_vars["size"].as<int>();
-    Problem p = options_vars.count("prove") ? Problem{ProofOptions{"magic_series.opb", "magic_series.veripb"}} : Problem{};
+    Problem p = options_vars.contains("prove") ? Problem{ProofOptions{"magic_series.opb", "magic_series.veripb"}} : Problem{};
 
     auto series = p.create_integer_variable_vector(size, 0_i, Integer{size - 1}, "series");
 
@@ -96,7 +96,7 @@ auto main(int argc, char * argv[]) -> int
 
     // Although this is discussed in the text, it isn't included in the executed
     // benchmarks.
-    if (options_vars.count("extra-constraints")) {
+    if (options_vars.contains("extra-constraints")) {
         Linear sum_mul_s;
         for_each_with_index(series, [&](IntegerVariableID s, auto idx) {
             sum_mul_s.emplace_back(Integer(idx), s);

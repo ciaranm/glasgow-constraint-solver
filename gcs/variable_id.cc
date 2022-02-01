@@ -1,13 +1,12 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
-#include "util/overloaded.hh"
 #include <gcs/variable_id.hh>
+
+#include <util/overloaded.hh>
 
 using namespace gcs;
 
-using std::pair;
 using std::string;
-using std::to_string;
 
 auto gcs::operator+(IntegerVariableID v, Integer o) -> IntegerVariableID
 {

@@ -38,7 +38,7 @@ auto main(int argc, char * argv[]) -> int
             if ("c" == command)
                 getline(inf, command);
             else if ("p" == command) {
-                int n_edges;
+                int n_edges = 0;
                 if (! (inf >> command >> size >> n_edges)) {
                     cerr << "Error reading p line in input" << endl;
                     return EXIT_FAILURE;
@@ -46,7 +46,7 @@ auto main(int argc, char * argv[]) -> int
                 edges.reserve(n_edges);
             }
             else if ("e" == command) {
-                int f, t;
+                int f = 0, t = 0;
                 if (! (inf >> f >> t)) {
                     cerr << "Error reading e line in input" << endl;
                     return EXIT_FAILURE;
