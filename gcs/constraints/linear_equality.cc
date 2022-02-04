@@ -69,7 +69,15 @@ auto LinearEquality::install(Propagators & propagators, const State & initial_st
                     for (auto & [_, v] : coeff_vars)
                         vars.push_back(v);
 
-                    state.add_proof_steps(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) {
+                    state.add_proof_steps(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
+                        proof.emit_proof_comment("building GAC table for linear equality");
+
+                        for (auto & var : vars) {
+                            state.for_each_value(var, [&](Integer val) {
+                                proof.need_proof_variable(var == val);
+                            });
+                        }
+
                         for_each_with_index(permitted, [&](const vector<Integer> & vals, auto idx) {
                             stringstream line;
                             line << "red " << coeff_vars.size() << " ~" << proof.proof_variable(sel == Integer(idx));
@@ -88,10 +96,21 @@ auto LinearEquality::install(Propagators & propagators, const State & initial_st
                             proof.emit_proof_line(line.str());
                         });
 
+                        stringstream line1, line2;
+                        line1 << "red 1 ~tmptrail ";
+                        line2 << "red " << permitted.size() << " tmptrail ";
+
                         stringstream trail;
                         for_each_with_index(permitted, [&](const vector<Integer> &, auto idx) {
                             trail << " 1 " << proof.proof_variable(sel == Integer(idx));
+                            line1 << " 1 " << proof.proof_variable(sel == Integer(idx));
+                            line2 << " 1 " << proof.proof_variable(sel != Integer(idx));
                         });
+
+                        line1 << " >= 1 ; tmptrail 0";
+                        line2 << " >= " << permitted.size() << " ; tmptrail 1";
+                        to_delete.emplace_back(proof.emit_proof_line(line1.str()));
+                        to_delete.emplace_back(proof.emit_proof_line(line2.str()));
 
                         vector<Integer> current;
                         function<void()> search = [&]() {
@@ -104,14 +123,16 @@ auto LinearEquality::install(Propagators & propagators, const State & initial_st
                                 });
                             }
                             stringstream line;
-                            line << "u" << trail.str();
+                            line << "u 1 tmptrail";
                             for_each_with_index(current, [&](Integer val, auto val_idx) {
                                 line << " 1 ~" << proof.proof_variable(coeff_vars[val_idx].second == val);
                             });
                             line << " >= 1 ;";
-                            proof.emit_proof_line(line.str());
+                            to_delete.emplace_back(proof.emit_proof_line(line.str()));
                         };
                         search();
+
+                        proof.emit_proof_line("u" + trail.str() + " >= 1 ;");
                     }});
 
                     data = ExtensionalData{sel, move(vars), move(permitted)};
