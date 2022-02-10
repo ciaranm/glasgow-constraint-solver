@@ -237,22 +237,27 @@ auto Propagators::propagate(State & state, const optional<IntegerVariableID> & o
             state.extract_changed_variables([&](SimpleIntegerVariableID v, HowChanged h) {
                 if (v.index < _imp->iv_triggers.size()) {
                     auto & triggers = _imp->iv_triggers[v.index];
+
+                    // the 0 == (on_queue + is_disabled) thing is to turn two branches into
+                    // one, and is really saying (! on_queue && ! is_disabled). annoyingly,
+                    // this is a hotspot in some benchmarks...
+
                     for (auto & p : triggers.on_change)
-                        if (! on_queue[p] && ! _imp->propagator_is_disabled[p]) {
+                        if (0 == (on_queue[p] + _imp->propagator_is_disabled[p])) {
                             propagation_queue.push_back(p);
                             on_queue[p] = 1;
                         }
 
                     if (! triggers.on_bounds.empty() && h != HowChanged::InteriorValuesChanged)
                         for (auto & p : triggers.on_bounds)
-                            if (! on_queue[p] && ! _imp->propagator_is_disabled[p]) {
+                            if (0 == (on_queue[p] + _imp->propagator_is_disabled[p])) {
                                 propagation_queue.push_back(p);
                                 on_queue[p] = 1;
                             }
 
                     if (! triggers.on_instantiated.empty() && h == HowChanged::Instantiated)
                         for (auto & p : triggers.on_instantiated)
-                            if (! on_queue[p] && ! _imp->propagator_is_disabled[p]) {
+                            if (0 == (on_queue[p] + _imp->propagator_is_disabled[p])) {
                                 propagation_queue.push_back(p);
                                 on_queue[p] = 1;
                             }
