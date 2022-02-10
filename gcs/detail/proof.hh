@@ -4,6 +4,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROOF_HH
 
 #include <gcs/detail/justification.hh>
+#include <gcs/detail/linear_utils.hh>
 #include <gcs/detail/literal_utils.hh>
 #include <gcs/detail/state-fwd.hh>
 #include <gcs/linear.hh>
@@ -59,7 +60,7 @@ namespace gcs
         [[nodiscard]] auto cnf(const Literals &) -> ProofLine;
         [[nodiscard]] auto at_most_one(const Literals &) -> ProofLine;
         [[nodiscard]] auto pseudoboolean_ge(const WeightedLiterals &, Integer) -> ProofLine;
-        auto integer_linear_le(const State &, const Linear & coeff_vars, Integer value, bool equality) -> ProofLine;
+        auto integer_linear_le(const State &, const SimpleLinear & coeff_vars, Integer value, bool equality) -> ProofLine;
 
         auto minimise(IntegerVariableID) -> void;
 

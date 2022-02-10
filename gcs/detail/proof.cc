@@ -381,28 +381,18 @@ auto Proof::pseudoboolean_ge(const WeightedLiterals & lits, Integer val) -> Proo
     return ++_imp->model_constraints;
 }
 
-auto Proof::integer_linear_le(const State &, const Linear & lin, Integer val, bool equality) -> ProofLine
+auto Proof::integer_linear_le(const State &, const SimpleLinear & lin, Integer val, bool equality) -> ProofLine
 {
     _imp->opb << (equality ? "* linear eq" : "* linear le");
 
     for (const auto & [coeff, var] : lin)
-        _imp->opb << " " << coeff << "*" << debug_string(var);
+        _imp->opb << " " << coeff << "*" << debug_string(IntegerVariableID{var});
     _imp->opb << " <= " << val << '\n';
 
     auto output = [&](Integer multiplier) {
         for (const auto & [coeff, var] : lin)
-            overloaded{
-                [&, coeff = coeff](const SimpleIntegerVariableID & v) {
-                    for (auto & [bit_value, bit_name] : _imp->integer_variable_bits.find(v)->second.second)
-                        _imp->opb << (multiplier * coeff * bit_value) << " " << bit_name << " ";
-                },
-                [&](const ConstantIntegerVariableID &) {
-                    throw UnimplementedException{};
-                },
-                [&](const ViewOfIntegerVariableID &) {
-                    throw UnimplementedException{};
-                }}
-                .visit(var);
+            for (auto & [bit_value, bit_name] : _imp->integer_variable_bits.find(var)->second.second)
+                _imp->opb << (multiplier * coeff * bit_value) << " " << bit_name << " ";
 
         _imp->opb << ">= " << (multiplier * val) << " ;\n";
         ++_imp->model_constraints;

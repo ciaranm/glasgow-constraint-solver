@@ -9,13 +9,23 @@
 #include <gcs/linear.hh>
 
 #include <optional>
+#include <variant>
 #include <vector>
 
 namespace gcs
 {
-    auto sanitise_linear(Linear &) -> void;
+    using CoefficientAndSimpleVariable = std::pair<Integer, SimpleIntegerVariableID>;
+    using SimpleLinear = std::vector<CoefficientAndSimpleVariable>;
 
-    auto propagate_linear(const Linear &, Integer, State &, bool equality,
+    using IsPositiveAndSimpleVariable = std::pair<bool, SimpleIntegerVariableID>;
+    using SimpleSum = std::vector<IsPositiveAndSimpleVariable>;
+
+    [[nodiscard]] auto sanitise_linear(const Linear &) -> std::pair<std::variant<SimpleSum, SimpleLinear>, Integer>;
+
+    auto propagate_linear(const SimpleLinear &, Integer, State &, bool equality,
+        std::optional<ProofLine> proof_line) -> std::pair<Inference, PropagatorState>;
+
+    auto propagate_sum(const SimpleSum &, Integer, State &, bool equality,
         std::optional<ProofLine> proof_line) -> std::pair<Inference, PropagatorState>;
 }
 

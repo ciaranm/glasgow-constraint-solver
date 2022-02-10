@@ -126,10 +126,8 @@ auto Propagators::pseudoboolean_ge(const State &, WeightedLiterals && lits, Inte
         return nullopt;
 }
 
-auto Propagators::integer_linear_le(const State & state, Linear && coeff_vars, Integer value, bool equality) -> void
+auto Propagators::integer_linear_le(const State & state, const SimpleLinear & coeff_vars, Integer value, bool equality) -> void
 {
-    sanitise_linear(coeff_vars);
-
     optional<ProofLine> proof_line;
     if (_imp->problem->optional_proof())
         proof_line = _imp->problem->optional_proof()->integer_linear_le(state, coeff_vars, value, equality);
@@ -138,9 +136,30 @@ auto Propagators::integer_linear_le(const State & state, Linear && coeff_vars, I
     for (auto & [_, v] : coeff_vars)
         trigger_on_bounds(v, id);
 
-    _imp->propagation_functions.emplace_back([&, coeff_vars = move(coeff_vars), value = value,
+    _imp->propagation_functions.emplace_back([&, coeff_vars = coeff_vars, value = value,
                                                  equality = equality, proof_line = proof_line](State & state) {
         return propagate_linear(coeff_vars, value, state, equality, proof_line);
+    });
+    _imp->propagator_is_disabled.push_back(0);
+}
+
+auto Propagators::sum_le(const State & state, const SimpleSum & sum_vars, Integer value, bool equality) -> void
+{
+    optional<ProofLine> proof_line;
+    if (_imp->problem->optional_proof()) {
+        SimpleLinear coeff_vars;
+        for (const auto & [c, v] : sum_vars)
+            coeff_vars.emplace_back(c ? 1_i : -1_i, v);
+        proof_line = _imp->problem->optional_proof()->integer_linear_le(state, coeff_vars, value, equality);
+    }
+
+    int id = _imp->propagation_functions.size();
+    for (auto & [_, v] : sum_vars)
+        trigger_on_bounds(v, id);
+
+    _imp->propagation_functions.emplace_back([&, sum_vars = sum_vars, value = value,
+                                                 equality = equality, proof_line = proof_line](State & state) {
+        return propagate_sum(sum_vars, value, state, equality, proof_line);
     });
     _imp->propagator_is_disabled.push_back(0);
 }

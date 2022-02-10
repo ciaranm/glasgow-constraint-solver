@@ -3,6 +3,7 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROPAGATORS_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROPAGATORS_HH
 
+#include <gcs/detail/linear_utils.hh>
 #include <gcs/detail/literal_utils.hh>
 #include <gcs/detail/propagators-fwd.hh>
 #include <gcs/detail/state.hh>
@@ -52,7 +53,8 @@ namespace gcs
         auto cnf(const State &, Literals && lits, bool propagating) -> std::optional<ProofLine>;
         auto at_most_one(const State &, Literals && lits, bool propagating) -> std::optional<ProofLine>;
         auto pseudoboolean_ge(const State &, WeightedLiterals && lits, Integer, bool propagating) -> std::optional<ProofLine>;
-        auto integer_linear_le(const State &, Linear && coeff_vars, Integer value, bool equality) -> void;
+        auto integer_linear_le(const State &, const SimpleLinear & coeff_vars, Integer value, bool equality) -> void;
+        auto sum_le(const State &, const SimpleSum & coeff_vars, Integer value, bool equality) -> void;
         auto table(const State &, std::vector<IntegerVariableID> &&, std::vector<std::vector<Integer>> &&, const std::string & name) -> void;
         auto propagator(const State &, PropagationFunction &&, const Triggers & trigger_vars, const std::string & name) -> void;
 
