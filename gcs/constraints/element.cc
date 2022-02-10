@@ -26,6 +26,7 @@ using std::optional;
 using std::pair;
 using std::stringstream;
 using std::vector;
+using std::visit;
 
 Element::Element(IntegerVariableID var, IntegerVariableID idx_var, const vector<IntegerVariableID> & vals) :
     _var(var),
@@ -224,46 +225,49 @@ auto Element2DConstantArray::install(Propagators & propagators, const State & in
     Triggers bounds_triggers{
         .on_bounds = {_var}};
 
-    propagators.propagator(
-        initial_state, [idx1 = _idx1, idx2 = _idx2, var = _var, vals = _vals](State & state) -> pair<Inference, PropagatorState> {
-            auto bounds = state.bounds(var);
-            auto inference = Inference::NoChange;
+    visit([&](auto & _idx1, auto & _idx2) {
+        propagators.propagator(
+            initial_state, [idx1 = _idx1, idx2 = _idx2, var = _var, vals = _vals](State & state) -> pair<Inference, PropagatorState> {
+                auto bounds = state.bounds(var);
+                auto inference = Inference::NoChange;
 
-            state.for_each_value_while(idx1, [&](Integer i1) -> bool {
-                bool suitable_idx2_found = false;
-                state.for_each_value_while(idx2, [&](Integer i2) -> bool {
-                    auto this_val = vals.at(i1.raw_value).at(i2.raw_value);
-                    if (this_val >= bounds.first && this_val <= bounds.second) {
-                        suitable_idx2_found = true;
-                        return false;
-                    }
-                    return true;
-                });
-                if (! suitable_idx2_found)
-                    increase_inference_to(inference, state.infer(idx1 != i1, JustifyUsingRUP{}));
-
-                return inference != Inference::Contradiction;
-            });
-
-            state.for_each_value_while(idx2, [&](Integer i2) -> bool {
-                bool suitable_idx1_found = false;
                 state.for_each_value_while(idx1, [&](Integer i1) -> bool {
-                    auto this_val = vals.at(i1.raw_value).at(i2.raw_value);
-                    if (this_val >= bounds.first && this_val <= bounds.second) {
-                        suitable_idx1_found = true;
-                        return false;
-                    }
-                    return true;
+                    bool suitable_idx2_found = false;
+                    state.for_each_value_while_immutable(idx2, [&](Integer i2) -> bool {
+                        auto this_val = vals.at(i1.raw_value).at(i2.raw_value);
+                        if (this_val >= bounds.first && this_val <= bounds.second) {
+                            suitable_idx2_found = true;
+                            return false;
+                        }
+                        return true;
+                    });
+                    if (! suitable_idx2_found)
+                        increase_inference_to(inference, state.infer(idx1 != i1, JustifyUsingRUP{}));
+
+                    return inference != Inference::Contradiction;
                 });
-                if (! suitable_idx1_found)
-                    increase_inference_to(inference, state.infer(idx2 != i2, JustifyUsingRUP{}));
 
-                return inference != Inference::Contradiction;
-            });
+                state.for_each_value_while(idx2, [&](Integer i2) -> bool {
+                    bool suitable_idx1_found = false;
+                    state.for_each_value_while_immutable(idx1, [&](Integer i1) -> bool {
+                        auto this_val = vals.at(i1.raw_value).at(i2.raw_value);
+                        if (this_val >= bounds.first && this_val <= bounds.second) {
+                            suitable_idx1_found = true;
+                            return false;
+                        }
+                        return true;
+                    });
+                    if (! suitable_idx1_found)
+                        increase_inference_to(inference, state.infer(idx2 != i2, JustifyUsingRUP{}));
 
-            return pair{inference, PropagatorState::Enable};
-        },
-        index_triggers, "element 2d const array var bounds");
+                    return inference != Inference::Contradiction;
+                });
+
+                return pair{inference, PropagatorState::Enable};
+            },
+            index_triggers, "element 2d const array var bounds");
+    },
+        _idx1, _idx2);
 }
 
 auto Element2DConstantArray::describe_for_proof() -> std::string
