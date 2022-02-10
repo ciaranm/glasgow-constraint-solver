@@ -273,8 +273,8 @@ auto Propagators::propagate(State & state, const optional<IntegerVariableID> & o
         if (propagation_queue.empty())
             break;
 
-        int propagator_id = *propagation_queue.begin();
-        propagation_queue.erase(propagation_queue.begin());
+        int propagator_id = propagation_queue.front();
+        propagation_queue.pop_front();
         on_queue[propagator_id] = 0;
         auto [inference, propagator_state] = _imp->propagation_functions[propagator_id](state);
         ++_imp->total_propagations;
