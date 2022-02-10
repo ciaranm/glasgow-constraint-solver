@@ -51,10 +51,6 @@ namespace gcs
 
     using IntegerVariableID = std::variant<SimpleIntegerVariableID, ViewOfIntegerVariableID, ConstantIntegerVariableID>;
 
-    // The following is badly named... Maybe a good name will become evident once the variants
-    // gain more items?
-    using DirectIntegerVariableID = std::variant<SimpleIntegerVariableID, ConstantIntegerVariableID>;
-
     [[nodiscard]] inline auto constant_variable(const Integer x) -> IntegerVariableID
     {
         return ConstantIntegerVariableID{x};

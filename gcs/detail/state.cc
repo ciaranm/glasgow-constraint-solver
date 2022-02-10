@@ -112,40 +112,46 @@ auto State::assign_to_state_of(const DirectIntegerVariableID i) -> IntegerVariab
         .visit(i);
 }
 
-auto State::state_of(const DirectIntegerVariableID i, IntegerVariableState & space) -> IntegerVariableState &
-{
-    return overloaded{
-        [&](const SimpleIntegerVariableID & v) -> IntegerVariableState & {
-            return _imp->integer_variable_states.back()[v.index];
-        },
-        [&](const ConstantIntegerVariableID & v) -> IntegerVariableState & {
-            space = IntegerVariableConstantState{v.const_value};
-            return space;
-        }}
-        .visit(i);
-}
-
-auto State::state_of(const DirectIntegerVariableID i, IntegerVariableState & space) const -> const IntegerVariableState &
-{
-    return overloaded{
-        [&](const SimpleIntegerVariableID & v) -> const IntegerVariableState & {
-            return _imp->integer_variable_states.back()[v.index];
-        },
-        [&](const ConstantIntegerVariableID & v) -> const IntegerVariableState & {
-            space = IntegerVariableConstantState{v.const_value};
-            return space;
-        }}
-        .visit(i);
-}
-
-auto State::state_of(const SimpleIntegerVariableID v) const -> const IntegerVariableState &
+auto State::state_of(const SimpleIntegerVariableID & v, IntegerVariableState &) -> IntegerVariableState &
 {
     return _imp->integer_variable_states.back()[v.index];
 }
 
-auto State::state_of(const SimpleIntegerVariableID v) -> IntegerVariableState &
+auto State::state_of(const ConstantIntegerVariableID & v, IntegerVariableState & space) -> IntegerVariableState &
+{
+    space = IntegerVariableConstantState{v.const_value};
+    return space;
+}
+
+auto State::state_of(const SimpleIntegerVariableID & v, IntegerVariableState &) const -> const IntegerVariableState &
 {
     return _imp->integer_variable_states.back()[v.index];
+}
+
+auto State::state_of(const ConstantIntegerVariableID & v, IntegerVariableState & space) const -> const IntegerVariableState &
+{
+    space = IntegerVariableConstantState{v.const_value};
+    return space;
+}
+
+auto State::state_of(const SimpleIntegerVariableID & v) -> IntegerVariableState &
+{
+    return _imp->integer_variable_states.back()[v.index];
+}
+
+auto State::state_of(const SimpleIntegerVariableID & v) const -> const IntegerVariableState &
+{
+    return _imp->integer_variable_states.back()[v.index];
+}
+
+auto State::state_of(const DirectIntegerVariableID & v, IntegerVariableState & space) -> IntegerVariableState &
+{
+    return visit([&] (const auto & v) -> IntegerVariableState & { return state_of(v, space); }, v);
+}
+
+auto State::state_of(const DirectIntegerVariableID & v, IntegerVariableState & space) const -> const IntegerVariableState &
+{
+    return visit([&] (const auto & v) -> const IntegerVariableState & { return state_of(v, space); }, v);
 }
 
 auto State::infer_literal_from_direct_integer_variable(
@@ -527,7 +533,8 @@ auto State::upper_bound(const IntegerVariableID var) const -> Integer
         offset;
 }
 
-auto State::bounds(const IntegerVariableID var) const -> pair<Integer, Integer>
+template <IntegerVariableIDLike VarType_>
+auto State::bounds(const VarType_ & var) const -> pair<Integer, Integer>
 {
     auto [actual_var, offset] = underlying_direct_variable_and_offset(var);
     IntegerVariableState space = IntegerVariableConstantState{0_i};
@@ -540,19 +547,6 @@ auto State::bounds(const IntegerVariableID var) const -> pair<Integer, Integer>
         [](const IntegerVariableSetState & v) { return pair{*v.values->begin(), *v.values->rbegin()}; }}
                       .visit(state_of(actual_var, space));
     return pair{result.first + offset, result.second + offset};
-}
-
-auto State::bounds(const SimpleIntegerVariableID var) const -> pair<Integer, Integer>
-{
-    auto result = overloaded{
-        [](const IntegerVariableRangeState & v) { return pair{v.lower, v.upper}; },
-        [](const IntegerVariableConstantState & v) { return pair{v.value, v.value}; },
-        [](const IntegerVariableSmallSetState & v) { return pair{
-                                                         v.lower + Integer{v.bits.countr_zero()},
-                                                         v.lower + Integer{Bits::number_of_bits} - Integer{v.bits.countl_zero()} - 1_i}; },
-        [](const IntegerVariableSetState & v) { return pair{*v.values->begin(), *v.values->rbegin()}; }}
-                      .visit(state_of(var));
-    return pair{result.first, result.second};
 }
 
 auto State::in_domain(const IntegerVariableID var, const Integer val) const -> bool
@@ -585,41 +579,8 @@ auto State::domain_has_holes(const IntegerVariableID var) const -> bool
         .visit(state_of(actual_var, space));
 }
 
-auto State::optional_single_value(const SimpleIntegerVariableID var) const -> optional<Integer>
-{
-    auto result = overloaded{
-        [](const IntegerVariableRangeState & v) -> optional<Integer> {
-            if (v.lower == v.upper)
-                return make_optional(v.lower);
-            else
-                return nullopt;
-        },
-        [](const IntegerVariableConstantState & v) -> optional<Integer> {
-            return make_optional(v.value);
-        },
-        [](const IntegerVariableSmallSetState & v) -> optional<Integer> {
-            if (v.bits.has_single_bit())
-                return make_optional(v.lower + Integer{v.bits.countr_zero()});
-            else
-                return nullopt;
-        },
-        [](const IntegerVariableSetState & v) -> optional<Integer> {
-            if (1 == v.values->size())
-                return make_optional(*v.values->begin());
-            else
-                return nullopt;
-        }}.visit(state_of(var));
-
-    return result;
-}
-
-auto State::optional_single_value(const ViewOfIntegerVariableID var) const -> optional<Integer>
-{
-    auto result = optional_single_value(var.actual_variable);
-    return result ? *result + var.offset : result;
-}
-
-auto State::optional_single_value(const IntegerVariableID var) const -> optional<Integer>
+template <IntegerVariableIDLike VarType_>
+auto State::optional_single_value(const VarType_ & var) const -> optional<Integer>
 {
     auto [actual_var, offset] = underlying_direct_variable_and_offset(var);
     IntegerVariableState space = IntegerVariableConstantState{0_i};
@@ -661,7 +622,8 @@ auto State::has_single_value(const IntegerVariableID var) const -> bool
         .visit(state_of(actual_var, space));
 }
 
-auto State::domain_size(const IntegerVariableID var) const -> Integer
+template <IntegerVariableIDLike VarType_>
+auto State::domain_size(const VarType_ & var) const -> Integer
 {
     auto [actual_var, _] = underlying_direct_variable_and_offset(var);
     IntegerVariableState space = IntegerVariableConstantState{0_i};
@@ -673,17 +635,8 @@ auto State::domain_size(const IntegerVariableID var) const -> Integer
         .visit(state_of(actual_var, space));
 }
 
-auto State::domain_size(const SimpleIntegerVariableID var) const -> Integer
-{
-    return overloaded{
-        [](const IntegerVariableConstantState &) { return Integer{1}; },
-        [](const IntegerVariableRangeState & r) { return r.upper - r.lower + Integer{1}; },
-        [](const IntegerVariableSmallSetState & s) { return Integer{s.bits.popcount()}; },
-        [](const IntegerVariableSetState & s) { return Integer(s.values->size()); }}
-        .visit(state_of(var));
-}
-
-auto State::for_each_value(const IntegerVariableID var, function<auto(Integer)->void> f) const -> void
+template <IntegerVariableIDLike VarType_>
+auto State::for_each_value(const VarType_ & var, function<auto(Integer)->void> f) const -> void
 {
     for_each_value_while(var, [&](Integer v) -> bool {
         f(v);
@@ -691,7 +644,8 @@ auto State::for_each_value(const IntegerVariableID var, function<auto(Integer)->
     });
 }
 
-auto State::for_each_value_while(const IntegerVariableID var, function<auto(Integer)->bool> f) const -> void
+template <IntegerVariableIDLike VarType_>
+auto State::for_each_value_while(const VarType_ & var, function<auto(Integer)->bool> f) const -> void
 {
     auto [actual_var, offset] = underlying_direct_variable_and_offset(var);
 
@@ -729,7 +683,8 @@ auto State::for_each_value_while(const IntegerVariableID var, function<auto(Inte
         .visit(var_copy);
 }
 
-auto State::for_each_value_while_immutable(const IntegerVariableID var, function<auto(Integer)->bool> f) const -> void
+template <IntegerVariableIDLike VarType_>
+auto State::for_each_value_while_immutable(const VarType_ & var, function<auto(Integer)->bool> f) const -> void
 {
     auto [actual_var, offset] = underlying_direct_variable_and_offset(var);
 
@@ -764,72 +719,6 @@ auto State::for_each_value_while_immutable(const IntegerVariableID var, function
                     break;
         }}
         .visit(var_ref);
-}
-
-auto State::for_each_value_while(const SimpleIntegerVariableID var, function<auto(Integer)->bool> f) const -> void
-{
-    IntegerVariableState var_copy = state_of(var);
-
-    overloaded{
-        [&](const IntegerVariableConstantState & c) {
-            f(c.value);
-        },
-        [&](const IntegerVariableRangeState & r) {
-            for (auto v = r.lower; v <= r.upper; ++v)
-                if (! f(v))
-                    break;
-        },
-        [&](const IntegerVariableSmallSetState & r) {
-            for (unsigned w = 0; w < Bits::n_words; ++w) {
-                auto b = r.bits.data[w];
-                while (true) {
-                    int z = countr_zero(b);
-                    if (z == Bits::bits_per_word)
-                        break;
-                    b &= ~(Bits::BitWord{1} << z);
-                    if (! f(r.lower + Integer{w * Bits::bits_per_word} + Integer{z}))
-                        break;
-                }
-            }
-        },
-        [&](const IntegerVariableSetState & s) {
-            for (const auto & v : *s.values)
-                if (! f(v))
-                    break;
-        }}
-        .visit(var_copy);
-}
-
-auto State::for_each_value_while_immutable(const SimpleIntegerVariableID var, function<auto(Integer)->bool> f) const -> void
-{
-    overloaded{
-        [&](const IntegerVariableConstantState & c) {
-            f(c.value);
-        },
-        [&](const IntegerVariableRangeState & r) {
-            for (auto v = r.lower; v <= r.upper; ++v)
-                if (! f(v))
-                    break;
-        },
-        [&](const IntegerVariableSmallSetState & r) {
-            for (unsigned w = 0; w < Bits::n_words; ++w) {
-                auto b = r.bits.data[w];
-                while (true) {
-                    int z = countr_zero(b);
-                    if (z == Bits::bits_per_word)
-                        break;
-                    b &= ~(Bits::BitWord{1} << z);
-                    if (! f(r.lower + Integer{w * Bits::bits_per_word} + Integer{z}))
-                        break;
-                }
-            }
-        },
-        [&](const IntegerVariableSetState & s) {
-            for (const auto & v : *s.values)
-                if (! f(v))
-                    break;
-        }}
-        .visit(state_of(var));
 }
 
 auto State::operator()(const IntegerVariableID & i) const -> Integer
@@ -997,5 +886,34 @@ auto State::on_backtrack(std::function<auto()->void> f) -> void
 auto State::current() -> CurrentState
 {
     return CurrentState{*this};
+}
+
+namespace gcs
+{
+    template auto State::optional_single_value(const IntegerVariableID &) const -> optional<Integer>;
+    template auto State::optional_single_value(const SimpleIntegerVariableID &) const -> optional<Integer>;
+    template auto State::optional_single_value(const ViewOfIntegerVariableID &) const -> optional<Integer>;
+    template auto State::optional_single_value(const ConstantIntegerVariableID &) const -> optional<Integer>;
+
+    template auto State::bounds(const IntegerVariableID & var) const -> pair<Integer, Integer>;
+    template auto State::bounds(const SimpleIntegerVariableID & var) const -> pair<Integer, Integer>;
+
+    template auto State::domain_size(const IntegerVariableID &) const -> Integer;
+    template auto State::domain_size(const SimpleIntegerVariableID &) const -> Integer;
+
+    template auto State::for_each_value(const IntegerVariableID &, std::function<auto(Integer)->void>) const -> void;
+    template auto State::for_each_value(const SimpleIntegerVariableID &, std::function<auto(Integer)->void>) const -> void;
+    template auto State::for_each_value(const ViewOfIntegerVariableID &, std::function<auto(Integer)->void>) const -> void;
+    template auto State::for_each_value(const ConstantIntegerVariableID &, std::function<auto(Integer)->void>) const -> void;
+
+    template auto State::for_each_value_while(const IntegerVariableID &, std::function<auto(Integer)->bool>) const -> void;
+    template auto State::for_each_value_while(const SimpleIntegerVariableID &, std::function<auto(Integer)->bool>) const -> void;
+    template auto State::for_each_value_while(const ViewOfIntegerVariableID &, std::function<auto(Integer)->bool>) const -> void;
+    template auto State::for_each_value_while(const ConstantIntegerVariableID &, std::function<auto(Integer)->bool>) const -> void;
+
+    template auto State::for_each_value_while_immutable(const IntegerVariableID &, std::function<auto(Integer)->bool>) const -> void;
+    template auto State::for_each_value_while_immutable(const SimpleIntegerVariableID &, std::function<auto(Integer)->bool>) const -> void;
+    template auto State::for_each_value_while_immutable(const ViewOfIntegerVariableID &, std::function<auto(Integer)->bool>) const -> void;
+    template auto State::for_each_value_while_immutable(const ConstantIntegerVariableID &, std::function<auto(Integer)->bool>) const -> void;
 }
 
