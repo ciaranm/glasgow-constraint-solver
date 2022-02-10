@@ -53,6 +53,11 @@ namespace gcs
         [[nodiscard]] auto state_of(const DirectIntegerVariableID, IntegerVariableState & space) -> IntegerVariableState &;
         [[nodiscard]] auto state_of(const DirectIntegerVariableID, IntegerVariableState & space) const -> const IntegerVariableState &;
 
+        [[nodiscard]] auto state_of(const SimpleIntegerVariableID) -> IntegerVariableState &;
+        [[nodiscard]] auto state_of(const SimpleIntegerVariableID) const -> const IntegerVariableState &;
+        [[nodiscard]] auto state_of(const ViewOfIntegerVariableID) -> IntegerVariableState &;
+        [[nodiscard]] auto state_of(const ViewOfIntegerVariableID) const -> const IntegerVariableState &;
+
         auto remember_change(const SimpleIntegerVariableID, HowChanged) -> void;
 
     public:
@@ -69,6 +74,8 @@ namespace gcs
         [[nodiscard]] auto create_pseudovariable(Integer lower, Integer upper, const std::optional<std::string> &) -> SimpleIntegerVariableID;
 
         [[nodiscard]] auto infer(const Literal & lit, Justification why) -> Inference;
+        [[nodiscard]] auto infer(const LiteralFromIntegerVariable & lit, Justification why) -> Inference;
+
         [[nodiscard]] auto infer_all(const std::vector<Literal> & lit, Justification why) -> Inference;
         auto add_proof_steps(JustifyExplicitly why) -> void;
         [[nodiscard]] auto want_proofs() const -> bool;
@@ -79,12 +86,19 @@ namespace gcs
         [[nodiscard]] auto lower_bound(const IntegerVariableID) const -> Integer;
         [[nodiscard]] auto upper_bound(const IntegerVariableID) const -> Integer;
         [[nodiscard]] auto bounds(const IntegerVariableID) const -> std::pair<Integer, Integer>;
+        [[nodiscard]] auto bounds(const SimpleIntegerVariableID) const -> std::pair<Integer, Integer>;
         [[nodiscard]] auto in_domain(const IntegerVariableID, Integer) const -> bool;
+        [[nodiscard]] auto optional_single_value(const SimpleIntegerVariableID) const -> std::optional<Integer>;
+        [[nodiscard]] auto optional_single_value(const ViewOfIntegerVariableID) const -> std::optional<Integer>;
         [[nodiscard]] auto optional_single_value(const IntegerVariableID) const -> std::optional<Integer>;
         [[nodiscard]] auto has_single_value(const IntegerVariableID) const -> bool;
         [[nodiscard]] auto domain_size(const IntegerVariableID) const -> Integer;
+        [[nodiscard]] auto domain_size(const SimpleIntegerVariableID) const -> Integer;
         auto for_each_value(const IntegerVariableID, std::function<auto(Integer)->void>) const -> void;
         auto for_each_value_while(const IntegerVariableID, std::function<auto(Integer)->bool>) const -> void;
+        auto for_each_value_while_immutable(const IntegerVariableID, std::function<auto(Integer)->bool>) const -> void;
+        auto for_each_value_while(const SimpleIntegerVariableID, std::function<auto(Integer)->bool>) const -> void;
+        auto for_each_value_while_immutable(const SimpleIntegerVariableID, std::function<auto(Integer)->bool>) const -> void;
         [[nodiscard]] auto domain_has_holes(const IntegerVariableID) const -> bool;
 
         [[nodiscard]] auto test_literal(const Literal &) const -> LiteralIs;

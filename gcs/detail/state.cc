@@ -10,6 +10,7 @@
 #include "util/overloaded.hh"
 
 #include <algorithm>
+#include <bit>
 #include <list>
 #include <map>
 #include <string>
@@ -19,6 +20,7 @@
 
 using namespace gcs;
 
+using std::countr_zero;
 using std::decay_t;
 using std::function;
 using std::get;
@@ -136,6 +138,16 @@ auto State::state_of(const DirectIntegerVariableID i, IntegerVariableState & spa
         .visit(i);
 }
 
+auto State::state_of(const SimpleIntegerVariableID v) const -> const IntegerVariableState &
+{
+    return _imp->integer_variable_states.back()[v.index];
+}
+
+auto State::state_of(const SimpleIntegerVariableID v) -> IntegerVariableState &
+{
+    return _imp->integer_variable_states.back()[v.index];
+}
+
 auto State::infer_literal_from_direct_integer_variable(
     const DirectIntegerVariableID var,
     LiteralFromIntegerVariable::Operator state,
@@ -158,18 +170,19 @@ auto State::infer_literal_from_direct_integer_variable(
         }
 
     case NotEqual:
-        // If the value isn't in the domain, we don't need to do anything.
-        // Otherwise...
-        if (! in_domain(generalise<IntegerVariableID>(var), value))
-            return pair{Inference::NoChange, HowChanged::Dummy};
-
         return overloaded{
-            [&](IntegerVariableConstantState &) -> pair<Inference, HowChanged> {
-                // Constant equal to the value, problem!
-                return pair{Inference::Contradiction, HowChanged::Dummy};
+            [&](IntegerVariableConstantState & cvar) -> pair<Inference, HowChanged> {
+                // Constant equal to the value, potential problem!
+                return cvar.value != value
+                    ? pair{Inference::NoChange, HowChanged::Dummy}
+                    : pair{Inference::Contradiction, HowChanged::Dummy};
             },
             [&](IntegerVariableRangeState & rvar) -> pair<Inference, HowChanged> {
-                if (rvar.lower == rvar.upper) {
+                if (value < rvar.lower || value > rvar.upper) {
+                    // not in the domain, no problem
+                    return pair{Inference::NoChange, HowChanged::Dummy};
+                }
+                else if (rvar.lower == rvar.upper) {
                     // Constant equal to the value, problem!
                     return pair{Inference::Contradiction, HowChanged::Dummy};
                 }
@@ -213,6 +226,15 @@ auto State::infer_literal_from_direct_integer_variable(
                 }
             },
             [&](IntegerVariableSmallSetState & svar) -> pair<Inference, HowChanged> {
+                if (value < svar.lower || value > (svar.lower + Integer{Bits::number_of_bits - 1})) {
+                    // out of bounds, not in domain
+                    return pair{Inference::NoChange, HowChanged::Dummy};
+                }
+                else if (! svar.bits.test((value - svar.lower).raw_value)) {
+                    // not in domain, no problem
+                    return pair{Inference::NoChange, HowChanged::Dummy};
+                }
+
                 // Knock out the value
                 bool is_bound = (value == svar.lower + Integer{svar.bits.countr_zero()}) ||
                     (value == svar.lower + Integer{Bits::number_of_bits} - Integer{svar.bits.countl_zero()} - 1_i);
@@ -229,6 +251,9 @@ auto State::infer_literal_from_direct_integer_variable(
                     return pair{Inference::Change, HowChanged::InteriorValuesChanged};
             },
             [&](IntegerVariableSetState & svar) -> pair<Inference, HowChanged> {
+                if (! svar.values->contains(value))
+                    return pair{Inference::NoChange, HowChanged::Dummy};
+
                 // Knock out the value
                 bool is_bound = (value == *svar.values->begin() || value == *svar.values->rbegin());
                 if (1 == svar.values->size())
@@ -409,6 +434,29 @@ auto State::infer(const Literal & lit, Justification just) -> Inference
         .visit(lit);
 }
 
+auto State::infer(const LiteralFromIntegerVariable & ilit, Justification just) -> Inference
+{
+    auto [actual_var, offset] = underlying_direct_variable_and_offset(ilit.var);
+    auto [inference, how_changed] = infer_literal_from_direct_integer_variable(actual_var, ilit.op, ilit.value - offset);
+    switch (inference) {
+    case Inference::NoChange:
+        return Inference::NoChange;
+
+    case Inference::Contradiction:
+        if (_imp->problem->optional_proof())
+            _imp->problem->optional_proof()->infer(*this, FalseLiteral{}, just);
+        return Inference::Contradiction;
+
+    case Inference::Change:
+        remember_change(get<SimpleIntegerVariableID>(actual_var), how_changed);
+        if (_imp->problem->optional_proof())
+            _imp->problem->optional_proof()->infer(*this, ilit, just);
+        return Inference::Change;
+    }
+
+    throw NonExhaustiveSwitch{};
+}
+
 auto State::infer_all(const vector<Literal> & lits, Justification just) -> Inference
 {
     Inference result = Inference::NoChange;
@@ -489,6 +537,19 @@ auto State::bounds(const IntegerVariableID var) const -> pair<Integer, Integer>
     return pair{result.first + offset, result.second + offset};
 }
 
+auto State::bounds(const SimpleIntegerVariableID var) const -> pair<Integer, Integer>
+{
+    auto result = overloaded{
+        [](const IntegerVariableRangeState & v) { return pair{v.lower, v.upper}; },
+        [](const IntegerVariableConstantState & v) { return pair{v.value, v.value}; },
+        [](const IntegerVariableSmallSetState & v) { return pair{
+                                                         v.lower + Integer{v.bits.countr_zero()},
+                                                         v.lower + Integer{Bits::number_of_bits} - Integer{v.bits.countl_zero()} - 1_i}; },
+        [](const IntegerVariableSetState & v) { return pair{*v.values->begin(), *v.values->rbegin()}; }}
+                      .visit(state_of(var));
+    return pair{result.first, result.second};
+}
+
 auto State::in_domain(const IntegerVariableID var, const Integer val) const -> bool
 {
     auto [actual_var, offset] = underlying_direct_variable_and_offset(var);
@@ -517,6 +578,40 @@ auto State::domain_has_holes(const IntegerVariableID var) const -> bool
         [](const IntegerVariableSmallSetState &) { return true; },
         [](const IntegerVariableSetState &) { return true; }}
         .visit(state_of(actual_var, space));
+}
+
+auto State::optional_single_value(const SimpleIntegerVariableID var) const -> optional<Integer>
+{
+    auto result = overloaded{
+        [](const IntegerVariableRangeState & v) -> optional<Integer> {
+            if (v.lower == v.upper)
+                return make_optional(v.lower);
+            else
+                return nullopt;
+        },
+        [](const IntegerVariableConstantState & v) -> optional<Integer> {
+            return make_optional(v.value);
+        },
+        [](const IntegerVariableSmallSetState & v) -> optional<Integer> {
+            if (v.bits.has_single_bit())
+                return make_optional(v.lower + Integer{v.bits.countr_zero()});
+            else
+                return nullopt;
+        },
+        [](const IntegerVariableSetState & v) -> optional<Integer> {
+            if (1 == v.values->size())
+                return make_optional(*v.values->begin());
+            else
+                return nullopt;
+        }}.visit(state_of(var));
+
+    return result;
+}
+
+auto State::optional_single_value(const ViewOfIntegerVariableID var) const -> optional<Integer>
+{
+    auto result = optional_single_value(var.actual_variable);
+    return result ? *result + var.offset : result;
 }
 
 auto State::optional_single_value(const IntegerVariableID var) const -> optional<Integer>
@@ -573,6 +668,16 @@ auto State::domain_size(const IntegerVariableID var) const -> Integer
         .visit(state_of(actual_var, space));
 }
 
+auto State::domain_size(const SimpleIntegerVariableID var) const -> Integer
+{
+    return overloaded{
+        [](const IntegerVariableConstantState &) { return Integer{1}; },
+        [](const IntegerVariableRangeState & r) { return r.upper - r.lower + Integer{1}; },
+        [](const IntegerVariableSmallSetState & s) { return Integer{s.bits.popcount()}; },
+        [](const IntegerVariableSetState & s) { return Integer(s.values->size()); }}
+        .visit(state_of(var));
+}
+
 auto State::for_each_value(const IntegerVariableID var, function<auto(Integer)->void> f) const -> void
 {
     for_each_value_while(var, [&](Integer v) -> bool {
@@ -599,10 +704,17 @@ auto State::for_each_value_while(const IntegerVariableID var, function<auto(Inte
                     break;
         },
         [&, offset = offset](const IntegerVariableSmallSetState & r) {
-            for (unsigned b = 0; b < Bits::number_of_bits; ++b)
-                if (r.bits.test(b))
-                    if (! f(r.lower + Integer{b} + offset))
+            for (unsigned w = 0; w < Bits::n_words; ++w) {
+                auto b = r.bits.data[w];
+                while (true) {
+                    int z = countr_zero(b);
+                    if (z == Bits::bits_per_word)
                         break;
+                    b &= ~(Bits::BitWord{1} << z);
+                    if (! f(r.lower + Integer{w * Bits::bits_per_word} + Integer{z} + offset))
+                        break;
+                }
+            }
         },
         [&, offset = offset](const IntegerVariableSetState & s) {
             for (const auto & v : *s.values)
@@ -610,6 +722,109 @@ auto State::for_each_value_while(const IntegerVariableID var, function<auto(Inte
                     break;
         }}
         .visit(var_copy);
+}
+
+auto State::for_each_value_while_immutable(const IntegerVariableID var, function<auto(Integer)->bool> f) const -> void
+{
+    auto [actual_var, offset] = underlying_direct_variable_and_offset(var);
+
+    IntegerVariableState space = IntegerVariableConstantState{0_i};
+    const IntegerVariableState & var_ref = state_of(actual_var, space);
+
+    overloaded{
+        [&, offset = offset](const IntegerVariableConstantState & c) {
+            f(c.value + offset);
+        },
+        [&, offset = offset](const IntegerVariableRangeState & r) {
+            for (auto v = r.lower; v <= r.upper; ++v)
+                if (! f(v + offset))
+                    break;
+        },
+        [&, offset = offset](const IntegerVariableSmallSetState & r) {
+            for (unsigned w = 0; w < Bits::n_words; ++w) {
+                auto b = r.bits.data[w];
+                while (true) {
+                    int z = countr_zero(b);
+                    if (z == Bits::bits_per_word)
+                        break;
+                    b &= ~(Bits::BitWord{1} << z);
+                    if (! f(r.lower + Integer{w * Bits::bits_per_word} + Integer{z} + offset))
+                        break;
+                }
+            }
+        },
+        [&, offset = offset](const IntegerVariableSetState & s) {
+            for (const auto & v : *s.values)
+                if (! f(v + offset))
+                    break;
+        }}
+        .visit(var_ref);
+}
+
+auto State::for_each_value_while(const SimpleIntegerVariableID var, function<auto(Integer)->bool> f) const -> void
+{
+    IntegerVariableState var_copy = state_of(var);
+
+    overloaded{
+        [&](const IntegerVariableConstantState & c) {
+            f(c.value);
+        },
+        [&](const IntegerVariableRangeState & r) {
+            for (auto v = r.lower; v <= r.upper; ++v)
+                if (! f(v))
+                    break;
+        },
+        [&](const IntegerVariableSmallSetState & r) {
+            for (unsigned w = 0; w < Bits::n_words; ++w) {
+                auto b = r.bits.data[w];
+                while (true) {
+                    int z = countr_zero(b);
+                    if (z == Bits::bits_per_word)
+                        break;
+                    b &= ~(Bits::BitWord{1} << z);
+                    if (! f(r.lower + Integer{w * Bits::bits_per_word} + Integer{z}))
+                        break;
+                }
+            }
+        },
+        [&](const IntegerVariableSetState & s) {
+            for (const auto & v : *s.values)
+                if (! f(v))
+                    break;
+        }}
+        .visit(var_copy);
+}
+
+auto State::for_each_value_while_immutable(const SimpleIntegerVariableID var, function<auto(Integer)->bool> f) const -> void
+{
+    overloaded{
+        [&](const IntegerVariableConstantState & c) {
+            f(c.value);
+        },
+        [&](const IntegerVariableRangeState & r) {
+            for (auto v = r.lower; v <= r.upper; ++v)
+                if (! f(v))
+                    break;
+        },
+        [&](const IntegerVariableSmallSetState & r) {
+            for (unsigned w = 0; w < Bits::n_words; ++w) {
+                auto b = r.bits.data[w];
+                while (true) {
+                    int z = countr_zero(b);
+                    if (z == Bits::bits_per_word)
+                        break;
+                    b &= ~(Bits::BitWord{1} << z);
+                    if (! f(r.lower + Integer{w * Bits::bits_per_word} + Integer{z}))
+                        break;
+                }
+            }
+        },
+        [&](const IntegerVariableSetState & s) {
+            for (const auto & v : *s.values)
+                if (! f(v))
+                    break;
+        }}
+        .visit(state_of(var));
 }
 
 auto State::operator()(const IntegerVariableID & i) const -> Integer
