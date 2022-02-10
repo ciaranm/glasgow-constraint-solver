@@ -25,8 +25,8 @@ struct Problem::Imp
 {
     State initial_state;
     Propagators propagators;
-    vector<IntegerVariableID> problem_variables;
-    optional<vector<IntegerVariableID>> branch_on;
+    vector<SimpleIntegerVariableID> problem_variables;
+    optional<vector<SimpleIntegerVariableID>> branch_on;
     optional<IntegerVariableID> objective_variable;
     optional<Integer> objective_value;
     optional<Proof> optional_proof;
@@ -123,11 +123,17 @@ auto Problem::post(Constraint && c) -> void
     move(c).install(_imp->propagators, _imp->initial_state);
 }
 
-auto Problem::branch_on(const std::vector<IntegerVariableID> & v) -> void
+auto Problem::branch_on(const std::vector<IntegerVariableID> & vars) -> void
 {
     if (! _imp->branch_on)
         _imp->branch_on.emplace();
-    _imp->branch_on->insert(_imp->branch_on->end(), v.begin(), v.end());
+
+    for (auto & v : vars)
+        overloaded{
+            [&](const SimpleIntegerVariableID & v) { _imp->branch_on->push_back(v); },
+            [&](const ViewOfIntegerVariableID & v) { _imp->branch_on->push_back(v.actual_variable); },
+            [&](const ConstantIntegerVariableID &) {}}
+            .visit(v);
 }
 
 auto Problem::optional_proof() const -> std::optional<Proof> &
