@@ -74,7 +74,7 @@ namespace gcs
         auto backtrack(const State &) -> void;
         auto assert_contradiction() -> void;
 
-        auto infer(const State & state, const Literal & lit, Justification why) -> void;
+        auto infer(const State & state, const Literal & lit, const Justification & why) -> void;
 
         auto enter_proof_level(int depth) -> void;
         auto forget_proof_level(int depth) -> void;

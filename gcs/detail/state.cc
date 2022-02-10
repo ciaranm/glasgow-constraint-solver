@@ -399,7 +399,7 @@ auto State::infer_literal_from_direct_integer_variable(
     throw NonExhaustiveSwitch{};
 }
 
-auto State::infer(const Literal & lit, Justification just) -> Inference
+auto State::infer(const Literal & lit, const Justification & just) -> Inference
 {
     return overloaded{
         [&](const LiteralFromIntegerVariable & ilit) -> Inference {
@@ -434,7 +434,7 @@ auto State::infer(const Literal & lit, Justification just) -> Inference
         .visit(lit);
 }
 
-auto State::infer(const LiteralFromIntegerVariable & ilit, Justification just) -> Inference
+auto State::infer(const LiteralFromIntegerVariable & ilit, const Justification & just) -> Inference
 {
     auto [actual_var, offset] = underlying_direct_variable_and_offset(ilit.var);
     auto [inference, how_changed] = infer_literal_from_direct_integer_variable(actual_var, ilit.op, ilit.value - offset);
@@ -457,11 +457,23 @@ auto State::infer(const LiteralFromIntegerVariable & ilit, Justification just) -
     throw NonExhaustiveSwitch{};
 }
 
-auto State::infer_all(const vector<Literal> & lits, Justification just) -> Inference
+auto State::infer_all(const vector<Literal> & lits, const Justification & just) -> Inference
 {
+    bool first = true;
+
+    // only do explicit justifications once
+    Justification just_not_first{ NoJustificationNeeded{} };
+    if (_imp->problem->optional_proof())
+        visit([&](const auto & j) -> void {
+            if constexpr (is_same_v<decay_t<decltype(j)>, JustifyExplicitly>)
+                just_not_first = JustifyUsingRUP{};
+            else
+                just_not_first = just;
+            }, just);
+
     Inference result = Inference::NoChange;
     for (const auto & lit : lits) {
-        switch (infer(lit, just)) {
+        switch (first ? infer(lit, just) : infer(lit, just_not_first)) {
         case Inference::NoChange:
             break;
         case Inference::Change:
@@ -470,14 +482,7 @@ auto State::infer_all(const vector<Literal> & lits, Justification just) -> Infer
         case Inference::Contradiction:
             return Inference::Contradiction;
         }
-
-        // only do justifications once
-        if (_imp->problem->optional_proof())
-            visit([&](const auto & j) -> void {
-                if constexpr (is_same_v<decay_t<decltype(j)>, JustifyExplicitly>)
-                    just = JustifyUsingRUP{};
-            },
-                just);
+        first = false;
     }
 
     return result;

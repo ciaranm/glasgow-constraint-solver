@@ -73,10 +73,10 @@ namespace gcs
         [[nodiscard]] auto create_integer_variable(Integer lower, Integer upper) -> SimpleIntegerVariableID;
         [[nodiscard]] auto create_pseudovariable(Integer lower, Integer upper, const std::optional<std::string> &) -> SimpleIntegerVariableID;
 
-        [[nodiscard]] auto infer(const Literal & lit, Justification why) -> Inference;
-        [[nodiscard]] auto infer(const LiteralFromIntegerVariable & lit, Justification why) -> Inference;
+        [[nodiscard]] auto infer(const Literal & lit, const Justification & why) -> Inference;
+        [[nodiscard]] auto infer(const LiteralFromIntegerVariable & lit, const Justification & why) -> Inference;
 
-        [[nodiscard]] auto infer_all(const std::vector<Literal> & lit, Justification why) -> Inference;
+        [[nodiscard]] auto infer_all(const std::vector<Literal> & lit, const Justification & why) -> Inference;
         auto add_proof_steps(JustifyExplicitly why) -> void;
         [[nodiscard]] auto want_proofs() const -> bool;
 

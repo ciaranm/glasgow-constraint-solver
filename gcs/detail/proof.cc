@@ -560,7 +560,7 @@ auto Proof::assert_contradiction() -> void
     _imp->proof << flush;
 }
 
-auto Proof::infer(const State & state, const Literal & lit, Justification why) -> void
+auto Proof::infer(const State & state, const Literal & lit, const Justification & why) -> void
 {
     auto output_it = [&](const string & rule) {
         _imp->proof << rule;
