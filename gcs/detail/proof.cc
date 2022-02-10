@@ -71,7 +71,7 @@ struct Proof::Imp
     ProofLine proof_line = 0;
     int active_proof_level = 0;
 
-    map<DirectIntegerVariableID, ProofLine> variable_at_least_one_constraints;
+    map<SimpleIntegerVariableID, ProofLine> variable_at_least_one_constraints;
     map<LiteralFromIntegerVariable, string> direct_integer_variables;
     map<SimpleIntegerVariableID, pair<Integer, vector<pair<Integer, string>>>> integer_variable_bits;
     map<SimpleIntegerVariableID, pair<Integer, Integer>> bounds_for_gevars;

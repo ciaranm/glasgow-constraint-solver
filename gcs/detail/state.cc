@@ -405,29 +405,53 @@ auto State::infer_literal_from_direct_integer_variable(
     throw NonExhaustiveSwitch{};
 }
 
+auto State::prove_and_remember_change(const Inference & inference, const HowChanged & how_changed, const Justification & just,
+        const Literal & lit, const DirectIntegerVariableID & actual_var) -> void
+{
+    switch (inference) {
+    case Inference::NoChange:
+        break;
+
+    case Inference::Contradiction:
+        if (_imp->problem->optional_proof())
+            _imp->problem->optional_proof()->infer(*this, FalseLiteral{}, just);
+        break;
+
+    case Inference::Change:
+        {
+            auto [it, _] = _imp->changed.emplace(get<SimpleIntegerVariableID>(actual_var), how_changed);
+
+            switch (how_changed) {
+            case HowChanged::InteriorValuesChanged:
+                break;
+
+            case HowChanged::BoundsChanged:
+                if (it->second == HowChanged::InteriorValuesChanged)
+                    it->second = HowChanged::BoundsChanged;
+                break;
+
+            case HowChanged::Instantiated:
+                it->second = HowChanged::Instantiated;
+                break;
+
+            case HowChanged::Dummy:
+                break;
+            }
+        }
+        if (_imp->problem->optional_proof())
+            _imp->problem->optional_proof()->infer(*this, lit, just);
+        break;
+    }
+}
+
 auto State::infer(const Literal & lit, const Justification & just) -> Inference
 {
     return overloaded{
         [&](const LiteralFromIntegerVariable & ilit) -> Inference {
             auto [actual_var, offset] = underlying_direct_variable_and_offset(ilit.var);
             auto [inference, how_changed] = infer_literal_from_direct_integer_variable(actual_var, ilit.op, ilit.value - offset);
-            switch (inference) {
-            case Inference::NoChange:
-                return Inference::NoChange;
-
-            case Inference::Contradiction:
-                if (_imp->problem->optional_proof())
-                    _imp->problem->optional_proof()->infer(*this, FalseLiteral{}, just);
-                return Inference::Contradiction;
-
-            case Inference::Change:
-                remember_change(get<SimpleIntegerVariableID>(actual_var), how_changed);
-                if (_imp->problem->optional_proof())
-                    _imp->problem->optional_proof()->infer(*this, lit, just);
-                return Inference::Change;
-            }
-
-            throw NonExhaustiveSwitch{};
+            prove_and_remember_change(inference, how_changed, just, lit, actual_var);
+            return inference;
         },
         [](const TrueLiteral &) {
             return Inference::NoChange;
@@ -444,23 +468,8 @@ auto State::infer(const LiteralFromIntegerVariable & ilit, const Justification &
 {
     auto [actual_var, offset] = underlying_direct_variable_and_offset(ilit.var);
     auto [inference, how_changed] = infer_literal_from_direct_integer_variable(actual_var, ilit.op, ilit.value - offset);
-    switch (inference) {
-    case Inference::NoChange:
-        return Inference::NoChange;
-
-    case Inference::Contradiction:
-        if (_imp->problem->optional_proof())
-            _imp->problem->optional_proof()->infer(*this, FalseLiteral{}, just);
-        return Inference::Contradiction;
-
-    case Inference::Change:
-        remember_change(get<SimpleIntegerVariableID>(actual_var), how_changed);
-        if (_imp->problem->optional_proof())
-            _imp->problem->optional_proof()->infer(*this, ilit, just);
-        return Inference::Change;
-    }
-
-    throw NonExhaustiveSwitch{};
+    prove_and_remember_change(inference, how_changed, just, ilit, actual_var);
+    return inference;
 }
 
 auto State::infer_all(const vector<Literal> & lits, const Justification & just) -> Inference
@@ -750,30 +759,6 @@ auto State::backtrack(Timestamp t) -> void
             f();
         _imp->on_backtracks.pop_back();
     }
-}
-
-auto State::remember_change(const SimpleIntegerVariableID v, HowChanged h) -> void
-{
-    auto [it, _] = _imp->changed.emplace(v, h);
-
-    switch (h) {
-    case HowChanged::InteriorValuesChanged:
-        return;
-
-    case HowChanged::BoundsChanged:
-        if (it->second == HowChanged::InteriorValuesChanged)
-            it->second = HowChanged::BoundsChanged;
-        return;
-
-    case HowChanged::Instantiated:
-        it->second = HowChanged::Instantiated;
-        return;
-
-    case HowChanged::Dummy:
-        break;
-    }
-
-    throw NonExhaustiveSwitch{};
 }
 
 auto State::extract_changed_variables(function<auto(SimpleIntegerVariableID, HowChanged)->void> f) -> void

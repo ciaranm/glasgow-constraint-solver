@@ -65,7 +65,8 @@ namespace gcs
 
         [[nodiscard]] auto state_of(const SimpleIntegerVariableID &) const -> const IntegerVariableState &;
 
-        auto remember_change(const SimpleIntegerVariableID, HowChanged) -> void;
+        auto prove_and_remember_change(const Inference & inference, const HowChanged & how_changed, const Justification & just,
+                const Literal & lit, const DirectIntegerVariableID & actual_var) -> void;
 
     public:
         explicit State(const Problem * const problem);
