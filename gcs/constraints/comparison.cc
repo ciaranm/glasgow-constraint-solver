@@ -52,20 +52,23 @@ auto ComparisonReif::_install_equals(Propagators & propagators, const State & in
         Triggers triggers;
         triggers.on_instantiated = {_v1, _v2};
 
-        propagators.propagator(
-            initial_state, [v1 = _v1, v2 = _v2](State & state) -> pair<Inference, PropagatorState> {
-                auto value1 = state.optional_single_value(v1);
-                auto value2 = state.optional_single_value(v2);
-                if (value1 && value2)
-                    return pair{(*value1 != *value2) ? Inference::NoChange : Inference::Contradiction, PropagatorState::DisableUntilBacktrack};
-                else if (value1)
-                    return pair{state.infer(v2 != *value1, NoJustificationNeeded{}), PropagatorState::DisableUntilBacktrack};
-                else if (value2)
-                    return pair{state.infer(v1 != *value2, NoJustificationNeeded{}), PropagatorState::DisableUntilBacktrack};
-                else
-                    return pair{Inference::NoChange, PropagatorState::Enable};
-            },
-            triggers, "not equal");
+        visit([&](auto & _v1, auto & _v2) {
+            propagators.propagator(
+                initial_state, [v1 = _v1, v2 = _v2](State & state) -> pair<Inference, PropagatorState> {
+                    auto value1 = state.optional_single_value(v1);
+                    auto value2 = state.optional_single_value(v2);
+                    if (value1 && value2)
+                        return pair{(*value1 != *value2) ? Inference::NoChange : Inference::Contradiction, PropagatorState::DisableUntilBacktrack};
+                    else if (value1)
+                        return pair{state.infer(v2 != *value1, NoJustificationNeeded{}), PropagatorState::DisableUntilBacktrack};
+                    else if (value2)
+                        return pair{state.infer(v1 != *value2, NoJustificationNeeded{}), PropagatorState::DisableUntilBacktrack};
+                    else
+                        return pair{Inference::NoChange, PropagatorState::Enable};
+                },
+                triggers, "not equal");
+        },
+            _v1, _v2);
     }
 
     if (use_special_equals_iff) {
