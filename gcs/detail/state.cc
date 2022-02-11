@@ -433,11 +433,23 @@ auto State::change_state_for_greater_than_or_equal(
             return pair{Inference::NoChange, HowChanged::Dummy};
         },
         [&](IntegerVariableSmallSetState & svar) -> pair<Inference, HowChanged> {
-            // This should be much smarter...
+            int last_bit_to_keep = (value - svar.lower).raw_value;
+            if (last_bit_to_keep < 0)
+                return pair{Inference::Contradiction, HowChanged::Dummy};
+
             auto pc_before = svar.bits.popcount();
-            for (int i = 0; i < Bits::number_of_bits; ++i)
-                if (svar.lower + Integer{i} < value)
-                    svar.bits.reset(i);
+
+            int word_to_modify = last_bit_to_keep / Bits::bits_per_word;
+            if (word_to_modify < Bits::n_words) {
+                int inv_number_of_bits_to_keep = last_bit_to_keep % Bits::bits_per_word;
+                Bits::BitWord mask = (Bits::BitWord{1} << inv_number_of_bits_to_keep) - 1;
+                svar.bits.data[word_to_modify] &= ~mask;
+                for (int w = 0 ; w < word_to_modify ; ++w)
+                    svar.bits.data[w] = 0;
+            }
+            else
+                return pair{Inference::NoChange, HowChanged::Dummy};
+
             auto pc_after = svar.bits.popcount();
             if (pc_after == 0)
                 return pair{Inference::Contradiction, HowChanged::Dummy};
