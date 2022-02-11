@@ -14,12 +14,13 @@ namespace gcs
         Contradiction
     };
 
+    // must be in order of propagation importance
     enum class HowChanged
     {
-        InteriorValuesChanged,
-        BoundsChanged,
-        Instantiated,
-        Dummy = -1
+        Dummy = -1,
+        InteriorValuesChanged = 0,
+        BoundsChanged = 1,
+        Instantiated = 2
     };
 }
 

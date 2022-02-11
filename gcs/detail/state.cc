@@ -10,8 +10,8 @@
 
 #include <algorithm>
 #include <bit>
+#include <deque>
 #include <list>
-#include <map>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -21,13 +21,14 @@ using namespace gcs;
 
 using std::countr_zero;
 using std::decay_t;
+using std::deque;
 using std::function;
 using std::get;
 using std::is_same_v;
 using std::list;
 using std::make_optional;
 using std::make_shared;
-using std::map;
+using std::max;
 using std::move;
 using std::nullopt;
 using std::optional;
@@ -57,7 +58,8 @@ struct State::Imp
 
     list<vector<IntegerVariableState>> integer_variable_states{};
     list<vector<function<auto()->void>>> on_backtracks{};
-    map<SimpleIntegerVariableID, HowChanged> changed{};
+    vector<HowChanged> how_changed{};
+    deque<SimpleIntegerVariableID> changed{};
     vector<Literal> guesses{};
 };
 
@@ -517,28 +519,21 @@ auto State::prove_and_remember_change(const Inference & inference, const HowChan
         break;
 
     case Inference::Change: {
-        auto [it, _] = _imp->changed.emplace(get<SimpleIntegerVariableID>(actual_var), how_changed);
+        // we know now that the variable definitely isn't a constant
+        auto simple_var = get<SimpleIntegerVariableID>(actual_var);
 
-        switch (how_changed) {
-        case HowChanged::InteriorValuesChanged:
-            break;
+        if (_imp->how_changed.size() <= simple_var.index)
+            _imp->how_changed.resize(simple_var.index + 1, HowChanged::Dummy);
 
-        case HowChanged::BoundsChanged:
-            if (it->second == HowChanged::InteriorValuesChanged)
-                it->second = HowChanged::BoundsChanged;
-            break;
+        if (_imp->how_changed[simple_var.index] == HowChanged::Dummy)
+            _imp->changed.push_back(simple_var);
 
-        case HowChanged::Instantiated:
-            it->second = HowChanged::Instantiated;
-            break;
+        _imp->how_changed[simple_var.index] = max<HowChanged>(_imp->how_changed[simple_var.index], how_changed);
 
-        case HowChanged::Dummy:
-            break;
-        }
-    }
         if (_imp->problem->optional_proof())
             _imp->problem->optional_proof()->infer(*this, lit, just);
         break;
+    }
     }
 }
 
@@ -899,9 +894,10 @@ auto State::backtrack(Timestamp t) -> void
 
 auto State::extract_changed_variables(function<auto(SimpleIntegerVariableID, HowChanged)->void> f) -> void
 {
-    for (auto & [c, h] : _imp->changed)
-        f(c, h);
+    for (auto & c : _imp->changed)
+        f(c, _imp->how_changed[c.index]);
     _imp->changed.clear();
+    fill(_imp->how_changed.begin(), _imp->how_changed.end(), HowChanged::Dummy);
 }
 
 auto State::for_each_guess(function<auto(Literal)->void> f) const -> void

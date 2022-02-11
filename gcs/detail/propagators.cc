@@ -267,14 +267,14 @@ auto Propagators::propagate(State & state, const optional<IntegerVariableID> & o
                             on_queue[p] = 1;
                         }
 
-                    if (! triggers.on_bounds.empty() && h != HowChanged::InteriorValuesChanged)
+                    if (h != HowChanged::InteriorValuesChanged)
                         for (auto & p : triggers.on_bounds)
                             if (0 == (on_queue[p] + _imp->propagator_is_disabled[p])) {
                                 propagation_queue.push_back(p);
                                 on_queue[p] = 1;
                             }
 
-                    if (! triggers.on_instantiated.empty() && h == HowChanged::Instantiated)
+                    if (h == HowChanged::Instantiated)
                         for (auto & p : triggers.on_instantiated)
                             if (0 == (on_queue[p] + _imp->propagator_is_disabled[p])) {
                                 propagation_queue.push_back(p);
