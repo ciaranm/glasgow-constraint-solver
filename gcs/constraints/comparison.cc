@@ -285,14 +285,14 @@ auto ComparisonReif::_install_less_than(Propagators & propagators, const State &
 
     if (use_special_less) {
         Triggers triggers;
-        triggers.on_instantiated = {_v1, _v2};
+        triggers.on_bounds = {_v1, _v2};
 
         propagators.propagator(
             initial_state, [v1 = _v1, v2 = _v2, equal = equal](State & state) -> pair<Inference, PropagatorState> {
                 auto result = Inference::NoChange;
-                increase_inference_to(result, state.infer(v1 < state.upper_bound(v2) + (equal ? 1_i : 0_i), NoJustificationNeeded{}));
+                increase_inference_to(result, state.infer_less_than(v1, state.upper_bound(v2) + (equal ? 1_i : 0_i), NoJustificationNeeded{}));
                 if (result != Inference::Contradiction)
-                    increase_inference_to(result, state.infer(v2 >= state.lower_bound(v1) + (equal ? 0_i : 1_i), NoJustificationNeeded{}));
+                    increase_inference_to(result, state.infer_greater_than_or_equal(v2, state.lower_bound(v1) + (equal ? 0_i : 1_i), NoJustificationNeeded{}));
                 return pair{result, PropagatorState::Enable};
             },
             triggers, "less");
