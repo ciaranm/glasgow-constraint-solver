@@ -23,10 +23,10 @@ namespace gcs
     [[nodiscard]] auto sanitise_linear(const Linear &) -> std::pair<std::variant<SimpleSum, SimpleLinear>, Integer>;
 
     auto propagate_linear(const SimpleLinear &, Integer, State &, bool equality,
-        std::optional<ProofLine> proof_line) -> std::pair<Inference, PropagatorState>;
+        const std::optional<ProofLine> & proof_line) -> std::pair<Inference, PropagatorState>;
 
     auto propagate_sum(const SimpleSum &, Integer, State &, bool equality,
-        std::optional<ProofLine> proof_line) -> std::pair<Inference, PropagatorState>;
+        const std::optional<ProofLine> & proof_line) -> std::pair<Inference, PropagatorState>;
 }
 
 #endif

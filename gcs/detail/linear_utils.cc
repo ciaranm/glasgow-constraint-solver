@@ -97,7 +97,7 @@ namespace
     }
 
     auto propagate_linear_or_sum(const auto & coeff_vars, Integer value, State & state, bool equality,
-        std::optional<ProofLine> proof_line) -> pair<Inference, PropagatorState>
+        const std::optional<ProofLine> & proof_line) -> pair<Inference, PropagatorState>
     {
         // What's the worst value a variable can take, if every other variable
         // is given its best value?
@@ -114,7 +114,7 @@ namespace
             inv_lower_sum += (-coeff >= 0_i) ? (-coeff * bounds.back().first) : (-coeff * bounds.back().second);
         }
 
-        auto justify = [&](SimpleIntegerVariableID change_var, Proof & proof, vector<ProofLine> & to_delete,
+        auto justify = [&](const SimpleIntegerVariableID & change_var, Proof & proof, vector<ProofLine> & to_delete,
                            bool second_constraint_for_equality, Literal inf_lit) -> void {
             vector<pair<Integer, ProofLine>> lines_to_sum;
             lines_to_sum.emplace_back(1_i, second_constraint_for_equality ? *proof_line - 1 : *proof_line);
@@ -172,7 +172,7 @@ namespace
             proof.emit_proof_line(step.str());
         };
 
-        auto infer = [&](int p, SimpleIntegerVariableID var, Integer remainder, const auto coeff, bool second_constraint_for_equality) {
+        auto infer = [&](int p, const SimpleIntegerVariableID & var, Integer remainder, const auto coeff, bool second_constraint_for_equality) {
             if constexpr (is_same_v<decltype(coeff), const bool>) {
                 if (coeff) {
                     if (bounds[p].second >= (1_i + remainder))
@@ -289,13 +289,13 @@ namespace
 }
 
 auto gcs::propagate_linear(const SimpleLinear & coeff_vars, Integer value, State & state, bool equality,
-    std::optional<ProofLine> proof_line) -> pair<Inference, PropagatorState>
+    const std::optional<ProofLine> & proof_line) -> pair<Inference, PropagatorState>
 {
     return propagate_linear_or_sum(coeff_vars, value, state, equality, proof_line);
 }
 
 auto gcs::propagate_sum(const SimpleSum & coeff_vars, Integer value, State & state, bool equality,
-    std::optional<ProofLine> proof_line) -> pair<Inference, PropagatorState>
+    const std::optional<ProofLine> & proof_line) -> pair<Inference, PropagatorState>
 {
     return propagate_linear_or_sum(coeff_vars, value, state, equality, proof_line);
 }
