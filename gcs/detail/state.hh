@@ -46,9 +46,30 @@ namespace gcs
         struct Imp;
         std::unique_ptr<Imp> _imp;
 
-        [[nodiscard]] auto infer_literal_from_direct_integer_variable(
-            const DirectIntegerVariableID var,
+        template <DirectIntegerVariableIDLike VarType_>
+        [[nodiscard]] auto change_state_for_literal(
+            const VarType_ & var,
             LiteralFromIntegerVariable::Operator state,
+            Integer value) -> std::pair<Inference, HowChanged>;
+
+        template <DirectIntegerVariableIDLike VarType_>
+        [[nodiscard]] auto change_state_for_equal(
+            const VarType_ & var,
+            Integer value) -> std::pair<Inference, HowChanged>;
+
+        template <DirectIntegerVariableIDLike VarType_>
+        [[nodiscard]] auto change_state_for_not_equal(
+            const VarType_ & var,
+            Integer value) -> std::pair<Inference, HowChanged>;
+
+        template <DirectIntegerVariableIDLike VarType_>
+        [[nodiscard]] auto change_state_for_less_than(
+            const VarType_ & var,
+            Integer value) -> std::pair<Inference, HowChanged>;
+
+        template <DirectIntegerVariableIDLike VarType_>
+        [[nodiscard]] auto change_state_for_greater_than_or_equal(
+            const VarType_ & var,
             Integer value) -> std::pair<Inference, HowChanged>;
 
         [[nodiscard]] auto assign_to_state_of(const DirectIntegerVariableID) -> IntegerVariableState &;
@@ -84,6 +105,18 @@ namespace gcs
         [[nodiscard]] auto infer(const Literal & lit, const Justification & why) -> Inference;
         [[nodiscard]] auto infer(const LiteralFromIntegerVariable & lit, const Justification & why) -> Inference;
 
+        template <IntegerVariableIDLike VarType_>
+        [[nodiscard]] auto infer_equal(const VarType_ &, Integer value, const Justification & why) -> Inference;
+
+        template <IntegerVariableIDLike VarType_>
+        [[nodiscard]] auto infer_not_equal(const VarType_ &, Integer value, const Justification & why) -> Inference;
+
+        template <IntegerVariableIDLike VarType_>
+        [[nodiscard]] auto infer_less_than(const VarType_ &, Integer value, const Justification & why) -> Inference;
+
+        template <IntegerVariableIDLike VarType_>
+        [[nodiscard]] auto infer_greater_than_or_equal(const VarType_ &, Integer value, const Justification & why) -> Inference;
+
         [[nodiscard]] auto infer_all(const std::vector<Literal> & lit, const Justification & why) -> Inference;
         auto add_proof_steps(JustifyExplicitly why) -> void;
         [[nodiscard]] auto want_proofs() const -> bool;
@@ -93,7 +126,9 @@ namespace gcs
 
         [[nodiscard]] auto lower_bound(const IntegerVariableID) const -> Integer;
         [[nodiscard]] auto upper_bound(const IntegerVariableID) const -> Integer;
-        [[nodiscard]] auto in_domain(const IntegerVariableID, Integer) const -> bool;
+
+        template <IntegerVariableIDLike VarType_>
+        [[nodiscard]] auto in_domain(const VarType_ &, Integer) const -> bool;
 
         template <IntegerVariableIDLike VarType_>
         [[nodiscard]] auto bounds(const VarType_ &) const -> std::pair<Integer, Integer>;

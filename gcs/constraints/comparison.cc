@@ -60,9 +60,9 @@ auto ComparisonReif::_install_equals(Propagators & propagators, const State & in
                     if (value1 && value2)
                         return pair{(*value1 != *value2) ? Inference::NoChange : Inference::Contradiction, PropagatorState::DisableUntilBacktrack};
                     else if (value1)
-                        return pair{state.infer(v2 != *value1, NoJustificationNeeded{}), PropagatorState::DisableUntilBacktrack};
+                        return pair{state.infer_not_equal(v2, *value1, NoJustificationNeeded{}), PropagatorState::DisableUntilBacktrack};
                     else if (value2)
-                        return pair{state.infer(v1 != *value2, NoJustificationNeeded{}), PropagatorState::DisableUntilBacktrack};
+                        return pair{state.infer_not_equal(v1, *value2, NoJustificationNeeded{}), PropagatorState::DisableUntilBacktrack};
                     else
                         return pair{Inference::NoChange, PropagatorState::Enable};
                 },
