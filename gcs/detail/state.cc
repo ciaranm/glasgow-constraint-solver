@@ -941,50 +941,55 @@ auto State::test_literal(const Literal & lit) const -> LiteralIs
 {
     return overloaded{
         [&](const LiteralFromIntegerVariable & ilit) -> LiteralIs {
-            switch (ilit.op) {
-                using enum LiteralFromIntegerVariable::Operator;
-            case Equal:
-                if (! in_domain(ilit.var, ilit.value))
-                    return LiteralIs::DefinitelyFalse;
-                else if (has_single_value(ilit.var))
-                    return LiteralIs::DefinitelyTrue;
-                else
-                    return LiteralIs::Undecided;
-
-            case Less:
-                if (lower_bound(ilit.var) < ilit.value) {
-                    if (upper_bound(ilit.var) < ilit.value)
-                        return LiteralIs::DefinitelyTrue;
-                    else
-                        return LiteralIs::Undecided;
-                }
-                else
-                    return LiteralIs::DefinitelyFalse;
-
-            case GreaterEqual:
-                if (upper_bound(ilit.var) >= ilit.value) {
-                    if (lower_bound(ilit.var) >= ilit.value)
-                        return LiteralIs::DefinitelyTrue;
-                    else
-                        return LiteralIs::Undecided;
-                }
-                else
-                    return LiteralIs::DefinitelyFalse;
-
-            case NotEqual:
-                if (! in_domain(ilit.var, ilit.value))
-                    return LiteralIs::DefinitelyTrue;
-                else if (has_single_value(ilit.var))
-                    return LiteralIs::DefinitelyFalse;
-                else
-                    return LiteralIs::Undecided;
-            }
-
-            throw NonExhaustiveSwitch{};
+            return test_literal(ilit);
         },
         [](const TrueLiteral &) { return LiteralIs::DefinitelyTrue; },
         [](const FalseLiteral &) { return LiteralIs::DefinitelyFalse; }}
         .visit(lit);
+}
+
+auto State::test_literal(const LiteralFromIntegerVariable & ilit) const -> LiteralIs
+{
+    switch (ilit.op) {
+        using enum LiteralFromIntegerVariable::Operator;
+    case Equal:
+        if (! in_domain(ilit.var, ilit.value))
+            return LiteralIs::DefinitelyFalse;
+        else if (has_single_value(ilit.var))
+            return LiteralIs::DefinitelyTrue;
+        else
+            return LiteralIs::Undecided;
+
+    case Less:
+        if (lower_bound(ilit.var) < ilit.value) {
+            if (upper_bound(ilit.var) < ilit.value)
+                return LiteralIs::DefinitelyTrue;
+            else
+                return LiteralIs::Undecided;
+        }
+        else
+            return LiteralIs::DefinitelyFalse;
+
+    case GreaterEqual:
+        if (upper_bound(ilit.var) >= ilit.value) {
+            if (lower_bound(ilit.var) >= ilit.value)
+                return LiteralIs::DefinitelyTrue;
+            else
+                return LiteralIs::Undecided;
+        }
+        else
+            return LiteralIs::DefinitelyFalse;
+
+    case NotEqual:
+        if (! in_domain(ilit.var, ilit.value))
+            return LiteralIs::DefinitelyTrue;
+        else if (has_single_value(ilit.var))
+            return LiteralIs::DefinitelyFalse;
+        else
+            return LiteralIs::Undecided;
+    }
+
+    throw NonExhaustiveSwitch{};
 }
 
 auto State::on_backtrack(std::function<auto()->void> f) -> void

@@ -153,6 +153,8 @@ namespace gcs
         [[nodiscard]] auto domain_has_holes(const IntegerVariableID) const -> bool;
 
         [[nodiscard]] auto test_literal(const Literal &) const -> LiteralIs;
+        [[nodiscard]] auto test_literal(const LiteralFromIntegerVariable &) const -> LiteralIs;
+
         [[nodiscard]] auto literal_is_nonfalsified(const Literal &) const -> bool;
 
         [[nodiscard]] auto operator()(const IntegerVariableID &) const -> Integer;
