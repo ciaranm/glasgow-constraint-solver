@@ -3,13 +3,13 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_STATE_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_STATE_HH
 
+#include <gcs/current_state.hh>
 #include <gcs/detail/integer_variable_state.hh>
 #include <gcs/detail/justification.hh>
 #include <gcs/detail/state-fwd.hh>
 #include <gcs/detail/variable_id_utils.hh>
 #include <gcs/literal.hh>
 #include <gcs/problem-fwd.hh>
-#include <gcs/current_state.hh>
 
 #include <concepts>
 #include <exception>
@@ -87,7 +87,7 @@ namespace gcs
         [[nodiscard]] auto state_of(const SimpleIntegerVariableID &) const -> const IntegerVariableState &;
 
         auto prove_and_remember_change(const Inference & inference, const HowChanged & how_changed, const Justification & just,
-                const Literal & lit, const DirectIntegerVariableID & actual_var) -> void;
+            const Literal & lit, const DirectIntegerVariableID & actual_var) -> void;
 
     public:
         explicit State(const Problem * const problem);

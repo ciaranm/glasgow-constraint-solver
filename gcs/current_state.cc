@@ -51,4 +51,3 @@ auto CurrentState::for_each_value(const IntegerVariableID v, std::function<auto(
 {
     _full_state.for_each_value(v, f);
 }
-

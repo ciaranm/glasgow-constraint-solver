@@ -75,7 +75,7 @@ auto check_results(pair<int, int> v1_range, pair<int, int> v2_range, const strin
 }
 
 auto check_gac_oneway(string direction, IntegerVariableID v1, IntegerVariableID v2, const CurrentState & s,
-        const function<auto(int, int)->bool> & is_satisfing) -> bool
+    const function<auto(int, int)->bool> & is_satisfing) -> bool
 {
     bool ok = true;
     s.for_each_value(v1, [&](Integer val1) {

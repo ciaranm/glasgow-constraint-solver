@@ -145,12 +145,12 @@ auto State::state_of(const SimpleIntegerVariableID & v) const -> const IntegerVa
 
 auto State::state_of(const DirectIntegerVariableID & v, IntegerVariableState & space) -> IntegerVariableState &
 {
-    return visit([&] (const auto & v) -> IntegerVariableState & { return state_of(v, space); }, v);
+    return visit([&](const auto & v) -> IntegerVariableState & { return state_of(v, space); }, v);
 }
 
 auto State::state_of(const DirectIntegerVariableID & v, IntegerVariableState & space) const -> const IntegerVariableState &
 {
-    return visit([&] (const auto & v) -> const IntegerVariableState & { return state_of(v, space); }, v);
+    return visit([&](const auto & v) -> const IntegerVariableState & { return state_of(v, space); }, v);
 }
 
 template <DirectIntegerVariableIDLike VarType_>
@@ -210,9 +210,8 @@ auto State::change_state_for_equal(
             }
             else
                 return pair{Inference::Contradiction, HowChanged::Dummy};
-        }
-    }
-    .visit(state_of(var, space));
+        }}
+        .visit(state_of(var, space));
 }
 
 template <DirectIntegerVariableIDLike VarType_>
@@ -366,9 +365,9 @@ auto State::change_state_for_less_than(
             int word_to_modify = first_bit_to_clear / Bits::bits_per_word;
             if (word_to_modify < Bits::n_words) {
                 int number_of_bits_to_keep = first_bit_to_clear % Bits::bits_per_word;
-                Bits::BitWord mask = (Bits::BitWord{ 1 } << number_of_bits_to_keep) - 1;
+                Bits::BitWord mask = (Bits::BitWord{1} << number_of_bits_to_keep) - 1;
                 svar.bits.data[word_to_modify] &= mask;
-                for (int w = word_to_modify + 1 ; w < Bits::n_words ; ++w)
+                for (int w = word_to_modify + 1; w < Bits::n_words; ++w)
                     svar.bits.data[w] = 0;
             }
             else
@@ -494,7 +493,7 @@ auto State::change_state_for_literal(
 }
 
 auto State::prove_and_remember_change(const Inference & inference, const HowChanged & how_changed, const Justification & just,
-        const Literal & lit, const DirectIntegerVariableID & actual_var) -> void
+    const Literal & lit, const DirectIntegerVariableID & actual_var) -> void
 {
     switch (inference) {
     case Inference::NoChange:
@@ -505,27 +504,26 @@ auto State::prove_and_remember_change(const Inference & inference, const HowChan
             _imp->problem->optional_proof()->infer(*this, FalseLiteral{}, just);
         break;
 
-    case Inference::Change:
-        {
-            auto [it, _] = _imp->changed.emplace(get<SimpleIntegerVariableID>(actual_var), how_changed);
+    case Inference::Change: {
+        auto [it, _] = _imp->changed.emplace(get<SimpleIntegerVariableID>(actual_var), how_changed);
 
-            switch (how_changed) {
-            case HowChanged::InteriorValuesChanged:
-                break;
+        switch (how_changed) {
+        case HowChanged::InteriorValuesChanged:
+            break;
 
-            case HowChanged::BoundsChanged:
-                if (it->second == HowChanged::InteriorValuesChanged)
-                    it->second = HowChanged::BoundsChanged;
-                break;
+        case HowChanged::BoundsChanged:
+            if (it->second == HowChanged::InteriorValuesChanged)
+                it->second = HowChanged::BoundsChanged;
+            break;
 
-            case HowChanged::Instantiated:
-                it->second = HowChanged::Instantiated;
-                break;
+        case HowChanged::Instantiated:
+            it->second = HowChanged::Instantiated;
+            break;
 
-            case HowChanged::Dummy:
-                break;
-            }
+        case HowChanged::Dummy:
+            break;
         }
+    }
         if (_imp->problem->optional_proof())
             _imp->problem->optional_proof()->infer(*this, lit, just);
         break;
@@ -601,14 +599,15 @@ auto State::infer_all(const vector<Literal> & lits, const Justification & just) 
     bool first = true;
 
     // only do explicit justifications once
-    Justification just_not_first{ NoJustificationNeeded{} };
+    Justification just_not_first{NoJustificationNeeded{}};
     if (_imp->problem->optional_proof())
         visit([&](const auto & j) -> void {
             if constexpr (is_same_v<decay_t<decltype(j)>, JustifyExplicitly>)
                 just_not_first = JustifyUsingRUP{};
             else
                 just_not_first = just;
-            }, just);
+        },
+            just);
 
     Inference result = Inference::NoChange;
     for (const auto & lit : lits) {
@@ -1051,4 +1050,3 @@ namespace gcs
     template auto State::infer_greater_than_or_equal(const ViewOfIntegerVariableID &, Integer, const Justification &) -> Inference;
     template auto State::infer_greater_than_or_equal(const ConstantIntegerVariableID &, Integer, const Justification &) -> Inference;
 }
-

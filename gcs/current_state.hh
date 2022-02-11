@@ -33,7 +33,7 @@ namespace gcs
         ~CurrentState() = default;
 
         CurrentState(const CurrentState &) = delete;
-        CurrentState & operator= (const CurrentState &) = delete;
+        CurrentState & operator=(const CurrentState &) = delete;
 
         // This is the only part of this class that most consumers need: returns
         // the value of a particular variable, or throws VariableDoesNotHaveUniqueValue
