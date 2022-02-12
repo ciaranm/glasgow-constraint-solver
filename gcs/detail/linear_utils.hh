@@ -20,12 +20,17 @@ namespace gcs
     using IsPositiveAndSimpleVariable = std::pair<bool, SimpleIntegerVariableID>;
     using SimpleSum = std::vector<IsPositiveAndSimpleVariable>;
 
-    [[nodiscard]] auto sanitise_linear(const Linear &) -> std::pair<std::variant<SimpleSum, SimpleLinear>, Integer>;
+    using SimpleIntegerVariableIDs = std::vector<SimpleIntegerVariableID>;
+
+    [[nodiscard]] auto sanitise_linear(const Linear &) -> std::pair<std::variant<SimpleIntegerVariableIDs, SimpleSum, SimpleLinear>, Integer>;
 
     auto propagate_linear(const SimpleLinear &, Integer, State &, bool equality,
         const std::optional<ProofLine> & proof_line) -> std::pair<Inference, PropagatorState>;
 
     auto propagate_sum(const SimpleSum &, Integer, State &, bool equality,
+        const std::optional<ProofLine> & proof_line) -> std::pair<Inference, PropagatorState>;
+
+    auto propagate_sum_all_positive(const SimpleIntegerVariableIDs &, Integer, State &, bool equality,
         const std::optional<ProofLine> & proof_line) -> std::pair<Inference, PropagatorState>;
 }
 

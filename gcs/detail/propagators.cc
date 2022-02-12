@@ -164,6 +164,27 @@ auto Propagators::sum_le(const State & state, const SimpleSum & sum_vars, Intege
     _imp->propagator_is_disabled.push_back(0);
 }
 
+auto Propagators::positive_sum_le(const State & state, const SimpleIntegerVariableIDs & sum_vars, Integer value, bool equality) -> void
+{
+    optional<ProofLine> proof_line;
+    if (_imp->problem->optional_proof()) {
+        SimpleLinear coeff_vars;
+        for (const auto & v : sum_vars)
+            coeff_vars.emplace_back(1_i, v);
+        proof_line = _imp->problem->optional_proof()->integer_linear_le(state, coeff_vars, value, equality);
+    }
+
+    int id = _imp->propagation_functions.size();
+    for (auto & v : sum_vars)
+        trigger_on_bounds(v, id);
+
+    _imp->propagation_functions.emplace_back([&, sum_vars = sum_vars, value = value,
+                                                 equality = equality, proof_line = proof_line](State & state) {
+        return propagate_sum_all_positive(sum_vars, value, state, equality, proof_line);
+    });
+    _imp->propagator_is_disabled.push_back(0);
+}
+
 auto Propagators::propagator(const State &, PropagationFunction && f, const Triggers & triggers, const std::string &) -> void
 {
     int id = _imp->propagation_functions.size();

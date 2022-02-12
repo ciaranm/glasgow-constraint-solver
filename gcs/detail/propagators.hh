@@ -55,6 +55,7 @@ namespace gcs
         auto pseudoboolean_ge(const State &, WeightedLiterals && lits, Integer, bool propagating) -> std::optional<ProofLine>;
         auto integer_linear_le(const State &, const SimpleLinear & coeff_vars, Integer value, bool equality) -> void;
         auto sum_le(const State &, const SimpleSum & coeff_vars, Integer value, bool equality) -> void;
+        auto positive_sum_le(const State &, const SimpleIntegerVariableIDs & vars, Integer value, bool equality) -> void;
         auto table(const State &, std::vector<IntegerVariableID> &&, std::vector<std::vector<Integer>> &&, const std::string & name) -> void;
         auto propagator(const State &, PropagationFunction &&, const Triggers & trigger_vars, const std::string & name) -> void;
 
