@@ -23,6 +23,8 @@ namespace gcs
 
     [[nodiscard]] auto underlying_direct_variable_and_offset(const IntegerVariableID & var) -> std::pair<DirectIntegerVariableID, Integer>;
 
+    [[nodiscard]] auto underlying_direct_variable_and_offset(const DirectIntegerVariableID & var) -> std::pair<DirectIntegerVariableID, Integer>;
+
     [[nodiscard]] inline auto underlying_direct_variable_and_offset(
         const SimpleIntegerVariableID & var) -> std::pair<SimpleIntegerVariableID, Integer>
     {

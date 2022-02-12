@@ -43,6 +43,12 @@ namespace gcs
     class State
     {
     private:
+        template <typename VarType_>
+        struct GetStateAndOffsetOf;
+
+        template <typename VarType_>
+        struct GetMutableStateAndOffsetOf;
+
         struct Imp;
         std::unique_ptr<Imp> _imp;
 
@@ -74,16 +80,12 @@ namespace gcs
 
         [[nodiscard]] auto assign_to_state_of(const DirectIntegerVariableID) -> IntegerVariableState &;
 
-        [[nodiscard]] auto state_of(const SimpleIntegerVariableID &, IntegerVariableState & space) -> IntegerVariableState &;
-        [[nodiscard]] auto state_of(const ConstantIntegerVariableID &, IntegerVariableState & space) -> IntegerVariableState &;
         [[nodiscard]] auto state_of(const DirectIntegerVariableID &, IntegerVariableState & space) -> IntegerVariableState &;
-
-        [[nodiscard]] auto state_of(const SimpleIntegerVariableID &, IntegerVariableState & space) const -> const IntegerVariableState &;
-        [[nodiscard]] auto state_of(const ConstantIntegerVariableID &, IntegerVariableState & space) const -> const IntegerVariableState &;
-        [[nodiscard]] auto state_of(const DirectIntegerVariableID &, IntegerVariableState & space) const -> const IntegerVariableState &;
-
+        [[nodiscard]] auto state_of(const ConstantIntegerVariableID &, IntegerVariableState & space) -> IntegerVariableState &;
         [[nodiscard]] auto state_of(const SimpleIntegerVariableID &) -> IntegerVariableState &;
 
+        [[nodiscard]] auto state_of(const DirectIntegerVariableID &, IntegerVariableState & space) const -> const IntegerVariableState &;
+        [[nodiscard]] auto state_of(const ConstantIntegerVariableID &, IntegerVariableState & space) const -> const IntegerVariableState &;
         [[nodiscard]] auto state_of(const SimpleIntegerVariableID &) const -> const IntegerVariableState &;
 
         auto prove_and_remember_change(const Inference & inference, const HowChanged & how_changed, const Justification & just,
