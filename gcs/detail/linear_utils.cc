@@ -361,5 +361,57 @@ auto gcs::propagate_sum(const SimpleSum & coeff_vars, Integer value, State & sta
 auto gcs::propagate_sum_all_positive(const SimpleIntegerVariableIDs & coeff_vars, Integer value, State & state, bool equality,
     const std::optional<ProofLine> & proof_line) -> pair<Inference, PropagatorState>
 {
-    return propagate_linear_or_sum(coeff_vars, value, state, equality, proof_line);
+    if (state.want_proofs() || ! equality)
+        return propagate_linear_or_sum(coeff_vars, value, state, equality, proof_line);
+
+    bool changed = false;
+
+    vector<pair<Integer, Integer>> bounds;
+    bounds.reserve(coeff_vars.size());
+
+    Integer lower_sum{0}, inv_lower_sum{0};
+    for (const auto & cv : coeff_vars) {
+        const auto & var = get_var(cv);
+        bounds.push_back(state.bounds(var));
+        lower_sum += bounds.back().first;
+        inv_lower_sum += -bounds.back().second;
+    }
+
+    for (unsigned p = 0, p_end = coeff_vars.size(); p != p_end; ++p) {
+        const auto & cv = coeff_vars[p];
+
+        Integer lower_without_me = lower_sum - bounds[p].first;
+        Integer remainder = value - lower_without_me;
+        if (bounds[p].second >= (1_i + remainder)) {
+            switch (state.infer_less_than(get_var(cv), 1_i + remainder, NoJustificationNeeded{})) {
+            case Inference::Change:
+                bounds[p] = state.bounds(get_var(cv)); // might be tighter than expected if we had holes
+                changed = true;
+                break;
+            case Inference::NoChange:
+                break;
+            case Inference::Contradiction:
+                return pair{Inference::Contradiction, PropagatorState::Enable};
+            }
+        }
+        lower_sum = lower_without_me + bounds[p].first;
+
+        Integer inv_lower_without_me = inv_lower_sum + bounds[p].second;
+        Integer inv_remainder = -value - inv_lower_without_me;
+        if (bounds[p].first < -inv_remainder) {
+            switch (state.infer_greater_than_or_equal(get_var(cv), -inv_remainder, NoJustificationNeeded{})) {
+            case Inference::Change:
+                bounds[p] = state.bounds(get_var(cv)); // might be tighter than expected if we had holes
+                changed = true;
+                break;
+            case Inference::NoChange:
+                break;
+            case Inference::Contradiction:
+                return pair{Inference::Contradiction, PropagatorState::Enable};
+            }
+        }
+        inv_lower_sum = inv_lower_without_me - bounds[p].second;
+    }
+
+    return pair{changed ? Inference::Change : Inference::NoChange, PropagatorState::Enable};
 }
