@@ -446,7 +446,7 @@ auto State::change_state_for_greater_than_or_equal(
                 int inv_number_of_bits_to_keep = last_bit_to_keep % Bits::bits_per_word;
                 Bits::BitWord mask = (Bits::BitWord{1} << inv_number_of_bits_to_keep) - 1;
                 svar.bits.data[word_to_modify] &= ~mask;
-                for (int w = 0 ; w < word_to_modify ; ++w)
+                for (int w = 0; w < word_to_modify; ++w)
                     svar.bits.data[w] = 0;
             }
             else

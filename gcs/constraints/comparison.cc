@@ -167,7 +167,8 @@ auto ComparisonReif::_install_equals(Propagators & propagators, const State & in
                     throw NonExhaustiveSwitch{};
                 },
                 triggers, "equals iff");
-        }, _v1, _v2, _cond);
+        },
+            _v1, _v2, _cond);
     }
 
     if (use_special_equals_if) {
