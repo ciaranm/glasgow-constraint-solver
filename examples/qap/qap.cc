@@ -62,6 +62,12 @@ auto main(int argc, char * argv[]) -> int
         return EXIT_SUCCESS;
     }
 
+    cout << "Replicating the MiniCP Quadratic Assignment Problem benchmark." << endl;
+    cout << "See Laurent D. Michel, Pierre Schaus, Pascal Van Hentenryck:" << endl;
+    cout << "\"MiniCP: a lightweight solver for constraint programming.\"" << endl;
+    cout << "Math. Program. Comput. 13(1): 133-184 (2021)." << endl;
+    cout << endl;
+
     Problem p = options_vars.contains("prove") ? Problem{ProofOptions{"qap.opb", "qap.veripb"}} : Problem{};
 
     constexpr int size = 12;
