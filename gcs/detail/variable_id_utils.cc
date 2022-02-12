@@ -34,21 +34,6 @@ auto gcs::debug_string(const VariableID & var) -> string
         .visit(var);
 }
 
-auto gcs::underlying_direct_variable_and_offset(const ConstantIntegerVariableID & var) -> pair<ConstantIntegerVariableID, Integer>
-{
-    return pair{var, 0_i};
-}
-
-auto gcs::underlying_direct_variable_and_offset(const SimpleIntegerVariableID & var) -> pair<SimpleIntegerVariableID, Integer>
-{
-    return pair{var, 0_i};
-}
-
-auto gcs::underlying_direct_variable_and_offset(const ViewOfIntegerVariableID & var) -> pair<SimpleIntegerVariableID, Integer>
-{
-    return pair{var.actual_variable, var.offset};
-}
-
 auto gcs::underlying_direct_variable_and_offset(const IntegerVariableID & var) -> pair<DirectIntegerVariableID, Integer>
 {
     return visit([&](const auto & var) -> pair<DirectIntegerVariableID, Integer> { return underlying_direct_variable_and_offset(var); }, var);
