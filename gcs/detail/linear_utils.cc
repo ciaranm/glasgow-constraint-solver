@@ -34,9 +34,9 @@ auto gcs::sanitise_linear(const Linear & coeff_vars) -> pair<variant<SimpleSum, 
     Integer modifier{0_i};
     for (const auto & [c, v] : coeff_vars)
         overloaded{
-            [&](const SimpleIntegerVariableID & v) { result.emplace_back(c, v); },
-            [&](const ConstantIntegerVariableID & v) { modifier -= c * v.const_value; },
-            [&](const ViewOfIntegerVariableID & v) { result.emplace_back(c, v.actual_variable); modifier -= c * v.offset; }}
+            [&, &c=c](const SimpleIntegerVariableID & v) { result.emplace_back(c, v); },
+            [&, &c=c](const ConstantIntegerVariableID & v) { modifier -= c * v.const_value; },
+            [&, &c=c](const ViewOfIntegerVariableID & v) { result.emplace_back(c, v.actual_variable); modifier -= c * v.offset; }}
             .visit(v);
 
     sort(result.begin(), result.end(), [](const CoefficientAndSimpleVariable & a, const CoefficientAndSimpleVariable & b) {
