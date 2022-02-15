@@ -9,7 +9,6 @@
 #include <util/overloaded.hh>
 
 #include <algorithm>
-#include <cmath>
 #include <cstdlib>
 #include <sstream>
 #include <type_traits>
@@ -18,7 +17,6 @@
 using namespace gcs;
 
 using std::is_same_v;
-using std::llabs;
 using std::max;
 using std::pair;
 using std::remove_if;
@@ -192,10 +190,10 @@ namespace
                 Integer big_number = 0_i;
                 proof.for_each_bit_defining_var(get_var(cv), [&](Integer bit_coeff, string bit_name) {
                     step << " " << (upper ? -bit_coeff : bit_coeff) << " " << bit_name;
-                    big_number += Integer{llabs(bit_coeff.raw_value)};
+                    big_number += Integer{abs(bit_coeff)};
                 });
 
-                big_number += Integer{max(1ll, upper ? llabs(state.upper_bound(get_var(cv)).raw_value) : llabs(state.lower_bound(get_var(cv)).raw_value))};
+                big_number += max(1_i, upper ? abs(state.upper_bound(get_var(cv))) : abs(state.lower_bound(get_var(cv))));
                 step << proof.trail_variables(state, big_number);
 
                 if (upper)
@@ -205,7 +203,7 @@ namespace
 
                 step << ";";
                 auto proof_line = proof.emit_proof_line(step.str());
-                lines_to_sum.emplace_back(Integer{llabs(get_coeff(cv).raw_value)}, proof_line);
+                lines_to_sum.emplace_back(abs(get_coeff(cv)), proof_line);
                 to_delete.push_back(proof_line);
             }
 
@@ -218,7 +216,7 @@ namespace
                     step << " +";
                 first = false;
             }
-            step << " " << llabs(change_var_coeff.raw_value) << " d";
+            step << " " << abs(change_var_coeff) << " d";
             proof.emit_proof_line(step.str());
         };
 

@@ -102,6 +102,11 @@ namespace gcs
     {
         return s << i.raw_value;
     }
+
+    inline auto abs(Integer i) -> Integer
+    {
+        return Integer{std::llabs(i.raw_value)};
+    }
 }
 
 #endif

@@ -31,7 +31,6 @@ using std::function;
 using std::ios;
 using std::istreambuf_iterator;
 using std::list;
-using std::llabs;
 using std::map;
 using std::max;
 using std::ofstream;
@@ -125,7 +124,7 @@ auto Proof::create_integer_variable(SimpleIntegerVariableID id, Integer lower, I
         name.append("_" + *optional_name);
 
     _imp->opb << "* variable " << name << " " << lower.raw_value << " .. " << upper.raw_value << " binary encoding\n";
-    Integer highest_abs_value = Integer{max(llabs(lower.raw_value), upper.raw_value)};
+    Integer highest_abs_value = max(abs(lower), upper);
     int highest_bit_shift = countr_zero(bit_ceil(static_cast<unsigned long long>(highest_abs_value.raw_value)));
     Integer highest_bit_coeff = Integer{1ll << highest_bit_shift};
 
@@ -394,7 +393,7 @@ auto Proof::integer_linear_le(const State &, const SimpleLinear & lin, Integer v
         Integer big_number = 0_i;
         for (const auto & [coeff, var] : lin)
             for (auto & [bit_value, bit_name] : _imp->integer_variable_bits.find(var)->second.second) {
-                big_number += Integer{llabs((multiplier * coeff * bit_value).raw_value)};
+                big_number += abs(multiplier * coeff * bit_value);
                 _imp->opb << (multiplier * coeff * bit_value) << " " << bit_name << " ";
             }
 
