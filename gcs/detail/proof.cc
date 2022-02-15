@@ -381,7 +381,8 @@ auto Proof::pseudoboolean_ge(const WeightedLiterals & lits, Integer val) -> Proo
     return ++_imp->model_constraints;
 }
 
-auto Proof::integer_linear_le(const State &, const SimpleLinear & lin, Integer val, bool equality) -> ProofLine
+auto Proof::integer_linear_le(const State &, const SimpleLinear & lin, Integer val,
+    optional<LiteralFromIntegerVariable> half_reif, bool equality) -> ProofLine
 {
     _imp->opb << (equality ? "* linear eq" : "* linear le");
 
@@ -390,9 +391,15 @@ auto Proof::integer_linear_le(const State &, const SimpleLinear & lin, Integer v
     _imp->opb << " <= " << val << '\n';
 
     auto output = [&](Integer multiplier) {
+        Integer big_number = 0_i;
         for (const auto & [coeff, var] : lin)
-            for (auto & [bit_value, bit_name] : _imp->integer_variable_bits.find(var)->second.second)
+            for (auto & [bit_value, bit_name] : _imp->integer_variable_bits.find(var)->second.second) {
+                big_number += Integer{llabs((multiplier * coeff * bit_value).raw_value)};
                 _imp->opb << (multiplier * coeff * bit_value) << " " << bit_name << " ";
+            }
+
+        if (half_reif)
+            _imp->opb << (big_number + 1_i) << " " << proof_variable(! *half_reif) << " ";
 
         _imp->opb << ">= " << (multiplier * val) << " ;\n";
         ++_imp->model_constraints;

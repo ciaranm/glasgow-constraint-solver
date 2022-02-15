@@ -11,7 +11,6 @@ namespace gcs
 {
     enum class ComparisonOperator
     {
-        Equals,
         LessThan,
         LessThanEqual
     };
@@ -24,7 +23,6 @@ namespace gcs
         bool _full_reif;
         ComparisonOperator _op;
 
-        auto _install_equals(Propagators &, const State &) && -> void;
         auto _install_less_than(Propagators &, const State &, bool equal) && -> void;
 
     public:
@@ -32,41 +30,6 @@ namespace gcs
 
         virtual auto describe_for_proof() -> std::string override;
         virtual auto install(Propagators &, const State &) && -> void override;
-    };
-
-    class Equals : public ComparisonReif
-    {
-    public:
-        inline explicit Equals(const IntegerVariableID v1, const IntegerVariableID v2) :
-            ComparisonReif(v1, v2, TrueLiteral{}, true, ComparisonOperator::Equals){};
-    };
-
-    class EqualsIf : public ComparisonReif
-    {
-    public:
-        inline explicit EqualsIf(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond) :
-            ComparisonReif(v1, v2, cond, false, ComparisonOperator::Equals){};
-    };
-
-    class EqualsIff : public ComparisonReif
-    {
-    public:
-        inline explicit EqualsIff(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond) :
-            ComparisonReif(v1, v2, cond, true, ComparisonOperator::Equals){};
-    };
-
-    class NotEquals : public ComparisonReif
-    {
-    public:
-        inline explicit NotEquals(const IntegerVariableID v1, const IntegerVariableID v2) :
-            ComparisonReif(v1, v2, FalseLiteral{}, true, ComparisonOperator::Equals){};
-    };
-
-    class NotEqualsIff : public ComparisonReif
-    {
-    public:
-        inline explicit NotEqualsIff(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond) :
-            ComparisonReif(v1, v2, ! cond, true, ComparisonOperator::Equals){};
     };
 
     class LessThan : public ComparisonReif

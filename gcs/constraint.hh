@@ -10,7 +10,7 @@
 
 namespace gcs
 {
-    class Constraint
+    class [[nodiscard]] Constraint
     {
     public:
         virtual ~Constraint() = 0;

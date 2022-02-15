@@ -3,6 +3,7 @@
 #include <gcs/constraints/all_different.hh>
 #include <gcs/constraints/arithmetic.hh>
 #include <gcs/constraints/comparison.hh>
+#include <gcs/constraints/equals.hh>
 #include <gcs/constraints/linear_equality.hh>
 #include <gcs/constraints/table.hh>
 #include <gcs/problem.hh>

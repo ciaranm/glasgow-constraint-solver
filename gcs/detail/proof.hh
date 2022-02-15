@@ -60,7 +60,8 @@ namespace gcs
         [[nodiscard]] auto cnf(const Literals &) -> ProofLine;
         [[nodiscard]] auto at_most_one(const Literals &) -> ProofLine;
         [[nodiscard]] auto pseudoboolean_ge(const WeightedLiterals &, Integer) -> ProofLine;
-        auto integer_linear_le(const State &, const SimpleLinear & coeff_vars, Integer value, bool equality) -> ProofLine;
+        auto integer_linear_le(const State &, const SimpleLinear & coeff_vars, Integer value,
+            std::optional<LiteralFromIntegerVariable> half_reif, bool equality) -> ProofLine;
 
         auto minimise(IntegerVariableID) -> void;
 

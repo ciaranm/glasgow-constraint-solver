@@ -18,6 +18,7 @@ using namespace gcs;
 
 using std::function;
 using std::move;
+using std::nullopt;
 using std::optional;
 using std::pair;
 using std::stringstream;
@@ -78,9 +79,15 @@ auto LinearEquality::install(Propagators & propagators, const State & initial_st
     auto [sanitised_cv, modifier] = sanitise_linear(_coeff_vars);
 
     overloaded{
-        [&, &modifier = modifier](const SimpleLinear & lin) { propagators.integer_linear_le(initial_state, lin, _value + modifier, true); },
-        [&, &modifier = modifier](const SimpleSum & sum) { propagators.sum_le(initial_state, sum, _value + modifier, true); },
-        [&, &modifier = modifier](const SimpleIntegerVariableIDs & sum) { propagators.positive_sum_le(initial_state, sum, _value + modifier, true); }}
+        [&, &modifier = modifier](const SimpleLinear & lin) {
+            propagators.integer_linear_le(initial_state, lin, _value + modifier, nullopt, true, true);
+        },
+        [&, &modifier = modifier](const SimpleSum & sum) {
+            propagators.sum_le(initial_state, sum, _value + modifier, nullopt, true, true);
+        },
+        [&, &modifier = modifier](const SimpleIntegerVariableIDs & sum) {
+            propagators.positive_sum_le(initial_state, sum, _value + modifier, nullopt, true, true);
+        }}
         .visit(sanitised_cv);
 
     if (_gac) {
@@ -213,9 +220,15 @@ auto LinearLessEqual::install(Propagators & propagators, const State & initial_s
 {
     auto [sanitised_cv, modifier] = sanitise_linear(_coeff_vars);
     overloaded{
-        [&, &modifier = modifier](const SimpleLinear & lin) { propagators.integer_linear_le(initial_state, lin, _value + modifier, false); },
-        [&, &modifier = modifier](const SimpleSum & sum) { propagators.sum_le(initial_state, sum, _value + modifier, false); },
-        [&, &modifier = modifier](const SimpleIntegerVariableIDs & sum) { propagators.positive_sum_le(initial_state, sum, _value + modifier, false); }}
+        [&, &modifier = modifier](const SimpleLinear & lin) {
+            propagators.integer_linear_le(initial_state, lin, _value + modifier, nullopt, false, true);
+        },
+        [&, &modifier = modifier](const SimpleSum & sum) {
+            propagators.sum_le(initial_state, sum, _value + modifier, nullopt, false, true);
+        },
+        [&, &modifier = modifier](const SimpleIntegerVariableIDs & sum) {
+            propagators.positive_sum_le(initial_state, sum, _value + modifier, nullopt, false, true);
+        }}
         .visit(sanitised_cv);
 }
 

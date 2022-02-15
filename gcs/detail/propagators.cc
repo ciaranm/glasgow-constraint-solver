@@ -115,74 +115,99 @@ auto Propagators::at_most_one(const State &, Literals && lits, bool propagating)
         return nullopt;
 }
 
-auto Propagators::pseudoboolean_ge(const State &, WeightedLiterals && lits, Integer val, bool propagating) -> std::optional<ProofLine>
+auto Propagators::pseudoboolean_ge_nonpropagating(const State &, WeightedLiterals && lits, Integer val) -> optional<ProofLine>
 {
-    if (propagating)
-        throw UnimplementedException{};
-
     if (_imp->problem->optional_proof())
         return _imp->problem->optional_proof()->pseudoboolean_ge(lits, val);
     else
         return nullopt;
 }
 
-auto Propagators::integer_linear_le(const State & state, const SimpleLinear & coeff_vars, Integer value, bool equality) -> void
+auto Propagators::sanitised_linear_le(const State & state, const SanitisedLinear & coeff_vars,
+    Integer value, optional<LiteralFromIntegerVariable> half_reif, bool equality, bool propagating) -> void
 {
-    optional<ProofLine> proof_line;
-    if (_imp->problem->optional_proof())
-        proof_line = _imp->problem->optional_proof()->integer_linear_le(state, coeff_vars, value, equality);
-
-    int id = _imp->propagation_functions.size();
-    for (auto & [_, v] : coeff_vars)
-        trigger_on_bounds(v, id);
-
-    _imp->propagation_functions.emplace_back([&, coeff_vars = coeff_vars, value = value,
-                                                 equality = equality, proof_line = proof_line](State & state) {
-        return propagate_linear(coeff_vars, value, state, equality, proof_line);
-    });
-    _imp->propagator_is_disabled.push_back(0);
+    overloaded{
+        [&](const SimpleSum & sum) { sum_le(state, sum, value, half_reif, equality, propagating); },
+        [&](const SimpleIntegerVariableIDs & sum) { positive_sum_le(state, sum, value, half_reif, equality, propagating); },
+        [&](const SimpleLinear & sum) { integer_linear_le(state, sum, value, half_reif, equality, propagating); }}
+        .visit(coeff_vars);
 }
 
-auto Propagators::sum_le(const State & state, const SimpleSum & sum_vars, Integer value, bool equality) -> void
+auto Propagators::integer_linear_le(const State & state, const SimpleLinear & coeff_vars,
+    Integer value, optional<LiteralFromIntegerVariable> half_reif, bool equality, bool propagating) -> void
 {
+    if (propagating && half_reif)
+        throw UnimplementedException{};
+
+    optional<ProofLine> proof_line;
+    if (_imp->problem->optional_proof())
+        proof_line = _imp->problem->optional_proof()->integer_linear_le(state, coeff_vars, value, half_reif, equality);
+
+    if (propagating) {
+        int id = _imp->propagation_functions.size();
+        for (auto & [_, v] : coeff_vars)
+            trigger_on_bounds(v, id);
+
+        _imp->propagation_functions.emplace_back([&, coeff_vars = coeff_vars, value = value,
+                                                     equality = equality, proof_line = proof_line](State & state) {
+            return propagate_linear(coeff_vars, value, state, equality, proof_line);
+        });
+        _imp->propagator_is_disabled.push_back(0);
+    }
+}
+
+auto Propagators::sum_le(const State & state, const SimpleSum & sum_vars,
+    Integer value, optional<LiteralFromIntegerVariable> half_reif, bool equality, bool propagating) -> void
+{
+    if (propagating && half_reif)
+        throw UnimplementedException{};
+
     optional<ProofLine> proof_line;
     if (_imp->problem->optional_proof()) {
         SimpleLinear coeff_vars;
         for (const auto & [c, v] : sum_vars)
             coeff_vars.emplace_back(c ? 1_i : -1_i, v);
-        proof_line = _imp->problem->optional_proof()->integer_linear_le(state, coeff_vars, value, equality);
+        proof_line = _imp->problem->optional_proof()->integer_linear_le(state, coeff_vars, value, half_reif, equality);
     }
 
-    int id = _imp->propagation_functions.size();
-    for (auto & [_, v] : sum_vars)
-        trigger_on_bounds(v, id);
+    if (propagating) {
+        int id = _imp->propagation_functions.size();
+        for (auto & [_, v] : sum_vars)
+            trigger_on_bounds(v, id);
 
-    _imp->propagation_functions.emplace_back([&, sum_vars = sum_vars, value = value,
-                                                 equality = equality, proof_line = proof_line](State & state) {
-        return propagate_sum(sum_vars, value, state, equality, proof_line);
-    });
-    _imp->propagator_is_disabled.push_back(0);
+        _imp->propagation_functions.emplace_back([&, sum_vars = sum_vars, value = value,
+                                                     equality = equality, proof_line = proof_line](State & state) {
+            return propagate_sum(sum_vars, value, state, equality, proof_line);
+        });
+        _imp->propagator_is_disabled.push_back(0);
+    }
 }
 
-auto Propagators::positive_sum_le(const State & state, const SimpleIntegerVariableIDs & sum_vars, Integer value, bool equality) -> void
+auto Propagators::positive_sum_le(const State & state, const SimpleIntegerVariableIDs & sum_vars,
+    Integer value, optional<LiteralFromIntegerVariable> half_reif, bool equality, bool propagating) -> void
 {
+    if (propagating && half_reif)
+        throw UnimplementedException{};
+
     optional<ProofLine> proof_line;
     if (_imp->problem->optional_proof()) {
         SimpleLinear coeff_vars;
         for (const auto & v : sum_vars)
             coeff_vars.emplace_back(1_i, v);
-        proof_line = _imp->problem->optional_proof()->integer_linear_le(state, coeff_vars, value, equality);
+        proof_line = _imp->problem->optional_proof()->integer_linear_le(state, coeff_vars, value, half_reif, equality);
     }
 
-    int id = _imp->propagation_functions.size();
-    for (auto & v : sum_vars)
-        trigger_on_bounds(v, id);
+    if (propagating) {
+        int id = _imp->propagation_functions.size();
+        for (auto & v : sum_vars)
+            trigger_on_bounds(v, id);
 
-    _imp->propagation_functions.emplace_back([&, sum_vars = sum_vars, value = value,
-                                                 equality = equality, proof_line = proof_line](State & state) {
-        return propagate_sum_all_positive(sum_vars, value, state, equality, proof_line);
-    });
-    _imp->propagator_is_disabled.push_back(0);
+        _imp->propagation_functions.emplace_back([&, sum_vars = sum_vars, value = value,
+                                                     equality = equality, proof_line = proof_line](State & state) {
+            return propagate_sum_all_positive(sum_vars, value, state, equality, proof_line);
+        });
+        _imp->propagator_is_disabled.push_back(0);
+    }
 }
 
 auto Propagators::propagator(const State &, PropagationFunction && f, const Triggers & triggers, const std::string &) -> void
@@ -225,7 +250,7 @@ auto Propagators::table(const State & state, vector<IntegerVariableID> && vars, 
             if (infeasible)
                 cnf(state, {selector != Integer(tuple_idx)}, true);
             else
-                pseudoboolean_ge(state, move(lits), Integer(lits.size() - 1), false);
+                pseudoboolean_ge_nonpropagating(state, move(lits), Integer(lits.size() - 1));
         });
     }
 

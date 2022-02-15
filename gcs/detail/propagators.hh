@@ -52,12 +52,19 @@ namespace gcs
 
         auto cnf(const State &, Literals && lits, bool propagating) -> std::optional<ProofLine>;
         auto at_most_one(const State &, Literals && lits, bool propagating) -> std::optional<ProofLine>;
-        auto pseudoboolean_ge(const State &, WeightedLiterals && lits, Integer, bool propagating) -> std::optional<ProofLine>;
-        auto integer_linear_le(const State &, const SimpleLinear & coeff_vars, Integer value, bool equality) -> void;
-        auto sum_le(const State &, const SimpleSum & coeff_vars, Integer value, bool equality) -> void;
-        auto positive_sum_le(const State &, const SimpleIntegerVariableIDs & vars, Integer value, bool equality) -> void;
         auto table(const State &, std::vector<IntegerVariableID> &&, std::vector<std::vector<Integer>> &&, const std::string & name) -> void;
         auto propagator(const State &, PropagationFunction &&, const Triggers & trigger_vars, const std::string & name) -> void;
+
+        auto sanitised_linear_le(const State &, const SanitisedLinear &, Integer value,
+            std::optional<LiteralFromIntegerVariable> half_reif, bool equality, bool propagating) -> void;
+        auto integer_linear_le(const State &, const SimpleLinear & coeff_vars, Integer value,
+            std::optional<LiteralFromIntegerVariable> half_reif, bool equality, bool propagating) -> void;
+        auto sum_le(const State &, const SimpleSum & coeff_vars, Integer value,
+            std::optional<LiteralFromIntegerVariable> half_reif, bool equality, bool propagating) -> void;
+        auto positive_sum_le(const State &, const SimpleIntegerVariableIDs & vars, Integer value,
+            std::optional<LiteralFromIntegerVariable> half_reif, bool equality, bool propagating) -> void;
+
+        auto pseudoboolean_ge_nonpropagating(const State &, WeightedLiterals && lits, Integer) -> std::optional<ProofLine>;
 
         [[nodiscard]] auto create_auxilliary_integer_variable(Integer, Integer, const std::string & name) -> IntegerVariableID;
 

@@ -2,7 +2,6 @@
 
 #include <gcs/constraints/all_different.hh>
 #include <gcs/constraints/arithmetic.hh>
-#include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/element.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>

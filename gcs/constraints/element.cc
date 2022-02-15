@@ -2,6 +2,7 @@
 
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/element.hh>
+#include <gcs/constraints/equals.hh>
 #include <gcs/detail/proof.hh>
 #include <gcs/detail/propagators.hh>
 #include <gcs/detail/state.hh>

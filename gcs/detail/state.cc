@@ -1097,6 +1097,8 @@ namespace gcs
 
     template auto State::bounds(const IntegerVariableID & var) const -> pair<Integer, Integer>;
     template auto State::bounds(const SimpleIntegerVariableID & var) const -> pair<Integer, Integer>;
+    template auto State::bounds(const ViewOfIntegerVariableID & var) const -> pair<Integer, Integer>;
+    template auto State::bounds(const ConstantIntegerVariableID & var) const -> pair<Integer, Integer>;
 
     template auto State::domain_size(const IntegerVariableID &) const -> Integer;
     template auto State::domain_size(const SimpleIntegerVariableID &) const -> Integer;

@@ -22,7 +22,9 @@ namespace gcs
 
     using SimpleIntegerVariableIDs = std::vector<SimpleIntegerVariableID>;
 
-    [[nodiscard]] auto sanitise_linear(const Linear &) -> std::pair<std::variant<SimpleIntegerVariableIDs, SimpleSum, SimpleLinear>, Integer>;
+    using SanitisedLinear = std::variant<SimpleIntegerVariableIDs, SimpleSum, SimpleLinear>;
+
+    [[nodiscard]] auto sanitise_linear(const Linear &) -> std::pair<SanitisedLinear, Integer>;
 
     auto propagate_linear(const SimpleLinear &, Integer, State &, bool equality,
         const std::optional<ProofLine> & proof_line) -> std::pair<Inference, PropagatorState>;

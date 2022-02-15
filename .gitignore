@@ -19,6 +19,7 @@ perf.data.old
 /comparison_test
 /abs_test
 /element_test
+/equals_test
 /linear_equality_test
 /stable_matching
 /magic_series
