@@ -428,62 +428,50 @@ auto Propagators::fill_in_constraint_stats(Stats & stats) const -> void
     stats.propagations += _imp->total_propagations;
 }
 
-auto Propagators::trigger_on_change(VariableID var, int t) -> void
+auto Propagators::trigger_on_change(IntegerVariableID var, int t) -> void
 {
     overloaded{
-        [&](const IntegerVariableID & ivar) {
-            overloaded{
-                [&](const SimpleIntegerVariableID & v) {
-                    if (_imp->iv_triggers.size() <= v.index)
-                        _imp->iv_triggers.resize(v.index + 1);
-                    _imp->iv_triggers[v.index].on_change.push_back(t);
-                },
-                [&](const ViewOfIntegerVariableID & v) {
-                    trigger_on_change(v.actual_variable, t);
-                },
-                [&](const ConstantIntegerVariableID &) {
-                }}
-                .visit(ivar);
+        [&](const SimpleIntegerVariableID & v) {
+            if (_imp->iv_triggers.size() <= v.index)
+                _imp->iv_triggers.resize(v.index + 1);
+            _imp->iv_triggers[v.index].on_change.push_back(t);
+        },
+        [&](const ViewOfIntegerVariableID & v) {
+            trigger_on_change(v.actual_variable, t);
+        },
+        [&](const ConstantIntegerVariableID &) {
         }}
         .visit(var);
 }
 
-auto Propagators::trigger_on_bounds(VariableID var, int t) -> void
+auto Propagators::trigger_on_bounds(IntegerVariableID var, int t) -> void
 {
     overloaded{
-        [&](const IntegerVariableID & ivar) {
-            overloaded{
-                [&](const SimpleIntegerVariableID & v) {
-                    if (_imp->iv_triggers.size() <= v.index)
-                        _imp->iv_triggers.resize(v.index + 1);
-                    _imp->iv_triggers[v.index].on_bounds.push_back(t);
-                },
-                [&](const ViewOfIntegerVariableID & v) {
-                    trigger_on_bounds(v.actual_variable, t);
-                },
-                [&](const ConstantIntegerVariableID &) {
-                }}
-                .visit(ivar);
+        [&](const SimpleIntegerVariableID & v) {
+            if (_imp->iv_triggers.size() <= v.index)
+                _imp->iv_triggers.resize(v.index + 1);
+            _imp->iv_triggers[v.index].on_bounds.push_back(t);
+        },
+        [&](const ViewOfIntegerVariableID & v) {
+            trigger_on_bounds(v.actual_variable, t);
+        },
+        [&](const ConstantIntegerVariableID &) {
         }}
         .visit(var);
 }
 
-auto Propagators::trigger_on_instantiated(VariableID var, int t) -> void
+auto Propagators::trigger_on_instantiated(IntegerVariableID var, int t) -> void
 {
     overloaded{
-        [&](const IntegerVariableID & ivar) {
-            overloaded{
-                [&](const SimpleIntegerVariableID & v) {
-                    if (_imp->iv_triggers.size() <= v.index)
-                        _imp->iv_triggers.resize(v.index + 1);
-                    _imp->iv_triggers[v.index].on_instantiated.push_back(t);
-                },
-                [&](const ViewOfIntegerVariableID & v) {
-                    trigger_on_instantiated(v.actual_variable, t);
-                },
-                [&](const ConstantIntegerVariableID &) {
-                }}
-                .visit(ivar);
+        [&](const SimpleIntegerVariableID & v) {
+            if (_imp->iv_triggers.size() <= v.index)
+                _imp->iv_triggers.resize(v.index + 1);
+            _imp->iv_triggers[v.index].on_instantiated.push_back(t);
+        },
+        [&](const ViewOfIntegerVariableID & v) {
+            trigger_on_instantiated(v.actual_variable, t);
+        },
+        [&](const ConstantIntegerVariableID &) {
         }}
         .visit(var);
 }

@@ -21,9 +21,9 @@ namespace gcs
 
     struct Triggers
     {
-        std::vector<VariableID> on_change = {};
-        std::vector<VariableID> on_bounds = {};
-        std::vector<VariableID> on_instantiated = {};
+        std::vector<IntegerVariableID> on_change = {};
+        std::vector<IntegerVariableID> on_bounds = {};
+        std::vector<IntegerVariableID> on_instantiated = {};
     };
 
     class Propagators
@@ -34,9 +34,9 @@ namespace gcs
 
         [[nodiscard]] auto propagate_cnfs(State &) const -> Inference;
 
-        auto trigger_on_change(VariableID, int id) -> void;
-        auto trigger_on_bounds(VariableID, int id) -> void;
-        auto trigger_on_instantiated(VariableID, int id) -> void;
+        auto trigger_on_change(IntegerVariableID, int id) -> void;
+        auto trigger_on_bounds(IntegerVariableID, int id) -> void;
+        auto trigger_on_instantiated(IntegerVariableID, int id) -> void;
 
     public:
         explicit Propagators(Problem * const);
