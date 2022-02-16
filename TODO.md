@@ -36,7 +36,8 @@ Constraints
 
 - What if it appears multiple times, but involving views?
 
-- Test whether constraints achieve GAC.
+- Test whether constraints achieve GAC, and tidy up existing tests that do this
+  to use common code.
 
 - Circuit, so we can do all the MiniCP benchmarks.
 

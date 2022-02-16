@@ -8,6 +8,7 @@
 #include <util/for_each.hh>
 
 using std::nullopt;
+using std::optional;
 using std::pair;
 using std::string;
 using std::vector;
@@ -44,6 +45,17 @@ auto ArrayMinMax::install(Propagators & propagators, const State & initial_state
                     return pair{inf, PropagatorState::Enable};
             }
 
+            // each var >= result
+            for (auto & var : vars) {
+                if (min)
+                    increase_inference_to(inf, state.infer_greater_than_or_equal(var, state.lower_bound(result), JustifyUsingRUP{}));
+                else
+                    increase_inference_to(inf, state.infer_less_than(result, state.upper_bound(result) + 1_i, JustifyUsingRUP{}));
+
+                if (Inference::Contradiction == inf)
+                    return pair{inf, PropagatorState::Enable};
+            }
+
             // result in union(vars)
             state.for_each_value(result, [&] (Integer value) {
                 bool found_support = false;
@@ -62,6 +74,28 @@ auto ArrayMinMax::install(Propagators & propagators, const State & initial_state
 
                 return true;
             });
+
+            if (Inference::Contradiction == inf)
+                return pair{inf, PropagatorState::Enable};
+
+            // largest value in result uniquely supported?
+            optional<IntegerVariableID> support_of_largest_1, support_of_largest_2;
+            auto largest_result = state.upper_bound(result);
+            for (auto & var : vars) {
+                if (state.in_domain(var, largest_result)) {
+                    if (! support_of_largest_1)
+                        support_of_largest_1 = var;
+                    else {
+                        support_of_largest_2 = var;
+                        break;
+                    }
+                }
+            }
+
+            if (! support_of_largest_1)
+                throw UnexpectedException{"missing support, bug in MinMaxArray propagator"};
+            else if (! support_of_largest_2)
+                increase_inference_to(inf, state.infer_less_than(*support_of_largest_1, largest_result + 1_i, JustifyUsingRUP{}));
 
             return pair{inf, PropagatorState::Enable};
             }, triggers, "array min max");

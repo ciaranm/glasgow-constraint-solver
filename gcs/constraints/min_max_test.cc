@@ -97,21 +97,9 @@ auto grow(vector<int> & array, const vector<pair<int, int>> & array_range, const
     }
 }
 
-auto check_var_gac(IntegerVariableID var, const vector<IntegerVariableID> & vars, const CurrentState & s) -> bool
+auto run_min_max_test(pair<int, int> result_range, const vector<pair<int, int>> & array_range) -> bool
 {
-    bool ok = true;
-    return ok;
-}
-
-auto check_vals_gac(IntegerVariableID var, const vector<IntegerVariableID> & vars, const CurrentState & s) -> bool
-{
-    bool ok = true;
-    return ok;
-}
-
-auto run_min_max_test(pair<int, int> var_range, const vector<pair<int, int>> & array_range) -> bool
-{
-    cerr << "MinMaxArray " << stringify_tuple(var_range) << " " << " [";
+    cerr << "MinMaxArray " << stringify_tuple(result_range) << " " << " [";
     for (const auto & v : array_range)
         cerr << " " << stringify_tuple(v);
     cerr << " ]";
@@ -121,18 +109,18 @@ auto run_min_max_test(pair<int, int> var_range, const vector<pair<int, int>> & a
         vector<int> array;
         grow(array, array_range, [&]() {
             auto min = *min_element(array.begin(), array.end());
-            if (min >= var_range.first && min <= var_range.second)
+            if (min >= result_range.first && min <= result_range.second)
                 expected.emplace(min, array);
         });
     }
 
     Problem p{ProofOptions{"min_max_test.opb", "min_max_test.veripb"}};
-    auto var = p.create_integer_variable(Integer(var_range.first), Integer(var_range.second), "result");
+    auto result = p.create_integer_variable(Integer(result_range.first), Integer(result_range.second), "result");
     vector<IntegerVariableID> array;
     for (const auto & [l, u] : array_range)
         array.push_back(p.create_integer_variable(Integer(l), Integer(u)));
 
-    p.post(ArrayMin{array, var});
+    p.post(ArrayMin{array, result});
     bool gac_violated = false;
     solve_with(p,
         SolveCallbacks{
@@ -140,11 +128,75 @@ auto run_min_max_test(pair<int, int> var_range, const vector<pair<int, int>> & a
                 vector<int> vals;
                 for (auto & a : array)
                     vals.push_back(s(a).raw_value);
-                actual.emplace(s(var).raw_value, vals);
+                actual.emplace(s(result).raw_value, vals);
                 return true;
             },
             .trace = [&](const CurrentState & s) -> bool {
-                gac_violated = gac_violated || ! check_var_gac(var, array, s) || ! check_vals_gac(var, array, s);
+                s.for_each_value(result, [&] (Integer val) {
+                    bool violated = expected.end() == find_if(expected.begin(), expected.end(), [&] (const auto & sol) {
+                            if (Integer{get<0>(sol)} != val)
+                                return false;
+                            bool ok = false;
+                            for_each_with_index(get<1>(sol), [&] (int val, auto idx) {
+                                    ok = ok || s.in_domain(array.at(idx), Integer{val});
+                                    });
+                            return ok;
+                            });
+                    if (violated) {
+                        cerr << "gac violated for result" << endl;
+                        gac_violated = true;
+                    }
+                });
+
+                for_each_with_index(array, [&] (auto var, auto idx) {
+                    s.for_each_value(var, [&](Integer val) {
+                        bool violated = expected.end() == find_if(expected.begin(), expected.end(), [&] (const auto & sol) {
+                                bool ok = true;
+                                if (Integer{get<1>(sol).at(idx)} != val)
+                                    ok = false;
+                                else if (! s.in_domain(result, Integer{get<0>(sol)}))
+                                    ok = false;
+                                else
+                                    for_each_with_index(get<1>(sol), [&] (int val, auto idx) {
+                                        if (! s.in_domain(array[idx], Integer{val}))
+                                            ok = false;
+                                    });
+                                return ok;
+                        });
+                        if (violated) {
+                            cerr << "gac violated for var " << idx << " val " << val << ", result is [";
+                            s.for_each_value(result, [&] (Integer val) {
+                                    cerr << " " << val;
+                                    });
+                            cerr << " ], vars are [";
+                            for (auto & var : array) {
+                                cerr << " [";
+                                s.for_each_value(var, [&](Integer val) {
+                                        cerr << " " << val;
+                                        });
+                                cerr << " ]";
+                            }
+                            cerr << " ]" << endl;
+                            gac_violated = true;
+                        }
+                    });
+                });
+
+                s.for_each_value(result, [&] (Integer val) {
+                    bool violated = expected.end() == find_if(expected.begin(), expected.end(), [&] (const auto & sol) {
+                            if (Integer{get<0>(sol)} != val)
+                                return false;
+                            bool ok = false;
+                            for_each_with_index(get<1>(sol), [&] (int val, auto idx) {
+                                    ok = ok || s.in_domain(array.at(idx), Integer{val});
+                                    });
+                            return ok;
+                            });
+                    if (violated) {
+                        cerr << "gac violated for result" << endl;
+                        gac_violated = true;
+                    }
+                });
                 return true;
             }});
 
@@ -165,10 +217,10 @@ auto main(int, char *[]) -> int
     random_device rand_dev;
     mt19937 rand(rand_dev());
     for (int x = 0; x < 10; ++x) {
-        uniform_int_distribution var_lower_dist(-10, 10);
-        auto var_lower = var_lower_dist(rand);
-        uniform_int_distribution var_upper_dist(var_lower, var_lower + 10);
-        auto var_upper = var_upper_dist(rand);
+        uniform_int_distribution result_lower_dist(-10, 10);
+        auto result_lower = result_lower_dist(rand);
+        uniform_int_distribution result_upper_dist(result_lower, result_lower + 10);
+        auto result_upper = result_upper_dist(rand);
 
         vector<pair<int, int>> values;
         uniform_int_distribution n_values_dist(1, 5);
@@ -181,7 +233,7 @@ auto main(int, char *[]) -> int
             values.emplace_back(val_lower, val_upper);
         }
 
-        data.emplace_back(pair{var_lower, var_upper}, move(values));
+        data.emplace_back(pair{result_lower, result_upper}, move(values));
     }
 
     for (auto & [r1, r2] : data) {
