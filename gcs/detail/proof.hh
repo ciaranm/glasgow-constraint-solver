@@ -57,7 +57,7 @@ namespace gcs
         auto posting(const std::string &) -> void;
         auto create_integer_variable(SimpleIntegerVariableID, Integer, Integer, const std::optional<std::string> &,
             bool direct_encoding) -> void;
-        [[nodiscard]] auto cnf(const Literals &) -> ProofLine;
+        auto cnf(const Literals &) -> ProofLine;
         [[nodiscard]] auto at_most_one(const Literals &) -> ProofLine;
         [[nodiscard]] auto pseudoboolean_ge(const WeightedLiterals &, Integer) -> ProofLine;
         auto integer_linear_le(const State &, const SimpleLinear & coeff_vars, Integer value,

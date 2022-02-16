@@ -72,7 +72,7 @@ auto Equals::install(Propagators & propagators, const State & initial_state) && 
 
     if (v1_is_constant && v2_is_constant) {
         if (*v1_is_constant != *v2_is_constant) {
-            propagators.cnf(initial_state, {}, true);
+            propagators.model_contradiction(initial_state, "Equals constraint on two variables with different constant values");
             return;
         }
     }
@@ -361,7 +361,7 @@ auto NotEquals::install(Propagators & propagators, const State & initial_state) 
 
     if (v1_is_constant && v2_is_constant) {
         if (*v1_is_constant == *v2_is_constant) {
-            propagators.cnf(initial_state, {}, true);
+            propagators.model_contradiction(initial_state, "NotEquals constraint on two variables with the same constant values");
             return;
         }
     }

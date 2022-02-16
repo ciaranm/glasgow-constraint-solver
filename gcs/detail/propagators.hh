@@ -47,8 +47,10 @@ namespace gcs
 
         [[nodiscard]] auto want_nonpropagating() const -> bool;
 
-        auto trim_lower_bound(const State &, IntegerVariableID var, Integer val) -> void;
-        auto trim_upper_bound(const State &, IntegerVariableID var, Integer val) -> void;
+        auto model_contradiction(const State &, const std::string & explain_yourself) -> void;
+
+        auto trim_lower_bound(const State &, IntegerVariableID var, Integer val, const std::string & explain_yourself) -> void;
+        auto trim_upper_bound(const State &, IntegerVariableID var, Integer val, const std::string & explain_yourself) -> void;
 
         auto cnf(const State &, Literals && lits, bool propagating) -> std::optional<ProofLine>;
         auto at_most_one(const State &, Literals && lits, bool propagating) -> std::optional<ProofLine>;

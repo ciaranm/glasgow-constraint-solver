@@ -21,17 +21,17 @@ Abs::Abs(const IntegerVariableID v1, const IntegerVariableID v2) :
 auto Abs::install(Propagators & propagators, const State & initial_state) && -> void
 {
     // _v2 >= 0
-    propagators.trim_lower_bound(initial_state, _v2, 0_i);
+    propagators.trim_lower_bound(initial_state, _v2, 0_i, "Abs");
 
     // _v1 <= upper_bound(_v2)
-    propagators.trim_upper_bound(initial_state, _v1, initial_state.upper_bound(_v2));
+    propagators.trim_upper_bound(initial_state, _v1, initial_state.upper_bound(_v2), "Abs");
 
     // _v1 >= -upper_bound(_v2)
-    propagators.trim_lower_bound(initial_state, _v1, -initial_state.upper_bound(_v2));
+    propagators.trim_lower_bound(initial_state, _v1, -initial_state.upper_bound(_v2), "Abs");
 
     // _v2 <= max(upper_bound(_v1), -lower_bound(_v1))
     auto v2u = max(initial_state.upper_bound(_v1), -initial_state.lower_bound(_v1));
-    propagators.trim_upper_bound(initial_state, _v2, v2u);
+    propagators.trim_upper_bound(initial_state, _v2, v2u, "Abs");
 
     // _v2 = abs(_v1)
     Triggers triggers{.on_change = {_v1, _v2}};

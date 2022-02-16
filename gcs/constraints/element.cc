@@ -39,13 +39,13 @@ Element::Element(IntegerVariableID var, IntegerVariableID idx_var, const vector<
 auto Element::install(Propagators & propagators, const State & initial_state) && -> void
 {
     if (_vals.empty()) {
-        propagators.cnf(initial_state, {}, true);
+        propagators.model_contradiction(initial_state, "Element constraint with no values");
         return;
     }
 
     // _idx_var >= 0, _idx_var < _vals.size()
-    propagators.trim_lower_bound(initial_state, _idx_var, 0_i);
-    propagators.trim_upper_bound(initial_state, _idx_var, Integer(_vals.size()) - 1_i);
+    propagators.trim_lower_bound(initial_state, _idx_var, 0_i, "Element");
+    propagators.trim_upper_bound(initial_state, _idx_var, Integer(_vals.size()) - 1_i, "Element");
 
     // _var <= max(upper(_vals)), _var >= min(lower(_vals))
     // ...and this should really be just over _vals that _idx_var might cover
@@ -56,8 +56,8 @@ auto Element::install(Propagators & propagators, const State & initial_state) &&
         return initial_state.lower_bound(v) < initial_state.lower_bound(w);
     }));
 
-    propagators.trim_lower_bound(initial_state, _var, min_lower);
-    propagators.trim_upper_bound(initial_state, _var, max_upper);
+    propagators.trim_lower_bound(initial_state, _var, min_lower, "Element");
+    propagators.trim_upper_bound(initial_state, _var, max_upper, "Element");
 
     for_each_with_index(_vals, [&](auto & v, auto idx) {
         // _idx_var == i -> _var == _vals[idx]
@@ -98,15 +98,15 @@ Element2DConstantArray::Element2DConstantArray(IntegerVariableID var, IntegerVar
 auto Element2DConstantArray::install(Propagators & propagators, const State & initial_state) && -> void
 {
     if (_vals.empty() || _vals.begin()->empty()) {
-        propagators.cnf(initial_state, {}, true);
+        propagators.model_contradiction(initial_state, "Element2DConstantArray constraint with no values");
         return;
     }
 
-    propagators.trim_lower_bound(initial_state, _idx1, 0_i);
-    propagators.trim_upper_bound(initial_state, _idx1, Integer(_vals.size()) - 1_i);
+    propagators.trim_lower_bound(initial_state, _idx1, 0_i, "Element2DConstantArray");
+    propagators.trim_upper_bound(initial_state, _idx1, Integer(_vals.size()) - 1_i, "Element2DConstantArray");
 
-    propagators.trim_lower_bound(initial_state, _idx2, 0_i);
-    propagators.trim_upper_bound(initial_state, _idx2, Integer(_vals.begin()->size()) - 1_i);
+    propagators.trim_lower_bound(initial_state, _idx2, 0_i, "Element2DConstantArray");
+    propagators.trim_upper_bound(initial_state, _idx2, Integer(_vals.begin()->size()) - 1_i, "Element2DConstantArray");
 
     if (propagators.want_nonpropagating()) {
         for_each_with_index(_vals, [&](auto & vv, auto idx1) {

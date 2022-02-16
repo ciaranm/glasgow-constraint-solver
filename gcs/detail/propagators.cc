@@ -65,23 +65,33 @@ Propagators::Propagators(Problem * p) :
 
 Propagators::~Propagators() = default;
 
-auto Propagators::trim_lower_bound(const State & state, IntegerVariableID var, Integer val) -> void
+auto Propagators::model_contradiction(const State & initial_state, const string & explain_yourself) -> void
+{
+    if (_imp->problem->optional_proof())
+        _imp->problem->optional_proof()->cnf({});
+
+    propagator(initial_state, [explain_yourself = explain_yourself](State &) -> pair<Inference, PropagatorState> {
+            return pair{Inference::Contradiction, PropagatorState::Enable};
+            }, Triggers{}, "model contradiction");
+}
+
+auto Propagators::trim_lower_bound(const State & state, IntegerVariableID var, Integer val, const string & x) -> void
 {
     if (state.lower_bound(var) < val) {
         if (state.upper_bound(var) >= val)
             cnf(state, {var >= val}, true);
         else
-            cnf(state, {}, true);
+            model_contradiction(state, "Trimmed lower bound of " + debug_string(var) + " due to " + x + " is outside its domain");
     }
 }
 
-auto Propagators::trim_upper_bound(const State & state, IntegerVariableID var, Integer val) -> void
+auto Propagators::trim_upper_bound(const State & state, IntegerVariableID var, Integer val, const string & x) -> void
 {
     if (state.upper_bound(var) > val) {
         if (state.lower_bound(var) <= val)
             cnf(state, {var < val + 1_i}, true);
         else
-            cnf(state, {}, true);
+            model_contradiction(state, "Trimmed upper bound of " + debug_string(var) + " due to " + x + " is outside its domain");
     }
 }
 
@@ -224,10 +234,10 @@ auto Propagators::propagator(const State &, PropagationFunction && f, const Trig
         trigger_on_instantiated(v, id);
 }
 
-auto Propagators::table(const State & state, vector<IntegerVariableID> && vars, vector<vector<Integer>> && permitted, const std::string &) -> void
+auto Propagators::table(const State & state, vector<IntegerVariableID> && vars, vector<vector<Integer>> && permitted, const string & x) -> void
 {
     if (permitted.empty()) {
-        cnf(state, {}, true);
+        model_contradiction(state, "Empty table constraint from " + x);
         return;
     }
 
