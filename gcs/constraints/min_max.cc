@@ -7,9 +7,14 @@
 
 #include <util/for_each.hh>
 
+using std::nullopt;
+using std::pair;
+using std::string;
+using std::vector;
+
 using namespace gcs;
 
-ArrayMinMax::ArrayMinMax(const std::vector<IntegerVariableID> & vars, const IntegerVariableID result, bool min) :
+ArrayMinMax::ArrayMinMax(const vector<IntegerVariableID> & vars, const IntegerVariableID result, bool min) :
     _vars(vars),
     _result(result),
     _min(min)
@@ -21,44 +26,66 @@ auto ArrayMinMax::install(Propagators & propagators, const State & initial_state
     if (_vars.empty())
         throw UnexpectedException{"not sure how min and max are defined over an empty array"};
 
-    if (_min) {
-        for (const auto & v : _vars)
-            LessThanEqual{_result, v}.install(propagators, initial_state);
-    }
-    else {
-        for (const auto & v : _vars)
-            LessThanEqual{v, _result}.install(propagators, initial_state);
-    }
+    Triggers triggers{ .on_change = {_result} };
+    for (const auto & v : _vars)
+        triggers.on_change.emplace_back(v);
 
-    auto selector = propagators.create_auxilliary_integer_variable(0_i, Integer(_vars.size() - 1), "minmax");
-    for_each_with_index(_vars, [&](IntegerVariableID var, auto idx) {
-        // (selector == idx /\ var == val) -> result == val
-        initial_state.for_each_value(var, [&](Integer val) {
-            propagators.cnf(initial_state, {selector != Integer(idx), var != val, _result == val}, true);
-        });
-        // (selector == idx /\ result == r) -> var == r
-        initial_state.for_each_value(_result, [&](Integer r) {
-            propagators.cnf(initial_state, {selector != Integer(idx), _result != r, var == r}, true);
-        });
-    });
+    propagators.propagator(initial_state, [vars = _vars, result = _result, min = _min](State & state) -> pair<Inference, PropagatorState> {
+            Inference inf = Inference::NoChange;
 
-    // selector isn't branched on, so need to force it to be the lowest possible thing it can be
-    // in case two variables have the same min or max value
-    for_each_with_index(_vars, [&](IntegerVariableID v1, auto v1_idx) {
-        for_each_with_index(_vars, [&](IntegerVariableID v2, auto v2_idx) {
-            if (v1_idx < v2_idx) {
-                // v1 == v2 -> selector != v2
-                initial_state.for_each_value(v1, [&](Integer val) {
-                    if (initial_state.in_domain(v2, val)) {
-                        propagators.cnf(initial_state, {v1 != val, v2 != val, selector != Integer(v2_idx)}, true);
-                    }
-                });
+            // result <= each var
+            for (auto & var : vars) {
+                if (min)
+                    increase_inference_to(inf, state.infer_less_than(result, state.upper_bound(var) + 1_i, JustifyUsingRUP{}));
+                else
+                    increase_inference_to(inf, state.infer_greater_than_or_equal(result, state.lower_bound(var), JustifyUsingRUP{}));
+
+                if (Inference::Contradiction == inf)
+                    return pair{inf, PropagatorState::Enable};
             }
+
+            // result in union(vars)
+            state.for_each_value(result, [&] (Integer value) {
+                bool found_support = false;
+                for (auto & var : vars) {
+                    if (state.in_domain(var, value)) {
+                        found_support = true;
+                        break;
+                    }
+                }
+
+                if (! found_support) {
+                    increase_inference_to(inf, state.infer_not_equal(result, value, JustifyUsingRUP{}));
+                    if (Inference::Contradiction == inf)
+                        return false;
+                }
+
+                return true;
+            });
+
+            return pair{inf, PropagatorState::Enable};
+            }, triggers, "array min max");
+
+    if (propagators.want_nonpropagating()) {
+        // result <= each var
+        for (const auto & v : _vars) {
+            auto cv = Linear{{_min ? -1_i : 1_i, v}, {_min ? 1_i : -1_i, _result}};
+            auto [sum, modifier] = sanitise_linear(cv);
+            propagators.sanitised_linear_le(initial_state, sum, modifier, nullopt, false, false);
+        }
+
+        // result == i -> i in vars
+        initial_state.for_each_value(_result, [&](Integer val) {
+            Literals lits{ {_result != val} };
+            for (auto & v : _vars)
+                if (initial_state.in_domain(v, val))
+                    lits.emplace_back(v == val);
+            propagators.cnf(initial_state, move(lits), false);
         });
-    });
+    }
 }
 
-auto ArrayMinMax::describe_for_proof() -> std::string
+auto ArrayMinMax::describe_for_proof() -> string
 {
     return "array min max";
 }
@@ -75,12 +102,12 @@ Max::Max(const IntegerVariableID v1, const IntegerVariableID v2, const IntegerVa
 {
 }
 
-ArrayMin::ArrayMin(const std::vector<IntegerVariableID> & vars, const IntegerVariableID result) :
+ArrayMin::ArrayMin(const vector<IntegerVariableID> & vars, const IntegerVariableID result) :
     ArrayMinMax(vars, result, true)
 {
 }
 
-ArrayMax::ArrayMax(const std::vector<IntegerVariableID> & vars, const IntegerVariableID result) :
+ArrayMax::ArrayMax(const vector<IntegerVariableID> & vars, const IntegerVariableID result) :
     ArrayMinMax(vars, result, false)
 {
 }

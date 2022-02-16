@@ -58,6 +58,8 @@ State
 - Template out some of the variable representations so we don't pay the price
   for offsets etc if we aren't using them.
 
+- Fast way of unioning and intersecting many domains.
+
 Design
 ------
 

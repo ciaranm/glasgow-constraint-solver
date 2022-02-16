@@ -28,5 +28,6 @@ perf.data.old
 /magic_square
 /cake
 /odd_even_sum
+/min_max_test
 *.opb
 *.veripb
