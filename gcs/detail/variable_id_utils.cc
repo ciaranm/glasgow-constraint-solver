@@ -43,4 +43,3 @@ auto gcs::underlying_direct_variable_and_offset(const DirectIntegerVariableID & 
 {
     return visit([&](const auto & var) -> pair<DirectIntegerVariableID, Integer> { return underlying_direct_variable_and_offset(var); }, var);
 }
-

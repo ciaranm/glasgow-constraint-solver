@@ -99,7 +99,8 @@ auto grow(vector<int> & array, const vector<pair<int, int>> & array_range, const
 
 auto run_min_max_test(pair<int, int> result_range, const vector<pair<int, int>> & array_range) -> bool
 {
-    cerr << "MinMaxArray " << stringify_tuple(result_range) << " " << " [";
+    cerr << "MinMaxArray " << stringify_tuple(result_range) << " "
+         << " [";
     for (const auto & v : array_range)
         cerr << " " << stringify_tuple(v);
     cerr << " ]";
@@ -132,48 +133,48 @@ auto run_min_max_test(pair<int, int> result_range, const vector<pair<int, int>> 
                 return true;
             },
             .trace = [&](const CurrentState & s) -> bool {
-                s.for_each_value(result, [&] (Integer val) {
-                    bool violated = expected.end() == find_if(expected.begin(), expected.end(), [&] (const auto & sol) {
-                            if (Integer{get<0>(sol)} != val)
-                                return false;
-                            bool ok = false;
-                            for_each_with_index(get<1>(sol), [&] (int val, auto idx) {
-                                    ok = ok || s.in_domain(array.at(idx), Integer{val});
-                                    });
-                            return ok;
-                            });
+                s.for_each_value(result, [&](Integer val) {
+                    bool violated = expected.end() == find_if(expected.begin(), expected.end(), [&](const auto & sol) {
+                        if (Integer{get<0>(sol)} != val)
+                            return false;
+                        bool ok = false;
+                        for_each_with_index(get<1>(sol), [&](int val, auto idx) {
+                            ok = ok || s.in_domain(array.at(idx), Integer{val});
+                        });
+                        return ok;
+                    });
                     if (violated) {
                         cerr << "gac violated for result" << endl;
                         gac_violated = true;
                     }
                 });
 
-                for_each_with_index(array, [&] (auto var, auto idx) {
+                for_each_with_index(array, [&](auto var, auto idx) {
                     s.for_each_value(var, [&](Integer val) {
-                        bool violated = expected.end() == find_if(expected.begin(), expected.end(), [&] (const auto & sol) {
-                                bool ok = true;
-                                if (Integer{get<1>(sol).at(idx)} != val)
-                                    ok = false;
-                                else if (! s.in_domain(result, Integer{get<0>(sol)}))
-                                    ok = false;
-                                else
-                                    for_each_with_index(get<1>(sol), [&] (int val, auto idx) {
-                                        if (! s.in_domain(array[idx], Integer{val}))
-                                            ok = false;
-                                    });
-                                return ok;
+                        bool violated = expected.end() == find_if(expected.begin(), expected.end(), [&](const auto & sol) {
+                            bool ok = true;
+                            if (Integer{get<1>(sol).at(idx)} != val)
+                                ok = false;
+                            else if (! s.in_domain(result, Integer{get<0>(sol)}))
+                                ok = false;
+                            else
+                                for_each_with_index(get<1>(sol), [&](int val, auto idx) {
+                                    if (! s.in_domain(array[idx], Integer{val}))
+                                        ok = false;
+                                });
+                            return ok;
                         });
                         if (violated) {
                             cerr << "gac violated for var " << idx << " val " << val << ", result is [";
-                            s.for_each_value(result, [&] (Integer val) {
-                                    cerr << " " << val;
-                                    });
+                            s.for_each_value(result, [&](Integer val) {
+                                cerr << " " << val;
+                            });
                             cerr << " ], vars are [";
                             for (auto & var : array) {
                                 cerr << " [";
                                 s.for_each_value(var, [&](Integer val) {
-                                        cerr << " " << val;
-                                        });
+                                    cerr << " " << val;
+                                });
                                 cerr << " ]";
                             }
                             cerr << " ]" << endl;
@@ -182,16 +183,16 @@ auto run_min_max_test(pair<int, int> result_range, const vector<pair<int, int>> 
                     });
                 });
 
-                s.for_each_value(result, [&] (Integer val) {
-                    bool violated = expected.end() == find_if(expected.begin(), expected.end(), [&] (const auto & sol) {
-                            if (Integer{get<0>(sol)} != val)
-                                return false;
-                            bool ok = false;
-                            for_each_with_index(get<1>(sol), [&] (int val, auto idx) {
-                                    ok = ok || s.in_domain(array.at(idx), Integer{val});
-                                    });
-                            return ok;
-                            });
+                s.for_each_value(result, [&](Integer val) {
+                    bool violated = expected.end() == find_if(expected.begin(), expected.end(), [&](const auto & sol) {
+                        if (Integer{get<0>(sol)} != val)
+                            return false;
+                        bool ok = false;
+                        for_each_with_index(get<1>(sol), [&](int val, auto idx) {
+                            ok = ok || s.in_domain(array.at(idx), Integer{val});
+                        });
+                        return ok;
+                    });
                     if (violated) {
                         cerr << "gac violated for result" << endl;
                         gac_violated = true;

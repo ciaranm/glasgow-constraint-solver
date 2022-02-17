@@ -70,9 +70,11 @@ auto Propagators::model_contradiction(const State & initial_state, const string 
     if (_imp->problem->optional_proof())
         _imp->problem->optional_proof()->cnf({});
 
-    propagator(initial_state, [explain_yourself = explain_yourself](State &) -> pair<Inference, PropagatorState> {
+    propagator(
+        initial_state, [explain_yourself = explain_yourself](State &) -> pair<Inference, PropagatorState> {
             return pair{Inference::Contradiction, PropagatorState::Enable};
-            }, Triggers{}, "model contradiction");
+        },
+        Triggers{}, "model contradiction");
 }
 
 auto Propagators::trim_lower_bound(const State & state, IntegerVariableID var, Integer val, const string & x) -> void

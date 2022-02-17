@@ -69,8 +69,8 @@ auto gcs::sanitise_linear(const Linear & coeff_vars) -> pair<variant<SimpleInteg
         return pair{simple_result, modifier};
     }
     else if (result.end() == find_if(result.begin(), result.end(), [](const CoefficientAndSimpleVariable & cv) -> bool {
-            return cv.first != 1_i && cv.first != -1_i;
-        })) {
+                 return cv.first != 1_i && cv.first != -1_i;
+             })) {
         SimpleSum sum_result;
         for (auto & [c, v] : result)
             sum_result.emplace_back(c == 1_i, v);

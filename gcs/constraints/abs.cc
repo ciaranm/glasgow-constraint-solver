@@ -35,23 +35,25 @@ auto Abs::install(Propagators & propagators, const State & initial_state) && -> 
 
     // _v2 = abs(_v1)
     Triggers triggers{.on_change = {_v1, _v2}};
-    propagators.propagator(initial_state, [v1 = _v1, v2 = _v2](State & state) -> pair<Inference, PropagatorState> {
-        // v2 = abs(v1)
-        Inference result = Inference::NoChange;
-        state.for_each_value_while(v1, [&](Integer val) {
-            if (! state.in_domain(v2, abs(val)))
-                increase_inference_to(result, state.infer_not_equal(v1, val, JustifyUsingRUP{}));
-            return result != Inference::Contradiction;
-        });
+    propagators.propagator(
+        initial_state, [v1 = _v1, v2 = _v2](State & state) -> pair<Inference, PropagatorState> {
+            // v2 = abs(v1)
+            Inference result = Inference::NoChange;
+            state.for_each_value_while(v1, [&](Integer val) {
+                if (! state.in_domain(v2, abs(val)))
+                    increase_inference_to(result, state.infer_not_equal(v1, val, JustifyUsingRUP{}));
+                return result != Inference::Contradiction;
+            });
 
-        state.for_each_value_while(v2, [&](Integer val) {
-            if (! state.in_domain(v1, val) && ! state.in_domain(v1, -val))
-                increase_inference_to(result, state.infer_not_equal(v2, val, JustifyUsingRUP{}));
-            return result != Inference::Contradiction;
-        });
+            state.for_each_value_while(v2, [&](Integer val) {
+                if (! state.in_domain(v1, val) && ! state.in_domain(v1, -val))
+                    increase_inference_to(result, state.infer_not_equal(v2, val, JustifyUsingRUP{}));
+                return result != Inference::Contradiction;
+            });
 
-        return pair{result, PropagatorState::Enable};
-    }, triggers, "abs");
+            return pair{result, PropagatorState::Enable};
+        },
+        triggers, "abs");
 
     if (propagators.want_nonpropagating()) {
         // _v2 == x <-> _v1 == x || _v1 == -x

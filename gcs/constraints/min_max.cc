@@ -27,11 +27,12 @@ auto ArrayMinMax::install(Propagators & propagators, const State & initial_state
     if (_vars.empty())
         throw UnexpectedException{"not sure how min and max are defined over an empty array"};
 
-    Triggers triggers{ .on_change = {_result} };
+    Triggers triggers{.on_change = {_result}};
     for (const auto & v : _vars)
         triggers.on_change.emplace_back(v);
 
-    propagators.propagator(initial_state, [vars = _vars, result = _result, min = _min](State & state) -> pair<Inference, PropagatorState> {
+    propagators.propagator(
+        initial_state, [vars = _vars, result = _result, min = _min](State & state) -> pair<Inference, PropagatorState> {
             Inference inf = Inference::NoChange;
 
             // result <= each var
@@ -57,7 +58,7 @@ auto ArrayMinMax::install(Propagators & propagators, const State & initial_state
             }
 
             // result in union(vars)
-            state.for_each_value(result, [&] (Integer value) {
+            state.for_each_value(result, [&](Integer value) {
                 bool found_support = false;
                 for (auto & var : vars) {
                     if (state.in_domain(var, value)) {
@@ -98,7 +99,8 @@ auto ArrayMinMax::install(Propagators & propagators, const State & initial_state
                 increase_inference_to(inf, state.infer_less_than(*support_of_largest_1, largest_result + 1_i, JustifyUsingRUP{}));
 
             return pair{inf, PropagatorState::Enable};
-            }, triggers, "array min max");
+        },
+        triggers, "array min max");
 
     if (propagators.want_nonpropagating()) {
         // result <= each var
@@ -110,7 +112,7 @@ auto ArrayMinMax::install(Propagators & propagators, const State & initial_state
 
         // result == i -> i in vars
         initial_state.for_each_value(_result, [&](Integer val) {
-            Literals lits{ {_result != val} };
+            Literals lits{{_result != val}};
             for (auto & v : _vars)
                 if (initial_state.in_domain(v, val))
                     lits.emplace_back(v == val);

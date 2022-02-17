@@ -220,17 +220,17 @@ auto State::state_of(const SimpleIntegerVariableID & v) const -> const IntegerVa
 auto State::state_of(const DirectIntegerVariableID & v, IntegerVariableState & space) -> IntegerVariableState &
 {
     return overloaded{
-        [&] (const SimpleIntegerVariableID & v) -> IntegerVariableState & { return state_of(v); },
-        [&] (const ConstantIntegerVariableID & v) -> IntegerVariableState & { return state_of(v, space); }
-    }.visit(v);
+        [&](const SimpleIntegerVariableID & v) -> IntegerVariableState & { return state_of(v); },
+        [&](const ConstantIntegerVariableID & v) -> IntegerVariableState & { return state_of(v, space); }}
+        .visit(v);
 }
 
 auto State::state_of(const DirectIntegerVariableID & v, IntegerVariableState & space) const -> const IntegerVariableState &
 {
     return overloaded{
-        [&] (const SimpleIntegerVariableID & v) -> const IntegerVariableState & { return state_of(v); },
-        [&] (const ConstantIntegerVariableID & v) -> const IntegerVariableState & { return state_of(v, space); }
-    }.visit(v);
+        [&](const SimpleIntegerVariableID & v) -> const IntegerVariableState & { return state_of(v); },
+        [&](const ConstantIntegerVariableID & v) -> const IntegerVariableState & { return state_of(v, space); }}
+        .visit(v);
 }
 
 template <DirectIntegerVariableIDLike VarType_>
@@ -238,7 +238,7 @@ auto State::change_state_for_equal(
     const VarType_ & var,
     Integer value) -> pair<Inference, HowChanged>
 {
-    GetMutableStateAndOffsetOf<VarType_> get_state{ *this, var };
+    GetMutableStateAndOffsetOf<VarType_> get_state{*this, var};
 
     // Has to be equal. If the value isn't in the domain, we've found a
     // contradiction, otherwise update to a constant value.
@@ -291,7 +291,7 @@ auto State::change_state_for_equal(
             else
                 return pair{Inference::Contradiction, HowChanged::Dummy};
         }}
-    .visit(get_state.state);
+        .visit(get_state.state);
 }
 
 template <DirectIntegerVariableIDLike VarType_>
@@ -299,7 +299,7 @@ auto State::change_state_for_not_equal(
     const VarType_ & var,
     Integer value) -> pair<Inference, HowChanged>
 {
-    GetMutableStateAndOffsetOf<VarType_> get_state{ *this, var };
+    GetMutableStateAndOffsetOf<VarType_> get_state{*this, var};
 
     return overloaded{
         [&](IntegerVariableConstantState & cvar) -> pair<Inference, HowChanged> {
@@ -413,7 +413,7 @@ auto State::change_state_for_less_than(
     const VarType_ & var,
     Integer value) -> pair<Inference, HowChanged>
 {
-    GetMutableStateAndOffsetOf<VarType_> get_state{ *this, var };
+    GetMutableStateAndOffsetOf<VarType_> get_state{*this, var};
 
     return overloaded{
         [&](IntegerVariableConstantState & c) -> pair<Inference, HowChanged> {
@@ -483,7 +483,7 @@ auto State::change_state_for_less_than(
             else
                 return pair{Inference::Change, HowChanged::BoundsChanged};
         }}
-    .visit(get_state.state);
+        .visit(get_state.state);
 }
 
 template <DirectIntegerVariableIDLike VarType_>
@@ -491,7 +491,7 @@ auto State::change_state_for_greater_than_or_equal(
     const VarType_ & var,
     Integer value) -> pair<Inference, HowChanged>
 {
-    GetMutableStateAndOffsetOf<VarType_> get_state{ *this, var };
+    GetMutableStateAndOffsetOf<VarType_> get_state{*this, var};
 
     return overloaded{
         [&](IntegerVariableConstantState & c) -> pair<Inference, HowChanged> {
@@ -753,7 +753,7 @@ auto State::upper_bound(const IntegerVariableID var) const -> Integer
 template <IntegerVariableIDLike VarType_>
 auto State::bounds(const VarType_ & var) const -> pair<Integer, Integer>
 {
-    GetStateAndOffsetOf<VarType_> get_state{ *this, var };
+    GetStateAndOffsetOf<VarType_> get_state{*this, var};
     auto result = overloaded{
         [](const IntegerVariableRangeState & v) { return pair{v.lower, v.upper}; },
         [](const IntegerVariableConstantState & v) { return pair{v.value, v.value}; },
@@ -768,7 +768,7 @@ auto State::bounds(const VarType_ & var) const -> pair<Integer, Integer>
 template <IntegerVariableIDLike VarType_>
 auto State::in_domain(const VarType_ & var, const Integer val) const -> bool
 {
-    GetStateAndOffsetOf<VarType_> get_state{ *this, var };
+    GetStateAndOffsetOf<VarType_> get_state{*this, var};
     auto actual_val = val - get_state.var_and_offset.second;
     return overloaded{
         [val = actual_val](const IntegerVariableRangeState & v) { return val >= v.lower && val <= v.upper; },
@@ -780,7 +780,7 @@ auto State::in_domain(const VarType_ & var, const Integer val) const -> bool
                 return v.bits.test((val - v.lower).raw_value);
         },
         [val = actual_val](const IntegerVariableSetState & v) { return v.values->end() != v.values->find(val); }}
-    .visit(get_state.state);
+        .visit(get_state.state);
 }
 
 auto State::domain_has_holes(const IntegerVariableID var) const -> bool
@@ -798,7 +798,7 @@ auto State::domain_has_holes(const IntegerVariableID var) const -> bool
 template <IntegerVariableIDLike VarType_>
 auto State::optional_single_value(const VarType_ & var) const -> optional<Integer>
 {
-    GetStateAndOffsetOf<VarType_> get_state{ *this, var };
+    GetStateAndOffsetOf<VarType_> get_state{*this, var};
     auto result = overloaded{
         [](const IntegerVariableRangeState & v) -> optional<Integer> {
             if (v.lower == v.upper)
@@ -840,13 +840,13 @@ auto State::has_single_value(const IntegerVariableID var) const -> bool
 template <IntegerVariableIDLike VarType_>
 auto State::domain_size(const VarType_ & var) const -> Integer
 {
-    GetStateAndOffsetOf<VarType_> get_state{ *this, var };
+    GetStateAndOffsetOf<VarType_> get_state{*this, var};
     return overloaded{
         [](const IntegerVariableConstantState &) { return Integer{1}; },
         [](const IntegerVariableRangeState & r) { return r.upper - r.lower + Integer{1}; },
         [](const IntegerVariableSmallSetState & s) { return Integer{s.bits.popcount()}; },
-        [](const IntegerVariableSetState & s) { return Integer(s.values->size()); }
-    }.visit(get_state.state);
+        [](const IntegerVariableSetState & s) { return Integer(s.values->size()); }}
+        .visit(get_state.state);
 }
 
 template <IntegerVariableIDLike VarType_>
@@ -863,7 +863,7 @@ auto State::for_each_value_while(const VarType_ & var, function<auto(Integer)->b
 {
     auto [actual_var, offset] = underlying_direct_variable_and_offset(var);
 
-    GetStateAndOffsetOf<VarType_> get_state{ *this, var };
+    GetStateAndOffsetOf<VarType_> get_state{*this, var};
     IntegerVariableState var_copy = get_state.state;
 
     overloaded{
@@ -901,7 +901,7 @@ auto State::for_each_value_while_immutable(const VarType_ & var, function<auto(I
 {
     auto [actual_var, offset] = underlying_direct_variable_and_offset(var);
 
-    GetStateAndOffsetOf<VarType_> get_state{ *this, var };
+    GetStateAndOffsetOf<VarType_> get_state{*this, var};
     const IntegerVariableState & var_ref = get_state.state;
 
     overloaded{
