@@ -1,5 +1,34 @@
-What do we actually need to make a solver?
-==========================================
+Examples, and Navigating the Source Code
+========================================
+
+The ``examples/`` directory contains example programs that show how to use the solver as a program
+author. It is probably best to start with ``examples/cake/cake.cc`` for some delicious cakes,
+``examples/crystal_maze/crystal_maze.cc`` for everyone's favourite first constraint programming
+problem, and ``examples/magic_square/magic_square.cc`` for some magic.
+
+The ``gcs/`` directory contains the user-facing part of the API. The ``Problem`` class in
+``gcs/problem.hh`` is your starting point, and you will want ``Problem::create_integer_variable``.
+This returns an ``IntegerVariableID``, which is a light-weight handle which you can pass around by
+value. For type-safety and avoiding overflow problems, the solver does not accept raw ``int`` and
+similar types directly, and anywhere you use a numerical value you must create an ``Integer``.
+
+You will also want some constraints. These can be found in the ``gcs/constraints/`` directory. Once
+you construct a constraint, you can add it to a problem instance using ``Problem::post``.
+
+Finally, you probably want to solve your problem. The ``solve`` function in ``gcs/solve.hh`` will do
+this. It accepts a callback function as its second, which is called every time a solution is found.
+The callback is given a ``CurrentState`` instance, and you can get a variable's value by using the
+function call operator on the state.  If the callback function returns ``false``, no more solutions
+will be found. If you are optimising something, via ``Problem::minimise``, this function will be
+called every time a better incumbent is found, and ``true`` means "keep going and try to find
+something better".
+
+The contents of the ``gcs/detail/`` directory, and anything in the ``gcs::detail`` namespace, are
+the solver's innards. These are probably not useful for end users, and if they are, they should
+probably be turned into a cleaner API rather than exposed directly.
+
+How Does the Solver Work Internally?
+====================================
 
 If we're looking to do as little as possible to get a working but not particularly efficient solver,
 we probably need:
@@ -44,7 +73,8 @@ store this state. The solution I'm going with for now is:
   having to overload constraints.
 
 - Whenever we've found a solution, we're given a temporary reference to a State object, that can
-  be queried using a variable identifier to get its value.
+  be queried using a variable identifier to get its value. (Actually, we get a CurrentState, which
+  avoids exposing all sorts of ugly innards.)
 
 Then there's the question of how variable state is stored. A variable is a set of values, but a set
 is a horribly inefficient data structure that is expensive to copy, and involves all kinds of
@@ -84,47 +114,25 @@ be similarly useful for proof logging.
 Constraints
 -----------
 
-The minimal set of constraints needed to work with MiniZinc is approximately:
+Constraints are user-facing. Each constraint is associated with zero or more propagators, which do
+the actual work. A propagator is always called at least once, at the root node. After that, it is
+only called when triggered by an event. Events include a specific variable being instantiated, a
+specific variable having its bounds changed, and a specific variable having any of its values
+deleted. (Instantiated implies both other kinds of events, and bounds implies any values, so
+multiple triggers are not needed.) A propagator is then called, and it can make some inferences. It
+must then return information on whether or not it actually changed anything, and whether or not it
+should be called again in the future. The easiest constraints to understand are probably
+``NotEquals`` and ``Table`` (the latter of which uses ``propagate_extensional`` to do the hard work,
+because this code is used by other constraints too).
 
-- element, minimum, maximum
-- abs, plus, times, div, mod, power
-- boolean and, or, cnf
-- reified equals and less-equals
-- reified integer linear equalities and inequalities
+For proof logging, every constraint must also be able to describe itself in low level terms. Usually
+this is done via members of the ``Propagators`` class such as ``cnf``, ``at_most_one``, and
+``sanitised_linear_le``. This is only done if ``Propagators::want_nonpropagating()`` is true.
 
-And realistically we probably want to do some of the globals:
-
-- alldifferent
-- count
-- nvalue
-- lex, precede chain, increasing, etc
-
-But do we really need to write propagators for all of these? CNF is great, we can propagate it in
-sub-linear(ish) time. Why not compile everything down to CNF? This also means we don't need to worry
-about propagation efficiency and memory for millions of constraints.
-
-The problem, of course, is that CNF encodings for some of these constraints are either large or
-don't propagate. But what if we mostly use CNF where we can? And when that doesn't work, compile to
-either linear inequalities or table constraints? And only when all else fails, have actual serious
-propagators to do things like Hall sets?  This means we can focus on writing really fast propagators
-for, say, CNF, table, and linear equalities, and not worry so much about the rest. It also means we
-can do things like conflict analysis on the CNF, and linear relaxations, and merging tables.
-
-Note that because we're not a SAT solver, compiling to CNF doesn't require an explicit boolean
-variable for each CP variable-value. We can just have literals refer to CP variable-values, and
-sort things out inside the CNF propagator. This also lets us have multiple virtual encodings for
-each CP variable without paying the cost of explicitly creating them, so we can have literals
-that mean "x < 3" and "x = 3".
-
-From a user perspective, they don't really need to see this. They can create and post constraints
-however they like. A constraint is just a temporary, short-lived thing that compiles itself into one
-or more of a small number of low-level representations, and possibly installs a full propagation
-routine if it's really needed.
-
-I expect that eventually, we'll end up with full propagation for quite a few constraints, but
-compiling most things down seems to be an easy way of getting started. For example, all of the
-arithmetic constraints can be brute-forced into table constraints in only a few lines of code, and
-we get fairly fast propagators with watches for free (at the slight expense of encoding size).
+Any inference that is carried out, via ``State::infer``, must also be justified for proof logging.
+This can be done by passing a ``NoJustificationNeeded`` or ``JustifyUsingRUP`` instance, for simple
+constraints, but complex reasoning will require a ``JustifyExplicitly`` instance which includes a
+callback to create the relevant proof steps.
 
 Backtracking Search
 -------------------
