@@ -33,6 +33,16 @@ namespace gcs
         virtual auto what() const noexcept -> const char * override;
     };
 
+    struct ProofFlag
+    {
+        unsigned long long index;
+        bool positive;
+    };
+
+    [[nodiscard]] auto operator!(const ProofFlag &) -> ProofFlag;
+
+    using LiteralFromIntegerVariableOrProofFlag = std::variant<LiteralFromIntegerVariable, ProofFlag>;
+
     class Proof
     {
     private:
@@ -57,11 +67,12 @@ namespace gcs
         auto posting(const std::string &) -> void;
         auto create_integer_variable(SimpleIntegerVariableID, Integer, Integer, const std::optional<std::string> &,
             bool direct_encoding) -> void;
+        [[nodiscard]] auto create_proof_flag(const std::string &) -> ProofFlag;
         auto cnf(const Literals &) -> ProofLine;
         [[nodiscard]] auto at_most_one(const Literals &) -> ProofLine;
         [[nodiscard]] auto pseudoboolean_ge(const WeightedLiterals &, Integer) -> ProofLine;
         auto integer_linear_le(const State &, const SimpleLinear & coeff_vars, Integer value,
-            std::optional<LiteralFromIntegerVariable> half_reif, bool equality) -> ProofLine;
+            std::optional<LiteralFromIntegerVariableOrProofFlag> half_reif, bool equality) -> ProofLine;
 
         auto minimise(IntegerVariableID) -> void;
 
@@ -92,6 +103,7 @@ namespace gcs
         auto create_pseudovariable(SimpleIntegerVariableID, Integer, Integer, const std::optional<std::string> &) -> void;
 
         [[nodiscard]] auto proof_variable(const Literal &) const -> const std::string &;
+        [[nodiscard]] auto proof_variable(const ProofFlag &) const -> const std::string &;
     };
 }
 

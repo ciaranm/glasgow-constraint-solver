@@ -7,6 +7,8 @@ namespace gcs
 {
     class Proof;
 
+    struct ProofFlag;
+
     using ProofLine = long long;
 }
 

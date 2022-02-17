@@ -5,6 +5,7 @@
 
 #include <gcs/detail/linear_utils.hh>
 #include <gcs/detail/literal_utils.hh>
+#include <gcs/detail/proof.hh>
 #include <gcs/detail/propagators-fwd.hh>
 #include <gcs/detail/state.hh>
 #include <gcs/linear.hh>
@@ -58,17 +59,19 @@ namespace gcs
         auto propagator(const State &, PropagationFunction &&, const Triggers & trigger_vars, const std::string & name) -> void;
 
         auto sanitised_linear_le(const State &, const SanitisedLinear &, Integer value,
-            std::optional<LiteralFromIntegerVariable> half_reif, bool equality, bool propagating) -> void;
+            std::optional<LiteralFromIntegerVariableOrProofFlag> half_reif, bool equality, bool propagating) -> void;
         auto integer_linear_le(const State &, const SimpleLinear & coeff_vars, Integer value,
-            std::optional<LiteralFromIntegerVariable> half_reif, bool equality, bool propagating) -> void;
+            std::optional<LiteralFromIntegerVariableOrProofFlag> half_reif, bool equality, bool propagating) -> void;
         auto sum_le(const State &, const SimpleSum & coeff_vars, Integer value,
-            std::optional<LiteralFromIntegerVariable> half_reif, bool equality, bool propagating) -> void;
+            std::optional<LiteralFromIntegerVariableOrProofFlag> half_reif, bool equality, bool propagating) -> void;
         auto positive_sum_le(const State &, const SimpleIntegerVariableIDs & vars, Integer value,
-            std::optional<LiteralFromIntegerVariable> half_reif, bool equality, bool propagating) -> void;
+            std::optional<LiteralFromIntegerVariableOrProofFlag> half_reif, bool equality, bool propagating) -> void;
 
         auto pseudoboolean_ge_nonpropagating(const State &, WeightedLiterals && lits, Integer) -> std::optional<ProofLine>;
 
         [[nodiscard]] auto create_auxilliary_integer_variable(Integer, Integer, const std::string & name) -> IntegerVariableID;
+
+        [[nodiscard]] auto create_proof_flag(const std::string &) -> ProofFlag;
 
         [[nodiscard]] auto propagate(State &, const std::optional<IntegerVariableID> & objective_variable,
             const std::optional<Integer> & objective_value) const -> bool;

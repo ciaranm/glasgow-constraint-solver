@@ -63,6 +63,11 @@ auto ProofError::what() const noexcept -> const char *
     return _wat.c_str();
 }
 
+auto gcs::operator!(const ProofFlag & f) -> ProofFlag
+{
+    return ProofFlag{f.index, ! f.positive};
+}
+
 struct Proof::Imp
 {
     unsigned long long model_variables = 0;
@@ -77,6 +82,7 @@ struct Proof::Imp
     map<SimpleIntegerVariableID, set<Integer>> gevars_that_exist;
     list<IntegerVariableID> solution_variables;
     optional<IntegerVariableID> objective_variable;
+    map<pair<unsigned long long, bool>, string> flags;
 
     string opb_file, proof_file;
     stringstream opb;
@@ -203,6 +209,16 @@ auto Proof::create_integer_variable(SimpleIntegerVariableID id, Integer lower, I
         _imp->opb << "1 ~" << proof_variable(id >= upper + 1_i) << " >= 1 ;\n";
         ++_imp->model_constraints;
     }
+}
+
+auto Proof::create_proof_flag(const string & n) -> ProofFlag
+{
+    ProofFlag result{_imp->flags.size() / 2, true};
+
+    string name = xify("flag" + to_string(result.index) + "_" + n);
+    _imp->flags.emplace(pair{result.index, true}, name);
+    _imp->flags.emplace(pair{result.index, false}, "~" + name);
+    return result;
 }
 
 auto Proof::need_gevar(SimpleIntegerVariableID id, Integer v) -> void
@@ -381,7 +397,7 @@ auto Proof::pseudoboolean_ge(const WeightedLiterals & lits, Integer val) -> Proo
 }
 
 auto Proof::integer_linear_le(const State &, const SimpleLinear & lin, Integer val,
-    optional<LiteralFromIntegerVariable> half_reif, bool equality) -> ProofLine
+    optional<LiteralFromIntegerVariableOrProofFlag> half_reif, bool equality) -> ProofLine
 {
     _imp->opb << (equality ? "* linear eq" : "* linear le");
 
@@ -398,7 +414,10 @@ auto Proof::integer_linear_le(const State &, const SimpleLinear & lin, Integer v
             }
 
         if (half_reif)
-            _imp->opb << (big_number + 1_i) << " " << proof_variable(! *half_reif) << " ";
+            visit([&](const auto & h) {
+                _imp->opb << (big_number + 1_i) << " " << proof_variable(! h) << " ";
+            },
+                *half_reif);
 
         _imp->opb << ">= " << (multiplier * val) << " ;\n";
         ++_imp->model_constraints;
@@ -444,6 +463,14 @@ auto Proof::proof_variable(const Literal & lit) const -> const string &
             throw UnimplementedException{};
         }}
         .visit(lit);
+}
+
+auto Proof::proof_variable(const ProofFlag & flag) const -> const string &
+{
+    auto it = _imp->flags.find(pair{flag.index, flag.positive});
+    if (it == _imp->flags.end())
+        throw ProofError("Missing flag");
+    return it->second;
 }
 
 auto Proof::need_proof_variable(const Literal & lit) -> void

@@ -136,7 +136,7 @@ auto Propagators::pseudoboolean_ge_nonpropagating(const State &, WeightedLiteral
 }
 
 auto Propagators::sanitised_linear_le(const State & state, const SanitisedLinear & coeff_vars,
-    Integer value, optional<LiteralFromIntegerVariable> half_reif, bool equality, bool propagating) -> void
+    Integer value, optional<LiteralFromIntegerVariableOrProofFlag> half_reif, bool equality, bool propagating) -> void
 {
     overloaded{
         [&](const SimpleSum & sum) { sum_le(state, sum, value, half_reif, equality, propagating); },
@@ -146,7 +146,7 @@ auto Propagators::sanitised_linear_le(const State & state, const SanitisedLinear
 }
 
 auto Propagators::integer_linear_le(const State & state, const SimpleLinear & coeff_vars,
-    Integer value, optional<LiteralFromIntegerVariable> half_reif, bool equality, bool propagating) -> void
+    Integer value, optional<LiteralFromIntegerVariableOrProofFlag> half_reif, bool equality, bool propagating) -> void
 {
     if (propagating && half_reif)
         throw UnimplementedException{};
@@ -169,7 +169,7 @@ auto Propagators::integer_linear_le(const State & state, const SimpleLinear & co
 }
 
 auto Propagators::sum_le(const State & state, const SimpleSum & sum_vars,
-    Integer value, optional<LiteralFromIntegerVariable> half_reif, bool equality, bool propagating) -> void
+    Integer value, optional<LiteralFromIntegerVariableOrProofFlag> half_reif, bool equality, bool propagating) -> void
 {
     if (propagating && half_reif)
         throw UnimplementedException{};
@@ -196,7 +196,7 @@ auto Propagators::sum_le(const State & state, const SimpleSum & sum_vars,
 }
 
 auto Propagators::positive_sum_le(const State & state, const SimpleIntegerVariableIDs & sum_vars,
-    Integer value, optional<LiteralFromIntegerVariable> half_reif, bool equality, bool propagating) -> void
+    Integer value, optional<LiteralFromIntegerVariableOrProofFlag> half_reif, bool equality, bool propagating) -> void
 {
     if (propagating && half_reif)
         throw UnimplementedException{};
@@ -426,6 +426,13 @@ auto Propagators::propagate_cnfs(State & state) const -> Inference
 auto Propagators::create_auxilliary_integer_variable(Integer l, Integer u, const std::string & s) -> IntegerVariableID
 {
     return _imp->problem->create_integer_variable(l, u, make_optional("aux_" + s));
+}
+
+auto Propagators::create_proof_flag(const std::string & n) -> ProofFlag
+{
+    if (! _imp->problem->optional_proof())
+        throw UnexpectedException{"trying to create a proof flag but proof logging is not enabled"};
+    return _imp->problem->optional_proof()->create_proof_flag(n);
 }
 
 auto Propagators::want_nonpropagating() const -> bool

@@ -1,6 +1,7 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
 #include <gcs/constraints/equals.hh>
+#include <gcs/detail/proof.hh>
 #include <gcs/detail/propagators.hh>
 #include <gcs/exception.hh>
 
@@ -391,9 +392,9 @@ auto NotEquals::install(Propagators & propagators, const State & initial_state) 
                     if (value1 && value2)
                         return pair{(*value1 != *value2) ? Inference::NoChange : Inference::Contradiction, PropagatorState::DisableUntilBacktrack};
                     else if (value1)
-                        return pair{state.infer_not_equal(v2, *value1, NoJustificationNeeded{}), PropagatorState::DisableUntilBacktrack};
+                        return pair{state.infer_not_equal(v2, *value1, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
                     else if (value2)
-                        return pair{state.infer_not_equal(v1, *value2, NoJustificationNeeded{}), PropagatorState::DisableUntilBacktrack};
+                        return pair{state.infer_not_equal(v1, *value2, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
                     else
                         return pair{Inference::NoChange, PropagatorState::Enable};
                 },
@@ -403,10 +404,15 @@ auto NotEquals::install(Propagators & propagators, const State & initial_state) 
     }
 
     if (propagators.want_nonpropagating()) {
-        auto lower_common = max(initial_state.lower_bound(_v1), initial_state.lower_bound(_v2));
-        auto upper_common = min(initial_state.upper_bound(_v1), initial_state.upper_bound(_v2));
-        for (auto v = lower_common; v <= upper_common; ++v)
-            propagators.cnf(initial_state, {{_v1 != v}, {_v2 != v}}, false);
+        auto selector = propagators.create_proof_flag("notequals");
+
+        auto cv1 = Linear{{1_i, _v1}, {-1_i, _v2}};
+        auto [sum1, modifier1] = sanitise_linear(cv1);
+        propagators.sanitised_linear_le(initial_state, sum1, modifier1 - 1_i, selector, false, false);
+
+        auto cv2 = Linear{{-1_i, _v1}, {1_i, _v2}};
+        auto [sum2, modifier2] = sanitise_linear(cv2);
+        propagators.sanitised_linear_le(initial_state, sum2, modifier2 - 1_i, ! selector, false, false);
     }
 }
 
