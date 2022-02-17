@@ -39,6 +39,8 @@ Constraints
 - Test whether constraints achieve GAC, and tidy up existing tests that do this
   to use common code.
 
+- Random branching order and hole poking in tests.
+
 - Circuit, so we can do all the MiniCP benchmarks.
 
 - Rewrite Abs to use multiplier and equality.

@@ -13,7 +13,7 @@ namespace gcs
     class Element : public Constraint
     {
     private:
-        IntegerVariableID _var, _idx_var;
+        IntegerVariableID _var, _idx;
         const std::vector<IntegerVariableID> & _vals;
 
     public:

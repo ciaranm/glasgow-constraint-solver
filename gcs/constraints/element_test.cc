@@ -138,7 +138,20 @@ auto check_vals_gac(IntegerVariableID var, IntegerVariableID idx, const vector<I
         if (s.has_single_value(idx) && s(idx) == Integer(index)) {
             s.for_each_value(avar, [&](Integer aval) {
                 if (! s.in_domain(var, aval)) {
-                    cerr << "avar missing support: " << aval << endl;
+                    cerr << "avar " << index << " missing support: " << aval << " when idx is " << s(idx)
+                         << ", var is ";
+                    s.for_each_value(var, [&](Integer v) {
+                        cerr << " " << v;
+                    });
+                    cerr << ", all vars are [ ";
+                    for (auto & v : vars) {
+                        cerr << "[";
+                        s.for_each_value(v, [&](Integer val) {
+                            cerr << " " << val;
+                        });
+                        cerr << " ]";
+                    }
+                    cerr << " ]" << endl;
                     ok = false;
                 }
             });
@@ -165,8 +178,8 @@ auto run_element_test(pair<int, int> var_range, pair<int, int> idx_range, const 
         }
 
     Problem p{ProofOptions{"element_test.opb", "element_test.veripb"}};
-    auto var = p.create_integer_variable(Integer(var_range.first), Integer(var_range.second));
-    auto idx = p.create_integer_variable(Integer(idx_range.first), Integer(idx_range.second));
+    auto var = p.create_integer_variable(Integer(var_range.first), Integer(var_range.second), "var");
+    auto idx = p.create_integer_variable(Integer(idx_range.first), Integer(idx_range.second), "idx");
     vector<IntegerVariableID> array;
     for (const auto & [l, u] : array_range)
         array.push_back(p.create_integer_variable(Integer(l), Integer(u)));
@@ -199,7 +212,8 @@ auto main(int, char *[]) -> int
         {{1, 2}, {0, 1}, {{1, 2}, {1, 2}, {1, 2}}},
         {{-1, 3}, {0, 2}, {{-1, 2}, {1, 3}, {4, 5}}},
         {{1, 4}, {0, 4}, {{1, 4}, {2, 3}, {0, 5}, {-2, 0}, {5, 7}}},
-        {{-5, 5}, {-3, 2}, {{-8, 0}, {4, 4}, {10, 10}, {2, 11}, {4, 10}}}};
+        {{-5, 5}, {-3, 2}, {{-8, 0}, {4, 4}, {10, 10}, {2, 11}, {4, 10}}},
+        {{7, 10}, {0, 9}, {{8, 18}, {9, 19}, {-1, 0}, {-6, 0}}}};
 
     random_device rand_dev;
     mt19937 rand(rand_dev());

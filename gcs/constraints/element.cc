@@ -29,9 +29,9 @@ using std::stringstream;
 using std::vector;
 using std::visit;
 
-Element::Element(IntegerVariableID var, IntegerVariableID idx_var, const vector<IntegerVariableID> & vals) :
+Element::Element(IntegerVariableID var, IntegerVariableID idx, const vector<IntegerVariableID> & vals) :
     _var(var),
-    _idx_var(idx_var),
+    _idx(idx),
     _vals(vals)
 {
 }
@@ -43,38 +43,85 @@ auto Element::install(Propagators & propagators, const State & initial_state) &&
         return;
     }
 
-    // _idx_var >= 0, _idx_var < _vals.size()
-    propagators.trim_lower_bound(initial_state, _idx_var, 0_i, "Element");
-    propagators.trim_upper_bound(initial_state, _idx_var, Integer(_vals.size()) - 1_i, "Element");
+    propagators.trim_lower_bound(initial_state, _idx, 0_i, "Element");
+    propagators.trim_upper_bound(initial_state, _idx, Integer(_vals.size()) - 1_i, "Element");
 
-    // _var <= max(upper(_vals)), _var >= min(lower(_vals))
-    // ...and this should really be just over _vals that _idx_var might cover
-    auto max_upper = initial_state.upper_bound(*max_element(_vals.begin(), _vals.end(), [&](const IntegerVariableID & v, const IntegerVariableID & w) {
-        return initial_state.upper_bound(v) < initial_state.upper_bound(w);
-    }));
-    auto min_lower = initial_state.lower_bound(*min_element(_vals.begin(), _vals.end(), [&](const IntegerVariableID & v, const IntegerVariableID & w) {
-        return initial_state.lower_bound(v) < initial_state.lower_bound(w);
-    }));
-
-    propagators.trim_lower_bound(initial_state, _var, min_lower, "Element");
-    propagators.trim_upper_bound(initial_state, _var, max_upper, "Element");
-
-    for_each_with_index(_vals, [&](auto & v, auto idx) {
-        // _idx_var == i -> _var == _vals[idx]
-        if (initial_state.in_domain(_idx_var, Integer(idx)))
-            EqualsIf{_var, v, _idx_var == Integer(idx)}.install(propagators, initial_state);
-    });
-
-    initial_state.for_each_value(_var, [&](Integer val) {
-        // _var == val -> exists i . _vals[idx] == val
-        Literals options;
-        options.emplace_back(_var != val);
-        for_each_with_index(_vals, [&](auto & v, auto idx) {
-            if (initial_state.in_domain(_idx_var, Integer(idx)) && initial_state.in_domain(v, val))
-                options.emplace_back(v == val);
+    if (propagators.want_nonpropagating()) {
+        for_each_with_index(_vals, [&](auto & val, auto val_idx) {
+            if (initial_state.in_domain(_idx, Integer(val_idx))) {
+                // idx == val_idx -> var == vals[val_idx]
+                auto cv = Linear{{1_i, _var}, {-1_i, val}};
+                auto [sum, modifier] = sanitise_linear(cv);
+                propagators.sanitised_linear_le(initial_state, sum, modifier, _idx == Integer(val_idx), true, false);
+            }
         });
-        propagators.cnf(initial_state, move(options), true);
-    });
+    }
+
+    Triggers triggers{.on_change = {_idx, _var}};
+    triggers.on_change.insert(triggers.on_change.end(), _vals.begin(), _vals.end());
+
+    propagators.propagator(
+        initial_state, [idx = _idx, var = _var, vals = _vals](State & state) mutable -> pair<Inference, PropagatorState> {
+            Inference inf = Inference::NoChange;
+
+            // update idx to only contain possible indices
+            state.for_each_value_while(idx, [&](Integer ival) {
+                bool supported = false;
+                state.for_each_value_while(vals[ival.raw_value], [&](Integer vval) {
+                    if (state.in_domain(var, vval))
+                        supported = true;
+                    return ! supported;
+                });
+                if (! supported)
+                    increase_inference_to(inf, state.infer_not_equal(idx, ival, JustifyUsingRUP{}));
+                return inf != Inference::Contradiction;
+            });
+
+            if (Inference::Contradiction == inf)
+                return pair{inf, PropagatorState::Enable};
+
+            // update var to only contain supported values
+            state.for_each_value_while(var, [&](Integer val) {
+                bool supported = false;
+                state.for_each_value_while(idx, [&](Integer v) {
+                    if (state.in_domain(vals[v.raw_value], val))
+                        supported = true;
+                    return ! supported;
+                });
+                if (! supported) {
+                    increase_inference_to(inf, state.infer_not_equal(var, val, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
+                        state.for_each_value(idx, [&](Integer i) {
+                            stringstream trail;
+                            trail << "u ";
+                            trail << proof.trail_variables(state, 1_i) << " 1 " << proof.proof_variable(var != val)
+                                  << " 1 " << proof.proof_variable(idx != i);
+                            trail << " >= 1 ;";
+                            to_delete.push_back(proof.emit_proof_line(trail.str()));
+                        });
+                    }}));
+
+                    if (Inference::Contradiction == inf)
+                        return false;
+                }
+                return true;
+            });
+
+            if (Inference::Contradiction == inf)
+                return pair{inf, PropagatorState::Enable};
+
+            // if idx has only one value, force that val
+            auto idx_is = state.optional_single_value(idx);
+            if (idx_is) {
+                state.for_each_value_while(vals[idx_is->raw_value], [&](Integer val) {
+                    if (! state.in_domain(var, val))
+                        increase_inference_to(inf, state.infer_not_equal(vals[idx_is->raw_value], val, JustifyUsingRUP{}));
+                    return inf != Inference::Contradiction;
+                });
+            }
+
+            return pair{inf, PropagatorState::Enable};
+        },
+        triggers, "element index");
 }
 
 auto Element::describe_for_proof() -> std::string
