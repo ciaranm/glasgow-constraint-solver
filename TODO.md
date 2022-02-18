@@ -46,8 +46,6 @@ Constraints
 
 - Circuit, so we can do all the MiniCP benchmarks.
 
-- Rewrite Abs to use multiplier and equality.
-
 State
 -----
 
