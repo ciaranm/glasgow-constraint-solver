@@ -46,7 +46,7 @@ struct Propagators::Imp
     deque<PropagationFunction> propagation_functions;
     vector<uint8_t> propagator_is_disabled;
     microseconds total_propagation_time{0};
-    unsigned long long total_propagations = 0;
+    unsigned long long total_propagations = 0, effectful_propagations = 0, contradicting_propagations = 0;
     deque<TriggerIDs> iv_triggers;
     bool first = true;
 
@@ -357,9 +357,15 @@ auto Propagators::propagate(State & state, const optional<IntegerVariableID> & o
         auto [inference, propagator_state] = _imp->propagation_functions[propagator_id](state);
         ++_imp->total_propagations;
         switch (inference) {
-        case Inference::NoChange: break;
-        case Inference::Change: break;
-        case Inference::Contradiction: contradiction = true; break;
+        case Inference::NoChange:
+        break;
+        case Inference::Change:
+            ++_imp->effectful_propagations;
+        break;
+        case Inference::Contradiction:
+            ++_imp->contradicting_propagations;
+            contradiction = true;
+        break;
         }
 
         if (! contradiction) {
@@ -445,6 +451,8 @@ auto Propagators::fill_in_constraint_stats(Stats & stats) const -> void
     stats.n_cnfs += _imp->cnfs.size();
     stats.n_propagators += _imp->propagation_functions.size();
     stats.propagations += _imp->total_propagations;
+    stats.effectful_propagations += _imp->effectful_propagations;
+    stats.contradicting_propagations += _imp->contradicting_propagations;
 }
 
 auto Propagators::trigger_on_change(IntegerVariableID var, int t) -> void

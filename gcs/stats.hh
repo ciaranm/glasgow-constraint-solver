@@ -16,6 +16,8 @@ namespace gcs
         unsigned long long recursions = 0;
         unsigned long long failures = 0;
         unsigned long long propagations = 0;
+        unsigned long long effectful_propagations = 0;
+        unsigned long long contradicting_propagations = 0;
         unsigned long long solutions = 0;
         unsigned long long max_depth = 0;
 
