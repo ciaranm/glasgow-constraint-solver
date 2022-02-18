@@ -49,7 +49,7 @@ Constraints
 State
 -----
 
-- The propagation queue is a filthy hack, and CNF propagation is slooooow.
+- The propagation queue is a filthy hack.
 
 - Tests and better code for State in general.
 
