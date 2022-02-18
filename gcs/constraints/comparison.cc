@@ -5,90 +5,162 @@
 #include <gcs/detail/state.hh>
 #include <gcs/exception.hh>
 
-#include "util/overloaded.hh"
+#include <util/overloaded.hh>
 
 using namespace gcs;
 
-using std::max;
-using std::min;
-using std::move;
+using std::nullopt;
+using std::optional;
 using std::pair;
 
-ComparisonReif::ComparisonReif(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond, bool full_reif, ComparisonOperator op) :
+CompareLessThanReif::CompareLessThanReif(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond, bool full_reif, bool or_equal) :
     _v1(v1),
     _v2(v2),
     _cond(cond),
     _full_reif(full_reif),
-    _op(op)
+    _or_equal(or_equal)
 {
 }
 
-auto ComparisonReif::install(Propagators & propagators, const State & initial_state) && -> void
+auto CompareLessThanReif::install(Propagators & propagators, const State & initial_state) && -> void
 {
-    switch (_op) {
-    case ComparisonOperator::LessThan: return move(*this)._install_less_than(propagators, initial_state, false);
-    case ComparisonOperator::LessThanEqual: return move(*this)._install_less_than(propagators, initial_state, true);
-    }
-    throw NonExhaustiveSwitch{};
-}
+    if (propagators.want_nonpropagating()) {
+        auto do_less = [&] (IntegerVariableID v1, IntegerVariableID v2, optional<LiteralFromIntegerVariable> cond, bool or_equal) {
+            auto cv = Linear{{1_i, v1}, {-1_i, v2}};
+            auto [sum, modifier] = sanitise_linear(cv);
+            propagators.sanitised_linear_le(initial_state, sum, modifier + (or_equal ? 0_i : -1_i), cond, false, false);
+        };
 
-auto ComparisonReif::_install_less_than(Propagators & propagators, const State & initial_state, bool equal) && -> void
-{
-    bool use_special_less = _full_reif && LiteralIs::DefinitelyTrue == initial_state.test_literal(_cond);
-    bool use_cnf = ! use_special_less;
-
-    if (use_special_less) {
-        Triggers triggers;
-        triggers.on_bounds = {_v1, _v2};
-
-        propagators.propagator(
-            initial_state, [v1 = _v1, v2 = _v2, equal = equal](State & state) -> pair<Inference, PropagatorState> {
-                auto result = Inference::NoChange;
-                increase_inference_to(result, state.infer_less_than(v1, state.upper_bound(v2) + (equal ? 1_i : 0_i), NoJustificationNeeded{}));
-                if (result != Inference::Contradiction)
-                    increase_inference_to(result, state.infer_greater_than_or_equal(v2, state.lower_bound(v1) + (equal ? 0_i : 1_i), NoJustificationNeeded{}));
-                return pair{result, PropagatorState::Enable};
+        overloaded{
+            [&] (const TrueLiteral &) {
+                do_less(_v1, _v2, nullopt, _or_equal);
             },
-            triggers, "less");
+            [&] (const FalseLiteral &) {
+                do_less(_v2, _v1, nullopt, _or_equal);
+            },
+            [&] (const LiteralFromIntegerVariable & ilit) {
+                do_less(_v1, _v2, ilit, _or_equal);
+                if (_full_reif)
+                    do_less(_v2, _v1, ! ilit, ! _or_equal);
+            }
+        }.visit(_cond);
     }
 
-    if (use_cnf || propagators.want_nonpropagating()) {
-        // cond -> (v2 == v -> v1 op v)
-        for (auto v = initial_state.lower_bound(_v2); v <= initial_state.upper_bound(_v2); ++v) {
-            auto bound = equal ? v + 1_i : v;
-            if (initial_state.upper_bound(_v1) >= bound) {
-                if (initial_state.lower_bound(_v1) <= bound)
-                    propagators.cnf(initial_state, {{! _cond}, {_v2 != v}, {_v1 < bound}}, use_cnf);
-                else
-                    propagators.cnf(initial_state, {{! _cond}, {_v2 != v}}, use_cnf);
-            }
-        }
+    auto v1_is_constant = initial_state.optional_single_value(_v1);
+    auto v2_is_constant = initial_state.optional_single_value(_v2);
+    auto cond_is = initial_state.test_literal(_cond);
 
-        // cond -> upper(v1) op upper(v2)
-        auto v2u = initial_state.upper_bound(_v2) + (equal ? 1_i : 0_i);
-        if (! (initial_state.upper_bound(_v1) < v2u)) {
-            if (initial_state.in_domain(_v1, v2u))
-                propagators.cnf(initial_state, {{! _cond}, {_v1 < v2u}}, use_cnf);
+    if (v1_is_constant && v2_is_constant) {
+        switch (cond_is) {
+        case LiteralIs::Undecided:
+            propagators.propagator(initial_state, [v1_is_constant = v1_is_constant, v2_is_constant = v2_is_constant,
+                    cond = _cond, or_equal = _or_equal, full_reif = _full_reif] (State & state) {
+                auto actual = (or_equal ? *v1_is_constant <= *v2_is_constant : *v1_is_constant < *v2_is_constant);
+                if (actual && full_reif)
+                    return pair{state.infer(cond, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
+                else if (! actual)
+                    return pair{state.infer(! cond, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
+                else
+                    return pair{Inference::NoChange, PropagatorState::DisableUntilBacktrack};
+            }, Triggers{}, "compare less than reif");
+        break;
+
+        case LiteralIs::DefinitelyTrue:
+            if (! (_or_equal
+                    ? *v1_is_constant <= *v2_is_constant
+                    : *v1_is_constant < *v2_is_constant))
+                propagators.model_contradiction(initial_state, "CompareLessThanReif with true condition violated");
+        break;
+
+        case LiteralIs::DefinitelyFalse:
+            if (_full_reif && (_or_equal
+                    ? *v1_is_constant <= *v2_is_constant
+                    : *v1_is_constant < *v2_is_constant))
+                propagators.model_contradiction(initial_state, "CompareLessThanReif with false condition violated");
+        break;
+        }
+        return;
+    }
+
+    if (v1_is_constant && (LiteralIs::DefinitelyTrue == cond_is || (_full_reif && LiteralIs::DefinitelyFalse == cond_is))) {
+        propagators.propagator(initial_state, [v1_is_constant = *v1_is_constant, v2 = _v2,
+                    or_equal = _or_equal, full_reif = _full_reif, cond_is = cond_is](State & state) -> pair<Inference, PropagatorState> {
+            if (cond_is == LiteralIs::DefinitelyTrue)
+                return pair{state.infer_greater_than_or_equal(v2, or_equal ? v1_is_constant : v1_is_constant + 1_i, JustifyUsingRUP{}),
+                    PropagatorState::DisableUntilBacktrack};
             else
-                propagators.cnf(initial_state, {{! _cond}}, use_cnf);
-        }
-
-        if (_full_reif) {
-            // !cond -> exists v. v2 == v /\ v1 !op v
-            for (auto v = initial_state.lower_bound(_v2); v <= initial_state.upper_bound(_v2); ++v) {
-                auto bound = equal ? v + 1_i : v;
-                if (initial_state.upper_bound(_v1) >= bound) {
-                    if (initial_state.lower_bound(_v1) <= bound)
-                        propagators.cnf(initial_state, {{_cond}, {_v2 != v}, {_v1 >= bound}}, use_cnf);
-                }
-                else
-                    propagators.cnf(initial_state, {{_cond}, {_v2 != v}}, use_cnf);
-            }
-        }
+                return pair{state.infer_less_than(v2, or_equal ? v1_is_constant : v1_is_constant - 1_i, JustifyUsingRUP{}),
+                    PropagatorState::DisableUntilBacktrack};
+        },
+        Triggers{}, "compare less than reif");
     }
+
+    if (v2_is_constant && (LiteralIs::DefinitelyTrue == cond_is || (_full_reif && LiteralIs::DefinitelyFalse == cond_is))) {
+        propagators.propagator(initial_state, [v2_is_constant = *v2_is_constant, v1 = _v1,
+                    or_equal = _or_equal, full_reif = _full_reif, cond_is = cond_is](State & state) -> pair<Inference, PropagatorState> {
+            if (cond_is == LiteralIs::DefinitelyTrue)
+                return pair{state.infer_less_than(v1, or_equal ? v2_is_constant + 1_i : v2_is_constant, JustifyUsingRUP{}),
+                    PropagatorState::DisableUntilBacktrack};
+            else
+                return pair{state.infer_greater_than_or_equal(v1, or_equal ? v2_is_constant : v2_is_constant + 1_i, JustifyUsingRUP{}),
+                    PropagatorState::DisableUntilBacktrack};
+        },
+        Triggers{}, "compare less than reif");
+    }
+
+    // if we get this far, none of the special cases apply
+
+    Triggers triggers{.on_bounds = {_v1, _v2}};
+    overloaded{
+        [&] (const TrueLiteral &) { },
+        [&] (const FalseLiteral &) { },
+        [&] (const LiteralFromIntegerVariable & ilit) { triggers.on_change.push_back(ilit.var); }
+    }.visit(_cond);
+
+    visit([&](auto & _v1, auto & _v2, auto & _cond) {
+        propagators.propagator(initial_state, [v1 = _v1, v2 = _v2, cond = _cond, full_reif = _full_reif, or_equal = _or_equal] (
+                    State & state) -> pair<Inference, PropagatorState> {
+            auto cond_is = state.test_literal(cond);
+            switch (cond_is) {
+            case LiteralIs::DefinitelyTrue:
+            {
+                auto inf = Inference::NoChange;
+                increase_inference_to(inf, state.infer_less_than(v1, state.upper_bound(v2) + (or_equal ? 1_i : 0_i), JustifyUsingRUP{}));
+                if (Inference::Contradiction != inf)
+                    increase_inference_to(inf, state.infer_greater_than_or_equal(
+                                v2, state.lower_bound(v1) + (or_equal ? 0_i : 1_i), JustifyUsingRUP{}));
+                return pair{inf, PropagatorState::Enable};
+            }
+            break;
+
+            case LiteralIs::DefinitelyFalse:
+                if (full_reif)
+                    return pair{state.infer_greater_than_or_equal(v1, state.lower_bound(v2) + (or_equal ? 1_i : 0_i),
+                            JustifyUsingRUP{}), PropagatorState::Enable};
+                else
+                    return pair{Inference::NoChange, PropagatorState::DisableUntilBacktrack};
+            break;
+
+            case LiteralIs::Undecided:
+                if (full_reif && (or_equal
+                        ? state.upper_bound(v1) <= state.lower_bound(v2)
+                        : state.upper_bound(v1) < state.lower_bound(v2)))
+                    return pair{state.infer(cond, JustifyUsingRUP{}), PropagatorState::Enable};
+                else if (or_equal
+                    ? state.lower_bound(v1) > state.upper_bound(v2)
+                    : state.lower_bound(v1) >= state.upper_bound(v2))
+                    return pair{state.infer(! cond, JustifyUsingRUP{}), PropagatorState::Enable};
+                else
+                    return pair{Inference::NoChange, PropagatorState::Enable};
+            break;
+            }
+
+            throw NonExhaustiveSwitch{};
+        }, triggers, "compare less than reif");
+    }, _v1, _v2, _cond);
 }
 
-auto ComparisonReif::describe_for_proof() -> std::string
+auto CompareLessThanReif::describe_for_proof() -> std::string
 {
-    return "comparison";
+    return "compare less than reif";
 }

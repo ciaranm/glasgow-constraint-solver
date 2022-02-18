@@ -62,6 +62,8 @@ namespace gcs
 
     [[nodiscard]] auto operator!(const Literal &) -> Literal;
 
+    [[nodiscard]] auto operator!(const LiteralFromIntegerVariable &) -> LiteralFromIntegerVariable;
+
     using Literals = std::vector<Literal>;
 }
 

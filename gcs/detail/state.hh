@@ -156,6 +156,8 @@ namespace gcs
 
         [[nodiscard]] auto test_literal(const Literal &) const -> LiteralIs;
         [[nodiscard]] auto test_literal(const LiteralFromIntegerVariable &) const -> LiteralIs;
+        [[nodiscard]] inline auto test_literal(const TrueLiteral &) const -> LiteralIs { return LiteralIs::DefinitelyTrue; }
+        [[nodiscard]] inline auto test_literal(const FalseLiteral &) const -> LiteralIs { return LiteralIs::DefinitelyFalse; }
 
         [[nodiscard]] auto literal_is_nonfalsified(const Literal &) const -> bool;
 

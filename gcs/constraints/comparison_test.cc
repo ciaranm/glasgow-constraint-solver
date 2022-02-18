@@ -60,11 +60,17 @@ auto check_results(pair<int, int> v1_range, pair<int, int> v2_range, const strin
     cerr << name << " " << stringify_tuple(v1_range) << " " << stringify_tuple(v2_range);
     if (expected != actual) {
         cerr << " expected:";
-        for (auto & t : expected)
+        for (auto & t : expected) {
             cerr << " " << stringify_tuple(t);
+            if (! actual.contains(t))
+                cerr << "!";
+        }
         cerr << "; actual:";
-        for (auto & t : actual)
+        for (auto & t : actual) {
             cerr << " " << stringify_tuple(t);
+            if (! expected.contains(t))
+                cerr << "!";
+        }
         cerr << endl;
 
         return false;
@@ -108,8 +114,8 @@ auto run_binary_comparison_test(pair<int, int> v1_range, pair<int, int> v2_range
                 expected.emplace(v1, v2);
 
     Problem p{ProofOptions{"comparison_test.opb", "comparison_test.veripb"}};
-    auto v1 = p.create_integer_variable(Integer(v1_range.first), Integer(v1_range.second));
-    auto v2 = p.create_integer_variable(Integer(v2_range.first), Integer(v2_range.second));
+    auto v1 = p.create_integer_range_variable(Integer(v1_range.first), Integer(v1_range.second));
+    auto v2 = p.create_integer_range_variable(Integer(v2_range.first), Integer(v2_range.second));
     p.post(Constraint_{v1, v2});
     bool gac_violated = false;
     solve_with(p,
@@ -160,6 +166,13 @@ auto main(int, char *[]) -> int
         {{1, 3}, {1, 3}},
         {{1, 5}, {6, 8}},
         {{1, 1}, {2, 4}},
+        {{1, 1}, {-3, 3}},
+        {{1, 1}, {1, 3}},
+        {{1, 1}, {2, 3}},
+        {{1, 1}, {-3, 0}},
+        {{1, 1}, {2, 2}},
+        {{2, 2}, {1, 1}},
+        {{1, 1}, {1, 1}},
         {{-2, -2}, {-2, -1}}};
 
     random_device rand_dev;
