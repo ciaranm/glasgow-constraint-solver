@@ -358,14 +358,14 @@ auto Propagators::propagate(State & state, const optional<IntegerVariableID> & o
         ++_imp->total_propagations;
         switch (inference) {
         case Inference::NoChange:
-        break;
+            break;
         case Inference::Change:
             ++_imp->effectful_propagations;
-        break;
+            break;
         case Inference::Contradiction:
             ++_imp->contradicting_propagations;
             contradiction = true;
-        break;
+            break;
         }
 
         if (! contradiction) {

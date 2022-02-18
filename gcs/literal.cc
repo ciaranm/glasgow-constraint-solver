@@ -10,7 +10,7 @@ using namespace gcs;
 auto gcs::operator!(const LiteralFromIntegerVariable & ilit) -> LiteralFromIntegerVariable
 {
     switch (ilit.op) {
-    using enum LiteralFromIntegerVariable::Operator;
+        using enum LiteralFromIntegerVariable::Operator;
     case Equal:
         return LiteralFromIntegerVariable{ilit.var, NotEqual, ilit.value};
     case NotEqual:
