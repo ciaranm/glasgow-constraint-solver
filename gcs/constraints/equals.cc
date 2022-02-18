@@ -8,12 +8,16 @@
 #include <util/overloaded.hh>
 
 #include <algorithm>
+#include <sstream>
+#include <vector>
 
 using std::max;
 using std::min;
 using std::nullopt;
 using std::pair;
 using std::string;
+using std::stringstream;
+using std::vector;
 
 using namespace gcs;
 
@@ -360,6 +364,8 @@ auto NotEquals::install(Propagators & propagators, const State & initial_state) 
     auto v1_is_constant = initial_state.optional_single_value(_v1);
     auto v2_is_constant = initial_state.optional_single_value(_v2);
 
+    bool convert_to_values_ne = false;
+
     if (v1_is_constant && v2_is_constant) {
         if (*v1_is_constant == *v2_is_constant) {
             propagators.model_contradiction(initial_state, "NotEquals constraint on two variables with the same constant values");
@@ -381,26 +387,52 @@ auto NotEquals::install(Propagators & propagators, const State & initial_state) 
             Triggers{}, "not equals");
     }
     else {
+        if (initial_state.domain_size(_v1) < 100_i && initial_state.domain_size(_v2) < 100_i)
+            convert_to_values_ne = true;
+
         Triggers triggers;
         triggers.on_instantiated = {_v1, _v2};
 
         visit([&](auto & _v1, auto & _v2) {
             propagators.propagator(
-                initial_state, [v1 = _v1, v2 = _v2](State & state) -> pair<Inference, PropagatorState> {
+                initial_state, [v1 = _v1, v2 = _v2, convert_to_values_ne = convert_to_values_ne](State & state) -> pair<Inference, PropagatorState> {
                     auto value1 = state.optional_single_value(v1);
                     auto value2 = state.optional_single_value(v2);
                     if (value1 && value2)
                         return pair{(*value1 != *value2) ? Inference::NoChange : Inference::Contradiction, PropagatorState::DisableUntilBacktrack};
                     else if (value1)
-                        return pair{state.infer_not_equal(v2, *value1, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
+                        return pair{state.infer_not_equal(v2, *value1, convert_to_values_ne
+                                ? Justification{NoJustificationNeeded{}}
+                                : Justification{JustifyUsingRUP{}}),
+                        PropagatorState::DisableUntilBacktrack};
                     else if (value2)
-                        return pair{state.infer_not_equal(v1, *value2, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
+                        return pair{state.infer_not_equal(v1, *value2, convert_to_values_ne
+                                ? Justification{NoJustificationNeeded{}}
+                                : Justification{JustifyUsingRUP{}}),
+                        PropagatorState::DisableUntilBacktrack};
                     else
                         return pair{Inference::NoChange, PropagatorState::Enable};
                 },
                 triggers, "not equals");
         },
             _v1, _v2);
+
+        if (convert_to_values_ne && propagators.want_nonpropagating()) {
+            propagators.propagator(initial_state, [v1 = _v1, v2 = _v2](State & state) -> pair<Inference, PropagatorState> {
+                state.add_proof_steps(JustifyExplicitly{[&] (Proof & proof, vector<ProofLine> &) -> void {
+                    proof.emit_proof_comment("converting not equals to value encoding");
+                    state.for_each_value(v1, [&] (Integer val1) {
+                        if (state.in_domain(v2, val1)) {
+                            stringstream line;
+                            line << "u 1 " << proof.proof_variable(v1 != val1) << " 1 " << proof.proof_variable(v2 != val1)
+                                 << " >= 1 ;";
+                            proof.emit_proof_line(line.str());
+                        }
+                    });
+                }});
+                return pair{Inference::NoChange, PropagatorState::DisableUntilBacktrack};
+            }, Triggers{}, "not equals conversion");
+        }
     }
 
     if (propagators.want_nonpropagating()) {
