@@ -17,6 +17,7 @@
 #include <map>
 #include <set>
 #include <sstream>
+#include <tuple>
 #include <unordered_map>
 #include <vector>
 
@@ -41,6 +42,7 @@ using std::set;
 using std::string;
 using std::stringstream;
 using std::to_string;
+using std::tuple;
 using std::unordered_map;
 using std::vector;
 using std::visit;
@@ -84,6 +86,8 @@ struct Proof::Imp
     optional<IntegerVariableID> objective_variable;
     map<pair<unsigned long long, bool>, string> flags;
 
+    list<map<tuple<bool, SimpleIntegerVariableID, Integer>, ProofLine>> line_for_bound_in_bits;
+
     string opb_file, proof_file;
     stringstream opb;
     fstream proof;
@@ -106,6 +110,7 @@ Proof::~Proof() = default;
 Proof::Proof(Proof && other) noexcept :
     _imp(move(other._imp))
 {
+    _imp->line_for_bound_in_bits.emplace_back();
 }
 
 auto Proof::operator=(Proof && other) noexcept -> Proof &
@@ -688,23 +693,6 @@ auto Proof::forget_proof_level(int depth) -> void
     _imp->proof << "w " << depth << '\n';
 }
 
-auto Proof::for_each_bit_defining_var(IntegerVariableID var, const function<auto(Integer, const string &)->void> & callback) -> void
-{
-    overloaded{
-        [&](const ConstantIntegerVariableID &) {
-            throw UnimplementedException{};
-        },
-        [&](const ViewOfIntegerVariableID &) {
-            throw UnimplementedException{};
-        },
-        [&](const SimpleIntegerVariableID & var) {
-            auto & [_, bit_vars] = _imp->integer_variable_bits.find(var)->second;
-            for (auto & [coeff, var] : bit_vars)
-                callback(coeff, var);
-        }}
-        .visit(var);
-}
-
 auto Proof::trail_variables(const State & state, Integer coeff) -> string
 {
     stringstream result;
@@ -729,4 +717,45 @@ auto Proof::delete_proof_lines(const vector<ProofLine> & to_delete) -> void
             line << " " << l;
         _imp->proof << line.str() << '\n';
     }
+}
+
+auto Proof::get_or_emit_line_for_bound_in_bits(State & state, bool upper, const SimpleIntegerVariableID & var, Integer val) -> ProofLine
+{
+    auto it = _imp->line_for_bound_in_bits.back().find(tuple{upper, var, val});
+    if (it != _imp->line_for_bound_in_bits.back().end())
+        return it->second;
+
+    stringstream step;
+    step << "u";
+    Integer big_number = 0_i;
+
+    auto & [_, bit_vars] = _imp->integer_variable_bits.find(var)->second;
+    for (auto & [bit_coeff, bit_name] : bit_vars) {
+        step << " " << (upper ? -bit_coeff : bit_coeff) << " " << bit_name;
+        big_number += Integer{abs(bit_coeff)};
+    }
+
+    big_number += max(1_i, abs(val));
+    step << trail_variables(state, big_number);
+
+    if (upper)
+        step << " >= " << -val << " ";
+    else
+        step << " >= " << val << " ";
+
+    step << ";";
+
+    auto line = emit_proof_line(step.str());
+    _imp->line_for_bound_in_bits.back().emplace(tuple{upper, var, val}, line);
+    return line;
+}
+
+auto Proof::new_guess() -> void
+{
+    _imp->line_for_bound_in_bits.emplace_back(_imp->line_for_bound_in_bits.back());
+}
+
+auto Proof::undo_guess() -> void
+{
+    _imp->line_for_bound_in_bits.pop_back();
 }

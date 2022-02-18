@@ -169,17 +169,10 @@ namespace
             }
         }
 
-        auto justify = [&](const SimpleIntegerVariableID & change_var, Proof & proof, vector<ProofLine> & to_delete,
-                           bool second_constraint_for_equality, Literal inf_lit) -> void {
+        auto justify = [&](const SimpleIntegerVariableID & change_var, Proof & proof, vector<ProofLine> &,
+                           bool second_constraint_for_equality) -> void {
             vector<pair<Integer, ProofLine>> lines_to_sum;
             lines_to_sum.emplace_back(1_i, second_constraint_for_equality ? *proof_line - 1 : *proof_line);
-
-            stringstream comment;
-            comment << "justifying linear " << (equality ? (second_constraint_for_equality ? "second equality" : "equality") : "inequality");
-            for (const auto & cv : coeff_vars)
-                comment << " " << get_coeff(cv) << " * " << debug_string(IntegerVariableID{get_var(cv)});
-            comment << " <= " << value << " bounds change on " << debug_string(IntegerVariableID{change_var}) << " to infer " << debug_string(inf_lit);
-            proof.emit_proof_comment(comment.str());
 
             Integer change_var_coeff = 0_i;
             for (const auto & cv : coeff_vars) {
@@ -192,26 +185,9 @@ namespace
                 // discover otherwise
                 bool upper = (get_coeff(cv) < 0_i) != second_constraint_for_equality;
 
-                stringstream step;
-                step << "u";
-                Integer big_number = 0_i;
-                proof.for_each_bit_defining_var(get_var(cv), [&](Integer bit_coeff, string bit_name) {
-                    step << " " << (upper ? -bit_coeff : bit_coeff) << " " << bit_name;
-                    big_number += Integer{abs(bit_coeff)};
-                });
+                auto proof_line = proof.get_or_emit_line_for_bound_in_bits(state, upper, get_var(cv), upper ? state.upper_bound(get_var(cv)) : state.lower_bound(get_var(cv)));
 
-                big_number += max(1_i, upper ? abs(state.upper_bound(get_var(cv))) : abs(state.lower_bound(get_var(cv))));
-                step << proof.trail_variables(state, big_number);
-
-                if (upper)
-                    step << " >= " << -state.upper_bound(get_var(cv)) << " ";
-                else
-                    step << " >= " << state.lower_bound(get_var(cv)) << " ";
-
-                step << ";";
-                auto proof_line = proof.emit_proof_line(step.str());
                 lines_to_sum.emplace_back(abs(get_coeff(cv)), proof_line);
-                to_delete.push_back(proof_line);
             }
 
             stringstream step;
@@ -232,7 +208,7 @@ namespace
                 if (coeff) {
                     if (bounds[p].second >= (1_i + remainder))
                         return state.infer_less_than(var, 1_i + remainder, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
-                            justify(var, proof, to_delete, second_constraint_for_equality, var < (1_i + remainder));
+                            justify(var, proof, to_delete, second_constraint_for_equality);
                         }});
                     else
                         return Inference::NoChange;
@@ -240,7 +216,7 @@ namespace
                 else {
                     if (bounds[p].first < -remainder)
                         return state.infer_greater_than_or_equal(var, -remainder, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
-                            justify(var, proof, to_delete, second_constraint_for_equality, var >= -remainder);
+                            justify(var, proof, to_delete, second_constraint_for_equality);
                         }});
                     else
                         return Inference::NoChange;
@@ -251,7 +227,7 @@ namespace
                 if (coeff > 0_i && remainder >= 0_i) {
                     if (bounds[p].second >= (1_i + remainder / coeff))
                         return state.infer_less_than(var, 1_i + remainder / coeff, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
-                            justify(var, proof, to_delete, second_constraint_for_equality, var < (1_i + remainder / coeff));
+                            justify(var, proof, to_delete, second_constraint_for_equality);
                         }});
                     else
                         return Inference::NoChange;
@@ -260,7 +236,7 @@ namespace
                     auto div_with_rounding = -((-remainder + coeff - 1_i) / coeff);
                     if (bounds[p].second >= 1_i + div_with_rounding)
                         return state.infer_less_than(var, 1_i + div_with_rounding, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
-                            justify(var, proof, to_delete, second_constraint_for_equality, var < 1_i + div_with_rounding);
+                            justify(var, proof, to_delete, second_constraint_for_equality);
                         }});
                     else
                         return Inference::NoChange;
@@ -268,7 +244,7 @@ namespace
                 else if (coeff < 0_i && remainder >= 0_i) {
                     if (bounds[p].first < remainder / coeff)
                         return state.infer_greater_than_or_equal(var, remainder / coeff, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
-                            justify(var, proof, to_delete, second_constraint_for_equality, var >= remainder / coeff);
+                            justify(var, proof, to_delete, second_constraint_for_equality);
                         }});
                     else
                         return Inference::NoChange;
@@ -277,7 +253,7 @@ namespace
                     auto div_with_rounding = (-remainder + -coeff - 1_i) / -coeff;
                     if (bounds[p].first < div_with_rounding)
                         return state.infer_greater_than_or_equal(var, div_with_rounding, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
-                            justify(var, proof, to_delete, second_constraint_for_equality, var >= div_with_rounding);
+                            justify(var, proof, to_delete, second_constraint_for_equality);
                         }});
                     else
                         return Inference::NoChange;

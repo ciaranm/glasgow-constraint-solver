@@ -98,12 +98,17 @@ namespace gcs
         auto emit_proof_comment(const std::string &) -> void;
         [[nodiscard]] auto trail_variables(const State &, Integer coeff) -> std::string;
         [[nodiscard]] auto need_constraint_saying_variable_takes_at_least_one_value(IntegerVariableID) -> ProofLine;
-        auto for_each_bit_defining_var(IntegerVariableID var, const std::function<auto(Integer, const std::string &)->void> &) -> void;
 
         auto create_pseudovariable(SimpleIntegerVariableID, Integer, Integer, const std::optional<std::string> &) -> void;
 
         [[nodiscard]] auto proof_variable(const Literal &) const -> const std::string &;
         [[nodiscard]] auto proof_variable(const ProofFlag &) const -> const std::string &;
+
+        [[nodiscard]] auto get_or_emit_line_for_bound_in_bits(State & state, bool upper,
+            const SimpleIntegerVariableID & var, Integer val) -> ProofLine;
+
+        auto new_guess() -> void;
+        auto undo_guess() -> void;
     };
 }
 
