@@ -48,7 +48,7 @@ auto Arithmetic<op_>::install(Propagators & propagators, const State & initial_s
         });
     });
 
-    propagators.table(initial_state, vector{_v1, _v2, _result}, move(permitted), "arithmetic");
+    propagators.define_and_install_table(initial_state, vector{_v1, _v2, _result}, move(permitted), "arithmetic");
 }
 
 template <ArithmeticOperator op_>

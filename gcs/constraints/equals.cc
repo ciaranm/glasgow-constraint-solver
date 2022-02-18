@@ -82,14 +82,14 @@ auto Equals::install(Propagators & propagators, const State & initial_state) && 
         }
     }
     else if (v1_is_constant) {
-        propagators.propagator(
+        propagators.install(
             initial_state, [v1_is_constant = v1_is_constant, v2 = _v2](State & state) -> pair<Inference, PropagatorState> {
                 return pair{state.infer_equal(v2, *v1_is_constant, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
             },
             Triggers{}, "equals");
     }
     else if (v2_is_constant) {
-        propagators.propagator(
+        propagators.install(
             initial_state, [v2_is_constant = v2_is_constant, v1 = _v1](State & state) -> pair<Inference, PropagatorState> {
                 return pair{state.infer_equal(v1, *v2_is_constant, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
             },
@@ -100,7 +100,7 @@ auto Equals::install(Propagators & propagators, const State & initial_state) && 
         triggers.on_change = {_v1, _v2};
 
         visit([&](auto & _v1, auto & _v2) {
-            propagators.propagator(
+            propagators.install(
                 initial_state, [v1 = _v1, v2 = _v2](State & state) -> pair<Inference, PropagatorState> {
                     return enforce_equality(v1, v2, state);
                 },
@@ -109,7 +109,7 @@ auto Equals::install(Propagators & propagators, const State & initial_state) && 
             _v1, _v2);
     }
 
-    if (propagators.want_nonpropagating()) {
+    if (propagators.want_definitions()) {
         auto cv = Linear{{1_i, _v1}, {-1_i, _v2}};
         propagators.define_linear_eq(initial_state, cv, 0_i, nullopt);
     }
@@ -150,7 +150,7 @@ auto EqualsIf::install(Propagators & propagators, const State & initial_state) &
             }
 
             visit([&](auto & _v1, auto & _v2) {
-                propagators.propagator(
+                propagators.install(
                     initial_state, [v1 = _v1, v2 = _v2, cond = cond](State & state) -> pair<Inference, PropagatorState> {
                         switch (state.test_literal(cond)) {
                         case LiteralIs::DefinitelyTrue: {
@@ -207,7 +207,7 @@ auto EqualsIf::install(Propagators & propagators, const State & initial_state) &
             },
                 _v1, _v2);
 
-            if (propagators.want_nonpropagating()) {
+            if (propagators.want_definitions()) {
                 auto cv = Linear{{1_i, _v1}, {-1_i, _v2}};
                 propagators.define_linear_eq(initial_state, cv, 0_i, cond);
             }
@@ -233,7 +233,7 @@ auto EqualsIff::install(Propagators & propagators, const State & initial_state) 
     auto upper_common = min(initial_state.upper_bound(_v1), initial_state.upper_bound(_v2));
     if (lower_common > upper_common) {
         propagators.define_cnf(initial_state, {{! _cond}});
-        propagators.propagator(
+        propagators.install(
             initial_state, [cond = _cond](State & state) {
                 return pair{state.infer(! cond, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
             },
@@ -263,7 +263,7 @@ auto EqualsIff::install(Propagators & propagators, const State & initial_state) 
             }
 
             visit([&](auto & _v1, auto & _v2) {
-                propagators.propagator(
+                propagators.install(
                     initial_state, [v1 = _v1, v2 = _v2, cond = cond](State & state) -> pair<Inference, PropagatorState> {
                         switch (state.test_literal(cond)) {
                         case LiteralIs::DefinitelyTrue: {
@@ -329,7 +329,7 @@ auto EqualsIff::install(Propagators & propagators, const State & initial_state) 
             },
                 _v1, _v2);
 
-            if (propagators.want_nonpropagating()) {
+            if (propagators.want_definitions()) {
                 if (initial_state.lower_bound(_v1) < lower_common)
                     propagators.define_cnf(initial_state, {{_v1 >= lower_common}, {! cond}});
                 if (initial_state.lower_bound(_v2) < lower_common)
@@ -376,14 +376,14 @@ auto NotEquals::install(Propagators & propagators, const State & initial_state) 
         }
     }
     else if (v1_is_constant) {
-        propagators.propagator(
+        propagators.install(
             initial_state, [v1_is_constant = v1_is_constant, v2 = _v2](State & state) -> pair<Inference, PropagatorState> {
                 return pair{state.infer_not_equal(v2, *v1_is_constant, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
             },
             Triggers{}, "not equals");
     }
     else if (v2_is_constant) {
-        propagators.propagator(
+        propagators.install(
             initial_state, [v2_is_constant = v2_is_constant, v1 = _v1](State & state) -> pair<Inference, PropagatorState> {
                 return pair{state.infer_not_equal(v1, *v2_is_constant, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
             },
@@ -397,7 +397,7 @@ auto NotEquals::install(Propagators & propagators, const State & initial_state) 
         triggers.on_instantiated = {_v1, _v2};
 
         visit([&](auto & _v1, auto & _v2) {
-            propagators.propagator(
+            propagators.install(
                 initial_state, [v1 = _v1, v2 = _v2, convert_to_values_ne = convert_to_values_ne](State & state) -> pair<Inference, PropagatorState> {
                     auto value1 = state.optional_single_value(v1);
                     auto value2 = state.optional_single_value(v2);
@@ -416,8 +416,8 @@ auto NotEquals::install(Propagators & propagators, const State & initial_state) 
         },
             _v1, _v2);
 
-        if (convert_to_values_ne && propagators.want_nonpropagating()) {
-            propagators.propagator(
+        if (convert_to_values_ne && propagators.want_definitions()) {
+            propagators.install(
                 initial_state, [v1 = _v1, v2 = _v2](State & state) -> pair<Inference, PropagatorState> {
                     state.add_proof_steps(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
                         proof.emit_proof_comment("converting not equals to value encoding");
@@ -436,7 +436,7 @@ auto NotEquals::install(Propagators & propagators, const State & initial_state) 
         }
     }
 
-    if (propagators.want_nonpropagating()) {
+    if (propagators.want_definitions()) {
         auto selector = propagators.create_proof_flag("notequals");
 
         auto cv1 = Linear{{1_i, _v1}, {-1_i, _v2}};

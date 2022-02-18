@@ -79,7 +79,7 @@ auto LinearEquality::install(Propagators & propagators, const State & initial_st
     auto [sanitised_cv, modifier] = sanitise_linear(_coeff_vars);
 
     optional<ProofLine> proof_line;
-    if (propagators.want_nonpropagating())
+    if (propagators.want_definitions())
         proof_line = propagators.define_linear_eq(initial_state, _coeff_vars, _value + modifier, nullopt);
 
     Triggers triggers;
@@ -88,21 +88,21 @@ auto LinearEquality::install(Propagators & propagators, const State & initial_st
 
     overloaded{
         [&, &modifier = modifier](const SimpleLinear & lin) {
-            propagators.propagator(
+            propagators.install(
                 initial_state, [modifier = modifier, lin = lin, value = _value, proof_line = proof_line](State & state) {
                     return propagate_linear(lin, value + modifier, state, true, proof_line);
                 },
                 triggers, "linear equality");
         },
         [&, &modifier = modifier](const SimpleSum & sum) {
-            propagators.propagator(
+            propagators.install(
                 initial_state, [modifier = modifier, sum = sum, value = _value, proof_line = proof_line](State & state) {
                     return propagate_sum(sum, value + modifier, state, true, proof_line);
                 },
                 triggers, "linear equality");
         },
         [&, &modifier = modifier](const SimpleIntegerVariableIDs & sum) {
-            propagators.propagator(
+            propagators.install(
                 initial_state, [modifier = modifier, sum = sum, value = _value, proof_line = proof_line](State & state) {
                     return propagate_sum_all_positive(sum, value + modifier, state, true, proof_line);
                 },
@@ -117,7 +117,7 @@ auto LinearEquality::install(Propagators & propagators, const State & initial_st
                 triggers.on_change.push_back(get_var(cv));
 
             optional<ExtensionalData> data;
-            propagators.propagator(
+            propagators.install(
                 initial_state, [data = move(data), coeff_vars = sanitised_cv, value = _value](State & state) mutable -> pair<Inference, PropagatorState> {
                     if (! data) {
                         vector<vector<Integer>> permitted;
@@ -241,7 +241,7 @@ auto LinearLessEqual::install(Propagators & propagators, const State & initial_s
     auto [sanitised_cv, modifier] = sanitise_linear(_coeff_vars);
 
     optional<ProofLine> proof_line;
-    if (propagators.want_nonpropagating())
+    if (propagators.want_definitions())
         proof_line = propagators.define_linear_le(initial_state, _coeff_vars, _value + modifier, nullopt);
 
     Triggers triggers;
@@ -250,21 +250,21 @@ auto LinearLessEqual::install(Propagators & propagators, const State & initial_s
 
     overloaded{
         [&, &modifier = modifier](const SimpleLinear & lin) {
-            propagators.propagator(
+            propagators.install(
                 initial_state, [modifier = modifier, lin = lin, value = _value, proof_line = proof_line](State & state) {
                     return propagate_linear(lin, value + modifier, state, false, proof_line);
                 },
                 triggers, "linear inequality");
         },
         [&, &modifier = modifier](const SimpleSum & sum) {
-            propagators.propagator(
+            propagators.install(
                 initial_state, [modifier = modifier, sum = sum, value = _value, proof_line = proof_line](State & state) {
                     return propagate_sum(sum, value + modifier, state, false, proof_line);
                 },
                 triggers, "linear inequality");
         },
         [&, &modifier = modifier](const SimpleIntegerVariableIDs & sum) {
-            propagators.propagator(
+            propagators.install(
                 initial_state, [modifier = modifier, sum = sum, value = _value, proof_line = proof_line](State & state) {
                     return propagate_sum_all_positive(sum, value + modifier, state, false, proof_line);
                 },

@@ -68,7 +68,7 @@ auto Propagators::model_contradiction(const State & initial_state, const string 
     if (_imp->problem->optional_proof())
         _imp->problem->optional_proof()->cnf({});
 
-    propagator(
+    install(
         initial_state, [explain_yourself = explain_yourself](State &) -> pair<Inference, PropagatorState> {
             return pair{Inference::Contradiction, PropagatorState::Enable};
         },
@@ -80,7 +80,7 @@ auto Propagators::trim_lower_bound(const State & state, IntegerVariableID var, I
     if (state.lower_bound(var) < val) {
         if (state.upper_bound(var) >= val) {
             define_cnf(state, {var >= val});
-            propagator(
+            install(
                 state, [var, val](State & state) {
                     return pair{state.infer(var >= val, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
                 },
@@ -96,7 +96,7 @@ auto Propagators::trim_upper_bound(const State & state, IntegerVariableID var, I
     if (state.upper_bound(var) > val) {
         if (state.lower_bound(var) <= val) {
             define_cnf(state, {var < val + 1_i});
-            propagator(
+            install(
                 state, [var, val](State & state) {
                     return pair{state.infer(var < val + 1_i, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
                 },
@@ -157,7 +157,7 @@ auto Propagators::define_linear_eq(const State & state, const Linear & coeff_var
         return nullopt;
 }
 
-auto Propagators::propagator(const State &, PropagationFunction && f, const Triggers & triggers, const std::string &) -> void
+auto Propagators::install(const State &, PropagationFunction && f, const Triggers & triggers, const std::string &) -> void
 {
     int id = _imp->propagation_functions.size();
     _imp->propagation_functions.emplace_back(move(f));
@@ -171,7 +171,8 @@ auto Propagators::propagator(const State &, PropagationFunction && f, const Trig
         trigger_on_instantiated(v, id);
 }
 
-auto Propagators::table(const State & state, vector<IntegerVariableID> && vars, vector<vector<Integer>> && permitted, const string & x) -> void
+auto Propagators::define_and_install_table(const State & state, vector<IntegerVariableID> && vars,
+        vector<vector<Integer>> && permitted, const string & x) -> void
 {
     if (permitted.empty()) {
         model_contradiction(state, "Empty table constraint from " + x);
@@ -182,7 +183,7 @@ auto Propagators::table(const State & state, vector<IntegerVariableID> && vars, 
     auto selector = create_auxilliary_integer_variable(0_i, Integer(permitted.size() - 1), "table");
 
     // pb encoding, if necessary
-    if (want_nonpropagating()) {
+    if (want_definitions()) {
         for_each_with_index(permitted, [&](const auto & tuple, auto tuple_idx) {
             // selector == tuple_idx -> /\_i vars[i] == tuple[i]
             bool infeasible = false;
@@ -334,7 +335,7 @@ auto Propagators::create_proof_flag(const std::string & n) -> ProofFlag
     return _imp->problem->optional_proof()->create_proof_flag(n);
 }
 
-auto Propagators::want_nonpropagating() const -> bool
+auto Propagators::want_definitions() const -> bool
 {
     return _imp->problem->optional_proof() != nullopt;
 }

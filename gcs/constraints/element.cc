@@ -46,7 +46,7 @@ auto Element::install(Propagators & propagators, const State & initial_state) &&
     propagators.trim_lower_bound(initial_state, _idx, 0_i, "Element");
     propagators.trim_upper_bound(initial_state, _idx, Integer(_vals.size()) - 1_i, "Element");
 
-    if (propagators.want_nonpropagating()) {
+    if (propagators.want_definitions()) {
         for_each_with_index(_vals, [&](auto & val, auto val_idx) {
             if (initial_state.in_domain(_idx, Integer(val_idx))) {
                 // idx == val_idx -> var == vals[val_idx]
@@ -59,7 +59,7 @@ auto Element::install(Propagators & propagators, const State & initial_state) &&
     Triggers triggers{.on_change = {_idx, _var}};
     triggers.on_change.insert(triggers.on_change.end(), _vals.begin(), _vals.end());
 
-    propagators.propagator(
+    propagators.install(
         initial_state, [idx = _idx, var = _var, vals = _vals](State & state) mutable -> pair<Inference, PropagatorState> {
             Inference inf = Inference::NoChange;
 
@@ -154,7 +154,7 @@ auto Element2DConstantArray::install(Propagators & propagators, const State & in
     propagators.trim_lower_bound(initial_state, _idx2, 0_i, "Element2DConstantArray");
     propagators.trim_upper_bound(initial_state, _idx2, Integer(_vals.begin()->size()) - 1_i, "Element2DConstantArray");
 
-    if (propagators.want_nonpropagating()) {
+    if (propagators.want_definitions()) {
         for_each_with_index(_vals, [&](auto & vv, auto idx1) {
             if (initial_state.in_domain(_idx1, Integer(idx1)))
                 for_each_with_index(vv, [&](auto & v, auto idx2) {
@@ -168,7 +168,7 @@ auto Element2DConstantArray::install(Propagators & propagators, const State & in
         .on_change = {_idx1, _idx2}};
 
     optional<SimpleIntegerVariableID> idxsel;
-    propagators.propagator(
+    propagators.install(
         initial_state, [idx1 = _idx1, idx2 = _idx2, var = _var, vals = _vals, idxsel = move(idxsel)](State & state) mutable -> pair<Inference, PropagatorState> {
             if (state.want_proofs() && ! idxsel) {
                 idxsel = make_optional(state.create_pseudovariable(0_i, Integer(vals.size() * vals.begin()->size()), "element2didx"));
@@ -273,7 +273,7 @@ auto Element2DConstantArray::install(Propagators & propagators, const State & in
         .on_bounds = {_var}};
 
     visit([&](auto & _idx1, auto & _idx2) {
-        propagators.propagator(
+        propagators.install(
             initial_state, [idx1 = _idx1, idx2 = _idx2, var = _var, vals = _vals](State & state) -> pair<Inference, PropagatorState> {
                 auto bounds = state.bounds(var);
                 auto inference = Inference::NoChange;

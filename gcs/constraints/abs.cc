@@ -35,7 +35,7 @@ auto Abs::install(Propagators & propagators, const State & initial_state) && -> 
 
     // _v2 = abs(_v1)
     Triggers triggers{.on_change = {_v1, _v2}};
-    propagators.propagator(
+    propagators.install(
         initial_state, [v1 = _v1, v2 = _v2](State & state) -> pair<Inference, PropagatorState> {
             // v2 = abs(v1)
             Inference result = Inference::NoChange;
@@ -55,7 +55,7 @@ auto Abs::install(Propagators & propagators, const State & initial_state) && -> 
         },
         triggers, "abs");
 
-    if (propagators.want_nonpropagating()) {
+    if (propagators.want_definitions()) {
         // _v2 == x <-> _v1 == x || _v1 == -x
         for (auto x = min(max(0_i, initial_state.lower_bound(_v1)), max(0_i, initial_state.lower_bound(_v2))); x <= v2u; ++x) {
             if (initial_state.in_domain(_v2, x))

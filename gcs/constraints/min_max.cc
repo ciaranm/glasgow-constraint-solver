@@ -31,7 +31,7 @@ auto ArrayMinMax::install(Propagators & propagators, const State & initial_state
     for (const auto & v : _vars)
         triggers.on_change.emplace_back(v);
 
-    propagators.propagator(
+    propagators.install(
         initial_state, [vars = _vars, result = _result, min = _min](State & state) -> pair<Inference, PropagatorState> {
             Inference inf = Inference::NoChange;
 
@@ -102,7 +102,7 @@ auto ArrayMinMax::install(Propagators & propagators, const State & initial_state
         },
         triggers, "array min max");
 
-    if (propagators.want_nonpropagating()) {
+    if (propagators.want_definitions()) {
         // result <= each var
         for (const auto & v : _vars) {
             auto cv = Linear{{_min ? -1_i : 1_i, v}, {_min ? 1_i : -1_i, _result}};

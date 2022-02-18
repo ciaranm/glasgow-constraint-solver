@@ -34,7 +34,7 @@ auto Table::install(Propagators & propagators, const State & initial_state) && -
         if (tuple.size() != _vars.size())
             throw UnexpectedException{"table size mismatch"};
 
-    propagators.table(initial_state, vector<IntegerVariableID>{_vars}, move(_tuples), "table");
+    propagators.define_and_install_table(initial_state, vector<IntegerVariableID>{_vars}, move(_tuples), "table");
 }
 
 auto Table::describe_for_proof() -> string

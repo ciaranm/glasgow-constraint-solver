@@ -560,7 +560,7 @@ namespace
 auto AllDifferent::install(Propagators & propagators, const State & initial_state) && -> void
 {
     map<Integer, ProofLine> constraint_numbers;
-    if (propagators.want_nonpropagating()) {
+    if (propagators.want_definitions()) {
         auto max_upper = initial_state.upper_bound(*max_element(_vars.begin(), _vars.end(), [&](const IntegerVariableID & v, const IntegerVariableID & w) {
             return initial_state.upper_bound(v) < initial_state.upper_bound(w);
         }));
@@ -593,7 +593,7 @@ auto AllDifferent::install(Propagators & propagators, const State & initial_stat
                 compressed_vals.push_back(val);
         });
 
-    propagators.propagator(
+    propagators.install(
         initial_state, [vars = move(sanitised_vars), vals = move(compressed_vals), save_constraint_numbers = move(constraint_numbers)](State & state) -> pair<Inference, PropagatorState> {
             return pair{propagate_all_different(vars, vals, save_constraint_numbers, state), PropagatorState::Enable};
         },

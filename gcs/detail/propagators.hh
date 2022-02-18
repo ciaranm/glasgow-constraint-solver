@@ -44,12 +44,12 @@ namespace gcs
         Propagators(const Propagators &) = delete;
         auto operator=(const Propagators &) -> Propagators & = delete;
 
-        [[nodiscard]] auto want_nonpropagating() const -> bool;
-
         auto model_contradiction(const State &, const std::string & explain_yourself) -> void;
 
         auto trim_lower_bound(const State &, IntegerVariableID var, Integer val, const std::string & explain_yourself) -> void;
         auto trim_upper_bound(const State &, IntegerVariableID var, Integer val, const std::string & explain_yourself) -> void;
+
+        [[nodiscard]] auto want_definitions() const -> bool;
 
         auto define_cnf(const State &, Literals && lits) -> std::optional<ProofLine>;
         auto define_at_most_one(const State &, Literals && lits) -> std::optional<ProofLine>;
@@ -59,8 +59,10 @@ namespace gcs
         auto define_linear_eq(const State &, const Linear &, Integer value,
             std::optional<LiteralFromIntegerVariableOrProofFlag> half_reif) -> std::optional<ProofLine>;
 
-        auto table(const State &, std::vector<IntegerVariableID> &&, std::vector<std::vector<Integer>> &&, const std::string & name) -> void;
-        auto propagator(const State &, PropagationFunction &&, const Triggers & trigger_vars, const std::string & name) -> void;
+        auto install(const State &, PropagationFunction &&, const Triggers & trigger_vars, const std::string & name) -> void;
+
+        auto define_and_install_table(const State &, std::vector<IntegerVariableID> &&,
+                std::vector<std::vector<Integer>> &&, const std::string & name) -> void;
 
         [[nodiscard]] auto create_auxilliary_integer_variable(Integer, Integer, const std::string & name) -> IntegerVariableID;
 
