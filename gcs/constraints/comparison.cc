@@ -27,8 +27,7 @@ auto CompareLessThanReif::install(Propagators & propagators, const State & initi
     if (propagators.want_nonpropagating()) {
         auto do_less = [&](IntegerVariableID v1, IntegerVariableID v2, optional<LiteralFromIntegerVariable> cond, bool or_equal) {
             auto cv = Linear{{1_i, v1}, {-1_i, v2}};
-            auto [sum, modifier] = sanitise_linear(cv);
-            propagators.sanitised_linear_le(initial_state, sum, modifier + (or_equal ? 0_i : -1_i), cond, false, false);
+            propagators.define_linear_le(initial_state, cv, or_equal ? 0_i : -1_i, cond);
         };
 
         overloaded{

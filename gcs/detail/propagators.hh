@@ -33,8 +33,6 @@ namespace gcs
         struct Imp;
         std::unique_ptr<Imp> _imp;
 
-        [[nodiscard]] auto propagate_cnfs(State &) const -> Inference;
-
         auto trigger_on_change(IntegerVariableID, int id) -> void;
         auto trigger_on_bounds(IntegerVariableID, int id) -> void;
         auto trigger_on_instantiated(IntegerVariableID, int id) -> void;
@@ -53,21 +51,16 @@ namespace gcs
         auto trim_lower_bound(const State &, IntegerVariableID var, Integer val, const std::string & explain_yourself) -> void;
         auto trim_upper_bound(const State &, IntegerVariableID var, Integer val, const std::string & explain_yourself) -> void;
 
-        auto cnf(const State &, Literals && lits, bool propagating) -> std::optional<ProofLine>;
-        auto at_most_one(const State &, Literals && lits, bool propagating) -> std::optional<ProofLine>;
+        auto define_cnf(const State &, Literals && lits) -> std::optional<ProofLine>;
+        auto define_at_most_one(const State &, Literals && lits) -> std::optional<ProofLine>;
+        auto define_pseudoboolean_ge(const State &, WeightedLiterals && lits, Integer) -> std::optional<ProofLine>;
+        auto define_linear_le(const State &, const Linear &, Integer value,
+            std::optional<LiteralFromIntegerVariableOrProofFlag> half_reif) -> std::optional<ProofLine>;
+        auto define_linear_eq(const State &, const Linear &, Integer value,
+            std::optional<LiteralFromIntegerVariableOrProofFlag> half_reif) -> std::optional<ProofLine>;
+
         auto table(const State &, std::vector<IntegerVariableID> &&, std::vector<std::vector<Integer>> &&, const std::string & name) -> void;
         auto propagator(const State &, PropagationFunction &&, const Triggers & trigger_vars, const std::string & name) -> void;
-
-        auto sanitised_linear_le(const State &, const SanitisedLinear &, Integer value,
-            std::optional<LiteralFromIntegerVariableOrProofFlag> half_reif, bool equality, bool propagating) -> void;
-        auto integer_linear_le(const State &, const SimpleLinear & coeff_vars, Integer value,
-            std::optional<LiteralFromIntegerVariableOrProofFlag> half_reif, bool equality, bool propagating) -> void;
-        auto sum_le(const State &, const SimpleSum & coeff_vars, Integer value,
-            std::optional<LiteralFromIntegerVariableOrProofFlag> half_reif, bool equality, bool propagating) -> void;
-        auto positive_sum_le(const State &, const SimpleIntegerVariableIDs & vars, Integer value,
-            std::optional<LiteralFromIntegerVariableOrProofFlag> half_reif, bool equality, bool propagating) -> void;
-
-        auto pseudoboolean_ge_nonpropagating(const State &, WeightedLiterals && lits, Integer) -> std::optional<ProofLine>;
 
         [[nodiscard]] auto create_auxilliary_integer_variable(Integer, Integer, const std::string & name) -> IntegerVariableID;
 

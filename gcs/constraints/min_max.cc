@@ -106,8 +106,7 @@ auto ArrayMinMax::install(Propagators & propagators, const State & initial_state
         // result <= each var
         for (const auto & v : _vars) {
             auto cv = Linear{{_min ? -1_i : 1_i, v}, {_min ? 1_i : -1_i, _result}};
-            auto [sum, modifier] = sanitise_linear(cv);
-            propagators.sanitised_linear_le(initial_state, sum, modifier, nullopt, false, false);
+            propagators.define_linear_le(initial_state, cv, 0_i, nullopt);
         }
 
         // result == i -> i in vars
@@ -116,7 +115,7 @@ auto ArrayMinMax::install(Propagators & propagators, const State & initial_state
             for (auto & v : _vars)
                 if (initial_state.in_domain(v, val))
                     lits.emplace_back(v == val);
-            propagators.cnf(initial_state, move(lits), false);
+            propagators.define_cnf(initial_state, move(lits));
         });
     }
 }

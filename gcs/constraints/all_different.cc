@@ -574,7 +574,7 @@ auto AllDifferent::install(Propagators & propagators, const State & initial_stat
             for (const auto & var : _vars)
                 if (initial_state.in_domain(var, val))
                     lits.emplace_back(var == val);
-            constraint_numbers.emplace(val, nullopt_to_zero(propagators.at_most_one(initial_state, move(lits), false)));
+            constraint_numbers.emplace(val, nullopt_to_zero(propagators.define_at_most_one(initial_state, move(lits))));
         }
     }
 

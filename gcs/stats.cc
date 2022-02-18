@@ -12,7 +12,6 @@ using std::ostream;
 
 auto gcs::operator<<(ostream & o, const Stats & s) -> ostream &
 {
-    o << "cnfs: " << s.n_cnfs << '\n';
     o << "propagators: " << s.n_propagators << '\n';
     o << "recursions: " << s.recursions << '\n';
     o << "failures: " << s.failures << '\n';

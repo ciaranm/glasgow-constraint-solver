@@ -126,8 +126,9 @@ should be called again in the future. The easiest constraints to understand are 
 because this code is used by other constraints too).
 
 For proof logging, every constraint must also be able to describe itself in low level terms. Usually
-this is done via members of the ``Propagators`` class such as ``cnf``, ``at_most_one``, and
-``sanitised_linear_le``. This is only done if ``Propagators::want_nonpropagating()`` is true.
+this is done via members of the ``Propagators`` class such as ``define_cnf``,
+``define_at_most_one``, ``define_linear_le``, ``define_linear_eq`` and ``define_pseudoboolean_ge``.
+This should only be done if ``Propagators::want_nonpropagating()`` is true.
 
 Any inference that is carried out, via ``State::infer``, must also be justified for proof logging.
 This can be done by passing a ``NoJustificationNeeded`` or ``JustifyUsingRUP`` instance, for simple

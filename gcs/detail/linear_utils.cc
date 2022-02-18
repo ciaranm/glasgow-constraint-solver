@@ -26,7 +26,7 @@ using std::stringstream;
 using std::variant;
 using std::vector;
 
-auto gcs::sanitise_linear(const Linear & coeff_vars) -> pair<variant<SimpleIntegerVariableIDs, SimpleSum, SimpleLinear>, Integer>
+auto gcs::simplify_linear(const Linear & coeff_vars) -> pair<SimpleLinear, Integer>
 {
     SimpleLinear result;
     Integer modifier{0_i};
@@ -59,6 +59,13 @@ auto gcs::sanitise_linear(const Linear & coeff_vars) -> pair<variant<SimpleInteg
         return cv.first == 0_i;
     }),
         result.end());
+
+    return pair{result, modifier};
+}
+
+auto gcs::sanitise_linear(const Linear & coeff_vars) -> pair<SanitisedLinear, Integer>
+{
+    auto [result, modifier] = simplify_linear(coeff_vars);
 
     if (result.end() == find_if(result.begin(), result.end(), [](const CoefficientAndSimpleVariable & cv) -> bool {
             return cv.first != 1_i;

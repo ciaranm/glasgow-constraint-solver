@@ -51,8 +51,7 @@ auto Element::install(Propagators & propagators, const State & initial_state) &&
             if (initial_state.in_domain(_idx, Integer(val_idx))) {
                 // idx == val_idx -> var == vals[val_idx]
                 auto cv = Linear{{1_i, _var}, {-1_i, val}};
-                auto [sum, modifier] = sanitise_linear(cv);
-                propagators.sanitised_linear_le(initial_state, sum, modifier, _idx == Integer(val_idx), true, false);
+                propagators.define_linear_eq(initial_state, cv, 0_i, _idx == Integer(val_idx));
             }
         });
     }
@@ -160,7 +159,7 @@ auto Element2DConstantArray::install(Propagators & propagators, const State & in
             if (initial_state.in_domain(_idx1, Integer(idx1)))
                 for_each_with_index(vv, [&](auto & v, auto idx2) {
                     if (initial_state.in_domain(_idx2, Integer(idx2)))
-                        propagators.cnf(initial_state, {_idx1 != Integer(idx1), _idx2 != Integer(idx2), _var == v}, false);
+                        propagators.define_cnf(initial_state, {_idx1 != Integer(idx1), _idx2 != Integer(idx2), _var == v});
                 });
         });
     }

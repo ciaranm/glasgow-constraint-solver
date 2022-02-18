@@ -78,15 +78,35 @@ auto LinearEquality::install(Propagators & propagators, const State & initial_st
 {
     auto [sanitised_cv, modifier] = sanitise_linear(_coeff_vars);
 
+    optional<ProofLine> proof_line;
+    if (propagators.want_nonpropagating())
+        proof_line = propagators.define_linear_eq(initial_state, _coeff_vars, _value + modifier, nullopt);
+
+    Triggers triggers;
+    for (auto & [_, v] : _coeff_vars)
+        triggers.on_bounds.push_back(v);
+
     overloaded{
         [&, &modifier = modifier](const SimpleLinear & lin) {
-            propagators.integer_linear_le(initial_state, lin, _value + modifier, nullopt, true, true);
+            propagators.propagator(
+                initial_state, [modifier = modifier, lin = lin, value = _value, proof_line = proof_line](State & state) {
+                    return propagate_linear(lin, value + modifier, state, true, proof_line);
+                },
+                triggers, "linear equality");
         },
         [&, &modifier = modifier](const SimpleSum & sum) {
-            propagators.sum_le(initial_state, sum, _value + modifier, nullopt, true, true);
+            propagators.propagator(
+                initial_state, [modifier = modifier, sum = sum, value = _value, proof_line = proof_line](State & state) {
+                    return propagate_sum(sum, value + modifier, state, true, proof_line);
+                },
+                triggers, "linear equality");
         },
         [&, &modifier = modifier](const SimpleIntegerVariableIDs & sum) {
-            propagators.positive_sum_le(initial_state, sum, _value + modifier, nullopt, true, true);
+            propagators.propagator(
+                initial_state, [modifier = modifier, sum = sum, value = _value, proof_line = proof_line](State & state) {
+                    return propagate_sum_all_positive(sum, value + modifier, state, true, proof_line);
+                },
+                triggers, "linear equality");
         }}
         .visit(sanitised_cv);
 
@@ -219,15 +239,36 @@ LinearLessEqual::LinearLessEqual(Linear && coeff_vars, Integer value) :
 auto LinearLessEqual::install(Propagators & propagators, const State & initial_state) && -> void
 {
     auto [sanitised_cv, modifier] = sanitise_linear(_coeff_vars);
+
+    optional<ProofLine> proof_line;
+    if (propagators.want_nonpropagating())
+        proof_line = propagators.define_linear_le(initial_state, _coeff_vars, _value + modifier, nullopt);
+
+    Triggers triggers;
+    for (auto & [_, v] : _coeff_vars)
+        triggers.on_bounds.push_back(v);
+
     overloaded{
         [&, &modifier = modifier](const SimpleLinear & lin) {
-            propagators.integer_linear_le(initial_state, lin, _value + modifier, nullopt, false, true);
+            propagators.propagator(
+                initial_state, [modifier = modifier, lin = lin, value = _value, proof_line = proof_line](State & state) {
+                    return propagate_linear(lin, value + modifier, state, false, proof_line);
+                },
+                triggers, "linear inequality");
         },
         [&, &modifier = modifier](const SimpleSum & sum) {
-            propagators.sum_le(initial_state, sum, _value + modifier, nullopt, false, true);
+            propagators.propagator(
+                initial_state, [modifier = modifier, sum = sum, value = _value, proof_line = proof_line](State & state) {
+                    return propagate_sum(sum, value + modifier, state, false, proof_line);
+                },
+                triggers, "linear inequality");
         },
         [&, &modifier = modifier](const SimpleIntegerVariableIDs & sum) {
-            propagators.positive_sum_le(initial_state, sum, _value + modifier, nullopt, false, true);
+            propagators.propagator(
+                initial_state, [modifier = modifier, sum = sum, value = _value, proof_line = proof_line](State & state) {
+                    return propagate_sum_all_positive(sum, value + modifier, state, false, proof_line);
+                },
+                triggers, "linear inequality");
         }}
         .visit(sanitised_cv);
 }

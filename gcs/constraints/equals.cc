@@ -111,8 +111,7 @@ auto Equals::install(Propagators & propagators, const State & initial_state) && 
 
     if (propagators.want_nonpropagating()) {
         auto cv = Linear{{1_i, _v1}, {-1_i, _v2}};
-        auto [sum, modifier] = sanitise_linear(cv);
-        propagators.sanitised_linear_le(initial_state, sum, modifier, nullopt, true, false);
+        propagators.define_linear_eq(initial_state, cv, 0_i, nullopt);
     }
 }
 
@@ -210,8 +209,7 @@ auto EqualsIf::install(Propagators & propagators, const State & initial_state) &
 
             if (propagators.want_nonpropagating()) {
                 auto cv = Linear{{1_i, _v1}, {-1_i, _v2}};
-                auto [sum, modifier] = sanitise_linear(cv);
-                propagators.sanitised_linear_le(initial_state, sum, modifier, cond, true, false);
+                propagators.define_linear_eq(initial_state, cv, 0_i, cond);
             }
         }}
         .visit(_cond);
@@ -234,7 +232,12 @@ auto EqualsIff::install(Propagators & propagators, const State & initial_state) 
     auto lower_common = max(initial_state.lower_bound(_v1), initial_state.lower_bound(_v2));
     auto upper_common = min(initial_state.upper_bound(_v1), initial_state.upper_bound(_v2));
     if (lower_common > upper_common) {
-        propagators.cnf(initial_state, {{! _cond}}, true);
+        propagators.define_cnf(initial_state, {{! _cond}});
+        propagators.propagator(
+            initial_state, [cond = _cond](State & state) {
+                return pair{state.infer(! cond, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
+            },
+            Triggers{}, "equals iff");
         return;
     }
 
@@ -328,21 +331,21 @@ auto EqualsIff::install(Propagators & propagators, const State & initial_state) 
 
             if (propagators.want_nonpropagating()) {
                 if (initial_state.lower_bound(_v1) < lower_common)
-                    propagators.cnf(initial_state, {{_v1 >= lower_common}, {! cond}}, false);
+                    propagators.define_cnf(initial_state, {{_v1 >= lower_common}, {! cond}});
                 if (initial_state.lower_bound(_v2) < lower_common)
-                    propagators.cnf(initial_state, {{_v2 >= lower_common}, {! cond}}, false);
+                    propagators.define_cnf(initial_state, {{_v2 >= lower_common}, {! cond}});
                 if (initial_state.upper_bound(_v1) > upper_common)
-                    propagators.cnf(initial_state, {{_v1 < upper_common + 1_i}, {! cond}}, false);
+                    propagators.define_cnf(initial_state, {{_v1 < upper_common + 1_i}, {! cond}});
                 if (initial_state.upper_bound(_v2) > upper_common)
-                    propagators.cnf(initial_state, {{_v2 < upper_common + 1_i}, {! cond}}, false);
+                    propagators.define_cnf(initial_state, {{_v2 < upper_common + 1_i}, {! cond}});
 
                 // (cond and _v1 == v) -> _v2 == v
                 for (auto v = lower_common; v <= upper_common; ++v)
-                    propagators.cnf(initial_state, {{_v1 != v}, {_v2 == v}, {! cond}}, false);
+                    propagators.define_cnf(initial_state, {{_v1 != v}, {_v2 == v}, {! cond}});
 
                 // (! cond and _v1 == v) -> _v2 != v
                 for (auto v = lower_common; v <= upper_common; ++v)
-                    propagators.cnf(initial_state, {{cond}, {_v1 != v}, {_v2 != v}}, false);
+                    propagators.define_cnf(initial_state, {{cond}, {_v1 != v}, {_v2 != v}});
             }
         }}
         .visit(_cond);
@@ -401,15 +404,11 @@ auto NotEquals::install(Propagators & propagators, const State & initial_state) 
                     if (value1 && value2)
                         return pair{(*value1 != *value2) ? Inference::NoChange : Inference::Contradiction, PropagatorState::DisableUntilBacktrack};
                     else if (value1)
-                        return pair{state.infer_not_equal(v2, *value1, convert_to_values_ne
-                                ? Justification{NoJustificationNeeded{}}
-                                : Justification{JustifyUsingRUP{}}),
-                        PropagatorState::DisableUntilBacktrack};
+                        return pair{state.infer_not_equal(v2, *value1, convert_to_values_ne ? Justification{NoJustificationNeeded{}} : Justification{JustifyUsingRUP{}}),
+                            PropagatorState::DisableUntilBacktrack};
                     else if (value2)
-                        return pair{state.infer_not_equal(v1, *value2, convert_to_values_ne
-                                ? Justification{NoJustificationNeeded{}}
-                                : Justification{JustifyUsingRUP{}}),
-                        PropagatorState::DisableUntilBacktrack};
+                        return pair{state.infer_not_equal(v1, *value2, convert_to_values_ne ? Justification{NoJustificationNeeded{}} : Justification{JustifyUsingRUP{}}),
+                            PropagatorState::DisableUntilBacktrack};
                     else
                         return pair{Inference::NoChange, PropagatorState::Enable};
                 },
@@ -418,20 +417,22 @@ auto NotEquals::install(Propagators & propagators, const State & initial_state) 
             _v1, _v2);
 
         if (convert_to_values_ne && propagators.want_nonpropagating()) {
-            propagators.propagator(initial_state, [v1 = _v1, v2 = _v2](State & state) -> pair<Inference, PropagatorState> {
-                state.add_proof_steps(JustifyExplicitly{[&] (Proof & proof, vector<ProofLine> &) -> void {
-                    proof.emit_proof_comment("converting not equals to value encoding");
-                    state.for_each_value(v1, [&] (Integer val1) {
-                        if (state.in_domain(v2, val1)) {
-                            stringstream line;
-                            line << "u 1 " << proof.proof_variable(v1 != val1) << " 1 " << proof.proof_variable(v2 != val1)
-                                 << " >= 1 ;";
-                            proof.emit_proof_line(line.str());
-                        }
-                    });
-                }});
-                return pair{Inference::NoChange, PropagatorState::DisableUntilBacktrack};
-            }, Triggers{}, "not equals conversion");
+            propagators.propagator(
+                initial_state, [v1 = _v1, v2 = _v2](State & state) -> pair<Inference, PropagatorState> {
+                    state.add_proof_steps(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
+                        proof.emit_proof_comment("converting not equals to value encoding");
+                        state.for_each_value(v1, [&](Integer val1) {
+                            if (state.in_domain(v2, val1)) {
+                                stringstream line;
+                                line << "u 1 " << proof.proof_variable(v1 != val1) << " 1 " << proof.proof_variable(v2 != val1)
+                                     << " >= 1 ;";
+                                proof.emit_proof_line(line.str());
+                            }
+                        });
+                    }});
+                    return pair{Inference::NoChange, PropagatorState::DisableUntilBacktrack};
+                },
+                Triggers{}, "not equals conversion");
         }
     }
 
@@ -439,12 +440,10 @@ auto NotEquals::install(Propagators & propagators, const State & initial_state) 
         auto selector = propagators.create_proof_flag("notequals");
 
         auto cv1 = Linear{{1_i, _v1}, {-1_i, _v2}};
-        auto [sum1, modifier1] = sanitise_linear(cv1);
-        propagators.sanitised_linear_le(initial_state, sum1, modifier1 - 1_i, selector, false, false);
+        propagators.define_linear_le(initial_state, cv1, -1_i, selector);
 
         auto cv2 = Linear{{-1_i, _v1}, {1_i, _v2}};
-        auto [sum2, modifier2] = sanitise_linear(cv2);
-        propagators.sanitised_linear_le(initial_state, sum2, modifier2 - 1_i, ! selector, false, false);
+        propagators.define_linear_le(initial_state, cv2, -1_i, ! selector);
     }
 }
 
