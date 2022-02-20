@@ -82,7 +82,5 @@ Proofs
 
 - Better comment names for constraints in the OPB files.
 
-- A way to handle variables with large domains.
-
 - Don't generate binary encoding for 0/1 variables.
 
