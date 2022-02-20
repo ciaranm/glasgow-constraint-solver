@@ -135,6 +135,10 @@ This can be done by passing a ``NoJustificationNeeded`` or ``JustifyUsingRUP`` i
 constraints, but complex reasoning will require a ``JustifyExplicitly`` instance which includes a
 callback to create the relevant proof steps.
 
+If the compiler macro ``GCS_TRACK_ALL_PROPAGATIONS`` is defined, the proof log will include explicit
+origin statements for every ``JustifyUsingRUP`` propagation, which may be helpful in debugging bad
+proofs. It will also slow things down considerably.
+
 Backtracking Search
 -------------------
 

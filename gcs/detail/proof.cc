@@ -612,8 +612,12 @@ auto Proof::infer(const State & state, const Literal & lit, const Justification 
     };
 
     overloaded{
-        [&](const JustifyUsingRUP &) {
+        [&]([[maybe_unused]] const JustifyUsingRUP & j) {
             need_proof_variable(lit);
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+            _imp->proof << "* RUP from " << j.where.file_name() << ":"
+                << j.where.line() << " in " << j.where.function_name() << '\n';
+#endif
             output_it("u");
         },
         [&](const JustifyUsingAssertion &) {

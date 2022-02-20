@@ -5,6 +5,10 @@
 
 #include <gcs/detail/proof-fwd.hh>
 
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+#  include <experimental/source_location>
+#endif
+
 #include <functional>
 #include <variant>
 #include <vector>
@@ -24,6 +28,15 @@ namespace gcs
 
     struct JustifyUsingRUP
     {
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+        std::experimental::source_location where;
+
+        explicit JustifyUsingRUP(const std::experimental::source_location & w = std::experimental::source_location::current()) :
+            where(w)
+        {
+        }
+#else
+#endif
     };
 
     struct JustifyUsingAssertion
