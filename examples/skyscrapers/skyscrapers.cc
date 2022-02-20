@@ -5,7 +5,6 @@
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/equals.hh>
 #include <gcs/constraints/linear_equality.hh>
-#include <gcs/constraints/table.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
@@ -17,6 +16,8 @@
 #include <string>
 #include <utility>
 #include <vector>
+
+#include <boost/program_options.hpp>
 
 using namespace gcs;
 
@@ -35,50 +36,59 @@ using std::chrono::duration_cast;
 using std::chrono::microseconds;
 using std::chrono::steady_clock;
 
+namespace po = boost::program_options;
+
 using namespace std::literals::string_literals;
 
 auto main(int argc, char * argv[]) -> int
 {
-    Problem p{ProofOptions{"skyscrapers.opb", "skyscrapers.veripb"}};
+    po::options_description display_options{"Program options"};
+    display_options.add_options()            //
+        ("help", "Display help information") //
+        ("prove", "Create a proof");
 
-    int size = 0;
-    vector<vector<int>> predefs;
-    vector<int> north, south, east, west;
-    bool use_table = false;
-    const string usage = " [ instance 5 | 6 | 7 | 9 ] [ table false|true ]";
+    po::options_description all_options{"All options"};
+    all_options.add_options()                                                         //
+        ("instance", po::value<int>()->default_value(7), "Problem instance to solve") //
+        ("all", "Find all solutions");
 
-    if (argc > 3) {
-        cerr << "Usage: " << argv[0] << usage << endl;
+    all_options.add(display_options);
+
+    po::positional_options_description positional_options;
+    positional_options
+        .add("instance", -1);
+
+    po::variables_map options_vars;
+
+    try {
+        po::store(po::command_line_parser(argc, argv)
+                      .options(all_options)
+                      .positional(positional_options)
+                      .run(),
+            options_vars);
+        po::notify(options_vars);
+    }
+    catch (const po::error & e) {
+        cerr << "Error: " << e.what() << endl;
+        cerr << "Try " << argv[0] << " --help" << endl;
         return EXIT_FAILURE;
     }
 
-    int instance = 5;
-    if (argc >= 2) {
-        if (argv[1] == "5"s)
-            instance = 5;
-        else if (argv[1] == "6"s)
-            instance = 6;
-        else if (argv[1] == "7"s)
-            instance = 7;
-        else if (argv[1] == "9"s)
-            instance = 9;
-        else {
-            cerr << "Usage: " << argv[0] << usage << endl;
-            return EXIT_FAILURE;
-        }
+    if (options_vars.contains("help")) {
+        cout << "Usage: " << argv[0] << " [options] [instance]" << endl;
+        cout << endl;
+        cout << display_options << endl;
+        return EXIT_SUCCESS;
     }
 
-    if (argc >= 3) {
-        if (argv[2] == "true"s)
-            use_table = true;
-        else if (argv[2] == "false"s)
-            use_table = false;
-        else {
-            cerr << "Usage: " << argv[0] << usage << endl;
-            return EXIT_FAILURE;
-        }
-    }
+    int instance = options_vars["instance"].as<int>();
 
+    Problem p = options_vars.contains("prove") ? Problem{ProofOptions{"skyscrapers.opb", "skyscrapers.veripb"}} : Problem{};
+
+    vector<vector<int>> predefs;
+    vector<int> north, south, east, west;
+
+    int size = 0;
     if (instance == 5) {
         size = 5;
         predefs = {
@@ -143,7 +153,7 @@ auto main(int argc, char * argv[]) -> int
         west = {0, 0, 0, 1, 0, 4, 4, 0, 5};
     }
     else {
-        cerr << "Usage: " << argv[0] << usage << endl;
+        cerr << "Unknown instance (try size 5, 6, 7, or 9)" << endl;
         return EXIT_FAILURE;
     }
 
@@ -152,29 +162,25 @@ auto main(int argc, char * argv[]) -> int
     vector<IntegerVariableID> branch_vars;
     for (int r = 0; r < size; ++r) {
         grid.emplace_back();
-        if (! use_table) {
-            visible_north.emplace_back();
-            visible_south.emplace_back();
-            visible_east.emplace_back();
-            visible_west.emplace_back();
-        }
+        visible_north.emplace_back();
+        visible_south.emplace_back();
+        visible_east.emplace_back();
+        visible_west.emplace_back();
         for (int c = 0; c < size; ++c) {
             grid[r].push_back(p.create_integer_variable(1_i, Integer{size}, "grid" + to_string(r) + "_" + to_string(c)));
             branch_vars.push_back(grid[r][c]);
-            if (! use_table) {
-                visible_north[r].push_back(north[c] != 0
-                        ? make_optional(p.create_integer_variable(0_i, 1_i, "visible_north" + to_string(c)))
-                        : nullopt);
-                visible_south[r].push_back(south[c] != 0
-                        ? make_optional(p.create_integer_variable(0_i, 1_i, "visible_south" + to_string(c)))
-                        : nullopt);
-                visible_east[r].push_back(east[r] != 0
-                        ? make_optional(p.create_integer_variable(0_i, 1_i, "visible_east" + to_string(c)))
-                        : nullopt);
-                visible_west[r].push_back(west[r] != 0
-                        ? make_optional(p.create_integer_variable(0_i, 1_i, "visible_west" + to_string(c)))
-                        : nullopt);
-            }
+            visible_north[r].push_back(north[c] != 0
+                    ? make_optional(p.create_integer_variable(0_i, 1_i, "visible_north" + to_string(c)))
+                    : nullopt);
+            visible_south[r].push_back(south[c] != 0
+                    ? make_optional(p.create_integer_variable(0_i, 1_i, "visible_south" + to_string(c)))
+                    : nullopt);
+            visible_east[r].push_back(east[r] != 0
+                    ? make_optional(p.create_integer_variable(0_i, 1_i, "visible_east" + to_string(c)))
+                    : nullopt);
+            visible_west[r].push_back(west[r] != 0
+                    ? make_optional(p.create_integer_variable(0_i, 1_i, "visible_west" + to_string(c)))
+                    : nullopt);
         }
     }
 
@@ -232,88 +238,10 @@ auto main(int argc, char * argv[]) -> int
         }
     };
 
-    if (use_table) {
-        vector<vector<Integer>> feasible;
-        function<auto(vector<Integer> &)->void> build_feasible = [&](vector<Integer> & head) -> void {
-            if (cmp_equal(head.size(), size)) {
-                int left_visible_count = 0, right_visible_count = 0;
-
-                Integer biggest_from_left = 0_i, biggest_from_right = 0_i;
-                for (int c = 0; c < size; ++c) {
-                    if (head[c] > biggest_from_left) {
-                        ++left_visible_count;
-                        biggest_from_left = head[c];
-                    }
-                }
-
-                for (int c = size - 1; c >= 0; --c) {
-                    if (head[c] > biggest_from_right) {
-                        ++right_visible_count;
-                        biggest_from_right = head[c];
-                    }
-                }
-
-                head.push_back(0_i);
-                head.push_back(Integer(right_visible_count));
-                feasible.push_back(head);
-                head.at(head.size() - 2) = Integer(left_visible_count);
-                feasible.push_back(head);
-                head.back() = 0_i;
-                feasible.push_back(head);
-                head.pop_back();
-                head.pop_back();
-            }
-            else {
-                for (Integer i = 1_i; i <= Integer(size); ++i) {
-                    bool alldiff = true;
-                    for (auto & h : head)
-                        if (h == i)
-                            alldiff = false;
-
-                    if (alldiff) {
-                        head.push_back(i);
-                        build_feasible(head);
-                        head.pop_back();
-                    }
-                }
-            }
-        };
-
-        auto start_time = steady_clock::now();
-        vector<Integer> head;
-        build_feasible(head);
-        cout << "build table time: " << (duration_cast<microseconds>(steady_clock::now() - start_time).count() / 1'000'000.0) << "s" << endl;
-
-        for (int r = 0; r < size; ++r) {
-            if (west[r] != 0 || east[r] != 0) {
-                vector<IntegerVariableID> row;
-                for (int c = 0; c < size; ++c)
-                    row.push_back(grid[r][c]);
-                row.push_back(constant_variable(Integer(west[r])));
-                row.push_back(constant_variable(Integer(east[r])));
-                auto tuples_copy = feasible;
-                p.post(Table{row, move(tuples_copy)});
-            }
-        }
-
-        for (int c = 0; c < size; ++c) {
-            if (north[c] != 0 || south[c] != 0) {
-                vector<IntegerVariableID> col;
-                for (int r = 0; r < size; ++r)
-                    col.push_back(grid[r][c]);
-                col.push_back(constant_variable(Integer(north[c])));
-                col.push_back(constant_variable(Integer(south[c])));
-                auto tuples_copy = feasible;
-                p.post(Table{col, move(tuples_copy)});
-            }
-        }
-    }
-    else {
-        build_visible_constraints(visible_north, north, true, true);
-        build_visible_constraints(visible_south, south, true, false);
-        build_visible_constraints(visible_west, west, false, true);
-        build_visible_constraints(visible_east, east, false, false);
-    }
+    build_visible_constraints(visible_north, north, true, true);
+    build_visible_constraints(visible_south, south, true, false);
+    build_visible_constraints(visible_west, west, false, true);
+    build_visible_constraints(visible_east, east, false, false);
 
     auto stats = solve(p, [&](const CurrentState & s) -> bool {
         cout << "   ";

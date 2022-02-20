@@ -10,17 +10,61 @@
 #include <iostream>
 #include <vector>
 
+#include <boost/program_options.hpp>
+
 using namespace gcs;
 
+using std::cerr;
 using std::cout;
 using std::endl;
 using std::vector;
 
-auto main(int, char *[]) -> int
-{
-    int k = 7;
+namespace po = boost::program_options;
 
-    Problem p{ProofOptions{"langford.opb", "langford.veripb"}};
+auto main(int argc, char * argv[]) -> int
+{
+    po::options_description display_options{"Program options"};
+    display_options.add_options()            //
+        ("help", "Display help information") //
+        ("prove", "Create a proof");
+
+    po::options_description all_options{"All options"};
+    all_options.add_options()                                                         //
+        ("size", po::value<int>()->default_value(7), "Size of the problem to solve") //
+        ("all", "Find all solutions");
+
+    all_options.add(display_options);
+
+    po::positional_options_description positional_options;
+    positional_options
+        .add("size", -1);
+
+    po::variables_map options_vars;
+
+    try {
+        po::store(po::command_line_parser(argc, argv)
+                      .options(all_options)
+                      .positional(positional_options)
+                      .run(),
+            options_vars);
+        po::notify(options_vars);
+    }
+    catch (const po::error & e) {
+        cerr << "Error: " << e.what() << endl;
+        cerr << "Try " << argv[0] << " --help" << endl;
+        return EXIT_FAILURE;
+    }
+
+    if (options_vars.contains("help")) {
+        cout << "Usage: " << argv[0] << " [options] [size]" << endl;
+        cout << endl;
+        cout << display_options << endl;
+        return EXIT_SUCCESS;
+    }
+
+    int k = options_vars["size"].as<int>();
+
+    Problem p = options_vars.contains("prove") ? Problem{ProofOptions{"langford.opb", "langford.veripb"}} : Problem{};
     vector<IntegerVariableID> position, solution;
     for (int i = 0; i < 2 * k; ++i) {
         position.emplace_back(p.create_integer_variable(0_i, Integer{2 * k - 1}));

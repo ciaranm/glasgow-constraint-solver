@@ -13,6 +13,9 @@ export PATH=$HOME/.local/bin:$PATH
 ./cake --prove || exit 1
 veripb cake.{opb,veripb} || exit 1
 
+./colour --prove || exit 1
+veripb colour.{opb,veripb} || exit 1
+
 ./crystal_maze --prove || exit 1
 veripb crystal_maze.{opb,veripb} || exit 1
 
@@ -24,6 +27,9 @@ veripb crystal_maze.{opb,veripb} || exit 1
 
 ./crystal_maze --gac --abs --prove || exit 1
 veripb crystal_maze.{opb,veripb} || exit 1
+
+./langford --prove || exit 1
+veripb langford.{opb,veripb} || exit 1
 
 ./money --prove || exit 1
 veripb money.{opb,veripb} || exit 1
@@ -37,7 +43,16 @@ veripb magic_series.{opb,veripb} || exit 1
 ./magic_square 3 --prove || exit 1
 veripb magic_square.{opb,veripb} || exit 1
 
+./odd_even_sum --prove || exit 1
+veripb odd_even_sum.{opb,veripb} || exit 1
+
+./ortho_latin 5 --prove || exit 1
+veripb ortho_latin.{opb,veripb} || exit 1
+
 ./qap 5 --prove || exit 1
 veripb qap.{opb,veripb} || exit 1
+
+./skyscrapers 5 --prove || exit 1
+veripb skyscrapers.{opb,veripb} || exit 1
 
 echo tests passed

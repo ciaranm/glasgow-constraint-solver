@@ -23,8 +23,6 @@ Code and Infrastructure
 Examples
 --------
 
-- Consistent command line handling.
-
 - Do something about autotabulation in Skyscrapers.
 
 Constraints

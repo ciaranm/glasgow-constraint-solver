@@ -11,6 +11,8 @@
 #include <iostream>
 #include <vector>
 
+#include <boost/program_options.hpp>
+
 using namespace gcs;
 
 using std::cerr;
@@ -20,19 +22,51 @@ using std::ifstream;
 using std::stoi;
 using std::vector;
 
+namespace po = boost::program_options;
+
 auto main(int argc, char * argv[]) -> int
 {
-    int size = 5;
+    po::options_description display_options{"Program options"};
+    display_options.add_options()            //
+        ("help", "Display help information") //
+        ("prove", "Create a proof");
 
-    if (argc > 2) {
-        cerr << "Usage: " << argv[0] << " [ size ]" << endl;
+    po::options_description all_options{"All options"};
+    all_options.add_options()                                                         //
+        ("size", po::value<int>()->default_value(88), "Size of the problem to solve") //
+        ("all", "Find all solutions");
+
+    all_options.add(display_options);
+
+    po::positional_options_description positional_options;
+    positional_options
+        .add("size", -1);
+
+    po::variables_map options_vars;
+
+    try {
+        po::store(po::command_line_parser(argc, argv)
+                      .options(all_options)
+                      .positional(positional_options)
+                      .run(),
+            options_vars);
+        po::notify(options_vars);
+    }
+    catch (const po::error & e) {
+        cerr << "Error: " << e.what() << endl;
+        cerr << "Try " << argv[0] << " --help" << endl;
         return EXIT_FAILURE;
     }
 
-    if (argc >= 2)
-        size = stoi(argv[1]);
+    if (options_vars.contains("help")) {
+        cout << "Usage: " << argv[0] << " [options] [size]" << endl;
+        cout << endl;
+        cout << display_options << endl;
+        return EXIT_SUCCESS;
+    }
 
-    Problem p{ProofOptions{"ortho_latin.opb", "ortho_latin.veripb"}};
+    Problem p = options_vars.contains("prove") ? Problem{ProofOptions{"ortho_latin.opb", "ortho_latin.veripb"}} : Problem{};
+    int size = options_vars["size"].as<int>();
 
     vector<vector<IntegerVariableID>> g1, g2;
     vector<IntegerVariableID> g12;
