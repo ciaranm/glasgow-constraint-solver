@@ -1,13 +1,12 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
-#include "gcs/exception.hh"
+#include <gcs/exception.hh>
 
 using namespace gcs;
 
+using std::source_location;
 using std::string;
 using std::to_string;
-
-using std::experimental::source_location;
 
 UnexpectedException::UnexpectedException(const string & w) :
     _wat("unexpected problem: " + w)

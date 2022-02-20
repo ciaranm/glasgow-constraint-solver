@@ -6,7 +6,7 @@
 #include <gcs/detail/proof-fwd.hh>
 
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
-#  include <experimental/source_location>
+#  include <source_location>
 #endif
 
 #include <functional>
@@ -29,9 +29,9 @@ namespace gcs
     struct JustifyUsingRUP
     {
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
-        std::experimental::source_location where;
+        std::source_location where;
 
-        explicit JustifyUsingRUP(const std::experimental::source_location & w = std::experimental::source_location::current()) :
+        explicit JustifyUsingRUP(const std::source_location & w = std::source_location::current()) :
             where(w)
         {
         }
