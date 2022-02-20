@@ -62,12 +62,6 @@ State
 Design
 ------
 
-- Can we isolate innards from user API?
-
-- Have a think about removing Boolean variables, and just using literals
-  everywhere instead. Might not be very useful if we need to introduce float
-  and set variables for MiniZinc, though.
-
 - Can we have an IntegerViewOfLiteral value? Or does this lead to nasty
   recursion issues? Either way, being able to use reified values directly
   in linear and extensional constraints might be interesting.
