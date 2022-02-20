@@ -90,6 +90,7 @@ auto Element::install(Propagators & propagators, const State & initial_state) &&
                 if (! supported) {
                     increase_inference_to(inf, state.infer_not_equal(var, val, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
                         state.for_each_value(idx, [&](Integer i) {
+                            proof.need_proof_variable(var != val);
                             stringstream trail;
                             trail << "u ";
                             trail << proof.trail_variables(state, 1_i) << " 1 " << proof.proof_variable(var != val)

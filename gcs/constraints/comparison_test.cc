@@ -114,8 +114,8 @@ auto run_binary_comparison_test(pair<int, int> v1_range, pair<int, int> v2_range
                 expected.emplace(v1, v2);
 
     Problem p{ProofOptions{"comparison_test.opb", "comparison_test.veripb"}};
-    auto v1 = p.create_integer_range_variable(Integer(v1_range.first), Integer(v1_range.second));
-    auto v2 = p.create_integer_range_variable(Integer(v2_range.first), Integer(v2_range.second));
+    auto v1 = p.create_integer_variable(Integer(v1_range.first), Integer(v1_range.second));
+    auto v2 = p.create_integer_variable(Integer(v2_range.first), Integer(v2_range.second));
     p.post(Constraint_{v1, v2});
     bool gac_violated = false;
     solve_with(p,

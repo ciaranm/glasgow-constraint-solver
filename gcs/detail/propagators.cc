@@ -111,10 +111,9 @@ auto Propagators::define_cnf(const State &, Literals && c) -> optional<ProofLine
 {
     optional<ProofLine> result = nullopt;
 
-    if (sanitise_literals(c)) {
-        if (_imp->problem->optional_proof())
+    if (_imp->problem->optional_proof())
+        if (sanitise_literals(c))
             result = _imp->problem->optional_proof()->cnf(c);
-    }
 
     return result;
 }

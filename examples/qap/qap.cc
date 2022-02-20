@@ -147,7 +147,7 @@ auto main(int argc, char * argv[]) -> int
         }
     }
 
-    auto cost = p.create_integer_range_variable(0_i, 100000_i, "cost");
+    auto cost = p.create_integer_variable(0_i, 100000_i, "cost");
     wcosts.emplace_back(-1_i, cost);
     p.post(LinearEquality{move(wcosts), 0_i});
 

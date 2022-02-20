@@ -2,8 +2,8 @@
 
 #include <gcs/constraints/abs.hh>
 #include <gcs/constraints/all_different.hh>
-#include <gcs/constraints/arithmetic.hh>
 #include <gcs/constraints/equals.hh>
+#include <gcs/constraints/linear_equality.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
@@ -36,8 +36,9 @@ auto main(int argc, char * argv[]) -> int
         ("prove", "Create a proof");         //
 
     po::options_description all_options{"All options"};
-    all_options.add_options()         //
-        ("abs", "Use abs constraint") //
+    all_options.add_options()                    //
+        ("abs", "Use abs constraint")            //
+        ("gac", "Use GAC on the sum constraint") //
         ;
 
     all_options.add(display_options);
@@ -87,7 +88,7 @@ auto main(int argc, char * argv[]) -> int
             p.post(NotEquals{diffs.back(), -1_c});
         }
 
-        p.post(Minus{xs[x1], xs[x2], diffs.back()});
+        p.post(LinearEquality{Linear{{1_i, xs[x1]}, {-1_i, xs[x2]}, {-1_i, diffs.back()}}, 0_i, options_vars.contains("gac")});
     }
 
     auto stats = solve(p, [&](const CurrentState & s) -> bool {

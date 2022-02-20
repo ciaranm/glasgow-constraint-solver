@@ -41,11 +41,6 @@ namespace gcs
             Integer upper,
             const std::optional<std::string> & name = std::nullopt) -> SimpleIntegerVariableID;
 
-        [[nodiscard]] auto create_integer_range_variable(
-            Integer lower,
-            Integer upper,
-            const std::optional<std::string> & name = std::nullopt) -> SimpleIntegerVariableID;
-
         [[nodiscard]] auto create_integer_variable_vector(
             std::size_t how_many,
             Integer lower,

@@ -59,18 +59,18 @@ auto main(int argc, char * argv[]) -> int
     Problem p = options_vars.contains("prove") ? Problem{ProofOptions{"cake.opb", "cake.veripb"}} : Problem{};
 
     // https://www.minizinc.org/doc-2.5.5/en/modelling.html#an-arithmetic-optimisation-example
-    auto banana = p.create_integer_range_variable(0_i, 100_i);
-    auto chocolate = p.create_integer_range_variable(0_i, 100_i);
+    auto banana = p.create_integer_variable(0_i, 100_i);
+    auto chocolate = p.create_integer_variable(0_i, 100_i);
     p.post(LinearLessEqual{Linear{{250_i, banana}, {200_i, chocolate}}, 4000_i});
     p.post(LinearLessEqual{Linear{{2_i, banana}}, 6_i});
     p.post(LinearLessEqual{Linear{{75_i, banana}, {150_i, chocolate}}, 2000_i});
     p.post(LinearLessEqual{Linear{{100_i, banana}, {150_i, chocolate}}, 500_i});
     p.post(LinearLessEqual{Linear{{75_i, chocolate}}, 500_i});
 
-    auto profit = p.create_integer_range_variable(0_i, 107500_i, "profit");
+    auto profit = p.create_integer_variable(0_i, 107500_i, "profit");
     p.post(LinearEquality{Linear{{400_i, banana}, {450_i, chocolate}, {-1_i, profit}}, 0_i});
 
-    auto loss = p.create_integer_range_variable(-107500_i, 0_i, "loss");
+    auto loss = p.create_integer_variable(-107500_i, 0_i, "loss");
     p.post(LinearEquality{Linear{{1_i, profit}, {1_i, loss}}, 0_i});
 
     p.branch_on(vector<IntegerVariableID>{banana, chocolate});

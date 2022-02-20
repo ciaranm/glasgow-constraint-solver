@@ -16,6 +16,15 @@ veripb cake.{opb,veripb} || exit 1
 ./crystal_maze --prove || exit 1
 veripb crystal_maze.{opb,veripb} || exit 1
 
+./crystal_maze --abs --prove || exit 1
+veripb crystal_maze.{opb,veripb} || exit 1
+
+./crystal_maze --gac --prove || exit 1
+veripb crystal_maze.{opb,veripb} || exit 1
+
+./crystal_maze --gac --abs --prove || exit 1
+veripb crystal_maze.{opb,veripb} || exit 1
+
 ./money --prove || exit 1
 veripb money.{opb,veripb} || exit 1
 

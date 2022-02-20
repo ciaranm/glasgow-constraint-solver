@@ -20,9 +20,6 @@ Code and Infrastructure
 
 - Replace for\_each\_with\_index with C++20 stuff so we can use break in loops.
 
-- There shouldn't be a need for create_integer_range_variable, it should be
-  figured out automatically.
-
 Examples
 --------
 

@@ -197,9 +197,9 @@ auto main(int, char *[]) -> int
         Problem p{ProofOptions{"linear_equality_test.opb", "linear_equality_test.veripb"}};
 
         auto vs = vector{
-            p.create_integer_range_variable(Integer{v0_range.first}, Integer{v0_range.second}),
-            p.create_integer_range_variable(Integer{v1_range.first}, Integer{v1_range.second}),
-            p.create_integer_range_variable(Integer{v2_range.first}, Integer{v2_range.second})};
+            p.create_integer_variable(Integer{v0_range.first}, Integer{v0_range.second}),
+            p.create_integer_variable(Integer{v1_range.first}, Integer{v1_range.second}),
+            p.create_integer_variable(Integer{v2_range.first}, Integer{v2_range.second})};
 
         for (auto & [linear, value] : constraints) {
             Linear c;
