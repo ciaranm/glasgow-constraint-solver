@@ -313,7 +313,7 @@ auto Element2DConstantArray::install(Propagators & propagators, const State & in
 
                 return pair{inference, PropagatorState::Enable};
             },
-            index_triggers, "element 2d const array var bounds");
+            bounds_triggers, "element 2d const array var bounds");
     },
         _idx1, _idx2);
 }
