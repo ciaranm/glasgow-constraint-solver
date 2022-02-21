@@ -219,7 +219,6 @@ auto Propagators::propagate(State & state, const optional<IntegerVariableID> & o
     vector<int> on_queue(_imp->propagation_functions.size(), 0);
     deque<int> propagation_queue;
     vector<int> newly_disabled_propagators;
-    newly_disabled_propagators.reserve(_imp->propagation_functions.size());
 
     if (objective_variable && objective_value) {
         switch (state.infer(*objective_variable < *objective_value, NoJustificationNeeded{})) {
