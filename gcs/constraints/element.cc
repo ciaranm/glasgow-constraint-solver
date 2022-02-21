@@ -171,7 +171,7 @@ auto Element2DConstantArray::install(Propagators & propagators, const State & in
     optional<SimpleIntegerVariableID> idxsel;
     propagators.install(
         initial_state, [idx1 = _idx1, idx2 = _idx2, var = _var, vals = _vals, idxsel = move(idxsel)](State & state) mutable -> pair<Inference, PropagatorState> {
-            if (state.want_proofs() && ! idxsel) {
+            if (state.want_proofs() && ! idxsel) [[unlikely]] {
                 idxsel = make_optional(state.create_pseudovariable(0_i, Integer(vals.size() * vals.begin()->size()), "element2didx"));
 
                 state.add_proof_steps(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
@@ -262,9 +262,9 @@ auto Element2DConstantArray::install(Propagators & propagators, const State & in
                 to_delete.push_back(proof.emit_proof_line(line.str()));
             }};
 
-            increase_inference_to(inference, state.infer(var >= *smallest_seen, just));
+            increase_inference_to(inference, state.infer_greater_than_or_equal(var, *smallest_seen, just));
             if (Inference::Contradiction != inference)
-                increase_inference_to(inference, state.infer(var < *largest_seen + 1_i, just));
+                increase_inference_to(inference, state.infer_less_than(var, *largest_seen + 1_i, just));
 
             return pair{inference, PropagatorState::Enable};
         },
