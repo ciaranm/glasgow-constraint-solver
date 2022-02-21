@@ -138,13 +138,12 @@ auto EqualsIf::install(Propagators & propagators, const State & initial_state) &
         [&](const LiteralFromIntegerVariable & cond) {
             Triggers triggers{.on_change = {_v1, _v2}};
             switch (cond.op) {
-                using enum LiteralFromIntegerVariable::Operator;
-            case Less:
-            case GreaterEqual:
+            case LiteralFromIntegerVariable::Operator::Less:
+            case LiteralFromIntegerVariable::Operator::GreaterEqual:
                 triggers.on_bounds.push_back(cond.var);
                 break;
-            case Equal:
-            case NotEqual:
+            case LiteralFromIntegerVariable::Operator::Equal:
+            case LiteralFromIntegerVariable::Operator::NotEqual:
                 triggers.on_change.push_back(cond.var);
                 break;
             }
@@ -251,13 +250,12 @@ auto EqualsIff::install(Propagators & propagators, const State & initial_state) 
         [&](const LiteralFromIntegerVariable & cond) {
             Triggers triggers{.on_change = {_v1, _v2}};
             switch (cond.op) {
-                using enum LiteralFromIntegerVariable::Operator;
-            case Less:
-            case GreaterEqual:
+            case LiteralFromIntegerVariable::Operator::Less:
+            case LiteralFromIntegerVariable::Operator::GreaterEqual:
                 triggers.on_bounds.push_back(cond.var);
                 break;
-            case Equal:
-            case NotEqual:
+            case LiteralFromIntegerVariable::Operator::Equal:
+            case LiteralFromIntegerVariable::Operator::NotEqual:
                 triggers.on_change.push_back(cond.var);
                 break;
             }

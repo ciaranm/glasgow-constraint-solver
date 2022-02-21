@@ -21,14 +21,13 @@ auto gcs::debug_string(const Literal & lit) -> string
     return overloaded{
         [](const LiteralFromIntegerVariable & ilit) -> string {
             switch (ilit.op) {
-                using enum LiteralFromIntegerVariable::Operator;
-            case Equal:
+            case LiteralFromIntegerVariable::Operator::Equal:
                 return "intvars[" + debug_string(ilit.var) + "] = " + ilit.value.to_string();
-            case NotEqual:
+            case LiteralFromIntegerVariable::Operator::NotEqual:
                 return "intvars[" + debug_string(ilit.var) + "] != " + ilit.value.to_string();
-            case GreaterEqual:
+            case LiteralFromIntegerVariable::Operator::GreaterEqual:
                 return "intvars[" + debug_string(ilit.var) + "] >= " + ilit.value.to_string();
-            case Less:
+            case LiteralFromIntegerVariable::Operator::Less:
                 return "intvars[" + debug_string(ilit.var) + "] < " + ilit.value.to_string();
             }
             throw NonExhaustiveSwitch{};
@@ -53,11 +52,10 @@ namespace
                     [&](ViewOfIntegerVariableID) -> optional<bool> { return nullopt; },
                     [&](ConstantIntegerVariableID x) -> optional<bool> {
                         switch (ilit.op) {
-                            using enum LiteralFromIntegerVariable::Operator;
-                        case Equal: return x.const_value == ilit.value;
-                        case NotEqual: return x.const_value != ilit.value;
-                        case GreaterEqual: return x.const_value >= ilit.value;
-                        case Less: return x.const_value < ilit.value;
+                        case LiteralFromIntegerVariable::Operator::Equal: return x.const_value == ilit.value;
+                        case LiteralFromIntegerVariable::Operator::NotEqual: return x.const_value != ilit.value;
+                        case LiteralFromIntegerVariable::Operator::GreaterEqual: return x.const_value >= ilit.value;
+                        case LiteralFromIntegerVariable::Operator::Less: return x.const_value < ilit.value;
                         }
                         throw NonExhaustiveSwitch{};
                     }}

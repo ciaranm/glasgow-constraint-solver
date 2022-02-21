@@ -570,14 +570,13 @@ auto State::change_state_for_literal(
     Integer value) -> pair<Inference, HowChanged>
 {
     switch (state) {
-        using enum LiteralFromIntegerVariable::Operator;
-    case Equal:
+    case LiteralFromIntegerVariable::Operator::Equal:
         return change_state_for_equal(var, value);
-    case NotEqual:
+    case LiteralFromIntegerVariable::Operator::NotEqual:
         return change_state_for_not_equal(var, value);
-    case Less:
+    case LiteralFromIntegerVariable::Operator::Less:
         return change_state_for_less_than(var, value);
-    case GreaterEqual:
+    case LiteralFromIntegerVariable::Operator::GreaterEqual:
         return change_state_for_greater_than_or_equal(var, value);
     }
 
@@ -1004,14 +1003,13 @@ auto State::literal_is_nonfalsified(const Literal & lit) const -> bool
     return overloaded{
         [&](const LiteralFromIntegerVariable & ilit) -> bool {
             switch (ilit.op) {
-                using enum LiteralFromIntegerVariable::Operator;
-            case Equal:
+            case LiteralFromIntegerVariable::Operator::Equal:
                 return in_domain(ilit.var, ilit.value);
-            case Less:
+            case LiteralFromIntegerVariable::Operator::Less:
                 return lower_bound(ilit.var) < ilit.value;
-            case GreaterEqual:
+            case LiteralFromIntegerVariable::Operator::GreaterEqual:
                 return upper_bound(ilit.var) >= ilit.value;
-            case NotEqual: {
+            case LiteralFromIntegerVariable::Operator::NotEqual: {
                 auto single_value = optional_single_value(ilit.var);
                 return (nullopt == single_value || *single_value != ilit.value);
             }
@@ -1038,8 +1036,7 @@ auto State::test_literal(const Literal & lit) const -> LiteralIs
 auto State::test_literal(const LiteralFromIntegerVariable & ilit) const -> LiteralIs
 {
     switch (ilit.op) {
-        using enum LiteralFromIntegerVariable::Operator;
-    case Equal:
+    case LiteralFromIntegerVariable::Operator::Equal:
         if (! in_domain(ilit.var, ilit.value))
             return LiteralIs::DefinitelyFalse;
         else if (has_single_value(ilit.var))
@@ -1047,7 +1044,7 @@ auto State::test_literal(const LiteralFromIntegerVariable & ilit) const -> Liter
         else
             return LiteralIs::Undecided;
 
-    case Less:
+    case LiteralFromIntegerVariable::Operator::Less:
         if (lower_bound(ilit.var) < ilit.value) {
             if (upper_bound(ilit.var) < ilit.value)
                 return LiteralIs::DefinitelyTrue;
@@ -1057,7 +1054,7 @@ auto State::test_literal(const LiteralFromIntegerVariable & ilit) const -> Liter
         else
             return LiteralIs::DefinitelyFalse;
 
-    case GreaterEqual:
+    case LiteralFromIntegerVariable::Operator::GreaterEqual:
         if (upper_bound(ilit.var) >= ilit.value) {
             if (lower_bound(ilit.var) >= ilit.value)
                 return LiteralIs::DefinitelyTrue;
@@ -1067,7 +1064,7 @@ auto State::test_literal(const LiteralFromIntegerVariable & ilit) const -> Liter
         else
             return LiteralIs::DefinitelyFalse;
 
-    case NotEqual:
+    case LiteralFromIntegerVariable::Operator::NotEqual:
         if (! in_domain(ilit.var, ilit.value))
             return LiteralIs::DefinitelyTrue;
         else if (has_single_value(ilit.var))

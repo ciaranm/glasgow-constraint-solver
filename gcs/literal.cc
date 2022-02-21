@@ -10,15 +10,14 @@ using namespace gcs;
 auto gcs::operator!(const LiteralFromIntegerVariable & ilit) -> LiteralFromIntegerVariable
 {
     switch (ilit.op) {
-        using enum LiteralFromIntegerVariable::Operator;
-    case Equal:
-        return LiteralFromIntegerVariable{ilit.var, NotEqual, ilit.value};
-    case NotEqual:
-        return LiteralFromIntegerVariable{ilit.var, Equal, ilit.value};
-    case Less:
-        return LiteralFromIntegerVariable{ilit.var, GreaterEqual, ilit.value};
-    case GreaterEqual:
-        return LiteralFromIntegerVariable{ilit.var, Less, ilit.value};
+    case LiteralFromIntegerVariable::Operator::Equal:
+        return LiteralFromIntegerVariable{ilit.var, LiteralFromIntegerVariable::Operator::NotEqual, ilit.value};
+    case LiteralFromIntegerVariable::Operator::NotEqual:
+        return LiteralFromIntegerVariable{ilit.var, LiteralFromIntegerVariable::Operator::Equal, ilit.value};
+    case LiteralFromIntegerVariable::Operator::Less:
+        return LiteralFromIntegerVariable{ilit.var, LiteralFromIntegerVariable::Operator::GreaterEqual, ilit.value};
+    case LiteralFromIntegerVariable::Operator::GreaterEqual:
+        return LiteralFromIntegerVariable{ilit.var, LiteralFromIntegerVariable::Operator::Less, ilit.value};
     }
     throw NonExhaustiveSwitch{};
 }

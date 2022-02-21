@@ -4,7 +4,9 @@
 
 using namespace gcs;
 
+#if __has_include(<source_location>)
 using std::source_location;
+#endif
 using std::string;
 using std::to_string;
 
@@ -17,6 +19,8 @@ auto UnexpectedException::what() const noexcept -> const char *
 {
     return _wat.c_str();
 }
+
+#if __has_include(<source_location>)
 
 namespace
 {
@@ -35,3 +39,17 @@ NonExhaustiveSwitch::NonExhaustiveSwitch(const source_location & where) :
     UnexpectedException{"non-exhaustive at " + where_does_it_hurt(where)}
 {
 }
+
+#else
+
+UnimplementedException::UnimplementedException() :
+    UnexpectedException{"unimplemented, source location not supported by your compiler"}
+{
+}
+
+NonExhaustiveSwitch::NonExhaustiveSwitch() :
+    UnexpectedException{"unimplemented, source location not supported by your compiler"}
+{
+}
+
+#endif

@@ -4,7 +4,9 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_EXCEPTION_HH
 
 #include <exception>
-#include <source_location>
+#if __has_include(<source_location>)
+#  include <source_location>
+#endif
 #include <string>
 
 namespace gcs
@@ -23,13 +25,21 @@ namespace gcs
     class NonExhaustiveSwitch : public UnexpectedException
     {
     public:
+#if __has_include(<source_location>)
         explicit NonExhaustiveSwitch(const std::source_location & = std::source_location::current());
+#else
+        explicit NonExhaustiveSwitch();
+#endif
     };
 
     class UnimplementedException : public UnexpectedException
     {
     public:
+#if __has_include(<source_location>)
         explicit UnimplementedException(const std::source_location & = std::source_location::current());
+#else
+        explicit UnimplementedException();
+#endif
     };
 }
 
