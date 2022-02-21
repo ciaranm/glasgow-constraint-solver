@@ -853,7 +853,7 @@ auto State::domain_size(const VarType_ & var) const -> Integer
 }
 
 template <IntegerVariableIDLike VarType_>
-auto State::for_each_value(const VarType_ & var, function<auto(Integer)->void> f) const -> void
+auto State::for_each_value(const VarType_ & var, const function<auto(Integer)->void> & f) const -> void
 {
     for_each_value_while(var, [&](Integer v) -> bool {
         f(v);
@@ -862,7 +862,7 @@ auto State::for_each_value(const VarType_ & var, function<auto(Integer)->void> f
 }
 
 template <IntegerVariableIDLike VarType_>
-auto State::for_each_value_while(const VarType_ & var, function<auto(Integer)->bool> f) const -> void
+auto State::for_each_value_while(const VarType_ & var, const function<auto(Integer)->bool> & f) const -> void
 {
     auto [actual_var, offset] = underlying_direct_variable_and_offset(var);
 
@@ -900,7 +900,7 @@ auto State::for_each_value_while(const VarType_ & var, function<auto(Integer)->b
 }
 
 template <IntegerVariableIDLike VarType_>
-auto State::for_each_value_while_immutable(const VarType_ & var, function<auto(Integer)->bool> f) const -> void
+auto State::for_each_value_while_immutable(const VarType_ & var, const function<auto(Integer)->bool> & f) const -> void
 {
     auto [actual_var, offset] = underlying_direct_variable_and_offset(var);
 
@@ -971,7 +971,7 @@ auto State::backtrack(Timestamp t) -> void
     }
 }
 
-auto State::extract_changed_variables(function<auto(SimpleIntegerVariableID, HowChanged)->void> f) -> void
+auto State::extract_changed_variables(const function<auto(SimpleIntegerVariableID, HowChanged)->void> & f) -> void
 {
     for (auto & c : _imp->changed)
         f(c, _imp->how_changed[c.index]);
@@ -979,7 +979,7 @@ auto State::extract_changed_variables(function<auto(SimpleIntegerVariableID, How
     fill(_imp->how_changed.begin(), _imp->how_changed.end(), HowChanged::Dummy);
 }
 
-auto State::for_each_guess(function<auto(Literal)->void> f) const -> void
+auto State::for_each_guess(const function<auto(Literal)->void> & f) const -> void
 {
     for (auto & g : _imp->guesses)
         f(g);
@@ -1109,20 +1109,20 @@ namespace gcs
     template auto State::domain_size(const IntegerVariableID &) const -> Integer;
     template auto State::domain_size(const SimpleIntegerVariableID &) const -> Integer;
 
-    template auto State::for_each_value(const IntegerVariableID &, std::function<auto(Integer)->void>) const -> void;
-    template auto State::for_each_value(const SimpleIntegerVariableID &, std::function<auto(Integer)->void>) const -> void;
-    template auto State::for_each_value(const ViewOfIntegerVariableID &, std::function<auto(Integer)->void>) const -> void;
-    template auto State::for_each_value(const ConstantIntegerVariableID &, std::function<auto(Integer)->void>) const -> void;
+    template auto State::for_each_value(const IntegerVariableID &, const std::function<auto(Integer)->void> &) const -> void;
+    template auto State::for_each_value(const SimpleIntegerVariableID &, const std::function<auto(Integer)->void> &) const -> void;
+    template auto State::for_each_value(const ViewOfIntegerVariableID &, const std::function<auto(Integer)->void> &) const -> void;
+    template auto State::for_each_value(const ConstantIntegerVariableID &, const std::function<auto(Integer)->void> &) const -> void;
 
-    template auto State::for_each_value_while(const IntegerVariableID &, std::function<auto(Integer)->bool>) const -> void;
-    template auto State::for_each_value_while(const SimpleIntegerVariableID &, std::function<auto(Integer)->bool>) const -> void;
-    template auto State::for_each_value_while(const ViewOfIntegerVariableID &, std::function<auto(Integer)->bool>) const -> void;
-    template auto State::for_each_value_while(const ConstantIntegerVariableID &, std::function<auto(Integer)->bool>) const -> void;
+    template auto State::for_each_value_while(const IntegerVariableID &, const std::function<auto(Integer)->bool> &) const -> void;
+    template auto State::for_each_value_while(const SimpleIntegerVariableID &, const std::function<auto(Integer)->bool> &) const -> void;
+    template auto State::for_each_value_while(const ViewOfIntegerVariableID &, const std::function<auto(Integer)->bool> &) const -> void;
+    template auto State::for_each_value_while(const ConstantIntegerVariableID &, const std::function<auto(Integer)->bool> &) const -> void;
 
-    template auto State::for_each_value_while_immutable(const IntegerVariableID &, std::function<auto(Integer)->bool>) const -> void;
-    template auto State::for_each_value_while_immutable(const SimpleIntegerVariableID &, std::function<auto(Integer)->bool>) const -> void;
-    template auto State::for_each_value_while_immutable(const ViewOfIntegerVariableID &, std::function<auto(Integer)->bool>) const -> void;
-    template auto State::for_each_value_while_immutable(const ConstantIntegerVariableID &, std::function<auto(Integer)->bool>) const -> void;
+    template auto State::for_each_value_while_immutable(const IntegerVariableID &, const std::function<auto(Integer)->bool> &) const -> void;
+    template auto State::for_each_value_while_immutable(const SimpleIntegerVariableID &, const std::function<auto(Integer)->bool> &) const -> void;
+    template auto State::for_each_value_while_immutable(const ViewOfIntegerVariableID &, const std::function<auto(Integer)->bool> &) const -> void;
+    template auto State::for_each_value_while_immutable(const ConstantIntegerVariableID &, const std::function<auto(Integer)->bool> &) const -> void;
 
     template auto State::infer_equal(const IntegerVariableID &, Integer, const Justification &) -> Inference;
     template auto State::infer_equal(const SimpleIntegerVariableID &, Integer, const Justification &) -> Inference;

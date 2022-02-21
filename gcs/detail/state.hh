@@ -124,7 +124,7 @@ namespace gcs
         [[nodiscard]] auto want_proofs() const -> bool;
 
         auto guess(const Literal & lit) -> void;
-        auto for_each_guess(std::function<auto(Literal)->void>) const -> void;
+        auto for_each_guess(const std::function<auto(Literal)->void> &) const -> void;
 
         [[nodiscard]] auto lower_bound(const IntegerVariableID) const -> Integer;
         [[nodiscard]] auto upper_bound(const IntegerVariableID) const -> Integer;
@@ -144,13 +144,13 @@ namespace gcs
         [[nodiscard]] auto has_single_value(const IntegerVariableID) const -> bool;
 
         template <IntegerVariableIDLike VarType_>
-        auto for_each_value(const VarType_ &, std::function<auto(Integer)->void>) const -> void;
+        auto for_each_value(const VarType_ &, const std::function<auto(Integer)->void> &) const -> void;
 
         template <IntegerVariableIDLike VarType_>
-        auto for_each_value_while(const VarType_ &, std::function<auto(Integer)->bool>) const -> void;
+        auto for_each_value_while(const VarType_ &, const std::function<auto(Integer)->bool> &) const -> void;
 
         template <IntegerVariableIDLike VarType_>
-        auto for_each_value_while_immutable(const VarType_ &, std::function<auto(Integer)->bool>) const -> void;
+        auto for_each_value_while_immutable(const VarType_ &, const std::function<auto(Integer)->bool> &) const -> void;
 
         [[nodiscard]] auto domain_has_holes(const IntegerVariableID) const -> bool;
 
@@ -173,7 +173,7 @@ namespace gcs
         auto backtrack(Timestamp) -> void;
         auto on_backtrack(std::function<auto()->void>) -> void;
 
-        auto extract_changed_variables(std::function<auto(SimpleIntegerVariableID, HowChanged)->void>) -> void;
+        auto extract_changed_variables(const std::function<auto(SimpleIntegerVariableID, HowChanged)->void> &) -> void;
 
         [[nodiscard]] auto current() -> CurrentState;
     };
