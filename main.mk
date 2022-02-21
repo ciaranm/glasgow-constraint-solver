@@ -23,7 +23,8 @@ SUBMAKEFILES := \
     examples/qap/qap.mk \
     examples/skyscrapers/skyscrapers.mk
 
-override CXXFLAGS += -O3 -march=native -std=c++20 -Isrc/ -W -Wall -Wextra -g -ggdb3 -pthread
+override CXXFLAGS += -O3 -march=native -std=c++20 -Isrc/ -W -Wall -Wextra -g -ggdb3 -pthread -flto
+override LDFLAGS += -flto
 
 boost_ldlibs := -lboost_program_options
 
