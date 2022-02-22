@@ -3,8 +3,9 @@ Examples, and Navigating the Source Code
 
 The ``examples/`` directory contains example programs that show how to use the solver as a program
 author. It is probably best to start with ``examples/cake/cake.cc`` for some delicious cakes,
-``examples/crystal_maze/crystal_maze.cc`` for everyone's favourite first constraint programming
-problem, and ``examples/magic_square/magic_square.cc`` for some magic.
+``examples/crystal_maze/crystal_maze.cc`` and ``examples/sudoku/sudoku.cc`` for everyone's favourite
+first two constraint programming problems, and ``examples/magic_square/magic_square.cc`` for some
+magic.
 
 The ``gcs/`` directory contains the user-facing part of the API. The ``Problem`` class in
 ``gcs/problem.hh`` is your starting point, and you will want ``Problem::create_integer_variable``.

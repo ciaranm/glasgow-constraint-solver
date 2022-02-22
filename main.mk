@@ -21,7 +21,8 @@ SUBMAKEFILES := \
     examples/odd_even_sum/odd_even_sum.mk \
     examples/ortho_latin/ortho_latin.mk \
     examples/qap/qap.mk \
-    examples/skyscrapers/skyscrapers.mk
+    examples/skyscrapers/skyscrapers.mk \
+    examples/sudoku/sudoku.mk
 
 override CXXFLAGS += -O3 -march=native -std=c++20 -Isrc/ -W -Wall -Wextra -g -ggdb3 -pthread -flto
 override LDFLAGS += -flto
