@@ -1,13 +1,13 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
-#include <gcs/detail/variable_id_utils.hh>
+#include <gcs/innards/variable_id_utils.hh>
 
 #include <util/overloaded.hh>
 
 #include <string>
 
 using namespace gcs;
-using namespace gcs::detail;
+using namespace gcs::innards;
 
 using std::pair;
 using std::string;
@@ -15,7 +15,7 @@ using std::to_string;
 
 using namespace std::literals::string_literals;
 
-auto gcs::detail::debug_string(const IntegerVariableID & var) -> string
+auto gcs::innards::debug_string(const IntegerVariableID & var) -> string
 {
     return overloaded{
         [](SimpleIntegerVariableID x) {
@@ -30,7 +30,7 @@ auto gcs::detail::debug_string(const IntegerVariableID & var) -> string
         .visit(var);
 }
 
-auto gcs::detail::debug_string(const VariableID & var) -> string
+auto gcs::innards::debug_string(const VariableID & var) -> string
 {
     return overloaded{
         [](IntegerVariableID v) { return "int " + debug_string(v); }}

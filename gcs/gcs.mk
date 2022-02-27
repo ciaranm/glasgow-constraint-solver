@@ -20,12 +20,12 @@ SOURCES := \
     constraints/linear_equality.cc \
     constraints/min_max.cc \
     constraints/table.cc \
-    detail/extensional.cc \
-    detail/integer_variable_state.cc \
-    detail/linear_utils.cc \
-    detail/literal_utils.cc \
-    detail/proof.cc \
-    detail/propagators.cc \
-    detail/state.cc \
-    detail/variable_id_utils.cc
+    innards/extensional.cc \
+    innards/integer_variable_state.cc \
+    innards/linear_utils.cc \
+    innards/literal_utils.cc \
+    innards/proof.cc \
+    innards/propagators.cc \
+    innards/state.cc \
+    innards/variable_id_utils.cc
 

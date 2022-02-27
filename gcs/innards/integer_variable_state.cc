@@ -1,15 +1,15 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
-#include <gcs/detail/integer_variable_state.hh>
+#include <gcs/innards/integer_variable_state.hh>
 #include <util/overloaded.hh>
 
 using namespace gcs;
-using namespace gcs::detail;
+using namespace gcs::innards;
 
 using std::string;
 using std::to_string;
 
-auto gcs::detail::debug_string(const IntegerVariableState & ivar) -> string
+auto gcs::innards::debug_string(const IntegerVariableState & ivar) -> string
 {
     return overloaded{
         [](const IntegerVariableConstantState & c) {

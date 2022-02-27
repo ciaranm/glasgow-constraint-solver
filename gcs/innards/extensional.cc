@@ -1,14 +1,14 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
-#include <gcs/detail/extensional.hh>
-#include <gcs/detail/state.hh>
+#include <gcs/innards/extensional.hh>
+#include <gcs/innards/state.hh>
 
 using std::pair;
 
 using namespace gcs;
-using namespace gcs::detail;
+using namespace gcs::innards;
 
-auto gcs::detail::propagate_extensional(const ExtensionalData & table, State & state) -> pair<Inference, PropagatorState>
+auto gcs::innards::propagate_extensional(const ExtensionalData & table, State & state) -> pair<Inference, PropagatorState>
 {
     bool changed = false, contradiction = false;
 

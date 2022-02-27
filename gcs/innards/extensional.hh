@@ -3,15 +3,15 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_EXTENSIONAL_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_EXTENSIONAL_HH
 
-#include <gcs/detail/propagators-fwd.hh>
-#include <gcs/detail/state-fwd.hh>
+#include <gcs/innards/propagators-fwd.hh>
+#include <gcs/innards/state-fwd.hh>
 #include <gcs/integer.hh>
 #include <gcs/variable_id.hh>
 
 #include <utility>
 #include <vector>
 
-namespace gcs::detail
+namespace gcs::innards
 {
     struct ExtensionalData
     {

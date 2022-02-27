@@ -2,10 +2,10 @@
 
 #include <gcs/exception.hh>
 
-#include <gcs/detail/extensional.hh>
-#include <gcs/detail/linear_utils.hh>
-#include <gcs/detail/proof.hh>
-#include <gcs/detail/propagators.hh>
+#include <gcs/innards/extensional.hh>
+#include <gcs/innards/linear_utils.hh>
+#include <gcs/innards/proof.hh>
+#include <gcs/innards/propagators.hh>
 
 #include <util/for_each.hh>
 #include <util/overloaded.hh>
@@ -16,7 +16,7 @@
 #include <list>
 
 using namespace gcs;
-using namespace gcs::detail;
+using namespace gcs::innards;
 
 using std::deque;
 using std::list;
@@ -172,7 +172,7 @@ auto Propagators::install(const State &, PropagationFunction && f, const Trigger
 }
 
 auto Propagators::define_and_install_table(const State & state, vector<IntegerVariableID> && vars,
-        vector<vector<Integer>> && permitted, const string & x) -> void
+    vector<vector<Integer>> && permitted, const string & x) -> void
 {
     if (permitted.empty()) {
         model_contradiction(state, "Empty table constraint from " + x);

@@ -1,11 +1,11 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
 #include <gcs/constraints/all_different.hh>
-#include <gcs/detail/proof.hh>
-#include <gcs/detail/propagators.hh>
-#include <gcs/detail/state.hh>
-#include <gcs/detail/variable_id_utils.hh>
 #include <gcs/exception.hh>
+#include <gcs/innards/proof.hh>
+#include <gcs/innards/propagators.hh>
+#include <gcs/innards/state.hh>
+#include <gcs/innards/variable_id_utils.hh>
 
 #include <util/for_each.hh>
 #include <util/overloaded.hh>
@@ -21,7 +21,7 @@
 #include <variant>
 
 using namespace gcs;
-using namespace gcs::detail;
+using namespace gcs::innards;
 
 using std::adjacent_find;
 using std::decay_t;

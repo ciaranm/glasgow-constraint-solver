@@ -3,7 +3,7 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_STATE_FWD_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_STATE_FWD_HH
 
-namespace gcs::detail
+namespace gcs::innards
 {
     class State;
 

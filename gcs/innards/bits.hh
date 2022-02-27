@@ -7,7 +7,7 @@
 #include <bit>
 #include <limits>
 
-namespace gcs::detail
+namespace gcs::innards
 {
     struct Bits
     {

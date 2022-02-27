@@ -3,10 +3,10 @@
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/element.hh>
 #include <gcs/constraints/equals.hh>
-#include <gcs/detail/proof.hh>
-#include <gcs/detail/propagators.hh>
-#include <gcs/detail/state.hh>
 #include <gcs/exception.hh>
+#include <gcs/innards/proof.hh>
+#include <gcs/innards/propagators.hh>
+#include <gcs/innards/state.hh>
 #include <gcs/integer.hh>
 
 #include <util/for_each.hh>
@@ -19,7 +19,7 @@
 #include <vector>
 
 using namespace gcs;
-using namespace gcs::detail;
+using namespace gcs::innards;
 
 using std::make_optional;
 using std::max;

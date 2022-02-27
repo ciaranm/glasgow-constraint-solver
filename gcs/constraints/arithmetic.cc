@@ -1,15 +1,15 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
 #include <gcs/constraints/arithmetic.hh>
-#include <gcs/detail/propagators.hh>
-#include <gcs/detail/state.hh>
+#include <gcs/innards/propagators.hh>
+#include <gcs/innards/state.hh>
 
 #include <cmath>
 #include <tuple>
 #include <vector>
 
 using namespace gcs;
-using namespace gcs::detail;
+using namespace gcs::innards;
 
 using std::llroundl;
 using std::move;

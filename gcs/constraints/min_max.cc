@@ -2,13 +2,13 @@
 
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/min_max.hh>
-#include <gcs/detail/propagators.hh>
 #include <gcs/exception.hh>
+#include <gcs/innards/propagators.hh>
 
 #include <util/for_each.hh>
 
 using namespace gcs;
-using namespace gcs::detail;
+using namespace gcs::innards;
 
 using std::nullopt;
 using std::optional;

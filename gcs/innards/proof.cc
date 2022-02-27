@@ -1,10 +1,10 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
-#include <gcs/detail/literal_utils.hh>
-#include <gcs/detail/proof.hh>
-#include <gcs/detail/state.hh>
-#include <gcs/detail/variable_id_utils.hh>
 #include <gcs/exception.hh>
+#include <gcs/innards/literal_utils.hh>
+#include <gcs/innards/proof.hh>
+#include <gcs/innards/state.hh>
+#include <gcs/innards/variable_id_utils.hh>
 
 #include <util/overloaded.hh>
 
@@ -22,7 +22,7 @@
 #include <vector>
 
 using namespace gcs;
-using namespace gcs::detail;
+using namespace gcs::innards;
 
 using std::bit_ceil;
 using std::copy;
@@ -66,7 +66,7 @@ auto ProofError::what() const noexcept -> const char *
     return _wat.c_str();
 }
 
-auto gcs::detail::operator!(const ProofFlag & f) -> ProofFlag
+auto gcs::innards::operator!(const ProofFlag & f) -> ProofFlag
 {
     return ProofFlag{f.index, ! f.positive};
 }
@@ -677,7 +677,7 @@ auto Proof::infer(const State & state, const Literal & lit, const Justification 
             need_proof_variable(lit);
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
             _imp->proof << "* RUP from " << j.where.file_name() << ":"
-                << j.where.line() << " in " << j.where.function_name() << '\n';
+                        << j.where.line() << " in " << j.where.function_name() << '\n';
 #endif
             output_it("u");
         },

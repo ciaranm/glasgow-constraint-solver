@@ -1,10 +1,10 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
 #include <gcs/current_state.hh>
-#include <gcs/detail/state.hh>
+#include <gcs/innards/state.hh>
 
 using namespace gcs;
-using namespace gcs::detail;
+using namespace gcs::innards;
 
 using std::string;
 

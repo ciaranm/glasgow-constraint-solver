@@ -1,14 +1,14 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
-#ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_DETAIL_LITERAL_UTILS_HH
-#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_DETAIL_LITERAL_UTILS_HH
+#ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INNARDS_LITERAL_UTILS_HH
+#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INNARDS_LITERAL_UTILS_HH
 
 #include <gcs/literal.hh>
 
 #include <utility>
 #include <vector>
 
-namespace gcs::detail
+namespace gcs::innards
 {
     [[nodiscard]] auto is_literally_true(const Literal &) -> bool;
 

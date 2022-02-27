@@ -1,7 +1,7 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
-#ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_DETAIL_VARIABLE_ID_UTILS_HH
-#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_DETAIL_VARIABLE_ID_UTILS_HH
+#ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INNARDS_VARIABLE_ID_UTILS_HH
+#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INNARDS_VARIABLE_ID_UTILS_HH
 
 #include <gcs/variable_id.hh>
 
@@ -9,7 +9,7 @@
 #include <string>
 #include <utility>
 
-namespace gcs::detail
+namespace gcs::innards
 {
     template <typename T_>
     concept IntegerVariableIDLike = std::is_convertible_v<T_, IntegerVariableID>;

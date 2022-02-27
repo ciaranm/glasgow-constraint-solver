@@ -4,8 +4,8 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROBLEM_HH
 
 #include <gcs/constraint.hh>
-#include <gcs/detail/proof-fwd.hh>
-#include <gcs/detail/state-fwd.hh>
+#include <gcs/innards/proof-fwd.hh>
+#include <gcs/innards/state-fwd.hh>
 #include <gcs/literal.hh>
 #include <gcs/proof_options.hh>
 #include <gcs/stats.hh>
@@ -56,10 +56,10 @@ namespace gcs
             Integer upper,
             const std::optional<std::string> & name = std::nullopt) -> std::array<SimpleIntegerVariableID, n_>;
 
-        [[nodiscard]] auto create_state() const -> detail::State;
-        [[nodiscard]] auto propagate(detail::State &) const -> bool;
+        [[nodiscard]] auto create_state() const -> innards::State;
+        [[nodiscard]] auto propagate(innards::State &) const -> bool;
 
-        [[nodiscard]] auto find_branching_variable(detail::State &) const -> std::optional<IntegerVariableID>;
+        [[nodiscard]] auto find_branching_variable(innards::State &) const -> std::optional<IntegerVariableID>;
 
         auto post(Constraint &&) -> void;
 
@@ -68,14 +68,14 @@ namespace gcs
         auto minimise(IntegerVariableID) -> void;
         auto maximise(IntegerVariableID) -> void;
 
-        auto update_objective(const detail::State &) -> void;
+        auto update_objective(const innards::State &) -> void;
 
-        [[nodiscard]] auto optional_proof() const -> std::optional<detail::Proof> &;
+        [[nodiscard]] auto optional_proof() const -> std::optional<innards::Proof> &;
 
         auto fill_in_constraint_stats(Stats &) const -> void;
     };
 
-    namespace detail
+    namespace innards
     {
         template <std::size_t n_>
         struct ArrayInitialisationMagicForProblem
@@ -103,7 +103,7 @@ namespace gcs
         Integer upper,
         const std::optional<std::string> & name) -> std::array<SimpleIntegerVariableID, n_>
     {
-        detail::ArrayInitialisationMagicForProblem<n_> magic{this, lower, upper, name};
+        innards::ArrayInitialisationMagicForProblem<n_> magic{this, lower, upper, name};
         return magic.result;
     }
 }

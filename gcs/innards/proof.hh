@@ -3,10 +3,10 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROOF_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROOF_HH
 
-#include <gcs/detail/justification.hh>
-#include <gcs/detail/linear_utils.hh>
-#include <gcs/detail/literal_utils.hh>
-#include <gcs/detail/state-fwd.hh>
+#include <gcs/innards/justification.hh>
+#include <gcs/innards/linear_utils.hh>
+#include <gcs/innards/literal_utils.hh>
+#include <gcs/innards/state-fwd.hh>
 #include <gcs/linear.hh>
 #include <gcs/literal.hh>
 #include <gcs/proof_options.hh>
@@ -20,7 +20,7 @@
 #include <utility>
 #include <vector>
 
-namespace gcs::detail
+namespace gcs::innards
 {
     class ProofError : public std::exception
     {

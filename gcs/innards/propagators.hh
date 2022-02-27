@@ -3,11 +3,11 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROPAGATORS_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROPAGATORS_HH
 
-#include <gcs/detail/linear_utils.hh>
-#include <gcs/detail/literal_utils.hh>
-#include <gcs/detail/proof.hh>
-#include <gcs/detail/propagators-fwd.hh>
-#include <gcs/detail/state.hh>
+#include <gcs/innards/linear_utils.hh>
+#include <gcs/innards/literal_utils.hh>
+#include <gcs/innards/proof.hh>
+#include <gcs/innards/propagators-fwd.hh>
+#include <gcs/innards/state.hh>
 #include <gcs/linear.hh>
 #include <gcs/literal.hh>
 #include <gcs/problem.hh>
@@ -16,7 +16,7 @@
 #include <utility>
 #include <vector>
 
-namespace gcs::detail
+namespace gcs::innards
 {
     using PropagationFunction = std::function<auto(State &)->std::pair<Inference, PropagatorState>>;
 
@@ -62,7 +62,7 @@ namespace gcs::detail
         auto install(const State &, PropagationFunction &&, const Triggers & trigger_vars, const std::string & name) -> void;
 
         auto define_and_install_table(const State &, std::vector<IntegerVariableID> &&,
-                std::vector<std::vector<Integer>> &&, const std::string & name) -> void;
+            std::vector<std::vector<Integer>> &&, const std::string & name) -> void;
 
         [[nodiscard]] auto create_auxilliary_integer_variable(Integer, Integer, const std::string & name) -> IntegerVariableID;
 

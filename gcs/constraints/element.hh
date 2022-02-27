@@ -20,7 +20,7 @@ namespace gcs
         explicit Element(IntegerVariableID var, IntegerVariableID idx_var, const std::vector<IntegerVariableID> & vals);
 
         virtual auto describe_for_proof() -> std::string override;
-        virtual auto install(detail::Propagators &, const detail::State &) && -> void override;
+        virtual auto install(innards::Propagators &, const innards::State &) && -> void override;
     };
 
     class Element2DConstantArray : public Constraint
@@ -34,7 +34,7 @@ namespace gcs
             const std::vector<std::vector<Integer>> & vals);
 
         virtual auto describe_for_proof() -> std::string override;
-        virtual auto install(detail::Propagators &, const detail::State &) && -> void override;
+        virtual auto install(innards::Propagators &, const innards::State &) && -> void override;
     };
 }
 

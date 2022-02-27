@@ -1,9 +1,9 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
-#include <gcs/detail/proof.hh>
-#include <gcs/detail/state.hh>
-#include <gcs/detail/variable_id_utils.hh>
 #include <gcs/exception.hh>
+#include <gcs/innards/proof.hh>
+#include <gcs/innards/state.hh>
+#include <gcs/innards/variable_id_utils.hh>
 #include <gcs/problem.hh>
 
 #include <util/overloaded.hh>
@@ -19,7 +19,7 @@
 #include <vector>
 
 using namespace gcs;
-using namespace gcs::detail;
+using namespace gcs::innards;
 
 using std::countr_zero;
 using std::decay_t;
@@ -41,7 +41,7 @@ using std::tuple;
 using std::vector;
 using std::visit;
 
-auto gcs::detail::increase_inference_to(Inference & current, const Inference updated) -> void
+auto gcs::innards::increase_inference_to(Inference & current, const Inference updated) -> void
 {
     switch (updated) {
     case Inference::NoChange: break;

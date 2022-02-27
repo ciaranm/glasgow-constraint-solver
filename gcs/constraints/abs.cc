@@ -1,15 +1,15 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
 #include <gcs/constraints/abs.hh>
-#include <gcs/detail/propagators.hh>
-#include <gcs/detail/state.hh>
+#include <gcs/innards/propagators.hh>
+#include <gcs/innards/state.hh>
 
 #include <algorithm>
 #include <optional>
 #include <sstream>
 
 using namespace gcs;
-using namespace gcs::detail;
+using namespace gcs::innards;
 
 using std::max;
 using std::min;

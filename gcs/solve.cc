@@ -1,12 +1,12 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
-#include <gcs/detail/proof.hh>
-#include <gcs/detail/state.hh>
 #include <gcs/exception.hh>
+#include <gcs/innards/proof.hh>
+#include <gcs/innards/state.hh>
 #include <gcs/solve.hh>
 
 using namespace gcs;
-using namespace gcs::detail;
+using namespace gcs::innards;
 
 using std::max;
 using std::nullopt;

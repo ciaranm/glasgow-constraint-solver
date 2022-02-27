@@ -3,7 +3,7 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CURRENT_STATE_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CURRENT_STATE_HH
 
-#include <gcs/detail/state-fwd.hh>
+#include <gcs/innards/state-fwd.hh>
 #include <gcs/integer.hh>
 #include <gcs/variable_id.hh>
 
@@ -26,10 +26,10 @@ namespace gcs
     class CurrentState
     {
     private:
-        detail::State & _full_state;
+        innards::State & _full_state;
 
     public:
-        explicit CurrentState(detail::State & state);
+        explicit CurrentState(innards::State & state);
         ~CurrentState() = default;
 
         CurrentState(const CurrentState &) = delete;

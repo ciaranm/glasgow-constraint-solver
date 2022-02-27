@@ -28,7 +28,7 @@ namespace gcs
         explicit Arithmetic(const IntegerVariableID v1, const IntegerVariableID v2, const IntegerVariableID result);
 
         virtual auto describe_for_proof() -> std::string override;
-        virtual auto install(detail::Propagators &, const detail::State &) && -> void override;
+        virtual auto install(innards::Propagators &, const innards::State &) && -> void override;
     };
 
     using Plus = Arithmetic<ArithmeticOperator::Plus>;

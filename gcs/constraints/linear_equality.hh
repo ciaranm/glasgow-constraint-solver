@@ -22,7 +22,7 @@ namespace gcs
         explicit LinearEquality(Linear && coeff_vars, Integer value, bool gac = false);
 
         virtual auto describe_for_proof() -> std::string override;
-        virtual auto install(detail::Propagators &, const detail::State &) && -> void override;
+        virtual auto install(innards::Propagators &, const innards::State &) && -> void override;
     };
 
     class LinearLessEqual : public Constraint
@@ -35,7 +35,7 @@ namespace gcs
         explicit LinearLessEqual(Linear && coeff_vars, Integer value);
 
         virtual auto describe_for_proof() -> std::string override;
-        virtual auto install(detail::Propagators &, const detail::State &) && -> void override;
+        virtual auto install(innards::Propagators &, const innards::State &) && -> void override;
     };
 }
 

@@ -24,7 +24,7 @@ will be found. If you are optimising something, via ``Problem::minimise``, this 
 called every time a better incumbent is found, and ``true`` means "keep going and try to find
 something better".
 
-The contents of the ``gcs/detail/`` directory, and anything in the ``gcs::detail`` namespace, are
+The contents of the ``gcs/innards/`` directory, and anything in the ``gcs::innards`` namespace, are
 the solver's innards. These are probably not useful for end users, and if they are, they should
 probably be turned into a cleaner API rather than exposed directly.
 

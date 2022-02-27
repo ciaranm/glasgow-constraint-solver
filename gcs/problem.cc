@@ -1,17 +1,17 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
 #include <gcs/constraints/comparison.hh>
-#include <gcs/detail/proof.hh>
-#include <gcs/detail/propagators.hh>
-#include <gcs/detail/state.hh>
 #include <gcs/exception.hh>
+#include <gcs/innards/proof.hh>
+#include <gcs/innards/propagators.hh>
+#include <gcs/innards/state.hh>
 #include <gcs/problem.hh>
 
 #include <util/for_each.hh>
 #include <util/overloaded.hh>
 
 using namespace gcs;
-using namespace gcs::detail;
+using namespace gcs::innards;
 
 using std::make_optional;
 using std::move;

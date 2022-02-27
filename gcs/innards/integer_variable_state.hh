@@ -3,7 +3,7 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INTEGER_VARIABLE_STATE_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INTEGER_VARIABLE_STATE_HH
 
-#include <gcs/detail/bits.hh>
+#include <gcs/innards/bits.hh>
 #include <gcs/integer.hh>
 
 #include <memory>
@@ -12,7 +12,7 @@
 #include <string>
 #include <variant>
 
-namespace gcs::detail
+namespace gcs::innards
 {
     struct IntegerVariableConstantState
     {

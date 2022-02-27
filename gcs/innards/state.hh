@@ -4,10 +4,10 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_STATE_HH
 
 #include <gcs/current_state.hh>
-#include <gcs/detail/integer_variable_state.hh>
-#include <gcs/detail/justification.hh>
-#include <gcs/detail/state-fwd.hh>
-#include <gcs/detail/variable_id_utils.hh>
+#include <gcs/innards/integer_variable_state.hh>
+#include <gcs/innards/justification.hh>
+#include <gcs/innards/state-fwd.hh>
+#include <gcs/innards/variable_id_utils.hh>
 #include <gcs/literal.hh>
 #include <gcs/problem-fwd.hh>
 
@@ -17,7 +17,7 @@
 #include <memory>
 #include <optional>
 
-namespace gcs::detail
+namespace gcs::innards
 {
     auto increase_inference_to(Inference &, const Inference) -> void;
 
@@ -78,15 +78,15 @@ namespace gcs::detail
             const VarType_ & var,
             Integer value) -> std::pair<Inference, HowChanged>;
 
-        [[nodiscard]] auto assign_to_state_of(const DirectIntegerVariableID) -> detail::IntegerVariableState &;
+        [[nodiscard]] auto assign_to_state_of(const DirectIntegerVariableID) -> innards::IntegerVariableState &;
 
-        [[nodiscard]] auto state_of(const DirectIntegerVariableID &, detail::IntegerVariableState & space) -> detail::IntegerVariableState &;
-        [[nodiscard]] auto state_of(const ConstantIntegerVariableID &, detail::IntegerVariableState & space) -> detail::IntegerVariableState &;
-        [[nodiscard]] auto state_of(const SimpleIntegerVariableID &) -> detail::IntegerVariableState &;
+        [[nodiscard]] auto state_of(const DirectIntegerVariableID &, innards::IntegerVariableState & space) -> innards::IntegerVariableState &;
+        [[nodiscard]] auto state_of(const ConstantIntegerVariableID &, innards::IntegerVariableState & space) -> innards::IntegerVariableState &;
+        [[nodiscard]] auto state_of(const SimpleIntegerVariableID &) -> innards::IntegerVariableState &;
 
-        [[nodiscard]] auto state_of(const DirectIntegerVariableID &, detail::IntegerVariableState & space) const -> const detail::IntegerVariableState &;
-        [[nodiscard]] auto state_of(const ConstantIntegerVariableID &, detail::IntegerVariableState & space) const -> const detail::IntegerVariableState &;
-        [[nodiscard]] auto state_of(const SimpleIntegerVariableID &) const -> const detail::IntegerVariableState &;
+        [[nodiscard]] auto state_of(const DirectIntegerVariableID &, innards::IntegerVariableState & space) const -> const innards::IntegerVariableState &;
+        [[nodiscard]] auto state_of(const ConstantIntegerVariableID &, innards::IntegerVariableState & space) const -> const innards::IntegerVariableState &;
+        [[nodiscard]] auto state_of(const SimpleIntegerVariableID &) const -> const innards::IntegerVariableState &;
 
         auto prove_and_remember_change(const Inference & inference, const HowChanged & how_changed, const Justification & just,
             const Literal & lit, const DirectIntegerVariableID & actual_var) -> void;

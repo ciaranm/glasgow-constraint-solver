@@ -1,8 +1,8 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
-#include <gcs/detail/literal_utils.hh>
-#include <gcs/detail/variable_id_utils.hh>
 #include <gcs/exception.hh>
+#include <gcs/innards/literal_utils.hh>
+#include <gcs/innards/variable_id_utils.hh>
 
 #include <util/overloaded.hh>
 
@@ -16,7 +16,7 @@ using std::remove_if;
 using std::string;
 using std::unique;
 
-auto gcs::detail::debug_string(const Literal & lit) -> string
+auto gcs::innards::debug_string(const Literal & lit) -> string
 {
     return overloaded{
         [](const LiteralFromIntegerVariable & ilit) -> string {
@@ -71,19 +71,19 @@ namespace
     }
 }
 
-auto gcs::detail::is_literally_true(const Literal & lit) -> bool
+auto gcs::innards::is_literally_true(const Literal & lit) -> bool
 {
     auto result = is_literally_true_or_false(lit);
     return result && *result;
 }
 
-auto gcs::detail::is_literally_false(const Literal & lit) -> bool
+auto gcs::innards::is_literally_false(const Literal & lit) -> bool
 {
     auto result = is_literally_true_or_false(lit);
     return result && ! *result;
 }
 
-auto gcs::detail::sanitise_literals(Literals & lits) -> bool
+auto gcs::innards::sanitise_literals(Literals & lits) -> bool
 {
     // if we've got a literal that is definitely true, the clause is always satisfied,
     // so we can discard the clause

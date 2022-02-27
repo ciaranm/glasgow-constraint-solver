@@ -3,17 +3,17 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_JUSTIFICATION_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_JUSTIFICATION_HH
 
-#include <gcs/detail/proof-fwd.hh>
+#include <gcs/innards/proof-fwd.hh>
 
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
-#  include <source_location>
+#include <source_location>
 #endif
 
 #include <functional>
 #include <variant>
 #include <vector>
 
-namespace gcs::detail
+namespace gcs::innards
 {
     using ExplicitJustificationFunction = std::function<auto(Proof &, std::vector<ProofLine> &)->void>;
 

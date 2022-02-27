@@ -1,11 +1,11 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
 #include <gcs/constraints/linear_equality.hh>
-#include <gcs/detail/extensional.hh>
-#include <gcs/detail/linear_utils.hh>
-#include <gcs/detail/proof.hh>
-#include <gcs/detail/propagators.hh>
 #include <gcs/exception.hh>
+#include <gcs/innards/extensional.hh>
+#include <gcs/innards/linear_utils.hh>
+#include <gcs/innards/proof.hh>
+#include <gcs/innards/propagators.hh>
 
 #include <util/for_each.hh>
 #include <util/overloaded.hh>
@@ -15,7 +15,7 @@
 #include <vector>
 
 using namespace gcs;
-using namespace gcs::detail;
+using namespace gcs::innards;
 
 using std::function;
 using std::move;

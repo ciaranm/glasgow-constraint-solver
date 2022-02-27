@@ -1,9 +1,9 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
 #include <gcs/constraints/table.hh>
-#include <gcs/detail/propagators.hh>
-#include <gcs/detail/state.hh>
 #include <gcs/exception.hh>
+#include <gcs/innards/propagators.hh>
+#include <gcs/innards/state.hh>
 
 #include <util/for_each.hh>
 
@@ -18,7 +18,7 @@
 #include <variant>
 
 using namespace gcs;
-using namespace gcs::detail;
+using namespace gcs::innards;
 
 using std::string;
 using std::vector;
