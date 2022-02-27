@@ -21,28 +21,6 @@ namespace gcs
     template <typename T_>
     concept DirectIntegerVariableIDLike = std::is_convertible_v<T_, DirectIntegerVariableID>;
 
-    [[nodiscard]] auto underlying_direct_variable_and_offset(const IntegerVariableID & var) -> std::pair<DirectIntegerVariableID, Integer>;
-
-    [[nodiscard]] auto underlying_direct_variable_and_offset(const DirectIntegerVariableID & var) -> std::pair<DirectIntegerVariableID, Integer>;
-
-    [[nodiscard]] inline auto underlying_direct_variable_and_offset(
-        const SimpleIntegerVariableID & var) -> std::pair<SimpleIntegerVariableID, Integer>
-    {
-        return std::pair{var, 0_i};
-    }
-
-    [[nodiscard]] inline auto underlying_direct_variable_and_offset(
-        const ConstantIntegerVariableID & var) -> std::pair<ConstantIntegerVariableID, Integer>
-    {
-        return std::pair{var, 0_i};
-    }
-
-    [[nodiscard]] inline auto underlying_direct_variable_and_offset(
-        const ViewOfIntegerVariableID & var) -> std::pair<SimpleIntegerVariableID, Integer>
-    {
-        return std::pair{var.actual_variable, var.offset};
-    }
-
     [[nodiscard]] auto debug_string(const IntegerVariableID &) -> std::string;
 
     [[nodiscard]] auto debug_string(const VariableID &) -> std::string;

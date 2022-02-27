@@ -26,11 +26,13 @@ namespace gcs
     struct ViewOfIntegerVariableID
     {
         SimpleIntegerVariableID actual_variable;
-        Integer offset;
+        bool negate_first;
+        Integer then_add;
 
-        explicit ViewOfIntegerVariableID(SimpleIntegerVariableID a, Integer o) :
+        explicit ViewOfIntegerVariableID(SimpleIntegerVariableID a, bool n, Integer o) :
             actual_variable(a),
-            offset(o)
+            negate_first(n),
+            then_add(o)
         {
         }
 
@@ -69,6 +71,8 @@ namespace gcs
     [[nodiscard]] auto operator+(IntegerVariableID v, Integer o) -> IntegerVariableID;
 
     [[nodiscard]] auto operator-(IntegerVariableID v, Integer o) -> IntegerVariableID;
+
+    [[nodiscard]] auto operator-(IntegerVariableID v) -> IntegerVariableID;
 
     using VariableID = std::variant<IntegerVariableID>;
 }

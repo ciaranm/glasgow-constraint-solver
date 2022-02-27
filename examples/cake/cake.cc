@@ -70,11 +70,8 @@ auto main(int argc, char * argv[]) -> int
     auto profit = p.create_integer_variable(0_i, 107500_i, "profit");
     p.post(LinearEquality{Linear{{400_i, banana}, {450_i, chocolate}, {-1_i, profit}}, 0_i});
 
-    auto loss = p.create_integer_variable(-107500_i, 0_i, "loss");
-    p.post(LinearEquality{Linear{{1_i, profit}, {1_i, loss}}, 0_i});
-
     p.branch_on(vector<IntegerVariableID>{banana, chocolate});
-    p.minimise(loss);
+    p.maximise(profit);
     auto stats = solve(p, [&](const CurrentState & s) -> bool {
         cout << "banana cakes = " << s(banana) << ", chocolate cakes = "
              << s(chocolate) << ", profit = " << s(profit) << endl;

@@ -139,6 +139,16 @@ auto Problem::minimise(IntegerVariableID var) -> void
         _imp->optional_proof->minimise(var);
 }
 
+auto Problem::maximise(IntegerVariableID var) -> void
+{
+    if (_imp->objective_variable)
+        throw UnexpectedException{"not sure how to have multiple objective variables"};
+    _imp->objective_variable = -var;
+
+    if (_imp->optional_proof)
+        _imp->optional_proof->minimise(-var);
+}
+
 auto Problem::update_objective(const State & state) -> void
 {
     if (_imp->objective_variable)

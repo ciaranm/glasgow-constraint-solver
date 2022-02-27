@@ -13,6 +13,7 @@
 #include <deque>
 #include <list>
 #include <string>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -35,6 +36,7 @@ using std::optional;
 using std::pair;
 using std::set;
 using std::string;
+using std::tuple;
 using std::vector;
 using std::visit;
 
@@ -52,17 +54,63 @@ auto gcs::increase_inference_to(Inference & current, const Inference updated) ->
     }
 }
 
+namespace
+{
+    auto deview(const SimpleIntegerVariableID & var) -> tuple<SimpleIntegerVariableID, bool, Integer>
+    {
+        return tuple{var, false, 0_i};
+    }
+
+    auto deview(const ViewOfIntegerVariableID & var) -> tuple<SimpleIntegerVariableID, bool, Integer>
+    {
+        return tuple{var.actual_variable, var.negate_first, var.then_add};
+    }
+
+    auto deview(const ConstantIntegerVariableID & var) -> tuple<ConstantIntegerVariableID, bool, Integer>
+    {
+        return tuple{var, false, 0_i};
+    }
+
+    auto deview(const IntegerVariableID & var) -> tuple<DirectIntegerVariableID, bool, Integer>
+    {
+        return overloaded{
+            [&](const SimpleIntegerVariableID & var) {
+                return tuple{DirectIntegerVariableID{var}, false, 0_i};
+            },
+            [&](const ConstantIntegerVariableID & var) {
+                return tuple{DirectIntegerVariableID{var}, false, 0_i};
+            },
+            [&](const ViewOfIntegerVariableID & var) {
+                return tuple{DirectIntegerVariableID{var.actual_variable}, var.negate_first, var.then_add};
+            },
+        }
+            .visit(var);
+    }
+
+    auto deview(const DirectIntegerVariableID & var) -> tuple<DirectIntegerVariableID, bool, Integer>
+    {
+        return overloaded{
+            [&](const SimpleIntegerVariableID & var) {
+                return tuple{DirectIntegerVariableID{var}, false, 0_i};
+            },
+            [&](const ConstantIntegerVariableID & var) {
+                return tuple{DirectIntegerVariableID{var}, false, 0_i};
+            }}
+            .visit(var);
+    }
+}
+
 template <typename VarType_>
 struct State::GetStateAndOffsetOf
 {
-    pair<DirectIntegerVariableID, Integer> var_and_offset;
+    tuple<DirectIntegerVariableID, bool, Integer> var_negate_then_add;
     IntegerVariableState space;
     const IntegerVariableState & state;
 
     GetStateAndOffsetOf(const State & state, const VarType_ & var) :
-        var_and_offset(underlying_direct_variable_and_offset(var)),
+        var_negate_then_add(deview(var)),
         space(IntegerVariableConstantState{0_i}),
-        state(state.state_of(var_and_offset.first, space))
+        state(state.state_of(get<0>(var_negate_then_add), space))
     {
     }
 };
@@ -70,12 +118,12 @@ struct State::GetStateAndOffsetOf
 template <>
 struct State::GetStateAndOffsetOf<SimpleIntegerVariableID>
 {
-    pair<SimpleIntegerVariableID, Integer> var_and_offset;
+    tuple<SimpleIntegerVariableID, bool, Integer> var_negate_then_add;
     const IntegerVariableState & state;
 
     GetStateAndOffsetOf(const State & state, const SimpleIntegerVariableID & var) :
-        var_and_offset(underlying_direct_variable_and_offset(var)),
-        state(state.state_of(var_and_offset.first))
+        var_negate_then_add(deview(var)),
+        state(state.state_of(get<0>(var_negate_then_add)))
     {
     }
 };
@@ -83,12 +131,12 @@ struct State::GetStateAndOffsetOf<SimpleIntegerVariableID>
 template <>
 struct State::GetStateAndOffsetOf<ViewOfIntegerVariableID>
 {
-    pair<SimpleIntegerVariableID, Integer> var_and_offset;
+    tuple<SimpleIntegerVariableID, bool, Integer> var_negate_then_add;
     const IntegerVariableState & state;
 
     GetStateAndOffsetOf(const State & state, const ViewOfIntegerVariableID & var) :
-        var_and_offset(underlying_direct_variable_and_offset(var)),
-        state(state.state_of(var_and_offset.first))
+        var_negate_then_add(deview(var)),
+        state(state.state_of(get<0>(var_negate_then_add)))
     {
     }
 };
@@ -96,14 +144,14 @@ struct State::GetStateAndOffsetOf<ViewOfIntegerVariableID>
 template <typename VarType_>
 struct State::GetMutableStateAndOffsetOf
 {
-    pair<DirectIntegerVariableID, Integer> var_and_offset;
+    tuple<DirectIntegerVariableID, bool, Integer> var_negate_then_add;
     IntegerVariableState space;
     IntegerVariableState & state;
 
     GetMutableStateAndOffsetOf(State & state, const VarType_ & var) :
-        var_and_offset(underlying_direct_variable_and_offset(var)),
+        var_negate_then_add(deview(var)),
         space(IntegerVariableConstantState{0_i}),
-        state(state.state_of(var_and_offset.first, space))
+        state(state.state_of(get<0>(var_negate_then_add), space))
     {
     }
 };
@@ -111,12 +159,12 @@ struct State::GetMutableStateAndOffsetOf
 template <>
 struct State::GetMutableStateAndOffsetOf<SimpleIntegerVariableID>
 {
-    pair<SimpleIntegerVariableID, Integer> var_and_offset;
+    tuple<SimpleIntegerVariableID, bool, Integer> var_negate_then_add;
     IntegerVariableState & state;
 
     GetMutableStateAndOffsetOf(State & state, const SimpleIntegerVariableID & var) :
-        var_and_offset(underlying_direct_variable_and_offset(var)),
-        state(state.state_of(var_and_offset.first))
+        var_negate_then_add(deview(var)),
+        state(state.state_of(get<0>(var_negate_then_add)))
     {
     }
 };
@@ -124,12 +172,12 @@ struct State::GetMutableStateAndOffsetOf<SimpleIntegerVariableID>
 template <>
 struct State::GetMutableStateAndOffsetOf<ViewOfIntegerVariableID>
 {
-    pair<SimpleIntegerVariableID, Integer> var_and_offset;
+    tuple<SimpleIntegerVariableID, bool, Integer> var_negate_then_add;
     IntegerVariableState & state;
 
     GetMutableStateAndOffsetOf(State & state, const SimpleIntegerVariableID & var) :
-        var_and_offset(underlying_direct_variable_and_offset(var)),
-        state(state.state_of(var_and_offset.first))
+        var_negate_then_add(deview(var)),
+        state(state.state_of(get<0>(var_negate_then_add)))
     {
     }
 };
@@ -563,26 +611,6 @@ auto State::change_state_for_greater_than_or_equal(
         .visit(get_state.state);
 }
 
-template <DirectIntegerVariableIDLike VarType_>
-auto State::change_state_for_literal(
-    const VarType_ & var,
-    LiteralFromIntegerVariable::Operator state,
-    Integer value) -> pair<Inference, HowChanged>
-{
-    switch (state) {
-    case LiteralFromIntegerVariable::Operator::Equal:
-        return change_state_for_equal(var, value);
-    case LiteralFromIntegerVariable::Operator::NotEqual:
-        return change_state_for_not_equal(var, value);
-    case LiteralFromIntegerVariable::Operator::Less:
-        return change_state_for_less_than(var, value);
-    case LiteralFromIntegerVariable::Operator::GreaterEqual:
-        return change_state_for_greater_than_or_equal(var, value);
-    }
-
-    throw NonExhaustiveSwitch{};
-}
-
 auto State::prove_and_remember_change(const Inference & inference, const HowChanged & how_changed, const Justification & just,
     const Literal & lit, const DirectIntegerVariableID & actual_var) -> void
 {
@@ -618,10 +646,7 @@ auto State::infer(const Literal & lit, const Justification & just) -> Inference
 {
     return overloaded{
         [&](const LiteralFromIntegerVariable & ilit) -> Inference {
-            auto [actual_var, offset] = underlying_direct_variable_and_offset(ilit.var);
-            auto [inference, how_changed] = change_state_for_literal(actual_var, ilit.op, ilit.value - offset);
-            prove_and_remember_change(inference, how_changed, just, lit, actual_var);
-            return inference;
+            return infer(ilit, just);
         },
         [](const TrueLiteral &) {
             return Inference::NoChange;
@@ -636,17 +661,24 @@ auto State::infer(const Literal & lit, const Justification & just) -> Inference
 
 auto State::infer(const LiteralFromIntegerVariable & ilit, const Justification & just) -> Inference
 {
-    auto [actual_var, offset] = underlying_direct_variable_and_offset(ilit.var);
-    auto [inference, how_changed] = change_state_for_literal(actual_var, ilit.op, ilit.value - offset);
-    prove_and_remember_change(inference, how_changed, just, ilit, actual_var);
-    return inference;
+    switch (ilit.op) {
+    case LiteralFromIntegerVariable::Operator::Equal:
+        return infer_equal(ilit.var, ilit.value, just);
+    case LiteralFromIntegerVariable::Operator::NotEqual:
+        return infer_not_equal(ilit.var, ilit.value, just);
+    case LiteralFromIntegerVariable::Operator::Less:
+        return infer_less_than(ilit.var, ilit.value, just);
+    case LiteralFromIntegerVariable::Operator::GreaterEqual:
+        return infer_greater_than_or_equal(ilit.var, ilit.value, just);
+    }
+    throw NonExhaustiveSwitch{};
 }
 
 template <IntegerVariableIDLike VarType_>
 auto State::infer_not_equal(const VarType_ & var, Integer value, const Justification & just) -> Inference
 {
-    auto [actual_var, offset] = underlying_direct_variable_and_offset(var);
-    auto [inference, how_changed] = change_state_for_not_equal(actual_var, value - offset);
+    auto [actual_var, negate_first, then_add] = deview(var);
+    auto [inference, how_changed] = change_state_for_not_equal(actual_var, (negate_first ? -value : value) - then_add);
     prove_and_remember_change(inference, how_changed, just, var != value, actual_var);
     return inference;
 }
@@ -654,8 +686,8 @@ auto State::infer_not_equal(const VarType_ & var, Integer value, const Justifica
 template <IntegerVariableIDLike VarType_>
 auto State::infer_equal(const VarType_ & var, Integer value, const Justification & just) -> Inference
 {
-    auto [actual_var, offset] = underlying_direct_variable_and_offset(var);
-    auto [inference, how_changed] = change_state_for_equal(actual_var, value - offset);
+    auto [actual_var, negate_first, then_add] = deview(var);
+    auto [inference, how_changed] = change_state_for_equal(actual_var, (negate_first ? -value : value) - then_add);
     prove_and_remember_change(inference, how_changed, just, var == value, actual_var);
     return inference;
 }
@@ -663,19 +695,33 @@ auto State::infer_equal(const VarType_ & var, Integer value, const Justification
 template <IntegerVariableIDLike VarType_>
 auto State::infer_less_than(const VarType_ & var, Integer value, const Justification & just) -> Inference
 {
-    auto [actual_var, offset] = underlying_direct_variable_and_offset(var);
-    auto [inference, how_changed] = change_state_for_less_than(actual_var, value - offset);
-    prove_and_remember_change(inference, how_changed, just, var < value, actual_var);
-    return inference;
+    auto [actual_var, negate_first, then_add] = deview(var);
+    if (negate_first) {
+        auto [inference, how_changed] = change_state_for_greater_than_or_equal(actual_var, -value - then_add + 1_i);
+        prove_and_remember_change(inference, how_changed, just, var < value, actual_var);
+        return inference;
+    }
+    else {
+        auto [inference, how_changed] = change_state_for_less_than(actual_var, value - then_add);
+        prove_and_remember_change(inference, how_changed, just, var < value, actual_var);
+        return inference;
+    }
 }
 
 template <IntegerVariableIDLike VarType_>
 auto State::infer_greater_than_or_equal(const VarType_ & var, Integer value, const Justification & just) -> Inference
 {
-    auto [actual_var, offset] = underlying_direct_variable_and_offset(var);
-    auto [inference, how_changed] = change_state_for_greater_than_or_equal(actual_var, value - offset);
-    prove_and_remember_change(inference, how_changed, just, var >= value, actual_var);
-    return inference;
+    auto [actual_var, negate_first, then_add] = deview(var);
+    if (negate_first) {
+        auto [inference, how_changed] = change_state_for_less_than(actual_var, -value - then_add);
+        prove_and_remember_change(inference, how_changed, just, var >= value, actual_var);
+        return inference;
+    }
+    else {
+        auto [inference, how_changed] = change_state_for_greater_than_or_equal(actual_var, value - then_add);
+        prove_and_remember_change(inference, how_changed, just, var >= value, actual_var);
+        return inference;
+    }
 }
 
 auto State::infer_all(const vector<Literal> & lits, const Justification & just) -> Inference
@@ -728,28 +774,52 @@ auto State::guess(const Literal & lit) -> void
 
 auto State::lower_bound(const IntegerVariableID var) const -> Integer
 {
-    auto [actual_var, offset] = underlying_direct_variable_and_offset(var);
+    auto [actual_var, negate_first, then_add] = deview(var);
     IntegerVariableState space = IntegerVariableConstantState{0_i};
-    return overloaded{
-               [](const IntegerVariableRangeState & v) { return v.lower; },
-               [](const IntegerVariableConstantState & v) { return v.value; },
-               [](const IntegerVariableSmallSetState & v) { return v.lower + Integer{v.bits.countr_zero()}; },
-               [](const IntegerVariableSetState & v) { return *v.values->begin(); }}
-               .visit(state_of(actual_var, space)) +
-        offset;
+
+    if (negate_first) {
+        return -overloaded{
+                   [](const IntegerVariableRangeState & v) { return v.upper; },
+                   [](const IntegerVariableConstantState & v) { return v.value; },
+                   [](const IntegerVariableSmallSetState & v) { return v.lower + Integer{Bits::number_of_bits} - Integer{v.bits.countl_zero()} - 1_i; },
+                   [](const IntegerVariableSetState & v) { return *v.values->rbegin(); }}
+                    .visit(state_of(actual_var, space)) +
+            then_add;
+    }
+    else {
+        return overloaded{
+                   [](const IntegerVariableRangeState & v) { return v.lower; },
+                   [](const IntegerVariableConstantState & v) { return v.value; },
+                   [](const IntegerVariableSmallSetState & v) { return v.lower + Integer{v.bits.countr_zero()}; },
+                   [](const IntegerVariableSetState & v) { return *v.values->begin(); }}
+                   .visit(state_of(actual_var, space)) +
+            then_add;
+    }
 }
 
 auto State::upper_bound(const IntegerVariableID var) const -> Integer
 {
-    auto [actual_var, offset] = underlying_direct_variable_and_offset(var);
+    auto [actual_var, negate_first, then_add] = deview(var);
     IntegerVariableState space = IntegerVariableConstantState{0_i};
-    return overloaded{
-               [](const IntegerVariableRangeState & v) { return v.upper; },
-               [](const IntegerVariableConstantState & v) { return v.value; },
-               [](const IntegerVariableSmallSetState & v) { return v.lower + Integer{Bits::number_of_bits} - Integer{v.bits.countl_zero()} - 1_i; },
-               [](const IntegerVariableSetState & v) { return *v.values->rbegin(); }}
-               .visit(state_of(actual_var, space)) +
-        offset;
+
+    if (negate_first) {
+        return -overloaded{
+                   [](const IntegerVariableRangeState & v) { return v.lower; },
+                   [](const IntegerVariableConstantState & v) { return v.value; },
+                   [](const IntegerVariableSmallSetState & v) { return v.lower + Integer{v.bits.countr_zero()}; },
+                   [](const IntegerVariableSetState & v) { return *v.values->begin(); }}
+                    .visit(state_of(actual_var, space)) +
+            then_add;
+    }
+    else {
+        return overloaded{
+                   [](const IntegerVariableRangeState & v) { return v.upper; },
+                   [](const IntegerVariableConstantState & v) { return v.value; },
+                   [](const IntegerVariableSmallSetState & v) { return v.lower + Integer{Bits::number_of_bits} - Integer{v.bits.countl_zero()} - 1_i; },
+                   [](const IntegerVariableSetState & v) { return *v.values->rbegin(); }}
+                   .visit(state_of(actual_var, space)) +
+            then_add;
+    }
 }
 
 template <IntegerVariableIDLike VarType_>
@@ -764,14 +834,18 @@ auto State::bounds(const VarType_ & var) const -> pair<Integer, Integer>
                                                          v.lower + Integer{Bits::number_of_bits} - Integer{v.bits.countl_zero()} - 1_i}; },
         [](const IntegerVariableSetState & v) { return pair{*v.values->begin(), *v.values->rbegin()}; }}
                       .visit(get_state.state);
-    return pair{result.first + get_state.var_and_offset.second, result.second + get_state.var_and_offset.second};
+
+    if (get<1>(get_state.var_negate_then_add))
+        return pair{-result.second + get<2>(get_state.var_negate_then_add), -result.first + get<2>(get_state.var_negate_then_add)};
+    else
+        return pair{result.first + get<2>(get_state.var_negate_then_add), result.second + get<2>(get_state.var_negate_then_add)};
 }
 
 template <IntegerVariableIDLike VarType_>
 auto State::in_domain(const VarType_ & var, const Integer val) const -> bool
 {
     GetStateAndOffsetOf<VarType_> get_state{*this, var};
-    auto actual_val = val - get_state.var_and_offset.second;
+    auto actual_val = (get<1>(get_state.var_negate_then_add) ? -val : val) - get<2>(get_state.var_negate_then_add);
     return overloaded{
         [val = actual_val](const IntegerVariableRangeState & v) { return val >= v.lower && val <= v.upper; },
         [val = actual_val](const IntegerVariableConstantState & v) { return val == v.value; },
@@ -787,7 +861,7 @@ auto State::in_domain(const VarType_ & var, const Integer val) const -> bool
 
 auto State::domain_has_holes(const IntegerVariableID var) const -> bool
 {
-    auto [actual_var, _] = underlying_direct_variable_and_offset(var);
+    auto [actual_var, _1, _2] = deview(var);
     IntegerVariableState space = IntegerVariableConstantState{0_i};
     return overloaded{
         [](const IntegerVariableRangeState &) { return false; },
@@ -824,12 +898,15 @@ auto State::optional_single_value(const VarType_ & var) const -> optional<Intege
                 return nullopt;
         }}.visit(get_state.state);
 
-    return result ? *result + get_state.var_and_offset.second : result;
+    if (result)
+        return (get<1>(get_state.var_negate_then_add) ? -*result : *result) + get<2>(get_state.var_negate_then_add);
+    else
+        return result;
 }
 
 auto State::has_single_value(const IntegerVariableID var) const -> bool
 {
-    auto [actual_var, _] = underlying_direct_variable_and_offset(var);
+    auto [actual_var, _1, _2] = deview(var);
     IntegerVariableState space = IntegerVariableConstantState{0_i};
     return overloaded{
         [](const IntegerVariableRangeState & v) -> bool { return v.lower == v.upper; },
@@ -863,21 +940,25 @@ auto State::for_each_value(const VarType_ & var, const function<auto(Integer)->v
 template <IntegerVariableIDLike VarType_>
 auto State::for_each_value_while(const VarType_ & var, const function<auto(Integer)->bool> & f) const -> void
 {
-    auto [actual_var, offset] = underlying_direct_variable_and_offset(var);
+    auto [actual_var, negate_first, then_add] = deview(var);
 
     GetStateAndOffsetOf<VarType_> get_state{*this, var};
     IntegerVariableState var_copy = get_state.state;
 
+    auto apply = [negate_first = negate_first, then_add = then_add](Integer v) -> Integer {
+        return (negate_first ? -v : v) + then_add;
+    };
+
     overloaded{
-        [&, offset = offset](const IntegerVariableConstantState & c) {
-            f(c.value + offset);
+        [&](const IntegerVariableConstantState & c) {
+            f(apply(c.value));
         },
-        [&, offset = offset](const IntegerVariableRangeState & r) {
+        [&](const IntegerVariableRangeState & r) {
             for (auto v = r.lower; v <= r.upper; ++v)
-                if (! f(v + offset))
+                if (! f(apply(v)))
                     break;
         },
-        [&, offset = offset](const IntegerVariableSmallSetState & r) {
+        [&](const IntegerVariableSmallSetState & r) {
             for (unsigned w = 0; w < Bits::n_words; ++w) {
                 auto b = r.bits.data[w];
                 while (true) {
@@ -885,14 +966,14 @@ auto State::for_each_value_while(const VarType_ & var, const function<auto(Integ
                     if (z == Bits::bits_per_word)
                         break;
                     b &= ~(Bits::BitWord{1} << z);
-                    if (! f(r.lower + Integer{w * Bits::bits_per_word} + Integer{z} + offset))
+                    if (! f(apply(r.lower + Integer{w * Bits::bits_per_word} + Integer{z})))
                         break;
                 }
             }
         },
-        [&, offset = offset](const IntegerVariableSetState & s) {
+        [&](const IntegerVariableSetState & s) {
             for (const auto & v : *s.values)
-                if (! f(v + offset))
+                if (! f(apply(v)))
                     break;
         }}
         .visit(var_copy);
@@ -901,21 +982,25 @@ auto State::for_each_value_while(const VarType_ & var, const function<auto(Integ
 template <IntegerVariableIDLike VarType_>
 auto State::for_each_value_while_immutable(const VarType_ & var, const function<auto(Integer)->bool> & f) const -> void
 {
-    auto [actual_var, offset] = underlying_direct_variable_and_offset(var);
+    auto [actual_var, negate_first, then_add] = deview(var);
+
+    auto apply = [&, negate_first = negate_first, then_add = then_add](Integer v) -> Integer {
+        return (negate_first ? -v : v) + then_add;
+    };
 
     GetStateAndOffsetOf<VarType_> get_state{*this, var};
     const IntegerVariableState & var_ref = get_state.state;
 
     overloaded{
-        [&, offset = offset](const IntegerVariableConstantState & c) {
-            f(c.value + offset);
+        [&](const IntegerVariableConstantState & c) {
+            f(apply(c.value));
         },
-        [&, offset = offset](const IntegerVariableRangeState & r) {
+        [&](const IntegerVariableRangeState & r) {
             for (auto v = r.lower; v <= r.upper; ++v)
-                if (! f(v + offset))
+                if (! f(apply(v)))
                     break;
         },
-        [&, offset = offset](const IntegerVariableSmallSetState & r) {
+        [&](const IntegerVariableSmallSetState & r) {
             for (unsigned w = 0; w < Bits::n_words; ++w) {
                 auto b = r.bits.data[w];
                 while (true) {
@@ -923,14 +1008,14 @@ auto State::for_each_value_while_immutable(const VarType_ & var, const function<
                     if (z == Bits::bits_per_word)
                         break;
                     b &= ~(Bits::BitWord{1} << z);
-                    if (! f(r.lower + Integer{w * Bits::bits_per_word} + Integer{z} + offset))
+                    if (! f(apply(r.lower + Integer{w * Bits::bits_per_word} + Integer{z})))
                         break;
                 }
             }
         },
-        [&, offset = offset](const IntegerVariableSetState & s) {
+        [&](const IntegerVariableSetState & s) {
             for (const auto & v : *s.values)
-                if (! f(v + offset))
+                if (! f(apply(v)))
                     break;
         }}
         .visit(var_ref);

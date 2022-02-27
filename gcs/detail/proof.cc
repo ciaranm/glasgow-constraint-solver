@@ -347,8 +347,10 @@ auto Proof::start_proof(State &) -> void
             [&](const ConstantIntegerVariableID &) {
                 throw UnimplementedException{};
             },
-            [&](const ViewOfIntegerVariableID &) {
-                throw UnimplementedException{};
+            [&](const ViewOfIntegerVariableID & v) {
+                // the "then add" bit is irrelevant for the objective function
+                for (auto & [bit_value, bit_name] : _imp->integer_variable_bits.find(v.actual_variable)->second.second)
+                    full_opb << (v.negate_first ? -bit_value : bit_value) << " " << bit_name << " ";
             }}
             .visit(*_imp->objective_variable);
 
@@ -480,8 +482,17 @@ auto Proof::proof_variable(const Literal & lit) const -> const string &
                     return it->second;
                 },
                 [&](const ViewOfIntegerVariableID & view) -> const string & {
-                    LiteralFromIntegerVariable relit{view.actual_variable, ilit.op, ilit.value - view.offset};
-                    return proof_variable(relit);
+                    switch (ilit.op) {
+                    case LiteralFromIntegerVariable::Operator::NotEqual:
+                        return proof_variable(view.actual_variable != (view.negate_first ? -1_i : 1_i) * (ilit.value - view.then_add));
+                    case LiteralFromIntegerVariable::Operator::Equal:
+                        return proof_variable(view.actual_variable == (view.negate_first ? -1_i : 1_i) * (ilit.value - view.then_add));
+                    case LiteralFromIntegerVariable::Operator::Less:
+                        return proof_variable(view.actual_variable >= ((view.negate_first ? -1_i : 1_i) * (ilit.value - view.then_add)) + 1_i);
+                    case LiteralFromIntegerVariable::Operator::GreaterEqual:
+                        return proof_variable(view.actual_variable < ((view.negate_first ? -1_i : 1_i) * (ilit.value - view.then_add)) + 1_i);
+                    }
+                    throw NonExhaustiveSwitch{};
                 },
                 [&](const ConstantIntegerVariableID &) -> const string & {
                     throw UnimplementedException{};
@@ -514,8 +525,20 @@ auto Proof::need_proof_variable(const Literal & lit) -> void
                     need_direct_encoding_for(var, ilit.value);
                 },
                 [&](const ViewOfIntegerVariableID & view) {
-                    LiteralFromIntegerVariable relit{view.actual_variable, ilit.op, ilit.value - view.offset};
-                    need_proof_variable(relit);
+                    switch (ilit.op) {
+                    case LiteralFromIntegerVariable::Operator::NotEqual:
+                        need_proof_variable(view.actual_variable != (view.negate_first ? -1_i : 1_i) * (ilit.value - view.then_add));
+                        break;
+                    case LiteralFromIntegerVariable::Operator::Equal:
+                        need_proof_variable(view.actual_variable == (view.negate_first ? -1_i : 1_i) * (ilit.value - view.then_add));
+                        break;
+                    case LiteralFromIntegerVariable::Operator::Less:
+                        need_proof_variable(view.actual_variable >= ((view.negate_first ? -1_i : 1_i) * (ilit.value - view.then_add)) - 1_i);
+                        break;
+                    case LiteralFromIntegerVariable::Operator::GreaterEqual:
+                        need_proof_variable(view.actual_variable < ((view.negate_first ? -1_i : 1_i) * (ilit.value - view.then_add)) + 1_i);
+                        break;
+                    }
                 },
                 [&](const ConstantIntegerVariableID &) {
                     throw UnimplementedException{};
@@ -543,12 +566,13 @@ auto Proof::solution(const State & state) -> void
     for (auto & var : _imp->solution_variables)
         need_proof_variable(var == state(var));
 
-    _imp->proof << "# 0\n";
-
     if (_imp->objective_variable) {
         Integer obj_val = state(*_imp->objective_variable);
         need_proof_variable(*_imp->objective_variable == obj_val);
+        need_proof_variable(*_imp->objective_variable < obj_val);
     }
+
+    _imp->proof << "# 0\n";
 
     _imp->proof << (_imp->objective_variable ? "o" : "v");
 
@@ -556,47 +580,56 @@ auto Proof::solution(const State & state) -> void
         if ((! _imp->objective_variable) || (var != *_imp->objective_variable))
             _imp->proof << " " << proof_variable(var == state(var));
 
-    if (_imp->objective_variable) {
-        Integer obj_val = state(*_imp->objective_variable);
-        _imp->proof << " " << proof_variable(*_imp->objective_variable == obj_val);
+    if (! _imp->objective_variable) {
+        _imp->proof << '\n';
+        ++_imp->proof_line;
+    }
+    else {
+        auto do_it = [&](const SimpleIntegerVariableID & var, Integer val) {
+            _imp->proof << " " << proof_variable(var == val);
+
+            auto & [negative_bit_coeff, bit_vars] = _imp->integer_variable_bits.find(var)->second;
+            if (val.raw_value < 0) {
+                for (auto & [coeff, var] : bit_vars) {
+                    if (coeff < 0_i)
+                        _imp->proof << " " << var;
+                    else
+                        _imp->proof << " " << (((val + negative_bit_coeff).raw_value & coeff.raw_value) ? "" : "~") << var;
+                }
+            }
+            else {
+                for (auto & [coeff, var] : bit_vars) {
+                    if (coeff < 0_i)
+                        _imp->proof << " ~" << var;
+                    else
+                        _imp->proof << " " << ((val.raw_value & coeff.raw_value) ? "" : "~") << var;
+                }
+            }
+
+            _imp->proof << '\n';
+            ++_imp->proof_line;
+        };
 
         overloaded{
             [&](const SimpleIntegerVariableID & var) {
-                auto & [negative_bit_coeff, bit_vars] = _imp->integer_variable_bits.find(var)->second;
-                if (obj_val.raw_value < 0) {
-                    for (auto & [coeff, var] : bit_vars) {
-                        if (coeff < 0_i)
-                            _imp->proof << " " << var;
-                        else
-                            _imp->proof << " " << (((obj_val + negative_bit_coeff).raw_value & coeff.raw_value) ? "" : "~") << var;
-                    }
-                }
-                else {
-                    for (auto & [coeff, var] : bit_vars) {
-                        if (coeff < 0_i)
-                            _imp->proof << " ~" << var;
-                        else
-                            _imp->proof << " " << ((obj_val.raw_value & coeff.raw_value) ? "" : "~") << var;
-                    }
-                }
+                Integer obj_val = state(*_imp->objective_variable);
+                do_it(var, obj_val);
+                need_proof_variable(var < obj_val);
+                _imp->proof << "u 1 " << proof_variable(var < obj_val) << " >= 1 ;\n";
+                ++_imp->proof_line;
             },
             [&](const ConstantIntegerVariableID &) {
                 throw UnimplementedException{};
             },
-            [&](const ViewOfIntegerVariableID &) {
-                throw UnimplementedException{};
+            [&](const ViewOfIntegerVariableID & var) {
+                Integer obj_val = state(var.actual_variable);
+                do_it(var.actual_variable, obj_val);
+                auto lit = var < state(var);
+                need_proof_variable(lit);
+                _imp->proof << "u 1 " << proof_variable(lit) << " >= 1 ;\n";
+                ++_imp->proof_line;
             }}
             .visit(*_imp->objective_variable);
-
-        _imp->proof << '\n';
-        ++_imp->proof_line;
-
-        _imp->proof << "u 1 " << proof_variable(*_imp->objective_variable < obj_val) << " >= 1 ;\n";
-        ++_imp->proof_line;
-    }
-    else {
-        _imp->proof << '\n';
-        ++_imp->proof_line;
     }
 
     _imp->proof << "# " << _imp->active_proof_level << "\n";
@@ -684,7 +717,6 @@ auto Proof::emit_proof_comment(const string & s) -> void
 
 auto Proof::need_constraint_saying_variable_takes_at_least_one_value(IntegerVariableID var) -> ProofLine
 {
-    auto [actual_var, _] = underlying_direct_variable_and_offset(var);
     return overloaded{
         [&](const ConstantIntegerVariableID &) -> ProofLine {
             throw UnimplementedException{};
@@ -709,8 +741,11 @@ auto Proof::need_constraint_saying_variable_takes_at_least_one_value(IntegerVari
                 result = _imp->variable_at_least_one_constraints.emplace(var, _imp->proof_line).first;
             }
             return result->second;
+        },
+        [&](const ViewOfIntegerVariableID & var) -> ProofLine {
+            return need_constraint_saying_variable_takes_at_least_one_value(var.actual_variable);
         }}
-        .visit(actual_var);
+        .visit(var);
 }
 
 auto Proof::enter_proof_level(int depth) -> void

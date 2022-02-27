@@ -34,7 +34,10 @@ auto gcs::simplify_linear(const Linear & coeff_vars) -> pair<SimpleLinear, Integ
         overloaded{
             [&, &c = c](const SimpleIntegerVariableID & v) { result.emplace_back(c, v); },
             [&, &c = c](const ConstantIntegerVariableID & v) { modifier -= c * v.const_value; },
-            [&, &c = c](const ViewOfIntegerVariableID & v) { result.emplace_back(c, v.actual_variable); modifier -= c * v.offset; }}
+            [&, &c = c](const ViewOfIntegerVariableID & v) {
+                result.emplace_back(v.negate_first ? -c : c, v.actual_variable);
+                modifier -= c * v.then_add;
+            }}
             .visit(v);
 
     sort(result.begin(), result.end(), [](const CoefficientAndSimpleVariable & a, const CoefficientAndSimpleVariable & b) {
