@@ -82,7 +82,7 @@ auto CompareLessThanReif::install(Propagators & propagators, const State & initi
 
     if (v1_is_constant && (LiteralIs::DefinitelyTrue == cond_is || (_full_reif && LiteralIs::DefinitelyFalse == cond_is))) {
         propagators.install(
-            initial_state, [v1_is_constant = *v1_is_constant, v2 = _v2, or_equal = _or_equal, full_reif = _full_reif, cond_is = cond_is](State & state) -> pair<Inference, PropagatorState> {
+            initial_state, [v1_is_constant = *v1_is_constant, v2 = _v2, or_equal = _or_equal, cond_is = cond_is](State & state) -> pair<Inference, PropagatorState> {
                 if (cond_is == LiteralIs::DefinitelyTrue)
                     return pair{state.infer_greater_than_or_equal(v2, or_equal ? v1_is_constant : v1_is_constant + 1_i, JustifyUsingRUP{}),
                         PropagatorState::DisableUntilBacktrack};
@@ -95,7 +95,7 @@ auto CompareLessThanReif::install(Propagators & propagators, const State & initi
 
     if (v2_is_constant && (LiteralIs::DefinitelyTrue == cond_is || (_full_reif && LiteralIs::DefinitelyFalse == cond_is))) {
         propagators.install(
-            initial_state, [v2_is_constant = *v2_is_constant, v1 = _v1, or_equal = _or_equal, full_reif = _full_reif, cond_is = cond_is](State & state) -> pair<Inference, PropagatorState> {
+            initial_state, [v2_is_constant = *v2_is_constant, v1 = _v1, or_equal = _or_equal, cond_is = cond_is](State & state) -> pair<Inference, PropagatorState> {
                 if (cond_is == LiteralIs::DefinitelyTrue)
                     return pair{state.infer_less_than(v1, or_equal ? v2_is_constant + 1_i : v2_is_constant, JustifyUsingRUP{}),
                         PropagatorState::DisableUntilBacktrack};
