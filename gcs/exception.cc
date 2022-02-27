@@ -4,7 +4,7 @@
 
 using namespace gcs;
 
-#if __has_include(<source_location>)
+#if __has_include(<source_location>) && __cpp_lib_source_location
 using std::source_location;
 #endif
 using std::string;
@@ -20,7 +20,7 @@ auto UnexpectedException::what() const noexcept -> const char *
     return _wat.c_str();
 }
 
-#if __has_include(<source_location>)
+#if __has_include(<source_location>) && __cpp_lib_source_location
 
 namespace
 {
