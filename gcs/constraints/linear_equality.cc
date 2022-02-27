@@ -15,6 +15,7 @@
 #include <vector>
 
 using namespace gcs;
+using namespace gcs::detail;
 
 using std::function;
 using std::move;

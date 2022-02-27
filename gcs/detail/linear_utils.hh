@@ -12,7 +12,7 @@
 #include <variant>
 #include <vector>
 
-namespace gcs
+namespace gcs::detail
 {
     using CoefficientAndSimpleVariable = std::pair<Integer, SimpleIntegerVariableID>;
     using SimpleLinear = std::vector<CoefficientAndSimpleVariable>;

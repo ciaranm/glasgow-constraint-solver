@@ -21,7 +21,7 @@ namespace gcs
         explicit CompareLessThanReif(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond, bool full_reif, bool or_equal);
 
         virtual auto describe_for_proof() -> std::string override;
-        virtual auto install(Propagators &, const State &) && -> void override;
+        virtual auto install(detail::Propagators &, const detail::State &) && -> void override;
     };
 
     class LessThan : public CompareLessThanReif

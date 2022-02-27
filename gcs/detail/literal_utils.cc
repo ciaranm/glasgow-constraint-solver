@@ -16,7 +16,7 @@ using std::remove_if;
 using std::string;
 using std::unique;
 
-auto gcs::debug_string(const Literal & lit) -> string
+auto gcs::detail::debug_string(const Literal & lit) -> string
 {
     return overloaded{
         [](const LiteralFromIntegerVariable & ilit) -> string {
@@ -71,19 +71,19 @@ namespace
     }
 }
 
-auto gcs::is_literally_true(const Literal & lit) -> bool
+auto gcs::detail::is_literally_true(const Literal & lit) -> bool
 {
     auto result = is_literally_true_or_false(lit);
     return result && *result;
 }
 
-auto gcs::is_literally_false(const Literal & lit) -> bool
+auto gcs::detail::is_literally_false(const Literal & lit) -> bool
 {
     auto result = is_literally_true_or_false(lit);
     return result && ! *result;
 }
 
-auto gcs::sanitise_literals(Literals & lits) -> bool
+auto gcs::detail::sanitise_literals(Literals & lits) -> bool
 {
     // if we've got a literal that is definitely true, the clause is always satisfied,
     // so we can discard the clause

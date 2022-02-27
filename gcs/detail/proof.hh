@@ -20,7 +20,7 @@
 #include <utility>
 #include <vector>
 
-namespace gcs
+namespace gcs::detail
 {
     class ProofError : public std::exception
     {

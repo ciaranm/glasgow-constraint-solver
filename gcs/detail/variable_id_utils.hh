@@ -9,7 +9,7 @@
 #include <string>
 #include <utility>
 
-namespace gcs
+namespace gcs::detail
 {
     template <typename T_>
     concept IntegerVariableIDLike = std::is_convertible_v<T_, IntegerVariableID>;

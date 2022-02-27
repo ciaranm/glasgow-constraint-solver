@@ -18,6 +18,7 @@
 #include <variant>
 
 using namespace gcs;
+using namespace gcs::detail;
 
 using std::string;
 using std::vector;

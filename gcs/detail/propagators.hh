@@ -16,7 +16,7 @@
 #include <utility>
 #include <vector>
 
-namespace gcs
+namespace gcs::detail
 {
     using PropagationFunction = std::function<auto(State &)->std::pair<Inference, PropagatorState>>;
 

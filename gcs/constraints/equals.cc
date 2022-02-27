@@ -11,6 +11,9 @@
 #include <sstream>
 #include <vector>
 
+using namespace gcs;
+using namespace gcs::detail;
+
 using std::max;
 using std::min;
 using std::nullopt;
@@ -18,8 +21,6 @@ using std::pair;
 using std::string;
 using std::stringstream;
 using std::vector;
-
-using namespace gcs;
 
 namespace
 {

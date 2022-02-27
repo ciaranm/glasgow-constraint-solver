@@ -6,6 +6,7 @@
 #include <gcs/solve.hh>
 
 using namespace gcs;
+using namespace gcs::detail;
 
 using std::max;
 using std::nullopt;

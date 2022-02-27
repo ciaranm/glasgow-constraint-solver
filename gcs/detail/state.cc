@@ -19,6 +19,7 @@
 #include <vector>
 
 using namespace gcs;
+using namespace gcs::detail;
 
 using std::countr_zero;
 using std::decay_t;
@@ -40,7 +41,7 @@ using std::tuple;
 using std::vector;
 using std::visit;
 
-auto gcs::increase_inference_to(Inference & current, const Inference updated) -> void
+auto gcs::detail::increase_inference_to(Inference & current, const Inference updated) -> void
 {
     switch (updated) {
     case Inference::NoChange: break;

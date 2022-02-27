@@ -16,6 +16,7 @@
 #include <list>
 
 using namespace gcs;
+using namespace gcs::detail;
 
 using std::deque;
 using std::list;

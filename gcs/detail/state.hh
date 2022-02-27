@@ -17,7 +17,7 @@
 #include <memory>
 #include <optional>
 
-namespace gcs
+namespace gcs::detail
 {
     auto increase_inference_to(Inference &, const Inference) -> void;
 
@@ -78,15 +78,15 @@ namespace gcs
             const VarType_ & var,
             Integer value) -> std::pair<Inference, HowChanged>;
 
-        [[nodiscard]] auto assign_to_state_of(const DirectIntegerVariableID) -> IntegerVariableState &;
+        [[nodiscard]] auto assign_to_state_of(const DirectIntegerVariableID) -> detail::IntegerVariableState &;
 
-        [[nodiscard]] auto state_of(const DirectIntegerVariableID &, IntegerVariableState & space) -> IntegerVariableState &;
-        [[nodiscard]] auto state_of(const ConstantIntegerVariableID &, IntegerVariableState & space) -> IntegerVariableState &;
-        [[nodiscard]] auto state_of(const SimpleIntegerVariableID &) -> IntegerVariableState &;
+        [[nodiscard]] auto state_of(const DirectIntegerVariableID &, detail::IntegerVariableState & space) -> detail::IntegerVariableState &;
+        [[nodiscard]] auto state_of(const ConstantIntegerVariableID &, detail::IntegerVariableState & space) -> detail::IntegerVariableState &;
+        [[nodiscard]] auto state_of(const SimpleIntegerVariableID &) -> detail::IntegerVariableState &;
 
-        [[nodiscard]] auto state_of(const DirectIntegerVariableID &, IntegerVariableState & space) const -> const IntegerVariableState &;
-        [[nodiscard]] auto state_of(const ConstantIntegerVariableID &, IntegerVariableState & space) const -> const IntegerVariableState &;
-        [[nodiscard]] auto state_of(const SimpleIntegerVariableID &) const -> const IntegerVariableState &;
+        [[nodiscard]] auto state_of(const DirectIntegerVariableID &, detail::IntegerVariableState & space) const -> const detail::IntegerVariableState &;
+        [[nodiscard]] auto state_of(const ConstantIntegerVariableID &, detail::IntegerVariableState & space) const -> const detail::IntegerVariableState &;
+        [[nodiscard]] auto state_of(const SimpleIntegerVariableID &) const -> const detail::IntegerVariableState &;
 
         auto prove_and_remember_change(const Inference & inference, const HowChanged & how_changed, const Justification & just,
             const Literal & lit, const DirectIntegerVariableID & actual_var) -> void;

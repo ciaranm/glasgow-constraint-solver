@@ -11,7 +11,7 @@
 #include <utility>
 #include <vector>
 
-namespace gcs
+namespace gcs::detail
 {
     struct ExtensionalData
     {

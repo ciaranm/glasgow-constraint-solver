@@ -13,7 +13,7 @@
 #include <variant>
 #include <vector>
 
-namespace gcs
+namespace gcs::detail
 {
     using ExplicitJustificationFunction = std::function<auto(Proof &, std::vector<ProofLine> &)->void>;
 

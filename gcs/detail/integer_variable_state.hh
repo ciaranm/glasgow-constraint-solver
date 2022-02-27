@@ -12,7 +12,7 @@
 #include <string>
 #include <variant>
 
-namespace gcs
+namespace gcs::detail
 {
     struct IntegerVariableConstantState
     {

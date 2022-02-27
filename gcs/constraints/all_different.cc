@@ -21,6 +21,7 @@
 #include <variant>
 
 using namespace gcs;
+using namespace gcs::detail;
 
 using std::adjacent_find;
 using std::decay_t;

@@ -20,7 +20,7 @@ namespace gcs
         Equals(const IntegerVariableID v1, const IntegerVariableID v2);
 
         virtual auto describe_for_proof() -> std::string override;
-        virtual auto install(Propagators &, const State &) && -> void override;
+        virtual auto install(detail::Propagators &, const detail::State &) && -> void override;
     };
 
     class EqualsIf : public Constraint
@@ -33,7 +33,7 @@ namespace gcs
         EqualsIf(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond);
 
         virtual auto describe_for_proof() -> std::string override;
-        virtual auto install(Propagators &, const State &) && -> void override;
+        virtual auto install(detail::Propagators &, const detail::State &) && -> void override;
     };
 
     class EqualsIff : public Constraint
@@ -46,7 +46,7 @@ namespace gcs
         EqualsIff(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond);
 
         virtual auto describe_for_proof() -> std::string override;
-        virtual auto install(Propagators &, const State &) && -> void override;
+        virtual auto install(detail::Propagators &, const detail::State &) && -> void override;
     };
 
     class NotEquals : public Constraint
@@ -58,7 +58,7 @@ namespace gcs
         NotEquals(const IntegerVariableID v1, const IntegerVariableID v2);
 
         virtual auto describe_for_proof() -> std::string override;
-        virtual auto install(Propagators &, const State &) && -> void override;
+        virtual auto install(detail::Propagators &, const detail::State &) && -> void override;
     };
 }
 

@@ -56,10 +56,10 @@ namespace gcs
             Integer upper,
             const std::optional<std::string> & name = std::nullopt) -> std::array<SimpleIntegerVariableID, n_>;
 
-        [[nodiscard]] auto create_state() const -> State;
-        [[nodiscard]] auto propagate(State &) const -> bool;
+        [[nodiscard]] auto create_state() const -> detail::State;
+        [[nodiscard]] auto propagate(detail::State &) const -> bool;
 
-        [[nodiscard]] auto find_branching_variable(State &) const -> std::optional<IntegerVariableID>;
+        [[nodiscard]] auto find_branching_variable(detail::State &) const -> std::optional<IntegerVariableID>;
 
         auto post(Constraint &&) -> void;
 
@@ -68,9 +68,9 @@ namespace gcs
         auto minimise(IntegerVariableID) -> void;
         auto maximise(IntegerVariableID) -> void;
 
-        auto update_objective(const State &) -> void;
+        auto update_objective(const detail::State &) -> void;
 
-        [[nodiscard]] auto optional_proof() const -> std::optional<Proof> &;
+        [[nodiscard]] auto optional_proof() const -> std::optional<detail::Proof> &;
 
         auto fill_in_constraint_stats(Stats &) const -> void;
     };

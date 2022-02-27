@@ -9,6 +9,7 @@
 #include <vector>
 
 using namespace gcs;
+using namespace gcs::detail;
 
 using std::llroundl;
 using std::move;

@@ -11,6 +11,7 @@
 #include <util/overloaded.hh>
 
 using namespace gcs;
+using namespace gcs::detail;
 
 using std::make_optional;
 using std::move;

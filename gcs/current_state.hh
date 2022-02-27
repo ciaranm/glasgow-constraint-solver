@@ -26,10 +26,10 @@ namespace gcs
     class CurrentState
     {
     private:
-        State & _full_state;
+        detail::State & _full_state;
 
     public:
-        explicit CurrentState(State & state);
+        explicit CurrentState(detail::State & state);
         ~CurrentState() = default;
 
         CurrentState(const CurrentState &) = delete;

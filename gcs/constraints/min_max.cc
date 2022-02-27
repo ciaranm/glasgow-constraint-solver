@@ -7,13 +7,14 @@
 
 #include <util/for_each.hh>
 
+using namespace gcs;
+using namespace gcs::detail;
+
 using std::nullopt;
 using std::optional;
 using std::pair;
 using std::string;
 using std::vector;
-
-using namespace gcs;
 
 ArrayMinMax::ArrayMinMax(const vector<IntegerVariableID> & vars, const IntegerVariableID result, bool min) :
     _vars(vars),

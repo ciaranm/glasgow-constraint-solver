@@ -8,7 +8,7 @@
 #include <utility>
 #include <vector>
 
-namespace gcs
+namespace gcs::detail
 {
     [[nodiscard]] auto is_literally_true(const Literal &) -> bool;
 

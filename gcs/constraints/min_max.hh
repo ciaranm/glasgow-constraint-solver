@@ -21,7 +21,7 @@ namespace gcs
         explicit ArrayMinMax(const std::vector<IntegerVariableID> & vars, const IntegerVariableID result, bool min);
 
         virtual auto describe_for_proof() -> std::string override;
-        virtual auto install(Propagators &, const State &) && -> void override;
+        virtual auto install(detail::Propagators &, const detail::State &) && -> void override;
     };
 
     class Min : public ArrayMinMax

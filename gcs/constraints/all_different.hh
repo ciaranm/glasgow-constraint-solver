@@ -19,7 +19,7 @@ namespace gcs
         explicit AllDifferent(const std::vector<IntegerVariableID> & vars);
 
         virtual auto describe_for_proof() -> std::string override;
-        virtual auto install(Propagators &, const State &) && -> void override;
+        virtual auto install(detail::Propagators &, const detail::State &) && -> void override;
     };
 }
 

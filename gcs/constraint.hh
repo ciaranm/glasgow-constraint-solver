@@ -16,7 +16,7 @@ namespace gcs
         virtual ~Constraint() = 0;
 
         virtual auto describe_for_proof() -> std::string = 0;
-        virtual auto install(Propagators &, const State &) && -> void = 0;
+        virtual auto install(detail::Propagators &, const detail::State &) && -> void = 0;
     };
 }
 

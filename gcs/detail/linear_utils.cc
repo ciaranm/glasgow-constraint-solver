@@ -15,6 +15,7 @@
 #include <vector>
 
 using namespace gcs;
+using namespace gcs::detail;
 
 using std::is_same_v;
 using std::max;
@@ -26,7 +27,7 @@ using std::stringstream;
 using std::variant;
 using std::vector;
 
-auto gcs::simplify_linear(const Linear & coeff_vars) -> pair<SimpleLinear, Integer>
+auto gcs::detail::simplify_linear(const Linear & coeff_vars) -> pair<SimpleLinear, Integer>
 {
     SimpleLinear result;
     Integer modifier{0_i};
@@ -66,7 +67,7 @@ auto gcs::simplify_linear(const Linear & coeff_vars) -> pair<SimpleLinear, Integ
     return pair{result, modifier};
 }
 
-auto gcs::sanitise_linear(const Linear & coeff_vars) -> pair<SanitisedLinear, Integer>
+auto gcs::detail::sanitise_linear(const Linear & coeff_vars) -> pair<SanitisedLinear, Integer>
 {
     auto [result, modifier] = simplify_linear(coeff_vars);
 
@@ -330,19 +331,19 @@ namespace
     }
 }
 
-auto gcs::propagate_linear(const SimpleLinear & coeff_vars, Integer value, State & state, bool equality,
+auto gcs::detail::propagate_linear(const SimpleLinear & coeff_vars, Integer value, State & state, bool equality,
     const std::optional<ProofLine> & proof_line) -> pair<Inference, PropagatorState>
 {
     return propagate_linear_or_sum(coeff_vars, value, state, equality, proof_line);
 }
 
-auto gcs::propagate_sum(const SimpleSum & coeff_vars, Integer value, State & state, bool equality,
+auto gcs::detail::propagate_sum(const SimpleSum & coeff_vars, Integer value, State & state, bool equality,
     const std::optional<ProofLine> & proof_line) -> pair<Inference, PropagatorState>
 {
     return propagate_linear_or_sum(coeff_vars, value, state, equality, proof_line);
 }
 
-auto gcs::propagate_sum_all_positive(const SimpleIntegerVariableIDs & coeff_vars, Integer value, State & state, bool equality,
+auto gcs::detail::propagate_sum_all_positive(const SimpleIntegerVariableIDs & coeff_vars, Integer value, State & state, bool equality,
     const std::optional<ProofLine> & proof_line) -> pair<Inference, PropagatorState>
 {
     if (state.want_proofs() || ! equality)

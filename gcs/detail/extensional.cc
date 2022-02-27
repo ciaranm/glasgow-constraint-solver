@@ -6,8 +6,9 @@
 using std::pair;
 
 using namespace gcs;
+using namespace gcs::detail;
 
-auto gcs::propagate_extensional(const ExtensionalData & table, State & state) -> pair<Inference, PropagatorState>
+auto gcs::detail::propagate_extensional(const ExtensionalData & table, State & state) -> pair<Inference, PropagatorState>
 {
     bool changed = false, contradiction = false;
 

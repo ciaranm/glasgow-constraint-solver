@@ -3,7 +3,7 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROOF_FWD_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROOF_FWD_HH
 
-namespace gcs
+namespace gcs::detail
 {
     class Proof;
 

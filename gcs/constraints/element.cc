@@ -19,6 +19,7 @@
 #include <vector>
 
 using namespace gcs;
+using namespace gcs::detail;
 
 using std::make_optional;
 using std::max;

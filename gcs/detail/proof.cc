@@ -22,6 +22,7 @@
 #include <vector>
 
 using namespace gcs;
+using namespace gcs::detail;
 
 using std::bit_ceil;
 using std::copy;
@@ -65,7 +66,7 @@ auto ProofError::what() const noexcept -> const char *
     return _wat.c_str();
 }
 
-auto gcs::operator!(const ProofFlag & f) -> ProofFlag
+auto gcs::detail::operator!(const ProofFlag & f) -> ProofFlag
 {
     return ProofFlag{f.index, ! f.positive};
 }

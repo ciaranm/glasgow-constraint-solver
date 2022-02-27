@@ -20,7 +20,7 @@ namespace gcs
         explicit Table(const std::vector<IntegerVariableID> & vars, std::vector<std::vector<Integer>> && tuples);
 
         virtual auto describe_for_proof() -> std::string override;
-        virtual auto install(Propagators &, const State &) && -> void override;
+        virtual auto install(detail::Propagators &, const detail::State &) && -> void override;
     };
 }
 

@@ -9,6 +9,7 @@
 #include <sstream>
 
 using namespace gcs;
+using namespace gcs::detail;
 
 using std::max;
 using std::min;

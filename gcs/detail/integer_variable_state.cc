@@ -4,11 +4,12 @@
 #include <util/overloaded.hh>
 
 using namespace gcs;
+using namespace gcs::detail;
 
 using std::string;
 using std::to_string;
 
-auto gcs::debug_string(const IntegerVariableState & ivar) -> string
+auto gcs::detail::debug_string(const IntegerVariableState & ivar) -> string
 {
     return overloaded{
         [](const IntegerVariableConstantState & c) {

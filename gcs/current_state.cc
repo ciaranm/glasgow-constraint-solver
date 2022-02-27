@@ -4,6 +4,7 @@
 #include <gcs/detail/state.hh>
 
 using namespace gcs;
+using namespace gcs::detail;
 
 using std::string;
 
