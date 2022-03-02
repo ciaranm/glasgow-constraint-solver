@@ -240,6 +240,7 @@ auto Proof::need_gevar(SimpleIntegerVariableID id, Integer v) -> void
             _imp->opb << coeff << " " << var << " ";
         _imp->opb << ">= " << v << " <== " << gevar << " ;\n";
         ++_imp->model_constraints;
+        ++_imp->model_variables;
 
         // !gevar -> bits
         for (auto & [coeff, var] : bit_vars)
@@ -616,6 +617,7 @@ auto Proof::solution(const State & state) -> void
                 Integer obj_val = state(*_imp->objective_variable);
                 do_it(var, obj_val);
                 need_proof_variable(var < obj_val);
+                _imp->proof << "# 0\n";
                 _imp->proof << "u 1 " << proof_variable(var < obj_val) << " >= 1 ;\n";
                 ++_imp->proof_line;
             },
@@ -627,6 +629,7 @@ auto Proof::solution(const State & state) -> void
                 do_it(var.actual_variable, obj_val);
                 auto lit = var < state(var);
                 need_proof_variable(lit);
+                _imp->proof << "# 0\n";
                 _imp->proof << "u 1 " << proof_variable(lit) << " >= 1 ;\n";
                 ++_imp->proof_line;
             }}
