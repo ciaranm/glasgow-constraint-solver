@@ -156,9 +156,9 @@ namespace
 
                 if (propagators.want_definitions()) {
                     if (LiteralIs::DefinitelyFalse != reif_state) {
-                        WeightedLiterals forward;
+                        WeightedPseudoBooleanTerms forward;
                         for (auto & l : _lits)
-                            forward.emplace_back(1_i, l);
+                            forward.emplace_back(1_i, PseudoBooleanTerm{l});
                         forward.emplace_back(Integer(_lits.size()), ! _full_reif);
                         propagators.define_pseudoboolean_ge(initial_state, move(forward), Integer(_lits.size()));
                     }

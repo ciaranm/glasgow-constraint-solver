@@ -41,7 +41,15 @@ namespace gcs::innards
 
     [[nodiscard]] auto operator!(const ProofFlag &) -> ProofFlag;
 
-    using LiteralFromIntegerVariableOrProofFlag = std::variant<LiteralFromIntegerVariable, ProofFlag>;
+    using ReificationTerm = std::variant<Literal, ProofFlag>;
+
+    using PseudoBooleanTerm = std::variant<Literal, ProofFlag, IntegerVariableID>;
+    using WeightedPseudoBooleanTerm = std::pair<Integer, PseudoBooleanTerm>;
+    using WeightedPseudoBooleanTerms = std::vector<WeightedPseudoBooleanTerm>;
+
+    [[nodiscard]] auto sanitise_pseudoboolean_terms(WeightedPseudoBooleanTerms &, Integer &) -> bool;
+
+    [[nodiscard]] auto sanitise_literals(Literals &) -> bool;
 
     class Proof
     {
@@ -69,9 +77,9 @@ namespace gcs::innards
         [[nodiscard]] auto create_proof_flag(const std::string &) -> ProofFlag;
         auto cnf(const Literals &) -> ProofLine;
         [[nodiscard]] auto at_most_one(const Literals &) -> ProofLine;
-        [[nodiscard]] auto pseudoboolean_ge(const WeightedLiterals &, Integer) -> ProofLine;
+        [[nodiscard]] auto pseudoboolean_ge(const WeightedPseudoBooleanTerms &, Integer) -> ProofLine;
         auto integer_linear_le(const State &, const SimpleLinear & coeff_vars, Integer value,
-            std::optional<LiteralFromIntegerVariableOrProofFlag> half_reif, bool equality) -> ProofLine;
+            std::optional<ReificationTerm> half_reif, bool equality) -> ProofLine;
 
         auto minimise(IntegerVariableID) -> void;
 

@@ -127,17 +127,17 @@ auto Propagators::define_at_most_one(const State &, Literals && lits) -> optiona
         return nullopt;
 }
 
-auto Propagators::define_pseudoboolean_ge(const State &, WeightedLiterals && lits, Integer val) -> optional<ProofLine>
+auto Propagators::define_pseudoboolean_ge(const State &, WeightedPseudoBooleanTerms && lits, Integer val) -> optional<ProofLine>
 {
     if (_imp->problem->optional_proof()) {
-        if (sanitise_pseudoboolean_ge(lits, val))
+        if (sanitise_pseudoboolean_terms(lits, val))
             return _imp->problem->optional_proof()->pseudoboolean_ge(lits, val);
     }
     return nullopt;
 }
 
 auto Propagators::define_linear_le(const State & state, const Linear & coeff_vars,
-    Integer value, optional<LiteralFromIntegerVariableOrProofFlag> half_reif) -> optional<ProofLine>
+    Integer value, optional<ReificationTerm> half_reif) -> optional<ProofLine>
 {
     if (_imp->problem->optional_proof()) {
         auto [cv, modifier] = simplify_linear(coeff_vars);
@@ -148,7 +148,7 @@ auto Propagators::define_linear_le(const State & state, const Linear & coeff_var
 }
 
 auto Propagators::define_linear_eq(const State & state, const Linear & coeff_vars,
-    Integer value, optional<LiteralFromIntegerVariableOrProofFlag> half_reif) -> optional<ProofLine>
+    Integer value, optional<ReificationTerm> half_reif) -> optional<ProofLine>
 {
     if (_imp->problem->optional_proof()) {
         auto [cv, modifier] = simplify_linear(coeff_vars);
@@ -188,7 +188,7 @@ auto Propagators::define_and_install_table(const State & state, vector<IntegerVa
         for_each_with_index(permitted, [&](const auto & tuple, auto tuple_idx) {
             // selector == tuple_idx -> /\_i vars[i] == tuple[i]
             bool infeasible = false;
-            WeightedLiterals lits;
+            WeightedPseudoBooleanTerms lits;
             lits.emplace_back(Integer(tuple.size()), selector != Integer(tuple_idx));
             for_each_with_index(vars, [&](IntegerVariableID var, auto var_idx) {
                 if (is_literally_false(var == tuple[var_idx]))

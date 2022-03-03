@@ -5,22 +5,19 @@
 
 #include <gcs/literal.hh>
 
+#include <optional>
 #include <utility>
 #include <vector>
 
 namespace gcs::innards
 {
+    [[nodiscard]] auto is_literally_true_or_false(const Literal &) -> std::optional<bool>;
+
     [[nodiscard]] auto is_literally_true(const Literal &) -> bool;
 
     [[nodiscard]] auto is_literally_false(const Literal &) -> bool;
 
     [[nodiscard]] auto debug_string(const Literal &) -> std::string;
-
-    [[nodiscard]] auto sanitise_literals(Literals &) -> bool;
-
-    using WeightedLiterals = std::vector<std::pair<Integer, Literal>>;
-
-    [[nodiscard]] auto sanitise_pseudoboolean_ge(WeightedLiterals &, Integer &) -> bool;
 }
 
 #endif

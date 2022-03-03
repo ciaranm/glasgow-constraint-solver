@@ -53,11 +53,11 @@ namespace gcs::innards
 
         auto define_cnf(const State &, Literals && lits) -> std::optional<ProofLine>;
         auto define_at_most_one(const State &, Literals && lits) -> std::optional<ProofLine>;
-        auto define_pseudoboolean_ge(const State &, WeightedLiterals && lits, Integer) -> std::optional<ProofLine>;
+        auto define_pseudoboolean_ge(const State &, WeightedPseudoBooleanTerms && lits, Integer) -> std::optional<ProofLine>;
         auto define_linear_le(const State &, const Linear &, Integer value,
-            std::optional<LiteralFromIntegerVariableOrProofFlag> half_reif) -> std::optional<ProofLine>;
+            std::optional<ReificationTerm> half_reif) -> std::optional<ProofLine>;
         auto define_linear_eq(const State &, const Linear &, Integer value,
-            std::optional<LiteralFromIntegerVariableOrProofFlag> half_reif) -> std::optional<ProofLine>;
+            std::optional<ReificationTerm> half_reif) -> std::optional<ProofLine>;
 
         auto install(const State &, PropagationFunction &&, const Triggers & trigger_vars, const std::string & name) -> void;
 
