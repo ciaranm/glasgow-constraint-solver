@@ -20,6 +20,7 @@ SOURCES := \
     constraints/logical.cc \
     constraints/linear_equality.cc \
     constraints/min_max.cc \
+    constraints/n_value.cc \
     constraints/table.cc \
     innards/extensional.cc \
     innards/integer_variable_state.cc \

@@ -11,6 +11,7 @@ SUBMAKEFILES := \
     gcs/constraints/linear_equality_test.mk \
     gcs/constraints/logical_test.mk \
     gcs/constraints/min_max_test.mk \
+    gcs/constraints/n_value_test.mk \
     examples/cake/cake.mk \
     examples/colour/colour.mk \
     examples/crystal_maze/crystal_maze.mk \

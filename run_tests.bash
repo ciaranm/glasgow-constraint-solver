@@ -10,6 +10,7 @@ export PATH=$HOME/.local/bin:$PATH
 ./linear_equality_test || exit 1
 ./logical_test || exit 1
 ./min_max_test || exit 1
+./n_value_test || exit 1
 
 ./cake --prove || exit 1
 veripb cake.{opb,veripb} || exit 1
