@@ -15,6 +15,7 @@ perf.data.old
 /equals_test
 /langford
 /linear_equality_test
+/logical_test
 /magic_series
 /magic_square
 /min_max_test

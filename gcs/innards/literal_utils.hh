@@ -19,6 +19,8 @@ namespace gcs::innards
     [[nodiscard]] auto sanitise_literals(Literals &) -> bool;
 
     using WeightedLiterals = std::vector<std::pair<Integer, Literal>>;
+
+    [[nodiscard]] auto sanitise_pseudoboolean_ge(WeightedLiterals &, Integer &) -> bool;
 }
 
 #endif

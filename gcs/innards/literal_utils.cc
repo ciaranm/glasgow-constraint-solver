@@ -102,3 +102,20 @@ auto gcs::innards::sanitise_literals(Literals & lits) -> bool
 
     return true;
 }
+
+auto gcs::innards::sanitise_pseudoboolean_ge(WeightedLiterals & lits, Integer & val) -> bool
+{
+    // adjust coefficients down for true and false literals
+    for (auto l = lits.begin(), l_end = lits.end(); l != l_end; ++l) {
+        auto t_or_f = is_literally_true_or_false(l->second);
+        if (t_or_f && *t_or_f)
+            val -= l->first;
+        else if (t_or_f && ! *t_or_f)
+            val += l->first;
+    }
+
+    // now actually remove true and false literals
+    lits.erase(remove_if(lits.begin(), lits.end(), [&](const auto & wlit) -> bool { return nullopt != is_literally_true_or_false(wlit.second); }), lits.end());
+
+    return true;
+}

@@ -17,6 +17,7 @@ SOURCES := \
     constraints/element.cc \
     constraints/equals.cc \
     constraints/comparison.cc \
+    constraints/logical.cc \
     constraints/linear_equality.cc \
     constraints/min_max.cc \
     constraints/table.cc \

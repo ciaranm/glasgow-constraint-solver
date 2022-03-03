@@ -8,6 +8,7 @@ export PATH=$HOME/.local/bin:$PATH
 ./element_test || exit 1
 ./equals_test || exit 1
 ./linear_equality_test || exit 1
+./logical_test || exit 1
 ./min_max_test || exit 1
 
 ./cake --prove || exit 1

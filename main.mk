@@ -9,6 +9,7 @@ SUBMAKEFILES := \
     gcs/constraints/abs_test.mk \
     gcs/constraints/element_test.mk \
     gcs/constraints/linear_equality_test.mk \
+    gcs/constraints/logical_test.mk \
     gcs/constraints/min_max_test.mk \
     examples/cake/cake.mk \
     examples/colour/colour.mk \

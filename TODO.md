@@ -41,6 +41,9 @@ Constraints
 
 - Circuit, so we can do all the MiniCP benchmarks.
 
+- There are various places where we have triggers on literals. This can be done
+  in a much smarter way.
+
 State
 -----
 

@@ -129,10 +129,11 @@ auto Propagators::define_at_most_one(const State &, Literals && lits) -> optiona
 
 auto Propagators::define_pseudoboolean_ge(const State &, WeightedLiterals && lits, Integer val) -> optional<ProofLine>
 {
-    if (_imp->problem->optional_proof())
-        return _imp->problem->optional_proof()->pseudoboolean_ge(lits, val);
-    else
-        return nullopt;
+    if (_imp->problem->optional_proof()) {
+        if (sanitise_pseudoboolean_ge(lits, val))
+            return _imp->problem->optional_proof()->pseudoboolean_ge(lits, val);
+    }
+    return nullopt;
 }
 
 auto Propagators::define_linear_le(const State & state, const Linear & coeff_vars,
