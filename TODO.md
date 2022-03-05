@@ -44,7 +44,9 @@ Constraints
 - There are various places where we have triggers on literals. This can be done
   in a much smarter way.
 
-- Proper propagation for NValue.
+- Proper propagation for Count and NValue.
+
+- Make EqualsIff and AllDifferent use more compact encodings for large domains.
 
 State
 -----

@@ -14,6 +14,7 @@ SOURCES := \
     constraints/abs.cc \
     constraints/all_different.cc \
     constraints/arithmetic.cc \
+    constraints/count.cc \
     constraints/element.cc \
     constraints/equals.cc \
     constraints/comparison.cc \

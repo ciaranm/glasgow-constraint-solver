@@ -5,6 +5,7 @@ SUBMAKEFILES := \
     gcs/gcs.mk \
     gcs/constraints/arithmetic_test.mk \
     gcs/constraints/comparison_test.mk \
+    gcs/constraints/count_test.mk \
     gcs/constraints/equals_test.mk \
     gcs/constraints/abs_test.mk \
     gcs/constraints/element_test.mk \
