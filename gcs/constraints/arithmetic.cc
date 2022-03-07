@@ -17,7 +17,7 @@ using std::pow;
 using std::vector;
 
 template <ArithmeticOperator op_>
-Arithmetic<op_>::Arithmetic(const IntegerVariableID v1, const IntegerVariableID v2, const IntegerVariableID result) :
+GACArithmetic<op_>::GACArithmetic(const IntegerVariableID v1, const IntegerVariableID v2, const IntegerVariableID result) :
     _v1(v1),
     _v2(v2),
     _result(result)
@@ -25,7 +25,7 @@ Arithmetic<op_>::Arithmetic(const IntegerVariableID v1, const IntegerVariableID 
 }
 
 template <ArithmeticOperator op_>
-auto Arithmetic<op_>::install(Propagators & propagators, const State & initial_state) && -> void
+auto GACArithmetic<op_>::install(Propagators & propagators, const State & initial_state) && -> void
 {
     bool v2_zero_is_ok = (op_ != ArithmeticOperator::Div && op_ != ArithmeticOperator::Mod);
 
@@ -53,17 +53,17 @@ auto Arithmetic<op_>::install(Propagators & propagators, const State & initial_s
 }
 
 template <ArithmeticOperator op_>
-auto Arithmetic<op_>::describe_for_proof() -> std::string
+auto GACArithmetic<op_>::describe_for_proof() -> std::string
 {
     return "arithmetic";
 }
 
 namespace gcs
 {
-    template class Arithmetic<ArithmeticOperator::Plus>;
-    template class Arithmetic<ArithmeticOperator::Minus>;
-    template class Arithmetic<ArithmeticOperator::Times>;
-    template class Arithmetic<ArithmeticOperator::Div>;
-    template class Arithmetic<ArithmeticOperator::Mod>;
-    template class Arithmetic<ArithmeticOperator::Power>;
+    template class GACArithmetic<ArithmeticOperator::Plus>;
+    template class GACArithmetic<ArithmeticOperator::Minus>;
+    template class GACArithmetic<ArithmeticOperator::Times>;
+    template class GACArithmetic<ArithmeticOperator::Div>;
+    template class GACArithmetic<ArithmeticOperator::Mod>;
+    template class GACArithmetic<ArithmeticOperator::Power>;
 }

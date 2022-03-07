@@ -10,6 +10,12 @@
 
 namespace gcs
 {
+    /**
+     * \brief Constrain that the value of interest appears exactly how many times in
+     * the array.
+     *
+     * \ingroup Constraints
+     */
     class Count : public Constraint
     {
     private:

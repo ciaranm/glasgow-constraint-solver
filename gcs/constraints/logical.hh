@@ -11,6 +11,12 @@
 
 namespace gcs
 {
+    /**
+     * \brief Constrain that each of the literals is true (or variables are
+     * non-zero) if and only if the reification variable holds.
+     *
+     * \ingroup Constraints
+     */
     class And : public Constraint
     {
     private:
@@ -27,6 +33,12 @@ namespace gcs
         virtual auto install(innards::Propagators &, const innards::State &) && -> void override;
     };
 
+    /**
+     * \brief Constrain that at least one of the literals is true (or variables
+     * are non-zero) if and only if the reification variable holds.
+     *
+     * \ingroup Constraints
+     */
     class Or : public Constraint
     {
     private:

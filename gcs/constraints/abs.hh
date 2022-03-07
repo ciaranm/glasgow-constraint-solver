@@ -8,6 +8,11 @@
 
 namespace gcs
 {
+    /**
+     * \brief Absolute value constraint, `v2 = abs(v1)`.
+     *
+     * \ingroup Constraints
+     */
     class Abs : public Constraint
     {
     private:

@@ -13,6 +13,11 @@
 
 namespace gcs::innards
 {
+    /**
+     * \brief Data for gcs::innards::propagate_extensional().
+     *
+     * \ingroup Innards
+     */
     struct ExtensionalData
     {
         IntegerVariableID selector;
@@ -20,6 +25,14 @@ namespace gcs::innards
         std::vector<std::vector<Integer>> tuples;
     };
 
+    /**
+     * \brief Propagator for extensional constraints.
+     *
+     * This function performs propagation for the Table constraint, but also for
+     * various other constraints that end up producing something table-like.
+     *
+     * \sa Table
+     */
     auto propagate_extensional(const ExtensionalData &, State &) -> std::pair<Inference, PropagatorState>;
 }
 

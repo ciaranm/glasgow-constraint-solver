@@ -12,12 +12,57 @@
 
 namespace gcs
 {
+    /**
+     * \defgroup SolveCallbacks Callbacks for solving
+     */
+
+    /**
+     * \brief Called for every solution found when using gcs::solve() and gcs::solve_with(),
+     * if false is returned then no further solutions will be given.
+     *
+     * \ingroup SolveCallbacks
+     */
     using SolutionCallback = std::function<auto(const CurrentState &)->bool>;
+
+    /**
+     * \brief Called after propagation is complete when using gcs::solve_with(),
+     * if false is returned then search will stop.
+     *
+     * \ingroup SolveCallbacks
+     */
     using TraceCallback = std::function<auto(const CurrentState &)->bool>;
+
+    /**
+     * \brief Called by gcs::solve_with() to determine the branch variable when
+     * searching, should return nullopt if every variable is instantiated.
+     *
+     * \ingroup SolveCallbacks
+     */
     using BranchCallback = std::function<auto(const CurrentState &)->std::optional<IntegerVariableID>>;
+
+    /**
+     * \brief Called by gcs::solve_with() when branching on the specified
+     * variable, should return a vector of literals that describe a complete
+     * branching choice.
+     *
+     * \ingroup SolveCallbacks
+     */
     using GuessCallback = std::function<auto(const CurrentState &, IntegerVariableID)->std::vector<Literal>>;
+
+    /**
+     * \brief Called by gcs::solve_with() after the proof has been started.
+     *
+     * \ingroup SolveCallbacks
+     */
     using AfterProofStartedCallback = std::function<auto(const CurrentState &)->void>;
 
+    /**
+     * \brief Callbacks for gcs::solve_with().
+     *
+     * Every callback is optional.
+     *
+     * \ingroup SolveCallbacks
+     */
     struct SolveCallbacks
     {
         SolutionCallback solution = SolutionCallback{};
@@ -27,8 +72,28 @@ namespace gcs
         AfterProofStartedCallback after_proof_started = AfterProofStartedCallback{};
     };
 
+    /**
+     * \brief Solve a problem, and call the provided callback for each solution
+     * found.
+     *
+     * If the callback returns false, no further solutions will be provided. If
+     * we are dealing with an optimisation problem, the callback will be called
+     * for every candidate solution, not just an optimal solution.
+     *
+     * \ingroup Core
+     * \sa SolveCallbacks
+     */
     auto solve(Problem &, SolutionCallback callback) -> Stats;
 
+    /**
+     * \brief Solve a problem, with callbacks for various events.
+     *
+     * All callback members are optional. If a solution or trace callback
+     * returns false, no further solutions will be provided.
+     *
+     * \ingroup Core
+     * \sa SolveCallbacks
+     */
     auto solve_with(Problem &, SolveCallbacks ballbacks) -> Stats;
 }
 

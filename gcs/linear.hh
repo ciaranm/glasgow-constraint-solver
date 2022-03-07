@@ -11,7 +11,19 @@
 
 namespace gcs
 {
+    /**
+     * \brief An integer variable with a coefficient for multiplication.
+     *
+     * \ingroup Core
+     */
     using CoefficientAndVariable = std::pair<Integer, IntegerVariableID>;
+
+    /**
+     * \brief A linear expression, consisting of the sum of variables multiplied
+     * by coefficients.
+     *
+     * \ingroup Core
+     */
     using Linear = std::vector<CoefficientAndVariable>;
 }
 

@@ -9,6 +9,11 @@
 
 namespace gcs::innards
 {
+    /**
+     * \brief A fixed size bitset.
+     *
+     * \ingroup Innards
+     */
     struct Bits
     {
         using BitWord = unsigned long long;

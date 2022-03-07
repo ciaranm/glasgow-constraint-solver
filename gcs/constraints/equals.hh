@@ -11,6 +11,11 @@
 
 namespace gcs
 {
+    /**
+     * \brief Constrain that two variables are equal.
+     *
+     * \ingroup Constraints
+     */
     class Equals : public Constraint
     {
     private:
@@ -23,6 +28,11 @@ namespace gcs
         virtual auto install(innards::Propagators &, const innards::State &) && -> void override;
     };
 
+    /**
+     * \brief Constrain that two variables are equal if `cond` holds.
+     *
+     * \ingroup Constraints
+     */
     class EqualsIf : public Constraint
     {
     private:
@@ -36,6 +46,11 @@ namespace gcs
         virtual auto install(innards::Propagators &, const innards::State &) && -> void override;
     };
 
+    /**
+     * \brief Constrain that two variables are equal if and only if `cond` holds.
+     *
+     * \ingroup Constraints
+     */
     class EqualsIff : public Constraint
     {
     private:
@@ -49,6 +64,11 @@ namespace gcs
         virtual auto install(innards::Propagators &, const innards::State &) && -> void override;
     };
 
+    /**
+     * \brief Constrain that two variables are not equal.
+     *
+     * \ingroup Constraints
+     */
     class NotEquals : public Constraint
     {
     private:

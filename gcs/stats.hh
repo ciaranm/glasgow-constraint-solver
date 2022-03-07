@@ -11,6 +11,13 @@
 
 namespace gcs
 {
+    /**
+     * \brief Statistics from solving.
+     *
+     * \sa gcs::solve()
+     * \sa gcs::solve_with()
+     * \ingroup Core
+     */
     struct Stats
     {
         unsigned long long recursions = 0;
@@ -26,6 +33,12 @@ namespace gcs
         std::chrono::microseconds solve_time;
     };
 
+    /**
+     * \brief Stats can be written to an ostream, for convenience.
+     *
+     * \sa Stats
+     * \ingroup Core
+     */
     auto operator<<(std::ostream &, const Stats &) -> std::ostream &;
 }
 

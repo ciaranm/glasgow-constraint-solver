@@ -11,6 +11,15 @@
 
 namespace gcs
 {
+    /**
+     * \brief Constrain that the sum of the variables multiplied by their associated
+     * coefficients is equal to the specified value.
+     *
+     * If gac is specifed, achieves generalised arc consistency. This is very
+     * expensive for large variables.
+     *
+     * \ingroup Constraints
+     */
     class LinearEquality : public Constraint
     {
     private:
@@ -25,6 +34,12 @@ namespace gcs
         virtual auto install(innards::Propagators &, const innards::State &) && -> void override;
     };
 
+    /**
+     * \brief Constrain that the sum of the variables multiplied by their associated
+     * coefficients is less than or equal to the specified value.
+     *
+     * \ingroup Constraints
+     */
     class LinearLessEqual : public Constraint
     {
     private:

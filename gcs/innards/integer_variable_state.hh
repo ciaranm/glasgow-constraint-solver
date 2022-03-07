@@ -14,6 +14,12 @@
 
 namespace gcs::innards
 {
+    /**
+     * \brief Specifies that an IntegerVariableID has a constant value.
+     *
+     * \ingroup Innards
+     * \sa State::state_of()
+     */
     struct IntegerVariableConstantState
     {
         Integer value;
@@ -24,6 +30,13 @@ namespace gcs::innards
         }
     };
 
+    /**
+     * \brief Specifies that an IntegerVariableID has the values between lower and
+     * upper inclusive.
+     *
+     * \ingroup Innards
+     * \sa State::state_of()
+     */
     struct IntegerVariableRangeState
     {
         Integer lower, upper;
@@ -35,6 +48,13 @@ namespace gcs::innards
         }
     };
 
+    /**
+     * \brief Specifies that an IntegerVariableID has the values specified by
+     * the bits, indexed with the first bit being lower.
+     *
+     * \ingroup Innards
+     * \sa State::state_of()
+     */
     struct IntegerVariableSmallSetState
     {
         Integer lower;
@@ -47,6 +67,13 @@ namespace gcs::innards
         }
     };
 
+    /**
+     * \brief Specifies that an IntegerVariableID has the values contained
+     * in this set.
+     *
+     * \ingroup Innards
+     * \sa State::state_of()
+     */
     struct IntegerVariableSetState
     {
         std::shared_ptr<std::set<Integer>> values;
@@ -57,12 +84,25 @@ namespace gcs::innards
         }
     };
 
+    /**
+     * \brief An IntegerVariableID's values could be given in any of these
+     * forms.
+     *
+     * \ingroup Innards
+     * \sa State::state_of()
+     */
     using IntegerVariableState = std::variant<
         IntegerVariableConstantState,
         IntegerVariableRangeState,
         IntegerVariableSmallSetState,
         IntegerVariableSetState>;
 
+    /**
+     * \brief Turn an IntegerVariableState into a semi-readable string for
+     * debugging purposes.
+     *
+     * \ingroup Innards
+     */
     [[nodiscard]] auto debug_string(const IntegerVariableState &) -> std::string;
 }
 

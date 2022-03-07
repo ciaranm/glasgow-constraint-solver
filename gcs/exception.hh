@@ -13,6 +13,12 @@
 
 namespace gcs
 {
+    /**
+     * \brief Thrown if something has gone wrong. This usually indicates a bug
+     * in the solver.
+     *
+     * \ingroup Core
+     */
     class UnexpectedException : public std::exception
     {
     private:
@@ -24,6 +30,12 @@ namespace gcs
         virtual auto what() const noexcept -> const char * override;
     };
 
+    /**
+     * \brief Thrown if a switch statement is missing a case entry. This usually
+     * indicates a bug in the solver.
+     *
+     * \ingroup Core
+     */
     class NonExhaustiveSwitch : public UnexpectedException
     {
     public:
@@ -34,6 +46,11 @@ namespace gcs
 #endif
     };
 
+    /**
+     * \brief Thrown if requested functionality is not yet implemented.
+     *
+     * \ingroup Core
+     */
     class UnimplementedException : public UnexpectedException
     {
     public:

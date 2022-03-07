@@ -10,6 +10,12 @@
 
 namespace gcs
 {
+    /**
+     * \brief Constrain that the specified variables are equal to one of the specified
+     * tuples.
+     *
+     * \ingroup Constraints
+     */
     class Table : public Constraint
     {
     private:

@@ -1084,30 +1084,6 @@ auto State::want_proofs() const -> bool
     return _imp->problem->optional_proof() != nullopt;
 }
 
-auto State::literal_is_nonfalsified(const Literal & lit) const -> bool
-{
-    return overloaded{
-        [&](const LiteralFromIntegerVariable & ilit) -> bool {
-            switch (ilit.op) {
-            case LiteralFromIntegerVariable::Operator::Equal:
-                return in_domain(ilit.var, ilit.value);
-            case LiteralFromIntegerVariable::Operator::Less:
-                return lower_bound(ilit.var) < ilit.value;
-            case LiteralFromIntegerVariable::Operator::GreaterEqual:
-                return upper_bound(ilit.var) >= ilit.value;
-            case LiteralFromIntegerVariable::Operator::NotEqual: {
-                auto single_value = optional_single_value(ilit.var);
-                return (nullopt == single_value || *single_value != ilit.value);
-            }
-            }
-
-            throw NonExhaustiveSwitch{};
-        },
-        [](const TrueLiteral &) { return true; },
-        [](const FalseLiteral &) { return false; }}
-        .visit(lit);
-}
-
 auto State::test_literal(const Literal & lit) const -> LiteralIs
 {
     return overloaded{

@@ -10,6 +10,12 @@
 
 namespace gcs
 {
+    /**
+     * \brief All different constraint, each var takes a different value.
+     *
+     * \ingroup Constraints
+     * \sa NValue
+     */
     class AllDifferent : public Constraint
     {
     private:

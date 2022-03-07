@@ -1,6 +1,7 @@
 intermediate
 perf.data
 perf.data.old
+html
 *.a
 *.log
 *.opb

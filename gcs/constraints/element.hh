@@ -10,6 +10,12 @@
 
 namespace gcs
 {
+    /**
+     * \brief Constrain that `var = vals[idx]`.
+     *
+     * \ingroup Constraints
+     * \sa Element2DConstantArray
+     */
     class Element : public Constraint
     {
     private:
@@ -17,12 +23,18 @@ namespace gcs
         const std::vector<IntegerVariableID> & _vals;
 
     public:
-        explicit Element(IntegerVariableID var, IntegerVariableID idx_var, const std::vector<IntegerVariableID> & vals);
+        explicit Element(IntegerVariableID var, IntegerVariableID idx, const std::vector<IntegerVariableID> & vals);
 
         virtual auto describe_for_proof() -> std::string override;
         virtual auto install(innards::Propagators &, const innards::State &) && -> void override;
     };
 
+    /**
+     * \brief Constrain that `var = vals[idx1, idx2]`.
+     *
+     * \ingroup Constraints
+     * \sa Element
+     */
     class Element2DConstantArray : public Constraint
     {
     private:

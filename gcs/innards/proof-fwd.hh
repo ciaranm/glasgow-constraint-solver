@@ -9,6 +9,11 @@ namespace gcs::innards
 
     struct ProofFlag;
 
+    /**
+     * A proof line number, corresponding to a VeriPB constraint number.
+     *
+     * \ingroup Innards
+     */
     using ProofLine = long long;
 }
 

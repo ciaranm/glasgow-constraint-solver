@@ -10,6 +10,13 @@
 
 namespace gcs
 {
+    /**
+     * \brief Constrain that a variable is equal to the number of distinct
+     * values among the array of variables.
+     *
+     * \ingroup Constraints
+     * \sa AllDifferent
+     */
     class NValue : public Constraint
     {
     private:

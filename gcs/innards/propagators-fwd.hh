@@ -5,6 +5,12 @@
 
 namespace gcs::innards
 {
+    /**
+     * Should a propagator be called again, or is it guaranteed it cannot
+     * perform any more inference?
+     *
+     * \ingroup Innards
+     */
     enum class PropagatorState
     {
         Enable,

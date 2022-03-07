@@ -21,6 +21,16 @@
 
 namespace gcs
 {
+    /**
+     * \defgroup Core Core functionality
+     */
+
+    /**
+     * \brief The central class which defines a constraint satisfaction problem
+     * instance to be solved.
+     *
+     * \ingroup Core
+     */
     class Problem
     {
     private:
@@ -28,6 +38,10 @@ namespace gcs
         std::unique_ptr<Imp> _imp;
 
     public:
+        /**
+         * \name Constructors, destructors, etc.
+         * @{
+         */
         Problem();
         explicit Problem(const ProofOptions &);
 
@@ -36,43 +50,83 @@ namespace gcs
         Problem(const Problem &) = delete;
         Problem & operator=(const Problem &) = delete;
 
+        ///@}
+
+        /**
+         * \name For end users.
+         *@{
+         */
+
+        /**
+         * \brief Add this Constraint to the model. This is potentially a
+         * destructive operation: the constraint instance will not be valid for
+         * further use after this.
+         */
+        auto post(Constraint &&) -> void;
+
+        /**
+         * \brief Create a new integer variable, whose domain goes from lower to
+         * upper (inclusive). The final argument gives an optional name that
+         * will appear in some output; it does not have to be unique.
+         */
         [[nodiscard]] auto create_integer_variable(
             Integer lower,
             Integer upper,
             const std::optional<std::string> & name = std::nullopt) -> SimpleIntegerVariableID;
 
+        /**
+         * \brief Create a vector of how_many integer variables, each of
+         * whose domain goes from lower to upper (inclusive). The final argument
+         * gives an optional name that will appear in some output; it does not
+         * have to be unique.
+         */
         [[nodiscard]] auto create_integer_variable_vector(
             std::size_t how_many,
             Integer lower,
             Integer upper,
             const std::optional<std::string> & name = std::nullopt) -> std::vector<IntegerVariableID>;
 
-        // Probably best to use only for small n, and for assigning using bindings,
-        // like [ a, b, c ] = create_integer_variable_array<3>(1_i, 3_i);
-        // Use the vector version instead if you don't want to bind directly.
+        /**
+         * \brief Create n integer variables, each of whose domain goes
+         * from lower to upper (inclusive).
+         *
+         * This should only be used for small values of n, and only for
+         * assigning to structured bindings, like
+         * ```
+         * [ a, b, c ] = create_n_integer_variables<3>(1_i, 3_i);
+         * ```
+         * Otherwise, use Problem::create_integer_variable_vector instead.
+         */
         template <std::size_t n_>
         [[nodiscard]] auto create_n_integer_variables(
             Integer lower,
             Integer upper,
             const std::optional<std::string> & name = std::nullopt) -> std::array<SimpleIntegerVariableID, n_>;
 
-        [[nodiscard]] auto create_state() const -> innards::State;
-        [[nodiscard]] auto propagate(innards::State &) const -> bool;
-
-        [[nodiscard]] auto find_branching_variable(innards::State &) const -> std::optional<IntegerVariableID>;
-
-        auto post(Constraint &&) -> void;
-
         auto branch_on(const std::vector<IntegerVariableID> &) -> void;
 
         auto minimise(IntegerVariableID) -> void;
         auto maximise(IntegerVariableID) -> void;
+
+        ///@}
+
+        /**
+         * \name For use by the innards.
+         * @{
+         */
+
+        [[nodiscard]] auto create_state() const -> innards::State;
+        [[nodiscard]] auto propagate(innards::State &) const -> bool;
+
+        [[nodiscard]] auto find_branching_variable(innards::State &) const -> std::optional<IntegerVariableID>;
 
         auto update_objective(const innards::State &) -> void;
 
         [[nodiscard]] auto optional_proof() const -> std::optional<innards::Proof> &;
 
         auto fill_in_constraint_stats(Stats &) const -> void;
+
+        ///@}
     };
 
     namespace innards

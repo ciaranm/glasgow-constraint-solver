@@ -11,18 +11,41 @@
 
 namespace gcs::innards
 {
+    /**
+     * \brief Either an IntegerVariableID, or one of its more specific types.
+     *
+     * \ingroup Innards
+     */
     template <typename T_>
     concept IntegerVariableIDLike = std::is_convertible_v<T_, IntegerVariableID>;
 
-    // The following is badly named... Maybe a good name will become evident once the variants
-    // gain more items?
+    /**
+     * \brief An IntegerVariableID that isn't a view.
+     *
+     * \ingroup Innards
+     */
     using DirectIntegerVariableID = std::variant<SimpleIntegerVariableID, ConstantIntegerVariableID>;
 
+    /**
+     * \brief Either a DirectIntegerVariableID, or one of its more specific types.
+     *
+     * \ingroup Innards
+     */
     template <typename T_>
     concept DirectIntegerVariableIDLike = std::is_convertible_v<T_, DirectIntegerVariableID>;
 
+    /**
+     * Convert an IntegerVariableID into a roughly-readable string, for debugging.
+     *
+     * \ingroup Innards
+     */
     [[nodiscard]] auto debug_string(const IntegerVariableID &) -> std::string;
 
+    /**
+     * Convert a VariableID into a roughly-readable string, for debugging.
+     *
+     * \ingroup Innards
+     */
     [[nodiscard]] auto debug_string(const VariableID &) -> std::string;
 }
 

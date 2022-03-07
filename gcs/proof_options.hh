@@ -7,11 +7,17 @@
 
 namespace gcs
 {
+    /**
+     * \brief Options for a Problem telling it how to produce a proof.
+     *
+     * \sa Problem
+     * \ingroup Core
+     */
     struct ProofOptions
     {
-        std::string opb_file;
-        std::string proof_file;
-        bool use_friendly_names = true;
+        std::string opb_file;           ///< Filename for the OPB model
+        std::string proof_file;         ///< Filename for the proof file
+        bool use_friendly_names = true; ///< Use verbose names, rather than just x1, x2, etc.
     };
 }
 
