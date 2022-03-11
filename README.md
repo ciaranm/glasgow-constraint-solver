@@ -16,9 +16,17 @@ This section describes how to build the solver, and how to create and solve a si
 Compiling
 ---------
 
-To build, type ``make``. You will need a C++20 compiler, such as GCC 10.3, as well as Boost (use
-``libboost-dev-all`` on Ubuntu). If you have ``veripb`` installed (see below), you should then run
-``./run_tests.bash``.
+To build, type:
+
+```shell
+cmake -S . -B build
+cmake --build build
+cmake --build build --target docs
+```
+
+You will need a C++20 compiler, such as GCC 10.3, as well as Boost (use ``libboost-dev-all`` on
+Ubuntu). To generate API documentation, Doxygen must be installed. If you have ``veripb`` installed
+(see below), you should then run ``./run_tests.bash``.
 
 Solving a Constraint Optimisation Problem
 -----------------------------------------

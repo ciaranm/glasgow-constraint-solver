@@ -83,4 +83,9 @@ not to be indented.
     }
 ```
 
+cmake
+-----
+
+Is terrible.
+
 <!-- vim: set tw=100 spell spelllang=en : -->

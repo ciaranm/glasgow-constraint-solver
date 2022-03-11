@@ -2,6 +2,8 @@ intermediate
 perf.data
 perf.data.old
 html
+build
+Doxyfile
 *.a
 *.log
 *.opb
