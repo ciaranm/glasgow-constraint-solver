@@ -88,4 +88,10 @@ cmake
 
 Is terrible.
 
+Doxygen
+-------
+
+It would be good if we could treat certain typedefs as being real classes. Some constraints are
+typedeffed to a template class in the innards, which doesn't show up particularly nicely.
+
 <!-- vim: set tw=100 spell spelllang=en : -->
