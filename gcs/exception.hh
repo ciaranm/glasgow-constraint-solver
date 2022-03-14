@@ -55,8 +55,10 @@ namespace gcs
     {
     public:
 #if __has_include(<source_location>) && __cpp_lib_source_location
+        explicit UnimplementedException(const std::string & msg, const std::source_location & = std::source_location::current());
         explicit UnimplementedException(const std::source_location & = std::source_location::current());
 #else
+        explicit UnimplementedException(const std::string & msg);
         explicit UnimplementedException();
 #endif
     };

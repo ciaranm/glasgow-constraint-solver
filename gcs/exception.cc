@@ -35,6 +35,11 @@ UnimplementedException::UnimplementedException(const source_location & where) :
 {
 }
 
+UnimplementedException::UnimplementedException(const string & msg, const source_location & where) :
+    UnexpectedException{"unimplemented: " + msg + " at " + where_does_it_hurt(where)}
+{
+}
+
 NonExhaustiveSwitch::NonExhaustiveSwitch(const source_location & where) :
     UnexpectedException{"non-exhaustive at " + where_does_it_hurt(where)}
 {
@@ -44,6 +49,11 @@ NonExhaustiveSwitch::NonExhaustiveSwitch(const source_location & where) :
 
 UnimplementedException::UnimplementedException() :
     UnexpectedException{"unimplemented, source location not supported by your compiler"}
+{
+}
+
+UnimplementedException::UnimplementedException(const string & msg) :
+    UnexpectedException{"unimplemented " + msg + ", source location not supported by your compiler"}
 {
 }
 
