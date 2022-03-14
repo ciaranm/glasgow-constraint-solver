@@ -3,6 +3,11 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+add_compile_options(-W)
+add_compile_options(-Wall)
+add_compile_options(-g)
+add_compile_options(-g3)
+
 project(
     Glasgow-constraint-solver
     VERSION 0.0.1
