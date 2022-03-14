@@ -20,12 +20,15 @@ namespace gcs
     class And : public Constraint
     {
     private:
-        const Literals & _lits;
-        const Literal & _full_reif;
+        const Literals _lits;
+        const Literal _full_reif;
 
     public:
         // Equivalent to And([var != 0 : var in vars], full_reif != 0)
         explicit And(const std::vector<IntegerVariableID> & vars, const IntegerVariableID & full_reif);
+
+        // Equivalent to And([var != 0 : var in vars], true)
+        explicit And(const std::vector<IntegerVariableID> & vars);
 
         explicit And(const Literals &, const Literal &);
 
@@ -42,12 +45,15 @@ namespace gcs
     class Or : public Constraint
     {
     private:
-        const Literals & _lits;
-        const Literal & _full_reif;
+        const Literals _lits;
+        const Literal _full_reif;
 
     public:
         // Equivalent to Or([var != 0 : var in vars], full_reif != 0)
         explicit Or(const std::vector<IntegerVariableID> & vars, const IntegerVariableID & full_reif);
+
+        // Equivalent to Or([var != 0 : var in vars], true)
+        explicit Or(const std::vector<IntegerVariableID> & vars);
 
         explicit Or(const Literals &, const Literal &);
 

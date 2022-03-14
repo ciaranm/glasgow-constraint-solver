@@ -179,6 +179,11 @@ And::And(const vector<IntegerVariableID> & vars, const IntegerVariableID & full_
 {
 }
 
+And::And(const vector<IntegerVariableID> & vars) :
+    And(to_lits(vars), TrueLiteral{})
+{
+}
+
 And::And(const Literals & l, const Literal & full_reif) :
     _lits(l),
     _full_reif(full_reif)
@@ -197,6 +202,11 @@ auto And::install(Propagators & propagators, const State & initial_state) && -> 
 
 Or::Or(const vector<IntegerVariableID> & vars, const IntegerVariableID & full_reif) :
     Or(to_lits(vars), full_reif != 0_i)
+{
+}
+
+Or::Or(const vector<IntegerVariableID> & vars) :
+    Or(to_lits(vars), TrueLiteral{})
 {
 }
 
