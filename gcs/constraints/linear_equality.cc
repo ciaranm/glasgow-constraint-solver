@@ -78,11 +78,11 @@ namespace
 
 auto LinearEquality::install(Propagators & propagators, const State & initial_state) && -> void
 {
-    auto [sanitised_cv, modifier] = sanitise_linear(_coeff_vars);
-
     optional<ProofLine> proof_line;
     if (propagators.want_definitions())
-        proof_line = propagators.define_linear_eq(initial_state, _coeff_vars, _value + modifier, nullopt);
+        proof_line = propagators.define_linear_eq(initial_state, _coeff_vars, _value, nullopt);
+
+    auto [sanitised_cv, modifier] = sanitise_linear(_coeff_vars);
 
     Triggers triggers;
     for (auto & [_, v] : _coeff_vars)
@@ -241,11 +241,11 @@ LinearLessEqual::LinearLessEqual(Linear && coeff_vars, Integer value) :
 
 auto LinearLessEqual::install(Propagators & propagators, const State & initial_state) && -> void
 {
-    auto [sanitised_cv, modifier] = sanitise_linear(_coeff_vars);
-
     optional<ProofLine> proof_line;
     if (propagators.want_definitions())
-        proof_line = propagators.define_linear_le(initial_state, _coeff_vars, _value + modifier, nullopt);
+        proof_line = propagators.define_linear_le(initial_state, _coeff_vars, _value, nullopt);
+
+    auto [sanitised_cv, modifier] = sanitise_linear(_coeff_vars);
 
     Triggers triggers;
     for (auto & [_, v] : _coeff_vars)
