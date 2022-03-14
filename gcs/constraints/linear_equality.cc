@@ -23,6 +23,7 @@ using std::nullopt;
 using std::optional;
 using std::pair;
 using std::stringstream;
+using std::to_string;
 using std::vector;
 
 LinearEquality::LinearEquality(Linear && coeff_vars, Integer value, bool gac) :
@@ -119,7 +120,8 @@ auto LinearEquality::install(Propagators & propagators, const State & initial_st
 
             optional<ExtensionalData> data;
             propagators.install(
-                initial_state, [data = move(data), coeff_vars = sanitised_cv, value = _value](State & state) mutable -> pair<Inference, PropagatorState> {
+                initial_state, [data = move(data), coeff_vars = sanitised_cv, value = _value + modifier](
+                    State & state) mutable -> pair<Inference, PropagatorState> {
                     if (! data) {
                         vector<vector<Integer>> permitted;
                         vector<Integer> current;
@@ -150,7 +152,7 @@ auto LinearEquality::install(Propagators & propagators, const State & initial_st
                             vars.push_back(get_var(cv));
 
                         state.add_proof_steps(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
-                            proof.emit_proof_comment("building GAC table for linear equality");
+                            proof.emit_proof_comment("building GAC table for linear equality with " + to_string(permitted.size()) + " options");
 
                             for (auto & var : vars) {
                                 state.for_each_value(var, [&](Integer val) {

@@ -178,45 +178,59 @@ auto main(int, char *[]) -> int
             move(constraints));
     }
 
-    for (auto & [v0_range, v1_range, v2_range, constraints] : data) {
-        set<tuple<int, int, int>> expected, actual;
+    for (int eq = 0 ; eq <= 1 ; ++eq) {
+        for (auto & [v0_range, v1_range, v2_range, constraints] : data) {
+            set<tuple<int, int, int>> expected, actual;
 
-        for (int v0 = v0_range.first; v0 <= v0_range.second; ++v0)
-            for (int v1 = v1_range.first; v1 <= v1_range.second; ++v1)
-                for (int v2 = v2_range.first; v2 <= v2_range.second; ++v2) {
-                    bool ok = true;
-                    for (auto & [linear, value] : constraints)
-                        if (linear[0] * v0 + linear[1] * v1 + linear[2] * v2 > value) {
-                            ok = false;
-                            break;
+            for (int v0 = v0_range.first; v0 <= v0_range.second; ++v0)
+                for (int v1 = v1_range.first; v1 <= v1_range.second; ++v1)
+                    for (int v2 = v2_range.first; v2 <= v2_range.second; ++v2) {
+                        bool ok = true;
+                        for (auto & [linear, value] : constraints) {
+                            if (eq) {
+                                if (linear[0] * v0 + linear[1] * v1 + linear[2] * v2 != value) {
+                                    ok = false;
+                                    break;
+                                }
+                            }
+                            else {
+                                if (linear[0] * v0 + linear[1] * v1 + linear[2] * v2 > value) {
+                                    ok = false;
+                                    break;
+                                }
+                            }
                         }
-                    if (ok)
-                        expected.emplace(v0, v1, v2);
-                }
+                        if (ok)
+                            expected.emplace(v0, v1, v2);
+                    }
 
-        Problem p{ProofOptions{"linear_equality_test.opb", "linear_equality_test.veripb"}};
+            Problem p{ProofOptions{"linear_equality_test.opb", "linear_equality_test.veripb"}};
 
-        auto vs = vector{
-            p.create_integer_variable(Integer{v0_range.first}, Integer{v0_range.second}),
-            p.create_integer_variable(Integer{v1_range.first}, Integer{v1_range.second}),
-            p.create_integer_variable(Integer{v2_range.first}, Integer{v2_range.second})};
+            auto vs = vector{
+                p.create_integer_variable(Integer{v0_range.first}, Integer{v0_range.second}),
+                p.create_integer_variable(Integer{v1_range.first}, Integer{v1_range.second}),
+                p.create_integer_variable(Integer{v2_range.first}, Integer{v2_range.second})};
 
-        for (auto & [linear, value] : constraints) {
-            Linear c;
-            for_each_with_index(linear, [&](int coeff, auto idx) {
-                if (coeff != 0)
-                    c.emplace_back(Integer{coeff}, vs[idx]);
+            for (auto & [linear, value] : constraints) {
+                Linear c;
+                for_each_with_index(linear, [&](int coeff, auto idx) {
+                    if (coeff != 0)
+                        c.emplace_back(Integer{coeff}, vs[idx]);
+                });
+                if (eq)
+                    p.post(LinearEquality{move(c), Integer{value}});
+                else
+                    p.post(LinearLessEqual{move(c), Integer{value}});
+            }
+
+            solve(p, [&](const CurrentState & s) -> bool {
+                actual.emplace(s(vs[0]).raw_value, s(vs[1]).raw_value, s(vs[2]).raw_value);
+                return true;
             });
-            p.post(LinearLessEqual{move(c), Integer{value}});
+
+            if (! check_results(v0_range, v1_range, v2_range, constraints, eq ? "linear eq" : "linear ineq", expected, actual))
+                return EXIT_FAILURE;
         }
-
-        solve(p, [&](const CurrentState & s) -> bool {
-            actual.emplace(s(vs[0]).raw_value, s(vs[1]).raw_value, s(vs[2]).raw_value);
-            return true;
-        });
-
-        if (! check_results(v0_range, v1_range, v2_range, constraints, "linear ineq", expected, actual))
-            return EXIT_FAILURE;
     }
 
     return EXIT_SUCCESS;
