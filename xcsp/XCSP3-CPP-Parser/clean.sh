@@ -1,0 +1,1 @@
+cmake --build . --target clean -- -j 6
