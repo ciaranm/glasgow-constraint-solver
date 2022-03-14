@@ -315,7 +315,7 @@ auto EqualsIff::install(Propagators & propagators, const State & initial_state) 
                                 });
 
                                 if (! overlap)
-                                    return pair{state.infer(! cond, NoJustificationNeeded{}), PropagatorState::DisableUntilBacktrack};
+                                    return pair{state.infer(! cond, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
                                 else
                                     return pair{Inference::NoChange, PropagatorState::Enable};
                             }
