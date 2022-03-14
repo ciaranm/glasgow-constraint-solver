@@ -566,9 +566,15 @@ auto Proof::proof_variable(const Literal & lit) const -> const string &
                     case LiteralFromIntegerVariable::Operator::Equal:
                         return proof_variable(view.actual_variable == (view.negate_first ? -1_i : 1_i) * (ilit.value - view.then_add));
                     case LiteralFromIntegerVariable::Operator::Less:
-                        return proof_variable(view.actual_variable >= ((view.negate_first ? -1_i : 1_i) * (ilit.value - view.then_add)) + 1_i);
+                        if (view.negate_first)
+                            return proof_variable(view.actual_variable >= ilit.value - view.then_add + 1_i);
+                        else
+                            return proof_variable(view.actual_variable < (ilit.value - view.then_add));
                     case LiteralFromIntegerVariable::Operator::GreaterEqual:
-                        return proof_variable(view.actual_variable < ((view.negate_first ? -1_i : 1_i) * (ilit.value - view.then_add)) + 1_i);
+                        if (view.negate_first)
+                            return proof_variable(view.actual_variable < ilit.value - view.then_add + 1_i);
+                        else
+                            return proof_variable(view.actual_variable >= (ilit.value - view.then_add));
                     }
                     throw NonExhaustiveSwitch{};
                 },
@@ -611,10 +617,16 @@ auto Proof::need_proof_variable(const Literal & lit) -> void
                         need_proof_variable(view.actual_variable == (view.negate_first ? -1_i : 1_i) * (ilit.value - view.then_add));
                         break;
                     case LiteralFromIntegerVariable::Operator::Less:
-                        need_proof_variable(view.actual_variable >= ((view.negate_first ? -1_i : 1_i) * (ilit.value - view.then_add)) - 1_i);
+                        if (view.negate_first)
+                            need_proof_variable(view.actual_variable >= ilit.value - view.then_add + 1_i);
+                        else
+                            need_proof_variable(view.actual_variable < (ilit.value - view.then_add));
                         break;
                     case LiteralFromIntegerVariable::Operator::GreaterEqual:
-                        need_proof_variable(view.actual_variable < ((view.negate_first ? -1_i : 1_i) * (ilit.value - view.then_add)) + 1_i);
+                        if (view.negate_first)
+                            need_proof_variable(view.actual_variable < ilit.value - view.then_add + 1_i);
+                        else
+                            need_proof_variable(view.actual_variable >= (ilit.value - view.then_add));
                         break;
                     }
                 },
