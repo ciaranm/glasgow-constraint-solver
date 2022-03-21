@@ -48,6 +48,14 @@ Constraints
 
 - Make EqualsIff and AllDifferent use more compact encodings for large domains.
 
+- Better propagation for Arithmetic.
+
+- Ability to share tuples between tables.
+
+- Negative table should use 2wl or something smarter.
+
+- 1D Element with table of constants
+
 State
 -----
 
@@ -83,5 +91,7 @@ Proofs
 
 - Better comment names for constraints in the OPB files.
 
-- Don't generate binary encoding for 0/1 variables.
+- Don't generate binary encoding for 0/1 or small-domain variables.
+
+- Short proofs for equals bounds changes.
 
