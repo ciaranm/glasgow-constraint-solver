@@ -125,7 +125,7 @@ namespace gcs
          */
 
         [[nodiscard]] auto create_state() const -> innards::State;
-        [[nodiscard]] auto propagate(innards::State &) const -> bool;
+        [[nodiscard]] auto propagate(innards::State &, std::atomic<bool> * optional_abort_flag = nullptr) const -> bool;
 
         [[nodiscard]] auto find_branching_variable(innards::State &) const -> std::optional<IntegerVariableID>;
 

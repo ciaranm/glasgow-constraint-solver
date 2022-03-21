@@ -13,6 +13,7 @@
 #include <gcs/literal.hh>
 #include <gcs/problem.hh>
 
+#include <atomic>
 #include <functional>
 #include <utility>
 #include <vector>
@@ -184,7 +185,7 @@ namespace gcs::innards
          * Propagate every constraint, until either a fixed point or a contradiction is reached.
          */
         [[nodiscard]] auto propagate(State &, const std::optional<IntegerVariableID> & objective_variable,
-            const std::optional<Integer> & objective_value) const -> bool;
+            const std::optional<Integer> & objective_value, std::atomic<bool> * optional_abort_flag = nullptr) const -> bool;
 
         ///@}
 

@@ -8,6 +8,7 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::atomic;
 using std::max;
 using std::nullopt;
 using std::chrono::duration_cast;
@@ -17,7 +18,8 @@ using std::chrono::steady_clock;
 namespace
 {
     auto solve_with_state(unsigned long long depth, Stats & stats, Problem & problem, State & state,
-        SolveCallbacks & callbacks, bool & this_subtree_contains_solution) -> bool
+        SolveCallbacks & callbacks, bool & this_subtree_contains_solution,
+        atomic<bool> * optional_abort_flag) -> bool
     {
         stats.max_depth = max(stats.max_depth, depth);
         ++stats.recursions;
@@ -25,7 +27,10 @@ namespace
         if (problem.optional_proof())
             problem.optional_proof()->enter_proof_level(depth + 1);
 
-        if (problem.propagate(state)) {
+        if (problem.propagate(state, optional_abort_flag)) {
+            if (optional_abort_flag && optional_abort_flag->load())
+                return false;
+
             auto branch_var = callbacks.branch ? callbacks.branch(state.current()) : problem.find_branching_variable(state);
             if (branch_var == nullopt) {
                 if (problem.optional_proof())
@@ -44,14 +49,20 @@ namespace
                 if (callbacks.trace && ! callbacks.trace(state.current()))
                     keep_going = false;
 
-                if (callbacks.guess) {
+                if (optional_abort_flag && optional_abort_flag->load())
+                    keep_going = false;
+
+                if (callbacks.guess && keep_going) {
                     auto guesses = callbacks.guess(state.current(), *branch_var);
                     for (auto & guess : guesses) {
+                        if (optional_abort_flag && optional_abort_flag->load())
+                            keep_going = false;
+
                         if (keep_going) {
                             auto timestamp = state.new_epoch();
                             state.guess(guess);
                             bool child_contains_solution = false;
-                            if (! solve_with_state(depth + 1, stats, problem, state, callbacks, child_contains_solution))
+                            if (! solve_with_state(depth + 1, stats, problem, state, callbacks, child_contains_solution, optional_abort_flag))
                                 keep_going = false;
 
                             if (child_contains_solution)
@@ -61,15 +72,20 @@ namespace
 
                             state.backtrack(timestamp);
                         }
+                        else
+                            break;
                     }
                 }
                 else {
                     state.for_each_value(*branch_var, [&](Integer val) {
+                        if (optional_abort_flag && optional_abort_flag->load())
+                            keep_going = false;
+
                         if (keep_going) {
                             auto timestamp = state.new_epoch();
                             state.guess(*branch_var == val);
                             bool child_contains_solution = false;
-                            if (! solve_with_state(depth + 1, stats, problem, state, callbacks, child_contains_solution))
+                            if (! solve_with_state(depth + 1, stats, problem, state, callbacks, child_contains_solution, optional_abort_flag))
                                 keep_going = false;
 
                             if (child_contains_solution)
@@ -97,7 +113,7 @@ namespace
     }
 }
 
-auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks) -> Stats
+auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks, atomic<bool> * optional_abort_flag) -> Stats
 {
     Stats stats;
     auto start_time = steady_clock::now();
@@ -110,7 +126,7 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks) -> Stats
         callbacks.after_proof_started(state.current());
 
     bool child_contains_solution = false;
-    if (solve_with_state(0, stats, problem, state, callbacks, child_contains_solution))
+    if (solve_with_state(0, stats, problem, state, callbacks, child_contains_solution, optional_abort_flag))
         if (problem.optional_proof())
             problem.optional_proof()->assert_contradiction();
 

@@ -18,6 +18,7 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::atomic;
 using std::deque;
 using std::list;
 using std::make_optional;
@@ -251,7 +252,7 @@ auto Propagators::define_and_install_table(const State & state, vector<IntegerVa
 }
 
 auto Propagators::propagate(State & state, const optional<IntegerVariableID> & objective_variable,
-    const optional<Integer> & objective_value) const -> bool
+    const optional<Integer> & objective_value, atomic<bool> * optional_abort_flag) const -> bool
 {
     vector<int> on_queue(_imp->propagation_functions.size(), 0);
     deque<int> propagation_queue;
@@ -346,6 +347,9 @@ auto Propagators::propagate(State & state, const optional<IntegerVariableID> & o
                 break;
             }
         }
+
+        if (optional_abort_flag && optional_abort_flag->load())
+            return false;
     }
 
     if (! newly_disabled_propagators.empty()) {

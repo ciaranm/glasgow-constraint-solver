@@ -13,6 +13,7 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::atomic;
 using std::make_optional;
 using std::move;
 using std::nullopt;
@@ -99,9 +100,9 @@ auto Problem::create_state() const -> State
     return _imp->initial_state.clone();
 }
 
-auto Problem::propagate(State & state) const -> bool
+auto Problem::propagate(State & state, atomic<bool> * optional_abort_flag) const -> bool
 {
-    auto result = _imp->propagators.propagate(state, _imp->objective_variable, _imp->objective_value);
+    auto result = _imp->propagators.propagate(state, _imp->objective_variable, _imp->objective_value, optional_abort_flag);
 
     return result;
 }

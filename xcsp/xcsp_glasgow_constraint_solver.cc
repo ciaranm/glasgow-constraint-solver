@@ -7,11 +7,16 @@
 #include <XCSP3CoreParser.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
+#include <condition_variable>
+#include <csignal>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <boost/program_options.hpp>
@@ -27,19 +32,26 @@ using XCSP3Core::XVariable;
 
 using namespace gcs;
 
+using std::atomic;
 using std::cerr;
+using std::condition_variable;
 using std::cout;
+using std::cv_status;
 using std::endl;
 using std::flush;
 using std::get;
 using std::make_unique;
 using std::map;
 using std::minmax_element;
+using std::mutex;
 using std::nullopt;
 using std::optional;
+using std::signal;
 using std::stoll;
 using std::string;
+using std::thread;
 using std::tuple;
+using std::unique_lock;
 using std::unique_ptr;
 using std::vector;
 
@@ -47,10 +59,22 @@ using std::chrono::duration_cast;
 using std::chrono::microseconds;
 using std::chrono::seconds;
 using std::chrono::steady_clock;
+using std::chrono::system_clock;
 
 using namespace std::literals::string_literals;
 
 namespace po = boost::program_options;
+
+namespace
+{
+    static atomic<bool> abort_flag{false}, was_terminated{false};
+
+    auto sig_int_or_term_handler(int) -> void
+    {
+        abort_flag.store(true);
+        was_terminated.store(true);
+    }
+}
 
 using VarInfo = tuple<optional<IntegerVariableID>, Integer, Integer, optional<vector<int>>>;
 using VariableMapping = map<string, VarInfo>;
@@ -603,7 +627,8 @@ auto main(int argc, char * argv[]) -> int
     po::options_description display_options{"Program options"};
     display_options.add_options()            //
         ("help", "Display help information") //
-        ("prove", "Create a proof");         //
+        ("prove", "Create a proof")          //
+        ("timeout", po::value<int>(), "Timeout in seconds");
 
     po::options_description all_options{"All options"};
     all_options.add_options() //
@@ -656,7 +681,36 @@ auto main(int argc, char * argv[]) -> int
     cout << "d MODEL BUILD TIME: " << (model_done_duration.count() / 1'000'000.0) << "s" << endl;
 
     optional<CurrentState> saved_solution;
-    bool timeout = false;
+
+    signal(SIGINT, &sig_int_or_term_handler);
+    signal(SIGTERM, &sig_int_or_term_handler);
+
+    thread timeout_thread;
+    mutex timeout_mutex;
+    condition_variable timeout_cv;
+    bool actually_timed_out = false;
+
+    if (options_vars.contains("timeout")) {
+        seconds limit{options_vars["timeout"].as<int>()};
+
+        timeout_thread = thread([limit = limit, &timeout_mutex, &timeout_cv, &actually_timed_out] {
+            auto abort_time = system_clock::now() + limit;
+            {
+                /* Sleep until either we've reached the time limit,
+                 * or we've finished all the work. */
+                unique_lock<mutex> guard(timeout_mutex);
+                while (! abort_flag.load()) {
+                    if (cv_status::timeout == timeout_cv.wait_until(guard, abort_time)) {
+                        /* We've woken up, and it's due to a timeout. */
+                        actually_timed_out = true;
+                        break;
+                    }
+                }
+            }
+            abort_flag.store(true);
+        });
+    }
+
     auto stats = solve_with(problem,
         SolveCallbacks{
             .solution = [&](const CurrentState & s) -> bool {
@@ -667,17 +721,35 @@ auto main(int argc, char * argv[]) -> int
                 }
                 else
                     return false;
-            }});
+            }},
+        &abort_flag);
 
-    if (! saved_solution) {
+    if (timeout_thread.joinable()) {
+        {
+            unique_lock<mutex> guard(timeout_mutex);
+            abort_flag.store(true);
+            timeout_cv.notify_all();
+        }
+        timeout_thread.join();
+    }
+
+    bool actually_aborted = actually_timed_out || was_terminated.load();
+
+    if (actually_aborted) {
+        if (callbacks.is_optimisation && saved_solution)
+            cout << "s SATISFIABLE" << endl;
+        else
+            cout << "s UNKNOWN" << endl;
+    }
+    else if (! saved_solution) {
         cout << "s UNSATISFIABLE" << endl;
     }
-    else {
-        if (callbacks.is_optimisation)
-            cout << "s OPTIMUM FOUND" << endl;
-        else
-            cout << "s SATISFIABLE" << endl;
+    else if (callbacks.is_optimisation)
+        cout << "s OPTIMUM FOUND" << endl;
+    else
+        cout << "s SATISFIABLE" << endl;
 
+    if (saved_solution) {
         cout << "v <instantiation>" << endl;
         cout << "v   <list>";
         for (const auto & [n, _] : callbacks.mapping)
@@ -699,5 +771,5 @@ auto main(int argc, char * argv[]) -> int
     cout << "d CONTRADICTING PROPAGATIONS: " << stats.contradicting_propagations << endl;
     cout << "d SOLVE TIME: " << (stats.solve_time.count() / 1'000'000.0) << "s" << endl;
 
-    return timeout ? EXIT_FAILURE : EXIT_SUCCESS;
+    return actually_aborted ? EXIT_FAILURE : EXIT_SUCCESS;
 }

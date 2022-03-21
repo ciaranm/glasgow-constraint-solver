@@ -7,6 +7,7 @@
 #include <gcs/problem.hh>
 #include <gcs/stats.hh>
 
+#include <atomic>
 #include <functional>
 #include <vector>
 
@@ -91,10 +92,13 @@ namespace gcs
      * All callback members are optional. If a solution or trace callback
      * returns false, no further solutions will be provided.
      *
+     * If the final argument is not nullptr, the provided atomic might be
+     * polled and search might abort if it becomes true.
+     *
      * \ingroup Core
      * \sa SolveCallbacks
      */
-    auto solve_with(Problem &, SolveCallbacks ballbacks) -> Stats;
+    auto solve_with(Problem &, SolveCallbacks ballbacks, std::atomic<bool> * optional_abort_flag = nullptr) -> Stats;
 }
 
 #endif
