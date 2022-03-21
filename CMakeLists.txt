@@ -8,30 +8,42 @@ add_compile_options(-Wall)
 add_compile_options(-g)
 add_compile_options(-g3)
 
+# add_compile_options(-DGCS_TRACK_ALL_PROPAGATIONS=1)
+
 project(
-    Glasgow-constraint-solver
+    Glasgow-Constraint-Solver
     VERSION 0.0.1
     DESCRIPTION "An auditable constraint programming and optimisation solver"
     HOMEPAGE_URL "https://github.com/ciaranm/glasgow-constraint-solver"
     LANGUAGES CXX)
 
+option(GCS_ENABLE_DOXYGEN "Add a doxygen target to generate the documentation" OFF)
+option(GCS_ENABLE_XCSP "Support for the XCSP modelling language" OFF)
+
 include_directories(.)
 add_subdirectory(gcs)
 add_subdirectory(examples)
 
-find_package(Doxygen)
+if (GCS_ENABLE_DOXYGEN)
+    find_package(Doxygen)
 
-if (DOXYGEN_FOUND)
-    # set input and output files
-    set(DOXYGEN_IN ${CMAKE_CURRENT_SOURCE_DIR}/Doxyfile.in)
-    set(DOXYGEN_OUT ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile)
+    if (DOXYGEN_FOUND)
+        # set input and output files
+        set(DOXYGEN_IN ${CMAKE_CURRENT_SOURCE_DIR}/Doxyfile.in)
+        set(DOXYGEN_OUT ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile)
 
-    # request to configure the file
-    configure_file(${DOXYGEN_IN} ${DOXYGEN_OUT} @ONLY)
-    add_custom_target(docs
-        COMMAND ${DOXYGEN_EXECUTABLE} ${DOXYGEN_OUT}
-        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-        VERBATIM)
-else (DOXYGEN_FOUND)
-    message("Could not find Doxygen to generate documentation")
-endif (DOXYGEN_FOUND)
+        # request to configure the file
+        configure_file(${DOXYGEN_IN} ${DOXYGEN_OUT} @ONLY)
+        add_custom_target(docs
+            COMMAND ${DOXYGEN_EXECUTABLE} ${DOXYGEN_OUT}
+            WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+            VERBATIM)
+    else (DOXYGEN_FOUND)
+        message("Could not find Doxygen to generate documentation")
+    endif (DOXYGEN_FOUND)
+endif (GCS_ENABLE_DOXYGEN)
+
+if (GCS_ENABLE_XCSP)
+    add_subdirectory(xcsp/XCSP3-CPP-Parser)
+    add_subdirectory(xcsp)
+endif (GCS_ENABLE_XCSP)

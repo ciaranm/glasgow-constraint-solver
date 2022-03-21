@@ -16,20 +16,49 @@ This section describes how to build the solver, and how to create and solve a si
 Compiling
 ---------
 
-To build, type:
+To build, you will need a C++20 compiler, such as GCC 10.3, as well as Boost (use
+``libboost-dev-all`` on Ubuntu).
 
 ```shell
 cmake -S . -B build
 cmake --build build
+```
+
+If you have ``veripb`` installed (see below), you should then run
+
+
+```shell
+./run_tests.bash
+```
+
+To generate API documentation, Doxygen must be installed. Then instead do:
+
+```shell
+cmake -S . -B build -DGCS_ENABLE_DOXYGEN=ON
+cmake --build build
 cmake --build build --target docs
 ```
 
-You will need a C++20 compiler, such as GCC 10.3, as well as Boost (use ``libboost-dev-all`` on
-Ubuntu). To generate API documentation, Doxygen must be installed. If you have ``veripb`` installed
-(see below), you should then run ``./run_tests.bash``.
+For XCSP support, you will also need libxml2 (``libxml2-dev`` on Ubuntu). Then instead do:
 
-Solving a Constraint Optimisation Problem
------------------------------------------
+```shell
+cmake -S . -B build -DGCS_ENABLE_XCSP=ON
+cmake --build build
+```
+
+You can, of course, combine Doxygen and XCSP support.
+
+Using the XCSP Solver
+---------------------
+
+To use the XCSP solver, run:
+
+```shell
+./build/xcsp_glasgow_constraint_solver instance.xml
+```
+
+Manually Solving a Constraint Optimisation Problem
+--------------------------------------------------
 
 Let's start by <a
 href="https://www.minizinc.org/doc-2.5.5/en/modelling.html#an-arithmetic-optimisation-example">making

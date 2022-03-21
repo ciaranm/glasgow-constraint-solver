@@ -6,7 +6,11 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::make_optional;
+using std::move;
+using std::optional;
 using std::string;
+using std::unique_ptr;
 
 VariableDoesNotHaveUniqueValue::VariableDoesNotHaveUniqueValue(const string & w) :
     _wat(w + " does not have a unique value")
@@ -21,6 +25,21 @@ auto VariableDoesNotHaveUniqueValue::what() const noexcept -> const char *
 CurrentState::CurrentState(State & state) :
     _full_state(state)
 {
+}
+
+CurrentState::CurrentState(optional<State> && s) :
+    _state_copy(make_unique<optional<State>>(move(s))),
+    _full_state(**_state_copy)
+{
+}
+
+CurrentState::~CurrentState() = default;
+
+CurrentState::CurrentState(CurrentState &&) = default;
+
+auto CurrentState::clone() const -> CurrentState
+{
+    return CurrentState{make_optional(_full_state.clone())};
 }
 
 auto CurrentState::operator()(const IntegerVariableID & v) const -> Integer

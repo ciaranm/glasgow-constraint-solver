@@ -9,6 +9,8 @@
 
 #include <exception>
 #include <functional>
+#include <memory>
+#include <optional>
 
 namespace gcs
 {
@@ -37,12 +39,18 @@ namespace gcs
      * \brief Gives a way of accessing a variable's value from inside a
      * solution. Usually you will just use CurrentState::operator().
      *
+     * Normally this is only valid inside a callback, and cannot be stored for
+     * later use.  Use CurrentState::clone() if you need to save the state.
+     *
      * \ingroup Core
      */
     class CurrentState
     {
     private:
+        std::unique_ptr<std::optional<innards::State>> _state_copy;
         innards::State & _full_state;
+
+        explicit CurrentState(std::optional<innards::State> &&);
 
     public:
         /**
@@ -50,10 +58,15 @@ namespace gcs
          * @{
          */
         explicit CurrentState(innards::State & state);
-        ~CurrentState() = default;
+        ~CurrentState();
+
+        CurrentState(CurrentState &&);
 
         CurrentState(const CurrentState &) = delete;
-        CurrentState & operator=(const CurrentState &) = delete;
+        auto operator=(const CurrentState &) -> CurrentState & = delete;
+        auto operator=(CurrentState &&) -> CurrentState & = delete;
+
+        [[ nodiscard ]] auto clone() const -> CurrentState;
 
         ///@}
 
