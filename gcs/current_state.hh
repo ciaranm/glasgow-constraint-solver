@@ -66,7 +66,7 @@ namespace gcs
         auto operator=(const CurrentState &) -> CurrentState & = delete;
         auto operator=(CurrentState &&) -> CurrentState & = delete;
 
-        [[ nodiscard ]] auto clone() const -> CurrentState;
+        [[nodiscard]] auto clone() const -> CurrentState;
 
         ///@}
 

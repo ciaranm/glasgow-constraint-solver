@@ -29,7 +29,7 @@ auto main(int argc, char * argv[]) -> int
         ("prove", "Create a proof");
 
     po::options_description all_options{"All options"};
-    all_options.add_options()                                                         //
+    all_options.add_options()                                                        //
         ("size", po::value<int>()->default_value(7), "Size of the problem to solve") //
         ("all", "Find all solutions");
 

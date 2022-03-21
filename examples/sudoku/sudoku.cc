@@ -32,8 +32,8 @@ auto main(int argc, char * argv[]) -> int
         ("prove", "Create a proof");
 
     po::options_description all_options{"All options"};
-    all_options.add_options() //
-        ("xv",  "Solve the xv puzzle instead") //
+    all_options.add_options()                 //
+        ("xv", "Solve the xv puzzle instead") //
         ("all", "Find all solutions");
 
     all_options.add(display_options);
@@ -73,8 +73,8 @@ auto main(int argc, char * argv[]) -> int
         O  // must not sum to 5 or 10
     };
 
-    vector<vector<int> > predef;
-    vector<vector<NXV> > horizontal_xvs, vertical_xvs;
+    vector<vector<int>> predef;
+    vector<vector<NXV>> horizontal_xvs, vertical_xvs;
 
     if (options_vars.contains("xv")) {
         // https://www.youtube.com/watch?v=9ATC_uBF8ow
@@ -87,8 +87,7 @@ auto main(int argc, char * argv[]) -> int
             {0, 5, 0, 3, 0, 8, 0, 2, 0},
             {2, 0, 5, 0, 3, 0, 6, 0, 9},
             {0, 9, 0, 4, 0, 6, 0, 1, 0},
-            {0, 0, 0, 0, 0, 0, 0, 0, 0}
-        };
+            {0, 0, 0, 0, 0, 0, 0, 0, 0}};
 
         horizontal_xvs = {
             {O, O, O, O, O, O, O, O},
@@ -99,8 +98,7 @@ auto main(int argc, char * argv[]) -> int
             {O, O, O, O, O, O, O, O},
             {O, O, O, O, O, O, O, O},
             {O, O, O, O, O, O, O, O},
-            {O, O, O, O, O, O, O, O}
-        };
+            {O, O, O, O, O, O, O, O}};
 
         vertical_xvs = {
             {O, O, O, O, O, O, O, O},
@@ -111,8 +109,7 @@ auto main(int argc, char * argv[]) -> int
             {O, X, O, O, O, O, O, O},
             {X, O, X, O, O, O, O, O},
             {O, X, O, O, O, O, O, O},
-            {O, O, O, O, O, O, O, O}
-        };
+            {O, O, O, O, O, O, O, O}};
     }
     else {
         // https://abcnews.go.com/blogs/headlines/2012/06/can-you-solve-the-hardest-ever-sudoku
@@ -125,8 +122,7 @@ auto main(int argc, char * argv[]) -> int
             {0, 0, 0, 1, 0, 0, 0, 3, 0},
             {0, 0, 1, 0, 0, 0, 0, 6, 8},
             {0, 0, 8, 5, 0, 0, 0, 1, 0},
-            {0, 9, 0, 0, 0, 0, 4, 0, 0}
-        };
+            {0, 9, 0, 0, 0, 0, 4, 0, 0}};
     }
 
     vector<vector<IntegerVariableID>> grid;
@@ -145,8 +141,7 @@ auto main(int argc, char * argv[]) -> int
     }
 
     for (int r = 0; r < size; ++r)
-        for (int c = 0; c < size; ++c)
-        {
+        for (int c = 0; c < size; ++c) {
             vector<IntegerVariableID> box;
             for (int rr = 0; rr < size; ++rr)
                 for (int cc = 0; cc < size; ++cc)
@@ -160,8 +155,8 @@ auto main(int argc, char * argv[]) -> int
                 p.post(Equals{grid[r][c], constant_variable(Integer{predef[r][c]})});
 
     if (! vertical_xvs.empty()) {
-        for (int c = 0 ; c < n ; ++c)
-            for (int r = 0 ; r < n - 1 ; ++r)
+        for (int c = 0; c < n; ++c)
+            for (int r = 0; r < n - 1; ++r)
                 switch (vertical_xvs[c][r]) {
                 case N:
                     break;
@@ -179,8 +174,8 @@ auto main(int argc, char * argv[]) -> int
                     break;
                 }
 
-        for (int r = 0 ; r < n ; ++r)
-            for (int c = 0 ; c < n - 1 ; ++c)
+        for (int r = 0; r < n; ++r)
+            for (int c = 0; c < n - 1; ++c)
                 switch (horizontal_xvs[r][c]) {
                 case N:
                     break;
@@ -199,43 +194,42 @@ auto main(int argc, char * argv[]) -> int
                 }
     }
 
-    auto stats = solve_with(p, SolveCallbacks{
-        .solution = [&](const CurrentState & s) -> bool {
-            for (const auto & row : grid) {
-                bool first = true;
-                for (const auto & box : row) {
-                    if (! first)
-                        cout << " ";
-                    cout << s(box);
-                    first = false;
-                }
-                cout << endl;
-            }
-            cout << endl;
-            return options_vars.contains("all");
-        },
-        .trace = [&](const CurrentState & s) -> bool {
-            for (const auto & row : grid) {
-                bool first = true;
-                for (const auto & box : row) {
-                    if (! first)
-                        cout << " ";
-                    if (s.has_single_value(box))
+    auto stats = solve_with(p,
+        SolveCallbacks{
+            .solution = [&](const CurrentState & s) -> bool {
+                for (const auto & row : grid) {
+                    bool first = true;
+                    for (const auto & box : row) {
+                        if (! first)
+                            cout << " ";
                         cout << s(box);
-                    else
-                        cout << ".";
-
-                    first = false;
+                        first = false;
+                    }
+                    cout << endl;
                 }
                 cout << endl;
-            }
-            cout << endl;
-            return true;
-        }
-    });
+                return options_vars.contains("all");
+            },
+            .trace = [&](const CurrentState & s) -> bool {
+                for (const auto & row : grid) {
+                    bool first = true;
+                    for (const auto & box : row) {
+                        if (! first)
+                            cout << " ";
+                        if (s.has_single_value(box))
+                            cout << s(box);
+                        else
+                            cout << ".";
+
+                        first = false;
+                    }
+                    cout << endl;
+                }
+                cout << endl;
+                return true;
+            }});
 
     cout << stats;
 
     return EXIT_SUCCESS;
 }
-

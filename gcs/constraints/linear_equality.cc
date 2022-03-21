@@ -120,8 +120,7 @@ auto LinearEquality::install(Propagators & propagators, const State & initial_st
 
             optional<ExtensionalData> data;
             propagators.install(
-                initial_state, [data = move(data), coeff_vars = sanitised_cv, value = _value + modifier](
-                    State & state) mutable -> pair<Inference, PropagatorState> {
+                initial_state, [data = move(data), coeff_vars = sanitised_cv, value = _value + modifier](State & state) mutable -> pair<Inference, PropagatorState> {
                     if (! data) {
                         vector<vector<Integer>> permitted;
                         vector<Integer> current;

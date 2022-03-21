@@ -667,8 +667,7 @@ auto main(int argc, char * argv[]) -> int
                 }
                 else
                     return false;
-            }
-            });
+            }});
 
     if (! saved_solution) {
         cout << "s UNSATISFIABLE" << endl;

@@ -96,7 +96,7 @@ auto gcs::innards::sanitise_pseudoboolean_terms(WeightedPseudoBooleanTerms & lit
 
     // adjust coefficients down for true and false literals
     for (const auto & l : lits) {
-        auto t_or_f = visit([&] (const auto & t) { return is_literally_true_or_false(t); }, l.second);
+        auto t_or_f = visit([&](const auto & t) { return is_literally_true_or_false(t); }, l.second);
         if (t_or_f && *t_or_f)
             val -= l.first;
         else if (t_or_f && ! *t_or_f)
@@ -105,8 +105,9 @@ auto gcs::innards::sanitise_pseudoboolean_terms(WeightedPseudoBooleanTerms & lit
 
     // now actually remove true and false literals
     lits.erase(remove_if(lits.begin(), lits.end(), [&](const auto & wlit) -> bool {
-        return nullopt != visit([&] (const auto & t) { return is_literally_true_or_false(t); }, wlit.second);
-    }), lits.end());
+        return nullopt != visit([&](const auto & t) { return is_literally_true_or_false(t); }, wlit.second);
+    }),
+        lits.end());
 
     return true;
 }
@@ -467,35 +468,35 @@ auto Proof::pseudoboolean_ge(const WeightedPseudoBooleanTerms & lits, Integer va
 {
     for (const auto & [_, lit] : lits)
         overloaded{
-            [&] (const Literal & lit) { need_proof_variable(lit); },
-            [&] (const IntegerVariableID &) { },
-            [&] (const ProofFlag &) { }
-        }.visit(lit);
+            [&](const Literal & lit) { need_proof_variable(lit); },
+            [&](const IntegerVariableID &) {},
+            [&](const ProofFlag &) {}}
+            .visit(lit);
 
     for (const auto & [w, lit] : lits) {
         overloaded{
-            [&, w = w] (const Literal & lit) {
+            [&, w = w](const Literal & lit) {
                 _imp->opb << w << " " << proof_variable(lit) << " ";
             },
-            [&, w = w] (const ProofFlag & flag) {
+            [&, w = w](const ProofFlag & flag) {
                 _imp->opb << w << " " << proof_variable(flag) << " ";
             },
-            [&, w = w] (const IntegerVariableID & var) {
+            [&, w = w](const IntegerVariableID & var) {
                 overloaded{
-                    [&] (const SimpleIntegerVariableID & ivar) {
+                    [&](const SimpleIntegerVariableID & ivar) {
                         auto & [_, bit_vars] = _imp->integer_variable_bits.find(ivar)->second;
                         for (auto & [bit_value, bit_name] : bit_vars)
                             _imp->opb << w * bit_value << " " << bit_name << " ";
                     },
-                    [&] (const ConstantIntegerVariableID &) {
+                    [&](const ConstantIntegerVariableID &) {
                         throw UnimplementedException{};
                     },
-                    [&] (const ViewOfIntegerVariableID &) {
+                    [&](const ViewOfIntegerVariableID &) {
                         throw UnimplementedException{};
-                    }
-                }.visit(var);
-            }
-        }.visit(lit);
+                    }}
+                    .visit(var);
+            }}
+            .visit(lit);
     }
     _imp->opb << ">= " << val << " ;\n";
     return ++_imp->model_constraints;
@@ -507,9 +508,9 @@ auto Proof::integer_linear_le(const State &, const SimpleLinear & lin, Integer v
     if (half_reif)
         overloaded{
             [&](const Literal & lit) { need_proof_variable(lit); },
-            [&](const IntegerVariableID &) { },
-            [&](const ProofFlag &) { }
-        }.visit(*half_reif);
+            [&](const IntegerVariableID &) {},
+            [&](const ProofFlag &) {}}
+            .visit(*half_reif);
 
     _imp->opb << (equality ? "* linear eq" : "* linear le");
 
