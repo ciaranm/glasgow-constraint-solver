@@ -178,7 +178,7 @@ auto main(int, char *[]) -> int
             move(constraints));
     }
 
-    for (int eq = 0 ; eq <= 1 ; ++eq) {
+    for (int mode = 0; mode <= 2; ++mode) {
         for (auto & [v0_range, v1_range, v2_range, constraints] : data) {
             set<tuple<int, int, int>> expected, actual;
 
@@ -187,13 +187,19 @@ auto main(int, char *[]) -> int
                     for (int v2 = v2_range.first; v2 <= v2_range.second; ++v2) {
                         bool ok = true;
                         for (auto & [linear, value] : constraints) {
-                            if (eq) {
+                            if (0 == mode) {
                                 if (linear[0] * v0 + linear[1] * v1 + linear[2] * v2 != value) {
                                     ok = false;
                                     break;
                                 }
                             }
-                            else {
+                            else if (1 == mode) {
+                                if (linear[0] * v0 + linear[1] * v1 + linear[2] * v2 < value) {
+                                    ok = false;
+                                    break;
+                                }
+                            }
+                            else if (2 == mode) {
                                 if (linear[0] * v0 + linear[1] * v1 + linear[2] * v2 > value) {
                                     ok = false;
                                     break;
@@ -217,9 +223,11 @@ auto main(int, char *[]) -> int
                     if (coeff != 0)
                         c.emplace_back(Integer{coeff}, vs[idx]);
                 });
-                if (eq)
+                if (0 == mode)
                     p.post(LinearEquality{move(c), Integer{value}});
-                else
+                else if (1 == mode)
+                    p.post(LinearGreaterThanEqual{move(c), Integer{value}});
+                else if (2 == mode)
                     p.post(LinearLessEqual{move(c), Integer{value}});
             }
 
@@ -228,7 +236,10 @@ auto main(int, char *[]) -> int
                 return true;
             });
 
-            if (! check_results(v0_range, v1_range, v2_range, constraints, eq ? "linear eq" : "linear ineq", expected, actual))
+            if (! check_results(v0_range, v1_range, v2_range, constraints,
+                    mode == 0 ? "linear eq" : mode == 1 ? "linear ge"
+                                                        : "linear le",
+                    expected, actual))
                 return EXIT_FAILURE;
         }
     }

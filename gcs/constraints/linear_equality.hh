@@ -19,6 +19,8 @@ namespace gcs
      * expensive for large variables.
      *
      * \ingroup Constraints
+     * \sa LinearLessEqual
+     * \sa LinearGreaterThanEqual
      */
     class LinearEquality : public Constraint
     {
@@ -34,23 +36,60 @@ namespace gcs
         virtual auto install(innards::Propagators &, const innards::State &) && -> void override;
     };
 
-    /**
-     * \brief Constrain that the sum of the variables multiplied by their associated
-     * coefficients is less than or equal to the specified value.
-     *
-     * \ingroup Constraints
-     */
-    class LinearLessEqual : public Constraint
+    namespace innards
     {
-    private:
-        Linear _coeff_vars;
-        Integer _value;
+        /**
+         * \brief Constrain that the sum of the variables multiplied by their
+         * associated coefficients is either less than or equal to, or greater than
+         * or equal to, the specified value.
+         *
+         * \ingroup innards
+         * \sa LinearLessEqual
+         * \sa LinearGreaterThanEqual
+         */
+        class LinearInequality : public Constraint
+        {
+        private:
+            Linear _coeff_vars;
+            Integer _value;
 
+        public:
+            explicit LinearInequality(Linear && coeff_vars, Integer value);
+
+            virtual auto install(innards::Propagators &, const innards::State &) && -> void override;
+        };
+    }
+
+    /**
+     * \brief Constrain that the sum of the variables multiplied by their
+     * associated coefficients is less than or equal to the specified value.
+     *
+     * \ingroup innards
+     * \sa LinearEquality
+     * \sa LinearGreaterThanEqual
+     */
+    class LinearLessEqual : public innards::LinearInequality
+    {
     public:
         explicit LinearLessEqual(Linear && coeff_vars, Integer value);
 
         virtual auto describe_for_proof() -> std::string override;
-        virtual auto install(innards::Propagators &, const innards::State &) && -> void override;
+    };
+
+    /**
+     * \brief Constrain that the sum of the variables multiplied by their
+     * associated coefficients is greater than or equal to the specified value.
+     *
+     * \ingroup innards
+     * \sa LinearEquality
+     * \sa LinearLessEqual
+     */
+    class LinearGreaterThanEqual : public innards::LinearInequality
+    {
+    public:
+        explicit LinearGreaterThanEqual(Linear && coeff_vars, Integer value);
+
+        virtual auto describe_for_proof() -> std::string override;
     };
 }
 

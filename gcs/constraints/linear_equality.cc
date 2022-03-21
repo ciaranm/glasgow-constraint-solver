@@ -233,13 +233,13 @@ auto LinearEquality::describe_for_proof() -> std::string
     return "linear equality";
 }
 
-LinearLessEqual::LinearLessEqual(Linear && coeff_vars, Integer value) :
+LinearInequality::LinearInequality(Linear && coeff_vars, Integer value) :
     _coeff_vars(move(coeff_vars)),
     _value(value)
 {
 }
 
-auto LinearLessEqual::install(Propagators & propagators, const State & initial_state) && -> void
+auto LinearInequality::install(Propagators & propagators, const State & initial_state) && -> void
 {
     optional<ProofLine> proof_line;
     if (propagators.want_definitions())
@@ -276,7 +276,32 @@ auto LinearLessEqual::install(Propagators & propagators, const State & initial_s
         .visit(sanitised_cv);
 }
 
+LinearLessEqual::LinearLessEqual(Linear && coeff_vars, Integer value) :
+    LinearInequality(move(coeff_vars), value)
+{
+}
+
 auto LinearLessEqual::describe_for_proof() -> std::string
 {
-    return "linear less or equal";
+    return "linear less equal";
+}
+
+namespace
+{
+    auto negate(Linear && coeff_vars) -> Linear &
+    {
+        for (auto & [c, _] : coeff_vars)
+            c = -c;
+        return coeff_vars;
+    }
+}
+
+LinearGreaterThanEqual::LinearGreaterThanEqual(Linear && coeff_vars, Integer value) :
+    LinearInequality(move(negate(move(coeff_vars))), -value)
+{
+}
+
+auto LinearGreaterThanEqual::describe_for_proof() -> std::string
+{
+    return "linear greater equal";
 }
