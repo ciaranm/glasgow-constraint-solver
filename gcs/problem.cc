@@ -1,6 +1,6 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
-#include <gcs/constraints/comparison.hh>
+#include <gcs/constraints/in.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/proof.hh>
 #include <gcs/innards/propagators.hh>
@@ -61,6 +61,23 @@ auto Problem::create_integer_variable(Integer lower, Integer upper, const option
     _imp->problem_variables.push_back(result);
     if (_imp->optional_proof)
         _imp->optional_proof->create_integer_variable(result, lower, upper, name);
+    return result;
+}
+
+auto Problem::create_integer_variable(const vector<Integer> & domain, const optional<std::string> & name) -> SimpleIntegerVariableID
+{
+    if (domain.empty())
+        throw UnexpectedException{"variable has empty domain"};
+
+    auto [min, max] = minmax_element(domain.begin(), domain.end());
+
+    auto result = _imp->initial_state.create_integer_variable(*min, *max);
+    _imp->problem_variables.push_back(result);
+    if (_imp->optional_proof)
+        _imp->optional_proof->create_integer_variable(result, *min, *max, name);
+
+    post(In{result, domain});
+
     return result;
 }
 

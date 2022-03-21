@@ -2,7 +2,7 @@
 
 #include <gcs/constraints/linear_equality.hh>
 #include <gcs/exception.hh>
-#include <gcs/innards/extensional.hh>
+#include <gcs/innards/extensional_utils.hh>
 #include <gcs/innards/linear_utils.hh>
 #include <gcs/innards/proof.hh>
 #include <gcs/innards/propagators.hh>

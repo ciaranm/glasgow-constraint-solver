@@ -6,6 +6,7 @@
 #include <gcs/constraint.hh>
 #include <gcs/current_state.hh>
 #include <gcs/exception.hh>
+#include <gcs/extensional.hh>
 #include <gcs/integer.hh>
 #include <gcs/linear.hh>
 #include <gcs/literal.hh>

@@ -1,8 +1,9 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
-#ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_EXTENSIONAL_HH
-#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_EXTENSIONAL_HH
+#ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_EXTENSIONAL_UTILS_HH
+#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_EXTENSIONAL_UTILS_HH
 
+#include <gcs/extensional.hh>
 #include <gcs/innards/propagators-fwd.hh>
 #include <gcs/innards/state-fwd.hh>
 #include <gcs/integer.hh>
@@ -22,7 +23,7 @@ namespace gcs::innards
     {
         IntegerVariableID selector;
         std::vector<IntegerVariableID> vars;
-        std::vector<std::vector<Integer>> tuples;
+        ExtensionalTuples tuples;
     };
 
     /**

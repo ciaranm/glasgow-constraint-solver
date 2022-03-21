@@ -2,7 +2,7 @@
 
 #include <gcs/exception.hh>
 
-#include <gcs/innards/extensional.hh>
+#include <gcs/innards/extensional_utils.hh>
 #include <gcs/innards/linear_utils.hh>
 #include <gcs/innards/proof.hh>
 #include <gcs/innards/propagators.hh>
@@ -27,7 +27,7 @@ using std::optional;
 using std::pair;
 using std::string;
 using std::vector;
-using std::chrono::microseconds;
+using std::visit;
 
 namespace
 {
@@ -46,7 +46,6 @@ struct Propagators::Imp
     list<Literal> unary_cnfs;
     deque<PropagationFunction> propagation_functions;
     vector<uint8_t> propagator_is_disabled;
-    microseconds total_propagation_time{0};
     unsigned long long total_propagations = 0, effectful_propagations = 0, contradicting_propagations = 0;
     deque<TriggerIDs> iv_triggers;
     bool first = true;
@@ -172,47 +171,83 @@ auto Propagators::install(const State &, PropagationFunction && f, const Trigger
         trigger_on_instantiated(v, id);
 }
 
-auto Propagators::define_and_install_table(const State & state, vector<IntegerVariableID> && vars,
-    vector<vector<Integer>> && permitted, const string & x) -> void
+namespace
 {
-    if (permitted.empty()) {
-        model_contradiction(state, "Empty table constraint from " + x);
-        return;
+    auto is_immediately_infeasible(const IntegerVariableID & var, const Integer & val) -> bool
+    {
+        return is_literally_false(var == val);
     }
 
-    int id = _imp->propagation_functions.size();
-    auto selector = create_auxilliary_integer_variable(0_i, Integer(permitted.size() - 1), "table");
+    auto is_immediately_infeasible(const IntegerVariableID &, const Wildcard &) -> bool
+    {
+        return false;
+    }
 
-    // pb encoding, if necessary
-    if (want_definitions()) {
-        for_each_with_index(permitted, [&](const auto & tuple, auto tuple_idx) {
-            // selector == tuple_idx -> /\_i vars[i] == tuple[i]
-            bool infeasible = false;
-            WeightedPseudoBooleanTerms lits;
-            lits.emplace_back(Integer(tuple.size()), selector != Integer(tuple_idx));
-            for_each_with_index(vars, [&](IntegerVariableID var, auto var_idx) {
-                if (is_literally_false(var == tuple[var_idx]))
-                    infeasible = true;
-                else if (! is_literally_true(var == tuple[var_idx]))
-                    lits.emplace_back(1_i, var == tuple[var_idx]);
+    auto is_immediately_infeasible(const IntegerVariableID & var, const IntegerOrWildcard & val) -> bool
+    {
+        return visit([&](const auto & val) { return is_immediately_infeasible(var, val); }, val);
+    }
+
+    auto add_lit_unless_immediately_true(WeightedPseudoBooleanTerms & lits, const IntegerVariableID & var, const Integer & val) -> void
+    {
+        if (! is_literally_true(var == val))
+            lits.emplace_back(1_i, var == val);
+    }
+
+    auto add_lit_unless_immediately_true(WeightedPseudoBooleanTerms &, const IntegerVariableID &, const Wildcard &) -> void
+    {
+    }
+
+    auto add_lit_unless_immediately_true(WeightedPseudoBooleanTerms & lits, const IntegerVariableID & var, const IntegerOrWildcard & val) -> void
+    {
+        return visit([&](const auto & val) { add_lit_unless_immediately_true(lits, var, val); }, val);
+    }
+}
+
+auto Propagators::define_and_install_table(const State & state, vector<IntegerVariableID> && vars,
+    ExtensionalTuples && permitted, const string & x) -> void
+{
+    visit([&](auto && permitted) {
+        if (permitted.empty()) {
+            model_contradiction(state, "Empty table constraint from " + x);
+            return;
+        }
+
+        int id = _imp->propagation_functions.size();
+        auto selector = create_auxilliary_integer_variable(0_i, Integer(permitted.size() - 1), "table");
+
+        // pb encoding, if necessary
+        if (want_definitions()) {
+            for_each_with_index(permitted, [&](const auto & tuple, auto tuple_idx) {
+                // selector == tuple_idx -> /\_i vars[i] == tuple[i]
+                bool infeasible = false;
+                WeightedPseudoBooleanTerms lits;
+                lits.emplace_back(Integer(tuple.size()), selector != Integer(tuple_idx));
+                for_each_with_index(vars, [&](IntegerVariableID var, auto var_idx) {
+                    if (is_immediately_infeasible(var, tuple[var_idx]))
+                        infeasible = true;
+                    else
+                        add_lit_unless_immediately_true(lits, var, tuple[var_idx]);
+                });
+                if (infeasible)
+                    define_cnf(state, {selector != Integer(tuple_idx)});
+                else
+                    define_pseudoboolean_ge(state, move(lits), Integer(lits.size() - 1));
             });
-            if (infeasible)
-                define_cnf(state, {selector != Integer(tuple_idx)});
-            else
-                define_pseudoboolean_ge(state, move(lits), Integer(lits.size() - 1));
+        }
+
+        // set up triggers before we move vars away
+        for (auto & v : vars)
+            trigger_on_change(v, id);
+        trigger_on_change(selector, id);
+
+        _imp->propagation_functions.emplace_back([&, table = ExtensionalData{selector, move(vars), move(permitted)}](
+                                                     State & state) -> pair<Inference, PropagatorState> {
+            return propagate_extensional(table, state);
         });
-    }
-
-    // set up triggers before we move vars away
-    for (auto & v : vars)
-        trigger_on_change(v, id);
-    trigger_on_change(selector, id);
-
-    _imp->propagation_functions.emplace_back([&, table = ExtensionalData{selector, move(vars), move(permitted)}](
-                                                 State & state) -> pair<Inference, PropagatorState> {
-        return propagate_extensional(table, state);
-    });
-    _imp->propagator_is_disabled.push_back(0);
+        _imp->propagator_is_disabled.push_back(0);
+    },
+        move(permitted));
 }
 
 auto Propagators::propagate(State & state, const optional<IntegerVariableID> & objective_variable,

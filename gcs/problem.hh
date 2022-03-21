@@ -75,6 +75,15 @@ namespace gcs
             const std::optional<std::string> & name = std::nullopt) -> SimpleIntegerVariableID;
 
         /**
+         * \brief Create a new integer variable, whose domain is selected from
+         * among the chosen values. The final argument gives an optional name that
+         * will appear in some output; it does not have to be unique.
+         */
+        [[nodiscard]] auto create_integer_variable(
+            const std::vector<Integer> & domain,
+            const std::optional<std::string> & name = std::nullopt) -> SimpleIntegerVariableID;
+
+        /**
          * \brief Create a vector of how_many integer variables, each of
          * whose domain goes from lower to upper (inclusive). The final argument
          * gives an optional name that will appear in some output; it does not

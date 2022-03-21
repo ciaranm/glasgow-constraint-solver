@@ -3,6 +3,7 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROPAGATORS_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROPAGATORS_HH
 
+#include <gcs/extensional.hh>
 #include <gcs/innards/linear_utils.hh>
 #include <gcs/innards/literal_utils.hh>
 #include <gcs/innards/proof.hh>
@@ -152,7 +153,7 @@ namespace gcs::innards
          * \sa gcs::innards::propagate_extensional()
          */
         auto define_and_install_table(const State &, std::vector<IntegerVariableID> &&,
-            std::vector<std::vector<Integer>> &&, const std::string & name) -> void;
+            ExtensionalTuples &&, const std::string & name) -> void;
 
         ///@}
 

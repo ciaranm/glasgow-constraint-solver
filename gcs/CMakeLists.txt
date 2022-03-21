@@ -20,6 +20,7 @@ add_library(glasgow_constraint_solver
     constraints/element_test.cc
     constraints/equals.cc
     constraints/equals_test.cc
+    constraints/in.cc
     constraints/linear_equality.cc
     constraints/linear_equality_test.cc
     constraints/logical.cc
@@ -29,7 +30,7 @@ add_library(glasgow_constraint_solver
     constraints/n_value.cc
     constraints/n_value_test.cc
     constraints/table.cc
-    innards/extensional.cc
+    innards/extensional_utils.cc
     innards/integer_variable_state.cc
     innards/linear_utils.cc
     innards/literal_utils.cc
