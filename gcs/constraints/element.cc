@@ -9,7 +9,7 @@
 #include <gcs/innards/state.hh>
 #include <gcs/integer.hh>
 
-#include <util/for_each.hh>
+#include <util/enumerate.hh>
 
 #include <algorithm>
 #include <optional>
@@ -48,13 +48,12 @@ auto Element::install(Propagators & propagators, const State & initial_state) &&
     propagators.trim_upper_bound(initial_state, _idx, Integer(_vals.size()) - 1_i, "Element");
 
     if (propagators.want_definitions()) {
-        for_each_with_index(_vals, [&](auto & val, auto val_idx) {
+        for (const auto & [val_idx, val] : enumerate(_vals))
             if (initial_state.in_domain(_idx, Integer(val_idx))) {
                 // idx == val_idx -> var == vals[val_idx]
                 auto cv = Linear{{1_i, _var}, {-1_i, val}};
                 propagators.define_linear_eq(initial_state, cv, 0_i, _idx == Integer(val_idx));
             }
-        });
     }
 
     Triggers triggers{.on_change = {_idx, _var}};
@@ -157,13 +156,11 @@ auto Element2DConstantArray::install(Propagators & propagators, const State & in
     propagators.trim_upper_bound(initial_state, _idx2, Integer(_vals.begin()->size()) - 1_i, "Element2DConstantArray");
 
     if (propagators.want_definitions()) {
-        for_each_with_index(_vals, [&](auto & vv, auto idx1) {
+        for (const auto & [idx1, vv] : enumerate(_vals))
             if (initial_state.in_domain(_idx1, Integer(idx1)))
-                for_each_with_index(vv, [&](auto & v, auto idx2) {
+                for (const auto & [idx2, v] : enumerate(vv))
                     if (initial_state.in_domain(_idx2, Integer(idx2)))
                         propagators.define_cnf(initial_state, {_idx1 != Integer(idx1), _idx2 != Integer(idx2), _var == v});
-                });
-        });
     }
 
     Triggers index_triggers{

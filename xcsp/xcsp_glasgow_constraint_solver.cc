@@ -2,7 +2,7 @@
 
 #include <gcs/gcs.hh>
 #include <gcs/innards/state.hh>
-#include <util/for_each.hh>
+#include <util/enumerate.hh>
 
 #include <XCSP3CoreParser.h>
 
@@ -445,11 +445,11 @@ struct ParserCallbacks : XCSP3CoreCallbacks
     auto buildConstraintSumCommon(string, vector<XVariable *> & x_vars, const optional<vector<int>> & coeffs, XCondition & cond) -> void
     {
         Linear cvs;
-        for_each_with_index(x_vars, [&](const XVariable * const x, auto idx) {
+        for (const auto & [idx, x] : enumerate(x_vars)) {
             auto m = mapping.find(x->id);
             need_variable(problem, m->second, x->id);
             cvs.emplace_back(coeffs ? Integer{coeffs->at(idx)} : 1_i, *get<0>(m->second));
-        });
+        }
 
         Integer bound = 0_i;
         switch (cond.operandType) {
@@ -594,7 +594,7 @@ struct ParserCallbacks : XCSP3CoreCallbacks
         else if (type == ExpressionObjective::SUM_O) {
             Integer lower = 0_i, upper = 0_i;
             Linear cvs;
-            for_each_with_index(x_vars, [&](const XVariable * const x, auto idx) {
+            for (const auto & [idx, x] : enumerate(x_vars)) {
                 auto m = mapping.find(x->id);
                 need_variable(problem, m->second, x->id);
                 auto [var, l, u, _] = m->second;
@@ -607,7 +607,7 @@ struct ParserCallbacks : XCSP3CoreCallbacks
                     lower += Integer{coeffs.at(idx)} * l;
                     upper += Integer{coeffs.at(idx)} * u;
                 }
-            });
+            }
 
             auto obj = problem.create_integer_variable(lower, upper, "objective");
             objective_variable = obj;

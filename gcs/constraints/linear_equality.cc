@@ -7,7 +7,7 @@
 #include <gcs/innards/proof.hh>
 #include <gcs/innards/propagators.hh>
 
-#include <util/for_each.hh>
+#include <util/enumerate.hh>
 #include <util/overloaded.hh>
 
 #include <functional>
@@ -127,10 +127,10 @@ auto LinearEquality::install(Propagators & propagators, const State & initial_st
                         function<void()> search = [&]() {
                             if (current.size() == coeff_vars.size()) {
                                 Integer actual_value{0_i};
-                                for_each_with_index(coeff_vars, [&](auto & cv, auto idx) {
+                                for (const auto & [idx, cv] : enumerate(coeff_vars)) {
                                     auto coeff = get_coeff(cv);
                                     actual_value += to_coeff(coeff) * current[idx];
-                                });
+                                }
                                 if (actual_value == value)
                                     permitted.push_back(current);
                             }
@@ -159,34 +159,32 @@ auto LinearEquality::install(Propagators & propagators, const State & initial_st
                                 });
                             }
 
-                            for_each_with_index(permitted, [&](const vector<Integer> & vals, auto idx) {
+                            for (const auto & [idx, vals] : enumerate(permitted)) {
                                 stringstream line;
                                 line << "red " << coeff_vars.size() << " ~" << proof.proof_variable(sel == Integer(idx));
-                                for_each_with_index(vals, [&](const Integer & val, auto val_idx) {
+                                for (const auto & [val_idx, val] : enumerate(vals))
                                     line << " 1 " << proof.proof_variable(get_var(coeff_vars[val_idx]) == Integer(val));
-                                });
                                 line << " >= " << coeff_vars.size() << " ; " << proof.proof_variable(sel == Integer(idx)) << " 0";
                                 proof.emit_proof_line(line.str());
 
                                 line = stringstream{};
                                 line << "red 1 " << proof.proof_variable(sel == Integer(idx));
-                                for_each_with_index(vals, [&](const Integer & val, auto val_idx) {
+                                for (const auto & [val_idx, val] : enumerate(vals))
                                     line << " 1 ~" << proof.proof_variable(get_var(coeff_vars[val_idx]) == Integer(val));
-                                });
                                 line << " >= 1 ; " << proof.proof_variable(sel == Integer(idx)) << " 1";
                                 proof.emit_proof_line(line.str());
-                            });
+                            }
 
                             stringstream line1, line2;
                             line1 << "red 1 ~tmptrail ";
                             line2 << "red " << permitted.size() << " tmptrail ";
 
                             stringstream trail;
-                            for_each_with_index(permitted, [&](const vector<Integer> &, auto idx) {
+                            for (const auto & [idx, _] : enumerate(permitted)) {
                                 trail << " 1 " << proof.proof_variable(sel == Integer(idx));
                                 line1 << " 1 " << proof.proof_variable(sel == Integer(idx));
                                 line2 << " 1 " << proof.proof_variable(sel != Integer(idx));
-                            });
+                            }
 
                             line1 << " >= 1 ; tmptrail 0";
                             line2 << " >= " << permitted.size() << " ; tmptrail 1";
@@ -205,9 +203,8 @@ auto LinearEquality::install(Propagators & propagators, const State & initial_st
                                 }
                                 stringstream line;
                                 line << "u 1 tmptrail";
-                                for_each_with_index(current, [&](Integer val, auto val_idx) {
+                                for (const auto & [val_idx, val] : enumerate(current))
                                     line << " 1 ~" << proof.proof_variable(get_var(coeff_vars[val_idx]) == val);
-                                });
                                 line << " >= 1 ;";
                                 to_delete.emplace_back(proof.emit_proof_line(line.str()));
                             };

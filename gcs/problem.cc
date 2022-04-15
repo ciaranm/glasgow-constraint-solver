@@ -7,7 +7,6 @@
 #include <gcs/innards/state.hh>
 #include <gcs/problem.hh>
 
-#include <util/for_each.hh>
 #include <util/overloaded.hh>
 
 using namespace gcs;

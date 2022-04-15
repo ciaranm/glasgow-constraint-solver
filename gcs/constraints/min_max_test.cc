@@ -3,7 +3,7 @@
 #include <gcs/constraints/min_max.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
-#include <util/for_each.hh>
+#include <util/enumerate.hh>
 
 #include <cstdlib>
 #include <functional>
@@ -137,11 +137,10 @@ auto run_min_max_test(pair<int, int> result_range, const vector<pair<int, int>> 
                     bool violated = expected.end() == find_if(expected.begin(), expected.end(), [&](const auto & sol) {
                         if (Integer{get<0>(sol)} != val)
                             return false;
-                        bool ok = false;
-                        for_each_with_index(get<1>(sol), [&](int val, auto idx) {
-                            ok = ok || s.in_domain(array.at(idx), Integer{val});
-                        });
-                        return ok;
+                        for (const auto & [idx, val] : enumerate(get<1>(sol)))
+                            if (s.in_domain(array.at(idx), Integer{val}))
+                                return true;
+                        return false;
                     });
                     if (violated) {
                         cerr << "gac violated for result" << endl;
@@ -149,7 +148,7 @@ auto run_min_max_test(pair<int, int> result_range, const vector<pair<int, int>> 
                     }
                 });
 
-                for_each_with_index(array, [&](auto var, auto idx) {
+                for (const auto & [idx, var] : enumerate(array)) {
                     s.for_each_value(var, [&](Integer val) {
                         bool violated = expected.end() == find_if(expected.begin(), expected.end(), [&](const auto & sol) {
                             bool ok = true;
@@ -158,10 +157,9 @@ auto run_min_max_test(pair<int, int> result_range, const vector<pair<int, int>> 
                             else if (! s.in_domain(result, Integer{get<0>(sol)}))
                                 ok = false;
                             else
-                                for_each_with_index(get<1>(sol), [&](int val, auto idx) {
+                                for (const auto & [idx, val] : enumerate(get<1>(sol)))
                                     if (! s.in_domain(array[idx], Integer{val}))
                                         ok = false;
-                                });
                             return ok;
                         });
                         if (violated) {
@@ -181,17 +179,16 @@ auto run_min_max_test(pair<int, int> result_range, const vector<pair<int, int>> 
                             gac_violated = true;
                         }
                     });
-                });
+                }
 
                 s.for_each_value(result, [&](Integer val) {
                     bool violated = expected.end() == find_if(expected.begin(), expected.end(), [&](const auto & sol) {
                         if (Integer{get<0>(sol)} != val)
                             return false;
-                        bool ok = false;
-                        for_each_with_index(get<1>(sol), [&](int val, auto idx) {
-                            ok = ok || s.in_domain(array.at(idx), Integer{val});
-                        });
-                        return ok;
+                        for (const auto & [idx, val] : enumerate(get<1>(sol)))
+                            if (s.in_domain(array.at(idx), Integer{val}))
+                                return true;
+                        return false;
                     });
                     if (violated) {
                         cerr << "gac violated for result" << endl;

@@ -3,7 +3,7 @@
 #include <gcs/constraints/element.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
-#include <util/for_each.hh>
+#include <util/enumerate.hh>
 
 #include <cstdlib>
 #include <functional>
@@ -134,7 +134,7 @@ auto check_var_gac(IntegerVariableID var, IntegerVariableID idx, const vector<In
 auto check_vals_gac(IntegerVariableID var, IntegerVariableID idx, const vector<IntegerVariableID> & vars, const CurrentState & s) -> bool
 {
     bool ok = true;
-    for_each_with_index(vars, [&](IntegerVariableID avar, auto index) {
+    for (const auto & [index, avar] : enumerate(vars)) {
         if (s.has_single_value(idx) && s(idx) == Integer(index)) {
             s.for_each_value(avar, [&](Integer aval) {
                 if (! s.in_domain(var, aval)) {
@@ -156,7 +156,7 @@ auto check_vals_gac(IntegerVariableID var, IntegerVariableID idx, const vector<I
                 }
             });
         }
-    });
+    }
     return ok;
 }
 

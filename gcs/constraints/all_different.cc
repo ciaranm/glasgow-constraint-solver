@@ -7,7 +7,7 @@
 #include <gcs/innards/state.hh>
 #include <gcs/innards/variable_id_utils.hh>
 
-#include <util/for_each.hh>
+#include <util/enumerate.hh>
 #include <util/overloaded.hh>
 
 #include <algorithm>
@@ -171,10 +171,9 @@ namespace
         const vector<optional<Right>> & matching) -> void
     {
         vector<optional<Left>> inverse_matching(vals.size(), nullopt);
-        for_each_with_index(matching, [&](const optional<Right> & r, auto l) {
+        for (const auto & [l, r] : enumerate(matching))
             if (r)
                 inverse_matching[r->offset] = Left{l};
-        });
 
         vector<uint8_t> hall_variables(vars.size(), 0);
         vector<uint8_t> hall_values(vals.size(), 0);
@@ -361,12 +360,10 @@ namespace
         // find a matching to check feasibility
         vector<pair<Left, Right>> edges;
 
-        for_each_with_index(vars, [&](IntegerVariableID var, auto var_idx) {
-            for_each_with_index(vals, [&](Integer val, auto val_idx) {
+        for (const auto & [var_idx, var] : enumerate(vars))
+            for (const auto & [val_idx, val] : enumerate(vals))
                 if (state.in_domain(var, val))
                     edges.emplace_back(Left{var_idx}, Right{val_idx});
-            });
-        });
 
         vector<uint8_t> left_covered(vars.size(), 0);
         vector<uint8_t> right_covered(vals.size(), 0);
@@ -453,10 +450,9 @@ namespace
         // every edge in the original matching is used, and so cannot be
         // deleted
         vector<vector<uint8_t>> used_edges(vars.size(), vector<uint8_t>(vals.size(), 0));
-        for_each_with_index(matching, [&](const optional<Right> & r, auto l) {
+        for (const auto & [l, r] : enumerate(matching))
             if (r)
                 used_edges[l][r->offset] = 1;
-        });
 
         // for each unmatched vertex, bring in everything that could be updated
         // to take it

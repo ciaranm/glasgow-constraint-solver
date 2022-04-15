@@ -5,7 +5,7 @@
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
 
-#include <util/for_each.hh>
+#include <util/enumerate.hh>
 
 #include <algorithm>
 #include <functional>
@@ -112,9 +112,8 @@ auto NegativeTable::install(Propagators & propagators, const State & initial_sta
         if (propagators.want_definitions()) {
             for (auto & t : tuples) {
                 Literals lits;
-                for_each_with_index(_vars, [&](const IntegerVariableID & v, auto idx) {
+                for (const auto & [idx, v] : enumerate(_vars))
                     add_literal(lits, v, t[idx]);
-                });
                 propagators.define_cnf(initial_state, move(lits));
             }
         }
@@ -132,7 +131,7 @@ auto NegativeTable::install(Propagators & propagators, const State & initial_sta
                 for (auto & t : tuples) {
                     bool falsified = false;
                     optional<Literal> l1, l2;
-                    for_each_with_index(vars, [&](const IntegerVariableID & v, auto idx) {
+                    for (const auto & [idx, v] : enumerate(vars)) {
                         switch (state.test_literal(v == t[idx])) {
                         case LiteralIs::DefinitelyFalse:
                             falsified = true;
@@ -145,7 +144,8 @@ auto NegativeTable::install(Propagators & propagators, const State & initial_sta
                             else if (! l2)
                                 l2 = (v != t[idx]);
                         }
-                    });
+                    }
+
                     if (! falsified) {
                         if (! l1)
                             return pair{Inference::Contradiction, PropagatorState::Enable};

@@ -4,7 +4,6 @@
 #include <gcs/constraints/equals.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
-#include <util/for_each.hh>
 
 #include <cstdlib>
 #include <iostream>

@@ -4,7 +4,7 @@
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
-#include "util/for_each.hh"
+#include <util/enumerate.hh>
 
 #include <cstdlib>
 #include <functional>
@@ -219,10 +219,9 @@ auto main(int, char *[]) -> int
 
             for (auto & [linear, value] : constraints) {
                 Linear c;
-                for_each_with_index(linear, [&](int coeff, auto idx) {
+                for (const auto & [idx, coeff] : enumerate(linear))
                     if (coeff != 0)
                         c.emplace_back(Integer{coeff}, vs[idx]);
-                });
                 if (0 == mode)
                     p.post(LinearEquality{move(c), Integer{value}});
                 else if (1 == mode)

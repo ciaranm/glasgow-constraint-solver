@@ -5,7 +5,7 @@
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
-#include <util/for_each.hh>
+#include <util/enumerate.hh>
 
 #include <boost/program_options.hpp>
 
@@ -98,9 +98,8 @@ auto main(int argc, char * argv[]) -> int
     // benchmarks.
     if (options_vars.contains("extra-constraints")) {
         Linear sum_mul_s;
-        for_each_with_index(series, [&](IntegerVariableID s, auto idx) {
+        for (const auto & [idx, s] : enumerate(series))
             sum_mul_s.emplace_back(Integer(idx), s);
-        });
         p.post(LinearEquality{move(sum_mul_s), Integer{size}});
     }
 

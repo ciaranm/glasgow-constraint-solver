@@ -5,8 +5,6 @@
 #include <gcs/exception.hh>
 #include <gcs/innards/propagators.hh>
 
-#include <util/for_each.hh>
-
 using namespace gcs;
 using namespace gcs::innards;
 

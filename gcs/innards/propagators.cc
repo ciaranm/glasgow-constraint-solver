@@ -7,7 +7,7 @@
 #include <gcs/innards/proof.hh>
 #include <gcs/innards/propagators.hh>
 
-#include <util/for_each.hh>
+#include <util/enumerate.hh>
 #include <util/overloaded.hh>
 
 #include <algorithm>
@@ -219,22 +219,22 @@ auto Propagators::define_and_install_table(const State & state, vector<IntegerVa
 
         // pb encoding, if necessary
         if (want_definitions()) {
-            for_each_with_index(permitted, [&](const auto & tuple, auto tuple_idx) {
+            for (const auto & [tuple_idx, tuple] : enumerate(permitted)) {
                 // selector == tuple_idx -> /\_i vars[i] == tuple[i]
                 bool infeasible = false;
                 WeightedPseudoBooleanTerms lits;
                 lits.emplace_back(Integer(tuple.size()), selector != Integer(tuple_idx));
-                for_each_with_index(vars, [&](IntegerVariableID var, auto var_idx) {
+                for (const auto & [var_idx, var] : enumerate(vars)) {
                     if (is_immediately_infeasible(var, tuple[var_idx]))
                         infeasible = true;
                     else
                         add_lit_unless_immediately_true(lits, var, tuple[var_idx]);
-                });
+                }
                 if (infeasible)
                     define_cnf(state, {selector != Integer(tuple_idx)});
                 else
                     define_pseudoboolean_ge(state, move(lits), Integer(lits.size() - 1));
-            });
+            }
         }
 
         // set up triggers before we move vars away
