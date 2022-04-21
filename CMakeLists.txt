@@ -5,6 +5,8 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 add_compile_options(-W)
 add_compile_options(-Wall)
+add_compile_options(-O3)
+add_compile_options(-march=native)
 add_compile_options(-g)
 add_compile_options(-g3)
 
