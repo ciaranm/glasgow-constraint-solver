@@ -3,6 +3,7 @@
 #include <gcs/constraints/equals.hh>
 #include <gcs/constraints/min_max.hh>
 #include <gcs/problem.hh>
+#include <gcs/search_heuristics.hh>
 #include <gcs/solve.hh>
 
 #include <cstdlib>
@@ -117,17 +118,19 @@ auto main(int argc, char * argv[]) -> int
     IntegerVariableID colours = p.create_integer_variable(0_i, Integer{size - 1}, "colours");
     p.post(ArrayMax{vertices, colours});
 
-    p.branch_on(vertices);
     p.minimise(colours);
 
-    auto stats = solve(p, [&](const CurrentState & s) -> bool {
-        cout << s(colours) + 1_i << " colours:";
-        for (auto & v : vertices)
-            cout << " " << s(v);
-        cout << endl;
+    auto stats = solve_with(p,
+        SolveCallbacks{
+            .solution = [&](const CurrentState & s) -> bool {
+                cout << s(colours) + 1_i << " colours:";
+                for (auto & v : vertices)
+                    cout << " " << s(v);
+                cout << endl;
 
-        return true;
-    });
+                return true;
+            },
+            .branch = branch_on_dom_then_deg(p, vertices)});
 
     cout << stats;
 

@@ -52,6 +52,11 @@ auto CurrentState::has_single_value(const IntegerVariableID v) const -> bool
     return _full_state.has_single_value(v);
 }
 
+auto CurrentState::domain_size(const IntegerVariableID v) const -> Integer
+{
+    return _full_state.domain_size(v);
+}
+
 auto CurrentState::lower_bound(const IntegerVariableID v) const -> Integer
 {
     return _full_state.lower_bound(v);

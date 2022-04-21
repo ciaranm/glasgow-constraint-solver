@@ -6,6 +6,7 @@
 #include <gcs/constraints/equals.hh>
 #include <gcs/constraints/linear_equality.hh>
 #include <gcs/problem.hh>
+#include <gcs/search_heuristics.hh>
 #include <gcs/solve.hh>
 
 #include <chrono>
@@ -184,8 +185,6 @@ auto main(int argc, char * argv[]) -> int
         }
     }
 
-    p.branch_on(branch_vars);
-
     for (int r = 0; r < size; ++r)
         p.post(AllDifferent{grid[r]});
 
@@ -243,28 +242,31 @@ auto main(int argc, char * argv[]) -> int
     build_visible_constraints(visible_west, west, false, true);
     build_visible_constraints(visible_east, east, false, false);
 
-    auto stats = solve(p, [&](const CurrentState & s) -> bool {
-        cout << "   ";
-        for (int c = 0; c < size; ++c)
-            cout << " " << (north[c] != 0 ? to_string(north[c]) : " ");
-        cout << endl;
+    auto stats = solve_with(p,
+        SolveCallbacks{
+            .solution = [&](const CurrentState & s) -> bool {
+                cout << "   ";
+                for (int c = 0; c < size; ++c)
+                    cout << " " << (north[c] != 0 ? to_string(north[c]) : " ");
+                cout << endl;
 
-        for (int r = 0; r < size; ++r) {
-            cout << (west[r] != 0 ? to_string(west[r]) : " ") << "  ";
-            for (int c = 0; c < size; ++c)
-                cout << " " << s(grid[r][c]);
-            cout << "  " << (east[r] != 0 ? to_string(east[r]) : "");
-            cout << endl;
-        }
+                for (int r = 0; r < size; ++r) {
+                    cout << (west[r] != 0 ? to_string(west[r]) : " ") << "  ";
+                    for (int c = 0; c < size; ++c)
+                        cout << " " << s(grid[r][c]);
+                    cout << "  " << (east[r] != 0 ? to_string(east[r]) : "");
+                    cout << endl;
+                }
 
-        cout << "   ";
-        for (int c = 0; c < size; ++c)
-            cout << " " << (south[c] != 0 ? to_string(south[c]) : " ");
-        cout << endl;
+                cout << "   ";
+                for (int c = 0; c < size; ++c)
+                    cout << " " << (south[c] != 0 ? to_string(south[c]) : " ");
+                cout << endl;
 
-        cout << endl;
-        return true;
-    });
+                cout << endl;
+                return true;
+            },
+            .branch = branch_on_dom_then_deg(p, branch_vars)});
 
     cout << stats;
 

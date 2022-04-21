@@ -58,6 +58,7 @@ namespace gcs::innards
         auto trigger_on_change(IntegerVariableID, int id) -> void;
         auto trigger_on_bounds(IntegerVariableID, int id) -> void;
         auto trigger_on_instantiated(IntegerVariableID, int id) -> void;
+        auto increase_degree(IntegerVariableID) -> void;
 
     public:
         /**
@@ -200,6 +201,18 @@ namespace gcs::innards
          * \sa Stats
          */
         auto fill_in_constraint_stats(Stats &) const -> void;
+
+        ///@}
+
+        /**
+         * \name Information about constraints
+         */
+        ///@{
+
+        /**
+         * How many constraints is this variable involved in?
+         */
+        auto degree_of(IntegerVariableID) const -> long;
 
         ///@}
     };

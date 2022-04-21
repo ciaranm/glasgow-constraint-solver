@@ -5,6 +5,7 @@
 #include <gcs/constraints/equals.hh>
 #include <gcs/constraints/linear_equality.hh>
 #include <gcs/problem.hh>
+#include <gcs/search_heuristics.hh>
 #include <gcs/solve.hh>
 
 #include <cstdlib>
@@ -124,14 +125,13 @@ auto main(int argc, char * argv[]) -> int
     p.post(LessThan{grid[0][0], grid[size - 1][size - 1]});
     p.post(LessThan{grid[0][0], grid[size - 1][0]});
 
-    p.branch_on(grid_flat);
-
     unsigned long long n_solutions = 0;
     auto stats = solve_with(p,
         SolveCallbacks{
             .solution = [&](const CurrentState &) -> bool {
                 return ++n_solutions < 10000;
             },
+            .branch = branch_on_dom(p, grid_flat),
             .guess = [&](const CurrentState & state, IntegerVariableID var) -> vector<Literal> {
                 return vector<Literal>{var == state.lower_bound(var), var != state.lower_bound(var)};
             }});

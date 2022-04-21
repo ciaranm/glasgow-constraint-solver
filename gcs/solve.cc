@@ -3,6 +3,7 @@
 #include <gcs/exception.hh>
 #include <gcs/innards/proof.hh>
 #include <gcs/innards/state.hh>
+#include <gcs/search_heuristics.hh>
 #include <gcs/solve.hh>
 
 using namespace gcs;
@@ -11,6 +12,7 @@ using namespace gcs::innards;
 using std::atomic;
 using std::max;
 using std::nullopt;
+using std::optional;
 using std::chrono::duration_cast;
 using std::chrono::microseconds;
 using std::chrono::steady_clock;
@@ -31,7 +33,7 @@ namespace
             if (optional_abort_flag && optional_abort_flag->load())
                 return false;
 
-            auto branch_var = callbacks.branch ? callbacks.branch(state.current()) : problem.find_branching_variable(state);
+            auto branch_var = callbacks.branch ? callbacks.branch(state.current()) : branch_on_dom_then_deg(problem)(state.current());
             if (branch_var == nullopt) {
                 if (problem.optional_proof())
                     problem.optional_proof()->solution(state);

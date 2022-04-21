@@ -3,6 +3,7 @@
 #include <gcs/constraints/equals.hh>
 #include <gcs/constraints/linear_equality.hh>
 #include <gcs/problem.hh>
+#include <gcs/search_heuristics.hh>
 #include <gcs/solve.hh>
 
 #include <util/enumerate.hh>
@@ -103,8 +104,6 @@ auto main(int argc, char * argv[]) -> int
         p.post(LinearEquality{move(sum_mul_s), Integer{size}});
     }
 
-    p.branch_on(series);
-
     auto stats = solve_with(p,
         SolveCallbacks{
             .solution = [&](const CurrentState & s) -> bool {
@@ -115,6 +114,7 @@ auto main(int argc, char * argv[]) -> int
 
                 return true;
             },
+            .branch = branch_on_dom(p, series),
             .guess = [&](const CurrentState & state, IntegerVariableID var) -> vector<Literal> {
                 return vector<Literal>{var == state.lower_bound(var), var != state.lower_bound(var)};
             }});

@@ -2,6 +2,7 @@
 
 #include <gcs/constraints/linear_equality.hh>
 #include <gcs/problem.hh>
+#include <gcs/search_heuristics.hh>
 #include <gcs/solve.hh>
 
 #include <cstdlib>
@@ -70,13 +71,17 @@ auto main(int argc, char * argv[]) -> int
     auto profit = p.create_integer_variable(0_i, 107500_i, "profit");
     p.post(LinearEquality{Linear{{400_i, banana}, {450_i, chocolate}, {-1_i, profit}}, 0_i});
 
-    p.branch_on(vector<IntegerVariableID>{banana, chocolate});
     p.maximise(profit);
-    auto stats = solve(p, [&](const CurrentState & s) -> bool {
-        cout << "banana cakes = " << s(banana) << ", chocolate cakes = "
-             << s(chocolate) << ", profit = " << s(profit) << endl;
-        return true;
-    });
+    auto stats = solve_with(p,
+        SolveCallbacks{
+            .solution = [&](const CurrentState & s) -> bool {
+                cout << "banana cakes = " << s(banana) << ", chocolate cakes = "
+                     << s(chocolate) << ", profit = " << s(profit) << endl;
+                return true;
+            },
+            .branch = branch_on_dom_then_deg(p, vector<IntegerVariableID>{banana, chocolate}),
+            .guess = guess_smallest_value_first() //
+        });
 
     cout << stats;
 

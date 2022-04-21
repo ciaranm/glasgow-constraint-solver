@@ -5,6 +5,7 @@
 #include <gcs/constraints/equals.hh>
 #include <gcs/constraints/linear_equality.hh>
 #include <gcs/problem.hh>
+#include <gcs/search_heuristics.hh>
 #include <gcs/solve.hh>
 
 #include <algorithm>
@@ -150,8 +151,6 @@ auto main(int argc, char * argv[]) -> int
     auto cost = p.create_integer_variable(0_i, 100000_i, "cost");
     wcosts.emplace_back(-1_i, cost);
     p.post(LinearEquality{move(wcosts), 0_i});
-
-    p.branch_on(xs);
     p.minimise(cost);
 
     auto stats = solve_with(p,
@@ -160,6 +159,7 @@ auto main(int argc, char * argv[]) -> int
                 cout << "cost: " << s(cost) << endl;
                 return true;
             },
+            .branch = branch_on_dom(p, xs),
             .guess = [&](const CurrentState & state, IntegerVariableID var) -> vector<Literal> {
                 return vector<Literal>{var == state.lower_bound(var), var != state.lower_bound(var)};
             }});

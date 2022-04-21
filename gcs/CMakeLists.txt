@@ -4,6 +4,7 @@ add_library(glasgow_constraint_solver
     exception.cc
     literal.cc
     problem.cc
+    search_heuristics.cc
     solve.cc
     stats.cc
     variable_id.cc

@@ -15,6 +15,8 @@ namespace gcs
 {
     /**
      * \defgroup SolveCallbacks Callbacks for solving
+     *
+     * \sa SearchHeuristics
      */
 
     /**
@@ -38,6 +40,7 @@ namespace gcs
      * searching, should return nullopt if every variable is instantiated.
      *
      * \ingroup SolveCallbacks
+     * \sa SearchHeuristics
      */
     using BranchCallback = std::function<auto(const CurrentState &)->std::optional<IntegerVariableID>>;
 
@@ -47,6 +50,7 @@ namespace gcs
      * branching choice.
      *
      * \ingroup SolveCallbacks
+     * \sa SearchHeuristics
      */
     using GuessCallback = std::function<auto(const CurrentState &, IntegerVariableID)->std::vector<Literal>>;
 

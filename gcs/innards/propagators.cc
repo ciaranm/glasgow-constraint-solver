@@ -49,6 +49,7 @@ struct Propagators::Imp
     vector<uint8_t> propagator_is_disabled;
     unsigned long long total_propagations = 0, effectful_propagations = 0, contradicting_propagations = 0;
     deque<TriggerIDs> iv_triggers;
+    vector<long> degrees;
     bool first = true;
 
     Imp(Problem * p) :
@@ -164,12 +165,20 @@ auto Propagators::install(const State &, PropagationFunction && f, const Trigger
     _imp->propagation_functions.emplace_back(move(f));
     _imp->propagator_is_disabled.push_back(0);
 
-    for (const auto & v : triggers.on_change)
+    for (const auto & v : triggers.on_change) {
         trigger_on_change(v, id);
-    for (const auto & v : triggers.on_bounds)
+        increase_degree(v);
+    }
+
+    for (const auto & v : triggers.on_bounds) {
         trigger_on_bounds(v, id);
-    for (const auto & v : triggers.on_instantiated)
+        increase_degree(v);
+    }
+
+    for (const auto & v : triggers.on_instantiated) {
         trigger_on_instantiated(v, id);
+        increase_degree(v);
+    }
 }
 
 namespace
@@ -431,6 +440,40 @@ auto Propagators::trigger_on_instantiated(IntegerVariableID var, int t) -> void
             trigger_on_instantiated(v.actual_variable, t);
         },
         [&](const ConstantIntegerVariableID &) {
+        }}
+        .visit(var);
+}
+
+auto Propagators::increase_degree(IntegerVariableID var) -> void
+{
+    overloaded{
+        [&](const SimpleIntegerVariableID & v) {
+            if (_imp->degrees.size() < v.index + 1)
+                _imp->degrees.resize(v.index + 1);
+            ++_imp->degrees[v.index];
+        },
+        [&](const ViewOfIntegerVariableID & v) {
+            increase_degree(v.actual_variable);
+        },
+        [&](const ConstantIntegerVariableID &) {
+        }}
+        .visit(var);
+}
+
+auto Propagators::degree_of(IntegerVariableID var) const -> long
+{
+    return overloaded{
+        [&](const SimpleIntegerVariableID & v) -> long {
+            if (v.index >= _imp->degrees.size())
+                return 0;
+            else
+                return _imp->degrees[v.index];
+        },
+        [&](const ViewOfIntegerVariableID & v) -> long {
+            return degree_of(v.actual_variable);
+        },
+        [&](const ConstantIntegerVariableID &) -> long {
+            return 0;
         }}
         .visit(var);
 }

@@ -5,6 +5,7 @@
 #include <gcs/constraints/equals.hh>
 #include <gcs/constraints/linear_equality.hh>
 #include <gcs/problem.hh>
+#include <gcs/search_heuristics.hh>
 #include <gcs/solve.hh>
 
 #include <cstdlib>
@@ -69,7 +70,6 @@ auto main(int argc, char * argv[]) -> int
 
     auto xs = p.create_integer_variable_vector(8, 1_i, 8_i, "box");
     p.post(AllDifferent{xs});
-    p.branch_on(xs);
 
     vector<pair<int, int>> edges{{0, 1}, {0, 2}, {0, 3}, {0, 4},
         {1, 3}, {1, 4}, {1, 5}, {2, 3}, {2, 6}, {3, 4}, {3, 6},
@@ -91,13 +91,16 @@ auto main(int argc, char * argv[]) -> int
         p.post(LinearEquality{Linear{{1_i, xs[x1]}, {-1_i, xs[x2]}, {-1_i, diffs.back()}}, 0_i, options_vars.contains("gac")});
     }
 
-    auto stats = solve(p, [&](const CurrentState & s) -> bool {
-        cout << "  " << s(xs[0]) << " " << s(xs[1]) << endl;
-        cout << s(xs[2]) << " " << s(xs[3]) << " " << s(xs[4]) << " " << s(xs[5]) << endl;
-        cout << "  " << s(xs[6]) << " " << s(xs[7]) << endl;
-        cout << endl;
-        return true;
-    });
+    auto stats = solve_with(p,
+        SolveCallbacks{
+            .solution = [&](const CurrentState & s) -> bool {
+                cout << "  " << s(xs[0]) << " " << s(xs[1]) << endl;
+                cout << s(xs[2]) << " " << s(xs[3]) << " " << s(xs[4]) << " " << s(xs[5]) << endl;
+                cout << "  " << s(xs[6]) << " " << s(xs[7]) << endl;
+                cout << endl;
+                return true;
+            },
+            .branch = branch_on_dom_then_deg(p, xs)});
 
     cout << stats;
 

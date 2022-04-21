@@ -110,13 +110,6 @@ p.maximise(profit);
 
 Here the linear equality says that 400 times bananas plus 450 times chocolate equals profit.
 
-Finally, it is usually a good idea to tell the solver which variables it should use for making
-decisions. In this case, the banana and chocolate variables are our decision variables.
-
-```cpp
-p.branch_on(vector<IntegerVariableID>{banana, chocolate});
-```
-
 We can now ask for a solution.
 
 ```cpp
@@ -132,6 +125,24 @@ finds a new candidate solution, and the last time it is called will be when an o
 been found. To get the actual value of a variable inside this callback, we use the ``s`` argument as
 it it were a function. We return ``true`` from our callback to say that we want the solver to keep
 going and try to find a better solution.
+
+Finally, it is often a good idea to tell the solver which variables it should use for making
+decisions. In this case, the banana and chocolate variables are our decision variables, so we could
+instead use the ``solve_with`` function to specify a search strategy. The ``branch`` and
+``guess`` parameters here can also be callbacks, but there are some common options available.
+
+```cpp
+solve_with(p,
+    SolveCallbacks{
+        .solution = [&](const CurrentState & s) -> bool {
+            cout << "banana cakes = " << s(banana) << ", chocolate cakes = "
+                 << s(chocolate) << ", profit = " << s(profit) << endl;
+            return true;
+        },
+        .branch = branch_on_dom_then_deg(problem, vector<IntegerVariableID>{banana, chocolate}),
+        .guess = guess_smallest_value_first()
+    });
+```
 
 The ``examples/`` directory contains example programs that show how to use the solver as a program
 author. It is probably best to start with ``examples/cake/cake.cc`` for a complete version of this

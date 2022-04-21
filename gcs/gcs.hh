@@ -12,6 +12,7 @@
 #include <gcs/literal.hh>
 #include <gcs/problem.hh>
 #include <gcs/proof_options.hh>
+#include <gcs/search_heuristics.hh>
 #include <gcs/solve.hh>
 #include <gcs/stats.hh>
 #include <gcs/variable_id.hh>

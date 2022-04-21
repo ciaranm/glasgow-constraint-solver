@@ -87,8 +87,17 @@ namespace gcs
 
         /**
          * \brief Does this variable have a unique value?
+         *
+         * \sa CurrentState::domain_size
          */
         [[nodiscard]] auto has_single_value(const IntegerVariableID) const -> bool;
+
+        /**
+         * How many values are left in this variable's domain?
+         *
+         * \sa CurrentState::has_single_value
+         */
+        [[nodiscard]] auto domain_size(const IntegerVariableID) const -> Integer;
 
         /**
          * \brief What is the lowest value in this variable's domain?

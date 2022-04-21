@@ -13,6 +13,7 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::atomic;
+using std::get;
 using std::make_optional;
 using std::move;
 using std::nullopt;
@@ -26,8 +27,7 @@ struct Problem::Imp
 {
     State initial_state;
     Propagators propagators;
-    vector<SimpleIntegerVariableID> problem_variables;
-    optional<vector<SimpleIntegerVariableID>> branch_on;
+    vector<IntegerVariableID> problem_variables;
     optional<IntegerVariableID> objective_variable;
     optional<Integer> objective_value;
     optional<Proof> optional_proof;
@@ -106,40 +106,11 @@ auto Problem::propagate(State & state, atomic<bool> * optional_abort_flag) const
     return result;
 }
 
-auto Problem::find_branching_variable(State & state) const -> optional<IntegerVariableID>
-{
-    optional<IntegerVariableID> result = nullopt;
-    Integer sz{0};
-
-    for (auto & var : (_imp->branch_on ? *_imp->branch_on : _imp->problem_variables)) {
-        Integer s = state.domain_size(var);
-        if (s > Integer{1} && (nullopt == result || s < sz)) {
-            result = var;
-            sz = s;
-        }
-    }
-
-    return result;
-}
-
 auto Problem::post(Constraint && c) -> void
 {
     if (optional_proof())
         optional_proof()->posting(c.describe_for_proof());
     move(c).install(_imp->propagators, _imp->initial_state);
-}
-
-auto Problem::branch_on(const std::vector<IntegerVariableID> & vars) -> void
-{
-    if (! _imp->branch_on)
-        _imp->branch_on.emplace();
-
-    for (auto & v : vars)
-        overloaded{
-            [&](const SimpleIntegerVariableID & v) { _imp->branch_on->push_back(v); },
-            [&](const ViewOfIntegerVariableID & v) { _imp->branch_on->push_back(v.actual_variable); },
-            [&](const ConstantIntegerVariableID &) {}}
-            .visit(v);
 }
 
 auto Problem::optional_proof() const -> std::optional<Proof> &
@@ -176,4 +147,14 @@ auto Problem::update_objective(const State & state) -> void
 auto Problem::fill_in_constraint_stats(Stats & stats) const -> void
 {
     _imp->propagators.fill_in_constraint_stats(stats);
+}
+
+auto Problem::degree_of(IntegerVariableID var) const -> long
+{
+    return _imp->propagators.degree_of(var);
+}
+
+auto Problem::all_variables() const -> const std::vector<IntegerVariableID> &
+{
+    return _imp->problem_variables;
 }
