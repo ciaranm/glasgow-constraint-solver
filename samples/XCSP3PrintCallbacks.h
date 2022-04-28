@@ -45,214 +45,224 @@ namespace XCSP3Core {
     public:
         XCSP3PrintCallbacks();
 
-        virtual void beginInstance(InstanceType type) override;
+        void beginInstance(InstanceType type) override;
 
-        virtual void endInstance() override;
+        void endInstance() override;
 
-        virtual void beginVariables() override;
+        void beginVariables() override;
 
-        virtual void endVariables() override;
+        void endVariables() override;
 
-        virtual void beginVariableArray(string id) override;
+        void beginVariableArray(string id) override;
 
-        virtual void endVariableArray() override;
+        void endVariableArray() override;
 
-        virtual void beginConstraints() override;
+        void beginConstraints() override;
 
-        virtual void endConstraints() override;
+        void endConstraints() override;
 
-        virtual void beginGroup(string id) override;
+        void beginGroup(string id) override;
 
-        virtual void endGroup() override;
+        void endGroup() override;
 
-        virtual void beginBlock(string classes) override;
+        void beginBlock(string classes) override;
 
-        virtual void endBlock() override;
+        void endBlock() override;
 
-        virtual void beginSlide(string id, bool circular) override;
+        void beginSlide(string id, bool circular) override;
 
-        virtual void endSlide() override;
+        void endSlide() override;
 
-        virtual void beginObjectives() override;
+        void beginObjectives() override;
 
-        virtual void endObjectives() override;
+        void endObjectives() override;
 
-        virtual void beginAnnotations() override;
+        void beginAnnotations() override;
 
-        virtual void endAnnotations() override;
+        void endAnnotations() override;
 
-        virtual void buildVariableInteger(string id, int minValue, int maxValue) override;
+        void buildVariableInteger(string id, int minValue, int maxValue) override;
 
-        virtual void buildVariableInteger(string id, vector<int> &values) override;
+        void buildVariableInteger(string id, vector<int> &values) override;
 
-        virtual void buildConstraintExtension(string id, vector<XVariable *> list, vector<vector<int>> &tuples, bool support, bool hasStar) override;
+        void buildConstraintExtension(string id, vector<XVariable *> list, vector<vector<int>> &tuples, bool support, bool hasStar) override;
 
-        virtual void buildConstraintExtension(string id, XVariable *variable, vector<int> &tuples, bool support, bool hasStar) override;
+        void buildConstraintExtension(string id, XVariable *variable, vector<int> &tuples, bool support, bool hasStar) override;
 
-        virtual void buildConstraintExtensionAs(string id, vector<XVariable *> list, bool support, bool hasStar) override;
+        void buildConstraintExtensionAs(string id, vector<XVariable *> list, bool support, bool hasStar) override;
 
-        virtual void buildConstraintIntension(string id, string expr) override;
+        void buildConstraintIntension(string id, string expr) override;
 
-        virtual void buildConstraintIntension(string id, Tree *tree) override;
+        void buildConstraintIntension(string id, Tree *tree) override;
 
-        virtual void buildConstraintPrimitive(string id, OrderType op, XVariable *x, int k, XVariable *y) override;
+        void buildConstraintPrimitive(string id, OrderType op, XVariable *x, int k, XVariable *y) override;
 
-        virtual void buildConstraintPrimitive(string id, OrderType op, XVariable *x, int k) override;
+        void buildConstraintPrimitive(string id, OrderType op, XVariable *x, int k) override;
 
-        virtual void buildConstraintPrimitive(string id, XVariable *x,  bool in, int min, int max) override;
+        void buildConstraintPrimitive(string id, XVariable *x,  bool in, int min, int max) override;
 
-        virtual void buildConstraintRegular(string id, vector<XVariable *> &list, string st, vector<string> &final, vector<XTransition> &transitions) override;
+        void buildConstraintRegular(string id, vector<XVariable *> &list, string st, vector<string> &final, vector<XTransition> &transitions) override;
 
-        virtual void buildConstraintMDD(string id, vector<XVariable *> &list, vector<XTransition> &transitions) override;
+        void buildConstraintMDD(string id, vector<XVariable *> &list, vector<XTransition> &transitions) override;
 
-        virtual void buildConstraintAlldifferent(string id, vector<XVariable *> &list) override;
+        void buildConstraintAlldifferent(string id, vector<XVariable *> &list) override;
 
-        virtual void buildConstraintAlldifferentExcept(string id, vector<XVariable *> &list, vector<int> &except) override;
+        void buildConstraintAlldifferentExcept(string id, vector<XVariable *> &list, vector<int> &except) override;
 
-        virtual void buildConstraintAlldifferent(string id, vector<Tree *> &list) override;
+        void buildConstraintAlldifferent(string id, vector<Tree *> &list) override;
 
-        virtual void buildConstraintAlldifferentList(string id, vector<vector<XVariable *>> &lists) override;
+        void buildConstraintAlldifferentList(string id, vector<vector<XVariable *>> &lists) override;
 
-        virtual void buildConstraintAlldifferentMatrix(string id, vector<vector<XVariable *>> &matrix) override;
+        void buildConstraintAlldifferentMatrix(string id, vector<vector<XVariable *>> &matrix) override;
 
-        virtual void buildConstraintAllEqual(string id, vector<XVariable *> &list) override;
+        void buildConstraintAllEqual(string id, vector<XVariable *> &list) override;
 
-        virtual void buildConstraintNotAllEqual(string id, vector<XVariable *> &list) override;
+        void buildConstraintNotAllEqual(string id, vector<XVariable *> &list) override;
 
-        virtual void buildConstraintOrdered(string id, vector<XVariable *> &list, OrderType order) override;
+        void buildConstraintOrdered(string id, vector<XVariable *> &list, OrderType order) override;
 
-        virtual void buildConstraintOrdered(string id, vector<XVariable *> &list, vector<int> &lengths, OrderType order) override;
+        void buildConstraintOrdered(string id, vector<XVariable *> &list, vector<int> &lengths, OrderType order) override;
 
-        virtual void buildConstraintLex(string id, vector<vector<XVariable *>> &lists, OrderType order) override;
+        void buildConstraintLex(string id, vector<vector<XVariable *>> &lists, OrderType order) override;
 
-        virtual void buildConstraintLexMatrix(string id, vector<vector<XVariable *>> &matrix, OrderType order) override;
+        void buildConstraintLexMatrix(string id, vector<vector<XVariable *>> &matrix, OrderType order) override;
 
-        virtual void buildConstraintSum(string id, vector<XVariable *> &list, vector<int> &coeffs, XCondition &cond) override;
+        void buildConstraintSum(string id, vector<XVariable *> &list, vector<int> &coeffs, XCondition &cond) override;
 
-        virtual void buildConstraintSum(string id, vector<XVariable *> &list, XCondition &cond) override;
+        void buildConstraintSum(string id, vector<XVariable *> &list, XCondition &cond) override;
 
-        virtual void buildConstraintSum(string id, vector<XVariable *> &list, vector<XVariable *> &coeffs, XCondition &cond) override;
+        void buildConstraintSum(string id, vector<XVariable *> &list, vector<XVariable *> &coeffs, XCondition &cond) override;
 
-        virtual void buildConstraintSum(string id, vector<Tree *> &list, vector<int> &coeffs, XCondition &cond) override;
+        void buildConstraintSum(string id, vector<Tree *> &list, vector<int> &coeffs, XCondition &cond) override;
 
-        virtual void buildConstraintSum(string id, vector<Tree *> &list, XCondition &cond) override;
+        void buildConstraintSum(string id, vector<Tree *> &list, XCondition &cond) override;
 
-        virtual void buildConstraintAtMost(string id, vector<XVariable *> &list, int value, int k) override;
+        void buildConstraintAtMost(string id, vector<XVariable *> &list, int value, int k) override;
 
-        virtual void buildConstraintAtLeast(string id, vector<XVariable *> &list, int value, int k) override;
+        void buildConstraintAtLeast(string id, vector<XVariable *> &list, int value, int k) override;
 
-        virtual void buildConstraintExactlyK(string id, vector<XVariable *> &list, int value, int k) override;
+        void buildConstraintExactlyK(string id, vector<XVariable *> &list, int value, int k) override;
 
-        virtual void buildConstraintAmong(string id, vector<XVariable *> &list, vector<int> &values, int k) override;
+        void buildConstraintAmong(string id, vector<XVariable *> &list, vector<int> &values, int k) override;
 
-        virtual void buildConstraintExactlyVariable(string id, vector<XVariable *> &list, int value, XVariable *x) override;
+        void buildConstraintExactlyVariable(string id, vector<XVariable *> &list, int value, XVariable *x) override;
 
-        virtual void buildConstraintCount(string id, vector<XVariable *> &list, vector<int> &values, XCondition &xc) override;
+        void buildConstraintCount(string id, vector<XVariable *> &list, vector<int> &values, XCondition &xc) override;
 
-        virtual void buildConstraintCount(string id, vector<XVariable *> &list, vector<XVariable *> &values, XCondition &xc) override;
+        void buildConstraintCount(string id, vector<XVariable *> &list, vector<XVariable *> &values, XCondition &xc) override;
 
-        virtual void buildConstraintNValues(string id, vector<XVariable *> &list, vector<int> &except, XCondition &xc) override;
+        void buildConstraintNValues(string id, vector<XVariable *> &list, vector<int> &except, XCondition &xc) override;
 
-        virtual void buildConstraintNValues(string id, vector<XVariable *> &list, XCondition &xc) override;
+        void buildConstraintNValues(string id, vector<XVariable *> &list, XCondition &xc) override;
 
-        virtual void buildConstraintCardinality(string id, vector<XVariable *> &list, vector<int> values, vector<int> &occurs, bool closed) override;
+        void buildConstraintCardinality(string id, vector<XVariable *> &list, vector<int> values, vector<int> &occurs, bool closed) override;
 
-        virtual void buildConstraintCardinality(string id, vector<XVariable *> &list, vector<int> values, vector<XVariable *> &occurs,
+        void buildConstraintCardinality(string id, vector<XVariable *> &list, vector<int> values, vector<XVariable *> &occurs,
                                                 bool closed) override;
 
-        virtual void buildConstraintCardinality(string id, vector<XVariable *> &list, vector<int> values, vector<XInterval> &occurs,
+        void buildConstraintCardinality(string id, vector<XVariable *> &list, vector<int> values, vector<XInterval> &occurs,
                                                 bool closed) override;
 
-        virtual void buildConstraintCardinality(string id, vector<XVariable *> &list, vector<XVariable *> values, vector<int> &occurs,
+        void buildConstraintCardinality(string id, vector<XVariable *> &list, vector<XVariable *> values, vector<int> &occurs,
                                                 bool closed) override;
 
-        virtual void buildConstraintCardinality(string id, vector<XVariable *> &list, vector<XVariable *> values, vector<XVariable *> &occurs,
+        void buildConstraintCardinality(string id, vector<XVariable *> &list, vector<XVariable *> values, vector<XVariable *> &occurs,
                                                 bool closed) override;
 
-        virtual void buildConstraintCardinality(string id, vector<XVariable *> &list, vector<XVariable *> values, vector<XInterval> &occurs,
+        void buildConstraintCardinality(string id, vector<XVariable *> &list, vector<XVariable *> values, vector<XInterval> &occurs,
                                                 bool closed) override;
 
-        virtual void buildConstraintMinimum(string id, vector<XVariable *> &list, XCondition &xc) override;
+        void buildConstraintMinimum(string id, vector<XVariable *> &list, XCondition &xc) override;
 
-        virtual void buildConstraintMinimum(string id, vector<XVariable *> &list, XVariable *index, int startIndex, RankType rank,
+        void buildConstraintMinimum(string id, vector<XVariable *> &list, XVariable *index, int startIndex, RankType rank,
                                             XCondition &xc) override;
 
-        virtual void buildConstraintMaximum(string id, vector<XVariable *> &list, XCondition &xc) override;
+        void buildConstraintMaximum(string id, vector<XVariable *> &list, XCondition &xc) override;
 
-        virtual void buildConstraintMaximum(string id, vector<XVariable *> &list, XVariable *index, int startIndex, RankType rank,
+        void buildConstraintMaximum(string id, vector<Tree *> &list, XCondition &xc) override;
+
+        void buildConstraintMaximum(string id, vector<XVariable *> &list, XVariable *index, int startIndex, RankType rank,
                                             XCondition &xc) override;
 
-        virtual void buildConstraintElement(string id, vector<XVariable *> &list, int value) override;
+        void buildConstraintElement(string id, vector<XVariable *> &list, int value) override;
 
-        virtual void buildConstraintElement(string id, vector<XVariable *> &list, XVariable *value) override;
+        void buildConstraintElement(string id, vector<XVariable *> &list, XVariable *value) override;
 
-        virtual void buildConstraintElement(string id, vector<XVariable *> &list, int startIndex, XVariable *index, RankType rank, int value) override;
+        void buildConstraintElement(string id, vector<XVariable *> &list, int startIndex, XVariable *index, RankType rank, int value) override;
 
-        virtual void buildConstraintElement(string id, vector<XVariable *> &list, int startIndex, XVariable *index, RankType rank, XVariable *value) override;
+        void buildConstraintElement(string id, vector<XVariable *> &list, int startIndex, XVariable *index, RankType rank, XVariable *value) override;
 
-        virtual void buildConstraintElement(string id, vector<int> &list, int startIndex, XVariable *index, RankType rank, XVariable *value) override;
+        void buildConstraintElement(string id, vector<int> &list, int startIndex, XVariable *index, RankType rank, XVariable *value) override;
 
-        virtual void buildConstraintElement(string id, vector<vector<int> > &matrix, int startRowIndex, XVariable *rowIndex, int startColIndex, XVariable* colIndex, XVariable *value) override;
+        void buildConstraintElement(string id, vector<vector<int> > &matrix, int startRowIndex, XVariable *rowIndex, int startColIndex, XVariable* colIndex, XVariable *value) override;
 
-        virtual void buildConstraintChannel(string id, vector<XVariable *> &list, int startIndex) override;
+        void buildConstraintElement(string id, vector<XVariable *> &list, XVariable *index, int startIndex, XCondition &xc)  override;
 
-        virtual void buildConstraintChannel(string id, vector<XVariable *> &list1, int startIndex1, vector<XVariable *> &list2, int startIndex2) override;
+        void buildConstraintChannel(string id, vector<XVariable *> &list, int startIndex) override;
 
-        virtual void buildConstraintChannel(string id, vector<XVariable *> &list, int startIndex, XVariable *value) override;
+        void buildConstraintChannel(string id, vector<XVariable *> &list1, int startIndex1, vector<XVariable *> &list2, int startIndex2) override;
 
-        virtual void buildConstraintStretch(string id, vector<XVariable *> &list, vector<int> &values, vector<XInterval> &widths) override;
+        void buildConstraintChannel(string id, vector<XVariable *> &list, int startIndex, XVariable *value) override;
 
-        virtual void
+        void buildConstraintStretch(string id, vector<XVariable *> &list, vector<int> &values, vector<XInterval> &widths) override;
+
+        void
         buildConstraintStretch(string id, vector<XVariable *> &list, vector<int> &values, vector<XInterval> &widths, vector<vector<int>> &patterns) override;
 
-        virtual void buildConstraintNoOverlap(string id, vector<XVariable *> &origins, vector<int> &lengths, bool zeroIgnored) override;
+        void buildConstraintNoOverlap(string id, vector<XVariable *> &origins, vector<int> &lengths, bool zeroIgnored) override;
 
-        virtual void buildConstraintNoOverlap(string id, vector<XVariable *> &origins, vector<XVariable *> &lengths, bool zeroIgnored) override;
+        void buildConstraintNoOverlap(string id, vector<XVariable *> &origins, vector<XVariable *> &lengths, bool zeroIgnored) override;
 
-        virtual void buildConstraintNoOverlap(string id, vector<vector<XVariable *>> &origins, vector<vector<int>> &lengths, bool zeroIgnored) override;
+        void buildConstraintNoOverlap(string id, vector<vector<XVariable *>> &origins, vector<vector<int>> &lengths, bool zeroIgnored) override;
 
-        virtual void buildConstraintNoOverlap(string id, vector<vector<XVariable *>> &origins, vector<vector<XVariable *>> &lengths, bool zeroIgnored) override;
+        void buildConstraintNoOverlap(string id, vector<vector<XVariable *>> &origins, vector<vector<XVariable *>> &lengths, bool zeroIgnored) override;
 
-        virtual void buildConstraintInstantiation(string id, vector<XVariable *> &list, vector<int> &values) override;
+        void buildConstraintInstantiation(string id, vector<XVariable *> &list, vector<int> &values) override;
 
-        virtual void buildConstraintClause(string id, vector<XVariable *> &positive, vector<XVariable *> &negative) override ;
+        void buildConstraintClause(string id, vector<XVariable *> &positive, vector<XVariable *> &negative) override ;
 
-        virtual void buildConstraintCircuit(string id, vector<XVariable *> &list, int startIndex) override;
-
-
-        virtual void buildConstraintCircuit(string id, vector<XVariable *> &list, int startIndex, int size) override;
+        void buildConstraintCircuit(string id, vector<XVariable *> &list, int startIndex) override;
 
 
-        virtual void buildConstraintCircuit(string id, vector<XVariable *> &list, int startIndex, XVariable *size) override;
-
-        virtual void buildConstraintPrecedence(string id, vector<XVariable *> &list, vector<int> values) override;
-
-        virtual void buildConstraintBinPacking(string id, vector<XVariable *> &list, vector<int> &sizes, XCondition &cond) override;
-
-        virtual void buildObjectiveMinimizeExpression(string expr) override;
-
-        virtual void buildObjectiveMaximizeExpression(string expr) override;
+        void buildConstraintCircuit(string id, vector<XVariable *> &list, int startIndex, int size) override;
 
 
-        virtual void buildObjectiveMinimizeVariable(XVariable *x) override;
+        void buildConstraintCircuit(string id, vector<XVariable *> &list, int startIndex, XVariable *size) override;
+
+        void buildConstraintPrecedence(string id, vector<XVariable *> &list, vector<int> values) override;
+
+        void buildConstraintBinPacking(string id, vector<XVariable *> &list, vector<int> &sizes, XCondition &cond) override;
+
+        void buildConstraintFlow(string id, vector<XVariable *> &list, vector<int> &balance, vector<int> &weights, vector<vector<int> > &arcs, XCondition &xc) override;
+
+        void buildConstraintKnapsack(string id, vector<XVariable *> &list, vector<int> &weights, vector<int> &profits, int limit, XCondition &xc) override;
+
+        void buildConstraintKnapsack(string id, vector<XVariable *> &list, vector<int> &weights, vector<int> &profits, XVariable *limit, XCondition &xc) override;
+
+        void buildObjectiveMinimizeExpression(string expr) override;
+
+        void buildObjectiveMaximizeExpression(string expr) override;
 
 
-        virtual void buildObjectiveMaximizeVariable(XVariable *x) override;
+        void buildObjectiveMinimizeVariable(XVariable *x) override;
 
 
-        virtual void buildObjectiveMinimize(ExpressionObjective type, vector<XVariable *> &list, vector<int> &coefs) override;
+        void buildObjectiveMaximizeVariable(XVariable *x) override;
 
 
-        virtual void buildObjectiveMaximize(ExpressionObjective type, vector<XVariable *> &list, vector<int> &coefs) override;
+        void buildObjectiveMinimize(ExpressionObjective type, vector<XVariable *> &list, vector<int> &coefs) override;
 
 
-        virtual void buildObjectiveMinimize(ExpressionObjective type, vector<XVariable *> &list) override;
+        void buildObjectiveMaximize(ExpressionObjective type, vector<XVariable *> &list, vector<int> &coefs) override;
 
 
-        virtual void buildObjectiveMaximize(ExpressionObjective type, vector<XVariable *> &list) override;
+        void buildObjectiveMinimize(ExpressionObjective type, vector<XVariable *> &list) override;
 
 
-        virtual void buildAnnotationDecision(vector<XVariable*> &list) override;
+        void buildObjectiveMaximize(ExpressionObjective type, vector<XVariable *> &list) override;
+
+
+        void buildAnnotationDecision(vector<XVariable*> &list) override;
         bool canonize;
     };
 
@@ -869,6 +879,16 @@ void XCSP3PrintCallbacks::buildConstraintMaximum(string, vector<XVariable *> &li
 }
 
 
+void XCSP3PrintCallbacks::buildConstraintMaximum(string, vector<Tree *> &list, XCondition &xc) {
+    cout << "\n    maximum  constraint" << endl;
+    cout << "        ";
+    for(Tree *t : list) {
+        t->prefixe();std::cout << " ";
+    }
+    cout << "        condition: " << xc << endl;
+}
+
+
 // string id, vector<XVariable *> &list, XVariable *index, int startIndex, RankType rank, XCondition &xc
 void XCSP3PrintCallbacks::buildConstraintMaximum(string, vector<XVariable *> &list, XVariable *index, int startIndex, RankType, XCondition &xc) {
     cout << "\n    arg_maximum  constraint" << endl;
@@ -918,6 +938,15 @@ void XCSP3PrintCallbacks::buildConstraintElement(string id, vector<vector<int> >
     cout << "        row index : " << *rowIndex << endl;
     cout << "        col index : " << *colIndex << endl;
     cout << "        value     : " << *value << endl;
+}
+
+void XCSP3PrintCallbacks::buildConstraintElement(string id, vector<XVariable *> &list, XVariable *index, int startIndex, XCondition &xc) {
+    cout << "\n   element with list and condition\n";
+    displayList(list);
+    cout << "        Start index : " << startIndex << endl;
+    cout << "        index : " << *index << endl;
+
+    cout << "        condition: " << xc << endl;
 }
 
 // string id, vector<XVariable *> &list, int startIndex, XVariable *index, RankType rank, XVariable *value
@@ -1120,6 +1149,48 @@ void XCSP3PrintCallbacks::buildConstraintBinPacking(string id, vector<XVariable 
     displayList(sizes);
     cout << "        condition:" << cond << endl;
 }
+
+
+void XCSP3PrintCallbacks::buildConstraintFlow(string id, vector<XVariable *> &list, vector<int> &balance, vector<int> &weights, vector<vector<int> > &arcs, XCondition &cond) {
+    cout << "\n    Flow constraint" << endl;
+    cout << "        list:";
+    displayList(list);
+    cout << "        balance: ";
+    displayList(balance);
+    cout << "        weights: ";
+    displayList(weights);
+    cout << "        arcs: ";
+    cout << "("<<arcs[0][0] << "," << arcs[0][1] << ") ... (" << arcs.back()[0] << "," << arcs.back()[1]<<")" <<endl;
+
+    cout << "        condition:" << cond << endl;
+
+}
+void XCSP3PrintCallbacks::buildConstraintKnapsack(string id, vector<XVariable *> &list, vector<int> &weights, vector<int> &profits, int limit, XCondition &xc) {
+    cout << "\n    Knapsack constraint with integer limit" << endl;
+    cout << "        list:";
+    displayList(list);
+    cout << "        profits: ";
+    displayList(profits);
+    cout << "        weights: ";
+    displayList(weights);
+    cout << "        limit: " << limit << endl;
+    cout << "        condition:" << xc << endl;
+
+}
+
+void XCSP3PrintCallbacks::buildConstraintKnapsack(string id, vector<XVariable *> &list, vector<int> &weights, vector<int> &profits, XVariable *limit, XCondition &xc) {
+    cout << "\n    Knapsack constraint with variable limit" << endl;
+    cout << "        list:";
+    displayList(list);
+    cout << "        profits: ";
+    displayList(profits);
+    cout << "        weights: ";
+    displayList(weights);
+    cout << "        limit: " << limit->id << endl;
+    cout << "        condition:" << xc << endl;
+
+}
+
 
 void XCSP3PrintCallbacks::buildObjectiveMinimizeExpression(string expr) {
 
