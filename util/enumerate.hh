@@ -52,7 +52,7 @@ namespace gcs
             }
         };
 
-        return Enumerate(std::forward<Range_>(range));
+        return Enumerate{std::forward<Range_>(range)};
     }
 }
 
