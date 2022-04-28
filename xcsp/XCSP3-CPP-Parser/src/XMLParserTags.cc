@@ -90,8 +90,9 @@ void XMLParser::VarTagAction::beginTag(const AttributeList &attributes) {
 
     this->checkParentTag("variables");
     this->parser->stateStack.front().subtagAllowed = false;
-    if(variable != NULL)
-        variable = NULL;
+
+    variable = nullptr;
+    variableArray = nullptr;
 
 
     if(!attributes["id"].to(lid))
@@ -117,9 +118,9 @@ void XMLParser::VarTagAction::beginTag(const AttributeList &attributes) {
             throw runtime_error("Variable as \"" + as + "\" does not exist");
         if((similarArray = dynamic_cast<XVariableArray *>(this->parser->variablesList[as])) != NULL) {
             variableArray = new XVariableArray(id, similarArray);
+
         } else {
-            XVariable *similar = (XVariable *)
-                    this->parser->variablesList[as];
+            XVariable *similar = (XVariable *)this->parser->variablesList[as];
             variable = new XVariable(id, similar->domain);
         }
     } else {
@@ -131,7 +132,6 @@ void XMLParser::VarTagAction::beginTag(const AttributeList &attributes) {
 
 // UTF8String txt, bool last
 void XMLParser::VarTagAction::text(const UTF8String txt, bool) {
-
     if((variable != NULL || variableArray != NULL) && !txt.isWhiteSpace())
         throw runtime_error("<var> with attribute 'as' must not have domain declaration");
     this->parser->parseDomain(txt, *domain);
@@ -321,6 +321,7 @@ void XMLParser::BasicConstraintTagAction::beginTag(const AttributeList &attribut
     this->parser->lists.push_back(vector<XVariable *>());
     this->parser->matrix.clear();
     this->parser->patterns.clear();
+    this->parser->weights.clear();
 
 
     this->parser->integers.clear();
@@ -890,9 +891,10 @@ void XMLParser::ElementTagAction::endTag() {
     constraint->index = this->parser->index;
     constraint->rank = this->parser->rank;
 
-    if(this->parser->values.size() != 1)
-        throw runtime_error("<element> tag should have one value");
-    constraint->value = this->parser->values[0];
+    if(this->parser->values.size() == 0)
+        constraint->condition = this->parser->condition;
+    else
+        constraint->value = this->parser->values[0];
 
     XConstraintElementMatrix *c  = nullptr;
     if(this->parser->matrix.size() > 0) {
@@ -933,6 +935,15 @@ void XMLParser::ElementTagAction::endTag() {
 
 void XMLParser::MinMaxTagAction::beginTag(const AttributeList &attributes) {
 
+    if(!attributes["rank"].isNull()) {
+        string rank;
+        attributes["rank"].to(rank);
+        if(rank == "any") this->parser->rank = ANY;
+        if(rank == "first") this->parser->rank = FIRST;
+        if(rank == "last") this->parser->rank = LAST;
+    }
+
+
     // Must be called inside a constraint
     BasicConstraintTagAction::beginTag(attributes);
 
@@ -941,10 +952,10 @@ void XMLParser::MinMaxTagAction::beginTag(const AttributeList &attributes) {
     // Link constraint to group
     if(this->group != NULL) {
         this->group->constraint = constraint;
-        if(this->tagName == "maximum")
-            this->group->type = MAXIMUM;
-        else
-            this->group->type = MINIMUM;
+        if(this->tagName == "maximum") this->group->type = MAXIMUM;
+        if(this->tagName == "minimum") this->group->type = MINIMUM;
+        if(this->tagName == "minimumArg") this->group->type = MINARG;
+        if(this->tagName == "maximumArg") this->group->type = MAXARG;
     }
 }
 
@@ -957,10 +968,10 @@ void XMLParser::MinMaxTagAction::endTag() {
     constraint->rank = this->parser->rank;
 
     if(this->group == NULL) {
-        if(this->tagName == "maximum")
-            this->parser->manager->newConstraintMaximum(constraint);
-        else
-            this->parser->manager->newConstraintMinimum(constraint);
+        if(this->tagName == "maximum") this->parser->manager->newConstraintMaximum(constraint);
+        if(this->tagName == "minimum") this->parser->manager->newConstraintMinimum(constraint);
+        if(this->tagName == "maximumArg") this->parser->manager->newConstraintMinMaxArg(constraint, true);
+        if(this->tagName == "minimumArg")  this->parser->manager->newConstraintMinMaxArg(constraint, false);
         delete constraint;
     }
 }
@@ -1196,6 +1207,81 @@ void XMLParser::PrecedenceTagAction::endTag() {
 
     if(this->group == NULL) {
         this->parser->manager->newConstraintPrecedence(constraint);
+        delete constraint;
+    }
+}
+
+
+
+void XMLParser::FlowTagAction::beginTag(const AttributeList &attributes) {
+    BasicConstraintTagAction::beginTag(attributes);
+
+    constraint = new XConstraintFlow(this->id, this->parser->classes);
+
+    // Link constraint to group
+    if(this->group != NULL) {
+        this->group->constraint = constraint;
+        this->group->type = FLOW;
+    }
+}
+
+
+
+
+
+
+void XMLParser::FlowTagAction::endTag() {
+    constraint->list.assign(this->parser->lists[0].begin(), this->parser->lists[0].end());
+    constraint->balance.assign(this->parser->values.begin(), this->parser->values.end());
+    constraint->weights.assign(this->parser->weights.begin(), this->parser->weights.end());
+    constraint->condition = this->parser->condition;
+
+    int v=0;
+    int i = 0;
+    for (XEntity *xe: this->parser->lengths) {
+
+        if(isInteger(xe, v)) { // Horrible, but too lazy....
+            if(i%2 == 0)
+                constraint->arcs.push_back(vector<int>());
+            i++;
+            constraint->arcs.back().push_back(v);
+        }
+    }
+
+    if(this->group == NULL) {
+        this->parser->manager->newConstraintFlow(constraint);
+        delete constraint;
+    }
+}
+
+
+
+
+void XMLParser::KnapsackTagAction::beginTag(const AttributeList &attributes) {
+    BasicConstraintTagAction::beginTag(attributes);
+    constraint = new XConstraintKnapsack(this->id, this->parser->classes);
+    // Link constraint to group
+    if(this->group != NULL) {
+        this->group->constraint = constraint;
+        this->group->type = FLOW;
+    }
+}
+
+
+
+
+
+
+void XMLParser::KnapsackTagAction::endTag() {
+    constraint->list.assign(this->parser->lists[0].begin(), this->parser->lists[0].end());
+    constraint->profits.assign(this->parser->heights.begin(), this->parser->heights.end());
+    constraint->weights.assign(this->parser->weights.begin(), this->parser->weights.end());
+    constraint->condition = this->parser->condition;
+    constraint->value = this->parser->values[0];
+
+
+    if(this->group == NULL) {
+        this->parser->manager->newConstraintKnapsack(constraint);
         delete constraint;
     }
 }

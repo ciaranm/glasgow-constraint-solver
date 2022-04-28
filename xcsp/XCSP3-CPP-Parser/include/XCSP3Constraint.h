@@ -106,7 +106,6 @@ namespace XCSP3Core {
     public :
         string condition;
 
-
         virtual void unfoldParameters(XConstraintGroup *group, vector<XVariable *> &arguments, XConstraint *original);
         void extractCondition(XCondition &xc);  // Create the op and the operand (which can be a value, an interval or a XVariable)
     };
@@ -401,7 +400,7 @@ namespace XCSP3Core {
      * constraint element
      **************************************************************************/
 
-    class XConstraintElement : public XConstraint, public XIndex, public XValue {
+    class XConstraintElement : public XConstraint, public XIndex, public XValue, public XInitialCondition {
     public :
         int startIndex;
         RankType rank;
@@ -573,6 +572,29 @@ namespace XCSP3Core {
     public:
         XConstraintPrecedence(std::string idd, std::string c) : XConstraint(idd, c) {}
     };
+
+
+    class XConstraintFlow :  public XConstraint, public XInitialCondition {
+        void unfoldParameters(XConstraintGroup *group, vector<XVariable *> &arguments, XConstraint *original) override;
+    public:
+        vector<vector<int> > arcs;
+        vector<XVariable *>balance;
+        vector<XVariable *> weights;
+
+        XConstraintFlow(std::string idd, std::string c) : XConstraint(idd, c) {}
+    };
+
+
+    class XConstraintKnapsack :  public XConstraint, public XInitialCondition, public XValue {
+        void unfoldParameters(XConstraintGroup *group, vector<XVariable *> &arguments, XConstraint *original) override;
+    public:
+        vector<XVariable *>profits;
+        vector<XVariable *> weights;
+
+        XConstraintKnapsack(std::string idd, std::string c) : XConstraint(idd, c) {}
+    };
+
+
 
 }
 

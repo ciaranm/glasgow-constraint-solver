@@ -225,7 +225,7 @@ void XMLParser::parseSequence(const UTF8String &txt, vector<XVariable *> &list, 
                         vector<string> compact;
                         split(current, 'x', compact);
                         if(compact.size() == 2) {
-                            nb = std::stoi(compact[0]);
+                            nb = compact[0] == "*" ? STAR : std::stoi(compact[0]);
                             int sz;
                             sz = std::stoi(compact[1]);
                             for(int k = 0; k < sz; k++) {
@@ -239,10 +239,14 @@ void XMLParser::parseSequence(const UTF8String &txt, vector<XVariable *> &list, 
                             toFree.push_back(xi);
                         }
                     } catch(invalid_argument &e) {
-                        if(variablesList[current] != NULL)
-                            list.push_back((XVariable *) variablesList[current]);
-                        else
-                            throw runtime_error("unknown variable: " + current);
+                        if(current == "*")
+                            list.push_back(new XInteger(current, STAR));
+                        else {
+                            if (variablesList[current] != NULL)
+                                list.push_back((XVariable *) variablesList[current]);
+                            else
+                                throw runtime_error("unknown variable: " + current);
+                        }
                     }
                 } else { // A range
                     int first = std::stoi(current.substr(0, dotdot));
@@ -476,6 +480,23 @@ XMLParser::XMLParser(XCSP3CoreCallbacks *cb) {
     registerTagAction(tagList, new ListOfVariablesOrIntegerTagAction(this, "sizes", this->values));
 
     registerTagAction(tagList, new PrecedenceTagAction(this, "precedence"));
+
+
+    // Flow
+    registerTagAction(tagList, new FlowTagAction(this, "flow"));
+    registerTagAction(tagList, new ListOfVariablesOrIntegerTagAction(this, "balance", this->values));
+    registerTagAction(tagList, new ListOfVariablesOrIntegerTagAction(this, "weights", this->weights));
+    registerTagAction(tagList, new OriginsTagAction(this, "arcs", this->lengths));
+
+
+    // Knapsack
+    registerTagAction(tagList, new KnapsackTagAction(this, "knapsack"));
+    registerTagAction(tagList, new ListOfVariablesOrIntegerTagAction(this, "profits", this->heights));
+    registerTagAction(tagList, new ListOfVariablesOrIntegerTagAction(this, "limit", this->values));
+
+    registerTagAction(tagList, new MinMaxTagAction(this, "maximumArg"));
+    registerTagAction(tagList, new MinMaxTagAction(this, "minimumArg"));
+
 
 }
 

@@ -512,7 +512,10 @@ void XConstraintElement::unfoldParameters(XConstraintGroup *group, vector<XVaria
     XConstraintElement *xc = dynamic_cast<XConstraintElement *>(original);
     XConstraint::unfoldParameters(group, arguments, original);
     XIndex::unfoldParameters(group, arguments, original);
-    XValue::unfoldParameters(group, arguments, original);
+    if(xc->value != nullptr)
+        XValue::unfoldParameters(group, arguments, original);
+    else
+        XInitialCondition::unfoldParameters(group, arguments, original);
     startIndex = xc->startIndex;
     rank = xc->rank;
 }
@@ -608,6 +611,27 @@ void XConstraintPrecedence::unfoldParameters(XConstraintGroup *group, vector<XVa
     XConstraintPrecedence *xc = dynamic_cast<XConstraintPrecedence *>(original);
     XConstraint::unfoldParameters(group, arguments, original);
     XValues::unfoldParameters(group, arguments, original);
+}
+
+void XConstraintFlow::unfoldParameters(XConstraintGroup *group, vector<XVariable *> &arguments, XConstraint *original) {
+    XConstraintFlow *xc = dynamic_cast<XConstraintFlow *>(original);
+
+    XConstraint::unfoldParameters(group, arguments, original);
+    XInitialCondition::unfoldParameters(group, arguments, original);
+    group->unfoldVector(weights, arguments, xc->weights);
+    group->unfoldVector(balance, arguments, xc->balance);
+}
+
+
+
+
+void XConstraintKnapsack::unfoldParameters(XConstraintGroup *group, vector<XVariable *> &arguments, XConstraint *original) {
+    XConstraintKnapsack *xc = dynamic_cast<XConstraintKnapsack *>(original);
+    XConstraint::unfoldParameters(group, arguments, original);
+    XValue::unfoldParameters(group, arguments, original);
+    XInitialCondition::unfoldParameters(group, arguments, original);
+    group->unfoldVector(profits, arguments, xc->profits);
+    group->unfoldVector(weights, arguments, xc->weights);
 }
 
 

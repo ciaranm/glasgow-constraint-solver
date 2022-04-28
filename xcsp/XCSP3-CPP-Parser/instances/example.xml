@@ -267,19 +267,13 @@ x[2]   x[3] </list>
 
 <intension>le(add(x[0],3),x[1])</intension>
 
-<circuit>
-  <list startIndex='1'>x[0..5]</list>
-  <size>x[0..1]</size>
-</circuit>
 
-<cumulative>
-  <origins> x[0..2] </origins>
-  <lengths>x[3..6] </lengths>
-  <heights> 1 2 3 4 </heights>
-  <ends> x[0..2]</ends>
-  <condition> (le,4) </condition>
-</cumulative>
 
+
+      <nValues>
+        <list>mul(0,eq(lg[0],0)) mul(0,eq(lg[1],0)) mul(0,eq(lg[2],0))</list>
+        <condition>(eq,4)</condition>
+      </nValues>
   </constraints>
 
  <objectives>
