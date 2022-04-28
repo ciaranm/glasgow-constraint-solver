@@ -9,7 +9,6 @@
 using namespace gcs;
 using namespace gcs::innards;
 
-using std::pair;
 using std::string;
 using std::to_string;
 

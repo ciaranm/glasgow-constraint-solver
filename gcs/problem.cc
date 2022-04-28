@@ -13,7 +13,6 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::atomic;
-using std::get;
 using std::make_optional;
 using std::move;
 using std::nullopt;

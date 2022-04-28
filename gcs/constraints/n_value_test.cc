@@ -15,7 +15,6 @@
 #include <vector>
 
 using std::cerr;
-using std::cmp_less;
 using std::endl;
 using std::function;
 using std::index_sequence;

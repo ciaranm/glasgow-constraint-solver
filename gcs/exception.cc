@@ -8,7 +8,9 @@ using namespace gcs;
 using std::source_location;
 #endif
 using std::string;
+#if __has_include(<source_location>) && __cpp_lib_source_location
 using std::to_string;
+#endif
 
 UnexpectedException::UnexpectedException(const string & w) :
     _wat("unexpected problem: " + w)

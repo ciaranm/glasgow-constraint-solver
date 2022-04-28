@@ -12,7 +12,6 @@ using namespace gcs::innards;
 using std::atomic;
 using std::max;
 using std::nullopt;
-using std::optional;
 using std::chrono::duration_cast;
 using std::chrono::microseconds;
 using std::chrono::steady_clock;

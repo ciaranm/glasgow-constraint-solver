@@ -18,13 +18,11 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::is_same_v;
-using std::max;
 using std::pair;
 using std::remove_if;
 using std::sort;
 using std::string;
 using std::stringstream;
-using std::variant;
 using std::vector;
 
 auto gcs::innards::simplify_linear(const Linear & coeff_vars) -> pair<SimpleLinear, Integer>

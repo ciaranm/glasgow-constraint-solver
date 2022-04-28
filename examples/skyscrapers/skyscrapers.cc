@@ -23,19 +23,15 @@
 using namespace gcs;
 
 using std::cerr;
-using std::cmp_equal;
 using std::cout;
 using std::endl;
-using std::function;
 using std::make_optional;
 using std::nullopt;
 using std::optional;
 using std::string;
 using std::to_string;
 using std::vector;
-using std::chrono::duration_cast;
 using std::chrono::microseconds;
-using std::chrono::steady_clock;
 
 namespace po = boost::program_options;
 

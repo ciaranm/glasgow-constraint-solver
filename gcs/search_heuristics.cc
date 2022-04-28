@@ -4,8 +4,6 @@
 
 #include <tuple>
 
-using std::function;
-using std::nullopt;
 using std::optional;
 using std::tuple;
 using std::vector;

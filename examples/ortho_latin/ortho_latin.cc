@@ -19,7 +19,6 @@ using std::cerr;
 using std::cout;
 using std::endl;
 using std::ifstream;
-using std::stoi;
 using std::vector;
 
 namespace po = boost::program_options;

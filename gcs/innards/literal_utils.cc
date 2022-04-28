@@ -12,9 +12,7 @@ using namespace gcs;
 
 using std::nullopt;
 using std::optional;
-using std::remove_if;
 using std::string;
-using std::unique;
 
 auto gcs::innards::debug_string(const Literal & lit) -> string
 {

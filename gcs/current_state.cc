@@ -10,7 +10,6 @@ using std::make_optional;
 using std::move;
 using std::optional;
 using std::string;
-using std::unique_ptr;
 
 VariableDoesNotHaveUniqueValue::VariableDoesNotHaveUniqueValue(const string & w) :
     _wat(w + " does not have a unique value")

@@ -12,7 +12,6 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::max;
-using std::min;
 using std::optional;
 using std::pair;
 using std::stringstream;

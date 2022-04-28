@@ -29,7 +29,6 @@ using std::copy;
 using std::countr_zero;
 using std::flush;
 using std::fstream;
-using std::function;
 using std::ios;
 using std::istreambuf_iterator;
 using std::list;
