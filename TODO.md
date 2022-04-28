@@ -18,8 +18,6 @@ Code and Infrastructure
 
 - Factor out common test code.
 
-- Replace for\_each\_with\_index with C++20 stuff so we can use break in loops.
-
 Examples
 --------
 
