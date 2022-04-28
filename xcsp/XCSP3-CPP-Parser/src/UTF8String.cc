@@ -334,6 +334,8 @@ UTF8String::iterator::iterator(const Byte *s) {
     p = s;
 }
 
+UTF8String::iterator::iterator(const iterator & o) : p(o.p) {
+}
 
 int UTF8String::iterator::operator*() {
     int ch = *p;

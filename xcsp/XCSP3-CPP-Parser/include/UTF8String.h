@@ -89,6 +89,8 @@ namespace XCSP3Core {
 
             explicit iterator(const Byte *s);
 
+            iterator(const iterator &);
+
             int operator*();
 
             iterator &operator++();
