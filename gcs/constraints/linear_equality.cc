@@ -113,7 +113,7 @@ auto LinearEquality::install(Propagators & propagators, const State & initial_st
         .visit(sanitised_cv);
 
     if (_gac) {
-        visit([&](auto & sanitised_cv) {
+        visit([&, modifier=modifier](auto & sanitised_cv) {
             Triggers triggers;
             for (auto & cv : sanitised_cv)
                 triggers.on_change.push_back(get_var(cv));

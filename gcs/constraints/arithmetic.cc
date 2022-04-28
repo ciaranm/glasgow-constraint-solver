@@ -58,7 +58,7 @@ auto GACArithmetic<op_>::describe_for_proof() -> std::string
     return "arithmetic";
 }
 
-namespace gcs
+namespace gcs::innards
 {
     template class GACArithmetic<ArithmeticOperator::Plus>;
     template class GACArithmetic<ArithmeticOperator::Minus>;
