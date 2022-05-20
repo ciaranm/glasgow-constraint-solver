@@ -58,4 +58,13 @@ veripb qap.{opb,veripb} || exit 1
 ./build/skyscrapers 5 --prove || exit 1
 veripb skyscrapers.{opb,veripb} || exit 1
 
+if [[ -f ./build/xcsp_glasgow_constraint_solver ]] ; then
+    ./build/xcsp_glasgow_constraint_solver --prove --all xcsp/tests/sum_not_equals.xml > >(tee sum_not_equals.out) || exit 1
+    grep -q '^d FOUND SOLUTIONS 8$' sum_not_equals.out || exit 1
+    veripb xcsp.{opb,veripb} || exit 1
+    rm -f sum_not_equals.out
+else
+    echo "skipping xcsp tests"
+fi
+
 echo tests passed

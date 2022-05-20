@@ -103,7 +103,7 @@ auto disintentionify_to_intvar(const string & s, string::size_type & pos, Proble
     pos = epos;
 
     if (s.at(epos) == '(') {
-        if (tok == "dist" || tok == "eq" || tok == "ne" || tok == "add" || tok == "sub" || tok == "mul" || tok == "mod") {
+        if (tok == "dist" || tok == "eq" || tok == "ne" || tok == "add" || tok == "sub" || tok == "mul" || tok == "mod" || tok == "div") {
             ++pos;
             auto [v1, lower1, upper1, _1] = disintentionify_to_intvar(s, pos, problem, mapping);
             if (s.at(pos) != ',')
@@ -162,6 +162,12 @@ auto disintentionify_to_intvar(const string & s, string::size_type & pos, Proble
                 auto bound = max(abs(lower2), abs(upper2));
                 auto r = problem.create_integer_variable(-bound, bound, "modresult");
                 problem.post(Mod{*v1, *v2, r});
+                return tuple{r, -bound, bound, nullopt};
+            }
+            else if (tok == "div") {
+                auto bound = max(abs(lower1), abs(upper1));
+                auto r = problem.create_integer_variable(-bound, bound, "modresult");
+                problem.post(Div{*v1, *v2, r});
                 return tuple{r, -bound, bound, nullopt};
             }
             else if (tok == "eq") {
@@ -445,10 +451,12 @@ struct ParserCallbacks : XCSP3CoreCallbacks
     auto buildConstraintSumCommon(string, vector<XVariable *> & x_vars, const optional<vector<int>> & coeffs, XCondition & cond) -> void
     {
         Linear cvs;
+        Integer range = 0_i;
         for (const auto & [idx, x] : enumerate(x_vars)) {
             auto m = mapping.find(x->id);
             need_variable(problem, m->second, x->id);
             cvs.emplace_back(coeffs ? Integer{coeffs->at(idx)} : 1_i, *get<0>(m->second));
+            range += abs(cvs.back().first) * max(abs(get<1>(m->second)), abs(get<2>(m->second)));
         }
 
         Integer bound = 0_i;
@@ -484,8 +492,13 @@ struct ParserCallbacks : XCSP3CoreCallbacks
         case OrderType::GE:
             problem.post(LinearGreaterThanEqual{move(cvs), bound});
             break;
+        case OrderType::NE: {
+            auto diff = problem.create_integer_variable(-range, range, "ne");
+            cvs.emplace_back(1, diff);
+            problem.post(LinearEquality{move(cvs), bound});
+            problem.post(NotEquals{diff, 0_c});
+        } break;
         case OrderType::IN:
-        case OrderType::NE:
             throw UnimplementedException{"order type"};
         }
     }
@@ -628,6 +641,7 @@ auto main(int argc, char * argv[]) -> int
     display_options.add_options()            //
         ("help", "Display help information") //
         ("prove", "Create a proof")          //
+        ("all", "Find all solutions")        //
         ("timeout", po::value<int>(), "Timeout in seconds");
 
     po::options_description all_options{"All options"};
@@ -678,7 +692,7 @@ auto main(int argc, char * argv[]) -> int
     }
 
     auto model_done_duration = duration_cast<microseconds>(steady_clock::now() - start_time);
-    cout << "d MODEL BUILD TIME: " << (model_done_duration.count() / 1'000'000.0) << "s" << endl;
+    cout << "d MODEL BUILD TIME " << (model_done_duration.count() / 1'000'000.0) << "s" << endl;
 
     optional<CurrentState> saved_solution;
 
@@ -719,6 +733,8 @@ auto main(int argc, char * argv[]) -> int
                     cout << "o " << s(*callbacks.objective_variable) << endl;
                     return true;
                 }
+                else if (options_vars.contains("all"))
+                    return true;
                 else
                     return false;
             }},
@@ -765,11 +781,14 @@ auto main(int argc, char * argv[]) -> int
         cout << "v </instantiation>" << endl;
     }
 
-    cout << "d WRONG DECISIONS: " << stats.failures << endl;
-    cout << "d PROPAGATIONS: " << stats.propagations << endl;
-    cout << "d EFFECTFUL PROPAGATIONS: " << stats.effectful_propagations << endl;
-    cout << "d CONTRADICTING PROPAGATIONS: " << stats.contradicting_propagations << endl;
-    cout << "d SOLVE TIME: " << (stats.solve_time.count() / 1'000'000.0) << "s" << endl;
+    cout << "d WRONG DECISIONS " << stats.failures << endl;
+    cout << "d PROPAGATIONS " << stats.propagations << endl;
+    cout << "d EFFECTFUL PROPAGATIONS " << stats.effectful_propagations << endl;
+    cout << "d CONTRADICTING PROPAGATIONS " << stats.contradicting_propagations << endl;
+    cout << "d SOLVE TIME " << (stats.solve_time.count() / 1'000'000.0) << "s" << endl;
+
+    if (options_vars.contains("all"))
+        cout << "d FOUND SOLUTIONS " << stats.solutions << endl;
 
     return actually_aborted ? EXIT_FAILURE : EXIT_SUCCESS;
 }

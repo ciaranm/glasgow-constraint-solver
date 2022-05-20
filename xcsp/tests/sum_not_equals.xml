@@ -1,0 +1,12 @@
+<instance format="XCSP3" type="CSP">
+    <variables>
+        <array id="x" size="[3]"> 0 3 </array>
+    </variables>
+    <constraints>
+        <sum>
+            <list> x[] </list>
+            <coeffs> 1 1 1 </coeffs>
+            <condition> (ne,4) </condition>
+        </sum>
+    </constraints>
+</instance>
