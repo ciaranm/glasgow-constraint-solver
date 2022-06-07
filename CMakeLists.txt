@@ -9,6 +9,8 @@ add_compile_options(-O3)
 add_compile_options(-march=native)
 add_compile_options(-g)
 add_compile_options(-g3)
+add_compile_options(-pthread)
+add_link_options(-pthread)
 
 # add_compile_options(-DGCS_TRACK_ALL_PROPAGATIONS=1)
 
