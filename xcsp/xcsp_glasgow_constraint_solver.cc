@@ -42,6 +42,8 @@ using std::flush;
 using std::get;
 using std::make_unique;
 using std::map;
+using std::max;
+using std::min;
 using std::minmax_element;
 using std::mutex;
 using std::nullopt;
@@ -141,8 +143,8 @@ auto disintentionify_to_intvar(const string & s, string::size_type & pos, Proble
                     return tuple{r, lower1 - lower2, upper1 - upper2, nullopt};
                 }
                 else {
-                    auto lower_bound = Integer{lower1 - lower2};
-                    auto upper_bound = Integer{upper1 - upper2};
+                    auto lower_bound = min({lower1 - lower2, lower1 - upper2, upper1 - lower2, upper2 - upper2});
+                    auto upper_bound = max({lower1 - lower2, lower1 - upper2, upper1 - lower2, upper2 - upper2});
                     auto r = problem.create_integer_variable(lower_bound, upper_bound, "subresult");
                     problem.post(LinearEquality{Linear{{1_i, *v1}, {-1_i, *v2}, {-1_i, r}}, 0_i});
                     return tuple{r, lower_bound, upper_bound, nullopt};
@@ -570,7 +572,7 @@ struct ParserCallbacks : XCSP3CoreCallbacks
         buildObjectiveCommon(type, x_vars, coeffs, true);
     }
 
-    auto buildObjectiveCommon(ExpressionObjective type, vector<XVariable *> & x_vars, vector<int> & coeffs, bool max) -> void
+    auto buildObjectiveCommon(ExpressionObjective type, vector<XVariable *> & x_vars, vector<int> & coeffs, bool is_max) -> void
     {
         is_optimisation = true;
 
@@ -586,7 +588,7 @@ struct ParserCallbacks : XCSP3CoreCallbacks
                 if (! upper)
                     upper = u;
                 lower = min(*lower, l);
-                upper = min(*upper, u);
+                upper = max(*upper, u);
 
                 vars.push_back(*var);
             }
@@ -599,7 +601,7 @@ struct ParserCallbacks : XCSP3CoreCallbacks
             else
                 problem.post(ArrayMax{vars, obj});
 
-            if (max)
+            if (is_max)
                 problem.maximise(obj);
             else
                 problem.minimise(obj);
@@ -627,7 +629,7 @@ struct ParserCallbacks : XCSP3CoreCallbacks
             cvs.emplace_back(-1, obj);
 
             problem.post(LinearEquality{move(cvs), 0_i});
-            if (max)
+            if (is_max)
                 problem.maximise(obj);
             else
                 problem.minimise(obj);
