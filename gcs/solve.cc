@@ -45,62 +45,44 @@ namespace
                 problem.update_objective(state);
             }
             else {
-                bool keep_going = true;
-
                 if (callbacks.trace && ! callbacks.trace(state.current()))
-                    keep_going = false;
+                    return false;
 
                 if (optional_abort_flag && optional_abort_flag->load())
-                    keep_going = false;
+                    return false;
 
-                if (callbacks.guess && keep_going) {
+                auto recurse = [&](const Literal & guess) -> bool {
+                    if (optional_abort_flag && optional_abort_flag->load())
+                        return false;
+
+                    auto result = true;
+                    auto timestamp = state.new_epoch();
+                    state.guess(guess);
+                    bool child_contains_solution = false;
+                    if (! solve_with_state(depth + 1, stats, problem, state, callbacks, child_contains_solution, optional_abort_flag))
+                        result = false;
+
+                    if (child_contains_solution)
+                        this_subtree_contains_solution = true;
+                    else
+                        ++stats.failures;
+
+                    state.backtrack(timestamp);
+                    return result;
+                };
+
+                if (callbacks.guess) {
                     auto guesses = callbacks.guess(state.current(), *branch_var);
-                    for (auto & guess : guesses) {
-                        if (optional_abort_flag && optional_abort_flag->load())
-                            keep_going = false;
-
-                        if (keep_going) {
-                            auto timestamp = state.new_epoch();
-                            state.guess(guess);
-                            bool child_contains_solution = false;
-                            if (! solve_with_state(depth + 1, stats, problem, state, callbacks, child_contains_solution, optional_abort_flag))
-                                keep_going = false;
-
-                            if (child_contains_solution)
-                                this_subtree_contains_solution = true;
-                            else
-                                ++stats.failures;
-
-                            state.backtrack(timestamp);
-                        }
-                        else
-                            break;
-                    }
+                    for (auto & guess : guesses)
+                        if (! recurse(guess))
+                            return false;
                 }
                 else {
-                    state.for_each_value(*branch_var, [&](Integer val) {
-                        if (optional_abort_flag && optional_abort_flag->load())
-                            keep_going = false;
-
-                        if (keep_going) {
-                            auto timestamp = state.new_epoch();
-                            state.guess(*branch_var == val);
-                            bool child_contains_solution = false;
-                            if (! solve_with_state(depth + 1, stats, problem, state, callbacks, child_contains_solution, optional_abort_flag))
-                                keep_going = false;
-
-                            if (child_contains_solution)
-                                this_subtree_contains_solution = true;
-                            else
-                                ++stats.failures;
-
-                            state.backtrack(timestamp);
-                        }
-                    });
+                    if (! state.for_each_value_while(*branch_var, [&](Integer val) {
+                            return recurse(*branch_var == val);
+                        }))
+                        return false;
                 }
-
-                if (! keep_going)
-                    return false;
             }
         }
 
