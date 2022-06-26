@@ -939,7 +939,7 @@ auto State::for_each_value(const VarType_ & var, const function<auto(Integer)->v
 }
 
 template <IntegerVariableIDLike VarType_>
-auto State::for_each_value_while(const VarType_ & var, const function<auto(Integer)->bool> & f) const -> void
+auto State::for_each_value_while(const VarType_ & var, const function<auto(Integer)->bool> & f) const -> bool
 {
     auto [actual_var, negate_first, then_add] = deview(var);
 
@@ -950,14 +950,18 @@ auto State::for_each_value_while(const VarType_ & var, const function<auto(Integ
         return (negate_first ? -v : v) + then_add;
     };
 
+    bool result = true;
+
     overloaded{
         [&](const IntegerVariableConstantState & c) {
             f(apply(c.value));
         },
         [&](const IntegerVariableRangeState & r) {
             for (auto v = r.lower; v <= r.upper; ++v)
-                if (! f(apply(v)))
+                if (! f(apply(v))) {
+                    result = false;
                     break;
+                }
         },
         [&](const IntegerVariableSmallSetState & r) {
             for (unsigned w = 0; w < Bits::n_words; ++w) {
@@ -967,21 +971,27 @@ auto State::for_each_value_while(const VarType_ & var, const function<auto(Integ
                     if (z == Bits::bits_per_word)
                         break;
                     b &= ~(Bits::BitWord{1} << z);
-                    if (! f(apply(r.lower + Integer{w * Bits::bits_per_word} + Integer{z})))
+                    if (! f(apply(r.lower + Integer{w * Bits::bits_per_word} + Integer{z}))) {
+                        result = false;
                         break;
+                    }
                 }
             }
         },
         [&](const IntegerVariableSetState & s) {
             for (const auto & v : *s.values)
-                if (! f(apply(v)))
+                if (! f(apply(v))) {
+                    result = false;
                     break;
+                }
         }}
         .visit(var_copy);
+
+    return result;
 }
 
 template <IntegerVariableIDLike VarType_>
-auto State::for_each_value_while_immutable(const VarType_ & var, const function<auto(Integer)->bool> & f) const -> void
+auto State::for_each_value_while_immutable(const VarType_ & var, const function<auto(Integer)->bool> & f) const -> bool
 {
     auto [actual_var, negate_first, then_add] = deview(var);
 
@@ -992,14 +1002,18 @@ auto State::for_each_value_while_immutable(const VarType_ & var, const function<
     GetStateAndOffsetOf<VarType_> get_state{*this, var};
     const IntegerVariableState & var_ref = get_state.state;
 
+    bool result = true;
+
     overloaded{
         [&](const IntegerVariableConstantState & c) {
             f(apply(c.value));
         },
         [&](const IntegerVariableRangeState & r) {
             for (auto v = r.lower; v <= r.upper; ++v)
-                if (! f(apply(v)))
+                if (! f(apply(v))) {
+                    result = false;
                     break;
+                }
         },
         [&](const IntegerVariableSmallSetState & r) {
             for (unsigned w = 0; w < Bits::n_words; ++w) {
@@ -1009,17 +1023,23 @@ auto State::for_each_value_while_immutable(const VarType_ & var, const function<
                     if (z == Bits::bits_per_word)
                         break;
                     b &= ~(Bits::BitWord{1} << z);
-                    if (! f(apply(r.lower + Integer{w * Bits::bits_per_word} + Integer{z})))
+                    if (! f(apply(r.lower + Integer{w * Bits::bits_per_word} + Integer{z}))) {
+                        result = false;
                         break;
+                    }
                 }
             }
         },
         [&](const IntegerVariableSetState & s) {
             for (const auto & v : *s.values)
-                if (! f(apply(v)))
+                if (! f(apply(v))) {
+                    result = false;
                     break;
+                }
         }}
         .visit(var_ref);
+
+    return result;
 }
 
 auto State::operator()(const IntegerVariableID & i) const -> Integer
@@ -1173,15 +1193,15 @@ namespace gcs
     template auto State::for_each_value(const ViewOfIntegerVariableID &, const std::function<auto(Integer)->void> &) const -> void;
     template auto State::for_each_value(const ConstantIntegerVariableID &, const std::function<auto(Integer)->void> &) const -> void;
 
-    template auto State::for_each_value_while(const IntegerVariableID &, const std::function<auto(Integer)->bool> &) const -> void;
-    template auto State::for_each_value_while(const SimpleIntegerVariableID &, const std::function<auto(Integer)->bool> &) const -> void;
-    template auto State::for_each_value_while(const ViewOfIntegerVariableID &, const std::function<auto(Integer)->bool> &) const -> void;
-    template auto State::for_each_value_while(const ConstantIntegerVariableID &, const std::function<auto(Integer)->bool> &) const -> void;
+    template auto State::for_each_value_while(const IntegerVariableID &, const std::function<auto(Integer)->bool> &) const -> bool;
+    template auto State::for_each_value_while(const SimpleIntegerVariableID &, const std::function<auto(Integer)->bool> &) const -> bool;
+    template auto State::for_each_value_while(const ViewOfIntegerVariableID &, const std::function<auto(Integer)->bool> &) const -> bool;
+    template auto State::for_each_value_while(const ConstantIntegerVariableID &, const std::function<auto(Integer)->bool> &) const -> bool;
 
-    template auto State::for_each_value_while_immutable(const IntegerVariableID &, const std::function<auto(Integer)->bool> &) const -> void;
-    template auto State::for_each_value_while_immutable(const SimpleIntegerVariableID &, const std::function<auto(Integer)->bool> &) const -> void;
-    template auto State::for_each_value_while_immutable(const ViewOfIntegerVariableID &, const std::function<auto(Integer)->bool> &) const -> void;
-    template auto State::for_each_value_while_immutable(const ConstantIntegerVariableID &, const std::function<auto(Integer)->bool> &) const -> void;
+    template auto State::for_each_value_while_immutable(const IntegerVariableID &, const std::function<auto(Integer)->bool> &) const -> bool;
+    template auto State::for_each_value_while_immutable(const SimpleIntegerVariableID &, const std::function<auto(Integer)->bool> &) const -> bool;
+    template auto State::for_each_value_while_immutable(const ViewOfIntegerVariableID &, const std::function<auto(Integer)->bool> &) const -> bool;
+    template auto State::for_each_value_while_immutable(const ConstantIntegerVariableID &, const std::function<auto(Integer)->bool> &) const -> bool;
 
     template auto State::infer_equal(const IntegerVariableID &, Integer, const Justification &) -> Inference;
     template auto State::infer_equal(const SimpleIntegerVariableID &, Integer, const Justification &) -> Inference;
