@@ -28,7 +28,7 @@ If you have ``veripb`` installed (see below), you should then run
 
 
 ```shell
-./run_tests.bash
+{ cd build ; ctest ; }
 ```
 
 To generate API documentation, Doxygen must be installed. Then instead do:

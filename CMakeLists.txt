@@ -21,6 +21,8 @@ project(
     HOMEPAGE_URL "https://github.com/ciaranm/glasgow-constraint-solver"
     LANGUAGES CXX)
 
+enable_testing()
+
 option(GCS_ENABLE_DOXYGEN "Add a doxygen target to generate the documentation" OFF)
 option(GCS_ENABLE_XCSP "Support for the XCSP modelling language" OFF)
 

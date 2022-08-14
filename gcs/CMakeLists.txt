@@ -43,6 +43,7 @@ add_library(glasgow_constraint_solver
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 link_libraries(glasgow_constraint_solver)
+
 add_executable(abs_test constraints/abs_test.cc)
 add_executable(arithmetic_test constraints/arithmetic_test.cc)
 add_executable(comparison_test constraints/comparison_test.cc)
@@ -54,3 +55,13 @@ add_executable(logical_test constraints/logical_test.cc)
 add_executable(min_max_test constraints/min_max_test.cc)
 add_executable(n_value_test constraints/n_value_test.cc)
 
+add_test(NAME abs COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:abs_test>)
+add_test(NAME arithmetic COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:arithmetic_test>)
+add_test(NAME comparison COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:comparison_test>)
+add_test(NAME count COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:count_test>)
+add_test(NAME element COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:element_test>)
+add_test(NAME equals COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:equals_test>)
+add_test(NAME linear_equality COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:linear_equality_test>)
+add_test(NAME logical COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:logical_test>)
+add_test(NAME min_max COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:min_max_test>)
+add_test(NAME n_value COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:n_value_test>)
