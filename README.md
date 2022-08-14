@@ -39,14 +39,13 @@ cmake --build build
 cmake --build build --target docs
 ```
 
-For XCSP support, you will also need libxml2 (``libxml2-dev`` on Ubuntu). Then instead do:
+By default, XCSP support will be enabled, which requires libxml2 (``libxml2-dev`` on Ubuntu) and
+which will use Git to fetch an external dependency for parsing XCSP. To turn this off, do:
 
 ```shell
-cmake -S . -B build -DGCS_ENABLE_XCSP=ON
+cmake -S . -B build -DGCS_ENABLE_XCSP=OFF
 cmake --build build
 ```
-
-You can, of course, combine Doxygen and XCSP support.
 
 Using the XCSP Solver
 ---------------------
