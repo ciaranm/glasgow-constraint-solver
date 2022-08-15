@@ -25,10 +25,14 @@ enable_testing()
 
 option(GCS_ENABLE_DOXYGEN "Add a doxygen target to generate the documentation" OFF)
 option(GCS_ENABLE_XCSP "Support for the XCSP modelling language" ON)
+option(GCS_ENABLE_EXAMPLES "Build examples" ON)
 
 include_directories(.)
 add_subdirectory(gcs)
-add_subdirectory(examples)
+
+if (GCS_ENABLE_EXAMPLES)
+    add_subdirectory(examples)
+endif (GCS_ENABLE_EXAMPLES)
 
 if (GCS_ENABLE_DOXYGEN)
     find_package(Doxygen)
