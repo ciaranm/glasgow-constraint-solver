@@ -3,6 +3,7 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INTEGER_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INTEGER_HH
 
+#include <functional>
 #include <ostream>
 #include <string>
 
@@ -155,5 +156,14 @@ namespace gcs
         return Integer(v);
     }
 }
+
+template <>
+struct std::hash<gcs::Integer>
+{
+    [[nodiscard]] inline auto operator()(const gcs::Integer & v) const -> std::size_t
+    {
+        return hash<long long>{}(v.raw_value);
+    }
+};
 
 #endif

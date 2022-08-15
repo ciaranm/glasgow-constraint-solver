@@ -5,6 +5,7 @@
 
 #include <gcs/integer.hh>
 
+#include <functional>
 #include <string>
 #include <utility>
 #include <variant>
@@ -164,5 +165,42 @@ namespace gcs
      */
     using VariableID = std::variant<IntegerVariableID>;
 }
+
+template <>
+struct std::hash<gcs::SimpleIntegerVariableID>
+{
+    [[nodiscard]] inline auto operator()(const gcs::SimpleIntegerVariableID & v) const -> std::size_t
+    {
+        return hash<unsigned long long>{}(v.index);
+    }
+};
+
+template <>
+struct std::hash<gcs::ConstantIntegerVariableID>
+{
+    [[nodiscard]] inline auto operator()(const gcs::ConstantIntegerVariableID & v) const -> std::size_t
+    {
+        return hash<gcs::Integer>{}(v.const_value);
+    }
+};
+
+template <>
+struct std::hash<gcs::ViewOfIntegerVariableID>
+{
+    [[nodiscard]] inline auto operator()(const gcs::ViewOfIntegerVariableID & v) const -> std::size_t
+    {
+        return hash<gcs::SimpleIntegerVariableID>{}(v.actual_variable) ^
+            hash<gcs::Integer>{}(v.then_add);
+    }
+};
+
+template <>
+struct std::hash<gcs::IntegerVariableID>
+{
+    [[nodiscard]] inline auto operator()(const gcs::IntegerVariableID & v) const -> std::size_t
+    {
+        return visit([&]<typename T_>(const T_ & v) -> std::size_t { return hash<T_>{}(v); }, v);
+    }
+};
 
 #endif
