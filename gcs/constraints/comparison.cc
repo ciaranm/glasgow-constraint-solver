@@ -36,7 +36,7 @@ auto CompareLessThanReif::install(Propagators & propagators, const State & initi
                 do_less(_v1, _v2, nullopt, _or_equal);
             },
             [&](const FalseLiteral &) {
-                do_less(_v2, _v1, nullopt, _or_equal);
+                do_less(_v2, _v1, nullopt, ! _or_equal);
             },
             [&](const LiteralFromIntegerVariable & ilit) {
                 do_less(_v1, _v2, ilit, _or_equal);
@@ -101,7 +101,7 @@ auto CompareLessThanReif::install(Propagators & propagators, const State & initi
                     return pair{state.infer_less_than(v1, or_equal ? v2_is_constant + 1_i : v2_is_constant, JustifyUsingRUP{}),
                         PropagatorState::DisableUntilBacktrack};
                 else
-                    return pair{state.infer_greater_than_or_equal(v1, or_equal ? v2_is_constant : v2_is_constant + 1_i, JustifyUsingRUP{}),
+                    return pair{state.infer_greater_than_or_equal(v1, or_equal ? v2_is_constant + 1_i : v2_is_constant, JustifyUsingRUP{}),
                         PropagatorState::DisableUntilBacktrack};
             },
             Triggers{}, "compare less than reif");
