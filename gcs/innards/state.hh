@@ -6,10 +6,10 @@
 #include <gcs/current_state.hh>
 #include <gcs/innards/integer_variable_state.hh>
 #include <gcs/innards/justification.hh>
+#include <gcs/innards/proof-fwd.hh>
 #include <gcs/innards/state-fwd.hh>
 #include <gcs/innards/variable_id_utils.hh>
 #include <gcs/literal.hh>
-#include <gcs/problem-fwd.hh>
 
 #include <concepts>
 #include <exception>
@@ -130,7 +130,7 @@ namespace gcs::innards
          */
         ///@{
 
-        explicit State(const Problem * const problem);
+        explicit State(innards::Proof * optional_proof);
         State(State &&) noexcept;
         ~State();
 

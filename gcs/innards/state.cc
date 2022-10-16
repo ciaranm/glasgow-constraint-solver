@@ -185,7 +185,7 @@ struct State::GetMutableStateAndOffsetOf<ViewOfIntegerVariableID>
 
 struct State::Imp
 {
-    const Problem * const problem;
+    Proof * optional_proof;
 
     list<vector<IntegerVariableState>> integer_variable_states{};
     list<vector<function<auto()->void>>> on_backtracks{};
@@ -194,8 +194,8 @@ struct State::Imp
     vector<Literal> guesses{};
 };
 
-State::State(const Problem * const problem) :
-    _imp(new Imp{.problem = problem})
+State::State(Proof * optional_proof) :
+    _imp(new Imp{.optional_proof = optional_proof})
 {
     _imp->integer_variable_states.emplace_back();
     _imp->on_backtracks.emplace_back();
@@ -207,7 +207,7 @@ State::~State() = default;
 
 auto State::clone() const -> State
 {
-    State result(_imp->problem);
+    State result{_imp->optional_proof};
     result._imp->integer_variable_states = _imp->integer_variable_states;
     result._imp->on_backtracks = _imp->on_backtracks;
     result._imp->changed = _imp->changed;
@@ -227,8 +227,8 @@ auto State::create_integer_variable(Integer lower, Integer upper) -> SimpleInteg
 auto State::create_pseudovariable(Integer lower, Integer upper, const optional<string> & name) -> SimpleIntegerVariableID
 {
     auto result = create_integer_variable(lower, upper);
-    if (_imp->problem->optional_proof())
-        _imp->problem->optional_proof()->create_pseudovariable(result, lower, upper, name);
+    if (_imp->optional_proof)
+        _imp->optional_proof->create_pseudovariable(result, lower, upper, name);
     return result;
 }
 
@@ -620,8 +620,8 @@ auto State::prove_and_remember_change(const Inference & inference, const HowChan
         break;
 
     case Inference::Contradiction:
-        if (_imp->problem->optional_proof())
-            _imp->problem->optional_proof()->infer(*this, FalseLiteral{}, just);
+        if (_imp->optional_proof)
+            _imp->optional_proof->infer(*this, FalseLiteral{}, just);
         break;
 
     case Inference::Change: {
@@ -636,8 +636,8 @@ auto State::prove_and_remember_change(const Inference & inference, const HowChan
 
         _imp->how_changed[simple_var.index] = max<HowChanged>(_imp->how_changed[simple_var.index], how_changed);
 
-        if (_imp->problem->optional_proof())
-            _imp->problem->optional_proof()->infer(*this, lit, just);
+        if (_imp->optional_proof)
+            _imp->optional_proof->infer(*this, lit, just);
         break;
     }
     }
@@ -653,8 +653,8 @@ auto State::infer(const Literal & lit, const Justification & just) -> Inference
             return Inference::NoChange;
         },
         [&](const FalseLiteral &) {
-            if (_imp->problem->optional_proof())
-                _imp->problem->optional_proof()->infer(*this, FalseLiteral{}, just);
+            if (_imp->optional_proof)
+                _imp->optional_proof->infer(*this, FalseLiteral{}, just);
             return Inference::Contradiction;
         }}
         .visit(lit);
@@ -731,7 +731,7 @@ auto State::infer_all(const vector<Literal> & lits, const Justification & just) 
 
     // only do explicit justifications once
     Justification just_not_first{NoJustificationNeeded{}};
-    if (_imp->problem->optional_proof())
+    if (_imp->optional_proof)
         visit([&](const auto & j) -> void {
             if constexpr (is_same_v<decay_t<decltype(j)>, JustifyExplicitly>)
                 just_not_first = JustifyUsingRUP{};
@@ -759,8 +759,8 @@ auto State::infer_all(const vector<Literal> & lits, const Justification & just) 
 
 auto State::guess(const Literal & lit) -> void
 {
-    if (_imp->problem->optional_proof())
-        _imp->problem->optional_proof()->new_guess();
+    if (_imp->optional_proof)
+        _imp->optional_proof->new_guess();
 
     switch (infer(lit, Guess{})) {
     case Inference::NoChange:
@@ -1062,8 +1062,8 @@ auto State::new_epoch() -> Timestamp
 
 auto State::backtrack(Timestamp t) -> void
 {
-    if (_imp->problem->optional_proof())
-        _imp->problem->optional_proof()->undo_guess();
+    if (_imp->optional_proof)
+        _imp->optional_proof->undo_guess();
 
     _imp->integer_variable_states.resize(t.when);
     _imp->changed.clear();
@@ -1092,16 +1092,16 @@ auto State::for_each_guess(const function<auto(Literal)->void> & f) const -> voi
 
 auto State::add_proof_steps(JustifyExplicitly why) -> void
 {
-    if (_imp->problem->optional_proof()) {
+    if (_imp->optional_proof) {
         vector<ProofLine> to_delete;
-        _imp->problem->optional_proof()->add_proof_steps(why, to_delete);
-        _imp->problem->optional_proof()->delete_proof_lines(to_delete);
+        _imp->optional_proof->add_proof_steps(why, to_delete);
+        _imp->optional_proof->delete_proof_lines(to_delete);
     }
 }
 
 auto State::want_proofs() const -> bool
 {
-    return _imp->problem->optional_proof() != nullopt;
+    return _imp->optional_proof != nullptr;
 }
 
 auto State::test_literal(const Literal & lit) const -> LiteralIs

@@ -24,29 +24,29 @@ using std::vector;
 
 struct Problem::Imp
 {
+    optional<Proof> optional_proof;
     State initial_state;
     Propagators propagators;
     vector<IntegerVariableID> problem_variables;
     optional<IntegerVariableID> objective_variable;
     optional<Integer> objective_value;
-    optional<Proof> optional_proof;
 
-    Imp(Problem * problem) :
-        initial_state(problem),
+    Imp(Problem * problem, const ProofOptions * optional_options) :
+        optional_proof(optional_options ? optional<Proof>{*optional_options} : nullopt),
+        initial_state(optional_proof ? &*optional_proof : nullptr),
         propagators(problem)
     {
     }
 };
 
 Problem::Problem() :
-    _imp(new Imp(this))
+    _imp(new Imp(this, nullptr))
 {
 }
 
 Problem::Problem(const ProofOptions & options) :
-    _imp(new Imp(this))
+    _imp(new Imp(this, &options))
 {
-    _imp->optional_proof = make_optional<Proof>(options);
 }
 
 Problem::~Problem() = default;
