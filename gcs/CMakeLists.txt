@@ -55,3 +55,11 @@ add_test(NAME linear_equality COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<T
 add_test(NAME logical COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:logical_test>)
 add_test(NAME min_max COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:min_max_test>)
 add_test(NAME n_value COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:n_value_test>)
+
+add_executable(state_test innards/state_test.cc)
+target_link_libraries(state_test PRIVATE Catch2::Catch2WithMain)
+add_test(NAME state_test COMMAND $<TARGET_FILE:state_test>)
+
+add_executable(linear_utils_test innards/linear_utils_test.cc)
+target_link_libraries(linear_utils_test PRIVATE Catch2::Catch2WithMain)
+add_test(NAME linear_utils_test COMMAND $<TARGET_FILE:linear_utils_test>)

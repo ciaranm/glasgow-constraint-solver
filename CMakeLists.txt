@@ -56,3 +56,14 @@ endif (GCS_ENABLE_DOXYGEN)
 if (GCS_ENABLE_XCSP)
     add_subdirectory(xcsp)
 endif (GCS_ENABLE_XCSP)
+
+Include(FetchContent)
+Set(FETCHCONTENT_QUIET FALSE)
+FetchContent_Declare(
+  Catch2
+  GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+  GIT_TAG        97c48e0c343d26d50764fafdc90b1e630fbd10ce # v3.1.0
+)
+FetchContent_MakeAvailable(Catch2)
+
+SET(CATCH_CONFIG_ENABLE_ALL_STRINGMAKERS ON)

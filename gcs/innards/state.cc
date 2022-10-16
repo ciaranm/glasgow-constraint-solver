@@ -679,7 +679,7 @@ template <IntegerVariableIDLike VarType_>
 auto State::infer_not_equal(const VarType_ & var, Integer value, const Justification & just) -> Inference
 {
     auto [actual_var, negate_first, then_add] = deview(var);
-    auto [inference, how_changed] = change_state_for_not_equal(actual_var, (negate_first ? -value : value) - then_add);
+    auto [inference, how_changed] = change_state_for_not_equal(actual_var, (negate_first ? -value + then_add : value - then_add));
     prove_and_remember_change(inference, how_changed, just, var != value, actual_var);
     return inference;
 }
@@ -688,7 +688,7 @@ template <IntegerVariableIDLike VarType_>
 auto State::infer_equal(const VarType_ & var, Integer value, const Justification & just) -> Inference
 {
     auto [actual_var, negate_first, then_add] = deview(var);
-    auto [inference, how_changed] = change_state_for_equal(actual_var, (negate_first ? -value : value) - then_add);
+    auto [inference, how_changed] = change_state_for_equal(actual_var, (negate_first ? -value + then_add : value - then_add));
     prove_and_remember_change(inference, how_changed, just, var == value, actual_var);
     return inference;
 }
@@ -698,7 +698,7 @@ auto State::infer_less_than(const VarType_ & var, Integer value, const Justifica
 {
     auto [actual_var, negate_first, then_add] = deview(var);
     if (negate_first) {
-        auto [inference, how_changed] = change_state_for_greater_than_or_equal(actual_var, -value - then_add + 1_i);
+        auto [inference, how_changed] = change_state_for_greater_than_or_equal(actual_var, -value + then_add + 1_i);
         prove_and_remember_change(inference, how_changed, just, var < value, actual_var);
         return inference;
     }
@@ -714,7 +714,7 @@ auto State::infer_greater_than_or_equal(const VarType_ & var, Integer value, con
 {
     auto [actual_var, negate_first, then_add] = deview(var);
     if (negate_first) {
-        auto [inference, how_changed] = change_state_for_less_than(actual_var, -value - then_add);
+        auto [inference, how_changed] = change_state_for_less_than(actual_var, -value + then_add + 1_i);
         prove_and_remember_change(inference, how_changed, just, var >= value, actual_var);
         return inference;
     }
@@ -846,7 +846,7 @@ template <IntegerVariableIDLike VarType_>
 auto State::in_domain(const VarType_ & var, const Integer val) const -> bool
 {
     GetStateAndOffsetOf<VarType_> get_state{*this, var};
-    auto actual_val = (get<1>(get_state.var_negate_then_add) ? -val : val) - get<2>(get_state.var_negate_then_add);
+    auto actual_val = (get<1>(get_state.var_negate_then_add) ? -val + get<2>(get_state.var_negate_then_add) : val - get<2>(get_state.var_negate_then_add));
     return overloaded{
         [val = actual_val](const IntegerVariableRangeState & v) { return val >= v.lower && val <= v.upper; },
         [val = actual_val](const IntegerVariableConstantState & v) { return val == v.value; },
