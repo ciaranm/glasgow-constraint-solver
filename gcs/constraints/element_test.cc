@@ -136,7 +136,7 @@ auto check_vals_gac(IntegerVariableID var, IntegerVariableID idx, const vector<I
     bool ok = true;
     for (const auto & [index, avar] : enumerate(vars)) {
         if (s.has_single_value(idx) && s(idx) == Integer(index)) {
-            s.for_each_value(avar, [&, index=index](Integer aval) {
+            s.for_each_value(avar, [&, index = index](Integer aval) {
                 if (! s.in_domain(var, aval)) {
                     cerr << "avar " << index << " missing support: " << aval << " when idx is " << s(idx)
                          << ", var is ";

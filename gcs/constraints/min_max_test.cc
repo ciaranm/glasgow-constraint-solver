@@ -148,7 +148,7 @@ auto run_min_max_test(pair<int, int> result_range, const vector<pair<int, int>> 
                 });
 
                 for (const auto & [idx, var] : enumerate(array)) {
-                    s.for_each_value(var, [&, idx=idx](Integer val) {
+                    s.for_each_value(var, [&, idx = idx](Integer val) {
                         bool violated = expected.end() == find_if(expected.begin(), expected.end(), [&](const auto & sol) {
                             bool ok = true;
                             if (Integer{get<1>(sol).at(idx)} != val)
