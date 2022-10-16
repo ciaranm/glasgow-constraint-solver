@@ -562,9 +562,9 @@ auto Proof::proof_variable(const Literal & lit) const -> const string &
                 [&](const ViewOfIntegerVariableID & view) -> const string & {
                     switch (ilit.op) {
                     case LiteralFromIntegerVariable::Operator::NotEqual:
-                        return proof_variable(view.actual_variable != (view.negate_first ? -1_i : 1_i) * (ilit.value - view.then_add));
+                        return proof_variable(view.actual_variable != (view.negate_first ? -ilit.value + view.then_add : ilit.value - view.then_add));
                     case LiteralFromIntegerVariable::Operator::Equal:
-                        return proof_variable(view.actual_variable == (view.negate_first ? -1_i : 1_i) * (ilit.value - view.then_add));
+                        return proof_variable(view.actual_variable == (view.negate_first ? -ilit.value + view.then_add : ilit.value - view.then_add));
                     case LiteralFromIntegerVariable::Operator::Less:
                         if (view.negate_first)
                             return proof_variable(view.actual_variable >= ilit.value - view.then_add + 1_i);
@@ -611,10 +611,10 @@ auto Proof::need_proof_variable(const Literal & lit) -> void
                 [&](const ViewOfIntegerVariableID & view) {
                     switch (ilit.op) {
                     case LiteralFromIntegerVariable::Operator::NotEqual:
-                        need_proof_variable(view.actual_variable != (view.negate_first ? -1_i : 1_i) * (ilit.value - view.then_add));
+                        need_proof_variable(view.actual_variable != (view.negate_first ? -ilit.value + view.then_add : ilit.value - view.then_add));
                         break;
                     case LiteralFromIntegerVariable::Operator::Equal:
-                        need_proof_variable(view.actual_variable == (view.negate_first ? -1_i : 1_i) * (ilit.value - view.then_add));
+                        need_proof_variable(view.actual_variable == (view.negate_first ? -ilit.value + view.then_add : ilit.value - view.then_add));
                         break;
                     case LiteralFromIntegerVariable::Operator::Less:
                         if (view.negate_first)
