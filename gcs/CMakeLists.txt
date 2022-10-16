@@ -9,27 +9,17 @@ add_library(glasgow_constraint_solver
     stats.cc
     variable_id.cc
     constraints/abs.cc
-    constraints/abs_test.cc
     constraints/all_different.cc
     constraints/arithmetic.cc
-    constraints/arithmetic_test.cc
     constraints/comparison.cc
-    constraints/comparison_test.cc
     constraints/count.cc
-    constraints/count_test.cc
     constraints/element.cc
-    constraints/element_test.cc
     constraints/equals.cc
-    constraints/equals_test.cc
     constraints/in.cc
     constraints/linear_equality.cc
-    constraints/linear_equality_test.cc
     constraints/logical.cc
-    constraints/logical_test.cc
     constraints/min_max.cc
-    constraints/min_max_test.cc
     constraints/n_value.cc
-    constraints/n_value_test.cc
     constraints/table.cc
     innards/extensional_utils.cc
     innards/integer_variable_state.cc
