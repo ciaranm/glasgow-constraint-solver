@@ -159,6 +159,7 @@ Proof::Proof(const ProofOptions & proof_options) :
     _imp->opb_file = proof_options.opb_file;
     _imp->proof_file = proof_options.proof_file;
     _imp->use_friendly_names = proof_options.use_friendly_names;
+    _imp->line_for_bound_in_bits.emplace_back();
 }
 
 Proof::~Proof() = default;
@@ -166,7 +167,6 @@ Proof::~Proof() = default;
 Proof::Proof(Proof && other) noexcept :
     _imp(move(other._imp))
 {
-    _imp->line_for_bound_in_bits.emplace_back();
 }
 
 auto Proof::operator=(Proof && other) noexcept -> Proof &
