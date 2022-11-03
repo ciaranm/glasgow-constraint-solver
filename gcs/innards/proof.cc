@@ -518,20 +518,18 @@ auto Proof::integer_linear_le(const State &, const SimpleLinear & lin, Integer v
     _imp->opb << " <= " << val << '\n';
 
     auto output = [&](Integer multiplier) {
-        Integer big_number = 0_i;
+        using namespace gcs::innards::opb_utils;
+
+        OPBExpression opb_expr;
         for (const auto & [coeff, var] : lin)
-            for (auto & [bit_value, bit_name] : _imp->integer_variable_bits.find(var)->second.second) {
-                big_number += abs(multiplier * coeff * bit_value);
-                _imp->opb << (multiplier * coeff * bit_value) << " " << bit_name << " ";
-            }
+            for (auto & [bit_value, bit_name] : _imp->integer_variable_bits.find(var)->second.second)
+                opb_expr.weighted_terms.emplace_back(multiplier * coeff * bit_value, bit_name);
 
+        auto opb_ineq = opb_expr >= (multiplier * val);
         if (half_reif)
-            visit([&](const auto & h) {
-                _imp->opb << (big_number + 1_i) << " " << proof_variable(! h) << " ";
-            },
-                *half_reif);
+            visit([&](const auto & h) { opb_ineq = implied_by(opb_ineq, proof_variable(h)); }, *half_reif);
 
-        _imp->opb << ">= " << (multiplier * val) << " ;\n";
+        _imp->opb << opb_ineq << " ;\n";
         ++_imp->model_constraints;
     };
 
