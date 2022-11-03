@@ -76,7 +76,7 @@ namespace gcs::innards::opb_utils
     [[nodiscard]] auto implied_by(OPBInequality x, const std::string & v) -> OPBInequality;
 
     /**
-     * Give an OPBInequality <code>x ==&lt; v</code>.
+     * Give an OPBInequality <code>x ==&gt; v</code>.
      *
      * \ingroup OPBUtils
      */
