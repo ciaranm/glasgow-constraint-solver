@@ -2,6 +2,7 @@
 
 #include <gcs/exception.hh>
 #include <gcs/innards/literal_utils.hh>
+#include <gcs/innards/opb_utils.hh>
 #include <gcs/innards/proof.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/innards/variable_id_utils.hh>
@@ -34,9 +35,12 @@ using std::istreambuf_iterator;
 using std::list;
 using std::map;
 using std::max;
+using std::min;
+using std::move;
 using std::nullopt;
 using std::ofstream;
 using std::optional;
+using std::ostream;
 using std::ostreambuf_iterator;
 using std::pair;
 using std::set;
@@ -230,6 +234,8 @@ auto Proof::create_proof_flag(const string & n) -> ProofFlag
 
 auto Proof::need_gevar(SimpleIntegerVariableID id, Integer v) -> void
 {
+    using namespace gcs::innards::opb_utils;
+
     if (_imp->direct_integer_variables.contains(id >= v))
         return;
 
@@ -241,101 +247,97 @@ auto Proof::need_gevar(SimpleIntegerVariableID id, Integer v) -> void
 
     auto & [_, bit_vars] = _imp->integer_variable_bits.find(id)->second;
 
-    if (_imp->opb_done) {
+    if (_imp->opb_done)
         _imp->proof << "# 0\n";
 
-        // gevar -> bits
-        _imp->proof << "red ";
-        for (auto & [coeff, var] : bit_vars)
-            _imp->proof << coeff << " " << var << " ";
-        _imp->proof << ">= " << v << " <== " << gevar << " ; " << gevar << " 0\n";
+    // gevar -> bits
+    auto gevar_implies_bits = implied_by(opb_sum(bit_vars) >= v, gevar);
+    if (_imp->opb_done) {
+        _imp->proof << "red " << gevar_implies_bits << " ; " << gevar << " 0\n";
         ++_imp->proof_line;
+    }
+    else {
+        _imp->opb << gevar_implies_bits << " ;\n";
+        ++_imp->model_constraints;
+        ++_imp->model_variables;
+    }
 
-        // !gevar -> bits
-        _imp->proof << "red ";
-        for (auto & [coeff, var] : bit_vars)
-            _imp->proof << -coeff << " " << var << " ";
-        _imp->proof << ">= " << (-v + 1_i) << " <== ~" << gevar << " ; " << gevar << " 1\n";
+    // !gevar -> bits
+    auto not_gevar_implies_bits = implied_by(opb_sum(bit_vars) < v, "~" + gevar);
+    if (_imp->opb_done) {
+        _imp->proof << "red " << not_gevar_implies_bits << " ; " << gevar << " 1\n";
         ++_imp->proof_line;
+    }
+    else {
+        _imp->opb << not_gevar_implies_bits << " ;\n";
+        ++_imp->model_constraints;
+    }
 
-        // is it a lower bound?
-        auto bounds = _imp->bounds_for_gevars.find(id);
-        if (bounds != _imp->bounds_for_gevars.end() && bounds->second.first == v) {
+    // is it a bound?
+    auto bounds = _imp->bounds_for_gevars.find(id);
+
+    // lower?
+    if (bounds != _imp->bounds_for_gevars.end() && bounds->second.first == v) {
+        if (_imp->opb_done) {
             _imp->proof << "u 1 " << gevar << " >= 1 ;\n";
             ++_imp->proof_line;
         }
-
-        // is it an lower bound?
-        if (bounds != _imp->bounds_for_gevars.end() && bounds->second.second < v) {
-            _imp->proof << "u 1 ~" << gevar << " >= 1 ;\n";
-            ++_imp->proof_line;
-        }
-
-        auto & other_gevars = _imp->gevars_that_exist.find(id)->second;
-        auto this_gevar = other_gevars.find(v);
-        auto higher_gevar = next(this_gevar);
-
-        // implied by the next highest gevar, if there is one
-        if (higher_gevar != other_gevars.end()) {
-            _imp->proof << "u 1 " << proof_variable(id >= *higher_gevar) << " >= 1 ==> " << proof_variable(id >= v) << " ;\n";
-            ++_imp->proof_line;
-        }
-
-        // implies the next lowest gevar, if there is one
-        if (this_gevar != other_gevars.begin()) {
-            _imp->proof << "u 1 " << proof_variable(id >= v) << " >= 1 ==> " << proof_variable(id >= *prev(this_gevar)) << " ;\n";
-            ++_imp->proof_line;
-        }
-
-        _imp->proof << "# " << _imp->active_proof_level << "\n";
-    }
-    else {
-        // gevar -> bits
-        for (auto & [coeff, var] : bit_vars)
-            _imp->opb << coeff << " " << var << " ";
-        _imp->opb << ">= " << v << " <== " << gevar << " ;\n";
-        ++_imp->model_constraints;
-        ++_imp->model_variables;
-
-        // !gevar -> bits
-        for (auto & [coeff, var] : bit_vars)
-            _imp->opb << -coeff << " " << var << " ";
-        _imp->opb << ">= " << (-v + 1_i) << " <== ~" << gevar << " ;\n";
-        ++_imp->model_constraints;
-
-        // is it a lower bound?
-        auto bounds = _imp->bounds_for_gevars.find(id);
-        if (bounds != _imp->bounds_for_gevars.end() && bounds->second.first == v) {
+        else {
             _imp->opb << "1 " << gevar << " >= 1 ;\n";
             ++_imp->model_constraints;
         }
+    }
 
-        // is it an upper bound?
-        if (bounds != _imp->bounds_for_gevars.end() && bounds->second.second < v) {
+    // upper?
+    if (bounds != _imp->bounds_for_gevars.end() && bounds->second.second < v) {
+        if (_imp->opb_done) {
+            _imp->proof << "u 1 ~" << gevar << " >= 1 ;\n";
+            ++_imp->proof_line;
+        }
+        else {
             _imp->opb << "1 ~" << gevar << " >= 1 ;\n";
             ++_imp->model_constraints;
         }
+    }
 
-        auto & other_gevars = _imp->gevars_that_exist.find(id)->second;
-        auto this_gevar = other_gevars.find(v);
-        auto higher_gevar = next(this_gevar);
+    auto & other_gevars = _imp->gevars_that_exist.find(id)->second;
+    auto this_gevar = other_gevars.find(v);
+    auto higher_gevar = next(this_gevar);
 
-        // implied by the next highest gevar, if there is one
-        if (higher_gevar != other_gevars.end()) {
-            _imp->opb << "1 " << proof_variable(id >= *higher_gevar) << " >= 1 ==> " << proof_variable(id >= v) << " ;\n";
-            ++_imp->model_constraints;
+    // implied by the next highest gevar, if there is one?
+    if (higher_gevar != other_gevars.end()) {
+        auto implies_higher = implies(opb_var_as_sum(proof_variable(id >= *higher_gevar)), proof_variable(id >= v));
+        if (_imp->opb_done) {
+            _imp->proof << "u " << implies_higher << " ;\n";
+            ++_imp->proof_line;
         }
-
-        // implies the next lowest gevar, if there is one
-        if (this_gevar != other_gevars.begin()) {
-            _imp->opb << "1 " << proof_variable(id >= v) << " >= 1 ==> " << proof_variable(id >= *prev(this_gevar)) << " ;\n";
+        else {
+            _imp->opb << implies_higher << " ;\n";
             ++_imp->model_constraints;
         }
     }
+
+    // implies the next lowest gevar, if there is one?
+    if (this_gevar != other_gevars.begin()) {
+        auto implies_lower = implies(opb_var_as_sum(proof_variable(id >= v)), proof_variable(id >= *prev(this_gevar)));
+        if (_imp->opb_done) {
+            _imp->proof << "u " << implies_lower << " ;\n";
+            ++_imp->proof_line;
+        }
+        else {
+            _imp->opb << implies_lower << " ;\n";
+            ++_imp->model_constraints;
+        }
+    }
+
+    if (_imp->opb_done)
+        _imp->proof << "# " << _imp->active_proof_level << "\n";
 }
 
 auto Proof::need_direct_encoding_for(SimpleIntegerVariableID id, Integer v) -> void
 {
+    using namespace gcs::innards::opb_utils;
+
     if (_imp->direct_integer_variables.contains(id == v))
         return;
 
@@ -347,33 +349,31 @@ auto Proof::need_direct_encoding_for(SimpleIntegerVariableID id, Integer v) -> v
     _imp->direct_integer_variables.emplace(id == v, eqvar);
     _imp->direct_integer_variables.emplace(id != v, "~" + eqvar);
 
-    if (_imp->opb_done) {
+    if (_imp->opb_done)
         _imp->proof << "# 0\n";
 
-        // eqvar -> ge_v && ! ge_v+1
-        _imp->proof << "red 1 " << proof_variable(id >= v) << " 1 ~" << proof_variable(id >= v + 1_i)
-                    << " >= 2 <== " << eqvar << " ; " << eqvar << " 0\n";
-        ++_imp->proof_line;
+    auto ge_v_but_not_v_plus_one = opb_sum({pair{1_i, proof_variable(id >= v)}, pair{1_i, "~" + proof_variable(id >= v + 1_i)}}) >= 2_i;
 
-        // ge_v && ! ge_v+1 -> eqvar
-        _imp->proof << "red 1 " << proof_variable(id >= v) << " 1 ~" << proof_variable(id >= v + 1_i)
-                    << " >= 1 ==> " << eqvar << " ; " << eqvar << " 1\n";
-        ++_imp->proof_line;
+    // eqvar -> ge_v && ! ge_v+1
+    auto eqvar_true = implied_by(ge_v_but_not_v_plus_one, eqvar);
 
-        _imp->proof << "# " << _imp->active_proof_level << "\n";
+    // ge_v && ! ge_v+1 -> eqvar
+    auto eqvar_false = implies(ge_v_but_not_v_plus_one, eqvar);
+
+    if (_imp->opb_done) {
+        _imp->proof << "red " << eqvar_true << " ; " << eqvar << " 0\n";
+        ++_imp->proof_line;
+        _imp->proof << "red " << eqvar_false << " ; " << eqvar << " 1\n";
+        ++_imp->proof_line;
     }
     else {
-        ++_imp->model_variables;
+        _imp->opb << eqvar_true << " ;\n";
+        _imp->opb << eqvar_false << " ;\n";
         _imp->model_constraints += 2;
-
-        // eqvar -> ge_v && ! ge_v+1
-        _imp->opb << "1 " << proof_variable(id >= v) << " 1 ~" << proof_variable(id >= v + 1_i)
-                  << " >= 2 <== " << eqvar << " ;\n";
-
-        // ge_v && ! ge_v+1 -> eqvar
-        _imp->opb << "1 " << proof_variable(id >= v) << " 1 ~" << proof_variable(id >= v + 1_i)
-                  << " >= 1 ==> " << eqvar << " ;\n";
     }
+
+    if (_imp->opb_done)
+        _imp->proof << "# " << _imp->active_proof_level << "\n";
 }
 
 auto Proof::create_pseudovariable(SimpleIntegerVariableID id, Integer lower, Integer upper, const optional<string> & optional_name) -> void

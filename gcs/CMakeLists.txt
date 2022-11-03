@@ -25,6 +25,7 @@ add_library(glasgow_constraint_solver
     innards/integer_variable_state.cc
     innards/linear_utils.cc
     innards/literal_utils.cc
+    innards/opb_utils.cc
     innards/proof.cc
     innards/propagators.cc
     innards/state.cc
