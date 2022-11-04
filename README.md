@@ -17,7 +17,7 @@ Compiling
 ---------
 
 To build, you will need a C++20 compiler, such as GCC 10.3, as well as Boost (use
-``libboost-dev-all`` on Ubuntu).
+``libboost-all-dev`` on Ubuntu).
 
 ```shell
 cmake -S . -B build
