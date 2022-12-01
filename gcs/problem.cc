@@ -9,43 +9,46 @@
 
 #include <util/overloaded.hh>
 
+#include <list>
+
 using namespace gcs;
 using namespace gcs::innards;
 
 using std::atomic;
+using std::list;
 using std::make_optional;
+using std::make_shared;
+using std::make_unique;
 using std::move;
 using std::nullopt;
 using std::optional;
 using std::size_t;
 using std::string;
 using std::to_string;
+using std::unique_ptr;
 using std::vector;
 
 struct Problem::Imp
 {
     optional<Proof> optional_proof;
     State initial_state;
-    Propagators propagators;
+    list<unique_ptr<Constraint>> constraints;
     vector<IntegerVariableID> problem_variables;
-    optional<IntegerVariableID> objective_variable;
-    optional<Integer> objective_value;
 
-    Imp(Problem * problem, const ProofOptions * optional_options) :
+    Imp(const ProofOptions * optional_options) :
         optional_proof(optional_options ? optional<Proof>{*optional_options} : nullopt),
-        initial_state(optional_proof ? &*optional_proof : nullptr),
-        propagators(problem)
+        initial_state(optional_proof ? &*optional_proof : nullptr)
     {
     }
 };
 
 Problem::Problem() :
-    _imp(new Imp(this, nullptr))
+    _imp(new Imp{nullptr})
 {
 }
 
 Problem::Problem(const ProofOptions & options) :
-    _imp(new Imp(this, &options))
+    _imp(new Imp{&options})
 {
 }
 
@@ -98,18 +101,22 @@ auto Problem::create_state() const -> State
     return _imp->initial_state.clone();
 }
 
-auto Problem::propagate(State & state, atomic<bool> * optional_abort_flag) const -> bool
+auto Problem::post(const Constraint & c) -> void
 {
-    auto result = _imp->propagators.propagate(state, _imp->objective_variable, _imp->objective_value, optional_abort_flag);
-
-    return result;
+    _imp->constraints.push_back(c.clone());
 }
 
-auto Problem::post(Constraint && c) -> void
+auto Problem::create_propagators(State & state) -> Propagators
 {
-    if (optional_proof())
-        optional_proof()->posting(c.describe_for_proof());
-    move(c).install(_imp->propagators, _imp->initial_state);
+    auto result = Propagators{state, optional_proof()};
+    for (auto & c : _imp->constraints) {
+        auto cc = c->clone();
+        if (optional_proof())
+            optional_proof()->posting(cc->describe_for_proof());
+        move(*cc).install(result, state);
+    }
+
+    return result;
 }
 
 auto Problem::optional_proof() const -> std::optional<Proof> &
@@ -119,41 +126,15 @@ auto Problem::optional_proof() const -> std::optional<Proof> &
 
 auto Problem::minimise(IntegerVariableID var) -> void
 {
-    if (_imp->objective_variable)
-        throw UnexpectedException{"not sure how to have multiple objective variables"};
-    _imp->objective_variable = var;
-
-    if (_imp->optional_proof)
-        _imp->optional_proof->minimise(var);
+    _imp->initial_state.minimise(var);
 }
 
 auto Problem::maximise(IntegerVariableID var) -> void
 {
-    if (_imp->objective_variable)
-        throw UnexpectedException{"not sure how to have multiple objective variables"};
-    _imp->objective_variable = -var;
-
-    if (_imp->optional_proof)
-        _imp->optional_proof->minimise(-var);
+    _imp->initial_state.maximise(var);
 }
 
-auto Problem::update_objective(const State & state) -> void
-{
-    if (_imp->objective_variable)
-        _imp->objective_value = state(*_imp->objective_variable);
-}
-
-auto Problem::fill_in_constraint_stats(Stats & stats) const -> void
-{
-    _imp->propagators.fill_in_constraint_stats(stats);
-}
-
-auto Problem::degree_of(IntegerVariableID var) const -> long
-{
-    return _imp->propagators.degree_of(var);
-}
-
-auto Problem::all_variables() const -> const std::vector<IntegerVariableID> &
+auto Problem::all_normal_variables() const -> const std::vector<IntegerVariableID> &
 {
     return _imp->problem_variables;
 }

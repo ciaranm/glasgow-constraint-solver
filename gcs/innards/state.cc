@@ -192,6 +192,9 @@ struct State::Imp
     vector<HowChanged> how_changed{};
     deque<SimpleIntegerVariableID> changed{};
     vector<Literal> guesses{};
+
+    optional<IntegerVariableID> optional_objective_var{};
+    optional<Integer> optional_objective_incumbent{};
 };
 
 State::State(Proof * optional_proof) :
@@ -201,16 +204,21 @@ State::State(Proof * optional_proof) :
     _imp->on_backtracks.emplace_back();
 }
 
-State::State(State && other) noexcept = default;
+State::State(State && other) noexcept :
+    _imp(move(other._imp))
+{
+}
 
 State::~State() = default;
 
 auto State::clone() const -> State
 {
-    State result{_imp->optional_proof};
+    auto result = State{_imp->optional_proof};
     result._imp->integer_variable_states = _imp->integer_variable_states;
     result._imp->on_backtracks = _imp->on_backtracks;
     result._imp->changed = _imp->changed;
+    result._imp->optional_objective_var = _imp->optional_objective_var;
+    result._imp->optional_objective_incumbent = _imp->optional_objective_incumbent;
     return result;
 }
 
@@ -258,12 +266,12 @@ auto State::state_of(const ConstantIntegerVariableID & v, IntegerVariableState &
 
 auto State::state_of(const SimpleIntegerVariableID & v) -> IntegerVariableState &
 {
-    return _imp->integer_variable_states.back()[v.index];
+    return _imp->integer_variable_states.back().at(v.index);
 }
 
 auto State::state_of(const SimpleIntegerVariableID & v) const -> const IntegerVariableState &
 {
-    return _imp->integer_variable_states.back()[v.index];
+    return _imp->integer_variable_states.back().at(v.index);
 }
 
 auto State::state_of(const DirectIntegerVariableID & v, IntegerVariableState & space) -> IntegerVariableState &
@@ -1166,6 +1174,38 @@ auto State::on_backtrack(std::function<auto()->void> f) -> void
 auto State::current() -> CurrentState
 {
     return CurrentState{*this};
+}
+
+auto State::minimise(IntegerVariableID var) -> void
+{
+    if (_imp->optional_objective_var)
+        throw UnimplementedException{"Not sure how to have multiple objectives"};
+    _imp->optional_objective_var = var;
+    if (_imp->optional_proof)
+        _imp->optional_proof->minimise(var);
+}
+
+auto State::maximise(IntegerVariableID var) -> void
+{
+    if (_imp->optional_objective_var)
+        throw UnimplementedException{"Not sure how to have multiple objectives"};
+    _imp->optional_objective_var = -var;
+    if (_imp->optional_proof)
+        _imp->optional_proof->minimise(-var);
+}
+
+auto State::update_objective_to_current_solution() -> void
+{
+    if (_imp->optional_objective_var)
+        _imp->optional_objective_incumbent = (*this)(*_imp->optional_objective_var);
+}
+
+auto State::infer_on_objective_variable_before_propagation() -> Inference
+{
+    if (_imp->optional_objective_var && _imp->optional_objective_incumbent)
+        return infer(*_imp->optional_objective_var < *_imp->optional_objective_incumbent, NoJustificationNeeded{});
+    else
+        return Inference::NoChange;
 }
 
 namespace gcs

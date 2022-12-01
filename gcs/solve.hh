@@ -42,7 +42,7 @@ namespace gcs
      * \ingroup SolveCallbacks
      * \sa SearchHeuristics
      */
-    using BranchCallback = std::function<auto(const CurrentState &)->std::optional<IntegerVariableID>>;
+    using BranchCallback = std::function<auto(const CurrentState &, const innards::Propagators &)->std::optional<IntegerVariableID>>;
 
     /**
      * \brief Called by gcs::solve_with() when branching on the specified

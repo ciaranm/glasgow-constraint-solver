@@ -65,11 +65,15 @@ namespace gcs::innards
          * \name Constructors, destructors, etc.
          */
         ///@{
-        explicit Propagators(Problem * const);
+        explicit Propagators(State &, std::optional<innards::Proof> &);
         ~Propagators();
 
         Propagators(const Propagators &) = delete;
         auto operator=(const Propagators &) -> Propagators & = delete;
+
+        Propagators(Propagators &&);
+        auto operator=(Propagators &&) -> Propagators &;
+
         ///@}
 
         /**
@@ -185,8 +189,7 @@ namespace gcs::innards
         /**
          * Propagate every constraint, until either a fixed point or a contradiction is reached.
          */
-        [[nodiscard]] auto propagate(State &, const std::optional<IntegerVariableID> & objective_variable,
-            const std::optional<Integer> & objective_value, std::atomic<bool> * optional_abort_flag = nullptr) const -> bool;
+        [[nodiscard]] auto propagate(State &, std::atomic<bool> * optional_abort_flag = nullptr) const -> bool;
 
         ///@}
 

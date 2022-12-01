@@ -22,7 +22,9 @@ namespace gcs
      * \ingroup SearchHeuristics
      * \sa gcs::branch_on_smallest_with_respect_to()
      */
-    using BranchVariableComparator = std::function<auto(const CurrentState &, IntegerVariableID, IntegerVariableID)->bool>;
+    using BranchVariableComparator = std::function<auto(
+        const CurrentState &, const innards::Propagators &, IntegerVariableID, IntegerVariableID)
+                                                       ->bool>;
 
     /**
      * Branch on whichever variable is smallest with respect to the provided

@@ -58,11 +58,9 @@ namespace gcs
          */
 
         /**
-         * \brief Add this Constraint to the model. This is potentially a
-         * destructive operation: the constraint instance will not be valid for
-         * further use after this.
+         * \brief Add a clone of this Constraint to the model.
          */
-        auto post(Constraint &&) -> void;
+        auto post(const Constraint &) -> void;
 
         /**
          * \brief Create a new integer variable, whose domain goes from lower to
@@ -123,17 +121,12 @@ namespace gcs
          */
 
         [[nodiscard]] auto create_state() const -> innards::State;
-        [[nodiscard]] auto propagate(innards::State &, std::atomic<bool> * optional_abort_flag = nullptr) const -> bool;
 
-        auto update_objective(const innards::State &) -> void;
+        [[nodiscard]] auto create_propagators(innards::State &) -> innards::Propagators;
 
         [[nodiscard]] auto optional_proof() const -> std::optional<innards::Proof> &;
 
-        auto fill_in_constraint_stats(Stats &) const -> void;
-
-        auto degree_of(IntegerVariableID) const -> long;
-
-        auto all_variables() const -> const std::vector<IntegerVariableID> &;
+        auto all_normal_variables() const -> const std::vector<IntegerVariableID> &;
 
         ///@}
     };

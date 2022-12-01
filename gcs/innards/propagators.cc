@@ -42,7 +42,9 @@ namespace
 
 struct Propagators::Imp
 {
-    Problem * const problem;
+    State & initial_state;
+    optional<Proof> & optional_proof;
+
     list<Literals> cnfs;
     list<Literal> unary_cnfs;
     deque<PropagationFunction> propagation_functions;
@@ -52,23 +54,28 @@ struct Propagators::Imp
     vector<long> degrees;
     bool first = true;
 
-    Imp(Problem * p) :
-        problem(p)
+    Imp(State & s, optional<Proof> & o) :
+        initial_state(s),
+        optional_proof(o)
     {
     }
 };
 
-Propagators::Propagators(Problem * p) :
-    _imp(new Imp(p))
+Propagators::Propagators(State & s, optional<Proof> & o) :
+    _imp(new Imp(s, o))
 {
 }
 
 Propagators::~Propagators() = default;
 
+Propagators::Propagators(Propagators &&) = default;
+
+auto Propagators::operator=(Propagators &&) -> Propagators & = default;
+
 auto Propagators::model_contradiction(const State & initial_state, const string & explain_yourself) -> void
 {
-    if (_imp->problem->optional_proof())
-        _imp->problem->optional_proof()->cnf({});
+    if (_imp->optional_proof)
+        _imp->optional_proof->cnf({});
 
     install(
         initial_state, [explain_yourself = explain_yourself](State &) -> pair<Inference, PropagatorState> {
@@ -113,26 +120,26 @@ auto Propagators::define_cnf(const State &, Literals && c) -> optional<ProofLine
 {
     optional<ProofLine> result = nullopt;
 
-    if (_imp->problem->optional_proof())
+    if (_imp->optional_proof)
         if (sanitise_literals(c))
-            result = _imp->problem->optional_proof()->cnf(c);
+            result = _imp->optional_proof->cnf(c);
 
     return result;
 }
 
 auto Propagators::define_at_most_one(const State &, Literals && lits) -> optional<ProofLine>
 {
-    if (_imp->problem->optional_proof())
-        return _imp->problem->optional_proof()->at_most_one(move(lits));
+    if (_imp->optional_proof)
+        return _imp->optional_proof->at_most_one(move(lits));
     else
         return nullopt;
 }
 
 auto Propagators::define_pseudoboolean_ge(const State &, WeightedPseudoBooleanTerms && lits, Integer val) -> optional<ProofLine>
 {
-    if (_imp->problem->optional_proof()) {
+    if (_imp->optional_proof) {
         if (sanitise_pseudoboolean_terms(lits, val))
-            return _imp->problem->optional_proof()->pseudoboolean_ge(lits, val);
+            return _imp->optional_proof->pseudoboolean_ge(lits, val);
     }
     return nullopt;
 }
@@ -140,9 +147,9 @@ auto Propagators::define_pseudoboolean_ge(const State &, WeightedPseudoBooleanTe
 auto Propagators::define_linear_le(const State & state, const Linear & coeff_vars,
     Integer value, optional<ReificationTerm> half_reif) -> optional<ProofLine>
 {
-    if (_imp->problem->optional_proof()) {
+    if (_imp->optional_proof) {
         auto [cv, modifier] = simplify_linear(coeff_vars);
-        return _imp->problem->optional_proof()->integer_linear_le(state, cv, value + modifier, half_reif, false);
+        return _imp->optional_proof->integer_linear_le(state, cv, value + modifier, half_reif, false);
     }
     else
         return nullopt;
@@ -151,9 +158,9 @@ auto Propagators::define_linear_le(const State & state, const Linear & coeff_var
 auto Propagators::define_linear_eq(const State & state, const Linear & coeff_vars,
     Integer value, optional<ReificationTerm> half_reif) -> optional<ProofLine>
 {
-    if (_imp->problem->optional_proof()) {
+    if (_imp->optional_proof) {
         auto [cv, modifier] = simplify_linear(coeff_vars);
-        return _imp->problem->optional_proof()->integer_linear_le(state, cv, value + modifier, half_reif, true);
+        return _imp->optional_proof->integer_linear_le(state, cv, value + modifier, half_reif, true);
     }
     else
         return nullopt;
@@ -260,19 +267,16 @@ auto Propagators::define_and_install_table(const State & state, vector<IntegerVa
         move(permitted));
 }
 
-auto Propagators::propagate(State & state, const optional<IntegerVariableID> & objective_variable,
-    const optional<Integer> & objective_value, atomic<bool> * optional_abort_flag) const -> bool
+auto Propagators::propagate(State & state, atomic<bool> * optional_abort_flag) const -> bool
 {
     vector<int> on_queue(_imp->propagation_functions.size(), 0);
     deque<int> propagation_queue;
     vector<int> newly_disabled_propagators;
 
-    if (objective_variable && objective_value) {
-        switch (state.infer(*objective_variable < *objective_value, NoJustificationNeeded{})) {
-        case Inference::NoChange: break;
-        case Inference::Change: break;
-        case Inference::Contradiction: return false;
-        }
+    switch (state.infer_on_objective_variable_before_propagation()) {
+    case Inference::NoChange: break;
+    case Inference::Change: break;
+    case Inference::Contradiction: return false;
     }
 
     if (_imp->first) {
@@ -373,19 +377,22 @@ auto Propagators::propagate(State & state, const optional<IntegerVariableID> & o
 
 auto Propagators::create_auxilliary_integer_variable(Integer l, Integer u, const std::string & s) -> IntegerVariableID
 {
-    return _imp->problem->create_integer_variable(l, u, make_optional("aux_" + s));
+    auto result = _imp->initial_state.create_integer_variable(l, u);
+    if (_imp->optional_proof)
+        _imp->optional_proof->create_integer_variable(result, l, u, "aux_" + s);
+    return result;
 }
 
 auto Propagators::create_proof_flag(const std::string & n) -> ProofFlag
 {
-    if (! _imp->problem->optional_proof())
+    if (! _imp->optional_proof)
         throw UnexpectedException{"trying to create a proof flag but proof logging is not enabled"};
-    return _imp->problem->optional_proof()->create_proof_flag(n);
+    return _imp->optional_proof->create_proof_flag(n);
 }
 
 auto Propagators::want_definitions() const -> bool
 {
-    return _imp->problem->optional_proof() != nullopt;
+    return _imp->optional_proof != nullopt;
 }
 
 auto Propagators::fill_in_constraint_stats(Stats & stats) const -> void

@@ -285,6 +285,37 @@ namespace gcs::innards
         ///@}
 
         /**
+         * \name Optimisation
+         */
+        ///@{
+
+        /**
+         * Update the objective, if we have found a solution.
+         */
+        auto update_objective_to_current_solution() -> void;
+
+        /**
+         * Infer to make the objective variable consistent with the most
+         * recently found solution, if necessary.
+         *
+         * This exists because when backtracking after finding a new incumbent
+         * during search, we lose the update to the objective variable.
+         */
+        [[nodiscard]] auto infer_on_objective_variable_before_propagation() -> Inference;
+
+        /**
+         * We're going to be trying to minimise this variable.
+         */
+        auto minimise(IntegerVariableID) -> void;
+
+        /**
+         * We're going to be trying to maximise this variable.
+         */
+        auto maximise(IntegerVariableID) -> void;
+
+        ///@}
+
+        /**
          * \name Variable state queries.
          */
         ///@{
@@ -431,7 +462,7 @@ namespace gcs::innards
         ///@}
 
         /**
-         * \name Propagation helpers.
+         * \name Propagation and helpers.
          */
         ///@{
 
