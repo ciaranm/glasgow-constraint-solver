@@ -9,13 +9,13 @@
 
 #include <util/overloaded.hh>
 
-#include <list>
+#include <deque>
 
 using namespace gcs;
 using namespace gcs::innards;
 
 using std::atomic;
-using std::list;
+using std::deque;
 using std::make_optional;
 using std::make_shared;
 using std::make_unique;
@@ -32,7 +32,7 @@ struct Problem::Imp
 {
     optional<Proof> optional_proof;
     State initial_state;
-    list<unique_ptr<Constraint>> constraints;
+    deque<unique_ptr<Constraint>> constraints;
     vector<IntegerVariableID> problem_variables;
 
     Imp(const ProofOptions * optional_options) :
