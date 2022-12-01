@@ -16,6 +16,7 @@ using std::move;
 using std::sort;
 using std::string;
 using std::unique;
+using std::unique_ptr;
 using std::vector;
 
 In::In(IntegerVariableID var, const vector<IntegerVariableID> & vals) :
@@ -28,6 +29,11 @@ In::In(IntegerVariableID var, const vector<Integer> & vals) :
     _var(var),
     _val_vals(vals)
 {
+}
+
+auto In::clone() const -> unique_ptr<Constraint>
+{
+    return make_unique<In>(_var, _val_vals);
 }
 
 auto In::install(Propagators & propagators, const State & initial_state) && -> void

@@ -20,6 +20,7 @@ using std::string;
 using std::stringstream;
 using std::to_string;
 using std::tuple;
+using std::unique_ptr;
 using std::vector;
 
 Count::Count(const std::vector<IntegerVariableID> & vars, const IntegerVariableID & value_of_interest, const IntegerVariableID & how_many) :
@@ -27,6 +28,11 @@ Count::Count(const std::vector<IntegerVariableID> & vars, const IntegerVariableI
     _value_of_interest(value_of_interest),
     _how_many(how_many)
 {
+}
+
+auto Count::clone() const -> unique_ptr<Constraint>
+{
+    return make_unique<Count>(_vars, _value_of_interest, _how_many);
 }
 
 auto Count::install(Propagators & propagators, const State & initial_state) && -> void

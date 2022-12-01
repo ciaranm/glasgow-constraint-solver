@@ -14,12 +14,14 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::make_unique;
 using std::max;
 using std::min;
 using std::nullopt;
 using std::pair;
 using std::string;
 using std::stringstream;
+using std::unique_ptr;
 using std::vector;
 
 namespace
@@ -69,6 +71,11 @@ Equals::Equals(const IntegerVariableID v1, const IntegerVariableID v2) :
     _v1(v1),
     _v2(v2)
 {
+}
+
+auto Equals::clone() const -> unique_ptr<Constraint>
+{
+    return make_unique<Equals>(_v1, _v2);
 }
 
 auto Equals::install(Propagators & propagators, const State & initial_state) && -> void
@@ -126,6 +133,11 @@ EqualsIf::EqualsIf(const IntegerVariableID v1, const IntegerVariableID v2, Liter
     _v2(v2),
     _cond(cond)
 {
+}
+
+auto EqualsIf::clone() const -> unique_ptr<Constraint>
+{
+    return make_unique<EqualsIf>(_v1, _v2, _cond);
 }
 
 auto EqualsIf::install(Propagators & propagators, const State & initial_state) && -> void
@@ -225,6 +237,11 @@ EqualsIff::EqualsIff(const IntegerVariableID v1, const IntegerVariableID v2, Lit
     _v2(v2),
     _cond(cond)
 {
+}
+
+auto EqualsIff::clone() const -> unique_ptr<Constraint>
+{
+    return make_unique<EqualsIff>(_v1, _v2, _cond);
 }
 
 auto EqualsIff::install(Propagators & propagators, const State & initial_state) && -> void
@@ -359,6 +376,11 @@ NotEquals::NotEquals(const IntegerVariableID v1, const IntegerVariableID v2) :
     _v1(v1),
     _v2(v2)
 {
+}
+
+auto NotEquals::clone() const -> unique_ptr<Constraint>
+{
+    return make_unique<NotEquals>(_v1, _v2);
 }
 
 auto NotEquals::install(Propagators & propagators, const State & initial_state) && -> void

@@ -15,12 +15,18 @@ using std::list;
 using std::map;
 using std::pair;
 using std::set;
+using std::unique_ptr;
 using std::vector;
 
 NValue::NValue(const IntegerVariableID & n, const std::vector<IntegerVariableID> & vars) :
     _n_values(n),
     _vars(vars)
 {
+}
+
+auto NValue::clone() const -> unique_ptr<Constraint>
+{
+    return make_unique<NValue>(_n_values, _vars);
 }
 
 auto NValue::install(Propagators & propagators, const State & initial_state) && -> void

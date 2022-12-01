@@ -34,6 +34,7 @@ namespace gcs
 
         virtual auto describe_for_proof() -> std::string override;
         virtual auto install(innards::Propagators &, const innards::State &) && -> void override;
+        virtual auto clone() const -> std::unique_ptr<Constraint> override;
     };
 
     namespace innards
@@ -57,6 +58,8 @@ namespace gcs
             explicit LinearInequality(Linear && coeff_vars, Integer value);
 
             virtual auto install(innards::Propagators &, const innards::State &) && -> void override;
+            virtual auto describe_for_proof() -> std::string override;
+            virtual auto clone() const -> std::unique_ptr<Constraint> override;
         };
     }
 
@@ -72,8 +75,6 @@ namespace gcs
     {
     public:
         explicit LinearLessEqual(Linear && coeff_vars, Integer value);
-
-        virtual auto describe_for_proof() -> std::string override;
     };
 
     /**
@@ -88,8 +89,6 @@ namespace gcs
     {
     public:
         explicit LinearGreaterThanEqual(Linear && coeff_vars, Integer value);
-
-        virtual auto describe_for_proof() -> std::string override;
     };
 }
 

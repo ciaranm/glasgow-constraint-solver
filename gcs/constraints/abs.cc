@@ -15,12 +15,18 @@ using std::max;
 using std::optional;
 using std::pair;
 using std::stringstream;
+using std::unique_ptr;
 using std::vector;
 
 Abs::Abs(const IntegerVariableID v1, const IntegerVariableID v2) :
     _v1(v1),
     _v2(v2)
 {
+}
+
+auto Abs::clone() const -> unique_ptr<Constraint>
+{
+    return make_unique<Abs>(_v1, _v2);
 }
 
 auto Abs::install(Propagators & propagators, const State & initial_state) && -> void

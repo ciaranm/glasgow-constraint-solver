@@ -12,6 +12,7 @@ using std::nullopt;
 using std::optional;
 using std::pair;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 
 ArrayMinMax::ArrayMinMax(const vector<IntegerVariableID> & vars, const IntegerVariableID result, bool min) :
@@ -19,6 +20,11 @@ ArrayMinMax::ArrayMinMax(const vector<IntegerVariableID> & vars, const IntegerVa
     _result(result),
     _min(min)
 {
+}
+
+auto ArrayMinMax::clone() const -> unique_ptr<Constraint>
+{
+    return make_unique<ArrayMinMax>(_vars, _result, _min);
 }
 
 auto ArrayMinMax::install(Propagators & propagators, const State & initial_state) && -> void

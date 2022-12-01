@@ -35,6 +35,7 @@ using std::optional;
 using std::pair;
 using std::sort;
 using std::stringstream;
+using std::unique_ptr;
 using std::variant;
 using std::vector;
 using std::visit;
@@ -42,6 +43,11 @@ using std::visit;
 AllDifferent::AllDifferent(const vector<IntegerVariableID> & v) :
     _vars(v)
 {
+}
+
+auto AllDifferent::clone() const -> unique_ptr<Constraint>
+{
+    return make_unique<AllDifferent>(_vars);
 }
 
 namespace

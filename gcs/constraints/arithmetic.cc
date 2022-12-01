@@ -14,6 +14,7 @@ using namespace gcs::innards;
 using std::llroundl;
 using std::move;
 using std::pow;
+using std::unique_ptr;
 using std::vector;
 
 template <ArithmeticOperator op_>
@@ -22,6 +23,12 @@ GACArithmetic<op_>::GACArithmetic(const IntegerVariableID v1, const IntegerVaria
     _v2(v2),
     _result(result)
 {
+}
+
+template <ArithmeticOperator op_>
+auto GACArithmetic<op_>::clone() const -> unique_ptr<Constraint>
+{
+    return make_unique<GACArithmetic<op_>>(_v1, _v2, _result);
 }
 
 template <ArithmeticOperator op_>

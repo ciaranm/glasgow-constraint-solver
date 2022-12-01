@@ -24,6 +24,7 @@ using namespace gcs::innards;
 using std::optional;
 using std::pair;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 using std::visit;
 
@@ -31,6 +32,11 @@ Table::Table(const vector<IntegerVariableID> & v, ExtensionalTuples && t) :
     _vars(v),
     _tuples(move(t))
 {
+}
+
+auto Table::clone() const -> unique_ptr<Constraint>
+{
+    return make_unique<Table>(_vars, ExtensionalTuples{_tuples});
 }
 
 auto Table::install(Propagators & propagators, const State & initial_state) && -> void
@@ -54,6 +60,11 @@ NegativeTable::NegativeTable(const vector<IntegerVariableID> & v, ExtensionalTup
     _vars(v),
     _tuples(move(t))
 {
+}
+
+auto NegativeTable::clone() const -> unique_ptr<Constraint>
+{
+    return make_unique<NegativeTable>(_vars, ExtensionalTuples{_tuples});
 }
 
 namespace

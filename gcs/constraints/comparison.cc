@@ -13,6 +13,7 @@ using namespace gcs::innards;
 using std::nullopt;
 using std::optional;
 using std::pair;
+using std::unique_ptr;
 
 CompareLessThanReif::CompareLessThanReif(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond, bool full_reif, bool or_equal) :
     _v1(v1),
@@ -21,6 +22,11 @@ CompareLessThanReif::CompareLessThanReif(const IntegerVariableID v1, const Integ
     _full_reif(full_reif),
     _or_equal(or_equal)
 {
+}
+
+auto CompareLessThanReif::clone() const -> unique_ptr<Constraint>
+{
+    return make_unique<CompareLessThanReif>(_v1, _v2, _cond, _full_reif, _or_equal);
 }
 
 auto CompareLessThanReif::install(Propagators & propagators, const State & initial_state) && -> void

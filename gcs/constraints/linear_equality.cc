@@ -24,6 +24,7 @@ using std::optional;
 using std::pair;
 using std::stringstream;
 using std::to_string;
+using std::unique_ptr;
 using std::vector;
 
 LinearEquality::LinearEquality(Linear && coeff_vars, Integer value, bool gac) :
@@ -31,6 +32,11 @@ LinearEquality::LinearEquality(Linear && coeff_vars, Integer value, bool gac) :
     _value(value),
     _gac(gac)
 {
+}
+
+auto LinearEquality::clone() const -> unique_ptr<Constraint>
+{
+    return make_unique<LinearEquality>(Linear{_coeff_vars}, _value, _gac);
 }
 
 namespace
@@ -235,6 +241,11 @@ LinearInequality::LinearInequality(Linear && coeff_vars, Integer value) :
 {
 }
 
+auto LinearInequality::clone() const -> unique_ptr<Constraint>
+{
+    return make_unique<LinearInequality>(Linear{_coeff_vars}, _value);
+}
+
 auto LinearInequality::install(Propagators & propagators, const State & initial_state) && -> void
 {
     optional<ProofLine> proof_line;
@@ -272,14 +283,14 @@ auto LinearInequality::install(Propagators & propagators, const State & initial_
         .visit(sanitised_cv);
 }
 
+auto LinearInequality::describe_for_proof() -> std::string
+{
+    return "linear inequality";
+}
+
 LinearLessEqual::LinearLessEqual(Linear && coeff_vars, Integer value) :
     LinearInequality(move(coeff_vars), value)
 {
-}
-
-auto LinearLessEqual::describe_for_proof() -> std::string
-{
-    return "linear less equal";
 }
 
 namespace
@@ -295,9 +306,4 @@ namespace
 LinearGreaterThanEqual::LinearGreaterThanEqual(Linear && coeff_vars, Integer value) :
     LinearInequality(move(negate(move(coeff_vars))), -value)
 {
-}
-
-auto LinearGreaterThanEqual::describe_for_proof() -> std::string
-{
-    return "linear greater equal";
 }

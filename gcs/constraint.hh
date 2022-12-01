@@ -6,6 +6,7 @@
 #include <gcs/innards/propagators-fwd.hh>
 #include <gcs/innards/state-fwd.hh>
 
+#include <memory>
 #include <string>
 
 namespace gcs
@@ -38,11 +39,18 @@ namespace gcs
         virtual auto describe_for_proof() -> std::string = 0;
 
         /**
-         * Called by Problem to install the constraint. A Constraint is expected
+         * Called internally to install the constraint. A Constraint is expected
          * to define zero or more propagators, and to provide a description of
-         * its meaning for proof logging.
+         * its meaning for proof logging. This is a destructive operation which
+         * can only be called once, and after calling it neither install() nor
+         * clone() may be called on this instance.
          */
         virtual auto install(innards::Propagators &, const innards::State &) && -> void = 0;
+
+        /**
+         * Create a copy of the constraint. To be used internally.
+         */
+        [[nodiscard]] virtual auto clone() const -> std::unique_ptr<Constraint> = 0;
     };
 }
 

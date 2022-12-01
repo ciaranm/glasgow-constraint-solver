@@ -27,6 +27,7 @@ using std::min;
 using std::optional;
 using std::pair;
 using std::stringstream;
+using std::unique_ptr;
 using std::vector;
 using std::visit;
 
@@ -35,6 +36,11 @@ Element::Element(IntegerVariableID var, IntegerVariableID idx, const vector<Inte
     _idx(idx),
     _vals(vals)
 {
+}
+
+auto Element::clone() const -> unique_ptr<Constraint>
+{
+    return make_unique<Element>(_var, _idx, _vals);
 }
 
 auto Element::install(Propagators & propagators, const State & initial_state) && -> void
@@ -140,6 +146,11 @@ Element2DConstantArray::Element2DConstantArray(IntegerVariableID var, IntegerVar
         for (const auto & v : _vals)
             if (v.size() != _vals.begin()->size())
                 throw UnexpectedException{"didn't get a rectangular 2d array, not sure what to do"};
+}
+
+auto Element2DConstantArray::clone() const -> unique_ptr<Constraint>
+{
+    return make_unique<Element2DConstantArray>(_var, _idx1, _idx2, _vals);
 }
 
 auto Element2DConstantArray::install(Propagators & propagators, const State & initial_state) && -> void

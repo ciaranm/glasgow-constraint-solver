@@ -15,6 +15,7 @@ using namespace gcs::innards;
 using std::optional;
 using std::pair;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 
 namespace
@@ -190,6 +191,11 @@ And::And(const Literals & l, const Literal & full_reif) :
 {
 }
 
+auto And::clone() const -> unique_ptr<Constraint>
+{
+    return make_unique<And>(_lits, _full_reif);
+}
+
 auto And::describe_for_proof() -> string
 {
     return "and";
@@ -214,6 +220,11 @@ Or::Or(const Literals & l, const Literal & full_reif) :
     _lits(l),
     _full_reif(full_reif)
 {
+}
+
+auto Or::clone() const -> unique_ptr<Constraint>
+{
+    return make_unique<Or>(_lits, _full_reif);
 }
 
 auto Or::describe_for_proof() -> string

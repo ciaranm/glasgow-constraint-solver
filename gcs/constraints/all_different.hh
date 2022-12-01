@@ -19,13 +19,14 @@ namespace gcs
     class AllDifferent : public Constraint
     {
     private:
-        const std::vector<IntegerVariableID> & _vars;
+        const std::vector<IntegerVariableID> _vars;
 
     public:
         explicit AllDifferent(const std::vector<IntegerVariableID> & vars);
 
         virtual auto describe_for_proof() -> std::string override;
         virtual auto install(innards::Propagators &, const innards::State &) && -> void override;
+        virtual auto clone() const -> std::unique_ptr<Constraint> override;
     };
 }
 
