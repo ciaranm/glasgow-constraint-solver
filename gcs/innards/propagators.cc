@@ -376,6 +376,11 @@ auto Propagators::create_auxilliary_integer_variable(Integer l, Integer u, const
     return _imp->problem->create_integer_variable(l, u, make_optional("aux_" + s));
 }
 
+auto Propagators::create_proof_only_variable(Integer l, Integer u, const std::string & s) -> IntegerVariableID
+{
+    return _imp->problem->create_proof_only_variable(l, u, make_optional(s));
+}
+
 auto Propagators::create_proof_flag(const std::string & n) -> ProofFlag
 {
     if (! _imp->problem->optional_proof())

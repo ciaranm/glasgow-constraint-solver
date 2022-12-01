@@ -135,6 +135,9 @@ namespace gcs
 
         auto all_variables() const -> const std::vector<IntegerVariableID> &;
 
+        [[nodiscard]] auto create_proof_only_variable(
+                Integer lower, Integer upper,
+                const std::optional<std::string> & name = std::nullopt) -> SimpleIntegerVariableID;
         ///@}
     };
 

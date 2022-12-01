@@ -170,6 +170,8 @@ namespace gcs::innards
          */
         [[nodiscard]] auto create_auxilliary_integer_variable(Integer, Integer, const std::string & name) -> IntegerVariableID;
 
+        [[nodiscard]] auto create_proof_only_variable(Integer, Integer, const std::string & name) -> IntegerVariableID;
+
         /**
          * Create a ProofFlag, that is used only in definitions.
          */

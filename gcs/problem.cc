@@ -157,3 +157,18 @@ auto Problem::all_variables() const -> const std::vector<IntegerVariableID> &
 {
     return _imp->problem_variables;
 }
+
+auto Problem::create_proof_only_variable(Integer lower, Integer upper, const optional<std::string> & name) -> SimpleIntegerVariableID
+{
+    if (lower > upper)
+        throw UnexpectedException{"variable has lower bound > upper bound"};
+
+    // Dummy value to avoid VariableDoesNotHaveUniqueValue ... bit of a hack
+    auto result = _imp->initial_state.create_integer_variable(lower, lower);
+
+    // Only other differences are we don't add it to the problem variables or proof solution variables
+    if (_imp->optional_proof)
+        // Added flag to override a variable being added to solution_variables
+        _imp->optional_proof->create_integer_variable(result, lower, upper, name, false);
+    return result;
+}

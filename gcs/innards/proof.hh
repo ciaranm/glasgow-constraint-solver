@@ -167,7 +167,8 @@ namespace gcs::innards
         /**
          * Create an integer variable with the specified bounds.
          */
-        auto create_integer_variable(SimpleIntegerVariableID, Integer, Integer, const std::optional<std::string> &) -> void;
+        auto create_integer_variable(SimpleIntegerVariableID, Integer, Integer, const std::optional<std::string> &,
+                const bool & solution_var = true) -> void;
 
         /**
          * Create a new ProofFlag, which can be used in various places as if it

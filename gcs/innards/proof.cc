@@ -187,7 +187,8 @@ auto Proof::operator=(Proof && other) noexcept -> Proof &
         return _imp->xification.try_emplace(s, "x" + to_string(_imp->xification.size() + 1)).first->second;
 }
 
-auto Proof::create_integer_variable(SimpleIntegerVariableID id, Integer lower, Integer upper, const optional<string> & optional_name) -> void
+auto Proof::create_integer_variable(SimpleIntegerVariableID id, Integer lower, Integer upper,
+                                    const optional<string> & optional_name, const bool & solution_var) -> void
 {
     string name = "iv" + to_string(id.index);
     if (optional_name)
@@ -217,8 +218,9 @@ auto Proof::create_integer_variable(SimpleIntegerVariableID id, Integer lower, I
         _imp->opb << -coeff << " " << var << " ";
     _imp->opb << ">= " << -upper << " ;\n";
     ++_imp->model_constraints;
-
-    _imp->solution_variables.push_back(id);
+    if (solution_var) {
+        _imp->solution_variables.push_back(id);
+    }
     _imp->bounds_for_gevars.emplace(id, pair{lower, upper});
 }
 
