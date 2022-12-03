@@ -121,19 +121,26 @@ namespace gcs::innards
         /**
          * Add a pseudo-Boolean greater-or-equal constraint to a Proof model.
          */
-        auto define_pseudoboolean_ge(const State &, WeightedPseudoBooleanTerms && lits, Integer) -> std::optional<ProofLine>;
+        auto define_pseudoboolean_ge(const State &, WeightedPseudoBooleanTerms && lits, Integer,
+            std::optional<ReificationTerm> half_reif = std::nullopt) -> std::optional<ProofLine>;
+
+        /**
+         * Add pseudo-Boolean equality constraints to a Proof model.
+         */
+        auto define_pseudoboolean_eq(const State &, WeightedPseudoBooleanTerms && lits, Integer,
+            std::optional<ReificationTerm> half_reif = std::nullopt) -> std::optional<ProofLine>;
 
         /**
          * Add a linear less-or-equal constraint to a Proof model.
          */
         auto define_linear_le(const State &, const Linear &, Integer value,
-            std::optional<ReificationTerm> half_reif) -> std::optional<ProofLine>;
+            std::optional<ReificationTerm> half_reif = std::nullopt) -> std::optional<ProofLine>;
 
         /**
          * Add linear equality constraint to a Proof model.
          */
         auto define_linear_eq(const State &, const Linear &, Integer value,
-            std::optional<ReificationTerm> half_reif) -> std::optional<ProofLine>;
+            std::optional<ReificationTerm> half_reif = std::nullopt) -> std::optional<ProofLine>;
 
         ///@}
 
@@ -178,6 +185,11 @@ namespace gcs::innards
          * Create a ProofFlag, that is used only in definitions.
          */
         [[nodiscard]] auto create_proof_flag(const std::string &) -> ProofFlag;
+
+        /**
+         * Create a variable ID that is used only in proof definitions, not state.
+         */
+        [[nodiscard]] auto create_proof_only_integer_variable(Integer, Integer, const std::string &) -> ProofOnlySimpleIntegerVariableID;
 
         ///@}
 

@@ -91,6 +91,11 @@ namespace
     {
         return nullopt;
     }
+
+    [[nodiscard]] auto is_literally_true_or_false(const ProofOnlySimpleIntegerVariableID &) -> optional<bool>
+    {
+        return nullopt;
+    }
 }
 
 auto gcs::innards::sanitise_pseudoboolean_terms(WeightedPseudoBooleanTerms & lits, Integer & val) -> bool
@@ -139,12 +144,13 @@ struct Proof::Imp
 
     map<SimpleIntegerVariableID, ProofLine> variable_at_least_one_constraints;
     map<LiteralFromIntegerVariable, string> direct_integer_variables;
-    map<SimpleIntegerVariableID, pair<Integer, vector<pair<Integer, string>>>> integer_variable_bits;
-    map<SimpleIntegerVariableID, pair<Integer, Integer>> bounds_for_gevars;
+    map<SimpleOrProofOnlyIntegerVariableID, pair<Integer, vector<pair<Integer, string>>>> integer_variable_bits;
+    map<SimpleOrProofOnlyIntegerVariableID, pair<Integer, Integer>> bounds_for_gevars;
     map<SimpleIntegerVariableID, set<Integer>> gevars_that_exist;
     list<IntegerVariableID> solution_variables;
     optional<IntegerVariableID> objective_variable;
     map<pair<unsigned long long, bool>, string> flags;
+    map<unsigned long long, string> proof_only_integer_variables;
 
     list<map<tuple<bool, SimpleIntegerVariableID, Integer>, ProofLine>> line_for_bound_in_bits;
 
@@ -187,12 +193,8 @@ auto Proof::operator=(Proof && other) noexcept -> Proof &
         return _imp->xification.try_emplace(s, "x" + to_string(_imp->xification.size() + 1)).first->second;
 }
 
-auto Proof::create_integer_variable(SimpleIntegerVariableID id, Integer lower, Integer upper, const optional<string> & optional_name) -> void
+auto Proof::set_up_variable_encoding(SimpleOrProofOnlyIntegerVariableID id, Integer lower, Integer upper, const string & name) -> void
 {
-    string name = "iv" + to_string(id.index);
-    if (optional_name)
-        name.append("_" + *optional_name);
-
     _imp->opb << "* variable " << name << " " << lower.raw_value << " .. " << upper.raw_value << " binary encoding\n";
     Integer highest_abs_value = max(abs(lower), upper);
     int highest_bit_shift = countr_zero(bit_ceil(static_cast<unsigned long long>(highest_abs_value.raw_value)));
@@ -218,8 +220,16 @@ auto Proof::create_integer_variable(SimpleIntegerVariableID id, Integer lower, I
     _imp->opb << ">= " << -upper << " ;\n";
     ++_imp->model_constraints;
 
-    _imp->solution_variables.push_back(id);
     _imp->bounds_for_gevars.emplace(id, pair{lower, upper});
+}
+
+auto Proof::set_up_integer_variable(SimpleIntegerVariableID id, Integer lower, Integer upper, const optional<string> & optional_name) -> void
+{
+    string name = "iv" + to_string(id.index);
+    if (optional_name)
+        name.append("_" + *optional_name);
+    set_up_variable_encoding(id, lower, upper, name);
+    _imp->solution_variables.push_back(id);
 }
 
 auto Proof::create_proof_flag(const string & n) -> ProofFlag
@@ -230,6 +240,15 @@ auto Proof::create_proof_flag(const string & n) -> ProofFlag
     _imp->flags.emplace(pair{result.index, true}, name);
     _imp->flags.emplace(pair{result.index, false}, "~" + name);
     return result;
+}
+
+auto Proof::create_proof_integer_variable(Integer lower, Integer upper, const std::string & s) -> ProofOnlySimpleIntegerVariableID
+{
+    ProofOnlySimpleIntegerVariableID id{_imp->proof_only_integer_variables.size()};
+    _imp->proof_only_integer_variables.emplace(id.index, s);
+    string name = "poiv" + to_string(id.index) + "_" + s;
+    set_up_variable_encoding(id, lower, upper, name);
+    return id;
 }
 
 auto Proof::need_gevar(SimpleIntegerVariableID id, Integer v) -> void
@@ -376,7 +395,7 @@ auto Proof::need_direct_encoding_for(SimpleIntegerVariableID id, Integer v) -> v
         _imp->proof << "# " << _imp->active_proof_level << "\n";
 }
 
-auto Proof::create_pseudovariable(SimpleIntegerVariableID id, Integer lower, Integer upper, const optional<string> & optional_name) -> void
+auto Proof::set_up_variable_with_state_but_separate_proof_definition(SimpleIntegerVariableID id, Integer lower, Integer upper, const optional<string> & optional_name) -> void
 {
     string name = "iv" + to_string(id.index);
     if (optional_name)
@@ -463,42 +482,74 @@ auto Proof::at_most_one(const Literals & lits) -> ProofLine
     return ++_imp->model_constraints;
 }
 
-auto Proof::pseudoboolean_ge(const WeightedPseudoBooleanTerms & lits, Integer val) -> ProofLine
+auto Proof::pseudoboolean_ge(const WeightedPseudoBooleanTerms & lits, Integer val,
+    optional<ReificationTerm> half_reif, bool equality) -> ProofLine
 {
     for (const auto & [_, lit] : lits)
         overloaded{
             [&](const Literal & lit) { need_proof_variable(lit); },
             [&](const IntegerVariableID &) {},
+            [&](const ProofOnlySimpleIntegerVariableID &) {},
             [&](const ProofFlag &) {}}
             .visit(lit);
 
-    for (const auto & [w, lit] : lits) {
+    if (half_reif)
         overloaded{
-            [&, w = w](const Literal & lit) {
-                _imp->opb << w << " " << proof_variable(lit) << " ";
-            },
-            [&, w = w](const ProofFlag & flag) {
-                _imp->opb << w << " " << proof_variable(flag) << " ";
-            },
-            [&, w = w](const IntegerVariableID & var) {
-                overloaded{
-                    [&](const SimpleIntegerVariableID & ivar) {
-                        auto & [_, bit_vars] = _imp->integer_variable_bits.find(ivar)->second;
-                        for (auto & [bit_value, bit_name] : bit_vars)
-                            _imp->opb << w * bit_value << " " << bit_name << " ";
-                    },
-                    [&](const ConstantIntegerVariableID &) {
-                        throw UnimplementedException{};
-                    },
-                    [&](const ViewOfIntegerVariableID &) {
-                        throw UnimplementedException{};
-                    }}
-                    .visit(var);
-            }}
-            .visit(lit);
-    }
-    _imp->opb << ">= " << val << " ;\n";
-    return ++_imp->model_constraints;
+            [&](const Literal & lit) { need_proof_variable(lit); },
+            [&](const ProofFlag &) {}}
+            .visit(*half_reif);
+
+    auto output = [&](Integer multiplier) {
+        using namespace gcs::innards::opb_utils;
+        OPBExpression expr;
+        Integer modified_val = multiplier * val;
+
+        for (const auto & [w, lit] : lits) {
+            overloaded{
+                [&, w = w](const Literal & lit) {
+                    expr.weighted_terms.emplace_back(multiplier * w, proof_variable(lit));
+                },
+                [&, w = w](const ProofFlag & flag) {
+                    expr.weighted_terms.emplace_back(multiplier * w, proof_variable(flag));
+                },
+                [&](const ProofOnlySimpleIntegerVariableID & ivar) {
+                    auto & [_, bit_vars] = _imp->integer_variable_bits.find(ivar)->second;
+                    for (auto & [bit_value, bit_name] : bit_vars)
+                        expr.weighted_terms.emplace_back(multiplier * w * bit_value, bit_name);
+                },
+                [&, w = w](const IntegerVariableID & var) {
+                    overloaded{
+                        [&](const SimpleIntegerVariableID & ivar) {
+                            auto & [_, bit_vars] = _imp->integer_variable_bits.find(ivar)->second;
+                            for (auto & [bit_value, bit_name] : bit_vars)
+                                expr.weighted_terms.emplace_back(multiplier * w * bit_value, bit_name);
+                        },
+                        [&](const ConstantIntegerVariableID & cvar) {
+                            modified_val -= (multiplier * w * cvar.const_value);
+                        },
+                        [&](const ViewOfIntegerVariableID &) {
+                            throw UnimplementedException{};
+                        }}
+                        .visit(var);
+                }}
+                .visit(lit);
+        }
+
+        auto opb_ineq = expr >= modified_val;
+        if (half_reif)
+            visit([&](const auto & h) { opb_ineq = implied_by(opb_ineq, proof_variable(h)); }, *half_reif);
+
+        _imp->opb << opb_ineq << " ;\n";
+    };
+
+    if (equality)
+        output(-1_i);
+    output(1_i);
+
+    auto result = ++_imp->model_constraints;
+    if (equality)
+        ++_imp->model_constraints;
+    return result;
 }
 
 auto Proof::integer_linear_le(const State &, const SimpleLinear & lin, Integer val,
@@ -507,7 +558,6 @@ auto Proof::integer_linear_le(const State &, const SimpleLinear & lin, Integer v
     if (half_reif)
         overloaded{
             [&](const Literal & lit) { need_proof_variable(lit); },
-            [&](const IntegerVariableID &) {},
             [&](const ProofFlag &) {}}
             .visit(*half_reif);
 

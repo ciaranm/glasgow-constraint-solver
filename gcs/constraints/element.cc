@@ -181,7 +181,8 @@ auto Element2DConstantArray::install(Propagators & propagators, const State & in
     propagators.install(
         initial_state, [idx1 = _idx1, idx2 = _idx2, var = _var, vals = _vals, idxsel = move(idxsel)](State & state) mutable -> pair<Inference, PropagatorState> {
             if (state.want_proofs() && ! idxsel) [[unlikely]] {
-                idxsel = make_optional(state.create_pseudovariable(0_i, Integer(vals.size() * vals.begin()->size()), "element2didx"));
+                idxsel = make_optional(state.create_variable_with_state_but_separate_proof_definition(
+                    0_i, Integer(vals.size() * vals.begin()->size()), "element2didx"));
 
                 state.add_proof_steps(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
                     state.for_each_value(idx1, [&](Integer i1) {

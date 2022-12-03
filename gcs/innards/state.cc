@@ -222,7 +222,7 @@ auto State::clone() const -> State
     return result;
 }
 
-auto State::create_integer_variable(Integer lower, Integer upper) -> SimpleIntegerVariableID
+auto State::allocate_integer_variable_with_state(Integer lower, Integer upper) -> SimpleIntegerVariableID
 {
     if (lower == upper)
         _imp->integer_variable_states.back().push_back(IntegerVariableConstantState{lower});
@@ -232,11 +232,12 @@ auto State::create_integer_variable(Integer lower, Integer upper) -> SimpleInteg
     return SimpleIntegerVariableID{_imp->integer_variable_states.back().size() - 1};
 }
 
-auto State::create_pseudovariable(Integer lower, Integer upper, const optional<string> & name) -> SimpleIntegerVariableID
+auto State::create_variable_with_state_but_separate_proof_definition(
+    Integer lower, Integer upper, const optional<string> & name) -> SimpleIntegerVariableID
 {
-    auto result = create_integer_variable(lower, upper);
+    auto result = allocate_integer_variable_with_state(lower, upper);
     if (_imp->optional_proof)
-        _imp->optional_proof->create_pseudovariable(result, lower, upper, name);
+        _imp->optional_proof->set_up_variable_with_state_but_separate_proof_definition(result, lower, upper, name);
     return result;
 }
 

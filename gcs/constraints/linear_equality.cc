@@ -151,7 +151,7 @@ auto LinearEquality::install(Propagators & propagators, const State & initial_st
                         };
                         search();
 
-                        auto sel = state.create_pseudovariable(0_i, Integer(permitted.size() - 1), "lineq");
+                        auto sel = state.create_variable_with_state_but_separate_proof_definition(0_i, Integer(permitted.size() - 1), "lineq");
                         vector<IntegerVariableID> vars;
                         for (auto & cv : coeff_vars)
                             vars.push_back(get_var(cv));

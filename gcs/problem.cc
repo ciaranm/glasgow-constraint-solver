@@ -59,10 +59,10 @@ auto Problem::create_integer_variable(Integer lower, Integer upper, const option
     if (lower > upper)
         throw UnexpectedException{"variable has lower bound > upper bound"};
 
-    auto result = _imp->initial_state.create_integer_variable(lower, upper);
+    auto result = _imp->initial_state.allocate_integer_variable_with_state(lower, upper);
     _imp->problem_variables.push_back(result);
     if (_imp->optional_proof)
-        _imp->optional_proof->create_integer_variable(result, lower, upper, name);
+        _imp->optional_proof->set_up_integer_variable(result, lower, upper, name);
     return result;
 }
 
@@ -73,10 +73,10 @@ auto Problem::create_integer_variable(const vector<Integer> & domain, const opti
 
     auto [min, max] = minmax_element(domain.begin(), domain.end());
 
-    auto result = _imp->initial_state.create_integer_variable(*min, *max);
+    auto result = _imp->initial_state.allocate_integer_variable_with_state(*min, *max);
     _imp->problem_variables.push_back(result);
     if (_imp->optional_proof)
-        _imp->optional_proof->create_integer_variable(result, *min, *max, name);
+        _imp->optional_proof->set_up_integer_variable(result, *min, *max, name);
 
     post(In{result, domain});
 

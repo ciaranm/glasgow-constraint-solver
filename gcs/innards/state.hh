@@ -156,13 +156,14 @@ namespace gcs::innards
          *
          * \sa Problem::create_integer_variable()
          */
-        [[nodiscard]] auto create_integer_variable(Integer lower, Integer upper) -> SimpleIntegerVariableID;
+        [[nodiscard]] auto allocate_integer_variable_with_state(Integer lower, Integer upper) -> SimpleIntegerVariableID;
 
         /**
          * Set up something that behaves like a variable in most respects, but
          * that is not a proper variable. Used by some propagators internally.
          */
-        [[nodiscard]] auto create_pseudovariable(Integer lower, Integer upper, const std::optional<std::string> &) -> SimpleIntegerVariableID;
+        [[nodiscard]] auto create_variable_with_state_but_separate_proof_definition(
+            Integer lower, Integer upper, const std::optional<std::string> &) -> SimpleIntegerVariableID;
 
         ///@}
 

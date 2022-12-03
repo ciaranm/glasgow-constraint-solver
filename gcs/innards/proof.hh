@@ -59,6 +59,26 @@ namespace gcs::innards
     [[nodiscard]] auto operator!(const ProofFlag &) -> ProofFlag;
 
     /**
+     * Behaves similar to a SimpleIntegerVariableID, except only appears
+     * in a Proof, with no associated State.
+     *
+     * \ingroup Innards
+     */
+    struct ProofOnlySimpleIntegerVariableID
+    {
+        unsigned long long index;
+
+        explicit ProofOnlySimpleIntegerVariableID(unsigned long long x) :
+            index(x)
+        {
+        }
+
+        [[nodiscard]] auto operator<=>(const ProofOnlySimpleIntegerVariableID &) const = default;
+    };
+
+    using SimpleOrProofOnlyIntegerVariableID = std::variant<SimpleIntegerVariableID, ProofOnlySimpleIntegerVariableID>;
+
+    /**
      * \brief Various things in Proof can reify on either a Literal or a ProofFlag.
      *
      * \ingroup Innards
@@ -75,7 +95,7 @@ namespace gcs::innards
      * \sa Proof::pseudoboolean_ge
      * \sa gcs::innards::sanitise_pseudoboolean_terms()
      */
-    using PseudoBooleanTerm = std::variant<Literal, ProofFlag, IntegerVariableID>;
+    using PseudoBooleanTerm = std::variant<Literal, ProofFlag, IntegerVariableID, ProofOnlySimpleIntegerVariableID>;
 
     /**
      * \brief Inside a Proof, pseudo-Boolean terms are weighted.
@@ -139,6 +159,8 @@ namespace gcs::innards
 
         auto need_gevar(SimpleIntegerVariableID id, Integer v) -> void;
 
+        auto set_up_variable_encoding(SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::string &) -> void;
+
     public:
         /**
          * \name Constructors, destructors, and the like.
@@ -165,15 +187,22 @@ namespace gcs::innards
         auto posting(const std::string &) -> void;
 
         /**
-         * Create an integer variable with the specified bounds.
+         * Set up proof logging for an integer variable with the specified bounds,
+         * that is being tracked inside State.
          */
-        auto create_integer_variable(SimpleIntegerVariableID, Integer, Integer, const std::optional<std::string> &) -> void;
+        auto set_up_integer_variable(SimpleIntegerVariableID, Integer, Integer, const std::optional<std::string> &) -> void;
 
         /**
          * Create a new ProofFlag, which can be used in various places as if it
-         * were a Boolean variable.
+         * were a Boolean variable but that is not actually tracked in State.
          */
         [[nodiscard]] auto create_proof_flag(const std::string &) -> ProofFlag;
+
+        /**
+         * Create something that behaves like an integer variable for proof purposes,
+         * but that does not have any state.
+         */
+        [[nodiscard]] auto create_proof_integer_variable(Integer, Integer, const std::string &) -> ProofOnlySimpleIntegerVariableID;
 
         /**
          * Add a new constraint, defined via CNF. Must call gcs::innards::sanitise_literals()
@@ -190,7 +219,8 @@ namespace gcs::innards
          * Add a pseudo-Boolean greater or equals constraint. Must call
          * gcs::innards::sanitise_pseudoboolean_terms() first.
          */
-        [[nodiscard]] auto pseudoboolean_ge(const WeightedPseudoBooleanTerms &, Integer) -> ProofLine;
+        [[nodiscard]] auto pseudoboolean_ge(const WeightedPseudoBooleanTerms &, Integer,
+            std::optional<ReificationTerm> half_reif, bool equality) -> ProofLine;
 
         /**
          * Add an integer linear inequality or equality constraint.
@@ -291,7 +321,8 @@ namespace gcs::innards
          * Set things up internally as if the specified variable was a real
          * variable, so that proof_variable() etc will work with it.
          */
-        auto create_pseudovariable(SimpleIntegerVariableID, Integer, Integer, const std::optional<std::string> &) -> void;
+        auto set_up_variable_with_state_but_separate_proof_definition(
+            SimpleIntegerVariableID, Integer, Integer, const std::optional<std::string> &) -> void;
 
         ///@}
 

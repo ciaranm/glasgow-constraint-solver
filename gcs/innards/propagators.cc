@@ -135,11 +135,22 @@ auto Propagators::define_at_most_one(const State &, Literals && lits) -> optiona
         return nullopt;
 }
 
-auto Propagators::define_pseudoboolean_ge(const State &, WeightedPseudoBooleanTerms && lits, Integer val) -> optional<ProofLine>
+auto Propagators::define_pseudoboolean_ge(const State &, WeightedPseudoBooleanTerms && lits, Integer val,
+    optional<ReificationTerm> half_reif) -> optional<ProofLine>
 {
     if (_imp->optional_proof) {
         if (sanitise_pseudoboolean_terms(lits, val))
-            return _imp->optional_proof->pseudoboolean_ge(lits, val);
+            return _imp->optional_proof->pseudoboolean_ge(lits, val, half_reif, false);
+    }
+    return nullopt;
+}
+
+auto Propagators::define_pseudoboolean_eq(const State &, WeightedPseudoBooleanTerms && lits, Integer val,
+    optional<ReificationTerm> half_reif) -> optional<ProofLine>
+{
+    if (_imp->optional_proof) {
+        if (sanitise_pseudoboolean_terms(lits, val))
+            return _imp->optional_proof->pseudoboolean_ge(lits, val, half_reif, true);
     }
     return nullopt;
 }
@@ -377,9 +388,9 @@ auto Propagators::propagate(State & state, atomic<bool> * optional_abort_flag) c
 
 auto Propagators::create_auxilliary_integer_variable(Integer l, Integer u, const std::string & s) -> IntegerVariableID
 {
-    auto result = _imp->initial_state.create_integer_variable(l, u);
+    auto result = _imp->initial_state.allocate_integer_variable_with_state(l, u);
     if (_imp->optional_proof)
-        _imp->optional_proof->create_integer_variable(result, l, u, "aux_" + s);
+        _imp->optional_proof->set_up_integer_variable(result, l, u, "aux_" + s);
     return result;
 }
 
@@ -388,6 +399,13 @@ auto Propagators::create_proof_flag(const std::string & n) -> ProofFlag
     if (! _imp->optional_proof)
         throw UnexpectedException{"trying to create a proof flag but proof logging is not enabled"};
     return _imp->optional_proof->create_proof_flag(n);
+}
+
+auto Propagators::create_proof_only_integer_variable(Integer l, Integer u, const std::string & s) -> ProofOnlySimpleIntegerVariableID
+{
+    if (! _imp->optional_proof)
+        throw UnexpectedException{"trying to create a proof variable but proof logging is not enabled"};
+    return _imp->optional_proof->create_proof_integer_variable(l, u, s);
 }
 
 auto Propagators::want_definitions() const -> bool
