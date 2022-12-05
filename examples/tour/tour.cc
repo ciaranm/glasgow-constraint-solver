@@ -11,11 +11,11 @@ using std::endl;
 
 auto main(int argc, char * argv[]) -> int
 {
-    int N = 5;
+    int N = 6;
     Problem p = Problem{ProofOptions{"tour.opb", "tour.veripb"}};
     vector<IntegerVariableID> succ = p.create_integer_variable_vector(N, 0_i, Integer{N-1});
 
-    p.post(Circuit{succ});
+    p.post(Circuit{succ, true});
 
     auto stats = solve_with(p,
         SolveCallbacks{
