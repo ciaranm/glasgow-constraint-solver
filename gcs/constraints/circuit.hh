@@ -23,8 +23,7 @@ namespace gcs
         const std::vector<IntegerVariableID> & _succ;
     public:
         explicit Circuit(const std::vector<IntegerVariableID> & vars);
-
-    private:
+        virtual auto clone() const -> std::unique_ptr<Constraint> override;
         virtual auto describe_for_proof() -> std::string override;
         virtual auto install(innards::Propagators &, const innards::State &) && -> void override;
     };

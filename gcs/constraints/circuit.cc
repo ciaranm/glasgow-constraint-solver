@@ -14,7 +14,7 @@ using std::move;
 using std::nullopt;
 using std::to_string;
 using std::pair;
-
+using std::unique_ptr;
 
 Circuit::Circuit(const vector<IntegerVariableID> & v) :
     _succ(v)
@@ -61,6 +61,11 @@ namespace {
     }
 }
 
+auto Circuit::clone() const -> unique_ptr<Constraint>
+{
+    return make_unique<Circuit>(_succ);
+}
+
 auto Circuit::install(Propagators & propagators, const State & initial_state) && -> void
 {
     // First define an all different constraint
@@ -69,33 +74,34 @@ auto Circuit::install(Propagators & propagators, const State & initial_state) &&
 
     if (propagators.want_definitions()) {
         // Define encoding to eliminate sub-cycles
-        vector<IntegerVariableID> position;
-        auto constN = ConstantIntegerVariableID{Integer{static_cast<long long>(_succ.size()-1)}};
+        vector<ProofOnlySimpleIntegerVariableID> position;
+        auto n_minus_1 = ConstantIntegerVariableID{Integer{static_cast<long long>(_succ.size()-1)}};
 
         // Need extra proof variable: pos[i] = j means "the ith node visited in the circuit is the jth var"
-        // WLOG start at node 0, so pos[0] = [0]
-        position.emplace_back(propagators.create_proof_only_variable(0_i, 0_i, "pos0"));
-        auto cv = Linear{{1_i, position[0]}, {-1_i, constN}};
-        propagators.define_linear_eq(initial_state, cv, 0_i, _succ[0] == 0_i);
+        // WLOG start at node 0, so pos[0] = 0
+        position.emplace_back(propagators.create_proof_only_integer_variable(0_i, 0_i, "pos0"));
+        // Hence we can only have succ[0] = 0 (self cycle) if there is only one node i.e. n - 1 = 0
+        auto cv = WeightedPseudoBooleanTerms{{1_i, position[0]}, {-1_i, n_minus_1}};
+        propagators.define_pseudoboolean_eq(initial_state, move(cv), 0_i, _succ[0] == 0_i);
 
         for(unsigned int idx = 1; idx < _succ.size(); ++idx) {
-            position.emplace_back(propagators.create_proof_only_variable(0_i, Integer(_succ.size() - 1), "pos" + to_string(idx)));
+            position.emplace_back(propagators.create_proof_only_integer_variable(0_i, Integer(_succ.size() - 1), "pos" + to_string(idx)));
         }
 
         for(unsigned int idx = 1; idx < _succ.size(); ++idx) {
             // (succ[0] = i) -> pos[i] = 1
-            auto cv1 = Linear{{1_i, position[idx]}, {-1_i, 1_c}};
-            propagators.define_linear_eq(initial_state, cv1, 0_i, _succ[0] == Integer{idx});
+            auto cv1 = WeightedPseudoBooleanTerms{{1_i, position[idx]}, {-1_i, 1_c}};
+            propagators.define_pseudoboolean_eq(initial_state, move(cv1), 0_i, _succ[0] == Integer{idx});
 
             // (succ[i] = 0) -> pos[i] = n-1
-            auto cv2 = Linear{{1_i, position[idx]}, {-1_i, constN}};
-            propagators.define_linear_eq(initial_state, cv2, 0_i, _succ[idx] == 0_i);
+            auto cv2 = WeightedPseudoBooleanTerms{{1_i, position[idx]}, {-1_i, n_minus_1}};
+            propagators.define_pseudoboolean_eq(initial_state, move(cv2), 0_i, _succ[idx] == 0_i);
 
             // (succ[i] = j) -> pos[j] = pos[i] + 1
             for(unsigned int jdx = 1; jdx < _succ.size(); ++jdx) {
                 //if (idx == jdx) continue;
-                auto cv3 = Linear{{1_i, position[jdx]}, {-1_i, position[idx]}, {-1_i, 1_c}};
-                propagators.define_linear_eq(initial_state, cv3, 0_i, _succ[idx] == Integer{jdx});
+                auto cv3 = WeightedPseudoBooleanTerms{{1_i, position[jdx]}, {-1_i, position[idx]}, {-1_i, 1_c}};
+                propagators.define_pseudoboolean_eq(initial_state, move(cv3), 0_i, _succ[idx] == Integer{jdx});
             }
         }
 
