@@ -38,11 +38,10 @@ namespace {
             if(checked[idx]) continue;
 
             checked[idx] = true;
-            auto fixed_val = state.optional_single_value(var);
-            if(fixed_val == nullopt) continue;
-            if(fixed_val->raw_value < 0) {
-                return Inference::Contradiction;
-            }
+            auto current_val = state.optional_single_value(var);
+            if(current_val == nullopt) continue;
+            if(current_val->raw_value < 0) return Inference::Contradiction; // shouldn't happen
+
             bool finished_cycle = true;
             unsigned long cycle_length = 1;
 
@@ -50,21 +49,21 @@ namespace {
             proof_step << "p ";
             bool need_justification = false;
 
-            proof_step << lines_for_setting_pos.at(make_pair(fixed_val.value(), Integer(idx))) + 1 << " ";
+            proof_step << lines_for_setting_pos.at(make_pair(current_val.value(), Integer(idx))) + 1 << " ";
 
-            while(fixed_val->raw_value != idx) {
-                auto last_val = fixed_val;
+            while(current_val->raw_value != idx) {
+                auto last_val = current_val;
                 auto next_var = succ[last_val->raw_value];
-                fixed_val = state.optional_single_value(next_var);
+                current_val = state.optional_single_value(next_var);
 
-                if(fixed_val == nullopt) {
+                if(current_val == nullopt) {
                     finished_cycle = false;
                     break;
                 }
 
-                checked[fixed_val->raw_value] = true;
+                checked[current_val->raw_value] = true;
 
-                proof_step << lines_for_setting_pos.at(make_pair(fixed_val.value(), last_val.value())) + 1 << " + ";
+                proof_step << lines_for_setting_pos.at(make_pair(current_val.value(), last_val.value())) + 1 << " + ";
                 need_justification = true;
 
                 cycle_length++;
@@ -101,23 +100,40 @@ namespace {
                 if(checked[val.raw_value]) return true; // Followed this chain already
                 checked[val.raw_value] = true;
 
-
                 // Follow this chain to the end
-                auto fixed_val = state.optional_single_value(succ[val.raw_value]);
+                auto current_val = state.optional_single_value(succ[val.raw_value]);
                 auto chain_length = 1;
                 auto next_var = var;
-                if(fixed_val == nullopt) return true;
-                while(fixed_val != nullopt) {
-                    next_var = succ[fixed_val->raw_value];
-                    fixed_val = state.optional_single_value(next_var);
+
+                stringstream proof_step;
+                proof_step << "p ";
+
+                if(current_val == nullopt) return true;
+
+                proof_step << lines_for_setting_pos.at(make_pair(current_val.value(), val)) + 1 << " ";
+                auto last_val = current_val;
+                while(current_val != nullopt) {
+                    last_val = current_val;
+                    next_var = succ[last_val->raw_value];
+                    current_val = state.optional_single_value(next_var);
                     chain_length ++;
+                    if(current_val != nullopt) {
+                        proof_step << lines_for_setting_pos.at(make_pair(current_val.value(), last_val.value())) + 1
+                                   << " + ";
+                    }
                 }
 
                 // Got the end of the chain, so infer that we cannot complete it to make a cycle, unless it has
                 // visited all the nodes.
                 auto infer_lit = chain_length < succ.size() ? next_var != val : next_var == val;
 
-                switch(state.infer(infer_lit, JustifyUsingRUP{})) {
+                switch(state.infer(infer_lit,
+                    JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
+                        proof_step << lines_for_setting_pos.at(make_pair(val, last_val.value())) + 1
+                                    << " + ";
+                        proof.emit_proof_line(proof_step.str());
+                    }})
+                ) {
                     case Inference::Contradiction:
                         inference_from_prevent = Inference::Contradiction;
                         return false;

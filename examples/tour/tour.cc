@@ -3,6 +3,7 @@
 #include <gcs/constraints/circuit.hh>
 #include <vector>
 #include <iostream>
+#include "gcs/constraints/equals.hh"
 
 using namespace gcs;
 using std::vector;
@@ -11,10 +12,18 @@ using std::endl;
 
 auto main(int argc, char * argv[]) -> int
 {
-    int N = 6;
+    int N = 7;
     Problem p = Problem{ProofOptions{"tour.opb", "tour.veripb"}};
     vector<IntegerVariableID> succ = p.create_integer_variable_vector(N, 0_i, Integer{N-1});
 
+    p.post(NotEquals{succ[3], 4_c
+    });
+
+    p.post(NotEquals{succ[4], 2_c
+    });
+
+    p.post(Equals{succ[2], 5_c
+    });
     p.post(Circuit{succ, true});
 
     auto stats = solve_with(p,
