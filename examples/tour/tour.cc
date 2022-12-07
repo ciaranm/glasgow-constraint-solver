@@ -15,6 +15,11 @@ auto main(int argc, char * argv[]) -> int
 {
     // Example for the circuit constraint, find a tour for some graph of locations
     // and minimise the distance between any two stops.
+
+    // This is based on the circuit benchmark instances from
+    // K. G. Francis and P. J. Stuckey, ‘Explaining circuit propagation’, Constraints, vol. 19, no. 1, pp. 1–29, Jan. 2014,
+    // doi: 10.1007/s10601-013-9148-0.
+
     int n = 20;
     Problem p = Problem{ProofOptions{"tour.opb", "tour.veripb"}};
 
@@ -70,7 +75,6 @@ auto main(int argc, char * argv[]) -> int
     auto stats = solve_with(p,
         SolveCallbacks{
         .solution = [&](const CurrentState & s) -> bool {
-
             for(const auto & v :succ) {
                 cout << s(v) << " ";
             }

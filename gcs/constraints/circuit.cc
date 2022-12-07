@@ -95,7 +95,7 @@ namespace
 
     // Slightly more complex propagator: prevent small cycles by finding chains and removing the head from the domain
     // of the tail.
-    auto propagate_circuit_using_prevent(vector<IntegerVariableID> succ, ProofLine2DMap lines_for_setting_pos, State & state) -> Inference
+    auto propagate_circuit_using_prevent(const vector<IntegerVariableID> & succ, ProofLine2DMap lines_for_setting_pos, State & state) -> Inference
     {
         // Have to use check first
         auto inference_from_check = propagate_circuit_using_check(succ, lines_for_setting_pos, state);
@@ -171,6 +171,10 @@ auto Circuit::clone() const -> unique_ptr<Constraint>
 
 auto Circuit::install(Propagators & propagators, const State & initial_state) && -> void
 {
+    // Can't have negative values
+    for(const auto & s : _succ) {
+        propagators.trim_lower_bound(initial_state, s, 0_i, "Circuit");
+    }
     // First define an all different constraint
     AllDifferent all_diff{_succ};
     move(all_diff).install(propagators, initial_state);

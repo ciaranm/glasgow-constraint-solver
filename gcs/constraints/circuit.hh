@@ -20,10 +20,10 @@ namespace gcs
      */
     class Circuit : public Constraint {
     private:
-        const std::vector<IntegerVariableID> & _succ;
+        const std::vector<IntegerVariableID> _succ;
         const bool _propagate_using_check_only;
     public:
-        explicit Circuit(const std::vector<IntegerVariableID> & vars, const bool propagate_using_check_only = false);
+        explicit Circuit(const std::vector<IntegerVariableID> & vars, bool propagate_using_check_only = false);
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
         virtual auto describe_for_proof() -> std::string override;
         virtual auto install(innards::Propagators &, const innards::State &) && -> void override;

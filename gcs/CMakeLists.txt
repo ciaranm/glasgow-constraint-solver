@@ -11,6 +11,7 @@ add_library(glasgow_constraint_solver
     constraints/abs.cc
     constraints/all_different.cc
     constraints/arithmetic.cc
+    constraints/circuit.cc
     constraints/comparison.cc
     constraints/count.cc
     constraints/element.cc
@@ -29,8 +30,7 @@ add_library(glasgow_constraint_solver
     innards/proof.cc
     innards/propagators.cc
     innards/state.cc
-    innards/variable_id_utils.cc
-        constraints/circuit.cc constraints/circuit.hh)
+    innards/variable_id_utils.cc)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 link_libraries(glasgow_constraint_solver)
