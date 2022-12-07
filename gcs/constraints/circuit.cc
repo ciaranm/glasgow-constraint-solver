@@ -100,7 +100,6 @@ namespace {
                 if(checked[val.raw_value]) return true; // Followed this chain already
                 checked[val.raw_value] = true;
 
-                // Follow this chain to the end
                 auto current_val = state.optional_single_value(succ[val.raw_value]);
                 auto chain_length = 1;
                 auto next_var = var;
@@ -112,6 +111,8 @@ namespace {
 
                 proof_step << lines_for_setting_pos.at(make_pair(current_val.value(), val)) + 1 << " ";
                 auto last_val = current_val;
+
+                // Follow this chain to the end
                 while(current_val != nullopt) {
                     last_val = current_val;
                     next_var = succ[last_val->raw_value];
