@@ -3,7 +3,6 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CIRCUIT_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CIRCUIT_HH
 
-
 #include <gcs/constraint.hh>
 #include <gcs/variable_id.hh>
 
@@ -18,10 +17,12 @@ namespace gcs
      *
      * \ingroup Constraints
      */
-    class Circuit : public Constraint {
+    class Circuit : public Constraint
+    {
     private:
         const std::vector<IntegerVariableID> _succ;
         const bool _propagate_using_check_only;
+
     public:
         explicit Circuit(const std::vector<IntegerVariableID> & vars, bool propagate_using_check_only = false);
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
@@ -30,6 +31,4 @@ namespace gcs
     };
 }
 
-
-
-#endif //GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CIRCUIT_HH
+#endif // GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CIRCUIT_HH

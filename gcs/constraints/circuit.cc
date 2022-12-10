@@ -1,15 +1,18 @@
 #include <gcs/constraints/all_different.hh>
 #include <gcs/constraints/circuit.hh>
-#include <gcs/innards/propagators.hh>
 #include <gcs/exception.hh>
+#include <gcs/innards/propagators.hh>
+
 #include <util/enumerate.hh>
-#include <iostream>
+
 #include <map>
 #include <utility>
 
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::cmp_less;
+using std::cmp_not_equal;
 using std::make_pair;
 using std::map;
 using std::move;
@@ -20,8 +23,6 @@ using std::stringstream;
 using std::to_string;
 using std::unique_ptr;
 using std::vector;
-using std::cmp_less;
-using std::cmp_not_equal;
 
 using ProofLine2DMap = map<pair<Integer, Integer>, ProofLine>;
 
@@ -174,7 +175,7 @@ auto Circuit::clone() const -> unique_ptr<Constraint>
 auto Circuit::install(Propagators & propagators, const State & initial_state) && -> void
 {
     // Can't have negative values
-    for(const auto & s : _succ) {
+    for (const auto & s : _succ) {
         propagators.trim_lower_bound(initial_state, s, 0_i, "Circuit");
     }
     // First define an all different constraint
