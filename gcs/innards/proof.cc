@@ -394,17 +394,16 @@ auto Proof::need_direct_encoding_for(SimpleIntegerVariableID id, Integer v) -> v
         _imp->proof << "# " << _imp->active_proof_level << "\n";
 }
 
-auto Proof::set_up_variable_with_state_but_separate_proof_definition(SimpleIntegerVariableID id, Integer lower, Integer upper, const optional<string> & optional_name) -> void
+auto Proof::create_literals_for_introduced_variable_value(
+    SimpleIntegerVariableID id, Integer val, const optional<string> & optional_name) -> void
 {
     string name = "iv" + to_string(id.index);
     if (optional_name)
         name.append("_" + *optional_name);
 
-    for (Integer v = lower; v <= upper; ++v) {
-        auto x = xify(name + "_eq_" + value_name(v));
-        _imp->direct_integer_variables.emplace(id == v, x);
-        _imp->direct_integer_variables.emplace(id != v, "~" + x);
-    }
+    auto x = xify(name + "_eq_" + value_name(val));
+    _imp->direct_integer_variables.emplace(id == val, x);
+    _imp->direct_integer_variables.emplace(id != val, "~" + x);
 }
 
 auto Proof::start_proof(State & state) -> void

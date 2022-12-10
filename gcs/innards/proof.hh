@@ -315,8 +315,8 @@ namespace gcs::innards
          * Set things up internally as if the specified variable was a real
          * variable, so that proof_variable() etc will work with it.
          */
-        auto set_up_variable_with_state_but_separate_proof_definition(
-            SimpleIntegerVariableID, Integer, Integer, const std::optional<std::string> &) -> void;
+        auto create_literals_for_introduced_variable_value(
+            SimpleIntegerVariableID, Integer, const std::optional<std::string> &) -> void;
 
         ///@}
 

@@ -181,8 +181,11 @@ auto Element2DConstantArray::install(Propagators & propagators, const State & in
     propagators.install(
         initial_state, [idx1 = _idx1, idx2 = _idx2, var = _var, vals = _vals, idxsel = move(idxsel)](State & state) mutable -> pair<Inference, PropagatorState> {
             if (state.maybe_proof() && ! idxsel) [[unlikely]] {
-                idxsel = make_optional(state.create_variable_with_state_but_separate_proof_definition(
-                    0_i, Integer(vals.size() * vals.begin()->size()), "element2didx"));
+                idxsel = state.what_variable_id_will_be_created_next();
+                for (auto i = 0_i, i_end = Integer(vals.size() * vals.begin()->size()); i != i_end; ++i)
+                    state.maybe_proof()->create_literals_for_introduced_variable_value(*idxsel, i, "element2didx");
+                if (*idxsel != state.allocate_integer_variable_with_state(0_i, Integer(vals.size() * vals.begin()->size())))
+                    throw UnexpectedException{"something went horribly wrong with variable IDs"};
 
                 state.add_proof_steps(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
                     state.for_each_value(idx1, [&](Integer i1) {

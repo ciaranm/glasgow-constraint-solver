@@ -161,13 +161,13 @@ namespace gcs::innards
         [[nodiscard]] auto allocate_integer_variable_with_state(Integer lower, Integer upper) -> SimpleIntegerVariableID;
 
         /**
-         * Set up something that behaves like a variable in most respects, but
-         * that is not a proper variable. Used by some propagators internally.
-         * Calls allocate_integer_variable_with_state() and the relevant Proof
-         * things.
+         * Tell us beforehand what the next SimpleIntegerVariableID to be
+         * created will be, when we then call
+         * create_variable_with_state_but_separate_proof_definition(). Care
+         * must be taken when using this because the variable ID returned will
+         * not yet be valid.
          */
-        [[nodiscard]] auto create_variable_with_state_but_separate_proof_definition(
-            Integer lower, Integer upper, const std::optional<std::string> &) -> SimpleIntegerVariableID;
+        [[nodiscard]] auto what_variable_id_will_be_created_next() const -> SimpleIntegerVariableID;
 
         ///@}
 

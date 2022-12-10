@@ -80,6 +80,93 @@ namespace
     {
         return 1_i;
     }
+
+    template <typename CV_>
+    auto build_table(const CV_ & coeff_vars, Integer value, State & state) -> ExtensionalData
+    {
+        vector<vector<Integer>> permitted;
+        vector<Integer> current;
+
+        vector<IntegerVariableID> vars;
+        for (auto & cv : coeff_vars) {
+            auto var = get_var(cv);
+            vars.push_back(var);
+            if (state.maybe_proof()) {
+                state.for_each_value(var, [&](Integer val) {
+                    state.maybe_proof()->need_proof_variable(var == val);
+                });
+            }
+        }
+
+        auto future_var_id = state.what_variable_id_will_be_created_next();
+
+        stringstream trail;
+        function<void(Proof *, vector<ProofLine> *)> search = [&](Proof * maybe_proof, vector<ProofLine> * to_delete) {
+            if (current.size() == coeff_vars.size()) {
+                Integer actual_value{0_i};
+                for (const auto & [idx, cv] : enumerate(coeff_vars)) {
+                    auto coeff = get_coeff(cv);
+                    actual_value += to_coeff(coeff) * current[idx];
+                }
+                if (actual_value == value) {
+                    permitted.push_back(current);
+                    if (maybe_proof) {
+                        Integer sel_value(permitted.size() - 1);
+                        maybe_proof->create_literals_for_introduced_variable_value(future_var_id, sel_value, "lineq");
+                        trail << "1 " << maybe_proof->proof_variable(future_var_id == sel_value) << " ";
+
+                        stringstream forward_implication, reverse_implication;
+                        forward_implication << "red " << coeff_vars.size() << " " << maybe_proof->proof_variable(future_var_id != sel_value);
+                        reverse_implication << "red 1 " << maybe_proof->proof_variable(future_var_id == sel_value);
+
+                        for (const auto & [idx, cv] : enumerate(coeff_vars)) {
+                            forward_implication << " 1 " << maybe_proof->proof_variable(get_var(cv) == current[idx]);
+                            reverse_implication << " 1 ~" << maybe_proof->proof_variable(get_var(cv) == current[idx]);
+                        }
+                        forward_implication << " >= " << coeff_vars.size() << " ; "
+                                            << maybe_proof->proof_variable(future_var_id == sel_value) << " 0";
+                        reverse_implication << " >= 1 ; "
+                                            << maybe_proof->proof_variable(future_var_id == sel_value) << " 1";
+
+                        maybe_proof->emit_proof_line(forward_implication.str());
+                        maybe_proof->emit_proof_line(reverse_implication.str());
+                    }
+                }
+            }
+            else {
+                const auto & var = get_var(coeff_vars[current.size()]);
+                state.for_each_value(var, [&](Integer val) {
+                    current.push_back(val);
+                    search(maybe_proof, to_delete);
+                    current.pop_back();
+                });
+            }
+
+            if (maybe_proof) {
+                stringstream backtrack;
+                backtrack << "u " << trail.str();
+                for (const auto & [idx, val] : enumerate(current))
+                    backtrack << "1 " << maybe_proof->proof_variable(get_var(coeff_vars[idx]) != val) << " ";
+                backtrack << ">= 1 ;";
+                maybe_proof->emit_proof_line(backtrack.str());
+            }
+        };
+
+        if (state.maybe_proof()) {
+            state.add_proof_steps(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
+                proof.emit_proof_comment("building GAC table for linear equality");
+                search(&proof, &to_delete);
+            }});
+        }
+        else
+            search(nullptr, nullptr);
+
+        auto sel = state.allocate_integer_variable_with_state(0_i, Integer(permitted.size() - 1));
+        if (sel != future_var_id)
+            throw UnexpectedException{"something went horribly wrong with variable IDs"};
+
+        return ExtensionalData{sel, move(vars), move(permitted)};
+    }
 }
 
 auto LinearEquality::install(Propagators & propagators, const State & initial_state) && -> void
@@ -127,101 +214,8 @@ auto LinearEquality::install(Propagators & propagators, const State & initial_st
             optional<ExtensionalData> data;
             propagators.install(
                 initial_state, [data = move(data), coeff_vars = sanitised_cv, value = _value + modifier](State & state) mutable -> pair<Inference, PropagatorState> {
-                    if (! data) {
-                        vector<vector<Integer>> permitted;
-                        vector<Integer> current;
-                        function<void()> search = [&]() {
-                            if (current.size() == coeff_vars.size()) {
-                                Integer actual_value{0_i};
-                                for (const auto & [idx, cv] : enumerate(coeff_vars)) {
-                                    auto coeff = get_coeff(cv);
-                                    actual_value += to_coeff(coeff) * current[idx];
-                                }
-                                if (actual_value == value)
-                                    permitted.push_back(current);
-                            }
-                            else {
-                                const auto & var = get_var(coeff_vars[current.size()]);
-                                state.for_each_value(var, [&](Integer val) {
-                                    current.push_back(val);
-                                    search();
-                                    current.pop_back();
-                                });
-                            }
-                        };
-                        search();
-
-                        auto sel = state.create_variable_with_state_but_separate_proof_definition(0_i, Integer(permitted.size() - 1), "lineq");
-                        vector<IntegerVariableID> vars;
-                        for (auto & cv : coeff_vars)
-                            vars.push_back(get_var(cv));
-
-                        state.add_proof_steps(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
-                            proof.emit_proof_comment("building GAC table for linear equality with " + to_string(permitted.size()) + " options");
-
-                            for (auto & var : vars) {
-                                state.for_each_value(var, [&](Integer val) {
-                                    proof.need_proof_variable(var == val);
-                                });
-                            }
-
-                            for (const auto & [idx, vals] : enumerate(permitted)) {
-                                stringstream line;
-                                line << "red " << coeff_vars.size() << " ~" << proof.proof_variable(sel == Integer(idx));
-                                for (const auto & [val_idx, val] : enumerate(vals))
-                                    line << " 1 " << proof.proof_variable(get_var(coeff_vars[val_idx]) == Integer(val));
-                                line << " >= " << coeff_vars.size() << " ; " << proof.proof_variable(sel == Integer(idx)) << " 0";
-                                proof.emit_proof_line(line.str());
-
-                                line = stringstream{};
-                                line << "red 1 " << proof.proof_variable(sel == Integer(idx));
-                                for (const auto & [val_idx, val] : enumerate(vals))
-                                    line << " 1 ~" << proof.proof_variable(get_var(coeff_vars[val_idx]) == Integer(val));
-                                line << " >= 1 ; " << proof.proof_variable(sel == Integer(idx)) << " 1";
-                                proof.emit_proof_line(line.str());
-                            }
-
-                            stringstream line1, line2;
-                            line1 << "red 1 ~tmptrail ";
-                            line2 << "red " << permitted.size() << " tmptrail ";
-
-                            stringstream trail;
-                            for (const auto & [idx, _] : enumerate(permitted)) {
-                                trail << " 1 " << proof.proof_variable(sel == Integer(idx));
-                                line1 << " 1 " << proof.proof_variable(sel == Integer(idx));
-                                line2 << " 1 " << proof.proof_variable(sel != Integer(idx));
-                            }
-
-                            line1 << " >= 1 ; tmptrail 0";
-                            line2 << " >= " << permitted.size() << " ; tmptrail 1";
-                            to_delete.emplace_back(proof.emit_proof_line(line1.str()));
-                            to_delete.emplace_back(proof.emit_proof_line(line2.str()));
-
-                            vector<Integer> current;
-                            function<void()> search = [&]() {
-                                if (current.size() != coeff_vars.size()) {
-                                    const auto & var = get_var(coeff_vars[current.size()]);
-                                    state.for_each_value(var, [&](Integer val) {
-                                        current.push_back(val);
-                                        search();
-                                        current.pop_back();
-                                    });
-                                }
-                                stringstream line;
-                                line << "u 1 tmptrail";
-                                for (const auto & [val_idx, val] : enumerate(current))
-                                    line << " 1 ~" << proof.proof_variable(get_var(coeff_vars[val_idx]) == val);
-                                line << " >= 1 ;";
-                                to_delete.emplace_back(proof.emit_proof_line(line.str()));
-                            };
-                            search();
-
-                            proof.emit_proof_line("u" + trail.str() + " >= 1 ;");
-                        }});
-
-                        data = ExtensionalData{sel, move(vars), move(permitted)};
-                    }
-
+                    if (! data)
+                        data = build_table(coeff_vars, value, state);
                     return propagate_extensional(*data, state);
                 },
                 triggers, "lin_eq_gac");

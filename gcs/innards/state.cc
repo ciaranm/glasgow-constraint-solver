@@ -233,13 +233,9 @@ auto State::allocate_integer_variable_with_state(Integer lower, Integer upper) -
     return SimpleIntegerVariableID{_imp->integer_variable_states.back().size() - 1};
 }
 
-auto State::create_variable_with_state_but_separate_proof_definition(
-    Integer lower, Integer upper, const optional<string> & name) -> SimpleIntegerVariableID
+auto State::what_variable_id_will_be_created_next() const -> SimpleIntegerVariableID
 {
-    auto result = allocate_integer_variable_with_state(lower, upper);
-    if (_imp->maybe_proof)
-        _imp->maybe_proof->set_up_variable_with_state_but_separate_proof_definition(result, lower, upper, name);
-    return result;
+    return SimpleIntegerVariableID{_imp->integer_variable_states.back().size()};
 }
 
 auto State::assign_to_state_of(const DirectIntegerVariableID i) -> IntegerVariableState &
