@@ -157,6 +157,8 @@ namespace
                 case Inference::NoChange:
                     return true;
                 }
+
+                throw NonExhaustiveSwitch{};
             });
         }
 
