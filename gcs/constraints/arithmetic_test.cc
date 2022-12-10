@@ -84,15 +84,17 @@ auto run_arithmetic_test(pair<int, int> v1_range, pair<int, int> v2_range, pair<
                 if (is_satisfing(v1, v2, v3))
                     expected.emplace(v1, v2, v3);
 
-    Problem p{ProofOptions{"arithmetic_test.opb", "arithmetic_test.veripb"}};
+    Problem p;
     auto v1 = p.create_integer_variable(Integer(v1_range.first), Integer(v1_range.second));
     auto v2 = p.create_integer_variable(Integer(v2_range.first), Integer(v2_range.second));
     auto v3 = p.create_integer_variable(Integer(v3_range.first), Integer(v3_range.second));
     p.post(Arithmetic_{v1, v2, v3});
-    solve(p, [&](const CurrentState & s) -> bool {
-        actual.emplace(s(v1).raw_value, s(v2).raw_value, s(v3).raw_value);
-        return true;
-    });
+    solve(
+        p, [&](const CurrentState & s) -> bool {
+            actual.emplace(s(v1).raw_value, s(v2).raw_value, s(v3).raw_value);
+            return true;
+        },
+        ProofOptions{"arithmetic_test.opb", "arithmetic_test.veripb"});
 
     return check_results(v1_range, v2_range, v3_range, typeid(Arithmetic_).name(), expected, actual);
 }

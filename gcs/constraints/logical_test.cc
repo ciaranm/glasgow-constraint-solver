@@ -75,7 +75,7 @@ auto run_logical_test(int n_vars, optional<bool> r, const vector<pair<int, bool>
             expected.emplace(candidate, false);
     });
 
-    Problem p{ProofOptions{"logical_test.opb", "logical_test.veripb"}};
+    Problem p;
     auto vs = p.create_integer_variable_vector(n_vars, 0_i, 1_i, "vs");
     auto rv = p.create_integer_variable(0_i, 1_i, "rv");
 
@@ -88,13 +88,15 @@ auto run_logical_test(int n_vars, optional<bool> r, const vector<pair<int, bool>
     if (r != nullopt)
         p.post(Equals{rv, *r ? 1_c : 0_c});
 
-    solve(p, [&](const CurrentState & s) -> bool {
-        vector<uint8_t> got;
-        for (auto & v : vs)
-            got.push_back(s(v) == 1_i ? 1 : 0);
-        actual.emplace(got, s(rv) == 1_i ? 1 : 0);
-        return true;
-    });
+    solve(
+        p, [&](const CurrentState & s) -> bool {
+            vector<uint8_t> got;
+            for (auto & v : vs)
+                got.push_back(s(v) == 1_i ? 1 : 0);
+            actual.emplace(got, s(rv) == 1_i ? 1 : 0);
+            return true;
+        },
+        ProofOptions{"logical_test.opb", "logical_test.veripb"});
 
     if (actual != expected) {
         cerr << "actual:";

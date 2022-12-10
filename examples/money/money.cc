@@ -17,7 +17,7 @@ using std::vector;
 
 auto main(int, char *[]) -> int
 {
-    Problem p{ProofOptions{"money.opb", "money.veripb"}};
+    Problem p;
 
     auto s = p.create_integer_variable(1_i, 9_i, "s");
     auto e = p.create_integer_variable(0_i, 9_i, "e");
@@ -38,15 +38,17 @@ auto main(int, char *[]) -> int
             { -10000_i, m }, { -1000_i, o }, { -100_i, n }, { -10_i, e }, { -1_i, y }, }, 0_i });
     // clang-format on
 
-    auto stats = solve(p, [&](const CurrentState & state) -> bool {
-        cout << " " << state(s) << state(e) << state(n) << state(d) << endl;
-        cout << " " << state(m) << state(o) << state(r) << state(e) << endl;
-        cout << state(m) << state(o) << state(n)
-             << state(e) << state(y) << endl;
-        cout << endl;
+    auto stats = solve(
+        p, [&](const CurrentState & state) -> bool {
+            cout << " " << state(s) << state(e) << state(n) << state(d) << endl;
+            cout << " " << state(m) << state(o) << state(r) << state(e) << endl;
+            cout << state(m) << state(o) << state(n)
+                 << state(e) << state(y) << endl;
+            cout << endl;
 
-        return true;
-    });
+            return true;
+        },
+        ProofOptions{"money.opb", "money.veripb"});
 
     cout << stats;
 

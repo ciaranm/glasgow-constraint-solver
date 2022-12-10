@@ -103,7 +103,7 @@ auto run_abs_test(pair<int, int> v1_range, pair<int, int> v2_range, const functi
             if (is_satisfing(v1, v2))
                 expected.emplace(v1, v2);
 
-    Problem p{ProofOptions{"abs_test.opb", "abs_test.veripb"}};
+    Problem p;
     auto v1 = p.create_integer_variable(Integer(v1_range.first), Integer(v1_range.second));
     auto v2 = p.create_integer_variable(Integer(v2_range.first), Integer(v2_range.second));
     p.post(Abs{v1, v2});
@@ -117,7 +117,8 @@ auto run_abs_test(pair<int, int> v1_range, pair<int, int> v2_range, const functi
             .trace = [&](const CurrentState & s) -> bool {
                 gac_violated = gac_violated || ! check_gac_oneway("forward", v1, v2, s, is_satisfing) || ! check_gac_oneway("reverse", v2, v1, s, [&](int a, int b) { return is_satisfing(b, a); });
                 return true;
-            }});
+            }},
+        ProofOptions{"abs_test.opb", "abs_test.veripb"});
 
     return (! gac_violated) && check_results(v1_range, v2_range, "Abs", expected, actual);
 }

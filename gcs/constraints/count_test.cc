@@ -87,7 +87,7 @@ auto run_count_test(pair<int, int> result_range, pair<int, int> voi_range, const
 
     cerr << " " << expected.size() << endl;
 
-    Problem p{ProofOptions{"count_test.opb", "count_test.veripb"}};
+    Problem p;
     auto result = p.create_integer_variable(Integer(result_range.first), Integer(result_range.second), "result");
     auto voi = p.create_integer_variable(Integer(voi_range.first), Integer(voi_range.second), "voi");
     vector<IntegerVariableID> array;
@@ -103,7 +103,8 @@ auto run_count_test(pair<int, int> result_range, pair<int, int> voi_range, const
                     vals.push_back(s(a).raw_value);
                 actual.emplace(s(result).raw_value, s(voi).raw_value, vals);
                 return true;
-            }});
+            }},
+        ProofOptions{"count_test.opb", "count_test.veripb"});
 
     if (actual != expected) {
         cerr << "actual:";

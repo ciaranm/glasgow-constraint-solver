@@ -130,7 +130,7 @@ namespace gcs::innards
          */
         ///@{
 
-        explicit State(innards::Proof * optional_proof);
+        explicit State();
         State(State &&) noexcept;
         ~State();
 
@@ -138,8 +138,9 @@ namespace gcs::innards
         auto operator=(const State &) -> State & = delete;
 
         /**
-         * Used by Problem::initial_state() to get started. Probably not usable
-         * elsewhere without code changes.
+         * Used by Problem::initial_state() to get started, and for
+         * CurrentState::clone(). Probably not usable elsewhere without code
+         * changes.
          */
         [[nodiscard]] auto clone() const -> State;
 
@@ -152,7 +153,8 @@ namespace gcs::innards
 
         /**
          * Used by Problem::create_integer_variable(), which you should be
-         * calling instead of this.
+         * calling instead of this. Allocates a new SimpleIntegerVariableID and
+         * tracks its state.
          *
          * \sa Problem::create_integer_variable()
          */
@@ -161,6 +163,8 @@ namespace gcs::innards
         /**
          * Set up something that behaves like a variable in most respects, but
          * that is not a proper variable. Used by some propagators internally.
+         * Calls allocate_integer_variable_with_state() and the relevant Proof
+         * things.
          */
         [[nodiscard]] auto create_variable_with_state_but_separate_proof_definition(
             Integer lower, Integer upper, const std::optional<std::string> &) -> SimpleIntegerVariableID;
@@ -234,9 +238,14 @@ namespace gcs::innards
         auto add_proof_steps(JustifyExplicitly why) -> void;
 
         /**
-         * Do we want proofs?
+         * The Proof, if we are proof logging, or nullptr if we are not.
          */
-        [[nodiscard]] auto want_proofs() const -> bool;
+        [[nodiscard]] auto maybe_proof() const -> Proof *;
+
+        /**
+         * Set a Proof for proof logging of inference steps.
+         */
+        auto log_inferences_to(Proof &) -> void;
 
         ///@}
 
@@ -313,6 +322,11 @@ namespace gcs::innards
          * We're going to be trying to maximise this variable.
          */
         auto maximise(IntegerVariableID) -> void;
+
+        /**
+         * What is our objective variable, to minimise?
+         */
+        [[nodiscard]] auto optional_minimise_variable() const -> std::optional<IntegerVariableID>;
 
         ///@}
 

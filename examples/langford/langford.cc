@@ -17,6 +17,8 @@ using namespace gcs;
 using std::cerr;
 using std::cout;
 using std::endl;
+using std::make_optional;
+using std::nullopt;
 using std::vector;
 
 namespace po = boost::program_options;
@@ -64,7 +66,7 @@ auto main(int argc, char * argv[]) -> int
 
     int k = options_vars["size"].as<int>();
 
-    Problem p = options_vars.contains("prove") ? Problem{ProofOptions{"langford.opb", "langford.veripb"}} : Problem{};
+    Problem p;
     vector<IntegerVariableID> position, solution;
     for (int i = 0; i < 2 * k; ++i) {
         position.emplace_back(p.create_integer_variable(0_i, Integer{2 * k - 1}));
@@ -82,19 +84,21 @@ auto main(int argc, char * argv[]) -> int
         p.post(Plus{position[i + k], constant_variable(Integer{i + 2}), position[i]});
     }
 
-    auto stats = solve(p, [&](const CurrentState & state) -> bool {
-        cout << "solution: ";
-        for (auto & s : solution)
-            cout << state(s) << " ";
-        cout << endl;
-        cout << "position: ";
-        for (auto & s : position)
-            cout << state(s) << " ";
-        cout << endl;
-        cout << endl;
+    auto stats = solve(
+        p, [&](const CurrentState & state) -> bool {
+            cout << "solution: ";
+            for (auto & s : solution)
+                cout << state(s) << " ";
+            cout << endl;
+            cout << "position: ";
+            for (auto & s : position)
+                cout << state(s) << " ";
+            cout << endl;
+            cout << endl;
 
-        return true;
-    });
+            return true;
+        },
+        options_vars.contains("prove") ? make_optional<ProofOptions>("langford.opb", "langford.veripb") : nullopt);
 
     cout << stats;
 

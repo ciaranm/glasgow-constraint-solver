@@ -55,7 +55,7 @@ namespace
             stringstream proof_step;
             bool need_justification = false;
 
-            if(state.want_proofs()) {
+            if (state.maybe_proof()) {
                 proof_step << "p ";
                 proof_step << lines_for_setting_pos.at(make_pair(current_val.value(), Integer(idx))) + 1 << " ";
             }
@@ -72,7 +72,7 @@ namespace
 
                 checked[current_val->raw_value] = true;
 
-                if(state.want_proofs()) {
+                if (state.maybe_proof()) {
                     proof_step << lines_for_setting_pos.at(make_pair(current_val.value(), last_val.value())) + 1
                                << " + ";
                     need_justification = true;
@@ -119,7 +119,7 @@ namespace
                 if (current_val == nullopt) return true;
 
                 stringstream proof_step;
-                if(state.want_proofs()) {
+                if (state.maybe_proof()) {
                     proof_step << "p ";
                     proof_step << lines_for_setting_pos.at(make_pair(current_val.value(), val)) + 1 << " ";
                 }
@@ -132,7 +132,7 @@ namespace
                     next_var = succ[last_val->raw_value];
                     current_val = state.optional_single_value(next_var);
                     chain_length++;
-                    if (state.want_proofs() && current_val != nullopt ) {
+                    if (state.maybe_proof() && current_val != nullopt) {
                         proof_step << lines_for_setting_pos.at(make_pair(current_val.value(), last_val.value())) + 1
                                    << " + ";
                     }

@@ -34,7 +34,7 @@ auto check_range(State & state, IntegerVariableID var, Integer lower, Integer up
 
 TEST_CASE("Variable values")
 {
-    State state{nullptr};
+    State state;
     auto var = state.allocate_integer_variable_with_state(1_i, 10_i);
 
     check_range(state, var, 1_i, 10_i);
@@ -46,7 +46,7 @@ TEST_CASE("Variable values")
 
 TEST_CASE("State infers >=")
 {
-    State state{nullptr};
+    State state;
     auto var = state.allocate_integer_variable_with_state(1_i, 10_i);
 
     SECTION("var >= value")
@@ -70,7 +70,7 @@ TEST_CASE("State infers >=")
 
 TEST_CASE("State infers <")
 {
-    State state{nullptr};
+    State state;
     auto var = state.allocate_integer_variable_with_state(1_i, 10_i);
 
     SECTION("var < value")
@@ -94,7 +94,7 @@ TEST_CASE("State infers <")
 
 TEST_CASE("State infers !=")
 {
-    State state{nullptr};
+    State state;
     auto var = state.allocate_integer_variable_with_state(1_i, 10_i);
 
     SECTION("var != value")
@@ -124,7 +124,7 @@ TEST_CASE("State infers !=")
 
 TEST_CASE("State infers =")
 {
-    State state{nullptr};
+    State state;
     auto var = state.allocate_integer_variable_with_state(1_i, 10_i);
 
     SECTION("var = value")

@@ -681,7 +681,7 @@ auto main(int argc, char * argv[]) -> int
 
     auto start_time = steady_clock::now();
 
-    Problem problem = options_vars.contains("prove") ? Problem{ProofOptions{"xcsp.opb", "xcsp.veripb"}} : Problem{};
+    Problem problem;
     ParserCallbacks callbacks{problem};
     try {
         XCSP3Core::XCSP3CoreParser parser{&callbacks};
@@ -740,6 +740,7 @@ auto main(int argc, char * argv[]) -> int
                 else
                     return false;
             }},
+        options_vars.contains("prove") ? make_optional<ProofOptions>("xcsp.opb", "xcsp.veripb") : nullopt,
         &abort_flag);
 
     if (timeout_thread.joinable()) {

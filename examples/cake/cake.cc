@@ -17,6 +17,8 @@ using namespace gcs;
 using std::cerr;
 using std::cout;
 using std::endl;
+using std::make_optional;
+using std::nullopt;
 using std::string;
 using std::vector;
 
@@ -57,7 +59,7 @@ auto main(int argc, char * argv[]) -> int
         return EXIT_SUCCESS;
     }
 
-    Problem p = options_vars.contains("prove") ? Problem{ProofOptions{"cake.opb", "cake.veripb"}} : Problem{};
+    Problem p;
 
     // https://www.minizinc.org/doc-2.5.5/en/modelling.html#an-arithmetic-optimisation-example
     auto banana = p.create_integer_variable(0_i, 100_i);
@@ -81,7 +83,8 @@ auto main(int argc, char * argv[]) -> int
             },
             .branch = branch_on_dom_then_deg(p, vector<IntegerVariableID>{banana, chocolate}),
             .guess = guess_smallest_value_first() //
-        });
+        },
+        options_vars.contains("prove") ? make_optional<ProofOptions>("cake.opb", "cake.veripb") : nullopt);
 
     cout << stats;
 

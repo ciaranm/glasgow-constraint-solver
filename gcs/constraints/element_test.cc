@@ -177,7 +177,7 @@ auto run_element_test(pair<int, int> var_range, pair<int, int> idx_range, const 
             });
         }
 
-    Problem p{ProofOptions{"element_test.opb", "element_test.veripb"}};
+    Problem p;
     auto var = p.create_integer_variable(Integer(var_range.first), Integer(var_range.second), "var");
     auto idx = p.create_integer_variable(Integer(idx_range.first), Integer(idx_range.second), "idx");
     vector<IntegerVariableID> array;
@@ -199,7 +199,8 @@ auto run_element_test(pair<int, int> var_range, pair<int, int> idx_range, const 
                 gac_violated = gac_violated || ! check_idx_gac(var, idx, array, s) ||
                     ! check_var_gac(var, idx, array, s) || ! check_vals_gac(var, idx, array, s);
                 return true;
-            }});
+            }},
+        ProofOptions{"element_test.opb", "element_test.veripb"});
 
     return (! gac_violated) && check_results(expected, actual);
 }

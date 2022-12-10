@@ -107,7 +107,7 @@ auto run_binary_equals_test(pair<int, int> v1_range, pair<int, int> v2_range, co
             if (is_satisfing(v1, v2))
                 expected.emplace(v1, v2);
 
-    Problem p{ProofOptions{"equals_test.opb", "equals_test.veripb"}};
+    Problem p;
     auto v1 = p.create_integer_variable(Integer(v1_range.first), Integer(v1_range.second));
     auto v2 = p.create_integer_variable(Integer(v2_range.first), Integer(v2_range.second));
     p.post(Constraint_{v1, v2});
@@ -123,7 +123,8 @@ auto run_binary_equals_test(pair<int, int> v1_range, pair<int, int> v2_range, co
                     ! check_gac_oneway(typeid(Constraint_).name() + " forward"s + " " + stringify_tuple(v1_range) + " " + stringify_tuple(v2_range), v1, v2, s, is_satisfing) ||
                     ! check_gac_oneway(typeid(Constraint_).name() + " reverse"s + " " + stringify_tuple(v1_range) + " " + stringify_tuple(v2_range), v2, v1, s, [&](int a, int b) { return is_satisfing(b, a); });
                 return true;
-            }});
+            }},
+        ProofOptions{"equals_test.opb", "equals_test.veripb"});
 
     return (! gac_violated) && check_results(v1_range, v2_range, typeid(Constraint_).name(), expected, actual);
 }
@@ -139,15 +140,17 @@ auto run_reif_binary_equals_test(pair<int, int> v1_range, pair<int, int> v2_rang
                 expected.emplace(v1, v2, 0);
         }
 
-    Problem p{ProofOptions{"equals_test.opb", "equals_test.veripb"}};
+    Problem p;
     auto v1 = p.create_integer_variable(Integer(v1_range.first), Integer(v1_range.second));
     auto v2 = p.create_integer_variable(Integer(v2_range.first), Integer(v2_range.second));
     auto v3 = p.create_integer_variable(0_i, 1_i);
     p.post(Constraint_{v1, v2, v3 == 1_i});
-    solve(p, [&](const CurrentState & s) -> bool {
-        actual.emplace(s(v1).raw_value, s(v2).raw_value, s(v3).raw_value);
-        return true;
-    });
+    solve(
+        p, [&](const CurrentState & s) -> bool {
+            actual.emplace(s(v1).raw_value, s(v2).raw_value, s(v3).raw_value);
+            return true;
+        },
+        ProofOptions{"equals_test.opb", "equals_test.veripb"});
 
     return check_results(v1_range, v2_range, typeid(Constraint_).name(), expected, actual);
 }

@@ -210,7 +210,7 @@ auto main(int, char *[]) -> int
                             expected.emplace(v0, v1, v2);
                     }
 
-            Problem p{ProofOptions{"linear_equality_test.opb", "linear_equality_test.veripb"}};
+            Problem p;
 
             auto vs = vector{
                 p.create_integer_variable(Integer{v0_range.first}, Integer{v0_range.second}),
@@ -230,10 +230,12 @@ auto main(int, char *[]) -> int
                     p.post(LinearLessEqual{move(c), Integer{value}});
             }
 
-            solve(p, [&](const CurrentState & s) -> bool {
-                actual.emplace(s(vs[0]).raw_value, s(vs[1]).raw_value, s(vs[2]).raw_value);
-                return true;
-            });
+            solve(
+                p, [&](const CurrentState & s) -> bool {
+                    actual.emplace(s(vs[0]).raw_value, s(vs[1]).raw_value, s(vs[2]).raw_value);
+                    return true;
+                },
+                ProofOptions{"linear_equality_test.opb", "linear_equality_test.veripb"});
 
             if (! check_results(v0_range, v1_range, v2_range, constraints,
                     mode == 0 ? "linear eq" : mode == 1 ? "linear ge"

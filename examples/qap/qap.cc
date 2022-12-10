@@ -24,6 +24,8 @@ using std::cerr;
 using std::cout;
 using std::endl;
 using std::ifstream;
+using std::make_optional;
+using std::nullopt;
 using std::to_string;
 using std::vector;
 
@@ -75,7 +77,7 @@ auto main(int argc, char * argv[]) -> int
     cout << "Math. Program. Comput. 13(1): 133-184 (2021)." << endl;
     cout << endl;
 
-    Problem p = options_vars.contains("prove") ? Problem{ProofOptions{"qap.opb", "qap.veripb"}} : Problem{};
+    Problem p;
 
     constexpr int max_size = 12;
     int size = options_vars["size"].as<int>();
@@ -162,7 +164,8 @@ auto main(int argc, char * argv[]) -> int
             .branch = branch_on_dom(p, xs),
             .guess = [&](const CurrentState & state, IntegerVariableID var) -> vector<Literal> {
                 return vector<Literal>{var == state.lower_bound(var), var != state.lower_bound(var)};
-            }});
+            }},
+        options_vars.contains("prove") ? make_optional<ProofOptions>("qap.opb", "qap.veripb") : nullopt);
 
     cout << stats << endl;
 

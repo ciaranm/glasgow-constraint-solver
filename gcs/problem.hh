@@ -43,7 +43,6 @@ namespace gcs
          * @{
          */
         Problem();
-        explicit Problem(const ProofOptions &);
 
         ~Problem();
 
@@ -120,11 +119,9 @@ namespace gcs
          * @{
          */
 
-        [[nodiscard]] auto create_state() const -> innards::State;
+        [[nodiscard]] auto create_state_for_new_search(std::optional<innards::Proof> &) const -> innards::State;
 
-        [[nodiscard]] auto create_propagators(innards::State &) -> innards::Propagators;
-
-        [[nodiscard]] auto optional_proof() const -> std::optional<innards::Proof> &;
+        [[nodiscard]] auto create_propagators(innards::State &, std::optional<innards::Proof> &) -> innards::Propagators;
 
         auto all_normal_variables() const -> const std::vector<IntegerVariableID> &;
 

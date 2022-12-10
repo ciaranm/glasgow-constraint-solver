@@ -114,7 +114,7 @@ auto run_min_max_test(pair<int, int> result_range, const vector<pair<int, int>> 
         });
     }
 
-    Problem p{ProofOptions{"min_max_test.opb", "min_max_test.veripb"}};
+    Problem p;
     auto result = p.create_integer_variable(Integer(result_range.first), Integer(result_range.second), "result");
     vector<IntegerVariableID> array;
     for (const auto & [l, u] : array_range)
@@ -195,7 +195,8 @@ auto run_min_max_test(pair<int, int> result_range, const vector<pair<int, int>> 
                     }
                 });
                 return true;
-            }});
+            }},
+        ProofOptions{"min_max_test.opb", "min_max_test.veripb"});
 
     return (! gac_violated) && check_results(expected, actual);
 }

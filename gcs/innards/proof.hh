@@ -228,12 +228,6 @@ namespace gcs::innards
         auto integer_linear_le(const State &, const SimpleLinear & coeff_vars, Integer value,
             std::optional<ReificationTerm> half_reif, bool equality) -> ProofLine;
 
-        /**
-         * Specify that this is an optimisation problem, and that we are
-         * minimising this variable.
-         */
-        auto minimise(IntegerVariableID) -> void;
-
         ///@}
 
         /**

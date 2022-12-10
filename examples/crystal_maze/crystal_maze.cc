@@ -20,6 +20,8 @@ using namespace gcs;
 using std::cerr;
 using std::cout;
 using std::endl;
+using std::make_optional;
+using std::nullopt;
 using std::pair;
 using std::string;
 using std::to_string;
@@ -66,7 +68,7 @@ auto main(int argc, char * argv[]) -> int
         return EXIT_SUCCESS;
     }
 
-    Problem p = options_vars.contains("prove") ? Problem{ProofOptions{"crystal_maze.opb", "crystal_maze.veripb"}} : Problem{};
+    Problem p;
 
     auto xs = p.create_integer_variable_vector(8, 1_i, 8_i, "box");
     p.post(AllDifferent{xs});
@@ -100,7 +102,8 @@ auto main(int argc, char * argv[]) -> int
                 cout << endl;
                 return true;
             },
-            .branch = branch_on_dom_then_deg(p, xs)});
+            .branch = branch_on_dom_then_deg(p, xs)},
+        options_vars.contains("prove") ? make_optional<ProofOptions>("crystal_maze.opb", "crystal_maze.veripb") : nullopt);
 
     cout << stats;
 

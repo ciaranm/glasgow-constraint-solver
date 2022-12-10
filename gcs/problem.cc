@@ -2,7 +2,6 @@
 
 #include <gcs/constraints/in.hh>
 #include <gcs/exception.hh>
-#include <gcs/innards/proof.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/problem.hh>
@@ -10,6 +9,7 @@
 #include <util/overloaded.hh>
 
 #include <deque>
+#include <tuple>
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -25,30 +25,20 @@ using std::optional;
 using std::size_t;
 using std::string;
 using std::to_string;
+using std::tuple;
 using std::unique_ptr;
 using std::vector;
 
 struct Problem::Imp
 {
-    optional<Proof> optional_proof;
-    State initial_state;
-    deque<unique_ptr<Constraint>> constraints;
-    vector<IntegerVariableID> problem_variables;
-
-    Imp(const ProofOptions * optional_options) :
-        optional_proof(optional_options ? optional<Proof>{*optional_options} : nullopt),
-        initial_state(optional_proof ? &*optional_proof : nullptr)
-    {
-    }
+    State initial_state{};
+    deque<unique_ptr<Constraint>> constraints{};
+    deque<tuple<SimpleIntegerVariableID, Integer, Integer, optional<string>>> opb_variables{};
+    vector<IntegerVariableID> problem_variables{};
 };
 
 Problem::Problem() :
-    _imp(new Imp{nullptr})
-{
-}
-
-Problem::Problem(const ProofOptions & options) :
-    _imp(new Imp{&options})
+    _imp(new Imp{})
 {
 }
 
@@ -60,9 +50,8 @@ auto Problem::create_integer_variable(Integer lower, Integer upper, const option
         throw UnexpectedException{"variable has lower bound > upper bound"};
 
     auto result = _imp->initial_state.allocate_integer_variable_with_state(lower, upper);
+    _imp->opb_variables.emplace_back(result, lower, upper, name);
     _imp->problem_variables.push_back(result);
-    if (_imp->optional_proof)
-        _imp->optional_proof->set_up_integer_variable(result, lower, upper, name);
     return result;
 }
 
@@ -74,9 +63,8 @@ auto Problem::create_integer_variable(const vector<Integer> & domain, const opti
     auto [min, max] = minmax_element(domain.begin(), domain.end());
 
     auto result = _imp->initial_state.allocate_integer_variable_with_state(*min, *max);
+    _imp->opb_variables.emplace_back(result, *min, *max, name);
     _imp->problem_variables.push_back(result);
-    if (_imp->optional_proof)
-        _imp->optional_proof->set_up_integer_variable(result, *min, *max, name);
 
     post(In{result, domain});
 
@@ -96,9 +84,15 @@ auto Problem::create_integer_variable_vector(
     return result;
 }
 
-auto Problem::create_state() const -> State
+auto Problem::create_state_for_new_search(optional<Proof> & optional_proof) const -> State
 {
-    return _imp->initial_state.clone();
+    auto result = _imp->initial_state.clone();
+    if (optional_proof) {
+        for (auto & [id, lower, upper, optional_name] : _imp->opb_variables)
+            optional_proof->set_up_integer_variable(id, lower, upper, optional_name ? *optional_name : "iv" + to_string(id.index));
+        result.log_inferences_to(*optional_proof);
+    }
+    return result;
 }
 
 auto Problem::post(const Constraint & c) -> void
@@ -106,22 +100,17 @@ auto Problem::post(const Constraint & c) -> void
     _imp->constraints.push_back(c.clone());
 }
 
-auto Problem::create_propagators(State & state) -> Propagators
+auto Problem::create_propagators(State & state, optional<Proof> & optional_proof) -> Propagators
 {
-    auto result = Propagators{state, optional_proof()};
+    auto result = Propagators{state, optional_proof};
     for (auto & c : _imp->constraints) {
         auto cc = c->clone();
-        if (optional_proof())
-            optional_proof()->posting(cc->describe_for_proof());
+        if (optional_proof)
+            optional_proof->posting(cc->describe_for_proof());
         move(*cc).install(result, state);
     }
 
     return result;
-}
-
-auto Problem::optional_proof() const -> std::optional<Proof> &
-{
-    return _imp->optional_proof;
 }
 
 auto Problem::minimise(IntegerVariableID var) -> void

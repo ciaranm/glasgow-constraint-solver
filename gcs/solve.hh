@@ -5,6 +5,7 @@
 
 #include <gcs/current_state.hh>
 #include <gcs/problem.hh>
+#include <gcs/proof_options.hh>
 #include <gcs/stats.hh>
 
 #include <atomic>
@@ -88,7 +89,7 @@ namespace gcs
      * \ingroup Core
      * \sa SolveCallbacks
      */
-    auto solve(Problem &, SolutionCallback callback) -> Stats;
+    auto solve(Problem &, SolutionCallback callback, const std::optional<ProofOptions> & = std::nullopt) -> Stats;
 
     /**
      * \brief Solve a problem, with callbacks for various events.
@@ -102,7 +103,8 @@ namespace gcs
      * \ingroup Core
      * \sa SolveCallbacks
      */
-    auto solve_with(Problem &, SolveCallbacks ballbacks, std::atomic<bool> * optional_abort_flag = nullptr) -> Stats;
+    auto solve_with(Problem &, SolveCallbacks callbacks, const std::optional<ProofOptions> & = std::nullopt,
+        std::atomic<bool> * optional_abort_flag = nullptr) -> Stats;
 }
 
 #endif

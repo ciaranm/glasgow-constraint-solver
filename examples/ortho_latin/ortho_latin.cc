@@ -19,6 +19,8 @@ using std::cerr;
 using std::cout;
 using std::endl;
 using std::ifstream;
+using std::make_optional;
+using std::nullopt;
 using std::vector;
 
 namespace po = boost::program_options;
@@ -64,7 +66,7 @@ auto main(int argc, char * argv[]) -> int
         return EXIT_SUCCESS;
     }
 
-    Problem p = options_vars.contains("prove") ? Problem{ProofOptions{"ortho_latin.opb", "ortho_latin.veripb"}} : Problem{};
+    Problem p;
     int size = options_vars["size"].as<int>();
 
     vector<vector<IntegerVariableID>> g1, g2;
@@ -114,16 +116,18 @@ auto main(int argc, char * argv[]) -> int
         p.post(Equals{g1[x][0], constant_variable(Integer{x})});
     }
 
-    auto stats = solve(p, [&](const CurrentState & s) -> bool {
-        for (int x = 0; x < size; ++x) {
-            for (int y = 0; y < size; ++y)
-                cout << s(g1[x][y]) << "," << s(g2[x][y]) << " ";
+    auto stats = solve(
+        p, [&](const CurrentState & s) -> bool {
+            for (int x = 0; x < size; ++x) {
+                for (int y = 0; y < size; ++y)
+                    cout << s(g1[x][y]) << "," << s(g2[x][y]) << " ";
+                cout << endl;
+            }
             cout << endl;
-        }
-        cout << endl;
 
-        return true;
-    });
+            return true;
+        },
+        options_vars.contains("prove") ? make_optional<ProofOptions>("ortho_latin.opb", "ortho_latin.veripb") : nullopt);
 
     cout << stats;
 

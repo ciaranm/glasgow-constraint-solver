@@ -80,7 +80,7 @@ auto main(int argc, char * argv[]) -> int
 
     int instance = options_vars["instance"].as<int>();
 
-    Problem p = options_vars.contains("prove") ? Problem{ProofOptions{"skyscrapers.opb", "skyscrapers.veripb"}} : Problem{};
+    Problem p;
 
     vector<vector<int>> predefs;
     vector<int> north, south, east, west;
@@ -262,7 +262,8 @@ auto main(int argc, char * argv[]) -> int
                 cout << endl;
                 return true;
             },
-            .branch = branch_on_dom_then_deg(p, branch_vars)});
+            .branch = branch_on_dom_then_deg(p, branch_vars)},
+        options_vars.contains("prove") ? make_optional<ProofOptions>("skyscrapers.opb", "skyscrapers.veripb") : nullopt);
 
     cout << stats;
 

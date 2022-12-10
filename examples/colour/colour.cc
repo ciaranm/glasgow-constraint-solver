@@ -20,6 +20,8 @@ using std::cout;
 using std::endl;
 using std::getline;
 using std::ifstream;
+using std::make_optional;
+using std::nullopt;
 using std::pair;
 using std::string;
 using std::vector;
@@ -108,7 +110,7 @@ auto main(int argc, char * argv[]) -> int
         }
     }
 
-    Problem p = options_vars.contains("prove") ? Problem{ProofOptions{"colour.opb", "colour.veripb"}} : Problem{};
+    Problem p;
 
     auto vertices = p.create_integer_variable_vector(size, 0_i, Integer{size - 1}, "vertex");
 
@@ -130,7 +132,8 @@ auto main(int argc, char * argv[]) -> int
 
                 return true;
             },
-            .branch = branch_on_dom_then_deg(p, vertices)});
+            .branch = branch_on_dom_then_deg(p, vertices)},
+        options_vars.contains("prove") ? make_optional<ProofOptions>("colour.opb", "colour.veripb") : nullopt);
 
     cout << stats;
 

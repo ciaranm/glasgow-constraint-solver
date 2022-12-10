@@ -16,6 +16,8 @@ using namespace gcs;
 using std::cerr;
 using std::cout;
 using std::endl;
+using std::make_optional;
+using std::nullopt;
 using std::string;
 
 using namespace std::literals::string_literals;
@@ -55,9 +57,7 @@ auto main(int argc, char * argv[]) -> int
         return EXIT_SUCCESS;
     }
 
-    Problem p = options_vars.contains("prove")
-        ? Problem{ProofOptions{"odd_even_sum.opb", "odd_even_sum.veripb"}}
-        : Problem{};
+    Problem p;
 
     auto a = p.create_integer_variable(0_i, 5_i, "a");
     auto b = p.create_integer_variable(0_i, 5_i, "b");
@@ -68,10 +68,12 @@ auto main(int argc, char * argv[]) -> int
     p.post(LinearEquality{Linear{{2_i, a}, {2_i, b}, {2_i, c}, {-2_i, d}, {1_i, e}}, 1_i, true});
     p.post(LinearEquality{Linear{{-2_i, a}, {2_i, b}, {-2_i, c}, {2_i, d}, {1_i, e}}, 1_i, true});
 
-    auto stats = solve(p, [&](const CurrentState & s) -> bool {
-        cout << s(a) << " " << s(b) << " " << s(c) << " " << s(d) << " " << s(e) << endl;
-        return true;
-    });
+    auto stats = solve(
+        p, [&](const CurrentState & s) -> bool {
+            cout << s(a) << " " << s(b) << " " << s(c) << " " << s(d) << " " << s(e) << endl;
+            return true;
+        },
+        options_vars.count("prove") ? make_optional<ProofOptions>("odd_even_sum.opb", "odd_even_sum.veripb") : nullopt);
 
     cout << stats;
 

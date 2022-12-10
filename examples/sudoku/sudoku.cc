@@ -18,6 +18,8 @@ using namespace gcs;
 using std::cerr;
 using std::cout;
 using std::endl;
+using std::make_optional;
+using std::nullopt;
 using std::vector;
 
 namespace po = boost::program_options;
@@ -60,7 +62,7 @@ auto main(int argc, char * argv[]) -> int
         return EXIT_SUCCESS;
     }
 
-    Problem p = options_vars.contains("prove") ? Problem{ProofOptions{"sudoku.opb", "sudoku.veripb"}} : Problem{};
+    Problem p;
 
     int size = 3;
     int n = size * size;
@@ -227,7 +229,8 @@ auto main(int argc, char * argv[]) -> int
                 }
                 cout << endl;
                 return true;
-            }});
+            }},
+        options_vars.contains("prove") ? make_optional<ProofOptions>("sudoku.opb", "sudoku.veripb") : nullopt);
 
     cout << stats;
 

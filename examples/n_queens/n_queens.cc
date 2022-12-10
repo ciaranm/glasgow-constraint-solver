@@ -17,6 +17,8 @@ using namespace gcs;
 using std::cerr;
 using std::cout;
 using std::endl;
+using std::make_optional;
+using std::nullopt;
 using std::string;
 using std::vector;
 
@@ -71,7 +73,7 @@ auto main(int argc, char * argv[]) -> int
     cout << endl;
 
     int size = options_vars["size"].as<int>();
-    Problem p = options_vars.contains("prove") ? Problem{ProofOptions{"n_queens.opb", "n_queens.veripb"}} : Problem{};
+    Problem p;
 
     auto queens = p.create_integer_variable_vector(size, 0_i, Integer{size - 1}, "queen");
 
@@ -95,7 +97,8 @@ auto main(int argc, char * argv[]) -> int
             },
             .guess = [&](const CurrentState & state, IntegerVariableID var) -> vector<Literal> {
                 return vector<Literal>{var == state.lower_bound(var), var != state.lower_bound(var)};
-            }});
+            }},
+        options_vars.contains("prove") ? make_optional<ProofOptions>("n_queens.opb", "n_queens.veripb") : nullopt);
 
     cout << stats;
 

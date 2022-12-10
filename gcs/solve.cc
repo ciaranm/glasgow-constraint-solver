@@ -13,6 +13,7 @@ using namespace gcs::innards;
 using std::atomic;
 using std::max;
 using std::nullopt;
+using std::optional;
 using std::chrono::duration_cast;
 using std::chrono::microseconds;
 using std::chrono::steady_clock;
@@ -21,14 +22,15 @@ namespace
 {
     auto solve_with_state(unsigned long long depth, Stats & stats, Problem & problem,
         Propagators & propagators, State & state,
-        SolveCallbacks & callbacks, bool & this_subtree_contains_solution,
+        SolveCallbacks & callbacks, optional<Proof> & optional_proof,
+        bool & this_subtree_contains_solution,
         atomic<bool> * optional_abort_flag) -> bool
     {
         stats.max_depth = max(stats.max_depth, depth);
         ++stats.recursions;
 
-        if (problem.optional_proof())
-            problem.optional_proof()->enter_proof_level(depth + 1);
+        if (optional_proof)
+            optional_proof->enter_proof_level(depth + 1);
 
         if (propagators.propagate(state, optional_abort_flag)) {
             if (optional_abort_flag && optional_abort_flag->load())
@@ -36,8 +38,8 @@ namespace
 
             auto branch_var = callbacks.branch ? callbacks.branch(state.current(), propagators) : branch_on_dom_then_deg(problem)(state.current(), propagators);
             if (branch_var == nullopt) {
-                if (problem.optional_proof())
-                    problem.optional_proof()->solution(state);
+                if (optional_proof)
+                    optional_proof->solution(state);
 
                 ++stats.solutions;
                 this_subtree_contains_solution = true;
@@ -62,7 +64,7 @@ namespace
                     state.guess(guess);
                     bool child_contains_solution = false;
                     if (! solve_with_state(depth + 1, stats, problem, propagators, state,
-                            callbacks, child_contains_solution, optional_abort_flag))
+                            callbacks, optional_proof, child_contains_solution, optional_abort_flag))
                         result = false;
 
                     if (child_contains_solution)
@@ -89,34 +91,41 @@ namespace
             }
         }
 
-        if (problem.optional_proof()) {
-            problem.optional_proof()->enter_proof_level(depth);
-            problem.optional_proof()->backtrack(state);
-            problem.optional_proof()->forget_proof_level(depth + 1);
+        if (optional_proof) {
+            optional_proof->enter_proof_level(depth);
+            optional_proof->backtrack(state);
+            optional_proof->forget_proof_level(depth + 1);
         }
 
         return true;
     }
 }
 
-auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks, atomic<bool> * optional_abort_flag) -> Stats
+auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
+    const optional<ProofOptions> & optional_proof_options,
+    atomic<bool> * optional_abort_flag) -> Stats
 {
     Stats stats;
     auto start_time = steady_clock::now();
 
-    auto state = problem.create_state();
-    auto propagators = problem.create_propagators(state);
+    optional<Proof> optional_proof;
+    if (optional_proof_options)
+        optional_proof = Proof{*optional_proof_options};
 
-    if (problem.optional_proof())
-        problem.optional_proof()->start_proof(state);
+    auto state = problem.create_state_for_new_search(optional_proof);
+    auto propagators = problem.create_propagators(state, optional_proof);
+
+    if (optional_proof)
+        optional_proof->start_proof(state);
 
     if (callbacks.after_proof_started)
         callbacks.after_proof_started(state.current());
 
     bool child_contains_solution = false;
-    if (solve_with_state(0, stats, problem, propagators, state, callbacks, child_contains_solution, optional_abort_flag))
-        if (problem.optional_proof())
-            problem.optional_proof()->assert_contradiction();
+    if (solve_with_state(0, stats, problem, propagators, state, callbacks, optional_proof,
+            child_contains_solution, optional_abort_flag))
+        if (optional_proof)
+            optional_proof->assert_contradiction();
 
     stats.solve_time = duration_cast<microseconds>(steady_clock::now() - start_time);
     propagators.fill_in_constraint_stats(stats);
@@ -124,7 +133,8 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks, atomic<bool> *
     return stats;
 }
 
-auto gcs::solve(Problem & problem, SolutionCallback callback) -> Stats
+auto gcs::solve(Problem & problem, SolutionCallback callback,
+    const optional<ProofOptions> & proof_options) -> Stats
 {
-    return solve_with(problem, SolveCallbacks{.solution = callback});
+    return solve_with(problem, SolveCallbacks{.solution = callback}, proof_options);
 }

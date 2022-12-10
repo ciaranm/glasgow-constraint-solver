@@ -148,7 +148,6 @@ struct Proof::Imp
     map<SimpleOrProofOnlyIntegerVariableID, pair<Integer, Integer>> bounds_for_gevars;
     map<SimpleIntegerVariableID, set<Integer>> gevars_that_exist;
     list<IntegerVariableID> solution_variables;
-    optional<IntegerVariableID> objective_variable;
     map<pair<unsigned long long, bool>, string> flags;
     map<unsigned long long, string> proof_only_integer_variables;
 
@@ -408,12 +407,12 @@ auto Proof::set_up_variable_with_state_but_separate_proof_definition(SimpleInteg
     }
 }
 
-auto Proof::start_proof(State &) -> void
+auto Proof::start_proof(State & state) -> void
 {
     ofstream full_opb{_imp->opb_file};
     full_opb << "* #variable= " << _imp->model_variables << " #constraint= " << _imp->model_constraints << '\n';
 
-    if (_imp->objective_variable) {
+    if (state.optional_minimise_variable()) {
         full_opb << "min: ";
         overloaded{
             [&](const SimpleIntegerVariableID & v) {
@@ -428,7 +427,7 @@ auto Proof::start_proof(State &) -> void
                 for (auto & [bit_value, bit_name] : _imp->integer_variable_bits.find(v.actual_variable)->second.second)
                     full_opb << (v.negate_first ? -bit_value : bit_value) << " " << bit_name << " ";
             }}
-            .visit(*_imp->objective_variable);
+            .visit(*state.optional_minimise_variable());
 
         full_opb << " ;\n";
     }
@@ -589,11 +588,6 @@ auto Proof::integer_linear_le(const State &, const SimpleLinear & lin, Integer v
     return _imp->model_constraints;
 }
 
-auto Proof::minimise(IntegerVariableID var) -> void
-{
-    _imp->objective_variable = var;
-}
-
 auto Proof::proof_variable(const Literal & lit) const -> const string &
 {
     // This might need a design rethink: if we get a constant variable, turn it into either
@@ -704,21 +698,21 @@ auto Proof::solution(const State & state) -> void
     for (auto & var : _imp->solution_variables)
         need_proof_variable(var == state(var));
 
-    if (_imp->objective_variable) {
-        Integer obj_val = state(*_imp->objective_variable);
-        need_proof_variable(*_imp->objective_variable == obj_val);
-        need_proof_variable(*_imp->objective_variable < obj_val);
+    if (state.optional_minimise_variable()) {
+        Integer obj_val = state(*state.optional_minimise_variable());
+        need_proof_variable(*state.optional_minimise_variable() == obj_val);
+        need_proof_variable(*state.optional_minimise_variable() < obj_val);
     }
 
     _imp->proof << "# 0\n";
 
-    _imp->proof << (_imp->objective_variable ? "o" : "v");
+    _imp->proof << (state.optional_minimise_variable() ? "o" : "v");
 
     for (auto & var : _imp->solution_variables)
-        if ((! _imp->objective_variable) || (var != *_imp->objective_variable))
+        if ((! state.optional_minimise_variable()) || (var != *state.optional_minimise_variable()))
             _imp->proof << " " << proof_variable(var == state(var));
 
-    if (! _imp->objective_variable) {
+    if (! state.optional_minimise_variable()) {
         _imp->proof << '\n';
         ++_imp->proof_line;
     }
@@ -750,7 +744,7 @@ auto Proof::solution(const State & state) -> void
 
         overloaded{
             [&](const SimpleIntegerVariableID & var) {
-                Integer obj_val = state(*_imp->objective_variable);
+                Integer obj_val = state(*state.optional_minimise_variable());
                 do_it(var, obj_val);
                 need_proof_variable(var < obj_val);
                 _imp->proof << "# 0\n";
@@ -769,7 +763,7 @@ auto Proof::solution(const State & state) -> void
                 _imp->proof << "u 1 " << proof_variable(lit) << " >= 1 ;\n";
                 ++_imp->proof_line;
             }}
-            .visit(*_imp->objective_variable);
+            .visit(*state.optional_minimise_variable());
     }
 
     _imp->proof << "# " << _imp->active_proof_level << "\n";

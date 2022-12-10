@@ -37,7 +37,7 @@ namespace
             return pair{state.infer_equal(v1, *val2, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
 
         Inference result = Inference::NoChange;
-        if (state.domain_has_holes(v1) || state.domain_has_holes(v2) || state.want_proofs()) {
+        if (state.domain_has_holes(v1) || state.domain_has_holes(v2) || state.maybe_proof()) {
             state.for_each_value_while(v1, [&](Integer val) {
                 if (! state.in_domain(v2, val))
                     increase_inference_to(result, state.infer_not_equal(v1, val, JustifyUsingRUP{}));

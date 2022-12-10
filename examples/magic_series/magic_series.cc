@@ -20,6 +20,8 @@ using namespace gcs;
 using std::cerr;
 using std::cout;
 using std::endl;
+using std::make_optional;
+using std::nullopt;
 using std::vector;
 
 namespace po = boost::program_options;
@@ -73,7 +75,7 @@ auto main(int argc, char * argv[]) -> int
     cout << endl;
 
     int size = options_vars["size"].as<int>();
-    Problem p = options_vars.contains("prove") ? Problem{ProofOptions{"magic_series.opb", "magic_series.veripb"}} : Problem{};
+    Problem p;
 
     auto series = p.create_integer_variable_vector(size, 0_i, Integer{size - 1}, "series");
 
@@ -116,7 +118,8 @@ auto main(int argc, char * argv[]) -> int
             .branch = branch_on_dom(p, series),
             .guess = [&](const CurrentState & state, IntegerVariableID var) -> vector<Literal> {
                 return vector<Literal>{var == state.lower_bound(var), var != state.lower_bound(var)};
-            }});
+            }},
+        options_vars.contains("prove") ? make_optional<ProofOptions>("magic_series.opb", "magic_series.veripb") : nullopt);
 
     cout << stats;
 

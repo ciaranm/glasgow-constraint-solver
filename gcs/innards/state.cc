@@ -185,7 +185,7 @@ struct State::GetMutableStateAndOffsetOf<ViewOfIntegerVariableID>
 
 struct State::Imp
 {
-    Proof * optional_proof;
+    Proof * maybe_proof;
 
     list<vector<IntegerVariableState>> integer_variable_states{};
     list<vector<function<auto()->void>>> on_backtracks{};
@@ -193,12 +193,12 @@ struct State::Imp
     deque<SimpleIntegerVariableID> changed{};
     vector<Literal> guesses{};
 
-    optional<IntegerVariableID> optional_objective_var{};
+    optional<IntegerVariableID> optional_minimise_variable{};
     optional<Integer> optional_objective_incumbent{};
 };
 
-State::State(Proof * optional_proof) :
-    _imp(new Imp{.optional_proof = optional_proof})
+State::State() :
+    _imp(new Imp{})
 {
     _imp->integer_variable_states.emplace_back();
     _imp->on_backtracks.emplace_back();
@@ -213,12 +213,13 @@ State::~State() = default;
 
 auto State::clone() const -> State
 {
-    auto result = State{_imp->optional_proof};
+    auto result = State{};
     result._imp->integer_variable_states = _imp->integer_variable_states;
     result._imp->on_backtracks = _imp->on_backtracks;
     result._imp->changed = _imp->changed;
-    result._imp->optional_objective_var = _imp->optional_objective_var;
+    result._imp->optional_minimise_variable = _imp->optional_minimise_variable;
     result._imp->optional_objective_incumbent = _imp->optional_objective_incumbent;
+    result._imp->maybe_proof = _imp->maybe_proof;
     return result;
 }
 
@@ -236,8 +237,8 @@ auto State::create_variable_with_state_but_separate_proof_definition(
     Integer lower, Integer upper, const optional<string> & name) -> SimpleIntegerVariableID
 {
     auto result = allocate_integer_variable_with_state(lower, upper);
-    if (_imp->optional_proof)
-        _imp->optional_proof->set_up_variable_with_state_but_separate_proof_definition(result, lower, upper, name);
+    if (_imp->maybe_proof)
+        _imp->maybe_proof->set_up_variable_with_state_but_separate_proof_definition(result, lower, upper, name);
     return result;
 }
 
@@ -629,8 +630,8 @@ auto State::prove_and_remember_change(const Inference & inference, const HowChan
         break;
 
     case Inference::Contradiction:
-        if (_imp->optional_proof)
-            _imp->optional_proof->infer(*this, FalseLiteral{}, just);
+        if (_imp->maybe_proof)
+            _imp->maybe_proof->infer(*this, FalseLiteral{}, just);
         break;
 
     case Inference::Change: {
@@ -645,8 +646,8 @@ auto State::prove_and_remember_change(const Inference & inference, const HowChan
 
         _imp->how_changed[simple_var.index] = max<HowChanged>(_imp->how_changed[simple_var.index], how_changed);
 
-        if (_imp->optional_proof)
-            _imp->optional_proof->infer(*this, lit, just);
+        if (_imp->maybe_proof)
+            _imp->maybe_proof->infer(*this, lit, just);
         break;
     }
     }
@@ -662,8 +663,8 @@ auto State::infer(const Literal & lit, const Justification & just) -> Inference
             return Inference::NoChange;
         },
         [&](const FalseLiteral &) {
-            if (_imp->optional_proof)
-                _imp->optional_proof->infer(*this, FalseLiteral{}, just);
+            if (_imp->maybe_proof)
+                _imp->maybe_proof->infer(*this, FalseLiteral{}, just);
             return Inference::Contradiction;
         }}
         .visit(lit);
@@ -740,7 +741,7 @@ auto State::infer_all(const vector<Literal> & lits, const Justification & just) 
 
     // only do explicit justifications once
     Justification just_not_first{NoJustificationNeeded{}};
-    if (_imp->optional_proof)
+    if (_imp->maybe_proof)
         visit([&](const auto & j) -> void {
             if constexpr (is_same_v<decay_t<decltype(j)>, JustifyExplicitly>)
                 just_not_first = JustifyUsingRUP{};
@@ -768,8 +769,8 @@ auto State::infer_all(const vector<Literal> & lits, const Justification & just) 
 
 auto State::guess(const Literal & lit) -> void
 {
-    if (_imp->optional_proof)
-        _imp->optional_proof->new_guess();
+    if (_imp->maybe_proof)
+        _imp->maybe_proof->new_guess();
 
     switch (infer(lit, Guess{})) {
     case Inference::NoChange:
@@ -1071,8 +1072,8 @@ auto State::new_epoch() -> Timestamp
 
 auto State::backtrack(Timestamp t) -> void
 {
-    if (_imp->optional_proof)
-        _imp->optional_proof->undo_guess();
+    if (_imp->maybe_proof)
+        _imp->maybe_proof->undo_guess();
 
     _imp->integer_variable_states.resize(t.when);
     _imp->changed.clear();
@@ -1099,18 +1100,23 @@ auto State::for_each_guess(const function<auto(Literal)->void> & f) const -> voi
         f(g);
 }
 
-auto State::add_proof_steps(JustifyExplicitly why) -> void
+auto State::maybe_proof() const -> Proof *
 {
-    if (_imp->optional_proof) {
-        vector<ProofLine> to_delete;
-        _imp->optional_proof->add_proof_steps(why, to_delete);
-        _imp->optional_proof->delete_proof_lines(to_delete);
-    }
+    return _imp->maybe_proof;
 }
 
-auto State::want_proofs() const -> bool
+auto State::log_inferences_to(Proof & p) -> void
 {
-    return _imp->optional_proof != nullptr;
+    _imp->maybe_proof = &p;
+}
+
+auto State::add_proof_steps(JustifyExplicitly why) -> void
+{
+    if (_imp->maybe_proof) {
+        vector<ProofLine> to_delete;
+        _imp->maybe_proof->add_proof_steps(why, to_delete);
+        _imp->maybe_proof->delete_proof_lines(to_delete);
+    }
 }
 
 auto State::test_literal(const Literal & lit) const -> LiteralIs
@@ -1179,32 +1185,33 @@ auto State::current() -> CurrentState
 
 auto State::minimise(IntegerVariableID var) -> void
 {
-    if (_imp->optional_objective_var)
+    if (_imp->optional_minimise_variable)
         throw UnimplementedException{"Not sure how to have multiple objectives"};
-    _imp->optional_objective_var = var;
-    if (_imp->optional_proof)
-        _imp->optional_proof->minimise(var);
+    _imp->optional_minimise_variable = var;
 }
 
 auto State::maximise(IntegerVariableID var) -> void
 {
-    if (_imp->optional_objective_var)
+    if (_imp->optional_minimise_variable)
         throw UnimplementedException{"Not sure how to have multiple objectives"};
-    _imp->optional_objective_var = -var;
-    if (_imp->optional_proof)
-        _imp->optional_proof->minimise(-var);
+    _imp->optional_minimise_variable = -var;
 }
 
 auto State::update_objective_to_current_solution() -> void
 {
-    if (_imp->optional_objective_var)
-        _imp->optional_objective_incumbent = (*this)(*_imp->optional_objective_var);
+    if (_imp->optional_minimise_variable)
+        _imp->optional_objective_incumbent = (*this)(*_imp->optional_minimise_variable);
+}
+
+auto State::optional_minimise_variable() const -> optional<IntegerVariableID>
+{
+    return _imp->optional_minimise_variable;
 }
 
 auto State::infer_on_objective_variable_before_propagation() -> Inference
 {
-    if (_imp->optional_objective_var && _imp->optional_objective_incumbent)
-        return infer(*_imp->optional_objective_var < *_imp->optional_objective_incumbent, NoJustificationNeeded{});
+    if (_imp->optional_minimise_variable && _imp->optional_objective_incumbent)
+        return infer(*_imp->optional_minimise_variable < *_imp->optional_objective_incumbent, NoJustificationNeeded{});
     else
         return Inference::NoChange;
 }

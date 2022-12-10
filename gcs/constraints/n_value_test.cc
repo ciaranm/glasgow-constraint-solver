@@ -85,7 +85,7 @@ auto run_n_value_test(pair<int, int> result_range, const vector<pair<int, int>> 
 
     cerr << " " << expected.size() << endl;
 
-    Problem p{ProofOptions{"n_value_test.opb", "n_value_test.veripb"}};
+    Problem p;
     auto result = p.create_integer_variable(Integer(result_range.first), Integer(result_range.second), "result");
     vector<IntegerVariableID> array;
     for (const auto & [l, u] : array_range)
@@ -100,7 +100,8 @@ auto run_n_value_test(pair<int, int> result_range, const vector<pair<int, int>> 
                     vals.push_back(s(a).raw_value);
                 actual.emplace(s(result).raw_value, vals);
                 return true;
-            }});
+            }},
+        ProofOptions{"n_value_test.opb", "n_value_test.veripb"});
 
     if (actual != expected) {
         cerr << "actual:";

@@ -344,7 +344,7 @@ auto gcs::innards::propagate_sum(const SimpleSum & coeff_vars, Integer value, St
 auto gcs::innards::propagate_sum_all_positive(const SimpleIntegerVariableIDs & coeff_vars, Integer value, State & state, bool equality,
     const std::optional<ProofLine> & proof_line) -> pair<Inference, PropagatorState>
 {
-    if (state.want_proofs() || ! equality)
+    if (state.maybe_proof() || ! equality)
         return propagate_linear_or_sum(coeff_vars, value, state, equality, proof_line);
 
     bool changed = false;

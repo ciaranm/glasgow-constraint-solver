@@ -1,17 +1,21 @@
+#include <gcs/constraints/circuit.hh>
+#include <gcs/constraints/comparison.hh>
+#include <gcs/constraints/equals.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
-#include <gcs/constraints/circuit.hh>
-#include <vector>
+
 #include <iostream>
-#include <gcs/constraints/equals.hh>
-#include <gcs/constraints/comparison.hh>
+#include <vector>
 
 using namespace gcs;
-using std::vector;
+
 using std::cout;
 using std::endl;
+using std::make_optional;
+using std::nullopt;
+using std::vector;
 
-auto main(int argc, char * argv[]) -> int
+auto main(int, char *[]) -> int
 {
     // Example for the circuit constraint, find a tour for some graph of locations
     // and minimise the distance between any two stops.
@@ -21,7 +25,7 @@ auto main(int argc, char * argv[]) -> int
     // doi: 10.1007/s10601-013-9148-0.
 
     int n = 20;
-    Problem p = Problem{ProofOptions{"tour.opb", "tour.veripb"}};
+    Problem p;
 
     // Travel times between locations
     // -1 means no direct connection exists (no edge in the graph)
@@ -74,23 +78,22 @@ auto main(int argc, char * argv[]) -> int
 
     auto stats = solve_with(p,
         SolveCallbacks{
-        .solution = [&](const CurrentState & s) -> bool {
-            for(const auto & v :succ) {
-                cout << s(v) << " ";
-            }
-            cout << endl;
-            cout << 0 << " -> " << s(succ[0]);
-            auto current = s(succ[0]);
-            while(current != 0_i) {
-                cout << " -> ";
-                cout << s(succ[current.raw_value]);
-                current = s(succ[current.raw_value]);
-
-            }
-            cout << "\n\n";
-            return true;
-        }
-    });
+            .solution = [&](const CurrentState & s) -> bool {
+                for (const auto & v : succ) {
+                    cout << s(v) << " ";
+                }
+                cout << endl;
+                cout << 0 << " -> " << s(succ[0]);
+                auto current = s(succ[0]);
+                while (current != 0_i) {
+                    cout << " -> ";
+                    cout << s(succ[current.raw_value]);
+                    current = s(succ[current.raw_value]);
+                }
+                cout << "\n\n";
+                return true;
+            }},
+        ProofOptions("tour.opb", "tour.veripb"));
 
     cout << stats;
 

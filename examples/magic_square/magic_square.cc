@@ -21,6 +21,8 @@ using std::cerr;
 using std::cout;
 using std::endl;
 using std::ifstream;
+using std::make_optional;
+using std::nullopt;
 using std::vector;
 
 namespace po = boost::program_options;
@@ -74,7 +76,7 @@ auto main(int argc, char * argv[]) -> int
     cout << endl;
 
     int size = options_vars["size"].as<int>();
-    Problem p = options_vars.contains("prove") ? Problem{ProofOptions{"magic_square.opb", "magic_square.veripb"}} : Problem{};
+    Problem p;
     Integer m{size * (size * size + 1) / 2};
 
     vector<vector<IntegerVariableID>> grid;
@@ -134,7 +136,8 @@ auto main(int argc, char * argv[]) -> int
             .branch = branch_on_dom(p, grid_flat),
             .guess = [&](const CurrentState & state, IntegerVariableID var) -> vector<Literal> {
                 return vector<Literal>{var == state.lower_bound(var), var != state.lower_bound(var)};
-            }});
+            }},
+        options_vars.contains("prove") ? make_optional<ProofOptions>("magic_square.opb", "magic_square.veripb") : nullopt);
 
     cout << stats;
 
