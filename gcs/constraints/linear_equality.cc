@@ -148,7 +148,10 @@ namespace
                 for (const auto & [idx, val] : enumerate(current))
                     backtrack << "1 " << maybe_proof->proof_variable(get_var(coeff_vars[idx]) != val) << " ";
                 backtrack << ">= 1 ;";
-                maybe_proof->emit_proof_line(backtrack.str());
+
+                auto line = maybe_proof->emit_proof_line(backtrack.str());
+                if (! current.empty())
+                    to_delete->push_back(line);
             }
         };
 
