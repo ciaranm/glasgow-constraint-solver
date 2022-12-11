@@ -468,7 +468,7 @@ struct ParserCallbacks : XCSP3CoreCallbacks
             {
                 auto m = mapping.find(cond.var);
                 need_variable(problem, m->second, cond.var);
-                cvs.emplace_back(-1_i, *get<0>(mapping.find(cond.var)->second));
+                cvs.emplace_back(-1_i, *get<0>(mapping.at(cond.var)));
             }
             break;
         case OperandType::INTEGER:

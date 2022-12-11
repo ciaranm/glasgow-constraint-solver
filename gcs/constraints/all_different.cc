@@ -241,7 +241,7 @@ namespace
         // and each value in the component can only be used once
         for (Right v{0}; v.offset != vals.size(); ++v.offset)
             if (hall_values[v.offset])
-                proof_step << " " << constraint_numbers.find(vals[v.offset])->second << " +";
+                proof_step << " " << constraint_numbers.at(vals[v.offset]) << " +";
 
         proof_step << " 0";
         proof.emit_proof_line(proof_step.str());
@@ -350,7 +350,7 @@ namespace
 
             for (Right v{0}; v.offset != vals.size(); ++v.offset)
                 if (hall_right[v.offset])
-                    proof_step << " " << constraint_numbers.find(vals[v.offset])->second << " +";
+                    proof_step << " " << constraint_numbers.at(vals[v.offset]) << " +";
 
             proof_step << " 0";
             proof.emit_proof_line(proof_step.str());

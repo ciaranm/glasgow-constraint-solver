@@ -263,7 +263,7 @@ auto Proof::need_gevar(SimpleIntegerVariableID id, Integer v) -> void
     _imp->direct_integer_variables.emplace(id < v, "~" + gevar);
     _imp->gevars_that_exist[id].insert(v);
 
-    auto & [_, bit_vars] = _imp->integer_variable_bits.find(id)->second;
+    auto & [_, bit_vars] = _imp->integer_variable_bits.at(id);
 
     if (_imp->opb_done)
         _imp->proof << "# 0\n";
@@ -318,7 +318,7 @@ auto Proof::need_gevar(SimpleIntegerVariableID id, Integer v) -> void
         }
     }
 
-    auto & other_gevars = _imp->gevars_that_exist.find(id)->second;
+    auto & other_gevars = _imp->gevars_that_exist.at(id);
     auto this_gevar = other_gevars.find(v);
     auto higher_gevar = next(this_gevar);
 
@@ -415,7 +415,7 @@ auto Proof::start_proof(State & state) -> void
         full_opb << "min: ";
         overloaded{
             [&](const SimpleIntegerVariableID & v) {
-                for (auto & [bit_value, bit_name] : _imp->integer_variable_bits.find(v)->second.second)
+                for (auto & [bit_value, bit_name] : _imp->integer_variable_bits.at(v).second)
                     full_opb << bit_value << " " << bit_name << " ";
             },
             [&](const ConstantIntegerVariableID &) {
@@ -423,7 +423,7 @@ auto Proof::start_proof(State & state) -> void
             },
             [&](const ViewOfIntegerVariableID & v) {
                 // the "then add" bit is irrelevant for the objective function
-                for (auto & [bit_value, bit_name] : _imp->integer_variable_bits.find(v.actual_variable)->second.second)
+                for (auto & [bit_value, bit_name] : _imp->integer_variable_bits.at(v.actual_variable).second)
                     full_opb << (v.negate_first ? -bit_value : bit_value) << " " << bit_name << " ";
             }}
             .visit(*state.optional_minimise_variable());
@@ -511,14 +511,14 @@ auto Proof::pseudoboolean_ge(const WeightedPseudoBooleanTerms & lits, Integer va
                     expr.weighted_terms.emplace_back(multiplier * w, proof_variable(flag));
                 },
                 [&](const ProofOnlySimpleIntegerVariableID & ivar) {
-                    auto & [_, bit_vars] = _imp->integer_variable_bits.find(ivar)->second;
+                    auto & [_, bit_vars] = _imp->integer_variable_bits.at(ivar);
                     for (auto & [bit_value, bit_name] : bit_vars)
                         expr.weighted_terms.emplace_back(multiplier * w * bit_value, bit_name);
                 },
                 [&, w = w](const IntegerVariableID & var) {
                     overloaded{
                         [&](const SimpleIntegerVariableID & ivar) {
-                            auto & [_, bit_vars] = _imp->integer_variable_bits.find(ivar)->second;
+                            auto & [_, bit_vars] = _imp->integer_variable_bits.at(ivar);
                             for (auto & [bit_value, bit_name] : bit_vars)
                                 expr.weighted_terms.emplace_back(multiplier * w * bit_value, bit_name);
                         },
@@ -570,7 +570,7 @@ auto Proof::integer_linear_le(const State &, const SimpleLinear & lin, Integer v
 
         OPBExpression opb_expr;
         for (const auto & [coeff, var] : lin)
-            for (auto & [bit_value, bit_name] : _imp->integer_variable_bits.find(var)->second.second)
+            for (auto & [bit_value, bit_name] : _imp->integer_variable_bits.at(var).second)
                 opb_expr.weighted_terms.emplace_back(multiplier * coeff * bit_value, bit_name);
 
         auto opb_ineq = opb_expr >= (multiplier * val);
@@ -719,7 +719,7 @@ auto Proof::solution(const State & state) -> void
         auto do_it = [&](const SimpleIntegerVariableID & var, Integer val) {
             _imp->proof << " " << proof_variable(var == val);
 
-            auto & [negative_bit_coeff, bit_vars] = _imp->integer_variable_bits.find(var)->second;
+            auto & [negative_bit_coeff, bit_vars] = _imp->integer_variable_bits.at(var);
             if (val.raw_value < 0) {
                 for (auto & [coeff, var] : bit_vars) {
                     if (coeff < 0_i)
@@ -857,7 +857,7 @@ auto Proof::need_constraint_saying_variable_takes_at_least_one_value(IntegerVari
         [&](const SimpleIntegerVariableID & var) -> ProofLine {
             auto result = _imp->variable_at_least_one_constraints.find(var);
             if (result == _imp->variable_at_least_one_constraints.end()) {
-                auto [lower, upper] = _imp->bounds_for_gevars.find(var)->second;
+                auto [lower, upper] = _imp->bounds_for_gevars.at(var);
                 for (Integer v = lower; v <= upper; ++v)
                     need_proof_variable(var == v);
 
@@ -928,7 +928,7 @@ auto Proof::get_or_emit_line_for_bound_in_bits(State & state, bool upper, const 
     step << "u";
     Integer big_number = 0_i;
 
-    auto & [_, bit_vars] = _imp->integer_variable_bits.find(var)->second;
+    auto & [_, bit_vars] = _imp->integer_variable_bits.at(var);
     for (auto & [bit_coeff, bit_name] : bit_vars) {
         step << " " << (upper ? -bit_coeff : bit_coeff) << " " << bit_name;
         big_number += Integer{abs(bit_coeff)};
