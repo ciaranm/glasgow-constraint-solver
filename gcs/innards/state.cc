@@ -655,7 +655,9 @@ auto State::infer(const Literal & lit, const Justification & just) -> Inference
         [&](const LiteralFromIntegerVariable & ilit) -> Inference {
             return infer(ilit, just);
         },
-        [](const TrueLiteral &) {
+        [&](const TrueLiteral &) {
+            if (_imp->maybe_proof)
+                _imp->maybe_proof->infer(*this, TrueLiteral{}, just);
             return Inference::NoChange;
         },
         [&](const FalseLiteral &) {

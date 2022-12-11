@@ -794,14 +794,16 @@ auto Proof::assert_contradiction() -> void
 auto Proof::infer(const State & state, const Literal & lit, const Justification & why) -> void
 {
     auto output_it = [&](const string & rule) {
-        _imp->proof << rule;
-        state.for_each_guess([&](const Literal & lit) {
-            _imp->proof << " 1 " << proof_variable(! lit);
-        });
-        if (! is_literally_false(lit))
-            _imp->proof << " 1 " << proof_variable(lit);
-        _imp->proof << " >= 1 ;\n";
-        ++_imp->proof_line;
+        if (! is_literally_true(lit)) {
+            _imp->proof << rule;
+            state.for_each_guess([&](const Literal & lit) {
+                _imp->proof << " 1 " << proof_variable(! lit);
+            });
+            if (! is_literally_false(lit))
+                _imp->proof << " 1 " << proof_variable(lit);
+            _imp->proof << " >= 1 ;\n";
+            ++_imp->proof_line;
+        }
     };
 
     overloaded{
