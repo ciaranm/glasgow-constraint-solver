@@ -46,6 +46,8 @@ struct Propagators::Imp
 
     list<Literal> unary_cnfs;
     deque<PropagationFunction> propagation_functions;
+    deque<InitialisationFunction> initialisation_functions;
+
     vector<uint8_t> propagator_is_disabled;
     unsigned long long total_propagations = 0, effectful_propagations = 0, contradicting_propagations = 0;
     deque<TriggerIDs> iv_triggers;
@@ -193,6 +195,11 @@ auto Propagators::install(PropagationFunction && f, const Triggers & triggers, c
     }
 }
 
+auto Propagators::install_initialiser(InitialisationFunction && f) -> void
+{
+    _imp->initialisation_functions.emplace_back(move(f));
+}
+
 namespace
 {
     auto is_immediately_infeasible(const IntegerVariableID & var, const Integer & val) -> bool
@@ -270,6 +277,12 @@ auto Propagators::define_and_install_table(State & state, vector<IntegerVariable
         _imp->propagator_is_disabled.push_back(0);
     },
         move(permitted));
+}
+
+auto Propagators::initialise(State & state) const -> void
+{
+    for (auto & f : _imp->initialisation_functions)
+        f(state);
 }
 
 auto Propagators::propagate(State & state, atomic<bool> * optional_abort_flag) const -> bool

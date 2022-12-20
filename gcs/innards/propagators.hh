@@ -22,6 +22,8 @@ namespace gcs::innards
 {
     using PropagationFunction = std::function<auto(State &)->std::pair<Inference, PropagatorState>>;
 
+    using InitialisationFunction = std::function<auto(State &)->void>;
+
     /**
      * \brief Tell Propagators when a Constraint's propagators should be triggered.
      *
@@ -158,6 +160,12 @@ namespace gcs::innards
         auto install(PropagationFunction &&, const Triggers & trigger_vars, const std::string & name) -> void;
 
         /**
+         * Install an initialiser, which will be called once just before search
+         * starts.
+         */
+        auto install_initialiser(InitialisationFunction &&) -> void;
+
+        /**
          * Install a propagator for the provided table constraint, and take
          * care of definitions if want_definitions() is true. This is used by
          * Table, but also by various other constraints that turn themselves
@@ -202,6 +210,11 @@ namespace gcs::innards
          * Propagate every constraint, until either a fixed point or a contradiction is reached.
          */
         [[nodiscard]] auto propagate(State &, std::atomic<bool> * optional_abort_flag = nullptr) const -> bool;
+
+        /**
+         * Call every initialiser.
+         */
+        auto initialise(State &) const -> void;
 
         ///@}
 

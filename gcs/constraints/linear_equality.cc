@@ -11,6 +11,7 @@
 #include <util/overloaded.hh>
 
 #include <functional>
+#include <memory>
 #include <sstream>
 #include <vector>
 
@@ -18,6 +19,7 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::function;
+using std::make_shared;
 using std::move;
 using std::nullopt;
 using std::optional;
@@ -211,11 +213,12 @@ auto LinearEquality::install(Propagators & propagators, State & initial_state) &
             for (auto & cv : sanitised_cv)
                 triggers.on_change.push_back(get_var(cv));
 
-            optional<ExtensionalData> data;
-            propagators.install([data = move(data), coeff_vars = sanitised_cv, value = _value + modifier](State & state) mutable -> pair<Inference, PropagatorState> {
-                if (! data)
-                    data = build_table(coeff_vars, value, state);
-                return propagate_extensional(*data, state);
+            auto data = make_shared<optional<ExtensionalData>>(nullopt);
+            propagators.install_initialiser([data = data, coeff_vars = sanitised_cv, value = _value + modifier](State & state) -> void {
+                *data = build_table(coeff_vars, value, state);
+            });
+            propagators.install([data = data](State & state) -> pair<Inference, PropagatorState> {
+                return propagate_extensional(data.get()->value(), state);
             },
                 triggers, "lin_eq_gac");
         },

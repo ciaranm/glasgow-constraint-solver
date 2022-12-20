@@ -121,6 +121,8 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
     if (callbacks.after_proof_started)
         callbacks.after_proof_started(state.current());
 
+    propagators.initialise(state);
+
     bool child_contains_solution = false;
     if (solve_with_state(0, stats, problem, propagators, state, callbacks, optional_proof,
             child_contains_solution, optional_abort_flag))
