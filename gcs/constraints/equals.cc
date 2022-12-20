@@ -78,7 +78,7 @@ auto Equals::clone() const -> unique_ptr<Constraint>
     return make_unique<Equals>(_v1, _v2);
 }
 
-auto Equals::install(Propagators & propagators, const State & initial_state) && -> void
+auto Equals::install(Propagators & propagators, State & initial_state) && -> void
 {
     auto v1_is_constant = initial_state.optional_single_value(_v1);
     auto v2_is_constant = initial_state.optional_single_value(_v2);
@@ -140,7 +140,7 @@ auto EqualsIf::clone() const -> unique_ptr<Constraint>
     return make_unique<EqualsIf>(_v1, _v2, _cond);
 }
 
-auto EqualsIf::install(Propagators & propagators, const State & initial_state) && -> void
+auto EqualsIf::install(Propagators & propagators, State & initial_state) && -> void
 {
     overloaded{
         [&](const TrueLiteral &) {
@@ -244,7 +244,7 @@ auto EqualsIff::clone() const -> unique_ptr<Constraint>
     return make_unique<EqualsIff>(_v1, _v2, _cond);
 }
 
-auto EqualsIff::install(Propagators & propagators, const State & initial_state) && -> void
+auto EqualsIff::install(Propagators & propagators, State & initial_state) && -> void
 {
     auto lower_common = max(initial_state.lower_bound(_v1), initial_state.lower_bound(_v2));
     auto upper_common = min(initial_state.upper_bound(_v1), initial_state.upper_bound(_v2));
@@ -383,7 +383,7 @@ auto NotEquals::clone() const -> unique_ptr<Constraint>
     return make_unique<NotEquals>(_v1, _v2);
 }
 
-auto NotEquals::install(Propagators & propagators, const State & initial_state) && -> void
+auto NotEquals::install(Propagators & propagators, State & initial_state) && -> void
 {
     auto v1_is_constant = initial_state.optional_single_value(_v1);
     auto v2_is_constant = initial_state.optional_single_value(_v2);

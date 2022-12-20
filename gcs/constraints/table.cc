@@ -39,7 +39,7 @@ auto Table::clone() const -> unique_ptr<Constraint>
     return make_unique<Table>(_vars, ExtensionalTuples{_tuples});
 }
 
-auto Table::install(Propagators & propagators, const State & initial_state) && -> void
+auto Table::install(Propagators & propagators, State & initial_state) && -> void
 {
     visit([&](auto & tuples) {
         for (auto & tuple : tuples)
@@ -113,7 +113,7 @@ namespace gcs
     using ::operator!=;
 }
 
-auto NegativeTable::install(Propagators & propagators, const State & initial_state) && -> void
+auto NegativeTable::install(Propagators & propagators, State & initial_state) && -> void
 {
     visit([&](auto & tuples) {
         for (auto & tuple : tuples)

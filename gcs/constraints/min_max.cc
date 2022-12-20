@@ -27,7 +27,7 @@ auto ArrayMinMax::clone() const -> unique_ptr<Constraint>
     return make_unique<ArrayMinMax>(_vars, _result, _min);
 }
 
-auto ArrayMinMax::install(Propagators & propagators, const State & initial_state) && -> void
+auto ArrayMinMax::install(Propagators & propagators, State & initial_state) && -> void
 {
     if (_vars.empty())
         throw UnexpectedException{"not sure how min and max are defined over an empty array"};

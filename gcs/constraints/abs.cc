@@ -29,7 +29,7 @@ auto Abs::clone() const -> unique_ptr<Constraint>
     return make_unique<Abs>(_v1, _v2);
 }
 
-auto Abs::install(Propagators & propagators, const State & initial_state) && -> void
+auto Abs::install(Propagators & propagators, State & initial_state) && -> void
 {
     // _v2 >= 0
     propagators.trim_lower_bound(initial_state, _v2, 0_i, "Abs");

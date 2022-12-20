@@ -29,7 +29,7 @@ auto CompareLessThanReif::clone() const -> unique_ptr<Constraint>
     return make_unique<CompareLessThanReif>(_v1, _v2, _cond, _full_reif, _or_equal);
 }
 
-auto CompareLessThanReif::install(Propagators & propagators, const State & initial_state) && -> void
+auto CompareLessThanReif::install(Propagators & propagators, State & initial_state) && -> void
 {
     if (propagators.want_definitions()) {
         auto do_less = [&](IntegerVariableID v1, IntegerVariableID v2, optional<LiteralFromIntegerVariable> cond, bool or_equal) {

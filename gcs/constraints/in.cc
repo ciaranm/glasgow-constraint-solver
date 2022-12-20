@@ -36,7 +36,7 @@ auto In::clone() const -> unique_ptr<Constraint>
     return make_unique<In>(_var, _val_vals);
 }
 
-auto In::install(Propagators & propagators, const State & initial_state) && -> void
+auto In::install(Propagators & propagators, State & initial_state) && -> void
 {
     erase_if(_var_vals, [&](const IntegerVariableID & v) -> bool {
         auto const_val = initial_state.optional_single_value(v);

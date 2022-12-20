@@ -29,7 +29,7 @@ auto NValue::clone() const -> unique_ptr<Constraint>
     return make_unique<NValue>(_n_values, _vars);
 }
 
-auto NValue::install(Propagators & propagators, const State & initial_state) && -> void
+auto NValue::install(Propagators & propagators, State & initial_state) && -> void
 {
     Triggers triggers;
     triggers.on_bounds.emplace_back(_n_values);

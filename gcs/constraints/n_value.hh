@@ -27,7 +27,7 @@ namespace gcs
         explicit NValue(const IntegerVariableID &, const std::vector<IntegerVariableID> &);
 
         virtual auto describe_for_proof() -> std::string override;
-        virtual auto install(innards::Propagators &, const innards::State &) && -> void override;
+        virtual auto install(innards::Propagators &, innards::State &) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
     };
 }

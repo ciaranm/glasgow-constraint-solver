@@ -33,7 +33,7 @@ namespace gcs
         explicit LinearEquality(Linear && coeff_vars, Integer value, bool gac = false);
 
         virtual auto describe_for_proof() -> std::string override;
-        virtual auto install(innards::Propagators &, const innards::State &) && -> void override;
+        virtual auto install(innards::Propagators &, innards::State &) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
     };
 
@@ -57,7 +57,7 @@ namespace gcs
         public:
             explicit LinearInequality(Linear && coeff_vars, Integer value);
 
-            virtual auto install(innards::Propagators &, const innards::State &) && -> void override;
+            virtual auto install(innards::Propagators &, innards::State &) && -> void override;
             virtual auto describe_for_proof() -> std::string override;
             virtual auto clone() const -> std::unique_ptr<Constraint> override;
         };

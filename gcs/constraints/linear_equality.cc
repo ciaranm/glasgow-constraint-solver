@@ -172,7 +172,7 @@ namespace
     }
 }
 
-auto LinearEquality::install(Propagators & propagators, const State & initial_state) && -> void
+auto LinearEquality::install(Propagators & propagators, State & initial_state) && -> void
 {
     optional<ProofLine> proof_line;
     if (propagators.want_definitions())
@@ -243,7 +243,7 @@ auto LinearInequality::clone() const -> unique_ptr<Constraint>
     return make_unique<LinearInequality>(Linear{_coeff_vars}, _value);
 }
 
-auto LinearInequality::install(Propagators & propagators, const State & initial_state) && -> void
+auto LinearInequality::install(Propagators & propagators, State & initial_state) && -> void
 {
     optional<ProofLine> proof_line;
     if (propagators.want_definitions())

@@ -27,7 +27,7 @@ namespace gcs
         explicit Circuit(const std::vector<IntegerVariableID> & vars, bool propagate_using_check_only = false);
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
         virtual auto describe_for_proof() -> std::string override;
-        virtual auto install(innards::Propagators &, const innards::State &) && -> void override;
+        virtual auto install(innards::Propagators &, innards::State &) && -> void override;
     };
 }
 

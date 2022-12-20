@@ -32,7 +32,7 @@ auto GACArithmetic<op_>::clone() const -> unique_ptr<Constraint>
 }
 
 template <ArithmeticOperator op_>
-auto GACArithmetic<op_>::install(Propagators & propagators, const State & initial_state) && -> void
+auto GACArithmetic<op_>::install(Propagators & propagators, State & initial_state) && -> void
 {
     bool v2_zero_is_ok = (op_ != ArithmeticOperator::Div && op_ != ArithmeticOperator::Mod);
 

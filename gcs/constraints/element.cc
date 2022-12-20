@@ -43,7 +43,7 @@ auto Element::clone() const -> unique_ptr<Constraint>
     return make_unique<Element>(_var, _idx, _vals);
 }
 
-auto Element::install(Propagators & propagators, const State & initial_state) && -> void
+auto Element::install(Propagators & propagators, State & initial_state) && -> void
 {
     if (_vals.empty()) {
         propagators.model_contradiction(initial_state, "Element constraint with no values");
@@ -153,7 +153,7 @@ auto Element2DConstantArray::clone() const -> unique_ptr<Constraint>
     return make_unique<Element2DConstantArray>(_var, _idx1, _idx2, _vals);
 }
 
-auto Element2DConstantArray::install(Propagators & propagators, const State & initial_state) && -> void
+auto Element2DConstantArray::install(Propagators & propagators, State & initial_state) && -> void
 {
     if (_vals.empty() || _vals.begin()->empty()) {
         propagators.model_contradiction(initial_state, "Element2DConstantArray constraint with no values");

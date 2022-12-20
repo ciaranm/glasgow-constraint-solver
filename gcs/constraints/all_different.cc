@@ -560,7 +560,7 @@ namespace
     }
 }
 
-auto AllDifferent::install(Propagators & propagators, const State & initial_state) && -> void
+auto AllDifferent::install(Propagators & propagators, State & initial_state) && -> void
 {
     map<Integer, ProofLine> constraint_numbers;
     if (propagators.want_definitions()) {

@@ -35,7 +35,7 @@ auto Count::clone() const -> unique_ptr<Constraint>
     return make_unique<Count>(_vars, _value_of_interest, _how_many);
 }
 
-auto Count::install(Propagators & propagators, const State & initial_state) && -> void
+auto Count::install(Propagators & propagators, State & initial_state) && -> void
 {
     Triggers triggers;
     triggers.on_change.insert(triggers.on_change.end(), _vars.begin(), _vars.end());

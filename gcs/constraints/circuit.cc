@@ -172,7 +172,7 @@ auto Circuit::clone() const -> unique_ptr<Constraint>
     return make_unique<Circuit>(_succ, _propagate_using_check_only);
 }
 
-auto Circuit::install(Propagators & propagators, const State & initial_state) && -> void
+auto Circuit::install(Propagators & propagators, State & initial_state) && -> void
 {
     // Can't have negative values
     for (const auto & s : _succ) {

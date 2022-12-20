@@ -45,7 +45,7 @@ namespace gcs
          * can only be called once, and after calling it neither install() nor
          * clone() may be called on this instance.
          */
-        virtual auto install(innards::Propagators &, const innards::State &) && -> void = 0;
+        virtual auto install(innards::Propagators &, innards::State &) && -> void = 0;
 
         /**
          * Create a copy of the constraint. To be used internally.

@@ -27,7 +27,7 @@ namespace gcs
         explicit Table(const std::vector<IntegerVariableID> & vars, ExtensionalTuples && tuples);
 
         virtual auto describe_for_proof() -> std::string override;
-        virtual auto install(innards::Propagators &, const innards::State &) && -> void override;
+        virtual auto install(innards::Propagators &, innards::State &) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
     };
 
@@ -47,7 +47,7 @@ namespace gcs
         explicit NegativeTable(const std::vector<IntegerVariableID> & vars, ExtensionalTuples && tuples);
 
         virtual auto describe_for_proof() -> std::string override;
-        virtual auto install(innards::Propagators &, const innards::State &) && -> void override;
+        virtual auto install(innards::Propagators &, innards::State &) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
     };
 }

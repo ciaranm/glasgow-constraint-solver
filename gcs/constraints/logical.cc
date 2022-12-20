@@ -201,7 +201,7 @@ auto And::describe_for_proof() -> string
     return "and";
 }
 
-auto And::install(Propagators & propagators, const State & initial_state) && -> void
+auto And::install(Propagators & propagators, State & initial_state) && -> void
 {
     install_and_or_or(propagators, initial_state, _lits, _full_reif, "and");
 }
@@ -232,7 +232,7 @@ auto Or::describe_for_proof() -> string
     return "or";
 }
 
-auto Or::install(Propagators & propagators, const State & initial_state) && -> void
+auto Or::install(Propagators & propagators, State & initial_state) && -> void
 {
     auto lits = _lits;
     for (auto & l : lits)
