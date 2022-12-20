@@ -44,7 +44,6 @@ struct Propagators::Imp
 {
     optional<Proof> & optional_proof;
 
-    list<Literals> cnfs;
     list<Literal> unary_cnfs;
     deque<PropagationFunction> propagation_functions;
     vector<uint8_t> propagator_is_disabled;
