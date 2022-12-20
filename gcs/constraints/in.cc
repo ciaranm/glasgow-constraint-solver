@@ -49,7 +49,7 @@ auto In::install(Propagators & propagators, State & initial_state) && -> void
     _val_vals.erase(unique(_val_vals.begin(), _val_vals.end()), _val_vals.end());
 
     if (_var_vals.empty() && _val_vals.empty())
-        propagators.model_contradiction(initial_state, "No values or variables present for an 'In' constraint");
+        propagators.model_contradiction("No values or variables present for an 'In' constraint");
     else if (_var_vals.empty()) {
         vector<IntegerVariableID> vars;
         vars.emplace_back(_var);

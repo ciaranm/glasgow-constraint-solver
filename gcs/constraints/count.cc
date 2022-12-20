@@ -95,7 +95,6 @@ auto Count::install(Propagators & propagators, State & initial_state) && -> void
     }
 
     propagators.install(
-        initial_state,
         [vars = _vars, value_of_interest = _value_of_interest, how_many = _how_many, flags = flags, forward_sum_line = forward_sum_line,
             reverse_sum_line = reverse_sum_line](State & state) -> pair<Inference, PropagatorState> {
             int how_many_definitely_do_not = 0;

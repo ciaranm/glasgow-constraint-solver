@@ -85,22 +85,20 @@ auto Equals::install(Propagators & propagators, State & initial_state) && -> voi
 
     if (v1_is_constant && v2_is_constant) {
         if (*v1_is_constant != *v2_is_constant) {
-            propagators.model_contradiction(initial_state, "Equals constraint on two variables with different constant values");
+            propagators.model_contradiction("Equals constraint on two variables with different constant values");
             return;
         }
     }
     else if (v1_is_constant) {
-        propagators.install(
-            initial_state, [v1_is_constant = v1_is_constant, v2 = _v2](State & state) -> pair<Inference, PropagatorState> {
-                return pair{state.infer_equal(v2, *v1_is_constant, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
-            },
+        propagators.install([v1_is_constant = v1_is_constant, v2 = _v2](State & state) -> pair<Inference, PropagatorState> {
+            return pair{state.infer_equal(v2, *v1_is_constant, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
+        },
             Triggers{}, "equals");
     }
     else if (v2_is_constant) {
-        propagators.install(
-            initial_state, [v2_is_constant = v2_is_constant, v1 = _v1](State & state) -> pair<Inference, PropagatorState> {
-                return pair{state.infer_equal(v1, *v2_is_constant, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
-            },
+        propagators.install([v2_is_constant = v2_is_constant, v1 = _v1](State & state) -> pair<Inference, PropagatorState> {
+            return pair{state.infer_equal(v1, *v2_is_constant, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
+        },
             Triggers{}, "equals");
     }
     else {
@@ -108,10 +106,9 @@ auto Equals::install(Propagators & propagators, State & initial_state) && -> voi
         triggers.on_change = {_v1, _v2};
 
         visit([&](auto & _v1, auto & _v2) {
-            propagators.install(
-                initial_state, [v1 = _v1, v2 = _v2](State & state) -> pair<Inference, PropagatorState> {
-                    return enforce_equality(v1, v2, state);
-                },
+            propagators.install([v1 = _v1, v2 = _v2](State & state) -> pair<Inference, PropagatorState> {
+                return enforce_equality(v1, v2, state);
+            },
                 triggers, "equals");
         },
             _v1, _v2);
@@ -162,59 +159,58 @@ auto EqualsIf::install(Propagators & propagators, State & initial_state) && -> v
             }
 
             visit([&](auto & _v1, auto & _v2) {
-                propagators.install(
-                    initial_state, [v1 = _v1, v2 = _v2, cond = cond](State & state) -> pair<Inference, PropagatorState> {
-                        switch (state.test_literal(cond)) {
-                        case LiteralIs::DefinitelyTrue: {
-                            // condition is true, force equality
-                            return enforce_equality(v1, v2, state);
-                        } break;
+                propagators.install([v1 = _v1, v2 = _v2, cond = cond](State & state) -> pair<Inference, PropagatorState> {
+                    switch (state.test_literal(cond)) {
+                    case LiteralIs::DefinitelyTrue: {
+                        // condition is true, force equality
+                        return enforce_equality(v1, v2, state);
+                    } break;
 
-                        case LiteralIs::DefinitelyFalse: {
-                            return pair{Inference::NoChange, PropagatorState::Enable};
-                        } break;
+                    case LiteralIs::DefinitelyFalse: {
+                        return pair{Inference::NoChange, PropagatorState::Enable};
+                    } break;
 
-                        case LiteralIs::Undecided: {
-                            // condition is undecided, are we in a situation where it's now forced?
-                            auto value1 = state.optional_single_value(v1);
-                            auto value2 = state.optional_single_value(v2);
-                            if (value1 && value2) {
-                                if (*value1 != *value2)
-                                    return pair{state.infer(! cond, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
-                                else
-                                    return pair{Inference::NoChange, PropagatorState::DisableUntilBacktrack};
-                            }
-                            else if (value1) {
-                                if (! state.in_domain(v2, *value1))
-                                    return pair{state.infer(! cond, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
-                                else
-                                    return pair{Inference::NoChange, PropagatorState::Enable};
-                            }
-                            else if (value2) {
-                                if (! state.in_domain(v1, *value2))
-                                    return pair{state.infer(! cond, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
-                                else
-                                    return pair{Inference::NoChange, PropagatorState::Enable};
-                            }
-                            else {
-                                // not equals is forced if there's no overlap between domains
-                                bool overlap = false;
-                                state.for_each_value_while(v1, [&](Integer val) {
-                                    if (state.in_domain(v2, val))
-                                        overlap = true;
-                                    return ! overlap;
-                                });
-
-                                if (! overlap)
-                                    return pair{state.infer(! cond, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
-                                else
-                                    return pair{Inference::NoChange, PropagatorState::Enable};
-                            }
-                        } break;
+                    case LiteralIs::Undecided: {
+                        // condition is undecided, are we in a situation where it's now forced?
+                        auto value1 = state.optional_single_value(v1);
+                        auto value2 = state.optional_single_value(v2);
+                        if (value1 && value2) {
+                            if (*value1 != *value2)
+                                return pair{state.infer(! cond, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
+                            else
+                                return pair{Inference::NoChange, PropagatorState::DisableUntilBacktrack};
                         }
+                        else if (value1) {
+                            if (! state.in_domain(v2, *value1))
+                                return pair{state.infer(! cond, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
+                            else
+                                return pair{Inference::NoChange, PropagatorState::Enable};
+                        }
+                        else if (value2) {
+                            if (! state.in_domain(v1, *value2))
+                                return pair{state.infer(! cond, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
+                            else
+                                return pair{Inference::NoChange, PropagatorState::Enable};
+                        }
+                        else {
+                            // not equals is forced if there's no overlap between domains
+                            bool overlap = false;
+                            state.for_each_value_while(v1, [&](Integer val) {
+                                if (state.in_domain(v2, val))
+                                    overlap = true;
+                                return ! overlap;
+                            });
 
-                        throw NonExhaustiveSwitch{};
-                    },
+                            if (! overlap)
+                                return pair{state.infer(! cond, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
+                            else
+                                return pair{Inference::NoChange, PropagatorState::Enable};
+                        }
+                    } break;
+                    }
+
+                    throw NonExhaustiveSwitch{};
+                },
                     triggers, "equals if");
             },
                 _v1, _v2);
@@ -250,10 +246,9 @@ auto EqualsIff::install(Propagators & propagators, State & initial_state) && -> 
     auto upper_common = min(initial_state.upper_bound(_v1), initial_state.upper_bound(_v2));
     if (lower_common > upper_common) {
         propagators.define_cnf(initial_state, {{! _cond}});
-        propagators.install(
-            initial_state, [cond = _cond](State & state) {
-                return pair{state.infer(! cond, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
-            },
+        propagators.install([cond = _cond](State & state) {
+            return pair{state.infer(! cond, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
+        },
             Triggers{}, "equals iff");
         return;
     }
@@ -279,68 +274,67 @@ auto EqualsIff::install(Propagators & propagators, State & initial_state) && -> 
             }
 
             visit([&](auto & _v1, auto & _v2) {
-                propagators.install(
-                    initial_state, [v1 = _v1, v2 = _v2, cond = cond](State & state) -> pair<Inference, PropagatorState> {
-                        switch (state.test_literal(cond)) {
-                        case LiteralIs::DefinitelyTrue: {
-                            // condition is true, force equality
-                            return enforce_equality(v1, v2, state);
-                        } break;
+                propagators.install([v1 = _v1, v2 = _v2, cond = cond](State & state) -> pair<Inference, PropagatorState> {
+                    switch (state.test_literal(cond)) {
+                    case LiteralIs::DefinitelyTrue: {
+                        // condition is true, force equality
+                        return enforce_equality(v1, v2, state);
+                    } break;
 
-                        case LiteralIs::DefinitelyFalse: {
-                            // condition is false, force inequality
-                            auto value1 = state.optional_single_value(v1);
-                            auto value2 = state.optional_single_value(v2);
-                            if (value1 && value2)
-                                return pair{(*value1 != *value2) ? Inference::NoChange : Inference::Contradiction, PropagatorState::DisableUntilBacktrack};
-                            else if (value1)
-                                return pair{state.infer_not_equal(v2, *value1, NoJustificationNeeded{}), PropagatorState::DisableUntilBacktrack};
-                            else if (value2)
-                                return pair{state.infer_not_equal(v1, *value2, NoJustificationNeeded{}), PropagatorState::DisableUntilBacktrack};
+                    case LiteralIs::DefinitelyFalse: {
+                        // condition is false, force inequality
+                        auto value1 = state.optional_single_value(v1);
+                        auto value2 = state.optional_single_value(v2);
+                        if (value1 && value2)
+                            return pair{(*value1 != *value2) ? Inference::NoChange : Inference::Contradiction, PropagatorState::DisableUntilBacktrack};
+                        else if (value1)
+                            return pair{state.infer_not_equal(v2, *value1, NoJustificationNeeded{}), PropagatorState::DisableUntilBacktrack};
+                        else if (value2)
+                            return pair{state.infer_not_equal(v1, *value2, NoJustificationNeeded{}), PropagatorState::DisableUntilBacktrack};
+                        else
+                            return pair{Inference::NoChange, PropagatorState::Enable};
+                    } break;
+
+                    case LiteralIs::Undecided: {
+                        // condition is undecided, are we in a situation where it's now forced?
+                        auto value1 = state.optional_single_value(v1);
+                        auto value2 = state.optional_single_value(v2);
+                        if (value1 && value2) {
+                            return pair{state.infer(*value1 == *value2 ? cond : ! cond,
+                                            NoJustificationNeeded{}),
+                                PropagatorState::DisableUntilBacktrack};
+                        }
+                        else if (value1) {
+                            if (! state.in_domain(v2, *value1))
+                                return pair{state.infer(! cond, NoJustificationNeeded{}), PropagatorState::DisableUntilBacktrack};
                             else
                                 return pair{Inference::NoChange, PropagatorState::Enable};
-                        } break;
-
-                        case LiteralIs::Undecided: {
-                            // condition is undecided, are we in a situation where it's now forced?
-                            auto value1 = state.optional_single_value(v1);
-                            auto value2 = state.optional_single_value(v2);
-                            if (value1 && value2) {
-                                return pair{state.infer(*value1 == *value2 ? cond : ! cond,
-                                                NoJustificationNeeded{}),
-                                    PropagatorState::DisableUntilBacktrack};
-                            }
-                            else if (value1) {
-                                if (! state.in_domain(v2, *value1))
-                                    return pair{state.infer(! cond, NoJustificationNeeded{}), PropagatorState::DisableUntilBacktrack};
-                                else
-                                    return pair{Inference::NoChange, PropagatorState::Enable};
-                            }
-                            else if (value2) {
-                                if (! state.in_domain(v1, *value2))
-                                    return pair{state.infer(! cond, NoJustificationNeeded{}), PropagatorState::DisableUntilBacktrack};
-                                else
-                                    return pair{Inference::NoChange, PropagatorState::Enable};
-                            }
-                            else {
-                                // not equals is forced if there's no overlap between domains
-                                bool overlap = false;
-                                state.for_each_value_while(v1, [&](Integer val) {
-                                    if (state.in_domain(v2, val))
-                                        overlap = true;
-                                    return ! overlap;
-                                });
-
-                                if (! overlap)
-                                    return pair{state.infer(! cond, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
-                                else
-                                    return pair{Inference::NoChange, PropagatorState::Enable};
-                            }
-                        } break;
                         }
+                        else if (value2) {
+                            if (! state.in_domain(v1, *value2))
+                                return pair{state.infer(! cond, NoJustificationNeeded{}), PropagatorState::DisableUntilBacktrack};
+                            else
+                                return pair{Inference::NoChange, PropagatorState::Enable};
+                        }
+                        else {
+                            // not equals is forced if there's no overlap between domains
+                            bool overlap = false;
+                            state.for_each_value_while(v1, [&](Integer val) {
+                                if (state.in_domain(v2, val))
+                                    overlap = true;
+                                return ! overlap;
+                            });
 
-                        throw NonExhaustiveSwitch{};
-                    },
+                            if (! overlap)
+                                return pair{state.infer(! cond, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
+                            else
+                                return pair{Inference::NoChange, PropagatorState::Enable};
+                        }
+                    } break;
+                    }
+
+                    throw NonExhaustiveSwitch{};
+                },
                     triggers, "equals iff");
             },
                 _v1, _v2);
@@ -392,22 +386,20 @@ auto NotEquals::install(Propagators & propagators, State & initial_state) && -> 
 
     if (v1_is_constant && v2_is_constant) {
         if (*v1_is_constant == *v2_is_constant) {
-            propagators.model_contradiction(initial_state, "NotEquals constraint on two variables with the same constant values");
+            propagators.model_contradiction("NotEquals constraint on two variables with the same constant values");
             return;
         }
     }
     else if (v1_is_constant) {
-        propagators.install(
-            initial_state, [v1_is_constant = v1_is_constant, v2 = _v2](State & state) -> pair<Inference, PropagatorState> {
-                return pair{state.infer_not_equal(v2, *v1_is_constant, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
-            },
+        propagators.install([v1_is_constant = v1_is_constant, v2 = _v2](State & state) -> pair<Inference, PropagatorState> {
+            return pair{state.infer_not_equal(v2, *v1_is_constant, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
+        },
             Triggers{}, "not equals");
     }
     else if (v2_is_constant) {
-        propagators.install(
-            initial_state, [v2_is_constant = v2_is_constant, v1 = _v1](State & state) -> pair<Inference, PropagatorState> {
-                return pair{state.infer_not_equal(v1, *v2_is_constant, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
-            },
+        propagators.install([v2_is_constant = v2_is_constant, v1 = _v1](State & state) -> pair<Inference, PropagatorState> {
+            return pair{state.infer_not_equal(v1, *v2_is_constant, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
+        },
             Triggers{}, "not equals");
     }
     else {
@@ -418,43 +410,41 @@ auto NotEquals::install(Propagators & propagators, State & initial_state) && -> 
         triggers.on_instantiated = {_v1, _v2};
 
         visit([&](auto & _v1, auto & _v2) {
-            propagators.install(
-                initial_state, [v1 = _v1, v2 = _v2, convert_to_values_ne = convert_to_values_ne](State & state) -> pair<Inference, PropagatorState> {
-                    auto value1 = state.optional_single_value(v1);
-                    auto value2 = state.optional_single_value(v2);
-                    if (value1 && value2)
-                        return pair{(*value1 != *value2) ? Inference::NoChange : Inference::Contradiction, PropagatorState::DisableUntilBacktrack};
-                    else if (value1)
-                        return pair{state.infer_not_equal(v2, *value1, convert_to_values_ne ? Justification{NoJustificationNeeded{}} : Justification{JustifyUsingRUP{}}),
-                            PropagatorState::DisableUntilBacktrack};
-                    else if (value2)
-                        return pair{state.infer_not_equal(v1, *value2, convert_to_values_ne ? Justification{NoJustificationNeeded{}} : Justification{JustifyUsingRUP{}}),
-                            PropagatorState::DisableUntilBacktrack};
-                    else
-                        return pair{Inference::NoChange, PropagatorState::Enable};
-                },
+            propagators.install([v1 = _v1, v2 = _v2, convert_to_values_ne = convert_to_values_ne](State & state) -> pair<Inference, PropagatorState> {
+                auto value1 = state.optional_single_value(v1);
+                auto value2 = state.optional_single_value(v2);
+                if (value1 && value2)
+                    return pair{(*value1 != *value2) ? Inference::NoChange : Inference::Contradiction, PropagatorState::DisableUntilBacktrack};
+                else if (value1)
+                    return pair{state.infer_not_equal(v2, *value1, convert_to_values_ne ? Justification{NoJustificationNeeded{}} : Justification{JustifyUsingRUP{}}),
+                        PropagatorState::DisableUntilBacktrack};
+                else if (value2)
+                    return pair{state.infer_not_equal(v1, *value2, convert_to_values_ne ? Justification{NoJustificationNeeded{}} : Justification{JustifyUsingRUP{}}),
+                        PropagatorState::DisableUntilBacktrack};
+                else
+                    return pair{Inference::NoChange, PropagatorState::Enable};
+            },
                 triggers, "not equals");
         },
             _v1, _v2);
 
         if (convert_to_values_ne && propagators.want_definitions()) {
-            propagators.install(
-                initial_state, [v1 = _v1, v2 = _v2](State & state) -> pair<Inference, PropagatorState> {
-                    state.add_proof_steps(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
-                        proof.emit_proof_comment("converting not equals to value encoding");
-                        state.for_each_value(v1, [&](Integer val1) {
-                            if (state.in_domain(v2, val1)) {
-                                proof.need_proof_variable(v1 != val1);
-                                proof.need_proof_variable(v2 != val1);
-                                stringstream line;
-                                line << "u 1 " << proof.proof_variable(v1 != val1) << " 1 " << proof.proof_variable(v2 != val1)
-                                     << " >= 1 ;";
-                                proof.emit_proof_line(line.str());
-                            }
-                        });
-                    }});
-                    return pair{Inference::NoChange, PropagatorState::DisableUntilBacktrack};
-                },
+            propagators.install([v1 = _v1, v2 = _v2](State & state) -> pair<Inference, PropagatorState> {
+                state.add_proof_steps(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
+                    proof.emit_proof_comment("converting not equals to value encoding");
+                    state.for_each_value(v1, [&](Integer val1) {
+                        if (state.in_domain(v2, val1)) {
+                            proof.need_proof_variable(v1 != val1);
+                            proof.need_proof_variable(v2 != val1);
+                            stringstream line;
+                            line << "u 1 " << proof.proof_variable(v1 != val1) << " 1 " << proof.proof_variable(v2 != val1)
+                                 << " >= 1 ;";
+                            proof.emit_proof_line(line.str());
+                        }
+                    });
+                }});
+                return pair{Inference::NoChange, PropagatorState::DisableUntilBacktrack};
+            },
                 Triggers{}, "not equals conversion");
         }
     }

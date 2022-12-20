@@ -227,7 +227,6 @@ auto Circuit::install(Propagators & propagators, State & initial_state) && -> vo
         triggers.on_instantiated = {_succ.begin(), _succ.end()};
 
         propagators.install(
-            initial_state,
             [succ = _succ, use_check = _propagate_using_check_only, lines_for_setting_pos = lines_for_setting_pos](State & state) -> pair<Inference, PropagatorState> {
                 return pair{
                     use_check ? propagate_circuit_using_check(succ, lines_for_setting_pos, state) : propagate_circuit_using_prevent(succ, lines_for_setting_pos, state),

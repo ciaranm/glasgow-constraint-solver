@@ -186,24 +186,21 @@ auto LinearEquality::install(Propagators & propagators, State & initial_state) &
 
     overloaded{
         [&, &modifier = modifier](const SimpleLinear & lin) {
-            propagators.install(
-                initial_state, [modifier = modifier, lin = lin, value = _value, proof_line = proof_line](State & state) {
-                    return propagate_linear(lin, value + modifier, state, true, proof_line);
-                },
+            propagators.install([modifier = modifier, lin = lin, value = _value, proof_line = proof_line](State & state) {
+                return propagate_linear(lin, value + modifier, state, true, proof_line);
+            },
                 triggers, "linear equality");
         },
         [&, &modifier = modifier](const SimpleSum & sum) {
-            propagators.install(
-                initial_state, [modifier = modifier, sum = sum, value = _value, proof_line = proof_line](State & state) {
-                    return propagate_sum(sum, value + modifier, state, true, proof_line);
-                },
+            propagators.install([modifier = modifier, sum = sum, value = _value, proof_line = proof_line](State & state) {
+                return propagate_sum(sum, value + modifier, state, true, proof_line);
+            },
                 triggers, "linear equality");
         },
         [&, &modifier = modifier](const SimpleIntegerVariableIDs & sum) {
-            propagators.install(
-                initial_state, [modifier = modifier, sum = sum, value = _value, proof_line = proof_line](State & state) {
-                    return propagate_sum_all_positive(sum, value + modifier, state, true, proof_line);
-                },
+            propagators.install([modifier = modifier, sum = sum, value = _value, proof_line = proof_line](State & state) {
+                return propagate_sum_all_positive(sum, value + modifier, state, true, proof_line);
+            },
                 triggers, "linear equality");
         }}
         .visit(sanitised_cv);
@@ -215,12 +212,11 @@ auto LinearEquality::install(Propagators & propagators, State & initial_state) &
                 triggers.on_change.push_back(get_var(cv));
 
             optional<ExtensionalData> data;
-            propagators.install(
-                initial_state, [data = move(data), coeff_vars = sanitised_cv, value = _value + modifier](State & state) mutable -> pair<Inference, PropagatorState> {
-                    if (! data)
-                        data = build_table(coeff_vars, value, state);
-                    return propagate_extensional(*data, state);
-                },
+            propagators.install([data = move(data), coeff_vars = sanitised_cv, value = _value + modifier](State & state) mutable -> pair<Inference, PropagatorState> {
+                if (! data)
+                    data = build_table(coeff_vars, value, state);
+                return propagate_extensional(*data, state);
+            },
                 triggers, "lin_eq_gac");
         },
             sanitised_cv);
@@ -257,24 +253,21 @@ auto LinearInequality::install(Propagators & propagators, State & initial_state)
 
     overloaded{
         [&, &modifier = modifier](const SimpleLinear & lin) {
-            propagators.install(
-                initial_state, [modifier = modifier, lin = lin, value = _value, proof_line = proof_line](State & state) {
-                    return propagate_linear(lin, value + modifier, state, false, proof_line);
-                },
+            propagators.install([modifier = modifier, lin = lin, value = _value, proof_line = proof_line](State & state) {
+                return propagate_linear(lin, value + modifier, state, false, proof_line);
+            },
                 triggers, "linear inequality");
         },
         [&, &modifier = modifier](const SimpleSum & sum) {
-            propagators.install(
-                initial_state, [modifier = modifier, sum = sum, value = _value, proof_line = proof_line](State & state) {
-                    return propagate_sum(sum, value + modifier, state, false, proof_line);
-                },
+            propagators.install([modifier = modifier, sum = sum, value = _value, proof_line = proof_line](State & state) {
+                return propagate_sum(sum, value + modifier, state, false, proof_line);
+            },
                 triggers, "linear inequality");
         },
         [&, &modifier = modifier](const SimpleIntegerVariableIDs & sum) {
-            propagators.install(
-                initial_state, [modifier = modifier, sum = sum, value = _value, proof_line = proof_line](State & state) {
-                    return propagate_sum_all_positive(sum, value + modifier, state, false, proof_line);
-                },
+            propagators.install([modifier = modifier, sum = sum, value = _value, proof_line = proof_line](State & state) {
+                return propagate_sum_all_positive(sum, value + modifier, state, false, proof_line);
+            },
                 triggers, "linear inequality");
         }}
         .visit(sanitised_cv);

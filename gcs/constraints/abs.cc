@@ -50,47 +50,46 @@ auto Abs::install(Propagators & propagators, State & initial_state) && -> void
 
     // _v2 = abs(_v1)
     Triggers triggers{.on_change = {_v1, _v2}};
-    propagators.install(
-        initial_state, [v1 = _v1, v2 = _v2, selector = selector](State & state) -> pair<Inference, PropagatorState> {
-            // v2 = abs(v1)
-            Inference result = Inference::NoChange;
-            state.for_each_value_while(v1, [&](Integer val) {
-                if (! state.in_domain(v2, abs(val)))
-                    increase_inference_to(result, state.infer_not_equal(v1, val, JustifyUsingRUP{}));
-                return result != Inference::Contradiction;
-            });
+    propagators.install([v1 = _v1, v2 = _v2, selector = selector](State & state) -> pair<Inference, PropagatorState> {
+        // v2 = abs(v1)
+        Inference result = Inference::NoChange;
+        state.for_each_value_while(v1, [&](Integer val) {
+            if (! state.in_domain(v2, abs(val)))
+                increase_inference_to(result, state.infer_not_equal(v1, val, JustifyUsingRUP{}));
+            return result != Inference::Contradiction;
+        });
 
-            state.for_each_value_while(v2, [&](Integer val) {
-                if (! state.in_domain(v1, val) && ! state.in_domain(v1, -val) && state.in_domain(v2, val))
-                    increase_inference_to(result, state.infer_not_equal(v2, val, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & del) {
-                        proof.need_proof_variable(v2 == val);
-                        proof.need_proof_variable(v1 == val);
-                        proof.need_proof_variable(v1 == -val);
+        state.for_each_value_while(v2, [&](Integer val) {
+            if (! state.in_domain(v1, val) && ! state.in_domain(v1, -val) && state.in_domain(v2, val))
+                increase_inference_to(result, state.infer_not_equal(v2, val, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & del) {
+                    proof.need_proof_variable(v2 == val);
+                    proof.need_proof_variable(v1 == val);
+                    proof.need_proof_variable(v1 == -val);
 
-                        stringstream step;
+                    stringstream step;
 
-                        step << "u" << proof.trail_variables(state, 1_i) << " 1 " << proof.proof_variable(v1 != val) << " >= 1 ;";
-                        del.push_back(proof.emit_proof_line(step.str()));
+                    step << "u" << proof.trail_variables(state, 1_i) << " 1 " << proof.proof_variable(v1 != val) << " >= 1 ;";
+                    del.push_back(proof.emit_proof_line(step.str()));
 
-                        step = stringstream{};
-                        step << "u" << proof.trail_variables(state, 1_i) << " 1 " << proof.proof_variable(v1 != -val) << " >= 1 ;";
-                        del.push_back(proof.emit_proof_line(step.str()));
+                    step = stringstream{};
+                    step << "u" << proof.trail_variables(state, 1_i) << " 1 " << proof.proof_variable(v1 != -val) << " >= 1 ;";
+                    del.push_back(proof.emit_proof_line(step.str()));
 
-                        step = stringstream{};
-                        step << "u" << proof.trail_variables(state, 1_i) << " 1 " << proof.proof_variable(*selector)
-                             << " 1 " << proof.proof_variable(v2 != val) << " >= 1 ;";
-                        del.push_back(proof.emit_proof_line(step.str()));
+                    step = stringstream{};
+                    step << "u" << proof.trail_variables(state, 1_i) << " 1 " << proof.proof_variable(*selector)
+                         << " 1 " << proof.proof_variable(v2 != val) << " >= 1 ;";
+                    del.push_back(proof.emit_proof_line(step.str()));
 
-                        step = stringstream{};
-                        step << "u" << proof.trail_variables(state, 1_i) << " 1 " << proof.proof_variable(! *selector)
-                             << " 1 " << proof.proof_variable(v2 != val) << " >= 1 ;";
-                        del.push_back(proof.emit_proof_line(step.str()));
-                    }}));
-                return result != Inference::Contradiction;
-            });
+                    step = stringstream{};
+                    step << "u" << proof.trail_variables(state, 1_i) << " 1 " << proof.proof_variable(! *selector)
+                         << " 1 " << proof.proof_variable(v2 != val) << " >= 1 ;";
+                    del.push_back(proof.emit_proof_line(step.str()));
+                }}));
+            return result != Inference::Contradiction;
+        });
 
-            return pair{result, PropagatorState::Enable};
-        },
+        return pair{result, PropagatorState::Enable};
+    },
         triggers, "abs");
 
     if (propagators.want_definitions()) {

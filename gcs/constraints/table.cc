@@ -136,36 +136,35 @@ auto NegativeTable::install(Propagators & propagators, State & initial_state) &&
         triggers.on_change.emplace_back(v);
 
     visit([&](const auto & tuples) {
-        propagators.install(
-            initial_state, [vars = move(_vars), tuples = move(tuples)](State & state) -> pair<Inference, PropagatorState> {
-                auto inf = Inference::NoChange;
-                for (auto & t : tuples) {
-                    bool falsified = false;
-                    optional<Literal> l1, l2;
-                    for (const auto & [idx, v] : enumerate(vars)) {
-                        switch (state.test_literal(v == t[idx])) {
-                        case LiteralIs::DefinitelyFalse:
-                            falsified = true;
-                            break;
-                        case LiteralIs::DefinitelyTrue:
-                            break;
-                        case LiteralIs::Undecided:
-                            if (! l1)
-                                l1 = (v != t[idx]);
-                            else if (! l2)
-                                l2 = (v != t[idx]);
-                        }
-                    }
-
-                    if (! falsified) {
+        propagators.install([vars = move(_vars), tuples = move(tuples)](State & state) -> pair<Inference, PropagatorState> {
+            auto inf = Inference::NoChange;
+            for (auto & t : tuples) {
+                bool falsified = false;
+                optional<Literal> l1, l2;
+                for (const auto & [idx, v] : enumerate(vars)) {
+                    switch (state.test_literal(v == t[idx])) {
+                    case LiteralIs::DefinitelyFalse:
+                        falsified = true;
+                        break;
+                    case LiteralIs::DefinitelyTrue:
+                        break;
+                    case LiteralIs::Undecided:
                         if (! l1)
-                            return pair{Inference::Contradiction, PropagatorState::Enable};
+                            l1 = (v != t[idx]);
                         else if (! l2)
-                            increase_inference_to(inf, state.infer(*l1, JustifyUsingRUP{}));
+                            l2 = (v != t[idx]);
                     }
                 }
-                return pair{inf, PropagatorState::Enable};
-            },
+
+                if (! falsified) {
+                    if (! l1)
+                        return pair{Inference::Contradiction, PropagatorState::Enable};
+                    else if (! l2)
+                        increase_inference_to(inf, state.infer(*l1, JustifyUsingRUP{}));
+                }
+            }
+            return pair{inf, PropagatorState::Enable};
+        },
             triggers, "negative table");
     },
         _tuples);

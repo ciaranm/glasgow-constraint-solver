@@ -597,7 +597,6 @@ auto AllDifferent::install(Propagators & propagators, State & initial_state) && 
         });
 
     propagators.install(
-        initial_state,
         [vars = move(sanitised_vars),
             vals = move(compressed_vals),
             save_constraint_numbers = move(constraint_numbers)](State & state) -> pair<Inference, PropagatorState> {

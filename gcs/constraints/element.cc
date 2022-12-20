@@ -46,7 +46,7 @@ auto Element::clone() const -> unique_ptr<Constraint>
 auto Element::install(Propagators & propagators, State & initial_state) && -> void
 {
     if (_vals.empty()) {
-        propagators.model_contradiction(initial_state, "Element constraint with no values");
+        propagators.model_contradiction("Element constraint with no values");
         return;
     }
 
@@ -65,68 +65,67 @@ auto Element::install(Propagators & propagators, State & initial_state) && -> vo
     Triggers triggers{.on_change = {_idx, _var}};
     triggers.on_change.insert(triggers.on_change.end(), _vals.begin(), _vals.end());
 
-    propagators.install(
-        initial_state, [idx = _idx, var = _var, vals = _vals](State & state) mutable -> pair<Inference, PropagatorState> {
-            Inference inf = Inference::NoChange;
+    propagators.install([idx = _idx, var = _var, vals = _vals](State & state) mutable -> pair<Inference, PropagatorState> {
+        Inference inf = Inference::NoChange;
 
-            // update idx to only contain possible indices
-            state.for_each_value_while(idx, [&](Integer ival) {
-                bool supported = false;
-                state.for_each_value_while(vals[ival.raw_value], [&](Integer vval) {
-                    if (state.in_domain(var, vval))
-                        supported = true;
-                    return ! supported;
-                });
-                if (! supported)
-                    increase_inference_to(inf, state.infer_not_equal(idx, ival, JustifyUsingRUP{}));
+        // update idx to only contain possible indices
+        state.for_each_value_while(idx, [&](Integer ival) {
+            bool supported = false;
+            state.for_each_value_while(vals[ival.raw_value], [&](Integer vval) {
+                if (state.in_domain(var, vval))
+                    supported = true;
+                return ! supported;
+            });
+            if (! supported)
+                increase_inference_to(inf, state.infer_not_equal(idx, ival, JustifyUsingRUP{}));
+            return inf != Inference::Contradiction;
+        });
+
+        if (Inference::Contradiction == inf)
+            return pair{inf, PropagatorState::Enable};
+
+        // update var to only contain supported values
+        state.for_each_value_while(var, [&](Integer val) {
+            bool supported = false;
+            state.for_each_value_while(idx, [&](Integer v) {
+                if (state.in_domain(vals[v.raw_value], val))
+                    supported = true;
+                return ! supported;
+            });
+            if (! supported) {
+                increase_inference_to(inf, state.infer_not_equal(var, val, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
+                    state.for_each_value(idx, [&](Integer i) {
+                        proof.need_proof_variable(var != val);
+                        stringstream trail;
+                        trail << "u ";
+                        trail << proof.trail_variables(state, 1_i) << " 1 " << proof.proof_variable(var != val)
+                              << " 1 " << proof.proof_variable(idx != i);
+                        trail << " >= 1 ;";
+                        to_delete.push_back(proof.emit_proof_line(trail.str()));
+                    });
+                }}));
+
+                if (Inference::Contradiction == inf)
+                    return false;
+            }
+            return true;
+        });
+
+        if (Inference::Contradiction == inf)
+            return pair{inf, PropagatorState::Enable};
+
+        // if idx has only one value, force that val
+        auto idx_is = state.optional_single_value(idx);
+        if (idx_is) {
+            state.for_each_value_while(vals[idx_is->raw_value], [&](Integer val) {
+                if (! state.in_domain(var, val))
+                    increase_inference_to(inf, state.infer_not_equal(vals[idx_is->raw_value], val, JustifyUsingRUP{}));
                 return inf != Inference::Contradiction;
             });
+        }
 
-            if (Inference::Contradiction == inf)
-                return pair{inf, PropagatorState::Enable};
-
-            // update var to only contain supported values
-            state.for_each_value_while(var, [&](Integer val) {
-                bool supported = false;
-                state.for_each_value_while(idx, [&](Integer v) {
-                    if (state.in_domain(vals[v.raw_value], val))
-                        supported = true;
-                    return ! supported;
-                });
-                if (! supported) {
-                    increase_inference_to(inf, state.infer_not_equal(var, val, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
-                        state.for_each_value(idx, [&](Integer i) {
-                            proof.need_proof_variable(var != val);
-                            stringstream trail;
-                            trail << "u ";
-                            trail << proof.trail_variables(state, 1_i) << " 1 " << proof.proof_variable(var != val)
-                                  << " 1 " << proof.proof_variable(idx != i);
-                            trail << " >= 1 ;";
-                            to_delete.push_back(proof.emit_proof_line(trail.str()));
-                        });
-                    }}));
-
-                    if (Inference::Contradiction == inf)
-                        return false;
-                }
-                return true;
-            });
-
-            if (Inference::Contradiction == inf)
-                return pair{inf, PropagatorState::Enable};
-
-            // if idx has only one value, force that val
-            auto idx_is = state.optional_single_value(idx);
-            if (idx_is) {
-                state.for_each_value_while(vals[idx_is->raw_value], [&](Integer val) {
-                    if (! state.in_domain(var, val))
-                        increase_inference_to(inf, state.infer_not_equal(vals[idx_is->raw_value], val, JustifyUsingRUP{}));
-                    return inf != Inference::Contradiction;
-                });
-            }
-
-            return pair{inf, PropagatorState::Enable};
-        },
+        return pair{inf, PropagatorState::Enable};
+    },
         triggers, "element index");
 }
 
@@ -156,7 +155,7 @@ auto Element2DConstantArray::clone() const -> unique_ptr<Constraint>
 auto Element2DConstantArray::install(Propagators & propagators, State & initial_state) && -> void
 {
     if (_vals.empty() || _vals.begin()->empty()) {
-        propagators.model_contradiction(initial_state, "Element2DConstantArray constraint with no values");
+        propagators.model_contradiction("Element2DConstantArray constraint with no values");
         return;
     }
 
@@ -178,85 +177,37 @@ auto Element2DConstantArray::install(Propagators & propagators, State & initial_
         .on_change = {_idx1, _idx2}};
 
     optional<SimpleIntegerVariableID> idxsel;
-    propagators.install(
-        initial_state, [idx1 = _idx1, idx2 = _idx2, var = _var, vals = _vals, idxsel = move(idxsel)](State & state) mutable -> pair<Inference, PropagatorState> {
-            if (state.maybe_proof() && ! idxsel) [[unlikely]] {
-                idxsel = state.what_variable_id_will_be_created_next();
-                for (auto i = 0_i, i_end = Integer(vals.size() * vals.begin()->size()); i != i_end; ++i)
-                    state.maybe_proof()->create_literals_for_introduced_variable_value(*idxsel, i, "element2didx");
-                if (*idxsel != state.allocate_integer_variable_with_state(0_i, Integer(vals.size() * vals.begin()->size())))
-                    throw UnexpectedException{"something went horribly wrong with variable IDs"};
+    propagators.install([idx1 = _idx1, idx2 = _idx2, var = _var, vals = _vals, idxsel = move(idxsel)](State & state) mutable -> pair<Inference, PropagatorState> {
+        if (state.maybe_proof() && ! idxsel) [[unlikely]] {
+            idxsel = state.what_variable_id_will_be_created_next();
+            for (auto i = 0_i, i_end = Integer(vals.size() * vals.begin()->size()); i != i_end; ++i)
+                state.maybe_proof()->create_literals_for_introduced_variable_value(*idxsel, i, "element2didx");
+            if (*idxsel != state.allocate_integer_variable_with_state(0_i, Integer(vals.size() * vals.begin()->size())))
+                throw UnexpectedException{"something went horribly wrong with variable IDs"};
 
-                state.add_proof_steps(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
-                    state.for_each_value(idx1, [&](Integer i1) {
-                        state.for_each_value(idx2, [&](Integer i2) {
-                            Integer idx = i1 * Integer(vals.size()) + i2;
-                            stringstream line;
-                            line << "red 2 ~" << proof.proof_variable(*idxsel == idx)
-                                 << " 1 " << proof.proof_variable(idx1 == i1)
-                                 << " 1 " << proof.proof_variable(idx2 == i2)
-                                 << " >= 2 ; " << proof.proof_variable(*idxsel == idx) << " 0";
-                            proof.emit_proof_line(line.str());
-
-                            line = stringstream{};
-                            line << "red 1 " << proof.proof_variable(*idxsel == idx)
-                                 << " 1 ~" << proof.proof_variable(idx1 == i1)
-                                 << " 1 ~" << proof.proof_variable(idx2 == i2)
-                                 << " >= 1 ; " << proof.proof_variable(*idxsel == idx) << " 1";
-                            proof.emit_proof_line(line.str());
-                        });
-                    });
-
-                    stringstream trail;
-                    for (Integer v = 0_i, v_end = Integer(vals.size() * vals.begin()->size()); v != v_end; ++v)
-                        trail << " 1 " << proof.proof_variable(*idxsel == v);
-
-                    state.for_each_value(idx1, [&](Integer i1) {
-                        state.for_each_value(idx2, [&](Integer i2) {
-                            stringstream line;
-                            line << "u" << trail.str() << " 1 ~" << proof.proof_variable(idx1 == i1)
-                                 << " 1 ~" << proof.proof_variable(idx2 == i2) << " >= 1 ;";
-                            to_delete.push_back(proof.emit_proof_line(line.str()));
-                        });
-                        stringstream line;
-                        line << "u" << trail.str() << " 1 ~" << proof.proof_variable(idx1 == i1) << " >= 1 ;";
-                        to_delete.push_back(proof.emit_proof_line(line.str()));
-                    });
-
-                    stringstream line;
-                    line << "u";
-                    for (Integer v = 0_i, v_end = Integer(vals.size() * vals.begin()->size()); v != v_end; ++v)
-                        line << " 1 " << proof.proof_variable(*idxsel == v);
-                    line << " >= 1 ;";
-                    proof.emit_proof_line(line.str());
-                }});
-            }
-
-            optional<Integer> smallest_seen, largest_seen;
-            state.for_each_value(idx1, [&](Integer i1) {
-                state.for_each_value(idx2, [&](Integer i2) {
-                    auto this_val = vals.at(i1.raw_value).at(i2.raw_value);
-                    if (! smallest_seen)
-                        smallest_seen = this_val;
-                    else
-                        smallest_seen = min(*smallest_seen, this_val);
-
-                    if (! largest_seen)
-                        largest_seen = this_val;
-                    else
-                        largest_seen = max(*largest_seen, this_val);
-                });
-            });
-
-            auto inference = Inference::NoChange;
-            auto just = JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
-                stringstream trail;
+            state.add_proof_steps(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
                 state.for_each_value(idx1, [&](Integer i1) {
                     state.for_each_value(idx2, [&](Integer i2) {
-                        trail << " 1 " << proof.proof_variable(var == vals[i1.raw_value][i2.raw_value]);
+                        Integer idx = i1 * Integer(vals.size()) + i2;
+                        stringstream line;
+                        line << "red 2 ~" << proof.proof_variable(*idxsel == idx)
+                             << " 1 " << proof.proof_variable(idx1 == i1)
+                             << " 1 " << proof.proof_variable(idx2 == i2)
+                             << " >= 2 ; " << proof.proof_variable(*idxsel == idx) << " 0";
+                        proof.emit_proof_line(line.str());
+
+                        line = stringstream{};
+                        line << "red 1 " << proof.proof_variable(*idxsel == idx)
+                             << " 1 ~" << proof.proof_variable(idx1 == i1)
+                             << " 1 ~" << proof.proof_variable(idx2 == i2)
+                             << " >= 1 ; " << proof.proof_variable(*idxsel == idx) << " 1";
+                        proof.emit_proof_line(line.str());
                     });
                 });
-                trail << proof.trail_variables(state, 1_i);
+
+                stringstream trail;
+                for (Integer v = 0_i, v_end = Integer(vals.size() * vals.begin()->size()); v != v_end; ++v)
+                    trail << " 1 " << proof.proof_variable(*idxsel == v);
 
                 state.for_each_value(idx1, [&](Integer i1) {
                     state.for_each_value(idx2, [&](Integer i2) {
@@ -271,61 +222,107 @@ auto Element2DConstantArray::install(Propagators & propagators, State & initial_
                 });
 
                 stringstream line;
-                line << "u" << trail.str() << " >= 1 ;";
+                line << "u";
+                for (Integer v = 0_i, v_end = Integer(vals.size() * vals.begin()->size()); v != v_end; ++v)
+                    line << " 1 " << proof.proof_variable(*idxsel == v);
+                line << " >= 1 ;";
+                proof.emit_proof_line(line.str());
+            }});
+        }
+
+        optional<Integer> smallest_seen, largest_seen;
+        state.for_each_value(idx1, [&](Integer i1) {
+            state.for_each_value(idx2, [&](Integer i2) {
+                auto this_val = vals.at(i1.raw_value).at(i2.raw_value);
+                if (! smallest_seen)
+                    smallest_seen = this_val;
+                else
+                    smallest_seen = min(*smallest_seen, this_val);
+
+                if (! largest_seen)
+                    largest_seen = this_val;
+                else
+                    largest_seen = max(*largest_seen, this_val);
+            });
+        });
+
+        auto inference = Inference::NoChange;
+        auto just = JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
+            stringstream trail;
+            state.for_each_value(idx1, [&](Integer i1) {
+                state.for_each_value(idx2, [&](Integer i2) {
+                    trail << " 1 " << proof.proof_variable(var == vals[i1.raw_value][i2.raw_value]);
+                });
+            });
+            trail << proof.trail_variables(state, 1_i);
+
+            state.for_each_value(idx1, [&](Integer i1) {
+                state.for_each_value(idx2, [&](Integer i2) {
+                    stringstream line;
+                    line << "u" << trail.str() << " 1 ~" << proof.proof_variable(idx1 == i1)
+                         << " 1 ~" << proof.proof_variable(idx2 == i2) << " >= 1 ;";
+                    to_delete.push_back(proof.emit_proof_line(line.str()));
+                });
+                stringstream line;
+                line << "u" << trail.str() << " 1 ~" << proof.proof_variable(idx1 == i1) << " >= 1 ;";
                 to_delete.push_back(proof.emit_proof_line(line.str()));
-            }};
+            });
 
-            increase_inference_to(inference, state.infer_greater_than_or_equal(var, *smallest_seen, just));
-            if (Inference::Contradiction != inference)
-                increase_inference_to(inference, state.infer_less_than(var, *largest_seen + 1_i, just));
+            stringstream line;
+            line << "u" << trail.str() << " >= 1 ;";
+            to_delete.push_back(proof.emit_proof_line(line.str()));
+        }};
 
-            return pair{inference, PropagatorState::Enable};
-        },
+        increase_inference_to(inference, state.infer_greater_than_or_equal(var, *smallest_seen, just));
+        if (Inference::Contradiction != inference)
+            increase_inference_to(inference, state.infer_less_than(var, *largest_seen + 1_i, just));
+
+        return pair{inference, PropagatorState::Enable};
+    },
         index_triggers, "element 2d const array indices");
 
     Triggers bounds_triggers{
         .on_bounds = {_var}};
 
     visit([&](auto & _idx1, auto & _idx2) {
-        propagators.install(
-            initial_state, [idx1 = _idx1, idx2 = _idx2, var = _var, vals = _vals](State & state) -> pair<Inference, PropagatorState> {
-                auto bounds = state.bounds(var);
-                auto inference = Inference::NoChange;
+        propagators.install([idx1 = _idx1, idx2 = _idx2, var = _var, vals = _vals](State & state) -> pair<Inference, PropagatorState> {
+            auto bounds = state.bounds(var);
+            auto inference = Inference::NoChange;
 
-                state.for_each_value_while(idx1, [&](Integer i1) -> bool {
-                    bool suitable_idx2_found = false;
-                    state.for_each_value_while_immutable(idx2, [&](Integer i2) -> bool {
-                        auto this_val = vals.at(i1.raw_value).at(i2.raw_value);
-                        if (this_val >= bounds.first && this_val <= bounds.second) {
-                            suitable_idx2_found = true;
-                            return false;
-                        }
-                        return true;
-                    });
-                    if (! suitable_idx2_found)
-                        increase_inference_to(inference, state.infer(idx1 != i1, JustifyUsingRUP{}));
-
-                    return inference != Inference::Contradiction;
+            state.for_each_value_while(idx1, [&](Integer i1) -> bool {
+                bool suitable_idx2_found = false;
+                state.for_each_value_while_immutable(idx2, [&](Integer i2) -> bool {
+                    auto this_val = vals.at(i1.raw_value).at(i2.raw_value);
+                    if (this_val >= bounds.first && this_val <= bounds.second) {
+                        suitable_idx2_found = true;
+                        return false;
+                    }
+                    return true;
                 });
+                if (! suitable_idx2_found)
+                    increase_inference_to(inference, state.infer(idx1 != i1, JustifyUsingRUP{}));
 
-                state.for_each_value_while(idx2, [&](Integer i2) -> bool {
-                    bool suitable_idx1_found = false;
-                    state.for_each_value_while_immutable(idx1, [&](Integer i1) -> bool {
-                        auto this_val = vals.at(i1.raw_value).at(i2.raw_value);
-                        if (this_val >= bounds.first && this_val <= bounds.second) {
-                            suitable_idx1_found = true;
-                            return false;
-                        }
-                        return true;
-                    });
-                    if (! suitable_idx1_found)
-                        increase_inference_to(inference, state.infer(idx2 != i2, JustifyUsingRUP{}));
+                return inference != Inference::Contradiction;
+            });
 
-                    return inference != Inference::Contradiction;
+            state.for_each_value_while(idx2, [&](Integer i2) -> bool {
+                bool suitable_idx1_found = false;
+                state.for_each_value_while_immutable(idx1, [&](Integer i1) -> bool {
+                    auto this_val = vals.at(i1.raw_value).at(i2.raw_value);
+                    if (this_val >= bounds.first && this_val <= bounds.second) {
+                        suitable_idx1_found = true;
+                        return false;
+                    }
+                    return true;
                 });
+                if (! suitable_idx1_found)
+                    increase_inference_to(inference, state.infer(idx2 != i2, JustifyUsingRUP{}));
 
-                return pair{inference, PropagatorState::Enable};
-            },
+                return inference != Inference::Contradiction;
+            });
+
+            return pair{inference, PropagatorState::Enable};
+        },
             bounds_triggers, "element 2d const array var bounds");
     },
         _idx1, _idx2);

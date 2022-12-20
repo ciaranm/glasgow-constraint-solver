@@ -35,33 +35,32 @@ auto NValue::install(Propagators & propagators, State & initial_state) && -> voi
     triggers.on_bounds.emplace_back(_n_values);
     triggers.on_change.insert(triggers.on_change.end(), _vars.begin(), _vars.end());
 
-    propagators.install(
-        initial_state, [n_values = _n_values, vars = _vars](State & state) -> pair<Inference, PropagatorState> {
-            set<Integer> all_possible_values;
-            for (const auto & var : vars) {
-                state.for_each_value_while_immutable(var, [&](Integer v) -> bool {
-                    all_possible_values.insert(v);
-                    return true;
-                });
-            }
+    propagators.install([n_values = _n_values, vars = _vars](State & state) -> pair<Inference, PropagatorState> {
+        set<Integer> all_possible_values;
+        for (const auto & var : vars) {
+            state.for_each_value_while_immutable(var, [&](Integer v) -> bool {
+                all_possible_values.insert(v);
+                return true;
+            });
+        }
 
-            auto inf = state.infer(n_values < Integer(all_possible_values.size()) + 1_i, JustifyUsingRUP{});
-            if (Inference::Contradiction == inf)
-                return pair{inf, PropagatorState::Enable};
-
-            set<Integer> all_definite_values;
-            for (const auto & var : vars) {
-                auto val = state.optional_single_value(var);
-                if (val)
-                    all_definite_values.insert(*val);
-            }
-
-            increase_inference_to(inf, state.infer(n_values >= Integer(all_definite_values.size()), JustifyUsingRUP{}));
-            if (Inference::Contradiction == inf)
-                return pair{inf, PropagatorState::Enable};
-
+        auto inf = state.infer(n_values < Integer(all_possible_values.size()) + 1_i, JustifyUsingRUP{});
+        if (Inference::Contradiction == inf)
             return pair{inf, PropagatorState::Enable};
-        },
+
+        set<Integer> all_definite_values;
+        for (const auto & var : vars) {
+            auto val = state.optional_single_value(var);
+            if (val)
+                all_definite_values.insert(*val);
+        }
+
+        increase_inference_to(inf, state.infer(n_values >= Integer(all_definite_values.size()), JustifyUsingRUP{}));
+        if (Inference::Contradiction == inf)
+            return pair{inf, PropagatorState::Enable};
+
+        return pair{inf, PropagatorState::Enable};
+    },
         triggers, "nvalue");
 
     if (propagators.want_definitions()) {

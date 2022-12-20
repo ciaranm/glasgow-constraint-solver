@@ -37,16 +37,15 @@ namespace
 
         if (reif_state == LiteralIs::DefinitelyTrue) {
             // definitely true, just force all the literals
-            propagators.install(
-                initial_state, [lits = _lits](State & state) -> pair<Inference, PropagatorState> {
-                    Inference inf = Inference::NoChange;
-                    for (auto & l : lits) {
-                        increase_inference_to(inf, state.infer(l, JustifyUsingRUP{}));
-                        if (inf == Inference::Contradiction)
-                            break;
-                    }
-                    return pair{inf, PropagatorState::DisableUntilBacktrack};
-                },
+            propagators.install([lits = _lits](State & state) -> pair<Inference, PropagatorState> {
+                Inference inf = Inference::NoChange;
+                for (auto & l : lits) {
+                    increase_inference_to(inf, state.infer(l, JustifyUsingRUP{}));
+                    if (inf == Inference::Contradiction)
+                        break;
+                }
+                return pair{inf, PropagatorState::DisableUntilBacktrack};
+            },
                 Triggers{}, name);
 
             if (propagators.want_definitions()) {
@@ -81,10 +80,9 @@ namespace
             if (saw_false) {
                 // we saw a false literal, the reif variable must be forced off and
                 // then we don't do anything else
-                propagators.install(
-                    initial_state, [full_reif = _full_reif](State & state) -> pair<Inference, PropagatorState> {
-                        return pair{state.infer(! full_reif, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
-                    },
+                propagators.install([full_reif = _full_reif](State & state) -> pair<Inference, PropagatorState> {
+                    return pair{state.infer(! full_reif, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
+                },
                     Triggers{}, name);
 
                 if (propagators.want_definitions()) {
@@ -92,67 +90,66 @@ namespace
                 }
             }
             else {
-                propagators.install(
-                    initial_state, [lits = _lits, full_reif = _full_reif](State & state) -> pair<Inference, PropagatorState> {
-                        switch (state.test_literal(full_reif)) {
-                        case LiteralIs::DefinitelyTrue: {
-                            Inference inf = Inference::NoChange;
-                            for (auto & l : lits) {
-                                increase_inference_to(inf, state.infer(l, JustifyUsingRUP{}));
-                                if (inf == Inference::Contradiction)
-                                    break;
+                propagators.install([lits = _lits, full_reif = _full_reif](State & state) -> pair<Inference, PropagatorState> {
+                    switch (state.test_literal(full_reif)) {
+                    case LiteralIs::DefinitelyTrue: {
+                        Inference inf = Inference::NoChange;
+                        for (auto & l : lits) {
+                            increase_inference_to(inf, state.infer(l, JustifyUsingRUP{}));
+                            if (inf == Inference::Contradiction)
+                                break;
+                        }
+                        return pair{inf, PropagatorState::DisableUntilBacktrack};
+                    }
+
+                    case LiteralIs::DefinitelyFalse: {
+                        bool any_false = false;
+                        optional<Literal> undecided1;
+
+                        for (auto & l : lits)
+                            switch (state.test_literal(l)) {
+                            case LiteralIs::DefinitelyTrue: break;
+                            case LiteralIs::DefinitelyFalse: any_false = true; break;
+                            case LiteralIs::Undecided:
+                                if (undecided1)
+                                    return pair{Inference::NoChange, PropagatorState::Enable};
+                                else
+                                    undecided1 = l;
                             }
-                            return pair{inf, PropagatorState::DisableUntilBacktrack};
-                        }
 
-                        case LiteralIs::DefinitelyFalse: {
-                            bool any_false = false;
-                            optional<Literal> undecided1;
+                        if (any_false)
+                            return pair{Inference::NoChange, PropagatorState::DisableUntilBacktrack};
+                        else if (! undecided1)
+                            return pair{Inference::Contradiction, PropagatorState::Enable};
+                        else
+                            return pair{state.infer(! *undecided1, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
+                    }
 
-                            for (auto & l : lits)
-                                switch (state.test_literal(l)) {
-                                case LiteralIs::DefinitelyTrue: break;
-                                case LiteralIs::DefinitelyFalse: any_false = true; break;
-                                case LiteralIs::Undecided:
-                                    if (undecided1)
-                                        return pair{Inference::NoChange, PropagatorState::Enable};
-                                    else
-                                        undecided1 = l;
-                                }
+                    case LiteralIs::Undecided: {
+                        bool any_false = false;
+                        bool all_true = true;
 
-                            if (any_false)
-                                return pair{Inference::NoChange, PropagatorState::DisableUntilBacktrack};
-                            else if (! undecided1)
-                                return pair{Inference::Contradiction, PropagatorState::Enable};
-                            else
-                                return pair{state.infer(! *undecided1, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
-                        }
+                        for (auto & l : lits)
+                            switch (state.test_literal(l)) {
+                            case LiteralIs::DefinitelyTrue: break;
+                            case LiteralIs::DefinitelyFalse:
+                                any_false = true;
+                                all_true = false;
+                                break;
+                            case LiteralIs::Undecided: all_true = false; break;
+                            }
 
-                        case LiteralIs::Undecided: {
-                            bool any_false = false;
-                            bool all_true = true;
+                        if (any_false)
+                            return pair{state.infer(! full_reif, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
+                        else if (all_true)
+                            return pair{state.infer(full_reif, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
+                        else
+                            return pair{Inference::NoChange, PropagatorState::Enable};
+                    }
+                    }
 
-                            for (auto & l : lits)
-                                switch (state.test_literal(l)) {
-                                case LiteralIs::DefinitelyTrue: break;
-                                case LiteralIs::DefinitelyFalse:
-                                    any_false = true;
-                                    all_true = false;
-                                    break;
-                                case LiteralIs::Undecided: all_true = false; break;
-                                }
-
-                            if (any_false)
-                                return pair{state.infer(! full_reif, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
-                            else if (all_true)
-                                return pair{state.infer(full_reif, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
-                            else
-                                return pair{Inference::NoChange, PropagatorState::Enable};
-                        }
-                        }
-
-                        throw NonExhaustiveSwitch{};
-                    },
+                    throw NonExhaustiveSwitch{};
+                },
                     triggers, name);
 
                 if (propagators.want_definitions()) {

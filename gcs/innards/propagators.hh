@@ -65,7 +65,7 @@ namespace gcs::innards
          * \name Constructors, destructors, etc.
          */
         ///@{
-        explicit Propagators(State &, std::optional<innards::Proof> &);
+        explicit Propagators(std::optional<innards::Proof> &);
         ~Propagators();
 
         Propagators(const Propagators &) = delete;
@@ -84,7 +84,7 @@ namespace gcs::innards
         /**
          * Can be called by a Constraint if it is contradictory by definition.
          */
-        auto model_contradiction(const State &, const std::string & explain_yourself) -> void;
+        auto model_contradiction(const std::string & explain_yourself) -> void;
 
         /**
          * Called by a Constraint if a variable's lower bound must, by definition, be at least a value.
@@ -155,7 +155,7 @@ namespace gcs::innards
          * starts, even if no Triggers are specified, and a constraint may be
          * called even if its trigger condition is not met.
          */
-        auto install(const State &, PropagationFunction &&, const Triggers & trigger_vars, const std::string & name) -> void;
+        auto install(PropagationFunction &&, const Triggers & trigger_vars, const std::string & name) -> void;
 
         /**
          * Install a propagator for the provided table constraint, and take
@@ -165,7 +165,7 @@ namespace gcs::innards
          *
          * \sa gcs::innards::propagate_extensional()
          */
-        auto define_and_install_table(const State &, std::vector<IntegerVariableID> &&,
+        auto define_and_install_table(State &, std::vector<IntegerVariableID> &&,
             ExtensionalTuples &&, const std::string & name) -> void;
 
         ///@}
@@ -179,7 +179,7 @@ namespace gcs::innards
          * Create an IntegerVariableID that is associated with a constraint,
          * for example for tracking internal state.
          */
-        [[nodiscard]] auto create_auxilliary_integer_variable(Integer, Integer, const std::string & name) -> IntegerVariableID;
+        [[nodiscard]] auto create_auxilliary_integer_variable(State &, Integer, Integer, const std::string & name) -> IntegerVariableID;
 
         /**
          * Create a ProofFlag, that is used only in definitions.

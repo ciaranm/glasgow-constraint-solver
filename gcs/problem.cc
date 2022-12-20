@@ -102,7 +102,7 @@ auto Problem::post(const Constraint & c) -> void
 
 auto Problem::create_propagators(State & state, optional<Proof> & optional_proof) const -> Propagators
 {
-    auto result = Propagators{state, optional_proof};
+    auto result = Propagators{optional_proof};
     for (auto & c : _imp->constraints) {
         auto cc = c->clone();
         if (optional_proof)

@@ -42,7 +42,6 @@ namespace
 
 struct Propagators::Imp
 {
-    State & initial_state;
     optional<Proof> & optional_proof;
 
     list<Literals> cnfs;
@@ -54,15 +53,14 @@ struct Propagators::Imp
     vector<long> degrees;
     bool first = true;
 
-    Imp(State & s, optional<Proof> & o) :
-        initial_state(s),
+    Imp(optional<Proof> & o) :
         optional_proof(o)
     {
     }
 };
 
-Propagators::Propagators(State & s, optional<Proof> & o) :
-    _imp(new Imp(s, o))
+Propagators::Propagators(optional<Proof> & o) :
+    _imp(new Imp(o))
 {
 }
 
@@ -72,15 +70,14 @@ Propagators::Propagators(Propagators &&) = default;
 
 auto Propagators::operator=(Propagators &&) -> Propagators & = default;
 
-auto Propagators::model_contradiction(const State & initial_state, const string & explain_yourself) -> void
+auto Propagators::model_contradiction(const string & explain_yourself) -> void
 {
     if (_imp->optional_proof)
         _imp->optional_proof->cnf({});
 
-    install(
-        initial_state, [explain_yourself = explain_yourself](State &) -> pair<Inference, PropagatorState> {
-            return pair{Inference::Contradiction, PropagatorState::Enable};
-        },
+    install([explain_yourself = explain_yourself](State &) -> pair<Inference, PropagatorState> {
+        return pair{Inference::Contradiction, PropagatorState::Enable};
+    },
         Triggers{}, "model contradiction");
 }
 
@@ -89,14 +86,13 @@ auto Propagators::trim_lower_bound(const State & state, IntegerVariableID var, I
     if (state.lower_bound(var) < val) {
         if (state.upper_bound(var) >= val) {
             define_cnf(state, {var >= val});
-            install(
-                state, [var, val](State & state) {
-                    return pair{state.infer(var >= val, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
-                },
+            install([var, val](State & state) {
+                return pair{state.infer(var >= val, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
+            },
                 Triggers{}, "trimmed lower bound");
         }
         else
-            model_contradiction(state, "Trimmed lower bound of " + debug_string(var) + " due to " + x + " is outside its domain");
+            model_contradiction("Trimmed lower bound of " + debug_string(var) + " due to " + x + " is outside its domain");
     }
 }
 
@@ -105,14 +101,13 @@ auto Propagators::trim_upper_bound(const State & state, IntegerVariableID var, I
     if (state.upper_bound(var) > val) {
         if (state.lower_bound(var) <= val) {
             define_cnf(state, {var < val + 1_i});
-            install(
-                state, [var, val](State & state) {
-                    return pair{state.infer(var < val + 1_i, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
-                },
+            install([var, val](State & state) {
+                return pair{state.infer(var < val + 1_i, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
+            },
                 Triggers{}, "trimmed upper bound");
         }
         else
-            model_contradiction(state, "Trimmed upper bound of " + debug_string(var) + " due to " + x + " is outside its domain");
+            model_contradiction("Trimmed upper bound of " + debug_string(var) + " due to " + x + " is outside its domain");
     }
 }
 
@@ -177,7 +172,7 @@ auto Propagators::define_linear_eq(const State & state, const Linear & coeff_var
         return nullopt;
 }
 
-auto Propagators::install(const State &, PropagationFunction && f, const Triggers & triggers, const std::string &) -> void
+auto Propagators::install(PropagationFunction && f, const Triggers & triggers, const std::string &) -> void
 {
     int id = _imp->propagation_functions.size();
     _imp->propagation_functions.emplace_back(move(f));
@@ -232,17 +227,17 @@ namespace
     }
 }
 
-auto Propagators::define_and_install_table(const State & state, vector<IntegerVariableID> && vars,
+auto Propagators::define_and_install_table(State & state, vector<IntegerVariableID> && vars,
     ExtensionalTuples && permitted, const string & x) -> void
 {
     visit([&](auto && permitted) {
         if (permitted.empty()) {
-            model_contradiction(state, "Empty table constraint from " + x);
+            model_contradiction("Empty table constraint from " + x);
             return;
         }
 
         int id = _imp->propagation_functions.size();
-        auto selector = create_auxilliary_integer_variable(0_i, Integer(permitted.size() - 1), "table");
+        auto selector = create_auxilliary_integer_variable(state, 0_i, Integer(permitted.size() - 1), "table");
 
         // pb encoding, if necessary
         if (want_definitions()) {
@@ -386,9 +381,9 @@ auto Propagators::propagate(State & state, atomic<bool> * optional_abort_flag) c
     return ! contradiction;
 }
 
-auto Propagators::create_auxilliary_integer_variable(Integer l, Integer u, const std::string & s) -> IntegerVariableID
+auto Propagators::create_auxilliary_integer_variable(State & state, Integer l, Integer u, const std::string & s) -> IntegerVariableID
 {
-    auto result = _imp->initial_state.allocate_integer_variable_with_state(l, u);
+    auto result = state.allocate_integer_variable_with_state(l, u);
     if (_imp->optional_proof)
         _imp->optional_proof->set_up_integer_variable(result, l, u, "aux_" + s);
     return result;
