@@ -194,6 +194,9 @@ auto Proof::operator=(Proof && other) noexcept -> Proof &
 
 auto Proof::set_up_variable_encoding(SimpleOrProofOnlyIntegerVariableID id, Integer lower, Integer upper, const string & name) -> void
 {
+    if (_imp->opb_done)
+        throw UnexpectedException{"proof has already started"};
+
     _imp->opb << "* variable " << name << " " << lower.raw_value << " .. " << upper.raw_value << " binary encoding\n";
     Integer highest_abs_value = max(abs(lower), upper);
     int highest_bit_shift = countr_zero(bit_ceil(static_cast<unsigned long long>(highest_abs_value.raw_value)));
@@ -452,6 +455,9 @@ auto Proof::start_proof(State & state) -> void
 
 auto Proof::cnf(const Literals & lits) -> ProofLine
 {
+    if (_imp->opb_done)
+        throw UnexpectedException{"proof has already started"};
+
     for (const auto & lit : lits)
         need_proof_variable(lit);
 
@@ -467,6 +473,9 @@ auto Proof::cnf(const Literals & lits) -> ProofLine
 
 auto Proof::at_most_one(const Literals & lits) -> ProofLine
 {
+    if (_imp->opb_done)
+        throw UnexpectedException{"proof has already started"};
+
     for (const auto & lit : lits)
         need_proof_variable(lit);
 
@@ -483,6 +492,9 @@ auto Proof::at_most_one(const Literals & lits) -> ProofLine
 auto Proof::pseudoboolean_ge(const WeightedPseudoBooleanTerms & lits, Integer val,
     optional<ReificationTerm> half_reif, bool equality) -> ProofLine
 {
+    if (_imp->opb_done)
+        throw UnexpectedException{"proof has already started"};
+
     for (const auto & [_, lit] : lits)
         overloaded{
             [&](const Literal & lit) { need_proof_variable(lit); },
@@ -553,6 +565,9 @@ auto Proof::pseudoboolean_ge(const WeightedPseudoBooleanTerms & lits, Integer va
 auto Proof::integer_linear_le(const State &, const SimpleLinear & lin, Integer val,
     optional<ReificationTerm> half_reif, bool equality) -> ProofLine
 {
+    if (_imp->opb_done)
+        throw UnexpectedException{"proof has already started"};
+
     if (half_reif)
         overloaded{
             [&](const Literal & lit) { need_proof_variable(lit); },
