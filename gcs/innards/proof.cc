@@ -788,7 +788,8 @@ auto Proof::backtrack(const State & state) -> void
     _imp->proof << "* backtracking\n";
     _imp->proof << "u";
     state.for_each_guess([&](const Literal & lit) {
-        _imp->proof << " 1 " << proof_variable(! lit);
+        if (! is_literally_true(lit))
+            _imp->proof << " 1 " << proof_variable(! lit);
     });
     _imp->proof << " >= 1 ;\n";
     ++_imp->proof_line;
@@ -812,7 +813,8 @@ auto Proof::infer(const State & state, const Literal & lit, const Justification 
         if (! is_literally_true(lit)) {
             _imp->proof << rule;
             state.for_each_guess([&](const Literal & lit) {
-                _imp->proof << " 1 " << proof_variable(! lit);
+                if (! is_literally_true(lit))
+                    _imp->proof << " 1 " << proof_variable(! lit);
             });
             if (! is_literally_false(lit))
                 _imp->proof << " 1 " << proof_variable(lit);
@@ -841,13 +843,16 @@ auto Proof::infer(const State & state, const Literal & lit, const Justification 
             delete_proof_lines(to_delete);
         },
         [&](const Guess &) {
-            // we need this because it'll show up in the trail later
-            need_proof_variable(lit);
-            _imp->proof << "* guessing " << proof_variable(lit) << ", decision stack is [";
-            state.for_each_guess([&](const Literal & lit) {
-                _imp->proof << " " << proof_variable(lit);
-            });
-            _imp->proof << " ]\n";
+            if (! is_literally_true(lit)) {
+                // we need this because it'll show up in the trail later
+                need_proof_variable(lit);
+                _imp->proof << "* guessing " << proof_variable(lit) << ", decision stack is [";
+                state.for_each_guess([&](const Literal & lit) {
+                    if (! is_literally_true(lit))
+                        _imp->proof << " " << proof_variable(lit);
+                });
+                _imp->proof << " ]\n";
+            }
         },
         [&](const NoJustificationNeeded &) {
         }}
@@ -913,7 +918,8 @@ auto Proof::trail_variables(const State & state, Integer coeff) -> string
 {
     stringstream result;
     state.for_each_guess([&](const Literal & lit) {
-        result << " " << coeff << " " << proof_variable(! lit);
+        if (! is_literally_true(lit))
+            result << " " << coeff << " " << proof_variable(! lit);
     });
 
     return result.str();
