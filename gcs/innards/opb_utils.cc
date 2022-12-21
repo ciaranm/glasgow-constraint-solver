@@ -58,7 +58,7 @@ auto gcs::innards::opb_utils::implied_by(OPBInequality x, const string & v) -> O
 
 auto gcs::innards::opb_utils::implies(OPBInequality x, const string & v) -> OPBInequality
 {
-    Integer k = x.value;
+    Integer k = -x.value + 1_i;
     OPBInequality result{move(x.expr), -x.value + 1_i};
     for (auto & [c, _] : result.expr.weighted_terms) {
         k += max(0_i, c);
