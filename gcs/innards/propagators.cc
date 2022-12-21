@@ -44,7 +44,6 @@ struct Propagators::Imp
 {
     optional<Proof> & optional_proof;
 
-    list<Literal> unary_cnfs;
     deque<PropagationFunction> propagation_functions;
     deque<InitialisationFunction> initialisation_functions;
 
@@ -303,13 +302,6 @@ auto Propagators::propagate(State & state, atomic<bool> * optional_abort_flag) c
             propagation_queue.push_back(i);
             on_queue[i] = 1;
         }
-
-        for (auto & lit : _imp->unary_cnfs)
-            switch (state.infer(lit, NoJustificationNeeded{})) {
-            case Inference::Contradiction: return false;
-            case Inference::NoChange: break;
-            case Inference::Change: break;
-            }
     }
 
     bool contradiction = false;
