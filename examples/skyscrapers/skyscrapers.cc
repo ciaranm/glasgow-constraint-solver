@@ -214,13 +214,13 @@ auto main(int argc, char * argv[]) -> int
                     // How many things above us will hide us? We're visible iff it's zero
                     Linear hiding;
                     for (int rr = (forwards ? 0 : size - 1); forwards ? rr < r : rr > r; forwards ? ++rr : --rr) {
-                        hiding.emplace_back(1_i, p.create_integer_variable(0_i, 1_i));
+                        hiding.emplace_back(1_i, p.create_integer_variable(0_i, 1_i, "hiding_flag"));
                         p.post(GreaterThanIff{
                             grid[downwards ? r : c][downwards ? c : r],
                             grid[downwards ? rr : c][downwards ? c : rr],
                             hiding.back().second == 0_i});
                     }
-                    auto how_many_hidden = p.create_integer_variable(0_i, Integer(hiding.size()));
+                    auto how_many_hidden = p.create_integer_variable(0_i, Integer(hiding.size()), "how_many_hidden");
                     hiding.emplace_back(-1_i, how_many_hidden);
                     p.post(LinearEquality{move(hiding), 0_i});
                     p.post(EqualsIff{
