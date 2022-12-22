@@ -123,11 +123,11 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
 
     propagators.initialise(state);
 
-    auto presolve_success = problem.for_each_presolver([&] (Presolver & presolver) -> bool {
-            auto result = presolver.run(problem, propagators, state);
-            propagators.requeue_all_propagators();
-            return result;
-            });
+    auto presolve_success = problem.for_each_presolver([&](Presolver & presolver) -> bool {
+        auto result = presolver.run(problem, propagators, state);
+        propagators.requeue_all_propagators();
+        return result;
+    });
 
     if (presolve_success) {
         bool child_contains_solution = false;

@@ -1073,9 +1073,8 @@ auto State::new_epoch(bool subsearch) -> Timestamp
 
     return Timestamp{
         _imp->integer_variable_states.size() - 1,
-            _imp->guesses.size(),
-            subsearch ? make_optional<unsigned long long>(_imp->extra_proof_conditions.size()) : nullopt
-    };
+        _imp->guesses.size(),
+        subsearch ? make_optional<unsigned long long>(_imp->extra_proof_conditions.size()) : nullopt};
 }
 
 auto State::backtrack(Timestamp t) -> void
@@ -1088,7 +1087,7 @@ auto State::backtrack(Timestamp t) -> void
     _imp->guesses.erase(_imp->guesses.begin() + t.how_many_guesses, _imp->guesses.end());
     if (t.how_many_extra_proof_conditions)
         _imp->extra_proof_conditions.erase(_imp->extra_proof_conditions.begin() + *t.how_many_extra_proof_conditions,
-                _imp->extra_proof_conditions.end());
+            _imp->extra_proof_conditions.end());
 
     while (_imp->on_backtracks.size() > t.when) {
         for (auto & f : _imp->on_backtracks.back())
