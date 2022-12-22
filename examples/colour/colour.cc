@@ -132,7 +132,7 @@ auto main(int argc, char * argv[]) -> int
 
                 return true;
             },
-            .branch = branch_on_dom_then_deg(p, vertices)},
+            .branch = branch_on_dom_then_deg(vertices)},
         options_vars.contains("prove") ? make_optional<ProofOptions>("colour.opb", "colour.veripb") : nullopt);
 
     cout << stats;

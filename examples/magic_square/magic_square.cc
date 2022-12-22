@@ -133,7 +133,7 @@ auto main(int argc, char * argv[]) -> int
             .solution = [&](const CurrentState &) -> bool {
                 return ++n_solutions < 10000;
             },
-            .branch = branch_on_dom(p, grid_flat),
+            .branch = branch_on_dom(grid_flat),
             .guess = [&](const CurrentState & state, IntegerVariableID var) -> vector<Literal> {
                 return vector<Literal>{var == state.lower_bound(var), var != state.lower_bound(var)};
             }},

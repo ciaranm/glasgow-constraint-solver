@@ -161,7 +161,7 @@ auto main(int argc, char * argv[]) -> int
                 cout << "cost: " << s(cost) << endl;
                 return true;
             },
-            .branch = branch_on_dom(p, xs),
+            .branch = branch_on_dom(xs),
             .guess = [&](const CurrentState & state, IntegerVariableID var) -> vector<Literal> {
                 return vector<Literal>{var == state.lower_bound(var), var != state.lower_bound(var)};
             }},

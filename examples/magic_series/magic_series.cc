@@ -115,7 +115,7 @@ auto main(int argc, char * argv[]) -> int
 
                 return true;
             },
-            .branch = branch_on_dom(p, series),
+            .branch = branch_on_dom(series),
             .guess = [&](const CurrentState & state, IntegerVariableID var) -> vector<Literal> {
                 return vector<Literal>{var == state.lower_bound(var), var != state.lower_bound(var)};
             }},

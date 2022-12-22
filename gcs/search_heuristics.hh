@@ -22,9 +22,8 @@ namespace gcs
      * \ingroup SearchHeuristics
      * \sa gcs::branch_on_smallest_with_respect_to()
      */
-    using BranchVariableComparator = std::function<auto(
-        const CurrentState &, const innards::Propagators &, IntegerVariableID, IntegerVariableID)
-                                                       ->bool>;
+    using BranchVariableComparator = std::function<auto(const CurrentState &,
+            const innards::Propagators &, IntegerVariableID, IntegerVariableID)->bool>;
 
     /**
      * Branch on whichever variable is smallest with respect to the provided
@@ -33,7 +32,6 @@ namespace gcs
      * \ingroup SearchHeuristics
      */
     auto branch_on_smallest_with_respect_to(
-        const Problem & problem,
         const std::vector<IntegerVariableID> &,
         const BranchVariableComparator &) -> BranchCallback;
 
@@ -42,7 +40,7 @@ namespace gcs
      *
      * \ingroup SearchHeuristics
      */
-    auto branch_on_dom(const Problem & problem, const std::vector<IntegerVariableID> &) -> BranchCallback;
+    auto branch_on_dom(const std::vector<IntegerVariableID> &) -> BranchCallback;
 
     /**
      * Branch on smallest domain from all variables.
@@ -57,7 +55,7 @@ namespace gcs
      *
      * \ingroup SearchHeuristics
      */
-    auto branch_on_dom_then_deg(const Problem & problem, const std::vector<IntegerVariableID> &) -> BranchCallback;
+    auto branch_on_dom_then_deg(const std::vector<IntegerVariableID> &) -> BranchCallback;
 
     /**
      * Branch on smallest domain, tie-breaking on degree, from all variables.

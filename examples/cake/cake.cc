@@ -81,7 +81,7 @@ auto main(int argc, char * argv[]) -> int
                      << s(chocolate) << ", profit = " << s(profit) << endl;
                 return true;
             },
-            .branch = branch_on_dom_then_deg(p, vector<IntegerVariableID>{banana, chocolate}),
+            .branch = branch_on_dom_then_deg(vector<IntegerVariableID>{banana, chocolate}),
             .guess = guess_smallest_value_first() //
         },
         options_vars.contains("prove") ? make_optional<ProofOptions>("cake.opb", "cake.veripb") : nullopt);

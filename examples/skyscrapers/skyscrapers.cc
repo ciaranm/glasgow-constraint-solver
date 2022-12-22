@@ -262,7 +262,7 @@ auto main(int argc, char * argv[]) -> int
                 cout << endl;
                 return true;
             },
-            .branch = branch_on_dom_then_deg(p, branch_vars)},
+            .branch = branch_on_dom_then_deg(branch_vars)},
         options_vars.contains("prove") ? make_optional<ProofOptions>("skyscrapers.opb", "skyscrapers.veripb") : nullopt);
 
     cout << stats;
