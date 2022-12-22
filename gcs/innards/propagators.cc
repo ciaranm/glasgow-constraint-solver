@@ -284,6 +284,12 @@ auto Propagators::initialise(State & state) const -> void
         f(state);
 }
 
+auto Propagators::requeue_all_propagators() -> void
+{
+    _imp->first = true;
+    fill(_imp->propagator_is_disabled.begin(), _imp->propagator_is_disabled.end(), 0);
+}
+
 auto Propagators::propagate(State & state, atomic<bool> * optional_abort_flag) const -> bool
 {
     vector<int> on_queue(_imp->propagation_functions.size(), 0);

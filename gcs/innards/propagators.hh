@@ -216,6 +216,11 @@ namespace gcs::innards
          */
         auto initialise(State &) const -> void;
 
+        /**
+         * Reset to do a root propagation.
+         */
+        auto requeue_all_propagators() -> void;
+
         ///@}
 
         /**
