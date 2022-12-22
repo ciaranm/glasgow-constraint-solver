@@ -3,6 +3,7 @@ add_library(glasgow_constraint_solver
     current_state.cc
     exception.cc
     literal.cc
+    presolver.cc
     problem.cc
     search_heuristics.cc
     solve.cc

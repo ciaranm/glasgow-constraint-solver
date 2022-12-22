@@ -1,10 +1,11 @@
 /* vim: set sw=4 sts=4 et foldmethod=syntax : */
 
+#include <gcs/problem.hh>
 #include <gcs/constraints/in.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
-#include <gcs/problem.hh>
+#include <gcs/presolver.hh>
 
 #include <util/overloaded.hh>
 
@@ -34,6 +35,7 @@ struct Problem::Imp
     State initial_state{};
     deque<unique_ptr<Constraint>> constraints{};
     deque<tuple<SimpleIntegerVariableID, Integer, Integer, optional<string>>> opb_variables{};
+    deque<unique_ptr<Presolver>> presolvers{};
     vector<IntegerVariableID> problem_variables{};
 };
 
@@ -100,6 +102,11 @@ auto Problem::post(const Constraint & c) -> void
     _imp->constraints.push_back(c.clone());
 }
 
+auto Problem::add_presolver(const Presolver & p) -> void
+{
+    _imp->presolvers.push_back(p.clone());
+}
+
 auto Problem::create_propagators(State & state, optional<Proof> & optional_proof) const -> Propagators
 {
     auto result = Propagators{optional_proof};
@@ -111,6 +118,15 @@ auto Problem::create_propagators(State & state, optional<Proof> & optional_proof
     }
 
     return result;
+}
+
+auto Problem::for_each_presolver(const std::function<auto(Presolver &)->bool> & f) const -> bool
+{
+    for (auto & p : _imp->presolvers)
+        if (! f(*p))
+            return false;
+
+    return true;
 }
 
 auto Problem::minimise(IntegerVariableID var) -> void

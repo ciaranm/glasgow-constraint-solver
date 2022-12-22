@@ -7,6 +7,7 @@
 #include <gcs/innards/proof-fwd.hh>
 #include <gcs/innards/state-fwd.hh>
 #include <gcs/literal.hh>
+#include <gcs/presolver.hh>
 #include <gcs/proof_options.hh>
 #include <gcs/stats.hh>
 #include <gcs/variable_id.hh>
@@ -60,6 +61,11 @@ namespace gcs
          * \brief Add a clone of this Constraint to the model.
          */
         auto post(const Constraint &) -> void;
+
+        /**
+         * \brief Add a clone of this Presolver to the model.
+         */
+        auto add_presolver(const Presolver &) -> void;
 
         /**
          * \brief Create a new integer variable, whose domain goes from lower to
@@ -122,6 +128,8 @@ namespace gcs
         [[nodiscard]] auto create_state_for_new_search(std::optional<innards::Proof> &) const -> innards::State;
 
         [[nodiscard]] auto create_propagators(innards::State &, std::optional<innards::Proof> &) const -> innards::Propagators;
+
+        [[nodiscard]] auto for_each_presolver(const std::function<auto(Presolver &)->bool> &) const -> bool;
 
         auto all_normal_variables() const -> const std::vector<IntegerVariableID> &;
 

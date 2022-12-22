@@ -123,11 +123,21 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
 
     propagators.initialise(state);
 
-    bool child_contains_solution = false;
-    if (solve_with_state(0, stats, problem, propagators, state, callbacks, optional_proof,
-            child_contains_solution, optional_abort_flag))
-        if (optional_proof)
-            optional_proof->assert_contradiction();
+    auto presolve_success = problem.for_each_presolver([&] (Presolver & presolver) -> bool {
+            auto result = presolver.run(problem, propagators, state);
+            propagators.requeue_all_propagators();
+            return result;
+            });
+
+    if (presolve_success) {
+        bool child_contains_solution = false;
+        if (solve_with_state(0, stats, problem, propagators, state, callbacks, optional_proof,
+                child_contains_solution, optional_abort_flag))
+            if (optional_proof)
+                optional_proof->assert_contradiction();
+    }
+    else if (optional_proof)
+        optional_proof->assert_contradiction();
 
     stats.solve_time = duration_cast<microseconds>(steady_clock::now() - start_time);
     propagators.fill_in_constraint_stats(stats);
