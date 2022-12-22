@@ -42,10 +42,12 @@ namespace gcs::innards
     {
         unsigned long long when;
         unsigned long long how_many_guesses;
+        std::optional<unsigned long long> how_many_extra_proof_conditions;
 
-        explicit Timestamp(unsigned long long w, unsigned long long g) :
+        explicit Timestamp(unsigned long long w, unsigned long long g, std::optional<unsigned long long> p) :
             when(w),
-            how_many_guesses(g)
+            how_many_guesses(g),
+            how_many_extra_proof_conditions(p)
         {
         }
     };
@@ -263,7 +265,15 @@ namespace gcs::innards
         auto guess(const Literal & lit) -> void;
 
         /**
-         * Call the callback for each active guess in turn.
+         * Add an additional proof condition, similar to guess except that it
+         * does not go away on backtrack unless subsearch is specified. For
+         * use in autotabulation and similar.
+         */
+        auto add_extra_proof_condition(const Literal & lit) -> void;
+
+        /**
+         * Call the callback for each active guess in turn. Includes any extra proof
+         * conditions added using add_extra_proof_condition().
          *
          * \sa State::guess()
          */
@@ -271,11 +281,13 @@ namespace gcs::innards
 
         /**
          * Create a new epoch, that can be backtracked to. Only legal if we are in a fully
-         * propagated state, i.e. if extract_changed_variables() would do nothing.
+         * propagated state, i.e. if extract_changed_variables() would do nothing. If
+         * subsearch is true, also clears anything from add_extra_proof_condition() when
+         * backtracking.
          *
          * \sa State::guess()
          */
-        [[nodiscard]] auto new_epoch() -> Timestamp;
+        [[nodiscard]] auto new_epoch(bool subsearch = false) -> Timestamp;
 
         /**
          * Backtrack to the specified Timestamp. Behaviour is currently

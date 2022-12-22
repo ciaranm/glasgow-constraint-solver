@@ -192,6 +192,7 @@ struct State::Imp
     vector<HowChanged> how_changed{};
     deque<SimpleIntegerVariableID> changed{};
     vector<Literal> guesses{};
+    vector<Literal> extra_proof_conditions{};
 
     optional<IntegerVariableID> optional_minimise_variable{};
     optional<Integer> optional_objective_incumbent{};
@@ -781,6 +782,11 @@ auto State::guess(const Literal & lit) -> void
     }
 }
 
+auto State::add_extra_proof_condition(const Literal & lit) -> void
+{
+    _imp->extra_proof_conditions.push_back(lit);
+}
+
 auto State::lower_bound(const IntegerVariableID var) const -> Integer
 {
     auto [actual_var, negate_first, then_add] = deview(var);
@@ -1057,7 +1063,7 @@ auto State::operator()(const IntegerVariableID & i) const -> Integer
     throw VariableDoesNotHaveUniqueValue{"Integer variable " + debug_string(i)};
 }
 
-auto State::new_epoch() -> Timestamp
+auto State::new_epoch(bool subsearch) -> Timestamp
 {
     if (! _imp->changed.empty())
         throw UnimplementedException{};
@@ -1065,7 +1071,11 @@ auto State::new_epoch() -> Timestamp
     _imp->integer_variable_states.push_back(_imp->integer_variable_states.back());
     _imp->on_backtracks.emplace_back();
 
-    return Timestamp{_imp->integer_variable_states.size() - 1, _imp->guesses.size()};
+    return Timestamp{
+        _imp->integer_variable_states.size() - 1,
+            _imp->guesses.size(),
+            subsearch ? make_optional<unsigned long long>(_imp->extra_proof_conditions.size()) : nullopt
+    };
 }
 
 auto State::backtrack(Timestamp t) -> void
@@ -1076,6 +1086,9 @@ auto State::backtrack(Timestamp t) -> void
     _imp->integer_variable_states.resize(t.when);
     _imp->changed.clear();
     _imp->guesses.erase(_imp->guesses.begin() + t.how_many_guesses, _imp->guesses.end());
+    if (t.how_many_extra_proof_conditions)
+        _imp->extra_proof_conditions.erase(_imp->extra_proof_conditions.begin() + *t.how_many_extra_proof_conditions,
+                _imp->extra_proof_conditions.end());
 
     while (_imp->on_backtracks.size() > t.when) {
         for (auto & f : _imp->on_backtracks.back())
@@ -1094,6 +1107,8 @@ auto State::extract_changed_variables(const function<auto(SimpleIntegerVariableI
 
 auto State::for_each_guess(const function<auto(Literal)->void> & f) const -> void
 {
+    for (auto & g : _imp->extra_proof_conditions)
+        f(g);
     for (auto & g : _imp->guesses)
         f(g);
 }
