@@ -5,6 +5,7 @@
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/equals.hh>
 #include <gcs/constraints/linear_equality.hh>
+#include <gcs/presolvers/auto_table.hh>
 #include <gcs/problem.hh>
 #include <gcs/search_heuristics.hh>
 #include <gcs/solve.hh>
@@ -47,6 +48,7 @@ auto main(int argc, char * argv[]) -> int
     po::options_description all_options{"All options"};
     all_options.add_options()                                                         //
         ("instance", po::value<int>()->default_value(7), "Problem instance to solve") //
+        ("autotable", "Use autotabulation")                                           //
         ("all", "Find all solutions");
 
     all_options.add(display_options);
@@ -157,6 +159,7 @@ auto main(int argc, char * argv[]) -> int
     vector<vector<IntegerVariableID>> grid;
     vector<vector<optional<IntegerVariableID>>> visible_north, visible_south, visible_east, visible_west;
     vector<IntegerVariableID> branch_vars;
+
     for (int r = 0; r < size; ++r) {
         grid.emplace_back();
         visible_north.emplace_back();
@@ -237,6 +240,18 @@ auto main(int argc, char * argv[]) -> int
     build_visible_constraints(visible_south, south, true, false);
     build_visible_constraints(visible_west, west, false, true);
     build_visible_constraints(visible_east, east, false, false);
+
+    if (options_vars.contains("autotable")) {
+        for (int c = 0; c < size; ++c) {
+            vector<IntegerVariableID> column;
+            for (int r = 0; r < size; ++r)
+                column.push_back(grid[r][c]);
+            p.add_presolver(AutoTable{column});
+        }
+
+        for (int r = 0; r < size; ++r)
+            p.add_presolver(AutoTable{grid[r]});
+    }
 
     auto stats = solve_with(p,
         SolveCallbacks{
