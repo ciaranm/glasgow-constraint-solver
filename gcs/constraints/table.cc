@@ -28,8 +28,8 @@ using std::unique_ptr;
 using std::vector;
 using std::visit;
 
-Table::Table(const vector<IntegerVariableID> & v, ExtensionalTuples && t) :
-    _vars(v),
+Table::Table(vector<IntegerVariableID> v, ExtensionalTuples t) :
+    _vars(move(v)),
     _tuples(move(t))
 {
 }
@@ -56,8 +56,8 @@ auto Table::describe_for_proof() -> string
     return "table";
 }
 
-NegativeTable::NegativeTable(const vector<IntegerVariableID> & v, ExtensionalTuples && t) :
-    _vars(v),
+NegativeTable::NegativeTable(vector<IntegerVariableID> v, ExtensionalTuples t) :
+    _vars(move(v)),
     _tuples(move(t))
 {
 }

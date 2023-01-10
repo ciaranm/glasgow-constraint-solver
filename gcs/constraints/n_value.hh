@@ -21,10 +21,10 @@ namespace gcs
     {
     private:
         IntegerVariableID _n_values;
-        const std::vector<IntegerVariableID> & _vars;
+        const std::vector<IntegerVariableID> _vars;
 
     public:
-        explicit NValue(const IntegerVariableID &, const std::vector<IntegerVariableID> &);
+        explicit NValue(const IntegerVariableID &, std::vector<IntegerVariableID>);
 
         virtual auto describe_for_proof() -> std::string override;
         virtual auto install(innards::Propagators &, innards::State &) && -> void override;

@@ -26,8 +26,8 @@ using std::vector;
 
 using ProofLine2DMap = map<pair<Integer, Integer>, ProofLine>;
 
-Circuit::Circuit(const vector<IntegerVariableID> & v, const bool p) :
-    _succ(v),
+Circuit::Circuit(vector<IntegerVariableID> v, const bool p) :
+    _succ(move(v)),
     _propagate_using_check_only(p)
 {
 }

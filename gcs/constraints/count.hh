@@ -19,11 +19,11 @@ namespace gcs
     class Count : public Constraint
     {
     private:
-        const std::vector<IntegerVariableID> & _vars;
+        const std::vector<IntegerVariableID> _vars;
         IntegerVariableID _value_of_interest, _how_many;
 
     public:
-        explicit Count(const std::vector<IntegerVariableID> &, const IntegerVariableID & value_of_interest, const IntegerVariableID & how_many);
+        explicit Count(std::vector<IntegerVariableID>, const IntegerVariableID & value_of_interest, const IntegerVariableID & how_many);
 
         virtual auto describe_for_proof() -> std::string override;
         virtual auto install(innards::Propagators &, innards::State &) && -> void override;

@@ -26,12 +26,12 @@ namespace gcs
         class ArrayMinMax : public Constraint
         {
         private:
-            const std::vector<IntegerVariableID> & _vars;
+            const std::vector<IntegerVariableID> _vars;
             IntegerVariableID _result;
             bool _min;
 
         public:
-            explicit ArrayMinMax(const std::vector<IntegerVariableID> & vars, const IntegerVariableID result, bool min);
+            explicit ArrayMinMax(std::vector<IntegerVariableID> vars, const IntegerVariableID result, bool min);
 
             virtual auto describe_for_proof() -> std::string override;
             virtual auto install(innards::Propagators &, innards::State &) && -> void override;
@@ -84,7 +84,7 @@ namespace gcs
     class ArrayMin : public innards::ArrayMinMax
     {
     public:
-        explicit ArrayMin(const std::vector<IntegerVariableID> & vars, const IntegerVariableID result);
+        explicit ArrayMin(std::vector<IntegerVariableID> vars, const IntegerVariableID result);
     };
 
     /**
@@ -98,7 +98,7 @@ namespace gcs
     class ArrayMax : public innards::ArrayMinMax
     {
     public:
-        explicit ArrayMax(const std::vector<IntegerVariableID> & vars, const IntegerVariableID result);
+        explicit ArrayMax(std::vector<IntegerVariableID> vars, const IntegerVariableID result);
     };
 }
 

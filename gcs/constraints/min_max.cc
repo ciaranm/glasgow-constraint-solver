@@ -15,8 +15,8 @@ using std::string;
 using std::unique_ptr;
 using std::vector;
 
-ArrayMinMax::ArrayMinMax(const vector<IntegerVariableID> & vars, const IntegerVariableID result, bool min) :
-    _vars(vars),
+ArrayMinMax::ArrayMinMax(vector<IntegerVariableID> vars, const IntegerVariableID result, bool min) :
+    _vars(move(vars)),
     _result(result),
     _min(min)
 {
@@ -141,12 +141,12 @@ Max::Max(const IntegerVariableID v1, const IntegerVariableID v2, const IntegerVa
 {
 }
 
-ArrayMin::ArrayMin(const vector<IntegerVariableID> & vars, const IntegerVariableID result) :
-    ArrayMinMax(vars, result, true)
+ArrayMin::ArrayMin(vector<IntegerVariableID> vars, const IntegerVariableID result) :
+    ArrayMinMax(move(vars), result, true)
 {
 }
 
-ArrayMax::ArrayMax(const vector<IntegerVariableID> & vars, const IntegerVariableID result) :
-    ArrayMinMax(vars, result, false)
+ArrayMax::ArrayMax(vector<IntegerVariableID> vars, const IntegerVariableID result) :
+    ArrayMinMax(move(vars), result, false)
 {
 }

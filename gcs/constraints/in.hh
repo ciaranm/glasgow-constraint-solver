@@ -23,8 +23,8 @@ namespace gcs
         std::vector<Integer> _val_vals;
 
     public:
-        explicit In(IntegerVariableID var, const std::vector<IntegerVariableID> & vals);
-        explicit In(IntegerVariableID var, const std::vector<Integer> & vals);
+        explicit In(IntegerVariableID var, std::vector<IntegerVariableID> vals);
+        explicit In(IntegerVariableID var, std::vector<Integer> vals);
 
         virtual auto describe_for_proof() -> std::string override;
         virtual auto install(innards::Propagators &, innards::State &) && -> void override;

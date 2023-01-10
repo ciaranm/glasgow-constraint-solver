@@ -30,7 +30,7 @@ namespace gcs
         bool _gac;
 
     public:
-        explicit LinearEquality(Linear && coeff_vars, Integer value, bool gac = false);
+        explicit LinearEquality(Linear coeff_vars, Integer value, bool gac = false);
 
         virtual auto describe_for_proof() -> std::string override;
         virtual auto install(innards::Propagators &, innards::State &) && -> void override;
@@ -55,7 +55,7 @@ namespace gcs
             Integer _value;
 
         public:
-            explicit LinearInequality(Linear && coeff_vars, Integer value);
+            explicit LinearInequality(Linear coeff_vars, Integer value);
 
             virtual auto install(innards::Propagators &, innards::State &) && -> void override;
             virtual auto describe_for_proof() -> std::string override;
@@ -74,7 +74,7 @@ namespace gcs
     class LinearLessEqual : public innards::LinearInequality
     {
     public:
-        explicit LinearLessEqual(Linear && coeff_vars, Integer value);
+        explicit LinearLessEqual(Linear coeff_vars, Integer value);
     };
 
     /**
@@ -88,7 +88,7 @@ namespace gcs
     class LinearGreaterThanEqual : public innards::LinearInequality
     {
     public:
-        explicit LinearGreaterThanEqual(Linear && coeff_vars, Integer value);
+        explicit LinearGreaterThanEqual(Linear coeff_vars, Integer value);
     };
 }
 

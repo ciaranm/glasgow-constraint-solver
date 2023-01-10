@@ -20,11 +20,11 @@ namespace gcs
     class Table : public Constraint
     {
     private:
-        const std::vector<IntegerVariableID> & _vars;
-        ExtensionalTuples && _tuples;
+        const std::vector<IntegerVariableID> _vars;
+        ExtensionalTuples _tuples;
 
     public:
-        explicit Table(const std::vector<IntegerVariableID> & vars, ExtensionalTuples && tuples);
+        explicit Table(std::vector<IntegerVariableID> vars, ExtensionalTuples tuples);
 
         virtual auto describe_for_proof() -> std::string override;
         virtual auto install(innards::Propagators &, innards::State &) && -> void override;
@@ -40,11 +40,11 @@ namespace gcs
     class NegativeTable : public Constraint
     {
     private:
-        const std::vector<IntegerVariableID> & _vars;
-        ExtensionalTuples && _tuples;
+        const std::vector<IntegerVariableID> _vars;
+        ExtensionalTuples _tuples;
 
     public:
-        explicit NegativeTable(const std::vector<IntegerVariableID> & vars, ExtensionalTuples && tuples);
+        explicit NegativeTable(std::vector<IntegerVariableID> vars, ExtensionalTuples tuples);
 
         virtual auto describe_for_proof() -> std::string override;
         virtual auto install(innards::Propagators &, innards::State &) && -> void override;

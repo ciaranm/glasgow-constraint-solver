@@ -40,8 +40,8 @@ using std::variant;
 using std::vector;
 using std::visit;
 
-AllDifferent::AllDifferent(const vector<IntegerVariableID> & v) :
-    _vars(v)
+AllDifferent::AllDifferent(vector<IntegerVariableID> v) :
+    _vars(move(v))
 {
 }
 
