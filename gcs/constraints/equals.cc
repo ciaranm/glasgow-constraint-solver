@@ -340,22 +340,35 @@ auto EqualsIff::install(Propagators & propagators, State & initial_state) && -> 
                 _v1, _v2);
 
             if (propagators.want_definitions()) {
-                if (initial_state.lower_bound(_v1) < lower_common)
-                    propagators.define_cnf(initial_state, {{_v1 >= lower_common}, {! cond}});
-                if (initial_state.lower_bound(_v2) < lower_common)
-                    propagators.define_cnf(initial_state, {{_v2 >= lower_common}, {! cond}});
-                if (initial_state.upper_bound(_v1) > upper_common)
-                    propagators.define_cnf(initial_state, {{_v1 < upper_common + 1_i}, {! cond}});
-                if (initial_state.upper_bound(_v2) > upper_common)
-                    propagators.define_cnf(initial_state, {{_v2 < upper_common + 1_i}, {! cond}});
+                auto v1_is_constant = initial_state.optional_single_value(_v1);
+                auto v2_is_constant = initial_state.optional_single_value(_v2);
 
-                // (cond and _v1 == v) -> _v2 == v
-                for (auto v = lower_common; v <= upper_common; ++v)
-                    propagators.define_cnf(initial_state, {{_v1 != v}, {_v2 == v}, {! cond}});
+                if (v1_is_constant) {
+                    propagators.define_cnf(initial_state, {{_v2 == *v1_is_constant}, {! cond}});
+                    propagators.define_cnf(initial_state, {{_v2 != *v1_is_constant}, {cond}});
+                }
+                else if (v2_is_constant) {
+                    propagators.define_cnf(initial_state, {{_v1 == *v2_is_constant}, {! cond}});
+                    propagators.define_cnf(initial_state, {{_v1 != *v2_is_constant}, {cond}});
+                }
+                else {
+                    if (initial_state.lower_bound(_v1) < lower_common)
+                        propagators.define_cnf(initial_state, {{_v1 >= lower_common}, {! cond}});
+                    if (initial_state.lower_bound(_v2) < lower_common)
+                        propagators.define_cnf(initial_state, {{_v2 >= lower_common}, {! cond}});
+                    if (initial_state.upper_bound(_v1) > upper_common)
+                        propagators.define_cnf(initial_state, {{_v1 < upper_common + 1_i}, {! cond}});
+                    if (initial_state.upper_bound(_v2) > upper_common)
+                        propagators.define_cnf(initial_state, {{_v2 < upper_common + 1_i}, {! cond}});
 
-                // (! cond and _v1 == v) -> _v2 != v
-                for (auto v = lower_common; v <= upper_common; ++v)
-                    propagators.define_cnf(initial_state, {{cond}, {_v1 != v}, {_v2 != v}});
+                    // (cond and _v1 == v) -> _v2 == v
+                    for (auto v = lower_common; v <= upper_common; ++v)
+                        propagators.define_cnf(initial_state, {{_v1 != v}, {_v2 == v}, {! cond}});
+
+                    // (! cond and _v1 == v) -> _v2 != v
+                    for (auto v = lower_common; v <= upper_common; ++v)
+                        propagators.define_cnf(initial_state, {{cond}, {_v1 != v}, {_v2 != v}});
+                }
             }
         }}
         .visit(_cond);

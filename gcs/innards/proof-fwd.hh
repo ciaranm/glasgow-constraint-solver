@@ -15,6 +15,15 @@ namespace gcs::innards
      * \ingroup Innards
      */
     using ProofLine = long long;
+
+    /**
+     * How should an IntegerVariableID be encoded in a proof?
+     */
+    enum class IntegerVariableProofRepresentation
+    {
+        DirectOnly, /// Just using the direct 0/1 encoding
+        Bits        /// Use the bits encoding
+    };
 }
 
 #endif

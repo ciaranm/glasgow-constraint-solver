@@ -183,13 +183,19 @@ namespace
                     continue;
                 }
 
-                // the following line of logic is definitely correct until you inevitably
-                // discover otherwise
-                bool upper = (get_coeff(cv) < 0_i) != second_constraint_for_equality;
+                if (proof.has_bit_representation(get_var(cv))) {
+                    // the following line of logic is definitely correct until you inevitably
+                    // discover otherwise
+                    bool upper = (get_coeff(cv) < 0_i) != second_constraint_for_equality;
 
-                auto proof_line = proof.get_or_emit_line_for_bound_in_bits(state, upper, get_var(cv), upper ? state.upper_bound(get_var(cv)) : state.lower_bound(get_var(cv)));
+                    auto proof_line = proof.get_or_emit_line_for_bound_in_bits(state, upper,
+                        get_var(cv), upper ? state.upper_bound(get_var(cv)) : state.lower_bound(get_var(cv)));
 
-                lines_to_sum.emplace_back(abs(get_coeff(cv)), proof_line);
+                    lines_to_sum.emplace_back(abs(get_coeff(cv)), proof_line);
+                }
+                else {
+                    throw UnimplementedException{};
+                }
             }
 
             stringstream step;

@@ -46,7 +46,8 @@ Problem::Problem() :
 
 Problem::~Problem() = default;
 
-auto Problem::create_integer_variable(Integer lower, Integer upper, const optional<std::string> & name) -> SimpleIntegerVariableID
+auto Problem::create_integer_variable(Integer lower, Integer upper,
+    const optional<string> & name) -> SimpleIntegerVariableID
 {
     if (lower > upper)
         throw UnexpectedException{"variable has lower bound > upper bound"};
@@ -57,7 +58,7 @@ auto Problem::create_integer_variable(Integer lower, Integer upper, const option
     return result;
 }
 
-auto Problem::create_integer_variable(const vector<Integer> & domain, const optional<std::string> & name) -> SimpleIntegerVariableID
+auto Problem::create_integer_variable(const vector<Integer> & domain, const optional<string> & name) -> SimpleIntegerVariableID
 {
     if (domain.empty())
         throw UnexpectedException{"variable has empty domain"};
@@ -91,7 +92,8 @@ auto Problem::create_state_for_new_search(optional<Proof> & optional_proof) cons
     auto result = _imp->initial_state.clone();
     if (optional_proof) {
         for (auto & [id, lower, upper, optional_name] : _imp->opb_variables)
-            optional_proof->set_up_integer_variable(id, lower, upper, optional_name ? *optional_name : "iv" + to_string(id.index));
+            optional_proof->set_up_integer_variable(id, lower, upper,
+                optional_name ? *optional_name : "iv" + to_string(id.index), nullopt);
         result.log_inferences_to(*optional_proof);
     }
     return result;

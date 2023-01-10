@@ -142,7 +142,7 @@ struct Proof::Imp
     ProofLine proof_line = 0;
     int active_proof_level = 0;
 
-    map<SimpleIntegerVariableID, ProofLine> variable_at_least_one_constraints;
+    map<SimpleOrProofOnlyIntegerVariableID, ProofLine> variable_at_least_one_constraints;
     map<LiteralFromIntegerVariable, string> direct_integer_variables;
     map<SimpleOrProofOnlyIntegerVariableID, pair<Integer, vector<pair<Integer, string>>>> integer_variable_bits;
     map<SimpleOrProofOnlyIntegerVariableID, pair<Integer, Integer>> bounds_for_gevars;
@@ -192,12 +192,12 @@ auto Proof::operator=(Proof && other) noexcept -> Proof &
         return _imp->xification.try_emplace(s, "x" + to_string(_imp->xification.size() + 1)).first->second;
 }
 
-auto Proof::set_up_variable_encoding(SimpleOrProofOnlyIntegerVariableID id, Integer lower, Integer upper, const string & name) -> void
+auto Proof::set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableID id, Integer lower, Integer upper, const string & name) -> void
 {
     if (_imp->opb_done)
         throw UnexpectedException{"proof has already started"};
 
-    _imp->opb << "* variable " << name << " " << lower.raw_value << " .. " << upper.raw_value << " binary encoding\n";
+    _imp->opb << "* variable " << name << " " << lower.raw_value << " .. " << upper.raw_value << " bits encoding\n";
     Integer highest_abs_value = max(abs(lower), upper);
     int highest_bit_shift = countr_zero(bit_ceil(static_cast<unsigned long long>(highest_abs_value.raw_value)));
     Integer highest_bit_coeff = Integer{1ll << highest_bit_shift};
@@ -225,12 +225,77 @@ auto Proof::set_up_variable_encoding(SimpleOrProofOnlyIntegerVariableID id, Inte
     _imp->bounds_for_gevars.emplace(id, pair{lower, upper});
 }
 
-auto Proof::set_up_integer_variable(SimpleIntegerVariableID id, Integer lower, Integer upper, const optional<string> & optional_name) -> void
+auto Proof::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariableID id, Integer lower, Integer upper, const string & name) -> void
+{
+    if (_imp->opb_done)
+        throw UnexpectedException{"proof has already started"};
+
+    _imp->opb << "* variable " << name << " " << lower.raw_value << " .. " << upper.raw_value << " direct encoding\n";
+
+    for (auto v = lower; v <= upper; ++v) {
+        auto eqvar = xify(name + "_eq_" + value_name(v));
+        _imp->opb << "1 " << eqvar << " ";
+        ++_imp->model_variables;
+
+        overloaded{
+            [&](const SimpleIntegerVariableID & id) {
+                _imp->direct_integer_variables.emplace(id == v, eqvar);
+                _imp->direct_integer_variables.emplace(id != v, "~" + eqvar);
+            },
+            [](const ProofOnlySimpleIntegerVariableID &) {
+                // currently there's no API for asking for literals for these
+            }}
+            .visit(id);
+    }
+    _imp->opb << ">= 1 ;\n";
+    _imp->variable_at_least_one_constraints.emplace(id, ++_imp->model_constraints);
+
+    for (auto v = lower; v <= upper; ++v) {
+        auto eqvar = xify(name + "_eq_" + value_name(v));
+        _imp->opb << "-1 " << eqvar << " ";
+    }
+    _imp->opb << ">= -1 ;\n";
+    ++_imp->model_constraints;
+
+    if (0_i == lower && 1_i == upper) {
+        auto & bit_vars = _imp->integer_variable_bits.emplace(id, pair{0_i, vector<pair<Integer, string>>{}}).first->second.second;
+        bit_vars.emplace_back(1_i, xify(name + "_eq_" + value_name(1_i)));
+
+        overloaded{
+            [&](const SimpleIntegerVariableID & id) {
+                auto eq1var = xify(name + "_eq_" + value_name(1_i));
+                _imp->direct_integer_variables.emplace(id >= 1_i, eq1var);
+                _imp->direct_integer_variables.emplace(id < 1_i, "~" + eq1var);
+            },
+            [](const ProofOnlySimpleIntegerVariableID &) {
+                // currently there's no API for asking for literals for these
+            }}
+            .visit(id);
+    }
+}
+
+auto Proof::set_up_integer_variable(SimpleIntegerVariableID id, Integer lower, Integer upper,
+    const optional<string> & optional_name, const optional<IntegerVariableProofRepresentation> & rep) -> void
 {
     string name = "iv" + to_string(id.index);
     if (optional_name)
         name.append("_" + *optional_name);
-    set_up_variable_encoding(id, lower, upper, name);
+    if (! rep) {
+        if (lower == 0_i && upper == 1_i)
+            set_up_direct_only_variable_encoding(id, lower, upper, name);
+        else
+            set_up_bits_variable_encoding(id, lower, upper, name);
+    }
+    else {
+        switch (*rep) {
+        case IntegerVariableProofRepresentation::Bits:
+            set_up_bits_variable_encoding(id, lower, upper, name);
+            break;
+        case IntegerVariableProofRepresentation::DirectOnly:
+            set_up_direct_only_variable_encoding(id, lower, upper, name);
+            break;
+        }
+    }
     _imp->solution_variables.push_back(id);
 }
 
@@ -244,12 +309,21 @@ auto Proof::create_proof_flag(const string & n) -> ProofFlag
     return result;
 }
 
-auto Proof::create_proof_integer_variable(Integer lower, Integer upper, const std::string & s) -> ProofOnlySimpleIntegerVariableID
+auto Proof::create_proof_integer_variable(Integer lower, Integer upper, const std::string & s,
+    const IntegerVariableProofRepresentation rep) -> ProofOnlySimpleIntegerVariableID
 {
     ProofOnlySimpleIntegerVariableID id{_imp->proof_only_integer_variables.size()};
     _imp->proof_only_integer_variables.emplace(id.index, s);
     string name = "poiv" + to_string(id.index) + "_" + s;
-    set_up_variable_encoding(id, lower, upper, name);
+    switch (rep) {
+    case IntegerVariableProofRepresentation::DirectOnly:
+        set_up_direct_only_variable_encoding(id, lower, upper, name);
+        break;
+    case IntegerVariableProofRepresentation::Bits:
+        set_up_bits_variable_encoding(id, lower, upper, name);
+        break;
+    }
+
     return id;
 }
 
@@ -584,9 +658,19 @@ auto Proof::integer_linear_le(const State &, const SimpleLinear & lin, Integer v
         using namespace gcs::innards::opb_utils;
 
         OPBExpression opb_expr;
-        for (const auto & [coeff, var] : lin)
-            for (auto & [bit_value, bit_name] : _imp->integer_variable_bits.at(var).second)
-                opb_expr.weighted_terms.emplace_back(multiplier * coeff * bit_value, bit_name);
+        for (const auto & [coeff, var] : lin) {
+            auto bits = _imp->integer_variable_bits.find(var);
+            if (bits != _imp->integer_variable_bits.end())
+                for (auto & [bit_value, bit_name] : bits->second.second)
+                    opb_expr.weighted_terms.emplace_back(multiplier * coeff * bit_value, bit_name);
+            else {
+                stringstream str;
+                for (const auto & [coeff, var] : lin)
+                    str << " " << coeff << "*" << debug_string(IntegerVariableID{var});
+                str << " <= " << val << '\n';
+                throw UnexpectedException{"missing bits for " + str.str()};
+            }
+        }
 
         auto opb_ineq = opb_expr >= (multiplier * val);
         if (half_reif)
@@ -941,8 +1025,16 @@ auto Proof::delete_proof_lines(const vector<ProofLine> & to_delete) -> void
     }
 }
 
+auto Proof::has_bit_representation(const SimpleIntegerVariableID & var) const -> bool
+{
+    return _imp->integer_variable_bits.contains(var);
+}
+
 auto Proof::get_or_emit_line_for_bound_in_bits(State & state, bool upper, const SimpleIntegerVariableID & var, Integer val) -> ProofLine
 {
+    if (! has_bit_representation(var))
+        throw UnexpectedException{"variable does not have a bit representation"};
+
     auto it = _imp->line_for_bound_in_bits.back().find(tuple{upper, var, val});
     if (it != _imp->line_for_bound_in_bits.back().end())
         return it->second;

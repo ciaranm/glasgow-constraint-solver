@@ -6,6 +6,7 @@
 #include <gcs/innards/justification.hh>
 #include <gcs/innards/linear_utils.hh>
 #include <gcs/innards/literal_utils.hh>
+#include <gcs/innards/proof-fwd.hh>
 #include <gcs/innards/state-fwd.hh>
 #include <gcs/linear.hh>
 #include <gcs/literal.hh>
@@ -159,7 +160,8 @@ namespace gcs::innards
 
         auto need_gevar(SimpleIntegerVariableID id, Integer v) -> void;
 
-        auto set_up_variable_encoding(SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::string &) -> void;
+        auto set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::string &) -> void;
+        auto set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::string &) -> void;
 
     public:
         /**
@@ -190,7 +192,8 @@ namespace gcs::innards
          * Set up proof logging for an integer variable with the specified bounds,
          * that is being tracked inside State.
          */
-        auto set_up_integer_variable(SimpleIntegerVariableID, Integer, Integer, const std::optional<std::string> &) -> void;
+        auto set_up_integer_variable(SimpleIntegerVariableID, Integer, Integer, const std::optional<std::string> &,
+            const std::optional<IntegerVariableProofRepresentation> &) -> void;
 
         /**
          * Create a new ProofFlag, which can be used in various places as if it
@@ -202,7 +205,8 @@ namespace gcs::innards
          * Create something that behaves like an integer variable for proof purposes,
          * but that does not have any state.
          */
-        [[nodiscard]] auto create_proof_integer_variable(Integer, Integer, const std::string &) -> ProofOnlySimpleIntegerVariableID;
+        [[nodiscard]] auto create_proof_integer_variable(Integer, Integer, const std::string &,
+            const IntegerVariableProofRepresentation rep) -> ProofOnlySimpleIntegerVariableID;
 
         /**
          * Add a new constraint, defined via CNF. Must call gcs::innards::sanitise_literals()
@@ -350,8 +354,14 @@ namespace gcs::innards
         [[nodiscard]] auto proof_variable(const ProofFlag &) const -> const std::string &;
 
         /**
+         * Does a variable have a bit representation?
+         */
+        [[nodiscard]] auto has_bit_representation(const SimpleIntegerVariableID &) const -> bool;
+
+        /**
          * Give the proof line specifying this variable's upper or lower bound,
-         * using the bit representation.
+         * using the bit representation. Only callable if has_bit_representation()
+         * returns true.
          */
         [[nodiscard]] auto get_or_emit_line_for_bound_in_bits(State & state, bool upper,
             const SimpleIntegerVariableID & var, Integer val) -> ProofLine;

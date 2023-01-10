@@ -187,7 +187,8 @@ namespace gcs::innards
          * Create an IntegerVariableID that is associated with a constraint,
          * for example for tracking internal state.
          */
-        [[nodiscard]] auto create_auxilliary_integer_variable(State &, Integer, Integer, const std::string & name) -> IntegerVariableID;
+        [[nodiscard]] auto create_auxilliary_integer_variable(State &, Integer, Integer, const std::string & name,
+            const IntegerVariableProofRepresentation enc) -> IntegerVariableID;
 
         /**
          * Create a ProofFlag, that is used only in definitions.
@@ -197,7 +198,8 @@ namespace gcs::innards
         /**
          * Create a variable ID that is used only in proof definitions, not state.
          */
-        [[nodiscard]] auto create_proof_only_integer_variable(Integer, Integer, const std::string &) -> ProofOnlySimpleIntegerVariableID;
+        [[nodiscard]] auto create_proof_only_integer_variable(Integer, Integer, const std::string &,
+            const IntegerVariableProofRepresentation enc) -> ProofOnlySimpleIntegerVariableID;
 
         ///@}
 
