@@ -173,8 +173,8 @@ namespace gcs::innards
          *
          * \sa gcs::innards::propagate_extensional()
          */
-        auto define_and_install_table(State &, std::vector<IntegerVariableID> &&,
-            ExtensionalTuples &&, const std::string & name) -> void;
+        auto define_and_install_table(State &, const std::vector<IntegerVariableID> &,
+            ExtensionalTuples, const std::string & name) -> void;
 
         ///@}
 

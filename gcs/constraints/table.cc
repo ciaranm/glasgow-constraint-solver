@@ -39,10 +39,25 @@ auto Table::clone() const -> unique_ptr<Constraint>
     return make_unique<Table>(_vars, ExtensionalTuples{_tuples});
 }
 
+namespace
+{
+    template <typename T_>
+    auto depointinate(const std::shared_ptr<const T_> & t) -> const T_ &
+    {
+        return *t;
+    }
+
+    template <typename T_>
+    auto depointinate(const T_ & t) -> const T_ &
+    {
+        return t;
+    }
+}
+
 auto Table::install(Propagators & propagators, State & initial_state) && -> void
 {
     visit([&](auto & tuples) {
-        for (auto & tuple : tuples)
+        for (auto & tuple : depointinate(tuples))
             if (tuple.size() != _vars.size())
                 throw UnexpectedException{"table size mismatch"};
     },
@@ -116,12 +131,12 @@ namespace gcs
 auto NegativeTable::install(Propagators & propagators, State & initial_state) && -> void
 {
     visit([&](auto & tuples) {
-        for (auto & tuple : tuples)
+        for (auto & tuple : depointinate(tuples))
             if (tuple.size() != _vars.size())
                 throw UnexpectedException{"table size mismatch"};
 
         if (propagators.want_definitions()) {
-            for (auto & t : tuples) {
+            for (auto & t : depointinate(tuples)) {
                 Literals lits;
                 for (const auto & [idx, v] : enumerate(_vars))
                     add_literal(lits, v, t[idx]);
@@ -138,7 +153,7 @@ auto NegativeTable::install(Propagators & propagators, State & initial_state) &&
     visit([&](const auto & tuples) {
         propagators.install([vars = move(_vars), tuples = move(tuples)](State & state) -> pair<Inference, PropagatorState> {
             auto inf = Inference::NoChange;
-            for (auto & t : tuples) {
+            for (auto & t : depointinate(tuples)) {
                 bool falsified = false;
                 optional<Literal> l1, l2;
                 for (const auto & [idx, v] : enumerate(vars)) {

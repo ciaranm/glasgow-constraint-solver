@@ -5,6 +5,7 @@
 
 #include <gcs/integer.hh>
 
+#include <memory>
 #include <variant>
 #include <vector>
 
@@ -23,6 +24,15 @@ namespace gcs
      * \ingroup Extensional
      */
     using SimpleTuples = std::vector<std::vector<Integer>>;
+
+    /**
+     * \brief SimpleTuples but shared data (must be immutable).
+     * \sa gcs::innards::propagate_extensional()
+     * \sa gcs::WildcardTuples
+     * \sa gcs::Table
+     * \ingroup Extensional
+     */
+    using SharedSimpleTuples = std::shared_ptr<const SimpleTuples>;
 
     /**
      * \brief Wildcard for innards::ExtensionalData.
@@ -59,6 +69,15 @@ namespace gcs
     using WildcardTuples = std::vector<std::vector<IntegerOrWildcard>>;
 
     /**
+     * \brief SimpleTuples but shared data (must be immutable).
+     * \sa gcs::innards::propagate_extensional()
+     * \sa gcs::WildcardTuples
+     * \sa gcs::Table
+     * \ingroup Extensional
+     */
+    using SharedWildcardTuples = std::shared_ptr<const WildcardTuples>;
+
+    /**
      * \brief Tuples for extensional constraints.
      *
      * \sa ExtensionalData
@@ -66,7 +85,8 @@ namespace gcs
      * \sa gcs::Table
      * \ingroup Extensional
      */
-    using ExtensionalTuples = std::variant<SimpleTuples, WildcardTuples>;
+    using ExtensionalTuples = std::variant<SimpleTuples, SharedSimpleTuples,
+        WildcardTuples, SharedWildcardTuples>;
 }
 
 #endif
