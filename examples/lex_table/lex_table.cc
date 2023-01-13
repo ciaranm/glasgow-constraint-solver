@@ -54,7 +54,7 @@ auto main(int, char *[]) -> int
                                             cout << s(var) << " ";
                                         }
                                         cout << "]" << endl;
-                                        return false;
+                                        return true;
                                     }}
                             /*ProofOptions{"lex_table.opb", "lex_table.veripb"}*/ );
 

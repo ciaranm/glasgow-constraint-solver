@@ -7,6 +7,7 @@
 #include <variant>
 #include <map>
 #include <set>
+#include <algorithm>
 
 #include <gcs/exception.hh>
 #include <gcs/smart_entry.hh>
@@ -40,9 +41,172 @@ SmartTable::SmartTable(const vector<IntegerVariableID> & v, SmartTuples & t) :
 
 namespace
 {
+    // Shorthand
+    using VariableDomainMap = unordered_map<IntegerVariableID, vector<Integer>>;
+
+    auto filter_edge(const SmartEntry& edge, VariableDomainMap& supported_by_tree) {
+
+        overloaded{
+            [&](BinaryEntry binary_entry) {
+                vector<Integer> new_dom_1{};
+                vector<Integer> new_dom_2{};
+                auto dom_1 = supported_by_tree[binary_entry.var_1];
+                auto dom_2 = supported_by_tree[binary_entry.var_2];
+                std::sort(dom_1.begin(), dom_1.end());
+                std::sort(dom_2.begin(), dom_2.end());
+
+                switch(binary_entry.constraint_type) {
+                    case LESS_THAN:
+                        throw UnimplementedException{};
+                    case LESS_THAN_EQUAL:
+                        throw UnimplementedException{};
+                    case EQUAL:
+                        std::set_intersection(dom_1.begin(),dom_1.end(),
+                                              dom_2.begin(),dom_2.end(),
+                                              back_inserter(new_dom_1));
+                        new_dom_2 = new_dom_1;
+                        break;
+                    case NOT_EQUAL:
+                        throw UnimplementedException{};
+                    case GREATER_THAN:
+                        std::copy_if(dom_1.begin(), dom_1.end(), back_inserter(new_dom_1),
+                                     [&](Integer val){return val >= dom_2[0];});
+                        std::copy_if(dom_2.begin(), dom_2.end(), back_inserter(new_dom_2),
+                                     [&](Integer val){return val <= dom_1[dom_1.size() - 1];});
+                        break;
+                    case GREATER_THAN_EQUAL:
+                        throw UnimplementedException{};
+                    default:
+                        throw UnexpectedException{"Unexpected SmartEntry type encountered."};
+                }
+
+                supported_by_tree[binary_entry.var_1] = new_dom_1;
+                supported_by_tree[binary_entry.var_2] = new_dom_2;
+
+            },
+            [&](UnarySetEntry unary_set_entry) {
+                switch(unary_set_entry.constraint_type) {
+                    case IN:
+                        throw UnimplementedException{};
+                    case NOT_IN:
+                        throw UnimplementedException{};
+                    default:
+                        throw UnexpectedException{"Unexpected SmartEntry type encountered."};
+                }
+            },
+            [&](UnaryValueEntry unary_val_entry) {
+                switch(unary_val_entry.constraint_type) {
+                    case LESS_THAN:
+                        throw UnimplementedException{};
+                    case LESS_THAN_EQUAL:
+                        throw UnimplementedException{};
+                    case EQUAL:
+                        throw UnimplementedException{};
+                    case NOT_EQUAL:
+                        throw UnimplementedException{};
+                    case GREATER_THAN:
+                        throw UnimplementedException{};
+                    case GREATER_THAN_EQUAL:
+                        throw UnimplementedException{};
+                    default:
+                        throw UnexpectedException{"Unexpected SmartEntry type encountered."};
+                }
+            }
+        }.visit(edge);
+    }
+    auto filter_and_check_valid(const SmartTable::TreeEdges& tree, VariableDomainMap& supported_by_tree) -> bool {
+
+        for(int l = tree.size()-1; l >= 0; --l) {
+            for(const auto& edge : tree[l]) {
+
+                filter_edge(edge, supported_by_tree);
+
+                bool domain_became_empty = false;
+                overloaded{
+                    [&](const BinaryEntry& binary_entry) {
+                        if(supported_by_tree[binary_entry.var_1].empty()) domain_became_empty = true;
+                        if(supported_by_tree[binary_entry.var_2].empty()) domain_became_empty = true;
+                    },
+                    [&](const UnarySetEntry& unary_set_entry) {
+                        if(supported_by_tree[unary_set_entry.var].empty()) domain_became_empty = true;
+                    },
+                    [&](const UnaryValueEntry& unary_val_entry) {
+                        if(supported_by_tree[unary_val_entry.var].empty()) domain_became_empty = true;
+                    }
+                }.visit(edge);
+
+                if(domain_became_empty) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    auto remove_supported(VariableDomainMap& unsupported, IntegerVariableID var, vector<Integer>& to_remove) -> void {
+        vector<Integer> new_unsupported{};
+        auto unsupported_set = std::set(unsupported[var].begin(), unsupported[var].end());
+        auto to_remove_set = std::set(to_remove.begin(), to_remove.end());
+        std::set_difference(unsupported_set.begin(),unsupported_set.end(),
+                to_remove_set.begin(),to_remove_set.end(),
+                back_inserter(new_unsupported));
+
+        unsupported[var] = new_unsupported;
+    }
+    auto filter_again_and_remove_supported(const SmartTable::TreeEdges& tree, VariableDomainMap& supported_by_tree, VariableDomainMap& unsupported) {
+        for(int l = tree.size()-1; l >= 0; --l) {
+            for (const auto &edge: tree[l]) {
+                filter_edge(edge, supported_by_tree);
+
+                // Collect supported vals for this tree
+                overloaded{
+                        [&](const BinaryEntry& binary_entry) {
+                            remove_supported(unsupported, binary_entry.var_1, supported_by_tree[binary_entry.var_1]);
+                            remove_supported(unsupported, binary_entry.var_2, supported_by_tree[binary_entry.var_2]);
+                        },
+                        [&](const UnarySetEntry& unary_set_entry) {
+                            remove_supported(unsupported, unary_set_entry.var, supported_by_tree[unary_set_entry.var]);
+                        },
+                        [&](const UnaryValueEntry& unary_val_entry) {
+                            remove_supported(unsupported, unary_val_entry.var, supported_by_tree[unary_val_entry.var]);
+                        }
+                }.visit(edge);
+
+            }
+        }
+    }
+
+    auto get_unrestricted(const vector<IntegerVariableID>& vars, const vector<SmartEntry>& tuple) -> vector<IntegerVariableID> {
+        vector<IntegerVariableID> vars_in_tuple;
+        vector<IntegerVariableID> unrestricted;
+        for(const auto& entry : tuple) {
+            overloaded{
+                [&](const BinaryEntry &binary_entry) {
+                    vars_in_tuple.emplace_back(binary_entry.var_1);
+                },
+                [&](const UnarySetEntry &unary_set_entry) {
+                    vars_in_tuple.emplace_back(unary_set_entry.var);
+                },
+                [&](const UnaryValueEntry &unary_val_entry) {
+                    vars_in_tuple.emplace_back(unary_val_entry.var);
+                }
+            }.visit(entry);
+        }
+
+        auto vars_set = std::set(vars.begin(),vars.end());
+        auto vars_in_tuple_set = std::set(vars_in_tuple.begin(),vars_in_tuple.end());
+
+        std::set_difference(vars_set.begin(),vars_set.end(),
+                            vars_in_tuple_set.begin(),vars_in_tuple_set.end(),
+                            back_inserter(unrestricted));
+        return unrestricted;
+    }
 
     auto propagate_using_smart_str(const vector<IntegerVariableID>& selectors, const vector<IntegerVariableID>& vars, const SmartTuples& tuples, const vector<SmartTable::Forest>& forests, State& state) -> Inference {
-        unordered_map<IntegerVariableID, vector<Integer>> unsupported;
+
+        bool changed = false, contradiction = false;
+
+        VariableDomainMap unsupported{};
         // Initialise unsupported values to everything in each variable's current domain.
         for(const auto & var : vars) {
             state.for_each_value(var, [&](Integer value) {
@@ -63,25 +227,64 @@ namespace
 
             for(const auto& tree : forests[tuple_idx]) {
                 // Initialise supported by tree to current variable domains
-                unordered_map<IntegerVariableID, vector<Integer>> supported_by_tree;
+                VariableDomainMap supported_by_tree{};
 
                 for(const auto & var : vars) {
                     state.for_each_value(var, [&](Integer value) {
-                        if( !unsupported.contains(var)) {
+                        if( !supported_by_tree.contains(var)) {
                             supported_by_tree[var] = vector<Integer>{};
                         }
                         supported_by_tree[var].emplace_back(value);
                     });
                 }
 
-                // First pass of removal of unsupported values and check of validity
+                // First pass of filtering supported_by_tree and check of validity
                 if(!filter_and_check_valid(tree, supported_by_tree)) {
+                    // Not feasible TODO: Proof logging
 
+                    switch(state.infer_equal(selectors[tuple_idx], 0_i, NoJustificationNeeded{})) {
+                        case Inference::NoChange: break;
+                        case Inference::Change: changed = true; break;
+                        case Inference::Contradiction: contradiction = true; break;
+                    }
+                    break;
+                }
+
+                filter_again_and_remove_supported(tree, supported_by_tree, unsupported);
+            }
+
+            if(state.optional_single_value(selectors[tuple_idx]) == 0_i) {
+                for(const auto & var : get_unrestricted(vars, tuples[tuple_idx])) {
+                    unsupported[var] = vector<Integer>{};
                 }
             }
         }
 
-        return Inference::NoChange;
+        bool some_tuple_still_feasible = false;
+        for(unsigned int tuple_idx = 0; tuple_idx < tuples.size(); ++tuple_idx) {
+            if(state.optional_single_value(selectors[tuple_idx]) != 0_i) {
+                some_tuple_still_feasible = true;
+            }
+        }
+        if(!some_tuple_still_feasible) {
+            contradiction = true;
+        }
+
+        for(const auto& var : vars) {
+            for(const auto& value : unsupported[var]) {
+                // TODO: Obviously, justification is needed
+                switch(state.infer_not_equal(var, value, NoJustificationNeeded{})) {
+                    case Inference::NoChange: break;
+                    case Inference::Change: changed = true; break;
+                    case Inference::Contradiction: contradiction = true; break;
+                }
+            }
+        }
+
+        return contradiction
+               ? Inference::Contradiction
+               : changed ? Inference::Change
+                         : Inference::NoChange;
     }
 
     auto build_tree(const IntegerVariableID& root, int current_level, vector<vector<SmartEntry>>& entry_tree,
