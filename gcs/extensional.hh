@@ -4,6 +4,9 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_EXTENSIONAL_HH
 
 #include <gcs/integer.hh>
+#include <gcs/constraints/equals.hh>
+#include <gcs/constraints/comparison.hh>
+#include <gcs/constraints/in.hh>
 
 #include <variant>
 #include <vector>
@@ -67,6 +70,7 @@ namespace gcs
      * \ingroup Extensional
      */
     using ExtensionalTuples = std::variant<SimpleTuples, WildcardTuples>;
+
 }
 
 #endif
