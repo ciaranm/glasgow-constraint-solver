@@ -253,8 +253,7 @@ namespace
 
                 // First pass of filtering supported_by_tree and check of validity
                 if(!filter_and_check_valid(tree, supported_by_tree)) {
-                    // Not feasible TODO: Proof logging
-
+                    // Not feasible
                     switch(state.infer_equal(selectors[tuple_idx], 0_i, NoJustificationNeeded{})) {
                         case Inference::NoChange: break;
                         case Inference::Change: changed = true; break;
@@ -290,8 +289,7 @@ namespace
 
         for(const auto& var : vars) {
             for(const auto& value : unsupported[var]) {
-                // TODO: Obviously, justification is needed
-                switch(state.infer_not_equal(var, value, NoJustificationNeeded{})) {
+                switch(state.infer_not_equal(var, value, JustifyUsingRUP{})) {
                     case Inference::NoChange: break;
                     case Inference::Change: changed = true; break;
                     case Inference::Contradiction: contradiction = true; break;
@@ -387,6 +385,7 @@ namespace
         return forests;
     }
 
+    // DEBUGGING ONLY
     auto print_edge(const SmartEntry& edge, const vector<IntegerVariableID> vars) -> void {
         const string stringtypes[] = {"LESS_THAN", "LESS_THAN_EQUAL", "EQUAL", "NOT_EQUAL", "GREATER_THAN", "GREATER_THAN_EQUAL", "IN", "NOT_IN"};
         overloaded{
@@ -418,13 +417,15 @@ auto make_binary_entry_flag(State& state, Propagators& propagators, const Intege
             flag_lt = propagators.create_proof_flag("lt");
             flag_gt = propagators.create_proof_flag("gt");
             propagators.define_pseudoboolean_ge(state, move(var_1_minus_var_2), 1_i, flag_gt);
+            propagators.define_pseudoboolean_ge(state, move(var_2_minus_var_1), 0_i, !flag_gt);
             propagators.define_pseudoboolean_ge(state, move(var_2_minus_var_1), 1_i, flag_lt);
+            propagators.define_pseudoboolean_ge(state, move(var_1_minus_var_2), 0_i, !flag_lt);
             propagators.define_pseudoboolean_ge(state, {{1_i, flag_lt}, {1_i, flag_gt}}, 1_i, !flag);
             return flag;
         case GREATER_THAN:
             flag = propagators.create_proof_flag("bin_gt");
             propagators.define_pseudoboolean_ge(state, move(var_1_minus_var_2), 1_i, flag);
-            propagators.define_pseudoboolean_ge(state, move(var_2_minus_var_1), 1_i, !flag);
+            propagators.define_pseudoboolean_ge(state, move(var_2_minus_var_1), 0_i, !flag);
             return flag;
         case LESS_THAN:
 
@@ -465,7 +466,7 @@ auto SmartTable::install(Propagators & propagators, State & initial_state) && ->
 
         for(const auto& s : pb_selectors) {
             WeightedPseudoBooleanTerm t{1_i, s};
-            sum_pb_selectors.emplace_back(t); // No idea why but this errors if I put the initialiser list directly in emplace_back()
+            sum_pb_selectors.emplace_back(t); // No idea why, but this errors if I put the initialiser list directly in emplace_back()
         }
 
         propagators.define_pseudoboolean_ge(initial_state, move(sum_pb_selectors), 1_i);
@@ -498,7 +499,7 @@ auto SmartTable::install(Propagators & propagators, State & initial_state) && ->
             }
             auto tuple_len = Integer{static_cast<long long>(entry_flags_sum.size())};
             propagators.define_pseudoboolean_ge(initial_state, move(entry_flags_sum), tuple_len, pb_selectors[tuple_idx]);
-            propagators.define_pseudoboolean_ge(initial_state, move(entry_flags_neg_sum), tuple_len + 1_i, !pb_selectors[tuple_idx]);
+            propagators.define_pseudoboolean_ge(initial_state, move(entry_flags_neg_sum), -tuple_len + 1_i, !pb_selectors[tuple_idx]);
         }
     }
 
