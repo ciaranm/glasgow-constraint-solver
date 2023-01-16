@@ -1,9 +1,9 @@
-#include <gcs/constraints/smart_table.hh>
 #include <gcs/constraints/comparison.hh>
-#include <gcs/problem.hh>
-#include <gcs/solve.hh>
+#include <gcs/constraints/smart_table.hh>
 #include <gcs/extensional.hh>
+#include <gcs/problem.hh>
 #include <gcs/smart_entry.hh>
+#include <gcs/solve.hh>
 #include <iostream>
 #include <vector>
 
@@ -36,12 +36,13 @@ auto main(int, char *[]) -> int
     // As given in "The Smart Table Constraint" Mairy, J. B., Deville, Y., & Lecoutre, C. (2015)
     SmartTuples tuples;
 
-    for(int i = 0; i < n; ++i) {
+    for (int i = 0; i < n; ++i) {
         vector<SmartEntry> tuple;
-        for(int j = 0; j < i + 1; ++j) {
-            if(j < i) {
+        for (int j = 0; j < i + 1; ++j) {
+            if (j < i) {
                 tuple.emplace_back(EqualsVar{x[j], y[j]});
-            } else if (j == i) {
+            }
+            else if (j == i) {
                 tuple.emplace_back(GreaterThanVar{x[j], y[j]});
             }
         }
@@ -54,22 +55,22 @@ auto main(int, char *[]) -> int
     p.post(SmartTable{all_vars, tuples});
 
     auto stats = solve_with(p,
-                            SolveCallbacks{
-                                    .solution = [&](const CurrentState & s) -> bool {
-                                        cout << "x = [ ";
-                                        for(const auto & var : x) {
-                                            cout << s(var) << " ";
-                                        }
-                                        cout << "]" << endl;
-                                        cout << "y = [ ";
-                                        for(const auto & var : y) {
-                                            cout << s(var) << " ";
-                                        }
-                                        cout << "]\n" << endl;
-                                        return true;
-                                    }}
-    ,
-                            ProofOptions{"lex_table.opb", "lex_table.veripb"});
+        SolveCallbacks{
+            .solution = [&](const CurrentState & s) -> bool {
+                cout << "x = [ ";
+                for (const auto & var : x) {
+                    cout << s(var) << " ";
+                }
+                cout << "]" << endl;
+                cout << "y = [ ";
+                for (const auto & var : y) {
+                    cout << s(var) << " ";
+                }
+                cout << "]\n"
+                     << endl;
+                return true;
+            }},
+        ProofOptions{"lex_table.opb", "lex_table.veripb"});
 
     cout << stats;
 
