@@ -17,10 +17,21 @@ using std::vector;
 
 auto main(int, char *[]) -> int
 {
-    int n = 10;
+
+    vector<int> simple_vector{1, 2, 3, 4};
+    int n = 4;
     Problem p;
-    auto x = p.create_integer_variable_vector(n, 1_i, Integer{n}, "x");
-    auto y = p.create_integer_variable_vector(n, 1_i, Integer{n}, "y");
+    auto x = p.create_integer_variable_vector(n, 1_i, Integer{10}, "x");
+    auto y = p.create_integer_variable_vector(n, 1_i, Integer{10}, "y");
+
+    p.post(Equals(y[0], 5_c));
+    p.post(Equals(y[1], 2_c));
+    p.post(Equals(y[2], 3_c));
+    p.post(Equals(y[3], 5_c));
+
+    p.post(Equals(x[0], 5_c));
+    p.post(Equals(x[1], 2_c));
+    p.post(Equals(x[3], 6_c));
 
     SmartTuples tuples;
 
@@ -53,7 +64,7 @@ auto main(int, char *[]) -> int
                                         for(const auto & var : y) {
                                             cout << s(var) << " ";
                                         }
-                                        cout << "]" << endl;
+                                        cout << "]\n" << endl;
                                         return true;
                                     }}
                             /*ProofOptions{"lex_table.opb", "lex_table.veripb"}*/ );

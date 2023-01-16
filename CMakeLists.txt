@@ -7,11 +7,15 @@ add_compile_options(-W)
 add_compile_options(-Wall)
 add_compile_options(-Wno-restrict) # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=104336
 add_compile_options(-Wno-stringop-overread) # ditto
-add_compile_options(-O3)
+#add_compile_options(-O3)
 add_compile_options(-march=native)
 add_compile_options(-g)
 add_compile_options(-g3)
 add_compile_options(-pthread)
+
+# Needed to debug properly on Mac - remove when merging with main
+add_compile_options(-gdwarf-3)
+
 add_link_options(-pthread)
 
 # add_compile_options(-DGCS_TRACK_ALL_PROPAGATIONS=1)

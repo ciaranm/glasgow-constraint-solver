@@ -44,6 +44,13 @@ namespace
     // Shorthand
     using VariableDomainMap = unordered_map<IntegerVariableID, vector<Integer>>;
 
+
+    // --- remove - for sanity checking only
+    auto index_of(const IntegerVariableID& val, const vector<IntegerVariableID>& vec) -> int {
+        ptrdiff_t pos = distance(vec.begin(), find(vec.begin(), vec.end(), val));
+        return (int)pos;
+    }
+
     auto filter_edge(const SmartEntry& edge, VariableDomainMap& supported_by_tree) {
 
         overloaded{
@@ -70,9 +77,9 @@ namespace
                         throw UnimplementedException{};
                     case GREATER_THAN:
                         std::copy_if(dom_1.begin(), dom_1.end(), back_inserter(new_dom_1),
-                                     [&](Integer val){return val >= dom_2[0];});
+                                     [&](Integer val){return val > dom_2[0];});
                         std::copy_if(dom_2.begin(), dom_2.end(), back_inserter(new_dom_2),
-                                     [&](Integer val){return val <= dom_1[dom_1.size() - 1];});
+                                     [&](Integer val){return val < dom_1[dom_1.size() - 1];});
                         break;
                     case GREATER_THAN_EQUAL:
                         throw UnimplementedException{};
@@ -250,11 +257,16 @@ namespace
                     break;
                 }
 
+                if(contradiction) {
+                    return Inference::Contradiction;
+                }
+
                 filter_again_and_remove_supported(tree, supported_by_tree, unsupported);
             }
 
-            if(state.optional_single_value(selectors[tuple_idx]) == 0_i) {
-                for(const auto & var : get_unrestricted(vars, tuples[tuple_idx])) {
+            if(state.optional_single_value(selectors[tuple_idx]) != 0_i) {
+                const auto unrestricted = get_unrestricted(vars, tuples[tuple_idx]);
+                for(const auto & var : unrestricted) {
                     unsupported[var] = vector<Integer>{};
                 }
             }
@@ -363,13 +375,6 @@ namespace
 
         return forests;
     }
-
-    // --- remove - for sanity checking only
-    auto index_of(const IntegerVariableID& val, const vector<IntegerVariableID>& vec) -> int {
-        ptrdiff_t pos = distance(vec.begin(), find(vec.begin(), vec.end(), val));
-        return (int)pos;
-    }
-
 
     auto print_edge(const SmartEntry& edge, const vector<IntegerVariableID> vars) -> void {
         const string stringtypes[] = {"LESS_THAN", "LESS_THAN_EQUAL", "EQUAL", "NOT_EQUAL", "GREATER_THAN", "GREATER_THAN_EQUAL", "IN", "NOT_IN"};
