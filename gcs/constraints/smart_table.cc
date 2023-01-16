@@ -6,8 +6,10 @@
 #include <vector>
 #include <variant>
 #include <map>
+#include <tuple>
 #include <set>
 #include <algorithm>
+#include <string>
 
 #include <gcs/exception.hh>
 #include <gcs/smart_entry.hh>
@@ -20,6 +22,8 @@ using std::pair;
 using std::visit;
 using std::unordered_map;
 using std::set;
+using std::tuple;
+using std::move;
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -41,9 +45,9 @@ SmartTable::SmartTable(const vector<IntegerVariableID> & v, SmartTuples & t) :
 
 namespace
 {
-    // Shorthand
+    // Shorthands
     using VariableDomainMap = unordered_map<IntegerVariableID, vector<Integer>>;
-
+    using BinaryEntryData = tuple<IntegerVariableID, IntegerVariableID, ConstraintType>;
 
     // --- remove - for sanity checking only
     auto index_of(const IntegerVariableID& val, const vector<IntegerVariableID>& vec) -> int {
@@ -52,7 +56,8 @@ namespace
     }
 
     auto filter_edge(const SmartEntry& edge, VariableDomainMap& supported_by_tree) {
-
+        // Currently filter both domains - might be overkill
+        // If the tree was in a better form, think this can be optimised to do less redundant filtering.
         overloaded{
             [&](BinaryEntry binary_entry) {
                 vector<Integer> new_dom_1{};
@@ -62,6 +67,7 @@ namespace
                 std::sort(dom_1.begin(), dom_1.end());
                 std::sort(dom_2.begin(), dom_2.end());
 
+                // TODO: Rest of the filters
                 switch(binary_entry.constraint_type) {
                     case LESS_THAN:
                         throw UnimplementedException{};
@@ -303,12 +309,17 @@ namespace
                                unordered_map<IntegerVariableID, bool>& node_visited,
                                const unordered_map<IntegerVariableID, vector<SmartEntry>>& adjacent_edges) -> void {
         node_visited[root] = true;
+
+        // Simple recursive traverse
+        // Note: Perhaps we should build the tree in a "smarter" form e.g. make sure var_1 is always the node
+        //       closer to the root.
         for(const auto& edge : adjacent_edges.at(root)) {
             overloaded{
                     [&](BinaryEntry binary_entry) {
                         if(!node_visited[binary_entry.var_1]) {
                             entry_tree[current_level].emplace_back(edge);
                             entry_tree.emplace_back(vector<SmartEntry>{});
+
                             build_tree(binary_entry.var_1, current_level+1, entry_tree, node_visited, adjacent_edges);
                         } else if(!node_visited[binary_entry.var_2]) {
                             entry_tree[current_level].emplace_back(edge);
@@ -393,6 +404,34 @@ namespace
     // ---
 }
 
+auto make_binary_entry_flag(State& state, Propagators& propagators, const IntegerVariableID& var_1, const IntegerVariableID& var_2, const ConstraintType& c) -> ProofFlag {
+    ProofFlag flag;
+    WeightedPseudoBooleanTerms var_1_minus_var_2 = {{1_i, var_1}, {-1_i, var_2}};
+    switch(c) {
+        case EQUAL:
+            flag = propagators.create_proof_flag("bin_eq");
+            propagators.define_pseudoboolean_eq(state, move(var_1_minus_var_2), 0_i, flag);
+            return flag;
+        case GREATER_THAN:
+            flag = propagators.create_proof_flag("bin_gt");
+            propagators.define_pseudoboolean_ge(state, move(var_1_minus_var_2), 1_i, flag);
+            return flag;
+        case LESS_THAN:
+
+        case LESS_THAN_EQUAL:
+
+        case NOT_EQUAL:
+
+        case GREATER_THAN_EQUAL:
+
+        case IN:
+
+        case NOT_IN:
+
+        default:
+            throw UnimplementedException{};
+    }
+}
 auto SmartTable::clone() const -> unique_ptr<Constraint>
 {
     return make_unique<SmartTable>(_vars, _tuples);
@@ -400,35 +439,63 @@ auto SmartTable::clone() const -> unique_ptr<Constraint>
 
 auto SmartTable::install(Propagators & propagators, State & initial_state) && -> void
 {
-    if (propagators.want_definitions()) {
-        throw UnimplementedException{"PB for Smart Tables not yet implemented"};
-    }
-
-    // Trigger when any var changes? Is this overkill?
-    Triggers triggers;
-    triggers.on_change = {_vars.begin(), _vars.end()};
-
     vector<IntegerVariableID> selectors;
 
     for(unsigned int i = 0; i < _tuples.size(); ++i) {
         selectors.emplace_back(initial_state.allocate_integer_variable_with_state(0_i, 1_i));
     }
 
-    vector<Forest> forests = build_forests(_tuples);
+    if (propagators.want_definitions()) {
+        vector<ProofFlag> pb_selectors;
 
-//    for (const auto & forest : forests) {
-//        cout << "Tuple forest:" << endl;
-//        for (const auto & tree : forest) {
-//            for(const auto & level : tree) {
-//                for(const auto & edge : level) {
-//                    print_edge(edge, _vars);
-//                }
-//                cout << endl;
-//            }
-//            cout << "----" << endl;
-//        }
-//        cout << "----------------" << endl;
-//    }
+        for(unsigned int i = 0; i < _tuples.size(); ++i) {
+            pb_selectors.emplace_back(propagators.create_proof_flag("t" + std::to_string(i)));
+        }
+        WeightedPseudoBooleanTerms sum_pb_selectors{};
+
+        for(const auto& s : pb_selectors) {
+            WeightedPseudoBooleanTerm t{1_i, s};
+            sum_pb_selectors.emplace_back(t); // No idea why but this errors if I put the initialiser list directly in emplace_back()
+        }
+
+        propagators.define_pseudoboolean_ge(initial_state, move(sum_pb_selectors), 1_i);
+
+        // Would need a hash function for unordered map but shouldn't be too slow
+        std::map<BinaryEntryData, ProofFlag> smart_entry_flags;
+
+        for(unsigned int tuple_idx = 0; tuple_idx < _tuples.size(); ++tuple_idx) {
+            WeightedPseudoBooleanTerms entry_flags_sum{};
+            for(const auto& entry : _tuples[tuple_idx]) {
+                overloaded{
+                    [&](BinaryEntry binary_entry) {
+                        auto binary_entry_data = std::make_tuple(binary_entry.var_1, binary_entry.var_2, binary_entry.constraint_type);
+                        if(!smart_entry_flags.contains(binary_entry_data))
+                            smart_entry_flags[binary_entry_data] = make_binary_entry_flag(initial_state, propagators, binary_entry.var_1, binary_entry.var_2, binary_entry.constraint_type);
+
+                        WeightedPseudoBooleanTerm t{1_i, smart_entry_flags[binary_entry_data]};
+
+                        entry_flags_sum.emplace_back(t);
+                    },
+                    [&](UnarySetEntry u) {
+                        throw UnimplementedException{};
+                    },
+                    [&](UnaryValueEntry uv) {
+                        throw UnimplementedException{};
+                    }
+                }.visit(entry);
+            }
+            auto tuple_len = Integer{static_cast<long long>(entry_flags_sum.size())};
+            propagators.define_pseudoboolean_ge(initial_state, move(entry_flags_sum), tuple_len, pb_selectors[tuple_idx]);
+        }
+    }
+
+    // Trigger when any var changes? Is this overkill?
+    Triggers triggers;
+    triggers.on_change = {_vars.begin(), _vars.end()};
+
+
+
+    vector<Forest> forests = build_forests(_tuples);
 
     propagators.install(
             [selectors, vars = _vars, tuples = _tuples, forests = forests] (State & state) -> pair<Inference, PropagatorState> {
