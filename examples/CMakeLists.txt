@@ -1,5 +1,6 @@
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 add_subdirectory(auto_table)
+add_subdirectory(at_most_1_table)
 add_subdirectory(cake)
 add_subdirectory(colour)
 add_subdirectory(crystal_maze)

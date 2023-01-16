@@ -17,39 +17,27 @@ using std::vector;
 
 auto main(int, char *[]) -> int
 {
-    int n = 4;
+    int n = 3;
+
     Problem p;
-    auto x = p.create_integer_variable_vector(n, 0_i, 10_i, "x");
-    auto y = p.create_integer_variable_vector(n, 0_i, 10_i, "y");
-
-    p.post(Equals(y[0], 5_c));
-    p.post(Equals(y[1], 2_c));
-    p.post(Equals(y[2], 10_c));
-    p.post(Equals(y[3], 5_c));
-
-    p.post(Equals(x[0], 5_c));
-    p.post(Equals(x[1], 2_c));
-    // Only option for x[2] is 10, since it comes lexicographically first
-    p.post(Equals(x[3], 6_c));
-
-    // Smart table representation of the Lex constraint
+    auto x = p.create_integer_variable_vector(n, 0_i, 3_i, "x");
+    auto y = p.create_integer_variable(3_i, 3_i, "y");
+    // Smart table representation of the AtMost1 constraint
     // As given in "The Smart Table Constraint" Mairy, J. B., Deville, Y., & Lecoutre, C. (2015)
     SmartTuples tuples;
 
     for(int i = 0; i < n; ++i) {
         vector<SmartEntry> tuple;
-        for(int j = 0; j < i + 1; ++j) {
-            if(j < i) {
-                tuple.emplace_back(EqualsVar{x[j], y[j]});
-            } else if (j == i) {
-                tuple.emplace_back(GreaterThanVar{x[j], y[j]});
+        for(int j = 0; j < n; ++j) {
+            if (j != i) {
+                tuple.emplace_back(NotEqualsVar{x[j], y});
             }
         }
         tuples.emplace_back(tuple);
     }
 
     auto all_vars = x;
-    all_vars.insert(all_vars.end(), y.begin(), y.end());
+    all_vars.emplace_back(y);
 
     p.post(SmartTable{all_vars, tuples});
 
@@ -61,15 +49,10 @@ auto main(int, char *[]) -> int
                                             cout << s(var) << " ";
                                         }
                                         cout << "]" << endl;
-                                        cout << "y = [ ";
-                                        for(const auto & var : y) {
-                                            cout << s(var) << " ";
-                                        }
-                                        cout << "]\n" << endl;
                                         return true;
                                     }}
     ,
-                            ProofOptions{"lex_table.opb", "lex_table.veripb"});
+                            ProofOptions{"at_most_1_table.opb", "at_most_1_table.veripb"});
 
     cout << stats;
 

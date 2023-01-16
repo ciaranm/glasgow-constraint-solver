@@ -87,12 +87,20 @@ namespace
                         new_dom_2 = new_dom_1;
                         break;
                     case NOT_EQUAL:
-                        std::set_difference(dom_1.begin(),dom_1.end(),
-                                              dom_2.begin(),dom_2.end(),
-                                              back_inserter(new_dom_1));
-                        std::set_difference(dom_2.begin(),dom_2.end(),
-                                            dom_1.begin(),dom_1.end(),
-                                            back_inserter(new_dom_2));
+                        if(dom_1.size() == 1) {
+                            new_dom_1 = dom_1;
+                            std::set_difference(dom_2.begin(),dom_2.end(),
+                                                  dom_1.begin(),dom_1.end(),
+                                                  back_inserter(new_dom_2));
+                        } else if(dom_2.size() == 1) {
+                            new_dom_2 = dom_2;
+                            std::set_difference(dom_1.begin(),dom_1.end(),
+                                                dom_2.begin(),dom_2.end(),
+                                                back_inserter(new_dom_1));
+                        } else {
+                            new_dom_1 = dom_1;
+                            new_dom_2 = dom_2;
+                        }
                         break;
                     case GREATER_THAN:
                         std::copy_if(dom_1.begin(), dom_1.end(), back_inserter(new_dom_1),
@@ -495,6 +503,7 @@ auto make_binary_entry_flag(State& state, Propagators& propagators, const Intege
             propagators.define_pseudoboolean_ge(state, move(var_2_minus_var_1), 1_i, flag_lt);
             propagators.define_pseudoboolean_ge(state, move(var_1_minus_var_2), 0_i, !flag_lt);
             propagators.define_pseudoboolean_ge(state, {{1_i, flag_lt}, {1_i, flag_gt}}, 1_i, flag);
+            return flag;
         case GREATER_THAN_EQUAL:
             flag = propagators.create_proof_flag("bin_gt");
             propagators.define_pseudoboolean_ge(state, move(var_1_minus_var_2), 0_i, flag);
@@ -553,7 +562,7 @@ auto SmartTable::install(Propagators & propagators, State & initial_state) && ->
 
         propagators.define_pseudoboolean_ge(initial_state, move(sum_pb_selectors), 1_i);
 
-        // Would need a hash function for unordered map but shouldn't be too slow
+        // Would need a hash function for unordered map, but this shouldn't be too slow
         std::map<BinaryEntryData, ProofFlag> smart_entry_flags;
 
         for(unsigned int tuple_idx = 0; tuple_idx < _tuples.size(); ++tuple_idx) {

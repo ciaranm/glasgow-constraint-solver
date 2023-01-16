@@ -17,7 +17,7 @@ using std::vector;
 
 auto main(int, char *[]) -> int
 {
-    // Example for the circuit constraint, find a tour for some graph of locations
+    // Example for the circuit constraint: find a tour for some graph of locations
     // and minimise the distance between any two stops.
 
     // This is based on the circuit benchmark instances from
