@@ -405,16 +405,26 @@ namespace
 }
 
 auto make_binary_entry_flag(State& state, Propagators& propagators, const IntegerVariableID& var_1, const IntegerVariableID& var_2, const ConstraintType& c) -> ProofFlag {
-    ProofFlag flag;
+    ProofFlag flag, flag_lt, flag_gt;
     WeightedPseudoBooleanTerms var_1_minus_var_2 = {{1_i, var_1}, {-1_i, var_2}};
+    WeightedPseudoBooleanTerms var_2_minus_var_1 = {{1_i, var_2}, {-1_i, var_1}};
     switch(c) {
         case EQUAL:
+            // f => var1 == var2
             flag = propagators.create_proof_flag("bin_eq");
             propagators.define_pseudoboolean_eq(state, move(var_1_minus_var_2), 0_i, flag);
+
+            // !f => var1 != var2
+            flag_lt = propagators.create_proof_flag("lt");
+            flag_gt = propagators.create_proof_flag("gt");
+            propagators.define_pseudoboolean_ge(state, move(var_1_minus_var_2), 1_i, flag_gt);
+            propagators.define_pseudoboolean_ge(state, move(var_2_minus_var_1), 1_i, flag_lt);
+            propagators.define_pseudoboolean_ge(state, {{1_i, flag_lt}, {1_i, flag_gt}}, 1_i, !flag);
             return flag;
         case GREATER_THAN:
             flag = propagators.create_proof_flag("bin_gt");
             propagators.define_pseudoboolean_ge(state, move(var_1_minus_var_2), 1_i, flag);
+            propagators.define_pseudoboolean_ge(state, move(var_2_minus_var_1), 1_i, !flag);
             return flag;
         case LESS_THAN:
 
@@ -465,6 +475,7 @@ auto SmartTable::install(Propagators & propagators, State & initial_state) && ->
 
         for(unsigned int tuple_idx = 0; tuple_idx < _tuples.size(); ++tuple_idx) {
             WeightedPseudoBooleanTerms entry_flags_sum{};
+            WeightedPseudoBooleanTerms entry_flags_neg_sum{};
             for(const auto& entry : _tuples[tuple_idx]) {
                 overloaded{
                     [&](BinaryEntry binary_entry) {
@@ -473,8 +484,9 @@ auto SmartTable::install(Propagators & propagators, State & initial_state) && ->
                             smart_entry_flags[binary_entry_data] = make_binary_entry_flag(initial_state, propagators, binary_entry.var_1, binary_entry.var_2, binary_entry.constraint_type);
 
                         WeightedPseudoBooleanTerm t{1_i, smart_entry_flags[binary_entry_data]};
-
+                        WeightedPseudoBooleanTerm minus_t{-1_i, smart_entry_flags[binary_entry_data]};
                         entry_flags_sum.emplace_back(t);
+                        entry_flags_neg_sum.emplace_back(minus_t);
                     },
                     [&](UnarySetEntry u) {
                         throw UnimplementedException{};
@@ -486,14 +498,13 @@ auto SmartTable::install(Propagators & propagators, State & initial_state) && ->
             }
             auto tuple_len = Integer{static_cast<long long>(entry_flags_sum.size())};
             propagators.define_pseudoboolean_ge(initial_state, move(entry_flags_sum), tuple_len, pb_selectors[tuple_idx]);
+            propagators.define_pseudoboolean_ge(initial_state, move(entry_flags_neg_sum), tuple_len + 1_i, !pb_selectors[tuple_idx]);
         }
     }
 
     // Trigger when any var changes? Is this overkill?
     Triggers triggers;
     triggers.on_change = {_vars.begin(), _vars.end()};
-
-
 
     vector<Forest> forests = build_forests(_tuples);
 
