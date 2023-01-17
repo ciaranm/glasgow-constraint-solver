@@ -29,7 +29,7 @@ using std::to_string;
 using std::unique_ptr;
 using std::vector;
 
-LinearEquality::LinearEquality(Linear && coeff_vars, Integer value, bool gac) :
+LinearEquality::LinearEquality(Linear coeff_vars, Integer value, bool gac) :
     _coeff_vars(move(coeff_vars)),
     _value(value),
     _gac(gac)
@@ -231,7 +231,7 @@ auto LinearEquality::describe_for_proof() -> std::string
     return "linear equality";
 }
 
-LinearInequality::LinearInequality(Linear && coeff_vars, Integer value) :
+LinearInequality::LinearInequality(Linear coeff_vars, Integer value) :
     _coeff_vars(move(coeff_vars)),
     _value(value)
 {
@@ -281,14 +281,14 @@ auto LinearInequality::describe_for_proof() -> std::string
     return "linear inequality";
 }
 
-LinearLessEqual::LinearLessEqual(Linear && coeff_vars, Integer value) :
+LinearLessEqual::LinearLessEqual(Linear coeff_vars, Integer value) :
     LinearInequality(move(coeff_vars), value)
 {
 }
 
 namespace
 {
-    auto negate(Linear && coeff_vars) -> Linear &
+    auto negate(Linear & coeff_vars) -> Linear &
     {
         for (auto & [c, _] : coeff_vars)
             c = -c;
@@ -296,7 +296,7 @@ namespace
     }
 }
 
-LinearGreaterThanEqual::LinearGreaterThanEqual(Linear && coeff_vars, Integer value) :
-    LinearInequality(move(negate(move(coeff_vars))), -value)
+LinearGreaterThanEqual::LinearGreaterThanEqual(Linear coeff_vars, Integer value) :
+    LinearInequality(move(negate(coeff_vars)), -value)
 {
 }

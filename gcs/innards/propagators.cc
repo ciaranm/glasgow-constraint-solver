@@ -230,23 +230,36 @@ namespace
     {
         return visit([&](const auto & val) { add_lit_unless_immediately_true(lits, var, val); }, val);
     }
+
+    template <typename T_>
+    auto depointinate(const std::shared_ptr<const T_> & t) -> const T_ &
+    {
+        return *t;
+    }
+
+    template <typename T_>
+    auto depointinate(const T_ & t) -> const T_ &
+    {
+        return t;
+    }
 }
 
-auto Propagators::define_and_install_table(State & state, vector<IntegerVariableID> && vars,
-    ExtensionalTuples && permitted, const string & x) -> void
+auto Propagators::define_and_install_table(State & state, const vector<IntegerVariableID> & vars,
+    ExtensionalTuples permitted, const string & x) -> void
 {
     visit([&](auto && permitted) {
-        if (permitted.empty()) {
+        if (depointinate(permitted).empty()) {
             model_contradiction("Empty table constraint from " + x);
             return;
         }
 
         int id = _imp->propagation_functions.size();
-        auto selector = create_auxilliary_integer_variable(state, 0_i, Integer(permitted.size() - 1), "table");
+        auto selector = create_auxilliary_integer_variable(state, 0_i, Integer(depointinate(permitted).size() - 1), "table",
+            IntegerVariableProofRepresentation::DirectOnly);
 
         // pb encoding, if necessary
         if (want_definitions()) {
-            for (const auto & [tuple_idx, tuple] : enumerate(permitted)) {
+            for (const auto & [tuple_idx, tuple] : enumerate(depointinate(permitted))) {
                 // selector == tuple_idx -> /\_i vars[i] == tuple[i]
                 bool infeasible = false;
                 WeightedPseudoBooleanTerms lits;
@@ -391,11 +404,12 @@ auto Propagators::propagate(State & state, atomic<bool> * optional_abort_flag) c
     return ! contradiction;
 }
 
-auto Propagators::create_auxilliary_integer_variable(State & state, Integer l, Integer u, const std::string & s) -> IntegerVariableID
+auto Propagators::create_auxilliary_integer_variable(State & state, Integer l, Integer u, const std::string & s,
+    const IntegerVariableProofRepresentation rep) -> IntegerVariableID
 {
     auto result = state.allocate_integer_variable_with_state(l, u);
     if (_imp->optional_proof)
-        _imp->optional_proof->set_up_integer_variable(result, l, u, "aux_" + s);
+        _imp->optional_proof->set_up_integer_variable(result, l, u, "aux_" + s, rep);
     return result;
 }
 
@@ -406,11 +420,12 @@ auto Propagators::create_proof_flag(const std::string & n) -> ProofFlag
     return _imp->optional_proof->create_proof_flag(n);
 }
 
-auto Propagators::create_proof_only_integer_variable(Integer l, Integer u, const std::string & s) -> ProofOnlySimpleIntegerVariableID
+auto Propagators::create_proof_only_integer_variable(Integer l, Integer u, const std::string & s,
+    const IntegerVariableProofRepresentation rep) -> ProofOnlySimpleIntegerVariableID
 {
     if (! _imp->optional_proof)
         throw UnexpectedException{"trying to create a proof variable but proof logging is not enabled"};
-    return _imp->optional_proof->create_proof_integer_variable(l, u, s);
+    return _imp->optional_proof->create_proof_integer_variable(l, u, s, rep);
 }
 
 auto Propagators::want_definitions() const -> bool

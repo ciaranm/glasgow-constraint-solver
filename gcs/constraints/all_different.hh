@@ -22,7 +22,7 @@ namespace gcs
         const std::vector<IntegerVariableID> _vars;
 
     public:
-        explicit AllDifferent(const std::vector<IntegerVariableID> & vars);
+        explicit AllDifferent(std::vector<IntegerVariableID> vars);
 
         virtual auto describe_for_proof() -> std::string override;
         virtual auto install(innards::Propagators &, innards::State &) && -> void override;

@@ -6,6 +6,7 @@
 #include <util/enumerate.hh>
 
 #include <map>
+#include <sstream>
 #include <utility>
 
 using namespace gcs;
@@ -26,8 +27,8 @@ using std::vector;
 
 using ProofLine2DMap = map<pair<Integer, Integer>, ProofLine>;
 
-Circuit::Circuit(const vector<IntegerVariableID> & v, const bool p) :
-    _succ(v),
+Circuit::Circuit(vector<IntegerVariableID> v, const bool p) :
+    _succ(move(v)),
     _propagate_using_check_only(p)
 {
 }
@@ -106,7 +107,7 @@ namespace
 
         auto inference_from_prevent = Inference::NoChange;
         // Assume all different has already been propagated (do we know this for sure ???)
-        for (const auto & [idx, var] : enumerate(succ)) {
+        for (const auto & var : succ) {
             if (state.has_single_value(var)) continue;
 
             // In that case the possible start points for chains are the domains of the unfixed variables
@@ -184,19 +185,20 @@ auto Circuit::install(Propagators & propagators, State & initial_state) && -> vo
     ProofLine2DMap lines_for_setting_pos{};
     if (propagators.want_definitions()) {
         // Define encoding to eliminate sub-cycles
-        vector<ProofOnlySimpleIntegerVariableID> position;
+        vector<PseudoBooleanTerm> position;
         auto n_minus_1 = ConstantIntegerVariableID{Integer{static_cast<long long>(_succ.size() - 1)}};
 
         // Need extra proof variable: pos[i] = j means "the ith node visited in the circuit is the jth var"
         // WLOG start at node 0, so pos[0] = 0
-        position.emplace_back(propagators.create_proof_only_integer_variable(0_i, 0_i, "pos0"));
+        position.emplace_back(0_c);
         // Hence we can only have succ[0] = 0 (self cycle) if there is only one node i.e. n - 1 = 0
         auto cv = WeightedPseudoBooleanTerms{{1_i, position[0]}, {-1_i, n_minus_1}};
         auto proof_line = propagators.define_pseudoboolean_eq(initial_state, move(cv), 0_i, _succ[0] == 0_i);
         lines_for_setting_pos.insert({{Integer{0_i}, Integer{0_i}}, proof_line.value()});
 
         for (unsigned int idx = 1; idx < _succ.size(); ++idx) {
-            position.emplace_back(propagators.create_proof_only_integer_variable(0_i, Integer(_succ.size() - 1), "pos" + to_string(idx)));
+            position.emplace_back(propagators.create_proof_only_integer_variable(0_i, Integer(_succ.size() - 1),
+                "pos" + to_string(idx), IntegerVariableProofRepresentation::Bits));
         }
 
         for (unsigned int idx = 1; idx < _succ.size(); ++idx) {

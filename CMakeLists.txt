@@ -12,7 +12,7 @@ add_compile_options(-march=native)
 add_compile_options(-g)
 add_compile_options(-g3)
 add_compile_options(-pthread)
-
+g
 # Needed to debug properly on Mac - remove when merging with main
 add_compile_options(-gdwarf-3)
 

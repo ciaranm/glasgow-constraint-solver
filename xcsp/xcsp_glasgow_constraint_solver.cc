@@ -40,7 +40,7 @@ using std::cv_status;
 using std::endl;
 using std::flush;
 using std::get;
-using std::make_unique;
+using std::make_shared;
 using std::map;
 using std::max;
 using std::min;
@@ -351,7 +351,7 @@ struct ParserCallbacks : XCSP3CoreCallbacks
     Problem & problem;
     VariableMapping mapping;
 
-    unique_ptr<WildcardTuples> most_recent_tuples;
+    shared_ptr<WildcardTuples> most_recent_tuples;
     bool is_optimisation = false;
     optional<IntegerVariableID> objective_variable;
 
@@ -384,7 +384,7 @@ struct ParserCallbacks : XCSP3CoreCallbacks
             vars.emplace_back(*get<0>(m->second));
         }
 
-        most_recent_tuples = make_unique<WildcardTuples>();
+        most_recent_tuples = make_shared<WildcardTuples>();
         for (auto & t : x_tuples) {
             vector<IntegerOrWildcard> tuple;
             for (auto & v : t)
@@ -396,9 +396,9 @@ struct ParserCallbacks : XCSP3CoreCallbacks
         }
 
         if (is_support)
-            problem.post(Table{vars, WildcardTuples{*most_recent_tuples}});
+            problem.post(Table{vars, SharedWildcardTuples{most_recent_tuples}});
         else
-            problem.post(NegativeTable{vars, WildcardTuples{*most_recent_tuples}});
+            problem.post(NegativeTable{vars, SharedWildcardTuples{most_recent_tuples}});
     }
 
     virtual auto buildConstraintExtensionAs(string, vector<XVariable *> x_vars, bool is_support, bool) -> void
@@ -411,9 +411,9 @@ struct ParserCallbacks : XCSP3CoreCallbacks
         }
 
         if (is_support)
-            problem.post(Table{vars, ExtensionalTuples{*most_recent_tuples}});
+            problem.post(Table{vars, SharedWildcardTuples{most_recent_tuples}});
         else
-            problem.post(NegativeTable{vars, ExtensionalTuples{*most_recent_tuples}});
+            problem.post(NegativeTable{vars, SharedWildcardTuples{most_recent_tuples}});
     }
 
     virtual auto buildConstraintExtension(string, XVariable * x_var, vector<int> & x_tuples, bool is_support, bool) -> void
@@ -423,7 +423,7 @@ struct ParserCallbacks : XCSP3CoreCallbacks
         need_variable(problem, m->second, x_var->id);
         vars.emplace_back(*get<0>(m->second));
 
-        most_recent_tuples = make_unique<WildcardTuples>();
+        most_recent_tuples = make_shared<WildcardTuples>();
         for (auto & t : x_tuples) {
             vector<IntegerOrWildcard> tuple;
             if (t == STAR)
@@ -434,9 +434,9 @@ struct ParserCallbacks : XCSP3CoreCallbacks
         }
 
         if (is_support)
-            problem.post(Table{vars, WildcardTuples{*most_recent_tuples}});
+            problem.post(Table{vars, SharedWildcardTuples{most_recent_tuples}});
         else
-            problem.post(NegativeTable{vars, WildcardTuples{*most_recent_tuples}});
+            problem.post(NegativeTable{vars, SharedWildcardTuples{most_recent_tuples}});
     }
 
     virtual auto buildConstraintAlldifferent(string, vector<XVariable *> & x_vars) -> void override

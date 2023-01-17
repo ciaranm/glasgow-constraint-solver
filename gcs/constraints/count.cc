@@ -23,8 +23,8 @@ using std::tuple;
 using std::unique_ptr;
 using std::vector;
 
-Count::Count(const std::vector<IntegerVariableID> & vars, const IntegerVariableID & value_of_interest, const IntegerVariableID & how_many) :
-    _vars(vars),
+Count::Count(std::vector<IntegerVariableID> vars, const IntegerVariableID & value_of_interest, const IntegerVariableID & how_many) :
+    _vars(move(vars)),
     _value_of_interest(value_of_interest),
     _how_many(how_many)
 {

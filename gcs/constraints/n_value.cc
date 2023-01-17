@@ -18,9 +18,9 @@ using std::set;
 using std::unique_ptr;
 using std::vector;
 
-NValue::NValue(const IntegerVariableID & n, const std::vector<IntegerVariableID> & vars) :
+NValue::NValue(const IntegerVariableID & n, std::vector<IntegerVariableID> vars) :
     _n_values(n),
-    _vars(vars)
+    _vars(move(vars))
 {
 }
 

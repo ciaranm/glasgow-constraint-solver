@@ -19,15 +19,15 @@ using std::unique;
 using std::unique_ptr;
 using std::vector;
 
-In::In(IntegerVariableID var, const vector<IntegerVariableID> & vals) :
+In::In(IntegerVariableID var, vector<IntegerVariableID> vals) :
     _var(var),
-    _var_vals(vals)
+    _var_vals(move(vals))
 {
 }
 
-In::In(IntegerVariableID var, const vector<Integer> & vals) :
+In::In(IntegerVariableID var, vector<Integer> vals) :
     _var(var),
-    _val_vals(vals)
+    _val_vals(move(vals))
 {
 }
 

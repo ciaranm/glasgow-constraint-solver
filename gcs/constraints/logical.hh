@@ -30,7 +30,7 @@ namespace gcs
         // Equivalent to And([var != 0 : var in vars], true)
         explicit And(const std::vector<IntegerVariableID> & vars);
 
-        explicit And(const Literals &, const Literal &);
+        explicit And(Literals, const Literal &);
 
         virtual auto describe_for_proof() -> std::string override;
         virtual auto install(innards::Propagators &, innards::State &) && -> void override;
@@ -56,7 +56,7 @@ namespace gcs
         // Equivalent to Or([var != 0 : var in vars], true)
         explicit Or(const std::vector<IntegerVariableID> & vars);
 
-        explicit Or(const Literals &, const Literal &);
+        explicit Or(Literals, const Literal &);
 
         virtual auto describe_for_proof() -> std::string override;
         virtual auto install(innards::Propagators &, innards::State &) && -> void override;

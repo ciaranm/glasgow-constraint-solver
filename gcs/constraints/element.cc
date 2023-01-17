@@ -31,10 +31,10 @@ using std::unique_ptr;
 using std::vector;
 using std::visit;
 
-Element::Element(IntegerVariableID var, IntegerVariableID idx, const vector<IntegerVariableID> & vals) :
+Element::Element(IntegerVariableID var, IntegerVariableID idx, vector<IntegerVariableID> vals) :
     _var(var),
     _idx(idx),
-    _vals(vals)
+    _vals(move(vals))
 {
 }
 
@@ -135,11 +135,11 @@ auto Element::describe_for_proof() -> std::string
 }
 
 Element2DConstantArray::Element2DConstantArray(IntegerVariableID var, IntegerVariableID idx1,
-    IntegerVariableID idx2, const vector<vector<Integer>> & vals) :
+    IntegerVariableID idx2, vector<vector<Integer>> vals) :
     _var(var),
     _idx1(idx1),
     _idx2(idx2),
-    _vals(vals)
+    _vals(move(vals))
 {
     if (! _vals.empty())
         for (const auto & v : _vals)

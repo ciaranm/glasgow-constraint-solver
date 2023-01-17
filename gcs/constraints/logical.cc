@@ -182,8 +182,8 @@ And::And(const vector<IntegerVariableID> & vars) :
 {
 }
 
-And::And(const Literals & l, const Literal & full_reif) :
-    _lits(l),
+And::And(Literals l, const Literal & full_reif) :
+    _lits(move(l)),
     _full_reif(full_reif)
 {
 }
@@ -213,8 +213,8 @@ Or::Or(const vector<IntegerVariableID> & vars) :
 {
 }
 
-Or::Or(const Literals & l, const Literal & full_reif) :
-    _lits(l),
+Or::Or(Literals l, const Literal & full_reif) :
+    _lits(move(l)),
     _full_reif(full_reif)
 {
 }

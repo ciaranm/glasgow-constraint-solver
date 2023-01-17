@@ -5,6 +5,7 @@ add_library(glasgow_constraint_solver
     literal.cc
     presolver.cc
     problem.cc
+    proof_options.cc
     search_heuristics.cc
     solve.cc
     stats.cc
