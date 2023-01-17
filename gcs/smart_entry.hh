@@ -8,45 +8,6 @@
 #include <algorithm> //std::sort
 using namespace gcs;
 
-
-using DomainPair = std::pair<std::vector<Integer>, std::vector<Integer>>;
-using Domain = std::vector<Integer>;
-
-// Filters: maybe reuse these elsewhere
-//    Domain filter(Domain& dom) {
-//        Domain new_dom{};
-//        for(const auto& val : dom) {
-//            if(val != this->value) {
-//                new_dom.emplace_back(val);
-//            }
-//        }
-//        return new_dom;
-//    }
-
-//    DomainPair filter(Domain& dom_1, Domain& dom_2) {
-//        Domain new_dom{};
-//        std::sort(dom_1.begin(), dom_1.end());
-//        std::sort(dom_2.begin(), dom_2.end());
-//        std::set_intersection(dom_1.begin(),dom_1.end(),
-//                              dom_2.begin(),dom_2.end(),
-//                              back_inserter(new_dom));
-//        return DomainPair{new_dom, new_dom};
-//    }
-
-//    DomainPair filter(Domain& dom_1, Domain& dom_2) {
-//        Domain new_dom_1{};
-//        Domain new_dom_2{};
-//        std::sort(dom_1.begin(), dom_1.end());
-//        std::sort(dom_2.begin(), dom_2.end());
-//        std::set_difference(dom_1.begin(),dom_1.end(),
-//                              dom_2.begin(),dom_2.end(),
-//                              back_inserter(new_dom_1));
-//        std::set_difference(dom_2.begin(),dom_2.end(),
-//                            dom_1.begin(),dom_1.end(),
-//                            back_inserter(new_dom_2));
-//        return DomainPair{new_dom_1, new_dom_2};
-//    }
-
 enum ConstraintType {
     LESS_THAN,
     LESS_THAN_EQUAL,
@@ -95,6 +56,9 @@ using SmartEntry = std::variant<BinaryEntry, UnaryValueEntry, UnarySetEntry>;
 
 using SmartTuples = std::vector<std::vector<SmartEntry>>;
 
+/**
+ * Sugar classes so users can create SmartEntries a bit more easily.
+ */
 struct EqualsValue : UnaryValueEntry{
     EqualsValue(const IntegerVariableID &var, const Integer &value) : UnaryValueEntry(
             var, value, ConstraintType::EQUAL) {};

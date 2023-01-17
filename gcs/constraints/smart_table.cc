@@ -38,12 +38,30 @@ namespace
     using VariableDomainMap = unordered_map<IntegerVariableID, vector<Integer>>;
     using BinaryEntryData = tuple<IntegerVariableID, IntegerVariableID, ConstraintType>;
 
-    // --- remove eventually - for sanity checking only
+    // --- remove eventually -- DEBUGGING ONLY
     //    auto index_of(const IntegerVariableID & val, const vector<IntegerVariableID> & vec) -> int
     //    {
     //        ptrdiff_t pos = distance(vec.begin(), find(vec.begin(), vec.end(), val));
     //        return (int)pos;
     //    }
+
+    // // -- remove eventually -- DEBUGGING ONLY
+    //    auto print_edge(const SmartEntry & edge, const vector<IntegerVariableID> vars) -> void
+    //    {
+    //        const string stringtypes[] = {"LESS_THAN", "LESS_THAN_EQUAL", "EQUAL", "NOT_EQUAL", "GREATER_THAN", "GREATER_THAN_EQUAL", "IN", "NOT_IN"};
+    //        overloaded{
+    //            [&](BinaryEntry b) {
+    //                cout << index_of(b.var_1, vars) << ", " << stringtypes[b.constraint_type] << ", " << index_of(b.var_2, vars);
+    //            },
+    //            [&](UnarySetEntry us) {
+    //                cout << &us.var;
+    //            },
+    //            [&](UnaryValueEntry us) {
+    //                cout << &us.var;
+    //            }}
+    //            .visit(edge);
+    //    }
+    // // ---
 
     auto filter_edge(const SmartEntry & edge, VariableDomainMap & supported_by_tree)
     {
@@ -172,9 +190,9 @@ namespace
             }}
             .visit(edge);
     }
+
     auto filter_and_check_valid(const SmartTable::TreeEdges & tree, VariableDomainMap & supported_by_tree) -> bool
     {
-
         for (int l = tree.size() - 1; l >= 0; --l) {
             for (const auto & edge : tree[l]) {
 
@@ -213,6 +231,7 @@ namespace
 
         unsupported[var] = new_unsupported;
     }
+
     auto filter_again_and_remove_supported(const SmartTable::TreeEdges & tree, VariableDomainMap & supported_by_tree, VariableDomainMap & unsupported)
     {
         for (int l = tree.size() - 1; l >= 0; --l) {
@@ -432,29 +451,11 @@ namespace
 
             forests.emplace_back(forest);
         }
-
         return forests;
     }
-
-    // // -- remove eventually -- DEBUGGING ONLY
-    //    auto print_edge(const SmartEntry & edge, const vector<IntegerVariableID> vars) -> void
-    //    {
-    //        const string stringtypes[] = {"LESS_THAN", "LESS_THAN_EQUAL", "EQUAL", "NOT_EQUAL", "GREATER_THAN", "GREATER_THAN_EQUAL", "IN", "NOT_IN"};
-    //        overloaded{
-    //            [&](BinaryEntry b) {
-    //                cout << index_of(b.var_1, vars) << ", " << stringtypes[b.constraint_type] << ", " << index_of(b.var_2, vars);
-    //            },
-    //            [&](UnarySetEntry us) {
-    //                cout << &us.var;
-    //            },
-    //            [&](UnaryValueEntry us) {
-    //                cout << &us.var;
-    //            }}
-    //            .visit(edge);
-    //    }
-    // // ---
 }
 
+// For PB model
 auto make_binary_entry_flag(State & state, Propagators & propagators, const IntegerVariableID & var_1, const IntegerVariableID & var_2, const ConstraintType & c) -> ProofFlag
 {
     ProofFlag flag, flag_lt, flag_gt; // Is this initialisation okay?
@@ -534,6 +535,7 @@ auto literal_from_unary_entry(UnaryValueEntry & unary_entry) -> Literal
         throw UnexpectedException{"Unexpected SmartEntry type encountered while creating PB model."};
     }
 }
+
 auto SmartTable::clone() const -> unique_ptr<Constraint>
 {
     return make_unique<SmartTable>(_vars, _tuples);
