@@ -1,5 +1,4 @@
 #include <gcs/constraints/smart_table.hh>
-#include <gcs/innards/extensional_utils.hh>
 #include <gcs/innards/propagators.hh>
 
 #include <algorithm>
@@ -7,12 +6,11 @@
 #include <set>
 #include <string>
 #include <tuple>
-#include <utility>
+#include <unordered_map>
 #include <variant>
 #include <vector>
 
 #include <gcs/exception.hh>
-#include <gcs/smart_entry.hh>
 #include <util/overloaded.hh>
 
 using std::make_unique;
@@ -28,14 +26,6 @@ using std::visit;
 using namespace gcs;
 using namespace gcs::innards;
 
-// -- Remove
-#include <iostream>
-#include <string>
-using std::cout;
-using std::endl;
-using std::string;
-// --
-
 SmartTable::SmartTable(const vector<IntegerVariableID> & v, SmartTuples & t) :
     _vars(v),
     _tuples(t)
@@ -48,19 +38,19 @@ namespace
     using VariableDomainMap = unordered_map<IntegerVariableID, vector<Integer>>;
     using BinaryEntryData = tuple<IntegerVariableID, IntegerVariableID, ConstraintType>;
 
-    // --- remove - for sanity checking only
-    auto index_of(const IntegerVariableID & val, const vector<IntegerVariableID> & vec) -> int
-    {
-        ptrdiff_t pos = distance(vec.begin(), find(vec.begin(), vec.end(), val));
-        return (int)pos;
-    }
+    // --- remove eventually - for sanity checking only
+    //    auto index_of(const IntegerVariableID & val, const vector<IntegerVariableID> & vec) -> int
+    //    {
+    //        ptrdiff_t pos = distance(vec.begin(), find(vec.begin(), vec.end(), val));
+    //        return (int)pos;
+    //    }
 
     auto filter_edge(const SmartEntry & edge, VariableDomainMap & supported_by_tree)
     {
         // Currently filter both domains - might be overkill
         // If the tree was in a better form, think this can be optimised to do less redundant filtering.
         overloaded{
-            [&](BinaryEntry binary_entry) {
+            [&](const BinaryEntry & binary_entry) {
                 vector<Integer> new_dom_1{};
                 vector<Integer> new_dom_2{};
                 auto dom_1 = supported_by_tree[binary_entry.var_1];
@@ -124,7 +114,7 @@ namespace
                 supported_by_tree[binary_entry.var_1] = new_dom_1;
                 supported_by_tree[binary_entry.var_2] = new_dom_2;
             },
-            [&](UnarySetEntry unary_set_entry) {
+            [&](const UnarySetEntry & unary_set_entry) {
                 vector<Integer> new_dom{};
                 auto dom = supported_by_tree[unary_set_entry.var];
                 auto set_values = unary_set_entry.values;
@@ -146,7 +136,7 @@ namespace
                     throw UnexpectedException{"Unexpected SmartEntry type encountered."};
                 }
             },
-            [&](UnaryValueEntry unary_val_entry) {
+            [&](const UnaryValueEntry & unary_val_entry) {
                 vector<Integer> new_dom{};
                 auto dom = supported_by_tree[unary_val_entry.var];
                 auto value = unary_val_entry.value;
@@ -377,20 +367,20 @@ namespace
                 [&](BinaryEntry binary_entry) {
                     if (! node_visited[binary_entry.var_1]) {
                         entry_tree[current_level].emplace_back(edge);
-                        entry_tree.emplace_back(vector<SmartEntry>{});
+                        entry_tree.emplace_back();
 
                         build_tree(binary_entry.var_1, current_level + 1, entry_tree, node_visited, adjacent_edges);
                     }
                     else if (! node_visited[binary_entry.var_2]) {
                         entry_tree[current_level].emplace_back(edge);
-                        entry_tree.emplace_back(vector<SmartEntry>{});
+                        entry_tree.emplace_back();
                         build_tree(binary_entry.var_2, current_level + 1, entry_tree, node_visited, adjacent_edges);
                     }
                 },
-                [&](UnarySetEntry u) {
+                [&](const UnarySetEntry &) {
                     entry_tree[current_level].emplace_back(edge);
                 },
-                [&](UnaryValueEntry u) {
+                [&](const UnaryValueEntry &) {
                     entry_tree[current_level].emplace_back(edge);
                 }}
                 .visit(edge);
@@ -400,9 +390,7 @@ namespace
     auto build_forests(SmartTuples & tuples) -> vector<SmartTable::Forest>
     {
         vector<SmartTable::Forest> forests{};
-        for (unsigned int tuple_idx = 0; tuple_idx < tuples.size(); ++tuple_idx) {
-            auto current_tuple = tuples[tuple_idx];
-
+        for (const auto & current_tuple : tuples) {
             unordered_map<IntegerVariableID, bool> node_visited;
             unordered_map<IntegerVariableID, vector<SmartEntry>> adjacent_edges;
 
@@ -436,7 +424,7 @@ namespace
                 auto & visited = var_pair.second;
                 if (visited) continue;
                 vector<vector<SmartEntry>> entry_tree;
-                entry_tree.emplace_back(vector<SmartEntry>{});
+                entry_tree.emplace_back();
                 // Recursively build the tree starting from this node
                 build_tree(var, 0, entry_tree, node_visited, adjacent_edges);
                 forest.emplace_back(entry_tree);
@@ -448,28 +436,28 @@ namespace
         return forests;
     }
 
-    // DEBUGGING ONLY
-    auto print_edge(const SmartEntry & edge, const vector<IntegerVariableID> vars) -> void
-    {
-        const string stringtypes[] = {"LESS_THAN", "LESS_THAN_EQUAL", "EQUAL", "NOT_EQUAL", "GREATER_THAN", "GREATER_THAN_EQUAL", "IN", "NOT_IN"};
-        overloaded{
-            [&](BinaryEntry b) {
-                cout << index_of(b.var_1, vars) << ", " << stringtypes[b.constraint_type] << ", " << index_of(b.var_2, vars);
-            },
-            [&](UnarySetEntry us) {
-                cout << &us.var;
-            },
-            [&](UnaryValueEntry us) {
-                cout << &us.var;
-            }}
-            .visit(edge);
-    }
-    // ---
+    // // -- remove eventually -- DEBUGGING ONLY
+    //    auto print_edge(const SmartEntry & edge, const vector<IntegerVariableID> vars) -> void
+    //    {
+    //        const string stringtypes[] = {"LESS_THAN", "LESS_THAN_EQUAL", "EQUAL", "NOT_EQUAL", "GREATER_THAN", "GREATER_THAN_EQUAL", "IN", "NOT_IN"};
+    //        overloaded{
+    //            [&](BinaryEntry b) {
+    //                cout << index_of(b.var_1, vars) << ", " << stringtypes[b.constraint_type] << ", " << index_of(b.var_2, vars);
+    //            },
+    //            [&](UnarySetEntry us) {
+    //                cout << &us.var;
+    //            },
+    //            [&](UnaryValueEntry us) {
+    //                cout << &us.var;
+    //            }}
+    //            .visit(edge);
+    //    }
+    // // ---
 }
 
 auto make_binary_entry_flag(State & state, Propagators & propagators, const IntegerVariableID & var_1, const IntegerVariableID & var_2, const ConstraintType & c) -> ProofFlag
 {
-    ProofFlag flag, flag_lt, flag_gt;
+    ProofFlag flag, flag_lt, flag_gt; // Is this initialisation okay?
     WeightedPseudoBooleanTerms var_1_minus_var_2 = {{1_i, var_1}, {-1_i, var_2}};
     WeightedPseudoBooleanTerms var_2_minus_var_1 = {{1_i, var_2}, {-1_i, var_1}};
     switch (c) {

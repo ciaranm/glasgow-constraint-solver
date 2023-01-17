@@ -130,7 +130,7 @@ auto Propagators::define_at_most_one(const State &, Literals && lits) -> optiona
         return nullopt;
 }
 
-auto Propagators::define_pseudoboolean_ge(const State & state, WeightedPseudoBooleanTerms && lits, Integer val,
+auto Propagators::define_pseudoboolean_ge(const State &, WeightedPseudoBooleanTerms && lits, Integer val,
     optional<ReificationTerm> half_reif) -> optional<ProofLine>
 {
     if (_imp->optional_proof) {

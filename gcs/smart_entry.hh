@@ -163,6 +163,4 @@ struct LessThanEqualVar : BinaryEntry{
             : BinaryEntry(var_1, var_2,  ConstraintType::LESS_THAN_EQUAL) {}
 };
 
-
-
 #endif
