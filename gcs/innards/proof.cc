@@ -596,7 +596,7 @@ auto Proof::pseudoboolean_ge(const WeightedPseudoBooleanTerms & lits, Integer va
                 [&, w = w](const ProofFlag & flag) {
                     expr.weighted_terms.emplace_back(multiplier * w, proof_variable(flag));
                 },
-                [&](const ProofOnlySimpleIntegerVariableID & ivar) {
+                [&, w = w](const ProofOnlySimpleIntegerVariableID & ivar) {
                     auto & [_, bit_vars] = _imp->integer_variable_bits.at(ivar);
                     for (auto & [bit_value, bit_name] : bit_vars)
                         expr.weighted_terms.emplace_back(multiplier * w * bit_value, bit_name);

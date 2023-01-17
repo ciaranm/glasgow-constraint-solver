@@ -107,7 +107,7 @@ namespace
 
         auto inference_from_prevent = Inference::NoChange;
         // Assume all different has already been propagated (do we know this for sure ???)
-        for (const auto & [idx, var] : enumerate(succ)) {
+        for (const auto & var : succ) {
             if (state.has_single_value(var)) continue;
 
             // In that case the possible start points for chains are the domains of the unfixed variables
