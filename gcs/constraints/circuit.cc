@@ -6,6 +6,7 @@
 #include <util/enumerate.hh>
 
 #include <map>
+#include <sstream>
 #include <utility>
 
 using namespace gcs;
