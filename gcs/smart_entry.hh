@@ -6,9 +6,10 @@
 #include <gcs/variable_id.hh>
 #include <gcs/integer.hh>
 #include <algorithm> //std::sort
+
 using namespace gcs;
 
-enum ConstraintType {
+enum class ConstraintType {
     LESS_THAN,
     LESS_THAN_EQUAL,
     EQUAL,
@@ -28,8 +29,8 @@ struct BinaryEntry {
     ConstraintType constraint_type;
 
     // Constructor
-    BinaryEntry(IntegerVariableID var_1, IntegerVariableID var_2, ConstraintType constraint_type)
-    : var_1(var_1), var_2(var_2), constraint_type(constraint_type) {};
+//    BinaryEntry(IntegerVariableID var_1, IntegerVariableID var_2, ConstraintType constraint_type)
+//    : var_1(var_1), var_2(var_2), constraint_type(constraint_type) {};
 };
 
 struct UnaryValueEntry {

@@ -22,6 +22,14 @@ using std::unique_ptr;
 using std::unordered_map;
 using std::vector;
 using std::visit;
+using std::sort;
+using std::copy_if;
+using std::set_intersection;
+using std::set_difference;
+using std::to_string;
+using std::map;
+using std::make_tuple;
+using std::string;
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -37,6 +45,8 @@ namespace
     // Shorthands
     using VariableDomainMap = unordered_map<IntegerVariableID, vector<Integer>>;
     using BinaryEntryData = tuple<IntegerVariableID, IntegerVariableID, ConstraintType>;
+    using TreeEdges = std::vector<std::vector<SmartEntry>>;
+    using Forest = std::vector<TreeEdges>;
 
     // --- remove eventually -- DEBUGGING ONLY
     //    auto index_of(const IntegerVariableID & val, const vector<IntegerVariableID> & vec) -> int
@@ -63,7 +73,7 @@ namespace
     //    }
     // // ---
 
-    auto filter_edge(const SmartEntry & edge, VariableDomainMap & supported_by_tree)
+    auto filter_edge(const SmartEntry & edge, VariableDomainMap & supported_by_tree) -> void
     {
         // Currently filter both domains - might be overkill
         // If the tree was in a better form, think this can be optimised to do less redundant filtering.
@@ -71,40 +81,40 @@ namespace
             [&](const BinaryEntry & binary_entry) {
                 vector<Integer> new_dom_1{};
                 vector<Integer> new_dom_2{};
-                auto dom_1 = supported_by_tree[binary_entry.var_1];
-                auto dom_2 = supported_by_tree[binary_entry.var_2];
-                std::sort(dom_1.begin(), dom_1.end());
-                std::sort(dom_2.begin(), dom_2.end());
+                auto& dom_1 = supported_by_tree[binary_entry.var_1];
+                auto& dom_2 = supported_by_tree[binary_entry.var_2];
+                sort(dom_1.begin(), dom_1.end());
+                sort(dom_2.begin(), dom_2.end());
 
                 switch (binary_entry.constraint_type) {
-                case LESS_THAN:
-                    std::copy_if(dom_2.begin(), dom_2.end(), back_inserter(new_dom_2),
+                case ConstraintType::LESS_THAN:
+                    copy_if(dom_2.begin(), dom_2.end(), back_inserter(new_dom_2),
                         [&](Integer val) { return val > dom_1[0]; });
-                    std::copy_if(dom_1.begin(), dom_1.end(), back_inserter(new_dom_1),
+                    copy_if(dom_1.begin(), dom_1.end(), back_inserter(new_dom_1),
                         [&](Integer val) { return val < dom_2[dom_2.size() - 1]; });
                     break;
-                case LESS_THAN_EQUAL:
-                    std::copy_if(dom_2.begin(), dom_2.end(), back_inserter(new_dom_2),
+                case ConstraintType::LESS_THAN_EQUAL:
+                    copy_if(dom_2.begin(), dom_2.end(), back_inserter(new_dom_2),
                         [&](Integer val) { return val <= dom_1[0]; });
-                    std::copy_if(dom_1.begin(), dom_1.end(), back_inserter(new_dom_1),
+                    copy_if(dom_1.begin(), dom_1.end(), back_inserter(new_dom_1),
                         [&](Integer val) { return val <= dom_2[dom_2.size() - 1]; });
                     break;
-                case EQUAL:
-                    std::set_intersection(dom_1.begin(), dom_1.end(),
+                case ConstraintType::EQUAL:
+                    set_intersection(dom_1.begin(), dom_1.end(),
                         dom_2.begin(), dom_2.end(),
                         back_inserter(new_dom_1));
                     new_dom_2 = new_dom_1;
                     break;
-                case NOT_EQUAL:
+                case ConstraintType::NOT_EQUAL:
                     if (dom_1.size() == 1) {
                         new_dom_1 = dom_1;
-                        std::set_difference(dom_2.begin(), dom_2.end(),
+                        set_difference(dom_2.begin(), dom_2.end(),
                             dom_1.begin(), dom_1.end(),
                             back_inserter(new_dom_2));
                     }
                     else if (dom_2.size() == 1) {
                         new_dom_2 = dom_2;
-                        std::set_difference(dom_1.begin(), dom_1.end(),
+                        set_difference(dom_1.begin(), dom_1.end(),
                             dom_2.begin(), dom_2.end(),
                             back_inserter(new_dom_1));
                     }
@@ -113,16 +123,16 @@ namespace
                         new_dom_2 = dom_2;
                     }
                     break;
-                case GREATER_THAN:
-                    std::copy_if(dom_1.begin(), dom_1.end(), back_inserter(new_dom_1),
+                case ConstraintType::GREATER_THAN:
+                    copy_if(dom_1.begin(), dom_1.end(), back_inserter(new_dom_1),
                         [&](Integer val) { return val > dom_2[0]; });
-                    std::copy_if(dom_2.begin(), dom_2.end(), back_inserter(new_dom_2),
+                    copy_if(dom_2.begin(), dom_2.end(), back_inserter(new_dom_2),
                         [&](Integer val) { return val < dom_1[dom_1.size() - 1]; });
                     break;
-                case GREATER_THAN_EQUAL:
-                    std::copy_if(dom_1.begin(), dom_1.end(), back_inserter(new_dom_1),
+                case ConstraintType::GREATER_THAN_EQUAL:
+                    copy_if(dom_1.begin(), dom_1.end(), back_inserter(new_dom_1),
                         [&](Integer val) { return val >= dom_2[0]; });
-                    std::copy_if(dom_2.begin(), dom_2.end(), back_inserter(new_dom_2),
+                    copy_if(dom_2.begin(), dom_2.end(), back_inserter(new_dom_2),
                         [&](Integer val) { return val <= dom_1[dom_1.size() - 1]; });
                     break;
                 default:
@@ -136,17 +146,17 @@ namespace
                 vector<Integer> new_dom{};
                 auto dom = supported_by_tree[unary_set_entry.var];
                 auto set_values = unary_set_entry.values;
-                std::sort(dom.begin(), dom.end());
-                std::sort(set_values.begin(), set_values.end());
+                sort(dom.begin(), dom.end());
+                sort(set_values.begin(), set_values.end());
 
                 switch (unary_set_entry.constraint_type) {
-                case IN:
-                    std::set_intersection(dom.begin(), dom.end(),
+                case ConstraintType::IN:
+                    set_intersection(dom.begin(), dom.end(),
                         set_values.begin(), set_values.end(),
                         back_inserter(new_dom));
                     break;
-                case NOT_IN:
-                    std::set_difference(dom.begin(), dom.end(),
+                case ConstraintType::NOT_IN:
+                    set_difference(dom.begin(), dom.end(),
                         set_values.begin(), set_values.end(),
                         back_inserter(new_dom));
                     break;
@@ -158,30 +168,30 @@ namespace
                 vector<Integer> new_dom{};
                 auto dom = supported_by_tree[unary_val_entry.var];
                 auto value = unary_val_entry.value;
-                std::sort(dom.begin(), dom.end());
+                sort(dom.begin(), dom.end());
 
                 switch (unary_val_entry.constraint_type) {
-                case LESS_THAN:
-                    std::copy_if(dom.begin(), dom.end(), back_inserter(new_dom),
+                case ConstraintType::LESS_THAN:
+                    copy_if(dom.begin(), dom.end(), back_inserter(new_dom),
                         [&](Integer dom_val) { return dom_val < value; });
                     break;
-                case LESS_THAN_EQUAL:
-                    std::copy_if(dom.begin(), dom.end(), back_inserter(new_dom),
+                case ConstraintType::LESS_THAN_EQUAL:
+                    copy_if(dom.begin(), dom.end(), back_inserter(new_dom),
                         [&](Integer dom_val) { return dom_val <= value; });
                     break;
-                case EQUAL:
+                case ConstraintType::EQUAL:
                     new_dom.emplace_back(value);
                     break;
-                case NOT_EQUAL:
-                    std::copy_if(dom.begin(), dom.end(), back_inserter(new_dom),
+                case ConstraintType::NOT_EQUAL:
+                    copy_if(dom.begin(), dom.end(), back_inserter(new_dom),
                         [&](Integer dom_val) { return dom_val != value; });
                     break;
-                case GREATER_THAN:
-                    std::copy_if(dom.begin(), dom.end(), back_inserter(new_dom),
+                case ConstraintType::GREATER_THAN:
+                    copy_if(dom.begin(), dom.end(), back_inserter(new_dom),
                         [&](Integer dom_val) { return dom_val > value; });
                     break;
-                case GREATER_THAN_EQUAL:
-                    std::copy_if(dom.begin(), dom.end(), back_inserter(new_dom),
+                case ConstraintType::GREATER_THAN_EQUAL:
+                    copy_if(dom.begin(), dom.end(), back_inserter(new_dom),
                         [&](Integer dom_val) { return dom_val >= value; });
                     break;
                 default:
@@ -191,7 +201,7 @@ namespace
             .visit(edge);
     }
 
-    auto filter_and_check_valid(const SmartTable::TreeEdges & tree, VariableDomainMap & supported_by_tree) -> bool
+    [[nodiscard]] auto filter_and_check_valid(const TreeEdges & tree, VariableDomainMap & supported_by_tree) -> bool
     {
         for (int l = tree.size() - 1; l >= 0; --l) {
             for (const auto & edge : tree[l]) {
@@ -223,16 +233,16 @@ namespace
     auto remove_supported(VariableDomainMap & unsupported, IntegerVariableID var, vector<Integer> & to_remove) -> void
     {
         vector<Integer> new_unsupported{};
-        auto unsupported_set = std::set(unsupported[var].begin(), unsupported[var].end());
-        auto to_remove_set = std::set(to_remove.begin(), to_remove.end());
-        std::set_difference(unsupported_set.begin(), unsupported_set.end(),
+        auto unsupported_set = set(unsupported[var].begin(), unsupported[var].end());
+        auto to_remove_set = set(to_remove.begin(), to_remove.end());
+        set_difference(unsupported_set.begin(), unsupported_set.end(),
             to_remove_set.begin(), to_remove_set.end(),
             back_inserter(new_unsupported));
 
         unsupported[var] = new_unsupported;
     }
 
-    auto filter_again_and_remove_supported(const SmartTable::TreeEdges & tree, VariableDomainMap & supported_by_tree, VariableDomainMap & unsupported)
+    auto filter_again_and_remove_supported(const TreeEdges & tree, VariableDomainMap & supported_by_tree, VariableDomainMap & unsupported) -> void
     {
         for (int l = tree.size() - 1; l >= 0; --l) {
             for (const auto & edge : tree[l]) {
@@ -273,17 +283,17 @@ namespace
                 .visit(entry);
         }
 
-        auto vars_set = std::set(vars.begin(), vars.end());
-        auto vars_in_tuple_set = std::set(vars_in_tuple.begin(), vars_in_tuple.end());
+        auto vars_set = set(vars.begin(), vars.end());
+        auto vars_in_tuple_set = set(vars_in_tuple.begin(), vars_in_tuple.end());
 
-        std::set_difference(vars_set.begin(), vars_set.end(),
+        set_difference(vars_set.begin(), vars_set.end(),
             vars_in_tuple_set.begin(), vars_in_tuple_set.end(),
             back_inserter(unrestricted));
         return unrestricted;
     }
 
-    auto propagate_using_smart_str(const vector<IntegerVariableID> & selectors, const vector<IntegerVariableID> & vars,
-        const SmartTuples & tuples, const vector<SmartTable::Forest> & forests, State & state) -> Inference
+    [[nodiscard]] auto propagate_using_smart_str(const vector<IntegerVariableID> & selectors, const vector<IntegerVariableID> & vars,
+        const SmartTuples & tuples, const vector<Forest> & forests, State & state) -> Inference
     {
 
         bool changed = false, contradiction = false;
@@ -292,9 +302,6 @@ namespace
         // Initialise unsupported values to everything in each variable's current domain.
         for (const auto & var : vars) {
             state.for_each_value(var, [&](Integer value) {
-                if (! unsupported.contains(var)) {
-                    unsupported[var] = vector<Integer>{};
-                }
                 unsupported[var].emplace_back(value);
             });
         }
@@ -313,9 +320,6 @@ namespace
 
                 for (const auto & var : vars) {
                     state.for_each_value(var, [&](Integer value) {
-                        if (! supported_by_tree.contains(var)) {
-                            supported_by_tree[var] = vector<Integer>{};
-                        }
                         supported_by_tree[var].emplace_back(value);
                     });
                 }
@@ -350,6 +354,7 @@ namespace
         for (unsigned int tuple_idx = 0; tuple_idx < tuples.size(); ++tuple_idx) {
             if (state.optional_single_value(selectors[tuple_idx]) != 0_i) {
                 some_tuple_still_feasible = true;
+                break;
             }
         }
         if (! some_tuple_still_feasible) {
@@ -406,9 +411,9 @@ namespace
         }
     }
 
-    auto build_forests(SmartTuples & tuples) -> vector<SmartTable::Forest>
+    [[nodiscard]] auto build_forests(SmartTuples & tuples) -> vector<Forest>
     {
-        vector<SmartTable::Forest> forests{};
+        vector<Forest> forests{};
         for (const auto & current_tuple : tuples) {
             unordered_map<IntegerVariableID, bool> node_visited;
             unordered_map<IntegerVariableID, vector<SmartEntry>> adjacent_edges;
@@ -419,25 +424,21 @@ namespace
                     [&](const BinaryEntry & binary_entry) {
                         node_visited[binary_entry.var_1] = false;
                         node_visited[binary_entry.var_2] = false;
-                        adjacent_edges.try_emplace(binary_entry.var_1, vector<SmartEntry>{});
-                        adjacent_edges.try_emplace(binary_entry.var_2, vector<SmartEntry>{});
                         adjacent_edges[binary_entry.var_1].emplace_back(binary_entry);
                         adjacent_edges[binary_entry.var_2].emplace_back(binary_entry);
                     },
                     [&](const UnaryValueEntry & unary_val_entry) {
                         node_visited[unary_val_entry.var] = false;
-                        adjacent_edges.try_emplace(unary_val_entry.var, vector<SmartEntry>{});
                         adjacent_edges[unary_val_entry.var].emplace_back(unary_val_entry);
                     },
                     [&](const UnarySetEntry & unary_set_entry) {
                         node_visited[unary_set_entry.var] = false;
-                        adjacent_edges.try_emplace(unary_set_entry.var, vector<SmartEntry>{});
                         adjacent_edges[unary_set_entry.var].emplace_back(unary_set_entry);
                     }}
                     .visit(entry);
             }
 
-            SmartTable::Forest forest{};
+            Forest forest{};
             for (auto & var_pair : node_visited) {
                 auto & var = var_pair.first;
                 auto & visited = var_pair.second;
@@ -453,86 +454,89 @@ namespace
         }
         return forests;
     }
-}
 
-// For PB model
-auto make_binary_entry_flag(State & state, Propagators & propagators, const IntegerVariableID & var_1, const IntegerVariableID & var_2, const ConstraintType & c) -> ProofFlag
-{
-    ProofFlag flag, flag_lt, flag_gt; // Is this initialisation okay?
-    WeightedPseudoBooleanTerms var_1_minus_var_2 = {{1_i, var_1}, {-1_i, var_2}};
-    WeightedPseudoBooleanTerms var_2_minus_var_1 = {{1_i, var_2}, {-1_i, var_1}};
-    switch (c) {
-    case EQUAL:
-        // f => var1 == var2
-        flag = propagators.create_proof_flag("bin_eq");
-        propagators.define_pseudoboolean_eq(state, move(var_1_minus_var_2), 0_i, flag);
+    // For PB model
+    [[nodiscard]] auto make_binary_entry_flag(State & state, Propagators & propagators, const IntegerVariableID & var_1, const IntegerVariableID & var_2, const ConstraintType & c) -> ProofFlag
+    {
+        ProofFlag flag, flag_lt, flag_gt;
 
-        // !f => var1 != var2
-        flag_lt = propagators.create_proof_flag("lt");
-        flag_gt = propagators.create_proof_flag("gt");
-        propagators.define_pseudoboolean_ge(state, move(var_1_minus_var_2), 1_i, flag_gt);
-        propagators.define_pseudoboolean_ge(state, move(var_2_minus_var_1), 0_i, ! flag_gt);
-        propagators.define_pseudoboolean_ge(state, move(var_2_minus_var_1), 1_i, flag_lt);
-        propagators.define_pseudoboolean_ge(state, move(var_1_minus_var_2), 0_i, ! flag_lt);
-        propagators.define_pseudoboolean_ge(state, {{1_i, flag_lt}, {1_i, flag_gt}}, 1_i, ! flag);
-        return flag;
-    case GREATER_THAN:
-        flag = propagators.create_proof_flag("bin_gt");
-        propagators.define_pseudoboolean_ge(state, move(var_1_minus_var_2), 1_i, flag);
-        propagators.define_pseudoboolean_ge(state, move(var_2_minus_var_1), 0_i, ! flag);
-        return flag;
-    case LESS_THAN:
-        flag = propagators.create_proof_flag("bin_lt");
-        propagators.define_pseudoboolean_ge(state, move(var_2_minus_var_1), 1_i, flag);
-        propagators.define_pseudoboolean_ge(state, move(var_1_minus_var_2), 0_i, ! flag);
-        return flag;
-    case LESS_THAN_EQUAL:
-        propagators.define_pseudoboolean_ge(state, move(var_2_minus_var_1), 0_i, flag);
-        propagators.define_pseudoboolean_ge(state, move(var_1_minus_var_2), 1_i, ! flag);
-        return flag;
-    case NOT_EQUAL:
-        // !f => var1 == var2
-        flag = propagators.create_proof_flag("bin_eq");
-        propagators.define_pseudoboolean_eq(state, move(var_1_minus_var_2), 0_i, ! flag);
+        switch (c) {
+            case ConstraintType::EQUAL:
+                // f => var1 == var2
+                flag = propagators.create_proof_flag("bin_eq");
+                propagators.define_pseudoboolean_eq(state, {{1_i, var_1}, {-1_i, var_2}}, 0_i, flag);
 
-        // f => var1 != var2
-        flag_lt = propagators.create_proof_flag("lt");
-        flag_gt = propagators.create_proof_flag("gt");
-        propagators.define_pseudoboolean_ge(state, move(var_1_minus_var_2), 1_i, flag_gt);
-        propagators.define_pseudoboolean_ge(state, move(var_2_minus_var_1), 0_i, ! flag_gt);
-        propagators.define_pseudoboolean_ge(state, move(var_2_minus_var_1), 1_i, flag_lt);
-        propagators.define_pseudoboolean_ge(state, move(var_1_minus_var_2), 0_i, ! flag_lt);
-        propagators.define_pseudoboolean_ge(state, {{1_i, flag_lt}, {1_i, flag_gt}}, 1_i, flag);
-        return flag;
-    case GREATER_THAN_EQUAL:
-        flag = propagators.create_proof_flag("bin_gt");
-        propagators.define_pseudoboolean_ge(state, move(var_1_minus_var_2), 0_i, flag);
-        propagators.define_pseudoboolean_ge(state, move(var_2_minus_var_1), 1_i, ! flag);
-        return flag;
-    default:
-        throw UnexpectedException{"Unexpected SmartEntry type encountered while creating PB model."};
+                // !f => var1 != var2
+                flag_lt = propagators.create_proof_flag("lt");
+                flag_gt = propagators.create_proof_flag("gt");
+                propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 1_i, flag_gt);
+                propagators.define_pseudoboolean_ge(state, {{1_i, var_2}, {-1_i, var_1}}, 0_i, ! flag_gt);
+                propagators.define_pseudoboolean_ge(state, {{1_i, var_2}, {-1_i, var_1}}, 1_i, flag_lt);
+                propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 0_i, ! flag_lt);
+                propagators.define_pseudoboolean_ge(state, {{1_i, flag_lt}, {1_i, flag_gt}}, 1_i, ! flag);
+                return flag;
+            case ConstraintType::GREATER_THAN:
+                flag = propagators.create_proof_flag("bin_gt");
+                propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 1_i, flag);
+                propagators.define_pseudoboolean_ge(state, {{1_i, var_2}, {-1_i, var_1}}, 0_i, ! flag);
+                return flag;
+            case ConstraintType::LESS_THAN:
+                flag = propagators.create_proof_flag("bin_lt");
+                propagators.define_pseudoboolean_ge(state, {{1_i, var_2}, {-1_i, var_1}}, 1_i, flag);
+                propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 0_i, ! flag);
+                return flag;
+            case ConstraintType::LESS_THAN_EQUAL:
+                propagators.define_pseudoboolean_ge(state, {{1_i, var_2}, {-1_i, var_1}}, 0_i, flag);
+                propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 1_i, ! flag);
+                return flag;
+            case ConstraintType::NOT_EQUAL:
+                // !f => var1 == var2
+                flag = propagators.create_proof_flag("bin_eq");
+                propagators.define_pseudoboolean_eq(state, {{1_i, var_1}, {-1_i, var_2}}, 0_i, ! flag);
+
+                // f => var1 != var2
+                flag_lt = propagators.create_proof_flag("lt");
+                flag_gt = propagators.create_proof_flag("gt");
+                propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 1_i, flag_gt);
+                propagators.define_pseudoboolean_ge(state, {{1_i, var_2}, {-1_i, var_1}}, 0_i, ! flag_gt);
+                propagators.define_pseudoboolean_ge(state, {{1_i, var_2}, {-1_i, var_1}}, 1_i, flag_lt);
+                propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 0_i, ! flag_lt);
+                propagators.define_pseudoboolean_ge(state, {{1_i, flag_lt}, {1_i, flag_gt}}, 1_i, flag);
+                return flag;
+            case ConstraintType::GREATER_THAN_EQUAL:
+                flag = propagators.create_proof_flag("bin_gt");
+                propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 0_i, flag);
+                propagators.define_pseudoboolean_ge(state, {{1_i, var_2}, {-1_i, var_1}}, 1_i, ! flag);
+                return flag;
+            case ConstraintType::NOT_IN:
+            case ConstraintType::IN:
+                throw UnexpectedException{"Unexpected SmartEntry type encountered while creating PB model."};
+        }
+        throw NonExhaustiveSwitch{};
     }
-}
 
-auto literal_from_unary_entry(UnaryValueEntry & unary_entry) -> Literal
-{
-    auto var = unary_entry.var;
-    auto value = unary_entry.value;
-    switch (unary_entry.constraint_type) {
-    case LESS_THAN:
-        return var < value;
-    case LESS_THAN_EQUAL:
-        return var < value + 1_i;
-    case EQUAL:
-        return var == value;
-    case NOT_EQUAL:
-        return var != value;
-    case GREATER_THAN:
-        return var >= value + 1_i;
-    case GREATER_THAN_EQUAL:
-        return var >= value;
-    default:
-        throw UnexpectedException{"Unexpected SmartEntry type encountered while creating PB model."};
+    auto literal_from_unary_entry(UnaryValueEntry & unary_entry) -> Literal
+    {
+        auto var = unary_entry.var;
+        auto value = unary_entry.value;
+        switch (unary_entry.constraint_type) {
+        case ConstraintType::LESS_THAN:
+            return var < value;
+        case ConstraintType::LESS_THAN_EQUAL:
+            return var < value + 1_i;
+        case ConstraintType::EQUAL:
+            return var == value;
+        case ConstraintType::NOT_EQUAL:
+            return var != value;
+        case ConstraintType::GREATER_THAN:
+            return var >= value + 1_i;
+        case ConstraintType::GREATER_THAN_EQUAL:
+            return var >= value;
+        case ConstraintType::IN:
+        case ConstraintType::NOT_IN:
+            throw UnexpectedException{"Unexpected SmartEntry type encountered while creating PB model."};
+        }
+        throw NonExhaustiveSwitch{};
     }
 }
 
@@ -553,19 +557,18 @@ auto SmartTable::install(Propagators & propagators, State & initial_state) && ->
         vector<ProofFlag> pb_selectors;
 
         for (unsigned int i = 0; i < _tuples.size(); ++i) {
-            pb_selectors.emplace_back(propagators.create_proof_flag("t" + std::to_string(i)));
+            pb_selectors.emplace_back(propagators.create_proof_flag("t" + to_string(i)));
         }
         WeightedPseudoBooleanTerms sum_pb_selectors{};
 
         for (const auto & s : pb_selectors) {
-            WeightedPseudoBooleanTerm t{1_i, s};
-            sum_pb_selectors.emplace_back(t); // No idea why, but this errors if I put the initialiser list directly in emplace_back()
+            sum_pb_selectors.emplace_back(1_i, s);
         }
 
         propagators.define_pseudoboolean_ge(initial_state, move(sum_pb_selectors), 1_i);
 
         // Would need a hash function for unordered map, but this shouldn't be too slow
-        std::map<BinaryEntryData, ProofFlag> smart_entry_flags;
+        map<BinaryEntryData, ProofFlag> smart_entry_flags;
 
         for (unsigned int tuple_idx = 0; tuple_idx < _tuples.size(); ++tuple_idx) {
             WeightedPseudoBooleanTerms entry_flags_sum{};
@@ -573,44 +576,36 @@ auto SmartTable::install(Propagators & propagators, State & initial_state) && ->
             for (const auto & entry : _tuples[tuple_idx]) {
                 overloaded{
                     [&](BinaryEntry binary_entry) {
-                        auto binary_entry_data = std::make_tuple(binary_entry.var_1, binary_entry.var_2, binary_entry.constraint_type);
+                        auto binary_entry_data = make_tuple(binary_entry.var_1, binary_entry.var_2, binary_entry.constraint_type);
                         if (! smart_entry_flags.contains(binary_entry_data))
                             smart_entry_flags[binary_entry_data] = make_binary_entry_flag(initial_state, propagators, binary_entry.var_1, binary_entry.var_2, binary_entry.constraint_type);
 
-                        WeightedPseudoBooleanTerm t{1_i, smart_entry_flags[binary_entry_data]};
-                        WeightedPseudoBooleanTerm minus_t{-1_i, smart_entry_flags[binary_entry_data]};
-                        entry_flags_sum.emplace_back(t);
-                        entry_flags_neg_sum.emplace_back(minus_t);
+                        entry_flags_sum.emplace_back(1_i, smart_entry_flags[binary_entry_data]);
+                        entry_flags_neg_sum.emplace_back(-1_i, smart_entry_flags[binary_entry_data]);
                     },
                     [&](const UnarySetEntry & unary_set_entry) {
                         auto var = unary_set_entry.var;
                         WeightedPseudoBooleanTerms set_value_sum{};
                         WeightedPseudoBooleanTerms neg_set_value_sum{};
                         for (const auto & val : unary_set_entry.values) {
-                            WeightedPseudoBooleanTerm t{1_i, var == val};
-                            WeightedPseudoBooleanTerm minus_t{-1_i, var == val};
-                            set_value_sum.emplace_back(t);
-                            neg_set_value_sum.emplace_back(minus_t);
+                            set_value_sum.emplace_back(1_i, var == val);
+                            neg_set_value_sum.emplace_back(-1_i, var == val);
                         }
 
-                        auto flag = unary_set_entry.constraint_type == IN ? propagators.create_proof_flag("inset") : propagators.create_proof_flag("notinset");
+                        auto flag = unary_set_entry.constraint_type == ConstraintType::IN ? propagators.create_proof_flag("inset") : propagators.create_proof_flag("notinset");
 
                         propagators.define_pseudoboolean_ge(initial_state, move(set_value_sum), 1_i,
-                            unary_set_entry.constraint_type == IN ? flag : ! flag);
+                            unary_set_entry.constraint_type == ConstraintType::IN ? flag : ! flag);
                         propagators.define_pseudoboolean_ge(initial_state, move(neg_set_value_sum), 0_i,
-                            unary_set_entry.constraint_type == IN ? ! flag : flag);
+                            unary_set_entry.constraint_type == ConstraintType::IN ? ! flag : flag);
 
-                        WeightedPseudoBooleanTerm t{1_i, flag};
-                        WeightedPseudoBooleanTerm minus_t{-1_i, flag};
-                        entry_flags_sum.emplace_back(t);
-                        entry_flags_neg_sum.emplace_back(minus_t);
+                        entry_flags_sum.emplace_back(1_i, flag);
+                        entry_flags_neg_sum.emplace_back(-1_i, flag);
                     },
                     [&](UnaryValueEntry unary_value_entry) {
                         Literal l = literal_from_unary_entry(unary_value_entry);
-                        WeightedPseudoBooleanTerm t{1_i, l};
-                        WeightedPseudoBooleanTerm minus_t{-1_i, l};
-                        entry_flags_sum.emplace_back(t);
-                        entry_flags_neg_sum.emplace_back(minus_t);
+                        entry_flags_sum.emplace_back(1_i, l);
+                        entry_flags_neg_sum.emplace_back(-1_i, l);
                     }}
                     .visit(entry);
             }
@@ -627,7 +622,7 @@ auto SmartTable::install(Propagators & propagators, State & initial_state) && ->
     vector<Forest> forests = build_forests(_tuples);
 
     propagators.install(
-        [selectors, vars = _vars, tuples = _tuples, forests = forests](State & state) -> pair<Inference, PropagatorState> {
+        [selectors, vars = _vars, tuples = move(_tuples), forests = move(forests)](State & state) -> pair<Inference, PropagatorState> {
             return pair{
                 propagate_using_smart_str(selectors, vars, tuples, forests, state),
                 PropagatorState::Enable};
@@ -636,7 +631,7 @@ auto SmartTable::install(Propagators & propagators, State & initial_state) && ->
         "smart table");
 }
 
-auto SmartTable::describe_for_proof() -> std::string
+auto SmartTable::describe_for_proof() -> string
 {
     return "smart table";
 }

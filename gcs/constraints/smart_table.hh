@@ -18,8 +18,6 @@ namespace gcs
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
         virtual auto describe_for_proof() -> std::string override;
         virtual auto install(innards::Propagators &, innards::State &) && -> void override;
-        using TreeEdges = std::vector<std::vector<SmartEntry>>;
-        using Forest = std::vector<TreeEdges>;
     };
 }
 
