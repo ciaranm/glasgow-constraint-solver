@@ -273,6 +273,7 @@ namespace
             overloaded{
                 [&](const BinaryEntry & binary_entry) {
                     vars_in_tuple.emplace_back(binary_entry.var_1);
+                    vars_in_tuple.emplace_back(binary_entry.var_2);
                 },
                 [&](const UnarySetEntry & unary_set_entry) {
                     vars_in_tuple.emplace_back(unary_set_entry.var);
