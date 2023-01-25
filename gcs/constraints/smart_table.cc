@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <map>
 #include <set>
+#include <sstream>
 #include <string>
 #include <tuple>
 #include <unordered_map>
@@ -26,6 +27,7 @@ using std::sort;
 using std::copy_if;
 using std::set_intersection;
 using std::set_difference;
+using std::stringstream;
 using std::to_string;
 using std::map;
 using std::make_tuple;
@@ -223,6 +225,7 @@ namespace
                     .visit(edge);
 
                 if (domain_became_empty) {
+
                     return false;
                 }
             }
@@ -294,7 +297,7 @@ namespace
     }
 
     [[nodiscard]] auto propagate_using_smart_str(const vector<IntegerVariableID> & selectors, const vector<IntegerVariableID> & vars,
-        const SmartTuples & tuples, const vector<Forest> & forests, State & state) -> Inference
+        const SmartTuples & tuples, const vector<Forest> & forests, State & state, vector<ProofFlag>  pb_selectors) -> Inference
     {
 
         bool changed = false, contradiction = false;
@@ -328,10 +331,11 @@ namespace
                 // First pass of filtering supported_by_tree and check of validity
                 if (! filter_and_check_valid(tree, supported_by_tree)) {
                     // Not feasible
-                    switch (state.infer_equal(selectors[tuple_idx], 0_i, NoJustificationNeeded{})) {
-                    case Inference::NoChange: break;
-                    case Inference::Change: changed = true; break;
-                    case Inference::Contradiction: contradiction = true; break;
+                    switch (state.infer_equal(selectors[tuple_idx], 0_i, NoJustificationNeeded{}))
+                    {
+                        case Inference::NoChange: break;
+                        case Inference::Change: changed = true; break;
+                        case Inference::Contradiction: contradiction = true; break;
                     }
                     break;
                 }
@@ -364,7 +368,25 @@ namespace
 
         for (const auto & var : vars) {
             for (const auto & value : unsupported[var]) {
-                switch (state.infer_not_equal(var, value, JustifyUsingRUP{})) {
+                switch (state.infer_not_equal(var, value, JustifyExplicitly{
+                    [&](Proof & proof, vector<ProofLine> &) -> void {
+                        for (unsigned int tuple_idx = 0; tuple_idx < tuples.size(); ++tuple_idx) {
+                            stringstream proof_step;
+                            proof_step << "u";
+                            state.for_each_guess([&](const Literal & lit) {
+                                if (! is_literally_true(lit))
+                                    proof_step << " 1 " << proof.proof_variable(!lit);
+                            });
+                            proof.need_proof_variable(var != value);
+                            proof_step << " 1 " << proof.proof_variable(var != value);
+                            proof_step << " 1 " << proof.proof_variable(!pb_selectors[tuple_idx]);
+                            proof_step << " >= 1 ;\n";
+                            proof.emit_proof_line(proof_step.str());
+                        }
+
+                        return proof.infer(state, var!=value, JustifyUsingRUP{});
+                    }
+                })) {
                 case Inference::NoChange: break;
                 case Inference::Change: changed = true; break;
                 case Inference::Contradiction: contradiction = true; break;
@@ -498,11 +520,18 @@ namespace
                 // f => var1 != var2
                 flag_lt = propagators.create_proof_flag("lt");
                 flag_gt = propagators.create_proof_flag("gt");
+
+                // Means we need f => fgt or flt
+                propagators.define_pseudoboolean_ge(state, {{1_i, flag_lt}, {1_i, flag_gt}}, 1_i, flag);
+
+                // And then fgt <==> var1 > var2
                 propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 1_i, flag_gt);
                 propagators.define_pseudoboolean_ge(state, {{1_i, var_2}, {-1_i, var_1}}, 0_i, ! flag_gt);
+
+                // flt <==> var1 < var2
                 propagators.define_pseudoboolean_ge(state, {{1_i, var_2}, {-1_i, var_1}}, 1_i, flag_lt);
                 propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 0_i, ! flag_lt);
-                propagators.define_pseudoboolean_ge(state, {{1_i, flag_lt}, {1_i, flag_gt}}, 1_i, flag);
+
                 return flag;
             case ConstraintType::GREATER_THAN_EQUAL:
                 flag = propagators.create_proof_flag("bin_gt");
@@ -549,13 +578,14 @@ auto SmartTable::clone() const -> unique_ptr<Constraint>
 auto SmartTable::install(Propagators & propagators, State & initial_state) && -> void
 {
     vector<IntegerVariableID> selectors;
+    vector<ProofFlag> pb_selectors;
 
     for (unsigned int i = 0; i < _tuples.size(); ++i) {
         selectors.emplace_back(initial_state.allocate_integer_variable_with_state(0_i, 1_i));
     }
 
     if (propagators.want_definitions()) {
-        vector<ProofFlag> pb_selectors;
+
 
         for (unsigned int i = 0; i < _tuples.size(); ++i) {
             pb_selectors.emplace_back(propagators.create_proof_flag("t" + to_string(i)));
@@ -623,9 +653,9 @@ auto SmartTable::install(Propagators & propagators, State & initial_state) && ->
     vector<Forest> forests = build_forests(_tuples);
 
     propagators.install(
-        [selectors, vars = _vars, tuples = move(_tuples), forests = move(forests)](State & state) -> pair<Inference, PropagatorState> {
+        [selectors, vars = _vars, tuples = move(_tuples), forests = move(forests), pb_selectors = move(pb_selectors)](State & state) -> pair<Inference, PropagatorState> {
             return pair{
-                propagate_using_smart_str(selectors, vars, tuples, forests, state),
+                propagate_using_smart_str(selectors, vars, tuples, forests, state, pb_selectors),
                 PropagatorState::Enable};
         },
         triggers,

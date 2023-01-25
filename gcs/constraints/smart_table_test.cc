@@ -2,7 +2,7 @@
 #include <gcs/solve.hh>
 #include <gcs/constraints/smart_table.hh>
 #include <gcs/smart_entry.hh>
-
+#include <gcs/exception.hh>
 #include <cstdlib>
 #include <vector>
 #include <tuple>
@@ -69,17 +69,17 @@ auto run_lex_test(int length, vector<pair<int, int>> ranges) -> bool {
                 }},
         ProofOptions{"lex_table.opb", "lex_table.veripb"});
 
-    return !lex_violated && (0 == system("veripb --trace --useColor lex_table.opb lex_table.veripb"));
+    return !lex_violated && (0 == system("veripb lex_table.opb lex_table.veripb"));
 }
 
 auto main(int, char *[]) -> int
 {
     vector<pair<int, vector<pair<int, int>>>> data = {
             //Length    //Ranges
-            //{3,         {{1, 3}, {1, 2}, {2, 3}}},
+            {3,         {{1, 3}, {1, 2}, {2, 3}}},
             {3,         {{1, 2}, {1, 2}, {1, 2}}},
             {4,         {{-3, 0}, {1, 4}, {3, 3}, {3, 3}}},
-            {5,         {{5, 5}, {2, 4}, {0, 4}, {1, 5}}}
+            {4,         {{5, 5}, {2, 4}, {0, 4}, {1, 5}}}
     };
 
     for (auto & [length, ranges] : data) {
