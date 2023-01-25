@@ -14,24 +14,24 @@
 #include <gcs/exception.hh>
 #include <util/overloaded.hh>
 
+using std::copy_if;
+using std::make_tuple;
 using std::make_unique;
+using std::map;
 using std::move;
 using std::pair;
 using std::set;
+using std::set_difference;
+using std::set_intersection;
+using std::sort;
+using std::string;
+using std::stringstream;
+using std::to_string;
 using std::tuple;
 using std::unique_ptr;
 using std::unordered_map;
 using std::vector;
 using std::visit;
-using std::sort;
-using std::copy_if;
-using std::set_intersection;
-using std::set_difference;
-using std::stringstream;
-using std::to_string;
-using std::map;
-using std::make_tuple;
-using std::string;
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -83,8 +83,8 @@ namespace
             [&](const BinaryEntry & binary_entry) {
                 vector<Integer> new_dom_1{};
                 vector<Integer> new_dom_2{};
-                auto& dom_1 = supported_by_tree[binary_entry.var_1];
-                auto& dom_2 = supported_by_tree[binary_entry.var_2];
+                auto & dom_1 = supported_by_tree[binary_entry.var_1];
+                auto & dom_2 = supported_by_tree[binary_entry.var_2];
                 sort(dom_1.begin(), dom_1.end());
                 sort(dom_2.begin(), dom_2.end());
 
@@ -185,7 +185,7 @@ namespace
                     break;
                 case ConstraintType::EQUAL:
                     copy_if(dom.begin(), dom.end(), back_inserter(new_dom),
-                            [&](Integer dom_val) { return dom_val == value; });
+                        [&](Integer dom_val) { return dom_val == value; });
                     break;
                 case ConstraintType::NOT_EQUAL:
                     copy_if(dom.begin(), dom.end(), back_inserter(new_dom),
@@ -302,7 +302,7 @@ namespace
     }
 
     [[nodiscard]] auto propagate_using_smart_str(const vector<IntegerVariableID> & selectors, const vector<IntegerVariableID> & vars,
-        const SmartTuples & tuples, const vector<Forest> & forests, State & state, vector<ProofFlag>  pb_selectors) -> Inference
+        const SmartTuples & tuples, const vector<Forest> & forests, State & state, vector<ProofFlag> pb_selectors) -> Inference
     {
 
         bool changed = false, contradiction = false;
@@ -336,11 +336,10 @@ namespace
                 // First pass of filtering supported_by_tree and check of validity
                 if (! filter_and_check_valid(tree, supported_by_tree)) {
                     // Not feasible
-                    switch (state.infer_equal(selectors[tuple_idx], 0_i, NoJustificationNeeded{}))
-                    {
-                        case Inference::NoChange: break;
-                        case Inference::Change: changed = true; break;
-                        case Inference::Contradiction: contradiction = true; break;
+                    switch (state.infer_equal(selectors[tuple_idx], 0_i, NoJustificationNeeded{})) {
+                    case Inference::NoChange: break;
+                    case Inference::Change: changed = true; break;
+                    case Inference::Contradiction: contradiction = true; break;
                     }
                     break;
                 }
@@ -373,25 +372,23 @@ namespace
 
         for (const auto & var : vars) {
             for (const auto & value : unsupported[var]) {
-                switch (state.infer_not_equal(var, value, JustifyExplicitly{
-                    [&](Proof & proof, vector<ProofLine> &) -> void {
-                        for (unsigned int tuple_idx = 0; tuple_idx < tuples.size(); ++tuple_idx) {
-                            stringstream proof_step;
-                            proof_step << "u";
-                            state.for_each_guess([&](const Literal & lit) {
-                                if (! is_literally_true(lit))
-                                    proof_step << " 1 " << proof.proof_variable(!lit);
-                            });
-                            proof.need_proof_variable(var != value);
-                            proof_step << " 1 " << proof.proof_variable(var != value);
-                            proof_step << " 1 " << proof.proof_variable(!pb_selectors[tuple_idx]);
-                            proof_step << " >= 1 ;\n";
-                            proof.emit_proof_line(proof_step.str());
-                        }
-
-                        return proof.infer(state, var!=value, JustifyUsingRUP{});
+                switch (state.infer_not_equal(var, value, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
+                    for (unsigned int tuple_idx = 0; tuple_idx < tuples.size(); ++tuple_idx) {
+                        stringstream proof_step;
+                        proof_step << "u";
+                        state.for_each_guess([&](const Literal & lit) {
+                            if (! is_literally_true(lit))
+                                proof_step << " 1 " << proof.proof_variable(! lit);
+                        });
+                        proof.need_proof_variable(var != value);
+                        proof_step << " 1 " << proof.proof_variable(var != value);
+                        proof_step << " 1 " << proof.proof_variable(! pb_selectors[tuple_idx]);
+                        proof_step << " >= 1 ;\n";
+                        proof.emit_proof_line(proof_step.str());
                     }
-                })) {
+
+                    return proof.infer(state, var != value, JustifyUsingRUP{});
+                }})) {
                 case Inference::NoChange: break;
                 case Inference::Change: changed = true; break;
                 case Inference::Contradiction: contradiction = true; break;
@@ -489,64 +486,64 @@ namespace
         ProofFlag flag, flag_lt, flag_gt;
 
         switch (c) {
-            case ConstraintType::EQUAL:
-                // f => var1 == var2
-                flag = propagators.create_proof_flag("bin_eq");
-                propagators.define_pseudoboolean_eq(state, {{1_i, var_1}, {-1_i, var_2}}, 0_i, flag);
+        case ConstraintType::EQUAL:
+            // f => var1 == var2
+            flag = propagators.create_proof_flag("bin_eq");
+            propagators.define_pseudoboolean_eq(state, {{1_i, var_1}, {-1_i, var_2}}, 0_i, flag);
 
-                // !f => var1 != var2
-                flag_lt = propagators.create_proof_flag("lt");
-                flag_gt = propagators.create_proof_flag("gt");
-                propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 1_i, flag_gt);
-                propagators.define_pseudoboolean_ge(state, {{1_i, var_2}, {-1_i, var_1}}, 0_i, ! flag_gt);
-                propagators.define_pseudoboolean_ge(state, {{1_i, var_2}, {-1_i, var_1}}, 1_i, flag_lt);
-                propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 0_i, ! flag_lt);
-                propagators.define_pseudoboolean_ge(state, {{1_i, flag_lt}, {1_i, flag_gt}}, 1_i, ! flag);
-                return flag;
-            case ConstraintType::GREATER_THAN:
-                flag = propagators.create_proof_flag("bin_gt");
-                propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 1_i, flag);
-                propagators.define_pseudoboolean_ge(state, {{1_i, var_2}, {-1_i, var_1}}, 0_i, ! flag);
-                return flag;
-            case ConstraintType::LESS_THAN:
-                flag = propagators.create_proof_flag("bin_lt");
-                propagators.define_pseudoboolean_ge(state, {{1_i, var_2}, {-1_i, var_1}}, 1_i, flag);
-                propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 0_i, ! flag);
-                return flag;
-            case ConstraintType::LESS_THAN_EQUAL:
-                flag = propagators.create_proof_flag("bin_le");
-                propagators.define_pseudoboolean_ge(state, {{1_i, var_2}, {-1_i, var_1}}, 0_i, flag);
-                propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 1_i, ! flag);
-                return flag;
-            case ConstraintType::NOT_EQUAL:
-                // !f => var1 == var2
-                flag = propagators.create_proof_flag("bin_eq");
-                propagators.define_pseudoboolean_eq(state, {{1_i, var_1}, {-1_i, var_2}}, 0_i, ! flag);
+            // !f => var1 != var2
+            flag_lt = propagators.create_proof_flag("lt");
+            flag_gt = propagators.create_proof_flag("gt");
+            propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 1_i, flag_gt);
+            propagators.define_pseudoboolean_ge(state, {{1_i, var_2}, {-1_i, var_1}}, 0_i, ! flag_gt);
+            propagators.define_pseudoboolean_ge(state, {{1_i, var_2}, {-1_i, var_1}}, 1_i, flag_lt);
+            propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 0_i, ! flag_lt);
+            propagators.define_pseudoboolean_ge(state, {{1_i, flag_lt}, {1_i, flag_gt}}, 1_i, ! flag);
+            return flag;
+        case ConstraintType::GREATER_THAN:
+            flag = propagators.create_proof_flag("bin_gt");
+            propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 1_i, flag);
+            propagators.define_pseudoboolean_ge(state, {{1_i, var_2}, {-1_i, var_1}}, 0_i, ! flag);
+            return flag;
+        case ConstraintType::LESS_THAN:
+            flag = propagators.create_proof_flag("bin_lt");
+            propagators.define_pseudoboolean_ge(state, {{1_i, var_2}, {-1_i, var_1}}, 1_i, flag);
+            propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 0_i, ! flag);
+            return flag;
+        case ConstraintType::LESS_THAN_EQUAL:
+            flag = propagators.create_proof_flag("bin_le");
+            propagators.define_pseudoboolean_ge(state, {{1_i, var_2}, {-1_i, var_1}}, 0_i, flag);
+            propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 1_i, ! flag);
+            return flag;
+        case ConstraintType::NOT_EQUAL:
+            // !f => var1 == var2
+            flag = propagators.create_proof_flag("bin_eq");
+            propagators.define_pseudoboolean_eq(state, {{1_i, var_1}, {-1_i, var_2}}, 0_i, ! flag);
 
-                // f => var1 != var2
-                flag_lt = propagators.create_proof_flag("lt");
-                flag_gt = propagators.create_proof_flag("gt");
+            // f => var1 != var2
+            flag_lt = propagators.create_proof_flag("lt");
+            flag_gt = propagators.create_proof_flag("gt");
 
-                // Means we need f => fgt or flt
-                propagators.define_pseudoboolean_ge(state, {{1_i, flag_lt}, {1_i, flag_gt}}, 1_i, flag);
+            // Means we need f => fgt or flt
+            propagators.define_pseudoboolean_ge(state, {{1_i, flag_lt}, {1_i, flag_gt}}, 1_i, flag);
 
-                // And then fgt <==> var1 > var2
-                propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 1_i, flag_gt);
-                propagators.define_pseudoboolean_ge(state, {{1_i, var_2}, {-1_i, var_1}}, 0_i, ! flag_gt);
+            // And then fgt <==> var1 > var2
+            propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 1_i, flag_gt);
+            propagators.define_pseudoboolean_ge(state, {{1_i, var_2}, {-1_i, var_1}}, 0_i, ! flag_gt);
 
-                // flt <==> var1 < var2
-                propagators.define_pseudoboolean_ge(state, {{1_i, var_2}, {-1_i, var_1}}, 1_i, flag_lt);
-                propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 0_i, ! flag_lt);
+            // flt <==> var1 < var2
+            propagators.define_pseudoboolean_ge(state, {{1_i, var_2}, {-1_i, var_1}}, 1_i, flag_lt);
+            propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 0_i, ! flag_lt);
 
-                return flag;
-            case ConstraintType::GREATER_THAN_EQUAL:
-                flag = propagators.create_proof_flag("bin_ge");
-                propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 0_i, flag);
-                propagators.define_pseudoboolean_ge(state, {{1_i, var_2}, {-1_i, var_1}}, 1_i, ! flag);
-                return flag;
-            case ConstraintType::NOT_IN:
-            case ConstraintType::IN:
-                throw UnexpectedException{"Unexpected SmartEntry type encountered while creating PB model."};
+            return flag;
+        case ConstraintType::GREATER_THAN_EQUAL:
+            flag = propagators.create_proof_flag("bin_ge");
+            propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 0_i, flag);
+            propagators.define_pseudoboolean_ge(state, {{1_i, var_2}, {-1_i, var_1}}, 1_i, ! flag);
+            return flag;
+        case ConstraintType::NOT_IN:
+        case ConstraintType::IN:
+            throw UnexpectedException{"Unexpected SmartEntry type encountered while creating PB model."};
         }
         throw NonExhaustiveSwitch{};
     }
@@ -591,7 +588,6 @@ auto SmartTable::install(Propagators & propagators, State & initial_state) && ->
     }
 
     if (propagators.want_definitions()) {
-
 
         for (unsigned int i = 0; i < _tuples.size(); ++i) {
             pb_selectors.emplace_back(propagators.create_proof_flag("t" + to_string(i)));
