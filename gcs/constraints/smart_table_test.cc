@@ -24,7 +24,7 @@ auto check_lex(vector<Integer>& x_sols, vector<Integer>& y_sols, bool or_equal=f
     return check_lex(x_sols_smaller, y_sols_smaller);
 }
 
-auto run_lex_test(int length, vector<pair<int, int>> ranges, bool reverse=false) -> bool {
+auto run_lex_test(int length, vector<pair<int, int>> ranges, bool reverse=false, bool or_equal=false) -> bool {
     vector<IntegerVariableID> x;
     vector<IntegerVariableID> y;
 
@@ -44,9 +44,15 @@ auto run_lex_test(int length, vector<pair<int, int>> ranges, bool reverse=false)
             }
             else if (j == i) {
                 if(reverse)
-                    tuple.emplace_back(LessThanEqualVar{x[j], y[j]});
+                    if(or_equal)
+                        tuple.emplace_back(LessThanEqualVar{x[j], y[j]});
+                    else
+                        tuple.emplace_back(LessThanVar{x[j], y[j]});
                 else
-                    tuple.emplace_back(GreaterThanVar{x[j], y[j]});
+                    if(or_equal)
+                        tuple.emplace_back(GreaterThanEqualVar{x[j], y[j]});
+                    else
+                        tuple.emplace_back(GreaterThanVar{x[j], y[j]});
             }
         }
         tuples.emplace_back(tuple);
@@ -67,7 +73,7 @@ auto run_lex_test(int length, vector<pair<int, int>> ranges, bool reverse=false)
                         x_sols.emplace_back(s(x[i]));
                         y_sols.emplace_back(s(y[i]));
                     }
-                    lex_violated = lex_violated || (reverse ? (!check_lex(y_sols, x_sols, true)) : (!check_lex(x_sols, y_sols)));
+                    lex_violated = lex_violated || (reverse ? (!check_lex(y_sols, x_sols, or_equal)) : (!check_lex(x_sols, y_sols, or_equal)));
                     return true;
                 }},
         ProofOptions{"lex_table.opb", "lex_table.veripb"});
@@ -88,9 +94,17 @@ auto main(int, char *[]) -> int
     };
 
     for (auto & [length, ranges] : data) {
-        if(!run_lex_test(length, ranges, false))
+        // x > y
+        if(!run_lex_test(length, ranges, false, false))
             return EXIT_FAILURE;
-        if(!run_lex_test(length, ranges, true))
+        // x >= y
+        if(!run_lex_test(length, ranges, false, true))
+            return EXIT_FAILURE;
+        // x < y
+        if(!run_lex_test(length, ranges, true, false))
+            return EXIT_FAILURE;
+        // x <= y
+        if(!run_lex_test(length, ranges, true, true))
             return EXIT_FAILURE;
     }
 
