@@ -24,11 +24,19 @@ auto check_lex(vector<Integer>& x_sols, vector<Integer>& y_sols, bool or_equal=f
     return check_lex(x_sols_smaller, y_sols_smaller);
 }
 
-auto check_at_most_1(vector<Integer>& x_sols, Integer value) {
+auto check_at_most_1(vector<Integer>& x_sols, Integer value, bool at_least, bool in_set) {
     auto count = 0;
-    for(const auto& x_val : x_sols)
-        (x_val == value) && count++;
-    return count <= 1;
+    for(const auto& x_val : x_sols) {
+
+        if(in_set) {
+            (x_val == 1_i || x_val == value) && count++;
+        } else {
+            (x_val == value) && count++;
+        }
+        
+    }
+
+    return at_least ? count >= 1 : count <= 1;
 }
 
 auto run_lex_test(int length, vector<pair<int, int>> ranges, bool reverse=false, bool or_equal=false, bool fixed_y = false) -> bool {
@@ -52,32 +60,36 @@ auto run_lex_test(int length, vector<pair<int, int>> ranges, bool reverse=false,
                     tuple.emplace_back(EqualsVar{x[j], y[j]});
                 }
                 else if (j == i) {
-                    if(reverse)
-                        if(or_equal)
+                    if(reverse) {
+                        if (or_equal)
                             tuple.emplace_back(LessThanEqualVar{x[j], y[j]});
                         else
                             tuple.emplace_back(LessThanVar{x[j], y[j]});
-                    else
-                    if(or_equal)
-                        tuple.emplace_back(GreaterThanEqualVar{x[j], y[j]});
-                    else
-                        tuple.emplace_back(GreaterThanVar{x[j], y[j]});
+                    }
+                    else {
+                        if (or_equal)
+                            tuple.emplace_back(GreaterThanEqualVar{x[j], y[j]});
+                        else
+                            tuple.emplace_back(GreaterThanVar{x[j], y[j]});
+                    }
                 }
             } else {
                 if (j < i) {
                     tuple.emplace_back(EqualsValue{x[j], fixed_y_vals[j]});
                 }
                 else if (j == i) {
-                    if(reverse)
-                        if(or_equal)
+                    if(reverse) {
+                        if (or_equal)
                             tuple.emplace_back(LessThanEqualValue{x[j], fixed_y_vals[j]});
                         else
                             tuple.emplace_back(LessThanValue{x[j], fixed_y_vals[j]});
-                    else
-                    if(or_equal)
-                        tuple.emplace_back(GreaterThanEqualValue{x[j], fixed_y_vals[j]});
-                    else
-                        tuple.emplace_back(GreaterThanValue{x[j], fixed_y_vals[j]});
+                    }
+                    else {
+                        if (or_equal)
+                            tuple.emplace_back(GreaterThanEqualValue{x[j], fixed_y_vals[j]});
+                        else
+                            tuple.emplace_back(GreaterThanValue{x[j], fixed_y_vals[j]});
+                    }
                 }
             }
 
@@ -105,10 +117,10 @@ auto run_lex_test(int length, vector<pair<int, int>> ranges, bool reverse=false,
                 }},
         ProofOptions{"lex_table.opb", "lex_table.veripb"});
 
-    return !lex_violated && (0 == system("veripb lex_table.opb lex_table.veripb"));
+    return !lex_violated & (0 == system("veripb lex_table.opb lex_table.veripb"));
 }
 
-auto run_at_most_1_test(int length, vector<pair<int, int>>& ranges) -> bool {
+auto run_at_most_1_test(int length, vector<pair<int, int>>& ranges, bool at_least, bool in_set) -> bool {
     vector<IntegerVariableID> x;
     Problem p;
 
@@ -123,7 +135,19 @@ auto run_at_most_1_test(int length, vector<pair<int, int>>& ranges) -> bool {
         vector<SmartEntry> tuple;
         for (int j = 0; j < length; ++j) {
             if (j != i) {
-                tuple.emplace_back(NotEqualsVar{x[j], y});
+                if (at_least) {
+                    if (in_set) {
+                        tuple.emplace_back(InSet{x[j], {1_i, Integer{length}}});
+                    } else {
+                        tuple.emplace_back(EqualsVar{x[j], y});
+                    }
+                } else {
+                    if (in_set) {
+                        tuple.emplace_back(NotInSet{x[j], {1_i, Integer{length}}});
+                    } else {
+                        tuple.emplace_back(NotEqualsVar{x[j], y});
+                    }
+                }
             }
         }
         tuples.emplace_back(tuple);
@@ -141,12 +165,12 @@ auto run_at_most_1_test(int length, vector<pair<int, int>>& ranges) -> bool {
                         vector<Integer> x_sols;
                         for(int i = 0; i < length; ++i)
                             x_sols.emplace_back(s(x[i]));
-                        at_most_1_violated = at_most_1_violated || !check_at_most_1(x_sols, Integer{length});
+                        at_most_1_violated = at_most_1_violated || !check_at_most_1(x_sols, Integer{length}, at_least, in_set);
                         return true;
                     }},
             ProofOptions{"at_most_1_table.opb", "at_most_1_table.veripb"});
 
-    return !at_most_1_violated && (0 == system("veripb at_most_1_table.opb at_most_1_table.veripb"));
+    return !at_most_1_violated & (0 == system("veripb at_most_1_table.opb at_most_1_table.veripb"));
 };
 
 auto main(int, char *[]) -> int
@@ -188,7 +212,20 @@ auto main(int, char *[]) -> int
         if(!run_lex_test(length, ranges, true, true, true))
             return EXIT_FAILURE;
 
-        if(!run_at_most_1_test(length, ranges))
+        // at most one var in x == length
+        if(!run_at_most_1_test(length, ranges, false, false))
+            return EXIT_FAILURE;
+
+        // at most one var in x one of {1, length}
+        if(!run_at_most_1_test(length, ranges, false, true))
+            return EXIT_FAILURE;
+
+        // at least one var in x == length
+        if(!run_at_most_1_test(length, ranges, true, false))
+            return EXIT_FAILURE;
+
+        // at least one var in x one of {1, length}
+        if(!run_at_most_1_test(length, ranges, true, true))
             return EXIT_FAILURE;
 
     }
