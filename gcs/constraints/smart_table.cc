@@ -97,7 +97,7 @@ namespace
                     break;
                 case ConstraintType::LESS_THAN_EQUAL:
                     copy_if(dom_2.begin(), dom_2.end(), back_inserter(new_dom_2),
-                        [&](Integer val) { return val <= dom_1[0]; });
+                        [&](Integer val) { return val >= dom_1[0]; });
                     copy_if(dom_1.begin(), dom_1.end(), back_inserter(new_dom_1),
                         [&](Integer val) { return val <= dom_2[dom_2.size() - 1]; });
                     break;
