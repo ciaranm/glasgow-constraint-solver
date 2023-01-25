@@ -165,6 +165,8 @@ namespace
                 default:
                     throw UnexpectedException{"Unexpected SmartEntry type encountered."};
                 }
+
+                supported_by_tree[unary_set_entry.var] = new_dom;
             },
             [&](const UnaryValueEntry & unary_val_entry) {
                 vector<Integer> new_dom{};
@@ -182,7 +184,8 @@ namespace
                         [&](Integer dom_val) { return dom_val <= value; });
                     break;
                 case ConstraintType::EQUAL:
-                    new_dom.emplace_back(value);
+                    copy_if(dom.begin(), dom.end(), back_inserter(new_dom),
+                            [&](Integer dom_val) { return dom_val == value; });
                     break;
                 case ConstraintType::NOT_EQUAL:
                     copy_if(dom.begin(), dom.end(), back_inserter(new_dom),
@@ -199,6 +202,8 @@ namespace
                 default:
                     throw UnexpectedException{"Unexpected SmartEntry type encountered."};
                 }
+
+                supported_by_tree[unary_val_entry.var] = new_dom;
             }}
             .visit(edge);
     }
