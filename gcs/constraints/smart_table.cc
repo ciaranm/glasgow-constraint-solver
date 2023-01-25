@@ -509,6 +509,7 @@ namespace
                 propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 0_i, ! flag);
                 return flag;
             case ConstraintType::LESS_THAN_EQUAL:
+                flag = propagators.create_proof_flag("bin_le");
                 propagators.define_pseudoboolean_ge(state, {{1_i, var_2}, {-1_i, var_1}}, 0_i, flag);
                 propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 1_i, ! flag);
                 return flag;
@@ -534,7 +535,7 @@ namespace
 
                 return flag;
             case ConstraintType::GREATER_THAN_EQUAL:
-                flag = propagators.create_proof_flag("bin_gt");
+                flag = propagators.create_proof_flag("bin_ge");
                 propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 0_i, flag);
                 propagators.define_pseudoboolean_ge(state, {{1_i, var_2}, {-1_i, var_1}}, 1_i, ! flag);
                 return flag;

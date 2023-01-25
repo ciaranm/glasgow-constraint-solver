@@ -13,10 +13,10 @@ using std::pair;
 using std::tuple;
 using std::cout;
 
-auto check_lex(vector<Integer>& x_sols, vector<Integer>& y_sols) -> bool {
+auto check_lex(vector<Integer>& x_sols, vector<Integer>& y_sols, bool or_equal=false) -> bool {
     if(x_sols.size() != y_sols.size()) cout << "Tuples not same length!";
-    if(x_sols[0] > y_sols[0]) return true;
-    if(y_sols[0] > x_sols[0]) return false;
+    if(or_equal ?  x_sols[0] >= y_sols[0] : x_sols[0] > y_sols[0]) return true;
+    if(or_equal ?  y_sols[0] >= x_sols[0] : y_sols[0] > x_sols[0]) return false;
     if(x_sols.size() == 1) return false;
 
     vector<Integer> x_sols_smaller = {x_sols.begin() + 1, x_sols.end()};
@@ -24,7 +24,7 @@ auto check_lex(vector<Integer>& x_sols, vector<Integer>& y_sols) -> bool {
     return check_lex(x_sols_smaller, y_sols_smaller);
 }
 
-auto run_lex_test(int length, vector<pair<int, int>> ranges) -> bool {
+auto run_lex_test(int length, vector<pair<int, int>> ranges, bool reverse=false) -> bool {
     vector<IntegerVariableID> x;
     vector<IntegerVariableID> y;
 
@@ -43,7 +43,10 @@ auto run_lex_test(int length, vector<pair<int, int>> ranges) -> bool {
                 tuple.emplace_back(EqualsVar{x[j], y[j]});
             }
             else if (j == i) {
-                tuple.emplace_back(GreaterThanVar{x[j], y[j]});
+                if(reverse)
+                    tuple.emplace_back(LessThanEqualVar{x[j], y[j]});
+                else
+                    tuple.emplace_back(GreaterThanVar{x[j], y[j]});
             }
         }
         tuples.emplace_back(tuple);
@@ -64,7 +67,7 @@ auto run_lex_test(int length, vector<pair<int, int>> ranges) -> bool {
                         x_sols.emplace_back(s(x[i]));
                         y_sols.emplace_back(s(y[i]));
                     }
-                    lex_violated = lex_violated || !check_lex(x_sols, y_sols);
+                    lex_violated = lex_violated || (reverse ? (!check_lex(y_sols, x_sols, true)) : (!check_lex(x_sols, y_sols)));
                     return true;
                 }},
         ProofOptions{"lex_table.opb", "lex_table.veripb"});
@@ -79,11 +82,15 @@ auto main(int, char *[]) -> int
             {3,         {{1, 3}, {1, 2}, {2, 3}}},
             {3,         {{1, 2}, {1, 2}, {1, 2}}},
             {4,         {{-3, 0}, {1, 4}, {3, 3}, {3, 3}}},
-            {4,         {{5, 5}, {2, 4}, {0, 4}, {1, 5}}}
+            {4,         {{5, 5}, {2, 4}, {0, 4}, {1, 5}}},
+            {5,         {{-1, 4}, {3, 6}, {2, 2}, {3, 3}, {3, 5}}},
+            {5,         {{1, 1}, {2, 2}, {3, 3}, {4, 4}, {1, 10}}}
     };
 
     for (auto & [length, ranges] : data) {
-        if(!run_lex_test(length, ranges))
+        if(!run_lex_test(length, ranges, false))
+            return EXIT_FAILURE;
+        if(!run_lex_test(length, ranges, true))
             return EXIT_FAILURE;
     }
 
