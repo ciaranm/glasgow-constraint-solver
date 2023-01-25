@@ -652,7 +652,7 @@ auto SmartTable::install(Propagators & propagators, State & initial_state) && ->
         }
     }
 
-    // Trigger when any var changes? Is this overkill?
+    // Trigger when any var changes? Is this over-kill?
     Triggers triggers;
     triggers.on_change = {_vars.begin(), _vars.end()};
 

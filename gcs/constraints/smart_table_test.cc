@@ -95,6 +95,7 @@ auto run_lex_test(int length, vector<pair<int, int>> ranges, bool reverse=false,
 
         }
         tuples.emplace_back(tuple);
+
     }
 
     auto all_vars = x;
