@@ -1,5 +1,3 @@
-/* vim: set sw=4 sts=4 et foldmethod=syntax : */
-
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/element.hh>
 #include <gcs/constraints/equals.hh>

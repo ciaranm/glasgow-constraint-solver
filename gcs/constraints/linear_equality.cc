@@ -1,5 +1,3 @@
-/* vim: set sw=4 sts=4 et foldmethod=syntax : */
-
 #include <gcs/constraints/linear_equality.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/extensional_utils.hh>

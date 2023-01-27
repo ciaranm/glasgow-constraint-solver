@@ -1,5 +1,3 @@
-/* vim: set sw=4 sts=4 et foldmethod=syntax : */
-
 #include <gcs/innards/state.hh>
 
 #include <catch2/catch_test_macros.hpp>
