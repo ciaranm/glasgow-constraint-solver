@@ -16,6 +16,7 @@ namespace gcs
      * tuples.
      *
      * \ingroup Constraints
+     * \see SmartTable
      */
     class Table : public Constraint
     {

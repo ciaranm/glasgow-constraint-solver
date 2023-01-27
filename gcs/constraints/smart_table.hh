@@ -8,6 +8,13 @@
 
 namespace gcs
 {
+    /**
+     * \brief Constrain that the specified variables are equal to one of the specified
+     * smart tuples.
+     *
+     * \ingroup Constraints
+     * \see Table
+     */
     class SmartTable : public Constraint
     {
     private:
