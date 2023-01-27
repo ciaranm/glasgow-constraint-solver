@@ -1,5 +1,3 @@
-/* vim: set sw=4 sts=4 et foldmethod=syntax : */
-
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_TABLE_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_TABLE_HH
 
@@ -16,6 +14,7 @@ namespace gcs
      * tuples.
      *
      * \ingroup Constraints
+     * \see SmartTable
      */
     class Table : public Constraint
     {

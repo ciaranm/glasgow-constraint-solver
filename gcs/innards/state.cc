@@ -1,5 +1,3 @@
-/* vim: set sw=4 sts=4 et foldmethod=syntax : */
-
 #include <gcs/exception.hh>
 #include <gcs/innards/proof.hh>
 #include <gcs/innards/state.hh>
