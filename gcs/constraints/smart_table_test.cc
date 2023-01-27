@@ -1,9 +1,10 @@
-#include <cstdlib>
 #include <gcs/constraints/smart_table.hh>
 #include <gcs/exception.hh>
 #include <gcs/problem.hh>
 #include <gcs/smart_entry.hh>
 #include <gcs/solve.hh>
+
+#include <cstdlib>
 #include <iostream>
 #include <tuple>
 #include <vector>
@@ -12,6 +13,8 @@ using std::cout;
 using std::pair;
 using std::tuple;
 using std::vector;
+
+using namespace gcs;
 
 auto check_lex(vector<Integer> & x_sols, vector<Integer> & y_sols, bool or_equal = false) -> bool
 {
