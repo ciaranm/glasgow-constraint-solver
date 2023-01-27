@@ -23,6 +23,7 @@ add_library(glasgow_constraint_solver
     constraints/logical.cc
     constraints/min_max.cc
     constraints/n_value.cc
+    constraints/regular.cc
     constraints/smart_table.cc
     constraints/table.cc
     innards/extensional_utils.cc
