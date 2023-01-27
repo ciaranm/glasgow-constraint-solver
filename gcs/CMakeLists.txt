@@ -23,6 +23,7 @@ add_library(glasgow_constraint_solver
     constraints/logical.cc
     constraints/min_max.cc
     constraints/n_value.cc
+    constraints/smart_table.cc
     constraints/table.cc
     innards/extensional_utils.cc
     innards/integer_variable_state.cc
@@ -48,6 +49,7 @@ add_executable(linear_equality_test constraints/linear_equality_test.cc)
 add_executable(logical_test constraints/logical_test.cc)
 add_executable(min_max_test constraints/min_max_test.cc)
 add_executable(n_value_test constraints/n_value_test.cc)
+add_executable(smart_table_test constraints/smart_table_test.cc)
 
 add_test(NAME abs COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:abs_test>)
 add_test(NAME arithmetic COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:arithmetic_test>)
@@ -59,6 +61,7 @@ add_test(NAME linear_equality COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<T
 add_test(NAME logical COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:logical_test>)
 add_test(NAME min_max COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:min_max_test>)
 add_test(NAME n_value COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:n_value_test>)
+add_test(NAME smart_table COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:smart_table_test>)
 
 add_executable(state_test innards/state_test.cc)
 target_link_libraries(state_test PRIVATE Catch2::Catch2WithMain)
