@@ -115,14 +115,14 @@ namespace
                             back_inserter(new_dom_2));
                     }
                     else if (dom_2.size() == 1) {
-                        new_dom_2 = dom_2;
+                        new_dom_2 = move(dom_2);
                         set_difference(dom_1.begin(), dom_1.end(),
                             dom_2.begin(), dom_2.end(),
                             back_inserter(new_dom_1));
                     }
                     else {
-                        new_dom_1 = dom_1;
-                        new_dom_2 = dom_2;
+                        new_dom_1 = move(dom_1);
+                        new_dom_2 = move(dom_2);
                     }
                     break;
                 case ConstraintType::GREATER_THAN:
@@ -141,8 +141,8 @@ namespace
                     throw UnexpectedException{"Unexpected SmartEntry type encountered."};
                 }
 
-                supported_by_tree[binary_entry.var_1] = new_dom_1;
-                supported_by_tree[binary_entry.var_2] = new_dom_2;
+                supported_by_tree[binary_entry.var_1] = move(new_dom_1);
+                supported_by_tree[binary_entry.var_2] = move(new_dom_2);
             },
             [&](const UnarySetEntry & unary_set_entry) {
                 vector<Integer> new_dom{};
@@ -166,7 +166,7 @@ namespace
                     throw UnexpectedException{"Unexpected SmartEntry type encountered."};
                 }
 
-                supported_by_tree[unary_set_entry.var] = new_dom;
+                supported_by_tree[unary_set_entry.var] = move(new_dom);
             },
             [&](const UnaryValueEntry & unary_val_entry) {
                 vector<Integer> new_dom{};
@@ -203,7 +203,7 @@ namespace
                     throw UnexpectedException{"Unexpected SmartEntry type encountered."};
                 }
 
-                supported_by_tree[unary_val_entry.var] = new_dom;
+                supported_by_tree[unary_val_entry.var] = move(new_dom);
             }}
             .visit(edge);
     }
