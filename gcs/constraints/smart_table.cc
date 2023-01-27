@@ -36,9 +36,9 @@ using std::visit;
 using namespace gcs;
 using namespace gcs::innards;
 
-SmartTable::SmartTable(const vector<IntegerVariableID> & v, SmartTuples & t) :
-    _vars(v),
-    _tuples(t)
+SmartTable::SmartTable(vector<IntegerVariableID> v, SmartTuples t) :
+    _vars(move(v)),
+    _tuples(move(t))
 {
 }
 
@@ -47,8 +47,8 @@ namespace
     // Shorthands
     using VariableDomainMap = unordered_map<IntegerVariableID, vector<Integer>>;
     using BinaryEntryData = tuple<IntegerVariableID, IntegerVariableID, ConstraintType>;
-    using TreeEdges = std::vector<std::vector<SmartEntry>>;
-    using Forest = std::vector<TreeEdges>;
+    using TreeEdges = vector<vector<SmartEntry>>;
+    using Forest = vector<TreeEdges>;
 
     // --- remove eventually -- DEBUGGING ONLY
     //    auto index_of(const IntegerVariableID & val, const vector<IntegerVariableID> & vec) -> int
