@@ -27,7 +27,8 @@ auto main(int, char *[]) -> int
     transitions[1][1] = 2;
     transitions[2][1] = 2;
     transitions[2][0] = 3;
-    transitions[4][0] = 3;
+    transitions[3][0] = 3;
+    transitions[4][2] = 4;
 
     auto regular = Regular{x, {0_i, 1_i, 2_i}, 5, transitions, {3, 4}};
 
