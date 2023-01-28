@@ -20,16 +20,17 @@ namespace gcs
     {
     private:
         const std::vector<IntegerVariableID> _vars;
+        const std::vector<Integer> _symbols;
         const long _num_states;
         const std::vector<std::vector<long>> _transitions;
         const std::vector<long> _final_states;
 
     public:
         explicit Regular(std::vector<IntegerVariableID> vars,
-                         long num_states,
-                         std::vector<std::vector<long>> transitions,
-                         std::vector<long> final_states
-                         );
+            std::vector<Integer> symbols,
+            long num_states,
+            std::vector<std::vector<long>> transitions,
+            std::vector<long> final_states);
 
         virtual auto describe_for_proof() -> std::string override;
         virtual auto install(innards::Propagators &, innards::State &) && -> void override;
