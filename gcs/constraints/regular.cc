@@ -6,10 +6,10 @@
 #include <list>
 #include <optional>
 #include <set>
+#include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <variant>
-#include <tuple>
 
 // DEBUG ONLY -- REMOVE
 #include <iostream>
@@ -24,12 +24,13 @@ using std::optional;
 using std::pair;
 using std::set;
 using std::string;
+using std::to_string;
+using std::tuple;
 using std::unique_ptr;
 using std::unordered_map;
 using std::vector;
 using std::visit;
-using std::tuple;
-using std::to_string;
+using std::stringstream;
 
 namespace
 {
@@ -38,7 +39,7 @@ namespace
         const long num_states,
         const vector<vector<long>> & transitions,
         const vector<long> & final_states,
-        const vector<vector<ProofFlag>>& state_at_pos_flags,
+        const vector<vector<ProofFlag>> & state_at_pos_flags,
         State & state) -> Inference
     {
         const auto num_vars = vars.size();
@@ -67,6 +68,32 @@ namespace
                     }
                 }
             });
+
+            if(state.maybe_proof()) {
+                for(const auto& val : symbols) {
+                    for (unsigned long q = 0; q < num_states; q++) {
+                        if (transitions[q][val.raw_value] == -1) continue;
+                        cout << "var[" << i << "] = " << val.raw_value << endl;
+                        for(const auto & my_q : states_supporting[i][val]) {
+                            cout << my_q << ",";
+                        }
+                        cout << endl;
+                        if (states_supporting[i][val].empty()) {
+                            state.infer(TrueLiteral{}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine>&) -> void {
+                                stringstream proof_step;
+                                proof_step << "u ";
+                                state.for_each_guess([&](const Literal & lit) {
+                                    if (! is_literally_true(lit))
+                                        proof_step << " 1 " << proof.proof_variable(! lit);
+                                });
+                                proof_step << " 1 " << proof.proof_variable(!state_at_pos_flags[i+1][transitions[q][val.raw_value]]);
+                                proof_step << " >= 1 ;\n";
+                                proof.emit_proof_line(proof_step.str());
+                            }});
+                        }
+                    }
+                }
+            }
         }
         set<long> possible_final_states;
         for (const auto & f : final_states) {
@@ -78,21 +105,18 @@ namespace
 
         // Backward phase: validate
         for (long i = num_vars - 1; i >= 0; --i) {
-            
+
             unordered_map<long, bool> state_is_support;
             for (const auto & q : graph_nodes[i]) {
-
                 state_is_support[q] = false;
             }
 
-
             state.for_each_value(vars[i], [&](Integer val) -> void {
-                
                 set<long> states = states_supporting[i][val];
                 for (const auto & q : states) {
-                    
+
                     if (graph_nodes[i + 1].contains(transitions[q][val.raw_value])) {
-                        
+
                         out_edges[i][q].emplace_back(transitions[q][val.raw_value]);
                         out_deg[i][q]++;
                         in_edges[i + 1][transitions[q][val.raw_value]].emplace_back(q);
@@ -100,22 +124,42 @@ namespace
                         state_is_support[q] = true;
                     }
                     else {
-                        
+
                         states_supporting[i][val].erase(q);
-//                        state.infer(TrueLiteral{}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine>&) -> void {
-//
-//                        }});
+                        state.infer(TrueLiteral{}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine>&) -> void {
+                            stringstream proof_step;
+                            proof_step << "u ";
+                            state.for_each_guess([&](const Literal & lit) {
+                                if (! is_literally_true(lit))
+                                    proof_step << " 1 " << proof.proof_variable(! lit);
+                            });
+                            proof.need_proof_variable(vars[i] != val);
+                            proof_step << " 1 " << proof.proof_variable(vars[i] != val);
+                            proof_step << " 1 " << proof.proof_variable(!state_at_pos_flags[i][q]);
+                            proof_step << " >= 1 ;\n";
+                            proof.emit_proof_line(proof_step.str());
+                        }});
                     }
                 }
             });
 
             set<long> gn = graph_nodes[i];
             for (const auto & q : gn) {
-                if(!state_is_support[q]) {
+                if (! state_is_support[q]) {
                     graph_nodes[i].erase(q);
+                    state.infer(TrueLiteral{}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine>&) -> void {
+                        stringstream proof_step;
+                        proof_step << "u ";
+                        state.for_each_guess([&](const Literal & lit) {
+                            if (! is_literally_true(lit))
+                                proof_step << " 1 " << proof.proof_variable(! lit);
+                        });
+                        proof_step << " 1 " << proof.proof_variable(!state_at_pos_flags[i][q]);
+                        proof_step << " >= 1 ;\n";
+                        proof.emit_proof_line(proof_step.str());
+                    }});
                 }
             }
-            
         }
         bool changed = false;
         bool contradiction = false;
@@ -124,7 +168,6 @@ namespace
         for (unsigned long i = 0; i < num_vars; ++i) {
             state.for_each_value(vars[i], [&](Integer val) -> void {
                 if (states_supporting[i][val].empty()) {
-                    // TODO: Proof logging
                     switch (state.infer_not_equal(vars[i], val, JustifyUsingRUP{})) {
                     case Inference::Contradiction:
                         contradiction = true;
@@ -147,9 +190,10 @@ namespace
         return Inference::NoChange;
     }
 
-    auto convert_re_to_dfa(string regex) -> tuple<vector<Integer>, long, vector<vector<long>>, vector<long>> {
-        //TODO... maybe
-        return  tuple<vector<Integer>, long, vector<vector<long>>, vector<long>>{};
+    auto convert_re_to_dfa(string regex) -> tuple<vector<Integer>, long, vector<vector<long>>, vector<long>>
+    {
+        // TODO... maybe
+        return tuple<vector<Integer>, long, vector<vector<long>>, vector<long>>{};
     }
 }
 Regular::Regular(vector<IntegerVariableID> v, vector<Integer> s, long n, vector<vector<long>> t, vector<long> f) :
@@ -192,17 +236,18 @@ auto Regular::install(Propagators & propagators, State & initial_state) && -> vo
         for (const auto & f : _final_states) {
             pos_n_states.emplace_back(1_i, state_at_pos_flags[_num_states][f]);
         }
-        propagators.define_pseudoboolean_ge(initial_state, {{1_i, state_at_pos_flags[0][0]}}, 1_i);
+        propagators.define_pseudoboolean_ge(initial_state, move(pos_n_states), 1_i);
 
         for (unsigned int idx = 0; idx < _vars.size(); ++idx) {
             for (unsigned int q = 0; q < _num_states; ++q) {
-                for (const auto& val : _symbols) {
+                for (const auto & val : _symbols) {
                     if (_transitions[q][val.raw_value] == -1) {
                         // No transition for q, v, so constrain ~(state_i = q /\ X_i = val)
-                        propagators.define_pseudoboolean_eq(initial_state, {{1_i, _vars[idx] != val}, {1_i, !state_at_pos_flags[idx][q]}}, 1_i);
-                    } else {
+                        propagators.define_pseudoboolean_ge(initial_state, {{1_i, _vars[idx] != val}, {1_i, ! state_at_pos_flags[idx][q]}}, 1_i);
+                    }
+                    else {
                         auto new_q = _transitions[q][val.raw_value];
-                        propagators.define_pseudoboolean_ge(initial_state, {{1_i, !state_at_pos_flags[idx][q]}, {1_i, _vars[idx] != val}, {1_i, state_at_pos_flags[idx + 1][new_q]}}, 1_i);
+                        propagators.define_pseudoboolean_ge(initial_state, {{1_i, ! state_at_pos_flags[idx][q]}, {1_i, _vars[idx] != val}, {1_i, state_at_pos_flags[idx + 1][new_q]}}, 1_i);
                     }
                 }
             }
@@ -211,7 +256,7 @@ auto Regular::install(Propagators & propagators, State & initial_state) && -> vo
     Triggers triggers;
     triggers.on_change = {_vars.begin(), _vars.end()};
 
-    propagators.install([   v = _vars,
+    propagators.install([v = _vars,
                             s = _symbols,
                             n = _num_states,
                             t = _transitions,
