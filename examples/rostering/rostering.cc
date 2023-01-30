@@ -14,6 +14,10 @@ using std::vector;
 
 auto main(int, char *[]) -> int
 {
+    // This example is Example 2 from the paper
+    // "A Regular Language Membership Constraint for Finite Sequences of Variables"
+    // G. Pesant 2004
+
     Problem p;
     vector<IntegerVariableID> day;
     day.emplace_back(p.create_integer_variable(0_i, 3_i, "day0"));
@@ -22,8 +26,13 @@ auto main(int, char *[]) -> int
     day.emplace_back(p.create_integer_variable({0_i, 1_i, 3_i}, "day3"));
     day.emplace_back(p.create_integer_variable({0_i}, "day4"));
 
-    // Regular constraint for the language given by 00*11*00* + 2*
-    // 5 states 0..4, 3 possible values 0..2
+    // Regular constraint for simple rostering problem
+    // "Between 0s and 1s, 0s and 2s, or 1s and 2s, there should be at least one 3;
+    // Furthermore, 0s followed by 3s followed by 2s is not allowed,
+    // and neither are 1s followed by 3s followed by 0s
+    // nor 2s followed by 3s followed by 1s"
+
+    // 7 states 0..6, 4 possible values 0..3
     vector<vector<long>> transitions(7, vector<long>(4, -1));
     // Transitions
     transitions[0][0] = 1;
@@ -57,16 +66,16 @@ auto main(int, char *[]) -> int
     p.post(regular);
 
     auto stats = solve_with(p,
-                            SolveCallbacks{
-                                    .solution = [&](const CurrentState & s) -> bool {
-                                        for (const auto & var : day) {
-                                            cout << s(var);
-                                        }
-                                        cout << endl;
-                                        return true;
-                                    },
-                            },
-                            make_optional<ProofOptions>("regex.opb", "regex.veripb"));
+        SolveCallbacks{
+            .solution = [&](const CurrentState & s) -> bool {
+                for (const auto & var : day) {
+                    cout << s(var);
+                }
+                cout << endl;
+                return true;
+            },
+        },
+        make_optional<ProofOptions>("rostering.opb", "rostering.veripb"));
 
     cout << stats;
 

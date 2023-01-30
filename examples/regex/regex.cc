@@ -14,6 +14,9 @@ using std::vector;
 
 auto main(int, char *[]) -> int
 {
+    // This example is Example 1 from the paper
+    // "A Regular Language Membership Constraint for Finite Sequences of Variables"
+    // G. Pesant 2004
     Problem p;
     auto x = p.create_integer_variable_vector(5, 0_i, 2_i, "x");
 

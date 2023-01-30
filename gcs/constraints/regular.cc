@@ -268,7 +268,6 @@ auto Regular::install(Propagators & propagators, State & initial_state) && -> vo
         }
         propagators.define_pseudoboolean_ge(initial_state, move(pos_n_states), 1_i);
 
-
         for (unsigned int idx = 0; idx < _vars.size(); ++idx) {
             for (unsigned int q = 0; q < _num_states; ++q) {
                 for (const auto & val : _symbols) {
@@ -284,7 +283,6 @@ auto Regular::install(Propagators & propagators, State & initial_state) && -> vo
             }
         }
     }
-
 
     Triggers triggers;
     triggers.on_change = {_vars.begin(), _vars.end()};
