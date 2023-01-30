@@ -72,7 +72,7 @@ namespace
             // TODO: This is messy - could do with refactoring, but I think it's the inference we need
             if (state.maybe_proof()) {
                 for (long next_q = 0; next_q < num_states; ++next_q) {
-                    if(graph_nodes[i+1].contains(next_q)) continue;
+                    if (graph_nodes[i+1].contains(next_q)) continue;
                     cout << "Trying eliminate state " << i+1 << " is " << next_q << endl;
                     // Want to eliminate this node i.e. prove !state[i+1][next_q]
                     for (const auto& q : graph_nodes[i]) {
@@ -93,6 +93,7 @@ namespace
                                         }
                                 });
                         });
+
                         // Then eliminate each previous state
                         state.infer(TrueLiteral{}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
                             stringstream proof_step;
