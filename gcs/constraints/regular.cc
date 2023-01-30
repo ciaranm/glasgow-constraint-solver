@@ -24,13 +24,13 @@ using std::optional;
 using std::pair;
 using std::set;
 using std::string;
+using std::stringstream;
 using std::to_string;
 using std::tuple;
 using std::unique_ptr;
 using std::unordered_map;
 using std::vector;
 using std::visit;
-using std::stringstream;
 
 namespace
 {
@@ -69,29 +69,59 @@ namespace
                 }
             });
 
-            if(state.maybe_proof()) {
-                for(const auto& val : symbols) {
-                    for (unsigned long q = 0; q < num_states; q++) {
-                        if (transitions[q][val.raw_value] == -1) continue;
-                        cout << "var[" << i << "] = " << val.raw_value << endl;
-                        for(const auto & my_q : states_supporting[i][val]) {
-                            cout << my_q << ",";
-                        }
-                        cout << endl;
-                        if (states_supporting[i][val].empty()) {
-                            state.infer(TrueLiteral{}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine>&) -> void {
-                                stringstream proof_step;
-                                proof_step << "u ";
-                                state.for_each_guess([&](const Literal & lit) {
-                                    if (! is_literally_true(lit))
-                                        proof_step << " 1 " << proof.proof_variable(! lit);
+            // TODO: This is messy - could do with refactoring, but I think it's the inference we need
+            if (state.maybe_proof()) {
+                for (long next_q = 0; next_q < num_states; ++next_q) {
+                    if(graph_nodes[i+1].contains(next_q)) continue;
+                    cout << "Trying eliminate state " << i+1 << " is " << next_q << endl;
+                    // Want to eliminate this node i.e. prove !state[i+1][next_q]
+                    for (const auto& q : graph_nodes[i]) {
+                        // So first eliminate each previous state/variable combo
+                        state.for_each_value(vars[i], [&](Integer val) -> void {
+                            state.infer(TrueLiteral{}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
+                                            stringstream proof_step;
+                                            proof_step << "u ";
+                                            state.for_each_guess([&](const Literal &lit) {
+                                                if (!is_literally_true(lit))
+                                                    proof_step << " 1 " << proof.proof_variable(!lit);
+                                            });
+                                            proof_step << " 1 " << proof.proof_variable(vars[i] != val);
+                                            proof_step << " 1 " << proof.proof_variable(! state_at_pos_flags[i][q]);
+                                            proof_step << " 1 " << proof.proof_variable(! state_at_pos_flags[i+1][next_q]);
+                                            proof_step << " >= 1 ;\n";
+                                            proof.emit_proof_line(proof_step.str());
+                                        }
                                 });
-                                proof_step << " 1 " << proof.proof_variable(!state_at_pos_flags[i+1][transitions[q][val.raw_value]]);
-                                proof_step << " >= 1 ;\n";
-                                proof.emit_proof_line(proof_step.str());
-                            }});
+                        });
+                        // Then eliminate each previous state
+                        state.infer(TrueLiteral{}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
+                            stringstream proof_step;
+                            proof_step << "u ";
+                            state.for_each_guess([&](const Literal &lit) {
+                                if (!is_literally_true(lit))
+                                    proof_step << " 1 " << proof.proof_variable(!lit);
+                            });
+                            proof_step << " 1 " << proof.proof_variable(! state_at_pos_flags[i][q]);
+                            proof_step << " 1 " << proof.proof_variable(! state_at_pos_flags[i+1][next_q]);
+                            proof_step << " >= 1 ;\n";
+                            proof.emit_proof_line(proof_step.str());
                         }
+                        });
                     }
+
+                    // Finally, can eliminate what want
+                    state.infer(TrueLiteral{}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
+                        stringstream proof_step;
+                        proof_step << "u ";
+                        state.for_each_guess([&](const Literal &lit) {
+                            if (!is_literally_true(lit))
+                                proof_step << " 1 " << proof.proof_variable(!lit);
+                        });
+                        proof_step << " 1 " << proof.proof_variable(! state_at_pos_flags[i+1][next_q]);
+                        proof_step << " >= 1 ;\n";
+                        proof.emit_proof_line(proof_step.str());
+                    }
+                    });
                 }
             }
         }
@@ -126,7 +156,7 @@ namespace
                     else {
 
                         states_supporting[i][val].erase(q);
-                        state.infer(TrueLiteral{}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine>&) -> void {
+                        state.infer(TrueLiteral{}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
                             stringstream proof_step;
                             proof_step << "u ";
                             state.for_each_guess([&](const Literal & lit) {
@@ -135,7 +165,7 @@ namespace
                             });
                             proof.need_proof_variable(vars[i] != val);
                             proof_step << " 1 " << proof.proof_variable(vars[i] != val);
-                            proof_step << " 1 " << proof.proof_variable(!state_at_pos_flags[i][q]);
+                            proof_step << " 1 " << proof.proof_variable(! state_at_pos_flags[i][q]);
                             proof_step << " >= 1 ;\n";
                             proof.emit_proof_line(proof_step.str());
                         }});
@@ -147,14 +177,14 @@ namespace
             for (const auto & q : gn) {
                 if (! state_is_support[q]) {
                     graph_nodes[i].erase(q);
-                    state.infer(TrueLiteral{}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine>&) -> void {
+                    state.infer(TrueLiteral{}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
                         stringstream proof_step;
                         proof_step << "u ";
                         state.for_each_guess([&](const Literal & lit) {
                             if (! is_literally_true(lit))
                                 proof_step << " 1 " << proof.proof_variable(! lit);
                         });
-                        proof_step << " 1 " << proof.proof_variable(!state_at_pos_flags[i][q]);
+                        proof_step << " 1 " << proof.proof_variable(! state_at_pos_flags[i][q]);
                         proof_step << " >= 1 ;\n";
                         proof.emit_proof_line(proof_step.str());
                     }});
