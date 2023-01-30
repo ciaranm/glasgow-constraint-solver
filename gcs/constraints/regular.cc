@@ -72,8 +72,7 @@ namespace
             // TODO: This is messy - could do with refactoring, but I think it's the inference we need
             if (state.maybe_proof()) {
                 for (long next_q = 0; next_q < num_states; ++next_q) {
-                    if (graph_nodes[i+1].contains(next_q)) continue;
-                    cout << "Trying eliminate state " << i+1 << " is " << next_q << endl;
+                    if (graph_nodes[i + 1].contains(next_q)) continue;
                     // Want to eliminate this node i.e. prove !state[i+1][next_q]
                     for (const auto& q : graph_nodes[i]) {
                         // So first eliminate each previous state/variable combo
@@ -243,6 +242,7 @@ auto Regular::clone() const -> unique_ptr<Constraint>
 
 auto Regular::install(Propagators & propagators, State & initial_state) && -> void
 {
+
     vector<vector<ProofFlag>> state_at_pos_flags;
     if (propagators.want_definitions()) {
         // Make 2D array of flags: state_at_pos_flags[i][q] means the DFA is in state q when it receives the
@@ -261,13 +261,13 @@ auto Regular::install(Propagators & propagators, State & initial_state) && -> vo
 
         // State at pos 0 is 0
         propagators.define_pseudoboolean_ge(initial_state, {{1_i, state_at_pos_flags[0][0]}}, 1_i);
-
         // State at pos n is one of the final states
         WeightedPseudoBooleanTerms pos_n_states;
         for (const auto & f : _final_states) {
-            pos_n_states.emplace_back(1_i, state_at_pos_flags[_num_states][f]);
+            pos_n_states.emplace_back(1_i, state_at_pos_flags[_vars.size()][f]);
         }
         propagators.define_pseudoboolean_ge(initial_state, move(pos_n_states), 1_i);
+
 
         for (unsigned int idx = 0; idx < _vars.size(); ++idx) {
             for (unsigned int q = 0; q < _num_states; ++q) {
@@ -284,6 +284,8 @@ auto Regular::install(Propagators & propagators, State & initial_state) && -> vo
             }
         }
     }
+
+
     Triggers triggers;
     triggers.on_change = {_vars.begin(), _vars.end()};
 
