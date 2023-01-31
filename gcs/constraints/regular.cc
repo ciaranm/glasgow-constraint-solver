@@ -109,7 +109,7 @@ namespace
                         });
                     }
 
-                    // Finally, can eliminate what want
+                    // Finally, can eliminate what we want
                     state.infer(TrueLiteral{}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
                         stringstream proof_step;
                         proof_step << "u ";
