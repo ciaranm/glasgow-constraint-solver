@@ -33,8 +33,8 @@ namespace gcs
             ConstraintType constraint_type;
 
             // Constructor
-            //    BinaryEntry(IntegerVariableID var_1, IntegerVariableID var_2, ConstraintType constraint_type)
-            //    : var_1(var_1), var_2(var_2), constraint_type(constraint_type) {};
+            BinaryEntry(IntegerVariableID var_1, IntegerVariableID var_2, ConstraintType constraint_type)
+            : var_1(var_1), var_2(var_2), constraint_type(constraint_type) {};
         };
 
         struct UnaryValueEntry
