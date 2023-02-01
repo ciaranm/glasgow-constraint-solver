@@ -1,10 +1,10 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_VARIABLE_ID_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_VARIABLE_ID_HH
 
-#include <gcs/integer.hh>
-#include <util/overloaded.hh>
 #include <functional>
+#include <gcs/integer.hh>
 #include <string>
+#include <util/overloaded.hh>
 #include <utility>
 #include <variant>
 
@@ -95,35 +95,39 @@ namespace gcs
     {
         using variant::variant;
 
-        auto operator<=>(const IntegerVariableID & other) const -> std::partial_ordering {
-            if(this->valueless_by_exception() && other.valueless_by_exception()) {
+        auto operator<=>(const IntegerVariableID & other) const -> std::partial_ordering
+        {
+            if (this->valueless_by_exception() && other.valueless_by_exception()) {
                 return std::strong_ordering::equal;
-            } else if(this->valueless_by_exception()) {
-                return  std::strong_ordering::less;
-            } else if(other.valueless_by_exception()) {
+            }
+            else if (this->valueless_by_exception()) {
+                return std::strong_ordering::less;
+            }
+            else if (other.valueless_by_exception()) {
                 return std::strong_ordering::greater;
-            } else if(this->index() != other.index()) {
+            }
+            else if (this->index() != other.index()) {
                 return this->index() <=> other.index();
-            } else {
+            }
+            else {
                 std::partial_ordering ret = std::strong_ordering::equal;
 
                 overloaded{
-                    [&ret](const SimpleIntegerVariableID &v, const SimpleIntegerVariableID &w) {
+                    [&ret](const SimpleIntegerVariableID & v, const SimpleIntegerVariableID & w) {
                         ret = v <=> w;
                     },
-                    [&ret](const ViewOfIntegerVariableID &v, const ViewOfIntegerVariableID &w) {
+                    [&ret](const ViewOfIntegerVariableID & v, const ViewOfIntegerVariableID & w) {
                         ret = v <=> w;
                     },
-                    [&ret](const ConstantIntegerVariableID &v, const ConstantIntegerVariableID &w) {
+                    [&ret](const ConstantIntegerVariableID & v, const ConstantIntegerVariableID & w) {
                         ret = v <=> w;
                     },
-                    [&ret](const auto &v, const auto &w) {
+                    [&ret](const auto & v, const auto & w) {
 
-                    }
-                }.visit(*this, other);
+                    }}
+                    .visit(*this, other);
                 return ret;
             }
-
         }
     };
 #else
