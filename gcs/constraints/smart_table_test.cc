@@ -123,9 +123,9 @@ auto run_lex_test(int length, vector<pair<int, int>> ranges, bool reverse = fals
                 lex_violated = lex_violated || (reverse ? (! check_lex(y_sols, x_sols, or_equal)) : (! check_lex(x_sols, y_sols, or_equal)));
                 return true;
             }},
-        ProofOptions{"lex_table.opb", "lex_table.veripb"});
+        ProofOptions{"break_table.opb", "break_table.veripb"});
 
-    return ! lex_violated & (0 == system("veripb lex_table.opb lex_table.veripb"));
+    return ! lex_violated & (0 == system("veripb break_table.opb break_table.veripb"));
 }
 
 auto run_at_most_1_test(int length, vector<pair<int, int>> & ranges, bool at_least, bool in_set) -> bool
