@@ -15,6 +15,7 @@
 #include <util/overloaded.hh>
 
 using std::copy_if;
+using std::count;
 using std::make_tuple;
 using std::make_unique;
 using std::map;
@@ -33,6 +34,9 @@ using std::unordered_map;
 using std::vector;
 using std::visit;
 
+#include <iostream>
+using std::cout;
+using std::endl;
 using namespace gcs;
 using namespace gcs::innards;
 
@@ -49,31 +53,6 @@ namespace
     using BinaryEntryData = tuple<IntegerVariableID, IntegerVariableID, ConstraintType>;
     using TreeEdges = vector<vector<SmartEntry>>;
     using Forest = vector<TreeEdges>;
-
-    // --- remove eventually -- DEBUGGING ONLY
-    //    auto index_of(const IntegerVariableID & val, const vector<IntegerVariableID> & vec) -> int
-    //    {
-    //        ptrdiff_t pos = distance(vec.begin(), find(vec.begin(), vec.end(), val));
-    //        return (int)pos;
-    //    }
-
-    // // -- remove eventually -- DEBUGGING ONLY
-    //    auto print_edge(const SmartEntry & edge, const vector<IntegerVariableID> vars) -> void
-    //    {
-    //        const string stringtypes[] = {"LESS_THAN", "LESS_THAN_EQUAL", "EQUAL", "NOT_EQUAL", "GREATER_THAN", "GREATER_THAN_EQUAL", "IN", "NOT_IN"};
-    //        overloaded{
-    //            [&](BinaryEntry b) {
-    //                cout << index_of(b.var_1, vars) << ", " << stringtypes[b.constraint_type] << ", " << index_of(b.var_2, vars);
-    //            },
-    //            [&](UnarySetEntry us) {
-    //                cout << &us.var;
-    //            },
-    //            [&](UnaryValueEntry us) {
-    //                cout << &us.var;
-    //            }}
-    //            .visit(edge);
-    //    }
-    // // ---
 
     auto filter_edge(const SmartEntry & edge, VariableDomainMap & supported_by_tree) -> void
     {
@@ -336,6 +315,7 @@ namespace
                 // First pass of filtering supported_by_tree and check of validity
                 if (! filter_and_check_valid(tree, supported_by_tree)) {
                     // Not feasible
+
                     switch (state.infer_equal(selectors[tuple_idx], 0_i, NoJustificationNeeded{})) {
                     case Inference::NoChange: break;
                     case Inference::Change: changed = true; break;
@@ -620,16 +600,21 @@ auto SmartTable::install(Propagators & propagators, State & initial_state) && ->
                         auto var = unary_set_entry.var;
                         WeightedPseudoBooleanTerms set_value_sum{};
                         WeightedPseudoBooleanTerms neg_set_value_sum{};
-                        for (const auto & val : unary_set_entry.values) {
-                            set_value_sum.emplace_back(1_i, var == val);
-                            neg_set_value_sum.emplace_back(-1_i, var == val);
+                        initial_state.for_each_value(var, [&](Integer val) {
+                            if(!count(unary_set_entry.values.begin(), unary_set_entry.values.end(), val)) {
+                                set_value_sum.emplace_back(1_i, var != val);
+                            }
+                        });
+
+                        for(const auto& val : unary_set_entry.values) {
+                            neg_set_value_sum.emplace_back(1_i, var != val);
                         }
 
                         auto flag = unary_set_entry.constraint_type == ConstraintType::IN ? propagators.create_proof_flag("inset") : propagators.create_proof_flag("notinset");
 
-                        propagators.define_pseudoboolean_ge(initial_state, move(set_value_sum), 1_i,
+                        propagators.define_pseudoboolean_ge(initial_state, move(set_value_sum), Integer{static_cast<long long>(set_value_sum.size())},
                             unary_set_entry.constraint_type == ConstraintType::IN ? flag : ! flag);
-                        propagators.define_pseudoboolean_ge(initial_state, move(neg_set_value_sum), 0_i,
+                        propagators.define_pseudoboolean_ge(initial_state, move(neg_set_value_sum), Integer{static_cast<long long>(neg_set_value_sum.size())},
                             unary_set_entry.constraint_type == ConstraintType::IN ? ! flag : flag);
 
                         entry_flags_sum.emplace_back(1_i, flag);

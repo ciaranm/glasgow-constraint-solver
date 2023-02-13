@@ -18,60 +18,36 @@ using std::vector;
 
 auto main(int, char *[]) -> int
 {
-    int n = 4;
+
+    // An example that breaks the Smart Table proofs if the extra inferences are not made.
     Problem p;
-    auto x = p.create_integer_variable_vector(n, 0_i, 10_i, "x");
-    auto y = p.create_integer_variable_vector(n, 0_i, 10_i, "y");
+    auto x = p.create_integer_variable_vector(4, -2_i, 0_i, "x");
 
-    p.post(Equals(y[0], 5_c));
-    p.post(Equals(y[1], 2_c));
-    p.post(Equals(y[2], 10_c));
-    p.post(Equals(y[3], 5_c));
+    auto y = p.create_integer_variable(0_i, 1_i, "y");
 
-    p.post(Equals(x[0], 5_c));
-    p.post(Equals(x[1], 2_c));
-    // Only option for x[2] is 10, since it comes lexicographically first
-    p.post(Equals(x[3], 6_c));
+    // // Another option:
+    //    auto x = p.create_integer_variable(-1_i, 3_i, "x");
+    //    auto z = p.create_integer_variable(-1_i, 3_i, "z");
+    //    auto y = p.create_integer_variable(-1_i, 3_i, "y");
+    //    auto tuples = SmartTuples{
+    //                        {NotEqualsVar{y, x}, InSet{y, {-1_i, 2_i, 3_i}}, InSet{z, {-1_i, 0_i, 1_i}}, GreaterThanVar{z, y}}
+    //                        };
+    //    p.post(SmartTable{{x, y, z}, tuples});
 
-    // Smart table representation of the Lex constraint
-    // As given in "The Smart Table Constraint" Mairy, J. B., Deville, Y., & Lecoutre, C. (2015)
-    SmartTuples tuples;
-
-    for (int i = 0; i < n; ++i) {
-        vector<SmartEntry> tuple;
-        for (int j = 0; j < i + 1; ++j) {
-            if (j < i) {
-                tuple.emplace_back(EqualsVar{x[j], y[j]});
-            }
-            else if (j == i) {
-                tuple.emplace_back(GreaterThanVar{x[j], y[j]});
-            }
-        }
-        tuples.emplace_back(tuple);
+    vector<SmartEntry> tuple;
+    for(int i = 0; i < 3; i++) {
+        tuple.emplace_back(LessThanVar{x[i], x[i+1]});
     }
-
-    auto all_vars = x;
-    all_vars.insert(all_vars.end(), y.begin(), y.end());
-
-    p.post(SmartTable{all_vars, tuples});
+    x.emplace_back(y);
+    p.post(SmartTable{x, {tuple}});
 
     auto stats = solve_with(p,
         SolveCallbacks{
             .solution = [&](const CurrentState & s) -> bool {
-                cout << "x = [ ";
-                for (const auto & var : x) {
-                    cout << s(var) << " ";
-                }
-                cout << "]" << endl;
-                cout << "y = [ ";
-                for (const auto & var : y) {
-                    cout << s(var) << " ";
-                }
-                cout << "]\n"
-                     << endl;
+//                cout << "x = " << s(x) << " z = " << s(z) << " y = " << s(y) << endl;
                 return true;
             }},
-        ProofOptions{"lex_table.opb", "lex_table.veripb"});
+        ProofOptions{"break_table.opb", "break_table.veripb"});
 
     cout << stats;
 
