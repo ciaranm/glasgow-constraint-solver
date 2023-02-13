@@ -92,8 +92,8 @@ auto test_smart_table(const int& n, std::mt19937& rng) {
     auto x = p.create_integer_variable_vector(n, -1_i, Integer{n}, "x");
 
     SmartTuples tuples;
-    //auto num_tup = randn2_to_n(rng);
-    auto num_tup = 1;
+    auto num_tup = randn2_to_n(rng);
+
     for (int idx = 0; idx < num_tup; ++idx) {
 
         vector<SmartEntry> tuple;
@@ -246,7 +246,7 @@ auto main(int, char *[]) -> int
 {
     std::random_device rand_dev;
     //std::mt19937 rng(rand_dev());
-    std::mt19937 rng(0);
+    std::mt19937 rng(0); // Would rather have it the same every time, for now
     for(int n = 3; n < 6; n++) {
         for(int r = 0; r < 240/n; r++) {
             if(!test_smart_table(n, rng)) {
