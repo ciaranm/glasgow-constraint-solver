@@ -33,7 +33,7 @@ auto check_at_most_1(vector<Integer> & x_sols, Integer value, bool at_least, boo
     auto count = 0;
     for (const auto & x_val : x_sols) {
 
-        if(in_set) {
+        if (in_set) {
             (x_val == 1_i || x_val == value) && count++;
         }
         else {

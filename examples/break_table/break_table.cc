@@ -41,15 +41,15 @@ auto main(int, char *[]) -> int
 //    x.emplace_back(y);
 //    p.post(SmartTable{x, {tuple}});
 
-    auto stats = solve_with(p,
-        SolveCallbacks{
-            .solution = [&](const CurrentState & s) -> bool {
-//                cout << "x = " << s(x) << " z = " << s(z) << " y = " << s(y) << endl;
-                return true;
-            }},
-        ProofOptions{"break_table.opb", "break_table.veripb"});
+        auto stats = solve_with(p,
+            SolveCallbacks{
+                .solution = [&](const CurrentState & s) -> bool {
+                    //                cout << "x = " << s(x) << " z = " << s(z) << " y = " << s(y) << endl;
+                    return true;
+                }},
+            ProofOptions{"break_table.opb", "break_table.veripb"});
 
-    cout << stats;
+        cout << stats;
 
-    return EXIT_SUCCESS;
+        return EXIT_SUCCESS;
 }
