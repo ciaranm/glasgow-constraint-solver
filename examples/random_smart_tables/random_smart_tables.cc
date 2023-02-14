@@ -104,7 +104,7 @@ auto test_smart_table(const int& n, std::mt19937& rng) {
         std::uniform_int_distribution<> rand1_to_entries(1, num_vars_in_tuple);
         auto num_trees = rand1_to_entries(rng);
         vector<int> all_points;
-        for(int i = 1; i < num_vars_in_tuple; i++) {
+        for (int i = 1; i < num_vars_in_tuple; i++) {
             all_points.emplace_back(i);
         }
 

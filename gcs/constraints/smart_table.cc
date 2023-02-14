@@ -158,7 +158,7 @@ namespace
                         [&](Integer val) { return val < dom_1[dom_1.size() - 1]; });
                     break;
                 case ConstraintType::GREATER_THAN_EQUAL:
-                    if(state.maybe_proof()) {
+                    if (state.maybe_proof()) {
                         log_filtering_inference(tuple_selector, binary_entry.var_1>=(dom_2[0]), state);
                         log_filtering_inference(tuple_selector, binary_entry.var_2<(dom_1[dom_1.size() - 1] + 1_i), state);
                     }

@@ -71,7 +71,7 @@ auto main(int, char *[]) -> int
                      << endl;
                 return true;
             }},
-        ProofOptions{"break_table.opb", "break_table.veripb"});
+        ProofOptions{"lex_table.opb", "lex_table.veripb"});
 
     cout << stats;
 

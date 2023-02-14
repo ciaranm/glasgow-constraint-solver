@@ -47,7 +47,7 @@ auto main(int, char *[]) -> int
 //                cout << "x = " << s(x) << " z = " << s(z) << " y = " << s(y) << endl;
                 return true;
             }},
-        ProofOptions{"lex_table.opb", "lex_table.veripb"});
+        ProofOptions{"break_table.opb", "break_table.veripb"});
 
     cout << stats;
 
