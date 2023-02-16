@@ -42,7 +42,7 @@ auto main(int, char *[]) -> int
 
     auto stats = solve_with(p,
         SolveCallbacks{
-            .solution = [&](const CurrentState & s) -> bool {
+            .solution = [&](const CurrentState &) -> bool {
                 //                cout << "x = " << s(x) << " z = " << s(z) << " y = " << s(y) << endl;
                 return true;
             }},
