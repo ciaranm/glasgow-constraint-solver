@@ -188,6 +188,11 @@ namespace gcs::innards
         [[nodiscard]] auto infer(const LiteralFromIntegerVariable & lit, const Justification & why) -> Inference;
 
         /**
+         * Infer nothing, but still emit a justification if necessary.
+         */
+        auto infer_true(const Justification & why) -> void;
+
+        /**
          * Infer that a given IntegerVariableID or more specific type must be
          * equal to a particular value. Performance overload of State::infer().
          */

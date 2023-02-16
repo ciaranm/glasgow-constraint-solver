@@ -682,6 +682,12 @@ auto State::infer(const LiteralFromIntegerVariable & ilit, const Justification &
     throw NonExhaustiveSwitch{};
 }
 
+auto State::infer_true(const Justification & just) -> void
+{
+    if (_imp->maybe_proof)
+        _imp->maybe_proof->infer(*this, TrueLiteral{}, just);
+}
+
 template <IntegerVariableIDLike VarType_>
 auto State::infer_not_equal(const VarType_ & var, Integer value, const Justification & just) -> Inference
 {
