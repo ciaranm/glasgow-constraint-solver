@@ -56,15 +56,19 @@ namespace
 
     auto log_filtering_inference(const ProofFlag & tuple_selector, const Literal & lit, State & state)
     {
-        state.infer(TrueLiteral{}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
+        auto inference = state.infer(TrueLiteral{}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
             proof.need_proof_variable(lit);
             stringstream proof_step;
             proof_step << "u" << proof.trail_variables(state, 1_i);
             proof_step << " 1 " << proof.proof_variable(! tuple_selector);
             proof_step << " 1 " << proof.proof_variable(lit);
-            proof_step << " >= 1 ;\n";
+            proof_step << " >= 1 ;";
             proof.emit_proof_line(proof_step.str());
         }});
+
+        if (inference != Inference::NoChange) {
+            throw UnexpectedException{"Failed to infer TrueLiteral."};
+        }
     }
 
     auto filter_edge(const SmartEntry & edge, VariableDomainMap & supported_by_tree, const ProofFlag & tuple_selector, State & state) -> void
@@ -82,66 +86,74 @@ namespace
 
                 switch (binary_entry.constraint_type) {
                 case ConstraintType::LESS_THAN:
-                    if (state.maybe_proof()) {
-                        log_filtering_inference(tuple_selector, binary_entry.var_2 >= (dom_1[0] + 1_i), state);
-                        log_filtering_inference(tuple_selector, binary_entry.var_1 < dom_2[dom_2.size() - 1], state);
-                    }
                     copy_if(dom_2.begin(), dom_2.end(), back_inserter(new_dom_2),
                         [&](Integer val) { return val > dom_1[0]; });
                     copy_if(dom_1.begin(), dom_1.end(), back_inserter(new_dom_1),
                         [&](Integer val) { return val < dom_2[dom_2.size() - 1]; });
+                    if (state.maybe_proof()) {
+                        if(new_dom_2.size() < dom_2.size())
+                            log_filtering_inference(tuple_selector, binary_entry.var_2 >= (dom_1[0] + 1_i), state);
+                        if(new_dom_1.size() < dom_1.size())
+                            log_filtering_inference(tuple_selector, binary_entry.var_1 < dom_2[dom_2.size() - 1], state);
+                    }
                     break;
                 case ConstraintType::LESS_THAN_EQUAL:
-                    if (state.maybe_proof()) {
-                        log_filtering_inference(tuple_selector, binary_entry.var_2 >= (dom_1[0]), state);
-                        log_filtering_inference(tuple_selector, binary_entry.var_1 < (dom_2[dom_2.size() - 1] + 1_i), state);
-                    }
                     copy_if(dom_2.begin(), dom_2.end(), back_inserter(new_dom_2),
                         [&](Integer val) { return val >= dom_1[0]; });
                     copy_if(dom_1.begin(), dom_1.end(), back_inserter(new_dom_1),
                         [&](Integer val) { return val <= dom_2[dom_2.size() - 1]; });
-
+                    if (state.maybe_proof()) {
+                        if(new_dom_2.size() < dom_2.size())
+                            log_filtering_inference(tuple_selector, binary_entry.var_2 >= (dom_1[0]), state);
+                        if(new_dom_1.size() < dom_1.size())
+                            log_filtering_inference(tuple_selector, binary_entry.var_1 < (dom_2[dom_2.size() - 1] + 1_i), state);
+                    }
                     break;
                 case ConstraintType::EQUAL:
-                    if (state.maybe_proof()) {
-                        // This one seems particularly annoying. Is it necessary? - not sure
-                        vector<Integer> discarded_dom1;
-                        set_difference(dom_1.begin(), dom_1.end(), dom_2.begin(), dom_2.end(),
-                            back_inserter(discarded_dom1));
-                        for (const auto & val : discarded_dom1) {
-                            log_filtering_inference(tuple_selector, binary_entry.var_1 != val, state);
-                        }
-                        vector<Integer> discarded_dom2;
-                        set_difference(dom_2.begin(), dom_2.end(), dom_1.begin(), dom_1.end(),
-                            back_inserter(discarded_dom2));
-                        for (const auto & val : discarded_dom2) {
-                            log_filtering_inference(tuple_selector, binary_entry.var_2 != val, state);
-                        }
-                    }
-
                     set_intersection(dom_1.begin(), dom_1.end(),
                         dom_2.begin(), dom_2.end(),
                         back_inserter(new_dom_1));
                     new_dom_2 = new_dom_1;
+
+                    if (state.maybe_proof()) {
+                        // This one seems particularly annoying. Is it necessary? - not sure
+                        if(new_dom_1.size() < dom_1.size()) {
+                            vector<Integer> discarded_dom1;
+                            set_difference(dom_1.begin(), dom_1.end(), dom_2.begin(), dom_2.end(),
+                                           back_inserter(discarded_dom1));
+                            for (const auto & val : discarded_dom1) {
+                                log_filtering_inference(tuple_selector, binary_entry.var_1 != val, state);
+                            }
+                        }
+
+                        if(new_dom_2.size() < dom_2.size()) {
+                            vector<Integer> discarded_dom2;
+                            set_difference(dom_2.begin(), dom_2.end(), dom_1.begin(), dom_1.end(),
+                                           back_inserter(discarded_dom2));
+                            for (const auto &val: discarded_dom2) {
+                                log_filtering_inference(tuple_selector, binary_entry.var_2 != val, state);
+                            }
+                        }
+                    }
                     break;
                 case ConstraintType::NOT_EQUAL:
                     if (dom_1.size() == 1) {
-                        if (state.maybe_proof()) {
-                            log_filtering_inference(tuple_selector, binary_entry.var_2 != (dom_1[0]), state);
-                        }
                         new_dom_1 = dom_1;
                         set_difference(dom_2.begin(), dom_2.end(),
                             dom_1.begin(), dom_1.end(),
                             back_inserter(new_dom_2));
+                        if (state.maybe_proof() && new_dom_2.size() > dom_2.size()) {
+                            log_filtering_inference(tuple_selector, binary_entry.var_2 != (dom_1[0]), state);
+                        }
                     }
                     else if (dom_2.size() == 1) {
-                        if (state.maybe_proof()) {
-                            log_filtering_inference(tuple_selector, binary_entry.var_1 != (dom_2[0]), state);
-                        }
-                        new_dom_2 = move(dom_2);
+                        new_dom_2 = dom_2;
                         set_difference(dom_1.begin(), dom_1.end(),
                             dom_2.begin(), dom_2.end(),
                             back_inserter(new_dom_1));
+                        if (state.maybe_proof() && new_dom_1.size() > dom_1.size()) {
+                            log_filtering_inference(tuple_selector, binary_entry.var_1 != (dom_2[0]), state);
+                        }
                     }
                     else {
                         new_dom_1 = move(dom_1);
@@ -149,24 +161,28 @@ namespace
                     }
                     break;
                 case ConstraintType::GREATER_THAN:
-                    if (state.maybe_proof()) {
-                        log_filtering_inference(tuple_selector, binary_entry.var_1 >= (dom_2[0] + 1_i), state);
-                        log_filtering_inference(tuple_selector, binary_entry.var_2 < dom_1[dom_1.size() - 1], state);
-                    }
                     copy_if(dom_1.begin(), dom_1.end(), back_inserter(new_dom_1),
                         [&](Integer val) { return val > dom_2[0]; });
                     copy_if(dom_2.begin(), dom_2.end(), back_inserter(new_dom_2),
                         [&](Integer val) { return val < dom_1[dom_1.size() - 1]; });
+                    if (state.maybe_proof()) {
+                        if(new_dom_1.size() < dom_1.size())
+                            log_filtering_inference(tuple_selector, binary_entry.var_1 >= (dom_2[0] + 1_i), state);
+                        if(new_dom_2.size() < dom_2.size())
+                            log_filtering_inference(tuple_selector, binary_entry.var_2 < dom_1[dom_1.size() - 1], state);
+                    }
                     break;
                 case ConstraintType::GREATER_THAN_EQUAL:
-                    if (state.maybe_proof()) {
-                        log_filtering_inference(tuple_selector, binary_entry.var_1 >= (dom_2[0]), state);
-                        log_filtering_inference(tuple_selector, binary_entry.var_2 < (dom_1[dom_1.size() - 1] + 1_i), state);
-                    }
                     copy_if(dom_1.begin(), dom_1.end(), back_inserter(new_dom_1),
                         [&](Integer val) { return val >= dom_2[0]; });
                     copy_if(dom_2.begin(), dom_2.end(), back_inserter(new_dom_2),
                         [&](Integer val) { return val <= dom_1[dom_1.size() - 1]; });
+                    if (state.maybe_proof()) {
+                        if(new_dom_1.size() < dom_1.size())
+                            log_filtering_inference(tuple_selector, binary_entry.var_1 >= (dom_2[0]), state);
+                        if(new_dom_2.size() < dom_2.size())
+                            log_filtering_inference(tuple_selector, binary_entry.var_2 < (dom_1[dom_1.size() - 1] + 1_i), state);
+                    }
                     break;
                 default:
                     throw UnexpectedException{"Unexpected SmartEntry type encountered."};

@@ -60,7 +60,7 @@ auto random_tree_edges(int k, std::mt19937 & rng, int offset)
         }
     }
     auto v1 = -1;
-    int v2;
+    auto v2 = -1;
 
     for (int i = 0; i < k; i++) {
         if (count_in_prufer[i] == 0) {
