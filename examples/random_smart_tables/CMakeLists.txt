@@ -1,0 +1,3 @@
+add_executable(random_smart_tables random_smart_tables.cc)
+target_link_libraries(random_smart_tables PUBLIC glasgow_constraint_solver)
+

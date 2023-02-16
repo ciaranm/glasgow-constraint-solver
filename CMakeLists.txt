@@ -9,7 +9,7 @@ add_compile_options(-Wno-restrict) # https://gcc.gnu.org/bugzilla/show_bug.cgi?i
 add_compile_options(-Wno-stringop-overread) # ditto
 add_compile_options(-O3)
 # Set conditionally - clang does not recognise
-add_compile_options(-march=native)
+#add_compile_options(-march=native)
 add_compile_options(-g)
 add_compile_options(-g3)
 add_compile_options(-gdwarf-3)

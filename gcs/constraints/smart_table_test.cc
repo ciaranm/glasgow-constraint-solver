@@ -123,9 +123,9 @@ auto run_lex_test(int length, vector<pair<int, int>> ranges, bool reverse = fals
                 lex_violated = lex_violated || (reverse ? (! check_lex(y_sols, x_sols, or_equal)) : (! check_lex(x_sols, y_sols, or_equal)));
                 return true;
             }},
-        ProofOptions{"lex_table.opb", "lex_table.veripb"});
+        ProofOptions{"lex_test.opb", "lex_test.veripb"});
 
-    return ! lex_violated & (0 == system("veripb lex_table.opb lex_table.veripb"));
+    return ! lex_violated & (0 == system("veripb lex_test.opb lex_test.veripb"));
 }
 
 auto run_at_most_1_test(int length, vector<pair<int, int>> & ranges, bool at_least, bool in_set) -> bool
@@ -180,9 +180,9 @@ auto run_at_most_1_test(int length, vector<pair<int, int>> & ranges, bool at_lea
                 at_most_1_violated = at_most_1_violated || ! check_at_most_1(x_sols, Integer{length}, at_least, in_set);
                 return true;
             }},
-        ProofOptions{"at_most_1_table.opb", "at_most_1_table.veripb"});
+        ProofOptions{"at_most_1_test.opb", "at_most_1_test.veripb"});
 
-    return ! at_most_1_violated & (0 == system("veripb at_most_1_table.opb at_most_1_table.veripb"));
+    return ! at_most_1_violated & (0 == system("veripb at_most_1_test.opb at_most_1_test.veripb"));
 };
 
 auto main(int, char *[]) -> int

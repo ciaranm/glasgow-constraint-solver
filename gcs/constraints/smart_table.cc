@@ -15,6 +15,7 @@
 #include <util/overloaded.hh>
 
 using std::copy_if;
+using std::count;
 using std::make_tuple;
 using std::make_unique;
 using std::map;
@@ -33,6 +34,9 @@ using std::unordered_map;
 using std::vector;
 using std::visit;
 
+#include <iostream>
+using std::cout;
+using std::endl;
 using namespace gcs;
 using namespace gcs::innards;
 
@@ -50,32 +54,24 @@ namespace
     using TreeEdges = vector<vector<SmartEntry>>;
     using Forest = vector<TreeEdges>;
 
-    // --- remove eventually -- DEBUGGING ONLY
-    //    auto index_of(const IntegerVariableID & val, const vector<IntegerVariableID> & vec) -> int
-    //    {
-    //        ptrdiff_t pos = distance(vec.begin(), find(vec.begin(), vec.end(), val));
-    //        return (int)pos;
-    //    }
+    auto log_filtering_inference(const ProofFlag & tuple_selector, const Literal & lit, State & state)
+    {
+        auto inference = state.infer(TrueLiteral{}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
+            proof.need_proof_variable(lit);
+            stringstream proof_step;
+            proof_step << "u" << proof.trail_variables(state, 1_i);
+            proof_step << " 1 " << proof.proof_variable(! tuple_selector);
+            proof_step << " 1 " << proof.proof_variable(lit);
+            proof_step << " >= 1 ;";
+            proof.emit_proof_line(proof_step.str());
+        }});
 
-    // // -- remove eventually -- DEBUGGING ONLY
-    //    auto print_edge(const SmartEntry & edge, const vector<IntegerVariableID> vars) -> void
-    //    {
-    //        const string stringtypes[] = {"LESS_THAN", "LESS_THAN_EQUAL", "EQUAL", "NOT_EQUAL", "GREATER_THAN", "GREATER_THAN_EQUAL", "IN", "NOT_IN"};
-    //        overloaded{
-    //            [&](BinaryEntry b) {
-    //                cout << index_of(b.var_1, vars) << ", " << stringtypes[b.constraint_type] << ", " << index_of(b.var_2, vars);
-    //            },
-    //            [&](UnarySetEntry us) {
-    //                cout << &us.var;
-    //            },
-    //            [&](UnaryValueEntry us) {
-    //                cout << &us.var;
-    //            }}
-    //            .visit(edge);
-    //    }
-    // // ---
+        if (inference != Inference::NoChange) {
+            throw UnexpectedException{"Failed to infer TrueLiteral."};
+        }
+    }
 
-    auto filter_edge(const SmartEntry & edge, VariableDomainMap & supported_by_tree) -> void
+    auto filter_edge(const SmartEntry & edge, VariableDomainMap & supported_by_tree, const ProofFlag & tuple_selector, State & state) -> void
     {
         // Currently filter both domains - might be overkill
         // If the tree was in a better form, think this can be optimised to do less redundant filtering.
@@ -94,18 +90,51 @@ namespace
                         [&](Integer val) { return val > dom_1[0]; });
                     copy_if(dom_1.begin(), dom_1.end(), back_inserter(new_dom_1),
                         [&](Integer val) { return val < dom_2[dom_2.size() - 1]; });
+                    if (state.maybe_proof()) {
+                        if(new_dom_2.size() < dom_2.size())
+                            log_filtering_inference(tuple_selector, binary_entry.var_2 >= (dom_1[0] + 1_i), state);
+                        if(new_dom_1.size() < dom_1.size())
+                            log_filtering_inference(tuple_selector, binary_entry.var_1 < dom_2[dom_2.size() - 1], state);
+                    }
                     break;
                 case ConstraintType::LESS_THAN_EQUAL:
                     copy_if(dom_2.begin(), dom_2.end(), back_inserter(new_dom_2),
                         [&](Integer val) { return val >= dom_1[0]; });
                     copy_if(dom_1.begin(), dom_1.end(), back_inserter(new_dom_1),
                         [&](Integer val) { return val <= dom_2[dom_2.size() - 1]; });
+                    if (state.maybe_proof()) {
+                        if(new_dom_2.size() < dom_2.size())
+                            log_filtering_inference(tuple_selector, binary_entry.var_2 >= (dom_1[0]), state);
+                        if(new_dom_1.size() < dom_1.size())
+                            log_filtering_inference(tuple_selector, binary_entry.var_1 < (dom_2[dom_2.size() - 1] + 1_i), state);
+                    }
                     break;
                 case ConstraintType::EQUAL:
                     set_intersection(dom_1.begin(), dom_1.end(),
                         dom_2.begin(), dom_2.end(),
                         back_inserter(new_dom_1));
                     new_dom_2 = new_dom_1;
+
+                    if (state.maybe_proof()) {
+                        // This one seems particularly annoying. Is it necessary? - not sure
+                        if(new_dom_1.size() < dom_1.size()) {
+                            vector<Integer> discarded_dom1;
+                            set_difference(dom_1.begin(), dom_1.end(), dom_2.begin(), dom_2.end(),
+                                           back_inserter(discarded_dom1));
+                            for (const auto & val : discarded_dom1) {
+                                log_filtering_inference(tuple_selector, binary_entry.var_1 != val, state);
+                            }
+                        }
+
+                        if(new_dom_2.size() < dom_2.size()) {
+                            vector<Integer> discarded_dom2;
+                            set_difference(dom_2.begin(), dom_2.end(), dom_1.begin(), dom_1.end(),
+                                           back_inserter(discarded_dom2));
+                            for (const auto &val: discarded_dom2) {
+                                log_filtering_inference(tuple_selector, binary_entry.var_2 != val, state);
+                            }
+                        }
+                    }
                     break;
                 case ConstraintType::NOT_EQUAL:
                     if (dom_1.size() == 1) {
@@ -113,12 +142,18 @@ namespace
                         set_difference(dom_2.begin(), dom_2.end(),
                             dom_1.begin(), dom_1.end(),
                             back_inserter(new_dom_2));
+                        if (state.maybe_proof() && new_dom_2.size() > dom_2.size()) {
+                            log_filtering_inference(tuple_selector, binary_entry.var_2 != (dom_1[0]), state);
+                        }
                     }
                     else if (dom_2.size() == 1) {
-                        new_dom_2 = move(dom_2);
+                        new_dom_2 = dom_2;
                         set_difference(dom_1.begin(), dom_1.end(),
                             dom_2.begin(), dom_2.end(),
                             back_inserter(new_dom_1));
+                        if (state.maybe_proof() && new_dom_1.size() > dom_1.size()) {
+                            log_filtering_inference(tuple_selector, binary_entry.var_1 != (dom_2[0]), state);
+                        }
                     }
                     else {
                         new_dom_1 = move(dom_1);
@@ -130,12 +165,24 @@ namespace
                         [&](Integer val) { return val > dom_2[0]; });
                     copy_if(dom_2.begin(), dom_2.end(), back_inserter(new_dom_2),
                         [&](Integer val) { return val < dom_1[dom_1.size() - 1]; });
+                    if (state.maybe_proof()) {
+                        if(new_dom_1.size() < dom_1.size())
+                            log_filtering_inference(tuple_selector, binary_entry.var_1 >= (dom_2[0] + 1_i), state);
+                        if(new_dom_2.size() < dom_2.size())
+                            log_filtering_inference(tuple_selector, binary_entry.var_2 < dom_1[dom_1.size() - 1], state);
+                    }
                     break;
                 case ConstraintType::GREATER_THAN_EQUAL:
                     copy_if(dom_1.begin(), dom_1.end(), back_inserter(new_dom_1),
                         [&](Integer val) { return val >= dom_2[0]; });
                     copy_if(dom_2.begin(), dom_2.end(), back_inserter(new_dom_2),
                         [&](Integer val) { return val <= dom_1[dom_1.size() - 1]; });
+                    if (state.maybe_proof()) {
+                        if(new_dom_1.size() < dom_1.size())
+                            log_filtering_inference(tuple_selector, binary_entry.var_1 >= (dom_2[0]), state);
+                        if(new_dom_2.size() < dom_2.size())
+                            log_filtering_inference(tuple_selector, binary_entry.var_2 < (dom_1[dom_1.size() - 1] + 1_i), state);
+                    }
                     break;
                 default:
                     throw UnexpectedException{"Unexpected SmartEntry type encountered."};
@@ -208,12 +255,12 @@ namespace
             .visit(edge);
     }
 
-    [[nodiscard]] auto filter_and_check_valid(const TreeEdges & tree, VariableDomainMap & supported_by_tree) -> bool
+    [[nodiscard]] auto filter_and_check_valid(const TreeEdges & tree, VariableDomainMap & supported_by_tree, const ProofFlag & tuple_selector, State & state) -> bool
     {
         for (int l = tree.size() - 1; l >= 0; --l) {
             for (const auto & edge : tree[l]) {
 
-                filter_edge(edge, supported_by_tree);
+                filter_edge(edge, supported_by_tree, tuple_selector, state);
 
                 bool domain_became_empty = false;
                 overloaded{
@@ -250,11 +297,11 @@ namespace
         unsupported[var] = new_unsupported;
     }
 
-    auto filter_again_and_remove_supported(const TreeEdges & tree, VariableDomainMap & supported_by_tree, VariableDomainMap & unsupported) -> void
+    auto filter_again_and_remove_supported(const TreeEdges & tree, VariableDomainMap & supported_by_tree, VariableDomainMap & unsupported, const ProofFlag & tuple_selector, State & state) -> void
     {
         for (int l = tree.size() - 1; l >= 0; --l) {
             for (const auto & edge : tree[l]) {
-                filter_edge(edge, supported_by_tree);
+                filter_edge(edge, supported_by_tree, tuple_selector, state);
 
                 // Collect supported vals for this tree
                 overloaded{
@@ -334,8 +381,9 @@ namespace
                 }
 
                 // First pass of filtering supported_by_tree and check of validity
-                if (! filter_and_check_valid(tree, supported_by_tree)) {
+                if (! filter_and_check_valid(tree, supported_by_tree, pb_selectors[tuple_idx], state)) {
                     // Not feasible
+
                     switch (state.infer_equal(selectors[tuple_idx], 0_i, NoJustificationNeeded{})) {
                     case Inference::NoChange: break;
                     case Inference::Change: changed = true; break;
@@ -348,7 +396,7 @@ namespace
                     return Inference::Contradiction;
                 }
 
-                filter_again_and_remove_supported(tree, supported_by_tree, unsupported);
+                filter_again_and_remove_supported(tree, supported_by_tree, unsupported, pb_selectors[tuple_idx], state);
             }
 
             if (state.optional_single_value(selectors[tuple_idx]) != 0_i) {
@@ -375,19 +423,13 @@ namespace
                 switch (state.infer_not_equal(var, value, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
                     for (unsigned int tuple_idx = 0; tuple_idx < tuples.size(); ++tuple_idx) {
                         stringstream proof_step;
-                        proof_step << "u";
-                        state.for_each_guess([&](const Literal & lit) {
-                            if (! is_literally_true(lit))
-                                proof_step << " 1 " << proof.proof_variable(! lit);
-                        });
+                        proof_step << "u" << proof.trail_variables(state, 1_i);
                         proof.need_proof_variable(var != value);
                         proof_step << " 1 " << proof.proof_variable(var != value);
                         proof_step << " 1 " << proof.proof_variable(! pb_selectors[tuple_idx]);
-                        proof_step << " >= 1 ;\n";
+                        proof_step << " >= 1 ;";
                         proof.emit_proof_line(proof_step.str());
                     }
-
-                    return proof.infer(state, var != value, JustifyUsingRUP{});
                 }})) {
                 case Inference::NoChange: break;
                 case Inference::Change: changed = true; break;
@@ -620,16 +662,21 @@ auto SmartTable::install(Propagators & propagators, State & initial_state) && ->
                         auto var = unary_set_entry.var;
                         WeightedPseudoBooleanTerms set_value_sum{};
                         WeightedPseudoBooleanTerms neg_set_value_sum{};
+                        initial_state.for_each_value(var, [&](Integer val) {
+                            if (! count(unary_set_entry.values.begin(), unary_set_entry.values.end(), val)) {
+                                set_value_sum.emplace_back(1_i, var != val);
+                            }
+                        });
+
                         for (const auto & val : unary_set_entry.values) {
-                            set_value_sum.emplace_back(1_i, var == val);
-                            neg_set_value_sum.emplace_back(-1_i, var == val);
+                            neg_set_value_sum.emplace_back(1_i, var != val);
                         }
 
                         auto flag = unary_set_entry.constraint_type == ConstraintType::IN ? propagators.create_proof_flag("inset") : propagators.create_proof_flag("notinset");
 
-                        propagators.define_pseudoboolean_ge(initial_state, move(set_value_sum), 1_i,
+                        propagators.define_pseudoboolean_ge(initial_state, move(set_value_sum), Integer{static_cast<long long>(set_value_sum.size())},
                             unary_set_entry.constraint_type == ConstraintType::IN ? flag : ! flag);
-                        propagators.define_pseudoboolean_ge(initial_state, move(neg_set_value_sum), 0_i,
+                        propagators.define_pseudoboolean_ge(initial_state, move(neg_set_value_sum), Integer{static_cast<long long>(neg_set_value_sum.size())},
                             unary_set_entry.constraint_type == ConstraintType::IN ? ! flag : flag);
 
                         entry_flags_sum.emplace_back(1_i, flag);
