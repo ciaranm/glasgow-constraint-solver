@@ -5,6 +5,7 @@
 #include <gcs/problem.hh>
 #include <gcs/smart_entry.hh>
 #include <gcs/solve.hh>
+
 #include <iostream>
 #include <numeric>
 #include <random>
@@ -19,11 +20,14 @@ using std::cout;
 using std::endl;
 using std::iota;
 using std::make_optional;
+using std::mt19937;
 using std::nullopt;
 using std::pair;
 using std::shuffle;
+using std::ssize;
 using std::string;
 using std::stringstream;
+using std::uniform_int_distribution;
 using std::vector;
 
 using namespace innards;
@@ -34,12 +38,12 @@ auto index_of(const IntegerVariableID & val, const vector<IntegerVariableID> & v
     return (int)pos;
 }
 
-auto random_tree_edges(int k, std::mt19937 & rng, int offset)
+auto random_tree_edges(int k, mt19937 & rng, int offset)
 {
     vector<pair<int, int>> edges;
 
     // Generate a random tree using Prüfer sequence
-    std::uniform_int_distribution<> rand0_to_km1(0, k - 1);
+    uniform_int_distribution<> rand0_to_km1(0, k - 1);
     vector<int> prufer_seq;
     vector<int> count_in_prufer(k, 0);
 
@@ -83,14 +87,14 @@ auto constraint_type_str(ConstraintType c) -> string
     return string_names[static_cast<int>(c)];
 }
 
-auto test_smart_table(const int & n, std::mt19937 & rng)
+auto test_smart_table(const int & n, mt19937 & rng)
 {
     stringstream string_rep;
     Problem p;
-    std::uniform_int_distribution<> rand1_to_n(1, n);
-    std::uniform_int_distribution<> randn2_to_n(n / 2, n);
-    std::uniform_int_distribution<> rand0_to_5(0, 5);
-    std::uniform_int_distribution<> rand0_to_7(0, 7);
+    uniform_int_distribution<> rand1_to_n(1, n);
+    uniform_int_distribution<> randn2_to_n(n / 2, n);
+    uniform_int_distribution<> rand0_to_5(0, 5);
+    uniform_int_distribution<> rand0_to_7(0, 7);
 
     auto x = p.create_integer_variable_vector(n, -1_i, Integer{n}, "x");
 
@@ -101,25 +105,25 @@ auto test_smart_table(const int & n, std::mt19937 & rng)
 
         vector<SmartEntry> tuple;
         auto copy_x = x;
-        std::shuffle(std::begin(copy_x), std::end(copy_x), rng);
+        shuffle(begin(copy_x), end(copy_x), rng);
 
         auto num_vars_in_tuple = randn2_to_n(rng);
-        std::uniform_int_distribution<> rand1_to_entries(1, num_vars_in_tuple);
+        uniform_int_distribution<> rand1_to_entries(1, num_vars_in_tuple);
         auto num_trees = rand1_to_entries(rng);
         vector<int> all_points;
         for (int i = 1; i < num_vars_in_tuple; i++) {
             all_points.emplace_back(i);
         }
 
-        std::shuffle(std::begin(all_points), std::end(all_points), rng);
+        shuffle(begin(all_points), end(all_points), rng);
         vector<int> split_points{0};
         for (int i = 0; i < num_trees - 1; i++) {
             split_points.emplace_back(all_points[i]);
         }
         split_points.emplace_back(num_vars_in_tuple);
-        std::sort(split_points.begin(), split_points.end());
+        sort(split_points.begin(), split_points.end());
 
-        for (int i = 0; i < split_points.size() - 1; i++) {
+        for (int i = 0; i < ssize(split_points) - 1; i++) {
             string_rep << "Tree " << i << "(";
             auto num_nodes_in_tree = split_points[i + 1] - split_points[i];
             string_rep << num_nodes_in_tree << " nodes): ";
@@ -131,7 +135,7 @@ auto test_smart_table(const int & n, std::mt19937 & rng)
                     for (int val = -1; val <= n; val++) {
                         random_set.emplace_back(Integer{val});
                     }
-                    std::shuffle(random_set.begin(), random_set.end(), rng);
+                    shuffle(random_set.begin(), random_set.end(), rng);
                     int how_many = rand1_to_n(rng);
                     string_rep << "x[" << index_of(copy_x[split_points[i]], x) << "] ";
                     string_rep << constraint_type_str(constraint_type);
@@ -191,7 +195,7 @@ auto test_smart_table(const int & n, std::mt19937 & rng)
                 for (int val = -1; val <= n; val++) {
                     random_set.emplace_back(Integer{val});
                 }
-                std::shuffle(random_set.begin(), random_set.end(), rng);
+                shuffle(random_set.begin(), random_set.end(), rng);
                 int how_many = rand1_to_n(rng);
                 string_rep << "x[" << index_of(copy_x[var_idx], x) << "] ";
                 string_rep << constraint_type_str(constraint_type);
@@ -225,7 +229,7 @@ auto test_smart_table(const int & n, std::mt19937 & rng)
 
     auto stats = solve_with(p,
         SolveCallbacks{
-            .solution = [&](const CurrentState & s) -> bool {
+            .solution = [&](const CurrentState &) -> bool {
                 //                        cout << "x = [ ";
                 //                        for (const auto & var : x) {
                 //                            cout << s(var) << " ";
@@ -246,9 +250,9 @@ auto test_smart_table(const int & n, std::mt19937 & rng)
 }
 auto main(int, char *[]) -> int
 {
-    std::random_device rand_dev;
+    // random_device rand_dev;
     // std::mt19937 rng(rand_dev());
-    std::mt19937 rng(0); // Would rather have it the same every time, for now
+    mt19937 rng(0); // Would rather have it the same every time, for now
     for (int n = 3; n < 6; n++) {
         for (int r = 0; r < 240 / n; r++) {
             if (! test_smart_table(n, rng)) {
