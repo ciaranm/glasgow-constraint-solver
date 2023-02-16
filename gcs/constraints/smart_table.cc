@@ -427,7 +427,7 @@ namespace
                         proof.need_proof_variable(var != value);
                         proof_step << " 1 " << proof.proof_variable(var != value);
                         proof_step << " 1 " << proof.proof_variable(! pb_selectors[tuple_idx]);
-                        proof_step << " >= 1 ;\n";
+                        proof_step << " >= 1 ;";
                         proof.emit_proof_line(proof_step.str());
                     }
                 }})) {
