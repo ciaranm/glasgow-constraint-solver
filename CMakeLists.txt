@@ -3,13 +3,25 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+project(
+    Glasgow-Constraint-Solver
+    VERSION 0.0.1
+    DESCRIPTION "An auditable constraint programming and optimisation solver"
+    HOMEPAGE_URL "https://github.com/ciaranm/glasgow-constraint-solver"
+    LANGUAGES CXX)
+
 add_compile_options(-W)
 add_compile_options(-Wall)
 add_compile_options(-Wno-restrict) # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=104336
 add_compile_options(-Wno-stringop-overread) # ditto
 add_compile_options(-O3)
-# Set conditionally - clang does not recognise
-#add_compile_options(-march=native)
+
+include(CheckCXXCompilerFlag)
+unset(COMPILER_SUPPORTS_MARCH_NATIVE CACHE)
+CHECK_CXX_COMPILER_FLAG(-march=native COMPILER_SUPPORTS_MARCH_NATIVE)
+if(COMPILER_SUPPORTS_MARCH_NATIVE)
+add_compile_options(-march=native)
+endif(COMPILER_SUPPORTS_MARCH_NATIVE)
 add_compile_options(-g)
 add_compile_options(-g3)
 add_compile_options(-gdwarf-3)
@@ -18,13 +30,6 @@ add_compile_options(-pthread)
 add_link_options(-pthread)
 
 # add_compile_options(-DGCS_TRACK_ALL_PROPAGATIONS=1)
-
-project(
-    Glasgow-Constraint-Solver
-    VERSION 0.0.1
-    DESCRIPTION "An auditable constraint programming and optimisation solver"
-    HOMEPAGE_URL "https://github.com/ciaranm/glasgow-constraint-solver"
-    LANGUAGES CXX)
 
 enable_testing()
 
