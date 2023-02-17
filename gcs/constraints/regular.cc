@@ -15,6 +15,7 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::make_pair;
 using std::move;
 using std::optional;
 using std::pair;
@@ -27,7 +28,6 @@ using std::unique_ptr;
 using std::unordered_map;
 using std::vector;
 using std::visit;
-using std::make_pair;
 
 namespace
 {
@@ -156,29 +156,31 @@ namespace
         return state.add_constraint_state(graph);
     }
 
-    auto decrement_outdeg(RegularGraph& graph, const long i, const long k) -> void {
+    auto decrement_outdeg(RegularGraph & graph, const long i, const long k) -> void
+    {
         graph.out_deg[i][k]--;
-        if(graph.out_deg[i][k] == 0 && i > 0) {
-            for(const auto& edge : graph.in_edges[i][k]) {
+        if (graph.out_deg[i][k] == 0 && i > 0) {
+            for (const auto & edge : graph.in_edges[i][k]) {
                 auto l = edge.first;
-                graph.in_edges[i-1][l].erase(k);
-                for(const auto& val : edge.second)
-                    graph.states_supporting[i-1][val].erase(l);
-                decrement_outdeg(graph, i-1, l);
+                graph.in_edges[i - 1][l].erase(k);
+                for (const auto & val : edge.second)
+                    graph.states_supporting[i - 1][val].erase(l);
+                decrement_outdeg(graph, i - 1, l);
             }
             graph.in_edges[i][k] = {};
         }
     }
 
-    auto decrement_indeg(RegularGraph& graph, const long i, const long k) -> void {
+    auto decrement_indeg(RegularGraph & graph, const long i, const long k) -> void
+    {
         graph.in_deg[i][k]--;
-        if(graph.in_deg[i][k] == 0 && i < graph.in_deg.size()-1) {
-            for(const auto& edge : graph.out_edges[i][k]) {
+        if (graph.in_deg[i][k] == 0 && i < graph.in_deg.size() - 1) {
+            for (const auto & edge : graph.out_edges[i][k]) {
                 auto l = edge.first;
-                graph.in_edges[i+1][l].erase(k);
-                for(const auto& val : edge.second)
+                graph.in_edges[i + 1][l].erase(k);
+                for (const auto & val : edge.second)
                     graph.states_supporting[i][val].erase(l);
-                decrement_indeg(graph, i+1, l);
+                decrement_indeg(graph, i + 1, l);
             }
             graph.out_edges[i][k] = {};
         }
@@ -196,46 +198,48 @@ namespace
         bool contradiction = false;
 
         for (int i = 0; i < graph.states_supporting.size(); i++) {
-            for(const auto& val_and_states : graph.states_supporting[i]) {
+            for (const auto & val_and_states : graph.states_supporting[i]) {
                 auto val = val_and_states.first;
                 // Clean up domains
-                if (graph.states_supporting[i][val].empty() && !state.in_domain(vars[i], val)) {
-                    for(const auto& q : graph.states_supporting[i][val]) {
-                        auto next_q = transitions[i][val];
-                        if(graph.out_edges[i][q].contains(next_q))
+                if (!graph.states_supporting[i][val].empty() && ! state.in_domain(vars[i], val)) {
+                    for (const auto & q : graph.states_supporting[i][val]) {
+                        auto next_q = transitions[q][val];
+
+                        if (graph.out_edges[i][q].contains(next_q)) {
                             graph.out_edges[i][q][next_q].erase(val);
 
-                        if(graph.out_edges[i][q][next_q].empty())
-                            graph.out_edges[i][q].erase(next_q);
+                            if (graph.out_edges[i][q][next_q].empty())
+                                graph.out_edges[i][q].erase(next_q);
+                        }
 
-                        if(graph.in_edges[i+1][next_q].contains(q))
-                            graph.out_edges[i+1][next_q][q].erase(val);
+                        if (graph.in_edges[i + 1][next_q].contains(q)) {
+                            graph.in_edges[i + 1][next_q][q].erase(val);
 
-                        if(graph.out_edges[i+1][next_q][q].empty())
-                            graph.out_edges[i+1][next_q].erase(q);
+                            if (graph.in_edges[i + 1][next_q][q].empty())
+                                graph.in_edges[i + 1][next_q].erase(q);
+                        }
 
                         decrement_outdeg(graph, i, q);
-                        decrement_indeg(graph, i, next_q);
+                        decrement_indeg(graph, i+1, next_q);
                     }
                     graph.states_supporting[i][val] = {};
                 }
             }
         }
 
-
         for (int i = 0; i < graph.states_supporting.size(); i++) {
             state.for_each_value(vars[i], [&](Integer val) -> void {
                 // Clean up domains
                 if (graph.states_supporting[i][val].empty()) {
                     switch (state.infer_not_equal(vars[i], val, JustifyUsingRUP{})) {
-                        case Inference::Contradiction:
-                            contradiction = true;
-                            break;
-                        case Inference::Change:
-                            changed = true;
-                            break;
-                        case Inference::NoChange:
-                            break;
+                    case Inference::Contradiction:
+                        contradiction = true;
+                        break;
+                    case Inference::Change:
+                        changed = true;
+                        break;
+                    case Inference::NoChange:
+                        break;
                     }
                 }
             });
@@ -259,18 +263,17 @@ Regular::Regular(vector<IntegerVariableID> v, vector<Integer> s, long n, vector<
 }
 
 Regular::Regular(vector<IntegerVariableID> v, vector<Integer> s, long n, vector<vector<long>> transitions, vector<long> f) :
-        _vars(move(v)),
-        _symbols(move(s)),
-        _num_states(n),
-        _transitions(vector<unordered_map<Integer, long>>(n, unordered_map<Integer, long>{})),
-        _final_states(move(f))
+    _vars(move(v)),
+    _symbols(move(s)),
+    _num_states(n),
+    _transitions(vector<unordered_map<Integer, long>>(n, unordered_map<Integer, long>{})),
+    _final_states(move(f))
 {
-    for(int i = 0; i < transitions.size(); i++) {
-        for(int j = 0; j < transitions[i].size(); j++) {
-            _transitions[i][Integer{j}]= transitions[i][j];
+    for (int i = 0; i < transitions.size(); i++) {
+        for (int j = 0; j < transitions[i].size(); j++) {
+            _transitions[i][Integer{j}] = transitions[i][j];
         }
     }
-
 }
 
 auto Regular::clone() const -> unique_ptr<Constraint>

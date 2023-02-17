@@ -33,14 +33,13 @@ namespace gcs
             std::vector<long> final_states);
 
         Regular(std::vector<IntegerVariableID> v,
-                std::vector<Integer> s,
-                long n, std::vector<std::vector<long>> transitions,
-                std::vector<long> f);
+            std::vector<Integer> s,
+            long n, std::vector<std::vector<long>> transitions,
+            std::vector<long> f);
 
         virtual auto describe_for_proof() -> std::string override;
         virtual auto install(innards::Propagators &, innards::State &) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
-
     };
 }
 

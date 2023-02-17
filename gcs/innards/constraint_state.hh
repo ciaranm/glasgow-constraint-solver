@@ -2,16 +2,16 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINT_STATE_HH
 #include <gcs/integer.hh>
 #include <set>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-#include <tuple>
 
+using std::pair;
 using std::set;
 using std::unordered_map;
-using std::vector;
-using std::pair;
 using std::unordered_set;
+using std::vector;
 
 using namespace gcs;
 struct RegularGraph
