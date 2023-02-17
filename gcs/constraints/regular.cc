@@ -6,11 +6,11 @@
 #include <list>
 #include <optional>
 #include <set>
+#include <sstream>
 #include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <variant>
-#include <sstream>
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -30,36 +30,21 @@ using std::visit;
 
 namespace
 {
-    auto propagate_regular(const vector<IntegerVariableID> & vars,
-        const vector<Integer> &,
-        const long num_states,
-        const vector<vector<long>> & transitions,
-        const vector<long> & final_states,
-        const vector<vector<ProofFlag>> & state_at_pos_flags,
-        State & state) -> Inference
-    {
-        const auto num_vars = vars.size();
+    auto initialise_graph(const vector<IntegerVariableID>& vars, const vector<Integer>& symbols,
+                                      const long& num_states, const vector<vector<long>>& transitions,
+                                      const vector<long>& final_states, vector<vector<ProofFlag>>& state_at_pos_flags, State& state, Propagators& propagators) -> unsigned long {
+        const auto num_vars = static_cast<long>(vars.size());
+        RegularGraph graph = RegularGraph(num_vars, num_states);
 
-        // Might be a better way to initialise these ?
-        // -- or better data structures.
-        // TODO: Also, obvious would be better to create these once and then incrementally update, as in the paper
-        // rather than rebuilding the whole thing every time.
-        vector<unordered_map<Integer, set<long>>> states_supporting(num_vars);
-
-        vector<vector<vector<long>>> out_edges(num_vars, vector<vector<long>>(num_states));
-        vector<vector<long>> out_deg(num_vars, vector<long>(num_states, 0));
-        vector<vector<vector<long>>> in_edges(num_vars + 1, vector<vector<long>>(num_states));
-        vector<vector<long>> in_deg(num_vars + 1, vector<long>(num_states, 0));
-        vector<set<long>> graph_nodes(num_vars + 1);
 
         // Forward phase: accumulate
-        graph_nodes[0].insert(0);
+        graph.nodes[0].insert(0);
         for (unsigned long i = 0; i < num_vars; ++i) {
             state.for_each_value(vars[i], [&](Integer val) -> void {
-                for (const auto & q : graph_nodes[i]) {
+                for (const auto & q : graph.nodes[i]) {
                     if (transitions[q][val.raw_value] != -1) {
-                        states_supporting[i][val].insert(q);
-                        graph_nodes[i + 1].insert(transitions[q][val.raw_value]);
+                        graph.states_supporting[i][val].insert(q);
+                        graph.nodes[i + 1].insert(transitions[q][val.raw_value]);
                     }
                 }
             });
@@ -67,22 +52,19 @@ namespace
             // TODO: This is messy - could do with refactoring, but I think it's the inference we need
             if (state.maybe_proof()) {
                 for (long next_q = 0; next_q < num_states; ++next_q) {
-                    if (graph_nodes[i + 1].contains(next_q)) continue;
+                    if (graph.nodes[i + 1].contains(next_q)) continue;
                     // Want to eliminate this node i.e. prove !state[i+1][next_q]
-                    for (const auto& q : graph_nodes[i]) {
+                    for (const auto& q : graph.nodes[i]) {
                         // So first eliminate each previous state/variable combo
                         state.for_each_value(vars[i], [&](Integer val) -> void {
                             state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
                                 stringstream proof_step;
                                 proof_step << "u ";
-                                state.for_each_guess([&](const Literal & lit) {
-                                    if (! is_literally_true(lit))
-                                        proof_step << " 1 " << proof.proof_variable(! lit);
-                                });
+                                proof_step << proof.trail_variables(state, 1_i);
                                 proof_step << " 1 " << proof.proof_variable(vars[i] != val);
                                 proof_step << " 1 " << proof.proof_variable(! state_at_pos_flags[i][q]);
                                 proof_step << " 1 " << proof.proof_variable(! state_at_pos_flags[i + 1][next_q]);
-                                proof_step << " >= 1 ;\n";
+                                proof_step << " >= 1 ;";
                                 proof.emit_proof_line(proof_step.str());
                             }});
                         });
@@ -91,13 +73,10 @@ namespace
                         state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
                             stringstream proof_step;
                             proof_step << "u ";
-                            state.for_each_guess([&](const Literal &lit) {
-                                if (!is_literally_true(lit))
-                                    proof_step << " 1 " << proof.proof_variable(!lit);
-                            });
+                            proof_step << proof.trail_variables(state, 1_i);
                             proof_step << " 1 " << proof.proof_variable(! state_at_pos_flags[i][q]);
                             proof_step << " 1 " << proof.proof_variable(! state_at_pos_flags[i+1][next_q]);
-                            proof_step << " >= 1 ;\n";
+                            proof_step << " >= 1 ;";
                             proof.emit_proof_line(proof_step.str());
                         }});
                     }
@@ -106,12 +85,9 @@ namespace
                     state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
                         stringstream proof_step;
                         proof_step << "u ";
-                        state.for_each_guess([&](const Literal &lit) {
-                            if (!is_literally_true(lit))
-                                proof_step << " 1 " << proof.proof_variable(!lit);
-                        });
+                        proof_step << proof.trail_variables(state, 1_i);
                         proof_step << " 1 " << proof.proof_variable(! state_at_pos_flags[i+1][next_q]);
-                        proof_step << " >= 1 ;\n";
+                        proof_step << " >= 1 ;";
                         proof.emit_proof_line(proof_step.str());
                     }});
                 }
@@ -119,77 +95,81 @@ namespace
         }
         set<long> possible_final_states;
         for (const auto & f : final_states) {
-            if (graph_nodes[num_vars].contains(f))
+            if (graph.nodes[num_vars].contains(f))
                 possible_final_states.insert(f);
         }
 
-        graph_nodes[num_vars] = possible_final_states;
+        graph.nodes[num_vars] = possible_final_states;
 
         // Backward phase: validate
         for (long i = num_vars - 1; i >= 0; --i) {
 
             unordered_map<long, bool> state_is_support;
-            for (const auto & q : graph_nodes[i]) {
+            for (const auto & q : graph.nodes[i]) {
                 state_is_support[q] = false;
             }
 
             state.for_each_value(vars[i], [&](Integer val) -> void {
-                set<long> states = states_supporting[i][val];
+                set<long> states = graph.states_supporting[i][val];
                 for (const auto & q : states) {
 
-                    if (graph_nodes[i + 1].contains(transitions[q][val.raw_value])) {
+                    if (graph.nodes[i + 1].contains(transitions[q][val.raw_value])) {
 
-                        out_edges[i][q].emplace_back(transitions[q][val.raw_value]);
-                        out_deg[i][q]++;
-                        in_edges[i + 1][transitions[q][val.raw_value]].emplace_back(q);
-                        in_deg[i][transitions[q][val.raw_value]]++;
+                        graph.out_edges[i][q].emplace_back(transitions[q][val.raw_value]);
+                        graph.out_deg[i][q]++;
+                        graph.in_edges[i + 1][transitions[q][val.raw_value]].emplace_back(q);
+                        graph.in_deg[i][transitions[q][val.raw_value]]++;
                         state_is_support[q] = true;
                     }
                     else {
-
-                        states_supporting[i][val].erase(q);
+                        graph.states_supporting[i][val].erase(q);
                         state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
                             stringstream proof_step;
                             proof_step << "u ";
-                            state.for_each_guess([&](const Literal & lit) {
-                                if (! is_literally_true(lit))
-                                    proof_step << " 1 " << proof.proof_variable(! lit);
-                            });
+                            proof_step << proof.trail_variables(state, 1_i);
                             proof.need_proof_variable(vars[i] != val);
                             proof_step << " 1 " << proof.proof_variable(vars[i] != val);
                             proof_step << " 1 " << proof.proof_variable(! state_at_pos_flags[i][q]);
-                            proof_step << " >= 1 ;\n";
+                            proof_step << " >= 1 ;";
                             proof.emit_proof_line(proof_step.str());
                         }});
                     }
                 }
             });
 
-            set<long> gn = graph_nodes[i];
+            set<long> gn = graph.nodes[i];
             for (const auto & q : gn) {
                 if (! state_is_support[q]) {
-                    graph_nodes[i].erase(q);
+                    graph.nodes[i].erase(q);
                     state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
                         stringstream proof_step;
                         proof_step << "u ";
-                        state.for_each_guess([&](const Literal & lit) {
-                            if (! is_literally_true(lit))
-                                proof_step << " 1 " << proof.proof_variable(! lit);
-                        });
+                        proof_step << proof.trail_variables(state, 1_i);
                         proof_step << " 1 " << proof.proof_variable(! state_at_pos_flags[i][q]);
-                        proof_step << " >= 1 ;\n";
+                        proof_step << " >= 1 ;";
                         proof.emit_proof_line(proof_step.str());
                     }});
                 }
             }
         }
+        return state.add_constraint_state(graph);
+    }
+
+    auto propagate_regular(const vector<IntegerVariableID> & vars,
+        const unsigned long graph_idx,
+        const vector<vector<ProofFlag>> & state_at_pos_flags,
+        State & state) -> Inference
+    {
+        const auto num_vars = vars.size();
+
+        auto graph = get<RegularGraph>(state.get_constraint_state(graph_idx));
         bool changed = false;
         bool contradiction = false;
 
         // Clean up domains
         for (unsigned long i = 0; i < num_vars; ++i) {
             state.for_each_value(vars[i], [&](Integer val) -> void {
-                if (states_supporting[i][val].empty()) {
+                if (graph.states_supporting[i][val].empty()) {
                     switch (state.infer_not_equal(vars[i], val, JustifyUsingRUP{})) {
                     case Inference::Contradiction:
                         contradiction = true;
@@ -273,9 +253,10 @@ auto Regular::install(Propagators & propagators, State & initial_state) && -> vo
     Triggers triggers;
     triggers.on_change = {_vars.begin(), _vars.end()};
 
-    propagators.install([v = move(_vars), s = move(_symbols), n = move(_num_states), t = move(_transitions),
-                            f = move(_final_states), flags = state_at_pos_flags](State & state) -> pair<Inference, PropagatorState> {
-        return pair{propagate_regular(v, s, n, t, f, flags, state), PropagatorState::Enable};
+    auto graph_idx = initialise_graph(_vars, _symbols, _num_states, _transitions, _final_states, state_at_pos_flags, initial_state, propagators);
+
+    propagators.install([v = move(_vars), graph_idx, flags = state_at_pos_flags](State & state) -> pair<Inference, PropagatorState> {
+        return pair{propagate_regular(v, graph_idx, flags, state), PropagatorState::Enable};
     },
         triggers, "regular");
 }
@@ -284,3 +265,5 @@ auto Regular::describe_for_proof() -> string
 {
     return "regular";
 }
+
+

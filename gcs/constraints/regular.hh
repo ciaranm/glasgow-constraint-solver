@@ -35,6 +35,12 @@ namespace gcs
         virtual auto describe_for_proof() -> std::string override;
         virtual auto install(innards::Propagators &, innards::State &) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
+
+        <unknown>
+        initialise_graph(const std::vector<IntegerVariableID> vars, const std::vector<Integer> symbols,
+                         const long states,
+                         const std::vector<std::vector<long>> num_states, const std::vector<long> final_states,
+                         std::vector<vector<ProofFlag>>;
     };
 }
 
