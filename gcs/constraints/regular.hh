@@ -4,7 +4,7 @@
 #include <gcs/constraint.hh>
 #include <gcs/extensional.hh>
 #include <gcs/variable_id.hh>
-
+#include <unordered_map>
 #include <vector>
 
 namespace gcs
@@ -22,25 +22,25 @@ namespace gcs
         const std::vector<IntegerVariableID> _vars;
         const std::vector<Integer> _symbols;
         const long _num_states;
-        const std::vector<std::vector<long>> _transitions;
+        std::vector<std::unordered_map<Integer, long>> _transitions;
         const std::vector<long> _final_states;
 
     public:
         explicit Regular(std::vector<IntegerVariableID> vars,
             std::vector<Integer> symbols,
             long num_states,
-            std::vector<std::vector<long>> transitions,
+            std::vector<std::unordered_map<Integer, long>> transitions,
             std::vector<long> final_states);
+
+        Regular(std::vector<IntegerVariableID> v,
+                std::vector<Integer> s,
+                long n, std::vector<std::vector<long>> transitions,
+                std::vector<long> f);
 
         virtual auto describe_for_proof() -> std::string override;
         virtual auto install(innards::Propagators &, innards::State &) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
 
-        <unknown>
-        initialise_graph(const std::vector<IntegerVariableID> vars, const std::vector<Integer> symbols,
-                         const long states,
-                         const std::vector<std::vector<long>> num_states, const std::vector<long> final_states,
-                         std::vector<vector<ProofFlag>>;
     };
 }
 

@@ -201,6 +201,7 @@ State::State() :
     _imp(new Imp{})
 {
     _imp->integer_variable_states.emplace_back();
+    _imp->constraint_states.emplace_back();
     _imp->on_backtracks.emplace_back();
 }
 

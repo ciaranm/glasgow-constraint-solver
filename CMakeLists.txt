@@ -14,7 +14,7 @@ add_compile_options(-W)
 add_compile_options(-Wall)
 add_compile_options(-Wno-restrict) # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=104336
 add_compile_options(-Wno-stringop-overread) # ditto
-add_compile_options(-O3)
+#add_compile_options(-O3)
 
 include(CheckCXXCompilerFlag)
 unset(COMPILER_SUPPORTS_MARCH_NATIVE CACHE)
