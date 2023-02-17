@@ -14,6 +14,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <gcs/innards/constraint_state.hh>
 
 namespace gcs::innards
 {
@@ -516,6 +517,10 @@ namespace gcs::innards
         [[nodiscard]] auto current() -> CurrentState;
 
         ///@}
+
+
+        [[nodiscard]] auto add_constraint_state(const ConstraintState c) -> unsigned long;
+        [[nodiscard]] auto get_constraint_state(unsigned long index) -> ConstraintState;
     };
 }
 

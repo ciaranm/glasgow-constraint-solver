@@ -10,6 +10,7 @@
 #include <unordered_map>
 #include <utility>
 #include <variant>
+#include <sstream>
 
 using namespace gcs;
 using namespace gcs::innards;

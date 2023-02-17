@@ -3,7 +3,7 @@
 #include <gcs/innards/state.hh>
 #include <gcs/innards/variable_id_utils.hh>
 #include <gcs/problem.hh>
-
+#include <gcs/innards/constraint_state.hh>
 #include <util/overloaded.hh>
 
 #include <algorithm>
@@ -186,6 +186,7 @@ struct State::Imp
     Proof * maybe_proof;
 
     list<vector<IntegerVariableState>> integer_variable_states{};
+    list<vector<ConstraintState>> constraint_states{};
     list<vector<function<auto()->void>>> on_backtracks{};
     vector<HowChanged> how_changed{};
     deque<SimpleIntegerVariableID> changed{};
@@ -214,6 +215,7 @@ auto State::clone() const -> State
 {
     auto result = State{};
     result._imp->integer_variable_states = _imp->integer_variable_states;
+    result._imp->constraint_states = _imp->constraint_states;
     result._imp->on_backtracks = _imp->on_backtracks;
     result._imp->changed = _imp->changed;
     result._imp->optional_minimise_variable = _imp->optional_minimise_variable;
@@ -1073,6 +1075,7 @@ auto State::new_epoch(bool subsearch) -> Timestamp
         throw UnimplementedException{};
 
     _imp->integer_variable_states.push_back(_imp->integer_variable_states.back());
+    _imp->constraint_states.push_back(_imp->constraint_states.back());
     _imp->on_backtracks.emplace_back();
 
     return Timestamp{
@@ -1087,6 +1090,7 @@ auto State::backtrack(Timestamp t) -> void
         _imp->maybe_proof->undo_guess();
 
     _imp->integer_variable_states.resize(t.when);
+    _imp->constraint_states.resize(t.when);
     _imp->changed.clear();
     _imp->guesses.erase(_imp->guesses.begin() + t.how_many_guesses, _imp->guesses.end());
     if (t.how_many_extra_proof_conditions)
@@ -1230,6 +1234,16 @@ auto State::infer_on_objective_variable_before_propagation() -> Inference
         return infer(*_imp->optional_minimise_variable < *_imp->optional_objective_incumbent, NoJustificationNeeded{});
     else
         return Inference::NoChange;
+}
+
+auto innards::State::add_constraint_state(const ConstraintState c) -> unsigned long {
+    // Copying because I'm not sure if making it a reference is a bad idea... (want it to persist)
+    _imp->constraint_states.back().push_back(c);
+    return _imp->constraint_states.size() - 1;
+}
+
+auto innards::State::get_constraint_state(unsigned long index) -> ConstraintState {
+    return _imp->constraint_states.back()[index];
 }
 
 namespace gcs
