@@ -1244,7 +1244,7 @@ auto innards::State::add_constraint_state(const ConstraintState c) -> unsigned l
     return _imp->constraint_states.size() - 1;
 }
 
-auto innards::State::get_constraint_state(unsigned long index) -> ConstraintState&
+auto innards::State::get_constraint_state(unsigned long index) -> ConstraintState &
 {
     return _imp->constraint_states.back()[index];
 }
