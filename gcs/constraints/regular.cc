@@ -31,13 +31,16 @@ using std::visit;
 
 namespace
 {
-    auto initialise_graph(const vector<IntegerVariableID> & vars, const vector<Integer> & symbols,
-        const long & num_states, vector<unordered_map<Integer, long>> & transitions,
-        const vector<long> & final_states, vector<vector<ProofFlag>> & state_at_pos_flags, State & state, Propagators & propagators) -> unsigned long
+    auto initialise_graph(RegularGraph& graph, const vector<IntegerVariableID> & vars,
+                          const long num_states, vector<unordered_map<Integer, long>> & transitions,
+        const vector<long> & final_states, const vector<vector<ProofFlag>> & state_at_pos_flags, State & state)
     {
-        const auto num_vars = static_cast<long>(vars.size());
-        RegularGraph graph = RegularGraph(num_vars, num_states);
-
+        auto num_vars = vars.size();
+        state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
+            stringstream proof_step;
+            proof_step << "* Initialising graph\n";
+            proof.emit_proof_line(proof_step.str());
+        }});
         // Forward phase: accumulate
         graph.nodes[0].insert(0);
         for (unsigned long i = 0; i < num_vars; ++i) {
@@ -126,6 +129,7 @@ namespace
                         graph.states_supporting[i][val].erase(q);
                         state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
                             stringstream proof_step;
+                            proof_step << "* back_pass\n";
                             proof_step << "u ";
                             proof_step << proof.trail_variables(state, 1_i);
                             proof.need_proof_variable(vars[i] != val);
@@ -144,6 +148,7 @@ namespace
                     graph.nodes[i].erase(q);
                     state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
                         stringstream proof_step;
+                        proof_step << "* back_pass\n";
                         proof_step << "u ";
                         proof_step << proof.trail_variables(state, 1_i);
                         proof_step << " 1 " << proof.proof_variable(! state_at_pos_flags[i][q]);
@@ -153,25 +158,50 @@ namespace
                 }
             }
         }
-        return state.add_constraint_state(graph);
+
+        graph.initialised = true;
     }
 
-    auto decrement_outdeg(RegularGraph & graph, const long i, const long k) -> void
+    auto decrement_outdeg(RegularGraph &graph, const long i, const long k,
+                          const vector<vector<ProofFlag>> &state_at_pos_flags,
+                          State &state, const vector<IntegerVariableID> &vars) -> void
     {
         graph.out_deg[i][k]--;
         if (graph.out_deg[i][k] == 0 && i > 0) {
             for (const auto & edge : graph.in_edges[i][k]) {
                 auto l = edge.first;
                 graph.in_edges[i - 1][l].erase(k);
-                for (const auto & val : edge.second)
+                for (const auto & val : edge.second) {
                     graph.states_supporting[i - 1][val].erase(l);
-                decrement_outdeg(graph, i - 1, l);
+                    state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
+                        stringstream proof_step;
+                        proof_step << "* dec_outdeg inner\n";
+                        proof_step << "u ";
+                        proof_step << proof.trail_variables(state, 1_i);
+                        proof.need_proof_variable(vars[i] != val);
+                        proof_step << " 1 " << proof.proof_variable(vars[i-1] != val);
+                        proof_step << " 1 " << proof.proof_variable(! state_at_pos_flags[i-1][l]);
+                        proof_step << " >= 1 ;";
+                        proof.emit_proof_line(proof_step.str());
+                    }});
+                }
+
+                decrement_outdeg(graph, i - 1, l, state_at_pos_flags, state, vars);
             }
             graph.in_edges[i][k] = {};
+            state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
+                stringstream proof_step;
+                proof_step << "* dec_outdeg\n";
+                proof_step << "u ";
+                proof_step << proof.trail_variables(state, 1_i);
+                proof_step << " 1 " << proof.proof_variable(! state_at_pos_flags[i][k]);
+                proof_step << " >= 1 ;";
+                proof.emit_proof_line(proof_step.str());
+            }});
         }
     }
 
-    auto decrement_indeg(RegularGraph & graph, const long i, const long k) -> void
+    auto decrement_indeg(RegularGraph & graph, const long i, const long k, State& state, const vector<vector<ProofFlag>>& state_at_pos_flags) -> void
     {
         graph.in_deg[i][k]--;
         if (graph.in_deg[i][k] == 0 && i < graph.in_deg.size() - 1) {
@@ -180,20 +210,35 @@ namespace
                 graph.in_edges[i + 1][l].erase(k);
                 for (const auto & val : edge.second)
                     graph.states_supporting[i][val].erase(l);
-                decrement_indeg(graph, i + 1, l);
+                decrement_indeg(graph, i + 1, l, state, state_at_pos_flags);
             }
             graph.out_edges[i][k] = {};
+            state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
+                stringstream proof_step;
+                proof_step << "u ";
+                proof_step << proof.trail_variables(state, 1_i);
+                proof_step << " 1 " << proof.proof_variable(! state_at_pos_flags[i][k]);
+                proof_step << " >= 1 ;";
+                proof.emit_proof_line(proof_step.str());
+            }});
         }
     }
+
     auto propagate_regular(const vector<IntegerVariableID> & vars,
-        const unsigned long graph_idx,
+        const long num_states,
         vector<unordered_map<Integer, long>> transitions,
+        const vector<long>& final_states,
         const vector<vector<ProofFlag>> & state_at_pos_flags,
+        const unsigned long graph_idx,
         State & state) -> Inference
     {
         const auto num_vars = vars.size();
 
-        auto graph = get<RegularGraph>(state.get_constraint_state(graph_idx));
+        auto& graph = get<RegularGraph>(state.get_constraint_state(graph_idx));
+
+        if(!graph.initialised)
+            initialise_graph(graph, vars, num_states, transitions, final_states, state_at_pos_flags, state);
+
         bool changed = false;
         bool contradiction = false;
 
@@ -201,7 +246,7 @@ namespace
             for (const auto & val_and_states : graph.states_supporting[i]) {
                 auto val = val_and_states.first;
                 // Clean up domains
-                if (!graph.states_supporting[i][val].empty() && ! state.in_domain(vars[i], val)) {
+                if (! graph.states_supporting[i][val].empty() && ! state.in_domain(vars[i], val)) {
                     for (const auto & q : graph.states_supporting[i][val]) {
                         auto next_q = transitions[q][val];
 
@@ -219,10 +264,11 @@ namespace
                                 graph.in_edges[i + 1][next_q].erase(q);
                         }
 
-                        decrement_outdeg(graph, i, q);
-                        decrement_indeg(graph, i+1, next_q);
+                        decrement_outdeg(graph, i, q, state_at_pos_flags, state, vars);
+                        decrement_indeg(graph, i + 1, next_q, state, state_at_pos_flags);
                     }
                     graph.states_supporting[i][val] = {};
+
                 }
             }
         }
@@ -328,10 +374,11 @@ auto Regular::install(Propagators & propagators, State & initial_state) && -> vo
     Triggers triggers;
     triggers.on_change = {_vars.begin(), _vars.end()};
 
-    auto graph_idx = initialise_graph(_vars, _symbols, _num_states, _transitions, _final_states, state_at_pos_flags, initial_state, propagators);
 
-    propagators.install([v = move(_vars), g = graph_idx, t = move(_transitions), flags = state_at_pos_flags](State & state) -> pair<Inference, PropagatorState> {
-        return pair{propagate_regular(v, g, t, flags, state), PropagatorState::Enable};
+    RegularGraph graph = RegularGraph(_vars.size(), _num_states);
+    auto graph_idx = initial_state.add_constraint_state(graph);
+    propagators.install([v = move(_vars), n = _num_states, t = move(_transitions), f = move(_final_states), g = graph_idx,  flags = state_at_pos_flags](State & state) -> pair<Inference, PropagatorState> {
+        return pair{propagate_regular(v, n, t, f, flags, g, state), PropagatorState::Enable};
     },
         triggers, "regular");
 }

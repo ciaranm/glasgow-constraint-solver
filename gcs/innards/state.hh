@@ -519,7 +519,7 @@ namespace gcs::innards
         ///@}
 
         [[nodiscard]] auto add_constraint_state(const ConstraintState c) -> unsigned long;
-        [[nodiscard]] auto get_constraint_state(unsigned long index) -> ConstraintState;
+        [[nodiscard]] auto get_constraint_state(unsigned long index) -> ConstraintState&;
     };
 }
 
