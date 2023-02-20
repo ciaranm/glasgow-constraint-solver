@@ -117,7 +117,7 @@ namespace
                         graph.out_edges[i][q][transitions[q][val]].emplace(val);
                         graph.out_deg[i][q]++;
                         graph.in_edges[i + 1][transitions[q][val]][q].emplace(val);
-                        graph.in_deg[i][transitions[q][val]]++;
+                        graph.in_deg[i+1][transitions[q][val]]++;
                         state_is_support[q] = true;
                     }
                     else {
@@ -148,7 +148,7 @@ namespace
                 auto l = edge.first;
                 graph.in_edges[i - 1][l].erase(k);
                 for (const auto & val : edge.second) {
-                    graph.states_supporting[i - 1][val].erase(l);
+                    graph.states_supporting[i-1][val].erase(l);
                     log_additional_inference({vars[i - 1] != val}, {! state_at_pos_flags[i - 1][l]}, state, "dec outdeg inner");
                 }
 
@@ -164,25 +164,25 @@ namespace
         graph.in_deg[i][k]--;
         if (graph.in_deg[i][k] == 0 && i < graph.in_deg.size() - 1) {
 
-//            for (const auto & q : graph.nodes[i-1]) {
-//                // So first eliminate each previous state/variable combo
-//                state.for_each_value(vars[i], [&](Integer val) -> void {
-//                    log_additional_inference({vars[i] != val}, {! state_at_pos_flags[i-1][q], ! state_at_pos_flags[i][k]}, state);
-//                });
-//
-//                // Then eliminate each previous state
-//                log_additional_inference({}, {! state_at_pos_flags[i-1][q], ! state_at_pos_flags[i][k]}, state);
-//            }
-//
-//            // Finally, can eliminate what we want
-//            log_additional_inference({}, {! state_at_pos_flags[i][k]}, state);
+            for (const auto & q : graph.nodes[i-1]) {
+                // So first eliminate each previous state/variable combo
+                state.for_each_value(vars[i], [&](Integer val) -> void {
+                    log_additional_inference({vars[i] != val}, {! state_at_pos_flags[i-1][q], ! state_at_pos_flags[i][k]}, state);
+                });
+
+                // Then eliminate each previous state
+                log_additional_inference({}, {! state_at_pos_flags[i-1][q], ! state_at_pos_flags[i][k]}, state);
+            }
+
+            // Finally, can eliminate what we want
+            log_additional_inference({}, {! state_at_pos_flags[i][k]}, state);
 
             for (const auto & edge : graph.out_edges[i][k]) {
                 auto l = edge.first;
                 graph.in_edges[i + 1][l].erase(k);
 
                 for (const auto & val : edge.second) {
-                    graph.states_supporting[i][val].erase(l);
+                    graph.states_supporting[i][val].erase(k);
 
                 }
                 decrement_indeg(graph, i + 1, l, vars, state_at_pos_flags, state);
