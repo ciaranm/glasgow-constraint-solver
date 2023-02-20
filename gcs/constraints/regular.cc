@@ -31,6 +31,28 @@ using std::visit;
 
 namespace
 {
+    auto log_additional_inference(const vector<Literal>& literals, const vector<ProofFlag>& proof_flags, State& state, string comment = "") -> void {
+        // Trying to cut down on repeated code
+        state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
+            if (!comment.empty()) {
+                proof.emit_proof_comment(comment);
+            }
+            stringstream proof_step;
+            proof_step << "u ";
+            proof_step << proof.trail_variables(state, 1_i);
+            for(const auto& lit : literals) {
+                proof.need_proof_variable(lit);
+                proof_step << " 1 " << proof.proof_variable(lit);
+            }
+
+            for(const auto& flag : proof_flags) {
+                proof_step << " 1 " << proof.proof_variable(flag);
+            }
+            proof_step << " >= 1 ;";
+            proof.emit_proof_line(proof_step.str());
+        }});
+    }
+
     auto initialise_graph(RegularGraph & graph, const vector<IntegerVariableID> & vars,
         const long num_states, vector<unordered_map<Integer, long>> & transitions,
         const vector<long> & final_states, const vector<vector<ProofFlag>> & state_at_pos_flags, State & state)
@@ -51,7 +73,6 @@ namespace
                 }
             });
 
-            // TODO: This is messy - could do with refactoring, but I think it's the inference we need
             if (state.maybe_proof()) {
                 for (long next_q = 0; next_q < num_states; ++next_q) {
                     if (graph.nodes[i + 1].contains(next_q)) continue;
@@ -59,39 +80,15 @@ namespace
                     for (const auto & q : graph.nodes[i]) {
                         // So first eliminate each previous state/variable combo
                         state.for_each_value(vars[i], [&](Integer val) -> void {
-                            state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
-                                stringstream proof_step;
-                                proof_step << "u ";
-                                proof_step << proof.trail_variables(state, 1_i);
-                                proof_step << " 1 " << proof.proof_variable(vars[i] != val);
-                                proof_step << " 1 " << proof.proof_variable(! state_at_pos_flags[i][q]);
-                                proof_step << " 1 " << proof.proof_variable(! state_at_pos_flags[i + 1][next_q]);
-                                proof_step << " >= 1 ;";
-                                proof.emit_proof_line(proof_step.str());
-                            }});
+                            log_additional_inference({vars[i] != val}, {! state_at_pos_flags[i][q], ! state_at_pos_flags[i + 1][next_q]}, state);
                         });
 
                         // Then eliminate each previous state
-                        state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
-                            stringstream proof_step;
-                            proof_step << "u ";
-                            proof_step << proof.trail_variables(state, 1_i);
-                            proof_step << " 1 " << proof.proof_variable(! state_at_pos_flags[i][q]);
-                            proof_step << " 1 " << proof.proof_variable(! state_at_pos_flags[i+1][next_q]);
-                            proof_step << " >= 1 ;";
-                            proof.emit_proof_line(proof_step.str());
-                        }});
+                        log_additional_inference({}, {! state_at_pos_flags[i][q], ! state_at_pos_flags[i + 1][next_q]}, state);
                     }
 
                     // Finally, can eliminate what we want
-                    state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
-                        stringstream proof_step;
-                        proof_step << "u ";
-                        proof_step << proof.trail_variables(state, 1_i);
-                        proof_step << " 1 " << proof.proof_variable(! state_at_pos_flags[i+1][next_q]);
-                        proof_step << " >= 1 ;";
-                        proof.emit_proof_line(proof_step.str());
-                    }});
+                    log_additional_inference({}, {! state_at_pos_flags[i + 1][next_q]}, state);
                 }
             }
         }
@@ -116,7 +113,6 @@ namespace
                 for (const auto & q : states) {
 
                     if (graph.nodes[i + 1].contains(transitions[q][val])) {
-
                         graph.out_edges[i][q][transitions[q][val]].emplace(val);
                         graph.out_deg[i][q]++;
                         graph.in_edges[i + 1][transitions[q][val]][q].emplace(val);
@@ -125,17 +121,7 @@ namespace
                     }
                     else {
                         graph.states_supporting[i][val].erase(q);
-                        state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
-                            stringstream proof_step;
-                            proof_step << "* back_pass\n";
-                            proof_step << "u ";
-                            proof_step << proof.trail_variables(state, 1_i);
-                            proof.need_proof_variable(vars[i] != val);
-                            proof_step << " 1 " << proof.proof_variable(vars[i] != val);
-                            proof_step << " 1 " << proof.proof_variable(! state_at_pos_flags[i][q]);
-                            proof_step << " >= 1 ;";
-                            proof.emit_proof_line(proof_step.str());
-                        }});
+                        log_additional_inference({vars[i] != val}, {! state_at_pos_flags[i][q]}, state);
                     }
                 }
             });
@@ -144,15 +130,7 @@ namespace
             for (const auto & q : gn) {
                 if (! state_is_support[q]) {
                     graph.nodes[i].erase(q);
-                    state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
-                        stringstream proof_step;
-                        proof_step << "* back_pass\n";
-                        proof_step << "u ";
-                        proof_step << proof.trail_variables(state, 1_i);
-                        proof_step << " 1 " << proof.proof_variable(! state_at_pos_flags[i][q]);
-                        proof_step << " >= 1 ;";
-                        proof.emit_proof_line(proof_step.str());
-                    }});
+                    log_additional_inference({}, {! state_at_pos_flags[i][q]}, state, "back pass");
                 }
             }
         }
@@ -160,9 +138,8 @@ namespace
         graph.initialised = true;
     }
 
-    auto decrement_outdeg(RegularGraph & graph, const long i, const long k,
-        const vector<vector<ProofFlag>> & state_at_pos_flags,
-        State & state, const vector<IntegerVariableID> & vars) -> void
+    auto decrement_outdeg(RegularGraph & graph, const long i, const long k, const vector<IntegerVariableID> & vars,
+        const vector<vector<ProofFlag>> & state_at_pos_flags, State & state) -> void
     {
         graph.out_deg[i][k]--;
         if (graph.out_deg[i][k] == 0 && i > 0) {
@@ -171,54 +148,33 @@ namespace
                 graph.in_edges[i - 1][l].erase(k);
                 for (const auto & val : edge.second) {
                     graph.states_supporting[i - 1][val].erase(l);
-                    state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
-                        stringstream proof_step;
-                        proof_step << "* dec_outdeg inner\n";
-                        proof_step << "u ";
-                        proof_step << proof.trail_variables(state, 1_i);
-                        proof.need_proof_variable(vars[i] != val);
-                        proof_step << " 1 " << proof.proof_variable(vars[i - 1] != val);
-                        proof_step << " 1 " << proof.proof_variable(! state_at_pos_flags[i - 1][l]);
-                        proof_step << " >= 1 ;";
-                        proof.emit_proof_line(proof_step.str());
-                    }});
+                    log_additional_inference({vars[i-1] != val}, {! state_at_pos_flags[i - 1][l]}, state, "dec outdeg inner");
                 }
 
-                decrement_outdeg(graph, i - 1, l, state_at_pos_flags, state, vars);
+                decrement_outdeg(graph, i - 1, l, vars, state_at_pos_flags, state);
             }
             graph.in_edges[i][k] = {};
-            state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
-                stringstream proof_step;
-                proof_step << "* dec_outdeg\n";
-                proof_step << "u ";
-                proof_step << proof.trail_variables(state, 1_i);
-                proof_step << " 1 " << proof.proof_variable(! state_at_pos_flags[i][k]);
-                proof_step << " >= 1 ;";
-                proof.emit_proof_line(proof_step.str());
-            }});
+            log_additional_inference({}, {! state_at_pos_flags[i][k]}, state, "dec outdeg");
         }
     }
 
-    auto decrement_indeg(RegularGraph & graph, const long i, const long k, State & state, const vector<vector<ProofFlag>> & state_at_pos_flags) -> void
+    auto decrement_indeg(RegularGraph & graph, const long i, const long k, const vector<IntegerVariableID>& vars, const vector<vector<ProofFlag>> & state_at_pos_flags, State & state) -> void
     {
         graph.in_deg[i][k]--;
         if (graph.in_deg[i][k] == 0 && i < graph.in_deg.size() - 1) {
             for (const auto & edge : graph.out_edges[i][k]) {
                 auto l = edge.first;
                 graph.in_edges[i + 1][l].erase(k);
-                for (const auto & val : edge.second)
+                log_additional_inference({}, {! state_at_pos_flags[i][k]}, state, "dec indeg inner");
+
+                for (const auto & val : edge.second) {
                     graph.states_supporting[i][val].erase(l);
-                decrement_indeg(graph, i + 1, l, state, state_at_pos_flags);
+                    log_additional_inference({vars[i] != val}, {! state_at_pos_flags[i][l]}, state, "dec indeg inner");
+                }
+                decrement_indeg(graph, i + 1, l, vars, state_at_pos_flags, state);
             }
             graph.out_edges[i][k] = {};
-            state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
-                stringstream proof_step;
-                proof_step << "u ";
-                proof_step << proof.trail_variables(state, 1_i);
-                proof_step << " 1 " << proof.proof_variable(! state_at_pos_flags[i][k]);
-                proof_step << " >= 1 ;";
-                proof.emit_proof_line(proof_step.str());
-            }});
+
         }
     }
 
@@ -245,6 +201,7 @@ namespace
                 auto val = val_and_states.first;
                 // Clean up domains
                 if (! graph.states_supporting[i][val].empty() && ! state.in_domain(vars[i], val)) {
+
                     for (const auto & q : graph.states_supporting[i][val]) {
                         auto next_q = transitions[q][val];
 
@@ -262,8 +219,8 @@ namespace
                                 graph.in_edges[i + 1][next_q].erase(q);
                         }
 
-                        decrement_outdeg(graph, i, q, state_at_pos_flags, state, vars);
-                        decrement_indeg(graph, i + 1, next_q, state, state_at_pos_flags);
+                        decrement_outdeg(graph, i, q, vars, state_at_pos_flags, state);
+                        decrement_indeg(graph, i + 1, next_q, vars, state_at_pos_flags, state);
                     }
                     graph.states_supporting[i][val] = {};
                 }
