@@ -31,21 +31,22 @@ using std::visit;
 
 namespace
 {
-    auto log_additional_inference(const vector<Literal>& literals, const vector<ProofFlag>& proof_flags, State& state, string comment = "") -> void {
+    auto log_additional_inference(const vector<Literal> & literals, const vector<ProofFlag> & proof_flags, State & state, string comment = "") -> void
+    {
         // Trying to cut down on repeated code
         state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
-            if (!comment.empty()) {
+            if (! comment.empty()) {
                 proof.emit_proof_comment(comment);
             }
             stringstream proof_step;
             proof_step << "u ";
             proof_step << proof.trail_variables(state, 1_i);
-            for(const auto& lit : literals) {
+            for (const auto & lit : literals) {
                 proof.need_proof_variable(lit);
                 proof_step << " 1 " << proof.proof_variable(lit);
             }
 
-            for(const auto& flag : proof_flags) {
+            for (const auto & flag : proof_flags) {
                 proof_step << " 1 " << proof.proof_variable(flag);
             }
             proof_step << " >= 1 ;";
@@ -148,7 +149,7 @@ namespace
                 graph.in_edges[i - 1][l].erase(k);
                 for (const auto & val : edge.second) {
                     graph.states_supporting[i - 1][val].erase(l);
-                    log_additional_inference({vars[i-1] != val}, {! state_at_pos_flags[i - 1][l]}, state, "dec outdeg inner");
+                    log_additional_inference({vars[i - 1] != val}, {! state_at_pos_flags[i - 1][l]}, state, "dec outdeg inner");
                 }
 
                 decrement_outdeg(graph, i - 1, l, vars, state_at_pos_flags, state);
@@ -158,23 +159,36 @@ namespace
         }
     }
 
-    auto decrement_indeg(RegularGraph & graph, const long i, const long k, const vector<IntegerVariableID>& vars, const vector<vector<ProofFlag>> & state_at_pos_flags, State & state) -> void
+    auto decrement_indeg(RegularGraph & graph, const long i, const long k, const vector<IntegerVariableID> & vars, const vector<vector<ProofFlag>> & state_at_pos_flags, State & state) -> void
     {
         graph.in_deg[i][k]--;
         if (graph.in_deg[i][k] == 0 && i < graph.in_deg.size() - 1) {
+
+//            for (const auto & q : graph.nodes[i-1]) {
+//                // So first eliminate each previous state/variable combo
+//                state.for_each_value(vars[i], [&](Integer val) -> void {
+//                    log_additional_inference({vars[i] != val}, {! state_at_pos_flags[i-1][q], ! state_at_pos_flags[i][k]}, state);
+//                });
+//
+//                // Then eliminate each previous state
+//                log_additional_inference({}, {! state_at_pos_flags[i-1][q], ! state_at_pos_flags[i][k]}, state);
+//            }
+//
+//            // Finally, can eliminate what we want
+//            log_additional_inference({}, {! state_at_pos_flags[i][k]}, state);
+
             for (const auto & edge : graph.out_edges[i][k]) {
                 auto l = edge.first;
                 graph.in_edges[i + 1][l].erase(k);
-                log_additional_inference({}, {! state_at_pos_flags[i][k]}, state, "dec indeg inner");
 
                 for (const auto & val : edge.second) {
                     graph.states_supporting[i][val].erase(l);
-                    log_additional_inference({vars[i] != val}, {! state_at_pos_flags[i][l]}, state, "dec indeg inner");
+
                 }
                 decrement_indeg(graph, i + 1, l, vars, state_at_pos_flags, state);
             }
-            graph.out_edges[i][k] = {};
 
+            graph.out_edges[i][k] = {};
         }
     }
 
