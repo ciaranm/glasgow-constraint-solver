@@ -1,0 +1,3 @@
+add_executable(random_regular random_regular.cc)
+target_link_libraries(random_regular PUBLIC glasgow_constraint_solver)
+
