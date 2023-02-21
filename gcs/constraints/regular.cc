@@ -2,6 +2,7 @@
 #include <gcs/exception.hh>
 #include <gcs/innards/propagators.hh>
 
+#include <any>
 #include <functional>
 #include <list>
 #include <optional>
@@ -9,13 +10,14 @@
 #include <sstream>
 #include <tuple>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <variant>
-#include <any>
 
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::any_cast;
 using std::make_pair;
 using std::move;
 using std::optional;
@@ -27,12 +29,34 @@ using std::to_string;
 using std::tuple;
 using std::unique_ptr;
 using std::unordered_map;
+using std::unordered_set;
 using std::vector;
 using std::visit;
-using std::any_cast;
 
 namespace
 {
+    struct RegularGraph
+    {
+        vector<unordered_map<Integer, set<long>>> states_supporting;
+        vector<vector<unordered_map<long, unordered_set<Integer>>>> out_edges;
+        vector<vector<long>> out_deg;
+        vector<vector<unordered_map<long, unordered_set<Integer>>>> in_edges;
+        vector<vector<long>> in_deg;
+        vector<set<long>> nodes;
+        bool initialised;
+
+        explicit RegularGraph(long num_vars, long num_states) :
+                states_supporting(vector<unordered_map<Integer, set<long>>>(num_vars)),
+                out_edges(vector<vector<unordered_map<long, unordered_set<Integer>>>>(num_vars, vector<unordered_map<long, unordered_set<Integer>>>(num_states))),
+                out_deg(vector<vector<long>>(num_vars, vector<long>(num_states, 0))),
+                in_edges(vector<vector<unordered_map<long, unordered_set<Integer>>>>(num_vars + 1, vector<unordered_map<long, unordered_set<Integer>>>(num_states))),
+                in_deg(vector<vector<long>>(num_vars + 1, vector<long>(num_states, 0))),
+                nodes(vector<set<long>>(num_vars + 1)),
+                initialised(false)
+        {
+        }
+    };
+
     auto log_additional_inference(const vector<Literal> & literals, const vector<ProofFlag> & proof_flags, State & state, string comment = "") -> void
     {
         // Trying to cut down on repeated code
@@ -202,7 +226,7 @@ namespace
     {
         const auto num_vars = vars.size();
 
-        auto & graph = any_cast<RegularGraph&>(state.get_constraint_state(graph_idx));
+        auto & graph = any_cast<RegularGraph &>(state.get_constraint_state(graph_idx));
 
         if (! graph.initialised)
             initialise_graph(graph, vars, num_states, transitions, final_states, state_at_pos_flags, state);

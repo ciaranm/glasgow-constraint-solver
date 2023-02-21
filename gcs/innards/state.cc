@@ -1,5 +1,4 @@
 #include <gcs/exception.hh>
-#include <gcs/innards/constraint_state.hh>
 #include <gcs/innards/proof.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/innards/variable_id_utils.hh>

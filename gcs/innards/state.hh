@@ -12,9 +12,9 @@
 #include <concepts>
 #include <exception>
 #include <functional>
-#include <gcs/innards/constraint_state.hh>
 #include <memory>
 #include <optional>
+#include <any>
 
 namespace gcs::innards
 {
@@ -63,6 +63,8 @@ namespace gcs::innards
         DefinitelyTrue,
         Undecided
     };
+
+    using ConstraintState = std::any;
 
     /**
      * \brief Keeps track of the current state, at a point inside search.
