@@ -11,6 +11,7 @@
 #include <unordered_map>
 #include <utility>
 #include <variant>
+#include <any>
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -28,6 +29,7 @@ using std::unique_ptr;
 using std::unordered_map;
 using std::vector;
 using std::visit;
+using std::any_cast;
 
 namespace
 {
@@ -200,7 +202,7 @@ namespace
     {
         const auto num_vars = vars.size();
 
-        auto & graph = get<RegularGraph>(state.get_constraint_state(graph_idx));
+        auto & graph = any_cast<RegularGraph&>(state.get_constraint_state(graph_idx));
 
         if (! graph.initialised)
             initialise_graph(graph, vars, num_states, transitions, final_states, state_at_pos_flags, state);

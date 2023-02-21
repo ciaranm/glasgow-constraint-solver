@@ -6,37 +6,32 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-
-using std::pair;
-using std::set;
-using std::unordered_map;
-using std::unordered_set;
-using std::vector;
+#include <any>
 
 using namespace gcs;
 struct RegularGraph
 {
-    vector<unordered_map<Integer, set<long>>> states_supporting;
-    vector<vector<unordered_map<long, unordered_set<Integer>>>> out_edges;
-    vector<vector<long>> out_deg;
-    vector<vector<unordered_map<long, unordered_set<Integer>>>> in_edges;
-    vector<vector<long>> in_deg;
-    vector<set<long>> nodes;
+    std::vector<std::unordered_map<Integer, std::set<long>>> states_supporting;
+    std::vector<std::vector<std::unordered_map<long, std::unordered_set<Integer>>>> out_edges;
+    std::vector<std::vector<long>> out_deg;
+    std::vector<std::vector<std::unordered_map<long, std::unordered_set<Integer>>>> in_edges;
+    std::vector<std::vector<long>> in_deg;
+    std::vector<std::set<long>> nodes;
     bool initialised;
 
     explicit RegularGraph(long num_vars, long num_states) :
-        states_supporting(vector<unordered_map<Integer, set<long>>>(num_vars)),
-        out_edges(vector<vector<unordered_map<long, unordered_set<Integer>>>>(num_vars, vector<unordered_map<long, unordered_set<Integer>>>(num_states))),
-        out_deg(vector<vector<long>>(num_vars, vector<long>(num_states, 0))),
-        in_edges(vector<vector<unordered_map<long, unordered_set<Integer>>>>(num_vars + 1, vector<unordered_map<long, unordered_set<Integer>>>(num_states))),
-        in_deg(vector<vector<long>>(num_vars + 1, vector<long>(num_states, 0))),
-        nodes(vector<set<long>>(num_vars + 1)),
+        states_supporting(std::vector<std::unordered_map<Integer, std::set<long>>>(num_vars)),
+        out_edges(std::vector<std::vector<std::unordered_map<long, std::unordered_set<Integer>>>>(num_vars, std::vector<std::unordered_map<long, std::unordered_set<Integer>>>(num_states))),
+        out_deg(std::vector<std::vector<long>>(num_vars, std::vector<long>(num_states, 0))),
+        in_edges(std::vector<std::vector<std::unordered_map<long, std::unordered_set<Integer>>>>(num_vars + 1, std::vector<std::unordered_map<long, std::unordered_set<Integer>>>(num_states))),
+        in_deg(std::vector<std::vector<long>>(num_vars + 1, std::vector<long>(num_states, 0))),
+        nodes(std::vector<std::set<long>>(num_vars + 1)),
         initialised(false)
     {
     }
 };
 
 // In case we want to add other kinds of constraint state
-using ConstraintState = std::variant<RegularGraph>;
+using ConstraintState = std::any;
 
 #endif
