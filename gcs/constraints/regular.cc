@@ -152,8 +152,6 @@ namespace
                     log_additional_inference({vars[i - 1] != val}, {! state_at_pos_flags[i - 1][l]}, state, "dec outdeg inner");
                     decrement_outdeg(graph, i - 1, l, vars, state_at_pos_flags, state);
                 }
-
-
             }
             graph.in_edges[i][k] = {};
             log_additional_inference({}, {! state_at_pos_flags[i][k]}, state, "dec outdeg");
@@ -164,7 +162,7 @@ namespace
     {
         graph.in_deg[i][k]--;
         if (graph.in_deg[i][k] == 0 && i < graph.in_deg.size() - 1) {
-
+            // Again, want to eliminate this node i.e. prove !state[i][k]
             for (const auto & q : graph.nodes[i - 1]) {
                 // So first eliminate each previous state/variable combo
                 state.for_each_value(vars[i], [&](Integer val) -> void {

@@ -51,6 +51,6 @@ auto main(int, char *[]) -> int
 
     cout << stats;
 
-    system("veripb --trace --useColor regex.opb regex.veripb");
+//    system("veripb --trace --useColor regex.opb regex.veripb");
     return EXIT_SUCCESS;
 }
