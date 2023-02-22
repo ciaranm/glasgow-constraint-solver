@@ -9,6 +9,7 @@
 #include <gcs/innards/variable_id_utils.hh>
 #include <gcs/literal.hh>
 
+#include <any>
 #include <concepts>
 #include <exception>
 #include <functional>
@@ -61,6 +62,12 @@ namespace gcs::innards
         DefinitelyFalse,
         DefinitelyTrue,
         Undecided
+    };
+
+    using ConstraintState = std::any;
+
+    struct ConstraintStateHandle {
+        unsigned long index;
     };
 
     /**
@@ -516,6 +523,9 @@ namespace gcs::innards
         [[nodiscard]] auto current() -> CurrentState;
 
         ///@}
+
+        [[nodiscard]] auto add_constraint_state(const ConstraintState c) -> ConstraintStateHandle;
+        [[nodiscard]] auto get_constraint_state(const ConstraintStateHandle h) -> ConstraintState &;
     };
 }
 

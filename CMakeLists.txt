@@ -14,7 +14,6 @@ add_compile_options(-W)
 add_compile_options(-Wall)
 add_compile_options(-Wno-restrict) # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=104336
 add_compile_options(-Wno-stringop-overread) # ditto
-add_compile_options(-O3)
 
 include(CheckCXXCompilerFlag)
 unset(COMPILER_SUPPORTS_MARCH_NATIVE CACHE)
@@ -36,9 +35,14 @@ enable_testing()
 option(GCS_ENABLE_DOXYGEN "Add a doxygen target to generate the documentation" OFF)
 option(GCS_ENABLE_XCSP "Support for the XCSP modelling language" ON)
 option(GCS_ENABLE_EXAMPLES "Build examples" ON)
+option(GCS_DEBUG_MODE "Disable compiler optimisation for debugging" OFF)
 
 include_directories(.)
 add_subdirectory(gcs)
+
+if (NOT GCS_DEBUG_MODE)
+    add_compile_options(-O3)
+endif(GCS_DEBUG_MODE)
 
 if (GCS_ENABLE_EXAMPLES)
     add_subdirectory(examples)
