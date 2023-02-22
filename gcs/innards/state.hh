@@ -9,12 +9,12 @@
 #include <gcs/innards/variable_id_utils.hh>
 #include <gcs/literal.hh>
 
+#include <any>
 #include <concepts>
 #include <exception>
 #include <functional>
 #include <memory>
 #include <optional>
-#include <any>
 
 namespace gcs::innards
 {
@@ -65,6 +65,10 @@ namespace gcs::innards
     };
 
     using ConstraintState = std::any;
+
+    struct ConstraintStateHandle {
+        unsigned long index;
+    };
 
     /**
      * \brief Keeps track of the current state, at a point inside search.
@@ -520,8 +524,8 @@ namespace gcs::innards
 
         ///@}
 
-        [[nodiscard]] auto add_constraint_state(const ConstraintState c) -> unsigned long;
-        [[nodiscard]] auto get_constraint_state(unsigned long index) -> ConstraintState &;
+        [[nodiscard]] auto add_constraint_state(const ConstraintState c) -> ConstraintStateHandle;
+        [[nodiscard]] auto get_constraint_state(const ConstraintStateHandle h) -> ConstraintState &;
     };
 }
 

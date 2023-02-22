@@ -2,9 +2,11 @@
 #include <gcs/exception.hh>
 #include <gcs/innards/propagators.hh>
 
-#include <fstream>
 #include <any>
+#include <cstdio>
+#include <fstream>
 #include <functional>
+#include <iostream>
 #include <list>
 #include <optional>
 #include <set>
@@ -14,17 +16,23 @@
 #include <unordered_set>
 #include <utility>
 #include <variant>
-#include <iostream>
-#include <cstdio>
 
 using namespace gcs;
 using namespace gcs::innards;
 
 using std::any_cast;
+using std::cout;
+using std::endl;
+using std::fstream;
+using std::getline;
+using std::ifstream;
+using std::ios;
 using std::make_pair;
 using std::move;
+using std::ofstream;
 using std::optional;
 using std::pair;
+using std::rename;
 using std::set;
 using std::string;
 using std::stringstream;
@@ -35,14 +43,6 @@ using std::unordered_map;
 using std::unordered_set;
 using std::vector;
 using std::visit;
-using std::cout;
-using std::endl;
-using std::ofstream;
-using std::fstream;
-using std::ios;
-using std::getline;
-using std::rename;
-using std::ifstream;
 
 namespace
 {
@@ -68,8 +68,9 @@ namespace
         }
     };
 
-    auto print_graph_edges(const RegularGraph& graph, const string& output_file_name) {
-        //Remove last line of file (...very hacky)
+    auto print_graph_edges(const RegularGraph & graph, const string & output_file_name)
+    {
+        // Remove last line of file (...very hacky)
         ifstream in(output_file_name);
 
         ofstream out("temp.tmp");
@@ -86,33 +87,33 @@ namespace
         // Debugging and demonstration purposes only
         output_file << "[";
         int l = 0;
-        for(const auto& layer : graph.out_edges) {
+        for (const auto & layer : graph.out_edges) {
             output_file << "\t[";
             int k = 0;
-            for(const auto& node : layer) {
+            for (const auto & node : layer) {
                 output_file << "{";
                 int j = 0;
-                for(const auto& state_and_vals : node) {
+                for (const auto & state_and_vals : node) {
                     output_file << state_and_vals.first << ": [";
                     int i = 0;
-                    for(const auto& val : state_and_vals.second) {
+                    for (const auto & val : state_and_vals.second) {
                         output_file << val.raw_value;
-                        if(i != state_and_vals.second.size()-1)
+                        if (i != state_and_vals.second.size() - 1)
                             output_file << ", ";
                         i++;
                     }
                     output_file << "]";
-                    if(j != node.size()-1)
+                    if (j != node.size() - 1)
                         output_file << ",";
                     j++;
                 }
                 output_file << "}";
-                if(k != layer.size()-1)
+                if (k != layer.size() - 1)
                     output_file << ",";
                 k++;
             }
             output_file << "]";
-            if(l != graph.out_edges.size()-1) {
+            if (l != graph.out_edges.size() - 1) {
                 output_file << ",\n";
             }
         }
@@ -239,7 +240,7 @@ namespace
                 graph.in_edges[i - 1][l].erase(k);
                 for (const auto & val : edge.second) {
                     graph.states_supporting[i - 1][val].erase(l);
-                    //log_additional_inference({vars[i - 1] != val}, {! state_at_pos_flags[i - 1][l]}, state, "dec outdeg inner");
+                    // log_additional_inference({vars[i - 1] != val}, {! state_at_pos_flags[i - 1][l]}, state, "dec outdeg inner");
                     decrement_outdeg(graph, i - 1, l, vars, state_at_pos_flags, state);
                 }
             }
@@ -285,14 +286,14 @@ namespace
         vector<unordered_map<Integer, long>> transitions,
         const vector<long> & final_states,
         const vector<vector<ProofFlag>> & state_at_pos_flags,
-        const unsigned long graph_idx,
+        const ConstraintStateHandle& graph_handle,
         State & state,
         const bool print_graph,
         const string output_file_name) -> Inference
     {
         const auto num_vars = vars.size();
 
-        auto & graph = any_cast<RegularGraph &>(state.get_constraint_state(graph_idx));
+        auto & graph = any_cast<RegularGraph &>(state.get_constraint_state(graph_handle));
 
         if (! graph.initialised)
             initialise_graph(graph, vars, num_states, transitions, final_states, state_at_pos_flags, state);
@@ -349,11 +350,9 @@ namespace
             });
         }
 
-        if(print_graph) {
+        if (print_graph) {
             print_graph_edges(graph, output_file_name);
         }
-
-
 
         if (contradiction)
             return Inference::Contradiction;
@@ -364,13 +363,13 @@ namespace
 }
 
 Regular::Regular(vector<IntegerVariableID> v, vector<Integer> s, long n, vector<unordered_map<Integer, long>> t, vector<long> f, bool p) :
-        _vars(move(v)),
-        _symbols(move(s)),
-        _num_states(n),
-        _transitions(move(t)),
-        _final_states(move(f)),
-        _print_graph(p),
-        _GRAPH_OUTPUT_FILE("regular_graph_output.py")
+    _vars(move(v)),
+    _symbols(move(s)),
+    _num_states(n),
+    _transitions(move(t)),
+    _final_states(move(f)),
+    _print_graph(p),
+    _GRAPH_OUTPUT_FILE("regular_graph_output.py")
 {
 }
 
@@ -442,7 +441,7 @@ auto Regular::install(Propagators & propagators, State & initial_state) && -> vo
     triggers.on_change = {_vars.begin(), _vars.end()};
 
     RegularGraph graph = RegularGraph(_vars.size(), _num_states);
-    if(_print_graph) {
+    if (_print_graph) {
         ofstream output_file;
         output_file.open(_GRAPH_OUTPUT_FILE);
         output_file << "graphs = [\n";

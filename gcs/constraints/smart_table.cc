@@ -91,9 +91,9 @@ namespace
                     copy_if(dom_1.begin(), dom_1.end(), back_inserter(new_dom_1),
                         [&](Integer val) { return val < dom_2[dom_2.size() - 1]; });
                     if (state.maybe_proof()) {
-                        if(new_dom_2.size() < dom_2.size())
+                        if (new_dom_2.size() < dom_2.size())
                             log_filtering_inference(tuple_selector, binary_entry.var_2 >= (dom_1[0] + 1_i), state);
-                        if(new_dom_1.size() < dom_1.size())
+                        if (new_dom_1.size() < dom_1.size())
                             log_filtering_inference(tuple_selector, binary_entry.var_1 < dom_2[dom_2.size() - 1], state);
                     }
                     break;
@@ -103,9 +103,9 @@ namespace
                     copy_if(dom_1.begin(), dom_1.end(), back_inserter(new_dom_1),
                         [&](Integer val) { return val <= dom_2[dom_2.size() - 1]; });
                     if (state.maybe_proof()) {
-                        if(new_dom_2.size() < dom_2.size())
+                        if (new_dom_2.size() < dom_2.size())
                             log_filtering_inference(tuple_selector, binary_entry.var_2 >= (dom_1[0]), state);
-                        if(new_dom_1.size() < dom_1.size())
+                        if (new_dom_1.size() < dom_1.size())
                             log_filtering_inference(tuple_selector, binary_entry.var_1 < (dom_2[dom_2.size() - 1] + 1_i), state);
                     }
                     break;
@@ -117,20 +117,20 @@ namespace
 
                     if (state.maybe_proof()) {
                         // This one seems particularly annoying. Is it necessary? - not sure
-                        if(new_dom_1.size() < dom_1.size()) {
+                        if (new_dom_1.size() < dom_1.size()) {
                             vector<Integer> discarded_dom1;
                             set_difference(dom_1.begin(), dom_1.end(), dom_2.begin(), dom_2.end(),
-                                           back_inserter(discarded_dom1));
+                                back_inserter(discarded_dom1));
                             for (const auto & val : discarded_dom1) {
                                 log_filtering_inference(tuple_selector, binary_entry.var_1 != val, state);
                             }
                         }
 
-                        if(new_dom_2.size() < dom_2.size()) {
+                        if (new_dom_2.size() < dom_2.size()) {
                             vector<Integer> discarded_dom2;
                             set_difference(dom_2.begin(), dom_2.end(), dom_1.begin(), dom_1.end(),
-                                           back_inserter(discarded_dom2));
-                            for (const auto &val: discarded_dom2) {
+                                back_inserter(discarded_dom2));
+                            for (const auto & val : discarded_dom2) {
                                 log_filtering_inference(tuple_selector, binary_entry.var_2 != val, state);
                             }
                         }
@@ -166,9 +166,9 @@ namespace
                     copy_if(dom_2.begin(), dom_2.end(), back_inserter(new_dom_2),
                         [&](Integer val) { return val < dom_1[dom_1.size() - 1]; });
                     if (state.maybe_proof()) {
-                        if(new_dom_1.size() < dom_1.size())
+                        if (new_dom_1.size() < dom_1.size())
                             log_filtering_inference(tuple_selector, binary_entry.var_1 >= (dom_2[0] + 1_i), state);
-                        if(new_dom_2.size() < dom_2.size())
+                        if (new_dom_2.size() < dom_2.size())
                             log_filtering_inference(tuple_selector, binary_entry.var_2 < dom_1[dom_1.size() - 1], state);
                     }
                     break;
@@ -178,9 +178,9 @@ namespace
                     copy_if(dom_2.begin(), dom_2.end(), back_inserter(new_dom_2),
                         [&](Integer val) { return val <= dom_1[dom_1.size() - 1]; });
                     if (state.maybe_proof()) {
-                        if(new_dom_1.size() < dom_1.size())
+                        if (new_dom_1.size() < dom_1.size())
                             log_filtering_inference(tuple_selector, binary_entry.var_1 >= (dom_2[0]), state);
-                        if(new_dom_2.size() < dom_2.size())
+                        if (new_dom_2.size() < dom_2.size())
                             log_filtering_inference(tuple_selector, binary_entry.var_2 < (dom_1[dom_1.size() - 1] + 1_i), state);
                     }
                     break;

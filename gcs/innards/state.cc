@@ -1236,16 +1236,16 @@ auto State::infer_on_objective_variable_before_propagation() -> Inference
         return Inference::NoChange;
 }
 
-auto innards::State::add_constraint_state(const ConstraintState c) -> unsigned long
+auto innards::State::add_constraint_state(const ConstraintState c) -> ConstraintStateHandle
 {
     // Copying because I'm not sure if making it a reference is a bad idea... (want it to persist)
     _imp->constraint_states.back().push_back(c);
-    return _imp->constraint_states.size() - 1;
+    return ConstraintStateHandle{_imp->constraint_states.size() - 1};
 }
 
-auto innards::State::get_constraint_state(unsigned long index) -> ConstraintState &
+auto innards::State::get_constraint_state(const ConstraintStateHandle h) -> ConstraintState &
 {
-    return _imp->constraint_states.back()[index];
+    return _imp->constraint_states.back()[h.index];
 }
 
 namespace gcs
