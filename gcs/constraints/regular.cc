@@ -94,17 +94,22 @@ namespace
                 output_file << "{";
                 int j = 0;
                 for (const auto & state_and_vals : node) {
-                    output_file << state_and_vals.first << ": [";
-                    int i = 0;
-                    for (const auto & val : state_and_vals.second) {
-                        output_file << val.raw_value;
-                        if (i != state_and_vals.second.size() - 1)
-                            output_file << ", ";
-                        i++;
-                    }
-                    output_file << "]";
+                    if(graph.in_edges[l+1][state_and_vals.first].contains(k)) {
+                        output_file << state_and_vals.first << ": [";
+                        int i = 0;
+                            for (const auto &val: state_and_vals.second) {
+                                if(graph.in_edges[l+1][state_and_vals.first].at(k).contains(val)) {
+                                    output_file << val.raw_value;
+                                    if (i != state_and_vals.second.size() - 1)
+                                        output_file << ", ";
+                                    i++;
+                                }
+
+                            }
+                        output_file << "]";
                     if (j != node.size() - 1)
                         output_file << ",";
+                    }
                     j++;
                 }
                 output_file << "}";
@@ -116,6 +121,7 @@ namespace
             if (l != graph.out_edges.size() - 1) {
                 output_file << ",\n";
             }
+            l++;
         }
         output_file << "],\n";
         output_file << "]";
@@ -237,7 +243,7 @@ namespace
         if (graph.out_deg[i][k] == 0 && i > 0) {
             for (const auto & edge : graph.in_edges[i][k]) {
                 auto l = edge.first;
-                graph.in_edges[i - 1][l].erase(k);
+                graph.out_edges[i - 1][l].erase(k);
                 for (const auto & val : edge.second) {
                     graph.states_supporting[i - 1][val].erase(l);
                     log_additional_inference({vars[i - 1] != val}, {! state_at_pos_flags[i - 1][l]}, state, "dec outdeg inner");

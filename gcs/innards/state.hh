@@ -66,7 +66,8 @@ namespace gcs::innards
 
     using ConstraintState = std::any;
 
-    struct ConstraintStateHandle {
+    struct ConstraintStateHandle
+    {
         unsigned long index;
     };
 
