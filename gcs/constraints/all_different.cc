@@ -22,6 +22,8 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::adjacent_find;
+using std::cmp_not_equal;
+using std::count;
 using std::decay_t;
 using std::endl;
 using std::function;
@@ -220,9 +222,9 @@ namespace
 
         // we are going to need the at least one value variables
         vector<ProofLine> at_least_one_constraints;
-        for (auto & v : hall_variables)
-            if (v)
-                at_least_one_constraints.push_back(proof.need_constraint_saying_variable_takes_at_least_one_value(vars[v]));
+        for (Left v{0}; v.offset != vars.size(); ++v.offset)
+            if (hall_variables[v.offset])
+                at_least_one_constraints.push_back(proof.need_constraint_saying_variable_takes_at_least_one_value(vars[v.offset]));
 
         // each variable in the violator has to take at least one value that is
         // left in its domain...
@@ -241,7 +243,6 @@ namespace
             if (hall_values[v.offset])
                 proof_step << " " << constraint_numbers.at(vals[v.offset]) << " +";
 
-        proof_step << " 0";
         proof.emit_proof_line(proof_step.str());
     }
 
@@ -265,7 +266,6 @@ namespace
         Proof & proof,
         const vector<vector<Right>> & edges_out_from_variable,
         const vector<vector<Left>> & edges_out_from_value,
-        const Left delete_variable,
         const Right delete_value,
         const vector<int> & components) -> void
     {
@@ -318,25 +318,13 @@ namespace
         }
 
         if (have_hall_left) {
-            stringstream proof_step;
-
-            proof_step << "* all different, found hall set {";
-            for (Left v{0}; v.offset != vars.size(); ++v.offset)
-                if (hall_left[v.offset])
-                    proof_step << " " << debug_string(vars[v.offset]);
-
-            proof_step << " } having values {";
-            for (Right v{0}; v.offset != vals.size(); ++v.offset)
-                if (hall_right[v.offset])
-                    proof_step << " " << vals[v.offset];
-            proof_step << " } and so " << debug_string(vars[delete_variable.offset]) << " != " << vals[delete_value.offset] << endl;
-
             // we are going to need the at least one value variables
             vector<ProofLine> at_least_one_constraints;
             for (Left v{0}; v.offset != vars.size(); ++v.offset)
                 if (hall_left[v.offset])
                     at_least_one_constraints.push_back(proof.need_constraint_saying_variable_takes_at_least_one_value(vars[v.offset]));
 
+            stringstream proof_step;
             proof_step << "p";
             bool first = true;
             for (auto & c : at_least_one_constraints) {
@@ -350,7 +338,6 @@ namespace
                 if (hall_right[v.offset])
                     proof_step << " " << constraint_numbers.at(vals[v.offset]) << " +";
 
-            proof_step << " 0";
             proof.emit_proof_line(proof_step.str());
         }
     }
@@ -375,8 +362,7 @@ namespace
 
         build_matching(vars, vals, edges, left_covered, right_covered, matching);
 
-        // is our matching big enough?
-        if (left_covered.size() != vars.size()) {
+        if (cmp_not_equal(count(left_covered.begin(), left_covered.end(), 1), vars.size())) {
             // nope. we've got a maximum cardinality matching that leaves at least
             // one thing on the left uncovered.
             return state.infer(FalseLiteral{}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
@@ -539,7 +525,7 @@ namespace
                     continue;
                 if (! sccs_already_done[components[vertex_to_offset(vars, vals, delete_value)]]) {
                     sccs_already_done[components[vertex_to_offset(vars, vals, delete_value)]] = 1;
-                    prove_deletion_using_sccs(vars, vals, constraint_numbers, proof, edges_out_from_variable, edges_out_from_value, delete_var_name, delete_value, components);
+                    prove_deletion_using_sccs(vars, vals, constraint_numbers, proof, edges_out_from_variable, edges_out_from_value, delete_value, components);
                 }
             }
         }})) {
