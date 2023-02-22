@@ -240,7 +240,7 @@ namespace
                 graph.in_edges[i - 1][l].erase(k);
                 for (const auto & val : edge.second) {
                     graph.states_supporting[i - 1][val].erase(l);
-                    // log_additional_inference({vars[i - 1] != val}, {! state_at_pos_flags[i - 1][l]}, state, "dec outdeg inner");
+                    log_additional_inference({vars[i - 1] != val}, {! state_at_pos_flags[i - 1][l]}, state, "dec outdeg inner");
                     decrement_outdeg(graph, i - 1, l, vars, state_at_pos_flags, state);
                 }
             }
@@ -286,7 +286,7 @@ namespace
         vector<unordered_map<Integer, long>> transitions,
         const vector<long> & final_states,
         const vector<vector<ProofFlag>> & state_at_pos_flags,
-        const ConstraintStateHandle& graph_handle,
+        const ConstraintStateHandle & graph_handle,
         State & state,
         const bool print_graph,
         const string output_file_name) -> Inference
