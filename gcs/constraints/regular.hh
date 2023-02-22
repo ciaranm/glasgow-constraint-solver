@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <vector>
 
+
 namespace gcs
 {
     /**
@@ -24,18 +25,22 @@ namespace gcs
         const long _num_states;
         std::vector<std::unordered_map<Integer, long>> _transitions;
         const std::vector<long> _final_states;
+        const bool _print_graph;
+        const std::string _GRAPH_OUTPUT_FILE;
 
     public:
         explicit Regular(std::vector<IntegerVariableID> vars,
             std::vector<Integer> symbols,
             long num_states,
             std::vector<std::unordered_map<Integer, long>> transitions,
-            std::vector<long> final_states);
+            std::vector<long> final_states,
+            bool print_graph=false);
 
-        Regular(std::vector<IntegerVariableID> v,
+        explicit Regular(std::vector<IntegerVariableID> v,
             std::vector<Integer> s,
             long n, std::vector<std::vector<long>> transitions,
-            std::vector<long> f);
+            std::vector<long> f,
+            bool print_graph=false);
 
         virtual auto describe_for_proof() -> std::string override;
         virtual auto install(innards::Propagators &, innards::State &) && -> void override;
