@@ -90,7 +90,7 @@ auto test_regular(const int & n, mt19937 & rng)
 
     auto stats = solve_with(p,
         SolveCallbacks{
-            .solution = [&](const CurrentState & s) -> bool {
+            .solution = [&](const CurrentState &) -> bool {
                 return true;
             }},
         ProofOptions{"random_regular.opb", "random_regular.veripb"});

@@ -21,6 +21,8 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::any_cast;
+using std::cmp_less;
+using std::cmp_not_equal;
 using std::cout;
 using std::endl;
 using std::fstream;
@@ -100,25 +102,25 @@ namespace
                             for (const auto &val: state_and_vals.second) {
                                 if(graph.in_edges[l+1][state_and_vals.first].at(k).contains(val)) {
                                     output_file << val.raw_value;
-                                    if (i != state_and_vals.second.size() - 1)
+                                    if (cmp_not_equal(i, state_and_vals.second.size() - 1))
                                         output_file << ", ";
                                     i++;
                                 }
 
                             }
                         output_file << "]";
-                    if (j != node.size() - 1)
+                    if (cmp_not_equal(j, node.size() - 1))
                         output_file << ",";
                     }
                     j++;
                 }
                 output_file << "}";
-                if (k != layer.size() - 1)
+                if (cmp_not_equal(k, layer.size() - 1))
                     output_file << ",";
                 k++;
             }
             output_file << "]";
-            if (l != graph.out_edges.size() - 1) {
+            if (cmp_not_equal(l, graph.out_edges.size() - 1)) {
                 output_file << ",\n";
             }
             l++;
@@ -258,7 +260,7 @@ namespace
     auto decrement_indeg(RegularGraph & graph, const long i, const long k, const vector<IntegerVariableID> & vars, const vector<vector<ProofFlag>> & state_at_pos_flags, State & state) -> void
     {
         graph.in_deg[i][k]--;
-        if (graph.in_deg[i][k] == 0 && i < graph.in_deg.size() - 1) {
+        if (graph.in_deg[i][k] == 0 && cmp_less(i, graph.in_deg.size() - 1)) {
             // Again, want to eliminate this node i.e. prove !state[i][k]
             for (const auto & q : graph.nodes[i - 1]) {
                 // So first eliminate each previous state/variable combo
@@ -297,8 +299,6 @@ namespace
         const bool print_graph,
         const string output_file_name) -> Inference
     {
-        const auto num_vars = vars.size();
-
         auto & graph = any_cast<RegularGraph &>(state.get_constraint_state(graph_handle));
 
         if (! graph.initialised)
@@ -307,7 +307,7 @@ namespace
         bool changed = false;
         bool contradiction = false;
 
-        for (int i = 0; i < graph.states_supporting.size(); i++) {
+        for (size_t i = 0; i < graph.states_supporting.size(); i++) {
             for (const auto & val_and_states : graph.states_supporting[i]) {
                 auto val = val_and_states.first;
 
@@ -338,7 +338,7 @@ namespace
             }
         }
 
-        for (int i = 0; i < graph.states_supporting.size(); i++) {
+        for (size_t i = 0; i < graph.states_supporting.size(); i++) {
             state.for_each_value(vars[i], [&](Integer val) -> void {
                 // Clean up domains
                 if (graph.states_supporting[i][val].empty()) {
@@ -387,9 +387,9 @@ Regular::Regular(vector<IntegerVariableID> v, vector<Integer> s, long n, vector<
     _final_states(move(f)),
     _print_graph(p)
 {
-    for (int i = 0; i < transitions.size(); i++) {
-        for (int j = 0; j < transitions[i].size(); j++) {
-            _transitions[i][Integer{j}] = transitions[i][j];
+    for (size_t i = 0; i < transitions.size(); i++) {
+        for (size_t j = 0; j < transitions[i].size(); j++) {
+            _transitions[i][Integer(j)] = transitions[i][j];
         }
     }
 }
