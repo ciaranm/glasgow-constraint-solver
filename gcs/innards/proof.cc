@@ -1,4 +1,5 @@
 #include <gcs/exception.hh>
+#include <gcs/innards/bits_encoding.hh>
 #include <gcs/innards/literal_utils.hh>
 #include <gcs/innards/opb_utils.hh>
 #include <gcs/innards/proof.hh>
@@ -8,7 +9,6 @@
 #include <util/overloaded.hh>
 
 #include <algorithm>
-#include <bit>
 #include <cstdlib>
 #include <fstream>
 #include <iterator>
@@ -23,9 +23,7 @@
 using namespace gcs;
 using namespace gcs::innards;
 
-using std::bit_ceil;
 using std::copy;
-using std::countr_zero;
 using std::flush;
 using std::fstream;
 using std::ios;
@@ -196,11 +194,7 @@ auto Proof::set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableID id,
         throw UnexpectedException{"proof has already started"};
 
     _imp->opb << "* variable " << name << " " << lower.raw_value << " .. " << upper.raw_value << " bits encoding\n";
-    Integer highest_abs_value = max(abs(lower), upper);
-    int highest_bit_shift = countr_zero(bit_ceil(static_cast<unsigned long long>(highest_abs_value.raw_value)));
-    Integer highest_bit_coeff = Integer{1ll << highest_bit_shift};
-
-    auto negative_bit_coeff = lower < 0_i ? (-highest_bit_coeff * 2_i) : 0_i;
+    auto [highest_bit_shift, highest_bit_coeff, negative_bit_coeff] = get_bits_encoding_coeffs(lower, upper);
     auto & bit_vars = _imp->integer_variable_bits.emplace(id, pair{negative_bit_coeff, vector<pair<Integer, string>>{}}).first->second.second;
     if (0_i != negative_bit_coeff)
         bit_vars.emplace_back(negative_bit_coeff, xify(name + "_bn_" + to_string(highest_bit_shift + 1)));

@@ -26,6 +26,7 @@ add_library(glasgow_constraint_solver
     constraints/regular.cc
     constraints/smart_table.cc
     constraints/table.cc
+    innards/bits_encoding.cc
     innards/extensional_utils.cc
     innards/integer_variable_state.cc
     innards/linear_utils.cc
@@ -71,3 +72,7 @@ add_test(NAME state_test COMMAND $<TARGET_FILE:state_test>)
 add_executable(linear_utils_test innards/linear_utils_test.cc)
 target_link_libraries(linear_utils_test PRIVATE Catch2::Catch2WithMain)
 add_test(NAME linear_utils_test COMMAND $<TARGET_FILE:linear_utils_test>)
+
+add_executable(bits_encoding_test innards/bits_encoding_test.cc)
+target_link_libraries(bits_encoding_test PRIVATE Catch2::Catch2WithMain)
+add_test(NAME bits_encoding_test COMMAND $<TARGET_FILE:bits_encoding_test>)
