@@ -42,7 +42,7 @@ add_subdirectory(gcs)
 
 if (NOT GCS_DEBUG_MODE)
     add_compile_options(-O3)
-endif(GCS_DEBUG_MODE)
+endif(NOT GCS_DEBUG_MODE)
 
 if (GCS_ENABLE_EXAMPLES)
     add_subdirectory(examples)
