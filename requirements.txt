@@ -1,0 +1,4 @@
+# Use pip install -r requirements.txt
+# We need veripb to run the proof logging tests. It's not a core dependency
+# except if you want to verify proof logs.
+veripb @ git+https://gitlab.com/MIAOresearch/software/VeriPB.git
