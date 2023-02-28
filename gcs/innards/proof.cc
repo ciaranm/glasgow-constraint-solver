@@ -155,6 +155,7 @@ struct Proof::Imp
     bool opb_done = false;
 
     bool use_friendly_names;
+    bool always_use_full_encoding;
     unordered_map<string, string> xification;
 };
 
@@ -164,6 +165,7 @@ Proof::Proof(const ProofOptions & proof_options) :
     _imp->opb_file = proof_options.opb_file;
     _imp->proof_file = proof_options.proof_file;
     _imp->use_friendly_names = proof_options.use_friendly_names;
+    _imp->always_use_full_encoding = proof_options.always_use_full_encoding;
     _imp->line_for_bound_in_bits.emplace_back();
 }
 
@@ -215,6 +217,16 @@ auto Proof::set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableID id,
     ++_imp->model_constraints;
 
     _imp->bounds_for_gevars.emplace(id, pair{lower, upper});
+
+    if (_imp->always_use_full_encoding)
+        overloaded{
+            [&](const SimpleIntegerVariableID & id) {
+                for (; lower <= upper; ++lower)
+                    need_direct_encoding_for(id, lower);
+            },
+            [&](const ProofOnlySimpleIntegerVariableID &) {
+            }}
+            .visit(id);
 }
 
 auto Proof::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariableID id, Integer lower, Integer upper, const string & name) -> void
