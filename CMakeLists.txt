@@ -28,6 +28,10 @@ add_compile_options(-pthread)
 
 add_link_options(-pthread)
 
+if (NOT GCS_DEBUG_MODE)
+    add_compile_options(-O3)
+endif(NOT GCS_DEBUG_MODE)
+
 # add_compile_options(-DGCS_TRACK_ALL_PROPAGATIONS=1)
 
 enable_testing()
@@ -39,10 +43,6 @@ option(GCS_DEBUG_MODE "Disable compiler optimisation for debugging" OFF)
 
 include_directories(.)
 add_subdirectory(gcs)
-
-if (NOT GCS_DEBUG_MODE)
-    add_compile_options(-O3)
-endif(NOT GCS_DEBUG_MODE)
 
 if (GCS_ENABLE_EXAMPLES)
     add_subdirectory(examples)
