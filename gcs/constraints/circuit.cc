@@ -27,17 +27,45 @@ using std::vector;
 
 using ProofLine2DMap = map<pair<Integer, Integer>, ProofLine>;
 
-Circuit::Circuit(vector<IntegerVariableID> v, const bool p) :
+Circuit::Circuit(vector<IntegerVariableID> v, const bool p, const bool g) :
     _succ(move(v)),
-    _propagate_using_check_only(p)
+    _propagate_using_check_only(p),
+    _gac_all_different(g)
 {
 }
 
 namespace
 {
     // Most basic propagator: just check if there are any cycles that tour less than all of the variables
-    auto propagate_circuit_using_check(const vector<IntegerVariableID> & succ, const ProofLine2DMap & lines_for_setting_pos, State & state) -> Inference
+    auto propagate_circuit_using_check(const vector<IntegerVariableID> & succ,
+        const ProofLine2DMap & lines_for_setting_pos, State & state) -> Inference
     {
+        // propagate all-different first, to avoid infinte loops
+        auto result = Inference::NoChange;
+        {
+            vector<bool> being_done(succ.size(), false);
+            vector<pair<IntegerVariableID, Integer>> to_propagate;
+            for (auto [idx, s] : enumerate(succ))
+                if (auto val = state.optional_single_value(s)) {
+                    to_propagate.emplace_back(s, *val);
+                    being_done[idx] = true;
+                }
+            while (! to_propagate.empty()) {
+                auto [var, val] = to_propagate.back();
+                to_propagate.pop_back();
+                for (auto [other_idx, other] : enumerate(succ))
+                    if (other != var) {
+                        increase_inference_to(result, state.infer_not_equal(other, val, JustifyUsingRUP{}));
+                        if (result == Inference::Contradiction) return Inference::Contradiction;
+                        if (! being_done[other_idx])
+                            if (auto other_val = state.optional_single_value(other)) {
+                                being_done[other_idx] = true;
+                                to_propagate.emplace_back(other, *other_val);
+                            }
+                    }
+            }
+        }
+
         vector<bool> checked(succ.size(), false);
         for (const auto & [uidx, var] : enumerate(succ)) {
             // Convert the unsigned idx to signed idx to avoid warning when making Integer
@@ -92,7 +120,7 @@ namespace
             }
         }
 
-        return Inference::NoChange;
+        return result;
     }
 
     // Slightly more complex propagator: prevent small cycles by finding chains and removing the head from the domain
@@ -100,12 +128,11 @@ namespace
     auto propagate_circuit_using_prevent(const vector<IntegerVariableID> & succ, ProofLine2DMap lines_for_setting_pos, State & state) -> Inference
     {
         // Have to use check first
-        auto inference_from_check = propagate_circuit_using_check(succ, lines_for_setting_pos, state);
-        if (inference_from_check == Inference::Contradiction) return Inference::Contradiction;
+        auto result = propagate_circuit_using_check(succ, lines_for_setting_pos, state);
+        if (result == Inference::Contradiction) return Inference::Contradiction;
 
         vector<bool> checked(succ.size(), false);
 
-        auto inference_from_prevent = Inference::NoChange;
         // Assume all different has already been propagated (do we know this for sure ???)
         for (const auto & var : succ) {
             if (state.has_single_value(var)) continue;
@@ -151,10 +178,10 @@ namespace
                         proof.emit_proof_line(proof_step.str());
                     }})) {
                 case Inference::Contradiction:
-                    inference_from_prevent = Inference::Contradiction;
+                    result = Inference::Contradiction;
                     return false;
                 case Inference::Change:
-                    inference_from_prevent = Inference::Change;
+                    result = Inference::Change;
                     return true;
                 case Inference::NoChange:
                     return true;
@@ -164,24 +191,44 @@ namespace
             });
         }
 
-        return inference_from_prevent;
+        return result;
     }
 }
 
 auto Circuit::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<Circuit>(_succ, _propagate_using_check_only);
+    return make_unique<Circuit>(_succ, _propagate_using_check_only, _gac_all_different);
 }
 
 auto Circuit::install(Propagators & propagators, State & initial_state) && -> void
 {
     // Can't have negative values
-    for (const auto & s : _succ) {
+    for (const auto & s : _succ)
         propagators.trim_lower_bound(initial_state, s, 0_i, "Circuit");
+
+    // Can't have too-large values
+    for (const auto & s : _succ)
+        propagators.trim_upper_bound(initial_state, s, Integer(_succ.size() - 1), "Circuit");
+
+    if (_gac_all_different) {
+        // First define an all different constraint
+        AllDifferent all_diff{_succ};
+        move(all_diff).install(propagators, initial_state);
     }
-    // First define an all different constraint
-    AllDifferent all_diff{_succ};
-    move(all_diff).install(propagators, initial_state);
+    else if (propagators.want_definitions()) {
+        // Still need to define all-different
+        for (unsigned i = 0; i < _succ.size(); ++i)
+            for (unsigned j = i + 1; j < _succ.size(); ++j) {
+                auto selector = propagators.create_proof_flag("circuit_notequals");
+
+                auto cv1 = Linear{{1_i, _succ[i]}, {-1_i, _succ[j]}};
+                propagators.define_linear_le(initial_state, cv1, -1_i, selector);
+
+                auto cv2 = Linear{{-1_i, _succ[i]}, {1_i, _succ[j]}};
+                propagators.define_linear_le(initial_state, cv2, -1_i, ! selector);
+            }
+    }
+
     ProofLine2DMap lines_for_setting_pos{};
     if (propagators.want_definitions()) {
         // Define encoding to eliminate sub-cycles
@@ -237,6 +284,20 @@ auto Circuit::install(Propagators & propagators, State & initial_state) && -> vo
         },
         triggers,
         "circuit");
+
+    // Infer succ[i] != i at top of search
+    if (_succ.size() > 1) {
+        propagators.install([succ = _succ](State & state) -> pair<Inference, PropagatorState> {
+            auto result = Inference::NoChange;
+            for (auto [idx, s] : enumerate(succ)) {
+                increase_inference_to(result, state.infer_not_equal(s, Integer(idx), JustifyUsingRUP{}));
+                if (result == Inference::Contradiction)
+                    break;
+            }
+            return pair{result, PropagatorState::DisableUntilBacktrack};
+        },
+            Triggers{}, "circuit init");
+    }
 }
 
 auto Circuit::describe_for_proof() -> std::string
