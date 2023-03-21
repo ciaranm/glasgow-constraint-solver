@@ -132,6 +132,106 @@ auto Element::describe_for_proof() -> std::string
     return "element";
 }
 
+ElementConstantArray::ElementConstantArray(IntegerVariableID var, IntegerVariableID idx, vector<Integer> vals) :
+    _var(var),
+    _idx(idx),
+    _vals(move(vals))
+{
+}
+
+auto ElementConstantArray::clone() const -> unique_ptr<Constraint>
+{
+    return make_unique<ElementConstantArray>(_var, _idx, _vals);
+}
+
+auto ElementConstantArray::install(Propagators & propagators, State & initial_state) && -> void
+{
+    if (_vals.empty()) {
+        propagators.model_contradiction("ElementConstantArray constraint with no values");
+        return;
+    }
+
+    propagators.trim_lower_bound(initial_state, _idx, 0_i, "ElementConstantArray");
+    propagators.trim_upper_bound(initial_state, _idx, Integer(_vals.size()) - 1_i, "ElementConstantArray");
+
+    if (propagators.want_definitions()) {
+        for (const auto & [idx, v] : enumerate(_vals))
+            if (initial_state.in_domain(_idx, Integer(idx)))
+                propagators.define_cnf(initial_state, {_idx != Integer(idx), _var == v});
+    }
+
+    Triggers index_triggers{
+        .on_change = {_idx}};
+
+    propagators.install([idx = _idx, var = _var, vals = _vals](State & state) -> pair<Inference, PropagatorState> {
+        optional<Integer> smallest_seen, largest_seen;
+        state.for_each_value(idx, [&](Integer i) {
+            auto this_val = vals.at(i.raw_value);
+            if (! smallest_seen)
+                smallest_seen = this_val;
+            else
+                smallest_seen = min(*smallest_seen, this_val);
+
+            if (! largest_seen)
+                largest_seen = this_val;
+            else
+                largest_seen = max(*largest_seen, this_val);
+        });
+
+        auto inference = Inference::NoChange;
+        auto just = JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
+            stringstream trail;
+            state.for_each_value(idx, [&](Integer i) {
+                trail << " 1 " << proof.proof_variable(var == vals[i.raw_value]);
+            });
+            trail << proof.trail_variables(state, 1_i);
+
+            state.for_each_value(idx, [&](Integer i) {
+                stringstream line;
+                line << "u" << trail.str() << " 1 ~" << proof.proof_variable(idx == i) << " >= 1 ;";
+                to_delete.push_back(proof.emit_proof_line(line.str()));
+            });
+
+            stringstream line;
+            line << "u" << trail.str() << " >= 1 ;";
+            to_delete.push_back(proof.emit_proof_line(line.str()));
+        }};
+
+        increase_inference_to(inference, state.infer_greater_than_or_equal(var, *smallest_seen, just));
+        if (Inference::Contradiction != inference)
+            increase_inference_to(inference, state.infer_less_than(var, *largest_seen + 1_i, just));
+
+        return pair{inference, PropagatorState::Enable};
+    },
+        index_triggers, "element const array indices");
+
+    Triggers bounds_triggers{
+        .on_bounds = {_var}};
+
+    visit([&](auto & _idx) {
+        propagators.install([idx = _idx, var = _var, vals = _vals](State & state) -> pair<Inference, PropagatorState> {
+            auto bounds = state.bounds(var);
+            auto inference = Inference::NoChange;
+
+            state.for_each_value_while(idx, [&](Integer i) -> bool {
+                auto this_val = vals.at(i.raw_value);
+                if (this_val < bounds.first || this_val > bounds.second)
+                    increase_inference_to(inference, state.infer(idx != i, JustifyUsingRUP{}));
+                return inference != Inference::Contradiction;
+            });
+
+            return pair{inference, PropagatorState::Enable};
+        },
+            bounds_triggers, "element const array var bounds");
+    },
+        _idx);
+}
+
+auto ElementConstantArray::describe_for_proof() -> std::string
+{
+    return "element const array";
+}
+
 Element2DConstantArray::Element2DConstantArray(IntegerVariableID var, IntegerVariableID idx1,
     IntegerVariableID idx2, vector<vector<Integer>> vals) :
     _var(var),

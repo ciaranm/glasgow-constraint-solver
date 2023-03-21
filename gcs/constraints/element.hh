@@ -29,6 +29,27 @@ namespace gcs
     };
 
     /**
+     * \brief Constrain that `var = vals[idx]`.
+     *
+     * \ingroup Constraints
+     * \sa Element
+     */
+    class ElementConstantArray : public Constraint
+    {
+    private:
+        IntegerVariableID _var, _idx;
+        std::vector<Integer> _vals;
+
+    public:
+        explicit ElementConstantArray(IntegerVariableID var, IntegerVariableID idx,
+            std::vector<Integer> vals);
+
+        virtual auto describe_for_proof() -> std::string override;
+        virtual auto install(innards::Propagators &, innards::State &) && -> void override;
+        virtual auto clone() const -> std::unique_ptr<Constraint> override;
+    };
+
+    /**
      * \brief Constrain that `var = vals[idx1, idx2]`.
      *
      * \ingroup Constraints
