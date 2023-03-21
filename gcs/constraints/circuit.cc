@@ -222,21 +222,21 @@ auto Circuit::install(Propagators & propagators, State & initial_state) && -> vo
                 lines_for_setting_pos.insert({{Integer{jdx}, Integer{idx}}, proof_line.value()});
             }
         }
-
-        // For basic "check" algorithm, only trigger when variable gains a unique value
-        // Same applies for prevent, I think
-        Triggers triggers;
-        triggers.on_instantiated = {_succ.begin(), _succ.end()};
-
-        propagators.install(
-            [succ = _succ, use_check = _propagate_using_check_only, lines_for_setting_pos = lines_for_setting_pos](State & state) -> pair<Inference, PropagatorState> {
-                return pair{
-                    use_check ? propagate_circuit_using_check(succ, lines_for_setting_pos, state) : propagate_circuit_using_prevent(succ, lines_for_setting_pos, state),
-                    PropagatorState::Enable};
-            },
-            triggers,
-            "circuit");
     }
+
+    // For basic "check" algorithm, only trigger when variable gains a unique value
+    // Same applies for prevent, I think
+    Triggers triggers;
+    triggers.on_instantiated = {_succ.begin(), _succ.end()};
+
+    propagators.install(
+        [succ = _succ, use_check = _propagate_using_check_only, lines_for_setting_pos = lines_for_setting_pos](State & state) -> pair<Inference, PropagatorState> {
+            return pair{
+                use_check ? propagate_circuit_using_check(succ, lines_for_setting_pos, state) : propagate_circuit_using_prevent(succ, lines_for_setting_pos, state),
+                PropagatorState::Enable};
+        },
+        triggers,
+        "circuit");
 }
 
 auto Circuit::describe_for_proof() -> std::string
