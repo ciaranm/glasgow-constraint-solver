@@ -165,7 +165,7 @@ auto ElementConstantArray::install(Propagators & propagators, State & initial_st
 
     propagators.install([idx = _idx, var = _var, vals = _vals](State & state) -> pair<Inference, PropagatorState> {
         optional<Integer> smallest_seen, largest_seen;
-        state.for_each_value(idx, [&](Integer i) {
+        state.for_each_value_immutable(idx, [&](Integer i) {
             auto this_val = vals.at(i.raw_value);
             if (! smallest_seen)
                 smallest_seen = this_val;

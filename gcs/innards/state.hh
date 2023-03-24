@@ -427,6 +427,17 @@ namespace gcs::innards
         auto for_each_value(const VarType_ &, const std::function<auto(Integer)->void> &) const -> void;
 
         /**
+         * Call the callback for each value present in a variable's domain. The
+         * iterated domain must not be modified by the callback. Call using either
+         * IntegerVariableID or one of its more specific types.
+         *
+         * \sa State::for_each_value()
+         * \sa State::for_each_value_while_immutable()
+         */
+        template <IntegerVariableIDLike VarType_>
+        auto for_each_value_immutable(const VarType_ &, const std::function<auto(Integer)->void> &) const -> void;
+
+        /**
          * Call the callback for each value present in a variable's domain,
          * stopping if the callback returns false. The iterated value may be
          * removed during iteration. Call using either IntegerVariableID or one

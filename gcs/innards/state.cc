@@ -959,6 +959,15 @@ auto State::for_each_value(const VarType_ & var, const function<auto(Integer)->v
 }
 
 template <IntegerVariableIDLike VarType_>
+auto State::for_each_value_immutable(const VarType_ & var, const function<auto(Integer)->void> & f) const -> void
+{
+    for_each_value_while_immutable(var, [&](Integer v) -> bool {
+        f(v);
+        return true;
+    });
+}
+
+template <IntegerVariableIDLike VarType_>
 auto State::for_each_value_while(const VarType_ & var, const function<auto(Integer)->bool> & f) const -> bool
 {
     auto [actual_var, negate_first, then_add] = deview(var);
@@ -1272,6 +1281,11 @@ namespace gcs
     template auto State::for_each_value(const SimpleIntegerVariableID &, const std::function<auto(Integer)->void> &) const -> void;
     template auto State::for_each_value(const ViewOfIntegerVariableID &, const std::function<auto(Integer)->void> &) const -> void;
     template auto State::for_each_value(const ConstantIntegerVariableID &, const std::function<auto(Integer)->void> &) const -> void;
+
+    template auto State::for_each_value_immutable(const IntegerVariableID &, const std::function<auto(Integer)->void> &) const -> void;
+    template auto State::for_each_value_immutable(const SimpleIntegerVariableID &, const std::function<auto(Integer)->void> &) const -> void;
+    template auto State::for_each_value_immutable(const ViewOfIntegerVariableID &, const std::function<auto(Integer)->void> &) const -> void;
+    template auto State::for_each_value_immutable(const ConstantIntegerVariableID &, const std::function<auto(Integer)->void> &) const -> void;
 
     template auto State::for_each_value_while(const IntegerVariableID &, const std::function<auto(Integer)->bool> &) const -> bool;
     template auto State::for_each_value_while(const SimpleIntegerVariableID &, const std::function<auto(Integer)->bool> &) const -> bool;
