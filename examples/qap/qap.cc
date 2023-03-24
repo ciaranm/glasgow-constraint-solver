@@ -143,7 +143,7 @@ auto main(int argc, char * argv[]) -> int
         for (int j = 0; j < size; ++j) {
             auto d_xsi_xsj = p.create_integer_variable(0_i, Integer{max_distance} + 1_i,
                 "dxs" + to_string(i) + "xs" + to_string(j));
-            p.post(Element2DConstantArray{d_xsi_xsj, xs[i], xs[j], distances_consts_integers});
+            p.post(Element2DConstantArray{d_xsi_xsj, xs[i], xs[j], &distances_consts_integers});
             wcosts.emplace_back(Integer{weight_consts[i][j]}, d_xsi_xsj);
         }
     }

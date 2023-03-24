@@ -38,11 +38,11 @@ namespace gcs
     {
     private:
         IntegerVariableID _var, _idx;
-        std::vector<Integer> _vals;
+        std::vector<Integer> * _vals;
 
     public:
         explicit ElementConstantArray(IntegerVariableID var, IntegerVariableID idx,
-            std::vector<Integer> vals);
+            std::vector<Integer> * vals);
 
         virtual auto describe_for_proof() -> std::string override;
         virtual auto install(innards::Propagators &, innards::State &) && -> void override;
@@ -59,11 +59,11 @@ namespace gcs
     {
     private:
         IntegerVariableID _var, _idx1, _idx2;
-        std::vector<std::vector<Integer>> _vals;
+        std::vector<std::vector<Integer>> * _vals;
 
     public:
         explicit Element2DConstantArray(IntegerVariableID var, IntegerVariableID idx1, IntegerVariableID idx2,
-            std::vector<std::vector<Integer>> vals);
+            std::vector<std::vector<Integer>> * vals);
 
         virtual auto describe_for_proof() -> std::string override;
         virtual auto install(innards::Propagators &, innards::State &) && -> void override;

@@ -91,7 +91,7 @@ auto main(int argc, char * argv[]) -> int
 
     p.post(Circuit{succ, false, false});
     for (unsigned i = 0; i < n; ++i)
-        p.post(ElementConstantArray{dist[i], succ[i], distances[i]});
+        p.post(ElementConstantArray{dist[i], succ[i], &distances[i]});
 
     auto obj = p.create_integer_variable(0_i, 1000000_i, "obj");
     Linear dist_sum;

@@ -132,10 +132,10 @@ auto Element::describe_for_proof() -> std::string
     return "element";
 }
 
-ElementConstantArray::ElementConstantArray(IntegerVariableID var, IntegerVariableID idx, vector<Integer> vals) :
+ElementConstantArray::ElementConstantArray(IntegerVariableID var, IntegerVariableID idx, vector<Integer> * vals) :
     _var(var),
     _idx(idx),
-    _vals(move(vals))
+    _vals(vals)
 {
 }
 
@@ -146,16 +146,16 @@ auto ElementConstantArray::clone() const -> unique_ptr<Constraint>
 
 auto ElementConstantArray::install(Propagators & propagators, State & initial_state) && -> void
 {
-    if (_vals.empty()) {
+    if (_vals->empty()) {
         propagators.model_contradiction("ElementConstantArray constraint with no values");
         return;
     }
 
     propagators.trim_lower_bound(initial_state, _idx, 0_i, "ElementConstantArray");
-    propagators.trim_upper_bound(initial_state, _idx, Integer(_vals.size()) - 1_i, "ElementConstantArray");
+    propagators.trim_upper_bound(initial_state, _idx, Integer(_vals->size()) - 1_i, "ElementConstantArray");
 
     if (propagators.want_definitions()) {
-        for (const auto & [idx, v] : enumerate(_vals))
+        for (const auto & [idx, v] : enumerate(*_vals))
             if (initial_state.in_domain(_idx, Integer(idx)))
                 propagators.define_cnf(initial_state, {_idx != Integer(idx), _var == v});
     }
@@ -166,7 +166,7 @@ auto ElementConstantArray::install(Propagators & propagators, State & initial_st
     propagators.install([idx = _idx, var = _var, vals = _vals](State & state) -> pair<Inference, PropagatorState> {
         optional<Integer> smallest_seen, largest_seen;
         state.for_each_value_immutable(idx, [&](Integer i) {
-            auto this_val = vals.at(i.raw_value);
+            auto this_val = vals->at(i.raw_value);
             if (! smallest_seen)
                 smallest_seen = this_val;
             else
@@ -182,7 +182,7 @@ auto ElementConstantArray::install(Propagators & propagators, State & initial_st
         auto just = JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
             stringstream trail;
             state.for_each_value(idx, [&](Integer i) {
-                trail << " 1 " << proof.proof_variable(var == vals[i.raw_value]);
+                trail << " 1 " << proof.proof_variable(var == (*vals)[i.raw_value]);
             });
             trail << proof.trail_variables(state, 1_i);
 
@@ -214,7 +214,7 @@ auto ElementConstantArray::install(Propagators & propagators, State & initial_st
             auto inference = Inference::NoChange;
 
             state.for_each_value_while(idx, [&](Integer i) -> bool {
-                auto this_val = vals.at(i.raw_value);
+                auto this_val = vals->at(i.raw_value);
                 if (this_val < bounds.first || this_val > bounds.second)
                     increase_inference_to(inference, state.infer(idx != i, JustifyUsingRUP{}));
                 return inference != Inference::Contradiction;
@@ -233,15 +233,15 @@ auto ElementConstantArray::describe_for_proof() -> std::string
 }
 
 Element2DConstantArray::Element2DConstantArray(IntegerVariableID var, IntegerVariableID idx1,
-    IntegerVariableID idx2, vector<vector<Integer>> vals) :
+    IntegerVariableID idx2, vector<vector<Integer>> * vals) :
     _var(var),
     _idx1(idx1),
     _idx2(idx2),
-    _vals(move(vals))
+    _vals(vals)
 {
-    if (! _vals.empty())
-        for (const auto & v : _vals)
-            if (v.size() != _vals.begin()->size())
+    if (! _vals->empty())
+        for (const auto & v : *_vals)
+            if (v.size() != _vals->begin()->size())
                 throw UnexpectedException{"didn't get a rectangular 2d array, not sure what to do"};
 }
 
@@ -252,19 +252,19 @@ auto Element2DConstantArray::clone() const -> unique_ptr<Constraint>
 
 auto Element2DConstantArray::install(Propagators & propagators, State & initial_state) && -> void
 {
-    if (_vals.empty() || _vals.begin()->empty()) {
+    if (_vals->empty() || _vals->begin()->empty()) {
         propagators.model_contradiction("Element2DConstantArray constraint with no values");
         return;
     }
 
     propagators.trim_lower_bound(initial_state, _idx1, 0_i, "Element2DConstantArray");
-    propagators.trim_upper_bound(initial_state, _idx1, Integer(_vals.size()) - 1_i, "Element2DConstantArray");
+    propagators.trim_upper_bound(initial_state, _idx1, Integer(_vals->size()) - 1_i, "Element2DConstantArray");
 
     propagators.trim_lower_bound(initial_state, _idx2, 0_i, "Element2DConstantArray");
-    propagators.trim_upper_bound(initial_state, _idx2, Integer(_vals.begin()->size()) - 1_i, "Element2DConstantArray");
+    propagators.trim_upper_bound(initial_state, _idx2, Integer(_vals->begin()->size()) - 1_i, "Element2DConstantArray");
 
     if (propagators.want_definitions()) {
-        for (const auto & [idx1, vv] : enumerate(_vals))
+        for (const auto & [idx1, vv] : enumerate(*_vals))
             if (initial_state.in_domain(_idx1, Integer(idx1)))
                 for (const auto & [idx2, v] : enumerate(vv))
                     if (initial_state.in_domain(_idx2, Integer(idx2)))
@@ -278,15 +278,15 @@ auto Element2DConstantArray::install(Propagators & propagators, State & initial_
     propagators.install([idx1 = _idx1, idx2 = _idx2, var = _var, vals = _vals, idxsel = move(idxsel)](State & state) mutable -> pair<Inference, PropagatorState> {
         if (state.maybe_proof() && ! idxsel) [[unlikely]] {
             idxsel = state.what_variable_id_will_be_created_next();
-            for (auto i = 0_i, i_end = Integer(vals.size() * vals.begin()->size()); i != i_end; ++i)
+            for (auto i = 0_i, i_end = Integer(vals->size() * vals->begin()->size()); i != i_end; ++i)
                 state.maybe_proof()->create_literals_for_introduced_variable_value(*idxsel, i, "element2didx");
-            if (*idxsel != state.allocate_integer_variable_with_state(0_i, Integer(vals.size() * vals.begin()->size())))
+            if (*idxsel != state.allocate_integer_variable_with_state(0_i, Integer(vals->size() * vals->begin()->size())))
                 throw UnexpectedException{"something went horribly wrong with variable IDs"};
 
             state.add_proof_steps(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
                 state.for_each_value(idx1, [&](Integer i1) {
                     state.for_each_value(idx2, [&](Integer i2) {
-                        Integer idx = i1 * Integer(vals.size()) + i2;
+                        Integer idx = i1 * Integer(vals->size()) + i2;
                         stringstream line;
                         line << "red 2 ~" << proof.proof_variable(*idxsel == idx)
                              << " 1 " << proof.proof_variable(idx1 == i1)
@@ -304,7 +304,7 @@ auto Element2DConstantArray::install(Propagators & propagators, State & initial_
                 });
 
                 stringstream trail;
-                for (Integer v = 0_i, v_end = Integer(vals.size() * vals.begin()->size()); v != v_end; ++v)
+                for (Integer v = 0_i, v_end = Integer(vals->size() * vals->begin()->size()); v != v_end; ++v)
                     trail << " 1 " << proof.proof_variable(*idxsel == v);
 
                 state.for_each_value(idx1, [&](Integer i1) {
@@ -321,7 +321,7 @@ auto Element2DConstantArray::install(Propagators & propagators, State & initial_
 
                 stringstream line;
                 line << "u";
-                for (Integer v = 0_i, v_end = Integer(vals.size() * vals.begin()->size()); v != v_end; ++v)
+                for (Integer v = 0_i, v_end = Integer(vals->size() * vals->begin()->size()); v != v_end; ++v)
                     line << " 1 " << proof.proof_variable(*idxsel == v);
                 line << " >= 1 ;";
                 proof.emit_proof_line(line.str());
@@ -331,7 +331,7 @@ auto Element2DConstantArray::install(Propagators & propagators, State & initial_
         optional<Integer> smallest_seen, largest_seen;
         state.for_each_value(idx1, [&](Integer i1) {
             state.for_each_value(idx2, [&](Integer i2) {
-                auto this_val = vals.at(i1.raw_value).at(i2.raw_value);
+                auto this_val = vals->at(i1.raw_value).at(i2.raw_value);
                 if (! smallest_seen)
                     smallest_seen = this_val;
                 else
@@ -349,7 +349,7 @@ auto Element2DConstantArray::install(Propagators & propagators, State & initial_
             stringstream trail;
             state.for_each_value(idx1, [&](Integer i1) {
                 state.for_each_value(idx2, [&](Integer i2) {
-                    trail << " 1 " << proof.proof_variable(var == vals[i1.raw_value][i2.raw_value]);
+                    trail << " 1 " << proof.proof_variable(var == (*vals)[i1.raw_value][i2.raw_value]);
                 });
             });
             trail << proof.trail_variables(state, 1_i);
@@ -390,7 +390,7 @@ auto Element2DConstantArray::install(Propagators & propagators, State & initial_
             state.for_each_value_while(idx1, [&](Integer i1) -> bool {
                 bool suitable_idx2_found = false;
                 state.for_each_value_while_immutable(idx2, [&](Integer i2) -> bool {
-                    auto this_val = vals.at(i1.raw_value).at(i2.raw_value);
+                    auto this_val = vals->at(i1.raw_value).at(i2.raw_value);
                     if (this_val >= bounds.first && this_val <= bounds.second) {
                         suitable_idx2_found = true;
                         return false;
@@ -406,7 +406,7 @@ auto Element2DConstantArray::install(Propagators & propagators, State & initial_
             state.for_each_value_while(idx2, [&](Integer i2) -> bool {
                 bool suitable_idx1_found = false;
                 state.for_each_value_while_immutable(idx1, [&](Integer i1) -> bool {
-                    auto this_val = vals.at(i1.raw_value).at(i2.raw_value);
+                    auto this_val = vals->at(i1.raw_value).at(i2.raw_value);
                     if (this_val >= bounds.first && this_val <= bounds.second) {
                         suitable_idx1_found = true;
                         return false;
