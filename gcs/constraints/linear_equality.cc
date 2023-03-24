@@ -121,7 +121,7 @@ namespace
 
                         for (const auto & [idx, cv] : enumerate(coeff_vars)) {
                             forward_implication << " 1 " << maybe_proof->proof_variable(get_var(cv) == current[idx]);
-                            reverse_implication << " 1 ~" << maybe_proof->proof_variable(get_var(cv) == current[idx]);
+                            reverse_implication << " 1 " << maybe_proof->proof_variable(get_var(cv) != current[idx]);
                         }
                         forward_implication << " >= " << coeff_vars.size() << " ; "
                                             << maybe_proof->proof_variable(future_var_id == sel_value) << " 0";
