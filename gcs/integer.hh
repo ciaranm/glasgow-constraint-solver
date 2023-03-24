@@ -158,7 +158,7 @@ namespace gcs
 template <>
 struct std::hash<gcs::Integer>
 {
-    [[nodiscard]] inline auto operator()(const gcs::Integer & v) const -> std::size_t
+    [[nodiscard]] inline auto operator()(const gcs::Integer & v) const noexcept -> std::size_t
     {
         return hash<long long>{}(v.raw_value);
     }
