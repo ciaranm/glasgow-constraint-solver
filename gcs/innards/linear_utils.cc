@@ -169,7 +169,7 @@ namespace
             }
         }
 
-        auto justify = [&](const SimpleIntegerVariableID & change_var, Proof & proof, vector<ProofLine> &,
+        auto justify = [&](const SimpleIntegerVariableID & change_var, Proof & proof, vector<ProofLine> & to_delete,
                            bool second_constraint_for_equality) -> void {
             vector<pair<Integer, ProofLine>> lines_to_sum;
             lines_to_sum.emplace_back(1_i, second_constraint_for_equality ? *proof_line - 1 : *proof_line);
@@ -200,13 +200,16 @@ namespace
             step << "p";
             bool first = true;
             for (auto & [c, l] : lines_to_sum) {
-                step << " " << l << " " << c << " *";
+                if (c == 1_i)
+                    step << " " << l;
+                else
+                    step << " " << l << " " << c << " *";
                 if (! first)
                     step << " +";
                 first = false;
             }
             step << " " << abs(change_var_coeff) << " d";
-            proof.emit_proof_line(step.str());
+            to_delete.push_back(proof.emit_proof_line(step.str()));
         };
 
         auto infer = [&](int p, const SimpleIntegerVariableID & var, Integer remainder, const auto coeff, bool second_constraint_for_equality) {
