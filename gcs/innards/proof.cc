@@ -925,6 +925,10 @@ auto Proof::infer(const State & state, const Literal & lit, const Justification 
             output_it("a");
         },
         [&](const JustifyExplicitly & x) {
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+            _imp->proof << "* explicit from " << x.where.file_name() << ":"
+                        << x.where.line() << " in " << x.where.function_name() << '\n';
+#endif
             vector<ProofLine> to_delete;
             add_proof_steps(x, to_delete);
             infer(state, lit, JustifyUsingRUP{});
@@ -1044,6 +1048,9 @@ auto Proof::get_or_emit_line_for_bound_in_bits(State & state, bool upper, const 
         return it->second;
 
     stringstream step;
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+    step << "* need line for bound in bits " << (upper ? debug_string(var < val + 1_i) : debug_string(var >= val)) << "\n";
+#endif
     step << "u";
     Integer big_number = 0_i;
 

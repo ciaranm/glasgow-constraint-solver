@@ -43,6 +43,17 @@ namespace gcs::innards
     struct JustifyExplicitly
     {
         ExplicitJustificationFunction add_proof_steps;
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+        std::source_location where;
+
+        explicit JustifyExplicitly(const ExplicitJustificationFunction & a,
+                const std::source_location & w = std::source_location::current()) :
+            add_proof_steps(a),
+            where(w)
+        {
+        }
+#else
+#endif
     };
 
     /**
