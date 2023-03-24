@@ -26,9 +26,22 @@ auto gcs::branch_on_smallest_with_respect_to(const vector<IntegerVariableID> & v
 
 auto gcs::branch_on_dom(const vector<IntegerVariableID> & vars) -> BranchCallback
 {
-    return branch_on_smallest_with_respect_to(vars, [](const CurrentState & state, const innards::Propagators &, const IntegerVariableID & a, const IntegerVariableID & b) {
-        return state.domain_size(a) < state.domain_size(b);
-    });
+    return [vars = vars](const CurrentState & state, const innards::Propagators &) -> optional<IntegerVariableID> {
+        optional<Integer> best_size;
+        optional<IntegerVariableID> result;
+        for (auto & v : vars) {
+            auto size = state.domain_size(v);
+            if (size < 2_i)
+                continue;
+            else if (size == 2_i)
+                return v;
+            else if ((! best_size) || size < *best_size) {
+                best_size = size;
+                result = v;
+            }
+        }
+        return result;
+    };
 }
 
 auto gcs::branch_on_dom(const Problem & problem) -> BranchCallback
