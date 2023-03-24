@@ -210,11 +210,27 @@ auto Proof::set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableID id,
     _imp->opb << ">= " << lower << " ;\n";
     ++_imp->model_constraints;
 
+    overloaded{
+        [&](const SimpleIntegerVariableID & id) {
+            _imp->line_for_bound_in_bits.back().emplace(tuple{false, id, lower}, ProofLine{_imp->model_constraints});
+        },
+        [&](const ProofOnlySimpleIntegerVariableID &) {
+        }}
+        .visit(id);
+
     // upper bound
     for (auto & [coeff, var] : bit_vars)
         _imp->opb << -coeff << " " << var << " ";
     _imp->opb << ">= " << -upper << " ;\n";
     ++_imp->model_constraints;
+
+    overloaded{
+        [&](const SimpleIntegerVariableID & id) {
+            _imp->line_for_bound_in_bits.back().emplace(tuple{true, id, upper}, ProofLine{_imp->model_constraints});
+        },
+        [&](const ProofOnlySimpleIntegerVariableID &) {
+        }}
+        .visit(id);
 
     _imp->bounds_for_gevars.emplace(id, pair{lower, upper});
 
@@ -236,45 +252,62 @@ auto Proof::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariabl
 
     _imp->opb << "* variable " << name << " " << lower.raw_value << " .. " << upper.raw_value << " direct encoding\n";
 
-    for (auto v = lower; v <= upper; ++v) {
-        auto eqvar = xify(name + "_eq_" + value_name(v));
-        _imp->opb << "1 " << eqvar << " ";
-        ++_imp->model_variables;
-
-        overloaded{
-            [&](const SimpleIntegerVariableID & id) {
-                _imp->direct_integer_variables.emplace(id == v, eqvar);
-                _imp->direct_integer_variables.emplace(id != v, "~" + eqvar);
-            },
-            [](const ProofOnlySimpleIntegerVariableID &) {
-                // currently there's no API for asking for literals for these
-            }}
-            .visit(id);
-    }
-    _imp->opb << ">= 1 ;\n";
-    _imp->variable_at_least_one_constraints.emplace(id, ++_imp->model_constraints);
-
-    for (auto v = lower; v <= upper; ++v) {
-        auto eqvar = xify(name + "_eq_" + value_name(v));
-        _imp->opb << "-1 " << eqvar << " ";
-    }
-    _imp->opb << ">= -1 ;\n";
-    ++_imp->model_constraints;
-
     if (0_i == lower && 1_i == upper) {
-        auto & bit_vars = _imp->integer_variable_bits.emplace(id, pair{0_i, vector<pair<Integer, string>>{}}).first->second.second;
-        bit_vars.emplace_back(1_i, xify(name + "_eq_" + value_name(1_i)));
+        auto eqvar = xify(name + "_t");
+        _imp->opb << "1 " << eqvar << " >= 0 ;\n";
+        ++_imp->model_variables;
+        ++_imp->model_constraints;
 
         overloaded{
             [&](const SimpleIntegerVariableID & id) {
-                auto eq1var = xify(name + "_eq_" + value_name(1_i));
-                _imp->direct_integer_variables.emplace(id >= 1_i, eq1var);
-                _imp->direct_integer_variables.emplace(id < 1_i, "~" + eq1var);
+                _imp->direct_integer_variables.emplace(id == 1_i, eqvar);
+                _imp->direct_integer_variables.emplace(id != 1_i, "~" + eqvar);
+                _imp->direct_integer_variables.emplace(id == 0_i, "~" + eqvar);
+                _imp->direct_integer_variables.emplace(id != 0_i, eqvar);
             },
             [](const ProofOnlySimpleIntegerVariableID &) {
                 // currently there's no API for asking for literals for these
             }}
             .visit(id);
+
+        auto & bit_vars = _imp->integer_variable_bits.emplace(id, pair{0_i, vector<pair<Integer, string>>{}}).first->second.second;
+        bit_vars.emplace_back(1_i, eqvar);
+
+        overloaded{
+            [&](const SimpleIntegerVariableID & id) {
+                _imp->direct_integer_variables.emplace(id >= 1_i, eqvar);
+                _imp->direct_integer_variables.emplace(id < 1_i, "~" + eqvar);
+            },
+            [](const ProofOnlySimpleIntegerVariableID &) {
+                // currently there's no API for asking for literals for these
+            }}
+            .visit(id);
+    }
+    else {
+        for (auto v = lower; v <= upper; ++v) {
+            auto eqvar = xify(name + "_eq_" + value_name(v));
+            _imp->opb << "1 " << eqvar << " ";
+            ++_imp->model_variables;
+
+            overloaded{
+                [&](const SimpleIntegerVariableID & id) {
+                    _imp->direct_integer_variables.emplace(id == v, eqvar);
+                    _imp->direct_integer_variables.emplace(id != v, "~" + eqvar);
+                },
+                [](const ProofOnlySimpleIntegerVariableID &) {
+                    // currently there's no API for asking for literals for these
+                }}
+                .visit(id);
+        }
+        _imp->opb << ">= 1 ;\n";
+        _imp->variable_at_least_one_constraints.emplace(id, ++_imp->model_constraints);
+
+        for (auto v = lower; v <= upper; ++v) {
+            auto eqvar = xify(name + "_eq_" + value_name(v));
+            _imp->opb << "-1 " << eqvar << " ";
+        }
+        _imp->opb << ">= -1 ;\n";
+        ++_imp->model_constraints;
     }
 }
 
@@ -362,7 +395,7 @@ auto Proof::need_gevar(SimpleIntegerVariableID id, Integer v) -> void
     }
 
     // !gevar -> bits
-    auto not_gevar_implies_bits = implied_by(opb_sum(bit_vars) < v, "~" + gevar);
+    auto not_gevar_implies_bits = implied_by(opb_sum(bit_vars) < v, negate_opb_var_name(gevar));
     if (_imp->opb_done) {
         _imp->proof << "red " << not_gevar_implies_bits << " ; " << gevar << " 1\n";
         ++_imp->proof_line;
@@ -451,7 +484,8 @@ auto Proof::need_direct_encoding_for(SimpleIntegerVariableID id, Integer v) -> v
     if (_imp->opb_done)
         _imp->proof << "# 0\n";
 
-    auto ge_v_but_not_v_plus_one = opb_sum({pair{1_i, proof_variable(id >= v)}, pair{1_i, "~" + proof_variable(id >= v + 1_i)}}) >= 2_i;
+    auto ge_v_but_not_v_plus_one = opb_sum({pair{1_i, proof_variable(id >= v)},
+                                       pair{1_i, negate_opb_var_name(proof_variable(id >= v + 1_i))}}) >= 2_i;
 
     // eqvar -> ge_v && ! ge_v+1
     auto eqvar_true = implied_by(ge_v_but_not_v_plus_one, eqvar);
