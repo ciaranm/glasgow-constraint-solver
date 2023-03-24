@@ -119,15 +119,15 @@ namespace gcs::innards
             const VarType_ & var,
             Integer value) -> std::pair<Inference, HowChanged>;
 
-        [[nodiscard]] auto assign_to_state_of(const DirectIntegerVariableID) -> innards::IntegerVariableState &;
+        [[nodiscard]] inline auto assign_to_state_of(const DirectIntegerVariableID) -> innards::IntegerVariableState &;
 
-        [[nodiscard]] auto state_of(const DirectIntegerVariableID &, innards::IntegerVariableState & space) -> innards::IntegerVariableState &;
-        [[nodiscard]] auto state_of(const ConstantIntegerVariableID &, innards::IntegerVariableState & space) -> innards::IntegerVariableState &;
-        [[nodiscard]] auto state_of(const SimpleIntegerVariableID &) -> innards::IntegerVariableState &;
+        [[nodiscard]] inline auto state_of(const DirectIntegerVariableID &, innards::IntegerVariableState & space) -> innards::IntegerVariableState &;
+        [[nodiscard]] inline auto state_of(const ConstantIntegerVariableID &, innards::IntegerVariableState & space) -> innards::IntegerVariableState &;
+        [[nodiscard]] inline auto state_of(const SimpleIntegerVariableID &) -> innards::IntegerVariableState &;
 
-        [[nodiscard]] auto state_of(const DirectIntegerVariableID &, innards::IntegerVariableState & space) const -> const innards::IntegerVariableState &;
-        [[nodiscard]] auto state_of(const ConstantIntegerVariableID &, innards::IntegerVariableState & space) const -> const innards::IntegerVariableState &;
-        [[nodiscard]] auto state_of(const SimpleIntegerVariableID &) const -> const innards::IntegerVariableState &;
+        [[nodiscard]] inline auto state_of(const DirectIntegerVariableID &, innards::IntegerVariableState & space) const -> const innards::IntegerVariableState &;
+        [[nodiscard]] inline auto state_of(const ConstantIntegerVariableID &, innards::IntegerVariableState & space) const -> const innards::IntegerVariableState &;
+        [[nodiscard]] inline auto state_of(const SimpleIntegerVariableID &) const -> const innards::IntegerVariableState &;
 
         auto prove_and_remember_change(const Inference & inference, const HowChanged & how_changed, const Justification & just,
             const Literal & lit, const DirectIntegerVariableID & actual_var) -> void;
