@@ -7,7 +7,6 @@
 
 #include <algorithm>
 #include <bit>
-#include <deque>
 #include <list>
 #include <string>
 #include <tuple>
@@ -20,7 +19,6 @@ using namespace gcs::innards;
 
 using std::countr_zero;
 using std::decay_t;
-using std::deque;
 using std::function;
 using std::get;
 using std::is_same_v;
@@ -188,7 +186,7 @@ struct State::Imp
     list<vector<ConstraintState>> constraint_states{};
     list<vector<function<auto()->void>>> on_backtracks{};
     vector<HowChanged> how_changed{};
-    deque<SimpleIntegerVariableID> changed{};
+    vector<SimpleIntegerVariableID> changed{};
     vector<Literal> guesses{};
     vector<Literal> extra_proof_conditions{};
 
