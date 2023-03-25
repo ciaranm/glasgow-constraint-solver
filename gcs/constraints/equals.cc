@@ -423,17 +423,14 @@ auto NotEquals::install(Propagators & propagators, State & initial_state) && -> 
         visit([&](auto & _v1, auto & _v2) {
             propagators.install([v1 = _v1, v2 = _v2, convert_to_values_ne = convert_to_values_ne](State & state) -> pair<Inference, PropagatorState> {
                 auto value1 = state.optional_single_value(v1);
-                auto value2 = state.optional_single_value(v2);
-                if (value1 && value2)
-                    return pair{(*value1 != *value2) ? Inference::NoChange : Inference::Contradiction, PropagatorState::DisableUntilBacktrack};
-                else if (value1)
+                if (value1)
                     return pair{state.infer_not_equal(v2, *value1, convert_to_values_ne ? Justification{NoJustificationNeeded{}} : Justification{JustifyUsingRUP{}}),
                         PropagatorState::DisableUntilBacktrack};
-                else if (value2)
+                auto value2 = state.optional_single_value(v2);
+                if (value2)
                     return pair{state.infer_not_equal(v1, *value2, convert_to_values_ne ? Justification{NoJustificationNeeded{}} : Justification{JustifyUsingRUP{}}),
                         PropagatorState::DisableUntilBacktrack};
-                else
-                    return pair{Inference::NoChange, PropagatorState::Enable};
+                return pair{Inference::NoChange, PropagatorState::Enable};
             },
                 triggers, "not equals");
         },
