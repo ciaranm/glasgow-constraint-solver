@@ -111,7 +111,8 @@ namespace gcs::innards
      * \ingroup Innards
      */
     auto propagate_sum_all_positive(const SimpleIntegerVariableIDs &, Integer, State &, bool equality,
-        const std::optional<ProofLine> & proof_line) -> std::pair<Inference, PropagatorState>;
+        const std::optional<ProofLine> & proof_line,
+        std::vector<std::pair<Integer, Integer> > & space) -> std::pair<Inference, PropagatorState>;
 }
 
 #endif
