@@ -332,11 +332,12 @@ auto Propagators::propagate(State & state, atomic<bool> * optional_abort_flag) c
                     // one, and is really saying (! on_queue && ! is_disabled). annoyingly,
                     // this is a hotspot in some benchmarks...
 
-                    for (auto & p : triggers.on_change)
-                        if (0 == (on_queue[p] + _imp->propagator_is_disabled[p])) {
-                            propagation_queue.push_back(p);
-                            on_queue[p] = 1;
-                        }
+                    if (h == HowChanged::Instantiated)
+                        for (auto & p : triggers.on_instantiated)
+                            if (0 == (on_queue[p] + _imp->propagator_is_disabled[p])) {
+                                propagation_queue.push_back(p);
+                                on_queue[p] = 1;
+                            }
 
                     if (h != HowChanged::InteriorValuesChanged)
                         for (auto & p : triggers.on_bounds)
@@ -345,12 +346,11 @@ auto Propagators::propagate(State & state, atomic<bool> * optional_abort_flag) c
                                 on_queue[p] = 1;
                             }
 
-                    if (h == HowChanged::Instantiated)
-                        for (auto & p : triggers.on_instantiated)
-                            if (0 == (on_queue[p] + _imp->propagator_is_disabled[p])) {
-                                propagation_queue.push_back(p);
-                                on_queue[p] = 1;
-                            }
+                    for (auto & p : triggers.on_change)
+                        if (0 == (on_queue[p] + _imp->propagator_is_disabled[p])) {
+                            propagation_queue.push_back(p);
+                            on_queue[p] = 1;
+                        }
                 }
             });
         }
