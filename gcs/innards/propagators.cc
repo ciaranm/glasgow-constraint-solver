@@ -9,15 +9,15 @@
 #include <util/overloaded.hh>
 
 #include <algorithm>
+#include <bit>
 #include <chrono>
-#include <deque>
 #include <list>
 
 using namespace gcs;
 using namespace gcs::innards;
 
 using std::atomic;
-using std::deque;
+using std::bit_ceil;
 using std::list;
 using std::make_optional;
 using std::move;
@@ -42,12 +42,12 @@ struct Propagators::Imp
 {
     optional<Proof> & optional_proof;
 
-    deque<PropagationFunction> propagation_functions;
-    deque<InitialisationFunction> initialisation_functions;
+    vector<PropagationFunction> propagation_functions;
+    vector<InitialisationFunction> initialisation_functions;
 
     vector<uint8_t> propagator_is_disabled;
     unsigned long long total_propagations = 0, effectful_propagations = 0, contradicting_propagations = 0;
-    deque<TriggerIDs> iv_triggers;
+    vector<TriggerIDs> iv_triggers;
     vector<long> degrees;
     bool first = true;
 
@@ -304,7 +304,11 @@ auto Propagators::requeue_all_propagators() -> void
 auto Propagators::propagate(State & state, atomic<bool> * optional_abort_flag) const -> bool
 {
     vector<int> on_queue(_imp->propagation_functions.size(), 0);
-    deque<int> propagation_queue;
+    unsigned propagation_queue_first = 0, propagation_queue_end = 0;
+    unsigned propagation_queue_size = bit_ceil(_imp->propagation_functions.size() + 1);
+    unsigned propagation_queue_mask = propagation_queue_size - 1;
+    vector<int> propagation_queue;
+    propagation_queue.reserve(propagation_queue_size);
     vector<int> newly_disabled_propagators;
 
     switch (state.infer_on_objective_variable_before_propagation()) {
@@ -316,14 +320,15 @@ auto Propagators::propagate(State & state, atomic<bool> * optional_abort_flag) c
     if (_imp->first) {
         _imp->first = false;
         for (unsigned i = 0; i != _imp->propagation_functions.size(); ++i) {
-            propagation_queue.push_back(i);
+            propagation_queue[propagation_queue_end++] = i;
+            propagation_queue_end = propagation_queue_end & propagation_queue_mask;
             on_queue[i] = 1;
         }
     }
 
     bool contradiction = false;
     while (! contradiction) {
-        if (propagation_queue.empty()) {
+        if (propagation_queue_first == propagation_queue_end) {
             state.extract_changed_variables([&](SimpleIntegerVariableID v, HowChanged h) {
                 if (v.index < _imp->iv_triggers.size()) {
                     auto & triggers = _imp->iv_triggers[v.index];
@@ -335,31 +340,34 @@ auto Propagators::propagate(State & state, atomic<bool> * optional_abort_flag) c
                     if (h == HowChanged::Instantiated)
                         for (auto & p : triggers.on_instantiated)
                             if (0 == (on_queue[p] + _imp->propagator_is_disabled[p])) {
-                                propagation_queue.push_back(p);
+                                propagation_queue[propagation_queue_end++] = p;
+                                propagation_queue_end = propagation_queue_end & propagation_queue_mask;
                                 on_queue[p] = 1;
                             }
 
                     if (h != HowChanged::InteriorValuesChanged)
                         for (auto & p : triggers.on_bounds)
                             if (0 == (on_queue[p] + _imp->propagator_is_disabled[p])) {
-                                propagation_queue.push_back(p);
+                                propagation_queue[propagation_queue_end++] = p;
+                                propagation_queue_end = propagation_queue_end & propagation_queue_mask;
                                 on_queue[p] = 1;
                             }
 
                     for (auto & p : triggers.on_change)
                         if (0 == (on_queue[p] + _imp->propagator_is_disabled[p])) {
-                            propagation_queue.push_back(p);
+                            propagation_queue[propagation_queue_end++] = p;
+                            propagation_queue_end = propagation_queue_end & propagation_queue_mask;
                             on_queue[p] = 1;
                         }
                 }
             });
         }
 
-        if (propagation_queue.empty())
+        if (propagation_queue_first == propagation_queue_end)
             break;
 
-        int propagator_id = propagation_queue.front();
-        propagation_queue.pop_front();
+        int propagator_id = propagation_queue[propagation_queue_first++];
+        propagation_queue_first = propagation_queue_first & propagation_queue_mask;
         on_queue[propagator_id] = 0;
         auto [inference, propagator_state] = _imp->propagation_functions[propagator_id](state);
         ++_imp->total_propagations;
