@@ -1,6 +1,7 @@
 #include <gcs/constraints/arithmetic.hh>
 #include <gcs/constraints/equals.hh>
 #include <gcs/problem.hh>
+#include <gcs/search_heuristics.hh>
 #include <gcs/solve.hh>
 
 #include <cstdlib>
@@ -93,6 +94,7 @@ auto main(int argc, char * argv[]) -> int
 
                 return options_vars.contains("all");
             },
+            .branch = branch_on_dom(queens),
             .guess = [&](const CurrentState & state, IntegerVariableID var) -> vector<Literal> {
                 return vector<Literal>{var == state.lower_bound(var), var != state.lower_bound(var)};
             }},
