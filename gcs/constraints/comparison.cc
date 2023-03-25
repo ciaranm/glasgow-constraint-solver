@@ -123,10 +123,12 @@ auto CompareLessThanReif::install(Propagators & propagators, State & initial_sta
             switch (cond_is) {
             case LiteralIs::DefinitelyTrue: {
                 auto inf = Inference::NoChange;
-                increase_inference_to(inf, state.infer_less_than(v1, state.upper_bound(v2) + (or_equal ? 1_i : 0_i), JustifyUsingRUP{}));
+                auto v1_bounds = state.bounds(v1), v2_bounds = state.bounds(v2);
+                increase_inference_to(inf, state.infer_less_than(v1, v2_bounds.second + (or_equal ? 1_i : 0_i), JustifyUsingRUP{}));
                 if (Inference::Contradiction != inf)
-                    increase_inference_to(inf, state.infer_greater_than_or_equal(v2, state.lower_bound(v1) + (or_equal ? 0_i : 1_i), JustifyUsingRUP{}));
-                return pair{inf, PropagatorState::Enable};
+                    increase_inference_to(inf, state.infer_greater_than_or_equal(v2, v1_bounds.first + (or_equal ? 0_i : 1_i), JustifyUsingRUP{}));
+                return pair{inf,
+                    v1_bounds.second < (v2_bounds.first + (or_equal ? 1_i : 0_i)) ? PropagatorState::DisableUntilBacktrack : PropagatorState::Enable};
             } break;
 
             case LiteralIs::DefinitelyFalse:
