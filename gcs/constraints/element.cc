@@ -69,7 +69,7 @@ auto Element::install(Propagators & propagators, State & initial_state) && -> vo
         // update idx to only contain possible indices
         state.for_each_value_while(idx, [&](Integer ival) {
             bool supported = false;
-            state.for_each_value_while(vals[ival.raw_value], [&](Integer vval) {
+            state.for_each_value_while_immutable(vals[ival.raw_value], [&](Integer vval) {
                 if (state.in_domain(var, vval))
                     supported = true;
                 return ! supported;
@@ -85,14 +85,14 @@ auto Element::install(Propagators & propagators, State & initial_state) && -> vo
         // update var to only contain supported values
         state.for_each_value_while(var, [&](Integer val) {
             bool supported = false;
-            state.for_each_value_while(idx, [&](Integer v) {
+            state.for_each_value_while_immutable(idx, [&](Integer v) {
                 if (state.in_domain(vals[v.raw_value], val))
                     supported = true;
                 return ! supported;
             });
             if (! supported) {
                 increase_inference_to(inf, state.infer_not_equal(var, val, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
-                    state.for_each_value(idx, [&](Integer i) {
+                    state.for_each_value_immutable(idx, [&](Integer i) {
                         proof.need_proof_variable(var != val);
                         stringstream trail;
                         trail << "u ";
@@ -181,12 +181,12 @@ auto ElementConstantArray::install(Propagators & propagators, State & initial_st
         auto inference = Inference::NoChange;
         auto just = JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
             stringstream trail;
-            state.for_each_value(idx, [&](Integer i) {
+            state.for_each_value_immutable(idx, [&](Integer i) {
                 trail << " 1 " << proof.proof_variable(var == (*vals)[i.raw_value]);
             });
             trail << proof.trail_variables(state, 1_i);
 
-            state.for_each_value(idx, [&](Integer i) {
+            state.for_each_value_immutable(idx, [&](Integer i) {
                 stringstream line;
                 line << "u" << trail.str() << " 1 ~" << proof.proof_variable(idx == i) << " >= 1 ;";
                 to_delete.push_back(proof.emit_proof_line(line.str()));
@@ -284,8 +284,8 @@ auto Element2DConstantArray::install(Propagators & propagators, State & initial_
                 throw UnexpectedException{"something went horribly wrong with variable IDs"};
 
             state.add_proof_steps(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
-                state.for_each_value(idx1, [&](Integer i1) {
-                    state.for_each_value(idx2, [&](Integer i2) {
+                state.for_each_value_immutable(idx1, [&](Integer i1) {
+                    state.for_each_value_immutable(idx2, [&](Integer i2) {
                         Integer idx = i1 * Integer(vals->size()) + i2;
                         stringstream line;
                         line << "red 2 ~" << proof.proof_variable(*idxsel == idx)
@@ -307,8 +307,8 @@ auto Element2DConstantArray::install(Propagators & propagators, State & initial_
                 for (Integer v = 0_i, v_end = Integer(vals->size() * vals->begin()->size()); v != v_end; ++v)
                     trail << " 1 " << proof.proof_variable(*idxsel == v);
 
-                state.for_each_value(idx1, [&](Integer i1) {
-                    state.for_each_value(idx2, [&](Integer i2) {
+                state.for_each_value_immutable(idx1, [&](Integer i1) {
+                    state.for_each_value_immutable(idx2, [&](Integer i2) {
                         stringstream line;
                         line << "u" << trail.str() << " 1 ~" << proof.proof_variable(idx1 == i1)
                              << " 1 ~" << proof.proof_variable(idx2 == i2) << " >= 1 ;";
@@ -329,8 +329,8 @@ auto Element2DConstantArray::install(Propagators & propagators, State & initial_
         }
 
         optional<Integer> smallest_seen, largest_seen;
-        state.for_each_value(idx1, [&](Integer i1) {
-            state.for_each_value(idx2, [&](Integer i2) {
+        state.for_each_value_immutable(idx1, [&](Integer i1) {
+            state.for_each_value_immutable(idx2, [&](Integer i2) {
                 auto this_val = vals->at(i1.raw_value).at(i2.raw_value);
                 if (! smallest_seen)
                     smallest_seen = this_val;
@@ -347,15 +347,15 @@ auto Element2DConstantArray::install(Propagators & propagators, State & initial_
         auto inference = Inference::NoChange;
         auto just = JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
             stringstream trail;
-            state.for_each_value(idx1, [&](Integer i1) {
-                state.for_each_value(idx2, [&](Integer i2) {
+            state.for_each_value_immutable(idx1, [&](Integer i1) {
+                state.for_each_value_immutable(idx2, [&](Integer i2) {
                     trail << " 1 " << proof.proof_variable(var == (*vals)[i1.raw_value][i2.raw_value]);
                 });
             });
             trail << proof.trail_variables(state, 1_i);
 
-            state.for_each_value(idx1, [&](Integer i1) {
-                state.for_each_value(idx2, [&](Integer i2) {
+            state.for_each_value_immutable(idx1, [&](Integer i1) {
+                state.for_each_value_immutable(idx2, [&](Integer i2) {
                     stringstream line;
                     line << "u" << trail.str() << " 1 ~" << proof.proof_variable(idx1 == i1)
                          << " 1 ~" << proof.proof_variable(idx2 == i2) << " >= 1 ;";
