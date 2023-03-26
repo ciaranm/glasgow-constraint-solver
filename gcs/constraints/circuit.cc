@@ -113,8 +113,8 @@ namespace
 
             if (finished_cycle && cycle_length < succ.size()) {
                 if (need_justification)
-                    return state.infer(FalseLiteral{}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
-                        proof.emit_proof_line(proof_step.str());
+                    return state.infer(FalseLiteral{}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) -> void {
+                        to_delete.push_back(proof.emit_proof_line(proof_step.str()));
                     }});
                 return Inference::Contradiction;
             }
@@ -172,10 +172,10 @@ namespace
                 auto infer_lit = cmp_less(chain_length, succ.size()) ? next_var != val : next_var == val;
 
                 switch (state.infer(infer_lit,
-                    JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
+                    JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) -> void {
                         proof_step << lines_for_setting_pos.at(make_pair(val, last_val.value())) + 1
                                    << " + ";
-                        proof.emit_proof_line(proof_step.str());
+                        to_delete.push_back(proof.emit_proof_line(proof_step.str()));
                     }})) {
                 case Inference::Contradiction:
                     result = Inference::Contradiction;
