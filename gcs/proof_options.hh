@@ -14,7 +14,7 @@ namespace gcs
     struct ProofOptions
     {
         explicit ProofOptions(const std::string &, const std::string &);
-        explicit ProofOptions(const std::string &, const std::string &, bool);
+        explicit ProofOptions(const std::string &, const std::string &, bool, bool);
         ProofOptions(const ProofOptions &) = default;
 
         std::string opb_file;                  ///< Filename for the OPB model

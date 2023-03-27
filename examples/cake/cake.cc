@@ -27,9 +27,10 @@ namespace po = boost::program_options;
 auto main(int argc, char * argv[]) -> int
 {
     po::options_description display_options{"Program options"};
-    display_options.add_options()            //
-        ("help", "Display help information") //
-        ("prove", "Create a proof");         //
+    display_options.add_options()                                 //
+        ("help", "Display help information")                      //
+        ("prove", "Create a proof")                               //
+        ("full-proof-encoding", "Use the longer proof encoding"); //
 
     po::options_description all_options{"All options"};
 
@@ -82,7 +83,9 @@ auto main(int argc, char * argv[]) -> int
             .branch = branch_on_dom_then_deg(vector<IntegerVariableID>{banana, chocolate}),
             .guess = guess_smallest_value_first() //
         },
-        options_vars.contains("prove") ? make_optional<ProofOptions>("cake.opb", "cake.veripb") : nullopt);
+        options_vars.contains("prove") ? make_optional<ProofOptions>(
+                                             "cake.opb", "cake.veripb", true, options_vars.count("full-proof-encoding"))
+                                       : nullopt);
 
     cout << stats;
 

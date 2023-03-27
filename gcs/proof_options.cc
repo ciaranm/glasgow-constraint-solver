@@ -8,9 +8,10 @@ ProofOptions::ProofOptions(const std::string & o, const std::string & p) :
 {
 }
 
-ProofOptions::ProofOptions(const std::string & o, const std::string & p, bool u) :
+ProofOptions::ProofOptions(const std::string & o, const std::string & p, bool u, bool e) :
     opb_file(o),
     proof_file(p),
-    use_friendly_names(u)
+    use_friendly_names(u),
+    always_use_full_encoding(e)
 {
 }
