@@ -29,7 +29,8 @@ auto main(int argc, char * argv[]) -> int
     po::options_description display_options{"Program options"};
     display_options.add_options()            //
         ("help", "Display help information") //
-        ("prove", "Create a proof");
+        ("prove", "Create a proof") //
+        ("trace", "Trace progress");
 
     po::options_description all_options{"All options"};
     all_options.add_options()                 //
@@ -211,6 +212,9 @@ auto main(int argc, char * argv[]) -> int
                 return options_vars.contains("all");
             },
             .trace = [&](const CurrentState & s) -> bool {
+                if (! options_vars.contains("trace"))
+                    return true;
+
                 for (const auto & row : grid) {
                     bool first = true;
                     for (const auto & box : row) {
