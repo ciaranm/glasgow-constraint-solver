@@ -21,6 +21,7 @@ using std::move;
 using std::nullopt;
 using std::optional;
 using std::pair;
+using std::size_t;
 using std::stringstream;
 using std::to_string;
 using std::unique_ptr;
@@ -37,17 +38,26 @@ Circuit::Circuit(vector<IntegerVariableID> v, const bool p, const bool g) :
 
 namespace
 {
-    auto propagate_non_gac_alldifferent(const vector<IntegerVariableID> & succ, State & state) -> Inference
+    auto propagate_non_gac_alldifferent(const optional<IntegerVariableID> & trigger_var,
+            size_t trigger_idx, const vector<IntegerVariableID> & succ, State & state) -> Inference
     {
         auto result = Inference::NoChange;
         {
             vector<bool> being_done(succ.size(), false);
             vector<pair<IntegerVariableID, Integer>> to_propagate;
-            for (auto [idx, s] : enumerate(succ))
-                if (auto val = state.optional_single_value(s)) {
-                    to_propagate.emplace_back(s, *val);
-                    being_done[idx] = true;
+            if (trigger_var) {
+                auto val = state.optional_single_value(*trigger_var);
+                if (val) {
+                    to_propagate.emplace_back(*trigger_var, *val);
+                    being_done[trigger_idx] = true;
                 }
+            }
+            else
+                for (auto [idx, s] : enumerate(succ))
+                    if (auto val = state.optional_single_value(s)) {
+                        to_propagate.emplace_back(s, *val);
+                        being_done[idx] = true;
+                    }
             while (! to_propagate.empty()) {
                 auto [var, val] = to_propagate.back();
                 to_propagate.pop_back();
@@ -72,7 +82,7 @@ namespace
         const ProofLine2DMap & lines_for_setting_pos, State & state) -> Inference
     {
         // propagate all-different first, to avoid infinte loops
-        auto result = propagate_non_gac_alldifferent(succ, state);
+        auto result = propagate_non_gac_alldifferent(nullopt, 0, succ, state);
         if (result == Inference::Contradiction) return Inference::Contradiction;
 
         vector<bool> checked(succ.size(), false);
@@ -147,7 +157,7 @@ namespace
 
         // propagate all-different first, to avoid infinite loops
         // Have to use check first
-        auto result = propagate_non_gac_alldifferent(succ, state);
+        auto result = propagate_non_gac_alldifferent(trigger_var, trigger_idx, succ, state);
         if (result == Inference::Contradiction) return Inference::Contradiction;
 
         auto& chain_start = any_cast<vector<long long> &>(state.get_constraint_state(chain_start_idx));
