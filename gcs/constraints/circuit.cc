@@ -8,6 +8,7 @@
 #include <map>
 #include <sstream>
 #include <utility>
+#include <iostream>
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -65,6 +66,7 @@ namespace
         return result;
 
     }
+
     // Most basic propagator: just check if there are any cycles that tour less than all of the variables
     auto propagate_circuit_using_check(const vector<IntegerVariableID> & succ,
         const ProofLine2DMap & lines_for_setting_pos, State & state) -> Inference
@@ -135,11 +137,14 @@ namespace
     auto propagate_circuit_using_prevent(const vector<IntegerVariableID> & succ,
                                          const ProofLine2DMap & lines_for_setting_pos,
                                          State & state,
+                                         const IntegerVariableID & trigger_var,
+                                         const long & trigger_idx,
                                          const ConstraintStateHandle & chain_start_idx,
                                          const ConstraintStateHandle & chain_end_idx,
                                          const ConstraintStateHandle & chain_length_idx,
-                                         const ConstraintStateHandle & was_already_fixed_idx) -> Inference
+                                         bool& should_disable) -> Inference
     {
+
         // propagate all-different first, to avoid infinite loops
         // Have to use check first
         auto result = propagate_non_gac_alldifferent(succ, state);
@@ -148,43 +153,41 @@ namespace
         auto& chain_start = any_cast<vector<long long> &>(state.get_constraint_state(chain_start_idx));
         auto& chain_end = any_cast<vector<long long> &>(state.get_constraint_state(chain_end_idx));
         auto& chain_length = any_cast<vector<long long> &>(state.get_constraint_state(chain_length_idx));
-        auto& was_already_fixed = any_cast<vector<bool> &>(state.get_constraint_state(was_already_fixed_idx));
-
         auto n = succ.size();
 
-        for(unsigned int idx = 0; idx < succ.size(); idx++) {
-            auto current_idx = idx;
-            auto var = succ[current_idx];
-            auto value = state.optional_single_value(var);
-            while (!was_already_fixed[current_idx]&& value != nullopt) {
-                was_already_fixed[current_idx] = true;
-                auto start = chain_start[current_idx];
-                auto next_idx = value->raw_value;
-                auto end = chain_end[next_idx];
+        auto current_idx = trigger_idx;
+        auto var = trigger_var;
+        auto value = state.optional_single_value(var);
+        if(value == nullopt)
+            return result;
+        auto start = chain_start[current_idx];
+        auto next_idx = value->raw_value;
+        auto end = chain_end[next_idx];
 
-                if(cmp_not_equal(chain_length[start],n) && next_idx == start) {
-                    return Inference::Contradiction;
-                } else {
-                    chain_length[start] += chain_length[next_idx];
-                    chain_start[end] = start;
-                    chain_end[start] = end;
+        if(cmp_not_equal(chain_length[start],n) && next_idx == start) {
+            return Inference::Contradiction;
+        } else {
+            chain_length[start] += chain_length[next_idx];
+            chain_start[end] = start;
+            chain_end[start] = end;
 
-                    if(cmp_less(chain_length[start], succ.size())) {
-                        result = state.infer(succ[end] != Integer{start}, NoJustificationNeeded{});
-                    } else {
-                        return result;
-                    }
+            if(cmp_less(chain_length[start], succ.size())) {
+                increase_inference_to(result, state.infer(succ[end] != Integer{start}, NoJustificationNeeded{}));
+            } else {
+                increase_inference_to(result, state.infer(succ[end] == Integer{start}, NoJustificationNeeded{}));
+                return result;
+            }
 
-                    if (result == Inference::Contradiction) {
-                        return Inference::Contradiction;
-                    }
+            if (result == Inference::Contradiction) {
+                return Inference::Contradiction;
+            }
 
-                    current_idx = end;
-                    var = succ[current_idx];
-                    value = state.optional_single_value(var);
-                }
+            if(state.optional_single_value(succ[end])) {
+                should_disable = true;
             }
         }
+
+
         return result;
     }
 }
@@ -265,39 +268,59 @@ auto Circuit::install(Propagators & propagators, State & initial_state) && -> vo
         }
     }
 
-    // For basic "check" algorithm, only trigger when variable gains a unique value
-    // Same applies for prevent, I think
-    Triggers triggers;
-    triggers.on_instantiated = {_succ.begin(), _succ.end()};
 
-    // Constraint states for prevent algorithm
-    vector<long long> chain_start;
-    vector<long long> chain_end;
-    vector<long long> chain_length;
-    vector<bool> was_already_fixed;
 
-    for(unsigned int idx = 0; idx < _succ.size(); idx++) {
-        chain_start.emplace_back(idx);
-        chain_end.emplace_back(idx);
-        chain_length.emplace_back(1);
-        was_already_fixed.emplace_back(false);
+
+
+    if(_propagate_using_check_only) {
+        // For basic "check" algorithm, only trigger when variable gains a unique value
+        // Same applies for prevent, I think
+        Triggers triggers;
+        triggers.on_instantiated = {_succ.begin(), _succ.end()};
+        propagators.install(
+                [succ = _succ,lines_for_setting_pos = lines_for_setting_pos](State & state) -> pair<Inference, PropagatorState> {
+                    return pair{
+                            propagate_circuit_using_check(succ, lines_for_setting_pos, state),
+                            PropagatorState::Enable};
+                },
+                triggers,
+                "circuit");
+    } else {
+        // Constraint states for prevent algorithm
+        vector<long long> chain_start;
+        vector<long long> chain_end;
+        vector<long long> chain_length;
+
+        for(unsigned int idx = 0; idx < _succ.size(); idx++) {
+            chain_start.emplace_back(idx);
+            chain_end.emplace_back(idx);
+            chain_length.emplace_back(1);
+        }
+        auto chain_start_idx = initial_state.add_constraint_state(chain_start);
+        auto chain_end_idx = initial_state.add_constraint_state(chain_end);
+        auto chain_length_idx = initial_state.add_constraint_state(chain_length);
+
+        for(unsigned int idx = 0; idx < _succ.size(); idx++) {
+            Triggers triggers;
+            triggers.on_instantiated = {_succ[idx]};
+            propagators.install(
+                    [succ = _succ, idx=idx, lines_for_setting_pos = lines_for_setting_pos, start=chain_start_idx,
+                     end=chain_end_idx, length=chain_length_idx]
+                    (State & state) -> pair<Inference, PropagatorState> {
+                        bool should_disable = false;
+                        auto result = propagate_circuit_using_prevent(
+                                succ, lines_for_setting_pos, state, succ[idx], idx, start, end, length, should_disable);
+                        return pair{
+                                result,
+                                should_disable ? PropagatorState::DisableUntilBacktrack : PropagatorState::Enable};
+                    },
+                    triggers,
+                    "circuit");
+        }
+
     }
-    auto chain_start_idx = initial_state.add_constraint_state(chain_start);
-    auto chain_end_idx = initial_state.add_constraint_state(chain_end);
-    auto chain_length_idx = initial_state.add_constraint_state(chain_length);
-    auto was_already_fixed_idx = initial_state.add_constraint_state(was_already_fixed);
 
-    propagators.install(
-            [succ = _succ, use_check = _propagate_using_check_only, lines_for_setting_pos = lines_for_setting_pos,
-                    start = chain_start_idx, end = chain_end_idx, length = chain_length_idx, fixed = was_already_fixed_idx](State & state) -> pair<Inference, PropagatorState> {
-                return pair{
-                        use_check ?
-                        propagate_circuit_using_check(succ, lines_for_setting_pos, state) :
-                        propagate_circuit_using_prevent(succ, lines_for_setting_pos, state, start, end, length, fixed),
-                        PropagatorState::Enable};
-            },
-            triggers,
-            "circuit");
+
 
     // Infer succ[i] != i at top of search
     if (_succ.size() > 1) {
