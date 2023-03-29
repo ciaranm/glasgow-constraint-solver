@@ -10,7 +10,7 @@
 #include <optional>
 #include <vector>
 
-#include <boost/program_options.hpp>
+//#include <boost/program_options.hpp>
 
 using namespace gcs;
 
@@ -22,40 +22,40 @@ using std::nullopt;
 using std::string;
 using std::vector;
 
-namespace po = boost::program_options;
+//namespace po = boost::program_options;
 
 auto main(int argc, char * argv[]) -> int
 {
-    po::options_description display_options{"Program options"};
-    display_options.add_options()            //
-        ("help", "Display help information") //
-        ("prove", "Create a proof");
-
-    po::options_description all_options{"All options"};
-
-    all_options.add(display_options);
-
-    po::variables_map options_vars;
-
-    try {
-        po::store(po::command_line_parser(argc, argv)
-                      .options(all_options)
-                      .run(),
-            options_vars);
-        po::notify(options_vars);
-    }
-    catch (const po::error & e) {
-        cerr << "Error: " << e.what() << endl;
-        cerr << "Try " << argv[0] << " --help" << endl;
-        return EXIT_FAILURE;
-    }
-
-    if (options_vars.contains("help")) {
-        cout << "Usage: " << argv[0] << " [options]" << endl;
-        cout << endl;
-        cout << display_options << endl;
-        return EXIT_SUCCESS;
-    }
+//    po::options_description display_options{"Program options"};
+//    display_options.add_options()            //
+//        ("help", "Display help information") //
+//        ("prove", "Create a proof");
+//
+//    po::options_description all_options{"All options"};
+//
+//    all_options.add(display_options);
+//
+//    po::variables_map options_vars;
+//
+//    try {
+//        po::store(po::command_line_parser(argc, argv)
+//                      .options(all_options)
+//                      .run(),
+//            options_vars);
+//        po::notify(options_vars);
+//    }
+//    catch (const po::error & e) {
+//        cerr << "Error: " << e.what() << endl;
+//        cerr << "Try " << argv[0] << " --help" << endl;
+//        return EXIT_FAILURE;
+//    }
+//
+//    if (options_vars.contains("help")) {
+//        cout << "Usage: " << argv[0] << " [options]" << endl;
+//        cout << endl;
+//        cout << display_options << endl;
+//        return EXIT_SUCCESS;
+//    }
 
     cout << "Replicating the TSP benchmark." << endl;
     cout << "See Laurent D. Michel, Pierre Schaus, Pascal Van Hentenryck:" << endl;
@@ -111,7 +111,7 @@ auto main(int argc, char * argv[]) -> int
             .guess = [&](const CurrentState & state, IntegerVariableID var) -> vector<Literal> {
                 return vector<Literal>{var == state.lower_bound(var), var != state.lower_bound(var)};
             }},
-        options_vars.contains("prove") ? make_optional<ProofOptions>("tsp.opb", "tsp.veripb") : nullopt);
+        /*options_vars.contains("prove") ? make_optional<ProofOptions>("tsp.opb", "tsp.veripb") :*/ nullopt);
 
     cout << stats;
 
