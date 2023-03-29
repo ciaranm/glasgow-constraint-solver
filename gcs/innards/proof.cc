@@ -503,6 +503,7 @@ auto Proof::need_direct_encoding_for(SimpleIntegerVariableID id, Integer v) -> v
         _imp->opb << eqvar_true << " ;\n";
         _imp->opb << eqvar_false << " ;\n";
         _imp->model_constraints += 2;
+        ++_imp->model_variables;
     }
 
     if (_imp->opb_done)
