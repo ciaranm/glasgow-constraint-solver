@@ -29,9 +29,8 @@ using std::vector;
 
 using ProofLine2DMap = map<pair<Integer, Integer>, ProofLine>;
 
-Circuit::Circuit(vector<IntegerVariableID> v, const bool p, const bool g) :
+Circuit::Circuit(vector<IntegerVariableID> v, const bool g) :
     _succ(move(v)),
-    _propagate_using_check_only(p),
     _gac_all_different(g)
 {
 }
@@ -65,81 +64,11 @@ namespace
                     if (other != var) {
                         increase_inference_to(result, state.infer_not_equal(other, val, JustifyUsingRUP{}));
                         if (result == Inference::Contradiction) return Inference::Contradiction;
-                        if (! being_done[other_idx])
-                            if (auto other_val = state.optional_single_value(other)) {
-                                being_done[other_idx] = true;
-                                to_propagate.emplace_back(other, *other_val);
-                            }
                     }
             }
         }
         return result;
 
-    }
-
-    // Most basic propagator: just check if there are any cycles that tour less than all of the variables
-    auto propagate_circuit_using_check(const vector<IntegerVariableID> & succ,
-        const ProofLine2DMap & lines_for_setting_pos, State & state) -> Inference
-    {
-        // propagate all-different first, to avoid infinte loops
-        auto result = propagate_non_gac_alldifferent(nullopt, 0, succ, state);
-        if (result == Inference::Contradiction) return Inference::Contradiction;
-
-        vector<bool> checked(succ.size(), false);
-        for (const auto & [uidx, var] : enumerate(succ)) {
-            // Convert the unsigned idx to signed idx to avoid warning when making Integer
-            auto idx = static_cast<long long>(uidx);
-
-            if (checked[idx]) continue;
-
-            checked[idx] = true;
-            auto current_val = state.optional_single_value(var);
-            if (current_val == nullopt) continue;
-            if (current_val->raw_value < 0)
-                throw UnimplementedException("Successor encoding for circuit can't have negative values");
-
-            bool finished_cycle = true;
-            unsigned long cycle_length = 1;
-
-            stringstream proof_step;
-            bool need_justification = false;
-
-            if (state.maybe_proof()) {
-                proof_step << "p ";
-                proof_step << lines_for_setting_pos.at(make_pair(current_val.value(), Integer(idx))) + 1 << " ";
-            }
-
-            while (cmp_not_equal(current_val->raw_value, idx)) {
-                auto last_val = current_val;
-                auto next_var = succ[last_val->raw_value];
-                current_val = state.optional_single_value(next_var);
-
-                if (current_val == nullopt) {
-                    finished_cycle = false;
-                    break;
-                }
-
-                checked[current_val->raw_value] = true;
-
-                if (state.maybe_proof()) {
-                    proof_step << lines_for_setting_pos.at(make_pair(current_val.value(), last_val.value())) + 1
-                               << " + ";
-                    need_justification = true;
-                }
-
-                cycle_length++;
-            }
-
-            if (finished_cycle && cycle_length < succ.size()) {
-                if (need_justification)
-                    return state.infer(FalseLiteral{}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) -> void {
-                        to_delete.push_back(proof.emit_proof_line(proof_step.str()));
-                    }});
-                return Inference::Contradiction;
-            }
-        }
-
-        return result;
     }
 
     // Slightly more complex propagator: prevent small cycles by finding chains and removing the head from the domain
@@ -154,7 +83,6 @@ namespace
                                          const ConstraintStateHandle & chain_length_idx,
                                          bool& should_disable) -> Inference
     {
-
         // propagate all-different first, to avoid infinite loops
         // Have to use check first
         auto result = propagate_non_gac_alldifferent(trigger_var, trigger_idx, succ, state);
@@ -196,15 +124,13 @@ namespace
                 should_disable = true;
             }
         }
-
-
         return result;
     }
 }
 
 auto Circuit::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<Circuit>(_succ, _propagate_using_check_only, _gac_all_different);
+    return make_unique<Circuit>(_succ, _gac_all_different);
 }
 
 auto Circuit::install(Propagators & propagators, State & initial_state) && -> void
@@ -278,56 +204,36 @@ auto Circuit::install(Propagators & propagators, State & initial_state) && -> vo
         }
     }
 
+    // Constraint states for prevent algorithm
+    vector<long long> chain_start;
+    vector<long long> chain_end;
+    vector<long long> chain_length;
 
+    for(unsigned int idx = 0; idx < _succ.size(); idx++) {
+        chain_start.emplace_back(idx);
+        chain_end.emplace_back(idx);
+        chain_length.emplace_back(1);
+    }
+    auto chain_start_idx = initial_state.add_constraint_state(chain_start);
+    auto chain_end_idx = initial_state.add_constraint_state(chain_end);
+    auto chain_length_idx = initial_state.add_constraint_state(chain_length);
 
-
-
-    if(_propagate_using_check_only) {
-        // For basic "check" algorithm, only trigger when variable gains a unique value
-        // Same applies for prevent, I think
+    for(unsigned int idx = 0; idx < _succ.size(); idx++) {
         Triggers triggers;
-        triggers.on_instantiated = {_succ.begin(), _succ.end()};
+        triggers.on_instantiated = {_succ[idx]};
         propagators.install(
-                [succ = _succ,lines_for_setting_pos = lines_for_setting_pos](State & state) -> pair<Inference, PropagatorState> {
+                [succ = _succ, idx=idx, lines_for_setting_pos = lines_for_setting_pos, start=chain_start_idx,
+                 end=chain_end_idx, length=chain_length_idx]
+                (State & state) -> pair<Inference, PropagatorState> {
+                    bool should_disable = false;
+                    auto result = propagate_circuit_using_prevent(
+                            succ, lines_for_setting_pos, state, succ[idx], idx, start, end, length, should_disable);
                     return pair{
-                            propagate_circuit_using_check(succ, lines_for_setting_pos, state),
-                            PropagatorState::Enable};
+                            result,
+                            should_disable ? PropagatorState::DisableUntilBacktrack : PropagatorState::Enable};
                 },
                 triggers,
                 "circuit");
-    } else {
-        // Constraint states for prevent algorithm
-        vector<long long> chain_start;
-        vector<long long> chain_end;
-        vector<long long> chain_length;
-
-        for(unsigned int idx = 0; idx < _succ.size(); idx++) {
-            chain_start.emplace_back(idx);
-            chain_end.emplace_back(idx);
-            chain_length.emplace_back(1);
-        }
-        auto chain_start_idx = initial_state.add_constraint_state(chain_start);
-        auto chain_end_idx = initial_state.add_constraint_state(chain_end);
-        auto chain_length_idx = initial_state.add_constraint_state(chain_length);
-
-        for(unsigned int idx = 0; idx < _succ.size(); idx++) {
-            Triggers triggers;
-            triggers.on_instantiated = {_succ[idx]};
-            propagators.install(
-                    [succ = _succ, idx=idx, lines_for_setting_pos = lines_for_setting_pos, start=chain_start_idx,
-                     end=chain_end_idx, length=chain_length_idx]
-                    (State & state) -> pair<Inference, PropagatorState> {
-                        bool should_disable = false;
-                        auto result = propagate_circuit_using_prevent(
-                                succ, lines_for_setting_pos, state, succ[idx], idx, start, end, length, should_disable);
-                        return pair{
-                                result,
-                                should_disable ? PropagatorState::DisableUntilBacktrack : PropagatorState::Enable};
-                    },
-                    triggers,
-                    "circuit");
-        }
-
     }
 
 

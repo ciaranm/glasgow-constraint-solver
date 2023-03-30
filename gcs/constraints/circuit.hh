@@ -21,12 +21,10 @@ namespace gcs
     {
     private:
         const std::vector<IntegerVariableID> _succ;
-        const bool _propagate_using_check_only;
         const bool _gac_all_different;
 
     public:
-        explicit Circuit(std::vector<IntegerVariableID> vars, bool propagate_using_check_only = false,
-            bool gac_all_different = true);
+        explicit Circuit(std::vector<IntegerVariableID> var, bool gac_all_different = true);
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
         virtual auto describe_for_proof() -> std::string override;
         virtual auto install(innards::Propagators &, innards::State &) && -> void override;
