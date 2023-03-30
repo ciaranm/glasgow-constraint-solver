@@ -71,6 +71,40 @@ namespace
 
     }
 
+    auto output_cycle_to_proof(const vector<IntegerVariableID> & succ, const long& start, const ProofLine2DMap & lines_for_setting_pos,
+                               State & state) -> void {
+
+        auto current_val = state.optional_single_value(succ[start]);
+        if (current_val == nullopt)
+            throw UnexpectedException("Circuit propagator tried to output a cycle that doesn't exist");
+
+        if (current_val->raw_value < 0)
+            throw UnimplementedException("Successor encoding for circuit can't have negative values");
+
+        stringstream proof_step;
+
+        if (state.maybe_proof()) {
+            proof_step << "p ";
+            proof_step << lines_for_setting_pos.at(make_pair(current_val.value(), Integer(start))) + 1 << " ";
+        }
+        size_t cycle_length = 1;
+        while (cmp_not_equal(current_val->raw_value, start)) {
+            auto last_val = current_val;
+            auto next_var = succ[last_val->raw_value];
+            current_val = state.optional_single_value(next_var);
+
+            if (current_val == nullopt || cycle_length == succ.size()) break;
+
+            proof_step << lines_for_setting_pos.at(make_pair(current_val.value(), last_val.value())) + 1
+                           << " + ";
+            cycle_length++;
+        }
+
+        state.infer(TrueLiteral{}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) -> void {
+            to_delete.push_back(proof.emit_proof_line(proof_step.str()));
+        }});
+    }
+
     // Slightly more complex propagator: prevent small cycles by finding chains and removing the head from the domain
     // of the tail.
     auto propagate_circuit_using_prevent(const vector<IntegerVariableID> & succ,
@@ -103,6 +137,7 @@ namespace
         auto end = chain_end[next_idx];
 
         if(cmp_not_equal(chain_length[start],n) && next_idx == start) {
+            if(state.maybe_proof()) output_cycle_to_proof(succ, start, lines_for_setting_pos, state);
             return Inference::Contradiction;
         } else {
             chain_length[start] += chain_length[next_idx];
@@ -110,9 +145,10 @@ namespace
             chain_end[start] = end;
 
             if(cmp_less(chain_length[start], succ.size())) {
+                if(state.maybe_proof()) output_cycle_to_proof(succ, start, lines_for_setting_pos, state);
                 increase_inference_to(result, state.infer(succ[end] != Integer{start}, NoJustificationNeeded{}));
             } else {
-                increase_inference_to(result, state.infer(succ[end] == Integer{start}, NoJustificationNeeded{}));
+                increase_inference_to(result, state.infer(succ[end] == Integer{start}, JustifyUsingRUP{}));
                 return result;
             }
 
@@ -209,7 +245,7 @@ auto Circuit::install(Propagators & propagators, State & initial_state) && -> vo
     vector<long long> chain_end;
     vector<long long> chain_length;
 
-    for(unsigned int idx = 0; idx < _succ.size(); idx++) {
+    for (unsigned int idx = 0; idx < _succ.size(); idx++) {
         chain_start.emplace_back(idx);
         chain_end.emplace_back(idx);
         chain_length.emplace_back(1);
@@ -218,25 +254,22 @@ auto Circuit::install(Propagators & propagators, State & initial_state) && -> vo
     auto chain_end_idx = initial_state.add_constraint_state(chain_end);
     auto chain_length_idx = initial_state.add_constraint_state(chain_length);
 
-    for(unsigned int idx = 0; idx < _succ.size(); idx++) {
+    for (unsigned int idx = 0; idx < _succ.size(); idx++) {
         Triggers triggers;
         triggers.on_instantiated = {_succ[idx]};
         propagators.install(
-                [succ = _succ, idx=idx, lines_for_setting_pos = lines_for_setting_pos, start=chain_start_idx,
-                 end=chain_end_idx, length=chain_length_idx]
-                (State & state) -> pair<Inference, PropagatorState> {
-                    bool should_disable = false;
-                    auto result = propagate_circuit_using_prevent(
-                            succ, lines_for_setting_pos, state, succ[idx], idx, start, end, length, should_disable);
-                    return pair{
-                            result,
-                            should_disable ? PropagatorState::DisableUntilBacktrack : PropagatorState::Enable};
-                },
-                triggers,
-                "circuit");
+            [succ = _succ, idx = idx, lines_for_setting_pos = lines_for_setting_pos, start = chain_start_idx,
+                end = chain_end_idx, length = chain_length_idx, want_proof = propagators.want_definitions()](State & state) -> pair<Inference, PropagatorState> {
+                bool should_disable = false;
+                auto result = propagate_circuit_using_prevent(
+                    succ, lines_for_setting_pos, state, succ[idx], idx, start, end, length, should_disable);
+                return pair{
+                    result,
+                    should_disable ? PropagatorState::DisableUntilBacktrack : PropagatorState::Enable};
+            },
+            triggers,
+            "circuit");
     }
-
-
 
     // Infer succ[i] != i at top of search
     if (_succ.size() > 1) {
