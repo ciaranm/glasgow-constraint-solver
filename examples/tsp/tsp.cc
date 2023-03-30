@@ -111,7 +111,7 @@ auto main(int argc, char * argv[]) -> int
             .guess = [&](const CurrentState & state, IntegerVariableID var) -> vector<Literal> {
                 return vector<Literal>{var == state.lower_bound(var), var != state.lower_bound(var)};
             }},
-        /*options_vars.contains("prove") ? make_optional<ProofOptions>("tsp.opb", "tsp.veripb") :*/ nullopt);
+        make_optional<ProofOptions>("tsp.opb", "tsp.veripb"));
 
     cout << stats;
 
