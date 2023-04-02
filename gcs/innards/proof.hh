@@ -358,11 +358,12 @@ namespace gcs::innards
 
         /**
          * Give the proof line specifying this variable's upper or lower bound,
-         * using the bit representation. Only callable if has_bit_representation()
+         * using the bit representation, or, if this is a literal axiom, return
+         * it as a string instead. Only callable if has_bit_representation()
          * returns true.
          */
-        [[nodiscard]] auto get_or_emit_line_for_bound_in_bits(State & state, bool upper,
-            const SimpleIntegerVariableID & var, Integer val) -> ProofLine;
+        [[nodiscard]] auto get_or_emit_pol_term_for_bound_in_bits(State & state, bool upper,
+            const SimpleIntegerVariableID & var, Integer val) -> std::variant<ProofLine, std::string>;
 
         ///@}
 

@@ -22,6 +22,7 @@ using std::remove_if;
 using std::sort;
 using std::string;
 using std::stringstream;
+using std::variant;
 using std::vector;
 
 auto gcs::innards::simplify_linear(const Linear & coeff_vars) -> pair<SimpleLinear, Integer>
@@ -172,8 +173,8 @@ namespace
 
         auto justify = [&](const SimpleIntegerVariableID & change_var, Proof & proof, vector<ProofLine> & to_delete,
                            bool second_constraint_for_equality) -> void {
-            vector<pair<Integer, ProofLine>> lines_to_sum;
-            lines_to_sum.emplace_back(1_i, second_constraint_for_equality ? *proof_line - 1 : *proof_line);
+            vector<pair<Integer, variant<ProofLine, string>>> terms_to_sum;
+            terms_to_sum.emplace_back(1_i, second_constraint_for_equality ? *proof_line - 1 : *proof_line);
 
             Integer change_var_coeff = 0_i;
             for (const auto & cv : coeff_vars) {
@@ -187,10 +188,10 @@ namespace
                     // discover otherwise
                     bool upper = (get_coeff(cv) < 0_i) != second_constraint_for_equality;
 
-                    auto proof_line = proof.get_or_emit_line_for_bound_in_bits(state, upper,
+                    auto proof_line = proof.get_or_emit_pol_term_for_bound_in_bits(state, upper,
                         get_var(cv), upper ? state.upper_bound(get_var(cv)) : state.lower_bound(get_var(cv)));
 
-                    lines_to_sum.emplace_back(abs(get_coeff(cv)), proof_line);
+                    terms_to_sum.emplace_back(abs(get_coeff(cv)), proof_line);
                 }
                 else {
                     throw UnimplementedException{};
@@ -200,11 +201,14 @@ namespace
             stringstream step;
             step << "p";
             bool first = true;
-            for (auto & [c, l] : lines_to_sum) {
-                if (c == 1_i)
-                    step << " " << l;
-                else
-                    step << " " << l << " " << c << " *";
+            for (auto & [c, l] : terms_to_sum) {
+                visit([&](const auto & l) {
+                    if (c == 1_i)
+                        step << " " << l;
+                    else
+                        step << " " << l << " " << c << " *";
+                },
+                    l);
                 if (! first)
                     step << " +";
                 first = false;

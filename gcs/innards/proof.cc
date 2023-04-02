@@ -45,6 +45,7 @@ using std::stringstream;
 using std::to_string;
 using std::tuple;
 using std::unordered_map;
+using std::variant;
 using std::vector;
 using std::visit;
 
@@ -147,7 +148,7 @@ struct Proof::Imp
     map<pair<unsigned long long, bool>, string> flags;
     map<unsigned long long, string> proof_only_integer_variables;
 
-    list<map<tuple<bool, SimpleIntegerVariableID, Integer>, ProofLine>> line_for_bound_in_bits;
+    list<map<tuple<bool, SimpleIntegerVariableID, Integer>, variant<ProofLine, string>>> line_for_bound_in_bits;
 
     string opb_file, proof_file;
     stringstream opb;
@@ -260,6 +261,9 @@ auto Proof::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariabl
 
         overloaded{
             [&](const SimpleIntegerVariableID & id) {
+                _imp->line_for_bound_in_bits.back().emplace(tuple{false, id, lower}, eqvar);
+                _imp->line_for_bound_in_bits.back().emplace(tuple{true, id, upper}, "~" + eqvar);
+
                 _imp->direct_integer_variables.emplace(id == 1_i, eqvar);
                 _imp->direct_integer_variables.emplace(id != 1_i, "~" + eqvar);
                 _imp->direct_integer_variables.emplace(id == 0_i, "~" + eqvar);
@@ -1073,7 +1077,8 @@ auto Proof::has_bit_representation(const SimpleIntegerVariableID & var) const ->
     return _imp->integer_variable_bits.contains(var);
 }
 
-auto Proof::get_or_emit_line_for_bound_in_bits(State & state, bool upper, const SimpleIntegerVariableID & var, Integer val) -> ProofLine
+auto Proof::get_or_emit_pol_term_for_bound_in_bits(State & state, bool upper,
+    const SimpleIntegerVariableID & var, Integer val) -> variant<ProofLine, string>
 {
     if (! has_bit_representation(var))
         throw UnexpectedException{"variable does not have a bit representation"};
