@@ -209,7 +209,8 @@ namespace
                     step << " +";
                 first = false;
             }
-            step << " " << abs(change_var_coeff) << " d";
+            if (change_var_coeff != 1_i)
+                step << " " << abs(change_var_coeff) << " d";
             to_delete.push_back(proof.emit_proof_line(step.str()));
         };
 
