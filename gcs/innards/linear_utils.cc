@@ -206,7 +206,7 @@ namespace
                     if (c_and_l.first == 1_i)
                         step << " " << l;
                     else
-                        step << " " << c_and_l.first << " " << l << " *";
+                        step << " " << l << " " << c_and_l.first << " *";
                 },
                     c_and_l.second);
                 if (! first)
