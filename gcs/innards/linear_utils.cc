@@ -201,14 +201,14 @@ namespace
             stringstream step;
             step << "p";
             bool first = true;
-            for (auto & [c, l] : terms_to_sum) {
+            for (auto & c_and_l : terms_to_sum) {
                 visit([&](const auto & l) {
-                    if (c == 1_i)
+                    if (c_and_l.first == 1_i)
                         step << " " << l;
                     else
-                        step << " " << l << " " << c << " *";
+                        step << " " << c_and_l.first << " " << l << " *";
                 },
-                    l);
+                    c_and_l.second);
                 if (! first)
                     step << " +";
                 first = false;
