@@ -65,6 +65,11 @@ namespace
                     if (other != var) {
                         increase_inference_to(result, state.infer_not_equal(other, val, JustifyUsingRUP{}));
                         if (result == Inference::Contradiction) return Inference::Contradiction;
+                        if (! being_done[other_idx])
+                            if (auto other_val = state.optional_single_value(other)) {
+                                being_done[other_idx] = true;
+                                to_propagate.emplace_back(other, *other_val);
+                            }
                     }
             }
         }
@@ -100,7 +105,7 @@ namespace
             auto next_var = succ[last_val->raw_value];
             current_val = state.optional_single_value(next_var);
 
-            if (current_val == nullopt || cycle_length == length) break;
+            if (current_val == nullopt || cycle_length == length-1) break;
 
             proof_step << lines_for_setting_pos.at(make_pair(current_val.value(), last_val.value())) + 1
                     << " + ";
