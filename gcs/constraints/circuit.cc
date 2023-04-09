@@ -26,6 +26,7 @@ using std::stringstream;
 using std::to_string;
 using std::unique_ptr;
 using std::vector;
+using std::make_optional;
 
 using ProofLine2DMap = map<pair<Integer, Integer>, ProofLine>;
 
@@ -71,8 +72,14 @@ namespace
 
     }
 
-    auto output_cycle_to_proof(const vector<IntegerVariableID> & succ, const long& start, const ProofLine2DMap & lines_for_setting_pos,
-                               State & state) -> void {
+    auto output_cycle_to_proof(const vector<IntegerVariableID> & succ,
+                               const long& start,
+                               const long& length,
+                               const ProofLine2DMap & lines_for_setting_pos,
+                               State & state,
+                               Proof & proof,
+                               const optional<Integer>& prevent_idx=nullopt,
+                               const optional<Integer>& prevent_value=nullopt) -> void {
 
         auto current_val = state.optional_single_value(succ[start]);
         if (current_val == nullopt)
@@ -87,22 +94,27 @@ namespace
             proof_step << "p ";
             proof_step << lines_for_setting_pos.at(make_pair(current_val.value(), Integer(start))) + 1 << " ";
         }
-        size_t cycle_length = 1;
+        long cycle_length = 1;
         while (cmp_not_equal(current_val->raw_value, start)) {
             auto last_val = current_val;
             auto next_var = succ[last_val->raw_value];
             current_val = state.optional_single_value(next_var);
 
-            if (current_val == nullopt || cycle_length == succ.size()) break;
+            if (current_val == nullopt || cycle_length == length) break;
 
             proof_step << lines_for_setting_pos.at(make_pair(current_val.value(), last_val.value())) + 1
-                           << " + ";
+                    << " + ";
             cycle_length++;
         }
 
-        state.infer(TrueLiteral{}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) -> void {
-            to_delete.push_back(proof.emit_proof_line(proof_step.str()));
-        }});
+        if(prevent_idx.has_value()) {
+            proof_step << lines_for_setting_pos.at(make_pair(prevent_value.value(), prevent_idx.value())) + 1
+                       << " + ";
+        }
+
+        long line_to_delete;
+        proof.emit_proof_line(proof_step.str());
+
     }
 
     // Slightly more complex propagator: prevent small cycles by finding chains and removing the head from the domain
@@ -137,7 +149,11 @@ namespace
         auto end = chain_end[next_idx];
 
         if(cmp_not_equal(chain_length[start],n) && next_idx == start) {
-            if(state.maybe_proof()) output_cycle_to_proof(succ, start, lines_for_setting_pos, state);
+            state.infer(FalseLiteral{}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) -> void {
+                proof.emit_proof_comment("Contradicting cycle");
+                output_cycle_to_proof(succ, start, chain_length[start], lines_for_setting_pos, state, proof);
+            }});
+            if(state.maybe_proof())
             return Inference::Contradiction;
         } else {
             chain_length[start] += chain_length[next_idx];
@@ -145,9 +161,17 @@ namespace
             chain_end[start] = end;
 
             if(cmp_less(chain_length[start], succ.size())) {
-                if(state.maybe_proof()) output_cycle_to_proof(succ, start, lines_for_setting_pos, state);
-                increase_inference_to(result, state.infer(succ[end] != Integer{start}, NoJustificationNeeded{}));
+                increase_inference_to(result, state.infer(succ[end] != Integer{start}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
+                    proof.emit_proof_comment("Preventing cycle");
+                    output_cycle_to_proof(succ, start, chain_length[start], lines_for_setting_pos, state, proof, make_optional(Integer{end}),
+                                          make_optional(Integer{start}));
+                    proof.infer(state, succ[end] != Integer{start}, JustifyUsingRUP{});
+                    proof.emit_proof_comment("Done preventing cycle");
+                }}));
             } else {
+                state.infer(TrueLiteral{}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) -> void {
+                    proof.emit_proof_comment("Completing cycle");
+                }});
                 increase_inference_to(result, state.infer(succ[end] == Integer{start}, JustifyUsingRUP{}));
                 return result;
             }
