@@ -65,11 +65,11 @@ namespace
                     if (other != var) {
                         increase_inference_to(result, state.infer_not_equal(other, val, JustifyUsingRUP{}));
                         if (result == Inference::Contradiction) return Inference::Contradiction;
-                        if (! being_done[other_idx])
-                            if (auto other_val = state.optional_single_value(other)) {
-                                being_done[other_idx] = true;
-                                to_propagate.emplace_back(other, *other_val);
-                            }
+//                        if (! being_done[other_idx])
+//                            if (auto other_val = state.optional_single_value(other)) {
+//                                being_done[other_idx] = true;
+//                                to_propagate.emplace_back(other, *other_val);
+//                            }
                     }
             }
         }
@@ -83,8 +83,10 @@ namespace
                                const ProofLine2DMap & lines_for_setting_pos,
                                State & state,
                                Proof & proof,
+                               vector<ProofLine>& to_delete,
                                const optional<Integer>& prevent_idx=nullopt,
-                               const optional<Integer>& prevent_value=nullopt) -> void {
+                               const optional<Integer>& prevent_value=nullopt
+                               ) -> void {
 
         auto current_val = state.optional_single_value(succ[start]);
         if (current_val == nullopt)
@@ -117,8 +119,7 @@ namespace
                        << " + ";
         }
 
-        long line_to_delete;
-        proof.emit_proof_line(proof_step.str());
+        to_delete.push_back(proof.emit_proof_line(proof_step.str()));
 
     }
 
@@ -156,7 +157,7 @@ namespace
         if(cmp_not_equal(chain_length[start],n) && next_idx == start) {
             state.infer(FalseLiteral{}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) -> void {
                 proof.emit_proof_comment("Contradicting cycle");
-                output_cycle_to_proof(succ, start, chain_length[start], lines_for_setting_pos, state, proof);
+                output_cycle_to_proof(succ, start, chain_length[start], lines_for_setting_pos, state, proof, to_delete);
             }});
             if(state.maybe_proof())
             return Inference::Contradiction;
@@ -168,7 +169,7 @@ namespace
             if(cmp_less(chain_length[start], succ.size())) {
                 increase_inference_to(result, state.infer(succ[end] != Integer{start}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
                     proof.emit_proof_comment("Preventing cycle");
-                    output_cycle_to_proof(succ, start, chain_length[start], lines_for_setting_pos, state, proof, make_optional(Integer{end}),
+                    output_cycle_to_proof(succ, start, chain_length[start], lines_for_setting_pos, state, proof, to_delete, make_optional(Integer{end}),
                                           make_optional(Integer{start}));
                     proof.infer(state, succ[end] != Integer{start}, JustifyUsingRUP{});
                     proof.emit_proof_comment("Done preventing cycle");
