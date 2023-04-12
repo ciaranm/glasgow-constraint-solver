@@ -29,11 +29,20 @@ using std::vector;
 
 using ProofLine2DMap = map<pair<Integer, Integer>, ProofLine>;
 
+
+// Constraint states for prevent algorithm
+struct Chain {
+    vector<long long> start;
+    vector<long long> end;
+    vector<long long> length;
+};
+
 Circuit::Circuit(vector<IntegerVariableID> v, const bool g) :
     _succ(move(v)),
     _gac_all_different(g)
 {
 }
+
 
 namespace
 {
@@ -106,9 +115,7 @@ namespace
         State & state,
         const IntegerVariableID & trigger_var,
         const long & trigger_idx,
-        const ConstraintStateHandle & chain_start_idx,
-        const ConstraintStateHandle & chain_end_idx,
-        const ConstraintStateHandle & chain_length_idx,
+        const ConstraintStateHandle & chain_handle,
         bool & should_disable) -> Inference
     {
         // propagate all-different first, to avoid infinite loops
@@ -116,9 +123,7 @@ namespace
         auto result = propagate_non_gac_alldifferent(trigger_var, succ, state);
         if (result == Inference::Contradiction) return Inference::Contradiction;
 
-        auto & chain_start = any_cast<vector<long long> &>(state.get_constraint_state(chain_start_idx));
-        auto & chain_end = any_cast<vector<long long> &>(state.get_constraint_state(chain_end_idx));
-        auto & chain_length = any_cast<vector<long long> &>(state.get_constraint_state(chain_length_idx));
+        auto & chain = any_cast<Chain &>(state.get_constraint_state(chain_handle));
         auto n = succ.size();
 
         auto current_idx = trigger_idx;
@@ -126,27 +131,27 @@ namespace
         auto value = state.optional_single_value(var);
         if (value == nullopt)
             return result;
-        auto start = chain_start[current_idx];
+        auto start = chain.start[current_idx];
         auto next_idx = value->raw_value;
-        auto end = chain_end[next_idx];
+        auto end = chain.end[next_idx];
 
-        if (cmp_not_equal(chain_length[start], n) && next_idx == start) {
+        if (cmp_not_equal(chain.length[start], n) && next_idx == start) {
             state.infer(FalseLiteral{}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) -> void {
                 proof.emit_proof_comment("Contradicting cycle");
-                output_cycle_to_proof(succ, start, chain_length[start], lines_for_setting_pos, state, proof, to_delete);
+                output_cycle_to_proof(succ, start, chain.length[start], lines_for_setting_pos, state, proof, to_delete);
             }});
             if (state.maybe_proof())
                 return Inference::Contradiction;
         }
         else {
-            chain_length[start] += chain_length[next_idx];
-            chain_start[end] = start;
-            chain_end[start] = end;
+            chain.length[start] += chain.length[next_idx];
+            chain.start[end] = start;
+            chain.end[start] = end;
 
-            if (cmp_less(chain_length[start], succ.size())) {
+            if (cmp_less(chain.length[start], succ.size())) {
                 increase_inference_to(result, state.infer(succ[end] != Integer{start}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
                     proof.emit_proof_comment("Preventing cycle");
-                    output_cycle_to_proof(succ, start, chain_length[start], lines_for_setting_pos, state, proof, to_delete, make_optional(Integer{end}),
+                    output_cycle_to_proof(succ, start, chain.length[start], lines_for_setting_pos, state, proof, to_delete, make_optional(Integer{end}),
                         make_optional(Integer{start}));
                     proof.infer(state, succ[end] != Integer{start}, JustifyUsingRUP{});
                     proof.emit_proof_comment("Done preventing cycle");
@@ -250,28 +255,25 @@ auto Circuit::install(Propagators & propagators, State & initial_state) && -> vo
     }
 
     // Constraint states for prevent algorithm
-    vector<long long> chain_start;
-    vector<long long> chain_end;
-    vector<long long> chain_length;
+
+    Chain chain;
 
     for (unsigned int idx = 0; idx < _succ.size(); idx++) {
-        chain_start.emplace_back(idx);
-        chain_end.emplace_back(idx);
-        chain_length.emplace_back(1);
+        chain.start.emplace_back(idx);
+        chain.end.emplace_back(idx);
+        chain.length.emplace_back(1);
     }
-    auto chain_start_idx = initial_state.add_constraint_state(chain_start);
-    auto chain_end_idx = initial_state.add_constraint_state(chain_end);
-    auto chain_length_idx = initial_state.add_constraint_state(chain_length);
+
+    auto chain_handle = initial_state.add_constraint_state(chain);
 
     for (unsigned int idx = 0; idx < _succ.size(); idx++) {
         Triggers triggers;
         triggers.on_instantiated = {_succ[idx]};
         propagators.install(
-            [succ = _succ, idx = idx, lines_for_setting_pos = lines_for_setting_pos, start = chain_start_idx,
-                end = chain_end_idx, length = chain_length_idx, want_proof = propagators.want_definitions()](State & state) -> pair<Inference, PropagatorState> {
+            [succ = _succ, idx = idx, lines_for_setting_pos = lines_for_setting_pos, chain_handle = chain_handle, want_proof = propagators.want_definitions()](State & state) -> pair<Inference, PropagatorState> {
                 bool should_disable = false;
                 auto result = propagate_circuit_using_prevent(
-                    succ, lines_for_setting_pos, state, succ[idx], idx, start, end, length, should_disable);
+                    succ, lines_for_setting_pos, state, succ[idx], idx, chain_handle, should_disable);
                 return pair{
                     result,
                     should_disable ? PropagatorState::DisableUntilBacktrack : PropagatorState::Enable};
