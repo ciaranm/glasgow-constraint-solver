@@ -96,6 +96,5 @@ auto main(int, char *[]) -> int
         ProofOptions("tour.opb", "tour.veripb"));
 
     cout << stats;
-
     return EXIT_SUCCESS;
 }

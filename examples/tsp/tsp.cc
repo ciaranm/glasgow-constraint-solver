@@ -89,7 +89,7 @@ auto main(int argc, char * argv[]) -> int
     auto succ = p.create_integer_variable_vector(n, 0_i, Integer(n - 1));
     auto dist = p.create_integer_variable_vector(n, 0_i, 745_i);
 
-    p.post(Circuit{succ, false, false});
+    p.post(Circuit{succ, false});
     for (unsigned i = 0; i < n; ++i)
         p.post(ElementConstantArray{dist[i], succ[i], &distances[i]});
 
@@ -98,6 +98,7 @@ auto main(int argc, char * argv[]) -> int
     for (auto & s : dist)
         dist_sum.emplace_back(1_i, s);
     dist_sum.emplace_back(-1_i, obj);
+
     p.post(LinearEquality{dist_sum, 0_i});
     p.minimise(obj);
 

@@ -14,12 +14,14 @@ using namespace gcs::innards;
 
 using std::cmp_less;
 using std::cmp_not_equal;
+using std::make_optional;
 using std::make_pair;
 using std::map;
 using std::move;
 using std::nullopt;
 using std::optional;
 using std::pair;
+using std::size_t;
 using std::stringstream;
 using std::to_string;
 using std::unique_ptr;
@@ -27,177 +29,157 @@ using std::vector;
 
 using ProofLine2DMap = map<pair<Integer, Integer>, ProofLine>;
 
-Circuit::Circuit(vector<IntegerVariableID> v, const bool p, const bool g) :
+
+// Constraint states for prevent algorithm
+struct Chain {
+    vector<long long> start;
+    vector<long long> end;
+    vector<long long> length;
+};
+
+Circuit::Circuit(vector<IntegerVariableID> v, const bool g) :
     _succ(move(v)),
-    _propagate_using_check_only(p),
     _gac_all_different(g)
 {
 }
 
+
 namespace
 {
-    // Most basic propagator: just check if there are any cycles that tour less than all of the variables
-    auto propagate_circuit_using_check(const vector<IntegerVariableID> & succ,
-        const ProofLine2DMap & lines_for_setting_pos, State & state) -> Inference
+    auto propagate_non_gac_alldifferent(const optional<IntegerVariableID> & trigger_var,
+        const vector<IntegerVariableID> & succ, State & state) -> Inference
     {
-        // propagate all-different first, to avoid infinte loops
         auto result = Inference::NoChange;
-        {
-            vector<bool> being_done(succ.size(), false);
-            vector<pair<IntegerVariableID, Integer>> to_propagate;
-            for (auto [idx, s] : enumerate(succ))
-                if (auto val = state.optional_single_value(s)) {
-                    to_propagate.emplace_back(s, *val);
-                    being_done[idx] = true;
-                }
-            while (! to_propagate.empty()) {
-                auto [var, val] = to_propagate.back();
-                to_propagate.pop_back();
+        if (trigger_var) {
+            auto val = state.optional_single_value(*trigger_var);
+            if (val) {
                 for (auto [other_idx, other] : enumerate(succ))
-                    if (other != var) {
-                        increase_inference_to(result, state.infer_not_equal(other, val, JustifyUsingRUP{}));
+                    if (other != *trigger_var) {
+                        increase_inference_to(result, state.infer_not_equal(other, *val, JustifyUsingRUP{}));
                         if (result == Inference::Contradiction) return Inference::Contradiction;
-                        if (! being_done[other_idx])
-                            if (auto other_val = state.optional_single_value(other)) {
-                                being_done[other_idx] = true;
-                                to_propagate.emplace_back(other, *other_val);
-                            }
                     }
             }
         }
+        return result;
+    }
 
-        vector<bool> checked(succ.size(), false);
-        for (const auto & [uidx, var] : enumerate(succ)) {
-            // Convert the unsigned idx to signed idx to avoid warning when making Integer
-            auto idx = static_cast<long long>(uidx);
+    auto output_cycle_to_proof(const vector<IntegerVariableID> & succ,
+        const long & start,
+        const long & length,
+        const ProofLine2DMap & lines_for_setting_pos,
+        State & state,
+        Proof & proof,
+        vector<ProofLine> & to_delete,
+        const optional<Integer> & prevent_idx = nullopt,
+        const optional<Integer> & prevent_value = nullopt) -> void
+    {
 
-            if (checked[idx]) continue;
+        auto current_val = state.optional_single_value(succ[start]);
+        if (current_val == nullopt)
+            throw UnexpectedException("Circuit propagator tried to output a cycle that doesn't exist");
 
-            checked[idx] = true;
-            auto current_val = state.optional_single_value(var);
-            if (current_val == nullopt) continue;
-            if (current_val->raw_value < 0)
-                throw UnimplementedException("Successor encoding for circuit can't have negative values");
+        if (current_val->raw_value < 0)
+            throw UnimplementedException("Successor encoding for circuit can't have negative values");
 
-            bool finished_cycle = true;
-            unsigned long cycle_length = 1;
+        stringstream proof_step;
 
-            stringstream proof_step;
-            bool need_justification = false;
+        if (state.maybe_proof()) {
+            proof_step << "p ";
+            proof_step << lines_for_setting_pos.at(make_pair(current_val.value(), Integer(start))) + 1 << " ";
+        }
+        long cycle_length = 1;
+        while (cmp_not_equal(current_val->raw_value, start)) {
+            auto last_val = current_val;
+            auto next_var = succ[last_val->raw_value];
+            current_val = state.optional_single_value(next_var);
 
-            if (state.maybe_proof()) {
-                proof_step << "p ";
-                proof_step << lines_for_setting_pos.at(make_pair(current_val.value(), Integer(idx))) + 1 << " ";
-            }
+            if (current_val == nullopt || cycle_length == length - 1) break;
 
-            while (cmp_not_equal(current_val->raw_value, idx)) {
-                auto last_val = current_val;
-                auto next_var = succ[last_val->raw_value];
-                current_val = state.optional_single_value(next_var);
-
-                if (current_val == nullopt) {
-                    finished_cycle = false;
-                    break;
-                }
-
-                checked[current_val->raw_value] = true;
-
-                if (state.maybe_proof()) {
-                    proof_step << lines_for_setting_pos.at(make_pair(current_val.value(), last_val.value())) + 1
-                               << " + ";
-                    need_justification = true;
-                }
-
-                cycle_length++;
-            }
-
-            if (finished_cycle && cycle_length < succ.size()) {
-                if (need_justification)
-                    return state.infer(FalseLiteral{}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) -> void {
-                        to_delete.push_back(proof.emit_proof_line(proof_step.str()));
-                    }});
-                return Inference::Contradiction;
-            }
+            proof_step << lines_for_setting_pos.at(make_pair(current_val.value(), last_val.value())) + 1
+                       << " + ";
+            cycle_length++;
         }
 
-        return result;
+        if (prevent_idx.has_value()) {
+            proof_step << lines_for_setting_pos.at(make_pair(prevent_value.value(), prevent_idx.value())) + 1
+                       << " + ";
+        }
+
+        to_delete.push_back(proof.emit_proof_line(proof_step.str()));
     }
 
     // Slightly more complex propagator: prevent small cycles by finding chains and removing the head from the domain
     // of the tail.
-    auto propagate_circuit_using_prevent(const vector<IntegerVariableID> & succ, ProofLine2DMap lines_for_setting_pos, State & state) -> Inference
+    auto propagate_circuit_using_prevent(const vector<IntegerVariableID> & succ,
+        const ProofLine2DMap & lines_for_setting_pos,
+        State & state,
+        const IntegerVariableID & trigger_var,
+        const long & trigger_idx,
+        const ConstraintStateHandle & chain_handle,
+        bool & should_disable) -> Inference
     {
+        // propagate all-different first, to avoid infinite loops
         // Have to use check first
-        auto result = propagate_circuit_using_check(succ, lines_for_setting_pos, state);
+        auto result = propagate_non_gac_alldifferent(trigger_var, succ, state);
         if (result == Inference::Contradiction) return Inference::Contradiction;
 
-        vector<bool> checked(succ.size(), false);
+        auto & chain = any_cast<Chain &>(state.get_constraint_state(chain_handle));
+        auto n = succ.size();
 
-        // Assume all different has already been propagated (do we know this for sure ???)
-        for (const auto & var : succ) {
-            if (state.has_single_value(var)) continue;
+        auto current_idx = trigger_idx;
+        auto var = trigger_var;
+        auto value = state.optional_single_value(var);
+        if (value == nullopt)
+            return result;
+        auto start = chain.start[current_idx];
+        auto next_idx = value->raw_value;
+        auto end = chain.end[next_idx];
 
-            // In that case the possible start points for chains are the domains of the unfixed variables
-            state.for_each_value_while(var, [&](auto val) {
-                if (checked[val.raw_value]) return true; // Followed this chain already
-                checked[val.raw_value] = true;
-
-                auto current_val = state.optional_single_value(succ[val.raw_value]);
-                auto chain_length = 1;
-                auto next_var = var;
-                if (current_val == nullopt) return true;
-
-                stringstream proof_step;
-                if (state.maybe_proof()) {
-                    proof_step << "p ";
-                    proof_step << lines_for_setting_pos.at(make_pair(current_val.value(), val)) + 1 << " ";
-                }
-
-                optional<Integer> last_val;
-
-                // Follow this chain to the end
-                while (current_val != nullopt) {
-                    last_val = current_val;
-                    next_var = succ[last_val->raw_value];
-                    current_val = state.optional_single_value(next_var);
-                    chain_length++;
-                    if (state.maybe_proof() && current_val != nullopt) {
-                        proof_step << lines_for_setting_pos.at(make_pair(current_val.value(), last_val.value())) + 1
-                                   << " + ";
-                    }
-                }
-
-                // Got the end of the chain, so infer that we cannot complete it to make a cycle, unless it has
-                // visited all the nodes.
-                auto infer_lit = cmp_less(chain_length, succ.size()) ? next_var != val : next_var == val;
-
-                switch (state.infer(infer_lit,
-                    JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) -> void {
-                        proof_step << lines_for_setting_pos.at(make_pair(val, last_val.value())) + 1
-                                   << " + ";
-                        to_delete.push_back(proof.emit_proof_line(proof_step.str()));
-                    }})) {
-                case Inference::Contradiction:
-                    result = Inference::Contradiction;
-                    return false;
-                case Inference::Change:
-                    result = Inference::Change;
-                    return true;
-                case Inference::NoChange:
-                    return true;
-                }
-
-                throw NonExhaustiveSwitch{};
-            });
+        if (cmp_not_equal(chain.length[start], n) && next_idx == start) {
+            state.infer(FalseLiteral{}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) -> void {
+                proof.emit_proof_comment("Contradicting cycle");
+                output_cycle_to_proof(succ, start, chain.length[start], lines_for_setting_pos, state, proof, to_delete);
+            }});
+            if (state.maybe_proof())
+                return Inference::Contradiction;
         }
+        else {
+            chain.length[start] += chain.length[next_idx];
+            chain.start[end] = start;
+            chain.end[start] = end;
 
+            if (cmp_less(chain.length[start], succ.size())) {
+                increase_inference_to(result, state.infer(succ[end] != Integer{start}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
+                    proof.emit_proof_comment("Preventing cycle");
+                    output_cycle_to_proof(succ, start, chain.length[start], lines_for_setting_pos, state, proof, to_delete, make_optional(Integer{end}),
+                        make_optional(Integer{start}));
+                    proof.infer(state, succ[end] != Integer{start}, JustifyUsingRUP{});
+                    proof.emit_proof_comment("Done preventing cycle");
+                }}));
+            }
+            else {
+                state.infer(TrueLiteral{}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) -> void {
+                    proof.emit_proof_comment("Completing cycle");
+                }});
+                increase_inference_to(result, state.infer(succ[end] == Integer{start}, JustifyUsingRUP{}));
+                return result;
+            }
+
+            if (result == Inference::Contradiction) {
+                return Inference::Contradiction;
+            }
+
+            if (state.optional_single_value(succ[end])) {
+                should_disable = true;
+            }
+        }
         return result;
     }
 }
 
 auto Circuit::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<Circuit>(_succ, _propagate_using_check_only, _gac_all_different);
+    return make_unique<Circuit>(_succ, _gac_all_different);
 }
 
 auto Circuit::install(Propagators & propagators, State & initial_state) && -> void
@@ -231,6 +213,7 @@ auto Circuit::install(Propagators & propagators, State & initial_state) && -> vo
 
     ProofLine2DMap lines_for_setting_pos{};
     if (propagators.want_definitions()) {
+
         // Define encoding to eliminate sub-cycles
         vector<PseudoBooleanTerm> position;
         auto n_minus_1 = ConstantIntegerVariableID{Integer{static_cast<long long>(_succ.size() - 1)}};
@@ -271,19 +254,33 @@ auto Circuit::install(Propagators & propagators, State & initial_state) && -> vo
         }
     }
 
-    // For basic "check" algorithm, only trigger when variable gains a unique value
-    // Same applies for prevent, I think
-    Triggers triggers;
-    triggers.on_instantiated = {_succ.begin(), _succ.end()};
+    // Constraint states for prevent algorithm
 
-    propagators.install(
-        [succ = _succ, use_check = _propagate_using_check_only, lines_for_setting_pos = lines_for_setting_pos](State & state) -> pair<Inference, PropagatorState> {
-            return pair{
-                use_check ? propagate_circuit_using_check(succ, lines_for_setting_pos, state) : propagate_circuit_using_prevent(succ, lines_for_setting_pos, state),
-                PropagatorState::Enable};
-        },
-        triggers,
-        "circuit");
+    Chain chain;
+
+    for (unsigned int idx = 0; idx < _succ.size(); idx++) {
+        chain.start.emplace_back(idx);
+        chain.end.emplace_back(idx);
+        chain.length.emplace_back(1);
+    }
+
+    auto chain_handle = initial_state.add_constraint_state(chain);
+
+    for (unsigned int idx = 0; idx < _succ.size(); idx++) {
+        Triggers triggers;
+        triggers.on_instantiated = {_succ[idx]};
+        propagators.install(
+            [succ = _succ, idx = idx, lines_for_setting_pos = lines_for_setting_pos, chain_handle = chain_handle, want_proof = propagators.want_definitions()](State & state) -> pair<Inference, PropagatorState> {
+                bool should_disable = false;
+                auto result = propagate_circuit_using_prevent(
+                    succ, lines_for_setting_pos, state, succ[idx], idx, chain_handle, should_disable);
+                return pair{
+                    result,
+                    should_disable ? PropagatorState::DisableUntilBacktrack : PropagatorState::Enable};
+            },
+            triggers,
+            "circuit");
+    }
 
     // Infer succ[i] != i at top of search
     if (_succ.size() > 1) {
