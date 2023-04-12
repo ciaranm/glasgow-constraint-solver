@@ -98,6 +98,7 @@ auto main(int argc, char * argv[]) -> int
     for (auto & s : dist)
         dist_sum.emplace_back(1_i, s);
     dist_sum.emplace_back(-1_i, obj);
+
     p.post(LinearEquality{dist_sum, 0_i});
     p.minimise(obj);
 
