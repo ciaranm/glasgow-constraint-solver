@@ -136,7 +136,7 @@ namespace
         auto end = chain.end[next_idx];
 
         if (cmp_not_equal(chain.length[start], n) && next_idx == start) {
-            state.infer(FalseLiteral{}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) -> void {
+            state.infer_false(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) -> void {
                 proof.emit_proof_comment("Contradicting cycle");
                 output_cycle_to_proof(succ, start, chain.length[start], lines_for_setting_pos, state, proof, to_delete);
             }});
@@ -158,7 +158,7 @@ namespace
                 }}));
             }
             else {
-                state.infer(TrueLiteral{}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) -> void {
+                state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
                     proof.emit_proof_comment("Completing cycle");
                 }});
                 increase_inference_to(result, state.infer(succ[end] == Integer{start}, JustifyUsingRUP{}));

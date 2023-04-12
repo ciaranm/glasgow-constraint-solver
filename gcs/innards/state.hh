@@ -201,6 +201,11 @@ namespace gcs::innards
         auto infer_true(const Justification & why) -> void;
 
         /**
+         * Infer a contradiction, but still emit a justification if necessary.
+         */
+        auto infer_false(const Justification & why) -> void;
+
+        /**
          * Infer that a given IntegerVariableID or more specific type must be
          * equal to a particular value. Performance overload of State::infer().
          */

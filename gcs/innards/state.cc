@@ -688,6 +688,12 @@ auto State::infer_true(const Justification & just) -> void
         _imp->maybe_proof->infer(*this, TrueLiteral{}, just);
 }
 
+auto State::infer_false(const Justification & just) -> void
+{
+    if (_imp->maybe_proof)
+        _imp->maybe_proof->infer(*this, FalseLiteral{}, just);
+}
+
 template <IntegerVariableIDLike VarType_>
 auto State::infer_not_equal(const VarType_ & var, Integer value, const Justification & just) -> Inference
 {
