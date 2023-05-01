@@ -26,8 +26,8 @@ auto main(int, char *[]) -> int
     auto x2 = p.create_integer_variable(1_i, 3_i, "x2");
     auto x3 = p.create_integer_variable(1_i, 3_i, "x3");
     auto tuples = SmartTuples{
-            {LessThanVar{x1, x2}, InSet{x1, {1_i, 2_i}}, EqualsValue{x3, 3_i}},
-             {EqualsVar{x1, x2}, NotEqualsValue{x1, 1_i}, GreaterThanEqualVar{x2, x3}
+            {LessThanVar{x1, x2 + 3_i}, InSet{x1, {1_i, 2_i}}, EqualsValue{x3, 3_i}},
+             {EqualsVar{x1, x2}, NotEqualsValue{x1, 1_i}, GreaterThanEqualVar{x2 + 2_i, x3}
              }};
     p.post(SmartTable{{x1, x2, x3}, tuples});
 

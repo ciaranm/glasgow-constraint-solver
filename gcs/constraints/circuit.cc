@@ -29,9 +29,9 @@ using std::vector;
 
 using ProofLine2DMap = map<pair<Integer, Integer>, ProofLine>;
 
-
 // Constraint states for prevent algorithm
-struct Chain {
+struct Chain
+{
     vector<long long> start;
     vector<long long> end;
     vector<long long> length;
@@ -42,7 +42,6 @@ Circuit::Circuit(vector<IntegerVariableID> v, const bool g) :
     _gac_all_different(g)
 {
 }
-
 
 namespace
 {
