@@ -649,8 +649,11 @@ auto Proof::pseudoboolean_ge(const WeightedPseudoBooleanTerms & lits, Integer va
                         [&](const ConstantIntegerVariableID & cvar) {
                             modified_val -= (multiplier * w * cvar.const_value);
                         },
-                        [&](const ViewOfIntegerVariableID &) {
-                            throw UnimplementedException{};
+                        [&](const ViewOfIntegerVariableID & vvar) {
+                            auto & [_, bit_vars] = _imp->integer_variable_bits.at(vvar.actual_variable);
+                            for (auto & [bit_value, bit_name] : bit_vars)
+                                expr.weighted_terms.emplace_back((vvar.negate_first ? -1_i : 1_i)*multiplier * w * bit_value, bit_name);
+                            modified_val -= (multiplier * w * vvar.then_add);
                         }}
                         .visit(var);
                 }}

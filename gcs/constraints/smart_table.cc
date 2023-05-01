@@ -33,7 +33,7 @@ using std::unique_ptr;
 using std::unordered_map;
 using std::vector;
 using std::visit;
-
+using std::any_of;
 #include <iostream>
 using std::cout;
 using std::endl;
@@ -53,6 +53,40 @@ namespace
     using BinaryEntryData = tuple<IntegerVariableID, IntegerVariableID, ConstraintType>;
     using TreeEdges = vector<vector<SmartEntry>>;
     using Forest = vector<TreeEdges>;
+
+    // Annoying workaround access functions to make sure this all works with views
+    auto get_for_actual_var(VariableDomainMap& vdom, const IntegerVariableID& v) -> vector<Integer>& {
+        return overloaded{
+            [&](ConstantIntegerVariableID) -> vector<Integer>& {
+                throw UnimplementedException{};
+            },[&](ViewOfIntegerVariableID v) -> vector<Integer>& {
+                auto& vec = vdom.at(v.actual_variable);
+                for(int i = 0; i < vec.size(); i++) {
+                    vec[i] = (v.negate_first ? -1_i : 1_i)*vec[i] + v.then_add;
+                }
+                return vec;
+            },[&](SimpleIntegerVariableID s) -> vector<Integer>& {
+                return vdom.at(s);
+            }
+        }.visit(v);
+    }
+
+    auto set_for_actual_var(VariableDomainMap& vdom, const IntegerVariableID& v, vector<Integer>& vec) ->  void {
+        overloaded{
+                [&](ConstantIntegerVariableID) -> void {
+                    throw UnimplementedException{};
+                },[&](ViewOfIntegerVariableID v) -> void {
+                    auto mod_vec = vec;
+                    for(int i = 0; i < vec.size(); i++) {
+                        mod_vec[i] = (v.negate_first ? -1_i : 1_i)*(vec[i] - v.then_add);
+                    }
+                    vdom.at(v.actual_variable) = move(mod_vec);
+
+                },[&](SimpleIntegerVariableID s) -> void {
+                    vdom.at(s) = move(vec);
+                }
+        }.visit(v);
+    }
 
     auto log_filtering_inference(const ProofFlag & tuple_selector, const Literal & lit, State & state)
     {
@@ -79,8 +113,8 @@ namespace
             [&](const BinaryEntry & binary_entry) {
                 vector<Integer> new_dom_1{};
                 vector<Integer> new_dom_2{};
-                auto & dom_1 = supported_by_tree[binary_entry.var_1];
-                auto & dom_2 = supported_by_tree[binary_entry.var_2];
+                auto & dom_1 = get_for_actual_var(supported_by_tree, binary_entry.var_1);
+                auto & dom_2 = get_for_actual_var(supported_by_tree, binary_entry.var_2);
                 sort(dom_1.begin(), dom_1.end());
                 sort(dom_2.begin(), dom_2.end());
 
@@ -187,13 +221,12 @@ namespace
                 default:
                     throw UnexpectedException{"Unexpected SmartEntry type encountered."};
                 }
-
-                supported_by_tree[binary_entry.var_1] = move(new_dom_1);
-                supported_by_tree[binary_entry.var_2] = move(new_dom_2);
+                set_for_actual_var(supported_by_tree, binary_entry.var_1, new_dom_1);
+                set_for_actual_var(supported_by_tree, binary_entry.var_2, new_dom_2);
             },
             [&](const UnarySetEntry & unary_set_entry) {
                 vector<Integer> new_dom{};
-                auto dom = supported_by_tree[unary_set_entry.var];
+                auto dom = get_for_actual_var(supported_by_tree, unary_set_entry.var);
                 auto set_values = unary_set_entry.values;
                 sort(dom.begin(), dom.end());
                 sort(set_values.begin(), set_values.end());
@@ -213,11 +246,11 @@ namespace
                     throw UnexpectedException{"Unexpected SmartEntry type encountered."};
                 }
 
-                supported_by_tree[unary_set_entry.var] = move(new_dom);
+                set_for_actual_var(supported_by_tree, unary_set_entry.var, new_dom);
             },
             [&](const UnaryValueEntry & unary_val_entry) {
                 vector<Integer> new_dom{};
-                auto dom = supported_by_tree[unary_val_entry.var];
+                auto dom = get_for_actual_var(supported_by_tree, unary_val_entry.var);
                 auto value = unary_val_entry.value;
                 sort(dom.begin(), dom.end());
 
@@ -250,7 +283,7 @@ namespace
                     throw UnexpectedException{"Unexpected SmartEntry type encountered."};
                 }
 
-                supported_by_tree[unary_val_entry.var] = move(new_dom);
+                set_for_actual_var(supported_by_tree, unary_val_entry.var, new_dom);
             }}
             .visit(edge);
     }
@@ -265,19 +298,18 @@ namespace
                 bool domain_became_empty = false;
                 overloaded{
                     [&](const BinaryEntry & binary_entry) {
-                        if (supported_by_tree[binary_entry.var_1].empty()) domain_became_empty = true;
-                        if (supported_by_tree[binary_entry.var_2].empty()) domain_became_empty = true;
+                        if (get_for_actual_var(supported_by_tree,binary_entry.var_1).empty()) domain_became_empty = true;
+                        if (get_for_actual_var(supported_by_tree,binary_entry.var_2).empty()) domain_became_empty = true;
                     },
                     [&](const UnarySetEntry & unary_set_entry) {
-                        if (supported_by_tree[unary_set_entry.var].empty()) domain_became_empty = true;
+                        if (get_for_actual_var(supported_by_tree,unary_set_entry.var).empty()) domain_became_empty = true;
                     },
                     [&](const UnaryValueEntry & unary_val_entry) {
-                        if (supported_by_tree[unary_val_entry.var].empty()) domain_became_empty = true;
+                        if (get_for_actual_var(supported_by_tree,unary_val_entry.var).empty()) domain_became_empty = true;
                     }}
                     .visit(edge);
 
                 if (domain_became_empty) {
-
                     return false;
                 }
             }
@@ -303,17 +335,18 @@ namespace
             for (const auto & edge : tree[l]) {
                 filter_edge(edge, supported_by_tree, tuple_selector, state);
 
+                int a = 0;
                 // Collect supported vals for this tree
                 overloaded{
                     [&](const BinaryEntry & binary_entry) {
-                        remove_supported(unsupported, binary_entry.var_1, supported_by_tree[binary_entry.var_1]);
-                        remove_supported(unsupported, binary_entry.var_2, supported_by_tree[binary_entry.var_2]);
+                        remove_supported(unsupported, binary_entry.var_1, get_for_actual_var(supported_by_tree, binary_entry.var_1));
+                        remove_supported(unsupported, binary_entry.var_2, get_for_actual_var(supported_by_tree, binary_entry.var_2));
                     },
                     [&](const UnarySetEntry & unary_set_entry) {
-                        remove_supported(unsupported, unary_set_entry.var, supported_by_tree[unary_set_entry.var]);
+                        remove_supported(unsupported, unary_set_entry.var, get_for_actual_var(supported_by_tree, unary_set_entry.var));
                     },
                     [&](const UnaryValueEntry & unary_val_entry) {
-                        remove_supported(unsupported, unary_val_entry.var, supported_by_tree[unary_val_entry.var]);
+                        remove_supported(unsupported, unary_val_entry.var, get_for_actual_var(supported_by_tree, unary_val_entry.var));
                     }}
                     .visit(edge);
             }
