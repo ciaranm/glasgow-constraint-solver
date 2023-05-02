@@ -34,9 +34,7 @@ using std::unordered_map;
 using std::vector;
 using std::visit;
 using std::any_of;
-#include <iostream>
-using std::cout;
-using std::endl;
+
 using namespace gcs;
 using namespace gcs::innards;
 
@@ -55,18 +53,19 @@ namespace
     using Forest = vector<TreeEdges>;
 
     // Annoying workaround access functions to make sure this all works with views
-    auto get_for_actual_var(VariableDomainMap& vdom, const IntegerVariableID& v) -> vector<Integer>& {
+    auto get_for_actual_var(VariableDomainMap& vdom, const IntegerVariableID& v) -> vector<Integer> {
         return overloaded{
-            [&](ConstantIntegerVariableID) -> vector<Integer>& {
+            [&](ConstantIntegerVariableID) -> vector<Integer> {
                 throw UnimplementedException{};
-            },[&](ViewOfIntegerVariableID v) -> vector<Integer>& {
-                auto& vec = vdom.at(v.actual_variable);
+            },[&](ViewOfIntegerVariableID v) -> vector<Integer> {
+                auto vec = vector<Integer>(vdom[v.actual_variable].size(), 0_i);
                 for(int i = 0; i < vec.size(); i++) {
-                    vec[i] = (v.negate_first ? -1_i : 1_i)*vec[i] + v.then_add;
+                    vec[i] = (v.negate_first ? -1_i : 1_i)*vdom[v.actual_variable][i] + v.then_add;
                 }
                 return vec;
-            },[&](SimpleIntegerVariableID s) -> vector<Integer>& {
-                return vdom.at(s);
+            },[&](SimpleIntegerVariableID s) -> vector<Integer> {
+                vector<Integer> vec = vdom.at(s);
+                return vec;
             }
         }.visit(v);
     }
@@ -76,7 +75,7 @@ namespace
                 [&](ConstantIntegerVariableID) -> void {
                     throw UnimplementedException{};
                 },[&](ViewOfIntegerVariableID v) -> void {
-                    auto mod_vec = vec;
+                    auto mod_vec = vector<Integer>(vdom[v.actual_variable].size(), 0_i);
                     for(int i = 0; i < vec.size(); i++) {
                         mod_vec[i] = (v.negate_first ? -1_i : 1_i)*(vec[i] - v.then_add);
                     }
@@ -113,8 +112,8 @@ namespace
             [&](const BinaryEntry & binary_entry) {
                 vector<Integer> new_dom_1{};
                 vector<Integer> new_dom_2{};
-                auto & dom_1 = get_for_actual_var(supported_by_tree, binary_entry.var_1);
-                auto & dom_2 = get_for_actual_var(supported_by_tree, binary_entry.var_2);
+                auto dom_1 = get_for_actual_var(supported_by_tree, binary_entry.var_1);
+                auto dom_2 = get_for_actual_var(supported_by_tree, binary_entry.var_2);
                 sort(dom_1.begin(), dom_1.end());
                 sort(dom_2.begin(), dom_2.end());
 
@@ -339,14 +338,18 @@ namespace
                 // Collect supported vals for this tree
                 overloaded{
                     [&](const BinaryEntry & binary_entry) {
-                        remove_supported(unsupported, binary_entry.var_1, get_for_actual_var(supported_by_tree, binary_entry.var_1));
-                        remove_supported(unsupported, binary_entry.var_2, get_for_actual_var(supported_by_tree, binary_entry.var_2));
+                        auto supported_var_1 = get_for_actual_var(supported_by_tree, binary_entry.var_1);
+                        auto supported_var_2 = get_for_actual_var(supported_by_tree, binary_entry.var_2);
+                        remove_supported(unsupported, binary_entry.var_1, supported_var_1);
+                        remove_supported(unsupported, binary_entry.var_2, supported_var_2);
                     },
                     [&](const UnarySetEntry & unary_set_entry) {
-                        remove_supported(unsupported, unary_set_entry.var, get_for_actual_var(supported_by_tree, unary_set_entry.var));
+                        auto supported = get_for_actual_var(supported_by_tree, unary_set_entry.var);
+                        remove_supported(unsupported, unary_set_entry.var, supported);
                     },
                     [&](const UnaryValueEntry & unary_val_entry) {
-                        remove_supported(unsupported, unary_val_entry.var, get_for_actual_var(supported_by_tree, unary_val_entry.var));
+                        auto supported = get_for_actual_var(supported_by_tree, unary_val_entry.var);
+                        remove_supported(unsupported, unary_val_entry.var, supported);
                     }}
                     .visit(edge);
             }
@@ -477,25 +480,37 @@ namespace
                       : Inference::NoChange;
     }
 
+    auto deview(IntegerVariableID v) -> IntegerVariableID {
+        return overloaded{
+                [&](SimpleIntegerVariableID& s) -> IntegerVariableID {
+                    return s;
+                }, [&](ViewOfIntegerVariableID& v) -> IntegerVariableID {
+                    return v.actual_variable;
+                }, [&](ConstantIntegerVariableID& c) -> IntegerVariableID {
+                    return c;
+                }
+        }.visit(v);
+    }
+
     auto build_tree(const IntegerVariableID & root, int current_level, vector<vector<SmartEntry>> & entry_tree,
         unordered_map<IntegerVariableID, bool> & node_visited,
         const unordered_map<IntegerVariableID, vector<SmartEntry>> & adjacent_edges) -> void
     {
-        node_visited[root] = true;
+        node_visited[deview(root)] = true;
 
         // Simple recursive traverse
         // Note: Perhaps we should build the tree in a "smarter" form e.g. make sure var_1 is always the node
         //       closer to the root.
-        for (const auto & edge : adjacent_edges.at(root)) {
+        for (const auto & edge : adjacent_edges.at(deview(root))) {
             overloaded{
                 [&](BinaryEntry binary_entry) {
-                    if (! node_visited[binary_entry.var_1]) {
+                    if (! node_visited[deview(binary_entry.var_1)]) {
                         entry_tree[current_level].emplace_back(edge);
                         entry_tree.emplace_back();
 
                         build_tree(binary_entry.var_1, current_level + 1, entry_tree, node_visited, adjacent_edges);
                     }
-                    else if (! node_visited[binary_entry.var_2]) {
+                    else if (! node_visited[deview(binary_entry.var_2)]) {
                         entry_tree[current_level].emplace_back(edge);
                         entry_tree.emplace_back();
                         build_tree(binary_entry.var_2, current_level + 1, entry_tree, node_visited, adjacent_edges);
@@ -511,6 +526,8 @@ namespace
         }
     }
 
+
+
     [[nodiscard]] auto build_forests(SmartTuples & tuples) -> vector<Forest>
     {
         vector<Forest> forests{};
@@ -522,18 +539,18 @@ namespace
             for (const auto & entry : current_tuple) {
                 overloaded{
                     [&](const BinaryEntry & binary_entry) {
-                        node_visited[binary_entry.var_1] = false;
-                        node_visited[binary_entry.var_2] = false;
-                        adjacent_edges[binary_entry.var_1].emplace_back(binary_entry);
-                        adjacent_edges[binary_entry.var_2].emplace_back(binary_entry);
+                        node_visited[deview(binary_entry.var_1)] = false;
+                        node_visited[deview(binary_entry.var_2)] = false;
+                        adjacent_edges[deview(binary_entry.var_1)].emplace_back(binary_entry);
+                        adjacent_edges[deview(binary_entry.var_2)].emplace_back(binary_entry);
                     },
                     [&](const UnaryValueEntry & unary_val_entry) {
-                        node_visited[unary_val_entry.var] = false;
-                        adjacent_edges[unary_val_entry.var].emplace_back(unary_val_entry);
+                        node_visited[deview(unary_val_entry.var)] = false;
+                        adjacent_edges[deview(unary_val_entry.var)].emplace_back(unary_val_entry);
                     },
                     [&](const UnarySetEntry & unary_set_entry) {
-                        node_visited[unary_set_entry.var] = false;
-                        adjacent_edges[unary_set_entry.var].emplace_back(unary_set_entry);
+                        node_visited[deview(unary_set_entry.var)] = false;
+                        adjacent_edges[deview(unary_set_entry.var)].emplace_back(unary_set_entry);
                     }}
                     .visit(entry);
             }
