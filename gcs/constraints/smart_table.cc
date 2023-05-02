@@ -87,6 +87,18 @@ namespace
         }.visit(v);
     }
 
+    auto deview(IntegerVariableID v) -> IntegerVariableID {
+        return overloaded{
+                [&](SimpleIntegerVariableID& s) -> IntegerVariableID {
+                    return s;
+                }, [&](ViewOfIntegerVariableID& v) -> IntegerVariableID {
+                    return v.actual_variable;
+                }, [&](ConstantIntegerVariableID& c) -> IntegerVariableID {
+                    return c;
+                }
+        }.visit(v);
+    }
+
     auto log_filtering_inference(const ProofFlag & tuple_selector, const Literal & lit, State & state)
     {
         auto inference = state.infer(TrueLiteral{}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
@@ -125,9 +137,9 @@ namespace
                         [&](Integer val) { return val < dom_2[dom_2.size() - 1]; });
                     if (state.maybe_proof()) {
                         if (new_dom_2.size() < dom_2.size())
-                            log_filtering_inference(tuple_selector, binary_entry.var_2 >= (dom_1[0] + 1_i), state);
+                            log_filtering_inference(tuple_selector, deview(binary_entry.var_2) >= (dom_1[0] + 1_i), state);
                         if (new_dom_1.size() < dom_1.size())
-                            log_filtering_inference(tuple_selector, binary_entry.var_1 < dom_2[dom_2.size() - 1], state);
+                            log_filtering_inference(tuple_selector, deview(binary_entry.var_1) < dom_2[dom_2.size() - 1], state);
                     }
                     break;
                 case ConstraintType::LESS_THAN_EQUAL:
@@ -137,9 +149,9 @@ namespace
                         [&](Integer val) { return val <= dom_2[dom_2.size() - 1]; });
                     if (state.maybe_proof()) {
                         if (new_dom_2.size() < dom_2.size())
-                            log_filtering_inference(tuple_selector, binary_entry.var_2 >= (dom_1[0]), state);
+                            log_filtering_inference(tuple_selector, deview(binary_entry.var_2) >= (dom_1[0]), state);
                         if (new_dom_1.size() < dom_1.size())
-                            log_filtering_inference(tuple_selector, binary_entry.var_1 < (dom_2[dom_2.size() - 1] + 1_i), state);
+                            log_filtering_inference(tuple_selector, deview(binary_entry.var_1) < (dom_2[dom_2.size() - 1] + 1_i), state);
                     }
                     break;
                 case ConstraintType::EQUAL:
@@ -155,7 +167,7 @@ namespace
                             set_difference(dom_1.begin(), dom_1.end(), dom_2.begin(), dom_2.end(),
                                 back_inserter(discarded_dom1));
                             for (const auto & val : discarded_dom1) {
-                                log_filtering_inference(tuple_selector, binary_entry.var_1 != val, state);
+                                log_filtering_inference(tuple_selector, deview(binary_entry.var_1) != val, state);
                             }
                         }
 
@@ -164,7 +176,7 @@ namespace
                             set_difference(dom_2.begin(), dom_2.end(), dom_1.begin(), dom_1.end(),
                                 back_inserter(discarded_dom2));
                             for (const auto & val : discarded_dom2) {
-                                log_filtering_inference(tuple_selector, binary_entry.var_2 != val, state);
+                                log_filtering_inference(tuple_selector, deview(binary_entry.var_2) != val, state);
                             }
                         }
                     }
@@ -176,7 +188,7 @@ namespace
                             dom_1.begin(), dom_1.end(),
                             back_inserter(new_dom_2));
                         if (state.maybe_proof() && new_dom_2.size() > dom_2.size()) {
-                            log_filtering_inference(tuple_selector, binary_entry.var_2 != (dom_1[0]), state);
+                            log_filtering_inference(tuple_selector, deview(binary_entry.var_2) != (dom_1[0]), state);
                         }
                     }
                     else if (dom_2.size() == 1) {
@@ -185,7 +197,7 @@ namespace
                             dom_2.begin(), dom_2.end(),
                             back_inserter(new_dom_1));
                         if (state.maybe_proof() && new_dom_1.size() > dom_1.size()) {
-                            log_filtering_inference(tuple_selector, binary_entry.var_1 != (dom_2[0]), state);
+                            log_filtering_inference(tuple_selector, deview(binary_entry.var_1) != (dom_2[0]), state);
                         }
                     }
                     else {
@@ -200,9 +212,9 @@ namespace
                         [&](Integer val) { return val < dom_1[dom_1.size() - 1]; });
                     if (state.maybe_proof()) {
                         if (new_dom_1.size() < dom_1.size())
-                            log_filtering_inference(tuple_selector, binary_entry.var_1 >= (dom_2[0] + 1_i), state);
+                            log_filtering_inference(tuple_selector, deview(binary_entry.var_1) >= (dom_2[0] + 1_i), state);
                         if (new_dom_2.size() < dom_2.size())
-                            log_filtering_inference(tuple_selector, binary_entry.var_2 < dom_1[dom_1.size() - 1], state);
+                            log_filtering_inference(tuple_selector, deview(binary_entry.var_2) < dom_1[dom_1.size() - 1], state);
                     }
                     break;
                 case ConstraintType::GREATER_THAN_EQUAL:
@@ -212,9 +224,9 @@ namespace
                         [&](Integer val) { return val <= dom_1[dom_1.size() - 1]; });
                     if (state.maybe_proof()) {
                         if (new_dom_1.size() < dom_1.size())
-                            log_filtering_inference(tuple_selector, binary_entry.var_1 >= (dom_2[0]), state);
+                            log_filtering_inference(tuple_selector, deview(binary_entry.var_1) >= (dom_2[0]), state);
                         if (new_dom_2.size() < dom_2.size())
-                            log_filtering_inference(tuple_selector, binary_entry.var_2 < (dom_1[dom_1.size() - 1] + 1_i), state);
+                            log_filtering_inference(tuple_selector, deview(binary_entry.var_2) < (dom_1[dom_1.size() - 1] + 1_i), state);
                     }
                     break;
                 default:
@@ -334,7 +346,6 @@ namespace
             for (const auto & edge : tree[l]) {
                 filter_edge(edge, supported_by_tree, tuple_selector, state);
 
-                int a = 0;
                 // Collect supported vals for this tree
                 overloaded{
                     [&](const BinaryEntry & binary_entry) {
@@ -478,18 +489,6 @@ namespace
             ? Inference::Contradiction
             : changed ? Inference::Change
                       : Inference::NoChange;
-    }
-
-    auto deview(IntegerVariableID v) -> IntegerVariableID {
-        return overloaded{
-                [&](SimpleIntegerVariableID& s) -> IntegerVariableID {
-                    return s;
-                }, [&](ViewOfIntegerVariableID& v) -> IntegerVariableID {
-                    return v.actual_variable;
-                }, [&](ConstantIntegerVariableID& c) -> IntegerVariableID {
-                    return c;
-                }
-        }.visit(v);
     }
 
     auto build_tree(const IntegerVariableID & root, int current_level, vector<vector<SmartEntry>> & entry_tree,
