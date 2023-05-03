@@ -18,9 +18,9 @@ using std::make_optional;
 
 auto main(int argc, char *argv[]) -> int {
     Problem p;
-    auto x = p.create_integer_variable(-2_i, 8_i);
-    auto y = p.create_integer_variable(-2_i, 4_i);
-    auto tuples = SmartTuples{{LessThanVar{y, x - 3_i}}};
+    auto x = p.create_integer_variable(1_i, 7_i);
+    auto y = p.create_integer_variable(6_i, 8_i);
+    auto tuples = SmartTuples{{GreaterThanVar{x, y - 1_i}}};
     p.post(SmartTable{{x, y}, tuples});
     auto stats = solve_with(p,
                             SolveCallbacks{

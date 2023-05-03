@@ -124,6 +124,7 @@ namespace
             [&](const BinaryEntry & binary_entry) {
                 vector<Integer> new_dom_1{};
                 vector<Integer> new_dom_2{};
+
                 auto dom_1 = get_for_actual_var(supported_by_tree, binary_entry.var_1);
                 auto dom_2 = get_for_actual_var(supported_by_tree, binary_entry.var_2);
                 sort(dom_1.begin(), dom_1.end());
@@ -664,6 +665,17 @@ namespace
     }
 }
 
+auto provable_entry_member(IntegerVariableID v) -> bool {
+    return overloaded{
+        [&](ViewOfIntegerVariableID& v) -> bool {
+            return !v.negate_first && v.then_add >= 0_i;
+        },[&](ConstantIntegerVariableID) -> bool {
+            return false;
+        }, [&](SimpleIntegerVariableID) -> bool {
+            return true;
+        }
+    }.visit(v);
+}
 auto SmartTable::clone() const -> unique_ptr<Constraint>
 {
     return make_unique<SmartTable>(_vars, _tuples);
@@ -700,6 +712,9 @@ auto SmartTable::install(Propagators & propagators, State & initial_state) && ->
             for (const auto & entry : _tuples[tuple_idx]) {
                 overloaded{
                     [&](BinaryEntry binary_entry) {
+                        if(!provable_entry_member(binary_entry.var_1) || !provable_entry_member(binary_entry.var_2)) {
+                            throw UnimplementedException{"Can only proof log smart table binary entries of form <var> <op> <var> + b where b >= 0."};
+                        }
                         auto binary_entry_data = make_tuple(binary_entry.var_1, binary_entry.var_2, binary_entry.constraint_type);
                         if (! smart_entry_flags.contains(binary_entry_data))
                             smart_entry_flags[binary_entry_data] = make_binary_entry_flag(initial_state, propagators, binary_entry.var_1, binary_entry.var_2, binary_entry.constraint_type);
