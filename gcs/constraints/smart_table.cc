@@ -14,6 +14,7 @@
 #include <gcs/exception.hh>
 #include <util/overloaded.hh>
 
+using std::any_of;
 using std::copy_if;
 using std::count;
 using std::make_tuple;
@@ -33,7 +34,6 @@ using std::unique_ptr;
 using std::unordered_map;
 using std::vector;
 using std::visit;
-using std::any_of;
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -53,50 +53,58 @@ namespace
     using Forest = vector<TreeEdges>;
 
     // Annoying workaround access functions to make sure this all works with views
-    auto get_for_actual_var(VariableDomainMap& vdom, const IntegerVariableID& v) -> vector<Integer> {
+    auto get_for_actual_var(VariableDomainMap & vdom, const IntegerVariableID & v) -> vector<Integer>
+    {
         return overloaded{
             [&](ConstantIntegerVariableID) -> vector<Integer> {
                 throw UnimplementedException{};
-            },[&](ViewOfIntegerVariableID v) -> vector<Integer> {
+            },
+            [&](ViewOfIntegerVariableID v) -> vector<Integer> {
                 auto vec = vector<Integer>(vdom[v.actual_variable].size(), 0_i);
-                for(int i = 0; i < vec.size(); i++) {
-                    vec[i] = (v.negate_first ? -1_i : 1_i)*vdom[v.actual_variable][i] + v.then_add;
+                for (int i = 0; i < vec.size(); i++) {
+                    vec[i] = (v.negate_first ? -1_i : 1_i) * vdom[v.actual_variable][i] + v.then_add;
                 }
                 return vec;
-            },[&](SimpleIntegerVariableID s) -> vector<Integer> {
+            },
+            [&](SimpleIntegerVariableID s) -> vector<Integer> {
                 vector<Integer> vec = vdom.at(s);
                 return vec;
-            }
-        }.visit(v);
+            }}
+            .visit(v);
     }
 
-    auto set_for_actual_var(VariableDomainMap& vdom, const IntegerVariableID& v, vector<Integer>& vec) ->  void {
+    auto set_for_actual_var(VariableDomainMap & vdom, const IntegerVariableID & v, vector<Integer> & vec) -> void
+    {
         overloaded{
-                [&](ConstantIntegerVariableID) -> void {
-                    throw UnimplementedException{};
-                },[&](ViewOfIntegerVariableID v) -> void {
-                    auto mod_vec = vector<Integer>(vdom[v.actual_variable].size(), 0_i);
-                    for(int i = 0; i < vec.size(); i++) {
-                        mod_vec[i] = (v.negate_first ? -1_i : 1_i)*(vec[i] - v.then_add);
-                    }
-                    vdom.at(v.actual_variable) = move(mod_vec);
-
-                },[&](SimpleIntegerVariableID s) -> void {
-                    vdom.at(s) = move(vec);
+            [&](ConstantIntegerVariableID) -> void {
+                throw UnimplementedException{};
+            },
+            [&](ViewOfIntegerVariableID v) -> void {
+                auto mod_vec = vector<Integer>(vdom[v.actual_variable].size(), 0_i);
+                for (int i = 0; i < vec.size(); i++) {
+                    mod_vec[i] = (v.negate_first ? -1_i : 1_i) * (vec[i] - v.then_add);
                 }
-        }.visit(v);
+                vdom.at(v.actual_variable) = move(mod_vec);
+            },
+            [&](SimpleIntegerVariableID s) -> void {
+                vdom.at(s) = move(vec);
+            }}
+            .visit(v);
     }
 
-    auto deview(IntegerVariableID v) -> IntegerVariableID {
+    auto deview(IntegerVariableID v) -> IntegerVariableID
+    {
         return overloaded{
-                [&](SimpleIntegerVariableID& s) -> IntegerVariableID {
-                    return s;
-                }, [&](ViewOfIntegerVariableID& v) -> IntegerVariableID {
-                    return v.actual_variable;
-                }, [&](ConstantIntegerVariableID& c) -> IntegerVariableID {
-                    return c;
-                }
-        }.visit(v);
+            [&](SimpleIntegerVariableID & s) -> IntegerVariableID {
+                return s;
+            },
+            [&](ViewOfIntegerVariableID & v) -> IntegerVariableID {
+                return v.actual_variable;
+            },
+            [&](ConstantIntegerVariableID & c) -> IntegerVariableID {
+                return c;
+            }}
+            .visit(v);
     }
 
     auto log_filtering_inference(const ProofFlag & tuple_selector, const Literal & lit, State & state)
@@ -311,14 +319,14 @@ namespace
                 bool domain_became_empty = false;
                 overloaded{
                     [&](const BinaryEntry & binary_entry) {
-                        if (get_for_actual_var(supported_by_tree,binary_entry.var_1).empty()) domain_became_empty = true;
-                        if (get_for_actual_var(supported_by_tree,binary_entry.var_2).empty()) domain_became_empty = true;
+                        if (get_for_actual_var(supported_by_tree, binary_entry.var_1).empty()) domain_became_empty = true;
+                        if (get_for_actual_var(supported_by_tree, binary_entry.var_2).empty()) domain_became_empty = true;
                     },
                     [&](const UnarySetEntry & unary_set_entry) {
-                        if (get_for_actual_var(supported_by_tree,unary_set_entry.var).empty()) domain_became_empty = true;
+                        if (get_for_actual_var(supported_by_tree, unary_set_entry.var).empty()) domain_became_empty = true;
                     },
                     [&](const UnaryValueEntry & unary_val_entry) {
-                        if (get_for_actual_var(supported_by_tree,unary_val_entry.var).empty()) domain_became_empty = true;
+                        if (get_for_actual_var(supported_by_tree, unary_val_entry.var).empty()) domain_became_empty = true;
                     }}
                     .visit(edge);
 
@@ -527,8 +535,6 @@ namespace
         }
     }
 
-
-
     [[nodiscard]] auto build_forests(SmartTuples & tuples) -> vector<Forest>
     {
         vector<Forest> forests{};
@@ -666,16 +672,19 @@ namespace
     }
 }
 
-auto provable_entry_member(IntegerVariableID v) -> bool {
+auto provable_entry_member(IntegerVariableID v) -> bool
+{
     return overloaded{
-        [&](ViewOfIntegerVariableID& v) -> bool {
-            return !v.negate_first && v.then_add >= 0_i;
-        },[&](ConstantIntegerVariableID) -> bool {
+        [&](ViewOfIntegerVariableID & v) -> bool {
+            return ! v.negate_first && v.then_add >= 0_i;
+        },
+        [&](ConstantIntegerVariableID) -> bool {
             return false;
-        }, [&](SimpleIntegerVariableID) -> bool {
+        },
+        [&](SimpleIntegerVariableID) -> bool {
             return true;
-        }
-    }.visit(v);
+        }}
+        .visit(v);
 }
 auto SmartTable::clone() const -> unique_ptr<Constraint>
 {
@@ -713,9 +722,9 @@ auto SmartTable::install(Propagators & propagators, State & initial_state) && ->
             for (const auto & entry : _tuples[tuple_idx]) {
                 overloaded{
                     [&](BinaryEntry binary_entry) {
-//                        if(!provable_entry_member(binary_entry.var_1) || !provable_entry_member(binary_entry.var_2)) {
-//                            throw UnimplementedException{"Can only proof log smart table binary entries of form <var> <op> <var> + b where b >= 0."};
-//                        }
+                        //                        if(!provable_entry_member(binary_entry.var_1) || !provable_entry_member(binary_entry.var_2)) {
+                        //                            throw UnimplementedException{"Can only proof log smart table binary entries of form <var> <op> <var> + b where b >= 0."};
+                        //                        }
                         auto binary_entry_data = make_tuple(binary_entry.var_1, binary_entry.var_2, binary_entry.constraint_type);
                         if (! smart_entry_flags.contains(binary_entry_data))
                             smart_entry_flags[binary_entry_data] = make_binary_entry_flag(initial_state, propagators, binary_entry.var_1, binary_entry.var_2, binary_entry.constraint_type);
