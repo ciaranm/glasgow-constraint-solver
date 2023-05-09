@@ -104,6 +104,7 @@ namespace
         auto inference = state.infer(TrueLiteral{}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
             proof.need_proof_variable(lit);
             stringstream proof_step;
+            proof_step << "*st infer\n";
             proof_step << "u" << proof.trail_variables(state, 1_i);
             proof_step << " 1 " << proof.proof_variable(! tuple_selector);
             proof_step << " 1 " << proof.proof_variable(lit);
@@ -712,9 +713,9 @@ auto SmartTable::install(Propagators & propagators, State & initial_state) && ->
             for (const auto & entry : _tuples[tuple_idx]) {
                 overloaded{
                     [&](BinaryEntry binary_entry) {
-                        if(!provable_entry_member(binary_entry.var_1) || !provable_entry_member(binary_entry.var_2)) {
-                            throw UnimplementedException{"Can only proof log smart table binary entries of form <var> <op> <var> + b where b >= 0."};
-                        }
+//                        if(!provable_entry_member(binary_entry.var_1) || !provable_entry_member(binary_entry.var_2)) {
+//                            throw UnimplementedException{"Can only proof log smart table binary entries of form <var> <op> <var> + b where b >= 0."};
+//                        }
                         auto binary_entry_data = make_tuple(binary_entry.var_1, binary_entry.var_2, binary_entry.constraint_type);
                         if (! smart_entry_flags.contains(binary_entry_data))
                             smart_entry_flags[binary_entry_data] = make_binary_entry_flag(initial_state, propagators, binary_entry.var_1, binary_entry.var_2, binary_entry.constraint_type);
