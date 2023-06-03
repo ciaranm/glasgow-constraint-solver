@@ -792,7 +792,16 @@ auto Proof::need_proof_variable(const Literal & lit) -> void
         [&](const LiteralFromIntegerVariable & ilit) {
             return overloaded{
                 [&](const SimpleIntegerVariableID & var) {
-                    need_direct_encoding_for(var, ilit.value);
+                    switch (ilit.op) {
+                        case LiteralFromIntegerVariable::Operator::Equal:
+                        case LiteralFromIntegerVariable::Operator::NotEqual:
+                            need_direct_encoding_for(var, ilit.value);
+                            break;
+                        case LiteralFromIntegerVariable::Operator::Less:
+                        case LiteralFromIntegerVariable::Operator::GreaterEqual:
+                            need_gevar(var, ilit.value);
+                            break;
+                    }
                 },
                 [&](const ViewOfIntegerVariableID & view) {
                     switch (ilit.op) {
