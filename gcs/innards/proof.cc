@@ -381,6 +381,11 @@ auto Proof::need_gevar(SimpleIntegerVariableID id, Integer v) -> void
     _imp->direct_integer_variables.emplace(id < v, "~" + gevar);
     _imp->gevars_that_exist[id].insert(v);
 
+    if (_imp->opb_done)
+        _imp->proof << "* need " << gevar << '\n';
+    else
+        _imp->opb << "* need " << gevar << '\n';
+
     auto & [_, bit_vars] = _imp->integer_variable_bits.at(id);
 
     if (_imp->opb_done)
@@ -477,41 +482,122 @@ auto Proof::need_direct_encoding_for(SimpleIntegerVariableID id, Integer v) -> v
     if (_imp->direct_integer_variables.contains(id == v))
         return;
 
-    need_gevar(id, v);
-    need_gevar(id, v + 1_i);
-
     string name = "iv" + to_string(id.index);
     auto eqvar = xify(name + "_eq_" + value_name(v));
     _imp->direct_integer_variables.emplace(id == v, eqvar);
     _imp->direct_integer_variables.emplace(id != v, "~" + eqvar);
 
-    if (_imp->opb_done)
-        _imp->proof << "# 0\n";
+    auto bounds = _imp->bounds_for_gevars.find(id);
+    if (bounds != _imp->bounds_for_gevars.end() && bounds->second.first == v) {
+        // it's a lower bound
+        need_gevar(id, v + 1_i);
 
-    auto ge_v_but_not_v_plus_one = opb_sum({pair{1_i, proof_variable(id >= v)},
-                                       pair{1_i, negate_opb_var_name(proof_variable(id >= v + 1_i))}}) >= 2_i;
+        if (_imp->opb_done)
+            _imp->proof << "* need lower bound " << eqvar << '\n';
+        else
+            _imp->opb << "* need lower bound " << eqvar << '\n';
 
-    // eqvar -> ge_v && ! ge_v+1
-    auto eqvar_true = implied_by(ge_v_but_not_v_plus_one, eqvar);
+        if (_imp->opb_done)
+            _imp->proof << "# 0\n";
 
-    // ge_v && ! ge_v+1 -> eqvar
-    auto eqvar_false = implies(ge_v_but_not_v_plus_one, eqvar);
+        auto not_ge_v_plus_one = opb_sum({pair{1_i, negate_opb_var_name(proof_variable(id >= v + 1_i))}}) >= 1_i;
 
-    if (_imp->opb_done) {
-        _imp->proof << "red " << eqvar_true << " ; " << eqvar << " 0\n";
-        ++_imp->proof_line;
-        _imp->proof << "red " << eqvar_false << " ; " << eqvar << " 1\n";
-        ++_imp->proof_line;
+        // eqvar -> ! ge_v+1
+        auto eqvar_true = implied_by(not_ge_v_plus_one, eqvar);
+
+        // ge_v+1 -> eqvar
+        auto eqvar_false = implies(not_ge_v_plus_one, eqvar);
+
+        if (_imp->opb_done) {
+            _imp->proof << "red " << eqvar_true << " ; " << eqvar << " 0\n";
+            ++_imp->proof_line;
+            _imp->proof << "red " << eqvar_false << " ; " << eqvar << " 1\n";
+            ++_imp->proof_line;
+        }
+        else {
+            _imp->opb << eqvar_true << " ;\n";
+            _imp->opb << eqvar_false << " ;\n";
+            _imp->model_constraints += 2;
+            ++_imp->model_variables;
+        }
+
+        if (_imp->opb_done)
+            _imp->proof << "# " << _imp->active_proof_level << "\n";
+    }
+    else if (bounds != _imp->bounds_for_gevars.end() && bounds->second.second == v) {
+        // it's an upper bound
+        need_gevar(id, v);
+
+        if (_imp->opb_done)
+            _imp->proof << "* need upper bound " << eqvar << '\n';
+        else
+            _imp->opb << "* need upper bound " << eqvar << '\n';
+
+        if (_imp->opb_done)
+            _imp->proof << "# 0\n";
+
+        auto ge_v = opb_sum({pair{1_i, proof_variable(id >= v)}}) >= 1_i;
+
+        // eqvar -> ge_v
+        auto eqvar_true = implied_by(ge_v, eqvar);
+
+        // ge_v -> eqvar
+        auto eqvar_false = implies(ge_v, eqvar);
+
+        if (_imp->opb_done) {
+            _imp->proof << "red " << eqvar_true << " ; " << eqvar << " 0\n";
+            ++_imp->proof_line;
+            _imp->proof << "red " << eqvar_false << " ; " << eqvar << " 1\n";
+            ++_imp->proof_line;
+        }
+        else {
+            _imp->opb << eqvar_true << " ;\n";
+            _imp->opb << eqvar_false << " ;\n";
+            _imp->model_constraints += 2;
+            ++_imp->model_variables;
+        }
+
+        if (_imp->opb_done)
+            _imp->proof << "# " << _imp->active_proof_level << "\n";
     }
     else {
-        _imp->opb << eqvar_true << " ;\n";
-        _imp->opb << eqvar_false << " ;\n";
-        _imp->model_constraints += 2;
-        ++_imp->model_variables;
-    }
+        // neither a lower nor an upper bound
+        need_gevar(id, v);
+        need_gevar(id, v + 1_i);
 
-    if (_imp->opb_done)
-        _imp->proof << "# " << _imp->active_proof_level << "\n";
+        if (_imp->opb_done)
+            _imp->proof << "* need " << eqvar << '\n';
+        else
+            _imp->opb << "* need " << eqvar << '\n';
+
+        if (_imp->opb_done)
+            _imp->proof << "# 0\n";
+
+        auto ge_v_but_not_v_plus_one = opb_sum({pair{1_i, proof_variable(id >= v)},
+                                           pair{1_i, negate_opb_var_name(proof_variable(id >= v + 1_i))}}) >= 2_i;
+
+        // eqvar -> ge_v && ! ge_v+1
+        auto eqvar_true = implied_by(ge_v_but_not_v_plus_one, eqvar);
+
+        // ge_v && ! ge_v+1 -> eqvar
+        auto eqvar_false = implies(ge_v_but_not_v_plus_one, eqvar);
+
+        if (_imp->opb_done) {
+            _imp->proof << "red " << eqvar_true << " ; " << eqvar << " 0\n";
+            ++_imp->proof_line;
+            _imp->proof << "red " << eqvar_false << " ; " << eqvar << " 1\n";
+            ++_imp->proof_line;
+        }
+        else {
+            _imp->opb << eqvar_true << " ;\n";
+            _imp->opb << eqvar_false << " ;\n";
+            _imp->model_constraints += 2;
+            ++_imp->model_variables;
+        }
+
+        if (_imp->opb_done)
+            _imp->proof << "# " << _imp->active_proof_level << "\n";
+    }
 }
 
 auto Proof::create_literals_for_introduced_variable_value(
