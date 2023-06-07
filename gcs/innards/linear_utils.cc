@@ -22,6 +22,7 @@ using std::remove_if;
 using std::sort;
 using std::string;
 using std::stringstream;
+using std::to_string;
 using std::variant;
 using std::vector;
 
@@ -149,30 +150,13 @@ namespace
     auto propagate_linear_or_sum(const auto & coeff_vars, Integer value, State & state, bool equality,
         const std::optional<ProofLine> & proof_line) -> pair<Inference, PropagatorState>
     {
-        // What's the worst value a variable can take, if every other variable
-        // is given its best value?
-        bool changed = false;
-
         vector<pair<Integer, Integer>> bounds;
         bounds.reserve(coeff_vars.size());
 
-        Integer lower_sum{0}, inv_lower_sum{0};
-        for (const auto & cv : coeff_vars) {
-            const auto & var = get_var(cv);
-            bounds.push_back(state.bounds(var));
-            if constexpr (is_same_v<decltype(cv), const SimpleIntegerVariableID &>) {
-                lower_sum += bounds.back().first;
-                inv_lower_sum += -bounds.back().second;
-            }
-            else {
-                auto coeff = get_coeff(cv);
-                lower_sum += (coeff >= 0_i) ? (coeff * bounds.back().first) : (coeff * bounds.back().second);
-                inv_lower_sum += (-coeff >= 0_i) ? (-coeff * bounds.back().first) : (-coeff * bounds.back().second);
-            }
-        }
-
         auto justify = [&](const SimpleIntegerVariableID & change_var, Proof & proof, vector<ProofLine> & to_delete,
-                           bool second_constraint_for_equality) -> void {
+                           bool second_constraint_for_equality, const string & to_what) -> void {
+            proof.emit_proof_comment("justifying integer linear inequality " + debug_string(IntegerVariableID{change_var}) + " " + to_what);
+
             vector<pair<Integer, variant<ProofLine, string>>> terms_to_sum;
             terms_to_sum.emplace_back(1_i, second_constraint_for_equality ? *proof_line - 1 : *proof_line);
 
@@ -223,7 +207,7 @@ namespace
                 if (coeff) {
                     if (bounds[p].second >= (1_i + remainder))
                         return state.infer_less_than(var, 1_i + remainder, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
-                            justify(var, proof, to_delete, second_constraint_for_equality);
+                            justify(var, proof, to_delete, second_constraint_for_equality, "< " + to_string((1_i + remainder).raw_value));
                         }});
                     else
                         return Inference::NoChange;
@@ -231,7 +215,7 @@ namespace
                 else {
                     if (bounds[p].first < -remainder)
                         return state.infer_greater_than_or_equal(var, -remainder, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
-                            justify(var, proof, to_delete, second_constraint_for_equality);
+                            justify(var, proof, to_delete, second_constraint_for_equality, ">= " + to_string((-remainder).raw_value));
                         }});
                     else
                         return Inference::NoChange;
@@ -242,7 +226,7 @@ namespace
                 if (coeff > 0_i && remainder >= 0_i) {
                     if (bounds[p].second >= (1_i + remainder / coeff))
                         return state.infer_less_than(var, 1_i + remainder / coeff, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
-                            justify(var, proof, to_delete, second_constraint_for_equality);
+                            justify(var, proof, to_delete, second_constraint_for_equality, "< " + to_string((1_i + remainder / coeff).raw_value));
                         }});
                     else
                         return Inference::NoChange;
@@ -251,7 +235,7 @@ namespace
                     auto div_with_rounding = -((-remainder + coeff - 1_i) / coeff);
                     if (bounds[p].second >= 1_i + div_with_rounding)
                         return state.infer_less_than(var, 1_i + div_with_rounding, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
-                            justify(var, proof, to_delete, second_constraint_for_equality);
+                            justify(var, proof, to_delete, second_constraint_for_equality, "< " + to_string((1_i + div_with_rounding).raw_value));
                         }});
                     else
                         return Inference::NoChange;
@@ -259,7 +243,7 @@ namespace
                 else if (coeff < 0_i && remainder >= 0_i) {
                     if (bounds[p].first < remainder / coeff)
                         return state.infer_greater_than_or_equal(var, remainder / coeff, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
-                            justify(var, proof, to_delete, second_constraint_for_equality);
+                            justify(var, proof, to_delete, second_constraint_for_equality, ">= " + to_string((remainder  / coeff).raw_value));
                         }});
                     else
                         return Inference::NoChange;
@@ -268,7 +252,7 @@ namespace
                     auto div_with_rounding = (-remainder + -coeff - 1_i) / -coeff;
                     if (bounds[p].first < div_with_rounding)
                         return state.infer_greater_than_or_equal(var, div_with_rounding, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
-                            justify(var, proof, to_delete, second_constraint_for_equality);
+                            justify(var, proof, to_delete, second_constraint_for_equality, ">= " + to_string((div_with_rounding).raw_value));
                         }});
                     else
                         return Inference::NoChange;
@@ -277,6 +261,20 @@ namespace
                     throw UnexpectedException{"uh, trying to divide by zero?"};
             }
         };
+
+        bool changed = false;
+
+        Integer lower_sum{0};
+        for (const auto & cv : coeff_vars) {
+            const auto & var = get_var(cv);
+            bounds.push_back(state.bounds(var));
+            if constexpr (is_same_v<decltype(cv), const SimpleIntegerVariableID &>)
+                lower_sum += bounds.back().first;
+            else {
+                auto coeff = get_coeff(cv);
+                lower_sum += (coeff >= 0_i) ? (coeff * bounds.back().first) : (coeff * bounds.back().second);
+            }
+        }
 
         for (unsigned p = 0, p_end = coeff_vars.size(); p != p_end; ++p) {
             const auto & cv = coeff_vars[p];
@@ -303,21 +301,37 @@ namespace
 
             if constexpr (is_same_v<decltype(cv), const SimpleIntegerVariableID &>)
                 lower_sum = lower_without_me + bounds[p].first;
-            else if constexpr (is_same_v<decltype(cv), const pair<bool, SimpleIntegerVariableID> &>)
+            else if constexpr (is_same_v<decltype(cv), const pair<bool, SimpleIntegerVariableID> &>) {
                 lower_sum = lower_without_me + (cv.first ? bounds[p].first : -bounds[p].second);
-            else
+            }
+            else {
                 lower_sum = lower_without_me + ((get_coeff(cv) >= 0_i) ? (get_coeff(cv) * bounds[p].first) : (get_coeff(cv) * bounds[p].second));
+            }
+        }
 
-            if (equality) {
+        if (equality) {
+            Integer inv_lower_sum{0};
+            for (const auto & [idx, cv] : enumerate(coeff_vars)) {
+                if constexpr (is_same_v<decltype(cv), const SimpleIntegerVariableID &>)
+                    inv_lower_sum += -bounds[idx].second;
+                else {
+                    auto coeff = get_coeff(cv);
+                    inv_lower_sum += (-coeff >= 0_i) ? (-coeff * bounds[idx].first) : (-coeff * bounds[idx].second);
+                }
+            }
+
+            for (unsigned p = 0, p_end = coeff_vars.size(); p != p_end; ++p) {
+                const auto & cv = coeff_vars[p];
                 Integer inv_lower_without_me{0_i};
                 if constexpr (is_same_v<decltype(cv), const SimpleIntegerVariableID &>)
                     inv_lower_without_me = inv_lower_sum + bounds[p].second;
                 else if constexpr (is_same_v<decltype(cv), const pair<bool, SimpleIntegerVariableID> &>)
-                    inv_lower_without_me = inv_lower_sum - (! cv.first ? bounds[p].first : -bounds[p].second);
+                    inv_lower_without_me = inv_lower_sum + (! cv.first ? -bounds[p].first : bounds[p].second);
                 else
-                    inv_lower_without_me = inv_lower_sum - ((-get_coeff(cv) >= 0_i) ? (-get_coeff(cv) * bounds[p].first) : (-get_coeff(cv) * bounds[p].second));
+                    inv_lower_without_me = inv_lower_sum + ((-get_coeff(cv) >= 0_i) ? (get_coeff(cv) * bounds[p].first) : (get_coeff(cv) * bounds[p].second));
 
                 Integer inv_remainder = -value - inv_lower_without_me;
+
                 switch (infer(p, get_var(cv), inv_remainder, negate(get_coeff_or_bool(cv)), true)) {
                 case Inference::Change:
                     bounds[p] = state.bounds(get_var(cv)); // might be tighter than expected if we had holes
