@@ -1,7 +1,6 @@
 #include <gcs/constraints/smart_table.hh>
 #include <gcs/exception.hh>
 #include <gcs/problem.hh>
-#include <gcs/smart_entry.hh>
 #include <gcs/solve.hh>
 
 #include <cstdlib>
@@ -65,39 +64,39 @@ auto run_lex_test(int length, vector<pair<int, int>> ranges, bool reverse = fals
         for (int j = 0; j < i + 1; ++j) {
             if (! fixed_y) {
                 if (j < i) {
-                    tuple.emplace_back(EqualsVar{x[j], y[j]});
+                    tuple.emplace_back(SmartTable::equals(x[j], y[j]));
                 }
                 else if (j == i) {
                     if (reverse) {
                         if (or_equal)
-                            tuple.emplace_back(LessThanEqualVar{x[j], y[j]});
+                            tuple.emplace_back(SmartTable::less_than_equal(x[j], y[j]));
                         else
-                            tuple.emplace_back(LessThanVar{x[j], y[j]});
+                            tuple.emplace_back(SmartTable::less_than(x[j], y[j]));
                     }
                     else {
                         if (or_equal)
-                            tuple.emplace_back(GreaterThanEqualVar{x[j], y[j]});
+                            tuple.emplace_back(SmartTable::greater_than_equal(x[j], y[j]));
                         else
-                            tuple.emplace_back(GreaterThanVar{x[j], y[j]});
+                            tuple.emplace_back(SmartTable::greater_than(x[j], y[j]));
                     }
                 }
             }
             else {
                 if (j < i) {
-                    tuple.emplace_back(EqualsValue{x[j], fixed_y_vals[j]});
+                    tuple.emplace_back(SmartTable::equals(x[j], fixed_y_vals[j]));
                 }
                 else if (j == i) {
                     if (reverse) {
                         if (or_equal)
-                            tuple.emplace_back(LessThanEqualValue{x[j], fixed_y_vals[j]});
+                            tuple.emplace_back(SmartTable::less_than_equal(x[j], fixed_y_vals[j]));
                         else
-                            tuple.emplace_back(LessThanValue{x[j], fixed_y_vals[j]});
+                            tuple.emplace_back(SmartTable::less_than(x[j], fixed_y_vals[j]));
                     }
                     else {
                         if (or_equal)
-                            tuple.emplace_back(GreaterThanEqualValue{x[j], fixed_y_vals[j]});
+                            tuple.emplace_back(SmartTable::greater_than_equal(x[j], fixed_y_vals[j]));
                         else
-                            tuple.emplace_back(GreaterThanValue{x[j], fixed_y_vals[j]});
+                            tuple.emplace_back(SmartTable::greater_than(x[j], fixed_y_vals[j]));
                     }
                 }
             }
@@ -146,18 +145,18 @@ auto run_at_most_1_test(int length, vector<pair<int, int>> & ranges, bool at_lea
             if (j != i) {
                 if (at_least) {
                     if (in_set) {
-                        tuple.emplace_back(InSet{x[j], {1_i, Integer{length}}});
+                        tuple.emplace_back(SmartTable::in_set(x[j], {1_i, Integer{length}}));
                     }
                     else {
-                        tuple.emplace_back(EqualsVar{x[j], y});
+                        tuple.emplace_back(SmartTable::equals(x[j], y));
                     }
                 }
                 else {
                     if (in_set) {
-                        tuple.emplace_back(NotInSet{x[j], {1_i, Integer{length}}});
+                        tuple.emplace_back(SmartTable::not_in_set(x[j], {1_i, Integer{length}}));
                     }
                     else {
-                        tuple.emplace_back(NotEqualsVar{x[j], y});
+                        tuple.emplace_back(SmartTable::not_equals(x[j], y));
                     }
                 }
             }

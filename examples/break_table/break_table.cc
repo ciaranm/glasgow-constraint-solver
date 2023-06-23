@@ -3,7 +3,6 @@
 #include <gcs/constraints/smart_table.hh>
 #include <gcs/extensional.hh>
 #include <gcs/problem.hh>
-#include <gcs/smart_entry.hh>
 #include <gcs/solve.hh>
 #include <iostream>
 #include <vector>
@@ -29,8 +28,8 @@ auto main(int, char *[]) -> int
     auto x = p.create_integer_variable(-1_i, 3_i, "x");
     auto z = p.create_integer_variable(-1_i, 3_i, "z");
     auto y = p.create_integer_variable(-1_i, 3_i, "y");
-    auto tuples = SmartTuples{
-        {NotEqualsVar{y, x}, InSet{y, {-1_i, 2_i, 3_i}}, InSet{z, {-1_i, 0_i, 1_i}}, GreaterThanVar{z, y}}};
+    auto tuples = SmartTuples{{SmartTable::not_equals(y, x), SmartTable::in_set(y, {-1_i, 2_i, 3_i}),
+        SmartTable::in_set(z, {-1_i, 0_i, 1_i}), SmartTable::greater_than(z, y)}};
     p.post(SmartTable{{x, y, z}, tuples});
 
     //    vector<SmartEntry> tuple;

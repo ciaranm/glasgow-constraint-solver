@@ -3,7 +3,6 @@
 #include <gcs/constraints/smart_table.hh>
 #include <gcs/extensional.hh>
 #include <gcs/problem.hh>
-#include <gcs/smart_entry.hh>
 #include <gcs/solve.hh>
 #include <iostream>
 #include <vector>
@@ -40,12 +39,10 @@ auto main(int, char *[]) -> int
     for (int i = 0; i < n; ++i) {
         vector<SmartEntry> tuple;
         for (int j = 0; j < i + 1; ++j) {
-            if (j < i) {
-                tuple.emplace_back(EqualsVar{x[j], y[j]});
-            }
-            else if (j == i) {
-                tuple.emplace_back(GreaterThanVar{x[j], y[j]});
-            }
+            if (j < i)
+                tuple.emplace_back(SmartTable::equals(x[j], y[j]));
+            else if (j == i)
+                tuple.emplace_back(SmartTable::greater_than(x[j], y[j]));
         }
         tuples.emplace_back(tuple);
     }

@@ -3,7 +3,6 @@
 #include <gcs/constraints/smart_table.hh>
 #include <gcs/extensional.hh>
 #include <gcs/problem.hh>
-#include <gcs/smart_entry.hh>
 #include <gcs/solve.hh>
 
 #include <iostream>

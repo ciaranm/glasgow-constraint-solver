@@ -34,7 +34,7 @@ auto main(int, char *[]) -> int
         cout << "l_y = " << l_y << "; u_y = " << -l_y - 1 << endl;
         uniform_int_distribution<> rand_in_range_y(l_y, -l_y - 1);
         auto l = rand_in_range_y(rng);
-        auto tuples = SmartTuples{{GreaterThanEqualValue{y, Integer{l}}, GreaterThanVar{x, y}}};
+        auto tuples = SmartTuples{{SmartTable::greater_than_equal(y, Integer{l}), SmartTable::greater_than(x, y)}};
         p.post(SmartTable{{x, y}, tuples});
 
         solve_with(p,

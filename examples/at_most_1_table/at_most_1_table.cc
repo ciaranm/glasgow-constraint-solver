@@ -2,7 +2,6 @@
 #include <gcs/constraints/smart_table.hh>
 #include <gcs/extensional.hh>
 #include <gcs/problem.hh>
-#include <gcs/smart_entry.hh>
 #include <gcs/solve.hh>
 #include <iostream>
 #include <vector>
@@ -30,7 +29,7 @@ auto main(int, char *[]) -> int
         vector<SmartEntry> tuple;
         for (int j = 0; j < n; ++j) {
             if (j != i) {
-                tuple.emplace_back(NotEqualsVar{x[j], y});
+                tuple.emplace_back(SmartTable::not_equals(x[j], y));
             }
         }
         tuples.emplace_back(tuple);
