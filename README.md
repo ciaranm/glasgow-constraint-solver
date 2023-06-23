@@ -164,15 +164,25 @@ pip3 install -r requirements.txt
 ```
 
 To try out proof logging, run your favourite example program with the ``--prove`` command line
-option. Or, for your own problem, pass an additional argument when creating your `Problem` object:
+option. Or, for your own problem, pass an additional argument to ``solve()`` or ``solve_with()``:
 
 ```cpp
-Problem p{ProofOptions{"example.opb", "example.veripb"}};
+solve_with(p,
+    SolveCallbacks{
+        .solution = [&](const CurrentState & s) -> bool {
+            cout << "banana cakes = " << s(banana) << ", chocolate cakes = "
+                 << s(chocolate) << ", profit = " << s(profit) << endl;
+            return true;
+        },
+        .branch = branch_on_dom_then_deg(problem, vector<IntegerVariableID>{banana, chocolate}),
+        .guess = guess_smallest_value_first()
+    },
+    make_optional<ProofOptions>("cake.opb", "cake.veripb"));
 ```
 
-This will produce a ``.opb`` file containing a low-level description of the model, as well as a
-``.veripb`` file containing the associated proof. To verify the proof, use ``veripb example.opb
-example.veripb``.
+This will produce a ``cake.opb`` file containing a low-level description of the model, as well as a
+``cake.veripb`` file containing the associated proof. To verify the proof, use ``veripb cake.opb
+cake.veripb``.
 
 Navigating the Source Code
 ==========================
