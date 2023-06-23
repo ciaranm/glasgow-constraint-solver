@@ -95,7 +95,7 @@ namespace gcs
     {
         using variant::variant;
 
-        auto operator<=>(const IntegerVariableID & other) const -> std::partial_ordering
+        constexpr auto operator<=>(const IntegerVariableID & other) const -> std::partial_ordering
         {
             if (this->valueless_by_exception() && other.valueless_by_exception()) {
                 return std::strong_ordering::equal;
