@@ -48,7 +48,7 @@ namespace
 {
     // Shorthands
     using VariableDomainMap = unordered_map<IntegerVariableID, vector<Integer>>;
-    using BinaryEntryData = tuple<IntegerVariableID, IntegerVariableID, ConstraintType>;
+    using BinaryEntryData = tuple<IntegerVariableID, IntegerVariableID, SmartEntryConstraint>;
     using TreeEdges = vector<vector<SmartEntry>>;
     using Forest = vector<TreeEdges>;
 
@@ -140,7 +140,7 @@ namespace
                 sort(dom_2.begin(), dom_2.end());
 
                 switch (binary_entry.constraint_type) {
-                case ConstraintType::LESS_THAN:
+                case SmartEntryConstraint::LessThan:
                     copy_if(dom_2.begin(), dom_2.end(), back_inserter(new_dom_2),
                         [&](Integer val) { return val > dom_1[0]; });
                     copy_if(dom_1.begin(), dom_1.end(), back_inserter(new_dom_1),
@@ -152,7 +152,7 @@ namespace
                             log_filtering_inference(tuple_selector, deview(binary_entry.var_1) < dom_2[dom_2.size() - 1], state);
                     }
                     break;
-                case ConstraintType::LESS_THAN_EQUAL:
+                case SmartEntryConstraint::LessThanEqual:
                     copy_if(dom_2.begin(), dom_2.end(), back_inserter(new_dom_2),
                         [&](Integer val) { return val >= dom_1[0]; });
                     copy_if(dom_1.begin(), dom_1.end(), back_inserter(new_dom_1),
@@ -164,7 +164,7 @@ namespace
                             log_filtering_inference(tuple_selector, deview(binary_entry.var_1) < (dom_2[dom_2.size() - 1] + 1_i), state);
                     }
                     break;
-                case ConstraintType::EQUAL:
+                case SmartEntryConstraint::Equal:
                     set_intersection(dom_1.begin(), dom_1.end(),
                         dom_2.begin(), dom_2.end(),
                         back_inserter(new_dom_1));
@@ -191,7 +191,7 @@ namespace
                         }
                     }
                     break;
-                case ConstraintType::NOT_EQUAL:
+                case SmartEntryConstraint::NotEqual:
                     if (dom_1.size() == 1) {
                         new_dom_1 = dom_1;
                         set_difference(dom_2.begin(), dom_2.end(),
@@ -215,7 +215,7 @@ namespace
                         new_dom_2 = move(dom_2);
                     }
                     break;
-                case ConstraintType::GREATER_THAN:
+                case SmartEntryConstraint::GreaterThan:
                     copy_if(dom_1.begin(), dom_1.end(), back_inserter(new_dom_1),
                         [&](Integer val) { return val > dom_2[0]; });
                     copy_if(dom_2.begin(), dom_2.end(), back_inserter(new_dom_2),
@@ -227,7 +227,7 @@ namespace
                             log_filtering_inference(tuple_selector, deview(binary_entry.var_2) < dom_1[dom_1.size() - 1], state);
                     }
                     break;
-                case ConstraintType::GREATER_THAN_EQUAL:
+                case SmartEntryConstraint::GreaterThanEqual:
                     copy_if(dom_1.begin(), dom_1.end(), back_inserter(new_dom_1),
                         [&](Integer val) { return val >= dom_2[0]; });
                     copy_if(dom_2.begin(), dom_2.end(), back_inserter(new_dom_2),
@@ -253,12 +253,12 @@ namespace
                 sort(set_values.begin(), set_values.end());
 
                 switch (unary_set_entry.constraint_type) {
-                case ConstraintType::IN:
+                case SmartEntryConstraint::In:
                     set_intersection(dom.begin(), dom.end(),
                         set_values.begin(), set_values.end(),
                         back_inserter(new_dom));
                     break;
-                case ConstraintType::NOT_IN:
+                case SmartEntryConstraint::NotIn:
                     set_difference(dom.begin(), dom.end(),
                         set_values.begin(), set_values.end(),
                         back_inserter(new_dom));
@@ -276,27 +276,27 @@ namespace
                 sort(dom.begin(), dom.end());
 
                 switch (unary_val_entry.constraint_type) {
-                case ConstraintType::LESS_THAN:
+                case SmartEntryConstraint::LessThan:
                     copy_if(dom.begin(), dom.end(), back_inserter(new_dom),
                         [&](Integer dom_val) { return dom_val < value; });
                     break;
-                case ConstraintType::LESS_THAN_EQUAL:
+                case SmartEntryConstraint::LessThanEqual:
                     copy_if(dom.begin(), dom.end(), back_inserter(new_dom),
                         [&](Integer dom_val) { return dom_val <= value; });
                     break;
-                case ConstraintType::EQUAL:
+                case SmartEntryConstraint::Equal:
                     copy_if(dom.begin(), dom.end(), back_inserter(new_dom),
                         [&](Integer dom_val) { return dom_val == value; });
                     break;
-                case ConstraintType::NOT_EQUAL:
+                case SmartEntryConstraint::NotEqual:
                     copy_if(dom.begin(), dom.end(), back_inserter(new_dom),
                         [&](Integer dom_val) { return dom_val != value; });
                     break;
-                case ConstraintType::GREATER_THAN:
+                case SmartEntryConstraint::GreaterThan:
                     copy_if(dom.begin(), dom.end(), back_inserter(new_dom),
                         [&](Integer dom_val) { return dom_val > value; });
                     break;
-                case ConstraintType::GREATER_THAN_EQUAL:
+                case SmartEntryConstraint::GreaterThanEqual:
                     copy_if(dom.begin(), dom.end(), back_inserter(new_dom),
                         [&](Integer dom_val) { return dom_val >= value; });
                     break;
@@ -580,12 +580,12 @@ namespace
     }
 
     // For PB model
-    [[nodiscard]] auto make_binary_entry_flag(State & state, Propagators & propagators, const IntegerVariableID & var_1, const IntegerVariableID & var_2, const ConstraintType & c) -> ProofFlag
+    [[nodiscard]] auto make_binary_entry_flag(State & state, Propagators & propagators, const IntegerVariableID & var_1, const IntegerVariableID & var_2, const SmartEntryConstraint & c) -> ProofFlag
     {
         ProofFlag flag, flag_lt, flag_gt;
 
         switch (c) {
-        case ConstraintType::EQUAL:
+        case SmartEntryConstraint::Equal:
             // f => var1 == var2
             flag = propagators.create_proof_flag("bin_eq");
             propagators.define_pseudoboolean_eq(state, {{1_i, var_1}, {-1_i, var_2}}, 0_i, flag);
@@ -599,22 +599,22 @@ namespace
             propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 0_i, ! flag_lt);
             propagators.define_pseudoboolean_ge(state, {{1_i, flag_lt}, {1_i, flag_gt}}, 1_i, ! flag);
             return flag;
-        case ConstraintType::GREATER_THAN:
+        case SmartEntryConstraint::GreaterThan:
             flag = propagators.create_proof_flag("bin_gt");
             propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 1_i, flag);
             propagators.define_pseudoboolean_ge(state, {{1_i, var_2}, {-1_i, var_1}}, 0_i, ! flag);
             return flag;
-        case ConstraintType::LESS_THAN:
+        case SmartEntryConstraint::LessThan:
             flag = propagators.create_proof_flag("bin_lt");
             propagators.define_pseudoboolean_ge(state, {{1_i, var_2}, {-1_i, var_1}}, 1_i, flag);
             propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 0_i, ! flag);
             return flag;
-        case ConstraintType::LESS_THAN_EQUAL:
+        case SmartEntryConstraint::LessThanEqual:
             flag = propagators.create_proof_flag("bin_le");
             propagators.define_pseudoboolean_ge(state, {{1_i, var_2}, {-1_i, var_1}}, 0_i, flag);
             propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 1_i, ! flag);
             return flag;
-        case ConstraintType::NOT_EQUAL:
+        case SmartEntryConstraint::NotEqual:
             // !f => var1 == var2
             flag = propagators.create_proof_flag("bin_eq");
             propagators.define_pseudoboolean_eq(state, {{1_i, var_1}, {-1_i, var_2}}, 0_i, ! flag);
@@ -635,13 +635,13 @@ namespace
             propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 0_i, ! flag_lt);
 
             return flag;
-        case ConstraintType::GREATER_THAN_EQUAL:
+        case SmartEntryConstraint::GreaterThanEqual:
             flag = propagators.create_proof_flag("bin_ge");
             propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 0_i, flag);
             propagators.define_pseudoboolean_ge(state, {{1_i, var_2}, {-1_i, var_1}}, 1_i, ! flag);
             return flag;
-        case ConstraintType::NOT_IN:
-        case ConstraintType::IN:
+        case SmartEntryConstraint::NotIn:
+        case SmartEntryConstraint::In:
             throw UnexpectedException{"Unexpected SmartEntry type encountered while creating PB model."};
         }
         throw NonExhaustiveSwitch{};
@@ -652,20 +652,20 @@ namespace
         auto var = unary_entry.var;
         auto value = unary_entry.value;
         switch (unary_entry.constraint_type) {
-        case ConstraintType::LESS_THAN:
+        case SmartEntryConstraint::LessThan:
             return var < value;
-        case ConstraintType::LESS_THAN_EQUAL:
+        case SmartEntryConstraint::LessThanEqual:
             return var < value + 1_i;
-        case ConstraintType::EQUAL:
+        case SmartEntryConstraint::Equal:
             return var == value;
-        case ConstraintType::NOT_EQUAL:
+        case SmartEntryConstraint::NotEqual:
             return var != value;
-        case ConstraintType::GREATER_THAN:
+        case SmartEntryConstraint::GreaterThan:
             return var >= value + 1_i;
-        case ConstraintType::GREATER_THAN_EQUAL:
+        case SmartEntryConstraint::GreaterThanEqual:
             return var >= value;
-        case ConstraintType::IN:
-        case ConstraintType::NOT_IN:
+        case SmartEntryConstraint::In:
+        case SmartEntryConstraint::NotIn:
             throw UnexpectedException{"Unexpected SmartEntry type encountered while creating PB model."};
         }
         throw NonExhaustiveSwitch{};
@@ -746,12 +746,12 @@ auto SmartTable::install(Propagators & propagators, State & initial_state) && ->
                             neg_set_value_sum.emplace_back(1_i, var != val);
                         }
 
-                        auto flag = unary_set_entry.constraint_type == ConstraintType::IN ? propagators.create_proof_flag("inset") : propagators.create_proof_flag("notinset");
+                        auto flag = unary_set_entry.constraint_type == SmartEntryConstraint::In ? propagators.create_proof_flag("inset") : propagators.create_proof_flag("notinset");
 
                         propagators.define_pseudoboolean_ge(initial_state, move(set_value_sum), Integer{static_cast<long long>(set_value_sum.size())},
-                            unary_set_entry.constraint_type == ConstraintType::IN ? flag : ! flag);
+                            unary_set_entry.constraint_type == SmartEntryConstraint::In ? flag : ! flag);
                         propagators.define_pseudoboolean_ge(initial_state, move(neg_set_value_sum), Integer{static_cast<long long>(neg_set_value_sum.size())},
-                            unary_set_entry.constraint_type == ConstraintType::IN ? ! flag : flag);
+                            unary_set_entry.constraint_type == SmartEntryConstraint::In ? ! flag : flag);
 
                         entry_flags_sum.emplace_back(1_i, flag);
                         entry_flags_neg_sum.emplace_back(-1_i, flag);

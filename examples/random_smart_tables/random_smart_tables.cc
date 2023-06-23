@@ -80,7 +80,7 @@ auto random_tree_edges(int k, mt19937 & rng, int offset)
     return edges;
 }
 
-auto constraint_type_str(ConstraintType c) -> string
+auto constraint_type_str(SmartEntryConstraint c) -> string
 {
     const vector<string> string_names = {"<", "<=", "==", "!=", ">", ">=", "in", "notin"};
     return string_names[static_cast<int>(c)];
@@ -128,8 +128,8 @@ auto test_smart_table(const int & n, mt19937 & rng)
             string_rep << num_nodes_in_tree << " nodes): ";
             if (num_nodes_in_tree == 1) {
                 // Create random unary Smart Entry
-                auto constraint_type = static_cast<innards::ConstraintType>(rand0_to_7(rng));
-                if (constraint_type == innards::ConstraintType::IN || constraint_type == innards::ConstraintType::NOT_IN) {
+                auto constraint_type = static_cast<innards::SmartEntryConstraint>(rand0_to_7(rng));
+                if (constraint_type == innards::SmartEntryConstraint::In || constraint_type == innards::SmartEntryConstraint::NotIn) {
                     vector<Integer> random_set{};
                     for (int val = -1; val <= n; val++) {
                         random_set.emplace_back(Integer{val});
@@ -160,7 +160,7 @@ auto test_smart_table(const int & n, mt19937 & rng)
                 }
             }
             else if (num_nodes_in_tree == 2) {
-                auto constraint_type = static_cast<innards::ConstraintType>(rand0_to_5(rng));
+                auto constraint_type = static_cast<innards::SmartEntryConstraint>(rand0_to_5(rng));
                 string_rep << "x[" << index_of(copy_x[split_points[i]], x) << "] ";
                 string_rep << constraint_type_str(constraint_type);
                 string_rep << " x[" << index_of(copy_x[split_points[i] + 1], x) << "];  ";
@@ -173,7 +173,7 @@ auto test_smart_table(const int & n, mt19937 & rng)
                 auto tree_edges = random_tree_edges(num_nodes_in_tree, rng, split_points[i]);
                 for (const auto & edge : tree_edges) {
                     // Create binary Smart Entry with specified variables
-                    auto constraint_type = static_cast<innards::ConstraintType>(rand0_to_5(rng));
+                    auto constraint_type = static_cast<innards::SmartEntryConstraint>(rand0_to_5(rng));
                     string_rep << "x[" << index_of(copy_x[edge.first], x) << "] ";
                     string_rep << constraint_type_str(constraint_type);
                     string_rep << " x[" << index_of(copy_x[edge.second], x) << "];  ";
@@ -188,8 +188,8 @@ auto test_smart_table(const int & n, mt19937 & rng)
         auto num_extra_unary_entries = rand1_to_entries(rng);
         for (int i = 0; i < num_extra_unary_entries; i++) {
             auto var_idx = rand1_to_n(rng) - 1;
-            auto constraint_type = static_cast<innards::ConstraintType>(rand0_to_7(rng));
-            if (constraint_type == innards::ConstraintType::IN || constraint_type == innards::ConstraintType::NOT_IN) {
+            auto constraint_type = static_cast<innards::SmartEntryConstraint>(rand0_to_7(rng));
+            if (constraint_type == innards::SmartEntryConstraint::In || constraint_type == innards::SmartEntryConstraint::NotIn) {
                 vector<Integer> random_set{};
                 for (int val = -1; val <= n; val++) {
                     random_set.emplace_back(Integer{val});

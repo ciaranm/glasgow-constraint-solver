@@ -9,16 +9,16 @@ namespace gcs
 {
     namespace innards
     {
-        enum class ConstraintType
+        enum class SmartEntryConstraint
         {
-            LESS_THAN,
-            LESS_THAN_EQUAL,
-            EQUAL,
-            NOT_EQUAL,
-            GREATER_THAN,
-            GREATER_THAN_EQUAL,
-            IN,
-            NOT_IN
+            LessThan,
+            LessThanEqual,
+            Equal,
+            NotEqual,
+            GreaterThan,
+            GreaterThanEqual,
+            In,
+            NotIn
         };
 
         /**
@@ -28,21 +28,21 @@ namespace gcs
         {
             IntegerVariableID var_1;
             IntegerVariableID var_2;
-            ConstraintType constraint_type;
+            SmartEntryConstraint constraint_type;
         };
 
         struct UnaryValueEntry final
         {
             IntegerVariableID var;
             Integer value;
-            ConstraintType constraint_type;
+            SmartEntryConstraint constraint_type;
         };
 
         struct UnarySetEntry final
         {
             IntegerVariableID var;
             std::vector<Integer> values;
-            ConstraintType constraint_type;
+            SmartEntryConstraint constraint_type;
         };
     }
 
@@ -71,72 +71,72 @@ namespace gcs
 
         [[nodiscard]] static inline auto equals(const IntegerVariableID & a, const IntegerVariableID & b) -> SmartEntry
         {
-            return innards::BinaryEntry{a, b, innards::ConstraintType::EQUAL};
+            return innards::BinaryEntry{a, b, innards::SmartEntryConstraint::Equal};
         }
 
         [[nodiscard]] static inline auto equals(const IntegerVariableID & a, Integer b) -> SmartEntry
         {
-            return innards::UnaryValueEntry{a, b, innards::ConstraintType::EQUAL};
+            return innards::UnaryValueEntry{a, b, innards::SmartEntryConstraint::Equal};
         }
 
         [[nodiscard]] static inline auto not_equals(const IntegerVariableID & a, const IntegerVariableID & b) -> SmartEntry
         {
-            return innards::BinaryEntry{a, b, innards::ConstraintType::NOT_EQUAL};
+            return innards::BinaryEntry{a, b, innards::SmartEntryConstraint::NotEqual};
         }
 
         [[nodiscard]] static inline auto not_equals(const IntegerVariableID & a, Integer b) -> SmartEntry
         {
-            return innards::UnaryValueEntry{a, b, innards::ConstraintType::NOT_EQUAL};
+            return innards::UnaryValueEntry{a, b, innards::SmartEntryConstraint::NotEqual};
         }
 
         [[nodiscard]] static inline auto greater_than_equal(const IntegerVariableID & a, const IntegerVariableID & b) -> SmartEntry
         {
-            return innards::BinaryEntry{a, b, innards::ConstraintType::GREATER_THAN_EQUAL};
+            return innards::BinaryEntry{a, b, innards::SmartEntryConstraint::GreaterThanEqual};
         }
 
         [[nodiscard]] static inline auto greater_than_equal(const IntegerVariableID & a, Integer b) -> SmartEntry
         {
-            return innards::UnaryValueEntry{a, b, innards::ConstraintType::GREATER_THAN_EQUAL};
+            return innards::UnaryValueEntry{a, b, innards::SmartEntryConstraint::GreaterThanEqual};
         }
 
         [[nodiscard]] static inline auto greater_than(const IntegerVariableID & a, const IntegerVariableID & b) -> SmartEntry
         {
-            return innards::BinaryEntry{a, b, innards::ConstraintType::GREATER_THAN};
+            return innards::BinaryEntry{a, b, innards::SmartEntryConstraint::GreaterThan};
         }
 
         [[nodiscard]] static inline auto greater_than(const IntegerVariableID & a, Integer b) -> SmartEntry
         {
-            return innards::UnaryValueEntry{a, b, innards::ConstraintType::GREATER_THAN};
+            return innards::UnaryValueEntry{a, b, innards::SmartEntryConstraint::GreaterThan};
         }
 
         [[nodiscard]] static inline auto less_than_equal(const IntegerVariableID & a, const IntegerVariableID & b) -> SmartEntry
         {
-            return innards::BinaryEntry{a, b, innards::ConstraintType::LESS_THAN_EQUAL};
+            return innards::BinaryEntry{a, b, innards::SmartEntryConstraint::LessThanEqual};
         }
 
         [[nodiscard]] static inline auto less_than_equal(const IntegerVariableID & a, Integer b) -> SmartEntry
         {
-            return innards::UnaryValueEntry{a, b, innards::ConstraintType::LESS_THAN_EQUAL};
+            return innards::UnaryValueEntry{a, b, innards::SmartEntryConstraint::LessThanEqual};
         }
 
         [[nodiscard]] static inline auto less_than(const IntegerVariableID & a, const IntegerVariableID & b) -> SmartEntry
         {
-            return innards::BinaryEntry{a, b, innards::ConstraintType::LESS_THAN};
+            return innards::BinaryEntry{a, b, innards::SmartEntryConstraint::LessThan};
         }
 
         [[nodiscard]] static inline auto less_than(const IntegerVariableID & a, Integer b) -> SmartEntry
         {
-            return innards::UnaryValueEntry{a, b, innards::ConstraintType::LESS_THAN};
+            return innards::UnaryValueEntry{a, b, innards::SmartEntryConstraint::LessThan};
         }
 
         [[nodiscard]] static inline auto in_set(const IntegerVariableID & a, std::vector<Integer> b) -> SmartEntry
         {
-            return innards::UnarySetEntry{a, move(b), innards::ConstraintType::IN};
+            return innards::UnarySetEntry{a, move(b), innards::SmartEntryConstraint::In};
         }
 
         [[nodiscard]] static inline auto not_in_set(const IntegerVariableID & a, std::vector<Integer> b) -> SmartEntry
         {
-            return innards::UnarySetEntry{a, move(b), innards::ConstraintType::NOT_IN};
+            return innards::UnarySetEntry{a, move(b), innards::SmartEntryConstraint::NotIn};
         }
     };
 }
