@@ -16,7 +16,7 @@ namespace gcs
      * \sa gcs::solve_with()
      * \ingroup Core
      */
-    struct Stats
+    struct Stats final
     {
         unsigned long long recursions = 0;
         unsigned long long failures = 0;

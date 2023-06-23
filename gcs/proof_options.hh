@@ -11,7 +11,7 @@ namespace gcs
      * \sa Problem
      * \ingroup Core
      */
-    struct ProofOptions
+    struct ProofOptions final
     {
         explicit ProofOptions(const std::string &, const std::string &);
         explicit ProofOptions(const std::string &, const std::string &, bool, bool);

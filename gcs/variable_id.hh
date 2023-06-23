@@ -19,16 +19,16 @@ namespace gcs
      * \sa IntegerVariableID
      * \ingroup Core
      */
-    struct SimpleIntegerVariableID
+    struct SimpleIntegerVariableID final
     {
         unsigned long long index;
 
-        explicit SimpleIntegerVariableID(unsigned long long x) :
+        constexpr explicit SimpleIntegerVariableID(unsigned long long x) :
             index(x)
         {
         }
 
-        [[nodiscard]] auto operator<=>(const SimpleIntegerVariableID &) const = default;
+        [[nodiscard]] constexpr auto operator<=>(const SimpleIntegerVariableID &) const = default;
     };
 
     /**
@@ -40,20 +40,20 @@ namespace gcs
      * \sa IntegerVariableID
      * \ingroup Core
      */
-    struct ViewOfIntegerVariableID
+    struct ViewOfIntegerVariableID final
     {
         SimpleIntegerVariableID actual_variable;
         bool negate_first;
         Integer then_add;
 
-        explicit ViewOfIntegerVariableID(SimpleIntegerVariableID a, bool n, Integer o) :
+        constexpr explicit ViewOfIntegerVariableID(SimpleIntegerVariableID a, bool n, Integer o) :
             actual_variable(a),
             negate_first(n),
             then_add(o)
         {
         }
 
-        [[nodiscard]] auto operator<=>(const ViewOfIntegerVariableID &) const = default;
+        [[nodiscard]] constexpr auto operator<=>(const ViewOfIntegerVariableID &) const = default;
     };
 
     /**
@@ -69,16 +69,16 @@ namespace gcs
      * \sa gcs::constant_variable()
      * \ingroup Core
      */
-    struct ConstantIntegerVariableID
+    struct ConstantIntegerVariableID final
     {
         Integer const_value;
 
-        explicit ConstantIntegerVariableID(Integer x) :
+        constexpr explicit ConstantIntegerVariableID(Integer x) :
             const_value(x)
         {
         }
 
-        [[nodiscard]] auto operator<=>(const ConstantIntegerVariableID &) const = default;
+        [[nodiscard]] constexpr auto operator<=>(const ConstantIntegerVariableID &) const = default;
     };
 
     /**
@@ -141,7 +141,7 @@ namespace gcs
      * \sa gcs::operator""_c()
      * \ingroup Core
      */
-    [[nodiscard]] inline auto constant_variable(const Integer x) -> IntegerVariableID
+    [[nodiscard]] constexpr inline auto constant_variable(const Integer x) -> IntegerVariableID
     {
         return ConstantIntegerVariableID{x};
     }
@@ -153,7 +153,7 @@ namespace gcs
      * \sa gcs::constant_variable()
      * \ingroup Core
      */
-    [[nodiscard]] inline auto operator"" _c(unsigned long long v) -> ConstantIntegerVariableID
+    [[nodiscard]] constexpr inline auto operator"" _c(unsigned long long v) -> ConstantIntegerVariableID
     {
         return ConstantIntegerVariableID{Integer(v)};
     }
@@ -164,7 +164,7 @@ namespace gcs
      * \ingroup Core
      * \sa ConstantIntegerVariableID
      */
-    [[nodiscard]] inline auto operator-(ConstantIntegerVariableID a) -> ConstantIntegerVariableID
+    [[nodiscard]] constexpr inline auto operator-(ConstantIntegerVariableID a) -> ConstantIntegerVariableID
     {
         return ConstantIntegerVariableID{-a.const_value};
     }

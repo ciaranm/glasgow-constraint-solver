@@ -22,11 +22,11 @@ namespace gcs
      * \ingroup Core
      * \ingroup IntegerWrapper
      */
-    struct Integer
+    struct Integer final
     {
         long long raw_value;
 
-        explicit Integer(long long v) :
+        explicit constexpr Integer(long long v) :
             raw_value(v)
         {
         }
@@ -80,44 +80,44 @@ namespace gcs
      * \sa Integer
      */
 
-    [[nodiscard]] inline auto operator+(Integer a, Integer b) -> Integer
+    [[nodiscard]] constexpr inline auto operator+(Integer a, Integer b) -> Integer
     {
         return Integer{a.raw_value + b.raw_value};
     }
 
-    inline auto operator+=(Integer & a, Integer b) -> Integer &
+    constexpr inline auto operator+=(Integer & a, Integer b) -> Integer &
     {
         a.raw_value += b.raw_value;
         return a;
     }
 
-    [[nodiscard]] inline auto operator-(Integer a, Integer b) -> Integer
+    [[nodiscard]] constexpr inline auto operator-(Integer a, Integer b) -> Integer
     {
         return Integer{a.raw_value - b.raw_value};
     }
 
-    inline auto operator-=(Integer & a, Integer b) -> Integer &
+    constexpr inline auto operator-=(Integer & a, Integer b) -> Integer &
     {
         a.raw_value -= b.raw_value;
         return a;
     }
 
-    [[nodiscard]] inline auto operator*(Integer a, Integer b) -> Integer
+    [[nodiscard]] constexpr inline auto operator*(Integer a, Integer b) -> Integer
     {
         return Integer{a.raw_value * b.raw_value};
     }
 
-    [[nodiscard]] inline auto operator/(Integer a, Integer b) -> Integer
+    [[nodiscard]] constexpr inline auto operator/(Integer a, Integer b) -> Integer
     {
         return Integer{a.raw_value / b.raw_value};
     }
 
-    [[nodiscard]] inline auto operator%(Integer a, Integer b) -> Integer
+    [[nodiscard]] constexpr inline auto operator%(Integer a, Integer b) -> Integer
     {
         return Integer{a.raw_value % b.raw_value};
     }
 
-    [[nodiscard]] inline auto operator-(Integer a) -> Integer
+    [[nodiscard]] constexpr inline auto operator-(Integer a) -> Integer
     {
         return Integer{-a.raw_value};
     }
@@ -149,7 +149,7 @@ namespace gcs
      *
      * \ingroup IntegerWrapper
      */
-    [[nodiscard]] inline auto operator"" _i(unsigned long long v) -> Integer
+    [[nodiscard]] constexpr inline auto operator"" _i(unsigned long long v) -> Integer
     {
         return Integer(v);
     }

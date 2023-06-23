@@ -24,7 +24,7 @@ namespace gcs
      * \ingroup Core
      * \ingroup Literals
      */
-    struct LiteralFromIntegerVariable
+    struct LiteralFromIntegerVariable final
     {
         IntegerVariableID var;
         enum class Operator
@@ -40,7 +40,7 @@ namespace gcs
         /**
          * \brief Comparison, no defined meaning but allows for sorting etc.
          */
-        [[nodiscard]] auto operator<=>(const LiteralFromIntegerVariable &) const = default;
+        [[nodiscard]] constexpr auto operator<=>(const LiteralFromIntegerVariable &) const = default;
     };
 
     /**
@@ -50,7 +50,7 @@ namespace gcs
      * \ingroup Literals
      * \see LiteralFromIntegerVariable
      */
-    [[nodiscard]] inline auto operator==(const IntegerVariableID var, const Integer val) -> LiteralFromIntegerVariable
+    [[nodiscard]] constexpr inline auto operator==(const IntegerVariableID var, const Integer val) -> LiteralFromIntegerVariable
     {
         return LiteralFromIntegerVariable{var, LiteralFromIntegerVariable::Operator::Equal, val};
     }
@@ -62,7 +62,7 @@ namespace gcs
      * \ingroup Literals
      * \see LiteralFromIntegerVariable
      */
-    [[nodiscard]] inline auto operator!=(const IntegerVariableID var, const Integer val) -> LiteralFromIntegerVariable
+    [[nodiscard]] constexpr inline auto operator!=(const IntegerVariableID var, const Integer val) -> LiteralFromIntegerVariable
     {
         return LiteralFromIntegerVariable{var, LiteralFromIntegerVariable::Operator::NotEqual, val};
     }
@@ -74,7 +74,7 @@ namespace gcs
      * \ingroup Literals
      * \see LiteralFromIntegerVariable
      */
-    [[nodiscard]] inline auto operator<(const IntegerVariableID var, const Integer val) -> LiteralFromIntegerVariable
+    [[nodiscard]] constexpr inline auto operator<(const IntegerVariableID var, const Integer val) -> LiteralFromIntegerVariable
     {
         return LiteralFromIntegerVariable{var, LiteralFromIntegerVariable::Operator::Less, val};
     }
@@ -86,7 +86,7 @@ namespace gcs
      * \ingroup Literals
      * \see LiteralFromIntegerVariable
      */
-    [[nodiscard]] inline auto operator>=(const IntegerVariableID var, const Integer val) -> LiteralFromIntegerVariable
+    [[nodiscard]] constexpr inline auto operator>=(const IntegerVariableID var, const Integer val) -> LiteralFromIntegerVariable
     {
         return LiteralFromIntegerVariable{var, LiteralFromIntegerVariable::Operator::GreaterEqual, val};
     }
@@ -96,7 +96,7 @@ namespace gcs
      *
      * \ingroup Literals
      */
-    struct TrueLiteral
+    struct TrueLiteral final
     {
         /**
          * \brief Comparison, no defined meaning but allows for sorting etc.
@@ -109,12 +109,12 @@ namespace gcs
      *
      * \ingroup Literals
      */
-    struct FalseLiteral
+    struct FalseLiteral final
     {
         /**
          * \brief Comparison, no defined meaning but allows for sorting etc.
          */
-        [[nodiscard]] auto operator<=>(const FalseLiteral &) const = default;
+        [[nodiscard]] constexpr auto operator<=>(const FalseLiteral &) const = default;
     };
 
     /**

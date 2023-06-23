@@ -67,7 +67,7 @@ namespace gcs
      *
      * \ingroup SolveCallbacks
      */
-    struct SolveCallbacks
+    struct SolveCallbacks final
     {
         SolutionCallback solution = SolutionCallback{};
         TraceCallback trace = TraceCallback{};
