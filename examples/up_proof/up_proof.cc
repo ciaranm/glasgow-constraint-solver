@@ -15,7 +15,7 @@ using std::make_optional;
 using std::string;
 using std::vector;
 
-auto main(int argc, char * argv[]) -> int
+auto main(int, char *[]) -> int
 {
     Problem p;
     auto a = p.create_integer_variable(-100_i, 100_i);

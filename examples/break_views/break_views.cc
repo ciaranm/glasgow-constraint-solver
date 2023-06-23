@@ -15,7 +15,7 @@ using std::make_optional;
 using std::string;
 using std::vector;
 
-auto main(int argc, char * argv[]) -> int
+auto main(int, char *[]) -> int
 {
     Problem p;
     auto y = p.create_integer_variable(-4_i, 3_i);
@@ -24,7 +24,7 @@ auto main(int argc, char * argv[]) -> int
     p.post(GreaterThanEqual{x, y + 3_i});
     auto stats = solve_with(p,
         SolveCallbacks{
-            .solution = [&](const CurrentState & s) -> bool {
+            .solution = [&](const CurrentState &) -> bool {
                 cout << "Solution:" << endl;
                 return true;
             },

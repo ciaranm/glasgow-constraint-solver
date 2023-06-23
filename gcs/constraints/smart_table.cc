@@ -61,7 +61,7 @@ namespace
             },
             [&](ViewOfIntegerVariableID v) -> vector<Integer> {
                 auto vec = vector<Integer>(vdom[v.actual_variable].size(), 0_i);
-                for (int i = 0; i < vec.size(); i++) {
+                for (unsigned i = 0; i < vec.size(); i++) {
                     vec[i] = (v.negate_first ? -1_i : 1_i) * vdom[v.actual_variable][i] + v.then_add;
                 }
                 return vec;
@@ -81,7 +81,7 @@ namespace
             },
             [&](ViewOfIntegerVariableID v) -> void {
                 auto mod_vec = vector<Integer>(vdom[v.actual_variable].size(), 0_i);
-                for (int i = 0; i < vec.size(); i++) {
+                for (unsigned i = 0; i < vec.size(); i++) {
                     mod_vec[i] = (v.negate_first ? -1_i : 1_i) * (vec[i] - v.then_add);
                 }
                 vdom.at(v.actual_variable) = move(mod_vec);

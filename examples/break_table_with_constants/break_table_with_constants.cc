@@ -19,7 +19,7 @@ using std::string;
 using std::uniform_int_distribution;
 using std::vector;
 
-auto main(int argc, char * argv[]) -> int
+auto main(int, char *[]) -> int
 {
     Problem p;
     mt19937 rng(0);
@@ -37,17 +37,15 @@ auto main(int argc, char * argv[]) -> int
         auto tuples = SmartTuples{{GreaterThanEqualValue{y, Integer{l}}, GreaterThanVar{x, y}}};
         p.post(SmartTable{{x, y}, tuples});
 
-        auto stats = solve_with(p,
+        solve_with(p,
             SolveCallbacks{
-                .solution = [&](const CurrentState & s) -> bool {
+                .solution = [&](const CurrentState &) -> bool {
                     //                                            cout << "Solution: x = " << s(x) << "y =" << s(y) << endl;
                     return false;
                 },
             },
             make_optional<ProofOptions>("break_table_with_constants.opb",
                 "break_table_with_constants.veripb"));
-
-        //        cout << stats;
 
         if (system("veripb break_table_with_constants.opb break_table_with_constants.veripb") != 0) {
             return EXIT_FAILURE;
