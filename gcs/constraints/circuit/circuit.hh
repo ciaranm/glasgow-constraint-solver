@@ -36,23 +36,23 @@ namespace gcs
         virtual auto install(innards::Propagators &, innards::State &) && -> void = 0;
     };
 
-    //    class CircuitSCC : public CircuitBase
-    //    {
-    //    public:
-    //        using CircuitBase::CircuitBase;
-    //        virtual auto install(innards::Propagators &, innards::State &) && -> void override;
-    //    };
-
-    class CircuitPrevent : public CircuitBase
+    class CircuitSCC : public CircuitBase
     {
-
     public:
         using CircuitBase::CircuitBase;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
         virtual auto install(innards::Propagators &, innards::State &) && -> void override;
     };
 
-    using Circuit = CircuitPrevent;
+    class CircuitPrevent : public CircuitBase
+    {
+    public:
+        using CircuitBase::CircuitBase;
+        virtual auto clone() const -> std::unique_ptr<Constraint> override;
+        virtual auto install(innards::Propagators &, innards::State &) && -> void override;
+    };
+
+    using Circuit = CircuitSCC;
 
     auto propagate_non_gac_alldifferent(const std::optional<IntegerVariableID> & trigger_var,
         const std::vector<IntegerVariableID> & succ, innards::State & state) -> innards::Inference;
