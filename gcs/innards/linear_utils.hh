@@ -1,10 +1,11 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INNARDS_LINEAR_UTILS_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INNARDS_LINEAR_UTILS_HH
 
+#include <gcs/expression.hh>
 #include <gcs/innards/proof-fwd.hh>
 #include <gcs/innards/propagators-fwd.hh>
 #include <gcs/innards/state-fwd.hh>
-#include <gcs/linear.hh>
+#include <gcs/variable_id.hh>
 
 #include <optional>
 #include <variant>
@@ -13,59 +14,44 @@
 namespace gcs::innards
 {
     /**
-     * \brief A SimpleIntegerVariableID, together with a multiplication
-     * coefficient.
+     * A simpler alternative to `Weighted<Var_>` where the coefficient must be positive
+     * or negative one.
      *
+     * \sa Weighted
      * \ingroup Innards
      */
-    using CoefficientAndSimpleVariable = std::pair<Integer, SimpleIntegerVariableID>;
+    template <typename Var_>
+    struct PositiveOrNegative final
+    {
+        bool positive;
+        Var_ variable;
+
+        [[nodiscard]] constexpr auto operator<=>(const PositiveOrNegative<Var_> &) const = default;
+    };
 
     /**
-     * \brief A Linear that only uses SimpleIntegerVariableID terms.
+     * A PositiveOrNegative can be written to a `std::ostream` if its variable can be.
      *
-     * \ingroup Innards
-     * \sa SanitisedLinear
-     * \sa gcs::innards::sanitise_linear()
-     * \sa gcs::innards::propagate_linear()
-     */
-    using SimpleLinear = std::vector<CoefficientAndSimpleVariable>;
-
-    /**
-     * \brief A SimpleIntegerVariableID, with a coefficient that is either one
-     * if true, or negative one if false.
-     *
+     * \sa PositiveOrNegative
      * \ingroup Innards
      */
-    using IsPositiveAndSimpleVariable = std::pair<bool, SimpleIntegerVariableID>;
+    template <typename Var_>
+    auto operator<<(std::ostream & s, const PositiveOrNegative<Var_> & var) -> std::ostream &
+    {
+        return s << (var.positive ? "" : "-") << var.variable;
+    }
 
     /**
-     * \brief A Linear where the coefficients are all either one or minus one,
-     * and using only SimpleIntegerVariableID terms.
-     *
-     * \ingroup Innards
-     * \sa SanitisedLinear
-     * \sa gcs::innards::sanitise_linear()
-     * \sa gcs::innards::propagate_sum()
-     */
-    using SimpleSum = std::vector<IsPositiveAndSimpleVariable>;
-
-    /**
-     * \brief A Linear where all the coefficients are one and using only
-     * SimpleIntegerVariableID terms.
-     *
-     * \ingroup Innards
-     * \sa SanitisedLinear
-     * \sa gcs::innards::sanitise_linear()
-     * \sa gcs::innards::propagate_sum_all_positive()
-     */
-    using SimpleIntegerVariableIDs = std::vector<SimpleIntegerVariableID>;
-
-    /**
-     * \brief A Linear with its complicated bits removed.
+     * \brief A linear expression with its complicated bits removed.
      *
      * \sa gcs::innards::sanitise_linear()
+     *
+     * \ingroup Innards
      */
-    using SanitisedLinear = std::variant<SimpleIntegerVariableIDs, SimpleSum, SimpleLinear>;
+    using SanitisedLinear = std::variant<
+        SumOf<SimpleIntegerVariableID>,
+        SumOf<PositiveOrNegative<SimpleIntegerVariableID>>,
+        SumOf<Weighted<SimpleIntegerVariableID>>>;
 
     /**
      * \brief Sanitise a linear equation.
@@ -76,7 +62,7 @@ namespace gcs::innards
      *
      * \ingroup Innards
      */
-    [[nodiscard]] auto sanitise_linear(const Linear &) -> std::pair<SanitisedLinear, Integer>;
+    [[nodiscard]] auto sanitise_linear(const WeightedSum &) -> std::pair<SanitisedLinear, Integer>;
 
     /**
      * \brief Simplify a linear equation.
@@ -87,14 +73,14 @@ namespace gcs::innards
      *
      * \ingroup Innards
      */
-    [[nodiscard]] auto simplify_linear(const Linear &) -> std::pair<SimpleLinear, Integer>;
+    [[nodiscard]] auto simplify_linear(const WeightedSum &) -> std::pair<SumOf<Weighted<SimpleIntegerVariableID>>, Integer>;
 
     /**
      * \brief Propagate a linear equality or inequality.
      *
      * \ingroup Innards
      */
-    auto propagate_linear(const SimpleLinear &, Integer, State &, bool equality,
+    auto propagate_linear(const SumOf<Weighted<SimpleIntegerVariableID>> &, Integer, State &, bool equality,
         const std::optional<ProofLine> & proof_line) -> std::pair<Inference, PropagatorState>;
 
     /**
@@ -102,7 +88,7 @@ namespace gcs::innards
      *
      * \ingroup Innards
      */
-    auto propagate_sum(const SimpleSum &, Integer, State &, bool equality,
+    auto propagate_sum(const SumOf<PositiveOrNegative<SimpleIntegerVariableID>> &, Integer, State &, bool equality,
         const std::optional<ProofLine> & proof_line) -> std::pair<Inference, PropagatorState>;
 
     /**
@@ -110,9 +96,9 @@ namespace gcs::innards
      *
      * \ingroup Innards
      */
-    auto propagate_sum_all_positive(const SimpleIntegerVariableIDs &, Integer, State &, bool equality,
+    auto propagate_sum_all_positive(const SumOf<SimpleIntegerVariableID> &, Integer, State &, bool equality,
         const std::optional<ProofLine> & proof_line,
-        std::vector<std::pair<Integer, Integer> > & space) -> std::pair<Inference, PropagatorState>;
+        std::vector<std::pair<Integer, Integer>> & space) -> std::pair<Inference, PropagatorState>;
 }
 
 #endif

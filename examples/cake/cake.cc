@@ -63,14 +63,14 @@ auto main(int argc, char * argv[]) -> int
     // https://www.minizinc.org/doc-2.5.5/en/modelling.html#an-arithmetic-optimisation-example
     auto banana = p.create_integer_variable(0_i, 100_i);
     auto chocolate = p.create_integer_variable(0_i, 100_i);
-    p.post(LinearLessEqual{Linear{{250_i, banana}, {200_i, chocolate}}, 4000_i});
-    p.post(LinearLessEqual{Linear{{2_i, banana}}, 6_i});
-    p.post(LinearLessEqual{Linear{{75_i, banana}, {150_i, chocolate}}, 2000_i});
-    p.post(LinearLessEqual{Linear{{100_i, banana}, {150_i, chocolate}}, 500_i});
-    p.post(LinearLessEqual{Linear{{75_i, chocolate}}, 500_i});
+    p.post(LinearLessEqual{WeightedSum{} + 250_i * banana + 200_i * chocolate, 4000_i});
+    p.post(LinearLessEqual{WeightedSum{} + 2_i * banana, 6_i});
+    p.post(LinearLessEqual{WeightedSum{} + 75_i * banana + 150_i * chocolate, 2000_i});
+    p.post(LinearLessEqual{WeightedSum{} + 100_i * banana + 150_i * chocolate, 500_i});
+    p.post(LinearLessEqual{WeightedSum{} + 75_i * chocolate, 500_i});
 
     auto profit = p.create_integer_variable(0_i, 107500_i, "profit");
-    p.post(LinearEquality{Linear{{400_i, banana}, {450_i, chocolate}, {-1_i, profit}}, 0_i});
+    p.post(LinearEquality{WeightedSum{} + 400_i * banana + 450_i * chocolate + -1_i * profit, 0_i});
 
     p.maximise(profit);
     auto stats = solve_with(p,

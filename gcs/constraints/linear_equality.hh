@@ -2,8 +2,9 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_LINEAR_EQUALITY_HH
 
 #include <gcs/constraint.hh>
+#include <gcs/expression.hh>
 #include <gcs/integer.hh>
-#include <gcs/linear.hh>
+#include <gcs/variable_id.hh>
 
 #include <vector>
 
@@ -23,12 +24,12 @@ namespace gcs
     class LinearEquality : public Constraint
     {
     private:
-        Linear _coeff_vars;
+        WeightedSum _coeff_vars;
         Integer _value;
         bool _gac;
 
     public:
-        explicit LinearEquality(Linear coeff_vars, Integer value, bool gac = false);
+        explicit LinearEquality(WeightedSum coeff_vars, Integer value, bool gac = false);
 
         virtual auto describe_for_proof() -> std::string override;
         virtual auto install(innards::Propagators &, innards::State &) && -> void override;
@@ -49,11 +50,11 @@ namespace gcs
         class LinearInequality : public Constraint
         {
         private:
-            Linear _coeff_vars;
+            WeightedSum _coeff_vars;
             Integer _value;
 
         public:
-            explicit LinearInequality(Linear coeff_vars, Integer value);
+            explicit LinearInequality(WeightedSum coeff_vars, Integer value);
 
             virtual auto install(innards::Propagators &, innards::State &) && -> void override;
             virtual auto describe_for_proof() -> std::string override;
@@ -72,7 +73,7 @@ namespace gcs
     class LinearLessEqual : public innards::LinearInequality
     {
     public:
-        explicit LinearLessEqual(Linear coeff_vars, Integer value);
+        explicit LinearLessEqual(WeightedSum coeff_vars, Integer value);
     };
 
     /**
@@ -86,7 +87,7 @@ namespace gcs
     class LinearGreaterThanEqual : public innards::LinearInequality
     {
     public:
-        explicit LinearGreaterThanEqual(Linear coeff_vars, Integer value);
+        explicit LinearGreaterThanEqual(WeightedSum coeff_vars, Integer value);
     };
 }
 

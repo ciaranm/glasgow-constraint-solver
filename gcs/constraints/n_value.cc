@@ -73,18 +73,18 @@ auto NValue::install(Propagators & propagators, State & initial_state) && -> voi
         list<ProofFlag> flags;
         for (auto [v, vars] : all_possible_values) {
             auto flag = propagators.create_proof_flag("nvalue");
-            WeightedPseudoBooleanTerms forward;
+            WeightedPseudoBooleanSum forward;
             for (auto & var : vars)
-                forward.emplace_back(1_i, var == v);
-            forward.emplace_back(1_i, ! flag);
+                forward += 1_i * (var == v);
+            forward += 1_i * ! flag;
             Integer forward_g = 1_i;
             if (sanitise_pseudoboolean_terms(forward, forward_g))
                 propagators.define_pseudoboolean_ge(initial_state, move(forward), forward_g);
 
-            WeightedPseudoBooleanTerms reverse;
+            WeightedPseudoBooleanSum reverse;
             for (auto & var : vars)
-                reverse.emplace_back(1_i, var != v);
-            reverse.emplace_back(vars.size(), flag);
+                reverse += 1_i * (var != v);
+            reverse += Integer(vars.size()) * flag;
             Integer reverse_g(vars.size());
             if (sanitise_pseudoboolean_terms(reverse, reverse_g))
                 propagators.define_pseudoboolean_ge(initial_state, move(reverse), reverse_g);
@@ -92,13 +92,13 @@ auto NValue::install(Propagators & propagators, State & initial_state) && -> voi
             flags.push_back(flag);
         }
 
-        WeightedPseudoBooleanTerms forward, reverse;
+        WeightedPseudoBooleanSum forward, reverse;
         for (auto & flag : flags) {
-            forward.emplace_back(1_i, flag);
-            reverse.emplace_back(-1_i, flag);
+            forward += 1_i * flag;
+            reverse += -1_i * flag;
         }
-        forward.emplace_back(-1_i, _n_values);
-        reverse.emplace_back(1_i, _n_values);
+        forward += -1_i * _n_values;
+        reverse += 1_i * _n_values;
         Integer forward_g = 0_i, reverse_g = 0_i;
         if (sanitise_pseudoboolean_terms(forward, forward_g))
             propagators.define_pseudoboolean_ge(initial_state, move(forward), forward_g);

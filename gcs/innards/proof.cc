@@ -95,24 +95,24 @@ namespace
     }
 }
 
-auto gcs::innards::sanitise_pseudoboolean_terms(WeightedPseudoBooleanTerms & lits, Integer & val) -> bool
+auto gcs::innards::sanitise_pseudoboolean_terms(WeightedPseudoBooleanSum & lits, Integer & val) -> bool
 {
     using ::is_literally_true_or_false; // because C++
 
     // adjust coefficients down for true and false literals
-    for (const auto & l : lits) {
-        auto t_or_f = visit([&](const auto & t) { return is_literally_true_or_false(t); }, l.second);
+    for (const auto & l : lits.terms) {
+        auto t_or_f = visit([&](const auto & t) { return is_literally_true_or_false(t); }, l.variable);
         if (t_or_f && *t_or_f)
-            val -= l.first;
+            val -= l.coefficient;
         else if (t_or_f && ! *t_or_f)
-            val += l.first;
+            val += l.coefficient;
     }
 
     // now actually remove true and false literals
-    lits.erase(remove_if(lits.begin(), lits.end(), [&](const auto & wlit) -> bool {
-        return nullopt != visit([&](const auto & t) { return is_literally_true_or_false(t); }, wlit.second);
+    lits.terms.erase(remove_if(lits.terms.begin(), lits.terms.end(), [&](const auto & wlit) -> bool {
+        return nullopt != visit([&](const auto & t) { return is_literally_true_or_false(t); }, wlit.variable);
     }),
-        lits.end());
+        lits.terms.end());
 
     return true;
 }
@@ -692,13 +692,13 @@ auto Proof::at_most_one(const Literals & lits) -> ProofLine
     return ++_imp->model_constraints;
 }
 
-auto Proof::pseudoboolean_ge(const WeightedPseudoBooleanTerms & lits, Integer val,
+auto Proof::pseudoboolean_ge(const WeightedPseudoBooleanSum & lits, Integer val,
     optional<ReificationTerm> half_reif, bool equality) -> ProofLine
 {
     if (_imp->opb_done)
         throw UnexpectedException{"proof has already started"};
 
-    for (const auto & [_, lit] : lits)
+    for (const auto & [_, lit] : lits.terms)
         overloaded{
             [&](const Literal & lit) { need_proof_variable(lit); },
             [&](const IntegerVariableID &) {},
@@ -717,7 +717,7 @@ auto Proof::pseudoboolean_ge(const WeightedPseudoBooleanTerms & lits, Integer va
         OPBExpression expr;
         Integer modified_val = multiplier * val;
 
-        for (const auto & [w, lit] : lits) {
+        for (const auto & [w, lit] : lits.terms) {
             overloaded{
                 [&, w = w](const Literal & lit) {
                     expr.weighted_terms.emplace_back(multiplier * w, proof_variable(lit));
@@ -768,7 +768,7 @@ auto Proof::pseudoboolean_ge(const WeightedPseudoBooleanTerms & lits, Integer va
     return result;
 }
 
-auto Proof::integer_linear_le(const State &, const SimpleLinear & lin, Integer val,
+auto Proof::integer_linear_le(const State &, const SumOf<Weighted<SimpleIntegerVariableID>> & lin, Integer val,
     optional<ReificationTerm> half_reif, bool equality) -> ProofLine
 {
     if (_imp->opb_done)
@@ -782,7 +782,7 @@ auto Proof::integer_linear_le(const State &, const SimpleLinear & lin, Integer v
 
     _imp->opb << (equality ? "* linear eq" : "* linear le");
 
-    for (const auto & [coeff, var] : lin)
+    for (const auto & [coeff, var] : lin.terms)
         _imp->opb << " " << coeff << "*" << debug_string(IntegerVariableID{var});
     _imp->opb << " <= " << val << '\n';
 
@@ -790,14 +790,14 @@ auto Proof::integer_linear_le(const State &, const SimpleLinear & lin, Integer v
         using namespace gcs::innards::opb_utils;
 
         OPBExpression opb_expr;
-        for (const auto & [coeff, var] : lin) {
+        for (const auto & [coeff, var] : lin.terms) {
             auto bits = _imp->integer_variable_bits.find(var);
             if (bits != _imp->integer_variable_bits.end())
                 for (auto & [bit_value, bit_name] : bits->second.second)
                     opb_expr.weighted_terms.emplace_back(multiplier * coeff * bit_value, bit_name);
             else {
                 stringstream str;
-                for (const auto & [coeff, var] : lin)
+                for (const auto & [coeff, var] : lin.terms)
                     str << " " << coeff << "*" << debug_string(IntegerVariableID{var});
                 str << " <= " << val << '\n';
                 throw UnexpectedException{"missing bits for " + str.str()};

@@ -128,7 +128,7 @@ auto Propagators::define_at_most_one(const State &, Literals && lits) -> optiona
         return nullopt;
 }
 
-auto Propagators::define_pseudoboolean_ge(const State &, WeightedPseudoBooleanTerms && lits, Integer val,
+auto Propagators::define_pseudoboolean_ge(const State &, WeightedPseudoBooleanSum && lits, Integer val,
     optional<ReificationTerm> half_reif) -> optional<ProofLine>
 {
     if (_imp->optional_proof) {
@@ -138,7 +138,7 @@ auto Propagators::define_pseudoboolean_ge(const State &, WeightedPseudoBooleanTe
     return nullopt;
 }
 
-auto Propagators::define_pseudoboolean_eq(const State &, WeightedPseudoBooleanTerms && lits, Integer val,
+auto Propagators::define_pseudoboolean_eq(const State &, WeightedPseudoBooleanSum && lits, Integer val,
     optional<ReificationTerm> half_reif) -> optional<ProofLine>
 {
     if (_imp->optional_proof) {
@@ -148,7 +148,7 @@ auto Propagators::define_pseudoboolean_eq(const State &, WeightedPseudoBooleanTe
     return nullopt;
 }
 
-auto Propagators::define_linear_le(const State & state, const Linear & coeff_vars,
+auto Propagators::define_linear_le(const State & state, const WeightedSum & coeff_vars,
     Integer value, optional<ReificationTerm> half_reif) -> optional<ProofLine>
 {
     if (_imp->optional_proof) {
@@ -159,7 +159,7 @@ auto Propagators::define_linear_le(const State & state, const Linear & coeff_var
         return nullopt;
 }
 
-auto Propagators::define_linear_eq(const State & state, const Linear & coeff_vars,
+auto Propagators::define_linear_eq(const State & state, const WeightedSum & coeff_vars,
     Integer value, optional<ReificationTerm> half_reif) -> optional<ProofLine>
 {
     if (_imp->optional_proof) {
@@ -214,17 +214,17 @@ namespace
         return visit([&](const auto & val) { return is_immediately_infeasible(var, val); }, val);
     }
 
-    auto add_lit_unless_immediately_true(WeightedPseudoBooleanTerms & lits, const IntegerVariableID & var, const Integer & val) -> void
+    auto add_lit_unless_immediately_true(WeightedPseudoBooleanSum & lits, const IntegerVariableID & var, const Integer & val) -> void
     {
         if (! is_literally_true(var == val))
-            lits.emplace_back(1_i, var == val);
+            lits += 1_i * (var == val);
     }
 
-    auto add_lit_unless_immediately_true(WeightedPseudoBooleanTerms &, const IntegerVariableID &, const Wildcard &) -> void
+    auto add_lit_unless_immediately_true(WeightedPseudoBooleanSum &, const IntegerVariableID &, const Wildcard &) -> void
     {
     }
 
-    auto add_lit_unless_immediately_true(WeightedPseudoBooleanTerms & lits, const IntegerVariableID & var, const IntegerOrWildcard & val) -> void
+    auto add_lit_unless_immediately_true(WeightedPseudoBooleanSum & lits, const IntegerVariableID & var, const IntegerOrWildcard & val) -> void
     {
         return visit([&](const auto & val) { add_lit_unless_immediately_true(lits, var, val); }, val);
     }
@@ -260,8 +260,8 @@ auto Propagators::define_and_install_table(State & state, const vector<IntegerVa
             for (const auto & [tuple_idx, tuple] : enumerate(depointinate(permitted))) {
                 // selector == tuple_idx -> /\_i vars[i] == tuple[i]
                 bool infeasible = false;
-                WeightedPseudoBooleanTerms lits;
-                lits.emplace_back(Integer(tuple.size()), selector != Integer(tuple_idx));
+                WeightedPseudoBooleanSum lits;
+                lits += Integer(tuple.size()) * (selector != Integer(tuple_idx));
                 for (const auto & [var_idx, var] : enumerate(vars)) {
                     if (is_immediately_infeasible(var, tuple[var_idx]))
                         infeasible = true;
@@ -271,7 +271,7 @@ auto Propagators::define_and_install_table(State & state, const vector<IntegerVa
                 if (infeasible)
                     define_cnf(state, {selector != Integer(tuple_idx)});
                 else
-                    define_pseudoboolean_ge(state, move(lits), Integer(lits.size() - 1));
+                    define_pseudoboolean_ge(state, move(lits), Integer(lits.terms.size() - 1));
             }
         }
 

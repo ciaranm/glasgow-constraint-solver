@@ -409,21 +409,21 @@ auto Regular::install(Propagators & propagators, State & initial_state) && -> vo
         // NB: Might be easier to have a 1D array of ProofOnlyIntegerVariables, but making literals of these is
         // awkward currently. (TODO ?)
         for (unsigned int idx = 0; idx <= _vars.size(); ++idx) {
-            WeightedPseudoBooleanTerms exactly_1_true{};
+            WeightedPseudoBooleanSum exactly_1_true{};
             state_at_pos_flags.emplace_back();
             for (unsigned int q = 0; q < _num_states; ++q) {
                 state_at_pos_flags[idx].emplace_back(propagators.create_proof_flag("state" + to_string(idx) + "is" + to_string(q)));
-                exactly_1_true.emplace_back(1_i, state_at_pos_flags[idx][q]);
+                exactly_1_true += 1_i * state_at_pos_flags[idx][q];
             }
             propagators.define_pseudoboolean_eq(initial_state, move(exactly_1_true), 1_i);
         }
 
         // State at pos 0 is 0
-        propagators.define_pseudoboolean_ge(initial_state, {{1_i, state_at_pos_flags[0][0]}}, 1_i);
+        propagators.define_pseudoboolean_ge(initial_state, WeightedPseudoBooleanSum{} + 1_i * state_at_pos_flags[0][0], 1_i);
         // State at pos n is one of the final states
-        WeightedPseudoBooleanTerms pos_n_states;
+        WeightedPseudoBooleanSum pos_n_states;
         for (const auto & f : _final_states) {
-            pos_n_states.emplace_back(1_i, state_at_pos_flags[_vars.size()][f]);
+            pos_n_states += 1_i * state_at_pos_flags[_vars.size()][f];
         }
         propagators.define_pseudoboolean_ge(initial_state, move(pos_n_states), 1_i);
 
@@ -432,11 +432,11 @@ auto Regular::install(Propagators & propagators, State & initial_state) && -> vo
                 for (const auto & val : _symbols) {
                     if (_transitions[q][val] == -1) {
                         // No transition for q, v, so constrain ~(state_i = q /\ X_i = val)
-                        propagators.define_pseudoboolean_ge(initial_state, {{1_i, _vars[idx] != val}, {1_i, ! state_at_pos_flags[idx][q]}}, 1_i);
+                        propagators.define_pseudoboolean_ge(initial_state, WeightedPseudoBooleanSum{} + 1_i * (_vars[idx] != val) + (1_i * state_at_pos_flags[idx][q]), 1_i);
                     }
                     else {
                         auto new_q = _transitions[q][val];
-                        propagators.define_pseudoboolean_ge(initial_state, {{1_i, ! state_at_pos_flags[idx][q]}, {1_i, _vars[idx] != val}, {1_i, state_at_pos_flags[idx + 1][new_q]}}, 1_i);
+                        propagators.define_pseudoboolean_ge(initial_state, WeightedPseudoBooleanSum{} + 1_i * ! state_at_pos_flags[idx][q] + 1_i * (_vars[idx] != val) + 1_i * state_at_pos_flags[idx + 1][new_q], 1_i);
                     }
                 }
             }

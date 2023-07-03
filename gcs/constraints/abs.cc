@@ -91,17 +91,10 @@ auto Abs::install(Propagators & propagators, State & initial_state) && -> void
         triggers, "abs");
 
     if (propagators.want_definitions()) {
-        auto cv1 = Linear{{1_i, _v2}, {-1_i, _v1}};
-        propagators.define_linear_eq(initial_state, cv1, 0_i, *selector);
-
-        auto cv2 = Linear{{1_i, _v1}, {1_i, _v2}};
-        propagators.define_linear_eq(initial_state, cv2, 0_i, ! *selector);
-
-        auto cv3 = Linear{{1_i, _v1}};
-        propagators.define_linear_le(initial_state, cv3, -1_i, ! *selector);
-
-        auto cv4 = Linear{{-1_i, _v1}};
-        propagators.define_linear_le(initial_state, cv4, 0_i, *selector);
+        propagators.define_linear_eq(initial_state, WeightedSum{} + 1_i * _v2 + -1_i * _v1, 0_i, *selector);
+        propagators.define_linear_eq(initial_state, WeightedSum{} + 1_i * _v1 + 1_i * _v2, 0_i, ! *selector);
+        propagators.define_linear_le(initial_state, WeightedSum{} + 1_i * _v1, -1_i, ! *selector);
+        propagators.define_linear_le(initial_state, WeightedSum{} + -1_i * _v1, 0_i, *selector);
     }
 }
 

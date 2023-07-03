@@ -26,64 +26,64 @@ using std::to_string;
 using std::variant;
 using std::vector;
 
-auto gcs::innards::simplify_linear(const Linear & coeff_vars) -> pair<SimpleLinear, Integer>
+auto gcs::innards::simplify_linear(const WeightedSum & coeff_vars) -> pair<SumOf<Weighted<SimpleIntegerVariableID>>, Integer>
 {
-    SimpleLinear result;
+    SumOf<Weighted<SimpleIntegerVariableID>> result;
     Integer modifier{0_i};
-    for (const auto & [c, v] : coeff_vars)
+    for (const auto & [c, v] : coeff_vars.terms)
         overloaded{
-            [&, &c = c](const SimpleIntegerVariableID & v) { result.emplace_back(c, v); },
+            [&, &c = c](const SimpleIntegerVariableID & v) { result.terms.emplace_back(c, v); },
             [&, &c = c](const ConstantIntegerVariableID & v) { modifier -= c * v.const_value; },
             [&, &c = c](const ViewOfIntegerVariableID & v) {
-                result.emplace_back(v.negate_first ? -c : c, v.actual_variable);
+                result.terms.emplace_back(v.negate_first ? -c : c, v.actual_variable);
                 modifier -= c * v.then_add;
             }}
             .visit(v);
 
-    sort(result.begin(), result.end(), [](const CoefficientAndSimpleVariable & a, const CoefficientAndSimpleVariable & b) {
-        return a.second < b.second;
+    sort(result.terms.begin(), result.terms.end(), [](const Weighted<SimpleIntegerVariableID> & a, const Weighted<SimpleIntegerVariableID> & b) {
+        return a.variable < b.variable;
     });
 
     // same variable appears twice? bring in its coefficient, and rewrite future
     // coefficients to be zero
-    auto c = result.begin();
-    while (c != result.end()) {
+    auto c = result.terms.begin();
+    while (c != result.terms.end()) {
         auto c_next = next(c);
-        while (c_next != result.end() && c_next->second == c->second) {
-            c->first += c_next->first;
-            c_next->first = 0_i;
+        while (c_next != result.terms.end() && c_next->variable == c->variable) {
+            c->coefficient += c_next->coefficient;
+            c_next->coefficient = 0_i;
             ++c_next;
         }
         c = c_next;
     }
 
     // remove zero coefficients
-    result.erase(remove_if(result.begin(), result.end(), [](const CoefficientAndSimpleVariable & cv) {
-        return cv.first == 0_i;
+    result.terms.erase(remove_if(result.terms.begin(), result.terms.end(), [](const Weighted<SimpleIntegerVariableID> & cv) {
+        return cv.coefficient == 0_i;
     }),
-        result.end());
+        result.terms.end());
 
     return pair{result, modifier};
 }
 
-auto gcs::innards::sanitise_linear(const Linear & coeff_vars) -> pair<SanitisedLinear, Integer>
+auto gcs::innards::sanitise_linear(const WeightedSum & coeff_vars) -> pair<SanitisedLinear, Integer>
 {
     auto [result, modifier] = simplify_linear(coeff_vars);
 
-    if (result.end() == find_if(result.begin(), result.end(), [](const CoefficientAndSimpleVariable & cv) -> bool {
-            return cv.first != 1_i;
+    if (result.terms.end() == find_if(result.terms.begin(), result.terms.end(), [](const Weighted<SimpleIntegerVariableID> & cv) -> bool {
+            return cv.coefficient != 1_i;
         })) {
-        SimpleIntegerVariableIDs simple_result;
-        for (auto & [_, v] : result)
-            simple_result.emplace_back(v);
+        SumOf<SimpleIntegerVariableID> simple_result;
+        for (auto & [_, v] : result.terms)
+            simple_result.terms.emplace_back(v);
         return pair{simple_result, modifier};
     }
-    else if (result.end() == find_if(result.begin(), result.end(), [](const CoefficientAndSimpleVariable & cv) -> bool {
-                 return cv.first != 1_i && cv.first != -1_i;
+    else if (result.terms.end() == find_if(result.terms.begin(), result.terms.end(), [](const Weighted<SimpleIntegerVariableID> & cv) -> bool {
+                 return cv.coefficient != 1_i && cv.coefficient != -1_i;
              })) {
-        SimpleSum sum_result;
-        for (auto & [c, v] : result)
-            sum_result.emplace_back(c == 1_i, v);
+        SumOf<PositiveOrNegative<SimpleIntegerVariableID>> sum_result;
+        for (auto & [c, v] : result.terms)
+            sum_result.terms.emplace_back(c == 1_i, v);
         return pair{sum_result, modifier};
     }
     else
@@ -102,14 +102,14 @@ namespace
         return ! b;
     }
 
-    auto get_var(const pair<bool, SimpleIntegerVariableID> & cv) -> SimpleIntegerVariableID
+    auto get_var(const PositiveOrNegative<SimpleIntegerVariableID> & cv) -> SimpleIntegerVariableID
     {
-        return cv.second;
+        return cv.variable;
     }
 
-    auto get_var(const pair<Integer, SimpleIntegerVariableID> & cv) -> SimpleIntegerVariableID
+    auto get_var(const Weighted<SimpleIntegerVariableID> & cv) -> SimpleIntegerVariableID
     {
-        return cv.second;
+        return cv.variable;
     }
 
     auto get_var(const SimpleIntegerVariableID & cv) -> SimpleIntegerVariableID
@@ -117,14 +117,14 @@ namespace
         return cv;
     }
 
-    auto get_coeff(const pair<bool, SimpleIntegerVariableID> & cv) -> Integer
+    auto get_coeff(const PositiveOrNegative<SimpleIntegerVariableID> & cv) -> Integer
     {
-        return cv.first ? 1_i : -1_i;
+        return cv.positive ? 1_i : -1_i;
     }
 
-    auto get_coeff(const pair<Integer, SimpleIntegerVariableID> & cv) -> Integer
+    auto get_coeff(const Weighted<SimpleIntegerVariableID> & cv) -> Integer
     {
-        return cv.first;
+        return cv.coefficient;
     }
 
     auto get_coeff(const SimpleIntegerVariableID &) -> Integer
@@ -132,14 +132,14 @@ namespace
         return 1_i;
     }
 
-    auto get_coeff_or_bool(const pair<bool, SimpleIntegerVariableID> & cv) -> bool
+    auto get_coeff_or_bool(const PositiveOrNegative<SimpleIntegerVariableID> & cv) -> bool
     {
-        return cv.first;
+        return cv.positive;
     }
 
-    auto get_coeff_or_bool(const pair<Integer, SimpleIntegerVariableID> & cv) -> Integer
+    auto get_coeff_or_bool(const Weighted<SimpleIntegerVariableID> & cv) -> Integer
     {
-        return cv.first;
+        return cv.coefficient;
     }
 
     auto get_coeff_or_bool(const SimpleIntegerVariableID &) -> bool
@@ -151,7 +151,7 @@ namespace
         const std::optional<ProofLine> & proof_line) -> pair<Inference, PropagatorState>
     {
         vector<pair<Integer, Integer>> bounds;
-        bounds.reserve(coeff_vars.size());
+        bounds.reserve(coeff_vars.terms.size());
 
         auto justify = [&](const SimpleIntegerVariableID & change_var, Proof & proof, vector<ProofLine> & to_delete,
                            bool second_constraint_for_equality, const string & to_what) -> void {
@@ -161,7 +161,7 @@ namespace
             terms_to_sum.emplace_back(1_i, second_constraint_for_equality ? *proof_line - 1 : *proof_line);
 
             Integer change_var_coeff = 0_i;
-            for (const auto & cv : coeff_vars) {
+            for (const auto & cv : coeff_vars.terms) {
                 if (get_var(cv) == change_var) {
                     change_var_coeff = get_coeff(cv);
                     continue;
@@ -265,7 +265,7 @@ namespace
         bool changed = false;
 
         Integer lower_sum{0};
-        for (const auto & cv : coeff_vars) {
+        for (const auto & cv : coeff_vars.terms) {
             const auto & var = get_var(cv);
             bounds.push_back(state.bounds(var));
             if constexpr (is_same_v<decltype(cv), const SimpleIntegerVariableID &>)
@@ -276,8 +276,8 @@ namespace
             }
         }
 
-        for (unsigned p = 0, p_end = coeff_vars.size(); p != p_end; ++p) {
-            const auto & cv = coeff_vars[p];
+        for (unsigned p = 0, p_end = coeff_vars.terms.size(); p != p_end; ++p) {
+            const auto & cv = coeff_vars.terms[p];
 
             Integer lower_without_me{0_i};
             if constexpr (is_same_v<decltype(cv), const SimpleIntegerVariableID &>)
@@ -311,7 +311,7 @@ namespace
 
         if (equality) {
             Integer inv_lower_sum{0};
-            for (const auto & [idx, cv] : enumerate(coeff_vars)) {
+            for (const auto & [idx, cv] : enumerate(coeff_vars.terms)) {
                 if constexpr (is_same_v<decltype(cv), const SimpleIntegerVariableID &>)
                     inv_lower_sum += -bounds[idx].second;
                 else {
@@ -320,8 +320,8 @@ namespace
                 }
             }
 
-            for (unsigned p = 0, p_end = coeff_vars.size(); p != p_end; ++p) {
-                const auto & cv = coeff_vars[p];
+            for (unsigned p = 0, p_end = coeff_vars.terms.size(); p != p_end; ++p) {
+                const auto & cv = coeff_vars.terms[p];
                 Integer inv_lower_without_me{0_i};
                 if constexpr (is_same_v<decltype(cv), const SimpleIntegerVariableID &>)
                     inv_lower_without_me = inv_lower_sum + bounds[p].second;
@@ -356,20 +356,20 @@ namespace
     }
 }
 
-auto gcs::innards::propagate_linear(const SimpleLinear & coeff_vars, Integer value, State & state, bool equality,
+auto gcs::innards::propagate_linear(const SumOf<Weighted<SimpleIntegerVariableID>> & coeff_vars, Integer value, State & state, bool equality,
     const std::optional<ProofLine> & proof_line) -> pair<Inference, PropagatorState>
 {
     return propagate_linear_or_sum(coeff_vars, value, state, equality, proof_line);
 }
 
-auto gcs::innards::propagate_sum(const SimpleSum & coeff_vars, Integer value, State & state, bool equality,
+auto gcs::innards::propagate_sum(const SumOf<PositiveOrNegative<SimpleIntegerVariableID>> & coeff_vars, Integer value, State & state, bool equality,
     const std::optional<ProofLine> & proof_line) -> pair<Inference, PropagatorState>
 {
     return propagate_linear_or_sum(coeff_vars, value, state, equality, proof_line);
 }
 
-auto gcs::innards::propagate_sum_all_positive(const SimpleIntegerVariableIDs & coeff_vars, Integer value, State & state, bool equality,
-    const std::optional<ProofLine> & proof_line, vector<pair<Integer, Integer> > & space) -> pair<Inference, PropagatorState>
+auto gcs::innards::propagate_sum_all_positive(const SumOf<SimpleIntegerVariableID> & coeff_vars, Integer value, State & state, bool equality,
+    const std::optional<ProofLine> & proof_line, vector<pair<Integer, Integer>> & space) -> pair<Inference, PropagatorState>
 {
     if (state.maybe_proof() || ! equality)
         return propagate_linear_or_sum(coeff_vars, value, state, equality, proof_line);
@@ -377,15 +377,15 @@ auto gcs::innards::propagate_sum_all_positive(const SimpleIntegerVariableIDs & c
     bool changed = false;
 
     Integer lower_sum{0}, inv_lower_sum{0};
-    for (const auto & [ idx, cv ] : enumerate(coeff_vars)) {
+    for (const auto & [idx, cv] : enumerate(coeff_vars.terms)) {
         const auto & var = get_var(cv);
         space[idx] = state.bounds(var);
         lower_sum += space[idx].first;
         inv_lower_sum += -space[idx].second;
     }
 
-    for (unsigned p = 0, p_end = coeff_vars.size(); p != p_end; ++p) {
-        const auto & cv = coeff_vars[p];
+    for (unsigned p = 0, p_end = coeff_vars.terms.size(); p != p_end; ++p) {
+        const auto & cv = coeff_vars.terms[p];
 
         Integer lower_without_me = lower_sum - space[p].first;
         Integer remainder = value - lower_without_me;

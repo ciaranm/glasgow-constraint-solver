@@ -27,7 +27,7 @@ using std::to_string;
 using std::unique_ptr;
 using std::vector;
 
-LinearEquality::LinearEquality(Linear coeff_vars, Integer value, bool gac) :
+LinearEquality::LinearEquality(WeightedSum coeff_vars, Integer value, bool gac) :
     _coeff_vars(move(coeff_vars)),
     _value(value),
     _gac(gac)
@@ -36,7 +36,7 @@ LinearEquality::LinearEquality(Linear coeff_vars, Integer value, bool gac) :
 
 auto LinearEquality::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<LinearEquality>(Linear{_coeff_vars}, _value, _gac);
+    return make_unique<LinearEquality>(WeightedSum{_coeff_vars}, _value, _gac);
 }
 
 namespace
@@ -51,14 +51,14 @@ namespace
         return v;
     }
 
-    auto get_var(const pair<bool, SimpleIntegerVariableID> & cv) -> SimpleIntegerVariableID
+    auto get_var(const PositiveOrNegative<SimpleIntegerVariableID> & cv) -> SimpleIntegerVariableID
     {
-        return cv.second;
+        return cv.variable;
     }
 
-    auto get_var(const pair<Integer, SimpleIntegerVariableID> & cv) -> SimpleIntegerVariableID
+    auto get_var(const Weighted<SimpleIntegerVariableID> & cv) -> SimpleIntegerVariableID
     {
-        return cv.second;
+        return cv.variable;
     }
 
     auto get_var(const SimpleIntegerVariableID & cv) -> SimpleIntegerVariableID
@@ -66,14 +66,14 @@ namespace
         return cv;
     }
 
-    auto get_coeff(const pair<bool, SimpleIntegerVariableID> & cv) -> bool
+    auto get_coeff(const PositiveOrNegative<SimpleIntegerVariableID> & cv) -> bool
     {
-        return cv.first;
+        return cv.positive;
     }
 
-    auto get_coeff(const pair<Integer, SimpleIntegerVariableID> & cv) -> Integer
+    auto get_coeff(const Weighted<SimpleIntegerVariableID> & cv) -> Integer
     {
-        return cv.first;
+        return cv.coefficient;
     }
 
     auto get_coeff(const SimpleIntegerVariableID &) -> Integer
@@ -88,7 +88,7 @@ namespace
         vector<Integer> current;
 
         vector<IntegerVariableID> vars;
-        for (auto & cv : coeff_vars) {
+        for (auto & cv : coeff_vars.terms) {
             auto var = get_var(cv);
             vars.push_back(var);
             if (state.maybe_proof()) {
@@ -102,9 +102,9 @@ namespace
 
         stringstream trail;
         function<void(Proof *, vector<ProofLine> *)> search = [&](Proof * maybe_proof, vector<ProofLine> * to_delete) {
-            if (current.size() == coeff_vars.size()) {
+            if (current.size() == coeff_vars.terms.size()) {
                 Integer actual_value{0_i};
-                for (const auto & [idx, cv] : enumerate(coeff_vars)) {
+                for (const auto & [idx, cv] : enumerate(coeff_vars.terms)) {
                     auto coeff = get_coeff(cv);
                     actual_value += to_coeff(coeff) * current[idx];
                 }
@@ -116,14 +116,14 @@ namespace
                         trail << "1 " << maybe_proof->proof_variable(future_var_id == sel_value) << " ";
 
                         stringstream forward_implication, reverse_implication;
-                        forward_implication << "red " << coeff_vars.size() << " " << maybe_proof->proof_variable(future_var_id != sel_value);
+                        forward_implication << "red " << coeff_vars.terms.size() << " " << maybe_proof->proof_variable(future_var_id != sel_value);
                         reverse_implication << "red 1 " << maybe_proof->proof_variable(future_var_id == sel_value);
 
-                        for (const auto & [idx, cv] : enumerate(coeff_vars)) {
+                        for (const auto & [idx, cv] : enumerate(coeff_vars.terms)) {
                             forward_implication << " 1 " << maybe_proof->proof_variable(get_var(cv) == current[idx]);
                             reverse_implication << " 1 " << maybe_proof->proof_variable(get_var(cv) != current[idx]);
                         }
-                        forward_implication << " >= " << coeff_vars.size() << " ; "
+                        forward_implication << " >= " << coeff_vars.terms.size() << " ; "
                                             << maybe_proof->proof_variable(future_var_id == sel_value) << " 0";
                         reverse_implication << " >= 1 ; "
                                             << maybe_proof->proof_variable(future_var_id == sel_value) << " 1";
@@ -134,7 +134,7 @@ namespace
                 }
             }
             else {
-                const auto & var = get_var(coeff_vars[current.size()]);
+                const auto & var = get_var(coeff_vars.terms[current.size()]);
                 state.for_each_value(var, [&](Integer val) {
                     current.push_back(val);
                     search(maybe_proof, to_delete);
@@ -146,7 +146,7 @@ namespace
                 stringstream backtrack;
                 backtrack << "u " << trail.str();
                 for (const auto & [idx, val] : enumerate(current))
-                    backtrack << "1 " << maybe_proof->proof_variable(get_var(coeff_vars[idx]) != val) << " ";
+                    backtrack << "1 " << maybe_proof->proof_variable(get_var(coeff_vars.terms[idx]) != val) << " ";
                 backtrack << ">= 1 ;";
 
                 auto line = maybe_proof->emit_proof_line(backtrack.str());
@@ -181,25 +181,25 @@ auto LinearEquality::install(Propagators & propagators, State & initial_state) &
     auto [sanitised_cv, modifier] = sanitise_linear(_coeff_vars);
 
     Triggers triggers;
-    for (auto & [_, v] : _coeff_vars)
+    for (auto & [_, v] : _coeff_vars.terms)
         triggers.on_bounds.push_back(v);
 
     overloaded{
-        [&, &modifier = modifier](const SimpleLinear & lin) {
+        [&, &modifier = modifier](const SumOf<Weighted<SimpleIntegerVariableID>> & lin) {
             propagators.install([modifier = modifier, lin = lin, value = _value, proof_line = proof_line](State & state) {
                 return propagate_linear(lin, value + modifier, state, true, proof_line);
             },
                 triggers, "linear equality");
         },
-        [&, &modifier = modifier](const SimpleSum & sum) {
+        [&, &modifier = modifier](const SumOf<PositiveOrNegative<SimpleIntegerVariableID>> & sum) {
             propagators.install([modifier = modifier, sum = sum, value = _value, proof_line = proof_line](State & state) {
                 return propagate_sum(sum, value + modifier, state, true, proof_line);
             },
                 triggers, "linear equality");
         },
-        [&, &modifier = modifier](const SimpleIntegerVariableIDs & sum) {
+        [&, &modifier = modifier](const SumOf<SimpleIntegerVariableID> & sum) {
             vector<pair<Integer, Integer> > space;
-            space.resize(sum.size(), pair{0_i, 0_i});
+            space.resize(sum.terms.size(), pair{0_i, 0_i});
             propagators.install([modifier = modifier, sum = sum, value = _value,
                     proof_line = proof_line, space = move(space)](State & state) mutable {
                 return propagate_sum_all_positive(sum, value + modifier, state, true, proof_line, space);
@@ -211,7 +211,7 @@ auto LinearEquality::install(Propagators & propagators, State & initial_state) &
     if (_gac) {
         visit([&, modifier = modifier](auto & sanitised_cv) {
             Triggers triggers;
-            for (auto & cv : sanitised_cv)
+            for (auto & cv : sanitised_cv.terms)
                 triggers.on_change.push_back(get_var(cv));
 
             auto data = make_shared<optional<ExtensionalData>>(nullopt);
@@ -232,7 +232,7 @@ auto LinearEquality::describe_for_proof() -> std::string
     return "linear equality";
 }
 
-LinearInequality::LinearInequality(Linear coeff_vars, Integer value) :
+LinearInequality::LinearInequality(WeightedSum coeff_vars, Integer value) :
     _coeff_vars(move(coeff_vars)),
     _value(value)
 {
@@ -240,7 +240,7 @@ LinearInequality::LinearInequality(Linear coeff_vars, Integer value) :
 
 auto LinearInequality::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<LinearInequality>(Linear{_coeff_vars}, _value);
+    return make_unique<LinearInequality>(WeightedSum{_coeff_vars}, _value);
 }
 
 auto LinearInequality::install(Propagators & propagators, State & initial_state) && -> void
@@ -252,25 +252,25 @@ auto LinearInequality::install(Propagators & propagators, State & initial_state)
     auto [sanitised_cv, modifier] = sanitise_linear(_coeff_vars);
 
     Triggers triggers;
-    for (auto & [_, v] : _coeff_vars)
+    for (auto & [_, v] : _coeff_vars.terms)
         triggers.on_bounds.push_back(v);
 
     overloaded{
-        [&, &modifier = modifier](const SimpleLinear & lin) {
+        [&, &modifier = modifier](const SumOf<Weighted<SimpleIntegerVariableID>> & lin) {
             propagators.install([modifier = modifier, lin = lin, value = _value, proof_line = proof_line](State & state) {
                 return propagate_linear(lin, value + modifier, state, false, proof_line);
             },
                 triggers, "linear inequality");
         },
-        [&, &modifier = modifier](const SimpleSum & sum) {
+        [&, &modifier = modifier](const SumOf<PositiveOrNegative<SimpleIntegerVariableID>> & sum) {
             propagators.install([modifier = modifier, sum = sum, value = _value, proof_line = proof_line](State & state) {
                 return propagate_sum(sum, value + modifier, state, false, proof_line);
             },
                 triggers, "linear inequality");
         },
-        [&, &modifier = modifier](const SimpleIntegerVariableIDs & sum) {
+        [&, &modifier = modifier](const SumOf<SimpleIntegerVariableID> & sum) {
             vector<pair<Integer, Integer> > space;
-            space.resize(sum.size(), pair{0_i, 0_i});
+            space.resize(sum.terms.size(), pair{0_i, 0_i});
             propagators.install([modifier = modifier, sum = sum, value = _value,
                     proof_line = proof_line, space = move(space)](State & state) mutable {
                 return propagate_sum_all_positive(sum, value + modifier, state, false, proof_line, space);
@@ -285,22 +285,22 @@ auto LinearInequality::describe_for_proof() -> std::string
     return "linear inequality";
 }
 
-LinearLessEqual::LinearLessEqual(Linear coeff_vars, Integer value) :
+LinearLessEqual::LinearLessEqual(WeightedSum coeff_vars, Integer value) :
     LinearInequality(move(coeff_vars), value)
 {
 }
 
 namespace
 {
-    auto negate(Linear & coeff_vars) -> Linear &
+    auto negate(WeightedSum & coeff_vars) -> WeightedSum &
     {
-        for (auto & [c, _] : coeff_vars)
+        for (auto & [c, _] : coeff_vars.terms)
             c = -c;
         return coeff_vars;
     }
 }
 
-LinearGreaterThanEqual::LinearGreaterThanEqual(Linear coeff_vars, Integer value) :
+LinearGreaterThanEqual::LinearGreaterThanEqual(WeightedSum coeff_vars, Integer value) :
     LinearInequality(move(negate(coeff_vars)), -value)
 {
 }

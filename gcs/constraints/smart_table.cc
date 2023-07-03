@@ -588,57 +588,57 @@ namespace
         case SmartEntryConstraint::Equal:
             // f => var1 == var2
             flag = propagators.create_proof_flag("bin_eq");
-            propagators.define_pseudoboolean_eq(state, {{1_i, var_1}, {-1_i, var_2}}, 0_i, flag);
+            propagators.define_pseudoboolean_eq(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2, 0_i, flag);
 
             // !f => var1 != var2
             flag_lt = propagators.create_proof_flag("lt");
             flag_gt = propagators.create_proof_flag("gt");
-            propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 1_i, flag_gt);
-            propagators.define_pseudoboolean_ge(state, {{1_i, var_2}, {-1_i, var_1}}, 0_i, ! flag_gt);
-            propagators.define_pseudoboolean_ge(state, {{1_i, var_2}, {-1_i, var_1}}, 1_i, flag_lt);
-            propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 0_i, ! flag_lt);
-            propagators.define_pseudoboolean_ge(state, {{1_i, flag_lt}, {1_i, flag_gt}}, 1_i, ! flag);
+            propagators.define_pseudoboolean_ge(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2, 1_i, flag_gt);
+            propagators.define_pseudoboolean_ge(state, WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1, 0_i, ! flag_gt);
+            propagators.define_pseudoboolean_ge(state, WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1, 1_i, flag_lt);
+            propagators.define_pseudoboolean_ge(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2, 0_i, ! flag_lt);
+            propagators.define_pseudoboolean_ge(state, WeightedPseudoBooleanSum{} + 1_i * flag_lt + 1_i * flag_gt, 1_i, ! flag);
             return flag;
         case SmartEntryConstraint::GreaterThan:
             flag = propagators.create_proof_flag("bin_gt");
-            propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 1_i, flag);
-            propagators.define_pseudoboolean_ge(state, {{1_i, var_2}, {-1_i, var_1}}, 0_i, ! flag);
+            propagators.define_pseudoboolean_ge(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2, 1_i, flag);
+            propagators.define_pseudoboolean_ge(state, WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1, 0_i, ! flag);
             return flag;
         case SmartEntryConstraint::LessThan:
             flag = propagators.create_proof_flag("bin_lt");
-            propagators.define_pseudoboolean_ge(state, {{1_i, var_2}, {-1_i, var_1}}, 1_i, flag);
-            propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 0_i, ! flag);
+            propagators.define_pseudoboolean_ge(state, WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1, 1_i, flag);
+            propagators.define_pseudoboolean_ge(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2, 0_i, ! flag);
             return flag;
         case SmartEntryConstraint::LessThanEqual:
             flag = propagators.create_proof_flag("bin_le");
-            propagators.define_pseudoboolean_ge(state, {{1_i, var_2}, {-1_i, var_1}}, 0_i, flag);
-            propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 1_i, ! flag);
+            propagators.define_pseudoboolean_ge(state, WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1, 0_i, flag);
+            propagators.define_pseudoboolean_ge(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2, 1_i, ! flag);
             return flag;
         case SmartEntryConstraint::NotEqual:
             // !f => var1 == var2
             flag = propagators.create_proof_flag("bin_eq");
-            propagators.define_pseudoboolean_eq(state, {{1_i, var_1}, {-1_i, var_2}}, 0_i, ! flag);
+            propagators.define_pseudoboolean_eq(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2, 0_i, ! flag);
 
             // f => var1 != var2
             flag_lt = propagators.create_proof_flag("lt");
             flag_gt = propagators.create_proof_flag("gt");
 
             // Means we need f => fgt or flt
-            propagators.define_pseudoboolean_ge(state, {{1_i, flag_lt}, {1_i, flag_gt}}, 1_i, flag);
+            propagators.define_pseudoboolean_ge(state, WeightedPseudoBooleanSum{} + 1_i * flag_lt + 1_i * flag_gt, 1_i, flag);
 
             // And then fgt <==> var1 > var2
-            propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 1_i, flag_gt);
-            propagators.define_pseudoboolean_ge(state, {{1_i, var_2}, {-1_i, var_1}}, 0_i, ! flag_gt);
+            propagators.define_pseudoboolean_ge(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2, 1_i, flag_gt);
+            propagators.define_pseudoboolean_ge(state, WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1, 0_i, ! flag_gt);
 
             // flt <==> var1 < var2
-            propagators.define_pseudoboolean_ge(state, {{1_i, var_2}, {-1_i, var_1}}, 1_i, flag_lt);
-            propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 0_i, ! flag_lt);
+            propagators.define_pseudoboolean_ge(state, WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1, 1_i, flag_lt);
+            propagators.define_pseudoboolean_ge(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2, 0_i, ! flag_lt);
 
             return flag;
         case SmartEntryConstraint::GreaterThanEqual:
             flag = propagators.create_proof_flag("bin_ge");
-            propagators.define_pseudoboolean_ge(state, {{1_i, var_1}, {-1_i, var_2}}, 0_i, flag);
-            propagators.define_pseudoboolean_ge(state, {{1_i, var_2}, {-1_i, var_1}}, 1_i, ! flag);
+            propagators.define_pseudoboolean_ge(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2, 0_i, flag);
+            propagators.define_pseudoboolean_ge(state, WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1, 1_i, ! flag);
             return flag;
         case SmartEntryConstraint::NotIn:
         case SmartEntryConstraint::In:
@@ -705,11 +705,10 @@ auto SmartTable::install(Propagators & propagators, State & initial_state) && ->
         for (unsigned int i = 0; i < _tuples.size(); ++i) {
             pb_selectors.emplace_back(propagators.create_proof_flag("t" + to_string(i)));
         }
-        WeightedPseudoBooleanTerms sum_pb_selectors{};
+        WeightedPseudoBooleanSum sum_pb_selectors{};
 
-        for (const auto & s : pb_selectors) {
-            sum_pb_selectors.emplace_back(1_i, s);
-        }
+        for (const auto & s : pb_selectors)
+            sum_pb_selectors += 1_i * s;
 
         propagators.define_pseudoboolean_ge(initial_state, move(sum_pb_selectors), 1_i);
 
@@ -717,8 +716,8 @@ auto SmartTable::install(Propagators & propagators, State & initial_state) && ->
         map<BinaryEntryData, ProofFlag> smart_entry_flags;
 
         for (unsigned int tuple_idx = 0; tuple_idx < _tuples.size(); ++tuple_idx) {
-            WeightedPseudoBooleanTerms entry_flags_sum{};
-            WeightedPseudoBooleanTerms entry_flags_neg_sum{};
+            WeightedPseudoBooleanSum entry_flags_sum{};
+            WeightedPseudoBooleanSum entry_flags_neg_sum{};
             for (const auto & entry : _tuples[tuple_idx]) {
                 overloaded{
                     [&](BinaryEntry binary_entry) {
@@ -729,41 +728,39 @@ auto SmartTable::install(Propagators & propagators, State & initial_state) && ->
                         if (! smart_entry_flags.contains(binary_entry_data))
                             smart_entry_flags[binary_entry_data] = make_binary_entry_flag(initial_state, propagators, binary_entry.var_1, binary_entry.var_2, binary_entry.constraint_type);
 
-                        entry_flags_sum.emplace_back(1_i, smart_entry_flags[binary_entry_data]);
-                        entry_flags_neg_sum.emplace_back(-1_i, smart_entry_flags[binary_entry_data]);
+                        entry_flags_sum += 1_i * smart_entry_flags[binary_entry_data];
+                        entry_flags_neg_sum += -1_i * smart_entry_flags[binary_entry_data];
                     },
                     [&](const UnarySetEntry & unary_set_entry) {
                         auto var = unary_set_entry.var;
-                        WeightedPseudoBooleanTerms set_value_sum{};
-                        WeightedPseudoBooleanTerms neg_set_value_sum{};
+                        WeightedPseudoBooleanSum set_value_sum{};
+                        WeightedPseudoBooleanSum neg_set_value_sum{};
                         initial_state.for_each_value(var, [&](Integer val) {
-                            if (! count(unary_set_entry.values.begin(), unary_set_entry.values.end(), val)) {
-                                set_value_sum.emplace_back(1_i, var != val);
-                            }
+                            if (! count(unary_set_entry.values.begin(), unary_set_entry.values.end(), val))
+                                set_value_sum += 1_i * (var != val);
                         });
 
-                        for (const auto & val : unary_set_entry.values) {
-                            neg_set_value_sum.emplace_back(1_i, var != val);
-                        }
+                        for (const auto & val : unary_set_entry.values)
+                            neg_set_value_sum += 1_i * (var != val);
 
                         auto flag = unary_set_entry.constraint_type == SmartEntryConstraint::In ? propagators.create_proof_flag("inset") : propagators.create_proof_flag("notinset");
 
-                        propagators.define_pseudoboolean_ge(initial_state, move(set_value_sum), Integer{static_cast<long long>(set_value_sum.size())},
+                        propagators.define_pseudoboolean_ge(initial_state, move(set_value_sum), Integer{static_cast<long long>(set_value_sum.terms.size())},
                             unary_set_entry.constraint_type == SmartEntryConstraint::In ? flag : ! flag);
-                        propagators.define_pseudoboolean_ge(initial_state, move(neg_set_value_sum), Integer{static_cast<long long>(neg_set_value_sum.size())},
+                        propagators.define_pseudoboolean_ge(initial_state, move(neg_set_value_sum), Integer{static_cast<long long>(neg_set_value_sum.terms.size())},
                             unary_set_entry.constraint_type == SmartEntryConstraint::In ? ! flag : flag);
 
-                        entry_flags_sum.emplace_back(1_i, flag);
-                        entry_flags_neg_sum.emplace_back(-1_i, flag);
+                        entry_flags_sum += 1_i * flag;
+                        entry_flags_neg_sum += -1_i * flag;
                     },
                     [&](UnaryValueEntry unary_value_entry) {
                         Literal l = literal_from_unary_entry(unary_value_entry);
-                        entry_flags_sum.emplace_back(1_i, l);
-                        entry_flags_neg_sum.emplace_back(-1_i, l);
+                        entry_flags_sum += 1_i * l;
+                        entry_flags_neg_sum += -1_i * l;
                     }}
                     .visit(entry);
             }
-            auto tuple_len = Integer{static_cast<long long>(entry_flags_sum.size())};
+            auto tuple_len = Integer{static_cast<long long>(entry_flags_sum.terms.size())};
             propagators.define_pseudoboolean_ge(initial_state, move(entry_flags_sum), tuple_len, pb_selectors[tuple_idx]);
             propagators.define_pseudoboolean_ge(initial_state, move(entry_flags_neg_sum), -tuple_len + 1_i, ! pb_selectors[tuple_idx]);
         }

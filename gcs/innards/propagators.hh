@@ -1,13 +1,13 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROPAGATORS_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROPAGATORS_HH
 
+#include <gcs/expression.hh>
 #include <gcs/extensional.hh>
 #include <gcs/innards/linear_utils.hh>
 #include <gcs/innards/literal_utils.hh>
 #include <gcs/innards/proof.hh>
 #include <gcs/innards/propagators-fwd.hh>
 #include <gcs/innards/state.hh>
-#include <gcs/linear.hh>
 #include <gcs/literal.hh>
 #include <gcs/problem.hh>
 
@@ -121,25 +121,25 @@ namespace gcs::innards
         /**
          * Add a pseudo-Boolean greater-or-equal constraint to a Proof model.
          */
-        auto define_pseudoboolean_ge(const State &, WeightedPseudoBooleanTerms && lits, Integer,
+        auto define_pseudoboolean_ge(const State &, WeightedPseudoBooleanSum && lits, Integer,
             std::optional<ReificationTerm> half_reif = std::nullopt) -> std::optional<ProofLine>;
 
         /**
          * Add pseudo-Boolean equality constraints to a Proof model.
          */
-        auto define_pseudoboolean_eq(const State &, WeightedPseudoBooleanTerms && lits, Integer,
+        auto define_pseudoboolean_eq(const State &, WeightedPseudoBooleanSum && lits, Integer,
             std::optional<ReificationTerm> half_reif = std::nullopt) -> std::optional<ProofLine>;
 
         /**
          * Add a linear less-or-equal constraint to a Proof model.
          */
-        auto define_linear_le(const State &, const Linear &, Integer value,
+        auto define_linear_le(const State &, const WeightedSum &, Integer value,
             std::optional<ReificationTerm> half_reif = std::nullopt) -> std::optional<ProofLine>;
 
         /**
          * Add linear equality constraint to a Proof model.
          */
-        auto define_linear_eq(const State &, const Linear &, Integer value,
+        auto define_linear_eq(const State &, const WeightedSum &, Integer value,
             std::optional<ReificationTerm> half_reif = std::nullopt) -> std::optional<ProofLine>;
 
         ///@}

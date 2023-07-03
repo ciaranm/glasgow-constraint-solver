@@ -31,8 +31,7 @@ auto CompareLessThanReif::install(Propagators & propagators, State & initial_sta
 {
     if (propagators.want_definitions()) {
         auto do_less = [&](IntegerVariableID v1, IntegerVariableID v2, optional<LiteralFromIntegerVariable> cond, bool or_equal) {
-            auto cv = Linear{{1_i, v1}, {-1_i, v2}};
-            propagators.define_linear_le(initial_state, cv, or_equal ? 0_i : -1_i, cond);
+            propagators.define_linear_le(initial_state, WeightedSum{} + 1_i * v1 + -1_i * v2, or_equal ? 0_i : -1_i, cond);
         };
 
         overloaded{

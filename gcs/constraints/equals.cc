@@ -113,8 +113,7 @@ auto Equals::install(Propagators & propagators, State & initial_state) && -> voi
     }
 
     if (propagators.want_definitions()) {
-        auto cv = Linear{{1_i, _v1}, {-1_i, _v2}};
-        propagators.define_linear_eq(initial_state, cv, 0_i, nullopt);
+        propagators.define_linear_eq(initial_state, WeightedSum{} + 1_i * _v1 + -1_i * _v2, 0_i, nullopt);
     }
 }
 
@@ -214,8 +213,7 @@ auto EqualsIf::install(Propagators & propagators, State & initial_state) && -> v
                 _v1, _v2);
 
             if (propagators.want_definitions()) {
-                auto cv = Linear{{1_i, _v1}, {-1_i, _v2}};
-                propagators.define_linear_eq(initial_state, cv, 0_i, cond);
+                propagators.define_linear_eq(initial_state, WeightedSum{} + 1_i * _v1 + -1_i * _v2, 0_i, cond);
             }
         }}
         .visit(_cond);
@@ -460,11 +458,8 @@ auto NotEquals::install(Propagators & propagators, State & initial_state) && -> 
     if (propagators.want_definitions()) {
         auto selector = propagators.create_proof_flag("notequals");
 
-        auto cv1 = Linear{{1_i, _v1}, {-1_i, _v2}};
-        propagators.define_linear_le(initial_state, cv1, -1_i, selector);
-
-        auto cv2 = Linear{{-1_i, _v1}, {1_i, _v2}};
-        propagators.define_linear_le(initial_state, cv2, -1_i, ! selector);
+        propagators.define_linear_le(initial_state, WeightedSum{} + 1_i * _v1 + -1_i * _v2, -1_i, selector);
+        propagators.define_linear_le(initial_state, WeightedSum{} + -1_i * _v1 + 1_i * _v2, -1_i, ! selector);
     }
 }
 

@@ -30,10 +30,11 @@ auto main(int, char *[]) -> int
     p.post(AllDifferent{vars});
 
     // clang-format off
-    p.post(LinearEquality{ Linear{
-                             {  1000_i, s }, {  100_i, e }, {  10_i, n }, {  1_i, d },
-                             {  1000_i, m }, {  100_i, o }, {  10_i, r }, {  1_i, e },
-            { -10000_i, m }, { -1000_i, o }, { -100_i, n }, { -10_i, e }, { -1_i, y }, }, 0_i });
+    p.post(LinearEquality{WeightedSum{}
+            +                 1000_i * s +  100_i * e +  10_i * n +  1_i * d
+            +                 1000_i * m +  100_i * o +  10_i * r +  1_i * e
+            + -10000_i * m + -1000_i * o + -100_i * n + -10_i * e + -1_i * y
+            , 0_i});
     // clang-format on
 
     auto stats = solve(

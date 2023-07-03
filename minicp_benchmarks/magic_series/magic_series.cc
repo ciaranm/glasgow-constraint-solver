@@ -78,28 +78,28 @@ auto main(int argc, char * argv[]) -> int
     auto series = p.create_integer_variable_vector(size, 0_i, Integer{size - 1}, "series");
 
     for (int i = 0; i < size; ++i) {
-        Linear coeff_vars;
+        WeightedSum coeff_vars;
         for (int j = 0; j < size; ++j) {
             auto series_j_eq_i = p.create_integer_variable(0_i, 1_i);
             p.post(EqualsIff{series[j], constant_variable(Integer{i}), series_j_eq_i == 1_i});
-            coeff_vars.emplace_back(1_i, series_j_eq_i);
+            coeff_vars += 1_i * series_j_eq_i;
         }
 
-        coeff_vars.emplace_back(-1_i, series[i]);
+        coeff_vars += -1_i * series[i];
         p.post(LinearEquality{move(coeff_vars), 0_i});
     }
 
-    Linear sum_s;
+    WeightedSum sum_s;
     for (auto & s : series)
-        sum_s.emplace_back(1_i, s);
+        sum_s += 1_i * s;
     p.post(LinearEquality{move(sum_s), Integer{size}});
 
     // Although this is discussed in the text, it isn't included in the executed
     // benchmarks.
     if (options_vars.contains("extra-constraints")) {
-        Linear sum_mul_s;
+        WeightedSum sum_mul_s;
         for (const auto & [idx, s] : enumerate(series))
-            sum_mul_s.emplace_back(Integer(idx), s);
+            sum_mul_s += Integer(idx) * s;
         p.post(LinearEquality{move(sum_mul_s), Integer{size}});
     }
 

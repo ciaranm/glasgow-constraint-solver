@@ -107,8 +107,7 @@ auto ArrayMinMax::install(Propagators & propagators, State & initial_state) && -
     if (propagators.want_definitions()) {
         // result <= each var
         for (const auto & v : _vars) {
-            auto cv = Linear{{_min ? -1_i : 1_i, v}, {_min ? 1_i : -1_i, _result}};
-            propagators.define_linear_le(initial_state, cv, 0_i, nullopt);
+            propagators.define_linear_le(initial_state, WeightedSum{} + (_min ? -1_i : 1_i) * v + (_min ? 1_i : -1_i) * _result, 0_i, nullopt);
         }
 
         // result == i -> i in vars

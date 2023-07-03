@@ -138,18 +138,18 @@ auto main(int argc, char * argv[]) -> int
         for (int j = i + 1; j < size; ++j)
             p.post(NotEquals{xs[i], xs[j]});
 
-    Linear wcosts;
+    WeightedSum wcosts;
     for (int i = 0; i < size; ++i) {
         for (int j = 0; j < size; ++j) {
             auto d_xsi_xsj = p.create_integer_variable(0_i, Integer{max_distance} + 1_i,
                 "dxs" + to_string(i) + "xs" + to_string(j));
             p.post(Element2DConstantArray{d_xsi_xsj, xs[i], xs[j], &distances_consts_integers});
-            wcosts.emplace_back(Integer{weight_consts[i][j]}, d_xsi_xsj);
+            wcosts += Integer{weight_consts[i][j]} * d_xsi_xsj;
         }
     }
 
     auto cost = p.create_integer_variable(0_i, 100000_i, "cost");
-    wcosts.emplace_back(-1_i, cost);
+    wcosts += -1_i * cost;
     p.post(LinearEquality{move(wcosts), 0_i});
     p.minimise(cost);
 

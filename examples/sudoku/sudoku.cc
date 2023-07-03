@@ -162,16 +162,16 @@ auto main(int argc, char * argv[]) -> int
                 case N:
                     break;
                 case V:
-                    p.post(LinearEquality{Linear{{1_i, grid[r][c]}, {1_i, grid[r + 1][c]}}, 5_i, true});
+                    p.post(LinearEquality{WeightedSum{} + 1_i * grid[r][c] + 1_i * grid[r + 1][c], 5_i, true});
                     break;
                 case X:
-                    p.post(LinearEquality{Linear{{1_i, grid[r][c]}, {1_i, grid[r + 1][c]}}, 10_i, true});
+                    p.post(LinearEquality{WeightedSum{} + 1_i * grid[r][c] + 1_i * grid[r + 1][c], 10_i, true});
                     break;
                 case O:
                     auto sum = p.create_integer_variable(0_i, Integer{n * 2});
                     p.post(NotEquals{sum, 5_c});
                     p.post(NotEquals{sum, 10_c});
-                    p.post(LinearEquality{Linear{{1_i, grid[r][c]}, {1_i, grid[r + 1][c]}, {-1_i, sum}}, 0_i, true});
+                    p.post(LinearEquality{WeightedSum{} + 1_i * grid[r][c] + 1_i * grid[r + 1][c] + -1_i * sum, 0_i, true});
                     break;
                 }
 
@@ -181,16 +181,16 @@ auto main(int argc, char * argv[]) -> int
                 case N:
                     break;
                 case V:
-                    p.post(LinearEquality{Linear{{1_i, grid[r][c]}, {1_i, grid[r][c + 1]}}, 5_i, true});
+                    p.post(LinearEquality{WeightedSum{} + 1_i * grid[r][c] + 1_i * grid[r][c + 1], 5_i, true});
                     break;
                 case X:
-                    p.post(LinearEquality{Linear{{1_i, grid[r][c]}, {1_i, grid[r][c + 1]}}, 10_i, true});
+                    p.post(LinearEquality{WeightedSum{} + 1_i * grid[r][c] + 1_i * grid[r][c + 1], 10_i, true});
                     break;
                 case O:
                     auto sum = p.create_integer_variable(0_i, Integer{n * 2});
                     p.post(NotEquals{sum, 5_c});
                     p.post(NotEquals{sum, 10_c});
-                    p.post(LinearEquality{Linear{{1_i, grid[r][c]}, {1_i, grid[r][c + 1]}, {-1_i, sum}}, 0_i, true});
+                    p.post(LinearEquality{WeightedSum{} + 1_i * grid[r][c] + 1_i * grid[r][c + 1] + -1_i * sum, 0_i, true});
                     break;
                 }
     }

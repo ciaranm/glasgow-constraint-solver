@@ -66,10 +66,10 @@ auto main(int argc, char * argv[]) -> int
     auto vc = p.create_integer_variable(2_i, 3_i, "c");
     auto vd = p.create_integer_variable(2_i, 3_i, "d");
     p.post(AllDifferent({va, vb, vc, vd}));
-    p.post(LinearLessEqual{Linear{{1_i, va}, {1_i, vb}, {1_i, vc}}, 9_i});
+    p.post(LinearLessEqual{WeightedSum{} + 1_i * va + 1_i * vb + 1_i * vc, 9_i});
 
     auto obj = p.create_integer_variable(0_i, 10000_i, "obj");
-    p.post(LinearEquality{Linear{{2_i, va}, {3_i, vd}, {-1_i, obj}}, 0_i});
+    p.post(LinearEquality{WeightedSum{} + 2_i * va + 3_i * vd + -1_i * obj, 0_i});
 
     p.minimise(obj);
     auto stats = solve_with(p,

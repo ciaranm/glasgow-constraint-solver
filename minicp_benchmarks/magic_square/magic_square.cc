@@ -102,23 +102,23 @@ auto main(int argc, char * argv[]) -> int
     }
 
     for (int x = 0; x < size; ++x) {
-        Linear coeff_vars;
+        WeightedSum coeff_vars;
         for (int y = 0; y < size; ++y)
-            coeff_vars.emplace_back(1_i, grid[x][y]);
+            coeff_vars += 1_i * grid[x][y];
         p.post(LinearEquality{move(coeff_vars), m});
     }
 
     for (int y = 0; y < size; ++y) {
-        Linear coeff_vars;
+        WeightedSum coeff_vars;
         for (int x = 0; x < size; ++x)
-            coeff_vars.emplace_back(1_i, grid[x][y]);
+            coeff_vars += 1_i * grid[x][y];
         p.post(LinearEquality{move(coeff_vars), m});
     }
 
-    Linear coeff_vars1, coeff_vars2;
+    WeightedSum coeff_vars1, coeff_vars2;
     for (int xy = 0; xy < size; ++xy) {
-        coeff_vars1.emplace_back(1_i, grid[xy][xy]);
-        coeff_vars2.emplace_back(1_i, grid[size - xy - 1][xy]);
+        coeff_vars1 += 1_i * grid[xy][xy];
+        coeff_vars2 += 1_i * grid[size - xy - 1][xy];
     }
     p.post(LinearEquality{move(coeff_vars1), m});
     p.post(LinearEquality{move(coeff_vars2), m});

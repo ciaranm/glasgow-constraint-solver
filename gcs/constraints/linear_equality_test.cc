@@ -216,10 +216,10 @@ auto main(int, char *[]) -> int
                 p.create_integer_variable(Integer{v2_range.first}, Integer{v2_range.second})};
 
             for (auto & [linear, value] : constraints) {
-                Linear c;
+                WeightedSum c;
                 for (const auto & [idx, coeff] : enumerate(linear))
                     if (coeff != 0)
-                        c.emplace_back(Integer{coeff}, vs[idx]);
+                        c.terms.emplace_back(Integer{coeff}, vs[idx]);
                 if (0 == mode)
                     p.post(LinearEquality{move(c), Integer{value}});
                 else if (1 == mode)

@@ -118,7 +118,7 @@ auto disintentionify_to_intvar(const string & s, string::size_type & pos, Proble
                 auto bound = Integer{max(upper1.raw_value, upper2.raw_value) - min(lower1.raw_value, lower2.raw_value) + 1};
                 auto r = problem.create_integer_variable(0_i, bound, "distresult");
                 auto d = problem.create_integer_variable(-bound, bound, "dist");
-                problem.post(LinearEquality{Linear{{1_i, *v1}, {-1_i, *v2}, {-1_i, d}}, 0_i});
+                problem.post(LinearEquality{WeightedSum{} + 1_i * *v1 + -1_i * *v2 + -1_i * d, 0_i});
                 problem.post(Abs{d, r});
                 return tuple{r, 0_i, bound, nullopt};
             }
@@ -131,7 +131,7 @@ auto disintentionify_to_intvar(const string & s, string::size_type & pos, Proble
                     auto lower_bound = Integer{lower1 + lower2};
                     auto upper_bound = Integer{upper1 + upper2};
                     auto r = problem.create_integer_variable(lower_bound, upper_bound, "addresult");
-                    problem.post(LinearEquality{Linear{{1_i, *v1}, {1_i, *v2}, {-1_i, r}}, 0_i});
+                    problem.post(LinearEquality{WeightedSum{} + 1_i * *v1 + 1_i * *v2 + -1_i * r, 0_i});
                     return tuple{r, lower_bound, upper_bound, nullopt};
                 }
             }
@@ -144,7 +144,7 @@ auto disintentionify_to_intvar(const string & s, string::size_type & pos, Proble
                     auto lower_bound = min({lower1 - lower2, lower1 - upper2, upper1 - lower2, upper2 - upper2});
                     auto upper_bound = max({lower1 - lower2, lower1 - upper2, upper1 - lower2, upper2 - upper2});
                     auto r = problem.create_integer_variable(lower_bound, upper_bound, "subresult");
-                    problem.post(LinearEquality{Linear{{1_i, *v1}, {-1_i, *v2}, {-1_i, r}}, 0_i});
+                    problem.post(LinearEquality{WeightedSum{} + 1_i * *v1 + -1_i * *v2 + -1_i * r, 0_i});
                     return tuple{r, lower_bound, upper_bound, nullopt};
                 }
             }
@@ -153,7 +153,7 @@ auto disintentionify_to_intvar(const string & s, string::size_type & pos, Proble
                 auto upper_bound = max({lower1 * lower2, lower1 * upper2, upper1 * lower2, upper2 * upper2});
                 auto r = problem.create_integer_variable(lower_bound, upper_bound, "mulresult");
                 if (lower2 == upper2)
-                    problem.post(LinearEquality{Linear{{lower2, *v1}, {-1_i, r}}, 0_i, false});
+                    problem.post(LinearEquality{WeightedSum{} + lower2 * *v1 + -1_i * r, 0_i, false});
                 else
                     problem.post(Times{*v1, *v2, r});
                 return tuple{r, lower_bound, upper_bound, nullopt};
@@ -450,13 +450,13 @@ struct ParserCallbacks : XCSP3CoreCallbacks
 
     auto buildConstraintSumCommon(string, vector<XVariable *> & x_vars, const optional<vector<int>> & coeffs, XCondition & cond) -> void
     {
-        Linear cvs;
+        WeightedSum cvs;
         Integer range = 0_i;
         for (const auto & [idx, x] : enumerate(x_vars)) {
             auto m = mapping.find(x->id);
             need_variable(problem, m->second, x->id);
-            cvs.emplace_back(coeffs ? Integer{coeffs->at(idx)} : 1_i, *get<0>(m->second));
-            range += abs(cvs.back().first) * max(abs(get<1>(m->second)), abs(get<2>(m->second)));
+            cvs += (coeffs ? Integer{coeffs->at(idx)} : 1_i) * *get<0>(m->second);
+            range += abs(cvs.terms.back().coefficient) * max(abs(get<1>(m->second)), abs(get<2>(m->second)));
         }
 
         Integer bound = 0_i;
@@ -466,7 +466,7 @@ struct ParserCallbacks : XCSP3CoreCallbacks
             {
                 auto m = mapping.find(cond.var);
                 need_variable(problem, m->second, cond.var);
-                cvs.emplace_back(-1_i, *get<0>(mapping.at(cond.var)));
+                cvs += -1_i * *get<0>(mapping.at(cond.var));
             }
             break;
         case OperandType::INTEGER:
@@ -494,7 +494,7 @@ struct ParserCallbacks : XCSP3CoreCallbacks
             break;
         case OrderType::NE: {
             auto diff = problem.create_integer_variable(-range, range, "ne");
-            cvs.emplace_back(1, diff);
+            cvs += 1_i * diff;
             problem.post(LinearEquality{move(cvs), bound});
             problem.post(NotEquals{diff, 0_c});
         } break;
@@ -606,12 +606,12 @@ struct ParserCallbacks : XCSP3CoreCallbacks
         }
         else if (type == ExpressionObjective::SUM_O) {
             Integer lower = 0_i, upper = 0_i;
-            Linear cvs;
+            WeightedSum cvs;
             for (const auto & [idx, x] : enumerate(x_vars)) {
                 auto m = mapping.find(x->id);
                 need_variable(problem, m->second, x->id);
                 auto [var, l, u, _] = m->second;
-                cvs.emplace_back(coeffs.at(idx), *var);
+                cvs += Integer{coeffs.at(idx)} * *var;
                 if (coeffs.at(idx) < 0) {
                     lower += Integer{coeffs.at(idx)} * u;
                     upper += Integer{coeffs.at(idx)} * l;
@@ -624,7 +624,7 @@ struct ParserCallbacks : XCSP3CoreCallbacks
 
             auto obj = problem.create_integer_variable(lower, upper, "objective");
             objective_variable = obj;
-            cvs.emplace_back(-1, obj);
+            cvs += -1_i * obj;
 
             problem.post(LinearEquality{move(cvs), 0_i});
             if (is_max)

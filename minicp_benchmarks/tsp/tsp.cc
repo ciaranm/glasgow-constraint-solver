@@ -94,10 +94,10 @@ auto main(int argc, char * argv[]) -> int
         p.post(ElementConstantArray{dist[i], succ[i], &distances[i]});
 
     auto obj = p.create_integer_variable(0_i, 1000000_i, "obj");
-    Linear dist_sum;
+    WeightedSum dist_sum;
     for (auto & s : dist)
-        dist_sum.emplace_back(1_i, s);
-    dist_sum.emplace_back(-1_i, obj);
+        dist_sum += 1_i * s;
+    dist_sum += -1_i * obj;
 
     p.post(LinearEquality{dist_sum, 0_i});
     p.minimise(obj);

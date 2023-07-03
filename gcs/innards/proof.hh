@@ -6,7 +6,6 @@
 #include <gcs/innards/literal_utils.hh>
 #include <gcs/innards/proof-fwd.hh>
 #include <gcs/innards/state-fwd.hh>
-#include <gcs/linear.hh>
 #include <gcs/literal.hh>
 #include <gcs/proof_options.hh>
 #include <gcs/variable_id.hh>
@@ -90,34 +89,15 @@ namespace gcs::innards
      * a ProofFlag, or an IntegerVariableID to be decomposed into its bits.
      *
      * \ingroup Innards
-     * \sa WeightedPseudoBooleanTerm
      * \sa Proof::pseudoboolean_ge
      * \sa gcs::innards::sanitise_pseudoboolean_terms()
      */
     using PseudoBooleanTerm = std::variant<Literal, ProofFlag, IntegerVariableID, ProofOnlySimpleIntegerVariableID>;
 
-    /**
-     * \brief Inside a Proof, pseudo-Boolean terms are weighted.
-     *
-     * \ingroup Innards
-     * \sa PseudoBooleanTerm
-     * \sa Proof::pseudoboolean_ge
-     * \sa gcs::innards::sanitise_pseudoboolean_terms()
-     */
-    using WeightedPseudoBooleanTerm = std::pair<Integer, PseudoBooleanTerm>;
+    using WeightedPseudoBooleanSum = SumOf<Weighted<PseudoBooleanTerm>>;
 
     /**
-     * \brief A sequence of weighted pseudo-Boolean terms.
-     *
-     * \ingroup Innards
-     * \sa WeightedPseudoBooleanTerm
-     * \sa Proof::pseudoboolean_ge
-     * \sa gcs::innards::sanitise_pseudoboolean_terms()
-     */
-    using WeightedPseudoBooleanTerms = std::vector<WeightedPseudoBooleanTerm>;
-
-    /**
-     * \brief Modify a WeightedPseudoBooleanTerms and its associated
+     * \brief Modify a WeightedPseudoBooleanSum and its associated
      * greater-or-equal inequality value to simplify things.
      *
      * Removes anything that is gcs::innards::is_literally_true_or_false()
@@ -126,9 +106,9 @@ namespace gcs::innards
      *
      * \ingroup Innards
      * \sa Proof::pseudoboolean_ge
-     * \sa WeightedPseudoBooleanTerms
+     * \sa WeightedPseudoBooleanSum
      */
-    [[nodiscard]] auto sanitise_pseudoboolean_terms(WeightedPseudoBooleanTerms &, Integer &) -> bool;
+    [[nodiscard]] auto sanitise_pseudoboolean_terms(WeightedPseudoBooleanSum &, Integer &) -> bool;
 
     /**
      * \brief Sanitise a Literals by removing duplicates and forced terms.
@@ -221,13 +201,13 @@ namespace gcs::innards
          * Add a pseudo-Boolean greater or equals constraint. Must call
          * gcs::innards::sanitise_pseudoboolean_terms() first.
          */
-        [[nodiscard]] auto pseudoboolean_ge(const WeightedPseudoBooleanTerms &, Integer,
+        [[nodiscard]] auto pseudoboolean_ge(const WeightedPseudoBooleanSum &, Integer,
             std::optional<ReificationTerm> half_reif, bool equality) -> ProofLine;
 
         /**
          * Add an integer linear inequality or equality constraint.
          */
-        auto integer_linear_le(const State &, const SimpleLinear & coeff_vars, Integer value,
+        auto integer_linear_le(const State &, const SumOf<Weighted<SimpleIntegerVariableID>> & coeff_vars, Integer value,
             std::optional<ReificationTerm> half_reif, bool equality) -> ProofLine;
 
         ///@}
