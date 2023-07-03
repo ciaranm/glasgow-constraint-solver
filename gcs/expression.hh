@@ -136,7 +136,7 @@ namespace gcs
     requires std::constructible_from<Var_, RHS_>
     {
         SumLessEqual<Weighted<Var_>> result{std::move(lhs), 0_i};
-        result.terms.emplace_back(-rhs.coefficient, rhs.variable);
+        result += -rhs.coefficient * rhs.variable;
         return result;
     }
 
@@ -168,7 +168,7 @@ namespace gcs
         SumLessEqual<Weighted<Var_>> result{std::move(lhs), 0_i};
         for (auto & [c, _] : lhs.terms)
             c = -c;
-        result.terms.emplace_back(rhs.coefficient, rhs.variable);
+        result += rhs.coefficient * rhs.variable;
         return result;
     }
 
@@ -208,7 +208,7 @@ namespace gcs
     requires std::constructible_from<Var_, RHS_>
     {
         SumEquals<Weighted<Var_>> result{std::move(lhs), 0_i};
-        result.lhs.terms.emplace_back(-rhs.coefficient, rhs.variable);
+        result.lhs += -rhs.coefficient * rhs.variable;
         return result;
     }
 }
