@@ -118,7 +118,7 @@ auto disintentionify_to_intvar(const string & s, string::size_type & pos, Proble
                 auto bound = Integer{max(upper1.raw_value, upper2.raw_value) - min(lower1.raw_value, lower2.raw_value) + 1};
                 auto r = problem.create_integer_variable(0_i, bound, "distresult");
                 auto d = problem.create_integer_variable(-bound, bound, "dist");
-                problem.post(LinearEquality{WeightedSum{} + 1_i * *v1 + -1_i * *v2 + -1_i * d, 0_i});
+                problem.post(WeightedSum{} + 1_i * *v1 + -1_i * *v2 == 1_i * d);
                 problem.post(Abs{d, r});
                 return tuple{r, 0_i, bound, nullopt};
             }
@@ -131,7 +131,7 @@ auto disintentionify_to_intvar(const string & s, string::size_type & pos, Proble
                     auto lower_bound = Integer{lower1 + lower2};
                     auto upper_bound = Integer{upper1 + upper2};
                     auto r = problem.create_integer_variable(lower_bound, upper_bound, "addresult");
-                    problem.post(LinearEquality{WeightedSum{} + 1_i * *v1 + 1_i * *v2 + -1_i * r, 0_i});
+                    problem.post(WeightedSum{} + 1_i * *v1 + 1_i * *v2 == 1_i * r);
                     return tuple{r, lower_bound, upper_bound, nullopt};
                 }
             }
@@ -144,7 +144,7 @@ auto disintentionify_to_intvar(const string & s, string::size_type & pos, Proble
                     auto lower_bound = min({lower1 - lower2, lower1 - upper2, upper1 - lower2, upper2 - upper2});
                     auto upper_bound = max({lower1 - lower2, lower1 - upper2, upper1 - lower2, upper2 - upper2});
                     auto r = problem.create_integer_variable(lower_bound, upper_bound, "subresult");
-                    problem.post(LinearEquality{WeightedSum{} + 1_i * *v1 + -1_i * *v2 + -1_i * r, 0_i});
+                    problem.post(WeightedSum{} + 1_i * *v1 + -1_i * *v2 == 1_i * r);
                     return tuple{r, lower_bound, upper_bound, nullopt};
                 }
             }
@@ -153,7 +153,7 @@ auto disintentionify_to_intvar(const string & s, string::size_type & pos, Proble
                 auto upper_bound = max({lower1 * lower2, lower1 * upper2, upper1 * lower2, upper2 * upper2});
                 auto r = problem.create_integer_variable(lower_bound, upper_bound, "mulresult");
                 if (lower2 == upper2)
-                    problem.post(LinearEquality{WeightedSum{} + lower2 * *v1 + -1_i * r, 0_i, false});
+                    problem.post(WeightedSum{} + lower2 * *v1 == 1_i * r);
                 else
                     problem.post(Times{*v1, *v2, r});
                 return tuple{r, lower_bound, upper_bound, nullopt};
@@ -478,24 +478,24 @@ struct ParserCallbacks : XCSP3CoreCallbacks
 
         switch (cond.op) {
         case OrderType::LE:
-            problem.post(LinearLessEqual{move(cvs), bound});
+            problem.post(move(cvs) <= bound);
             break;
         case OrderType::LT:
-            problem.post(LinearLessEqual{move(cvs), bound - 1_i});
+            problem.post(move(cvs) <= bound - 1_i);
             break;
         case OrderType::EQ:
-            problem.post(LinearEquality{move(cvs), bound});
+            problem.post(move(cvs) == bound);
             break;
         case OrderType::GT:
-            problem.post(LinearGreaterThanEqual{move(cvs), bound + 1_i});
+            problem.post(move(cvs) >= bound + 1_i);
             break;
         case OrderType::GE:
-            problem.post(LinearGreaterThanEqual{move(cvs), bound});
+            problem.post(move(cvs) >= bound);
             break;
         case OrderType::NE: {
             auto diff = problem.create_integer_variable(-range, range, "ne");
             cvs += 1_i * diff;
-            problem.post(LinearEquality{move(cvs), bound});
+            problem.post(move(cvs) == bound);
             problem.post(NotEquals{diff, 0_c});
         } break;
         case OrderType::IN:
@@ -624,9 +624,7 @@ struct ParserCallbacks : XCSP3CoreCallbacks
 
             auto obj = problem.create_integer_variable(lower, upper, "objective");
             objective_variable = obj;
-            cvs += -1_i * obj;
-
-            problem.post(LinearEquality{move(cvs), 0_i});
+            problem.post(move(cvs) == 1_i * obj);
             if (is_max)
                 problem.maximise(obj);
             else

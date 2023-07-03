@@ -97,6 +97,120 @@ namespace gcs
      * \ingroup Expressions
      */
     using WeightedSum = SumOf<Weighted<IntegerVariableID>>;
+
+    /**
+     * A syntactic inequality.
+     *
+     * Often created by writing `WeightedSum{} + 42_i * var1 + 23_i * var2 <= 1234_i`. Greater
+     * than or equal is also supported, and the right hand side can be a weighted variable, but
+     * both of these cases are handled by automatic rewriting.
+     *
+     * \ingroup Expressions
+     * \sa SumEquals
+     */
+    template <typename Var_>
+    struct SumLessEqual
+    {
+        SumOf<Var_> lhs;
+        Integer rhs;
+    };
+
+    /**
+     * Allow a SumLessEqual to be created using `WeightedSum{} + 42_i * var1 + 23_i * var2 <= 1234_i`.
+     *
+     * \ingroup Expressions
+     */
+    template <typename Var_>
+    [[nodiscard]] inline auto operator<=(SumOf<Var_> lhs, Integer rhs) -> SumLessEqual<Var_>
+    {
+        return SumLessEqual<Var_>{std::move(lhs), rhs};
+    }
+
+    /**
+     * Allow a SumLessEqual to be created using `WeightedSum{} + 42_i * var1 + 23_i * var2 <= 1234_i * var3`.
+     *
+     * \ingroup Expressions
+     */
+    template <typename Var_, typename RHS_>
+    [[nodiscard]] inline auto operator<=(SumOf<Weighted<Var_>> lhs, Weighted<RHS_> rhs) -> SumLessEqual<Weighted<Var_>>
+    requires std::constructible_from<Var_, RHS_>
+    {
+        SumLessEqual<Weighted<Var_>> result{std::move(lhs), 0_i};
+        result.terms.emplace_back(-rhs.coefficient, rhs.variable);
+        return result;
+    }
+
+    /**
+     * Allow a SumLessEqual to be created using `WeightedSum{} + 42_i * var1 + 23_i * var2 >= 1234_i`,
+     * by rewriting.
+     *
+     * \ingroup Expressions
+     */
+    template <typename Var_>
+    [[nodiscard]] inline auto operator>=(SumOf<Var_> lhs, Integer rhs) -> SumLessEqual<Var_>
+    {
+        SumLessEqual<Var_> result{std::move(lhs), -rhs};
+        for (auto & [c, _] : lhs.terms)
+            c = -c;
+        return result;
+    }
+
+    /**
+     * Allow a SumLessEqual to be created using `WeightedSum{} + 42_i * var1 + 23_i * var2 >= 1234_i * var3`,
+     * by rewriting.
+     *
+     * \ingroup Expressions
+     */
+    template <typename Var_, typename RHS_>
+    [[nodiscard]] inline auto operator>=(SumOf<Weighted<Var_>> lhs, Weighted<RHS_> rhs) -> SumLessEqual<Weighted<Var_>>
+    requires std::constructible_from<Var_, RHS_>
+    {
+        SumLessEqual<Weighted<Var_>> result{std::move(lhs), 0_i};
+        for (auto & [c, _] : lhs.terms)
+            c = -c;
+        result.terms.emplace_back(rhs.coefficient, rhs.variable);
+        return result;
+    }
+
+    /**
+     * A syntactic equality.
+     *
+     * Often created by writing `WeightedSum{} + 42_i * var1 + 23_i * var2 == 1234_i`.
+     *
+     * \ingroup Expressions
+     * \sa SumLessEqual
+     */
+    template <typename Var_>
+    struct SumEquals
+    {
+        SumOf<Var_> lhs;
+        Integer rhs;
+    };
+
+    /**
+     * Allow a SumEquals to be created using `WeightedSum{} + 42_i * var1 + 23_i * var2 == 1234_i`.
+     *
+     * \ingroup Expressions
+     */
+    template <typename Var_>
+    [[nodiscard]] inline auto operator==(SumOf<Var_> lhs, Integer rhs) -> SumEquals<Var_>
+    {
+        return SumEquals<Var_>{std::move(lhs), rhs};
+    }
+
+    /**
+     * Allow a SumEquals to be created using `WeightedSum{} + 42_i * var1 + 23_i * var2 == 1234_i * var3`.
+     *
+     * \ingroup Expressions
+     */
+    template <typename Var_, typename RHS_>
+    [[nodiscard]] inline auto operator==(SumOf<Weighted<Var_>> lhs, Weighted<RHS_> rhs) -> SumEquals<Weighted<Var_>>
+    requires std::constructible_from<Var_, RHS_>
+    {
+        SumEquals<Weighted<Var_>> result{std::move(lhs), 0_i};
+        result.lhs.terms.emplace_back(-rhs.coefficient, rhs.variable);
+        return result;
+    }
 }
 
 #endif

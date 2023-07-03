@@ -85,14 +85,13 @@ auto main(int argc, char * argv[]) -> int
             coeff_vars += 1_i * series_j_eq_i;
         }
 
-        coeff_vars += -1_i * series[i];
-        p.post(LinearEquality{move(coeff_vars), 0_i});
+        p.post(move(coeff_vars) == 1_i * series[i]);
     }
 
     WeightedSum sum_s;
     for (auto & s : series)
         sum_s += 1_i * s;
-    p.post(LinearEquality{move(sum_s), Integer{size}});
+    p.post(move(sum_s) == Integer{size});
 
     // Although this is discussed in the text, it isn't included in the executed
     // benchmarks.
@@ -100,7 +99,7 @@ auto main(int argc, char * argv[]) -> int
         WeightedSum sum_mul_s;
         for (const auto & [idx, s] : enumerate(series))
             sum_mul_s += Integer(idx) * s;
-        p.post(LinearEquality{move(sum_mul_s), Integer{size}});
+        p.post(move(sum_mul_s) == Integer{size});
     }
 
     auto stats = solve_with(p,

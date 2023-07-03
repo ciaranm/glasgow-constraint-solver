@@ -105,14 +105,14 @@ auto main(int argc, char * argv[]) -> int
         WeightedSum coeff_vars;
         for (int y = 0; y < size; ++y)
             coeff_vars += 1_i * grid[x][y];
-        p.post(LinearEquality{move(coeff_vars), m});
+        p.post(move(coeff_vars) == m);
     }
 
     for (int y = 0; y < size; ++y) {
         WeightedSum coeff_vars;
         for (int x = 0; x < size; ++x)
             coeff_vars += 1_i * grid[x][y];
-        p.post(LinearEquality{move(coeff_vars), m});
+        p.post(move(coeff_vars) == m);
     }
 
     WeightedSum coeff_vars1, coeff_vars2;
@@ -120,8 +120,8 @@ auto main(int argc, char * argv[]) -> int
         coeff_vars1 += 1_i * grid[xy][xy];
         coeff_vars2 += 1_i * grid[size - xy - 1][xy];
     }
-    p.post(LinearEquality{move(coeff_vars1), m});
-    p.post(LinearEquality{move(coeff_vars2), m});
+    p.post(move(coeff_vars1) == m);
+    p.post(move(coeff_vars2) == m);
 
     p.post(LessThan{grid[0][size - 1], grid[size - 1][0]});
     p.post(LessThan{grid[0][0], grid[size - 1][size - 1]});

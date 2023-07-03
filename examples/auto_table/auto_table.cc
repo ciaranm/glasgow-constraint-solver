@@ -64,7 +64,7 @@ auto main(int argc, char * argv[]) -> int
     auto v = p.create_integer_variable_vector(5, 1_i, 5_i, "v");
     p.post(AllDifferent{vector{v[0], v[1], v[2]}});
     p.post(AllDifferent{vector{v[2], v[3], v[4]}});
-    p.post(LinearEquality{WeightedSum{} + 1_i * v[0] + 1_i * v[1] + 1_i * v[2] + 1_i * v[3] + 1_i * v[4], 10_i});
+    p.post(WeightedSum{} + 1_i * v[0] + 1_i * v[1] + 1_i * v[2] + 1_i * v[3] + 1_i * v[4] == 10_i);
 
     p.add_presolver(AutoTable{vector{v[0], v[1], v[2]}});
 

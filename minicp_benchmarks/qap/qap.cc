@@ -149,8 +149,7 @@ auto main(int argc, char * argv[]) -> int
     }
 
     auto cost = p.create_integer_variable(0_i, 100000_i, "cost");
-    wcosts += -1_i * cost;
-    p.post(LinearEquality{move(wcosts), 0_i});
+    p.post(move(wcosts) == 1_i * cost);
     p.minimise(cost);
 
     auto stats = solve_with(p,

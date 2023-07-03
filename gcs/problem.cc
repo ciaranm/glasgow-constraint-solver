@@ -5,6 +5,8 @@
 #include <gcs/innards/state.hh>
 #include <gcs/presolver.hh>
 
+#include <gcs/constraints/linear_equality.hh>
+
 #include <util/overloaded.hh>
 
 #include <deque>
@@ -100,6 +102,16 @@ auto Problem::create_state_for_new_search(optional<Proof> & optional_proof) cons
 auto Problem::post(const Constraint & c) -> void
 {
     _imp->constraints.push_back(c.clone());
+}
+
+auto Problem::post(SumLessEqual<Weighted<IntegerVariableID>> expr) -> void
+{
+    post(LinearLessEqual(move(expr.lhs), expr.rhs));
+}
+
+auto Problem::post(SumEquals<Weighted<IntegerVariableID>> expr) -> void
+{
+    post(LinearEquality(move(expr.lhs), expr.rhs));
 }
 
 auto Problem::add_presolver(const Presolver & p) -> void

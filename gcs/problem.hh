@@ -2,6 +2,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROBLEM_HH
 
 #include <gcs/constraint.hh>
+#include <gcs/expression.hh>
 #include <gcs/innards/proof-fwd.hh>
 #include <gcs/innards/state-fwd.hh>
 #include <gcs/literal.hh>
@@ -59,6 +60,16 @@ namespace gcs
          * \brief Add a clone of this Constraint to the model.
          */
         auto post(const Constraint &) -> void;
+
+        /**
+         * \brief Post this expression as a LinearLessEqual constraint.
+         */
+        auto post(SumLessEqual<Weighted<IntegerVariableID>>) -> void;
+
+        /**
+         * \brief Post this expression as a LinearEquality constraint.
+         */
+        auto post(SumEquals<Weighted<IntegerVariableID>>) -> void;
 
         /**
          * \brief Add a clone of this Presolver to the model.

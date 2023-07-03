@@ -223,7 +223,7 @@ auto main(int argc, char * argv[]) -> int
                     }
                     auto how_many_hidden = p.create_integer_variable(0_i, Integer(hiding.terms.size()), "how_many_hidden");
                     hiding += -1_i * how_many_hidden;
-                    p.post(LinearEquality{move(hiding), 0_i});
+                    p.post(move(hiding) == 0_i);
                     p.post(EqualsIff{
                         how_many_hidden,
                         constant_variable(0_i),

@@ -97,9 +97,7 @@ auto main(int argc, char * argv[]) -> int
     WeightedSum dist_sum;
     for (auto & s : dist)
         dist_sum += 1_i * s;
-    dist_sum += -1_i * obj;
-
-    p.post(LinearEquality{dist_sum, 0_i});
+    p.post(dist_sum == 1_i * obj);
     p.minimise(obj);
 
     auto stats = solve_with(p,
