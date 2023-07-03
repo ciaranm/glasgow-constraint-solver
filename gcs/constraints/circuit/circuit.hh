@@ -30,23 +30,25 @@ namespace gcs
 
     public:
         explicit CircuitBase(std::vector<IntegerVariableID> var, bool gac_all_different = true);
-        virtual auto clone() const -> std::unique_ptr<Constraint> override;
+        virtual auto clone() const -> std::unique_ptr<Constraint> = 0;
         virtual auto describe_for_proof() -> std::string override;
         virtual auto set_up(innards::Propagators &, innards::State &) -> ProofLine2DMap;
+        virtual auto install(innards::Propagators &, innards::State &) && -> void = 0;
     };
 
-    class CircuitSCC : public CircuitBase
-    {
-    public:
-        explicit CircuitSCC(std::vector<IntegerVariableID> var);
-        virtual auto install(innards::Propagators &, innards::State &) && -> void override;
-    };
+    //    class CircuitSCC : public CircuitBase
+    //    {
+    //    public:
+    //        using CircuitBase::CircuitBase;
+    //        virtual auto install(innards::Propagators &, innards::State &) && -> void override;
+    //    };
 
     class CircuitPrevent : public CircuitBase
     {
 
     public:
-        explicit CircuitPrevent(std::vector<IntegerVariableID> var, bool gac_all_different = true);
+        using CircuitBase::CircuitBase;
+        virtual auto clone() const -> std::unique_ptr<Constraint> override;
         virtual auto install(innards::Propagators &, innards::State &) && -> void override;
     };
 

@@ -32,11 +32,6 @@ CircuitBase::CircuitBase(vector<IntegerVariableID> v, const bool g) :
 {
 }
 
-auto CircuitBase::clone() const -> unique_ptr<Constraint>
-{
-    return make_unique<CircuitBase>(_succ);
-}
-
 auto CircuitBase::set_up(Propagators & propagators, State & initial_state) -> ProofLine2DMap
 {
     // Can't have negative values
@@ -118,6 +113,8 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state) -> Pr
         },
             Triggers{}, "circuit init");
     }
+
+    return lines_for_setting_pos;
 }
 
 auto CircuitBase::describe_for_proof() -> std::string
@@ -125,7 +122,7 @@ auto CircuitBase::describe_for_proof() -> std::string
     return "circuit (all different + no sub-cycles)";
 }
 
-auto propagate_non_gac_alldifferent(const optional<IntegerVariableID> & trigger_var,
+auto gcs::propagate_non_gac_alldifferent(const optional<IntegerVariableID> & trigger_var,
     const vector<IntegerVariableID> & succ, State & state) -> Inference
 {
     auto result = Inference::NoChange;

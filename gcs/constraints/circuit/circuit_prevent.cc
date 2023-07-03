@@ -147,6 +147,11 @@ auto propagate_circuit_using_prevent(const vector<IntegerVariableID> & succ,
     return result;
 }
 
+auto CircuitPrevent::clone() const -> unique_ptr<Constraint>
+{
+    return make_unique<CircuitPrevent>(_succ, _gac_all_different);
+}
+
 auto CircuitPrevent::install(Propagators & propagators, State & initial_state) && -> void
 {
     auto lines_for_setting_pos = CircuitBase::set_up(propagators, initial_state);
@@ -170,7 +175,6 @@ auto CircuitPrevent::install(Propagators & propagators, State & initial_state) &
                 idx = idx,
                 lines_for_setting_pos = lines_for_setting_pos,
                 chain_handle = chain_handle](State & state) -> pair<Inference, PropagatorState> {
-
                 bool should_disable = false;
                 auto result = propagate_circuit_using_prevent(
                     succ, lines_for_setting_pos, state, succ[idx], idx, chain_handle, should_disable);
