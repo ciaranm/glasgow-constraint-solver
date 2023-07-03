@@ -6,7 +6,22 @@ work, but there is a lot missing.
 
 Please contact [Ciaran McCreesh](mailto:ciaran.mccreesh@glasgow.ac.uk) with any queries.
 
-.. contents
+Contents
+========
+
+- [The Glasgow Constraint Solver](#the-glasgow-constraint-solver)
+- [Getting Started](#getting-started)
+  * [Compiling](#compiling)
+  * [Using the XCSP Solver](#using-the-xcsp-solver)
+  * [Manually Solving a Constraint Optimisation Problem](#manually-solving-a-constraint-optimisation-problem)
+  * [Proof Logging](#proof-logging)
+- [Navigating the Source Code](#navigating-the-source-code)
+- [How Does the Solver Work Internally?](#how-does-the-solver-work-internally)
+  * [Variables](#variables)
+  * [Constraints](#constraints)
+  * [Backtracking Search](#backtracking-search)
+- [How Do We Know It's Correct?](#how-do-we-know-its-correct)
+- [Acknowledgements](#acknowledgements)
 
 Getting Started
 ===============
