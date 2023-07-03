@@ -101,27 +101,30 @@ Next, we need to define some constraints. For this example, all of our constrain
 inequalities.
 
 ```cpp
-p.post(LinearLessEqual{Linear{{250_i, banana}, {200_i, chocolate}}, 4000_i});
-p.post(LinearLessEqual{Linear{{2_i, banana}}, 6_i});
-p.post(LinearLessEqual{Linear{{75_i, banana}, {150_i, chocolate}}, 2000_i});
-p.post(LinearLessEqual{Linear{{100_i, banana}, {150_i, chocolate}}, 500_i});
-p.post(LinearLessEqual{Linear{{75_i, chocolate}}, 500_i});
+p.post(WeightedSum{} + 250_i * banana + 200_i * chocolate <= 4000_i);
+p.post(WeightedSum{} + 2_i * banana <= 6_i);
+p.post(WeightedSum{} + 75_i * banana + 150_i * chocolate <= 2000_i);
+p.post(WeightedSum{} + 100_i * banana + 150_i * chocolate <= 500_i);
+p.post(WeightedSum{} + 75_i * chocolate <= 500_i);
 ```
 
 The first of these says that 250 times the number of banana cakes, plus 200 times the number of
 chocolate cakes, is less than or equal to 4000. The remainder of these constraints impose further
-similar restrictions.
+similar restrictions. Here we are making use of some convenience overloads; we could also be more
+verbose, and have written these constraints like:
+
+```cpp
+p.post(LinearLessEqual{WeightedSum{{{250_i, banana}, {200_i, chocolate}}}, 4000_i});
+```
 
 Next, we need to define our profit variable, which we want to maximise because capitalism. If we get
 400 moneys for each banana cake, and 450 moneys for each chocolate cake, we could say:
 
 ```cpp
 auto profit = p.create_integer_variable(0_i, 107500_i, "profit");
-p.post(LinearEquality{Linear{{400_i, banana}, {450_i, chocolate}, {-1_i, profit}}, 0_i});
+p.post(WeightedSum{} + 400_i * banana + 450_i * chocolate == 1_i * profit);
 p.maximise(profit);
 ```
-
-Here the linear equality says that 400 times bananas plus 450 times chocolate equals profit.
 
 We can now ask for a solution.
 
