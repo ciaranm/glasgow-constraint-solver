@@ -219,7 +219,7 @@ auto main(int, char *[]) -> int
                 WeightedSum c;
                 for (const auto & [idx, coeff] : enumerate(linear))
                     if (coeff != 0)
-                        c.terms.emplace_back(Integer{coeff}, vs[idx]);
+                        c += Integer{coeff} * vs[idx];
                 if (0 == mode)
                     p.post(LinearEquality{move(c), Integer{value}});
                 else if (1 == mode)
