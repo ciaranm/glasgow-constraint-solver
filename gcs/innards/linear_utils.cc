@@ -32,10 +32,10 @@ auto gcs::innards::simplify_linear(const WeightedSum & coeff_vars) -> pair<SumOf
     Integer modifier{0_i};
     for (const auto & [c, v] : coeff_vars.terms)
         overloaded{
-            [&, &c = c](const SimpleIntegerVariableID & v) { result.terms.emplace_back(c, v); },
+            [&, &c = c](const SimpleIntegerVariableID & v) { result += c * v; },
             [&, &c = c](const ConstantIntegerVariableID & v) { modifier -= c * v.const_value; },
             [&, &c = c](const ViewOfIntegerVariableID & v) {
-                result.terms.emplace_back(v.negate_first ? -c : c, v.actual_variable);
+                result += (v.negate_first ? -c : c) * v.actual_variable;
                 modifier -= c * v.then_add;
             }}
             .visit(v);
@@ -83,7 +83,7 @@ auto gcs::innards::sanitise_linear(const WeightedSum & coeff_vars) -> pair<Sanit
              })) {
         SumOf<PositiveOrNegative<SimpleIntegerVariableID>> sum_result;
         for (auto & [c, v] : result.terms)
-            sum_result.terms.emplace_back(c == 1_i, v);
+            sum_result.terms.push_back(PositiveOrNegative<SimpleIntegerVariableID>{c == 1_i, v});
         return pair{sum_result, modifier};
     }
     else
