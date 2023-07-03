@@ -9,7 +9,6 @@ Please contact [Ciaran McCreesh](mailto:ciaran.mccreesh@glasgow.ac.uk) with any 
 Contents
 ========
 
-- [The Glasgow Constraint Solver](#the-glasgow-constraint-solver)
 - [Getting Started](#getting-started)
   * [Compiling](#compiling)
   * [Using the XCSP Solver](#using-the-xcsp-solver)
