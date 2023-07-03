@@ -1,5 +1,5 @@
 #include <gcs/constraints/all_different.hh>
-#include <gcs/constraints/circuit.hh>
+#include <gcs/constraints/circuit_old.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/propagators.hh>
 

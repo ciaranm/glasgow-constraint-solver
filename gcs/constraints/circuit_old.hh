@@ -17,17 +17,27 @@ namespace gcs
      *
      * \ingroup Constraints
      */
-    class Circuit : public Constraint
+    class CircuitBase : public Constraint
     {
     private:
         const std::vector<IntegerVariableID> _succ;
         const bool _gac_all_different;
 
     public:
-        explicit Circuit(std::vector<IntegerVariableID> var, bool gac_all_different = true);
+        explicit CircuitBase(std::vector<IntegerVariableID> var, bool gac_all_different = true);
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
         virtual auto describe_for_proof() -> std::string override;
         virtual auto install(innards::Propagators &, innards::State &) && -> void override;
+    };
+
+    class CircuitSCC : public CircuitBase
+    {
+
+    };
+
+    class CircuitPrevent : public CircuitBase
+    {
+
     };
 }
 

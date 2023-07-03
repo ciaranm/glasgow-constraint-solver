@@ -1,4 +1,4 @@
-#include <gcs/constraints/circuit.hh>
+#include <gcs/constraints/circuit/circuit.hh>
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/equals.hh>
 #include <gcs/problem.hh>
