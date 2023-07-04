@@ -34,7 +34,7 @@ endif(NOT GCS_DEBUG_MODE)
 
 # add_compile_options(-DGCS_TRACK_ALL_PROPAGATIONS=1)
 
-enable_testing()
+# enable_testing()
 
 option(GCS_ENABLE_DOXYGEN "Add a doxygen target to generate the documentation" OFF)
 option(GCS_ENABLE_XCSP "Support for the XCSP modelling language" ON)

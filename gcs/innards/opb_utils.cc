@@ -73,3 +73,17 @@ auto gcs::innards::opb_utils::operator<<(ostream & s, const OPBInequality & e) -
     s << ">= " << e.value;
     return s;
 }
+
+auto gcs::innards::opb_utils::OPBInequality::OPBInequality_to_string() -> std::string
+{
+    std::string s = "";
+    for (auto & [c, v] : expr.weighted_terms) {
+        s += c.to_string();
+        s += " ";
+        s += v;
+        s += " ";
+    }
+    s += ">= ";
+    s += value.to_string();
+    return s;
+}

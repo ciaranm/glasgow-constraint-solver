@@ -34,6 +34,7 @@ namespace gcs::innards::opb_utils
     {
         OPBExpression expr;
         Integer value;
+        auto OPBInequality_to_string() -> std::string;
     };
 
     /**
@@ -86,6 +87,9 @@ namespace gcs::innards::opb_utils
      * \ingroup OPBUtils
      */
     auto operator<<(std::ostream & s, const OPBInequality & e) -> std::ostream &;
+
+    // auto OPBInequality_to_string() -> std::string;
+
 }
 
 #endif

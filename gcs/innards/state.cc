@@ -219,6 +219,17 @@ auto State::clone() const -> State
     result._imp->optional_minimise_variable = _imp->optional_minimise_variable;
     result._imp->optional_objective_incumbent = _imp->optional_objective_incumbent;
     result._imp->maybe_proof = _imp->maybe_proof;
+
+
+
+
+
+    // vector<HowChanged> how_changed{};
+    // vector<Literal> guesses{};
+    // vector<Literal> extra_proof_conditions{};
+
+
+
     return result;
 }
 
@@ -1148,7 +1159,7 @@ auto State::add_proof_steps(JustifyExplicitly why) -> void
     if (_imp->maybe_proof) {
         vector<ProofLine> to_delete;
         _imp->maybe_proof->add_proof_steps(why, to_delete);
-        _imp->maybe_proof->delete_proof_lines(to_delete);
+        // _imp->maybe_proof->delete_proof_lines(to_delete);
     }
 }
 

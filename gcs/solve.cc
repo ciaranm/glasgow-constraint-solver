@@ -4,6 +4,9 @@
 #include <gcs/innards/state.hh>
 #include <gcs/search_heuristics.hh>
 #include <gcs/solve.hh>
+#include <fstream>
+#include <iostream>
+
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -139,6 +142,24 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
 
     stats.solve_time = duration_cast<microseconds>(steady_clock::now() - start_time);
     propagators.fill_in_constraint_stats(stats);
+
+    if (optional_proof) {
+
+        std::string str = optional_proof_options.value().opb_file;
+        // std::size_t pos = str.find('.');
+        std::string name_file = str.substr(0, str.length() - 4);
+        name_file += "_computation_time_2_threads_work";
+
+        std::ofstream file;
+        file.open(name_file, std::ofstream::out | std::ofstream::app);
+
+        if (file) {
+            file << std::to_string(stats.solve_time.count() / 1'000'000.0) << std::endl;
+            file.close();
+        }
+        else
+            std::cout << "Impossible to open the file" << std::endl;
+    }
 
     return stats;
 }
