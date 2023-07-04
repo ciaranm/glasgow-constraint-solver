@@ -63,7 +63,7 @@ auto main(int, char *[]) -> int
         }
     }
 
-    p.post(Circuit{succ});
+    p.post(CircuitPrevent{succ});
 
     // Minimise the distance between any two stops
     auto max_leg = p.create_integer_variable(0_i, 100_i, "max_leg");
@@ -74,7 +74,7 @@ auto main(int, char *[]) -> int
         }
     }
 
-    p.minimise(max_leg);
+    // p.minimise(max_leg);
 
     auto stats = solve_with(p,
         SolveCallbacks{

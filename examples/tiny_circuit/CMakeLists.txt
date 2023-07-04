@@ -1,0 +1,3 @@
+add_executable(tiny_circuit tiny_circuit.cc)
+target_link_libraries(tiny_circuit PUBLIC glasgow_constraint_solver)
+
