@@ -249,13 +249,6 @@ namespace gcs::innards
         ///@{
 
         /**
-         * Output these proof steps, as if we were carrying out an explicit
-         * justification. Used by some Constraint implementations that do some
-         * non-inference reasoning upon startup.
-         */
-        auto add_proof_steps(JustifyExplicitly why) -> void;
-
-        /**
          * The Proof, if we are proof logging, or nullptr if we are not.
          */
         [[nodiscard]] auto maybe_proof() const -> Proof *;
