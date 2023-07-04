@@ -31,7 +31,7 @@ namespace
             return min(a, b);
     }
 
-    auto explore(const long & node, long & count, vector<long> & stack, vector<long> & lowlink, vector<long> & visit_number, long & start_prev_subtree, long & end_prev_subtree, const vector<IntegerVariableID> succ, State & state) -> pair<Inference, vector<pair<long, long>>>
+    auto explore(const long & node, long & count, vector<long> & lowlink, vector<long> & visit_number, long & start_prev_subtree, long & end_prev_subtree, const vector<IntegerVariableID> succ, State & state) -> pair<Inference, vector<pair<long, long>>>
     {
         visit_number[node] = count;
         lowlink[node] = count;
@@ -40,7 +40,7 @@ namespace
         vector<pair<long, long>> back_edges{};
         state.for_each_value_while(succ[node], [&](Integer w) -> bool {
             if (visit_number[w.raw_value] == -1) {
-                auto explore_result = explore(w.raw_value, count, stack, lowlink, visit_number, start_prev_subtree, end_prev_subtree, succ, state);
+                auto explore_result = explore(w.raw_value, count, lowlink, visit_number, start_prev_subtree, end_prev_subtree, succ, state);
                 increase_inference_to(result, explore_result.first);
                 if (result == Inference::Contradiction) {
                     return false;
@@ -72,19 +72,20 @@ namespace
     auto propagate_circuit_using_scc(const vector<IntegerVariableID> & succ, State & state) -> Inference
     {
         auto root = select_root(succ, state);
-        long count = 0;
+        long count = 1;
         long start_subtree = 0;
         long end_subtree = 0;
 
-        vector<long> stack{};
         vector<long> lowlink = vector<long>(succ.size(), -1);
         vector<long> visit_number = vector<long>(succ.size(), -1);
-
+        lowlink[root] = 0;
+        visit_number[root] = 0;
+        
         Inference result = Inference::NoChange;
 
         state.for_each_value_while(succ[root], [&](Integer v) -> bool {
             if (visit_number[v.raw_value] == -1) {
-                auto explore_result = explore(v.raw_value, count, stack, lowlink, visit_number, start_subtree, end_subtree, succ, state);
+                auto explore_result = explore(v.raw_value, count, lowlink, visit_number, start_subtree, end_subtree, succ, state);
                 increase_inference_to(result, explore_result.first);
                 if (result == Inference::Contradiction) {
                     return false;
@@ -98,8 +99,8 @@ namespace
                 else if (back_edges.size() == 1) {
                     increase_inference_to(result, state.infer(succ[back_edges[0].first] == Integer{back_edges[0].second}, NoJustificationNeeded{}));
                 }
-                start_subtree++;
-                end_subtree--;
+                start_subtree = end_subtree + 1;
+                end_subtree = count - 1;
             }
             return true;
         });
