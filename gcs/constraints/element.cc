@@ -282,7 +282,7 @@ auto Element2DConstantArray::install(Propagators & propagators, State & initial_
             if (*idxsel != state.allocate_integer_variable_with_state(0_i, Integer(vals->size() * vals->begin()->size())))
                 throw UnexpectedException{"something went horribly wrong with variable IDs"};
 
-            state.add_proof_steps(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
+            state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
                 state.for_each_value_immutable(idx1, [&](Integer i1) {
                     state.for_each_value_immutable(idx2, [&](Integer i2) {
                         Integer idx = i1 * Integer(vals->size()) + i2;

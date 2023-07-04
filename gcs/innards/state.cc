@@ -1143,15 +1143,6 @@ auto State::log_inferences_to(Proof & p) -> void
     _imp->maybe_proof = &p;
 }
 
-auto State::add_proof_steps(JustifyExplicitly why) -> void
-{
-    if (_imp->maybe_proof) {
-        vector<ProofLine> to_delete;
-        _imp->maybe_proof->add_proof_steps(why, to_delete);
-        _imp->maybe_proof->delete_proof_lines(to_delete);
-    }
-}
-
 auto State::test_literal(const Literal & lit) const -> LiteralIs
 {
     return overloaded{

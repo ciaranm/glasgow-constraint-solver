@@ -156,7 +156,7 @@ namespace
         };
 
         if (state.maybe_proof()) {
-            state.add_proof_steps(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
+            state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
                 proof.emit_proof_comment("building GAC table for linear equality");
                 search(&proof, &to_delete);
             }});
