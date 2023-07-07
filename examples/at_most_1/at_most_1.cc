@@ -1,6 +1,5 @@
+#include <gcs/constraints/at_most_one.hh>
 #include <gcs/constraints/comparison.hh>
-#include <gcs/constraints/smart_table.hh>
-#include <gcs/extensional.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
@@ -65,33 +64,16 @@ auto main(int argc, char * argv[]) -> int
     auto n = options_vars["n"].as<int>();
 
     Problem p;
-    auto x = p.create_integer_variable_vector(n, 0_i, Integer{n}, "x");
-    auto y = p.create_integer_variable(Integer{n}, Integer{n}, "y");
+    auto vars = p.create_integer_variable_vector(n, 0_i, Integer{n}, "x");
+    auto val = p.create_integer_variable(Integer{n}, Integer{n}, "y");
 
-
-    // Build the smart table
-    SmartTuples tuples;
-
-    for (int i = 0; i < n; ++i) {
-        vector<SmartEntry> tuple;
-        for (int j = 0; j < n; ++j) {
-            if (j != i) {
-                tuple.emplace_back(SmartTable::not_equals(x[j], y));
-            }
-        }
-        tuples.emplace_back(tuple);
-    }
-
-    auto all_vars = x;
-    all_vars.emplace_back(y);
-
-    p.post(SmartTable{all_vars, tuples});
+    p.post(AtMostOne{vars, val});
 
     auto stats = solve_with(p,
         SolveCallbacks{
             .solution = [&](const CurrentState & s) -> bool {
-                cout << "x = [ ";
-                for (const auto & var : x) {
+                cout << "vars = [ ";
+                for (const auto & var : vars) {
                     cout << s(var) << " ";
                 }
                 cout << "]" << endl;

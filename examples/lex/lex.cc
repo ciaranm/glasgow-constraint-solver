@@ -17,6 +17,9 @@ using std::vector;
 
 auto main(int, char *[]) -> int
 {
+    // Smart table representation of the Lex constraint
+    // As given in "The Smart Table Constraint" Mairy, J. B., Deville, Y., & Lecoutre, C. (2015)
+
     int n = 4;
     Problem p;
     auto x = p.create_integer_variable_vector(n, 0_i, 10_i, "x");
@@ -32,8 +35,7 @@ auto main(int, char *[]) -> int
     // Only option for x[2] is 10, since it comes lexicographically first
     p.post(Equals(x[3], 6_c));
 
-    // Smart table representation of the Lex constraint
-    // As given in "The Smart Table Constraint" Mairy, J. B., Deville, Y., & Lecoutre, C. (2015)
+
     SmartTuples tuples;
 
     for (int i = 0; i < n; ++i) {
