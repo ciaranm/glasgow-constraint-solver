@@ -54,7 +54,7 @@ namespace
                     back_edges.emplace_back(node, w.raw_value);
                 }
                 else if (prune_skip && visit_number[w.raw_value] < start_prev_subtree) {
-                    increase_inference_to(result, state.infer(succ[node] != w, NoJustificationNeeded{}));
+                    increase_inference_to(result, state.infer(succ[node] != w, JustifyUsingRUP{}));
                 }
                 lowlink[node] = pos_min(lowlink[node], visit_number[w.raw_value]);
             }
@@ -63,6 +63,7 @@ namespace
         });
 
         if (lowlink[node] == visit_number[node]) {
+
             return make_pair(Inference::Contradiction, back_edges);
         }
         else
@@ -97,7 +98,7 @@ namespace
                     return false;
                 }
                 else if (fix_req && back_edges.size() == 1) {
-                    increase_inference_to(result, state.infer(succ[back_edges[0].first] == Integer{back_edges[0].second}, NoJustificationNeeded{}));
+                    increase_inference_to(result, state.infer(succ[back_edges[0].first] == Integer{back_edges[0].second}, JustifyUsingRUP{}));
                 }
                 start_subtree = end_subtree + 1;
                 end_subtree = count - 1;
@@ -110,7 +111,7 @@ namespace
         if (prune_root && start_subtree > 1) {
             state.for_each_value_while(succ[root], [&](Integer v) -> bool {
                 if (visit_number[v.raw_value] < start_subtree)
-                    increase_inference_to(result, state.infer(succ[root] != v, NoJustificationNeeded{}));
+                    increase_inference_to(result, state.infer(succ[root] != v, JustifyUsingRUP{}));
                 return true;
             });
         }
@@ -131,7 +132,7 @@ auto CircuitSCC::install(Propagators & propagators, State & initial_state) && ->
     triggers.on_change = {_succ.begin(), _succ.end()};
     propagators.install(
         [succ = _succ, lines_for_setting_pos = lines_for_setting_pos](State & state) -> pair<Inference, PropagatorState> {
-            auto result = propagate_circuit_using_scc(succ, false, false, false, state);
+            auto result = propagate_circuit_using_scc(succ, true, true, true, state);
             return pair{result, PropagatorState::Enable};
         },
         triggers,

@@ -27,13 +27,13 @@ namespace gcs
     protected:
         const bool _gac_all_different;
         const std::vector<IntegerVariableID> _succ;
+        virtual auto set_up(innards::Propagators &, innards::State &) -> ProofLine2DMap;
 
     public:
         explicit CircuitBase(std::vector<IntegerVariableID> var, bool gac_all_different = true);
         virtual auto clone() const -> std::unique_ptr<Constraint> = 0;
         virtual auto describe_for_proof() -> std::string override;
-        virtual auto set_up(innards::Propagators &, innards::State &) -> ProofLine2DMap;
-        virtual auto install(innards::Propagators &, innards::State &) && -> void = 0;
+        //        virtual auto install(innards::Propagators &, innards::State &) && -> void = 0;
     };
 
     class CircuitSCC : public CircuitBase
@@ -52,7 +52,7 @@ namespace gcs
         virtual auto install(innards::Propagators &, innards::State &) && -> void override;
     };
 
-    using Circuit = CircuitSCC;
+    using Circuit = CircuitPrevent;
 
     auto propagate_non_gac_alldifferent(const std::optional<IntegerVariableID> & trigger_var,
         const std::vector<IntegerVariableID> & succ, innards::State & state) -> innards::Inference;
