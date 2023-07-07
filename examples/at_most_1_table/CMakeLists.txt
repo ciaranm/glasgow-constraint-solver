@@ -1,3 +1,0 @@
-add_executable(at_most_1_table at_most_1_table.cc)
-target_link_libraries(at_most_1_table PUBLIC glasgow_constraint_solver)
-

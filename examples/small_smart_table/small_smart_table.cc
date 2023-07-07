@@ -41,7 +41,7 @@ auto main(int, char *[]) -> int
                 cout << "x1 = " << s(x1) << " x2 = " << s(x2) << " x3 = " << s(x3) << endl;
                 return true;
             }},
-        ProofOptions{"smart_table_report_example.opb", "smart_table_report_example.veripb"});
+        ProofOptions{"small_smart_table.opb", "small_smart_table.veripb"});
 
     cout << stats;
 

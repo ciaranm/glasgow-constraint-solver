@@ -1,3 +1,3 @@
-add_executable(smart_table_report_example smart_table_report_example.cc)
+add_executable(smart_table_report_example small_smart_table.cc)
 target_link_libraries(smart_table_report_example PUBLIC glasgow_constraint_solver)
 
