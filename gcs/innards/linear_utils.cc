@@ -270,6 +270,8 @@ namespace
             bounds.push_back(state.bounds(var));
             if constexpr (is_same_v<decltype(cv), const SimpleIntegerVariableID &>)
                 lower_sum += bounds.back().first;
+            else if constexpr (is_same_v<decltype(cv), const pair<bool, SimpleIntegerVariableID> &>)
+                lower_sum += (cv.first ? bounds.back().first : -bounds.back().second);
             else {
                 auto coeff = get_coeff(cv);
                 lower_sum += (coeff >= 0_i) ? (coeff * bounds.back().first) : (coeff * bounds.back().second);
@@ -369,56 +371,7 @@ auto gcs::innards::propagate_sum(const SumOf<PositiveOrNegative<SimpleIntegerVar
 }
 
 auto gcs::innards::propagate_sum_all_positive(const SumOf<SimpleIntegerVariableID> & coeff_vars, Integer value, State & state, bool equality,
-    const std::optional<ProofLine> & proof_line, vector<pair<Integer, Integer>> & space) -> pair<Inference, PropagatorState>
+    const std::optional<ProofLine> & proof_line) -> pair<Inference, PropagatorState>
 {
-    if (state.maybe_proof() || ! equality)
-        return propagate_linear_or_sum(coeff_vars, value, state, equality, proof_line);
-
-    bool changed = false;
-
-    Integer lower_sum{0}, inv_lower_sum{0};
-    for (const auto & [idx, cv] : enumerate(coeff_vars.terms)) {
-        const auto & var = get_var(cv);
-        space[idx] = state.bounds(var);
-        lower_sum += space[idx].first;
-        inv_lower_sum += -space[idx].second;
-    }
-
-    for (unsigned p = 0, p_end = coeff_vars.terms.size(); p != p_end; ++p) {
-        const auto & cv = coeff_vars.terms[p];
-
-        Integer lower_without_me = lower_sum - space[p].first;
-        Integer remainder = value - lower_without_me;
-        if (space[p].second >= (1_i + remainder)) {
-            switch (state.infer_less_than(get_var(cv), 1_i + remainder, NoJustificationNeeded{})) {
-            case Inference::Change:
-                space[p] = state.bounds(get_var(cv)); // might be tighter than expected if we had holes
-                changed = true;
-                break;
-            case Inference::NoChange:
-                break;
-            case Inference::Contradiction:
-                return pair{Inference::Contradiction, PropagatorState::Enable};
-            }
-        }
-        lower_sum = lower_without_me + space[p].first;
-
-        Integer inv_lower_without_me = inv_lower_sum + space[p].second;
-        Integer inv_remainder = -value - inv_lower_without_me;
-        if (space[p].first < -inv_remainder) {
-            switch (state.infer_greater_than_or_equal(get_var(cv), -inv_remainder, NoJustificationNeeded{})) {
-            case Inference::Change:
-                space[p] = state.bounds(get_var(cv)); // might be tighter than expected if we had holes
-                changed = true;
-                break;
-            case Inference::NoChange:
-                break;
-            case Inference::Contradiction:
-                return pair{Inference::Contradiction, PropagatorState::Enable};
-            }
-        }
-        inv_lower_sum = inv_lower_without_me - space[p].second;
-    }
-
-    return pair{changed ? Inference::Change : Inference::NoChange, PropagatorState::Enable};
+    return propagate_linear_or_sum(coeff_vars, value, state, equality, proof_line);
 }

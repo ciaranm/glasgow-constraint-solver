@@ -198,11 +198,8 @@ auto LinearEquality::install(Propagators & propagators, State & initial_state) &
                 triggers, "linear equality");
         },
         [&, &modifier = modifier](const SumOf<SimpleIntegerVariableID> & sum) {
-            vector<pair<Integer, Integer> > space;
-            space.resize(sum.terms.size(), pair{0_i, 0_i});
-            propagators.install([modifier = modifier, sum = sum, value = _value,
-                    proof_line = proof_line, space = move(space)](State & state) mutable {
-                return propagate_sum_all_positive(sum, value + modifier, state, true, proof_line, space);
+            propagators.install([modifier = modifier, sum = sum, value = _value, proof_line = proof_line](State & state) mutable {
+                return propagate_sum_all_positive(sum, value + modifier, state, true, proof_line);
             },
                 triggers, "linear equality");
         }}
@@ -269,11 +266,8 @@ auto LinearInequality::install(Propagators & propagators, State & initial_state)
                 triggers, "linear inequality");
         },
         [&, &modifier = modifier](const SumOf<SimpleIntegerVariableID> & sum) {
-            vector<pair<Integer, Integer> > space;
-            space.resize(sum.terms.size(), pair{0_i, 0_i});
-            propagators.install([modifier = modifier, sum = sum, value = _value,
-                    proof_line = proof_line, space = move(space)](State & state) mutable {
-                return propagate_sum_all_positive(sum, value + modifier, state, false, proof_line, space);
+            propagators.install([modifier = modifier, sum = sum, value = _value, proof_line = proof_line](State & state) mutable {
+                return propagate_sum_all_positive(sum, value + modifier, state, false, proof_line);
             },
                 triggers, "linear inequality");
         }}
