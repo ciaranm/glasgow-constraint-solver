@@ -261,12 +261,4 @@ auto main(int, char *[]) -> int
     }
 
     return EXIT_SUCCESS;
-
-    //    for(int i = 0; i < 10; i++) {
-    //        auto edges = random_tree_edges(5, rng, 0);
-    //        for(const auto& edge : edges) {
-    //            cout << "(" << edge.first << "," << edge.second << ")" << ";";
-    //        }
-    //        cout << endl;
-    //    }
 }

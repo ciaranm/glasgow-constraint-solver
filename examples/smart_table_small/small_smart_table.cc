@@ -27,21 +27,14 @@ auto main(int, char *[]) -> int
         {SmartTable::less_than(x1, x2 - 3_i), SmartTable::in_set(x1, {1_i, 2_i}), SmartTable::equals(x3, 3_i)},
         {SmartTable::equals(x1, x2), SmartTable::not_equals(x1, 1_i), SmartTable::greater_than_equal(x2, x3 - 8_i)}};
     p.post(SmartTable{{x1, x2, x3}, tuples});
-
-    //    vector<SmartEntry> tuple;s
-    //    for(int i = 0; i < 3; i++) {
-    //        tuple.emplace_back(LessThanVar{x[i], x[i+1]});
-    //    }
-    //    x.emplace_back(y);
-    //    p.post(SmartTable{x, {tuple}});
-
+    
     auto stats = solve_with(p,
         SolveCallbacks{
             .solution = [&](const CurrentState & s) -> bool {
                 cout << "x1 = " << s(x1) << " x2 = " << s(x2) << " x3 = " << s(x3) << endl;
                 return true;
             }},
-        ProofOptions{"small_smart_table.opb", "small_smart_table.veripb"});
+        ProofOptions{"smart_table_small.opb", "smart_table_small.veripb"});
 
     cout << stats;
 

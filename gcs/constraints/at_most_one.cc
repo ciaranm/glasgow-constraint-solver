@@ -13,23 +13,23 @@ using std::vector;
 using namespace gcs;
 using namespace gcs::innards;
 
-AtMostOne::AtMostOne(vector<IntegerVariableID> vars, IntegerVariableID val) :
+AtMostOneSmartTable::AtMostOneSmartTable(vector<IntegerVariableID> vars, IntegerVariableID val) :
     _vars(move(vars)),
     _val(val)
 {
 }
 
-auto AtMostOne::clone() const -> unique_ptr<Constraint>
+auto AtMostOneSmartTable::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<AtMostOne>(_vars, _val);
+    return make_unique<AtMostOneSmartTable>(_vars, _val);
 }
 
-auto AtMostOne::install(Propagators & propagators, State & initial_state) && -> void
+auto AtMostOneSmartTable::install(Propagators & propagators, State & initial_state) && -> void
 {
     // Build the constraint as smart table
     // Question: Do we trust this encoding as a smart table?
     // Should we morally have a simpler PB encoding and reformulate?
-    // Like an auto-smarttable proof?
+    // Like an auto-smart-table proof?
     SmartTuples tuples;
 
     for (int i = 0; cmp_less(i, _vars.size()); ++i) {
@@ -49,7 +49,7 @@ auto AtMostOne::install(Propagators & propagators, State & initial_state) && -> 
     move(smt_table).install(propagators, initial_state);
 }
 
-auto AtMostOne::describe_for_proof() -> std::string
+auto AtMostOneSmartTable::describe_for_proof() -> std::string
 {
     return "at most one (as a smart table)";
 }

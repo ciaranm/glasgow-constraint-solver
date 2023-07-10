@@ -23,8 +23,8 @@ namespace po = boost::program_options;
 
 auto main(int argc, char * argv[]) -> int
 {
-    // Smart table representation of the AtMost1 constraint
-    // As given in "The Smart Table Constraint" Mairy, J. B., Deville, Y., & Lecoutre, C. (2015)
+    // A simple AtMost1 constraint example, using the encoding as a Smart Table
+    // as given in "The Smart Table Constraint" Mairy, J. B., Deville, Y., & Lecoutre, C. (2015)
     //
     // Constrain that at most one out n variables can take the value n.
     po::options_description display_options{"Program options"};
@@ -67,7 +67,7 @@ auto main(int argc, char * argv[]) -> int
     auto vars = p.create_integer_variable_vector(n, 0_i, Integer{n}, "x");
     auto val = p.create_integer_variable(Integer{n}, Integer{n}, "y");
 
-    p.post(AtMostOne{vars, val});
+    p.post(AtMostOneSmartTable{vars, val});
 
     auto stats = solve_with(p,
         SolveCallbacks{
@@ -79,7 +79,7 @@ auto main(int argc, char * argv[]) -> int
                 cout << "]" << endl;
                 return true;
             }},
-        options_vars.contains("prove") ? make_optional<ProofOptions>("at_most_1.opb", "at_most_1.veripb") : nullopt);
+        options_vars.contains("prove") ? make_optional<ProofOptions>("smart_table_am1.opb", "smart_table_am1.veripb") : nullopt);
 
     cout << stats;
 
