@@ -1,8 +1,5 @@
 
 #include <gcs/constraints/comparison.hh>
-#include <gcs/constraints/equals.hh>
-#include <gcs/constraints/smart_table.hh>
-#include <gcs/extensional.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
@@ -11,7 +8,6 @@
 #include <numeric>
 #include <random>
 #include <sstream>
-#include <string>
 #include <tuple>
 #include <vector>
 

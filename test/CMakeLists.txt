@@ -1,0 +1,5 @@
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+add_subdirectory(break_table)
+add_subdirectory(break_table_with_constants)
+add_subdirectory(break_views)
+add_subdirectory(up_proof)

@@ -122,7 +122,7 @@ namespace gcs
                     [&ret](const ConstantIntegerVariableID & v, const ConstantIntegerVariableID & w) {
                         ret = v <=> w;
                     },
-                    [&ret](const auto & v, const auto & w) {
+                    [&](const auto &, const auto &) {
 
                     }}
                     .visit(*this, other);
