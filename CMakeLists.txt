@@ -58,6 +58,7 @@ add_subdirectory(gcs)
 if (GCS_ENABLE_EXAMPLES)
     add_subdirectory(examples)
     add_subdirectory(minicp_benchmarks)
+    add_subdirectory(test)
 endif (GCS_ENABLE_EXAMPLES)
 
 if (GCS_ENABLE_DOXYGEN)
