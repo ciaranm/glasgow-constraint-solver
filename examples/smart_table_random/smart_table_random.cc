@@ -13,7 +13,11 @@
 #include <tuple>
 #include <vector>
 
+#include <boost/program_options.hpp>
+
 using namespace gcs;
+
+namespace po = boost::program_options;
 
 using std::cout;
 using std::endl;
@@ -249,6 +253,7 @@ auto test_smart_table(const int & n, mt19937 & rng)
 }
 auto main(int, char *[]) -> int
 {
+
     // random_device rand_dev;
     // std::mt19937 rng(rand_dev());
     mt19937 rng(0); // Would rather have it the same every time, for now
