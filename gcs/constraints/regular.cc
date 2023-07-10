@@ -437,7 +437,7 @@ auto Regular::install(Propagators & propagators, State & initial_state) && -> vo
                 for (const auto & val : _symbols) {
                     if (_transitions[q][val] == -1) {
                         // No transition for q, v, so constrain ~(state_i = q /\ X_i = val)
-                        propagators.define_pseudoboolean_ge(initial_state, WeightedPseudoBooleanSum{} + 1_i * (_vars[idx] != val) + (1_i * state_at_pos_flags[idx][q]), 1_i);
+                        propagators.define_pseudoboolean_ge(initial_state, WeightedPseudoBooleanSum{} + 1_i * (_vars[idx] != val) + (1_i * ! state_at_pos_flags[idx][q]), 1_i);
                     }
                     else {
                         auto new_q = _transitions[q][val];
