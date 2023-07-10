@@ -96,21 +96,20 @@ namespace
                 output_file << "{";
                 int j = 0;
                 for (const auto & state_and_vals : node) {
-                    if(graph.in_edges[l+1][state_and_vals.first].contains(k)) {
+                    if (graph.in_edges[l + 1][state_and_vals.first].contains(k)) {
                         output_file << state_and_vals.first << ": [";
                         int i = 0;
-                            for (const auto &val: state_and_vals.second) {
-                                if(graph.in_edges[l+1][state_and_vals.first].at(k).contains(val)) {
-                                    output_file << val.raw_value;
-                                    if (cmp_not_equal(i, state_and_vals.second.size() - 1))
-                                        output_file << ", ";
-                                    i++;
-                                }
-
+                        for (const auto & val : state_and_vals.second) {
+                            if (graph.in_edges[l + 1][state_and_vals.first].at(k).contains(val)) {
+                                output_file << val.raw_value;
+                                if (cmp_not_equal(i, state_and_vals.second.size() - 1))
+                                    output_file << ", ";
+                                i++;
                             }
+                        }
                         output_file << "]";
-                    if (cmp_not_equal(j, node.size() - 1))
-                        output_file << ",";
+                        if (cmp_not_equal(j, node.size() - 1))
+                            output_file << ",";
                     }
                     j++;
                 }
@@ -132,6 +131,7 @@ namespace
 
     auto log_additional_inference(const vector<Literal> & literals, const vector<ProofFlag> & proof_flags, State & state, string comment = "") -> void
     {
+        if (! state.maybe_proof()) return;
         // Trying to cut down on repeated code
         state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
             if (! comment.empty()) {
@@ -221,7 +221,8 @@ namespace
                     }
                     else {
                         graph.states_supporting[i][val].erase(q);
-                        log_additional_inference({vars[i] != val}, {! state_at_pos_flags[i][q]}, state);
+                        if (state.maybe_proof())
+                            log_additional_inference({vars[i] != val}, {! state_at_pos_flags[i][q]}, state);
                     }
                 }
             });
@@ -230,7 +231,8 @@ namespace
             for (const auto & q : gn) {
                 if (! state_is_support[q]) {
                     graph.nodes[i].erase(q);
-                    log_additional_inference({}, {! state_at_pos_flags[i][q]}, state, "back pass");
+                    if (state.maybe_proof())
+                        log_additional_inference({}, {! state_at_pos_flags[i][q]}, state, "back pass");
                 }
             }
         }
@@ -248,12 +250,14 @@ namespace
                 graph.out_edges[i - 1][l].erase(k);
                 for (const auto & val : edge.second) {
                     graph.states_supporting[i - 1][val].erase(l);
-                    log_additional_inference({vars[i - 1] != val}, {! state_at_pos_flags[i - 1][l]}, state, "dec outdeg inner");
+                    if (state.maybe_proof())
+                        log_additional_inference({vars[i - 1] != val}, {! state_at_pos_flags[i - 1][l]}, state, "dec outdeg inner");
                     decrement_outdeg(graph, i - 1, l, vars, state_at_pos_flags, state);
                 }
             }
             graph.in_edges[i][k] = {};
-            log_additional_inference({}, {! state_at_pos_flags[i][k]}, state, "dec outdeg");
+            if (state.maybe_proof())
+                log_additional_inference({}, {! state_at_pos_flags[i][k]}, state, "dec outdeg");
         }
     }
 
@@ -261,20 +265,21 @@ namespace
     {
         graph.in_deg[i][k]--;
         if (graph.in_deg[i][k] == 0 && cmp_less(i, graph.in_deg.size() - 1)) {
-            // Again, want to eliminate this node i.e. prove !state[i][k]
-            for (const auto & q : graph.nodes[i - 1]) {
-                // So first eliminate each previous state/variable combo
-                state.for_each_value(vars[i], [&](Integer val) -> void {
-                    log_additional_inference({vars[i] != val}, {! state_at_pos_flags[i - 1][q], ! state_at_pos_flags[i][k]}, state);
-                });
+            if (state.maybe_proof()) {
+                // Again, want to eliminate this node i.e. prove !state[i][k]
+                for (const auto & q : graph.nodes[i - 1]) {
+                    // So first eliminate each previous state/variable combo
+                    state.for_each_value(vars[i], [&](Integer val) -> void {
+                        log_additional_inference({vars[i] != val}, {! state_at_pos_flags[i - 1][q], ! state_at_pos_flags[i][k]}, state);
+                    });
 
-                // Then eliminate each previous state
-                log_additional_inference({}, {! state_at_pos_flags[i - 1][q], ! state_at_pos_flags[i][k]}, state);
+                    // Then eliminate each previous state
+                    log_additional_inference({}, {! state_at_pos_flags[i - 1][q], ! state_at_pos_flags[i][k]}, state);
+                }
+
+                // Finally, can eliminate what we want
+                log_additional_inference({}, {! state_at_pos_flags[i][k]}, state);
             }
-
-            // Finally, can eliminate what we want
-            log_additional_inference({}, {! state_at_pos_flags[i][k]}, state);
-
             for (const auto & edge : graph.out_edges[i][k]) {
                 auto l = edge.first;
                 graph.in_edges[i + 1][l].erase(k);
