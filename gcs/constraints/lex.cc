@@ -33,9 +33,9 @@ auto LexSmartTable::install(Propagators & propagators, State & initial_state) &&
     // Like an auto-smart-table proof?
     SmartTuples tuples;
 
-    for (int i = 0; i < min(_vars_1.size(), _vars_2.size()); ++i) {
+    for (unsigned int i = 0; i < min(_vars_1.size(), _vars_2.size()); ++i) {
         vector<SmartEntry> tuple;
-        for (int j = 0; j < i + 1; ++j) {
+        for (unsigned int j = 0; j < i + 1; ++j) {
             if (j < i)
                 tuple.emplace_back(SmartTable::equals(_vars_1[j], _vars_2[j]));
             else if (j == i)

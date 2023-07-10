@@ -4,23 +4,34 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 project(
-    Glasgow-Constraint-Solver
-    VERSION 0.0.1
-    DESCRIPTION "An auditable constraint programming and optimisation solver"
-    HOMEPAGE_URL "https://github.com/ciaranm/glasgow-constraint-solver"
-    LANGUAGES CXX)
+        Glasgow-Constraint-Solver
+        VERSION 0.0.1
+        DESCRIPTION "An auditable constraint programming and optimisation solver"
+        HOMEPAGE_URL "https://github.com/ciaranm/glasgow-constraint-solver"
+        LANGUAGES CXX)
 
 add_compile_options(-W)
 add_compile_options(-Wall)
-add_compile_options(-Wno-restrict) # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=104336
-add_compile_options(-Wno-stringop-overread) # ditto
 
 include(CheckCXXCompilerFlag)
 unset(COMPILER_SUPPORTS_MARCH_NATIVE CACHE)
 CHECK_CXX_COMPILER_FLAG(-march=native COMPILER_SUPPORTS_MARCH_NATIVE)
-if(COMPILER_SUPPORTS_MARCH_NATIVE)
-add_compile_options(-march=native)
-endif(COMPILER_SUPPORTS_MARCH_NATIVE)
+if (COMPILER_SUPPORTS_MARCH_NATIVE)
+    add_compile_options(-march=native)
+endif (COMPILER_SUPPORTS_MARCH_NATIVE)
+
+unset(COMPILER_SUPPORTS_NO_RESTRICT CACHE)
+CHECK_CXX_COMPILER_FLAG(-Wno-restrict COMPILER_SUPPORTS_NO_RESTRICT)
+if (COMPILER_SUPPORTS_NO_RESTRICT)
+    add_compile_options(-Wno-restrict) # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=104336
+endif (COMPILER_SUPPORTS_NO_RESTRICT)
+
+unset(COMPILER_SUPPORTS_NO_STRINGOP_OVERREAD CACHE)
+CHECK_CXX_COMPILER_FLAG(-Wno-stringop-overread COMPILER_SUPPORTS_NO_STRINGOP_OVERREAD)
+if (COMPILER_SUPPORTS_NO_STRINGOP_OVERREAD)
+    add_compile_options(-Wno-stringop-overread) # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=104336
+endif (COMPILER_SUPPORTS_NO_STRINGOP_OVERREAD)
+
 add_compile_options(-g)
 add_compile_options(-g3)
 add_compile_options(-gdwarf-3)
@@ -30,7 +41,7 @@ add_link_options(-pthread)
 
 if (NOT GCS_DEBUG_MODE)
     add_compile_options(-O3)
-endif(NOT GCS_DEBUG_MODE)
+endif (NOT GCS_DEBUG_MODE)
 
 # add_compile_options(-DGCS_TRACK_ALL_PROPAGATIONS=1)
 
@@ -60,9 +71,9 @@ if (GCS_ENABLE_DOXYGEN)
         # request to configure the file
         configure_file(${DOXYGEN_IN} ${DOXYGEN_OUT} @ONLY)
         add_custom_target(docs
-            COMMAND ${DOXYGEN_EXECUTABLE} ${DOXYGEN_OUT}
-            WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-            VERBATIM)
+                COMMAND ${DOXYGEN_EXECUTABLE} ${DOXYGEN_OUT}
+                WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+                VERBATIM)
     else (DOXYGEN_FOUND)
         message("Could not find Doxygen to generate documentation")
     endif (DOXYGEN_FOUND)
@@ -75,9 +86,9 @@ endif (GCS_ENABLE_XCSP)
 Include(FetchContent)
 Set(FETCHCONTENT_QUIET FALSE)
 FetchContent_Declare(
-  Catch2
-  GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-  GIT_TAG        65cc7fd2ae39a7a543767f661b096d7d521ee4f0 # v3.2.0
+        Catch2
+        GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+        GIT_TAG 65cc7fd2ae39a7a543767f661b096d7d521ee4f0 # v3.2.0
 )
 FetchContent_MakeAvailable(Catch2)
 
