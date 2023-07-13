@@ -8,14 +8,6 @@ Code and Infrastructure
 
 - Get an include what you use tool, and possibly a using what you use tool, set up.
 
-- Figure out linting.
-
-- Switch to a modern build system.
-
-- Run proof log tests automatically.
-
-- Set up some kind of continuous integration.
-
 - Factor out common test code.
 
 Examples
@@ -36,8 +28,6 @@ Constraints
   to use common code.
 
 - Random branching order and hole poking in tests.
-
-- Circuit, so we can do all the MiniCP benchmarks.
 
 - There are various places where we have triggers on literals. This can be done
   in a much smarter way.
