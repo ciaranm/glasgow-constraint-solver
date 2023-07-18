@@ -50,20 +50,39 @@ using std::visit;
 namespace
 {
 
-    auto propagate_mdd() -> Inference
+    auto propagate_mdd(std::vector<IntegerVariableID> vars,
+        const long num_nodes,
+        const std::vector<long> & level,
+        const long num_edges,
+        const std::vector<long> & from,
+        const std::vector<std::vector<Integer>> & label,
+        const std::vector<long> & to,
+        State & state) -> Inference
     {
         return Inference::NoChange;
     }
 }
 
-MDD::MDD()
+MDD::MDD(std::vector<IntegerVariableID> v,
+    long n,
+    std::vector<long> le,
+    long ne,
+    std::vector<long> f,
+    std::vector<std::vector<Integer>> la,
+    std::vector<long> t) :
+    _vars(move(v)),
+    _num_nodes(n),
+    _level(move(le)),
+    _num_edges(ne),
+    _from(move(f)),
+    _label(move(la)),
+    _to(move(t))
 {
-    // Constructor
 }
 
 auto MDD::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<MDD>();
+    return make_unique<MDD>(_vars, _num_nodes, _level, _num_edges, _from, _label, _to);
 }
 
 auto MDD::install(Propagators & propagators, State & initial_state) && -> void
@@ -73,10 +92,10 @@ auto MDD::install(Propagators & propagators, State & initial_state) && -> void
     }
 
     Triggers triggers;
-    triggers.on_change = {};
+    triggers.on_change = {_vars.begin(), _vars.end()};
 
-    propagators.install([](State & state) -> pair<Inference, PropagatorState> {
-        return pair{propagate_mdd(), PropagatorState::Enable};
+    propagators.install([v = _vars, n = _num_nodes, le = _level, ne = _num_edges, f = _from, la = _label, t = _to](State & state) -> pair<Inference, PropagatorState> {
+        return pair{propagate_mdd(v, n, le, ne, f, la, t, state), PropagatorState::Enable};
     },
         triggers, "MDD");
 }
