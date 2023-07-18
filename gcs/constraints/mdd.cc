@@ -82,8 +82,8 @@ namespace
 
                         // Shortcut if all values below here are unsupported
                         bool should_shortcut = true;
-                        for (long i = level[edge]; i < vars.size(); i++) {
-                            if (unsupported[vars[i]].empty()) {
+                        for (long i = level[from[edge]]; i < vars.size(); i++) {
+                            if (! unsupported[vars[i]].empty()) {
                                 should_shortcut = false;
                             }
                         }
@@ -101,6 +101,7 @@ namespace
 
     // Non-incremental, non-efficient mddc-type algorithm
     auto propagate_mdd(const vector<IntegerVariableID> vars,
+        const long & num_nodes,
         const vector<long> & level,
         const vector<vector<Integer>> & label,
         const vector<long> & from,
@@ -112,7 +113,7 @@ namespace
         // Currently using sets for eliminated nodes and nodes than can reach the final state
         // TODO: use sparse set, or at least something more efficient
         auto & failed = any_cast<NodeSet &>(state.get_constraint_state(failed_idx));
-        auto reach_final = NodeSet{static_cast<long>(vars.size())};
+        auto reach_final = NodeSet{static_cast<long>(num_nodes - 1)};
 
         VariableDomainMap unsupported{};
         // Here's this dodgy bit of code again to painstakingly extract every value from every domain
@@ -174,9 +175,9 @@ auto MDD::install(Propagators & propagators, State & initial_state) && -> void
     for (int i = 0; i < _num_edges; i++) {
         out_edges[_from[i]].emplace_back(i);
     }
-    propagators.install([v = _vars, le = _level, f = _from, la = _label, t = _to, fi = failed_idx, o = out_edges](State & state)
+    propagators.install([v = _vars, n = _num_nodes, le = _level, f = _from, la = _label, t = _to, fi = failed_idx, o = out_edges](State & state)
                             -> pair<Inference, PropagatorState> {
-        return pair{propagate_mdd(v, le, la, f, t, fi, o, state), PropagatorState::Enable};
+        return pair{propagate_mdd(v, n, le, la, f, t, fi, o, state), PropagatorState::Enable};
     },
         triggers, "MDD");
 }
