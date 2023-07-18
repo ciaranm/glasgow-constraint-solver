@@ -23,6 +23,7 @@ add_library(glasgow_constraint_solver
         constraints/lex.cc
         constraints/linear_equality.cc
         constraints/logical.cc
+        constraints/mdd.cc
         constraints/min_max.cc
         constraints/n_value.cc
         constraints/regular.cc
