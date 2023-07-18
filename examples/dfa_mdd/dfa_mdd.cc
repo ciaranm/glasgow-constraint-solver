@@ -68,6 +68,10 @@ auto main(int argc, char * argv[]) -> int
         SolveCallbacks{
             .solution = [&](const CurrentState & s) -> bool {
                 cout << "Solution:" << endl;
+                for (auto xi : x) {
+                    cout << s(xi) << " ";
+                }
+                cout << endl;
                 return true;
             },
         },
