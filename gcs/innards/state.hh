@@ -152,6 +152,9 @@ namespace gcs::innards
          */
         [[nodiscard]] auto clone() const -> State;
 
+        auto get_guesses() const -> std::vector<Literal>;
+        auto get_extra_proof_conditions() const -> std::vector<Literal>;
+
         ///@}
 
         /**

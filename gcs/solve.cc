@@ -111,7 +111,7 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
 
     optional<Proof> optional_proof;
     if (optional_proof_options)
-        optional_proof = Proof{*optional_proof_options};
+        optional_proof.emplace(*optional_proof_options);
 
     auto state = problem.create_state_for_new_search(optional_proof);
     auto propagators = problem.create_propagators(state, optional_proof);
@@ -146,9 +146,8 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
     if (optional_proof) {
 
         std::string str = optional_proof_options.value().opb_file;
-        // std::size_t pos = str.find('.');
         std::string name_file = str.substr(0, str.length() - 4);
-        name_file += "_computation_time_2_threads_work";
+        name_file += "_computation_time";
 
         std::ofstream file;
         file.open(name_file, std::ofstream::out | std::ofstream::app);

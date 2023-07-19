@@ -219,18 +219,17 @@ auto State::clone() const -> State
     result._imp->optional_minimise_variable = _imp->optional_minimise_variable;
     result._imp->optional_objective_incumbent = _imp->optional_objective_incumbent;
     result._imp->maybe_proof = _imp->maybe_proof;
-
-
-
-
-
-    // vector<HowChanged> how_changed{};
-    // vector<Literal> guesses{};
-    // vector<Literal> extra_proof_conditions{};
-
-
-
     return result;
+}
+
+auto State::get_guesses() const -> vector<Literal> 
+{
+    return _imp->guesses;
+}
+
+auto State::get_extra_proof_conditions() const -> vector<Literal> 
+{
+    return _imp->extra_proof_conditions;
 }
 
 auto State::allocate_integer_variable_with_state(Integer lower, Integer upper) -> SimpleIntegerVariableID

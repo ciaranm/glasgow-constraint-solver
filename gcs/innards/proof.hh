@@ -23,13 +23,34 @@
 #include <utility>
 #include <vector>
 
-struct JustifyExplicitlyProof
+
+struct WorkJustifyUsingRUP
 {
-    const gcs::innards::JustifyExplicitly & justification;
-    std::vector<gcs::innards::ProofLine> & to_delete;
+    gcs::Literal lit;
+    std::vector<gcs::Literal> guesses;
+    std::vector<gcs::Literal> extra_proof_conditions;
+};
+struct WorkJustifyUsingAssertion
+{
+    gcs::Literal lit;
+    std::vector<gcs::Literal> guesses;
+    std::vector<gcs::Literal> extra_proof_conditions;
+};
+struct WorkJustifyExplicitly
+{
+    const gcs::innards::JustifyExplicitly & x;
+    gcs::Literal lit;
+    std::vector<gcs::Literal> guesses;
+    std::vector<gcs::Literal> extra_proof_conditions;
+};
+struct WorkGuess
+{
+    gcs::Literal lit;
+    std::vector<gcs::Literal> guesses;
+    std::vector<gcs::Literal> extra_proof_conditions;
 };
 
-using Work = std::variant<std::string, const gcs::innards::JustifyExplicitly>;
+using Work = std::variant<std::string, WorkJustifyUsingRUP, WorkJustifyUsingAssertion, WorkJustifyExplicitly, WorkGuess>;
 
 namespace gcs::innards
 {
@@ -155,12 +176,14 @@ namespace gcs::innards
 
         [[nodiscard]] auto xify(std::string &&) -> std::string;
 
-        auto need_gevar(SimpleIntegerVariableID id, Integer v) -> void;
+        auto need_gevar(SimpleIntegerVariableID id, Integer v, const std::optional<bool> & work = std::nullopt) -> void;
 
         auto set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::string &) -> void;
         auto set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::string &) -> void;
         auto push_text_queue(std::string);
         auto push_work_queue(Work);
+        auto output_it(const std::string &, Literal, std::vector<Literal>, std::vector<Literal>);
+        auto for_each_guess(const std::function<auto(Literal)->void> &, std::vector<Literal>, std::vector<Literal>) const -> void;
 
     public:
         /**
@@ -185,8 +208,8 @@ namespace gcs::innards
         auto operator=(const Proof &) -> Proof & = delete;
         Proof(const Proof &) = delete;
 
-        Proof(Proof &&) noexcept;
-        auto operator=(Proof &&) noexcept -> Proof &;
+        Proof(Proof &&) noexcept = delete;
+        auto operator=(Proof &&) noexcept -> Proof & = delete;
         ///@}
 
         /**
@@ -254,14 +277,14 @@ namespace gcs::innards
          * Say that we are going to use a Literal in the proof, and that it must
          * be introduced if it is not there already.
          */
-        auto need_proof_variable(const Literal &) -> void;
+        auto need_proof_variable(const Literal &, const std::optional<bool> & work = std::nullopt) -> void;
 
         /**
          * Say that we are going to use the fact that a variable takes a
          * particular value, and that we must have the appropriate Literal
          * available if it is not there already.
          */
-        auto need_direct_encoding_for(SimpleIntegerVariableID, Integer) -> void;
+        auto need_direct_encoding_for(SimpleIntegerVariableID, Integer, const std::optional<bool> & work = std::nullopt) -> void;
 
         ///@}
 
