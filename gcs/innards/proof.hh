@@ -10,13 +10,26 @@
 #include <gcs/proof_options.hh>
 #include <gcs/variable_id.hh>
 
+#include <condition_variable>
 #include <exception>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
+#include <queue>
 #include <string>
+#include <thread>
+
 #include <utility>
 #include <vector>
+
+struct JustifyExplicitlyProof
+{
+    const gcs::innards::JustifyExplicitly & justification;
+    std::vector<gcs::innards::ProofLine> & to_delete;
+};
+
+using Work = std::variant<std::string, const gcs::innards::JustifyExplicitly>;
 
 namespace gcs::innards
 {
@@ -128,11 +141,17 @@ namespace gcs::innards
      *
      * \ingroup Innards
      */
+
     class Proof
     {
     private:
         struct Imp;
         std::unique_ptr<Imp> _imp;
+
+        // std::thread thread_proof_work;
+        std::thread thread_proof_text;
+
+        // std::exception_ptr teptr;
 
         [[nodiscard]] auto xify(std::string &&) -> std::string;
 
@@ -140,6 +159,8 @@ namespace gcs::innards
 
         auto set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::string &) -> void;
         auto set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::string &) -> void;
+        auto push_text_queue(std::string);
+        auto push_work_queue(Work);
 
     public:
         /**
@@ -148,6 +169,18 @@ namespace gcs::innards
         ///@{
         explicit Proof(const ProofOptions &);
         ~Proof();
+
+        void startWorkThread();
+        void startTextThread();
+
+        void threadWorkEntry();
+        void threadTextEntry();
+
+        Proof * getProof();
+        Imp * getImp();
+
+        void joinThread();
+        void Stop();
 
         auto operator=(const Proof &) -> Proof & = delete;
         Proof(const Proof &) = delete;
