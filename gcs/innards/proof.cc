@@ -172,11 +172,8 @@ struct Proof::Imp
 
     queue<Work> proofWorkQueue;
     condition_variable not_empty_work;
-
     std::mutex myMutexWork;
-
     bool finished = false;
-
     std::thread thread_proof_work;
 
     // condition_variable not_ful_work;
@@ -206,7 +203,6 @@ void Proof::startWorkThread()
 
 auto Proof::push_work_queue(Work work)
 {
-
     // auto visitor = overloaded{
     //     [&](string & proof_text) { std::cout << "Text pushed : " << proof_text << std::endl; },
     //     [&](JustifyExplicitlyProof & jep) {},
@@ -225,40 +221,20 @@ auto Proof::output_it(const string & rule, Literal lit, vector<Literal> guesses,
     string text_pushed;
 
     if (! is_literally_true(lit)) {
-        // _imp->proof << rule;
-        // std::cout << "test 1 | ";
-        // push_text_queue(rule);
         text_pushed = rule;
-        // std::cout << "test 2\n";
-        // push_work_queue(Work{rule});
-        // write_proof(rule);
-        // push_text_queue("start\n");
         for_each_guess([&](const Literal & lit) {
             if (! is_literally_true(lit)) {
-                // _imp->proof << " 1 " << proof_variable(! lit);
-                // push_text_queue(" 1 " + proof_variable(! lit));
-                // push_work_queue(Work{" 1 " + proof_variable(! lit)});
-                // write_proof(" 1 " + proof_variable(! lit));
                 text_pushed += " 1 " + proof_variable(! lit);
             }
         },
             guesses, extra_proof_conditions);
         if (! is_literally_false(lit)) {
-            // _imp->proof << " 1 " << proof_variable(lit);
-            // push_text_queue(" 1 " + proof_variable(lit));
-            // push_work_queue(Work{" 1 " + proof_variable(lit)});
-            // write_proof(" 1 " + proof_variable(lit));
             text_pushed += " 1 " + proof_variable(lit);
         }
-        // _imp->proof << " >= 1 ;\n";
-        // push_text_queue(" >= 1 ;\n");
-        // push_work_queue(Work{" >= 1 ;\n"});
-        // write_proof(" >= 1 ;\n");
         text_pushed += " >= 1 ;\n";
         _imp->proof << text_pushed;
         // push_work_queue(Work{text_pushed});
         ++_imp->proof_line;
-        // push_text_queue("end\n");
     }
 };
 
@@ -276,12 +252,10 @@ void Proof::threadWorkEntry()
         std::unique_lock<std::mutex> lock(_imp->myMutexWork);
         _imp->not_empty_work.wait(lock, [&] { return (_imp->finished || ! _imp->proofWorkQueue.empty()); });
         if (! _imp->proofWorkQueue.empty()) {
-            // proof_text = proofQueue.front();
             Work work = _imp->proofWorkQueue.front();
 
             // std::cout << "proofQueue.size() : " << proofQueue.size() << std::endl;
             _imp->proofWorkQueue.pop();
-            // _imp->proof << proof_text;
             lock.unlock();
 
             auto visitor = overloaded{
@@ -307,27 +281,22 @@ void Proof::threadWorkEntry()
                     vector<ProofLine> to_delete;
                     add_proof_steps(w.x, to_delete);
                     // infer(w.state, w.lit, JustifyUsingRUP{});
+                    need_proof_variable(w.lit, true);
+                    output_it("u", w.lit, w.guesses, w.extra_proof_conditions);
                     delete_proof_lines(to_delete);
                 },
                 [&](const WorkGuess & w) {
                     if (! is_literally_true(w.lit)) {
                         // we need this because it'll show up in the trail later
-                        need_proof_variable(w.lit);
-                        // _imp->proof << "* guessing " << proof_variable(lit) << ", decision stack is [";
-                        // push_text_queue("* guessing " + proof_variable(lit) + ", decision stack is [");
-                        // push_work_queue(Work{"* guessing " + proof_variable(w.lit) + ", decision stack is ["});
-
+                        need_proof_variable(w.lit, true);
+                        _imp->proof << "* guessing " << proof_variable(w.lit) << ", decision stack is [";
                         for_each_guess([&](const Literal & lit) {
                             if (! is_literally_true(lit)) {
-                                // _imp->proof << " " << proof_variable(lit);
-                                // push_text_queue(" " + proof_variable(lit));
-                                // push_work_queue(Work{" " + proof_variable(lit)});
+                                _imp->proof << " " << proof_variable(lit);
                             }
                         },
                             w.guesses, w.extra_proof_conditions);
-                        // _imp->proof << " ]\n";
-                        // push_text_queue(" ]\n");
-                        // push_work_queue(Work{" ]\n"});
+                        _imp->proof << " ]\n";
                     }
                 }
 
@@ -610,7 +579,6 @@ auto Proof::need_gevar(SimpleIntegerVariableID id, Integer v, const std::optiona
         }
         else {
             // _imp->proof << "# 0\n";
-            // push_text_queue("# 0\n");
             push_work_queue(Work{"# 0\n"});
         }
     }
@@ -623,7 +591,6 @@ auto Proof::need_gevar(SimpleIntegerVariableID id, Integer v, const std::optiona
         }
         else {
             // _imp->proof << "red " << gevar_implies_bits << " ; " << gevar << " 0\n";
-            // push_text_queue("red " + gevar_implies_bits.OPBInequality_to_string() + " ; " + gevar + " 0\n");
             push_work_queue(Work{"red " + gevar_implies_bits.OPBInequality_to_string() + " ; " + gevar + " 0\n"});
         }
         ++_imp->proof_line;
@@ -642,7 +609,6 @@ auto Proof::need_gevar(SimpleIntegerVariableID id, Integer v, const std::optiona
         }
         else {
             // _imp->proof << "red " << not_gevar_implies_bits << " ; " << gevar << " 1\n";
-            // push_text_queue("red " + not_gevar_implies_bits.OPBInequality_to_string() + " ; " + gevar + " 1\n");
             push_work_queue(Work{"red " + not_gevar_implies_bits.OPBInequality_to_string() + " ; " + gevar + " 1\n"});
         }
         ++_imp->proof_line;
@@ -663,7 +629,6 @@ auto Proof::need_gevar(SimpleIntegerVariableID id, Integer v, const std::optiona
             }
             else {
                 // _imp->proof << "u 1 " << gevar << " >= 1 ;\n";
-                // push_text_queue("u 1 " + gevar + " >= 1 ;\n");
                 push_work_queue(Work{"u 1 " + gevar + " >= 1 ;\n"});
             }
             ++_imp->proof_line;
@@ -682,7 +647,6 @@ auto Proof::need_gevar(SimpleIntegerVariableID id, Integer v, const std::optiona
             }
             else {
                 // _imp->proof << "u 1 ~" << gevar << " >= 1 ;\n";
-                // push_text_queue("u 1 ~" + gevar + " >= 1 ;\n");
                 push_work_queue(Work{"u 1 ~" + gevar + " >= 1 ;\n"});
             }
             ++_imp->proof_line;
@@ -706,7 +670,6 @@ auto Proof::need_gevar(SimpleIntegerVariableID id, Integer v, const std::optiona
             }
             else {
                 // _imp->proof << "u " << implies_higher << " ;\n";
-                // push_text_queue("u " + implies_higher.OPBInequality_to_string() + " ;\n");
                 push_work_queue(Work{"u " + implies_higher.OPBInequality_to_string() + " ;\n"});
             }
             ++_imp->proof_line;
@@ -726,7 +689,6 @@ auto Proof::need_gevar(SimpleIntegerVariableID id, Integer v, const std::optiona
             }
             else {
                 // _imp->proof << "u " << implies_lower << " ;\n";
-                // push_text_queue("u " + implies_lower.OPBInequality_to_string() + " ;\n");
                 push_work_queue(Work{"u " + implies_lower.OPBInequality_to_string() + " ;\n"});
             }
             ++_imp->proof_line;
@@ -743,83 +705,10 @@ auto Proof::need_gevar(SimpleIntegerVariableID id, Integer v, const std::optiona
         }
         else {
             // _imp->proof << "# " << _imp->active_proof_level << "\n";
-            // push_text_queue("# " + to_string(_imp->active_proof_level) + "\n");
             push_work_queue(Work{"# " + to_string(_imp->active_proof_level) + "\n"});
         }
     }
 }
-
-// auto Proof::need_direct_encoding_for(SimpleIntegerVariableID id, Integer v, const std::optional<bool> & work) -> void
-// {
-//     using namespace gcs::innards::opb_utils;
-
-//     if (_imp->direct_integer_variables.contains(id == v))
-//         return;
-
-//     // need_gevar(id, v, work);
-//     // need_gevar(id, v + 1_i, work);
-
-//     string name = "iv" + to_string(id.index);
-//     auto eqvar = xify(name + "_eq_" + value_name(v));
-//     _imp->direct_integer_variables.emplace(id == v, eqvar);
-//     _imp->direct_integer_variables.emplace(id != v, "~" + eqvar);
-
-//     if (_imp->opb_done) {
-//         if (work) {
-//             _imp->proof << "# 0\n";
-//         }
-//         else { // _imp->proof << "# 0\n";
-//             // push_text_queue("# 0\n");
-//             push_work_queue(Work{"# 0\n"});
-//         }
-//     }
-//     auto ge_v_but_not_v_plus_one = opb_sum({pair{1_i, proof_variable(id >= v)},
-//                                        pair{1_i, negate_opb_var_name(proof_variable(id >= v + 1_i))}}) >= 2_i;
-
-//     // eqvar -> ge_v && ! ge_v+1
-//     auto eqvar_true = implied_by(ge_v_but_not_v_plus_one, eqvar);
-
-//     // ge_v && ! ge_v+1 -> eqvar
-//     auto eqvar_false = implies(ge_v_but_not_v_plus_one, eqvar);
-
-//     if (_imp->opb_done) {
-//         if (work) {
-//             _imp->proof << "red " << eqvar_true << " ; " << eqvar << " 0\n";
-//             ++_imp->proof_line;
-//             _imp->proof << "red " << eqvar_false << " ; " << eqvar << " 1\n";
-//             ++_imp->proof_line;
-//         }
-//         else {
-//             // _imp->proof << "red " << eqvar_true << " ; " << eqvar << " 0\n";
-//             // push_text_queue("red " + eqvar_true.OPBInequality_to_string() + " ; " + eqvar + " 0\n");
-//             push_work_queue(Work{"red " + eqvar_true.OPBInequality_to_string() + " ; " + eqvar + " 0\n"});
-
-//             ++_imp->proof_line;
-//             // _imp->proof << "red " << eqvar_false << " ; " << eqvar << " 1\n";
-//             // push_text_queue("red " + eqvar_false.OPBInequality_to_string() + " ; " + eqvar + " 1\n");
-//             push_work_queue(Work{"red " + eqvar_false.OPBInequality_to_string() + " ; " + eqvar + " 1\n"});
-
-//             ++_imp->proof_line;
-//         }
-//     }
-//     else {
-//         _imp->opb << eqvar_true << " ;\n";
-//         _imp->opb << eqvar_false << " ;\n";
-//         _imp->model_constraints += 2;
-//         ++_imp->model_variables;
-//     }
-
-//     if (_imp->opb_done) {
-//         if (work) {
-//             _imp->proof << "# " << _imp->active_proof_level << "\n";
-//         }
-//         else {
-//             // _imp->proof << "# " << _imp->active_proof_level << "\n";
-//             // push_text_queue("# " + to_string(_imp->active_proof_level) + "\n");
-//             push_work_queue(Work{"# " + to_string(_imp->active_proof_level) + "\n"});
-//         }
-//     }
-// }
 
 auto Proof::need_direct_encoding_for(SimpleIntegerVariableID id, Integer v, const std::optional<bool> & work) -> void
 {
@@ -1088,7 +977,6 @@ auto Proof::start_proof(State & state) -> void
 
     // _imp->proof << "pseudo-Boolean proof version 1.2\n";
     // _imp->proof << "f " << _imp->model_constraints << " 0\n";
-    // push_text_queue("pseudo-Boolean proof version 1.2\nf " + to_string(_imp->model_constraints) + " 0\n");
     push_work_queue(Work{"pseudo-Boolean proof version 1.2\nf " + to_string(_imp->model_constraints) + " 0\n"});
 
     _imp->proof_line += _imp->model_constraints;
@@ -1376,7 +1264,6 @@ auto Proof::posting(const std::string & s) -> void
 auto Proof::solution(const State & state) -> void
 {
     // _imp->proof << "* solution\n";
-    // push_text_queue("* solution\n");
     push_work_queue(Work{"* solution\n"});
 
     for (auto & var : _imp->solution_variables)
@@ -1389,30 +1276,25 @@ auto Proof::solution(const State & state) -> void
     }
 
     // _imp->proof << "# 0\n";
-    // push_text_queue("# 0\n");
     push_work_queue(Work{"# 0\n"});
 
     // _imp->proof << (state.optional_minimise_variable() ? "o" : "v");
-    // push_text_queue(state.optional_minimise_variable() ? "o" : "v");
     push_work_queue(Work{state.optional_minimise_variable() ? "o" : "v"});
 
     for (auto & var : _imp->solution_variables)
         if ((! state.optional_minimise_variable()) || (var != *state.optional_minimise_variable())) {
             // _imp->proof << " " << proof_variable(var == state(var));
-            // push_text_queue(" " + proof_variable(var == state(var)));
             push_work_queue(Work{" " + proof_variable(var == state(var))});
         }
 
     if (! state.optional_minimise_variable()) {
         // _imp->proof << '\n';
-        // push_text_queue("\n");
         push_work_queue(Work{"\n"});
         ++_imp->proof_line;
     }
     else {
         auto do_it = [&](const SimpleIntegerVariableID & var, Integer val) {
             // _imp->proof << " " << proof_variable(var == val);
-            // push_text_queue(" " + proof_variable(var == val));
             push_work_queue(Work{" " + proof_variable(var == val)});
 
             auto & [negative_bit_coeff, bit_vars] = _imp->integer_variable_bits.at(var);
@@ -1420,13 +1302,11 @@ auto Proof::solution(const State & state) -> void
                 for (auto & [coeff, var] : bit_vars) {
                     if (coeff < 0_i) {
                         // _imp->proof << " " << var;
-                        // push_text_queue(" " + var);
                         push_work_queue(Work{" " + var});
                     }
 
                     else {
                         // _imp->proof << " " << (((val + negative_bit_coeff).raw_value & coeff.raw_value) ? "" : "~") << var;
-                        // push_text_queue((((val + negative_bit_coeff).raw_value & coeff.raw_value) ? " " : " ~") + var);
                         push_work_queue(Work{(((val + negative_bit_coeff).raw_value & coeff.raw_value) ? " " : " ~") + var});
                     }
                 }
@@ -1435,20 +1315,17 @@ auto Proof::solution(const State & state) -> void
                 for (auto & [coeff, var] : bit_vars) {
                     if (coeff < 0_i) {
                         // _imp->proof << " ~" << var;
-                        // push_text_queue(" ~" + var);
                         push_work_queue(Work{" ~" + var});
                     }
 
                     else {
                         // _imp->proof << " " << ((val.raw_value & coeff.raw_value) ? "" : "~") << var;
-                        // push_text_queue(((val.raw_value & coeff.raw_value) ? " " : " ~") + var);
                         push_work_queue(Work{((val.raw_value & coeff.raw_value) ? " " : " ~") + var});
                     }
                 }
             }
 
             // _imp->proof << '\n';
-            // push_text_queue("\n");
             push_work_queue(Work{"\n"});
 
             ++_imp->proof_line;
@@ -1461,7 +1338,6 @@ auto Proof::solution(const State & state) -> void
                 need_proof_variable(var < obj_val);
                 // _imp->proof << "# 0\n";
                 // _imp->proof << "u 1 " << proof_variable(var < obj_val) << " >= 1 ;\n";
-                // push_text_queue("# 0\nu 1 " + proof_variable(var < obj_val) + " >= 1 ;\n");
                 push_work_queue(Work{"# 0\nu 1 " + proof_variable(var < obj_val) + " >= 1 ;\n"});
 
                 ++_imp->proof_line;
@@ -1476,7 +1352,6 @@ auto Proof::solution(const State & state) -> void
                 need_proof_variable(lit);
                 // _imp->proof << "# 0\n";
                 // _imp->proof << "u 1 " << proof_variable(lit) << " >= 1 ;\n";
-                // push_text_queue("# 0\nu 1 " + proof_variable(lit) + " >= 1 ;\n");
                 push_work_queue(Work{"# 0\nu 1 " + proof_variable(lit) + " >= 1 ;\n"});
 
                 ++_imp->proof_line;
@@ -1485,7 +1360,6 @@ auto Proof::solution(const State & state) -> void
     }
 
     // _imp->proof << "# " << _imp->active_proof_level << "\n";
-    // push_text_queue("# " + to_string(_imp->active_proof_level) + "\n");
     push_work_queue(Work{"# " + to_string(_imp->active_proof_level) + "\n"});
 }
 
@@ -1493,18 +1367,15 @@ auto Proof::backtrack(const State & state) -> void
 {
     // _imp->proof << "* backtracking\n";
     // _imp->proof << "u";
-    // push_text_queue("* backtracking\nu");
     push_work_queue(Work{"* backtracking\nu"});
 
     state.for_each_guess([&](const Literal & lit) {
         if (! is_literally_true(lit)) {
             // _imp->proof << " 1 " << proof_variable(! lit);
-            // push_text_queue(" 1 " + proof_variable(! lit));
             push_work_queue(Work{" 1 " + proof_variable(! lit)});
         }
     });
     // _imp->proof << " >= 1 ;\n";
-    // push_text_queue(" >= 1 ;\n");
     push_work_queue(Work{" >= 1 ;\n"});
     ++_imp->proof_line;
 }
@@ -1513,12 +1384,10 @@ auto Proof::assert_contradiction() -> void
 {
     // _imp->proof << "* asserting contradiction\n";
     // _imp->proof << "u >= 1 ;\n";
-    // push_text_queue("* asserting contradiction\nu >= 1 ;\n");
     push_work_queue(Work{"* asserting contradiction\nu >= 1 ;\n"});
 
     ++_imp->proof_line;
     // _imp->proof << "c " << _imp->proof_line << " 0\n";
-    // push_text_queue("c " + to_string(_imp->proof_line) + " 0\n");
     push_work_queue(Work{"c " + to_string(_imp->proof_line) + " 0\n"});
 
     // this is mostly for tests: we haven't necessarily destroyed the
@@ -1535,23 +1404,19 @@ auto Proof::infer(const State & state, const Literal & lit, const Justification 
     // auto output_it = [&](const string & rule) {
     //     if (! is_literally_true(lit)) {
     //         // _imp->proof << rule;
-    //         // push_text_queue(rule);
     //         push_work_queue(Work{rule});
 
     //         state.for_each_guess([&](const Literal & lit) {
     //             if (! is_literally_true(lit)) {
     //                 // _imp->proof << " 1 " << proof_variable(! lit);
-    //                 // push_text_queue(" 1 " + proof_variable(! lit));
     //                 push_work_queue(Work{" 1 " + proof_variable(! lit)});
     //             }
     //         });
     //         if (! is_literally_false(lit)) {
     //             // _imp->proof << " 1 " << proof_variable(lit);
-    //             // push_text_queue(" 1 " + proof_variable(lit));
     //             push_work_queue(Work{" 1 " + proof_variable(lit)});
     //         }
     //         // _imp->proof << " >= 1 ;\n";
-    //         // push_text_queue(" >= 1 ;\n");
     //         push_work_queue(Work{" >= 1 ;\n"});
 
     //         ++_imp->proof_line;
@@ -1613,18 +1478,15 @@ auto Proof::infer(const State & state, const Literal & lit, const Justification 
                 // we need this because it'll show up in the trail later
                 need_proof_variable(lit);
                 // _imp->proof << "* guessing " << proof_variable(lit) << ", decision stack is [";
-                // push_text_queue("* guessing " + proof_variable(lit) + ", decision stack is [");
                 push_work_queue(Work{"* guessing " + proof_variable(lit) + ", decision stack is ["});
 
                 state.for_each_guess([&](const Literal & lit) {
                     if (! is_literally_true(lit)) {
                         // _imp->proof << " " << proof_variable(lit);
-                        // push_text_queue(" " + proof_variable(lit));
                         push_work_queue(Work{" " + proof_variable(lit)});
                     }
                 });
                 // _imp->proof << " ]\n";
-                // push_text_queue(" ]\n");
                 push_work_queue(Work{" ]\n"});
             }
             // push_work_queue(Work{WorkGuess{lit_copy, guesses_copy, extra_proof_conditions_copy}});
@@ -1638,7 +1500,6 @@ auto Proof::infer(const State & state, const Literal & lit, const Justification 
 auto Proof::emit_proof_line(const string & s) -> ProofLine
 {
     // _imp->proof << s << '\n';
-    // push_text_queue(s + "\n");
     push_work_queue(Work{s + "\n"});
     return ++_imp->proof_line;
 }
@@ -1646,7 +1507,6 @@ auto Proof::emit_proof_line(const string & s) -> ProofLine
 auto Proof::emit_proof_comment(const string & s) -> void
 {
     // _imp->proof << "* " << s << '\n';
-    // push_text_queue("* " + s + "\n");
     push_work_queue(Work{"* " + s + "\n"});
 }
 
@@ -1664,27 +1524,22 @@ auto Proof::need_constraint_saying_variable_takes_at_least_one_value(IntegerVari
                     need_proof_variable(var == v);
 
                 // _imp->proof << "# 0\n";
-                // push_text_queue("# 0\n");
                 push_work_queue(Work{"# 0\n"});
 
                 // _imp->proof << "u ";
-                // push_text_queue("u ");
                 push_work_queue(Work{"u "});
 
                 for (Integer v = lower; v <= upper; ++v) {
                     // _imp->proof << "1 " << proof_variable(var == v) << " ";
-                    // push_text_queue("1 " + proof_variable(var == v) + " ");
                     push_work_queue(Work{"1 " + proof_variable(var == v) + " "});
                 }
 
                 // _imp->proof << ">= 1 ;\n";
-                // push_text_queue(">= 1 ;\n");
                 push_work_queue(Work{">= 1 ;\n"});
 
                 _imp->variable_at_least_one_constraints.emplace(var, ++_imp->proof_line);
 
                 // _imp->proof << "# " << _imp->active_proof_level << "\n";
-                // push_text_queue("# " + to_string(_imp->active_proof_level) + "\n");
                 push_work_queue(Work{"# " + to_string(_imp->active_proof_level) + "\n"});
 
                 result = _imp->variable_at_least_one_constraints.emplace(var, _imp->proof_line).first;
@@ -1700,7 +1555,6 @@ auto Proof::need_constraint_saying_variable_takes_at_least_one_value(IntegerVari
 auto Proof::enter_proof_level(int depth) -> void
 {
     // _imp->proof << "# " << depth << '\n';
-    // push_text_queue("# " + to_string(depth) + "\n");
     push_work_queue(Work{"# " + to_string(depth) + "\n"});
 
     _imp->active_proof_level = depth;
@@ -1709,7 +1563,6 @@ auto Proof::enter_proof_level(int depth) -> void
 auto Proof::forget_proof_level(int depth) -> void
 {
     // _imp->proof << "w " << depth << '\n';
-    // push_text_queue("w " + to_string(depth) + "\n");
     push_work_queue(Work{"w " + to_string(depth) + "\n"});
 }
 
@@ -1737,7 +1590,6 @@ auto Proof::delete_proof_lines(const vector<ProofLine> & to_delete) -> void
         for (const auto & l : to_delete)
             line << " " << l;
         // _imp->proof << line.str() << '\n';
-        // push_text_queue(line.str() + "\n");
         push_work_queue(Work{line.str() + "\n"});
     }
 }
