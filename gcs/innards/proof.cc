@@ -1532,31 +1532,31 @@ auto Proof::assert_contradiction() -> void
 
 auto Proof::infer(const State & state, const Literal & lit, const Justification & why) -> void
 {
-    auto output_it = [&](const string & rule) {
-        if (! is_literally_true(lit)) {
-            // _imp->proof << rule;
-            // push_text_queue(rule);
-            push_work_queue(Work{rule});
+    // auto output_it = [&](const string & rule) {
+    //     if (! is_literally_true(lit)) {
+    //         // _imp->proof << rule;
+    //         // push_text_queue(rule);
+    //         push_work_queue(Work{rule});
 
-            state.for_each_guess([&](const Literal & lit) {
-                if (! is_literally_true(lit)) {
-                    // _imp->proof << " 1 " << proof_variable(! lit);
-                    // push_text_queue(" 1 " + proof_variable(! lit));
-                    push_work_queue(Work{" 1 " + proof_variable(! lit)});
-                }
-            });
-            if (! is_literally_false(lit)) {
-                // _imp->proof << " 1 " << proof_variable(lit);
-                // push_text_queue(" 1 " + proof_variable(lit));
-                push_work_queue(Work{" 1 " + proof_variable(lit)});
-            }
-            // _imp->proof << " >= 1 ;\n";
-            // push_text_queue(" >= 1 ;\n");
-            push_work_queue(Work{" >= 1 ;\n"});
+    //         state.for_each_guess([&](const Literal & lit) {
+    //             if (! is_literally_true(lit)) {
+    //                 // _imp->proof << " 1 " << proof_variable(! lit);
+    //                 // push_text_queue(" 1 " + proof_variable(! lit));
+    //                 push_work_queue(Work{" 1 " + proof_variable(! lit)});
+    //             }
+    //         });
+    //         if (! is_literally_false(lit)) {
+    //             // _imp->proof << " 1 " << proof_variable(lit);
+    //             // push_text_queue(" 1 " + proof_variable(lit));
+    //             push_work_queue(Work{" 1 " + proof_variable(lit)});
+    //         }
+    //         // _imp->proof << " >= 1 ;\n";
+    //         // push_text_queue(" >= 1 ;\n");
+    //         push_work_queue(Work{" >= 1 ;\n"});
 
-            ++_imp->proof_line;
-        }
-    };
+    //         ++_imp->proof_line;
+    //     }
+    // };
 
     vector<Literal> guesses_copy;
     vector<Literal> guesses = state.get_guesses();
