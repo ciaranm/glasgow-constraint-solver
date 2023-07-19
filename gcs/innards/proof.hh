@@ -182,7 +182,7 @@ namespace gcs::innards
         auto set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::string &) -> void;
         auto push_text_queue(std::string);
         auto push_work_queue(Work);
-        auto output_it(const std::string &, Literal, std::vector<Literal>, std::vector<Literal>);
+        auto output_it(const std::string &, Literal, std::vector<Literal>, std::vector<Literal>, const std::optional<bool> & work = std::nullopt);
         auto for_each_guess(const std::function<auto(Literal)->void> &, std::vector<Literal>, std::vector<Literal>) const -> void;
 
     public:
