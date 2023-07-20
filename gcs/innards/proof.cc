@@ -209,6 +209,8 @@ auto Proof::push_work_queue(Work work)
     // };
     // std::visit(visitor, work);
 
+    // std::cout << "PUSH WORK QUEUE" << std::endl;
+
     unique_lock<mutex> lock(_imp->myMutexWork);
     // _imp->not_full.wait(lock, [&] { return _imp->proofWorkQueue.size() < _imp->maxSize; });
     _imp->proofWorkQueue.push(work);
@@ -233,6 +235,7 @@ auto Proof::output_it(const string & rule, Literal lit, vector<Literal> guesses,
         }
         text_pushed += " >= 1 ;\n";
         if (work) {
+            // std::cout << "Write directly on the file"<< std::endl;
             _imp->proof << text_pushed;
         }
         else {
@@ -273,23 +276,32 @@ void Proof::threadWorkEntry()
                     _imp->proof << proof_text;
                 },
                 [&](const WorkJustifyUsingRUP & w) {
+                    // std::cout << "JustifyUsingRUP start" << std::endl;
                     need_proof_variable(w.lit, true);
                     output_it("u", w.lit, w.guesses, w.extra_proof_conditions, true);
-                    // std::cout << "WorkJustyUsingRUP done\n";
+                    // std::cout << "JustifyUsingRUP end" << std::endl;
                 },
                 [&](const WorkJustifyUsingAssertion & w) {
+                    // std::cout << "JustifyUsingAssertion start" << std::endl;
                     need_proof_variable(w.lit, true);
                     output_it("a", w.lit, w.guesses, w.extra_proof_conditions, true);
+                    // std::cout << "JustifyUsingAssertion end" << std::endl;
                 },
                 [&](const WorkJustifyExplicitly & w) {
+                    // std::cout << "JustifyExplicitly start" << std::endl;
                     vector<ProofLine> to_delete;
-                    add_proof_steps(w.x, to_delete);
+                    // add_proof_steps(w.x, to_delete);
+                    // w.x.add_proof_steps(*this, to_delete);
+                    w.add_proof_steps(*this, to_delete);
+
                     // infer(w.state, w.lit, JustifyUsingRUP{});
                     need_proof_variable(w.lit, true);
                     output_it("u", w.lit, w.guesses, w.extra_proof_conditions, true);
-                    delete_proof_lines(to_delete);
+                    delete_proof_lines(to_delete, true);
+                    // std::cout << "JustifyExplicitly end" << std::endl;
                 },
                 [&](const WorkGuess & w) {
+                    // std::cout << "Guess start" << std::endl;
                     if (! is_literally_true(w.lit)) {
                         // we need this because it'll show up in the trail later
                         need_proof_variable(w.lit, true);
@@ -302,6 +314,7 @@ void Proof::threadWorkEntry()
                             w.guesses, w.extra_proof_conditions);
                         _imp->proof << " ]\n";
                     }
+                    // std::cout << "Guess end" << std::endl;
                 }
 
             };
@@ -1442,7 +1455,6 @@ auto Proof::infer(const State & state, const Literal & lit, const Justification 
             literal));
     }
 
-    // Literal lit_copy = std::visit(CopyVisitor{}, lit);
     Literal lit_copy = std::visit(
         [](const auto & value) -> Literal {
             return Literal(value);
@@ -1451,7 +1463,7 @@ auto Proof::infer(const State & state, const Literal & lit, const Justification 
 
     overloaded{
         [&]([[maybe_unused]] const JustifyUsingRUP & j) {
-            std::cout << "JustifyUsingRUP" << std::endl;
+            std::cout << "JustifyUsingRUP pushed" << std::endl;
         // need_proof_variable(lit_copy);
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
             _imp->proof << "* RUP from " << j.where.file_name() << ":"
@@ -1461,43 +1473,46 @@ auto Proof::infer(const State & state, const Literal & lit, const Justification 
             push_work_queue(Work{WorkJustifyUsingRUP{lit_copy, guesses_copy, extra_proof_conditions_copy}});
         },
         [&](const JustifyUsingAssertion &) {
-            std::cout << "JustifyUsingAssertion" << std::endl;
+            std::cout << "JustifyUsingAssertion pushed" << std::endl;
             // need_proof_variable(lit_copy);
             // Proof::output_it("a", lit_copy, guesses_copy, extra_proof_conditions_copy);
             push_work_queue(Work{WorkJustifyUsingAssertion{lit_copy, guesses_copy, extra_proof_conditions_copy}});
         },
         [&](const JustifyExplicitly & x) {
-            std::cout << "JustifyExplicitly" << std::endl;
+            std::cout << "JustifyExplicitly pushed" << std::endl;
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
             _imp->proof << "* explicit from " << x.where.file_name() << ":"
                         << x.where.line() << " in " << x.where.function_name() << '\n';
 #endif
-            vector<ProofLine> to_delete;
-            add_proof_steps(x, to_delete);
-            // infer(state, lit_copy, JustifyUsingRUP{});
-            need_proof_variable(lit_copy);
-            Proof::output_it("u", lit_copy, guesses_copy, extra_proof_conditions_copy);
-            delete_proof_lines(to_delete);
-            // push_work_queue(Work{WorkJustifyExplicitly{x, lit_copy, guesses_copy, extra_proof_conditions_copy}});
+            // vector<ProofLine> to_delete;
+            // add_proof_steps(x, to_delete);
+            // // infer(state, lit_copy, JustifyUsingRUP{});
+            // need_proof_variable(lit_copy);
+            // Proof::output_it("u", lit_copy, guesses_copy, extra_proof_conditions_copy);
+            // delete_proof_lines(to_delete);
+            /**********************************************************/
+            // JustifyExplicitly je{x.add_proof_steps};
+            push_work_queue(Work{WorkJustifyExplicitly{x.add_proof_steps, lit_copy, guesses_copy, extra_proof_conditions_copy}});
         },
         [&](const Guess &) {
-            std::cout << "JustifyGuess" << std::endl;
-            if (! is_literally_true(lit_copy)) {
-                // we need this because it'll show up in the trail later
-                need_proof_variable(lit_copy);
-                // _imp->proof << "* guessing " << proof_variable(lit) << ", decision stack is [";
-                push_work_queue(Work{"* guessing " + proof_variable(lit_copy) + ", decision stack is ["});
-                for_each_guess([&](const Literal & lit) {
-                    if (! is_literally_true(lit)) {
-                        // _imp->proof << " " << proof_variable(lit);
-                        push_work_queue(Work{" " + proof_variable(lit)});
-                    }
-                },
-                    guesses_copy, extra_proof_conditions_copy);
-                // _imp->proof << " ]\n";
-                push_work_queue(Work{" ]\n"});
-            }
-            // push_work_queue(Work{WorkGuess{lit_copy, guesses_copy, extra_proof_conditions_copy}});
+            std::cout << "JustifyGuess pushed" << std::endl;
+            // if (! is_literally_true(lit_copy)) {
+            //     // we need this because it'll show up in the trail later
+            //     need_proof_variable(lit_copy);
+            //     // _imp->proof << "* guessing " << proof_variable(lit) << ", decision stack is [";
+            //     push_work_queue(Work{"* guessing " + proof_variable(lit_copy) + ", decision stack is ["});
+            //     for_each_guess([&](const Literal & lit) {
+            //         if (! is_literally_true(lit)) {
+            //             // _imp->proof << " " << proof_variable(lit);
+            //             push_work_queue(Work{" " + proof_variable(lit)});
+            //         }
+            //     },
+            //         guesses_copy, extra_proof_conditions_copy);
+            //     // _imp->proof << " ]\n";
+            //     push_work_queue(Work{" ]\n"});
+            // }
+            /****************************/
+            push_work_queue(Work{WorkGuess{lit_copy, guesses_copy, extra_proof_conditions_copy}});
         },
 
         [&](const NoJustificationNeeded &) {
@@ -1505,17 +1520,27 @@ auto Proof::infer(const State & state, const Literal & lit, const Justification 
         .visit(why);
 }
 
-auto Proof::emit_proof_line(const string & s) -> ProofLine
+auto Proof::emit_proof_line(const string & s, const std::optional<bool> & work) -> ProofLine
 {
-    // _imp->proof << s << '\n';
-    push_work_queue(Work{s + "\n"});
+    if (work) {
+        _imp->proof << s << '\n';
+    }
+    else {
+        // _imp->proof << s << '\n';
+        push_work_queue(Work{s + "\n"});
+    }
     return ++_imp->proof_line;
 }
 
-auto Proof::emit_proof_comment(const string & s) -> void
+auto Proof::emit_proof_comment(const string & s, const std::optional<bool> & work) -> void
 {
-    // _imp->proof << "* " << s << '\n';
-    push_work_queue(Work{"* " + s + "\n"});
+    if (work) {
+        _imp->proof << "* " << s << '\n';
+    }
+    else {
+        // _imp->proof << "* " << s << '\n';
+        push_work_queue(Work{"* " + s + "\n"});
+    }
 }
 
 auto Proof::need_constraint_saying_variable_takes_at_least_one_value(IntegerVariableID var) -> ProofLine
@@ -1590,15 +1615,20 @@ auto Proof::add_proof_steps(const JustifyExplicitly & x, vector<ProofLine> & to_
     x.add_proof_steps(*this, to_delete);
 }
 
-auto Proof::delete_proof_lines(const vector<ProofLine> & to_delete) -> void
+auto Proof::delete_proof_lines(const vector<ProofLine> & to_delete, const std::optional<bool> & work) -> void
 {
     if (! to_delete.empty()) {
         stringstream line;
         line << "d";
         for (const auto & l : to_delete)
             line << " " << l;
-        // _imp->proof << line.str() << '\n';
-        push_work_queue(Work{line.str() + "\n"});
+        if (work) {
+            _imp->proof << line.str() << '\n';
+        }
+        else {
+            // _imp->proof << line.str() << '\n';
+            push_work_queue(Work{line.str() + "\n"});
+        }
     }
 }
 

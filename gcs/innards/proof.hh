@@ -38,7 +38,9 @@ struct WorkJustifyUsingAssertion
 };
 struct WorkJustifyExplicitly
 {
-    const gcs::innards::JustifyExplicitly & x;
+    // const gcs::innards::JustifyExplicitly & x;
+    // gcs::innards::JustifyExplicitly x;
+    gcs::innards::ExplicitJustificationFunction add_proof_steps;
     gcs::Literal lit;
     std::vector<gcs::Literal> guesses;
     std::vector<gcs::Literal> extra_proof_conditions;
@@ -337,17 +339,17 @@ namespace gcs::innards
         /**
          * Delete the specified proof lines.
          */
-        auto delete_proof_lines(const std::vector<ProofLine> & to_delete) -> void;
+        auto delete_proof_lines(const std::vector<ProofLine> & to_delete, const std::optional<bool> & work = std::nullopt) -> void;
 
         /**
          * Emit the specified text as a proof line.
          */
-        auto emit_proof_line(const std::string &) -> ProofLine;
+        auto emit_proof_line(const std::string &, const std::optional<bool> & work = std::nullopt) -> ProofLine;
 
         /**
          * Emit the specified text as a comment.
          */
-        auto emit_proof_comment(const std::string &) -> void;
+        auto emit_proof_comment(const std::string &, const std::optional<bool> & work = std::nullopt) -> void;
 
         /**
          * Set things up internally as if the specified variable was a real
