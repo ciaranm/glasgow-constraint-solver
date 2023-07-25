@@ -437,15 +437,19 @@ auto NotEquals::install(Propagators & propagators, State & initial_state) && -> 
         if (convert_to_values_ne && propagators.want_definitions()) {
             propagators.install([v1 = _v1, v2 = _v2](State & state) -> pair<Inference, PropagatorState> {
                 state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
-                    proof.emit_proof_comment("converting not equals to value encoding", true);
+                    proof.emit_proof_comment("converting not equals to value encoding");
+                    // proof.emit_proof_comment("converting not equals to value encoding", true);
                     state.for_each_value(v1, [&](Integer val1) {
                         if (state.in_domain(v2, val1)) {
-                            proof.need_proof_variable(v1 != val1, true);
-                            proof.need_proof_variable(v2 != val1, true);
+                            proof.need_proof_variable(v1 != val1);
+                            proof.need_proof_variable(v2 != val1);
+                            // proof.need_proof_variable(v1 != val1, true);
+                            // proof.need_proof_variable(v2 != val1, true);                           
                             stringstream line;
                             line << "u 1 " << proof.proof_variable(v1 != val1) << " 1 " << proof.proof_variable(v2 != val1)
                                  << " >= 1 ;";
-                            proof.emit_proof_line(line.str(), true);
+                            proof.emit_proof_line(line.str());
+                            // proof.emit_proof_line(line.str(), true);
                         }
                     });
                 }});
