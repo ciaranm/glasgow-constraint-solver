@@ -1,11 +1,14 @@
 #include <gcs/constraints/circuit/circuit.hh>
+#include <gcs/exception.hh>
 #include <gcs/innards/propagators.hh>
+#include <set>
 #include <tuple>
 #include <utility>
 #include <vector>
 
 using std::min;
 using std::pair;
+using std::set;
 using std::unique_ptr;
 using std::vector;
 
@@ -70,7 +73,43 @@ namespace
             return make_pair(result, back_edges);
     }
 
-    auto propagate_circuit_using_scc(const vector<IntegerVariableID> & succ, const bool & prune_root, const bool & fix_req, const bool & prune_skip, State & state) -> Inference
+    auto get_actual_proof_variable(PseudoBooleanTerm p) -> ProofOnlySimpleIntegerVariableID
+    {
+        return overloaded{
+            [&](ProofOnlySimpleIntegerVariableID pr) -> ProofOnlySimpleIntegerVariableID {
+                return pr;
+            },
+            [&](Literal) -> ProofOnlySimpleIntegerVariableID {
+                throw UnexpectedException{"Position var is not a ProofOnlySimpleIntegerVariableID ?"};
+            },
+            [&](ProofFlag) -> ProofOnlySimpleIntegerVariableID {
+                throw UnexpectedException{"Position var is not a ProofOnlySimpleIntegerVariableID ?"};
+            },
+            [&](IntegerVariableID) -> ProofOnlySimpleIntegerVariableID {
+                throw UnexpectedException{"Position var is not a ProofOnlySimpleIntegerVariableID ?"};
+            },
+        }
+            .visit(p);
+    }
+    auto justify_disconnected_component(long root, const vector<IntegerVariableID> & succ, const vector<PseudoBooleanTerm> & pos_vars, State & state)
+    {
+        set<long> reachable = {root};
+
+        set<long> new_reachable = {};
+        state.for_each_value(succ[root], [&](Integer v) -> void {
+            new_reachable.insert(v.raw_value);
+        });
+        //        state.infer_true(JustifyExplicitly{
+        //            [&](Proof & proof, vector<ProofLine> & del) {
+        //                WeightedPseudoBooleanSum pos_sum{};
+        //                for (auto node : new_reachable) {
+        //                    proof.need_proof_variable(get_actual_proof_variable(pos_vars[1]) == Integer{node});
+        //                    pos_sum.terms.emplace_back(pos_sum)
+        //                }
+        //            }});
+    }
+
+    auto propagate_circuit_using_scc(const vector<IntegerVariableID> & succ, const bool & prune_root, const bool & fix_req, const bool & prune_skip, const vector<PseudoBooleanTerm> & pos_vars, State & state) -> Inference
     {
         auto root = select_root(succ, state);
         long count = 1;
@@ -106,7 +145,11 @@ namespace
             return true;
         });
 
-        if (count != succ.size()) return Inference::Contradiction;
+        if (count != succ.size()) {
+            // The graph isn't even connected
+            justify_disconnected_component(0, succ, pos_vars, state);
+            return Inference::Contradiction;
+        }
 
         if (prune_root && start_subtree > 1) {
             state.for_each_value_while(succ[root], [&](Integer v) -> bool {
@@ -126,13 +169,15 @@ auto CircuitSCC::clone() const -> unique_ptr<Constraint>
 
 auto CircuitSCC::install(Propagators & propagators, State & initial_state) && -> void
 {
-    auto lines_for_setting_pos = CircuitBase::set_up(propagators, initial_state);
+    auto pb_encs = CircuitBase::set_up(propagators, initial_state);
+    auto pos_vars = pb_encs.first;
+    auto lines_for_setting_pos = pb_encs.second;
 
     Triggers triggers;
     triggers.on_change = {_succ.begin(), _succ.end()};
     propagators.install(
-        [succ = _succ, lines_for_setting_pos = lines_for_setting_pos](State & state) -> pair<Inference, PropagatorState> {
-            auto result = propagate_circuit_using_scc(succ, true, true, true, state);
+        [succ = _succ, pos_vars = pos_vars, lines_for_setting_pos = lines_for_setting_pos](State & state) -> pair<Inference, PropagatorState> {
+            auto result = propagate_circuit_using_scc(succ, true, true, true, pos_vars, state);
             return pair{result, PropagatorState::Enable};
         },
         triggers,

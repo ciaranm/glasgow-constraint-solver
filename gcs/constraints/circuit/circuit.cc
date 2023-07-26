@@ -32,7 +32,7 @@ CircuitBase::CircuitBase(vector<IntegerVariableID> v, const bool g) :
 {
 }
 
-auto CircuitBase::set_up(Propagators & propagators, State & initial_state) -> ProofLine2DMap
+auto CircuitBase::set_up(Propagators & propagators, State & initial_state) -> pair<vector<PseudoBooleanTerm>, ProofLine2DMap>
 {
     // Can't have negative values
     for (const auto & s : _succ)
@@ -58,10 +58,11 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state) -> Pr
     }
 
     ProofLine2DMap lines_for_setting_pos{};
+    // Define encoding to eliminate sub-cycles
+    vector<PseudoBooleanTerm> position;
     if (propagators.want_definitions()) {
 
-        // Define encoding to eliminate sub-cycles
-        vector<PseudoBooleanTerm> position;
+
         auto n_minus_1 = ConstantIntegerVariableID{Integer{static_cast<long long>(_succ.size() - 1)}};
 
         // Need extra proof variable: pos[i] = j means "the ith node visited in the circuit is the jth var"
@@ -114,7 +115,7 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state) -> Pr
             Triggers{}, "circuit init");
     }
 
-    return lines_for_setting_pos;
+    return pair{position, lines_for_setting_pos};
 }
 
 auto CircuitBase::describe_for_proof() -> std::string

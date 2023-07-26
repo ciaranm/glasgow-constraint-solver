@@ -154,7 +154,7 @@ auto CircuitPrevent::clone() const -> unique_ptr<Constraint>
 
 auto CircuitPrevent::install(Propagators & propagators, State & initial_state) && -> void
 {
-    auto lines_for_setting_pos = CircuitBase::set_up(propagators, initial_state);
+    auto lines_for_setting_pos = CircuitBase::set_up(propagators, initial_state).second;
 
     // Constraint states for prevent algorithm
     Chain chain;

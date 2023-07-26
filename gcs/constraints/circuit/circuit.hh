@@ -5,6 +5,7 @@
 
 #include <gcs/constraint.hh>
 #include <gcs/innards/proof-fwd.hh>
+#include <gcs/innards/proof.hh>
 
 #include <gcs/variable_id.hh>
 #include <map>
@@ -27,7 +28,7 @@ namespace gcs
     protected:
         const bool _gac_all_different;
         const std::vector<IntegerVariableID> _succ;
-        virtual auto set_up(innards::Propagators &, innards::State &) -> ProofLine2DMap;
+        virtual auto set_up(innards::Propagators &, innards::State &) -> std::pair<std::vector<innards::PseudoBooleanTerm>, ProofLine2DMap>;
 
     public:
         explicit CircuitBase(std::vector<IntegerVariableID> var, bool gac_all_different = true);
