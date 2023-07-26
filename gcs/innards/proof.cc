@@ -27,8 +27,6 @@
 #include <thread>
 #include <barrier>
 #include <pthread.h>
-#include <chrono>
-#include <unistd.h> 
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -183,7 +181,7 @@ struct Proof::Imp
     std::thread thread_proof_work;
 
     // std::barrier my_barrier{2};
-    pthread_barrier_t barrier;
+    // pthread_barrier_t barrier;
     int number_justification;
     // condition_variable not_ful_work;
     // long unsigned int maxSize = 10;
@@ -198,7 +196,7 @@ Proof::Proof(const ProofOptions & proof_options) :
     _imp->always_use_full_encoding = proof_options.always_use_full_encoding;
     _imp->line_for_bound_in_bits.emplace_back();
     startWorkThread();
-    pthread_barrier_init(&(_imp->barrier), NULL, 1);
+    // pthread_barrier_init(&(_imp->barrier), NULL, 1);
     _imp->number_justification = 0;
 }
 
@@ -206,7 +204,7 @@ Proof::Proof(const ProofOptions & proof_options) :
 Proof::~Proof()
 {
     joinThread();
-    pthread_barrier_destroy(&_imp->barrier);
+    // pthread_barrier_destroy(&_imp->barrier);
 };
 
 void Proof::startWorkThread()
@@ -301,6 +299,7 @@ void Proof::threadWorkEntry()
                     _imp->number_justification--;
                     if (_imp->number_justification == 0){
                         _imp->empty_justification.notify_one();
+                        // std::cout << "work _imp->number_justification = " << _imp->number_justification << std::endl;
                     }
                     lock_number.unlock();
                 },
@@ -313,11 +312,12 @@ void Proof::threadWorkEntry()
                     _imp->number_justification--;
                     if (_imp->number_justification == 0){
                         _imp->empty_justification.notify_one();
+                        // std::cout << "work _imp->number_justification = " << _imp->number_justification << std::endl;
                     }
                     lock_number.unlock();
                 },
                 [&](const WorkJustifyExplicitly & w) {
-                    // std::cout << "JustifyExplicitly start" << std::endl;
+                    std::cout << "JustifyExplicitly start" << std::endl;
                     vector<ProofLine> to_delete;
                     // add_proof_steps(w.x, to_delete);
                     // w.x.add_proof_steps(*this, to_delete);
@@ -330,7 +330,7 @@ void Proof::threadWorkEntry()
                     // std::cout << "JustifyExplicitly end" << std::endl;
                 },
                 [&](const WorkGuess & w) {
-                    // std::cout << "Guess start" << std::endl;
+                    std::cout << "Guess start" << std::endl;
                     if (! is_literally_true(w.lit)) {
                         // we need this because it'll show up in the trail later
                         need_proof_variable(w.lit, true);
@@ -1498,6 +1498,7 @@ auto Proof::infer(const State & state, const Literal & lit, const Justification 
             // std::unique_lock<std::mutex> lock(_imp->myMutexWork);
             std::unique_lock<std::mutex> lock_number(_imp->mutexNumber);
             _imp->empty_justification.wait(lock_number, [&] { return (_imp->number_justification == 0); });
+            // std::cout << _imp->number_justification << " = justify _imp->number_justification" << std::endl;
             lock_number.unlock();
             // lock.unlock();
 
@@ -1522,6 +1523,7 @@ auto Proof::infer(const State & state, const Literal & lit, const Justification 
             // std::unique_lock<std::mutex> lock(_imp->myMutexWork);
             std::unique_lock<std::mutex> lock_number(_imp->mutexNumber);
             _imp->empty_justification.wait(lock_number, [&] { return (_imp->number_justification == 0); });
+            // std::cout << _imp->number_justification << " = justify _imp->number_justification" << std::endl;
             lock_number.unlock();
             // lock.unlock();
 
