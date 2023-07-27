@@ -106,8 +106,6 @@ auto Count::install(Propagators & propagators, State & initial_state) && -> void
 
             auto how_many_is_less_than = Integer(vars.size() - how_many_definitely_do_not) + 1_i;
             auto inf = state.infer(how_many < how_many_is_less_than, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) -> void {
-                proof.need_proof_variable(how_many < how_many_is_less_than);
-                proof.emit_proof_comment("need to show that " + proof.proof_variable(how_many < how_many_is_less_than) + " due to at least " + to_string(how_many_definitely_do_not) + " out of " + to_string(vars.size()) + " misses");
                 for (const auto & [idx, var] : enumerate(vars)) {
                     bool seen_any = false;
                     state.for_each_value_while_immutable(var, [&](const Integer & val) -> bool {
@@ -116,12 +114,9 @@ auto Count::install(Propagators & propagators, State & initial_state) && -> void
                         return ! seen_any;
                     });
 
-                    if (! seen_any) {
-                        stringstream line;
-                        line << "u" << proof.trail_variables(state, 1_i);
-                        line << " 1 " << proof.proof_variable(! get<0>(flags[idx])) << " >= 1 ;";
-                        to_delete.push_back(proof.emit_proof_line(line.str()));
-                    }
+                    if (! seen_any)
+                        to_delete.push_back(proof.emit_rup_proof_line_under_trail(state,
+                            WeightedPseudoBooleanSum{} + 1_i * (! get<0>(flags[idx])) >= 1_i));
                 }
             }});
 

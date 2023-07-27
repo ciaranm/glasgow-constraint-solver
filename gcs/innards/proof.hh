@@ -141,6 +141,9 @@ namespace gcs::innards
         auto set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::string &) -> void;
         auto set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::string &) -> void;
 
+        auto prepare_to_emit_inequality_to_partial_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq) -> void;
+        auto emit_inequality_to_partial_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq) -> void;
+
     public:
         /**
          * \name Constructors, destructors, and the like.
@@ -294,6 +297,24 @@ namespace gcs::innards
         auto emit_proof_comment(const std::string &) -> void;
 
         /**
+         * Emit a RUP proof step for the specified expression, not subject to
+         * the current trail.
+         */
+        auto emit_rup_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> &) -> ProofLine;
+
+        /**
+         * Emit a RUP proof step for the specified expression, subject to the
+         * current trail.
+         */
+        auto emit_rup_proof_line_under_trail(const State &, const SumLessEqual<Weighted<PseudoBooleanTerm>> &) -> ProofLine;
+
+        /**
+         * Emit a RED proof step for the specified expression.
+         */
+        auto emit_red_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> &,
+            const std::vector<std::pair<Literal, Literal>> & witness) -> ProofLine;
+
+        /**
          * Set things up internally as if the specified variable was a real
          * variable, so that proof_variable() etc will work with it.
          */
@@ -311,7 +332,12 @@ namespace gcs::innards
          * Return the sequence of current guesses, formatted for use in a "u"
          * line, each with the given coefficient.
          */
-        [[nodiscard]] auto trail_variables(const State &, Integer coeff) -> std::string;
+        [[nodiscard]] auto trail_variables_for_rup(const State &, Integer coeff) -> std::string;
+
+        /**
+         * Return the sequence of current guesses, each with the given coefficient.
+         */
+        [[nodiscard]] auto trail_variables_as_sum(const State &, Integer coeff) -> WeightedPseudoBooleanSum;
 
         /**
          * Say that we are going to need an at-least-one constraint for a

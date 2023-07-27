@@ -7,7 +7,6 @@
 #include <util/enumerate.hh>
 
 #include <optional>
-#include <sstream>
 #include <string>
 
 using namespace gcs;
@@ -17,7 +16,6 @@ using std::make_unique;
 using std::move;
 using std::optional;
 using std::pair;
-using std::stringstream;
 using std::to_string;
 using std::unique_ptr;
 using std::vector;
@@ -49,21 +47,19 @@ namespace
                     Integer sel_value(tuples.size());
                     proof->create_literals_for_introduced_variable_value(selector_var_id, sel_value, "autotable");
 
-                    stringstream forward_implication, reverse_implication;
-                    forward_implication << "red " << vars.size() << " " << proof->proof_variable(selector_var_id != sel_value);
-                    reverse_implication << "red 1 " << proof->proof_variable(selector_var_id == sel_value);
+                    WeightedPseudoBooleanSum forward_implication, reverse_implication;
+                    forward_implication += Integer(vars.size()) * (selector_var_id != sel_value);
+                    reverse_implication += 1_i * (selector_var_id == sel_value);
 
                     for (const auto & [idx, v] : enumerate(vars)) {
-                        forward_implication << " 1 " << proof->proof_variable(v == state(v));
-                        reverse_implication << " 1 ~" << proof->proof_variable(v == state(v));
+                        forward_implication += 1_i * (v == state(v));
+                        reverse_implication += 1_i * (v != state(v));
                     }
-                    forward_implication << " >= " << vars.size() << " ; "
-                                        << proof->proof_variable(selector_var_id == sel_value) << " 0";
-                    reverse_implication << " >= 1 ; "
-                                        << proof->proof_variable(selector_var_id == sel_value) << " 1";
 
-                    proof->emit_proof_line(forward_implication.str());
-                    proof->emit_proof_line(reverse_implication.str());
+                    proof->emit_red_proof_line(forward_implication >= Integer(vars.size()),
+                        {{selector_var_id == sel_value, FalseLiteral{}}});
+                    proof->emit_red_proof_line(reverse_implication >= 1_i,
+                        {{selector_var_id == sel_value, TrueLiteral{}}});
                     state.add_extra_proof_condition(selector_var_id != sel_value);
 
                     proof->enter_proof_level(depth + 1);

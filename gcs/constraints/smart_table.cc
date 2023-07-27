@@ -110,14 +110,8 @@ namespace
     auto log_filtering_inference(const ProofFlag & tuple_selector, const Literal & lit, State & state)
     {
         auto inference = state.infer(TrueLiteral{}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
-            proof.need_proof_variable(lit);
-            stringstream proof_step;
-            proof_step << "*st infer\n";
-            proof_step << "u" << proof.trail_variables(state, 1_i);
-            proof_step << " 1 " << proof.proof_variable(! tuple_selector);
-            proof_step << " 1 " << proof.proof_variable(lit);
-            proof_step << " >= 1 ;";
-            proof.emit_proof_line(proof_step.str());
+            WeightedPseudoBooleanSum terms;
+            proof.emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} + 1_i * (! tuple_selector) + 1_i * lit >= 1_i);
         }});
 
         if (inference != Inference::NoChange) {
@@ -479,13 +473,7 @@ namespace
             for (const auto & value : unsupported[var]) {
                 switch (state.infer_not_equal(var, value, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
                     for (unsigned int tuple_idx = 0; tuple_idx < tuples.size(); ++tuple_idx) {
-                        stringstream proof_step;
-                        proof_step << "u" << proof.trail_variables(state, 1_i);
-                        proof.need_proof_variable(var != value);
-                        proof_step << " 1 " << proof.proof_variable(var != value);
-                        proof_step << " 1 " << proof.proof_variable(! pb_selectors[tuple_idx]);
-                        proof_step << " >= 1 ;";
-                        proof.emit_proof_line(proof_step.str());
+                        proof.emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} + 1_i * (var != value) + 1_i * (! pb_selectors[tuple_idx]) >= 1_i);
                     }
                 }})) {
                 case Inference::NoChange: break;
