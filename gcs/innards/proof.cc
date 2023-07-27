@@ -1099,6 +1099,114 @@ auto Proof::emit_proof_comment(const string & s) -> void
     _imp->proof << "* " << s << '\n';
 }
 
+auto Proof::prepare_to_emit_inequality_to_partial_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq) -> void
+{
+    // make sure we have any definitions for things that show up
+    for (auto & [_, v] : ineq.lhs.terms)
+        overloaded{
+            [&](const Literal & lit) {
+                overloaded{
+                    [&](const TrueLiteral &) {},
+                    [&](const FalseLiteral &) {},
+                    [&](const LiteralFromIntegerVariable &) {
+                        need_proof_variable(lit);
+                    }}
+                    .visit(lit);
+            },
+            [&](const ProofFlag &) {},
+            [&](const IntegerVariableID &) {},
+            [&](const ProofOnlySimpleIntegerVariableID &) {}}
+            .visit(v);
+}
+
+auto Proof::emit_inequality_to_partial_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq) -> void
+{
+    // build up the inequality, adjusting as we go for constant terms,
+    // and converting from <= to >=.
+    Integer rhs = -ineq.rhs;
+    for (auto & [w, v] : ineq.lhs.terms) {
+        overloaded{
+            [&](const Literal & lit) {
+                overloaded{
+                    [&](const TrueLiteral &) {
+                        rhs -= w;
+                    },
+                    [&](const FalseLiteral &) {},
+                    [&](const LiteralFromIntegerVariable & ilit) {
+                        _imp->proof << " " << w << " " << proof_variable(ilit);
+                    }}
+                    .visit(lit);
+            },
+            [&](const ProofFlag & flag) {
+                _imp->proof << " 1 " << proof_variable(flag);
+            },
+            [&](const IntegerVariableID & var) {
+                overloaded{
+                    [&](const SimpleIntegerVariableID & var) {
+                        auto & [_, bit_vars] = _imp->integer_variable_bits.at(var);
+                        for (auto & [bit_value, bit_name] : bit_vars)
+                            _imp->proof << " " << -w * bit_value << " " << bit_name;
+                    },
+                    [&](const ViewOfIntegerVariableID &) {
+                        throw UnimplementedException{};
+                    },
+                    [&](const ConstantIntegerVariableID &) {
+                        throw UnimplementedException{};
+                    }}
+                    .visit(var);
+            },
+            [&](const ProofOnlySimpleIntegerVariableID & var) {
+                auto & [_, bit_vars] = _imp->integer_variable_bits.at(var);
+                for (auto & [bit_value, bit_name] : bit_vars)
+                    _imp->proof << " " << -w * bit_value << " " << bit_name;
+            }}
+            .visit(v);
+    }
+
+    _imp->proof << " >= " << rhs << " ;";
+}
+
+auto Proof::emit_rup_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq) -> ProofLine
+{
+    prepare_to_emit_inequality_to_partial_proof_line(ineq);
+
+    _imp->proof << "u";
+    emit_inequality_to_partial_proof_line(ineq);
+    _imp->proof << '\n';
+    return ++_imp->proof_line;
+}
+
+auto Proof::emit_rup_proof_line_under_trail(const State & state, const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq) -> ProofLine
+{
+    auto terms = trail_variables_as_sum(state, -ineq.rhs);
+    for (auto & t : ineq.lhs.terms)
+        terms += t;
+    return emit_rup_proof_line(terms >= -ineq.rhs);
+}
+
+auto Proof::emit_red_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
+    const std::vector<std::pair<Literal, Literal>> & witness) -> ProofLine
+{
+    prepare_to_emit_inequality_to_partial_proof_line(ineq);
+
+    _imp->proof << "red";
+    emit_inequality_to_partial_proof_line(ineq);
+
+    auto witness_literal = [this](const Literal & lit) -> string {
+        return overloaded{
+            [](const TrueLiteral &) -> string { return "1"; },
+            [](const FalseLiteral &) -> string { return "0"; },
+            [this](const LiteralFromIntegerVariable & var) -> string { return proof_variable(var); }}
+            .visit(lit);
+    };
+
+    for (auto & [f, t] : witness)
+        _imp->proof << " " << witness_literal(f) << " -> " << witness_literal(t);
+    _imp->proof << " ;\n";
+
+    return ++_imp->proof_line;
+}
+
 auto Proof::need_constraint_saying_variable_takes_at_least_one_value(IntegerVariableID var) -> ProofLine
 {
     return overloaded{
@@ -1143,7 +1251,7 @@ auto Proof::forget_proof_level(int depth) -> void
     _imp->proof << "w " << depth << '\n';
 }
 
-auto Proof::trail_variables(const State & state, Integer coeff) -> string
+auto Proof::trail_variables_for_rup(const State & state, Integer coeff) -> string
 {
     stringstream result;
     state.for_each_guess([&](const Literal & lit) {
@@ -1152,6 +1260,17 @@ auto Proof::trail_variables(const State & state, Integer coeff) -> string
     });
 
     return result.str();
+}
+
+auto Proof::trail_variables_as_sum(const State & state, Integer coeff) -> WeightedPseudoBooleanSum
+{
+    WeightedPseudoBooleanSum result;
+    state.for_each_guess([&](const Literal & lit) {
+        if (! is_literally_true(lit))
+            result += coeff * ! lit;
+    });
+
+    return result;
 }
 
 auto Proof::add_proof_steps(const JustifyExplicitly & x, vector<ProofLine> & to_delete) -> void
@@ -1199,7 +1318,7 @@ auto Proof::get_or_emit_pol_term_for_bound_in_bits(State & state, bool upper,
     }
 
     big_number += max(1_i, abs(val));
-    step << trail_variables(state, big_number);
+    step << trail_variables_for_rup(state, big_number);
 
     if (upper)
         step << " >= " << -val << " ";

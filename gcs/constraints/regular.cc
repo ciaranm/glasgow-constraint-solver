@@ -134,22 +134,15 @@ namespace
         if (! state.maybe_proof()) return;
         // Trying to cut down on repeated code
         state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
-            if (! comment.empty()) {
+            if (! comment.empty())
                 proof.emit_proof_comment(comment);
-            }
-            stringstream proof_step;
-            proof_step << "u ";
-            proof_step << proof.trail_variables(state, 1_i);
-            for (const auto & lit : literals) {
-                proof.need_proof_variable(lit);
-                proof_step << " 1 " << proof.proof_variable(lit);
-            }
 
-            for (const auto & flag : proof_flags) {
-                proof_step << " 1 " << proof.proof_variable(flag);
-            }
-            proof_step << " >= 1 ;";
-            proof.emit_proof_line(proof_step.str());
+            WeightedPseudoBooleanSum terms;
+            for (const auto & lit : literals)
+                terms += 1_i * lit;
+            for (const auto & flag : proof_flags)
+                terms += 1_i * flag;
+            proof.emit_rup_proof_line_under_trail(state, terms >= 1_i);
         }});
     }
 

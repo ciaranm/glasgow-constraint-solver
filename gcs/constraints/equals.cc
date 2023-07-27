@@ -440,12 +440,7 @@ auto NotEquals::install(Propagators & propagators, State & initial_state) && -> 
                     proof.emit_proof_comment("converting not equals to value encoding");
                     state.for_each_value(v1, [&](Integer val1) {
                         if (state.in_domain(v2, val1)) {
-                            proof.need_proof_variable(v1 != val1);
-                            proof.need_proof_variable(v2 != val1);
-                            stringstream line;
-                            line << "u 1 " << proof.proof_variable(v1 != val1) << " 1 " << proof.proof_variable(v2 != val1)
-                                 << " >= 1 ;";
-                            proof.emit_proof_line(line.str());
+                            proof.emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * (v1 != val1) + 1_i * (v2 != val1) >= 1_i);
                         }
                     });
                 }});

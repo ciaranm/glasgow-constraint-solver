@@ -91,16 +91,11 @@ namespace
         for (auto & cv : coeff_vars.terms) {
             auto var = get_var(cv);
             vars.push_back(var);
-            if (state.maybe_proof()) {
-                state.for_each_value(var, [&](Integer val) {
-                    state.maybe_proof()->need_proof_variable(var == val);
-                });
-            }
         }
 
         auto future_var_id = state.what_variable_id_will_be_created_next();
 
-        stringstream trail;
+        WeightedPseudoBooleanSum trail;
         function<void(Proof *, vector<ProofLine> *)> search = [&](Proof * maybe_proof, vector<ProofLine> * to_delete) {
             if (current.size() == coeff_vars.terms.size()) {
                 Integer actual_value{0_i};
@@ -113,23 +108,21 @@ namespace
                     if (maybe_proof) {
                         Integer sel_value(permitted.size() - 1);
                         maybe_proof->create_literals_for_introduced_variable_value(future_var_id, sel_value, "lineq");
-                        trail << "1 " << maybe_proof->proof_variable(future_var_id == sel_value) << " ";
+                        trail += 1_i * (future_var_id == sel_value);
 
-                        stringstream forward_implication, reverse_implication;
-                        forward_implication << "red " << coeff_vars.terms.size() << " " << maybe_proof->proof_variable(future_var_id != sel_value);
-                        reverse_implication << "red 1 " << maybe_proof->proof_variable(future_var_id == sel_value);
+                        WeightedPseudoBooleanSum forward_implication, reverse_implication;
+                        forward_implication += Integer(coeff_vars.terms.size()) * (future_var_id != sel_value);
+                        reverse_implication += 1_i * (future_var_id == sel_value);
 
                         for (const auto & [idx, cv] : enumerate(coeff_vars.terms)) {
-                            forward_implication << " 1 " << maybe_proof->proof_variable(get_var(cv) == current[idx]);
-                            reverse_implication << " 1 " << maybe_proof->proof_variable(get_var(cv) != current[idx]);
+                            forward_implication += 1_i * (get_var(cv) == current[idx]);
+                            reverse_implication += 1_i * (get_var(cv) != current[idx]);
                         }
-                        forward_implication << " >= " << coeff_vars.terms.size() << " ; "
-                                            << maybe_proof->proof_variable(future_var_id == sel_value) << " 0";
-                        reverse_implication << " >= 1 ; "
-                                            << maybe_proof->proof_variable(future_var_id == sel_value) << " 1";
 
-                        maybe_proof->emit_proof_line(forward_implication.str());
-                        maybe_proof->emit_proof_line(reverse_implication.str());
+                        maybe_proof->emit_red_proof_line(forward_implication >= Integer(coeff_vars.terms.size()),
+                            {{future_var_id == sel_value, FalseLiteral{}}});
+                        maybe_proof->emit_red_proof_line(reverse_implication >= 1_i,
+                            {{future_var_id == sel_value, TrueLiteral{}}});
                     }
                 }
             }
@@ -143,13 +136,11 @@ namespace
             }
 
             if (maybe_proof) {
-                stringstream backtrack;
-                backtrack << "u " << trail.str();
+                WeightedPseudoBooleanSum backtrack = trail;
                 for (const auto & [idx, val] : enumerate(current))
-                    backtrack << "1 " << maybe_proof->proof_variable(get_var(coeff_vars.terms[idx]) != val) << " ";
-                backtrack << ">= 1 ;";
+                    backtrack += 1_i * (get_var(coeff_vars.terms[idx]) != val);
 
-                auto line = maybe_proof->emit_proof_line(backtrack.str());
+                auto line = maybe_proof->emit_rup_proof_line(backtrack >= 1_i);
                 if (! current.empty())
                     to_delete->push_back(line);
             }
