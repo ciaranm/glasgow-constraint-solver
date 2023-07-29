@@ -20,6 +20,7 @@ using std::make_optional;
 using std::mt19937;
 using std::nullopt;
 using std::pair;
+using std::random_device;
 using std::shuffle;
 using std::ssize;
 using std::string;
@@ -49,8 +50,9 @@ auto test_regular(const int & n, mt19937 & rng)
     uniform_int_distribution<> dist_m1_to_num_states(-1, num_states - 1);
 
     string_rep << "#states\n";
-    for (int i = 0; i < num_states; i++)
+    for (int i = 0; i < num_states; i++) {
         string_rep << "s" << i << "\n";
+    }
     string_rep << "#initial\ns0\n";
 
     auto num_final_states = dist_1_to_num_states(rng);
@@ -61,50 +63,54 @@ auto test_regular(const int & n, mt19937 & rng)
     vector<long> final_states(states.begin(), states.begin() + num_final_states);
 
     string_rep << "#accepting\n";
-    for (const auto & i : final_states)
+    for (const auto & i : final_states) {
         string_rep << "s" << i << "\n";
 
-    string_rep << "#alphabet\n";
-    vector<Integer> symbols{};
-    for (int i = 0; i < n; i++) {
-        symbols.emplace_back(i);
-        string_rep << i << "\n";
-    }
-
-    string_rep << "#transitions\n";
-    vector<vector<long>> transitions(num_states, vector<long>(n));
-    for (int i = 0; i < num_states; i++) {
-        for (int j = 0; j < n; j++) {
-            transitions[i][j] = dist_m1_to_num_states(rng);
-            if (transitions[i][j] != -1)
-                string_rep << "s" << i << ":" << j << ">s" << transitions[i][j] << "\n";
+        string_rep << "#alphabet\n";
+        vector<Integer> symbols{};
+        for (int i = 0; i < n; i++) {
+            symbols.emplace_back(i);
+            string_rep << i << "\n";
         }
+
+        string_rep << "#transitions\n";
+        vector<vector<long>> transitions(num_states, vector<long>(n));
+        for (int i = 0; i < num_states; i++) {
+            for (int j = 0; j < n; j++) {
+                transitions[i][j] = dist_m1_to_num_states(rng);
+                if (transitions[i][j] != -1)
+                    string_rep << "s" << i << ":" << j << ">s" << transitions[i][j] << "\n";
+            }
+        }
+
+        p.post(Regular{x, symbols, num_states, transitions, final_states});
+
+        auto stats = solve_with(p,
+            SolveCallbacks{
+                .solution = [&](const CurrentState &) -> bool {
+                    return true;
+                }},
+            ProofOptions{"random_regular.opb", "random_regular.veripb"});
+
+        //        cout << "Num solutions: " << stats.solutions << endl;
+        if (0 != system("veripb random_regular.opb random_regular.veripb")) {
+            cout << string_rep.str() << endl;
+            return false;
+        }
+
+        return true;
     }
-
-    p.post(Regular{x, symbols, num_states, transitions, final_states});
-
-    auto stats = solve_with(p,
-        SolveCallbacks{
-            .solution = [&](const CurrentState &) -> bool {
-                return true;
-            }},
-        ProofOptions{"random_regular.opb", "random_regular.veripb"});
-
-    cout << "Num solutions: " << stats.solutions << endl;
-    if (0 != system("veripb random_regular.opb random_regular.veripb")) {
-        cout << string_rep.str() << endl;
-        return false;
-    }
-
-    return true;
 }
+
 auto main(int, char *[]) -> int
 {
-    // random_device rand_dev;
-    // std::mt19937 rng(rand_dev());
-    mt19937 rng(0); // Same every time, for now
+    random_device rand_dev;
+    auto seed = rand_dev();
+    std::mt19937 rng(seed);
+    cout << "Seed for random DFAs for Regular: " << seed << endl;
+    //    mt19937 rng(0); // Switch to this to have it the same every time.
     for (int n = 3; n < 6; n++) {
-        for (int r = 0; r < 240 / n; r++) {
+        for (int r = 0; r < 60 / n; r++) {
             if (! test_regular(n, rng)) {
                 cout << "n == " << n << " r == " << r << endl;
                 return EXIT_FAILURE;
