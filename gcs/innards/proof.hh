@@ -12,6 +12,7 @@
 
 #include <exception>
 #include <functional>
+#include <iosfwd>
 #include <memory>
 #include <optional>
 #include <string>
@@ -46,6 +47,8 @@ namespace gcs::innards
     {
         unsigned long long index;
         bool positive;
+
+        [[nodiscard]] auto operator<=>(const ProofFlag &) const = default;
     };
 
     /**
@@ -86,42 +89,22 @@ namespace gcs::innards
 
     /**
      * \brief Inside a Proof, a pseudo-Boolean expression can contain a Literal,
-     * a ProofFlag, or an IntegerVariableID to be decomposed into its bits.
+     * a ProofFlag, an IntegerVariableID or ProofOnlySimpleIntegerVariableID
+     * to be decomposed into its bits, or if you really want, a raw string
+     * (mostly for internal use).
      *
      * \ingroup Innards
      * \sa Proof::pseudoboolean_ge
-     * \sa gcs::innards::sanitise_pseudoboolean_terms()
      */
     using PseudoBooleanTerm = std::variant<Literal, ProofFlag, IntegerVariableID, ProofOnlySimpleIntegerVariableID>;
 
     using WeightedPseudoBooleanSum = SumOf<Weighted<PseudoBooleanTerm>>;
 
-    /**
-     * \brief Modify a WeightedPseudoBooleanSum and its associated
-     * greater-or-equal inequality value to simplify things.
-     *
-     * Removes anything that is gcs::innards::is_literally_true_or_false()
-     * with appropriate handling of the coefficients.  If false is returned, the
-     * expression is trivially satisfied and should not be specified.
-     *
-     * \ingroup Innards
-     * \sa Proof::pseudoboolean_ge
-     * \sa WeightedPseudoBooleanSum
-     */
-    [[nodiscard]] auto sanitise_pseudoboolean_terms(WeightedPseudoBooleanSum &, Integer &) -> bool;
+    using WeightedPseudoBooleanLessEqual = SumLessEqual<Weighted<PseudoBooleanTerm>>;
 
-    /**
-     * \brief Sanitise a Literals by removing duplicates and forced terms.
-     *
-     * If any term is gcs::innards::is_literally_true(), returns false because
-     * the expression is trivially satisfied and should not be specified.
-     * Otherwise, removes any gcs::innards::is_literally_false() terms, and
-     * groups like terms.
-     *
-     * \ingroup Innards
-     * \sa Proof::cnf
-     */
-    [[nodiscard]] auto sanitise_literals(Literals &) -> bool;
+    using WeightedPseudoBooleanEquality = SumEquals<Weighted<PseudoBooleanTerm>>;
+
+    using SimpleLiteral = std::variant<LiteralFrom<SimpleIntegerVariableID>, TrueLiteral, FalseLiteral>;
 
     /**
      * \brief Everything proof-related goes through here.
@@ -141,8 +124,13 @@ namespace gcs::innards
         auto set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::string &) -> void;
         auto set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::string &) -> void;
 
-        auto prepare_to_emit_inequality_to_partial_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq) -> void;
-        auto emit_inequality_to_partial_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq) -> void;
+        auto need_all_proof_variables_in(const SumOf<Weighted<PseudoBooleanTerm>> & sum) -> void;
+
+        auto emit_sum_to(const SumOf<Weighted<PseudoBooleanTerm>> & ineq, std::ostream &) -> void;
+        auto emit_inequality_to(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
+            const std::optional<ReificationTerm> &, std::ostream &) -> void;
+
+        [[nodiscard]] auto simplify_literal(const Literal & lit) -> SimpleLiteral;
 
     public:
         /**
@@ -190,28 +178,22 @@ namespace gcs::innards
             const IntegerVariableProofRepresentation rep) -> ProofOnlySimpleIntegerVariableID;
 
         /**
-         * Add a new constraint, defined via CNF. Must call gcs::innards::sanitise_literals()
-         * first.
+         * Add a new constraint, defined via CNF. Returns nullopt if the constraint
+         * is trivially satisfiable.
          */
-        auto cnf(const Literals &) -> ProofLine;
+        auto add_cnf_to_model(const Literals &) -> std::optional<ProofLine>;
 
         /**
-         * Add an at-most-one constraint.
+         * Add a pseudo-Boolean inequality to the model.
          */
-        [[nodiscard]] auto at_most_one(const Literals &) -> ProofLine;
+        [[nodiscard]] auto add_to_model(const WeightedPseudoBooleanLessEqual &,
+            std::optional<ReificationTerm> half_reif) -> std::optional<ProofLine>;
 
         /**
-         * Add a pseudo-Boolean greater or equals constraint. Must call
-         * gcs::innards::sanitise_pseudoboolean_terms() first.
+         * Add a pseudo-Boolean equality to the model.
          */
-        [[nodiscard]] auto pseudoboolean_ge(const WeightedPseudoBooleanSum &, Integer,
-            std::optional<ReificationTerm> half_reif, bool equality) -> ProofLine;
-
-        /**
-         * Add an integer linear inequality or equality constraint.
-         */
-        auto integer_linear_le(const State &, const SumOf<Weighted<SimpleIntegerVariableID>> & coeff_vars, Integer value,
-            std::optional<ReificationTerm> half_reif, bool equality) -> ProofLine;
+        [[nodiscard]] auto add_to_model(const WeightedPseudoBooleanEquality &,
+            std::optional<ReificationTerm> half_reif) -> std::pair<std::optional<ProofLine>, std::optional<ProofLine>>;
 
         ///@}
 

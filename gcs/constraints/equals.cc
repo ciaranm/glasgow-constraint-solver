@@ -113,7 +113,7 @@ auto Equals::install(Propagators & propagators, State & initial_state) && -> voi
     }
 
     if (propagators.want_definitions()) {
-        propagators.define_linear_eq(initial_state, WeightedSum{} + 1_i * _v1 + -1_i * _v2, 0_i, nullopt);
+        propagators.define(initial_state, WeightedPseudoBooleanSum{} + 1_i * _v1 + -1_i * _v2 == 0_i, nullopt);
     }
 }
 
@@ -145,12 +145,12 @@ auto EqualsIf::install(Propagators & propagators, State & initial_state) && -> v
         [&](const LiteralFromIntegerVariable & cond) {
             Triggers triggers{.on_change = {_v1, _v2}};
             switch (cond.op) {
-            case LiteralFromIntegerVariable::Operator::Less:
-            case LiteralFromIntegerVariable::Operator::GreaterEqual:
+            case LiteralOperator::Less:
+            case LiteralOperator::GreaterEqual:
                 triggers.on_bounds.push_back(cond.var);
                 break;
-            case LiteralFromIntegerVariable::Operator::Equal:
-            case LiteralFromIntegerVariable::Operator::NotEqual:
+            case LiteralOperator::Equal:
+            case LiteralOperator::NotEqual:
                 triggers.on_change.push_back(cond.var);
                 break;
             }
@@ -213,7 +213,7 @@ auto EqualsIf::install(Propagators & propagators, State & initial_state) && -> v
                 _v1, _v2);
 
             if (propagators.want_definitions()) {
-                propagators.define_linear_eq(initial_state, WeightedSum{} + 1_i * _v1 + -1_i * _v2, 0_i, cond);
+                propagators.define(initial_state, WeightedPseudoBooleanSum{} + 1_i * _v1 + -1_i * _v2 == 0_i, cond);
             }
         }}
         .visit(_cond);
@@ -259,12 +259,12 @@ auto EqualsIff::install(Propagators & propagators, State & initial_state) && -> 
         [&](const LiteralFromIntegerVariable & cond) {
             Triggers triggers{.on_change = {_v1, _v2}};
             switch (cond.op) {
-            case LiteralFromIntegerVariable::Operator::Less:
-            case LiteralFromIntegerVariable::Operator::GreaterEqual:
+            case LiteralOperator::Less:
+            case LiteralOperator::GreaterEqual:
                 triggers.on_bounds.push_back(cond.var);
                 break;
-            case LiteralFromIntegerVariable::Operator::Equal:
-            case LiteralFromIntegerVariable::Operator::NotEqual:
+            case LiteralOperator::Equal:
+            case LiteralOperator::NotEqual:
                 triggers.on_change.push_back(cond.var);
                 break;
             }
@@ -452,9 +452,8 @@ auto NotEquals::install(Propagators & propagators, State & initial_state) && -> 
 
     if (propagators.want_definitions()) {
         auto selector = propagators.create_proof_flag("notequals");
-
-        propagators.define_linear_le(initial_state, WeightedSum{} + 1_i * _v1 + -1_i * _v2, -1_i, selector);
-        propagators.define_linear_le(initial_state, WeightedSum{} + -1_i * _v1 + 1_i * _v2, -1_i, ! selector);
+        propagators.define(initial_state, WeightedPseudoBooleanSum{} + 1_i * _v1 + -1_i * _v2 <= -1_i, selector);
+        propagators.define(initial_state, WeightedPseudoBooleanSum{} + -1_i * _v1 + 1_i * _v2 <= -1_i, ! selector);
     }
 }
 

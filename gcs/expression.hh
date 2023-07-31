@@ -137,7 +137,7 @@ namespace gcs
     requires std::constructible_from<Var_, RHS_>
     {
         SumLessEqual<Weighted<Var_>> result{std::move(lhs), 0_i};
-        result += -rhs.coefficient * rhs.variable;
+        result.lhs += -rhs.coefficient * rhs.variable;
         return result;
     }
 
@@ -151,7 +151,7 @@ namespace gcs
     [[nodiscard]] constexpr inline auto operator>=(SumOf<Var_> lhs, Integer rhs) -> SumLessEqual<Var_>
     {
         SumLessEqual<Var_> result{std::move(lhs), -rhs};
-        for (auto & [c, _] : lhs.terms)
+        for (auto & [c, _] : result.lhs.terms)
             c = -c;
         return result;
     }
@@ -167,9 +167,9 @@ namespace gcs
     requires std::constructible_from<Var_, RHS_>
     {
         SumLessEqual<Weighted<Var_>> result{std::move(lhs), 0_i};
-        for (auto & [c, _] : lhs.terms)
+        for (auto & [c, _] : result.lhs.terms)
             c = -c;
-        result += rhs.coefficient * rhs.variable;
+        result.lhs += rhs.coefficient * rhs.variable;
         return result;
     }
 

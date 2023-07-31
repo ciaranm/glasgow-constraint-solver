@@ -96,7 +96,7 @@ namespace gcs::innards
         template <DirectIntegerVariableIDLike VarType_>
         [[nodiscard]] auto change_state_for_literal(
             const VarType_ & var,
-            LiteralFromIntegerVariable::Operator state,
+            LiteralOperator state,
             Integer value) -> std::pair<Inference, HowChanged>;
 
         template <DirectIntegerVariableIDLike VarType_>

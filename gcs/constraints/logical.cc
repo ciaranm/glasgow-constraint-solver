@@ -58,12 +58,12 @@ namespace
                 overloaded{
                     [&](const LiteralFromIntegerVariable & ilit) {
                         switch (ilit.op) {
-                        case LiteralFromIntegerVariable::Operator::Equal:
-                        case LiteralFromIntegerVariable::Operator::NotEqual:
+                        case LiteralOperator::Equal:
+                        case LiteralOperator::NotEqual:
                             triggers.on_change.push_back(ilit.var);
                             break;
-                        case LiteralFromIntegerVariable::Operator::Less:
-                        case LiteralFromIntegerVariable::Operator::GreaterEqual:
+                        case LiteralOperator::Less:
+                        case LiteralOperator::GreaterEqual:
                             triggers.on_bounds.push_back(ilit.var);
                             break;
                         }
@@ -155,8 +155,7 @@ namespace
                         WeightedPseudoBooleanSum forward;
                         for (auto & l : _lits)
                             forward += 1_i * PseudoBooleanTerm{l};
-                        forward += Integer(_lits.size()) * ! _full_reif;
-                        propagators.define_pseudoboolean_ge(initial_state, move(forward), Integer(_lits.size()));
+                        propagators.define(initial_state, forward >= Integer(_lits.size()), _full_reif);
                     }
 
                     Literals reverse;

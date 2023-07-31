@@ -166,10 +166,14 @@ namespace
 auto LinearEquality::install(Propagators & propagators, State & initial_state) && -> void
 {
     optional<ProofLine> proof_line;
-    if (propagators.want_definitions())
-        proof_line = propagators.define_linear_eq(initial_state, _coeff_vars, _value, nullopt);
+    if (propagators.want_definitions()) {
+        WeightedPseudoBooleanSum terms;
+        for (auto & [c, v] : _coeff_vars.terms)
+            terms += c * v;
+        proof_line = propagators.define(initial_state, terms == _value, nullopt).first.value();
+    }
 
-    auto [sanitised_cv, modifier] = sanitise_linear(_coeff_vars);
+    auto [sanitised_cv, modifier] = tidy_up_linear(_coeff_vars);
 
     Triggers triggers;
     for (auto & [_, v] : _coeff_vars.terms)
@@ -234,10 +238,14 @@ auto LinearInequality::clone() const -> unique_ptr<Constraint>
 auto LinearInequality::install(Propagators & propagators, State & initial_state) && -> void
 {
     optional<ProofLine> proof_line;
-    if (propagators.want_definitions())
-        proof_line = propagators.define_linear_le(initial_state, _coeff_vars, _value, nullopt);
+    if (propagators.want_definitions()) {
+        WeightedPseudoBooleanSum terms;
+        for (auto & [c, v] : _coeff_vars.terms)
+            terms += c * v;
+        proof_line = propagators.define(initial_state, terms <= _value, nullopt);
+    }
 
-    auto [sanitised_cv, modifier] = sanitise_linear(_coeff_vars);
+    auto [sanitised_cv, modifier] = tidy_up_linear(_coeff_vars);
 
     Triggers triggers;
     for (auto & [_, v] : _coeff_vars.terms)
