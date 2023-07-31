@@ -132,6 +132,21 @@ namespace gcs::innards
 
         [[nodiscard]] auto simplify_literal(const Literal & lit) -> SimpleLiteral;
 
+        auto need_proof_variable(const Literal &) -> void;
+        auto need_direct_encoding_for(SimpleIntegerVariableID, Integer) -> void;
+
+        /**
+         * Return the internal name for the variable corresponding to this
+         * Literal. Must call need_proof_variable() first.
+         */
+        [[nodiscard]] auto proof_variable(const Literal &) const -> const std::string &;
+
+        /**
+         * Return the internal name for the variable corresponding to this
+         * ProofFlag.
+         */
+        [[nodiscard]] auto proof_variable(const ProofFlag &) const -> const std::string &;
+
     public:
         /**
          * \name Constructors, destructors, and the like.
@@ -194,26 +209,6 @@ namespace gcs::innards
          */
         [[nodiscard]] auto add_to_model(const WeightedPseudoBooleanEquality &,
             std::optional<ReificationTerm> half_reif) -> std::pair<std::optional<ProofLine>, std::optional<ProofLine>>;
-
-        ///@}
-
-        /**
-         * \name Define things either in the OPB file or in the proof log.
-         */
-        ///@{
-
-        /**
-         * Say that we are going to use a Literal in the proof, and that it must
-         * be introduced if it is not there already.
-         */
-        auto need_proof_variable(const Literal &) -> void;
-
-        /**
-         * Say that we are going to use the fact that a variable takes a
-         * particular value, and that we must have the appropriate Literal
-         * available if it is not there already.
-         */
-        auto need_direct_encoding_for(SimpleIntegerVariableID, Integer) -> void;
 
         ///@}
 
@@ -326,18 +321,6 @@ namespace gcs::innards
          * variable.
          */
         [[nodiscard]] auto need_constraint_saying_variable_takes_at_least_one_value(IntegerVariableID) -> ProofLine;
-
-        /**
-         * Return the internal name for the variable corresponding to this
-         * Literal. Must call need_proof_variable() first.
-         */
-        [[nodiscard]] auto proof_variable(const Literal &) const -> const std::string &;
-
-        /**
-         * Return the internal name for the variable corresponding to this
-         * ProofFlag.
-         */
-        [[nodiscard]] auto proof_variable(const ProofFlag &) const -> const std::string &;
 
         /**
          * Does a variable have a bit representation?
