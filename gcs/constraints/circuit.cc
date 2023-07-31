@@ -84,7 +84,7 @@ namespace
 
         if (state.maybe_proof()) {
             proof_step << "p ";
-            proof_step << lines_for_setting_pos.at(make_pair(current_val.value(), Integer(start))) + 1 << " ";
+            proof_step << lines_for_setting_pos.at(make_pair(current_val.value(), Integer(start))) << " ";
         }
         long cycle_length = 1;
         while (cmp_not_equal(current_val->raw_value, start)) {
@@ -94,13 +94,13 @@ namespace
 
             if (current_val == nullopt || cycle_length == length - 1) break;
 
-            proof_step << lines_for_setting_pos.at(make_pair(current_val.value(), last_val.value())) + 1
+            proof_step << lines_for_setting_pos.at(make_pair(current_val.value(), last_val.value()))
                        << " + ";
             cycle_length++;
         }
 
         if (prevent_idx.has_value()) {
-            proof_step << lines_for_setting_pos.at(make_pair(prevent_value.value(), prevent_idx.value())) + 1
+            proof_step << lines_for_setting_pos.at(make_pair(prevent_value.value(), prevent_idx.value()))
                        << " + ";
         }
 
@@ -201,8 +201,8 @@ auto Circuit::install(Propagators & propagators, State & initial_state) && -> vo
         for (unsigned i = 0; i < _succ.size(); ++i)
             for (unsigned j = i + 1; j < _succ.size(); ++j) {
                 auto selector = propagators.create_proof_flag("circuit_notequals");
-                propagators.define_linear_le(initial_state, WeightedSum{} + 1_i * _succ[i] + -1_i * _succ[j], -1_i, selector);
-                propagators.define_linear_le(initial_state, WeightedSum{} + -1_i * _succ[i] + 1_i * _succ[j], -1_i, ! selector);
+                propagators.define(initial_state, WeightedPseudoBooleanSum{} + 1_i * _succ[i] + -1_i * _succ[j] <= -1_i, selector);
+                propagators.define(initial_state, WeightedPseudoBooleanSum{} + -1_i * _succ[i] + 1_i * _succ[j] <= -1_i, ! selector);
             }
     }
 
@@ -217,9 +217,9 @@ auto Circuit::install(Propagators & propagators, State & initial_state) && -> vo
         // WLOG start at node 0, so pos[0] = 0
         position.emplace_back(0_c);
         // Hence we can only have succ[0] = 0 (self cycle) if there is only one node i.e. n - 1 = 0
-        auto cv = WeightedPseudoBooleanSum{} + 1_i * position[0] + -1_i * n_minus_1;
-        auto proof_line = propagators.define_pseudoboolean_eq(initial_state, move(cv), 0_i, _succ[0] == 0_i);
-        lines_for_setting_pos.insert({{Integer{0_i}, Integer{0_i}}, proof_line.value()});
+        auto proof_line = propagators.define(initial_state,
+            WeightedPseudoBooleanSum{} + 1_i * position[0] + -1_i * n_minus_1 == 0_i, _succ[0] == 0_i);
+        lines_for_setting_pos.insert({{Integer{0_i}, Integer{0_i}}, proof_line.second.value()});
 
         for (unsigned int idx = 1; idx < _succ.size(); ++idx) {
             position.emplace_back(propagators.create_proof_only_integer_variable(0_i, Integer(_succ.size() - 1),
@@ -228,23 +228,21 @@ auto Circuit::install(Propagators & propagators, State & initial_state) && -> vo
 
         for (unsigned int idx = 1; idx < _succ.size(); ++idx) {
             // (succ[0] = i) -> pos[i] = 1
-            auto cv1 = WeightedPseudoBooleanSum{} + 1_i * position[idx] + -1_i * 1_c;
-            proof_line = propagators.define_pseudoboolean_eq(initial_state, move(cv1), 0_i, _succ[0] == Integer{idx});
-            lines_for_setting_pos.insert({{Integer{idx}, Integer{0_i}}, proof_line.value()});
+            proof_line = propagators.define(initial_state,
+                WeightedPseudoBooleanSum{} + 1_i * position[idx] + -1_i * 1_c == 0_i, _succ[0] == Integer{idx});
+            lines_for_setting_pos.insert({{Integer{idx}, Integer{0_i}}, proof_line.second.value()});
 
             // (succ[i] = 0) -> pos[i] = n-1
-            auto cv2 = WeightedPseudoBooleanSum{} + 1_i * position[idx] + -1_i * n_minus_1;
-
-            proof_line = propagators.define_pseudoboolean_eq(initial_state, move(cv2), 0_i, _succ[idx] == 0_i);
-            lines_for_setting_pos.insert({{Integer{0_i}, Integer{idx}}, proof_line.value()});
+            proof_line = propagators.define(initial_state,
+                WeightedPseudoBooleanSum{} + 1_i * position[idx] + -1_i * n_minus_1 == 0_i, _succ[idx] == 0_i);
+            lines_for_setting_pos.insert({{Integer{0_i}, Integer{idx}}, proof_line.second.value()});
 
             // (succ[i] = j) -> pos[j] = pos[i] + 1
             for (unsigned int jdx = 1; jdx < _succ.size(); ++jdx) {
-                // if (idx == jdx) continue;
-                auto cv3 = WeightedPseudoBooleanSum{} + 1_i * position[jdx] + -1_i * position[idx] + -1_i * 1_c;
-
-                proof_line = propagators.define_pseudoboolean_eq(initial_state, move(cv3), 0_i, _succ[idx] == Integer{jdx});
-                lines_for_setting_pos.insert({{Integer{jdx}, Integer{idx}}, proof_line.value()});
+                proof_line = propagators.define(initial_state,
+                    WeightedPseudoBooleanSum{} + 1_i * position[jdx] + -1_i * position[idx] + -1_i * 1_c == 0_i,
+                    _succ[idx] == Integer{jdx});
+                lines_for_setting_pos.insert({{Integer{jdx}, Integer{idx}}, proof_line.second.value()});
             }
         }
     }

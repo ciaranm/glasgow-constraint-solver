@@ -58,7 +58,6 @@ auto Abs::install(Propagators & propagators, State & initial_state) && -> void
         state.for_each_value_while(v2, [&](Integer val) {
             if (! state.in_domain(v1, val) && ! state.in_domain(v1, -val) && state.in_domain(v2, val))
                 increase_inference_to(result, state.infer_not_equal(v2, val, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & del) {
-                    proof.emit_proof_comment("start of abs block");
                     del.push_back(proof.emit_rup_proof_line_under_trail(state,
                         WeightedPseudoBooleanSum{} + 1_i * (v1 != val) >= 1_i));
                     del.push_back(proof.emit_rup_proof_line_under_trail(state,
@@ -67,7 +66,6 @@ auto Abs::install(Propagators & propagators, State & initial_state) && -> void
                         WeightedPseudoBooleanSum{} + 1_i * (*selector) + 1_i * (v2 != val) >= 1_i));
                     del.push_back(proof.emit_rup_proof_line_under_trail(state,
                         WeightedPseudoBooleanSum{} + 1_i * (! *selector) + 1_i * (v2 != val) >= 1_i));
-                    proof.emit_proof_comment("end of abs block");
                 }}));
             return result != Inference::Contradiction;
         });
@@ -77,10 +75,10 @@ auto Abs::install(Propagators & propagators, State & initial_state) && -> void
         triggers, "abs");
 
     if (propagators.want_definitions()) {
-        propagators.define_linear_eq(initial_state, WeightedSum{} + 1_i * _v2 + -1_i * _v1, 0_i, *selector);
-        propagators.define_linear_eq(initial_state, WeightedSum{} + 1_i * _v1 + 1_i * _v2, 0_i, ! *selector);
-        propagators.define_linear_le(initial_state, WeightedSum{} + 1_i * _v1, -1_i, ! *selector);
-        propagators.define_linear_le(initial_state, WeightedSum{} + -1_i * _v1, 0_i, *selector);
+        propagators.define(initial_state, WeightedPseudoBooleanSum{} + 1_i * _v2 + -1_i * _v1 == 0_i, *selector);
+        propagators.define(initial_state, WeightedPseudoBooleanSum{} + 1_i * _v1 + 1_i * _v2 == 0_i, ! *selector);
+        propagators.define(initial_state, WeightedPseudoBooleanSum{} + 1_i * _v1 <= -1_i, ! *selector);
+        propagators.define(initial_state, WeightedPseudoBooleanSum{} + -1_i * _v1 <= 0_i, *selector);
     }
 }
 

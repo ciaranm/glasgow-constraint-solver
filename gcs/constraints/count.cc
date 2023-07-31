@@ -50,26 +50,22 @@ auto Count::install(Propagators & propagators, State & initial_state) && -> void
             flags.emplace_back(flag, countb, counts);
 
             // countb -> (var < voi)
-            propagators.define_linear_le(initial_state, WeightedSum{} + 1_i * var + -1_i * _value_of_interest, -1_i, countb);
+            propagators.define(initial_state, WeightedPseudoBooleanSum{} + (1_i * var) + (-1_i * _value_of_interest) <= -1_i, countb);
 
             // ! countb -> (var >= voi)
-            propagators.define_linear_le(initial_state, WeightedSum{} + 1_i * _value_of_interest + -1_i * var, 0_i, ! countb);
+            propagators.define(initial_state, WeightedPseudoBooleanSum{} + (1_i * var) >= (1_i * _value_of_interest), ! countb);
 
             // counts -> (voi < var)
-            propagators.define_linear_le(initial_state, WeightedSum{} + -1_i * var + 1_i * _value_of_interest, -1_i, counts);
+            propagators.define(initial_state, WeightedPseudoBooleanSum{} + (-1_i * var) + (1_i * _value_of_interest) <= -1_i, counts);
 
             // ! counts -> (voi >= var)
-            propagators.define_linear_le(initial_state, WeightedSum{} + -1_i * _value_of_interest + 1_i * var, 0_i, ! counts);
+            propagators.define(initial_state, WeightedPseudoBooleanSum{} + (-1_i * _value_of_interest) + (1_i * var) <= 0_i, ! counts);
 
             // ! countb /\ ! counts -> flag
-            auto forward = WeightedPseudoBooleanSum{} + 1_i * countb + 1_i * counts + 1_i * flag;
+            propagators.define(initial_state, WeightedPseudoBooleanSum{} + 1_i * countb + 1_i * counts + 1_i * flag >= 1_i);
+
             // ! flag \/ (! countb /\ ! counts)
-            auto reverse = WeightedPseudoBooleanSum{} + 2_i * ! flag + 1_i * ! countb + 1_i * ! counts;
-            Integer forward_g = 1_i, reverse_g = 2_i;
-            if (sanitise_pseudoboolean_terms(forward, forward_g))
-                propagators.define_pseudoboolean_ge(initial_state, move(forward), forward_g);
-            if (sanitise_pseudoboolean_terms(reverse, reverse_g))
-                propagators.define_pseudoboolean_ge(initial_state, move(reverse), reverse_g);
+            propagators.define(initial_state, WeightedPseudoBooleanSum{} + 2_i * ! flag + 1_i * ! countb + 1_i * ! counts >= 2_i);
         }
 
         // sum flag == how_many
@@ -82,10 +78,8 @@ auto Count::install(Propagators & propagators, State & initial_state) && -> void
         reverse += 1_i * _how_many;
         Integer forward_g = 0_i, reverse_g = 0_i;
 
-        if (sanitise_pseudoboolean_terms(forward, forward_g))
-            forward_sum_line = propagators.define_pseudoboolean_ge(initial_state, move(forward), forward_g);
-        if (sanitise_pseudoboolean_terms(reverse, reverse_g))
-            reverse_sum_line = propagators.define_pseudoboolean_ge(initial_state, move(reverse), reverse_g);
+        forward_sum_line = propagators.define(initial_state, forward >= forward_g);
+        reverse_sum_line = propagators.define(initial_state, reverse >= reverse_g);
     }
 
     propagators.install(

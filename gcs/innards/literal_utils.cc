@@ -17,13 +17,13 @@ auto gcs::innards::debug_string(const Literal & lit) -> string
     return overloaded{
         [](const LiteralFromIntegerVariable & ilit) -> string {
             switch (ilit.op) {
-            case LiteralFromIntegerVariable::Operator::Equal:
+            case LiteralOperator::Equal:
                 return "intvars[" + debug_string(ilit.var) + "] = " + ilit.value.to_string();
-            case LiteralFromIntegerVariable::Operator::NotEqual:
+            case LiteralOperator::NotEqual:
                 return "intvars[" + debug_string(ilit.var) + "] != " + ilit.value.to_string();
-            case LiteralFromIntegerVariable::Operator::GreaterEqual:
+            case LiteralOperator::GreaterEqual:
                 return "intvars[" + debug_string(ilit.var) + "] >= " + ilit.value.to_string();
-            case LiteralFromIntegerVariable::Operator::Less:
+            case LiteralOperator::Less:
                 return "intvars[" + debug_string(ilit.var) + "] < " + ilit.value.to_string();
             }
             throw NonExhaustiveSwitch{};
@@ -46,10 +46,10 @@ auto gcs::innards::is_literally_true_or_false(const Literal & lit) -> optional<b
                 [&](ViewOfIntegerVariableID) -> optional<bool> { return nullopt; },
                 [&](ConstantIntegerVariableID x) -> optional<bool> {
                     switch (ilit.op) {
-                    case LiteralFromIntegerVariable::Operator::Equal: return x.const_value == ilit.value;
-                    case LiteralFromIntegerVariable::Operator::NotEqual: return x.const_value != ilit.value;
-                    case LiteralFromIntegerVariable::Operator::GreaterEqual: return x.const_value >= ilit.value;
-                    case LiteralFromIntegerVariable::Operator::Less: return x.const_value < ilit.value;
+                    case LiteralOperator::Equal: return x.const_value == ilit.value;
+                    case LiteralOperator::NotEqual: return x.const_value != ilit.value;
+                    case LiteralOperator::GreaterEqual: return x.const_value >= ilit.value;
+                    case LiteralOperator::Less: return x.const_value < ilit.value;
                     }
                     throw NonExhaustiveSwitch{};
                 }}

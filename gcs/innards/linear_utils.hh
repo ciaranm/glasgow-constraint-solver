@@ -44,36 +44,23 @@ namespace gcs::innards
     /**
      * \brief A linear expression with its complicated bits removed.
      *
-     * \sa gcs::innards::sanitise_linear()
-     *
      * \ingroup Innards
      */
-    using SanitisedLinear = std::variant<
+    using TidiedUpLinear = std::variant<
         SumOf<SimpleIntegerVariableID>,
         SumOf<PositiveOrNegative<SimpleIntegerVariableID>>,
         SumOf<Weighted<SimpleIntegerVariableID>>>;
 
     /**
-     * \brief Sanitise a linear equation.
+     * \brief Simplify and classify a linear equation.
      *
      * Figures out whether a linear equation falls into one of the simpler cases
-     * of being a sum, possibly with negatives. This also calls
-     * gcs::simplify_linear().
+     * of being a sum, possibly with negatives. This also simplifies the
+     * equation.
      *
      * \ingroup Innards
      */
-    [[nodiscard]] auto sanitise_linear(const WeightedSum &) -> std::pair<SanitisedLinear, Integer>;
-
-    /**
-     * \brief Simplify a linear equation.
-     *
-     * Deals with constants, groups liked variables, removes zero coefficients,
-     * etc. The second value in the return should be added to the right hand
-     * side of the equation or inequality.
-     *
-     * \ingroup Innards
-     */
-    [[nodiscard]] auto simplify_linear(const WeightedSum &) -> std::pair<SumOf<Weighted<SimpleIntegerVariableID>>, Integer>;
+    [[nodiscard]] auto tidy_up_linear(const WeightedSum &) -> std::pair<TidiedUpLinear, Integer>;
 
     /**
      * \brief Propagate a linear equality or inequality.

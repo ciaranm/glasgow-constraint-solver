@@ -53,7 +53,7 @@ auto Element::install(Propagators & propagators, State & initial_state) && -> vo
         for (const auto & [val_idx, val] : enumerate(_vals))
             if (initial_state.in_domain(_idx, Integer(val_idx))) {
                 // idx == val_idx -> var == vals[val_idx]
-                propagators.define_linear_eq(initial_state, WeightedSum{} + 1_i * _var + -1_i * val, 0_i, _idx == Integer(val_idx));
+                propagators.define(initial_state, WeightedPseudoBooleanSum{} + 1_i * _var + -1_i * val == 0_i, _idx == Integer(val_idx));
             }
     }
 

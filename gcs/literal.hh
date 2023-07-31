@@ -15,6 +15,20 @@ namespace gcs
      */
 
     /**
+     * \brief The operator used by a Literal.
+     *
+     * \see LiteralFrom
+     * \see Literal
+     */
+    enum class LiteralOperator
+    {
+        Equal,
+        NotEqual,
+        GreaterEqual,
+        Less
+    };
+
+    /**
      * \brief A literal, asserting that an IntegerVariableID is equal, not
      * equal, less than, or greater than or equal to an Integer constant.
      *
@@ -24,24 +38,20 @@ namespace gcs
      * \ingroup Core
      * \ingroup Literals
      */
-    struct LiteralFromIntegerVariable final
+    template <typename VariableType_>
+    struct LiteralFrom final
     {
-        IntegerVariableID var;
-        enum class Operator
-        {
-            Equal,
-            NotEqual,
-            GreaterEqual,
-            Less
-        };
-        Operator op;
+        VariableType_ var;
+        LiteralOperator op;
         Integer value;
 
         /**
          * \brief Comparison, no defined meaning but allows for sorting etc.
          */
-        [[nodiscard]] constexpr auto operator<=>(const LiteralFromIntegerVariable &) const = default;
+        [[nodiscard]] constexpr auto operator<=>(const LiteralFrom<VariableType_> &) const = default;
     };
+
+    using LiteralFromIntegerVariable = LiteralFrom<IntegerVariableID>;
 
     /**
      * \brief Create a Literal that the specified IntegerVariableID is equal to
@@ -52,7 +62,7 @@ namespace gcs
      */
     [[nodiscard]] constexpr inline auto operator==(const IntegerVariableID var, const Integer val) -> LiteralFromIntegerVariable
     {
-        return LiteralFromIntegerVariable{var, LiteralFromIntegerVariable::Operator::Equal, val};
+        return LiteralFromIntegerVariable{var, LiteralOperator::Equal, val};
     }
 
     /**
@@ -64,7 +74,7 @@ namespace gcs
      */
     [[nodiscard]] constexpr inline auto operator!=(const IntegerVariableID var, const Integer val) -> LiteralFromIntegerVariable
     {
-        return LiteralFromIntegerVariable{var, LiteralFromIntegerVariable::Operator::NotEqual, val};
+        return LiteralFromIntegerVariable{var, LiteralOperator::NotEqual, val};
     }
 
     /**
@@ -76,7 +86,7 @@ namespace gcs
      */
     [[nodiscard]] constexpr inline auto operator<(const IntegerVariableID var, const Integer val) -> LiteralFromIntegerVariable
     {
-        return LiteralFromIntegerVariable{var, LiteralFromIntegerVariable::Operator::Less, val};
+        return LiteralFromIntegerVariable{var, LiteralOperator::Less, val};
     }
 
     /**
@@ -88,7 +98,7 @@ namespace gcs
      */
     [[nodiscard]] constexpr inline auto operator>=(const IntegerVariableID var, const Integer val) -> LiteralFromIntegerVariable
     {
-        return LiteralFromIntegerVariable{var, LiteralFromIntegerVariable::Operator::GreaterEqual, val};
+        return LiteralFromIntegerVariable{var, LiteralOperator::GreaterEqual, val};
     }
 
     /**

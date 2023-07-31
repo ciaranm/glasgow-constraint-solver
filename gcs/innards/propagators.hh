@@ -109,38 +109,21 @@ namespace gcs::innards
         [[nodiscard]] auto want_definitions() const -> bool;
 
         /**
+         * Add a pseudo-Boolean constraint to a Proof model.
+         */
+        auto define(const State &, const WeightedPseudoBooleanLessEqual & ineq,
+            std::optional<ReificationTerm> half_reif = std::nullopt) -> std::optional<ProofLine>;
+
+        /**
+         * Add a pair of pseudo-Boolean constraints representing an equality to a Proof model.
+         */
+        auto define(const State &, const WeightedPseudoBooleanEquality & eq,
+            std::optional<ReificationTerm> half_reif = std::nullopt) -> std::pair<std::optional<ProofLine>, std::optional<ProofLine>>;
+
+        /**
          * Add a CNF definition to a Proof model.
          */
-        auto define_cnf(const State &, Literals && lits) -> std::optional<ProofLine>;
-
-        /**
-         * Add an at-most-one constraint to a Proof model.
-         */
-        auto define_at_most_one(const State &, Literals && lits) -> std::optional<ProofLine>;
-
-        /**
-         * Add a pseudo-Boolean greater-or-equal constraint to a Proof model.
-         */
-        auto define_pseudoboolean_ge(const State &, WeightedPseudoBooleanSum && lits, Integer,
-            std::optional<ReificationTerm> half_reif = std::nullopt) -> std::optional<ProofLine>;
-
-        /**
-         * Add pseudo-Boolean equality constraints to a Proof model.
-         */
-        auto define_pseudoboolean_eq(const State &, WeightedPseudoBooleanSum && lits, Integer,
-            std::optional<ReificationTerm> half_reif = std::nullopt) -> std::optional<ProofLine>;
-
-        /**
-         * Add a linear less-or-equal constraint to a Proof model.
-         */
-        auto define_linear_le(const State &, const WeightedSum &, Integer value,
-            std::optional<ReificationTerm> half_reif = std::nullopt) -> std::optional<ProofLine>;
-
-        /**
-         * Add linear equality constraint to a Proof model.
-         */
-        auto define_linear_eq(const State &, const WeightedSum &, Integer value,
-            std::optional<ReificationTerm> half_reif = std::nullopt) -> std::optional<ProofLine>;
+        auto define_cnf(const State &, const Literals & lits) -> std::optional<ProofLine>;
 
         ///@}
 
