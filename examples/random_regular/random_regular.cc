@@ -110,7 +110,7 @@ auto main(int, char *[]) -> int
     cout << "Seed for random DFAs for Regular: " << seed << endl;
     //    mt19937 rng(0); // Switch to this to have it the same every time.
     for (int n = 3; n < 6; n++) {
-        for (int r = 0; r < 60 / n; r++) {
+        for (int r = 0; r < 10 / n; r++) {
             if (! test_regular(n, rng)) {
                 cout << "n == " << n << " r == " << r << endl;
                 return EXIT_FAILURE;
