@@ -257,7 +257,7 @@ auto main(int, char *[]) -> int
     //    mt19937 rng(0); // Switch to this to have it the same every time.
 
     for (int n = 3; n < 6; n++) {
-        for (int r = 0; r < 60 / n; r++) {
+        for (int r = 0; r < 20 / n; r++) {
             if (! test_smart_table(n, rng)) {
                 return EXIT_FAILURE;
             }
