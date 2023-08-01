@@ -87,52 +87,7 @@ namespace gcs
      *
      * \ingroup Core
      */
-
-#if (_LIBCPP_VERSION)
-    // Nasty workaround due to <=> not being implemented in libc++ clang
-    // Remove once they fix this
-    struct IntegerVariableID : std::variant<SimpleIntegerVariableID, ViewOfIntegerVariableID, ConstantIntegerVariableID>
-    {
-        using variant::variant;
-
-        constexpr auto operator<=>(const IntegerVariableID & other) const -> std::partial_ordering
-        {
-            if (this->valueless_by_exception() && other.valueless_by_exception()) {
-                return std::strong_ordering::equal;
-            }
-            else if (this->valueless_by_exception()) {
-                return std::strong_ordering::less;
-            }
-            else if (other.valueless_by_exception()) {
-                return std::strong_ordering::greater;
-            }
-            else if (this->index() != other.index()) {
-                return this->index() <=> other.index();
-            }
-            else {
-                std::partial_ordering ret = std::strong_ordering::equal;
-
-                overloaded{
-                    [&ret](const SimpleIntegerVariableID & v, const SimpleIntegerVariableID & w) {
-                        ret = v <=> w;
-                    },
-                    [&ret](const ViewOfIntegerVariableID & v, const ViewOfIntegerVariableID & w) {
-                        ret = v <=> w;
-                    },
-                    [&ret](const ConstantIntegerVariableID & v, const ConstantIntegerVariableID & w) {
-                        ret = v <=> w;
-                    },
-                    [&](const auto &, const auto &) {
-
-                    }}
-                    .visit(*this, other);
-                return ret;
-            }
-        }
-    };
-#else
     using IntegerVariableID = std::variant<SimpleIntegerVariableID, ViewOfIntegerVariableID, ConstantIntegerVariableID>;
-#endif
 
     /**
      * \brief Create an IntegerVariableID for a constant value.
