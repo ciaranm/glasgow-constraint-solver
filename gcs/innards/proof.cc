@@ -55,6 +55,20 @@ namespace
     {
         return to_string(v.raw_value);
     }
+
+    using FlattenedProofLiteral = variant<IntegerVariableCondition, TrueLiteral, FalseLiteral, ProofVariableCondition>;
+
+    auto flatten(const ProofLiteral & lit) -> FlattenedProofLiteral
+    {
+        return overloaded{
+            [&](const Literal & lit) {
+                return visit([&](const auto & v) -> FlattenedProofLiteral { return v; }, lit);
+            },
+            [&](const ProofVariableCondition & cond) -> FlattenedProofLiteral {
+                return cond;
+            }}
+            .visit(lit);
+    }
 }
 
 ProofError::ProofError(const string & w) :
@@ -596,7 +610,7 @@ auto Proof::start_proof(State & state) -> void
         throw ProofError{"Error writing proof file to '" + _imp->proof_file + "'"};
 }
 
-auto Proof::proof_variable(const Literal & lit) const -> const string &
+auto Proof::proof_variable(const ProofLiteral & lit) const -> const string &
 {
     // This might need a design rethink: if we get a constant variable, turn it into either
     // true or false based upon its condition
@@ -606,7 +620,7 @@ auto Proof::proof_variable(const Literal & lit) const -> const string &
                 [&](const SimpleIntegerVariableID &) -> const string & {
                     auto it = _imp->direct_integer_variables.find(cond);
                     if (it == _imp->direct_integer_variables.end())
-                        throw ProofError("No variable exists for literal " + debug_string(lit));
+                        throw ProofError("No variable exists for literal " + debug_string(cond));
                     return it->second;
                 },
                 [&](const ViewOfIntegerVariableID & view) -> const string & {
@@ -633,13 +647,16 @@ auto Proof::proof_variable(const Literal & lit) const -> const string &
                 }}
                 .visit(cond.var);
         },
+        [&](const ProofVariableCondition &) -> const string & {
+            throw UnimplementedException{};
+        },
         [&](const TrueLiteral &) -> const string & {
             throw UnimplementedException{};
         },
         [&](const FalseLiteral &) -> const string & {
             throw UnimplementedException{};
         }}
-        .visit(lit);
+        .visit(flatten(lit));
 }
 
 auto Proof::proof_variable(const ProofFlag & flag) const -> const string &
@@ -650,7 +667,7 @@ auto Proof::proof_variable(const ProofFlag & flag) const -> const string &
     return it->second;
 }
 
-auto Proof::simplify_literal(const Literal & lit) -> SimpleLiteral
+auto Proof::simplify_literal(const ProofLiteral & lit) -> SimpleLiteral
 {
     return overloaded{
         [&](const TrueLiteral & t) -> SimpleLiteral { return t; },
@@ -693,11 +710,14 @@ auto Proof::simplify_literal(const Literal & lit) -> SimpleLiteral
                     throw UnimplementedException{};
                 }}
                 .visit(lit.var);
+        },
+        [&](const ProofVariableCondition & cond) -> SimpleLiteral {
+            return VariableConditionFrom<ProofOnlySimpleIntegerVariableID>{cond.var, cond.op, cond.value};
         }}
-        .visit(lit);
+        .visit(flatten(lit));
 }
 
-auto Proof::need_proof_variable(const Literal & lit) -> void
+auto Proof::need_proof_variable(const ProofLiteral & lit) -> void
 {
     return overloaded{
         [&](const VariableConditionFrom<SimpleIntegerVariableID> & cond) {
@@ -711,6 +731,9 @@ auto Proof::need_proof_variable(const Literal & lit) -> void
                 need_gevar(cond.var, cond.value);
                 break;
             }
+        },
+        [&](const ProofVariableCondition &) {
+            throw UnimplementedException{};
         },
         [&](const TrueLiteral &) {
         },
@@ -729,6 +752,10 @@ auto Proof::add_cnf_to_model(const Literals & lits) -> std::optional<ProofLine>
                 [&](const FalseLiteral &) { return false; },
                 [&](const VariableConditionFrom<SimpleIntegerVariableID> &) -> bool {
                     sum += 1_i * lit;
+                    return false;
+                },
+                [&](const ProofVariableCondition & cond) -> bool {
+                    sum += 1_i * cond;
                     return false;
                 }}
                 .visit(simplify_literal(lit)))
@@ -752,9 +779,9 @@ auto Proof::add_to_model(const WeightedPseudoBooleanLessEqual & ineq, optional<R
     need_all_proof_variables_in(ineq.lhs);
     if (half_reif)
         overloaded{
-            [&] (const ProofFlag &) {},
-            [&] (const Literal & lit) { need_proof_variable(lit); }
-        }.visit(*half_reif);
+            [&](const ProofFlag &) {},
+            [&](const ProofLiteral & lit) { need_proof_variable(lit); }}
+            .visit(*half_reif);
 
     emit_inequality_to(ineq, half_reif, _imp->opb);
     _imp->opb << '\n';
@@ -769,9 +796,9 @@ auto Proof::add_to_model(const WeightedPseudoBooleanEquality & eq, optional<Reif
     need_all_proof_variables_in(eq.lhs);
     if (half_reif)
         overloaded{
-            [&] (const ProofFlag &) {},
-            [&] (const Literal & lit) { need_proof_variable(lit); }
-        }.visit(*half_reif);
+            [&](const ProofFlag &) {},
+            [&](const ProofLiteral & lit) { need_proof_variable(lit); }}
+            .visit(*half_reif);
 
     emit_inequality_to(eq.lhs <= eq.rhs, half_reif, _imp->opb);
     _imp->opb << '\n';
@@ -965,14 +992,17 @@ auto Proof::need_all_proof_variables_in(const SumOf<Weighted<PseudoBooleanTerm>>
     // make sure we have any definitions for things that show up
     for (auto & [_, v] : sum.terms)
         overloaded{
-            [&](const Literal & lit) {
+            [&](const ProofLiteral & lit) {
                 overloaded{
                     [&](const TrueLiteral &) {},
                     [&](const FalseLiteral &) {},
                     [&](const IntegerVariableCondition &) {
                         need_proof_variable(lit);
+                    },
+                    [&](const ProofVariableCondition &) {
+                        need_proof_variable(lit);
                     }}
-                    .visit(lit);
+                    .visit(flatten(lit));
             },
             [&](const ProofFlag &) {},
             [&](const IntegerVariableID &) {},
@@ -992,7 +1022,7 @@ auto Proof::emit_inequality_to(const SumLessEqual<Weighted<PseudoBooleanTerm>> &
             continue;
 
         overloaded{
-            [&](const Literal & lit) {
+            [&](const ProofLiteral & lit) {
                 overloaded{
                     [&](const TrueLiteral &) {
                         rhs += w;
@@ -1001,8 +1031,12 @@ auto Proof::emit_inequality_to(const SumLessEqual<Weighted<PseudoBooleanTerm>> &
                     [&](const IntegerVariableCondition & cond) {
                         stream << -w << " " << proof_variable(cond) << " ";
                         reif_const += max(0_i, w);
+                    },
+                    [&](const ProofVariableCondition & cond) {
+                        stream << -w << " " << proof_variable(cond) << " ";
+                        reif_const += max(0_i, w);
                     }}
-                    .visit(lit);
+                    .visit(flatten(lit));
             },
             [&](const ProofFlag & flag) {
                 stream << -w << " " << proof_variable(flag) << " ";
@@ -1058,15 +1092,18 @@ auto Proof::emit_inequality_to(const SumLessEqual<Weighted<PseudoBooleanTerm>> &
             [&](const ProofFlag & f) {
                 stream << reif_const << " " << proof_variable(! f) << " ";
             },
-            [&](const Literal & lit) {
+            [&](const ProofLiteral & lit) {
                 overloaded{
                     [&](const TrueLiteral &) {
                     },
                     [&](const FalseLiteral &) {
                         throw UnimplementedException{};
                     },
-                    [&](const VariableConditionFrom<SimpleIntegerVariableID> &) {
-                        stream << reif_const << " " << proof_variable(! lit) << " ";
+                    [&](const VariableConditionFrom<SimpleIntegerVariableID> & lit) {
+                        stream << reif_const << " " << proof_variable(! IntegerVariableCondition{lit.var, lit.op, lit.value}) << " ";
+                    },
+                    [&](const ProofVariableCondition & cond) {
+                        stream << reif_const << " " << proof_variable(! cond) << " ";
                     }}
                     .visit(simplify_literal(lit));
             }}
@@ -1095,19 +1132,20 @@ auto Proof::emit_rup_proof_line_under_trail(const State & state, const SumLessEq
 }
 
 auto Proof::emit_red_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
-    const std::vector<std::pair<Literal, Literal>> & witness) -> ProofLine
+    const std::vector<std::pair<ProofLiteral, ProofLiteral>> & witness) -> ProofLine
 {
     need_all_proof_variables_in(ineq.lhs);
 
     _imp->proof << "red ";
     emit_inequality_to(ineq, nullopt, _imp->proof);
 
-    auto witness_literal = [this](const Literal & lit) -> string {
+    auto witness_literal = [this](const ProofLiteral & lit) -> string {
         return overloaded{
             [](const TrueLiteral &) -> string { return "1"; },
             [](const FalseLiteral &) -> string { return "0"; },
-            [this](const IntegerVariableCondition & var) -> string { return proof_variable(var); }}
-            .visit(lit);
+            [this](const IntegerVariableCondition & var) -> string { return proof_variable(var); },
+            [this](const ProofVariableCondition & var) -> string { return proof_variable(var); }}
+            .visit(flatten(lit));
     };
 
     for (auto & [f, t] : witness)

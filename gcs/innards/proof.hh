@@ -79,16 +79,20 @@ namespace gcs::innards
 
     using SimpleOrProofOnlyIntegerVariableID = std::variant<SimpleIntegerVariableID, ProofOnlySimpleIntegerVariableID>;
 
+    using ProofVariableCondition = VariableConditionFrom<ProofOnlySimpleIntegerVariableID>;
+
+    using ProofLiteral = std::variant<Literal, ProofVariableCondition>;
+
     /**
-     * \brief Various things in Proof can reify on either a Literal or a ProofFlag.
+     * \brief Various things in Proof can reify on either a ProofLiteral or a ProofFlag.
      *
      * \ingroup Innards
      * \sa Proof::integer_linear_le()
      */
-    using ReificationTerm = std::variant<Literal, ProofFlag>;
+    using ReificationTerm = std::variant<ProofLiteral, ProofFlag>;
 
     /**
-     * \brief Inside a Proof, a pseudo-Boolean expression can contain a Literal,
+     * \brief Inside a Proof, a pseudo-Boolean expression can contain a ProofLiteral,
      * a ProofFlag, an IntegerVariableID or ProofOnlySimpleIntegerVariableID
      * to be decomposed into its bits, or if you really want, a raw string
      * (mostly for internal use).
@@ -96,7 +100,7 @@ namespace gcs::innards
      * \ingroup Innards
      * \sa Proof::pseudoboolean_ge
      */
-    using PseudoBooleanTerm = std::variant<Literal, ProofFlag, IntegerVariableID, ProofOnlySimpleIntegerVariableID>;
+    using PseudoBooleanTerm = std::variant<ProofLiteral, ProofFlag, IntegerVariableID, ProofOnlySimpleIntegerVariableID>;
 
     using WeightedPseudoBooleanSum = SumOf<Weighted<PseudoBooleanTerm>>;
 
@@ -104,7 +108,8 @@ namespace gcs::innards
 
     using WeightedPseudoBooleanEquality = SumEquals<Weighted<PseudoBooleanTerm>>;
 
-    using SimpleLiteral = std::variant<VariableConditionFrom<SimpleIntegerVariableID>, TrueLiteral, FalseLiteral>;
+    using SimpleLiteral = std::variant<VariableConditionFrom<SimpleIntegerVariableID>,
+        ProofVariableCondition, TrueLiteral, FalseLiteral>;
 
     /**
      * \brief Everything proof-related goes through here.
@@ -130,16 +135,16 @@ namespace gcs::innards
         auto emit_inequality_to(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
             const std::optional<ReificationTerm> &, std::ostream &) -> void;
 
-        [[nodiscard]] auto simplify_literal(const Literal & lit) -> SimpleLiteral;
+        [[nodiscard]] auto simplify_literal(const ProofLiteral & lit) -> SimpleLiteral;
 
-        auto need_proof_variable(const Literal &) -> void;
+        auto need_proof_variable(const ProofLiteral &) -> void;
         auto need_direct_encoding_for(SimpleIntegerVariableID, Integer) -> void;
 
         /**
          * Return the internal name for the variable corresponding to this
-         * Literal. Must call need_proof_variable() first.
+         * ProofLiteral. Must call need_proof_variable() first.
          */
-        [[nodiscard]] auto proof_variable(const Literal &) const -> const std::string &;
+        [[nodiscard]] auto proof_variable(const ProofLiteral &) const -> const std::string &;
 
         /**
          * Return the internal name for the variable corresponding to this
@@ -289,7 +294,7 @@ namespace gcs::innards
          * Emit a RED proof step for the specified expression.
          */
         auto emit_red_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> &,
-            const std::vector<std::pair<Literal, Literal>> & witness) -> ProofLine;
+            const std::vector<std::pair<ProofLiteral, ProofLiteral>> & witness) -> ProofLine;
 
         /**
          * Set things up internally as if the specified variable was a real

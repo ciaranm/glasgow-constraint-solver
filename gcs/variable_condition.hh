@@ -1,6 +1,7 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_VARIABLE_CONDITION_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_VARIABLE_CONDITION_HH
 
+#include <gcs/exception.hh>
 #include <gcs/integer.hh>
 #include <gcs/variable_id.hh>
 
@@ -93,12 +94,26 @@ namespace gcs
     }
 
     /**
-     * \brief Negate an IntegerVariableCondition.
+     * \brief Negate an IntegerVariableCondition or other variable condition.
      *
      * Gives the literal with the opposite meaning, for example equals becomes
      * not equal.
      */
-    [[nodiscard]] auto operator!(const IntegerVariableCondition &) -> IntegerVariableCondition;
+    template <typename VariableType_>
+    [[nodiscard]] inline auto operator!(const VariableConditionFrom<VariableType_> & cond) -> VariableConditionFrom<VariableType_>
+    {
+        switch (cond.op) {
+        case VariableConditionOperator::Equal:
+            return VariableConditionFrom<VariableType_>{cond.var, VariableConditionOperator::NotEqual, cond.value};
+        case VariableConditionOperator::NotEqual:
+            return VariableConditionFrom<VariableType_>{cond.var, VariableConditionOperator::Equal, cond.value};
+        case VariableConditionOperator::Less:
+            return VariableConditionFrom<VariableType_>{cond.var, VariableConditionOperator::GreaterEqual, cond.value};
+        case VariableConditionOperator::GreaterEqual:
+            return VariableConditionFrom<VariableType_>{cond.var, VariableConditionOperator::Less, cond.value};
+        }
+        throw NonExhaustiveSwitch{};
+    }
 }
 
 #endif
