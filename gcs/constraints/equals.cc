@@ -142,15 +142,15 @@ auto EqualsIf::install(Propagators & propagators, State & initial_state) && -> v
         },
         [&](const FalseLiteral &) {
         },
-        [&](const LiteralFromIntegerVariable & cond) {
+        [&](const IntegerVariableCondition & cond) {
             Triggers triggers{.on_change = {_v1, _v2}};
             switch (cond.op) {
-            case LiteralOperator::Less:
-            case LiteralOperator::GreaterEqual:
+            case VariableConditionOperator::Less:
+            case VariableConditionOperator::GreaterEqual:
                 triggers.on_bounds.push_back(cond.var);
                 break;
-            case LiteralOperator::Equal:
-            case LiteralOperator::NotEqual:
+            case VariableConditionOperator::Equal:
+            case VariableConditionOperator::NotEqual:
                 triggers.on_change.push_back(cond.var);
                 break;
             }
@@ -256,15 +256,15 @@ auto EqualsIff::install(Propagators & propagators, State & initial_state) && -> 
         [&](const FalseLiteral &) {
             NotEquals{_v1, _v2}.install(propagators, initial_state);
         },
-        [&](const LiteralFromIntegerVariable & cond) {
+        [&](const IntegerVariableCondition & cond) {
             Triggers triggers{.on_change = {_v1, _v2}};
             switch (cond.op) {
-            case LiteralOperator::Less:
-            case LiteralOperator::GreaterEqual:
+            case VariableConditionOperator::Less:
+            case VariableConditionOperator::GreaterEqual:
                 triggers.on_bounds.push_back(cond.var);
                 break;
-            case LiteralOperator::Equal:
-            case LiteralOperator::NotEqual:
+            case VariableConditionOperator::Equal:
+            case VariableConditionOperator::NotEqual:
                 triggers.on_change.push_back(cond.var);
                 break;
             }

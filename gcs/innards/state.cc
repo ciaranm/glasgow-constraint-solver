@@ -651,8 +651,8 @@ auto State::prove_and_remember_change(const Inference & inference, const HowChan
 auto State::infer(const Literal & lit, const Justification & just) -> Inference
 {
     return overloaded{
-        [&](const LiteralFromIntegerVariable & ilit) -> Inference {
-            return infer(ilit, just);
+        [&](const IntegerVariableCondition & cond) -> Inference {
+            return infer(cond, just);
         },
         [&](const TrueLiteral &) {
             if (_imp->maybe_proof)
@@ -667,17 +667,17 @@ auto State::infer(const Literal & lit, const Justification & just) -> Inference
         .visit(lit);
 }
 
-auto State::infer(const LiteralFromIntegerVariable & ilit, const Justification & just) -> Inference
+auto State::infer(const IntegerVariableCondition & cond, const Justification & just) -> Inference
 {
-    switch (ilit.op) {
-    case LiteralOperator::Equal:
-        return infer_equal(ilit.var, ilit.value, just);
-    case LiteralOperator::NotEqual:
-        return infer_not_equal(ilit.var, ilit.value, just);
-    case LiteralOperator::Less:
-        return infer_less_than(ilit.var, ilit.value, just);
-    case LiteralOperator::GreaterEqual:
-        return infer_greater_than_or_equal(ilit.var, ilit.value, just);
+    switch (cond.op) {
+    case VariableConditionOperator::Equal:
+        return infer_equal(cond.var, cond.value, just);
+    case VariableConditionOperator::NotEqual:
+        return infer_not_equal(cond.var, cond.value, just);
+    case VariableConditionOperator::Less:
+        return infer_less_than(cond.var, cond.value, just);
+    case VariableConditionOperator::GreaterEqual:
+        return infer_greater_than_or_equal(cond.var, cond.value, just);
     }
     throw NonExhaustiveSwitch{};
 }
@@ -1146,28 +1146,28 @@ auto State::log_inferences_to(Proof & p) -> void
 auto State::test_literal(const Literal & lit) const -> LiteralIs
 {
     return overloaded{
-        [&](const LiteralFromIntegerVariable & ilit) -> LiteralIs {
-            return test_literal(ilit);
+        [&](const IntegerVariableCondition & cond) -> LiteralIs {
+            return test_literal(cond);
         },
         [](const TrueLiteral &) { return LiteralIs::DefinitelyTrue; },
         [](const FalseLiteral &) { return LiteralIs::DefinitelyFalse; }}
         .visit(lit);
 }
 
-auto State::test_literal(const LiteralFromIntegerVariable & ilit) const -> LiteralIs
+auto State::test_literal(const IntegerVariableCondition & cond) const -> LiteralIs
 {
-    switch (ilit.op) {
-    case LiteralOperator::Equal:
-        if (! in_domain(ilit.var, ilit.value))
+    switch (cond.op) {
+    case VariableConditionOperator::Equal:
+        if (! in_domain(cond.var, cond.value))
             return LiteralIs::DefinitelyFalse;
-        else if (has_single_value(ilit.var))
+        else if (has_single_value(cond.var))
             return LiteralIs::DefinitelyTrue;
         else
             return LiteralIs::Undecided;
 
-    case LiteralOperator::Less:
-        if (lower_bound(ilit.var) < ilit.value) {
-            if (upper_bound(ilit.var) < ilit.value)
+    case VariableConditionOperator::Less:
+        if (lower_bound(cond.var) < cond.value) {
+            if (upper_bound(cond.var) < cond.value)
                 return LiteralIs::DefinitelyTrue;
             else
                 return LiteralIs::Undecided;
@@ -1175,9 +1175,9 @@ auto State::test_literal(const LiteralFromIntegerVariable & ilit) const -> Liter
         else
             return LiteralIs::DefinitelyFalse;
 
-    case LiteralOperator::GreaterEqual:
-        if (upper_bound(ilit.var) >= ilit.value) {
-            if (lower_bound(ilit.var) >= ilit.value)
+    case VariableConditionOperator::GreaterEqual:
+        if (upper_bound(cond.var) >= cond.value) {
+            if (lower_bound(cond.var) >= cond.value)
                 return LiteralIs::DefinitelyTrue;
             else
                 return LiteralIs::Undecided;
@@ -1185,10 +1185,10 @@ auto State::test_literal(const LiteralFromIntegerVariable & ilit) const -> Liter
         else
             return LiteralIs::DefinitelyFalse;
 
-    case LiteralOperator::NotEqual:
-        if (! in_domain(ilit.var, ilit.value))
+    case VariableConditionOperator::NotEqual:
+        if (! in_domain(cond.var, cond.value))
             return LiteralIs::DefinitelyTrue;
-        else if (has_single_value(ilit.var))
+        else if (has_single_value(cond.var))
             return LiteralIs::DefinitelyFalse;
         else
             return LiteralIs::Undecided;

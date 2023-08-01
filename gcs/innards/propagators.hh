@@ -4,11 +4,10 @@
 #include <gcs/expression.hh>
 #include <gcs/extensional.hh>
 #include <gcs/innards/linear_utils.hh>
-#include <gcs/innards/literal_utils.hh>
+#include <gcs/innards/literal.hh>
 #include <gcs/innards/proof.hh>
 #include <gcs/innards/propagators-fwd.hh>
 #include <gcs/innards/state.hh>
-#include <gcs/literal.hh>
 #include <gcs/problem.hh>
 
 #include <atomic>

@@ -2,13 +2,13 @@ add_library(glasgow_constraint_solver
         constraint.cc
         current_state.cc
         exception.cc
-        literal.cc
         presolver.cc
         problem.cc
         proof_options.cc
         search_heuristics.cc
         solve.cc
         stats.cc
+        variable_condition.cc
         variable_id.cc
         constraints/abs.cc
         constraints/all_different.cc
@@ -32,7 +32,7 @@ add_library(glasgow_constraint_solver
         innards/extensional_utils.cc
         innards/integer_variable_state.cc
         innards/linear_utils.cc
-        innards/literal_utils.cc
+        innards/literal.cc
         innards/opb_utils.cc
         innards/proof.cc
         innards/propagators.cc

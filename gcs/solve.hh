@@ -45,13 +45,13 @@ namespace gcs
 
     /**
      * \brief Called by gcs::solve_with() when branching on the specified
-     * variable, should return a vector of literals that describe a complete
+     * variable, should return a vector of conditions that describe a complete
      * branching choice.
      *
      * \ingroup SolveCallbacks
      * \sa SearchHeuristics
      */
-    using GuessCallback = std::function<auto(const CurrentState &, IntegerVariableID)->std::vector<Literal>>;
+    using GuessCallback = std::function<auto(const CurrentState &, IntegerVariableID)->std::vector<IntegerVariableCondition>>;
 
     /**
      * \brief Called by gcs::solve_with() after the proof has been started.
