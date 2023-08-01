@@ -41,7 +41,6 @@ auto Count::install(Propagators & propagators, State & initial_state) && -> void
     triggers.on_bounds.emplace_back(_how_many);
 
     vector<tuple<ProofFlag, ProofFlag, ProofFlag>> flags;
-    optional<ProofLine> forward_sum_line, reverse_sum_line;
     if (propagators.want_definitions()) {
         for (auto & var : _vars) {
             auto flag = propagators.create_proof_flag("count");
@@ -78,13 +77,13 @@ auto Count::install(Propagators & propagators, State & initial_state) && -> void
         reverse += 1_i * _how_many;
         Integer forward_g = 0_i, reverse_g = 0_i;
 
-        forward_sum_line = propagators.define(initial_state, forward >= forward_g);
-        reverse_sum_line = propagators.define(initial_state, reverse >= reverse_g);
+        propagators.define(initial_state, forward >= forward_g);
+        propagators.define(initial_state, reverse >= reverse_g);
     }
 
     propagators.install(
-        [vars = _vars, value_of_interest = _value_of_interest, how_many = _how_many, flags = flags, forward_sum_line = forward_sum_line,
-            reverse_sum_line = reverse_sum_line](State & state) -> pair<Inference, PropagatorState> {
+        [vars = _vars, value_of_interest = _value_of_interest, how_many = _how_many, flags = flags](
+            State & state) -> pair<Inference, PropagatorState> {
             int how_many_definitely_do_not = 0;
             for (auto & var : vars) {
                 bool seen_any = false;
