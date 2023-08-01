@@ -1022,7 +1022,7 @@ auto Proof::emit_inequality_to(const SumLessEqual<Weighted<PseudoBooleanTerm>> &
             continue;
 
         overloaded{
-            [&](const ProofLiteral & lit) {
+            [&, w = w](const ProofLiteral & lit) {
                 overloaded{
                     [&](const TrueLiteral &) {
                         rhs += w;
@@ -1038,11 +1038,11 @@ auto Proof::emit_inequality_to(const SumLessEqual<Weighted<PseudoBooleanTerm>> &
                     }}
                     .visit(flatten(lit));
             },
-            [&](const ProofFlag & flag) {
+            [&, w = w](const ProofFlag & flag) {
                 stream << -w << " " << proof_variable(flag) << " ";
                 reif_const += max(0_i, w);
             },
-            [&](const IntegerVariableID & var) {
+            [&, w = w](const IntegerVariableID & var) {
                 overloaded{
                     [&](const SimpleIntegerVariableID & var) {
                         auto & [_, bit_vars] = _imp->integer_variable_bits.at(var);
@@ -1076,7 +1076,7 @@ auto Proof::emit_inequality_to(const SumLessEqual<Weighted<PseudoBooleanTerm>> &
                     }}
                     .visit(var);
             },
-            [&](const ProofOnlySimpleIntegerVariableID & var) {
+            [&, w = w](const ProofOnlySimpleIntegerVariableID & var) {
                 auto & [_, bit_vars] = _imp->integer_variable_bits.at(var);
                 for (auto & [bit_value, bit_name] : bit_vars) {
                     stream << -w * bit_value << " " << bit_name << " ";

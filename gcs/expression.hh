@@ -6,6 +6,7 @@
 
 #include <concepts>
 #include <iosfwd>
+#include <tuple>
 #include <vector>
 
 namespace gcs
@@ -26,6 +27,14 @@ namespace gcs
     {
         Integer coefficient;
         Var_ variable;
+
+#if (_LIBCPP_VERSION)
+        // workaround for clang/libcpp on MacOS
+        [[nodiscard]] inline constexpr auto operator<(const Weighted<Var_> & other) const -> bool
+        {
+            return std::tuple{coefficient, variable} < std::tuple{other.coefficient, other.variable};
+        }
+#endif
 
         [[nodiscard]] constexpr auto operator<=>(const Weighted<Var_> &) const = default;
     };
