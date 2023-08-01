@@ -56,15 +56,15 @@ namespace
             bool saw_false = false;
             for (auto & l : _lits)
                 overloaded{
-                    [&](const LiteralFromIntegerVariable & ilit) {
-                        switch (ilit.op) {
-                        case LiteralOperator::Equal:
-                        case LiteralOperator::NotEqual:
-                            triggers.on_change.push_back(ilit.var);
+                    [&](const IntegerVariableCondition & cond) {
+                        switch (cond.op) {
+                        case VariableConditionOperator::Equal:
+                        case VariableConditionOperator::NotEqual:
+                            triggers.on_change.push_back(cond.var);
                             break;
-                        case LiteralOperator::Less:
-                        case LiteralOperator::GreaterEqual:
-                            triggers.on_bounds.push_back(ilit.var);
+                        case VariableConditionOperator::Less:
+                        case VariableConditionOperator::GreaterEqual:
+                            triggers.on_bounds.push_back(cond.var);
                             break;
                         }
                     },

@@ -1,6 +1,6 @@
 #include <gcs/exception.hh>
 #include <gcs/innards/bits_encoding.hh>
-#include <gcs/innards/literal_utils.hh>
+#include <gcs/innards/literal.hh>
 #include <gcs/innards/opb_utils.hh>
 #include <gcs/innards/proof.hh>
 #include <gcs/innards/state.hh>
@@ -80,7 +80,7 @@ struct Proof::Imp
     int active_proof_level = 0;
 
     map<SimpleOrProofOnlyIntegerVariableID, ProofLine> variable_at_least_one_constraints;
-    map<LiteralFromIntegerVariable, string> direct_integer_variables;
+    map<IntegerVariableCondition, string> direct_integer_variables;
     map<SimpleOrProofOnlyIntegerVariableID, pair<Integer, vector<pair<Integer, string>>>> integer_variable_bits;
     map<SimpleOrProofOnlyIntegerVariableID, pair<Integer, Integer>> bounds_for_gevars;
     map<SimpleIntegerVariableID, set<Integer>> gevars_that_exist;
@@ -601,37 +601,37 @@ auto Proof::proof_variable(const Literal & lit) const -> const string &
     // This might need a design rethink: if we get a constant variable, turn it into either
     // true or false based upon its condition
     return overloaded{
-        [&](const LiteralFromIntegerVariable & ilit) -> const string & {
+        [&](const IntegerVariableCondition & cond) -> const string & {
             return overloaded{
                 [&](const SimpleIntegerVariableID &) -> const string & {
-                    auto it = _imp->direct_integer_variables.find(ilit);
+                    auto it = _imp->direct_integer_variables.find(cond);
                     if (it == _imp->direct_integer_variables.end())
                         throw ProofError("No variable exists for literal " + debug_string(lit));
                     return it->second;
                 },
                 [&](const ViewOfIntegerVariableID & view) -> const string & {
-                    switch (ilit.op) {
-                    case LiteralOperator::NotEqual:
-                        return proof_variable(view.actual_variable != (view.negate_first ? -ilit.value + view.then_add : ilit.value - view.then_add));
-                    case LiteralOperator::Equal:
-                        return proof_variable(view.actual_variable == (view.negate_first ? -ilit.value + view.then_add : ilit.value - view.then_add));
-                    case LiteralOperator::Less:
+                    switch (cond.op) {
+                    case VariableConditionOperator::NotEqual:
+                        return proof_variable(view.actual_variable != (view.negate_first ? -cond.value + view.then_add : cond.value - view.then_add));
+                    case VariableConditionOperator::Equal:
+                        return proof_variable(view.actual_variable == (view.negate_first ? -cond.value + view.then_add : cond.value - view.then_add));
+                    case VariableConditionOperator::Less:
                         if (view.negate_first)
-                            return proof_variable(view.actual_variable >= ilit.value - view.then_add + 1_i);
+                            return proof_variable(view.actual_variable >= cond.value - view.then_add + 1_i);
                         else
-                            return proof_variable(view.actual_variable < (ilit.value - view.then_add));
-                    case LiteralOperator::GreaterEqual:
+                            return proof_variable(view.actual_variable < (cond.value - view.then_add));
+                    case VariableConditionOperator::GreaterEqual:
                         if (view.negate_first)
-                            return proof_variable(view.actual_variable < ilit.value - view.then_add + 1_i);
+                            return proof_variable(view.actual_variable < cond.value - view.then_add + 1_i);
                         else
-                            return proof_variable(view.actual_variable >= (ilit.value - view.then_add));
+                            return proof_variable(view.actual_variable >= (cond.value - view.then_add));
                     }
                     throw NonExhaustiveSwitch{};
                 },
                 [&](const ConstantIntegerVariableID &) -> const string & {
                     throw UnimplementedException{};
                 }}
-                .visit(ilit.var);
+                .visit(cond.var);
         },
         [&](const TrueLiteral &) -> const string & {
             throw UnimplementedException{};
@@ -655,35 +655,35 @@ auto Proof::simplify_literal(const Literal & lit) -> SimpleLiteral
     return overloaded{
         [&](const TrueLiteral & t) -> SimpleLiteral { return t; },
         [&](const FalseLiteral & f) -> SimpleLiteral { return f; },
-        [&](const LiteralFromIntegerVariable & lit) -> SimpleLiteral {
+        [&](const IntegerVariableCondition & lit) -> SimpleLiteral {
             return overloaded{
                 [&](const SimpleIntegerVariableID & var) -> SimpleLiteral {
-                    return LiteralFrom<SimpleIntegerVariableID>{var, lit.op, lit.value};
+                    return VariableConditionFrom<SimpleIntegerVariableID>{var, lit.op, lit.value};
                 },
                 [&](const ViewOfIntegerVariableID & view) -> SimpleLiteral {
                     switch (lit.op) {
-                    case LiteralOperator::NotEqual:
-                        return LiteralFrom<SimpleIntegerVariableID>{view.actual_variable, LiteralOperator::NotEqual,
+                    case VariableConditionOperator::NotEqual:
+                        return VariableConditionFrom<SimpleIntegerVariableID>{view.actual_variable, VariableConditionOperator::NotEqual,
                             (view.negate_first ? -lit.value + view.then_add : lit.value - view.then_add)};
                         break;
-                    case LiteralOperator::Equal:
-                        return LiteralFrom<SimpleIntegerVariableID>{view.actual_variable, LiteralOperator::Equal,
+                    case VariableConditionOperator::Equal:
+                        return VariableConditionFrom<SimpleIntegerVariableID>{view.actual_variable, VariableConditionOperator::Equal,
                             view.negate_first ? -lit.value + view.then_add : lit.value - view.then_add};
                         break;
-                    case LiteralOperator::Less:
+                    case VariableConditionOperator::Less:
                         if (view.negate_first)
-                            return LiteralFrom<SimpleIntegerVariableID>{view.actual_variable, LiteralOperator::GreaterEqual,
+                            return VariableConditionFrom<SimpleIntegerVariableID>{view.actual_variable, VariableConditionOperator::GreaterEqual,
                                 lit.value - view.then_add + 1_i};
                         else
-                            return LiteralFrom<SimpleIntegerVariableID>{view.actual_variable, LiteralOperator::Less,
+                            return VariableConditionFrom<SimpleIntegerVariableID>{view.actual_variable, VariableConditionOperator::Less,
                                 (lit.value - view.then_add)};
                         break;
-                    case LiteralOperator::GreaterEqual:
+                    case VariableConditionOperator::GreaterEqual:
                         if (view.negate_first)
-                            return LiteralFrom<SimpleIntegerVariableID>{view.actual_variable, LiteralOperator::Less,
+                            return VariableConditionFrom<SimpleIntegerVariableID>{view.actual_variable, VariableConditionOperator::Less,
                                 lit.value - view.then_add + 1_i};
                         else
-                            return LiteralFrom<SimpleIntegerVariableID>{view.actual_variable, LiteralOperator::GreaterEqual,
+                            return VariableConditionFrom<SimpleIntegerVariableID>{view.actual_variable, VariableConditionOperator::GreaterEqual,
                                 lit.value - view.then_add};
                         break;
                     }
@@ -700,15 +700,15 @@ auto Proof::simplify_literal(const Literal & lit) -> SimpleLiteral
 auto Proof::need_proof_variable(const Literal & lit) -> void
 {
     return overloaded{
-        [&](const LiteralFrom<SimpleIntegerVariableID> & ilit) {
-            switch (ilit.op) {
-            case LiteralOperator::Equal:
-            case LiteralOperator::NotEqual:
-                need_direct_encoding_for(ilit.var, ilit.value);
+        [&](const VariableConditionFrom<SimpleIntegerVariableID> & cond) {
+            switch (cond.op) {
+            case VariableConditionOperator::Equal:
+            case VariableConditionOperator::NotEqual:
+                need_direct_encoding_for(cond.var, cond.value);
                 break;
-            case LiteralOperator::Less:
-            case LiteralOperator::GreaterEqual:
-                need_gevar(ilit.var, ilit.value);
+            case VariableConditionOperator::Less:
+            case VariableConditionOperator::GreaterEqual:
+                need_gevar(cond.var, cond.value);
                 break;
             }
         },
@@ -727,7 +727,7 @@ auto Proof::add_cnf_to_model(const Literals & lits) -> std::optional<ProofLine>
         if (overloaded{
                 [&](const TrueLiteral &) { return true; },
                 [&](const FalseLiteral &) { return false; },
-                [&](const LiteralFrom<SimpleIntegerVariableID> &) -> bool {
+                [&](const VariableConditionFrom<SimpleIntegerVariableID> &) -> bool {
                     sum += 1_i * lit;
                     return false;
                 }}
@@ -969,7 +969,7 @@ auto Proof::need_all_proof_variables_in(const SumOf<Weighted<PseudoBooleanTerm>>
                 overloaded{
                     [&](const TrueLiteral &) {},
                     [&](const FalseLiteral &) {},
-                    [&](const LiteralFromIntegerVariable &) {
+                    [&](const IntegerVariableCondition &) {
                         need_proof_variable(lit);
                     }}
                     .visit(lit);
@@ -998,8 +998,8 @@ auto Proof::emit_inequality_to(const SumLessEqual<Weighted<PseudoBooleanTerm>> &
                         rhs += w;
                     },
                     [&](const FalseLiteral &) {},
-                    [&](const LiteralFromIntegerVariable & ilit) {
-                        stream << -w << " " << proof_variable(ilit) << " ";
+                    [&](const IntegerVariableCondition & cond) {
+                        stream << -w << " " << proof_variable(cond) << " ";
                         reif_const += max(0_i, w);
                     }}
                     .visit(lit);
@@ -1065,7 +1065,7 @@ auto Proof::emit_inequality_to(const SumLessEqual<Weighted<PseudoBooleanTerm>> &
                     [&](const FalseLiteral &) {
                         throw UnimplementedException{};
                     },
-                    [&](const LiteralFrom<SimpleIntegerVariableID> &) {
+                    [&](const VariableConditionFrom<SimpleIntegerVariableID> &) {
                         stream << reif_const << " " << proof_variable(! lit) << " ";
                     }}
                     .visit(simplify_literal(lit));
@@ -1106,7 +1106,7 @@ auto Proof::emit_red_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> 
         return overloaded{
             [](const TrueLiteral &) -> string { return "1"; },
             [](const FalseLiteral &) -> string { return "0"; },
-            [this](const LiteralFromIntegerVariable & var) -> string { return proof_variable(var); }}
+            [this](const IntegerVariableCondition & var) -> string { return proof_variable(var); }}
             .visit(lit);
     };
 

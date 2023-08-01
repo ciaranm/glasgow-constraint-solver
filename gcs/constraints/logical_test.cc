@@ -30,6 +30,7 @@ using std::uniform_int_distribution;
 using std::vector;
 
 using namespace gcs;
+using namespace gcs::innards;
 
 namespace
 {

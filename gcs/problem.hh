@@ -5,10 +5,10 @@
 #include <gcs/expression.hh>
 #include <gcs/innards/proof-fwd.hh>
 #include <gcs/innards/state-fwd.hh>
-#include <gcs/literal.hh>
 #include <gcs/presolver.hh>
 #include <gcs/proof_options.hh>
 #include <gcs/stats.hh>
+#include <gcs/variable_condition.hh>
 #include <gcs/variable_id.hh>
 
 #include <array>

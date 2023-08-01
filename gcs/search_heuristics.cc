@@ -63,8 +63,8 @@ auto gcs::branch_on_dom_then_deg(const Problem & problem) -> BranchCallback
 
 auto gcs::guess_smallest_value_first() -> GuessCallback
 {
-    return [](const CurrentState & state, IntegerVariableID var) -> vector<Literal> {
-        vector<Literal> result;
+    return [](const CurrentState & state, IntegerVariableID var) -> vector<IntegerVariableCondition> {
+        vector<IntegerVariableCondition> result;
         state.for_each_value(var, [&](Integer val) {
             result.push_back(var == val);
         });

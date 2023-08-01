@@ -30,7 +30,7 @@ auto CompareLessThanReif::clone() const -> unique_ptr<Constraint>
 auto CompareLessThanReif::install(Propagators & propagators, State & initial_state) && -> void
 {
     if (propagators.want_definitions()) {
-        auto do_less = [&](IntegerVariableID v1, IntegerVariableID v2, optional<LiteralFromIntegerVariable> cond, bool or_equal) {
+        auto do_less = [&](IntegerVariableID v1, IntegerVariableID v2, optional<IntegerVariableCondition> cond, bool or_equal) {
             propagators.define(initial_state, WeightedPseudoBooleanSum{} + 1_i * v1 + -1_i * v2 <= (or_equal ? 0_i : -1_i), cond);
         };
 
@@ -41,10 +41,10 @@ auto CompareLessThanReif::install(Propagators & propagators, State & initial_sta
             [&](const FalseLiteral &) {
                 do_less(_v2, _v1, nullopt, ! _or_equal);
             },
-            [&](const LiteralFromIntegerVariable & ilit) {
-                do_less(_v1, _v2, ilit, _or_equal);
+            [&](const IntegerVariableCondition & cond) {
+                do_less(_v1, _v2, cond, _or_equal);
                 if (_full_reif)
-                    do_less(_v2, _v1, ! ilit, ! _or_equal);
+                    do_less(_v2, _v1, ! cond, ! _or_equal);
             }}
             .visit(_cond);
     }
@@ -113,7 +113,7 @@ auto CompareLessThanReif::install(Propagators & propagators, State & initial_sta
     overloaded{
         [&](const TrueLiteral &) {},
         [&](const FalseLiteral &) {},
-        [&](const LiteralFromIntegerVariable & ilit) { triggers.on_change.push_back(ilit.var); }}
+        [&](const IntegerVariableCondition & cond) { triggers.on_change.push_back(cond.var); }}
         .visit(_cond);
 
     visit([&](auto & _v1, auto & _v2, auto & _cond) {
