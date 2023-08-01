@@ -47,9 +47,6 @@ namespace gcs
      */
     class Min : public innards::ArrayMinMax
     {
-    private:
-        std::vector<IntegerVariableID> _vs;
-
     public:
         explicit Min(const IntegerVariableID v1, const IntegerVariableID v2, const IntegerVariableID result);
     };
@@ -64,9 +61,6 @@ namespace gcs
      */
     class Max : public innards::ArrayMinMax
     {
-    private:
-        std::vector<IntegerVariableID> _vs;
-
     public:
         explicit Max(const IntegerVariableID v1, const IntegerVariableID v2, const IntegerVariableID result);
     };

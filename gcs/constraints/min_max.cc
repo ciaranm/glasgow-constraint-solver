@@ -127,14 +127,12 @@ auto ArrayMinMax::describe_for_proof() -> string
 }
 
 Min::Min(const IntegerVariableID v1, const IntegerVariableID v2, const IntegerVariableID result) :
-    ArrayMinMax(_vs, result, true),
-    _vs({v1, v2})
+    ArrayMinMax({v1, v2}, result, true)
 {
 }
 
 Max::Max(const IntegerVariableID v1, const IntegerVariableID v2, const IntegerVariableID result) :
-    ArrayMinMax(_vs, result, false),
-    _vs({v1, v2})
+    ArrayMinMax({v1, v2}, result, false)
 {
 }
 
