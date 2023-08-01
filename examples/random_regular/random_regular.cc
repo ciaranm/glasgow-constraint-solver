@@ -65,41 +65,40 @@ auto test_regular(const int & n, mt19937 & rng)
     string_rep << "#accepting\n";
     for (const auto & i : final_states) {
         string_rep << "s" << i << "\n";
-
-        string_rep << "#alphabet\n";
-        vector<Integer> symbols{};
-        for (int i = 0; i < n; i++) {
-            symbols.emplace_back(i);
-            string_rep << i << "\n";
-        }
-
-        string_rep << "#transitions\n";
-        vector<vector<long>> transitions(num_states, vector<long>(n));
-        for (int i = 0; i < num_states; i++) {
-            for (int j = 0; j < n; j++) {
-                transitions[i][j] = dist_m1_to_num_states(rng);
-                if (transitions[i][j] != -1)
-                    string_rep << "s" << i << ":" << j << ">s" << transitions[i][j] << "\n";
-            }
-        }
-
-        p.post(Regular{x, symbols, num_states, transitions, final_states});
-
-        auto stats = solve_with(p,
-            SolveCallbacks{
-                .solution = [&](const CurrentState &) -> bool {
-                    return true;
-                }},
-            ProofOptions{"random_regular.opb", "random_regular.veripb"});
-
-        //        cout << "Num solutions: " << stats.solutions << endl;
-        if (0 != system("veripb random_regular.opb random_regular.veripb")) {
-            cout << string_rep.str() << endl;
-            return false;
-        }
-
-        return true;
     }
+    string_rep << "#alphabet\n";
+    vector<Integer> symbols{};
+    for (int i = 0; i < n; i++) {
+        symbols.emplace_back(i);
+        string_rep << i << "\n";
+    }
+
+    string_rep << "#transitions\n";
+    vector<vector<long>> transitions(num_states, vector<long>(n));
+    for (int i = 0; i < num_states; i++) {
+        for (int j = 0; j < n; j++) {
+            transitions[i][j] = dist_m1_to_num_states(rng);
+            if (transitions[i][j] != -1)
+                string_rep << "s" << i << ":" << j << ">s" << transitions[i][j] << "\n";
+        }
+    }
+
+    p.post(Regular{x, symbols, num_states, transitions, final_states});
+
+    auto stats = solve_with(p,
+        SolveCallbacks{
+            .solution = [&](const CurrentState &) -> bool {
+                return true;
+            }},
+        ProofOptions{"random_regular.opb", "random_regular.veripb"});
+
+    //        cout << "Num solutions: " << stats.solutions << endl;
+    if (0 != system("veripb random_regular.opb random_regular.veripb")) {
+        cout << string_rep.str() << endl;
+        return false;
+    }
+
+    return true;
 }
 
 auto main(int, char *[]) -> int
