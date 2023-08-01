@@ -55,7 +55,7 @@ namespace gcs
 
     using Circuit = CircuitPrevent;
 
-    auto propagate_non_gac_alldifferent(const std::optional<IntegerVariableID> & trigger_var,
+    auto propagate_non_gac_alldifferent_single(const std::optional<IntegerVariableID> & trigger_var,
         const std::vector<IntegerVariableID> & succ, innards::State & state) -> innards::Inference;
 }
 

@@ -79,6 +79,17 @@ auto output_cycle_to_proof(const vector<IntegerVariableID> & succ,
     to_delete.push_back(proof.emit_proof_line(proof_step.str()));
 }
 
+// auto propagate_circuit_using_prevent_faster(const vector<IntegerVariableID> & succ,
+//     const ProofLine2DMap & lines_for_setting_pos,
+//     State & state)
+//{
+//     auto n = succ.size();
+//
+//     auto end = vector<Integer>(n, -1_i);
+//
+//     vector<long> to_
+// }
+
 // Slightly more complex propagator than simple checking: prevent small cycles by finding chains and removing the head from the domain
 // of the tail.
 auto propagate_circuit_using_prevent(const vector<IntegerVariableID> & succ,
@@ -91,7 +102,7 @@ auto propagate_circuit_using_prevent(const vector<IntegerVariableID> & succ,
 {
     // propagate all-different first, to avoid infinite loops
     // Have to use check first
-    auto result = propagate_non_gac_alldifferent(trigger_var, succ, state);
+    auto result = propagate_non_gac_alldifferent_single(trigger_var, succ, state);
     if (result == Inference::Contradiction) return Inference::Contradiction;
 
     auto & chain = any_cast<Chain &>(state.get_constraint_state(chain_handle));

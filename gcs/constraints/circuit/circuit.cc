@@ -62,7 +62,6 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state) -> pa
     vector<PseudoBooleanTerm> position;
     if (propagators.want_definitions()) {
 
-
         auto n_minus_1 = ConstantIntegerVariableID{Integer{static_cast<long long>(_succ.size() - 1)}};
 
         // Need extra proof variable: pos[i] = j means "the ith node visited in the circuit is the jth var"
@@ -123,7 +122,7 @@ auto CircuitBase::describe_for_proof() -> std::string
     return "circuit (all different + no sub-cycles)";
 }
 
-auto gcs::propagate_non_gac_alldifferent(const optional<IntegerVariableID> & trigger_var,
+auto gcs::propagate_non_gac_alldifferent_single(const optional<IntegerVariableID> & trigger_var,
     const vector<IntegerVariableID> & succ, State & state) -> Inference
 {
     auto result = Inference::NoChange;
