@@ -129,7 +129,7 @@ namespace gcs::innards
         auto set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::string &) -> void;
         auto set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::string &) -> void;
 
-        auto need_all_proof_variables_in(const SumOf<Weighted<PseudoBooleanTerm>> & sum) -> void;
+        auto need_all_proof_names_in(const SumOf<Weighted<PseudoBooleanTerm>> & sum) -> void;
 
         auto emit_sum_to(const SumOf<Weighted<PseudoBooleanTerm>> & ineq, std::ostream &) -> void;
         auto emit_inequality_to(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
@@ -137,20 +137,20 @@ namespace gcs::innards
 
         [[nodiscard]] auto simplify_literal(const ProofLiteral & lit) -> SimpleLiteral;
 
-        auto need_proof_variable(const ProofLiteral &) -> void;
+        auto need_proof_name(const ProofLiteral &) -> void;
         auto need_direct_encoding_for(SimpleIntegerVariableID, Integer) -> void;
 
         /**
          * Return the internal name for the variable corresponding to this
-         * ProofLiteral. Must call need_proof_variable() first.
+         * ProofLiteral. Must call need_proof_name() first.
          */
-        [[nodiscard]] auto proof_variable(const ProofLiteral &) const -> const std::string &;
+        [[nodiscard]] auto proof_name(const ProofLiteral &) const -> const std::string &;
 
         /**
          * Return the internal name for the variable corresponding to this
          * ProofFlag.
          */
-        [[nodiscard]] auto proof_variable(const ProofFlag &) const -> const std::string &;
+        [[nodiscard]] auto proof_name(const ProofFlag &) const -> const std::string &;
 
     public:
         /**
@@ -298,7 +298,7 @@ namespace gcs::innards
 
         /**
          * Set things up internally as if the specified variable was a real
-         * variable, so that proof_variable() etc will work with it.
+         * variable, so that proof_name() etc will work with it.
          */
         auto create_literals_for_introduced_variable_value(
             SimpleIntegerVariableID, Integer, const std::optional<std::string> &) -> void;
