@@ -228,7 +228,7 @@ auto test_smart_table(const int & n, mt19937 & rng)
 
     p.post(SmartTable{x, tuples});
 
-    auto stats = solve_with(p,
+    solve_with(p,
         SolveCallbacks{
             .solution = [&](const CurrentState &) -> bool {
                 //                        cout << "x = [ ";

@@ -85,7 +85,7 @@ auto test_regular(const int & n, mt19937 & rng)
 
     p.post(Regular{x, symbols, num_states, transitions, final_states});
 
-    auto stats = solve_with(p,
+    solve_with(p,
         SolveCallbacks{
             .solution = [&](const CurrentState &) -> bool {
                 return true;
