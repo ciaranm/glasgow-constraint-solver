@@ -19,17 +19,10 @@ auto gcs::innards::debug_string(const IntegerVariableID & var) -> string
             return "varidx " + to_string(x.index);
         },
         [](ViewOfIntegerVariableID x) {
-            return "view " + (x.negate_first ? "-"s : ""s) + debug_string(VariableID{x.actual_variable}) + " + " + to_string(x.then_add.raw_value);
+            return "view " + (x.negate_first ? "-"s : ""s) + debug_string(x.actual_variable) + " + " + to_string(x.then_add.raw_value);
         },
         [](ConstantIntegerVariableID x) {
             return "const " + to_string(x.const_value.raw_value);
         }}
-        .visit(var);
-}
-
-auto gcs::innards::debug_string(const VariableID & var) -> string
-{
-    return overloaded{
-        [](IntegerVariableID v) { return "int " + debug_string(v); }}
         .visit(var);
 }

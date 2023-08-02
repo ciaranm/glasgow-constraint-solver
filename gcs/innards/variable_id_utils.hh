@@ -38,13 +38,6 @@ namespace gcs::innards
      * \ingroup Innards
      */
     [[nodiscard]] auto debug_string(const IntegerVariableID &) -> std::string;
-
-    /**
-     * Convert a VariableID into a roughly-readable string, for debugging.
-     *
-     * \ingroup Innards
-     */
-    [[nodiscard]] auto debug_string(const VariableID &) -> std::string;
 }
 
 #endif

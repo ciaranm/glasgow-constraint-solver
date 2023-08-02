@@ -11,7 +11,7 @@
 namespace gcs
 {
     /**
-     * \brief A VariableID corresponding to a genuine, simple integer variable.
+     * \brief An IntegerVariableID corresponding to a genuine, simple integer variable.
      *
      * Usually you can work with IntegerVariableID instead, but some operations
      * specifically require a genuine variable.
@@ -32,7 +32,7 @@ namespace gcs
     };
 
     /**
-     * \brief A VariableID corresponding to a SimpleIntegerVariableID, but
+     * \brief An IntegerVariableID corresponding to a SimpleIntegerVariableID, but
      * possibly negated, and possibly with a constant added to its value.
      *
      * Usually this will be constructed using `var + 42_i` or `-var`.
@@ -153,15 +153,6 @@ namespace gcs
      * \sa ViewOfIntegerVariableID
      */
     [[nodiscard]] auto operator-(IntegerVariableID v) -> IntegerVariableID;
-
-    /**
-     * \brief Currently, we only have integer variables, so a VariableID is an
-     * IntegerVariableID.
-     *
-     * \ingroup Core
-     * \sa IntegerVariableID
-     */
-    using VariableID = std::variant<IntegerVariableID>;
 }
 
 template <>
