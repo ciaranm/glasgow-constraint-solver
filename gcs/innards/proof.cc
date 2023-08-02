@@ -719,7 +719,7 @@ auto Proof::add_cnf_to_model(const Literals & lits) -> std::optional<ProofLine>
         if (overloaded{
                 [&](const TrueLiteral &) { return true; },
                 [&](const FalseLiteral &) { return false; },
-                [&](const VariableConditionFrom<auto> & cond) -> bool {
+                [&]<typename T_>(const VariableConditionFrom<T_> & cond) -> bool {
                     sum += 1_i * cond;
                     return false;
                 }}
@@ -749,7 +749,7 @@ auto Proof::add_to_model(const WeightedPseudoBooleanLessEqual & ineq, optional<R
                 overloaded{
                     [&](const TrueLiteral &) {},
                     [&](const FalseLiteral &) {},
-                    [&](const VariableConditionFrom<auto> & cond) { need_proof_name(cond); }}
+                    [&]<typename T_>(const VariableConditionFrom<T_> & cond) { need_proof_name(cond); }}
                     .visit(simplify_literal(lit));
             }}
             .visit(*half_reif);
@@ -772,7 +772,7 @@ auto Proof::add_to_model(const WeightedPseudoBooleanEquality & eq, optional<Reif
                 overloaded{
                     [&](const TrueLiteral &) {},
                     [&](const FalseLiteral &) {},
-                    [&](const VariableConditionFrom<auto> & cond) { need_proof_name(cond); }}
+                    [&]<typename T_>(const VariableConditionFrom<T_> & cond) { need_proof_name(cond); }}
                     .visit(simplify_literal(lit));
             }}
             .visit(*half_reif);
@@ -922,7 +922,7 @@ auto Proof::infer(const State & state, const Literal & lit, const Justification 
         overloaded{
             [&](const TrueLiteral &) {},
             [&](const FalseLiteral &) {},
-            [&](const VariableConditionFrom<auto> & cond) { need_proof_name(cond); }}
+            [&]<typename T_>(const VariableConditionFrom<T_> & cond) { need_proof_name(cond); }}
             .visit(simplify_literal(lit));
     };
 
@@ -986,7 +986,7 @@ auto Proof::need_all_proof_names_in(const SumOf<Weighted<PseudoBooleanTerm>> & s
                 overloaded{
                     [&](const TrueLiteral &) {},
                     [&](const FalseLiteral &) {},
-                    [&](const VariableConditionFrom<auto> & cond) {
+                    [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
                         need_proof_name(cond);
                     }}
                     .visit(simplify_literal(lit));
@@ -1015,7 +1015,7 @@ auto Proof::emit_inequality_to(const SumLessEqual<Weighted<PseudoBooleanTerm>> &
                         rhs += w;
                     },
                     [&](const FalseLiteral &) {},
-                    [&](const VariableConditionFrom<auto> & cond) {
+                    [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
                         stream << -w << " " << proof_name(cond) << " ";
                         reif_const += max(0_i, w);
                     }}
@@ -1082,7 +1082,7 @@ auto Proof::emit_inequality_to(const SumLessEqual<Weighted<PseudoBooleanTerm>> &
                     [&](const FalseLiteral &) {
                         throw UnimplementedException{};
                     },
-                    [&](const VariableConditionFrom<auto> & cond) {
+                    [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
                         stream << reif_const << " " << proof_name(! cond) << " ";
                     }}
                     .visit(simplify_literal(lit));
@@ -1123,7 +1123,7 @@ auto Proof::emit_red_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> 
         return overloaded{
             [](const TrueLiteral &) -> string { return "1"; },
             [](const FalseLiteral &) -> string { return "0"; },
-            [this](const VariableConditionFrom<auto> & var) -> string { return proof_name(var); }}
+            [this]<typename T_>(const VariableConditionFrom<T_> & var) -> string { return proof_name(var); }}
             .visit(simplify_literal(lit));
     };
 
@@ -1238,7 +1238,7 @@ auto Proof::get_or_emit_pol_term_for_bound_in_bits(State & state, bool upper,
         overloaded{
             [&](const TrueLiteral &) {},
             [&](const FalseLiteral &) { throw UnimplementedException{}; },
-            [&](const VariableConditionFrom<auto> & cond) { step << " " << big_number << " " << proof_name(! cond); }}
+            [&]<typename T_>(const VariableConditionFrom<T_> & cond) { step << " " << big_number << " " << proof_name(! cond); }}
             .visit(simplify_literal(lit));
     });
 
