@@ -37,4 +37,10 @@ TEST_CASE("Tidy up linear")
 
     auto l5 = WeightedSum{} + 2_i * v1 + 2_i * (-v2 + 1_i);
     CHECK(tidy_up_linear(l5) == pair{TidiedUpLinear{SumOf<Weighted<SimpleIntegerVariableID>>{{Weighted<SimpleIntegerVariableID>{2_i, v1}, Weighted<SimpleIntegerVariableID>{-2_i, v2}}}}, -2_i});
+
+    auto l6 = WeightedSum{} + 0_i * v1 + 0_i * v2;
+    CHECK(tidy_up_linear(l6) == pair{TidiedUpLinear{SumOf<SimpleIntegerVariableID>{{}}}, 0_i});
+
+    auto l7 = WeightedSum{} + 0_i * v1 + 0_i * v2 + 6_i * 1_c;
+    CHECK(tidy_up_linear(l7) == pair{TidiedUpLinear{SumOf<SimpleIntegerVariableID>{{}}}, -6_i});
 }

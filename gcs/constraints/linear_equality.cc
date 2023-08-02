@@ -175,6 +175,13 @@ auto LinearEquality::install(Propagators & propagators, State & initial_state) &
 
     auto [sanitised_cv, modifier] = tidy_up_linear(_coeff_vars);
 
+    if (visit([](const auto & s) { return s.terms.empty(); }, sanitised_cv) && modifier != _value) {
+        propagators.install([](State & state) -> pair<Inference, PropagatorState> {
+            return pair{state.infer(FalseLiteral{}, JustifyUsingRUP{}), PropagatorState::Enable};
+        },
+            Triggers{}, "empty linear equality");
+    }
+
     Triggers triggers;
     for (auto & [_, v] : _coeff_vars.terms)
         triggers.on_bounds.push_back(v);
@@ -246,6 +253,13 @@ auto LinearInequality::install(Propagators & propagators, State & initial_state)
     }
 
     auto [sanitised_cv, modifier] = tidy_up_linear(_coeff_vars);
+
+    if (visit([](const auto & s) { return s.terms.empty(); }, sanitised_cv) && modifier > _value) {
+        propagators.install([](State & state) -> pair<Inference, PropagatorState> {
+            return pair{state.infer(FalseLiteral{}, JustifyUsingRUP{}), PropagatorState::Enable};
+        },
+            Triggers{}, "empty linear equality");
+    }
 
     Triggers triggers;
     for (auto & [_, v] : _coeff_vars.terms)
