@@ -26,6 +26,7 @@ using std::pair;
 using std::random_device;
 using std::shuffle;
 using std::ssize;
+using std::stoll;
 using std::string;
 using std::stringstream;
 using std::uniform_int_distribution;
@@ -248,10 +249,14 @@ auto test_smart_table(const int & n, mt19937 & rng)
     // cout << string_rep.str() << endl;
     return true;
 }
-auto main(int, char *[]) -> int
+auto main(int argc, char * argv[]) -> int
 {
     random_device rand_dev;
     auto seed = rand_dev();
+
+    if (argc == 2)
+        seed = stoll(argv[1]);
+
     std::mt19937 rng(seed);
     cout << "Seed for random smart tables: " << seed << endl;
     //    mt19937 rng(0); // Switch to this to have it the same every time.
