@@ -667,7 +667,8 @@ auto State::infer(const Literal & lit, const Justification & just) -> Inference
         .visit(lit);
 }
 
-auto State::infer(const IntegerVariableCondition & cond, const Justification & just) -> Inference
+template <IntegerVariableIDLike VarType_>
+auto State::infer(const VariableConditionFrom<VarType_> & cond, const Justification & just) -> Inference
 {
     switch (cond.op) {
     case VariableConditionOperator::Equal:
@@ -1291,6 +1292,11 @@ namespace gcs
     template auto State::for_each_value_while_immutable(const SimpleIntegerVariableID &, const std::function<auto(Integer)->bool> &) const -> bool;
     template auto State::for_each_value_while_immutable(const ViewOfIntegerVariableID &, const std::function<auto(Integer)->bool> &) const -> bool;
     template auto State::for_each_value_while_immutable(const ConstantIntegerVariableID &, const std::function<auto(Integer)->bool> &) const -> bool;
+
+    template auto State::infer(const VariableConditionFrom<IntegerVariableID> &, const Justification &) -> Inference;
+    template auto State::infer(const VariableConditionFrom<SimpleIntegerVariableID> &, const Justification &) -> Inference;
+    template auto State::infer(const VariableConditionFrom<ViewOfIntegerVariableID> &, const Justification &) -> Inference;
+    template auto State::infer(const VariableConditionFrom<ConstantIntegerVariableID> &, const Justification &) -> Inference;
 
     template auto State::infer_equal(const IntegerVariableID &, Integer, const Justification &) -> Inference;
     template auto State::infer_equal(const SimpleIntegerVariableID &, Integer, const Justification &) -> Inference;

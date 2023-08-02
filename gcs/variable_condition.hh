@@ -51,9 +51,46 @@ namespace gcs
          * \brief Comparison, no defined meaning but allows for sorting etc.
          */
         [[nodiscard]] constexpr auto operator<=>(const VariableConditionFrom<VariableType_> &) const = default;
+
+        template <typename OtherVariableType_>
+        [[nodiscard]] inline constexpr operator VariableConditionFrom<OtherVariableType_>() const
+            requires std::constructible_from<OtherVariableType_, VariableType_>
+        {
+            return VariableConditionFrom<OtherVariableType_>{var, op, value};
+        }
     };
 
     using IntegerVariableCondition = VariableConditionFrom<IntegerVariableID>;
+
+    template <typename T_>
+    constexpr auto enable_conditional_variable_operators() -> bool
+    {
+        return false;
+    }
+
+    template <>
+    constexpr auto enable_conditional_variable_operators<IntegerVariableID>() -> bool
+    {
+        return true;
+    }
+
+    template <>
+    constexpr auto enable_conditional_variable_operators<SimpleIntegerVariableID>() -> bool
+    {
+        return true;
+    }
+
+    template <>
+    constexpr auto enable_conditional_variable_operators<ConstantIntegerVariableID>() -> bool
+    {
+        return true;
+    }
+
+    template <>
+    constexpr auto enable_conditional_variable_operators<ViewOfIntegerVariableID>() -> bool
+    {
+        return true;
+    }
 
     /**
      * \brief Create an IntegerVariableCondition that the specified IntegerVariableID is equal to
@@ -62,9 +99,11 @@ namespace gcs
      * \ingroup Literals
      * \see IntegerVariableCondition
      */
-    [[nodiscard]] constexpr inline auto operator==(const IntegerVariableID var, const Integer val) -> IntegerVariableCondition
+    template <typename VariableType_>
+        requires(enable_conditional_variable_operators<VariableType_>())
+    [[nodiscard]] constexpr inline auto operator==(const VariableType_ & var, Integer val) -> VariableConditionFrom<VariableType_>
     {
-        return IntegerVariableCondition{var, VariableConditionOperator::Equal, val};
+        return VariableConditionFrom<VariableType_>{var, VariableConditionOperator::Equal, val};
     }
 
     /**
@@ -74,9 +113,11 @@ namespace gcs
      * \ingroup Literals
      * \see IntegerVariableCondition
      */
-    [[nodiscard]] constexpr inline auto operator!=(const IntegerVariableID var, const Integer val) -> IntegerVariableCondition
+    template <typename VariableType_>
+        requires(enable_conditional_variable_operators<VariableType_>())
+    [[nodiscard]] constexpr inline auto operator!=(const VariableType_ & var, const Integer val) -> VariableConditionFrom<VariableType_>
     {
-        return IntegerVariableCondition{var, VariableConditionOperator::NotEqual, val};
+        return VariableConditionFrom<VariableType_>{var, VariableConditionOperator::NotEqual, val};
     }
 
     /**
@@ -86,9 +127,11 @@ namespace gcs
      * \ingroup Literals
      * \see IntegerVariableCondition
      */
-    [[nodiscard]] constexpr inline auto operator<(const IntegerVariableID var, const Integer val) -> IntegerVariableCondition
+    template <typename VariableType_>
+        requires(enable_conditional_variable_operators<VariableType_>())
+    [[nodiscard]] constexpr inline auto operator<(const VariableType_ & var, const Integer val) -> VariableConditionFrom<VariableType_>
     {
-        return IntegerVariableCondition{var, VariableConditionOperator::Less, val};
+        return VariableConditionFrom<VariableType_>{var, VariableConditionOperator::Less, val};
     }
 
     /**
@@ -98,9 +141,11 @@ namespace gcs
      * \ingroup Literals
      * \see IntegerVariableCondition
      */
-    [[nodiscard]] constexpr inline auto operator>=(const IntegerVariableID var, const Integer val) -> IntegerVariableCondition
+    template <typename VariableType_>
+        requires(enable_conditional_variable_operators<VariableType_>())
+    [[nodiscard]] constexpr inline auto operator>=(const VariableType_ & var, const Integer val) -> VariableConditionFrom<VariableType_>
     {
-        return IntegerVariableCondition{var, VariableConditionOperator::GreaterEqual, val};
+        return VariableConditionFrom<VariableType_>{var, VariableConditionOperator::GreaterEqual, val};
     }
 
     /**

@@ -77,6 +77,8 @@ namespace gcs::innards
         [[nodiscard]] auto operator<=>(const ProofOnlySimpleIntegerVariableID &) const = default;
     };
 
+    [[nodiscard]] auto debug_string(const ProofOnlySimpleIntegerVariableID &) -> std::string;
+
     using SimpleOrProofOnlyIntegerVariableID = std::variant<SimpleIntegerVariableID, ProofOnlySimpleIntegerVariableID>;
 
     using ProofVariableCondition = VariableConditionFrom<ProofOnlySimpleIntegerVariableID>;
@@ -124,33 +126,24 @@ namespace gcs::innards
 
         [[nodiscard]] auto xify(std::string &&) -> std::string;
 
-        auto need_gevar(SimpleIntegerVariableID id, Integer v) -> void;
+        auto need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> void;
 
         auto set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::string &) -> void;
         auto set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::string &) -> void;
 
-        auto need_all_proof_names_in(const SumOf<Weighted<PseudoBooleanTerm>> & sum) -> void;
-
-        auto emit_sum_to(const SumOf<Weighted<PseudoBooleanTerm>> & ineq, std::ostream &) -> void;
         auto emit_inequality_to(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
             const std::optional<ReificationTerm> &, std::ostream &) -> void;
 
         [[nodiscard]] auto simplify_literal(const ProofLiteral & lit) -> SimpleLiteral;
 
-        auto need_proof_name(const ProofLiteral &) -> void;
-        auto need_direct_encoding_for(SimpleIntegerVariableID, Integer) -> void;
+        auto need_proof_name(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> &) -> void;
 
-        /**
-         * Return the internal name for the variable corresponding to this
-         * ProofLiteral. Must call need_proof_name() first.
-         */
-        [[nodiscard]] auto proof_name(const ProofLiteral &) const -> const std::string &;
-
-        /**
-         * Return the internal name for the variable corresponding to this
-         * ProofFlag.
-         */
+        [[nodiscard]] auto proof_name(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> &) const -> const std::string &;
         [[nodiscard]] auto proof_name(const ProofFlag &) const -> const std::string &;
+
+        auto need_all_proof_names_in(const SumOf<Weighted<PseudoBooleanTerm>> & sum) -> void;
+
+        auto need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID, Integer) -> void;
 
     public:
         /**
@@ -311,12 +304,6 @@ namespace gcs::innards
         ///@{
 
         /**
-         * Return the sequence of current guesses, formatted for use in a "u"
-         * line, each with the given coefficient.
-         */
-        [[nodiscard]] auto trail_variables_for_rup(const State &, Integer coeff) -> std::string;
-
-        /**
          * Return the sequence of current guesses, each with the given coefficient.
          */
         [[nodiscard]] auto trail_variables_as_sum(const State &, Integer coeff) -> WeightedPseudoBooleanSum;
@@ -360,6 +347,21 @@ namespace gcs::innards
 
         ///@}
     };
+}
+
+namespace gcs
+{
+    template <>
+    constexpr auto enable_conditional_variable_operators<innards::ProofOnlySimpleIntegerVariableID>() -> bool
+    {
+        return true;
+    }
+
+    template <>
+    constexpr auto enable_conditional_variable_operators<innards::SimpleOrProofOnlyIntegerVariableID>() -> bool
+    {
+        return true;
+    }
 }
 
 #endif

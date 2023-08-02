@@ -193,7 +193,8 @@ namespace gcs::innards
          * Infer that a Literal must hold, for the specified Justification. Performance overload for if we
          * know we have an IntegerVariableCondition.
          */
-        [[nodiscard]] auto infer(const IntegerVariableCondition & lit, const Justification & why) -> Inference;
+        template <IntegerVariableIDLike VarType_>
+        [[nodiscard]] auto infer(const VariableConditionFrom<VarType_> & lit, const Justification & why) -> Inference;
 
         /**
          * Infer nothing, but still emit a justification if necessary.
