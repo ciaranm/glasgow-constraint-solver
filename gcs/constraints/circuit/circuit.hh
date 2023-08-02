@@ -7,11 +7,12 @@
 #include <gcs/innards/proof-fwd.hh>
 #include <gcs/innards/proof.hh>
 
+#include <gcs/innards/state.hh>
 #include <gcs/variable_id.hh>
+#include <list>
 #include <map>
 #include <optional>
 #include <vector>
-
 namespace gcs
 {
     using ProofLine2DMap = std::map<std::pair<Integer, Integer>, innards::ProofLine>;
@@ -28,10 +29,10 @@ namespace gcs
     protected:
         const bool _gac_all_different;
         const std::vector<IntegerVariableID> _succ;
-        virtual auto set_up(innards::Propagators &, innards::State &) -> std::pair<std::vector<innards::PseudoBooleanTerm>, ProofLine2DMap>;
+        virtual auto set_up(innards::Propagators &, innards::State &) -> std::tuple<std::vector<innards::PseudoBooleanTerm>, ProofLine2DMap, innards::ConstraintStateHandle>;
 
     public:
-        explicit CircuitBase(std::vector<IntegerVariableID> var, bool gac_all_different = true);
+        explicit CircuitBase(std::vector<IntegerVariableID> var, bool gac_all_different = false);
         virtual auto clone() const -> std::unique_ptr<Constraint> = 0;
         virtual auto describe_for_proof() -> std::string override;
         //        virtual auto install(innards::Propagators &, innards::State &) && -> void = 0;
@@ -55,8 +56,13 @@ namespace gcs
 
     using Circuit = CircuitPrevent;
 
-    auto propagate_non_gac_alldifferent_single(const std::optional<IntegerVariableID> & trigger_var,
-        const std::vector<IntegerVariableID> & succ, innards::State & state) -> innards::Inference;
+    auto propagate_non_gac_alldifferent(
+        const innards::ConstraintStateHandle & unassigned_handle, innards::State & state) -> innards::Inference;
+
+    auto prevent_small_cycles(const std::vector<IntegerVariableID> &,
+        const ProofLine2DMap & lines_for_setting_pos,
+        const innards::ConstraintStateHandle &,
+        innards::State & state) -> innards::Inference;
 }
 
 #endif // GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CIRCUIT_HH

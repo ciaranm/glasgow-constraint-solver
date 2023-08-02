@@ -1,11 +1,13 @@
 #include <gcs/constraints/circuit/circuit.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/propagators.hh>
+#include <list>
 #include <set>
 #include <tuple>
 #include <utility>
 #include <vector>
 
+using std::list;
 using std::min;
 using std::pair;
 using std::set;
@@ -73,24 +75,6 @@ namespace
             return make_pair(result, back_edges);
     }
 
-    auto get_actual_proof_variable(PseudoBooleanTerm p) -> ProofOnlySimpleIntegerVariableID
-    {
-        return overloaded{
-            [&](ProofOnlySimpleIntegerVariableID pr) -> ProofOnlySimpleIntegerVariableID {
-                return pr;
-            },
-            [&](Literal) -> ProofOnlySimpleIntegerVariableID {
-                throw UnexpectedException{"Position var is not a ProofOnlySimpleIntegerVariableID ?"};
-            },
-            [&](ProofFlag) -> ProofOnlySimpleIntegerVariableID {
-                throw UnexpectedException{"Position var is not a ProofOnlySimpleIntegerVariableID ?"};
-            },
-            [&](IntegerVariableID) -> ProofOnlySimpleIntegerVariableID {
-                throw UnexpectedException{"Position var is not a ProofOnlySimpleIntegerVariableID ?"};
-            },
-        }
-            .visit(p);
-    }
     auto justify_disconnected_component(long root, const vector<IntegerVariableID> & succ, const vector<PseudoBooleanTerm> & pos_vars, State & state)
     {
         set<long> reachable = {root};
@@ -109,8 +93,10 @@ namespace
         //            }});
     }
 
-    auto propagate_circuit_using_scc(const vector<IntegerVariableID> & succ, const bool & prune_root, const bool & fix_req, const bool & prune_skip, const vector<PseudoBooleanTerm> & pos_vars, State & state) -> Inference
+    auto check_sccs(const vector<IntegerVariableID> & succ, const bool & prune_root, const bool & fix_req,
+        const bool & prune_skip, const vector<PseudoBooleanTerm> & pos_vars, State & state) -> Inference
     {
+        auto result = Inference::NoChange;
         auto root = select_root(succ, state);
         long count = 1;
         long start_subtree = 0;
@@ -120,8 +106,6 @@ namespace
         vector<long> visit_number = vector<long>(succ.size(), -1);
         lowlink[root] = 0;
         visit_number[root] = 0;
-
-        Inference result = Inference::NoChange;
 
         state.for_each_value_while(succ[root], [&](Integer v) -> bool {
             if (visit_number[v.raw_value] == -1) {
@@ -158,7 +142,18 @@ namespace
                 return true;
             });
         }
+
         return result;
+    }
+
+    auto propagate_circuit_using_scc(const vector<IntegerVariableID> & succ, const bool & prune_root,
+        const bool & fix_req, const bool & prune_skip, const vector<PseudoBooleanTerm> & pos_vars,
+        const ProofLine2DMap & lines_for_setting_pos, const ConstraintStateHandle & unassigned_handle, State & state)
+        -> Inference
+    {
+        auto result = propagate_non_gac_alldifferent(unassigned_handle, state);
+        increase_inference_to(result, check_sccs(succ, prune_root, fix_req, prune_skip, pos_vars, state));
+        increase_inference_to(result, prevent_small_cycles(succ, lines_for_setting_pos, unassigned_handle, state));
     }
 }
 
@@ -169,15 +164,19 @@ auto CircuitSCC::clone() const -> unique_ptr<Constraint>
 
 auto CircuitSCC::install(Propagators & propagators, State & initial_state) && -> void
 {
-    auto pb_encs = CircuitBase::set_up(propagators, initial_state);
-    auto pos_vars = pb_encs.first;
-    auto lines_for_setting_pos = pb_encs.second;
+    auto set_up_results = CircuitBase::set_up(propagators, initial_state);
+    auto pos_vars = get<0>(set_up_results);
+    auto lines_for_setting_pos = get<1>(set_up_results);
+    auto unassigned_handle = get<2>(set_up_results);
 
     Triggers triggers;
     triggers.on_change = {_succ.begin(), _succ.end()};
     propagators.install(
-        [succ = _succ, pos_vars = pos_vars, lines_for_setting_pos = lines_for_setting_pos](State & state) -> pair<Inference, PropagatorState> {
-            auto result = propagate_circuit_using_scc(succ, true, true, true, pos_vars, state);
+        [succ = _succ,
+            pos_vars = pos_vars,
+            lines_for_setting_pos = lines_for_setting_pos,
+            unassigned_handle = unassigned_handle](State & state) -> pair<Inference, PropagatorState> {
+            auto result = propagate_circuit_using_scc(succ, true, true, true, pos_vars, lines_for_setting_pos, unassigned_handle, state);
             return pair{result, PropagatorState::Enable};
         },
         triggers,

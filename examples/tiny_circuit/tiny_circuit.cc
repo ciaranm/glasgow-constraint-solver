@@ -16,14 +16,22 @@ using std::vector;
 
 auto post_constraints(Problem & p, vector<IntegerVariableID> & nodes)
 {
-    // // From paper:
-    //    p.post(In{nodes[0], {1_i, 4_i, 5_i}});
-    //    p.post(In{nodes[1], {2_i, 3_i}});
-    //    p.post(In{nodes[2], {0_i}});
-    //    p.post(In{nodes[3], {2_i}});
-    //    p.post(In{nodes[4], {1_i, 3_i}});
-    //    p.post(In{nodes[5], {0_i, 6_i}});
-    //    p.post(In{nodes[6], {3_i, 4_i}});
+    // From paper:
+    p.post(In{nodes[0], {1_i}});
+    p.post(In{nodes[1], {2_i, 3_i}});
+    p.post(In{nodes[2], {0_i}});
+    p.post(In{nodes[3], {2_i}});
+    p.post(In{nodes[4], {1_i, 3_i}});
+    p.post(In{nodes[5], {0_i, 6_i}});
+    p.post(In{nodes[6], {3_i, 4_i}});
+
+    p.post(In{nodes[0], {1_i}});
+    p.post(In{nodes[1], {0_i}});
+    p.post(In{nodes[2], {0_i, 5_i}});
+    p.post(In{nodes[3], {2_i}});
+    p.post(In{nodes[4], {1_i, 3_i}});
+    p.post(In{nodes[5], {0_i, 6_i}});
+    p.post(In{nodes[6], {3_i, 4_i}});
 
     // Messing about:
     //    p.post(In{nodes[0], {1_i, 2_i, 4_i, 5_i}});
