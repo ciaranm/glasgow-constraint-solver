@@ -231,7 +231,7 @@ auto test_smart_table(const int & n, mt19937 & rng, bool make_string_rep)
 
     auto stats = solve_with(p,
         SolveCallbacks{
-            .solution = [&](const CurrentState & s) -> bool {
+            .solution = [&](const CurrentState &) -> bool {
                 //                cout << "x = [ ";
                 //                for (const auto & var : x) {
                 //                    cout << s(var) << " ";
