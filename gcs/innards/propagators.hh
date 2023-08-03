@@ -111,13 +111,15 @@ namespace gcs::innards
          * Add a pseudo-Boolean constraint to a Proof model.
          */
         auto define(const State &, const WeightedPseudoBooleanLessEqual & ineq,
-            const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> std::optional<ProofLine>;
+            const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt,
+            const std::optional<std::string> & comment = std::nullopt) -> std::optional<ProofLine>;
 
         /**
          * Add a pair of pseudo-Boolean constraints representing an equality to a Proof model.
          */
         auto define(const State &, const WeightedPseudoBooleanEquality & eq,
-            const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> std::pair<std::optional<ProofLine>, std::optional<ProofLine>>;
+            const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt,
+            const std::optional<std::string> & comment = std::nullopt) -> std::pair<std::optional<ProofLine>, std::optional<ProofLine>>;
 
         /**
          * Add a CNF definition to a Proof model.

@@ -740,7 +740,7 @@ auto Proof::add_cnf_to_model(const Literals & lits) -> std::optional<ProofLine>
     return add_to_model(move(sum) >= 1_i, nullopt);
 }
 
-auto Proof::add_to_model(const WeightedPseudoBooleanLessEqual & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> optional<ProofLine>
+auto Proof::add_to_model(const WeightedPseudoBooleanLessEqual & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif, const optional<string> & comment) -> optional<ProofLine>
 {
     if (_imp->opb_done)
         throw UnexpectedException{"proof has already started"};
@@ -759,12 +759,15 @@ auto Proof::add_to_model(const WeightedPseudoBooleanLessEqual & ineq, const opti
                 }}
                 .visit(r);
 
+    if (comment)
+        _imp->opb << "* " << *comment << '\n';
+
     emit_inequality_to(ineq, half_reif, _imp->opb);
     _imp->opb << '\n';
     return ++_imp->model_constraints;
 }
 
-auto Proof::add_to_model(const WeightedPseudoBooleanEquality & eq, const optional<HalfReifyOnConjunctionOf> & half_reif)
+auto Proof::add_to_model(const WeightedPseudoBooleanEquality & eq, const optional<HalfReifyOnConjunctionOf> & half_reif, const optional<string> & comment)
     -> pair<optional<ProofLine>, optional<ProofLine>>
 {
     if (_imp->opb_done)
@@ -783,6 +786,9 @@ auto Proof::add_to_model(const WeightedPseudoBooleanEquality & eq, const optiona
                         .visit(simplify_literal(lit));
                 }}
                 .visit(r);
+
+    if (comment)
+        _imp->opb << "* " << *comment << '\n';
 
     emit_inequality_to(eq.lhs <= eq.rhs, half_reif, _imp->opb);
     _imp->opb << '\n';

@@ -118,7 +118,7 @@ auto Propagators::define_cnf(const State &, const Literals & c) -> optional<Proo
 }
 
 auto Propagators::define(const State &, const WeightedPseudoBooleanLessEqual & ineq,
-    const optional<HalfReifyOnConjunctionOf> & half_reif) -> optional<ProofLine>
+    const optional<HalfReifyOnConjunctionOf> & half_reif, const optional<string> & comment) -> optional<ProofLine>
 {
     if (_imp->optional_proof)
         return _imp->optional_proof->add_to_model(ineq, half_reif);
@@ -127,10 +127,10 @@ auto Propagators::define(const State &, const WeightedPseudoBooleanLessEqual & i
 }
 
 auto Propagators::define(const State &, const WeightedPseudoBooleanEquality & eq,
-    const optional<HalfReifyOnConjunctionOf> & half_reif) -> pair<optional<ProofLine>, optional<ProofLine>>
+    const optional<HalfReifyOnConjunctionOf> & half_reif, const optional<string> & comment) -> pair<optional<ProofLine>, optional<ProofLine>>
 {
     if (_imp->optional_proof)
-        return _imp->optional_proof->add_to_model(eq, half_reif);
+        return _imp->optional_proof->add_to_model(eq, half_reif, comment);
     else
         return pair{nullopt, nullopt};
 }

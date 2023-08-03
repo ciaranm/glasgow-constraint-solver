@@ -200,13 +200,13 @@ namespace gcs::innards
          * Add a pseudo-Boolean inequality to the model.
          */
         [[nodiscard]] auto add_to_model(const WeightedPseudoBooleanLessEqual &,
-            const std::optional<HalfReifyOnConjunctionOf> & half_reif) -> std::optional<ProofLine>;
+            const std::optional<HalfReifyOnConjunctionOf> & half_reif, const std::optional<std::string> & comment = std::nullopt) -> std::optional<ProofLine>;
 
         /**
          * Add a pseudo-Boolean equality to the model.
          */
         [[nodiscard]] auto add_to_model(const WeightedPseudoBooleanEquality &,
-            const std::optional<HalfReifyOnConjunctionOf> & half_reif) -> std::pair<std::optional<ProofLine>, std::optional<ProofLine>>;
+            const std::optional<HalfReifyOnConjunctionOf> & half_reif, const std::optional<std::string> & comment = std::nullopt) -> std::pair<std::optional<ProofLine>, std::optional<ProofLine>>;
 
         ///@}
 

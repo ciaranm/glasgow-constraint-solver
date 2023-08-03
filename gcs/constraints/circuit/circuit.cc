@@ -7,6 +7,7 @@
 
 #include <list>
 #include <map>
+#include <string>
 #include <utility>
 
 using namespace gcs;
@@ -90,13 +91,16 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state) -> tu
         for (unsigned int idx = 1; idx < _succ.size(); ++idx) {
             // (succ[0] = i) -> pos[i] = 1
             auto cv1 = WeightedPseudoBooleanSum{} + 1_i * position[idx] + -1_i * 1_c;
-            proof_line = propagators.define(initial_state, move(cv1) == 0_i, _succ[0] == Integer{idx});
+
+            proof_line = propagators.define(initial_state, move(cv1) == 0_i, _succ[0] == Integer{idx},
+                "succ[0] = " + to_string(idx) + " => pos[" + to_string(idx) + "] = 1");
             lines_for_setting_pos.insert({{Integer{idx}, Integer{0_i}}, proof_line.first.value()});
 
             // (succ[i] = 0) -> pos[i] = n-1
             auto cv2 = WeightedPseudoBooleanSum{} + 1_i * position[idx] + -1_i * n_minus_1;
 
-            proof_line = propagators.define(initial_state, move(cv2) == 0_i, _succ[idx] == 0_i);
+            proof_line = propagators.define(initial_state, move(cv2) == 0_i, _succ[idx] == 0_i,
+                "succ[" + to_string(idx) + "] = 0 => pos[" + to_string(idx) + "] = n - 1");
             lines_for_setting_pos.insert({{Integer{0_i}, Integer{idx}}, proof_line.first.value()});
 
             // (succ[i] = j) -> pos[j] = pos[i] + 1
@@ -104,7 +108,8 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state) -> tu
                 // if (idx == jdx) continue;
                 auto cv3 = WeightedPseudoBooleanSum{} + 1_i * position[jdx] + -1_i * position[idx] + -1_i * 1_c;
 
-                proof_line = propagators.define(initial_state, move(cv3) == 0_i, _succ[idx] == Integer{jdx});
+                proof_line = propagators.define(initial_state, move(cv3) == 0_i, _succ[idx] == Integer{jdx},
+                    "succ[" + to_string(idx) + "] = " + to_string(jdx) + " => pos[" + to_string(jdx) + "] = " + to_string(idx));
                 lines_for_setting_pos.insert({{Integer{jdx}, Integer{idx}}, proof_line.first.value()});
             }
         }
