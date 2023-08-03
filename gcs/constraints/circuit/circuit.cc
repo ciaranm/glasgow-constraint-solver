@@ -109,7 +109,7 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state) -> tu
                 auto cv3 = WeightedPseudoBooleanSum{} + 1_i * position[jdx] + -1_i * position[idx] + -1_i * 1_c;
 
                 proof_line = propagators.define(initial_state, move(cv3) == 0_i, _succ[idx] == Integer{jdx},
-                    "succ[" + to_string(idx) + "] = " + to_string(jdx) + " => pos[" + to_string(jdx) + "] = " + to_string(idx));
+                    "succ[" + to_string(idx) + "] = " + to_string(jdx) + " => pos[" + to_string(jdx) + "] = " + "pos[" + to_string(idx) + "] + 1");
                 lines_for_setting_pos.insert({{Integer{jdx}, Integer{idx}}, proof_line.first.value()});
             }
         }
