@@ -733,9 +733,11 @@ auto SmartTable::install(Propagators & propagators, State & initial_state) && ->
 
                         auto flag = unary_set_entry.constraint_type == SmartEntryConstraint::In ? propagators.create_proof_flag("inset") : propagators.create_proof_flag("notinset");
 
-                        propagators.define(initial_state, move(set_value_sum) >= Integer{static_cast<long long>(set_value_sum.terms.size())},
+                        auto set_rhs = Integer{static_cast<long long>(set_value_sum.terms.size())};
+                        auto neg_set_rhs = Integer{static_cast<long long>(neg_set_value_sum.terms.size())};
+                        propagators.define(initial_state, move(set_value_sum) >= set_rhs,
                             unary_set_entry.constraint_type == SmartEntryConstraint::In ? flag : ! flag);
-                        propagators.define(initial_state, move(neg_set_value_sum) >= Integer{static_cast<long long>(neg_set_value_sum.terms.size())},
+                        propagators.define(initial_state, move(neg_set_value_sum) >= neg_set_rhs,
                             unary_set_entry.constraint_type == SmartEntryConstraint::In ? ! flag : flag);
 
                         entry_flags_sum += 1_i * flag;
