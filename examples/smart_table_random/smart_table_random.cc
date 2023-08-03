@@ -232,18 +232,19 @@ auto test_smart_table(const int & n, mt19937 & rng, bool make_string_rep)
     auto stats = solve_with(p,
         SolveCallbacks{
             .solution = [&](const CurrentState & s) -> bool {
-                cout << "x = [ ";
-                for (const auto & var : x) {
-                    cout << s(var) << " ";
-                }
-                cout << "]" << endl;
+                //                cout << "x = [ ";
+                //                for (const auto & var : x) {
+                //                    cout << s(var) << " ";
+                //                }
+                //                cout << "]" << endl;
 
                 return true;
             }},
         ProofOptions{"random_table.opb", "random_table.veripb"});
 
-    cout << "Num solutions: " << stats.solutions << endl;
     if (0 != system("veripb random_table.opb random_table.veripb")) {
+        cout << stats;
+        cout << "Num solutions: " << stats.solutions << endl;
         if (make_string_rep)
             cout << string_rep.str() << endl;
         return false;
