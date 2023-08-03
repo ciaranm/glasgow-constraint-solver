@@ -10,8 +10,6 @@
 #include <tuple>
 #include <vector>
 
-#include <unistd.h>
-
 #include <boost/program_options.hpp>
 
 using namespace gcs;
@@ -250,8 +248,6 @@ auto test_smart_table(const int & n, mt19937 & rng, bool make_string_rep)
             cout << string_rep.str() << endl;
         return false;
     }
-
-    sleep(1);
 
     return true;
 }
