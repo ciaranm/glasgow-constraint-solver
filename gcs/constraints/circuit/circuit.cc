@@ -36,7 +36,7 @@ CircuitBase::CircuitBase(vector<IntegerVariableID> v, const bool g) :
 {
 }
 
-auto CircuitBase::set_up(Propagators & propagators, State & initial_state) -> tuple<vector<PseudoBooleanTerm>, ProofLine2DMap, ConstraintStateHandle>
+auto CircuitBase::set_up(Propagators & propagators, State & initial_state) -> tuple<vector<ProofOnlySimpleIntegerVariableID>, ProofLine2DMap, ConstraintStateHandle>
 {
     // Can't have negative values
     for (const auto & s : _succ)
@@ -70,41 +70,21 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state) -> tu
 
     ProofLine2DMap lines_for_setting_pos{};
     // Define encoding to eliminate sub-cycles
-    vector<PseudoBooleanTerm> position;
+    vector<ProofOnlySimpleIntegerVariableID> position;
     if (propagators.want_definitions()) {
 
         auto n_minus_1 = ConstantIntegerVariableID{Integer{static_cast<long long>(_succ.size() - 1)}};
 
-        // Need extra proof variable: pos[i] = j means "the ith node visited in the circuit is the jth var"
-        // WLOG start at node 0, so pos[0] = 0
-        position.emplace_back(0_c);
-        // Hence we can only have succ[0] = 0 (self cycle) if there is only one node i.e. n - 1 = 0
-        auto cv = WeightedPseudoBooleanSum{} + 1_i * position[0] + -1_i * n_minus_1;
-        auto proof_line = propagators.define(initial_state, move(cv) == 0_i, _succ[0] == 0_i);
-        lines_for_setting_pos.insert({{Integer{0_i}, Integer{0_i}}, proof_line.first.value()});
+        pair<optional<ProofLine>, optional<ProofLine>> proof_line = {nullopt, nullopt};
 
-        for (unsigned int idx = 1; idx < _succ.size(); ++idx) {
+        for (unsigned int idx = 0; idx < _succ.size(); ++idx) {
             position.emplace_back(propagators.create_proof_only_integer_variable(0_i, Integer(_succ.size() - 1),
                 "pos" + to_string(idx), IntegerVariableProofRepresentation::Bits));
         }
 
-        for (unsigned int idx = 1; idx < _succ.size(); ++idx) {
-            // (succ[0] = i) -> pos[i] = 1
-            auto cv1 = WeightedPseudoBooleanSum{} + 1_i * position[idx] + -1_i * 1_c;
-
-            proof_line = propagators.define(initial_state, move(cv1) == 0_i, _succ[0] == Integer{idx},
-                "succ[0] = " + to_string(idx) + " => pos[" + to_string(idx) + "] = 1");
-            lines_for_setting_pos.insert({{Integer{idx}, Integer{0_i}}, proof_line.first.value()});
-
-            // (succ[i] = 0) -> pos[i] = n-1
-            auto cv2 = WeightedPseudoBooleanSum{} + 1_i * position[idx] + -1_i * n_minus_1;
-
-            proof_line = propagators.define(initial_state, move(cv2) == 0_i, _succ[idx] == 0_i,
-                "succ[" + to_string(idx) + "] = 0 => pos[" + to_string(idx) + "] = n - 1");
-            lines_for_setting_pos.insert({{Integer{0_i}, Integer{idx}}, proof_line.first.value()});
-
+        for (unsigned int idx = 0; idx < _succ.size(); ++idx) {
             // (succ[i] = j) -> pos[j] = pos[i] + 1
-            for (unsigned int jdx = 1; jdx < _succ.size(); ++jdx) {
+            for (unsigned int jdx = 0; jdx < _succ.size(); ++jdx) {
                 // if (idx == jdx) continue;
                 auto cv3 = WeightedPseudoBooleanSum{} + 1_i * position[jdx] + -1_i * position[idx] + -1_i * 1_c;
 
@@ -117,7 +97,14 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state) -> tu
 
     // Infer succ[i] != i at top of search, but no other propagation defined here: use CircuitPrevent or CircuitSCC
     if (_succ.size() > 1) {
-        propagators.install([succ = _succ](State & state) -> pair<Inference, PropagatorState> {
+        propagators.install([succ = _succ, pos = position](State & state) -> pair<Inference, PropagatorState> {
+            WeightedPseudoBooleanSum pos_eq_0s{};
+            for (auto p : pos)
+                pos_eq_0s += 1_i * (ProofVariableCondition{p, VariableConditionOperator::Equal, 0_i});
+            state.infer_true(JustifyExplicitly{
+                [&](Proof & proof, vector<ProofLine> &) -> void {
+                    proof.emit_rup_proof_line_under_trail(state, pos_eq_0s <= 1_i);
+                }});
             auto result = Inference::NoChange;
             for (auto [idx, s] : enumerate(succ)) {
                 increase_inference_to(result, state.infer_not_equal(s, Integer(idx), JustifyUsingRUP{}));

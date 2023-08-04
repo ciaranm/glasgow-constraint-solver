@@ -29,7 +29,7 @@ namespace gcs
     protected:
         const bool _gac_all_different;
         const std::vector<IntegerVariableID> _succ;
-        virtual auto set_up(innards::Propagators &, innards::State &) -> std::tuple<std::vector<innards::PseudoBooleanTerm>, ProofLine2DMap, innards::ConstraintStateHandle>;
+        virtual auto set_up(innards::Propagators &, innards::State &) -> std::tuple<std::vector<innards::ProofOnlySimpleIntegerVariableID>, ProofLine2DMap, innards::ConstraintStateHandle>;
 
     public:
         explicit CircuitBase(std::vector<IntegerVariableID> var, bool gac_all_different = false);

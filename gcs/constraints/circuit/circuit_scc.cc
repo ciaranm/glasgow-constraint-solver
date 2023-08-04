@@ -75,7 +75,7 @@ namespace
             return make_pair(result, back_edges);
     }
 
-    auto justify_disconnected_component(long root, const vector<IntegerVariableID> & succ, const vector<PseudoBooleanTerm> & pos_vars, State & state)
+    auto justify_disconnected_component(long root, const vector<IntegerVariableID> & succ, const vector<ProofOnlySimpleIntegerVariableID> & pos_vars, State & state)
     {
         set<long> reachable = {root};
 
@@ -94,7 +94,7 @@ namespace
     }
 
     auto check_sccs(const vector<IntegerVariableID> & succ, const bool & prune_root, const bool & fix_req,
-        const bool & prune_skip, const vector<PseudoBooleanTerm> & pos_vars, State & state) -> Inference
+        const bool & prune_skip, const vector<ProofOnlySimpleIntegerVariableID> & pos_vars, State & state) -> Inference
     {
         auto result = Inference::NoChange;
         auto root = select_root(succ, state);
@@ -147,7 +147,7 @@ namespace
     }
 
     auto propagate_circuit_using_scc(const vector<IntegerVariableID> & succ, const bool & prune_root,
-        const bool & fix_req, const bool & prune_skip, const vector<PseudoBooleanTerm> & pos_vars,
+        const bool & fix_req, const bool & prune_skip, const vector<ProofOnlySimpleIntegerVariableID> & pos_vars,
         const ProofLine2DMap & lines_for_setting_pos, const ConstraintStateHandle & unassigned_handle, State & state)
         -> Inference
     {
