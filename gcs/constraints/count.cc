@@ -49,16 +49,20 @@ auto Count::install(Propagators & propagators, State & initial_state) && -> void
             flags.emplace_back(flag, countb, counts);
 
             // countb -> (var < voi)
-            propagators.define(initial_state, WeightedPseudoBooleanSum{} + (1_i * var) + (-1_i * _value_of_interest) <= -1_i, countb);
+            propagators.define(initial_state, WeightedPseudoBooleanSum{} + (1_i * var) + (-1_i * _value_of_interest) <= -1_i,
+                HalfReifyOnConjunctionOf{{countb}});
 
             // ! countb -> (var >= voi)
-            propagators.define(initial_state, WeightedPseudoBooleanSum{} + (1_i * var) >= (1_i * _value_of_interest), ! countb);
+            propagators.define(initial_state, WeightedPseudoBooleanSum{} + (1_i * var) >= (1_i * _value_of_interest),
+                HalfReifyOnConjunctionOf{{! countb}});
 
             // counts -> (voi < var)
-            propagators.define(initial_state, WeightedPseudoBooleanSum{} + (-1_i * var) + (1_i * _value_of_interest) <= -1_i, counts);
+            propagators.define(initial_state, WeightedPseudoBooleanSum{} + (-1_i * var) + (1_i * _value_of_interest) <= -1_i,
+                HalfReifyOnConjunctionOf{{counts}});
 
             // ! counts -> (voi >= var)
-            propagators.define(initial_state, WeightedPseudoBooleanSum{} + (-1_i * _value_of_interest) + (1_i * var) <= 0_i, ! counts);
+            propagators.define(initial_state, WeightedPseudoBooleanSum{} + (-1_i * _value_of_interest) + (1_i * var) <= 0_i,
+                HalfReifyOnConjunctionOf{{! counts}});
 
             // ! countb /\ ! counts -> flag
             propagators.define(initial_state, WeightedPseudoBooleanSum{} + 1_i * countb + 1_i * counts + 1_i * flag >= 1_i);

@@ -75,10 +75,10 @@ auto Abs::install(Propagators & propagators, State & initial_state) && -> void
         triggers, "abs");
 
     if (propagators.want_definitions()) {
-        propagators.define(initial_state, WeightedPseudoBooleanSum{} + 1_i * _v2 + -1_i * _v1 == 0_i, *selector);
-        propagators.define(initial_state, WeightedPseudoBooleanSum{} + 1_i * _v1 + 1_i * _v2 == 0_i, ! *selector);
-        propagators.define(initial_state, WeightedPseudoBooleanSum{} + 1_i * _v1 <= -1_i, ! *selector);
-        propagators.define(initial_state, WeightedPseudoBooleanSum{} + -1_i * _v1 <= 0_i, *selector);
+        propagators.define(initial_state, WeightedPseudoBooleanSum{} + 1_i * _v2 + -1_i * _v1 == 0_i, HalfReifyOnConjunctionOf{*selector});
+        propagators.define(initial_state, WeightedPseudoBooleanSum{} + 1_i * _v1 + 1_i * _v2 == 0_i, HalfReifyOnConjunctionOf{! *selector});
+        propagators.define(initial_state, WeightedPseudoBooleanSum{} + 1_i * _v1 <= -1_i, HalfReifyOnConjunctionOf{! *selector});
+        propagators.define(initial_state, WeightedPseudoBooleanSum{} + -1_i * _v1 <= 0_i, HalfReifyOnConjunctionOf{*selector});
     }
 }
 

@@ -740,46 +740,49 @@ auto Proof::add_cnf_to_model(const Literals & lits) -> std::optional<ProofLine>
     return add_to_model(move(sum) >= 1_i, nullopt);
 }
 
-auto Proof::add_to_model(const WeightedPseudoBooleanLessEqual & ineq, optional<ReificationTerm> half_reif) -> optional<ProofLine>
+auto Proof::add_to_model(const WeightedPseudoBooleanLessEqual & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> optional<ProofLine>
 {
     if (_imp->opb_done)
         throw UnexpectedException{"proof has already started"};
 
     need_all_proof_names_in(ineq.lhs);
     if (half_reif)
-        overloaded{
-            [&](const ProofFlag &) {},
-            [&](const ProofLiteral & lit) {
-                overloaded{
-                    [&](const TrueLiteral &) {},
-                    [&](const FalseLiteral &) {},
-                    [&]<typename T_>(const VariableConditionFrom<T_> & cond) { need_proof_name(cond); }}
-                    .visit(simplify_literal(lit));
-            }}
-            .visit(*half_reif);
+        for (auto & r : *half_reif)
+            overloaded{
+                [&](const ProofFlag &) {},
+                [&](const ProofLiteral & lit) {
+                    overloaded{
+                        [&](const TrueLiteral &) {},
+                        [&](const FalseLiteral &) {},
+                        [&]<typename T_>(const VariableConditionFrom<T_> & cond) { need_proof_name(cond); }}
+                        .visit(simplify_literal(lit));
+                }}
+                .visit(r);
 
     emit_inequality_to(ineq, half_reif, _imp->opb);
     _imp->opb << '\n';
     return ++_imp->model_constraints;
 }
 
-auto Proof::add_to_model(const WeightedPseudoBooleanEquality & eq, optional<ReificationTerm> half_reif) -> pair<optional<ProofLine>, optional<ProofLine>>
+auto Proof::add_to_model(const WeightedPseudoBooleanEquality & eq, const optional<HalfReifyOnConjunctionOf> & half_reif)
+    -> pair<optional<ProofLine>, optional<ProofLine>>
 {
     if (_imp->opb_done)
         throw UnexpectedException{"proof has already started"};
 
     need_all_proof_names_in(eq.lhs);
     if (half_reif)
-        overloaded{
-            [&](const ProofFlag &) {},
-            [&](const ProofLiteral & lit) {
-                overloaded{
-                    [&](const TrueLiteral &) {},
-                    [&](const FalseLiteral &) {},
-                    [&]<typename T_>(const VariableConditionFrom<T_> & cond) { need_proof_name(cond); }}
-                    .visit(simplify_literal(lit));
-            }}
-            .visit(*half_reif);
+        for (auto & r : *half_reif)
+            overloaded{
+                [&](const ProofFlag &) {},
+                [&](const ProofLiteral & lit) {
+                    overloaded{
+                        [&](const TrueLiteral &) {},
+                        [&](const FalseLiteral &) {},
+                        [&]<typename T_>(const VariableConditionFrom<T_> & cond) { need_proof_name(cond); }}
+                        .visit(simplify_literal(lit));
+                }}
+                .visit(r);
 
     emit_inequality_to(eq.lhs <= eq.rhs, half_reif, _imp->opb);
     _imp->opb << '\n';
@@ -1002,7 +1005,7 @@ auto Proof::need_all_proof_names_in(const SumOf<Weighted<PseudoBooleanTerm>> & s
 }
 
 auto Proof::emit_inequality_to(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
-    const optional<ReificationTerm> & half_reif, ostream & stream) -> void
+    const optional<HalfReifyOnConjunctionOf> & half_reif, ostream & stream) -> void
 {
     // build up the inequality, adjusting as we go for constant terms,
     // and converting from <= to >=.
@@ -1075,23 +1078,24 @@ auto Proof::emit_inequality_to(const SumLessEqual<Weighted<PseudoBooleanTerm>> &
 
     if (half_reif) {
         reif_const += rhs;
-        overloaded{
-            [&](const ProofFlag & f) {
-                stream << reif_const << " " << proof_name(! f) << " ";
-            },
-            [&](const ProofLiteral & lit) {
-                overloaded{
-                    [&](const TrueLiteral &) {
-                    },
-                    [&](const FalseLiteral &) {
-                        throw UnimplementedException{};
-                    },
-                    [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
-                        stream << reif_const << " " << proof_name(! cond) << " ";
-                    }}
-                    .visit(simplify_literal(lit));
-            }}
-            .visit(*half_reif);
+        for (auto & r : *half_reif)
+            overloaded{
+                [&](const ProofFlag & f) {
+                    stream << reif_const << " " << proof_name(! f) << " ";
+                },
+                [&](const ProofLiteral & lit) {
+                    overloaded{
+                        [&](const TrueLiteral &) {
+                        },
+                        [&](const FalseLiteral &) {
+                            throw UnimplementedException{};
+                        },
+                        [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
+                            stream << reif_const << " " << proof_name(! cond) << " ";
+                        }}
+                        .visit(simplify_literal(lit));
+                }}
+                .visit(r);
     }
 
     stream << ">= " << rhs << " ;";

@@ -155,7 +155,7 @@ namespace
                         WeightedPseudoBooleanSum forward;
                         for (auto & l : _lits)
                             forward += 1_i * PseudoBooleanTerm{l};
-                        propagators.define(initial_state, forward >= Integer(_lits.size()), _full_reif);
+                        propagators.define(initial_state, forward >= Integer(_lits.size()), HalfReifyOnConjunctionOf{_full_reif});
                     }
 
                     Literals reverse;

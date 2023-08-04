@@ -213,7 +213,8 @@ auto EqualsIf::install(Propagators & propagators, State & initial_state) && -> v
                 _v1, _v2);
 
             if (propagators.want_definitions()) {
-                propagators.define(initial_state, WeightedPseudoBooleanSum{} + 1_i * _v1 + -1_i * _v2 == 0_i, cond);
+                propagators.define(initial_state, WeightedPseudoBooleanSum{} + 1_i * _v1 + -1_i * _v2 == 0_i,
+                    HalfReifyOnConjunctionOf{{cond}});
             }
         }}
         .visit(_cond);
@@ -452,8 +453,10 @@ auto NotEquals::install(Propagators & propagators, State & initial_state) && -> 
 
     if (propagators.want_definitions()) {
         auto selector = propagators.create_proof_flag("notequals");
-        propagators.define(initial_state, WeightedPseudoBooleanSum{} + 1_i * _v1 + -1_i * _v2 <= -1_i, selector);
-        propagators.define(initial_state, WeightedPseudoBooleanSum{} + -1_i * _v1 + 1_i * _v2 <= -1_i, ! selector);
+        propagators.define(initial_state, WeightedPseudoBooleanSum{} + 1_i * _v1 + -1_i * _v2 <= -1_i,
+            HalfReifyOnConjunctionOf{{selector}});
+        propagators.define(initial_state, WeightedPseudoBooleanSum{} + -1_i * _v1 + 1_i * _v2 <= -1_i,
+            HalfReifyOnConjunctionOf{{! selector}});
     }
 }
 

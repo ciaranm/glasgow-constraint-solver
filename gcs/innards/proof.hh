@@ -86,12 +86,12 @@ namespace gcs::innards
     using ProofLiteral = std::variant<Literal, ProofVariableCondition>;
 
     /**
-     * \brief Various things in Proof can reify on either a ProofLiteral or a ProofFlag.
+     * \brief Various things in Proof can reify on a conjunction of
+     * ProofLiteral and ProofFlag.
      *
      * \ingroup Innards
-     * \sa Proof::integer_linear_le()
      */
-    using ReificationTerm = std::variant<ProofLiteral, ProofFlag>;
+    using HalfReifyOnConjunctionOf = std::vector<std::variant<ProofLiteral, ProofFlag>>;
 
     /**
      * \brief Inside a Proof, a pseudo-Boolean expression can contain a ProofLiteral,
@@ -132,7 +132,7 @@ namespace gcs::innards
         auto set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::string &) -> void;
 
         auto emit_inequality_to(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
-            const std::optional<ReificationTerm> &, std::ostream &) -> void;
+            const std::optional<HalfReifyOnConjunctionOf> &, std::ostream &) -> void;
 
         [[nodiscard]] auto simplify_literal(const ProofLiteral & lit) -> SimpleLiteral;
 
@@ -200,13 +200,13 @@ namespace gcs::innards
          * Add a pseudo-Boolean inequality to the model.
          */
         [[nodiscard]] auto add_to_model(const WeightedPseudoBooleanLessEqual &,
-            std::optional<ReificationTerm> half_reif) -> std::optional<ProofLine>;
+            const std::optional<HalfReifyOnConjunctionOf> & half_reif) -> std::optional<ProofLine>;
 
         /**
          * Add a pseudo-Boolean equality to the model.
          */
         [[nodiscard]] auto add_to_model(const WeightedPseudoBooleanEquality &,
-            std::optional<ReificationTerm> half_reif) -> std::pair<std::optional<ProofLine>, std::optional<ProofLine>>;
+            const std::optional<HalfReifyOnConjunctionOf> & half_reif) -> std::pair<std::optional<ProofLine>, std::optional<ProofLine>>;
 
         ///@}
 
