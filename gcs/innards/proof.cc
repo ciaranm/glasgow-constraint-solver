@@ -346,7 +346,11 @@ auto Proof::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> void
     if (_imp->direct_integer_variables.contains(id >= v))
         return;
 
-    string name = "iv" + to_string(visit([&](const auto & var) { return var.index; }, id));
+    string name = overloaded{
+        [&](const SimpleIntegerVariableID & id) { return "iv" + to_string(id.index); },
+        [&](const ProofOnlySimpleIntegerVariableID & id) { return "poiv" + to_string(id.index); }}
+                      .visit(id);
+
     auto gevar = xify(name + "_ge_" + value_name(v));
     _imp->direct_integer_variables.emplace(id >= v, gevar);
     _imp->direct_integer_variables.emplace(id < v, "~" + gevar);
