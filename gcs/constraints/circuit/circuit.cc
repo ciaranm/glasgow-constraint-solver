@@ -88,10 +88,16 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state) -> tu
                 // if (idx == jdx) continue;
                 auto cv3 = WeightedPseudoBooleanSum{} + 1_i * position[jdx] + -1_i * position[idx] + -1_i * 1_c;
 
-                proof_line = propagators.define(initial_state, move(cv3) == 0_i, HalfReifyOnConjunctionOf{_succ[idx] == Integer{jdx}},
+                proof_line = propagators.define(initial_state, move(cv3) == 0_i, HalfReifyOnConjunctionOf{_succ[idx] == Integer{jdx}, position[jdx] != 0_i},
                     "succ[" + to_string(idx) + "] = " + to_string(jdx) + " /\\ pos[" + to_string(jdx) +
                         "] != 0 => pos[" + to_string(jdx) + "] = " + "pos[" + to_string(idx) + "] + 1");
                 lines_for_setting_pos.insert({{Integer{jdx}, Integer{idx}}, proof_line.first.value()});
+
+                auto cv4 = WeightedPseudoBooleanSum{} + 1_i * position[idx];
+
+                propagators.define(initial_state, move(cv4) == Integer{static_cast<long long>(_succ.size() - 1)}, HalfReifyOnConjunctionOf{_succ[idx] == Integer{jdx}, position[jdx] == 0_i},
+                    "succ[" + to_string(idx) + "] = " + to_string(jdx) + " /\\ pos[" + to_string(jdx) +
+                        "] == 0 => pos[" + to_string(idx) + "] = n-1");
             }
         }
     }
