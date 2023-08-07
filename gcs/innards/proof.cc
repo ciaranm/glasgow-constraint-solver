@@ -25,8 +25,6 @@
 #include <mutex>
 #include <queue>
 #include <thread>
-#include <barrier>
-#include <pthread.h>
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -177,14 +175,12 @@ struct Proof::Imp
 
     std::mutex myMutexWork;
     std::mutex mutexNumber;
+    std::mutex mutexProofLine;
     bool finished = false;
     std::thread thread_proof_work;
 
-    // std::barrier my_barrier{2};
-    // pthread_barrier_t barrier;
     int number_justification;
     // condition_variable not_ful_work;
-    // long unsigned int maxSize = 10;
 };
 
 Proof::Proof(const ProofOptions & proof_options) :
@@ -196,15 +192,12 @@ Proof::Proof(const ProofOptions & proof_options) :
     _imp->always_use_full_encoding = proof_options.always_use_full_encoding;
     _imp->line_for_bound_in_bits.emplace_back();
     startWorkThread();
-    // pthread_barrier_init(&(_imp->barrier), NULL, 1);
     _imp->number_justification = 0;
 }
 
-// Proof::~Proof() = default;
 Proof::~Proof()
 {
     joinThread();
-    // pthread_barrier_destroy(&_imp->barrier);
 };
 
 void Proof::startWorkThread()
@@ -218,6 +211,24 @@ auto Proof::push_work_queue(Work work)
     //     [&](string & proof_text) { std::cout << "Text pushed : " << proof_text << std::endl; },
     //     [&](JustifyExplicitlyProof & jep) {},
     // };
+    // std::visit(visitor, work);
+
+    // auto visitor = overloaded{
+    //     [&](string & proof_text) {
+    //         _imp->proof << proof_text;
+    //     },
+    //     [&](const WorkJustifyUsingRUP & ) {
+    //         std::cout << "not test" << std::endl;
+    //     },
+    //     [&](const WorkJustifyUsingAssertion & ) {
+    //         std::cout << "not test" << std::endl;
+    //     },
+    //     [&](const WorkJustifyExplicitly & ) {
+    //         std::cout << "not test" << std::endl;
+    //     },
+    //     [&](const WorkGuess & ) {
+    //         std::cout << "not test" << std::endl;
+    //     }};
     // std::visit(visitor, work);
 
     // std::cout << "PUSH WORK QUEUE" << std::endl;
@@ -248,12 +259,19 @@ auto Proof::output_it(const string & rule, Literal lit, vector<Literal> guesses,
         if (work) {
             // std::cout << "Write directly on the file"<< std::endl;
             _imp->proof << text_pushed;
+            _imp->mutexProofLine.lock();
+            ++_imp->proof_line;
+            _imp->mutexProofLine.unlock();
         }
         else {
             // _imp->proof << text_pushed;
             push_work_queue(Work{text_pushed});
+            // push_work_queue(Work{StringWithProofLine{text_pushed, 1}});
+            _imp->mutexProofLine.lock();
+            ++_imp->proof_line;
+            _imp->mutexProofLine.unlock();
         }
-        ++_imp->proof_line;
+        // ++_imp->proof_line;
     }
 };
 
@@ -292,12 +310,13 @@ void Proof::threadWorkEntry()
                 },
                 [&](const WorkJustifyUsingRUP & w) {
                     // std::cout << "JustifyUsingRUP start" << std::endl;
+
                     need_proof_variable(w.lit, true);
                     output_it("u", w.lit, w.guesses, w.extra_proof_conditions, true);
                     // std::cout << "JustifyUsingRUP end" << std::endl;
                     std::unique_lock<std::mutex> lock_number(_imp->mutexNumber);
                     _imp->number_justification--;
-                    if (_imp->number_justification == 0){
+                    if (_imp->number_justification == 0) {
                         _imp->empty_justification.notify_one();
                         // std::cout << "work _imp->number_justification = " << _imp->number_justification << std::endl;
                     }
@@ -305,12 +324,13 @@ void Proof::threadWorkEntry()
                 },
                 [&](const WorkJustifyUsingAssertion & w) {
                     // std::cout << "JustifyUsingAssertion start" << std::endl;
+
                     need_proof_variable(w.lit, true);
                     output_it("a", w.lit, w.guesses, w.extra_proof_conditions, true);
                     // std::cout << "JustifyUsingAssertion end" << std::endl;
                     std::unique_lock<std::mutex> lock_number(_imp->mutexNumber);
                     _imp->number_justification--;
-                    if (_imp->number_justification == 0){
+                    if (_imp->number_justification == 0) {
                         _imp->empty_justification.notify_one();
                         // std::cout << "work _imp->number_justification = " << _imp->number_justification << std::endl;
                     }
@@ -344,9 +364,15 @@ void Proof::threadWorkEntry()
                         _imp->proof << " ]\n";
                     }
                     // std::cout << "Guess end" << std::endl;
-                }
-
-            };
+                },
+                [&](const WorkEnterProofLevel & w) {
+                    _imp->proof << "# " << w.depth << '\n';
+                    _imp->active_proof_level = w.depth;
+                },
+                [&](const StringWithProofLine & s) {
+                    _imp->proof << s.text;
+                    _imp->proof_line += s.nb;
+                }};
             std::visit(visitor, work);
 
             // _imp->not_full.notify_one();
@@ -630,11 +656,18 @@ auto Proof::need_gevar(SimpleIntegerVariableID id, Integer v, const std::optiona
     if (_imp->opb_done) {
         if (work) {
             _imp->proof << "red " << gevar_implies_bits << " ; " << gevar << " 0\n";
+            _imp->mutexProofLine.lock();
+            ++_imp->proof_line;
+            _imp->mutexProofLine.unlock();
         }
         else {
             push_work_queue(Work{"red " + gevar_implies_bits.OPBInequality_to_string() + " ; " + gevar + " 0\n"});
+            // push_work_queue(Work{StringWithProofLine{"red " + gevar_implies_bits.OPBInequality_to_string() + " ; " + gevar + " 0\n", 1}});
+            _imp->mutexProofLine.lock();
+            ++_imp->proof_line;
+            _imp->mutexProofLine.unlock();
         }
-        ++_imp->proof_line;
+        // ++_imp->proof_line;
     }
     else {
         _imp->opb << gevar_implies_bits << " ;\n";
@@ -647,11 +680,17 @@ auto Proof::need_gevar(SimpleIntegerVariableID id, Integer v, const std::optiona
     if (_imp->opb_done) {
         if (work) {
             _imp->proof << "red " << not_gevar_implies_bits << " ; " << gevar << " 1\n";
+            _imp->mutexProofLine.lock();
+            ++_imp->proof_line;
+            _imp->mutexProofLine.unlock();
         }
         else {
             push_work_queue(Work{"red " + not_gevar_implies_bits.OPBInequality_to_string() + " ; " + gevar + " 1\n"});
+            // push_work_queue(Work{StringWithProofLine{"red " + not_gevar_implies_bits.OPBInequality_to_string() + " ; " + gevar + " 1\n", 1}});
+            _imp->mutexProofLine.lock();
+            ++_imp->proof_line;
+            _imp->mutexProofLine.unlock();
         }
-        ++_imp->proof_line;
     }
     else {
         _imp->opb << not_gevar_implies_bits << " ;\n";
@@ -666,11 +705,17 @@ auto Proof::need_gevar(SimpleIntegerVariableID id, Integer v, const std::optiona
         if (_imp->opb_done) {
             if (work) {
                 _imp->proof << "u 1 " << gevar << " >= 1 ;\n";
+                _imp->mutexProofLine.lock();
+                ++_imp->proof_line;
+                _imp->mutexProofLine.unlock();
             }
             else {
                 push_work_queue(Work{"u 1 " + gevar + " >= 1 ;\n"});
+                // push_work_queue(Work{StringWithProofLine{"u 1 " + gevar + " >= 1 ;\n", 1}});
+                _imp->mutexProofLine.lock();
+                ++_imp->proof_line;
+                _imp->mutexProofLine.unlock();
             }
-            ++_imp->proof_line;
         }
         else {
             _imp->opb << "1 " << gevar << " >= 1 ;\n";
@@ -683,11 +728,17 @@ auto Proof::need_gevar(SimpleIntegerVariableID id, Integer v, const std::optiona
         if (_imp->opb_done) {
             if (work) {
                 _imp->proof << "u 1 ~" << gevar << " >= 1 ;\n";
+                _imp->mutexProofLine.lock();
+                ++_imp->proof_line;
+                _imp->mutexProofLine.unlock();
             }
             else {
                 push_work_queue(Work{"u 1 ~" + gevar + " >= 1 ;\n"});
+                // push_work_queue(Work{StringWithProofLine{"u 1 ~" + gevar + " >= 1 ;\n", 1}});
+                _imp->mutexProofLine.lock();
+                ++_imp->proof_line;
+                _imp->mutexProofLine.unlock();
             }
-            ++_imp->proof_line;
         }
         else {
             _imp->opb << "1 ~" << gevar << " >= 1 ;\n";
@@ -705,11 +756,17 @@ auto Proof::need_gevar(SimpleIntegerVariableID id, Integer v, const std::optiona
         if (_imp->opb_done) {
             if (work) {
                 _imp->proof << "u " << implies_higher << " ;\n";
+                _imp->mutexProofLine.lock();
+                ++_imp->proof_line;
+                _imp->mutexProofLine.unlock();
             }
             else {
                 push_work_queue(Work{"u " + implies_higher.OPBInequality_to_string() + " ;\n"});
+                // push_work_queue(Work{StringWithProofLine{"u " + implies_higher.OPBInequality_to_string() + " ;\n", 1}});
+                _imp->mutexProofLine.lock();
+                ++_imp->proof_line;
+                _imp->mutexProofLine.unlock();
             }
-            ++_imp->proof_line;
         }
         else {
             _imp->opb << implies_higher << " ;\n";
@@ -723,11 +780,17 @@ auto Proof::need_gevar(SimpleIntegerVariableID id, Integer v, const std::optiona
         if (_imp->opb_done) {
             if (work) {
                 _imp->proof << "u " << implies_lower << " ;\n";
+                _imp->mutexProofLine.lock();
+                ++_imp->proof_line;
+                _imp->mutexProofLine.unlock();
             }
             else {
                 push_work_queue(Work{"u " + implies_lower.OPBInequality_to_string() + " ;\n"});
+                // push_work_queue(Work{StringWithProofLine{"u " + implies_lower.OPBInequality_to_string() + " ;\n", 1}});
+                _imp->mutexProofLine.lock();
+                ++_imp->proof_line;
+                _imp->mutexProofLine.unlock();
             }
-            ++_imp->proof_line;
         }
         else {
             _imp->opb << implies_lower << " ;\n";
@@ -792,15 +855,25 @@ auto Proof::need_direct_encoding_for(SimpleIntegerVariableID id, Integer v, cons
         if (_imp->opb_done) {
             if (work) {
                 _imp->proof << "red " << eqvar_true << " ; " << eqvar << " 0\n";
+                _imp->mutexProofLine.lock();
                 ++_imp->proof_line;
+                _imp->mutexProofLine.unlock();
                 _imp->proof << "red " << eqvar_false << " ; " << eqvar << " 1\n";
+                _imp->mutexProofLine.lock();
                 ++_imp->proof_line;
+                _imp->mutexProofLine.unlock();
             }
             else {
                 push_work_queue(Work{"red " + eqvar_true.OPBInequality_to_string() + " ; " + eqvar + " 0\n"});
+                _imp->mutexProofLine.lock();
                 ++_imp->proof_line;
+                _imp->mutexProofLine.unlock();
+                // push_work_queue(Work{StringWithProofLine{"red " + eqvar_true.OPBInequality_to_string() + " ; " + eqvar + " 0\n", 1}});
                 push_work_queue(Work{"red " + eqvar_false.OPBInequality_to_string() + " ; " + eqvar + " 1\n"});
+                _imp->mutexProofLine.lock();
                 ++_imp->proof_line;
+                _imp->mutexProofLine.unlock();
+                // push_work_queue(Work{StringWithProofLine{"red " + eqvar_false.OPBInequality_to_string() + " ; " + eqvar + " 1\n", 1}});
             }
         }
         else {
@@ -854,15 +927,25 @@ auto Proof::need_direct_encoding_for(SimpleIntegerVariableID id, Integer v, cons
         if (_imp->opb_done) {
             if (work) {
                 _imp->proof << "red " << eqvar_true << " ; " << eqvar << " 0\n";
+                _imp->mutexProofLine.lock();
                 ++_imp->proof_line;
+                _imp->mutexProofLine.unlock();
                 _imp->proof << "red " << eqvar_false << " ; " << eqvar << " 1\n";
+                _imp->mutexProofLine.lock();
                 ++_imp->proof_line;
+                _imp->mutexProofLine.unlock();
             }
             else {
                 push_work_queue(Work{"red " + eqvar_true.OPBInequality_to_string() + " ; " + eqvar + " 0\n"});
+                _imp->mutexProofLine.lock();
                 ++_imp->proof_line;
+                _imp->mutexProofLine.unlock();
+                // push_work_queue(Work{StringWithProofLine{"red " + eqvar_true.OPBInequality_to_string() + " ; " + eqvar + " 0\n", 1}});
                 push_work_queue(Work{"red " + eqvar_false.OPBInequality_to_string() + " ; " + eqvar + " 1\n"});
+                _imp->mutexProofLine.lock();
                 ++_imp->proof_line;
+                _imp->mutexProofLine.unlock();
+                // push_work_queue(Work{StringWithProofLine{"red " + eqvar_false.OPBInequality_to_string() + " ; " + eqvar + " 1\n", 1}});
             }
         }
         else {
@@ -918,15 +1001,25 @@ auto Proof::need_direct_encoding_for(SimpleIntegerVariableID id, Integer v, cons
         if (_imp->opb_done) {
             if (work) {
                 _imp->proof << "red " << eqvar_true << " ; " << eqvar << " 0\n";
+                _imp->mutexProofLine.lock();
                 ++_imp->proof_line;
+                _imp->mutexProofLine.unlock();
                 _imp->proof << "red " << eqvar_false << " ; " << eqvar << " 1\n";
+                _imp->mutexProofLine.lock();
                 ++_imp->proof_line;
+                _imp->mutexProofLine.unlock();
             }
             else {
                 push_work_queue(Work{"red " + eqvar_true.OPBInequality_to_string() + " ; " + eqvar + " 0\n"});
+                _imp->mutexProofLine.lock();
                 ++_imp->proof_line;
+                _imp->mutexProofLine.unlock();
+                // push_work_queue(Work{StringWithProofLine{"red " + eqvar_true.OPBInequality_to_string() + " ; " + eqvar + " 0\n", 1}});
                 push_work_queue(Work{"red " + eqvar_false.OPBInequality_to_string() + " ; " + eqvar + " 1\n"});
+                _imp->mutexProofLine.lock();
                 ++_imp->proof_line;
+                _imp->mutexProofLine.unlock();
+                // push_work_queue(Work{StringWithProofLine{"red " + eqvar_false.OPBInequality_to_string() + " ; " + eqvar + " 1\n", 1}});
             }
         }
         else {
@@ -998,9 +1091,10 @@ auto Proof::start_proof(State & state) -> void
     // _imp->proof << "pseudo-Boolean proof version 1.2\n";
     // _imp->proof << "f " << _imp->model_constraints << " 0\n";
     push_work_queue(Work{"pseudo-Boolean proof version 1.2\nf " + to_string(_imp->model_constraints) + " 0\n"});
-
+    // push_work_queue(Work{StringWithProofLine{"pseudo-Boolean proof version 1.2\nf " + to_string(_imp->model_constraints) + " 0\n", _imp->model_constraints}});
+    _imp->mutexProofLine.lock();
     _imp->proof_line += _imp->model_constraints;
-
+    _imp->mutexProofLine.unlock();
     if (! _imp->proof)
         throw ProofError{"Error writing proof file to '" + _imp->proof_file + "'"};
 }
@@ -1310,7 +1404,10 @@ auto Proof::solution(const State & state) -> void
     if (! state.optional_minimise_variable()) {
         // _imp->proof << '\n';
         push_work_queue(Work{"\n"});
+        // push_work_queue(Work{StringWithProofLine{"\n", 1}});
+        _imp->mutexProofLine.lock();
         ++_imp->proof_line;
+        _imp->mutexProofLine.unlock();
     }
     else {
         auto do_it = [&](const SimpleIntegerVariableID & var, Integer val) {
@@ -1347,8 +1444,10 @@ auto Proof::solution(const State & state) -> void
 
             // _imp->proof << '\n';
             push_work_queue(Work{"\n"});
-
+            // push_work_queue(Work{StringWithProofLine{"\n", 1}});
+            _imp->mutexProofLine.lock();
             ++_imp->proof_line;
+            _imp->mutexProofLine.unlock();
         };
 
         overloaded{
@@ -1359,8 +1458,10 @@ auto Proof::solution(const State & state) -> void
                 // _imp->proof << "# 0\n";
                 // _imp->proof << "u 1 " << proof_variable(var < obj_val) << " >= 1 ;\n";
                 push_work_queue(Work{"# 0\nu 1 " + proof_variable(var < obj_val) + " >= 1 ;\n"});
-
+                // push_work_queue(Work{StringWithProofLine{"# 0\nu 1 " + proof_variable(var < obj_val) + " >= 1 ;\n", 1}});
+                _imp->mutexProofLine.lock();
                 ++_imp->proof_line;
+                _imp->mutexProofLine.unlock();
             },
             [&](const ConstantIntegerVariableID &) {
                 throw UnimplementedException{};
@@ -1373,8 +1474,10 @@ auto Proof::solution(const State & state) -> void
                 // _imp->proof << "# 0\n";
                 // _imp->proof << "u 1 " << proof_variable(lit) << " >= 1 ;\n";
                 push_work_queue(Work{"# 0\nu 1 " + proof_variable(lit) + " >= 1 ;\n"});
-
+                // push_work_queue(Work{StringWithProofLine{"# 0\nu 1 " + proof_variable(lit) + " >= 1 ;\n", 1}});
+                _imp->mutexProofLine.lock();
                 ++_imp->proof_line;
+                _imp->mutexProofLine.unlock();
             }}
             .visit(*state.optional_minimise_variable());
     }
@@ -1397,7 +1500,10 @@ auto Proof::backtrack(const State & state) -> void
     });
     // _imp->proof << " >= 1 ;\n";
     push_work_queue(Work{" >= 1 ;\n"});
+    // push_work_queue(Work{StringWithProofLine{" >= 1 ;\n", 1}});
+    _imp->mutexProofLine.lock();
     ++_imp->proof_line;
+    _imp->mutexProofLine.unlock();
 }
 
 auto Proof::assert_contradiction() -> void
@@ -1405,9 +1511,13 @@ auto Proof::assert_contradiction() -> void
     // _imp->proof << "* asserting contradiction\n";
     // _imp->proof << "u >= 1 ;\n";
     push_work_queue(Work{"* asserting contradiction\nu >= 1 ;\n"});
-
+    // push_work_queue(Work{StringWithProofLine{"* asserting contradiction\nu >= 1 ;\n", 1}});
+    _imp->mutexProofLine.lock();
     ++_imp->proof_line;
+    _imp->mutexProofLine.unlock();
+
     // _imp->proof << "c " << _imp->proof_line << " 0\n";
+    std::cout << _imp->proof_line << std::endl;
     push_work_queue(Work{"c " + to_string(_imp->proof_line) + " 0\n"});
 
     // this is mostly for tests: we haven't necessarily destroyed the
@@ -1468,8 +1578,8 @@ auto Proof::infer(const State & state, const Literal & lit, const Justification 
 
     overloaded{
         [&]([[maybe_unused]] const JustifyUsingRUP & j) {
-            // std::cout << "JustifyUsingRUP pushed" << std::endl;
-            // need_proof_variable(lit_copy);
+    // std::cout << "JustifyUsingRUP pushed" << std::endl;
+    // need_proof_variable(lit_copy);
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
             _imp->proof << "* RUP from " << j.where.file_name() << ":"
                         << j.where.line() << " in " << j.where.function_name() << '\n';
@@ -1500,7 +1610,7 @@ auto Proof::infer(const State & state, const Literal & lit, const Justification 
             _imp->empty_justification.wait(lock_number, [&] { return (_imp->number_justification == 0); });
             // std::cout << _imp->number_justification << " = justify _imp->number_justification" << std::endl;
             lock_number.unlock();
-            // lock.unlock();
+        // lock.unlock();
 
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
             _imp->proof << "* explicit from " << x.where.file_name() << ":"
@@ -1555,12 +1665,20 @@ auto Proof::emit_proof_line(const string & s, const std::optional<bool> & work) 
 {
     if (work) {
         _imp->proof << s << '\n';
+        // ++_imp->proof_line;
     }
     else {
         // _imp->proof << s << '\n';
         push_work_queue(Work{s + "\n"});
+        // push_work_queue(Work{StringWithProofLine{s + "\n", 0}});
     }
-    return ++_imp->proof_line;
+
+    _imp->mutexProofLine.lock();
+    ++_imp->proof_line;
+    _imp->mutexProofLine.unlock();
+
+    return _imp->proof_line;
+    // return _imp->proof_line;
 }
 
 auto Proof::emit_proof_comment(const string & s, const std::optional<bool> & work) -> void
@@ -1601,7 +1719,11 @@ auto Proof::need_constraint_saying_variable_takes_at_least_one_value(IntegerVari
                 // _imp->proof << ">= 1 ;\n";
                 push_work_queue(Work{">= 1 ;\n"});
 
-                _imp->variable_at_least_one_constraints.emplace(var, ++_imp->proof_line);
+                _imp->mutexProofLine.lock();
+                ++_imp->proof_line;
+                _imp->mutexProofLine.unlock();
+
+                _imp->variable_at_least_one_constraints.emplace(var, _imp->proof_line);
 
                 // _imp->proof << "# " << _imp->active_proof_level << "\n";
                 push_work_queue(Work{"# " + to_string(_imp->active_proof_level) + "\n"});
@@ -1622,6 +1744,8 @@ auto Proof::enter_proof_level(int depth) -> void
     push_work_queue(Work{"# " + to_string(depth) + "\n"});
 
     _imp->active_proof_level = depth;
+
+    // push_work_queue(Work{WorkEnterProofLevel{depth}});
 }
 
 auto Proof::forget_proof_level(int depth) -> void

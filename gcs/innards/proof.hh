@@ -24,6 +24,17 @@
 #include <vector>
 
 
+struct WorkEnterProofLevel
+{
+    int depth;
+};
+
+struct StringWithProofLine
+{
+    std::string text;
+    long long nb;
+};
+
 struct WorkJustifyUsingRUP
 {
     gcs::Literal lit;
@@ -52,7 +63,7 @@ struct WorkGuess
     std::vector<gcs::Literal> extra_proof_conditions;
 };
 
-using Work = std::variant<std::string, WorkJustifyUsingRUP, WorkJustifyUsingAssertion, WorkJustifyExplicitly, WorkGuess>;
+using Work = std::variant<std::string, StringWithProofLine, WorkJustifyUsingRUP, WorkJustifyUsingAssertion, WorkJustifyExplicitly, WorkGuess, WorkEnterProofLevel>;
 
 namespace gcs::innards
 {
