@@ -1117,6 +1117,16 @@ auto Proof::emit_rup_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> 
     return ++_imp->proof_line;
 }
 
+auto Proof::emit_assertion_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq) -> ProofLine
+{
+    need_all_proof_names_in(ineq.lhs);
+
+    _imp->proof << "a ";
+    emit_inequality_to(ineq, nullopt, _imp->proof);
+    _imp->proof << '\n';
+    return ++_imp->proof_line;
+}
+
 auto Proof::emit_rup_proof_line_under_trail(const State & state, const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq) -> ProofLine
 {
     auto terms = trail_variables_as_sum(state, ineq.rhs);

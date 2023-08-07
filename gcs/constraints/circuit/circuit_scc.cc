@@ -153,7 +153,7 @@ namespace
     {
         auto result = propagate_non_gac_alldifferent(unassigned_handle, state);
         increase_inference_to(result, check_sccs(succ, prune_root, fix_req, prune_skip, pos_vars, state));
-        increase_inference_to(result, prevent_small_cycles(succ, lines_for_setting_pos, unassigned_handle, state));
+        increase_inference_to(result, prevent_small_cycles(succ, lines_for_setting_pos, unassigned_handle, pos_vars, state));
     }
 }
 

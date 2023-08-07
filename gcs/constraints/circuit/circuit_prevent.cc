@@ -58,14 +58,18 @@ auto check_small_cycles(const vector<IntegerVariableID> & succ, State & state) -
     return Inference::NoChange;
 }
 
-auto propagate_circuit_using_prevent(const vector<IntegerVariableID> & succ,
-    const ProofLine2DMap & lines_for_setting_pos, const ConstraintStateHandle & unassigned_handle, State & state)
+auto propagate_circuit_using_prevent(
+    const vector<IntegerVariableID> & succ,
+    const ProofLine2DMap & lines_for_setting_pos,
+    const ConstraintStateHandle & unassigned_handle,
+    const vector<ProofOnlySimpleIntegerVariableID> & pos_vars,
+    State & state)
 {
     auto result = propagate_non_gac_alldifferent(unassigned_handle, state);
     if (result == Inference::Contradiction) return result;
     increase_inference_to(result, check_small_cycles(succ, state));
     if (result == Inference::Contradiction) return result;
-    increase_inference_to(result, prevent_small_cycles(succ, lines_for_setting_pos, unassigned_handle, state));
+    increase_inference_to(result, prevent_small_cycles(succ, lines_for_setting_pos, unassigned_handle, pos_vars, state));
     return result;
 }
 
@@ -77,16 +81,17 @@ auto CircuitPrevent::clone() const -> unique_ptr<Constraint>
 auto CircuitPrevent::install(Propagators & propagators, State & initial_state) && -> void
 {
     auto set_up_results = CircuitBase::set_up(propagators, initial_state);
+    auto pos_vars = get<0>(set_up_results);
     auto lines_for_setting_pos = get<1>(set_up_results);
     auto unassigned_handle = get<2>(set_up_results);
 
     Triggers triggers;
     triggers.on_instantiated = {_succ.begin(), _succ.end()};
     propagators.install(
-        [succ = _succ, lines_for_setting_pos = lines_for_setting_pos,
+        [succ = _succ, pos_vars = pos_vars, lines_for_setting_pos = lines_for_setting_pos,
             unassigned_handle = unassigned_handle](State & state) -> pair<Inference, PropagatorState> {
             return pair{
-                propagate_circuit_using_prevent(succ, lines_for_setting_pos, unassigned_handle, state),
+                propagate_circuit_using_prevent(succ, lines_for_setting_pos, unassigned_handle, pos_vars, state),
                 PropagatorState::Enable};
         },
         triggers,

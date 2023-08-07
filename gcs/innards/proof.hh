@@ -272,6 +272,12 @@ namespace gcs::innards
         auto emit_proof_comment(const std::string &) -> void;
 
         /**
+         * Emit an assertion proof line (for development only), not subject to
+         * the current trail.
+         */
+        auto emit_assertion_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> &) -> ProofLine;
+
+        /**
          * Emit a RUP proof step for the specified expression, not subject to
          * the current trail.
          */

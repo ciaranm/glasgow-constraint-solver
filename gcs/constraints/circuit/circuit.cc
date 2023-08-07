@@ -56,8 +56,8 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state) -> tu
         for (unsigned i = 0; i < _succ.size(); ++i)
             for (unsigned j = i + 1; j < _succ.size(); ++j) {
                 auto selector = propagators.create_proof_flag("circuit_notequals");
-                propagators.define(initial_state, WeightedPseudoBooleanSum{} + 1_i * _succ[i] + -1_i * _succ[j] <= -1_i, selector);
-                propagators.define(initial_state, WeightedPseudoBooleanSum{} + -1_i * _succ[i] + 1_i * _succ[j] <= -1_i, ! selector);
+                propagators.define(initial_state, WeightedPseudoBooleanSum{} + 1_i * _succ[i] + -1_i * _succ[j] <= -1_i, HalfReifyOnConjunctionOf{selector});
+                propagators.define(initial_state, WeightedPseudoBooleanSum{} + -1_i * _succ[i] + 1_i * _succ[j] <= -1_i, HalfReifyOnConjunctionOf{! selector});
             }
     }
 
@@ -88,8 +88,9 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state) -> tu
                 // if (idx == jdx) continue;
                 auto cv3 = WeightedPseudoBooleanSum{} + 1_i * position[jdx] + -1_i * position[idx] + -1_i * 1_c;
 
-                proof_line = propagators.define(initial_state, move(cv3) == 0_i, _succ[idx] == Integer{jdx},
-                    "succ[" + to_string(idx) + "] = " + to_string(jdx) + " => pos[" + to_string(jdx) + "] = " + "pos[" + to_string(idx) + "] + 1");
+                proof_line = propagators.define(initial_state, move(cv3) == 0_i, HalfReifyOnConjunctionOf{_succ[idx] == Integer{jdx}},
+                    "succ[" + to_string(idx) + "] = " + to_string(jdx) + " /\\ pos[" + to_string(jdx) +
+                        "] != 0 => pos[" + to_string(jdx) + "] = " + "pos[" + to_string(idx) + "] + 1");
                 lines_for_setting_pos.insert({{Integer{jdx}, Integer{idx}}, proof_line.first.value()});
             }
         }
@@ -98,13 +99,6 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state) -> tu
     // Infer succ[i] != i at top of search, but no other propagation defined here: use CircuitPrevent or CircuitSCC
     if (_succ.size() > 1) {
         propagators.install([succ = _succ, pos = position](State & state) -> pair<Inference, PropagatorState> {
-            WeightedPseudoBooleanSum pos_eq_0s{};
-            for (auto p : pos)
-                pos_eq_0s += 1_i * (ProofVariableCondition{p, VariableConditionOperator::Equal, 0_i});
-            state.infer_true(JustifyExplicitly{
-                [&](Proof & proof, vector<ProofLine> &) -> void {
-                    proof.emit_rup_proof_line_under_trail(state, pos_eq_0s <= 1_i);
-                }});
             auto result = Inference::NoChange;
             for (auto [idx, s] : enumerate(succ)) {
                 increase_inference_to(result, state.infer_not_equal(s, Integer(idx), JustifyUsingRUP{}));
@@ -128,8 +122,10 @@ auto gcs::prevent_small_cycles(
     const vector<IntegerVariableID> & succ,
     const ProofLine2DMap & lines_for_setting_pos,
     const ConstraintStateHandle & unassigned_handle,
+    const vector<ProofOnlySimpleIntegerVariableID> & pos_vars,
     State & state) -> Inference
 {
+
     auto result = Inference::NoChange;
     auto & unassigned = any_cast<list<IntegerVariableID> &>(state.get_constraint_state(unassigned_handle));
     auto k = unassigned.size();
@@ -154,7 +150,11 @@ auto gcs::prevent_small_cycles(
     while (! known_ends.empty()) {
         auto i = known_ends.back();
         known_ends.pop_back();
-        increase_inference_to(result, state.infer(succ[end[i]] != Integer{i}, NoJustificationNeeded{}));
+        increase_inference_to(result,
+            state.infer(succ[end[i]] != Integer{i}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
+                proof.emit_assertion_proof_line(WeightedPseudoBooleanSum{} + 1_i * (pos_vars[i] == 0_i) >= 1_i);
+                proof.emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} + 1_i * (succ[end[i]] != Integer{i}) >= 1_i);
+            }}));
     }
     return result;
 }

@@ -59,9 +59,8 @@ namespace gcs
     auto propagate_non_gac_alldifferent(
         const innards::ConstraintStateHandle & unassigned_handle, innards::State & state) -> innards::Inference;
 
-    auto prevent_small_cycles(const std::vector<IntegerVariableID> &,
-        const ProofLine2DMap & lines_for_setting_pos,
-        const innards::ConstraintStateHandle &,
+    auto prevent_small_cycles(const std::vector<IntegerVariableID> &, const ProofLine2DMap & lines_for_setting_pos,
+        const innards::ConstraintStateHandle &, const std::vector<innards::ProofOnlySimpleIntegerVariableID> & pos_vars,
         innards::State & state) -> innards::Inference;
 }
 
