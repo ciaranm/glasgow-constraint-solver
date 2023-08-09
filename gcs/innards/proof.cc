@@ -1202,6 +1202,11 @@ auto Proof::forget_proof_level(int depth) -> void
     _imp->proof << "w " << depth << '\n';
 }
 
+auto innards::Proof::get_proof_level() -> int
+{
+    return _imp->active_proof_level;
+}
+
 auto Proof::trail_variables_as_sum(const State & state, Integer coeff) -> WeightedPseudoBooleanSum
 {
     WeightedPseudoBooleanSum result;

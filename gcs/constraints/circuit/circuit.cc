@@ -1,6 +1,5 @@
 #include <gcs/constraints/all_different.hh>
 #include <gcs/constraints/circuit/circuit.hh>
-#include <gcs/exception.hh>
 #include <gcs/innards/propagators.hh>
 
 #include <util/enumerate.hh>
@@ -36,7 +35,8 @@ CircuitBase::CircuitBase(vector<IntegerVariableID> v, const bool g) :
 {
 }
 
-auto CircuitBase::set_up(Propagators & propagators, State & initial_state) -> tuple<vector<ProofOnlySimpleIntegerVariableID>, ProofLine2DMap, ConstraintStateHandle>
+auto CircuitBase::set_up(Propagators & propagators, State & initial_state) -> tuple<vector<ProofOnlySimpleIntegerVariableID>, ConstraintStateHandle, ConstraintStateHandle>
+
 {
     // Can't have negative values
     for (const auto & s : _succ)
@@ -67,15 +67,13 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state) -> tu
         unassigned.emplace_back(v);
     }
     auto unassigned_handle = initial_state.add_constraint_state(unassigned);
+    long dummy = -1; // Not sure why this is necessary but I get a bad_any_cast otherwise
+    // Workaround: persistent constraint state as I don't want this to restore on backtrack
+    auto line_for_starting_cycle_handle = initial_state.add_persistent_constraint_state(dummy);
 
-    ProofLine2DMap lines_for_setting_pos{};
     // Define encoding to eliminate sub-cycles
     vector<ProofOnlySimpleIntegerVariableID> position;
     if (propagators.want_definitions()) {
-
-        auto n_minus_1 = ConstantIntegerVariableID{Integer{static_cast<long long>(_succ.size() - 1)}};
-
-        pair<optional<ProofLine>, optional<ProofLine>> proof_line = {nullopt, nullopt};
 
         for (unsigned int idx = 0; idx < _succ.size(); ++idx) {
             position.emplace_back(propagators.create_proof_only_integer_variable(0_i, Integer(_succ.size() - 1),
@@ -88,10 +86,9 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state) -> tu
                 // if (idx == jdx) continue;
                 auto cv3 = WeightedPseudoBooleanSum{} + 1_i * position[jdx] + -1_i * position[idx] + -1_i * 1_c;
 
-                proof_line = propagators.define(initial_state, move(cv3) == 0_i, HalfReifyOnConjunctionOf{_succ[idx] == Integer{jdx}, position[jdx] != 0_i},
+                propagators.define(initial_state, move(cv3) == 0_i, HalfReifyOnConjunctionOf{_succ[idx] == Integer{jdx}, position[jdx] != 0_i},
                     "succ[" + to_string(idx) + "] = " + to_string(jdx) + " /\\ pos[" + to_string(jdx) +
                         "] != 0 => pos[" + to_string(jdx) + "] = " + "pos[" + to_string(idx) + "] + 1");
-                lines_for_setting_pos.insert({{Integer{jdx}, Integer{idx}}, proof_line.first.value()});
 
                 auto cv4 = WeightedPseudoBooleanSum{} + 1_i * position[idx];
 
@@ -116,7 +113,7 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state) -> tu
             Triggers{}, "circuit init");
     }
 
-    return tuple{position, lines_for_setting_pos, unassigned_handle};
+    return tuple{position, line_for_starting_cycle_handle, unassigned_handle};
 }
 
 auto CircuitBase::describe_for_proof() -> std::string
@@ -126,7 +123,7 @@ auto CircuitBase::describe_for_proof() -> std::string
 
 auto gcs::prevent_small_cycles(
     const vector<IntegerVariableID> & succ,
-    const ProofLine2DMap & lines_for_setting_pos,
+    const ConstraintStateHandle & line_for_starting_cycle_handle,
     const ConstraintStateHandle & unassigned_handle,
     const vector<ProofOnlySimpleIntegerVariableID> & pos_vars,
     State & state) -> Inference
@@ -134,6 +131,7 @@ auto gcs::prevent_small_cycles(
 
     auto result = Inference::NoChange;
     auto & unassigned = any_cast<list<IntegerVariableID> &>(state.get_constraint_state(unassigned_handle));
+    auto & line_for_starting_cycle = any_cast<long &>(state.get_persistent_constraint_state(line_for_starting_cycle_handle));
     auto k = unassigned.size();
     auto n = succ.size();
     auto end = vector<long>(n, -1);
@@ -158,7 +156,13 @@ auto gcs::prevent_small_cycles(
         known_ends.pop_back();
         increase_inference_to(result,
             state.infer(succ[end[i]] != Integer{i}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
-                proof.emit_assertion_proof_line(WeightedPseudoBooleanSum{} + 1_i * (pos_vars[i] == 0_i) >= 1_i);
+                if (line_for_starting_cycle != -1)
+                    proof.delete_proof_lines({line_for_starting_cycle});
+                auto previous_proof_level = proof.get_proof_level();
+                proof.enter_proof_level(0);
+                proof.emit_proof_comment("Starting cycle for prevent");
+                line_for_starting_cycle = proof.emit_assertion_proof_line(WeightedPseudoBooleanSum{} + 1_i * (pos_vars[i] == 0_i) >= 1_i);
+                proof.enter_proof_level(previous_proof_level);
                 proof.emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} + 1_i * (succ[end[i]] != Integer{i}) >= 1_i);
             }}));
     }

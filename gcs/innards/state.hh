@@ -536,7 +536,9 @@ namespace gcs::innards
         ///@}
 
         [[nodiscard]] auto add_constraint_state(const ConstraintState c) -> ConstraintStateHandle;
+        [[nodiscard]] auto add_persistent_constraint_state(const ConstraintState c) -> ConstraintStateHandle;
         [[nodiscard]] auto get_constraint_state(const ConstraintStateHandle h) -> ConstraintState &;
+        [[nodiscard]] auto get_persistent_constraint_state(const ConstraintStateHandle h) -> ConstraintState &;
     };
 }
 

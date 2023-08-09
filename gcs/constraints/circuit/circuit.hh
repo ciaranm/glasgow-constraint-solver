@@ -29,7 +29,7 @@ namespace gcs
     protected:
         const bool _gac_all_different;
         const std::vector<IntegerVariableID> _succ;
-        virtual auto set_up(innards::Propagators &, innards::State &) -> std::tuple<std::vector<innards::ProofOnlySimpleIntegerVariableID>, ProofLine2DMap, innards::ConstraintStateHandle>;
+        virtual auto set_up(innards::Propagators &, innards::State &) -> std::tuple<std::vector<innards::ProofOnlySimpleIntegerVariableID>, innards::ConstraintStateHandle, innards::ConstraintStateHandle>;
 
     public:
         explicit CircuitBase(std::vector<IntegerVariableID> var, bool gac_all_different = false);
@@ -59,7 +59,7 @@ namespace gcs
     auto propagate_non_gac_alldifferent(
         const innards::ConstraintStateHandle & unassigned_handle, innards::State & state) -> innards::Inference;
 
-    auto prevent_small_cycles(const std::vector<IntegerVariableID> &, const ProofLine2DMap & lines_for_setting_pos,
+    auto prevent_small_cycles(const std::vector<IntegerVariableID> &, const innards::ConstraintStateHandle &,
         const innards::ConstraintStateHandle &, const std::vector<innards::ProofOnlySimpleIntegerVariableID> & pos_vars,
         innards::State & state) -> innards::Inference;
 }

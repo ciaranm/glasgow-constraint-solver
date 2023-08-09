@@ -80,17 +80,20 @@ namespace
         set<long> reachable = {root};
 
         set<long> new_reachable = {};
+        state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) {
+            proof.emit_assertion_proof_line(WeightedPseudoBooleanSum{} + 1_i * (pos_vars[root] == 0_i) >= 1_i);
+        }});
+
         state.for_each_value(succ[root], [&](Integer v) -> void {
             new_reachable.insert(v.raw_value);
         });
-        //        state.infer_true(JustifyExplicitly{
-        //            [&](Proof & proof, vector<ProofLine> & del) {
-        //                WeightedPseudoBooleanSum pos_sum{};
-        //                for (auto node : new_reachable) {
-        //                    proof.need_proof_variable(get_actual_proof_variable(pos_vars[1]) == Integer{node});
-        //                    pos_sum.terms.emplace_back(pos_sum)
-        //                }
-        //            }});
+        state.infer_true(JustifyExplicitly{
+            [&](Proof & proof, vector<ProofLine> & del) {
+                WeightedPseudoBooleanSum pos_sum{};
+                for (auto node : new_reachable) {
+                    pos_sum += 1_i * (pos_vars[1] == Integer{node});
+                }
+            }});
     }
 
     auto check_sccs(const vector<IntegerVariableID> & succ, const bool & prune_root, const bool & fix_req,
@@ -148,12 +151,15 @@ namespace
 
     auto propagate_circuit_using_scc(const vector<IntegerVariableID> & succ, const bool & prune_root,
         const bool & fix_req, const bool & prune_skip, const vector<ProofOnlySimpleIntegerVariableID> & pos_vars,
-        const ProofLine2DMap & lines_for_setting_pos, const ConstraintStateHandle & unassigned_handle, State & state)
+        const ConstraintStateHandle & line_for_starting_cycle, const ConstraintStateHandle & unassigned_handle, State & state)
         -> Inference
     {
         auto result = propagate_non_gac_alldifferent(unassigned_handle, state);
+        if (result == Inference::Contradiction) return result;
         increase_inference_to(result, check_sccs(succ, prune_root, fix_req, prune_skip, pos_vars, state));
-        increase_inference_to(result, prevent_small_cycles(succ, lines_for_setting_pos, unassigned_handle, pos_vars, state));
+        if (result == Inference::Contradiction) return result;
+        increase_inference_to(result, prevent_small_cycles(succ, line_for_starting_cycle, unassigned_handle, pos_vars, state));
+        return result;
     }
 }
 
@@ -166,7 +172,7 @@ auto CircuitSCC::install(Propagators & propagators, State & initial_state) && ->
 {
     auto set_up_results = CircuitBase::set_up(propagators, initial_state);
     auto pos_vars = get<0>(set_up_results);
-    auto lines_for_setting_pos = get<1>(set_up_results);
+    auto line_for_starting_cycle = get<1>(set_up_results);
     auto unassigned_handle = get<2>(set_up_results);
 
     Triggers triggers;
@@ -174,9 +180,9 @@ auto CircuitSCC::install(Propagators & propagators, State & initial_state) && ->
     propagators.install(
         [succ = _succ,
             pos_vars = pos_vars,
-            lines_for_setting_pos = lines_for_setting_pos,
+            line_for_starting_cycle = line_for_starting_cycle,
             unassigned_handle = unassigned_handle](State & state) -> pair<Inference, PropagatorState> {
-            auto result = propagate_circuit_using_scc(succ, true, true, true, pos_vars, lines_for_setting_pos, unassigned_handle, state);
+            auto result = propagate_circuit_using_scc(succ, true, true, true, pos_vars, line_for_starting_cycle, unassigned_handle, state);
             return pair{result, PropagatorState::Enable};
         },
         triggers,

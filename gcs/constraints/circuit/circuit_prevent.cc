@@ -29,10 +29,12 @@ using std::to_string;
 using std::unique_ptr;
 using std::vector;
 
-auto check_small_cycles(const vector<IntegerVariableID> & succ, State & state) -> Inference
+auto check_small_cycles(const vector<IntegerVariableID> & succ, const ConstraintStateHandle & line_for_starting_cycle_handle,
+    const vector<ProofOnlySimpleIntegerVariableID> & pos_vars, State & state) -> Inference
 {
     auto n = succ.size();
     auto checked = vector<bool>(n, false);
+    auto & line_for_starting_cycle = any_cast<long &>(state.get_persistent_constraint_state(line_for_starting_cycle_handle));
     for (auto [idx, var] : enumerate(succ)) {
         if (checked[idx]) continue;
         checked[idx] = true;
@@ -46,8 +48,20 @@ auto check_small_cycles(const vector<IntegerVariableID> & succ, State & state) -
                     checked[j] = true;
                     cycle_length++;
                     if (j == j0) {
-                        if (cycle_length < n)
+                        if (cycle_length < n) {
+                            state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
+                                if (line_for_starting_cycle != -1) {
+                                    proof.delete_proof_lines({line_for_starting_cycle});
+                                }
+                                auto previous_proof_level = proof.get_proof_level();
+                                proof.enter_proof_level(0);
+                                proof.emit_proof_comment("Starting cycle for check");
+                                line_for_starting_cycle = proof.emit_assertion_proof_line(WeightedPseudoBooleanSum{} + 1_i * (pos_vars[j0] == 0_i) >= 1_i);
+                                proof.enter_proof_level(previous_proof_level);
+                            }});
                             return Inference::Contradiction;
+                        }
+
                         else
                             break;
                     }
@@ -60,16 +74,16 @@ auto check_small_cycles(const vector<IntegerVariableID> & succ, State & state) -
 
 auto propagate_circuit_using_prevent(
     const vector<IntegerVariableID> & succ,
-    const ProofLine2DMap & lines_for_setting_pos,
+    const ConstraintStateHandle & line_for_starting_cycle_handle,
     const ConstraintStateHandle & unassigned_handle,
     const vector<ProofOnlySimpleIntegerVariableID> & pos_vars,
     State & state)
 {
     auto result = propagate_non_gac_alldifferent(unassigned_handle, state);
     if (result == Inference::Contradiction) return result;
-    increase_inference_to(result, check_small_cycles(succ, state));
+    increase_inference_to(result, check_small_cycles(succ, line_for_starting_cycle_handle, pos_vars, state));
     if (result == Inference::Contradiction) return result;
-    increase_inference_to(result, prevent_small_cycles(succ, lines_for_setting_pos, unassigned_handle, pos_vars, state));
+    increase_inference_to(result, prevent_small_cycles(succ, line_for_starting_cycle_handle, unassigned_handle, pos_vars, state));
     return result;
 }
 
@@ -82,16 +96,16 @@ auto CircuitPrevent::install(Propagators & propagators, State & initial_state) &
 {
     auto set_up_results = CircuitBase::set_up(propagators, initial_state);
     auto pos_vars = get<0>(set_up_results);
-    auto lines_for_setting_pos = get<1>(set_up_results);
+    auto line_for_starting_cycle = get<1>(set_up_results);
     auto unassigned_handle = get<2>(set_up_results);
 
     Triggers triggers;
     triggers.on_instantiated = {_succ.begin(), _succ.end()};
     propagators.install(
-        [succ = _succ, pos_vars = pos_vars, lines_for_setting_pos = lines_for_setting_pos,
+        [succ = _succ, pos_vars = pos_vars, line_for_starting_cycle = line_for_starting_cycle,
             unassigned_handle = unassigned_handle](State & state) -> pair<Inference, PropagatorState> {
             return pair{
-                propagate_circuit_using_prevent(succ, lines_for_setting_pos, unassigned_handle, pos_vars, state),
+                propagate_circuit_using_prevent(succ, line_for_starting_cycle, unassigned_handle, pos_vars, state),
                 PropagatorState::Enable};
         },
         triggers,

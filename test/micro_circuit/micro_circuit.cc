@@ -60,7 +60,7 @@ auto main(int argc, char * argv[]) -> int
 
     auto x = p.create_integer_variable_vector(4, 0_i, 3_i);
 
-    p.post(Circuit{x});
+    p.post(CircuitSCC{x});
     auto stats = solve_with(p,
         SolveCallbacks{
             .solution = [&](const CurrentState & s) -> bool {
@@ -68,8 +68,7 @@ auto main(int argc, char * argv[]) -> int
                 cout << s(x[0]) << " " << s(x[1]) << " " << s(x[2]) << " " << s(x[3]) << endl;
                 return true;
             },
-        },
-        make_optional<ProofOptions>("micro_circuit.opb", "micro_circuit.veripb"));
+        } /*,make_optional<ProofOptions>("micro_circuit.opb", "micro_circuit.veripb")*/);
 
     cout << stats;
 
