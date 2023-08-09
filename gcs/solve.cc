@@ -147,7 +147,7 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
 
         std::string str = optional_proof_options.value().opb_file;
         std::string name_file = str.substr(0, str.length() - 4);
-        name_file += "_computation_time";
+        name_file += "_computation_time_multi_threading";
 
         std::ofstream file;
         file.open(name_file, std::ofstream::out | std::ofstream::app);

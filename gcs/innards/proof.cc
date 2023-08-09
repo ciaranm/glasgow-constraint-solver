@@ -25,6 +25,7 @@
 #include <mutex>
 #include <queue>
 #include <thread>
+#include <unistd.h>
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -148,6 +149,7 @@ struct Proof::Imp
     ProofLine model_constraints = 0;
     ProofLine proof_line = 0;
     int active_proof_level = 0;
+    int active_proof_level_thread = 0;
 
     map<SimpleOrProofOnlyIntegerVariableID, ProofLine> variable_at_least_one_constraints;
     map<LiteralFromIntegerVariable, string> direct_integer_variables;
@@ -176,6 +178,7 @@ struct Proof::Imp
     std::mutex myMutexWork;
     std::mutex mutexNumber;
     std::mutex mutexProofLine;
+    // std::mutex mutexActiveProofLevel;
     bool finished = false;
     std::thread thread_proof_work;
 
@@ -197,7 +200,9 @@ Proof::Proof(const ProofOptions & proof_options) :
 
 Proof::~Proof()
 {
-    joinThread();
+    if (_imp->thread_proof_work.joinable()) {
+        _imp->thread_proof_work.join();
+    }
 };
 
 void Proof::startWorkThread()
@@ -367,11 +372,13 @@ void Proof::threadWorkEntry()
                 },
                 [&](const WorkEnterProofLevel & w) {
                     _imp->proof << "# " << w.depth << '\n';
-                    _imp->active_proof_level = w.depth;
+                    _imp->active_proof_level_thread = w.depth;
                 },
                 [&](const StringWithProofLine & s) {
                     _imp->proof << s.text;
+                    _imp->mutexProofLine.lock();
                     _imp->proof_line += s.nb;
+                    _imp->mutexProofLine.unlock();
                 }};
             std::visit(visitor, work);
 
@@ -380,34 +387,12 @@ void Proof::threadWorkEntry()
         }
         else if (_imp->finished) {
             _imp->proof << flush;
+            // std::cout << "Proof_line : " << _imp->proof_line << std::endl;
             // std::cout << "Thread proof finished\n";
             break;
         }
     }
 }
-
-// void Proof::threadTextEntry()
-// {
-//     string proof_text;
-//     while (true) {
-//         std::unique_lock<std::mutex> lock(_imp->myMutexText);
-//         _imp->not_empty_text.wait(lock, [&] { return (_imp->work_finished || ! _imp->proofTextQueue.empty()); });
-//         if (! _imp->proofTextQueue.empty()) {
-//             proof_text = _imp->proofTextQueue.front();
-
-//             // std::cout << "proofQueue.size() : " << proofQueue.size() << std::endl;
-//             _imp->proofTextQueue.pop();
-//             lock.unlock();
-//             _imp->proof << proof_text;
-//             std::cout << "Text written from threadText: " << proof_text << std::endl;
-//         }
-//         else if (_imp->work_finished) {
-//             _imp->proof << flush;
-//             // std::cout << "Thread proof finished\n";
-//             break;
-//         }
-//     }
-// }
 
 void Proof::joinThread()
 {
@@ -420,15 +405,6 @@ void Proof::Stop()
     _imp->finished = true;
     _imp->not_empty_work.notify_one();
 };
-
-// auto Proof::push_text_queue(string text_proof)
-// {
-//     unique_lock<mutex> lock(_imp->myMutexText);
-//     _imp->proofTextQueue.push(text_proof);
-//     // std::cout << "Text pushed : " << text_proof << std::endl;
-//     _imp->not_empty_text.notify_one();
-//     lock.unlock();
-// }
 
 [[nodiscard]] auto Proof::xify(std::string && s) -> std::string
 {
@@ -800,10 +776,11 @@ auto Proof::need_gevar(SimpleIntegerVariableID id, Integer v, const std::optiona
 
     if (_imp->opb_done) {
         if (work) {
-            _imp->proof << "# " << _imp->active_proof_level << "\n";
+            // _imp->proof << "# " << _imp->active_proof_level << "\n"; //pb w
+            _imp->proof << "# " << _imp->active_proof_level_thread << "\n";
         }
         else {
-            push_work_queue(Work{"# " + to_string(_imp->active_proof_level) + "\n"});
+            push_work_queue(Work{"# " + to_string(_imp->active_proof_level) + "\n"}); // pb
         }
     }
 }
@@ -885,10 +862,11 @@ auto Proof::need_direct_encoding_for(SimpleIntegerVariableID id, Integer v, cons
 
         if (_imp->opb_done) {
             if (work) {
-                _imp->proof << "# " << _imp->active_proof_level << "\n";
+                // _imp->proof << "# " << _imp->active_proof_level << "\n"; //pb w
+                _imp->proof << "# " << _imp->active_proof_level_thread << "\n";
             }
             else {
-                push_work_queue(Work{"# " + to_string(_imp->active_proof_level) + "\n"});
+                push_work_queue(Work{"# " + to_string(_imp->active_proof_level) + "\n"}); // pb
             }
         }
     }
@@ -957,10 +935,11 @@ auto Proof::need_direct_encoding_for(SimpleIntegerVariableID id, Integer v, cons
 
         if (_imp->opb_done) {
             if (work) {
-                _imp->proof << "# " << _imp->active_proof_level << "\n";
+                // _imp->proof << "# " << _imp->active_proof_level << "\n"; //pb w
+                _imp->proof << "# " << _imp->active_proof_level_thread << "\n";
             }
             else {
-                push_work_queue(Work{"# " + to_string(_imp->active_proof_level) + "\n"});
+                push_work_queue(Work{"# " + to_string(_imp->active_proof_level) + "\n"}); // pb
             }
         }
     }
@@ -1031,10 +1010,11 @@ auto Proof::need_direct_encoding_for(SimpleIntegerVariableID id, Integer v, cons
 
         if (_imp->opb_done) {
             if (work) {
-                _imp->proof << "# " << _imp->active_proof_level << "\n";
+                // _imp->proof << "# " << _imp->active_proof_level << "\n"; // pb w
+                _imp->proof << "# " << _imp->active_proof_level_thread << "\n";
             }
             else {
-                push_work_queue(Work{"# " + to_string(_imp->active_proof_level) + '\n'});
+                push_work_queue(Work{"# " + to_string(_imp->active_proof_level) + "\n"}); // pb
             }
         }
     }
@@ -1512,21 +1492,23 @@ auto Proof::assert_contradiction() -> void
     // _imp->proof << "u >= 1 ;\n";
     push_work_queue(Work{"* asserting contradiction\nu >= 1 ;\n"});
     // push_work_queue(Work{StringWithProofLine{"* asserting contradiction\nu >= 1 ;\n", 1}});
+
     _imp->mutexProofLine.lock();
     ++_imp->proof_line;
     _imp->mutexProofLine.unlock();
 
-    // _imp->proof << "c " << _imp->proof_line << " 0\n";
-    std::cout << _imp->proof_line << std::endl;
-    push_work_queue(Work{"c " + to_string(_imp->proof_line) + " 0\n"});
+    // std::cout << "Proof_line : " << _imp->proof_line << std::endl;
+    // std::cout << "Active_proof_level : " << _imp->active_proof_level << std::endl;
+    // std::cout << "size queue : " << _imp->proofWorkQueue.size() << std::endl;
 
-    // this is mostly for tests: we haven't necessarily destroyed the
-    // Problem before running the verifier.
+    std::unique_lock<std::mutex> lock_number(_imp->mutexNumber);
+    _imp->empty_justification.wait(lock_number, [&] { return (_imp->number_justification == 0); });
+    lock_number.unlock();
+    // _imp->proof << "c " << _imp->proof_line << " 0\n";
+    push_work_queue(Work{"c " + to_string(_imp->proof_line) + " 0\n"});
 
     (*this).Stop();
     // (*this).joinThread();
-
-    // _imp->proof << flush;   // doesn't work
 }
 
 auto Proof::infer(const State & state, const Literal & lit, const Justification & why) -> void
@@ -1678,7 +1660,6 @@ auto Proof::emit_proof_line(const string & s, const std::optional<bool> & work) 
     _imp->mutexProofLine.unlock();
 
     return _imp->proof_line;
-    // return _imp->proof_line;
 }
 
 auto Proof::emit_proof_comment(const string & s, const std::optional<bool> & work) -> void
@@ -1741,11 +1722,9 @@ auto Proof::need_constraint_saying_variable_takes_at_least_one_value(IntegerVari
 auto Proof::enter_proof_level(int depth) -> void
 {
     // _imp->proof << "# " << depth << '\n';
-    push_work_queue(Work{"# " + to_string(depth) + "\n"});
-
+    // push_work_queue(Work{"# " + to_string(depth) + "\n"});
+    push_work_queue(Work{WorkEnterProofLevel{depth}});
     _imp->active_proof_level = depth;
-
-    // push_work_queue(Work{WorkEnterProofLevel{depth}});
 }
 
 auto Proof::forget_proof_level(int depth) -> void
