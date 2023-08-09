@@ -113,7 +113,7 @@ auto Equals::install(Propagators & propagators, State & initial_state) && -> voi
     }
 
     if (propagators.want_definitions()) {
-        propagators.define_linear_eq(initial_state, WeightedSum{} + 1_i * _v1 + -1_i * _v2, 0_i, nullopt);
+        propagators.define(initial_state, WeightedPseudoBooleanSum{} + 1_i * _v1 + -1_i * _v2 == 0_i, nullopt);
     }
 }
 
@@ -142,15 +142,15 @@ auto EqualsIf::install(Propagators & propagators, State & initial_state) && -> v
         },
         [&](const FalseLiteral &) {
         },
-        [&](const LiteralFromIntegerVariable & cond) {
+        [&](const IntegerVariableCondition & cond) {
             Triggers triggers{.on_change = {_v1, _v2}};
             switch (cond.op) {
-            case LiteralFromIntegerVariable::Operator::Less:
-            case LiteralFromIntegerVariable::Operator::GreaterEqual:
+            case VariableConditionOperator::Less:
+            case VariableConditionOperator::GreaterEqual:
                 triggers.on_bounds.push_back(cond.var);
                 break;
-            case LiteralFromIntegerVariable::Operator::Equal:
-            case LiteralFromIntegerVariable::Operator::NotEqual:
+            case VariableConditionOperator::Equal:
+            case VariableConditionOperator::NotEqual:
                 triggers.on_change.push_back(cond.var);
                 break;
             }
@@ -213,7 +213,8 @@ auto EqualsIf::install(Propagators & propagators, State & initial_state) && -> v
                 _v1, _v2);
 
             if (propagators.want_definitions()) {
-                propagators.define_linear_eq(initial_state, WeightedSum{} + 1_i * _v1 + -1_i * _v2, 0_i, cond);
+                propagators.define(initial_state, WeightedPseudoBooleanSum{} + 1_i * _v1 + -1_i * _v2 == 0_i,
+                    HalfReifyOnConjunctionOf{{cond}});
             }
         }}
         .visit(_cond);
@@ -256,15 +257,15 @@ auto EqualsIff::install(Propagators & propagators, State & initial_state) && -> 
         [&](const FalseLiteral &) {
             NotEquals{_v1, _v2}.install(propagators, initial_state);
         },
-        [&](const LiteralFromIntegerVariable & cond) {
+        [&](const IntegerVariableCondition & cond) {
             Triggers triggers{.on_change = {_v1, _v2}};
             switch (cond.op) {
-            case LiteralFromIntegerVariable::Operator::Less:
-            case LiteralFromIntegerVariable::Operator::GreaterEqual:
+            case VariableConditionOperator::Less:
+            case VariableConditionOperator::GreaterEqual:
                 triggers.on_bounds.push_back(cond.var);
                 break;
-            case LiteralFromIntegerVariable::Operator::Equal:
-            case LiteralFromIntegerVariable::Operator::NotEqual:
+            case VariableConditionOperator::Equal:
+            case VariableConditionOperator::NotEqual:
                 triggers.on_change.push_back(cond.var);
                 break;
             }
@@ -441,15 +442,7 @@ auto NotEquals::install(Propagators & propagators, State & initial_state) && -> 
                     // proof.emit_proof_comment("converting not equals to value encoding", true);
                     state.for_each_value(v1, [&](Integer val1) {
                         if (state.in_domain(v2, val1)) {
-                            proof.need_proof_variable(v1 != val1);
-                            proof.need_proof_variable(v2 != val1);
-                            // proof.need_proof_variable(v1 != val1, true);
-                            // proof.need_proof_variable(v2 != val1, true);                           
-                            stringstream line;
-                            line << "u 1 " << proof.proof_variable(v1 != val1) << " 1 " << proof.proof_variable(v2 != val1)
-                                 << " >= 1 ;";
-                            proof.emit_proof_line(line.str());
-                            // proof.emit_proof_line(line.str(), true);
+                            proof.emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * (v1 != val1) + 1_i * (v2 != val1) >= 1_i);
                         }
                     });
                 }});
@@ -461,9 +454,10 @@ auto NotEquals::install(Propagators & propagators, State & initial_state) && -> 
 
     if (propagators.want_definitions()) {
         auto selector = propagators.create_proof_flag("notequals");
-
-        propagators.define_linear_le(initial_state, WeightedSum{} + 1_i * _v1 + -1_i * _v2, -1_i, selector);
-        propagators.define_linear_le(initial_state, WeightedSum{} + -1_i * _v1 + 1_i * _v2, -1_i, ! selector);
+        propagators.define(initial_state, WeightedPseudoBooleanSum{} + 1_i * _v1 + -1_i * _v2 <= -1_i,
+            HalfReifyOnConjunctionOf{{selector}});
+        propagators.define(initial_state, WeightedPseudoBooleanSum{} + -1_i * _v1 + 1_i * _v2 <= -1_i,
+            HalfReifyOnConjunctionOf{{! selector}});
     }
 }
 

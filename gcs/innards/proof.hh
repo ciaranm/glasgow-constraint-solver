@@ -3,16 +3,17 @@
 
 #include <gcs/innards/justification.hh>
 #include <gcs/innards/linear_utils.hh>
-#include <gcs/innards/literal_utils.hh>
+#include <gcs/innards/literal.hh>
 #include <gcs/innards/proof-fwd.hh>
 #include <gcs/innards/state-fwd.hh>
-#include <gcs/literal.hh>
 #include <gcs/proof_options.hh>
+#include <gcs/variable_condition.hh>
 #include <gcs/variable_id.hh>
 
 #include <condition_variable>
 #include <exception>
 #include <functional>
+#include <iosfwd>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -93,6 +94,8 @@ namespace gcs::innards
     {
         unsigned long long index;
         bool positive;
+
+        [[nodiscard]] auto operator<=>(const ProofFlag &) const = default;
     };
 
     /**
@@ -121,54 +124,41 @@ namespace gcs::innards
         [[nodiscard]] auto operator<=>(const ProofOnlySimpleIntegerVariableID &) const = default;
     };
 
+    [[nodiscard]] auto debug_string(const ProofOnlySimpleIntegerVariableID &) -> std::string;
+
     using SimpleOrProofOnlyIntegerVariableID = std::variant<SimpleIntegerVariableID, ProofOnlySimpleIntegerVariableID>;
 
-    /**
-     * \brief Various things in Proof can reify on either a Literal or a ProofFlag.
-     *
-     * \ingroup Innards
-     * \sa Proof::integer_linear_le()
-     */
-    using ReificationTerm = std::variant<Literal, ProofFlag>;
+    using ProofVariableCondition = VariableConditionFrom<ProofOnlySimpleIntegerVariableID>;
+
+    using ProofLiteral = std::variant<Literal, ProofVariableCondition>;
 
     /**
-     * \brief Inside a Proof, a pseudo-Boolean expression can contain a Literal,
-     * a ProofFlag, or an IntegerVariableID to be decomposed into its bits.
+     * \brief Various things in Proof can reify on a conjunction of
+     * ProofLiteral and ProofFlag.
+     *
+     * \ingroup Innards
+     */
+    using HalfReifyOnConjunctionOf = std::vector<std::variant<ProofLiteral, ProofFlag>>;
+
+    /**
+     * \brief Inside a Proof, a pseudo-Boolean expression can contain a ProofLiteral,
+     * a ProofFlag, an IntegerVariableID or ProofOnlySimpleIntegerVariableID
+     * to be decomposed into its bits, or if you really want, a raw string
+     * (mostly for internal use).
      *
      * \ingroup Innards
      * \sa Proof::pseudoboolean_ge
-     * \sa gcs::innards::sanitise_pseudoboolean_terms()
      */
-    using PseudoBooleanTerm = std::variant<Literal, ProofFlag, IntegerVariableID, ProofOnlySimpleIntegerVariableID>;
+    using PseudoBooleanTerm = std::variant<ProofLiteral, ProofFlag, IntegerVariableID, ProofOnlySimpleIntegerVariableID>;
 
     using WeightedPseudoBooleanSum = SumOf<Weighted<PseudoBooleanTerm>>;
 
-    /**
-     * \brief Modify a WeightedPseudoBooleanSum and its associated
-     * greater-or-equal inequality value to simplify things.
-     *
-     * Removes anything that is gcs::innards::is_literally_true_or_false()
-     * with appropriate handling of the coefficients.  If false is returned, the
-     * expression is trivially satisfied and should not be specified.
-     *
-     * \ingroup Innards
-     * \sa Proof::pseudoboolean_ge
-     * \sa WeightedPseudoBooleanSum
-     */
-    [[nodiscard]] auto sanitise_pseudoboolean_terms(WeightedPseudoBooleanSum &, Integer &) -> bool;
+    using WeightedPseudoBooleanLessEqual = SumLessEqual<Weighted<PseudoBooleanTerm>>;
 
-    /**
-     * \brief Sanitise a Literals by removing duplicates and forced terms.
-     *
-     * If any term is gcs::innards::is_literally_true(), returns false because
-     * the expression is trivially satisfied and should not be specified.
-     * Otherwise, removes any gcs::innards::is_literally_false() terms, and
-     * groups like terms.
-     *
-     * \ingroup Innards
-     * \sa Proof::cnf
-     */
-    [[nodiscard]] auto sanitise_literals(Literals &) -> bool;
+    using WeightedPseudoBooleanEquality = SumEquals<Weighted<PseudoBooleanTerm>>;
+
+    using SimpleLiteral = std::variant<VariableConditionFrom<SimpleIntegerVariableID>,
+        ProofVariableCondition, TrueLiteral, FalseLiteral>;
 
     /**
      * \brief Everything proof-related goes through here.
@@ -197,6 +187,20 @@ namespace gcs::innards
         auto push_work_queue(Work);
         auto output_it(const std::string &, Literal, std::vector<Literal>, std::vector<Literal>, const std::optional<bool> & work = std::nullopt);
         auto for_each_guess(const std::function<auto(Literal)->void> &, std::vector<Literal>, std::vector<Literal>) const -> void;
+
+        auto emit_inequality_to(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
+            const std::optional<HalfReifyOnConjunctionOf> &, std::ostream &) -> void;
+
+        [[nodiscard]] auto simplify_literal(const ProofLiteral & lit) -> SimpleLiteral;
+
+        auto need_proof_name(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> &) -> void;
+
+        [[nodiscard]] auto proof_name(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> &) const -> const std::string &;
+        [[nodiscard]] auto proof_name(const ProofFlag &) const -> const std::string &;
+
+        auto need_all_proof_names_in(const SumOf<Weighted<PseudoBooleanTerm>> & sum) -> void;
+
+        auto need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID, Integer) -> void;
 
     public:
         /**
@@ -256,48 +260,22 @@ namespace gcs::innards
             const IntegerVariableProofRepresentation rep) -> ProofOnlySimpleIntegerVariableID;
 
         /**
-         * Add a new constraint, defined via CNF. Must call gcs::innards::sanitise_literals()
-         * first.
+         * Add a new constraint, defined via CNF. Returns nullopt if the constraint
+         * is trivially satisfiable.
          */
-        auto cnf(const Literals &) -> ProofLine;
+        auto add_cnf_to_model(const Literals &) -> std::optional<ProofLine>;
 
         /**
-         * Add an at-most-one constraint.
+         * Add a pseudo-Boolean inequality to the model.
          */
-        [[nodiscard]] auto at_most_one(const Literals &) -> ProofLine;
+        [[nodiscard]] auto add_to_model(const WeightedPseudoBooleanLessEqual &,
+            const std::optional<HalfReifyOnConjunctionOf> & half_reif) -> std::optional<ProofLine>;
 
         /**
-         * Add a pseudo-Boolean greater or equals constraint. Must call
-         * gcs::innards::sanitise_pseudoboolean_terms() first.
+         * Add a pseudo-Boolean equality to the model.
          */
-        [[nodiscard]] auto pseudoboolean_ge(const WeightedPseudoBooleanSum &, Integer,
-            std::optional<ReificationTerm> half_reif, bool equality) -> ProofLine;
-
-        /**
-         * Add an integer linear inequality or equality constraint.
-         */
-        auto integer_linear_le(const State &, const SumOf<Weighted<SimpleIntegerVariableID>> & coeff_vars, Integer value,
-            std::optional<ReificationTerm> half_reif, bool equality) -> ProofLine;
-
-        ///@}
-
-        /**
-         * \name Define things either in the OPB file or in the proof log.
-         */
-        ///@{
-
-        /**
-         * Say that we are going to use a Literal in the proof, and that it must
-         * be introduced if it is not there already.
-         */
-        auto need_proof_variable(const Literal &, const std::optional<bool> & work = std::nullopt) -> void;
-
-        /**
-         * Say that we are going to use the fact that a variable takes a
-         * particular value, and that we must have the appropriate Literal
-         * available if it is not there already.
-         */
-        auto need_direct_encoding_for(SimpleIntegerVariableID, Integer, const std::optional<bool> & work = std::nullopt) -> void;
+        [[nodiscard]] auto add_to_model(const WeightedPseudoBooleanEquality &,
+            const std::optional<HalfReifyOnConjunctionOf> & half_reif) -> std::pair<std::optional<ProofLine>, std::optional<ProofLine>>;
 
         ///@}
 
@@ -363,8 +341,26 @@ namespace gcs::innards
         auto emit_proof_comment(const std::string &, const std::optional<bool> & work = std::nullopt) -> void;
 
         /**
+         * Emit a RUP proof step for the specified expression, not subject to
+         * the current trail.
+         */
+        auto emit_rup_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> &) -> ProofLine;
+
+        /**
+         * Emit a RUP proof step for the specified expression, subject to the
+         * current trail.
+         */
+        auto emit_rup_proof_line_under_trail(const State &, const SumLessEqual<Weighted<PseudoBooleanTerm>> &) -> ProofLine;
+
+        /**
+         * Emit a RED proof step for the specified expression.
+         */
+        auto emit_red_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> &,
+            const std::vector<std::pair<ProofLiteral, ProofLiteral>> & witness) -> ProofLine;
+
+        /**
          * Set things up internally as if the specified variable was a real
-         * variable, so that proof_variable() etc will work with it.
+         * variable, so that proof_name() etc will work with it.
          */
         auto create_literals_for_introduced_variable_value(
             SimpleIntegerVariableID, Integer, const std::optional<std::string> &) -> void;
@@ -377,28 +373,15 @@ namespace gcs::innards
         ///@{
 
         /**
-         * Return the sequence of current guesses, formatted for use in a "u"
-         * line, each with the given coefficient.
+         * Return the sequence of current guesses, each with the given coefficient.
          */
-        [[nodiscard]] auto trail_variables(const State &, Integer coeff) -> std::string;
+        [[nodiscard]] auto trail_variables_as_sum(const State &, Integer coeff) -> WeightedPseudoBooleanSum;
 
         /**
          * Say that we are going to need an at-least-one constraint for a
          * variable.
          */
         [[nodiscard]] auto need_constraint_saying_variable_takes_at_least_one_value(IntegerVariableID) -> ProofLine;
-
-        /**
-         * Return the internal name for the variable corresponding to this
-         * Literal. Must call need_proof_variable() first.
-         */
-        [[nodiscard]] auto proof_variable(const Literal &) const -> const std::string &;
-
-        /**
-         * Return the internal name for the variable corresponding to this
-         * ProofFlag.
-         */
-        [[nodiscard]] auto proof_variable(const ProofFlag &) const -> const std::string &;
 
         /**
          * Does a variable have a bit representation?
@@ -433,6 +416,21 @@ namespace gcs::innards
 
         ///@}
     };
+}
+
+namespace gcs
+{
+    template <>
+    constexpr auto enable_conditional_variable_operators<innards::ProofOnlySimpleIntegerVariableID>() -> bool
+    {
+        return true;
+    }
+
+    template <>
+    constexpr auto enable_conditional_variable_operators<innards::SimpleOrProofOnlyIntegerVariableID>() -> bool
+    {
+        return true;
+    }
 }
 
 #endif

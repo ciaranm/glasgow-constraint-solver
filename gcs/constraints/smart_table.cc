@@ -110,14 +110,8 @@ namespace
     auto log_filtering_inference(const ProofFlag & tuple_selector, const Literal & lit, State & state)
     {
         auto inference = state.infer(TrueLiteral{}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
-            proof.need_proof_variable(lit);
-            stringstream proof_step;
-            proof_step << "*st infer\n";
-            proof_step << "u" << proof.trail_variables(state, 1_i);
-            proof_step << " 1 " << proof.proof_variable(! tuple_selector);
-            proof_step << " 1 " << proof.proof_variable(lit);
-            proof_step << " >= 1 ;";
-            proof.emit_proof_line(proof_step.str());
+            WeightedPseudoBooleanSum terms;
+            proof.emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} + 1_i * (! tuple_selector) + 1_i * lit >= 1_i);
         }});
 
         if (inference != Inference::NoChange) {
@@ -479,13 +473,7 @@ namespace
             for (const auto & value : unsupported[var]) {
                 switch (state.infer_not_equal(var, value, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
                     for (unsigned int tuple_idx = 0; tuple_idx < tuples.size(); ++tuple_idx) {
-                        stringstream proof_step;
-                        proof_step << "u" << proof.trail_variables(state, 1_i);
-                        proof.need_proof_variable(var != value);
-                        proof_step << " 1 " << proof.proof_variable(var != value);
-                        proof_step << " 1 " << proof.proof_variable(! pb_selectors[tuple_idx]);
-                        proof_step << " >= 1 ;";
-                        proof.emit_proof_line(proof_step.str());
+                        proof.emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} + 1_i * (var != value) + 1_i * (! pb_selectors[tuple_idx]) >= 1_i);
                     }
                 }})) {
                 case Inference::NoChange: break;
@@ -588,57 +576,77 @@ namespace
         case SmartEntryConstraint::Equal:
             // f => var1 == var2
             flag = propagators.create_proof_flag("bin_eq");
-            propagators.define_pseudoboolean_eq(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2, 0_i, flag);
+            propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 == 0_i,
+                HalfReifyOnConjunctionOf{{flag}});
 
             // !f => var1 != var2
             flag_lt = propagators.create_proof_flag("lt");
             flag_gt = propagators.create_proof_flag("gt");
-            propagators.define_pseudoboolean_ge(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2, 1_i, flag_gt);
-            propagators.define_pseudoboolean_ge(state, WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1, 0_i, ! flag_gt);
-            propagators.define_pseudoboolean_ge(state, WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1, 1_i, flag_lt);
-            propagators.define_pseudoboolean_ge(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2, 0_i, ! flag_lt);
-            propagators.define_pseudoboolean_ge(state, WeightedPseudoBooleanSum{} + 1_i * flag_lt + 1_i * flag_gt, 1_i, ! flag);
+            propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i,
+                HalfReifyOnConjunctionOf{{flag_gt}});
+            propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1 >= 0_i,
+                HalfReifyOnConjunctionOf{{! flag_gt}});
+            propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i,
+                HalfReifyOnConjunctionOf{{flag_lt}});
+            propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 >= 0_i,
+                HalfReifyOnConjunctionOf{{! flag_lt}});
+            propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * flag_lt + 1_i * flag_gt >= 1_i,
+                HalfReifyOnConjunctionOf{{! flag}});
             return flag;
         case SmartEntryConstraint::GreaterThan:
             flag = propagators.create_proof_flag("bin_gt");
-            propagators.define_pseudoboolean_ge(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2, 1_i, flag);
-            propagators.define_pseudoboolean_ge(state, WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1, 0_i, ! flag);
+            propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i,
+                HalfReifyOnConjunctionOf{{flag}});
+            propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1 >= 0_i,
+                HalfReifyOnConjunctionOf{{! flag}});
             return flag;
         case SmartEntryConstraint::LessThan:
             flag = propagators.create_proof_flag("bin_lt");
-            propagators.define_pseudoboolean_ge(state, WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1, 1_i, flag);
-            propagators.define_pseudoboolean_ge(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2, 0_i, ! flag);
+            propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i,
+                HalfReifyOnConjunctionOf{{flag}});
+            propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 >= 0_i,
+                HalfReifyOnConjunctionOf{{! flag}});
             return flag;
         case SmartEntryConstraint::LessThanEqual:
             flag = propagators.create_proof_flag("bin_le");
-            propagators.define_pseudoboolean_ge(state, WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1, 0_i, flag);
-            propagators.define_pseudoboolean_ge(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2, 1_i, ! flag);
+            propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1 >= 0_i,
+                HalfReifyOnConjunctionOf{{flag}});
+            propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i,
+                HalfReifyOnConjunctionOf{{! flag}});
             return flag;
         case SmartEntryConstraint::NotEqual:
             // !f => var1 == var2
             flag = propagators.create_proof_flag("bin_eq");
-            propagators.define_pseudoboolean_eq(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2, 0_i, ! flag);
+            propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 == 0_i,
+                HalfReifyOnConjunctionOf{{! flag}});
 
             // f => var1 != var2
             flag_lt = propagators.create_proof_flag("lt");
             flag_gt = propagators.create_proof_flag("gt");
 
             // Means we need f => fgt or flt
-            propagators.define_pseudoboolean_ge(state, WeightedPseudoBooleanSum{} + 1_i * flag_lt + 1_i * flag_gt, 1_i, flag);
+            propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * flag_lt + 1_i * flag_gt >= 1_i,
+                HalfReifyOnConjunctionOf{{flag}});
 
             // And then fgt <==> var1 > var2
-            propagators.define_pseudoboolean_ge(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2, 1_i, flag_gt);
-            propagators.define_pseudoboolean_ge(state, WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1, 0_i, ! flag_gt);
+            propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i,
+                HalfReifyOnConjunctionOf{{flag_gt}});
+            propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1 >= 0_i,
+                HalfReifyOnConjunctionOf{{! flag_gt}});
 
             // flt <==> var1 < var2
-            propagators.define_pseudoboolean_ge(state, WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1, 1_i, flag_lt);
-            propagators.define_pseudoboolean_ge(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2, 0_i, ! flag_lt);
+            propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i,
+                HalfReifyOnConjunctionOf{{flag_lt}});
+            propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 >= 0_i,
+                HalfReifyOnConjunctionOf{{! flag_lt}});
 
             return flag;
         case SmartEntryConstraint::GreaterThanEqual:
             flag = propagators.create_proof_flag("bin_ge");
-            propagators.define_pseudoboolean_ge(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2, 0_i, flag);
-            propagators.define_pseudoboolean_ge(state, WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1, 1_i, ! flag);
+            propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 >= 0_i,
+                HalfReifyOnConjunctionOf{{flag}});
+            propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i,
+                HalfReifyOnConjunctionOf{{! flag}});
             return flag;
         case SmartEntryConstraint::NotIn:
         case SmartEntryConstraint::In:
@@ -710,7 +718,7 @@ auto SmartTable::install(Propagators & propagators, State & initial_state) && ->
         for (const auto & s : pb_selectors)
             sum_pb_selectors += 1_i * s;
 
-        propagators.define_pseudoboolean_ge(initial_state, move(sum_pb_selectors), 1_i);
+        propagators.define(initial_state, sum_pb_selectors >= 1_i);
 
         // Would need a hash function for unordered map, but this shouldn't be too slow
         map<BinaryEntryData, ProofFlag> smart_entry_flags;
@@ -745,10 +753,12 @@ auto SmartTable::install(Propagators & propagators, State & initial_state) && ->
 
                         auto flag = unary_set_entry.constraint_type == SmartEntryConstraint::In ? propagators.create_proof_flag("inset") : propagators.create_proof_flag("notinset");
 
-                        propagators.define_pseudoboolean_ge(initial_state, move(set_value_sum), Integer{static_cast<long long>(set_value_sum.terms.size())},
-                            unary_set_entry.constraint_type == SmartEntryConstraint::In ? flag : ! flag);
-                        propagators.define_pseudoboolean_ge(initial_state, move(neg_set_value_sum), Integer{static_cast<long long>(neg_set_value_sum.terms.size())},
-                            unary_set_entry.constraint_type == SmartEntryConstraint::In ? ! flag : flag);
+                        auto set_rhs = Integer{static_cast<long long>(set_value_sum.terms.size())};
+                        auto neg_set_rhs = Integer{static_cast<long long>(neg_set_value_sum.terms.size())};
+                        propagators.define(initial_state, move(set_value_sum) >= set_rhs,
+                            HalfReifyOnConjunctionOf{{unary_set_entry.constraint_type == SmartEntryConstraint::In ? flag : ! flag}});
+                        propagators.define(initial_state, move(neg_set_value_sum) >= neg_set_rhs,
+                            HalfReifyOnConjunctionOf{{unary_set_entry.constraint_type == SmartEntryConstraint::In ? ! flag : flag}});
 
                         entry_flags_sum += 1_i * flag;
                         entry_flags_neg_sum += -1_i * flag;
@@ -761,8 +771,10 @@ auto SmartTable::install(Propagators & propagators, State & initial_state) && ->
                     .visit(entry);
             }
             auto tuple_len = Integer{static_cast<long long>(entry_flags_sum.terms.size())};
-            propagators.define_pseudoboolean_ge(initial_state, move(entry_flags_sum), tuple_len, pb_selectors[tuple_idx]);
-            propagators.define_pseudoboolean_ge(initial_state, move(entry_flags_neg_sum), -tuple_len + 1_i, ! pb_selectors[tuple_idx]);
+            propagators.define(initial_state, move(entry_flags_sum) >= tuple_len,
+                HalfReifyOnConjunctionOf{{pb_selectors[tuple_idx]}});
+            propagators.define(initial_state, move(entry_flags_neg_sum) >= -tuple_len + 1_i,
+                HalfReifyOnConjunctionOf{{! pb_selectors[tuple_idx]}});
         }
     }
 

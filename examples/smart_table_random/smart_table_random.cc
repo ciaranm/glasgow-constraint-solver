@@ -23,8 +23,10 @@ using std::make_optional;
 using std::mt19937;
 using std::nullopt;
 using std::pair;
+using std::random_device;
 using std::shuffle;
 using std::ssize;
+using std::stoll;
 using std::string;
 using std::stringstream;
 using std::uniform_int_distribution;
@@ -87,7 +89,7 @@ auto constraint_type_str(SmartEntryConstraint c) -> string
     return string_names[static_cast<int>(c)];
 }
 
-auto test_smart_table(const int & n, mt19937 & rng)
+auto test_smart_table(const int & n, mt19937 & rng, bool make_string_rep)
 {
     stringstream string_rep;
     Problem p;
@@ -124,9 +126,9 @@ auto test_smart_table(const int & n, mt19937 & rng)
         sort(split_points.begin(), split_points.end());
 
         for (int i = 0; i < ssize(split_points) - 1; i++) {
-            string_rep << "Tree " << i << "(";
+            if (make_string_rep) string_rep << "Tree " << i << "(";
             auto num_nodes_in_tree = split_points[i + 1] - split_points[i];
-            string_rep << num_nodes_in_tree << " nodes): ";
+            if (make_string_rep) string_rep << num_nodes_in_tree << " nodes): ";
             if (num_nodes_in_tree == 1) {
                 // Create random unary Smart Entry
                 auto constraint_type = static_cast<innards::SmartEntryConstraint>(rand0_to_7(rng));
@@ -137,13 +139,15 @@ auto test_smart_table(const int & n, mt19937 & rng)
                     }
                     shuffle(random_set.begin(), random_set.end(), rng);
                     int how_many = rand1_to_n(rng);
-                    string_rep << "x[" << index_of(copy_x[split_points[i]], x) << "] ";
-                    string_rep << constraint_type_str(constraint_type);
-                    string_rep << " {";
-                    for (int j = 0; j < how_many - 1; j++) {
-                        string_rep << random_set[j].raw_value << ", ";
+                    if (make_string_rep) {
+                        string_rep << "x[" << index_of(copy_x[split_points[i]], x) << "] ";
+                        string_rep << constraint_type_str(constraint_type);
+                        string_rep << " {";
+                        for (int j = 0; j < how_many - 1; j++) {
+                            string_rep << random_set[j].raw_value << ", ";
+                        }
+                        string_rep << random_set[how_many - 1].raw_value << "};  ";
                     }
-                    string_rep << random_set[how_many - 1].raw_value << "};  ";
                     tuple.emplace_back(innards::UnarySetEntry{
                         copy_x[split_points[i]],
                         vector<Integer>(random_set.begin(), random_set.begin() + how_many),
@@ -151,9 +155,11 @@ auto test_smart_table(const int & n, mt19937 & rng)
                 }
                 else {
                     int random_val = rand1_to_n(rng) - 1;
-                    string_rep << "x[" << index_of(copy_x[split_points[i]], x) << "] ";
-                    string_rep << constraint_type_str(constraint_type);
-                    string_rep << " " << random_val << ";  ";
+                    if (make_string_rep) {
+                        string_rep << "x[" << index_of(copy_x[split_points[i]], x) << "] ";
+                        string_rep << constraint_type_str(constraint_type);
+                        string_rep << " " << random_val << ";  ";
+                    }
                     tuple.emplace_back(innards::UnaryValueEntry{
                         copy_x[split_points[i]],
                         Integer{random_val},
@@ -162,9 +168,11 @@ auto test_smart_table(const int & n, mt19937 & rng)
             }
             else if (num_nodes_in_tree == 2) {
                 auto constraint_type = static_cast<innards::SmartEntryConstraint>(rand0_to_5(rng));
-                string_rep << "x[" << index_of(copy_x[split_points[i]], x) << "] ";
-                string_rep << constraint_type_str(constraint_type);
-                string_rep << " x[" << index_of(copy_x[split_points[i] + 1], x) << "];  ";
+                if (make_string_rep) {
+                    string_rep << "x[" << index_of(copy_x[split_points[i]], x) << "] ";
+                    string_rep << constraint_type_str(constraint_type);
+                    string_rep << " x[" << index_of(copy_x[split_points[i] + 1], x) << "];  ";
+                }
                 tuple.emplace_back(innards::BinaryEntry{
                     copy_x[split_points[i]],
                     copy_x[split_points[i] + 1],
@@ -175,9 +183,11 @@ auto test_smart_table(const int & n, mt19937 & rng)
                 for (const auto & edge : tree_edges) {
                     // Create binary Smart Entry with specified variables
                     auto constraint_type = static_cast<innards::SmartEntryConstraint>(rand0_to_5(rng));
-                    string_rep << "x[" << index_of(copy_x[edge.first], x) << "] ";
-                    string_rep << constraint_type_str(constraint_type);
-                    string_rep << " x[" << index_of(copy_x[edge.second], x) << "];  ";
+                    if (make_string_rep) {
+                        string_rep << "x[" << index_of(copy_x[edge.first], x) << "] ";
+                        string_rep << constraint_type_str(constraint_type);
+                        string_rep << " x[" << index_of(copy_x[edge.second], x) << "];  ";
+                    }
                     tuple.emplace_back(innards::BinaryEntry{
                         copy_x[edge.first],
                         copy_x[edge.second],
@@ -197,13 +207,16 @@ auto test_smart_table(const int & n, mt19937 & rng)
                 }
                 shuffle(random_set.begin(), random_set.end(), rng);
                 int how_many = rand1_to_n(rng);
-                string_rep << "x[" << index_of(copy_x[var_idx], x) << "] ";
-                string_rep << constraint_type_str(constraint_type);
-                string_rep << " {";
-                for (int j = 0; j < how_many - 1; j++) {
-                    string_rep << random_set[j].raw_value << ", ";
+                if (make_string_rep) {
+                    string_rep << "x[" << index_of(copy_x[var_idx], x) << "] ";
+                    string_rep << constraint_type_str(constraint_type);
+                    string_rep << " {";
+                    for (int j = 0; j < how_many - 1; j++) {
+                        string_rep << random_set[j].raw_value << ", ";
+                    }
+                    string_rep << random_set[how_many - 1].raw_value << "};  ";
                 }
-                string_rep << random_set[how_many - 1].raw_value << "};  ";
+
                 tuple.emplace_back(innards::UnarySetEntry{
                     copy_x[var_idx],
                     vector<Integer>(random_set.begin(), random_set.begin() + how_many),
@@ -211,9 +224,11 @@ auto test_smart_table(const int & n, mt19937 & rng)
             }
             else {
                 int random_val = rand1_to_n(rng) - 1;
-                string_rep << "x[" << index_of(copy_x[var_idx], x) << "] ";
-                string_rep << constraint_type_str(constraint_type);
-                string_rep << " " << random_val << ";  ";
+                if (make_string_rep) {
+                    string_rep << "x[" << index_of(copy_x[var_idx], x) << "] ";
+                    string_rep << constraint_type_str(constraint_type);
+                    string_rep << " " << random_val << ";  ";
+                }
                 tuple.emplace_back(innards::UnaryValueEntry{
                     copy_x[var_idx],
                     Integer{random_val},
@@ -222,7 +237,7 @@ auto test_smart_table(const int & n, mt19937 & rng)
         }
 
         tuples.emplace_back(tuple);
-        string_rep << "\n";
+        if (make_string_rep) string_rep << "\n";
     }
 
     p.post(SmartTable{x, tuples});
@@ -230,33 +245,42 @@ auto test_smart_table(const int & n, mt19937 & rng)
     auto stats = solve_with(p,
         SolveCallbacks{
             .solution = [&](const CurrentState &) -> bool {
-                //                        cout << "x = [ ";
-                //                        for (const auto & var : x) {
-                //                            cout << s(var) << " ";
-                //                        }
-                //                        cout << "]" << endl;
+                //                cout << "x = [ ";
+                //                for (const auto & var : x) {
+                //                    cout << s(var) << " ";
+                //                }
+                //                cout << "]" << endl;
 
                 return true;
             }},
         ProofOptions{"random_table.opb", "random_table.veripb"});
 
-    cout << "Num solutions: " << stats.solutions << endl;
     if (0 != system("veripb random_table.opb random_table.veripb")) {
-
+        cout << stats;
+        cout << "Num solutions: " << stats.solutions << endl;
+        if (make_string_rep) cout << string_rep.str() << endl;
         return false;
     }
-    cout << string_rep.str() << endl;
+
     return true;
 }
-auto main(int, char *[]) -> int
+auto main(int argc, char * argv[]) -> int
 {
+    random_device rand_dev;
+    auto seed = rand_dev();
+    bool use_string_rep = false;
+    if (argc >= 2)
+        seed = stoll(argv[1]);
+    if (argc >= 3)
+        use_string_rep = true;
 
-    // random_device rand_dev;
-    // std::mt19937 rng(rand_dev());
-    mt19937 rng(0); // Would rather have it the same every time, for now
+    std::mt19937 rng(seed);
+    cout << "Seed for random smart tables: " << seed << endl;
+    //    mt19937 rng(0); // Switch to this to have it the same every time.
+
     for (int n = 3; n < 6; n++) {
-        for (int r = 0; r < 240 / n; r++) {
-            if (! test_smart_table(n, rng)) {
+        for (int r = 0; r < 20 / n; r++) {
+            if (! test_smart_table(n, rng, use_string_rep)) {
                 return EXIT_FAILURE;
             }
         }

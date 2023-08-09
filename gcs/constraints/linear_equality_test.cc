@@ -143,6 +143,11 @@ auto main(int, char *[]) -> int
             pair{vector{-2, -8, 0}, 138},
             pair{vector{10, 4, 7}, -78}});
 
+    data.emplace_back(
+        pair{8, 12}, pair{5, 11}, pair{-2, 4},
+        vector{
+            pair{vector{0, 0, 0}, -159}});
+
     random_device rand_dev;
     mt19937 rand(rand_dev());
     for (int x = 0; x < 10; ++x) {

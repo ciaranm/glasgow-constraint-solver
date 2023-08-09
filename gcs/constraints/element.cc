@@ -12,7 +12,6 @@
 #include <algorithm>
 #include <optional>
 #include <set>
-#include <sstream>
 #include <utility>
 #include <vector>
 
@@ -24,7 +23,6 @@ using std::max;
 using std::min;
 using std::optional;
 using std::pair;
-using std::stringstream;
 using std::unique_ptr;
 using std::vector;
 using std::visit;
@@ -55,7 +53,8 @@ auto Element::install(Propagators & propagators, State & initial_state) && -> vo
         for (const auto & [val_idx, val] : enumerate(_vals))
             if (initial_state.in_domain(_idx, Integer(val_idx))) {
                 // idx == val_idx -> var == vals[val_idx]
-                propagators.define_linear_eq(initial_state, WeightedSum{} + 1_i * _var + -1_i * val, 0_i, _idx == Integer(val_idx));
+                propagators.define(initial_state, WeightedPseudoBooleanSum{} + 1_i * _var + -1_i * val == 0_i,
+                    HalfReifyOnConjunctionOf{_idx == Integer(val_idx)});
             }
     }
 
@@ -92,13 +91,8 @@ auto Element::install(Propagators & propagators, State & initial_state) && -> vo
             if (! supported) {
                 increase_inference_to(inf, state.infer_not_equal(var, val, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
                     state.for_each_value_immutable(idx, [&](Integer i) {
-                        proof.need_proof_variable(var != val);
-                        stringstream trail;
-                        trail << "u ";
-                        trail << proof.trail_variables(state, 1_i) << " 1 " << proof.proof_variable(var != val)
-                              << " 1 " << proof.proof_variable(idx != i);
-                        trail << " >= 1 ;";
-                        to_delete.push_back(proof.emit_proof_line(trail.str()));
+                        to_delete.push_back(proof.emit_rup_proof_line_under_trail(state,
+                            WeightedPseudoBooleanSum{} + 1_i * (var != val) + 1_i * (idx != i) >= 1_i));
                     });
                 }}));
 
@@ -179,21 +173,16 @@ auto ElementConstantArray::install(Propagators & propagators, State & initial_st
 
         auto inference = Inference::NoChange;
         auto just = JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
-            stringstream trail;
+            WeightedPseudoBooleanSum trail = proof.trail_variables_as_sum(state, 1_i);
             state.for_each_value_immutable(idx, [&](Integer i) {
-                trail << " 1 " << proof.proof_variable(var == (*vals)[i.raw_value]);
-            });
-            trail << proof.trail_variables(state, 1_i);
-
-            state.for_each_value_immutable(idx, [&](Integer i) {
-                stringstream line;
-                line << "u" << trail.str() << " 1 ~" << proof.proof_variable(idx == i) << " >= 1 ;";
-                to_delete.push_back(proof.emit_proof_line(line.str()));
+                trail += 1_i * (var == (*vals)[i.raw_value]);
             });
 
-            stringstream line;
-            line << "u" << trail.str() << " >= 1 ;";
-            to_delete.push_back(proof.emit_proof_line(line.str()));
+            state.for_each_value_immutable(idx, [&](Integer i) {
+                to_delete.push_back(proof.emit_rup_proof_line(trail + 1_i * (idx == i) >= 1_i));
+            });
+
+            to_delete.push_back(proof.emit_rup_proof_line(trail >= 1_i));
         }};
 
         increase_inference_to(inference, state.infer_greater_than_or_equal(var, *smallest_seen, just));
@@ -286,44 +275,37 @@ auto Element2DConstantArray::install(Propagators & propagators, State & initial_
                 state.for_each_value_immutable(idx1, [&](Integer i1) {
                     state.for_each_value_immutable(idx2, [&](Integer i2) {
                         Integer idx = i1 * Integer(vals->size()) + i2;
-                        stringstream line;
-                        line << "red 2 ~" << proof.proof_variable(*idxsel == idx)
-                             << " 1 " << proof.proof_variable(idx1 == i1)
-                             << " 1 " << proof.proof_variable(idx2 == i2)
-                             << " >= 2 ; " << proof.proof_variable(*idxsel == idx) << " 0";
-                        proof.emit_proof_line(line.str());
-
-                        line = stringstream{};
-                        line << "red 1 " << proof.proof_variable(*idxsel == idx)
-                             << " 1 ~" << proof.proof_variable(idx1 == i1)
-                             << " 1 ~" << proof.proof_variable(idx2 == i2)
-                             << " >= 1 ; " << proof.proof_variable(*idxsel == idx) << " 1";
-                        proof.emit_proof_line(line.str());
+                        proof.emit_red_proof_line(WeightedPseudoBooleanSum{} +
+                                    2_i * ! (*idxsel == idx) + 1_i * (idx1 == i1) + 1_i * (idx2 == i2) >=
+                                2_i,
+                            {{*idxsel == idx, FalseLiteral{}}});
+                        proof.emit_red_proof_line(WeightedPseudoBooleanSum{} +
+                                    1_i * (*idxsel == idx) + 1_i * (idx1 != i1) + 1_i * (idx2 != i2) >=
+                                1_i,
+                            {{*idxsel == idx, TrueLiteral{}}});
                     });
                 });
 
-                stringstream trail;
+                WeightedPseudoBooleanSum trail;
                 for (Integer v = 0_i, v_end = Integer(vals->size() * vals->begin()->size()); v != v_end; ++v)
-                    trail << " 1 " << proof.proof_variable(*idxsel == v);
+                    trail += 1_i * (*idxsel == v);
 
                 state.for_each_value_immutable(idx1, [&](Integer i1) {
                     state.for_each_value_immutable(idx2, [&](Integer i2) {
-                        stringstream line;
-                        line << "u" << trail.str() << " 1 ~" << proof.proof_variable(idx1 == i1)
-                             << " 1 ~" << proof.proof_variable(idx2 == i2) << " >= 1 ;";
-                        to_delete.push_back(proof.emit_proof_line(line.str()));
+                        WeightedPseudoBooleanSum expr = trail;
+                        expr += 1_i * (idx1 != i1);
+                        expr += 1_i * (idx2 != i2);
+                        to_delete.push_back(proof.emit_rup_proof_line(expr >= 1_i));
                     });
-                    stringstream line;
-                    line << "u" << trail.str() << " 1 ~" << proof.proof_variable(idx1 == i1) << " >= 1 ;";
-                    to_delete.push_back(proof.emit_proof_line(line.str()));
+                    WeightedPseudoBooleanSum expr = trail;
+                    expr += 1_i * (idx1 != i1);
+                    to_delete.push_back(proof.emit_rup_proof_line(expr >= 1_i));
                 });
 
-                stringstream line;
-                line << "u";
+                WeightedPseudoBooleanSum expr;
                 for (Integer v = 0_i, v_end = Integer(vals->size() * vals->begin()->size()); v != v_end; ++v)
-                    line << " 1 " << proof.proof_variable(*idxsel == v);
-                line << " >= 1 ;";
-                proof.emit_proof_line(line.str());
+                    expr += 1_i * (*idxsel == v);
+                proof.emit_rup_proof_line(expr >= 1_i);
             }});
         }
 
@@ -345,29 +327,26 @@ auto Element2DConstantArray::install(Propagators & propagators, State & initial_
 
         auto inference = Inference::NoChange;
         auto just = JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
-            stringstream trail;
+            WeightedPseudoBooleanSum trail = proof.trail_variables_as_sum(state, 1_i);
             state.for_each_value_immutable(idx1, [&](Integer i1) {
                 state.for_each_value_immutable(idx2, [&](Integer i2) {
-                    trail << " 1 " << proof.proof_variable(var == (*vals)[i1.raw_value][i2.raw_value]);
+                    trail += 1_i * (var == (*vals)[i1.raw_value][i2.raw_value]);
                 });
             });
-            trail << proof.trail_variables(state, 1_i);
 
             state.for_each_value_immutable(idx1, [&](Integer i1) {
                 state.for_each_value_immutable(idx2, [&](Integer i2) {
-                    stringstream line;
-                    line << "u" << trail.str() << " 1 ~" << proof.proof_variable(idx1 == i1)
-                         << " 1 ~" << proof.proof_variable(idx2 == i2) << " >= 1 ;";
-                    to_delete.push_back(proof.emit_proof_line(line.str()));
+                    WeightedPseudoBooleanSum expr = trail;
+                    expr += 1_i * (idx1 != i1);
+                    expr += 1_i * (idx2 != i2);
+                    to_delete.push_back(proof.emit_rup_proof_line(expr >= 1_i));
                 });
-                stringstream line;
-                line << "u" << trail.str() << " 1 ~" << proof.proof_variable(idx1 == i1) << " >= 1 ;";
-                to_delete.push_back(proof.emit_proof_line(line.str()));
+                WeightedPseudoBooleanSum expr = trail;
+                expr += 1_i * (idx1 != i1);
+                to_delete.push_back(proof.emit_rup_proof_line(expr >= 1_i));
             });
 
-            stringstream line;
-            line << "u" << trail.str() << " >= 1 ;";
-            to_delete.push_back(proof.emit_proof_line(line.str()));
+            to_delete.push_back(proof.emit_rup_proof_line(trail >= 1_i));
         }};
 
         increase_inference_to(inference, state.infer_greater_than_or_equal(var, *smallest_seen, just));

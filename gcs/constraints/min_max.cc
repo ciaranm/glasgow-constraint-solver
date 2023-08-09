@@ -107,7 +107,7 @@ auto ArrayMinMax::install(Propagators & propagators, State & initial_state) && -
     if (propagators.want_definitions()) {
         // result <= each var
         for (const auto & v : _vars) {
-            propagators.define_linear_le(initial_state, WeightedSum{} + (_min ? -1_i : 1_i) * v + (_min ? 1_i : -1_i) * _result, 0_i, nullopt);
+            propagators.define(initial_state, WeightedPseudoBooleanSum{} + (_min ? -1_i : 1_i) * v + (_min ? 1_i : -1_i) * _result <= 0_i, nullopt);
         }
 
         // result == i -> i in vars
@@ -127,14 +127,12 @@ auto ArrayMinMax::describe_for_proof() -> string
 }
 
 Min::Min(const IntegerVariableID v1, const IntegerVariableID v2, const IntegerVariableID result) :
-    ArrayMinMax(_vs, result, true),
-    _vs({v1, v2})
+    ArrayMinMax({v1, v2}, result, true)
 {
 }
 
 Max::Max(const IntegerVariableID v1, const IntegerVariableID v2, const IntegerVariableID result) :
-    ArrayMinMax(_vs, result, false),
-    _vs({v1, v2})
+    ArrayMinMax({v1, v2}, result, false)
 {
 }
 

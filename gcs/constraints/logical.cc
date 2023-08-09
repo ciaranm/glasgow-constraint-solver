@@ -56,15 +56,15 @@ namespace
             bool saw_false = false;
             for (auto & l : _lits)
                 overloaded{
-                    [&](const LiteralFromIntegerVariable & ilit) {
-                        switch (ilit.op) {
-                        case LiteralFromIntegerVariable::Operator::Equal:
-                        case LiteralFromIntegerVariable::Operator::NotEqual:
-                            triggers.on_change.push_back(ilit.var);
+                    [&](const IntegerVariableCondition & cond) {
+                        switch (cond.op) {
+                        case VariableConditionOperator::Equal:
+                        case VariableConditionOperator::NotEqual:
+                            triggers.on_change.push_back(cond.var);
                             break;
-                        case LiteralFromIntegerVariable::Operator::Less:
-                        case LiteralFromIntegerVariable::Operator::GreaterEqual:
-                            triggers.on_bounds.push_back(ilit.var);
+                        case VariableConditionOperator::Less:
+                        case VariableConditionOperator::GreaterEqual:
+                            triggers.on_bounds.push_back(cond.var);
                             break;
                         }
                     },
@@ -155,8 +155,7 @@ namespace
                         WeightedPseudoBooleanSum forward;
                         for (auto & l : _lits)
                             forward += 1_i * PseudoBooleanTerm{l};
-                        forward += Integer(_lits.size()) * ! _full_reif;
-                        propagators.define_pseudoboolean_ge(initial_state, move(forward), Integer(_lits.size()));
+                        propagators.define(initial_state, forward >= Integer(_lits.size()), HalfReifyOnConjunctionOf{_full_reif});
                     }
 
                     Literals reverse;

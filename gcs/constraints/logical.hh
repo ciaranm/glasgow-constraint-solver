@@ -2,7 +2,8 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_LOGICAL_HH 1
 
 #include <gcs/constraint.hh>
-#include <gcs/literal.hh>
+#include <gcs/innards/literal.hh>
+#include <gcs/variable_condition.hh>
 #include <gcs/variable_id.hh>
 
 #include <vector>
@@ -18,8 +19,8 @@ namespace gcs
     class And : public Constraint
     {
     private:
-        const Literals _lits;
-        const Literal _full_reif;
+        const innards::Literals _lits;
+        const innards::Literal _full_reif;
 
     public:
         // Equivalent to And([var != 0 : var in vars], full_reif != 0)
@@ -28,7 +29,7 @@ namespace gcs
         // Equivalent to And([var != 0 : var in vars], true)
         explicit And(const std::vector<IntegerVariableID> & vars);
 
-        explicit And(Literals, const Literal &);
+        explicit And(innards::Literals, const innards::Literal &);
 
         virtual auto describe_for_proof() -> std::string override;
         virtual auto install(innards::Propagators &, innards::State &) && -> void override;
@@ -44,8 +45,8 @@ namespace gcs
     class Or : public Constraint
     {
     private:
-        const Literals _lits;
-        const Literal _full_reif;
+        const innards::Literals _lits;
+        const innards::Literal _full_reif;
 
     public:
         // Equivalent to Or([var != 0 : var in vars], full_reif != 0)
@@ -54,7 +55,7 @@ namespace gcs
         // Equivalent to Or([var != 0 : var in vars], true)
         explicit Or(const std::vector<IntegerVariableID> & vars);
 
-        explicit Or(Literals, const Literal &);
+        explicit Or(innards::Literals, const innards::Literal &);
 
         virtual auto describe_for_proof() -> std::string override;
         virtual auto install(innards::Propagators &, innards::State &) && -> void override;

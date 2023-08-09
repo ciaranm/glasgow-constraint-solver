@@ -557,12 +557,12 @@ auto AllDifferent::install(Propagators & propagators, State & initial_state) && 
         // for each value in at least two domains...
         for (Integer val = min_lower; val <= max_upper; ++val) {
             // at most one variable can take it
-            Literals lits;
+            WeightedPseudoBooleanSum am1;
             for (const auto & var : _vars)
                 if (initial_state.in_domain(var, val))
-                    lits.emplace_back(var == val);
-            if (lits.size() >= 2)
-                constraint_numbers.emplace(val, nullopt_to_zero(propagators.define_at_most_one(initial_state, move(lits))));
+                    am1 += 1_i * (var == val);
+            if (am1.terms.size() >= 2)
+                constraint_numbers.emplace(val, nullopt_to_zero(propagators.define(initial_state, move(am1) <= 1_i)));
         }
     }
 

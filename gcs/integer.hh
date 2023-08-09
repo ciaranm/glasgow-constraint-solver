@@ -41,7 +41,7 @@ namespace gcs
          * Standard arithmetic, comparison, and related operations for Integer.
          */
 
-        [[nodiscard]] auto operator<=>(const Integer &) const = default;
+        [[nodiscard]] constexpr auto operator<=>(const Integer &) const = default;
 
         auto operator++() -> Integer &
         {

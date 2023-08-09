@@ -77,17 +77,13 @@ auto NValue::install(Propagators & propagators, State & initial_state) && -> voi
             for (auto & var : vars)
                 forward += 1_i * (var == v);
             forward += 1_i * ! flag;
-            Integer forward_g = 1_i;
-            if (sanitise_pseudoboolean_terms(forward, forward_g))
-                propagators.define_pseudoboolean_ge(initial_state, move(forward), forward_g);
+            propagators.define(initial_state, forward >= 1_i);
 
             WeightedPseudoBooleanSum reverse;
             for (auto & var : vars)
                 reverse += 1_i * (var != v);
             reverse += Integer(vars.size()) * flag;
-            Integer reverse_g(vars.size());
-            if (sanitise_pseudoboolean_terms(reverse, reverse_g))
-                propagators.define_pseudoboolean_ge(initial_state, move(reverse), reverse_g);
+            propagators.define(initial_state, reverse >= Integer(vars.size()));
 
             flags.push_back(flag);
         }
@@ -99,11 +95,8 @@ auto NValue::install(Propagators & propagators, State & initial_state) && -> voi
         }
         forward += -1_i * _n_values;
         reverse += 1_i * _n_values;
-        Integer forward_g = 0_i, reverse_g = 0_i;
-        if (sanitise_pseudoboolean_terms(forward, forward_g))
-            propagators.define_pseudoboolean_ge(initial_state, move(forward), forward_g);
-        if (sanitise_pseudoboolean_terms(reverse, reverse_g))
-            propagators.define_pseudoboolean_ge(initial_state, move(reverse), reverse_g);
+        propagators.define(initial_state, forward >= 0_i);
+        propagators.define(initial_state, reverse >= 0_i);
     }
 }
 

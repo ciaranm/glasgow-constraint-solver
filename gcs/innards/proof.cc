@@ -1,6 +1,6 @@
 #include <gcs/exception.hh>
 #include <gcs/innards/bits_encoding.hh>
-#include <gcs/innards/literal_utils.hh>
+#include <gcs/innards/literal.hh>
 #include <gcs/innards/opb_utils.hh>
 #include <gcs/innards/proof.hh>
 #include <gcs/innards/state.hh>
@@ -66,66 +66,41 @@ namespace
     {
         return to_string(v.raw_value);
     }
-}
 
-auto gcs::innards::sanitise_literals(Literals & lits) -> bool
-{
-    // if we've got a literal that is definitely true, the clause is always satisfied,
-    // so we can discard the clause
-    if (lits.end() != find_if(lits.begin(), lits.end(), [](const Literal & lit) -> bool { return is_literally_true(lit); }))
-        return false;
+    using FlattenedProofLiteral = variant<IntegerVariableCondition, TrueLiteral, FalseLiteral, ProofVariableCondition>;
 
-    // remove any literals that are definitely false. this might remove everything, in
-    // which case we get the empty clause which is false so it's fine.
-    lits.erase(remove_if(lits.begin(), lits.end(), [&](const Literal & lit) -> bool { return is_literally_false(lit); }), lits.end());
-
-    // put these in some kind of order
-    sort(lits.begin(), lits.end());
-
-    // remove duplicates
-    lits.erase(unique(lits.begin(), lits.end()), lits.end());
-
-    return true;
-}
-
-namespace
-{
-    [[nodiscard]] auto is_literally_true_or_false(const ProofFlag &) -> optional<bool>
+    auto flatten(const ProofLiteral & lit) -> FlattenedProofLiteral
     {
-        return nullopt;
+        return overloaded{
+            [&](const Literal & lit) {
+                return visit([&](const auto & v) -> FlattenedProofLiteral { return v; }, lit);
+            },
+            [&](const ProofVariableCondition & cond) -> FlattenedProofLiteral {
+                return cond;
+            }}
+            .visit(lit);
     }
 
-    [[nodiscard]] auto is_literally_true_or_false(const IntegerVariableID &) -> optional<bool>
+    [[nodiscard]] auto deview(const VariableConditionFrom<ViewOfIntegerVariableID> & cond) -> VariableConditionFrom<SimpleIntegerVariableID>
     {
-        return nullopt;
+        switch (cond.op) {
+        case VariableConditionOperator::NotEqual:
+            return cond.var.actual_variable != (cond.var.negate_first ? -cond.value + cond.var.then_add : cond.value - cond.var.then_add);
+        case VariableConditionOperator::Equal:
+            return cond.var.actual_variable == (cond.var.negate_first ? -cond.value + cond.var.then_add : cond.value - cond.var.then_add);
+        case VariableConditionOperator::Less:
+            if (cond.var.negate_first)
+                return cond.var.actual_variable >= cond.value - cond.var.then_add + 1_i;
+            else
+                return cond.var.actual_variable < (cond.value - cond.var.then_add);
+        case VariableConditionOperator::GreaterEqual:
+            if (cond.var.negate_first)
+                return cond.var.actual_variable < cond.value - cond.var.then_add + 1_i;
+            else
+                return cond.var.actual_variable >= (cond.value - cond.var.then_add);
+        }
+        throw NonExhaustiveSwitch{};
     }
-
-    [[nodiscard]] auto is_literally_true_or_false(const ProofOnlySimpleIntegerVariableID &) -> optional<bool>
-    {
-        return nullopt;
-    }
-}
-
-auto gcs::innards::sanitise_pseudoboolean_terms(WeightedPseudoBooleanSum & lits, Integer & val) -> bool
-{
-    using ::is_literally_true_or_false; // because C++
-
-    // adjust coefficients down for true and false literals
-    for (const auto & l : lits.terms) {
-        auto t_or_f = visit([&](const auto & t) { return is_literally_true_or_false(t); }, l.variable);
-        if (t_or_f && *t_or_f)
-            val -= l.coefficient;
-        else if (t_or_f && ! *t_or_f)
-            val += l.coefficient;
-    }
-
-    // now actually remove true and false literals
-    lits.terms.erase(remove_if(lits.terms.begin(), lits.terms.end(), [&](const auto & wlit) -> bool {
-        return nullopt != visit([&](const auto & t) { return is_literally_true_or_false(t); }, wlit.variable);
-    }),
-        lits.terms.end());
-
-    return true;
 }
 
 ProofError::ProofError(const string & w) :
@@ -152,11 +127,11 @@ struct Proof::Imp
     int active_proof_level_thread = 0;
 
     map<SimpleOrProofOnlyIntegerVariableID, ProofLine> variable_at_least_one_constraints;
-    map<LiteralFromIntegerVariable, string> direct_integer_variables;
+    map<VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID>, string> direct_integer_variables;
     map<SimpleOrProofOnlyIntegerVariableID, pair<Integer, vector<pair<Integer, string>>>> integer_variable_bits;
     map<SimpleOrProofOnlyIntegerVariableID, pair<Integer, Integer>> bounds_for_gevars;
-    map<SimpleIntegerVariableID, set<Integer>> gevars_that_exist;
-    list<IntegerVariableID> solution_variables;
+    map<SimpleOrProofOnlyIntegerVariableID, set<Integer>> gevars_that_exist;
+    list<SimpleIntegerVariableID> solution_variables;
     map<pair<unsigned long long, bool>, string> flags;
     map<unsigned long long, string> proof_only_integer_variables;
 
@@ -315,7 +290,7 @@ void Proof::threadWorkEntry()
                 },
                 [&](const WorkJustifyUsingRUP & w) {
                     // std::cout << "JustifyUsingRUP start" << std::endl;
-
+                    need_lit("u");
                     need_proof_variable(w.lit, true);
                     output_it("u", w.lit, w.guesses, w.extra_proof_conditions, true);
                     // std::cout << "JustifyUsingRUP end" << std::endl;
@@ -516,15 +491,11 @@ auto Proof::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariabl
             _imp->opb << "1 " << eqvar << " ";
             ++_imp->model_variables;
 
-            overloaded{
-                [&](const SimpleIntegerVariableID & id) {
-                    _imp->direct_integer_variables.emplace(id == v, eqvar);
-                    _imp->direct_integer_variables.emplace(id != v, "~" + eqvar);
-                },
-                [](const ProofOnlySimpleIntegerVariableID &) {
-                    // currently there's no API for asking for literals for these
-                }}
-                .visit(id);
+            visit([&](const auto & id) {
+                _imp->direct_integer_variables.emplace(id == v, eqvar);
+                _imp->direct_integer_variables.emplace(id != v, "~" + eqvar);
+            },
+                id);
         }
         _imp->opb << ">= 1 ;\n";
         _imp->variable_at_least_one_constraints.emplace(id, ++_imp->model_constraints);
@@ -591,14 +562,18 @@ auto Proof::create_proof_integer_variable(Integer lower, Integer upper, const st
     return id;
 }
 
-auto Proof::need_gevar(SimpleIntegerVariableID id, Integer v, const std::optional<bool> & work) -> void
+auto Proof::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v, const std::optional<bool> & work) -> void
 {
     using namespace gcs::innards::opb_utils;
 
     if (_imp->direct_integer_variables.contains(id >= v))
         return;
 
-    string name = "iv" + to_string(id.index);
+    string name = overloaded{
+        [&](const SimpleIntegerVariableID & id) { return "iv" + to_string(id.index); },
+        [&](const ProofOnlySimpleIntegerVariableID & id) { return "poiv" + to_string(id.index); }}
+                      .visit(id);
+
     auto gevar = xify(name + "_ge_" + value_name(v));
     _imp->direct_integer_variables.emplace(id >= v, gevar);
     _imp->direct_integer_variables.emplace(id < v, "~" + gevar);
@@ -728,7 +703,7 @@ auto Proof::need_gevar(SimpleIntegerVariableID id, Integer v, const std::optiona
 
     // implied by the next highest gevar, if there is one?
     if (higher_gevar != other_gevars.end()) {
-        auto implies_higher = implies(opb_var_as_sum(proof_variable(id >= *higher_gevar)), proof_variable(id >= v));
+        auto implies_higher = implies(opb_var_as_sum(proof_name(id >= *higher_gevar)), proof_name(id >= v));
         if (_imp->opb_done) {
             if (work) {
                 _imp->proof << "u " << implies_higher << " ;\n";
@@ -752,7 +727,7 @@ auto Proof::need_gevar(SimpleIntegerVariableID id, Integer v, const std::optiona
 
     // implies the next lowest gevar, if there is one?
     if (this_gevar != other_gevars.begin()) {
-        auto implies_lower = implies(opb_var_as_sum(proof_variable(id >= v)), proof_variable(id >= *prev(this_gevar)));
+        auto implies_lower = implies(opb_var_as_sum(proof_name(id >= v)), proof_name(id >= *prev(this_gevar)));
         if (_imp->opb_done) {
             if (work) {
                 _imp->proof << "u " << implies_lower << " ;\n";
@@ -785,14 +760,18 @@ auto Proof::need_gevar(SimpleIntegerVariableID id, Integer v, const std::optiona
     }
 }
 
-auto Proof::need_direct_encoding_for(SimpleIntegerVariableID id, Integer v, const std::optional<bool> & work) -> void
+auto Proof::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID id, Integer v, const std::optional<bool> & work) -> void
 {
     using namespace gcs::innards::opb_utils;
 
     if (_imp->direct_integer_variables.contains(id == v))
         return;
 
-    string name = "iv" + to_string(id.index);
+    string name = overloaded{
+        [&](const SimpleIntegerVariableID & id) { return "iv" + to_string(id.index); },
+        [&](const ProofOnlySimpleIntegerVariableID & id) { return "poiv" + to_string(id.index); }}
+                      .visit(id);
+
     auto eqvar = xify(name + "_eq_" + value_name(v));
     _imp->direct_integer_variables.emplace(id == v, eqvar);
     _imp->direct_integer_variables.emplace(id != v, "~" + eqvar);
@@ -821,7 +800,7 @@ auto Proof::need_direct_encoding_for(SimpleIntegerVariableID id, Integer v, cons
                 push_work_queue(Work{"# 0\n"});
             }
         }
-        auto not_ge_v_plus_one = opb_sum({pair{1_i, negate_opb_var_name(proof_variable(id >= v + 1_i))}}) >= 1_i;
+        auto not_ge_v_plus_one = opb_sum({pair{1_i, negate_opb_var_name(proof_name(id >= v + 1_i))}}) >= 1_i;
 
         // eqvar -> ! ge_v+1
         auto eqvar_true = implied_by(not_ge_v_plus_one, eqvar);
@@ -894,7 +873,7 @@ auto Proof::need_direct_encoding_for(SimpleIntegerVariableID id, Integer v, cons
                 push_work_queue(Work{"# 0\n"});
             }
         }
-        auto ge_v = opb_sum({pair{1_i, proof_variable(id >= v)}}) >= 1_i;
+        auto ge_v = opb_sum({pair{1_i, proof_name(id >= v)}}) >= 1_i;
 
         // eqvar -> ge_v
         auto eqvar_true = implied_by(ge_v, eqvar);
@@ -968,8 +947,8 @@ auto Proof::need_direct_encoding_for(SimpleIntegerVariableID id, Integer v, cons
             }
         }
 
-        auto ge_v_but_not_v_plus_one = opb_sum({pair{1_i, proof_variable(id >= v)},
-                                           pair{1_i, negate_opb_var_name(proof_variable(id >= v + 1_i))}}) >= 2_i;
+        auto ge_v_but_not_v_plus_one = opb_sum({pair{1_i, proof_name(id >= v)},
+                                           pair{1_i, negate_opb_var_name(proof_name(id >= v + 1_i))}}) >= 2_i;
 
         // eqvar -> ge_v && ! ge_v+1
         auto eqvar_true = implied_by(ge_v_but_not_v_plus_one, eqvar);
@@ -1079,217 +1058,15 @@ auto Proof::start_proof(State & state) -> void
         throw ProofError{"Error writing proof file to '" + _imp->proof_file + "'"};
 }
 
-auto Proof::cnf(const Literals & lits) -> ProofLine
+auto Proof::proof_name(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> & cond) const -> const string &
 {
-    if (_imp->opb_done)
-        throw UnexpectedException{"proof has already started"};
-
-    for (const auto & lit : lits)
-        need_proof_variable(lit);
-
-    for (const auto & lit : lits) {
-        visit([&](const auto & lit) {
-            _imp->opb << "1 " << proof_variable(lit) << " ";
-        },
-            lit);
-    }
-    _imp->opb << ">= 1 ;\n";
-    return ++_imp->model_constraints;
+    auto it = _imp->direct_integer_variables.find(cond);
+    if (it == _imp->direct_integer_variables.end())
+        throw ProofError("No variable exists for condition on " + visit([&](const auto & var) { return debug_string(var); }, cond.var));
+    return it->second;
 }
 
-auto Proof::at_most_one(const Literals & lits) -> ProofLine
-{
-    if (_imp->opb_done)
-        throw UnexpectedException{"proof has already started"};
-
-    for (const auto & lit : lits)
-        need_proof_variable(lit);
-
-    for (const auto & lit : lits) {
-        visit([&](const auto & lit) {
-            _imp->opb << "-1 " << proof_variable(lit) << " ";
-        },
-            lit);
-    }
-    _imp->opb << ">= -1 ;\n";
-    return ++_imp->model_constraints;
-}
-
-auto Proof::pseudoboolean_ge(const WeightedPseudoBooleanSum & lits, Integer val,
-    optional<ReificationTerm> half_reif, bool equality)
-    -> ProofLine
-{
-    if (_imp->opb_done)
-        throw UnexpectedException{"proof has already started"};
-
-    for (const auto & [_, lit] : lits.terms)
-        overloaded{
-            [&](const Literal & lit) { need_proof_variable(lit); },
-            [&](const IntegerVariableID &) {},
-            [&](const ProofOnlySimpleIntegerVariableID &) {},
-            [&](const ProofFlag &) {}}
-            .visit(lit);
-
-    if (half_reif)
-        overloaded{
-            [&](const Literal & lit) { need_proof_variable(lit); },
-            [&](const ProofFlag &) {}}
-            .visit(*half_reif);
-
-    auto output = [&](Integer multiplier) {
-        using namespace gcs::innards::opb_utils;
-        OPBExpression expr;
-        Integer modified_val = multiplier * val;
-
-        for (const auto & [w, lit] : lits.terms) {
-            overloaded{
-                [&, w = w](const Literal & lit) {
-                    expr.weighted_terms.emplace_back(multiplier * w, proof_variable(lit));
-                },
-                [&, w = w](const ProofFlag & flag) {
-                    expr.weighted_terms.emplace_back(multiplier * w, proof_variable(flag));
-                },
-                [&, w = w](const ProofOnlySimpleIntegerVariableID & ivar) {
-                    auto & [_, bit_vars] = _imp->integer_variable_bits.at(ivar);
-                    for (auto & [bit_value, bit_name] : bit_vars)
-                        expr.weighted_terms.emplace_back(multiplier * w * bit_value, bit_name);
-                },
-                [&, w = w](const IntegerVariableID & var) {
-                    overloaded{
-                        [&](const SimpleIntegerVariableID & ivar) {
-                            auto & [_, bit_vars] = _imp->integer_variable_bits.at(ivar);
-                            for (auto & [bit_value, bit_name] : bit_vars)
-                                expr.weighted_terms.emplace_back(multiplier * w * bit_value, bit_name);
-                        },
-                        [&](const ConstantIntegerVariableID & cvar) {
-                            modified_val -= (multiplier * w * cvar.const_value);
-                        },
-                        [&](const ViewOfIntegerVariableID & vvar) {
-                            auto & [_, bit_vars] = _imp->integer_variable_bits.at(vvar.actual_variable);
-                            for (auto & [bit_value, bit_name] : bit_vars)
-                                expr.weighted_terms.emplace_back((vvar.negate_first ? -1_i : 1_i) * multiplier * w * bit_value, bit_name);
-                            modified_val -= (multiplier * w * vvar.then_add);
-                        }}
-                        .visit(var);
-                }}
-                .visit(lit);
-        }
-
-        auto opb_ineq = expr >= modified_val;
-        if (half_reif)
-            visit([&](const auto & h) { opb_ineq = implied_by(opb_ineq, proof_variable(h)); }, *half_reif);
-
-        _imp->opb << opb_ineq << " ;\n";
-    };
-
-    if (equality)
-        output(-1_i);
-    output(1_i);
-
-    auto result = ++_imp->model_constraints;
-    if (equality)
-        ++_imp->model_constraints;
-    return result;
-}
-
-auto Proof::integer_linear_le(const State &, const SumOf<Weighted<SimpleIntegerVariableID>> & lin, Integer val,
-    optional<ReificationTerm> half_reif, bool equality)
-    -> ProofLine
-{
-    if (_imp->opb_done)
-        throw UnexpectedException{"proof has already started"};
-
-    if (half_reif)
-        overloaded{
-            [&](const Literal & lit) { need_proof_variable(lit); },
-            [&](const ProofFlag &) {}}
-            .visit(*half_reif);
-
-    _imp->opb << (equality ? "* linear eq" : "* linear le");
-
-    for (const auto & [coeff, var] : lin.terms)
-        _imp->opb << " " << coeff << "*" << debug_string(IntegerVariableID{var});
-    _imp->opb << " <= " << val << '\n';
-
-    auto output = [&](Integer multiplier) {
-        using namespace gcs::innards::opb_utils;
-
-        OPBExpression opb_expr;
-        for (const auto & [coeff, var] : lin.terms) {
-            auto bits = _imp->integer_variable_bits.find(var);
-            if (bits != _imp->integer_variable_bits.end())
-                for (auto & [bit_value, bit_name] : bits->second.second)
-                    opb_expr.weighted_terms.emplace_back(multiplier * coeff * bit_value, bit_name);
-            else {
-                stringstream str;
-                for (const auto & [coeff, var] : lin.terms)
-                    str << " " << coeff << "*" << debug_string(IntegerVariableID{var});
-                str << " <= " << val << '\n';
-                throw UnexpectedException{"missing bits for " + str.str()};
-            }
-        }
-
-        auto opb_ineq = opb_expr >= (multiplier * val);
-        if (half_reif)
-            visit([&](const auto & h) { opb_ineq = implied_by(opb_ineq, proof_variable(h)); }, *half_reif);
-
-        _imp->opb << opb_ineq << " ;\n";
-        ++_imp->model_constraints;
-    };
-
-    if (equality)
-        output(1_i);
-    output(-1_i);
-    return _imp->model_constraints;
-}
-
-auto Proof::proof_variable(const Literal & lit) const -> const string &
-{
-    // This might need a design rethink: if we get a constant variable, turn it into either
-    // true or false based upon its condition
-    return overloaded{
-        [&](const LiteralFromIntegerVariable & ilit) -> const string & {
-            return overloaded{
-                [&](const SimpleIntegerVariableID &) -> const string & {
-                    auto it = _imp->direct_integer_variables.find(ilit);
-                    if (it == _imp->direct_integer_variables.end())
-                        throw ProofError("No variable exists for literal " + debug_string(lit));
-                    return it->second;
-                },
-                [&](const ViewOfIntegerVariableID & view) -> const string & {
-                    switch (ilit.op) {
-                    case LiteralFromIntegerVariable::Operator::NotEqual:
-                        return proof_variable(view.actual_variable != (view.negate_first ? -ilit.value + view.then_add : ilit.value - view.then_add));
-                    case LiteralFromIntegerVariable::Operator::Equal:
-                        return proof_variable(view.actual_variable == (view.negate_first ? -ilit.value + view.then_add : ilit.value - view.then_add));
-                    case LiteralFromIntegerVariable::Operator::Less:
-                        if (view.negate_first)
-                            return proof_variable(view.actual_variable >= ilit.value - view.then_add + 1_i);
-                        else
-                            return proof_variable(view.actual_variable < (ilit.value - view.then_add));
-                    case LiteralFromIntegerVariable::Operator::GreaterEqual:
-                        if (view.negate_first)
-                            return proof_variable(view.actual_variable < ilit.value - view.then_add + 1_i);
-                        else
-                            return proof_variable(view.actual_variable >= (ilit.value - view.then_add));
-                    }
-                    throw NonExhaustiveSwitch{};
-                },
-                [&](const ConstantIntegerVariableID &) -> const string & {
-                    throw UnimplementedException{};
-                }}
-                .visit(ilit.var);
-        },
-        [&](const TrueLiteral &) -> const string & {
-            throw UnimplementedException{};
-        },
-        [&](const FalseLiteral &) -> const string & {
-            throw UnimplementedException{};
-        }}
-        .visit(lit);
-}
-
-auto Proof::proof_variable(const ProofFlag & flag) const -> const string &
+auto Proof::proof_name(const ProofFlag & flag) const -> const string &
 {
     auto it = _imp->flags.find(pair{flag.index, flag.positive});
     if (it == _imp->flags.end())
@@ -1297,55 +1074,148 @@ auto Proof::proof_variable(const ProofFlag & flag) const -> const string &
     return it->second;
 }
 
-auto Proof::need_proof_variable(const Literal & lit, const std::optional<bool> & work) -> void
+auto Proof::simplify_literal(const ProofLiteral & lit) -> SimpleLiteral
 {
     return overloaded{
-        [&](const LiteralFromIntegerVariable & ilit) {
+        [&](const TrueLiteral & t) -> SimpleLiteral { return t; },
+        [&](const FalseLiteral & f) -> SimpleLiteral { return f; },
+        [&](const IntegerVariableCondition & lit) -> SimpleLiteral {
             return overloaded{
-                [&](const SimpleIntegerVariableID & var) {
-                    switch (ilit.op) {
-                    case LiteralFromIntegerVariable::Operator::Equal:
-                    case LiteralFromIntegerVariable::Operator::NotEqual:
-                        need_direct_encoding_for(var, ilit.value, work);
+                [&](const SimpleIntegerVariableID & var) -> SimpleLiteral {
+                    return VariableConditionFrom<SimpleIntegerVariableID>{var, lit.op, lit.value};
+                },
+                [&](const ViewOfIntegerVariableID & view) -> SimpleLiteral {
+                    switch (lit.op) {
+                    case VariableConditionOperator::NotEqual:
+                        return VariableConditionFrom<SimpleIntegerVariableID>{view.actual_variable, VariableConditionOperator::NotEqual,
+                            (view.negate_first ? -lit.value + view.then_add : lit.value - view.then_add)};
                         break;
-                    case LiteralFromIntegerVariable::Operator::Less:
-                    case LiteralFromIntegerVariable::Operator::GreaterEqual:
-                        need_gevar(var, ilit.value, work);
+                    case VariableConditionOperator::Equal:
+                        return VariableConditionFrom<SimpleIntegerVariableID>{view.actual_variable, VariableConditionOperator::Equal,
+                            view.negate_first ? -lit.value + view.then_add : lit.value - view.then_add};
+                        break;
+                    case VariableConditionOperator::Less:
+                        if (view.negate_first)
+                            return VariableConditionFrom<SimpleIntegerVariableID>{view.actual_variable, VariableConditionOperator::GreaterEqual,
+                                lit.value - view.then_add + 1_i};
+                        else
+                            return VariableConditionFrom<SimpleIntegerVariableID>{view.actual_variable, VariableConditionOperator::Less,
+                                (lit.value - view.then_add)};
+                        break;
+                    case VariableConditionOperator::GreaterEqual:
+                        if (view.negate_first)
+                            return VariableConditionFrom<SimpleIntegerVariableID>{view.actual_variable, VariableConditionOperator::Less,
+                                lit.value - view.then_add + 1_i};
+                        else
+                            return VariableConditionFrom<SimpleIntegerVariableID>{view.actual_variable, VariableConditionOperator::GreaterEqual,
+                                lit.value - view.then_add};
                         break;
                     }
+                    throw NonExhaustiveSwitch{};
                 },
-                [&](const ViewOfIntegerVariableID & view) {
-                    switch (ilit.op) {
-                    case LiteralFromIntegerVariable::Operator::NotEqual:
-                        need_proof_variable(view.actual_variable != (view.negate_first ? -ilit.value + view.then_add : ilit.value - view.then_add), work);
-                        break;
-                    case LiteralFromIntegerVariable::Operator::Equal:
-                        need_proof_variable(view.actual_variable == (view.negate_first ? -ilit.value + view.then_add : ilit.value - view.then_add), work);
-                        break;
-                    case LiteralFromIntegerVariable::Operator::Less:
-                        if (view.negate_first)
-                            need_proof_variable(view.actual_variable >= ilit.value - view.then_add + 1_i, work);
-                        else
-                            need_proof_variable(view.actual_variable < (ilit.value - view.then_add), work);
-                        break;
-                    case LiteralFromIntegerVariable::Operator::GreaterEqual:
-                        if (view.negate_first)
-                            need_proof_variable(view.actual_variable < ilit.value - view.then_add + 1_i, work);
-                        else
-                            need_proof_variable(view.actual_variable >= (ilit.value - view.then_add), work);
-                        break;
-                    }
-                },
-                [&](const ConstantIntegerVariableID &) {
+                [&](const ConstantIntegerVariableID &) -> SimpleLiteral {
                     throw UnimplementedException{};
                 }}
-                .visit(ilit.var);
+                .visit(lit.var);
         },
-        [&](const TrueLiteral &) {
-        },
-        [&](const FalseLiteral &) {
+        [&](const ProofVariableCondition & cond) -> SimpleLiteral {
+            return VariableConditionFrom<ProofOnlySimpleIntegerVariableID>{cond.var, cond.op, cond.value};
         }}
-        .visit(lit);
+        .visit(flatten(lit));
+}
+
+auto Proof::need_proof_name(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> & cond) -> void
+{
+    switch (cond.op) {
+    case VariableConditionOperator::Equal:
+    case VariableConditionOperator::NotEqual:
+        need_direct_encoding_for(cond.var, cond.value);
+        break;
+    case VariableConditionOperator::Less:
+    case VariableConditionOperator::GreaterEqual:
+        need_gevar(cond.var, cond.value);
+        break;
+    }
+}
+
+auto Proof::add_cnf_to_model(const Literals & lits) -> std::optional<ProofLine>
+{
+    WeightedPseudoBooleanSum sum;
+
+    for (auto & lit : lits) {
+        if (overloaded{
+                [&](const TrueLiteral &) { return true; },
+                [&](const FalseLiteral &) { return false; },
+                [&]<typename T_>(const VariableConditionFrom<T_> & cond) -> bool {
+                    sum += 1_i * cond;
+                    return false;
+                }}
+                .visit(simplify_literal(lit)))
+            return nullopt;
+    }
+
+    // put these in some kind of order
+    sort(sum.terms.begin(), sum.terms.end());
+
+    // remove duplicates
+    sum.terms.erase(unique(sum.terms.begin(), sum.terms.end()), sum.terms.end());
+
+    return add_to_model(move(sum) >= 1_i, nullopt);
+}
+
+auto Proof::add_to_model(const WeightedPseudoBooleanLessEqual & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> optional<ProofLine>
+{
+    if (_imp->opb_done)
+        throw UnexpectedException{"proof has already started"};
+
+    need_all_proof_names_in(ineq.lhs);
+    if (half_reif)
+        for (auto & r : *half_reif)
+            overloaded{
+                [&](const ProofFlag &) {},
+                [&](const ProofLiteral & lit) {
+                    overloaded{
+                        [&](const TrueLiteral &) {},
+                        [&](const FalseLiteral &) {},
+                        [&]<typename T_>(const VariableConditionFrom<T_> & cond) { need_proof_name(cond); }}
+                        .visit(simplify_literal(lit));
+                }}
+                .visit(r);
+
+    emit_inequality_to(ineq, half_reif, _imp->opb);
+    _imp->opb << '\n';
+    return ++_imp->model_constraints;
+}
+
+auto Proof::add_to_model(const WeightedPseudoBooleanEquality & eq, const optional<HalfReifyOnConjunctionOf> & half_reif)
+    -> pair<optional<ProofLine>, optional<ProofLine>>
+{
+    if (_imp->opb_done)
+        throw UnexpectedException{"proof has already started"};
+
+    need_all_proof_names_in(eq.lhs);
+    if (half_reif)
+        for (auto & r : *half_reif)
+            overloaded{
+                [&](const ProofFlag &) {},
+                [&](const ProofLiteral & lit) {
+                    overloaded{
+                        [&](const TrueLiteral &) {},
+                        [&](const FalseLiteral &) {},
+                        [&]<typename T_>(const VariableConditionFrom<T_> & cond) { need_proof_name(cond); }}
+                        .visit(simplify_literal(lit));
+                }}
+                .visit(r);
+
+    emit_inequality_to(eq.lhs <= eq.rhs, half_reif, _imp->opb);
+    _imp->opb << '\n';
+    auto first = ++_imp->model_constraints;
+
+    emit_inequality_to(eq.lhs >= eq.rhs, half_reif, _imp->opb);
+    _imp->opb << '\n';
+    auto second = ++_imp->model_constraints;
+
+    return pair{first, second};
 }
 
 auto Proof::posting(const std::string & s) -> void
@@ -1361,12 +1231,22 @@ auto Proof::solution(const State & state) -> void
     push_work_queue(Work{"* solution\n"});
 
     for (auto & var : _imp->solution_variables)
-        need_proof_variable(var == state(var));
+        need_proof_name(var == state(var));
 
-    if (state.optional_minimise_variable()) {
-        Integer obj_val = state(*state.optional_minimise_variable());
-        need_proof_variable(*state.optional_minimise_variable() == obj_val);
-        need_proof_variable(*state.optional_minimise_variable() < obj_val);
+    if (auto obj = state.optional_minimise_variable()) {
+        Integer obj_val = state(*obj);
+        overloaded{
+            [&](const ConstantIntegerVariableID &) {
+            },
+            [&](const SimpleIntegerVariableID & var) {
+                need_proof_name(var == obj_val);
+                need_proof_name(var < obj_val);
+            },
+            [&](const ViewOfIntegerVariableID & var) {
+                need_proof_name(deview(var == obj_val));
+                need_proof_name(deview(var < obj_val));
+            }}
+            .visit(*obj);
     }
 
     // _imp->proof << "# 0\n";
@@ -1376,10 +1256,8 @@ auto Proof::solution(const State & state) -> void
     push_work_queue(Work{state.optional_minimise_variable() ? "o" : "v"});
 
     for (auto & var : _imp->solution_variables)
-        if ((! state.optional_minimise_variable()) || (var != *state.optional_minimise_variable())) {
-            // _imp->proof << " " << proof_variable(var == state(var));
-            push_work_queue(Work{" " + proof_variable(var == state(var))});
-        }
+        if ((! state.optional_minimise_variable()) || (IntegerVariableID{var} != *state.optional_minimise_variable()))
+            _imp->proof << " " << proof_name(var == state(var));
 
     if (! state.optional_minimise_variable()) {
         // _imp->proof << '\n';
@@ -1391,8 +1269,7 @@ auto Proof::solution(const State & state) -> void
     }
     else {
         auto do_it = [&](const SimpleIntegerVariableID & var, Integer val) {
-            // _imp->proof << " " << proof_variable(var == val);
-            push_work_queue(Work{" " + proof_variable(var == val)});
+            _imp->proof << " " << proof_name(var == val);
 
             auto & [negative_bit_coeff, bit_vars] = _imp->integer_variable_bits.at(var);
             if (val.raw_value < 0) {
@@ -1434,10 +1311,10 @@ auto Proof::solution(const State & state) -> void
             [&](const SimpleIntegerVariableID & var) {
                 Integer obj_val = state(*state.optional_minimise_variable());
                 do_it(var, obj_val);
-                need_proof_variable(var < obj_val);
+                need_proof_name(var < obj_val);
                 // _imp->proof << "# 0\n";
-                // _imp->proof << "u 1 " << proof_variable(var < obj_val) << " >= 1 ;\n";
-                push_work_queue(Work{"# 0\nu 1 " + proof_variable(var < obj_val) + " >= 1 ;\n"});
+                // _imp->proof << "u 1 " << proof_name(var < obj_val) << " >= 1 ;\n";
+                push_work_queue(Work{"# 0\nu 1 " + proof_name(var < obj_val) + " >= 1 ;\n"});
                 // push_work_queue(Work{StringWithProofLine{"# 0\nu 1 " + proof_variable(var < obj_val) + " >= 1 ;\n", 1}});
                 _imp->mutexProofLine.lock();
                 ++_imp->proof_line;
@@ -1449,11 +1326,11 @@ auto Proof::solution(const State & state) -> void
             [&](const ViewOfIntegerVariableID & var) {
                 Integer obj_val = state(var.actual_variable);
                 do_it(var.actual_variable, obj_val);
-                auto lit = var < state(var);
-                need_proof_variable(lit);
+                auto lit = deview(var < state(var));
+                need_proof_name(lit);
                 // _imp->proof << "# 0\n";
-                // _imp->proof << "u 1 " << proof_variable(lit) << " >= 1 ;\n";
-                push_work_queue(Work{"# 0\nu 1 " + proof_variable(lit) + " >= 1 ;\n"});
+                // _imp->proof << "u 1 " << proof_name(lit) << " >= 1 ;\n";
+                push_work_queue(Work{"# 0\nu 1 " + proof_name(lit) + " >= 1 ;\n"});
                 // push_work_queue(Work{StringWithProofLine{"# 0\nu 1 " + proof_variable(lit) + " >= 1 ;\n", 1}});
                 _imp->mutexProofLine.lock();
                 ++_imp->proof_line;
@@ -1468,22 +1345,12 @@ auto Proof::solution(const State & state) -> void
 
 auto Proof::backtrack(const State & state) -> void
 {
-    // _imp->proof << "* backtracking\n";
-    // _imp->proof << "u";
-    push_work_queue(Work{"* backtracking\nu"});
-
+    _imp->proof << "* backtracking\n";
+    WeightedPseudoBooleanSum backtrack;
     state.for_each_guess([&](const Literal & lit) {
-        if (! is_literally_true(lit)) {
-            // _imp->proof << " 1 " << proof_variable(! lit);
-            push_work_queue(Work{" 1 " + proof_variable(! lit)});
-        }
+        backtrack += 1_i * ! lit;
     });
-    // _imp->proof << " >= 1 ;\n";
-    push_work_queue(Work{" >= 1 ;\n"});
-    // push_work_queue(Work{StringWithProofLine{" >= 1 ;\n", 1}});
-    _imp->mutexProofLine.lock();
-    ++_imp->proof_line;
-    _imp->mutexProofLine.unlock();
+    emit_rup_proof_line(move(backtrack) >= 1_i);
 }
 
 auto Proof::assert_contradiction() -> void
@@ -1558,6 +1425,14 @@ auto Proof::infer(const State & state, const Literal & lit, const Justification 
         },
         lit);
 
+    auto need_lit = [&]() {
+        overloaded{
+            [&](const TrueLiteral &) {},
+            [&](const FalseLiteral &) {},
+            [&]<typename T_>(const VariableConditionFrom<T_> & cond) { need_proof_name(cond); }}
+            .visit(simplify_literal(lit));
+    };
+
     overloaded{
         [&]([[maybe_unused]] const JustifyUsingRUP & j) {
     // std::cout << "JustifyUsingRUP pushed" << std::endl;
@@ -1598,7 +1473,7 @@ auto Proof::infer(const State & state, const Literal & lit, const Justification 
             _imp->proof << "* explicit from " << x.where.file_name() << ":"
                         << x.where.line() << " in " << x.where.function_name() << '\n';
 #endif
-            // pthread_barrier_wait(&_imp->barrier);
+            need_lit();
             vector<ProofLine> to_delete;
             add_proof_steps(x, to_delete);
             // infer(state, lit_copy, JustifyUsingRUP{});
@@ -1618,10 +1493,10 @@ auto Proof::infer(const State & state, const Literal & lit, const Justification 
             // std::cout << _imp->number_justification << " = justify _imp->number_justification" << std::endl;
             lock_number.unlock();
             // lock.unlock();
-
+            need_lit();
             if (! is_literally_true(lit_copy)) {
                 // we need this because it'll show up in the trail later
-                need_proof_variable(lit_copy);
+                // need_proof_variable(lit_copy);
                 // _imp->proof << "* guessing " << proof_variable(lit) << ", decision stack is [";
                 push_work_queue(Work{"* guessing " + proof_variable(lit_copy) + ", decision stack is ["});
                 for_each_guess([&](const Literal & lit) {
@@ -1673,6 +1548,164 @@ auto Proof::emit_proof_comment(const string & s, const std::optional<bool> & wor
     }
 }
 
+auto Proof::need_all_proof_names_in(const SumOf<Weighted<PseudoBooleanTerm>> & sum) -> void
+{
+    // make sure we have any definitions for things that show up
+    for (auto & [_, v] : sum.terms)
+        overloaded{
+            [&](const ProofLiteral & lit) {
+                overloaded{
+                    [&](const TrueLiteral &) {},
+                    [&](const FalseLiteral &) {},
+                    [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
+                        need_proof_name(cond);
+                    }}
+                    .visit(simplify_literal(lit));
+            },
+            [&](const ProofFlag &) {},
+            [&](const IntegerVariableID &) {},
+            [&](const ProofOnlySimpleIntegerVariableID &) {}}
+            .visit(v);
+}
+
+auto Proof::emit_inequality_to(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
+    const optional<HalfReifyOnConjunctionOf> & half_reif, ostream & stream) -> void
+{
+    // build up the inequality, adjusting as we go for constant terms,
+    // and converting from <= to >=.
+    Integer rhs = -ineq.rhs;
+    Integer reif_const = 0_i;
+    for (auto & [w, v] : ineq.lhs.terms) {
+        if (0_i == w)
+            continue;
+
+        overloaded{
+            [&, w = w](const ProofLiteral & lit) {
+                overloaded{
+                    [&](const TrueLiteral &) {
+                        rhs += w;
+                    },
+                    [&](const FalseLiteral &) {},
+                    [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
+                        stream << -w << " " << proof_name(cond) << " ";
+                        reif_const += max(0_i, w);
+                    }}
+                    .visit(simplify_literal(lit));
+            },
+            [&, w = w](const ProofFlag & flag) {
+                stream << -w << " " << proof_name(flag) << " ";
+                reif_const += max(0_i, w);
+            },
+            [&, w = w](const IntegerVariableID & var) {
+                overloaded{
+                    [&](const SimpleIntegerVariableID & var) {
+                        auto & [_, bit_vars] = _imp->integer_variable_bits.at(var);
+                        for (auto & [bit_value, bit_name] : bit_vars) {
+                            stream << -w * bit_value << " " << bit_name << " ";
+                            reif_const += max(0_i, w * bit_value);
+                        }
+                    },
+                    [&](const ViewOfIntegerVariableID & view) {
+                        if (! view.negate_first) {
+                            auto & [_, bit_vars] = _imp->integer_variable_bits.at(view.actual_variable);
+                            for (auto & [bit_value, bit_name] : bit_vars) {
+                                stream << -w * bit_value << " " << bit_name << " ";
+                                reif_const += max(0_i, w * bit_value);
+                            }
+                            rhs += w * view.then_add;
+                            reif_const += max(0_i, -w * view.then_add);
+                        }
+                        else {
+                            auto & [_, bit_vars] = _imp->integer_variable_bits.at(view.actual_variable);
+                            for (auto & [bit_value, bit_name] : bit_vars) {
+                                stream << w * bit_value << " " << bit_name << " ";
+                                reif_const += max(0_i, -w * bit_value);
+                            }
+                            rhs += w * view.then_add;
+                            reif_const += max(0_i, -w * view.then_add);
+                        }
+                    },
+                    [&](const ConstantIntegerVariableID & cvar) {
+                        rhs += w * cvar.const_value;
+                    }}
+                    .visit(var);
+            },
+            [&, w = w](const ProofOnlySimpleIntegerVariableID & var) {
+                auto & [_, bit_vars] = _imp->integer_variable_bits.at(var);
+                for (auto & [bit_value, bit_name] : bit_vars) {
+                    stream << -w * bit_value << " " << bit_name << " ";
+                    reif_const += max(0_i, w * bit_value);
+                }
+            }}
+            .visit(v);
+    }
+
+    if (half_reif) {
+        reif_const += rhs;
+        for (auto & r : *half_reif)
+            overloaded{
+                [&](const ProofFlag & f) {
+                    stream << reif_const << " " << proof_name(! f) << " ";
+                },
+                [&](const ProofLiteral & lit) {
+                    overloaded{
+                        [&](const TrueLiteral &) {
+                        },
+                        [&](const FalseLiteral &) {
+                            throw UnimplementedException{};
+                        },
+                        [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
+                            stream << reif_const << " " << proof_name(! cond) << " ";
+                        }}
+                        .visit(simplify_literal(lit));
+                }}
+                .visit(r);
+    }
+
+    stream << ">= " << rhs << " ;";
+}
+
+auto Proof::emit_rup_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq) -> ProofLine
+{
+    need_all_proof_names_in(ineq.lhs);
+
+    _imp->proof << "u ";
+    emit_inequality_to(ineq, nullopt, _imp->proof);
+    _imp->proof << '\n';
+    return ++_imp->proof_line;
+}
+
+auto Proof::emit_rup_proof_line_under_trail(const State & state, const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq) -> ProofLine
+{
+    auto terms = trail_variables_as_sum(state, ineq.rhs);
+    for (auto & t : ineq.lhs.terms)
+        terms += t;
+    return emit_rup_proof_line(terms <= ineq.rhs);
+}
+
+auto Proof::emit_red_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
+    const std::vector<std::pair<ProofLiteral, ProofLiteral>> & witness) -> ProofLine
+{
+    need_all_proof_names_in(ineq.lhs);
+
+    _imp->proof << "red ";
+    emit_inequality_to(ineq, nullopt, _imp->proof);
+
+    auto witness_literal = [this](const ProofLiteral & lit) -> string {
+        return overloaded{
+            [](const TrueLiteral &) -> string { return "1"; },
+            [](const FalseLiteral &) -> string { return "0"; },
+            [this]<typename T_>(const VariableConditionFrom<T_> & var) -> string { return proof_name(var); }}
+            .visit(simplify_literal(lit));
+    };
+
+    for (auto & [f, t] : witness)
+        _imp->proof << " " << witness_literal(f) << " -> " << witness_literal(t);
+    _imp->proof << " ;\n";
+
+    return ++_imp->proof_line;
+}
+
 auto Proof::need_constraint_saying_variable_takes_at_least_one_value(IntegerVariableID var) -> ProofLine
 {
     return overloaded{
@@ -1684,17 +1717,16 @@ auto Proof::need_constraint_saying_variable_takes_at_least_one_value(IntegerVari
             if (result == _imp->variable_at_least_one_constraints.end()) {
                 auto [lower, upper] = _imp->bounds_for_gevars.at(var);
                 for (Integer v = lower; v <= upper; ++v)
-                    need_proof_variable(var == v);
+                    need_proof_name(var == v);
 
                 // _imp->proof << "# 0\n";
                 push_work_queue(Work{"# 0\n"});
 
                 // _imp->proof << "u ";
                 push_work_queue(Work{"u "});
-
                 for (Integer v = lower; v <= upper; ++v) {
-                    // _imp->proof << "1 " << proof_variable(var == v) << " ";
-                    push_work_queue(Work{"1 " + proof_variable(var == v) + " "});
+                    // _imp->proof << "1 " << proof_name(var == v) << " ";
+                    push_work_queue(Work{"1 " + proof_name(var == v) + " "});
                 }
 
                 // _imp->proof << ">= 1 ;\n";
@@ -1733,15 +1765,15 @@ auto Proof::forget_proof_level(int depth) -> void
     push_work_queue(Work{"w " + to_string(depth) + "\n"});
 }
 
-auto Proof::trail_variables(const State & state, Integer coeff) -> string
+auto Proof::trail_variables_as_sum(const State & state, Integer coeff) -> WeightedPseudoBooleanSum
 {
-    stringstream result;
+    WeightedPseudoBooleanSum result;
     state.for_each_guess([&](const Literal & lit) {
         if (! is_literally_true(lit))
-            result << " " << coeff << " " << proof_variable(! lit);
+            result += coeff * ! lit;
     });
 
-    return result.str();
+    return result;
 }
 
 auto Proof::add_proof_steps(const JustifyExplicitly & x, vector<ProofLine> & to_delete) -> void
@@ -1796,7 +1828,13 @@ auto Proof::get_or_emit_pol_term_for_bound_in_bits(State & state, bool upper,
     }
 
     big_number += max(1_i, abs(val));
-    step << trail_variables(state, big_number);
+    state.for_each_guess([&](const Literal & lit) {
+        overloaded{
+            [&](const TrueLiteral &) {},
+            [&](const FalseLiteral &) { throw UnimplementedException{}; },
+            [&]<typename T_>(const VariableConditionFrom<T_> & cond) { step << " " << big_number << " " << proof_name(! cond); }}
+            .visit(simplify_literal(lit));
+    });
 
     if (upper)
         step << " >= " << -val << " ";
@@ -1818,4 +1856,9 @@ auto Proof::new_guess() -> void
 auto Proof::undo_guess() -> void
 {
     _imp->line_for_bound_in_bits.pop_back();
+}
+
+auto gcs::innards::debug_string(const ProofOnlySimpleIntegerVariableID & var) -> string
+{
+    return "proofvaridx " + to_string(var.index);
 }

@@ -661,8 +661,8 @@ auto State::prove_and_remember_change(const Inference & inference, const HowChan
 auto State::infer(const Literal & lit, const Justification & just) -> Inference
 {
     return overloaded{
-        [&](const LiteralFromIntegerVariable & ilit) -> Inference {
-            return infer(ilit, just);
+        [&](const IntegerVariableCondition & cond) -> Inference {
+            return infer(cond, just);
         },
         [&](const TrueLiteral &) {
             if (_imp->maybe_proof)
@@ -677,17 +677,18 @@ auto State::infer(const Literal & lit, const Justification & just) -> Inference
         .visit(lit);
 }
 
-auto State::infer(const LiteralFromIntegerVariable & ilit, const Justification & just) -> Inference
+template <IntegerVariableIDLike VarType_>
+auto State::infer(const VariableConditionFrom<VarType_> & cond, const Justification & just) -> Inference
 {
-    switch (ilit.op) {
-    case LiteralFromIntegerVariable::Operator::Equal:
-        return infer_equal(ilit.var, ilit.value, just);
-    case LiteralFromIntegerVariable::Operator::NotEqual:
-        return infer_not_equal(ilit.var, ilit.value, just);
-    case LiteralFromIntegerVariable::Operator::Less:
-        return infer_less_than(ilit.var, ilit.value, just);
-    case LiteralFromIntegerVariable::Operator::GreaterEqual:
-        return infer_greater_than_or_equal(ilit.var, ilit.value, just);
+    switch (cond.op) {
+    case VariableConditionOperator::Equal:
+        return infer_equal(cond.var, cond.value, just);
+    case VariableConditionOperator::NotEqual:
+        return infer_not_equal(cond.var, cond.value, just);
+    case VariableConditionOperator::Less:
+        return infer_less_than(cond.var, cond.value, just);
+    case VariableConditionOperator::GreaterEqual:
+        return infer_greater_than_or_equal(cond.var, cond.value, just);
     }
     throw NonExhaustiveSwitch{};
 }
@@ -1156,28 +1157,28 @@ auto State::log_inferences_to(Proof & p) -> void
 auto State::test_literal(const Literal & lit) const -> LiteralIs
 {
     return overloaded{
-        [&](const LiteralFromIntegerVariable & ilit) -> LiteralIs {
-            return test_literal(ilit);
+        [&](const IntegerVariableCondition & cond) -> LiteralIs {
+            return test_literal(cond);
         },
         [](const TrueLiteral &) { return LiteralIs::DefinitelyTrue; },
         [](const FalseLiteral &) { return LiteralIs::DefinitelyFalse; }}
         .visit(lit);
 }
 
-auto State::test_literal(const LiteralFromIntegerVariable & ilit) const -> LiteralIs
+auto State::test_literal(const IntegerVariableCondition & cond) const -> LiteralIs
 {
-    switch (ilit.op) {
-    case LiteralFromIntegerVariable::Operator::Equal:
-        if (! in_domain(ilit.var, ilit.value))
+    switch (cond.op) {
+    case VariableConditionOperator::Equal:
+        if (! in_domain(cond.var, cond.value))
             return LiteralIs::DefinitelyFalse;
-        else if (has_single_value(ilit.var))
+        else if (has_single_value(cond.var))
             return LiteralIs::DefinitelyTrue;
         else
             return LiteralIs::Undecided;
 
-    case LiteralFromIntegerVariable::Operator::Less:
-        if (lower_bound(ilit.var) < ilit.value) {
-            if (upper_bound(ilit.var) < ilit.value)
+    case VariableConditionOperator::Less:
+        if (lower_bound(cond.var) < cond.value) {
+            if (upper_bound(cond.var) < cond.value)
                 return LiteralIs::DefinitelyTrue;
             else
                 return LiteralIs::Undecided;
@@ -1185,9 +1186,9 @@ auto State::test_literal(const LiteralFromIntegerVariable & ilit) const -> Liter
         else
             return LiteralIs::DefinitelyFalse;
 
-    case LiteralFromIntegerVariable::Operator::GreaterEqual:
-        if (upper_bound(ilit.var) >= ilit.value) {
-            if (lower_bound(ilit.var) >= ilit.value)
+    case VariableConditionOperator::GreaterEqual:
+        if (upper_bound(cond.var) >= cond.value) {
+            if (lower_bound(cond.var) >= cond.value)
                 return LiteralIs::DefinitelyTrue;
             else
                 return LiteralIs::Undecided;
@@ -1195,10 +1196,10 @@ auto State::test_literal(const LiteralFromIntegerVariable & ilit) const -> Liter
         else
             return LiteralIs::DefinitelyFalse;
 
-    case LiteralFromIntegerVariable::Operator::NotEqual:
-        if (! in_domain(ilit.var, ilit.value))
+    case VariableConditionOperator::NotEqual:
+        if (! in_domain(cond.var, cond.value))
             return LiteralIs::DefinitelyTrue;
-        else if (has_single_value(ilit.var))
+        else if (has_single_value(cond.var))
             return LiteralIs::DefinitelyFalse;
         else
             return LiteralIs::Undecided;
@@ -1301,6 +1302,11 @@ namespace gcs
     template auto State::for_each_value_while_immutable(const SimpleIntegerVariableID &, const std::function<auto(Integer)->bool> &) const -> bool;
     template auto State::for_each_value_while_immutable(const ViewOfIntegerVariableID &, const std::function<auto(Integer)->bool> &) const -> bool;
     template auto State::for_each_value_while_immutable(const ConstantIntegerVariableID &, const std::function<auto(Integer)->bool> &) const -> bool;
+
+    template auto State::infer(const VariableConditionFrom<IntegerVariableID> &, const Justification &) -> Inference;
+    template auto State::infer(const VariableConditionFrom<SimpleIntegerVariableID> &, const Justification &) -> Inference;
+    template auto State::infer(const VariableConditionFrom<ViewOfIntegerVariableID> &, const Justification &) -> Inference;
+    template auto State::infer(const VariableConditionFrom<ConstantIntegerVariableID> &, const Justification &) -> Inference;
 
     template auto State::infer_equal(const IntegerVariableID &, Integer, const Justification &) -> Inference;
     template auto State::infer_equal(const SimpleIntegerVariableID &, Integer, const Justification &) -> Inference;

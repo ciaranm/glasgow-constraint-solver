@@ -26,30 +26,31 @@ using std::to_string;
 using std::variant;
 using std::vector;
 
-auto gcs::innards::simplify_linear(const WeightedSum & coeff_vars) -> pair<SumOf<Weighted<SimpleIntegerVariableID>>, Integer>
+auto gcs::innards::tidy_up_linear(const WeightedSum & coeff_vars) -> pair<TidiedUpLinear, Integer>
 {
-    SumOf<Weighted<SimpleIntegerVariableID>> result;
+    SumOf<Weighted<SimpleIntegerVariableID>> simplified_sum;
     Integer modifier{0_i};
     for (const auto & [c, v] : coeff_vars.terms)
         overloaded{
-            [&, &c = c](const SimpleIntegerVariableID & v) { result += c * v; },
+            [&, &c = c](const SimpleIntegerVariableID & v) { simplified_sum += c * v; },
             [&, &c = c](const ConstantIntegerVariableID & v) { modifier -= c * v.const_value; },
             [&, &c = c](const ViewOfIntegerVariableID & v) {
-                result += (v.negate_first ? -c : c) * v.actual_variable;
+                simplified_sum += (v.negate_first ? -c : c) * v.actual_variable;
                 modifier -= c * v.then_add;
             }}
             .visit(v);
 
-    sort(result.terms.begin(), result.terms.end(), [](const Weighted<SimpleIntegerVariableID> & a, const Weighted<SimpleIntegerVariableID> & b) {
-        return a.variable < b.variable;
-    });
+    sort(simplified_sum.terms.begin(), simplified_sum.terms.end(),
+        [](const Weighted<SimpleIntegerVariableID> & a, const Weighted<SimpleIntegerVariableID> & b) {
+            return a.variable < b.variable;
+        });
 
     // same variable appears twice? bring in its coefficient, and rewrite future
     // coefficients to be zero
-    auto c = result.terms.begin();
-    while (c != result.terms.end()) {
+    auto c = simplified_sum.terms.begin();
+    while (c != simplified_sum.terms.end()) {
         auto c_next = next(c);
-        while (c_next != result.terms.end() && c_next->variable == c->variable) {
+        while (c_next != simplified_sum.terms.end() && c_next->variable == c->variable) {
             c->coefficient += c_next->coefficient;
             c_next->coefficient = 0_i;
             ++c_next;
@@ -58,36 +59,30 @@ auto gcs::innards::simplify_linear(const WeightedSum & coeff_vars) -> pair<SumOf
     }
 
     // remove zero coefficients
-    result.terms.erase(remove_if(result.terms.begin(), result.terms.end(), [](const Weighted<SimpleIntegerVariableID> & cv) {
-        return cv.coefficient == 0_i;
-    }),
-        result.terms.end());
+    simplified_sum.terms.erase(remove_if(simplified_sum.terms.begin(), simplified_sum.terms.end(),
+                                   [](const Weighted<SimpleIntegerVariableID> & cv) {
+                                       return cv.coefficient == 0_i;
+                                   }),
+        simplified_sum.terms.end());
 
-    return pair{result, modifier};
-}
-
-auto gcs::innards::sanitise_linear(const WeightedSum & coeff_vars) -> pair<SanitisedLinear, Integer>
-{
-    auto [result, modifier] = simplify_linear(coeff_vars);
-
-    if (result.terms.end() == find_if(result.terms.begin(), result.terms.end(), [](const Weighted<SimpleIntegerVariableID> & cv) -> bool {
+    if (simplified_sum.terms.end() == find_if(simplified_sum.terms.begin(), simplified_sum.terms.end(), [](const Weighted<SimpleIntegerVariableID> & cv) -> bool {
             return cv.coefficient != 1_i;
         })) {
         SumOf<SimpleIntegerVariableID> simple_result;
-        for (auto & [_, v] : result.terms)
+        for (auto & [_, v] : simplified_sum.terms)
             simple_result.terms.emplace_back(v);
         return pair{simple_result, modifier};
     }
-    else if (result.terms.end() == find_if(result.terms.begin(), result.terms.end(), [](const Weighted<SimpleIntegerVariableID> & cv) -> bool {
+    else if (simplified_sum.terms.end() == find_if(simplified_sum.terms.begin(), simplified_sum.terms.end(), [](const Weighted<SimpleIntegerVariableID> & cv) -> bool {
                  return cv.coefficient != 1_i && cv.coefficient != -1_i;
              })) {
         SumOf<PositiveOrNegative<SimpleIntegerVariableID>> sum_result;
-        for (auto & [c, v] : result.terms)
+        for (auto & [c, v] : simplified_sum.terms)
             sum_result.terms.push_back(PositiveOrNegative<SimpleIntegerVariableID>{c == 1_i, v});
         return pair{sum_result, modifier};
     }
     else
-        return pair{result, modifier};
+        return pair{simplified_sum, modifier};
 }
 
 namespace
@@ -158,7 +153,7 @@ namespace
             proof.emit_proof_comment("justifying integer linear inequality " + debug_string(IntegerVariableID{change_var}) + " " + to_what);
 
             vector<pair<Integer, variant<ProofLine, string>>> terms_to_sum;
-            terms_to_sum.emplace_back(1_i, second_constraint_for_equality ? *proof_line - 1 : *proof_line);
+            terms_to_sum.emplace_back(1_i, second_constraint_for_equality ? *proof_line + 1 : *proof_line);
 
             Integer change_var_coeff = 0_i;
             for (const auto & cv : coeff_vars.terms) {

@@ -71,7 +71,7 @@ auto Propagators::operator=(Propagators &&) -> Propagators & = default;
 auto Propagators::model_contradiction(const string & explain_yourself) -> void
 {
     if (_imp->optional_proof)
-        _imp->optional_proof->cnf({});
+        _imp->optional_proof->add_cnf_to_model({});
 
     install([explain_yourself = explain_yourself](State &) -> pair<Inference, PropagatorState> {
         return pair{Inference::Contradiction, PropagatorState::Enable};
@@ -109,68 +109,33 @@ auto Propagators::trim_upper_bound(const State & state, IntegerVariableID var, I
     }
 }
 
-auto Propagators::define_cnf(const State &, Literals && c) -> optional<ProofLine>
-{
-    optional<ProofLine> result = nullopt;
-
-    if (_imp->optional_proof)
-        if (sanitise_literals(c))
-            result = _imp->optional_proof->cnf(c);
-
-    return result;
-}
-
-auto Propagators::define_at_most_one(const State &, Literals && lits) -> optional<ProofLine>
+auto Propagators::define_cnf(const State &, const Literals & c) -> optional<ProofLine>
 {
     if (_imp->optional_proof)
-        return _imp->optional_proof->at_most_one(move(lits));
+        return _imp->optional_proof->add_cnf_to_model(c);
     else
         return nullopt;
 }
 
-auto Propagators::define_pseudoboolean_ge(const State &, WeightedPseudoBooleanSum && lits, Integer val,
-    optional<ReificationTerm> half_reif) -> optional<ProofLine>
+auto Propagators::define(const State &, const WeightedPseudoBooleanLessEqual & ineq,
+    const optional<HalfReifyOnConjunctionOf> & half_reif) -> optional<ProofLine>
 {
-    if (_imp->optional_proof) {
-        if (sanitise_pseudoboolean_terms(lits, val))
-            return _imp->optional_proof->pseudoboolean_ge(lits, val, half_reif, false);
-    }
-    return nullopt;
-}
-
-auto Propagators::define_pseudoboolean_eq(const State &, WeightedPseudoBooleanSum && lits, Integer val,
-    optional<ReificationTerm> half_reif) -> optional<ProofLine>
-{
-    if (_imp->optional_proof) {
-        if (sanitise_pseudoboolean_terms(lits, val))
-            return _imp->optional_proof->pseudoboolean_ge(lits, val, half_reif, true);
-    }
-    return nullopt;
-}
-
-auto Propagators::define_linear_le(const State & state, const WeightedSum & coeff_vars,
-    Integer value, optional<ReificationTerm> half_reif) -> optional<ProofLine>
-{
-    if (_imp->optional_proof) {
-        auto [cv, modifier] = simplify_linear(coeff_vars);
-        return _imp->optional_proof->integer_linear_le(state, cv, value + modifier, half_reif, false);
-    }
+    if (_imp->optional_proof)
+        return _imp->optional_proof->add_to_model(ineq, half_reif);
     else
         return nullopt;
 }
 
-auto Propagators::define_linear_eq(const State & state, const WeightedSum & coeff_vars,
-    Integer value, optional<ReificationTerm> half_reif) -> optional<ProofLine>
+auto Propagators::define(const State &, const WeightedPseudoBooleanEquality & eq,
+    const optional<HalfReifyOnConjunctionOf> & half_reif) -> pair<optional<ProofLine>, optional<ProofLine>>
 {
-    if (_imp->optional_proof) {
-        auto [cv, modifier] = simplify_linear(coeff_vars);
-        return _imp->optional_proof->integer_linear_le(state, cv, value + modifier, half_reif, true);
-    }
+    if (_imp->optional_proof)
+        return _imp->optional_proof->add_to_model(eq, half_reif);
     else
-        return nullopt;
+        return pair{nullopt, nullopt};
 }
 
-auto Propagators::install(PropagationFunction && f, const Triggers & triggers, const std::string &) -> void
+auto Propagators::install(PropagationFunction && f, const Triggers & triggers, const string &) -> void
 {
     int id = _imp->propagation_functions.size();
     _imp->propagation_functions.emplace_back(move(f));
@@ -271,7 +236,7 @@ auto Propagators::define_and_install_table(State & state, const vector<IntegerVa
                 if (infeasible)
                     define_cnf(state, {selector != Integer(tuple_idx)});
                 else
-                    define_pseudoboolean_ge(state, move(lits), Integer(lits.terms.size() - 1));
+                    define(state, lits >= Integer(lits.terms.size() - 1));
             }
         }
 

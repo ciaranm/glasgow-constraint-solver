@@ -2,7 +2,8 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_COMPARISON_HH
 
 #include <gcs/constraint.hh>
-#include <gcs/literal.hh>
+#include <gcs/innards/literal.hh>
+#include <gcs/variable_condition.hh>
 #include <gcs/variable_id.hh>
 
 namespace gcs
@@ -50,7 +51,7 @@ namespace gcs
     {
     public:
         inline explicit LessThan(const IntegerVariableID v1, const IntegerVariableID v2) :
-            CompareLessThanReif(v1, v2, TrueLiteral{}, true, false){};
+            CompareLessThanReif(v1, v2, innards::TrueLiteral{}, true, false){};
     };
 
     /**
@@ -61,7 +62,7 @@ namespace gcs
     class LessThanIf : public innards::CompareLessThanReif
     {
     public:
-        inline explicit LessThanIf(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond) :
+        inline explicit LessThanIf(const IntegerVariableID v1, const IntegerVariableID v2, IntegerVariableCondition cond) :
             CompareLessThanReif(v1, v2, cond, false, false){};
     };
 
@@ -74,7 +75,7 @@ namespace gcs
     {
     public:
         inline explicit LessThanEqual(const IntegerVariableID v1, const IntegerVariableID v2) :
-            CompareLessThanReif(v1, v2, TrueLiteral{}, true, true){};
+            CompareLessThanReif(v1, v2, innards::TrueLiteral{}, true, true){};
     };
 
     /**
@@ -86,7 +87,7 @@ namespace gcs
     {
     public:
         inline explicit GreaterThan(const IntegerVariableID v1, const IntegerVariableID v2) :
-            CompareLessThanReif(v2, v1, TrueLiteral{}, true, false){};
+            CompareLessThanReif(v2, v1, innards::TrueLiteral{}, true, false){};
     };
 
     /**
@@ -98,7 +99,7 @@ namespace gcs
     {
     public:
         inline explicit GreaterThanEqual(const IntegerVariableID v1, const IntegerVariableID v2) :
-            CompareLessThanReif(v2, v1, TrueLiteral{}, true, true){};
+            CompareLessThanReif(v2, v1, innards::TrueLiteral{}, true, true){};
     };
 
     /**
@@ -109,7 +110,7 @@ namespace gcs
     class LessThanIff : public innards::CompareLessThanReif
     {
     public:
-        inline explicit LessThanIff(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond) :
+        inline explicit LessThanIff(const IntegerVariableID v1, const IntegerVariableID v2, IntegerVariableCondition cond) :
             CompareLessThanReif(v1, v2, cond, true, false){};
     };
 
@@ -121,7 +122,7 @@ namespace gcs
     class LessThanEqualIff : public innards::CompareLessThanReif
     {
     public:
-        inline explicit LessThanEqualIff(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond) :
+        inline explicit LessThanEqualIff(const IntegerVariableID v1, const IntegerVariableID v2, IntegerVariableCondition cond) :
             CompareLessThanReif(v1, v2, cond, true, true){};
     };
 
@@ -133,7 +134,7 @@ namespace gcs
     class GreaterThanIff : public innards::CompareLessThanReif
     {
     public:
-        inline explicit GreaterThanIff(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond) :
+        inline explicit GreaterThanIff(const IntegerVariableID v1, const IntegerVariableID v2, IntegerVariableCondition cond) :
             CompareLessThanReif(v2, v1, cond, true, false){};
     };
 
@@ -145,7 +146,7 @@ namespace gcs
     class GreaterThanEqualIff : public innards::CompareLessThanReif
     {
     public:
-        inline explicit GreaterThanEqualIff(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond) :
+        inline explicit GreaterThanEqualIff(const IntegerVariableID v1, const IntegerVariableID v2, IntegerVariableCondition cond) :
             CompareLessThanReif(v2, v1, cond, true, true){};
     };
 }

@@ -30,8 +30,6 @@ auto main(int, char *[]) -> int
     auto two_pow_np1_minus_two_pow_m = p.create_integer_variable(-32_i, 64_i);
 
     p.post(Power{2_c, n, two_pow_n});
-    if (3 == 5) return false;
-
     p.post(Power{2_c, m, two_pow_m});
     p.post(Power{2_c, n + 1_i, two_pow_np1});
     p.post(Plus{two_pow_np1, -two_pow_m, two_pow_np1_minus_two_pow_m});

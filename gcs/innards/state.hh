@@ -4,10 +4,10 @@
 #include <gcs/current_state.hh>
 #include <gcs/innards/integer_variable_state.hh>
 #include <gcs/innards/justification.hh>
+#include <gcs/innards/literal.hh>
 #include <gcs/innards/proof-fwd.hh>
 #include <gcs/innards/state-fwd.hh>
 #include <gcs/innards/variable_id_utils.hh>
-#include <gcs/literal.hh>
 
 #include <any>
 #include <concepts>
@@ -96,7 +96,7 @@ namespace gcs::innards
         template <DirectIntegerVariableIDLike VarType_>
         [[nodiscard]] auto change_state_for_literal(
             const VarType_ & var,
-            LiteralFromIntegerVariable::Operator state,
+            VariableConditionOperator op,
             Integer value) -> std::pair<Inference, HowChanged>;
 
         template <DirectIntegerVariableIDLike VarType_>
@@ -194,9 +194,10 @@ namespace gcs::innards
 
         /**
          * Infer that a Literal must hold, for the specified Justification. Performance overload for if we
-         * know we have a LiteralFromIntegerVariable.
+         * know we have an IntegerVariableCondition.
          */
-        [[nodiscard]] auto infer(const LiteralFromIntegerVariable & lit, const Justification & why) -> Inference;
+        template <IntegerVariableIDLike VarType_>
+        [[nodiscard]] auto infer(const VariableConditionFrom<VarType_> & lit, const Justification & why) -> Inference;
 
         /**
          * Infer nothing, but still emit a justification if necessary.
@@ -478,12 +479,12 @@ namespace gcs::innards
         [[nodiscard]] auto test_literal(const Literal &) const -> LiteralIs;
 
         /**
-         * Is the specified LiteralFromIntegerVariable definitely true,
+         * Is the specified IntegerVariableCondition definitely true,
          * definitly false, or unknown?
          *
          * \sa is_literally_true_or_false()
          */
-        [[nodiscard]] auto test_literal(const LiteralFromIntegerVariable &) const -> LiteralIs;
+        [[nodiscard]] auto test_literal(const IntegerVariableCondition &) const -> LiteralIs;
 
         /**
          * A TrueLiteral is definitely true. Performance overload.
