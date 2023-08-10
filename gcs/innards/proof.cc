@@ -60,6 +60,7 @@ using std::unordered_map;
 using std::variant;
 using std::vector;
 using std::visit;
+
 namespace
 {
     auto value_name(Integer v) -> string
@@ -195,20 +196,24 @@ auto Proof::push_work_queue(Work work)
 
     // auto visitor = overloaded{
     //     [&](string & proof_text) {
-    //         _imp->proof << proof_text;
+    //         std::cout << "Text pushed : " << proof_text;
     //     },
     //     [&](const WorkJustifyUsingRUP & ) {
-    //         std::cout << "not test" << std::endl;
+    //         std::cout << "WorkJustifyUsingRUP pushed\n";
     //     },
     //     [&](const WorkJustifyUsingAssertion & ) {
-    //         std::cout << "not test" << std::endl;
+    //         std::cout << "WorkJustifyUsingAssertion pushed\n";
     //     },
     //     [&](const WorkJustifyExplicitly & ) {
-    //         std::cout << "not test" << std::endl;
+    //         std::cout << "WorkJustifyExplicitly pushed\n";
     //     },
     //     [&](const WorkGuess & ) {
-    //         std::cout << "not test" << std::endl;
+    //         std::cout << "WorkGuess pushed\n";
+    //     },
+    //     [&](const WorkEnterProofLevel & ) {
+    //         std::cout << "WorkEnterProofLevel pushed\n";
     //     }};
+
     // std::visit(visitor, work);
 
     // std::cout << "PUSH WORK QUEUE" << std::endl;
@@ -220,40 +225,79 @@ auto Proof::push_work_queue(Work work)
     lock.unlock();
 }
 
-auto Proof::output_it(const string & rule, Literal lit, vector<Literal> guesses, vector<Literal> extra_proof_conditions, const std::optional<bool> & work)
+auto Proof::output_it(const string & rule, Literal lit, vector<Literal> guesses, vector<Literal> extra_proof_conditions, const std::optional<bool> & work_thread)
 {
     string text_pushed;
-
     if (! is_literally_true(lit)) {
-        text_pushed = rule;
+        // auto terms = trail_variables_as_sum(state, 1_i);
+        WeightedPseudoBooleanSum terms;
+        Integer coeff = 1_i;
         for_each_guess([&](const Literal & lit) {
-            if (! is_literally_true(lit)) {
-                text_pushed += " 1 " + proof_variable(! lit);
-            }
+            if (! is_literally_true(lit))
+                terms += coeff * ! lit;
         },
             guesses, extra_proof_conditions);
-        if (! is_literally_false(lit)) {
-            text_pushed += " 1 " + proof_variable(lit);
-        }
-        text_pushed += " >= 1 ;\n";
-        if (work) {
-            // std::cout << "Write directly on the file"<< std::endl;
+        terms += 1_i * lit;
+        // _imp->proof << rule << " ";
+        text_pushed = rule + " ";
+        if (work_thread) {
+            // std::cout << "output_it wrote :" << text_pushed << "\n";
             _imp->proof << text_pushed;
+        }
+        else {
+            push_work_queue(Work{text_pushed});
+        }
+        emit_inequality_to(move(terms) >= 1_i, nullopt, false, work_thread);
+        // _imp->proof << '\n';
+        // text_pushed = "\n";
+        // ++_imp->proof_line;
+        if (work_thread) {
+            // std::cout << "output_it wrote : "
+            //           << "\n";
+            _imp->proof << "\n";
             _imp->mutexProofLine.lock();
             ++_imp->proof_line;
             _imp->mutexProofLine.unlock();
         }
         else {
             // _imp->proof << text_pushed;
-            push_work_queue(Work{text_pushed});
+            push_work_queue(Work{"\n"});
             // push_work_queue(Work{StringWithProofLine{text_pushed, 1}});
             _imp->mutexProofLine.lock();
             ++_imp->proof_line;
             _imp->mutexProofLine.unlock();
         }
-        // ++_imp->proof_line;
     }
 };
+// if (! is_literally_true(lit)) {
+//     text_pushed = rule;
+//     for_each_guess([&](const Literal & lit) {
+//         if (! is_literally_true(lit)) {
+//             text_pushed += " 1 " + proof_variable(! lit);
+//         }
+//     },
+//         guesses, extra_proof_conditions);
+//     if (! is_literally_false(lit)) {
+//         text_pushed += " 1 " + proof_variable(lit);
+//     }
+//     text_pushed += " >= 1 ;\n";
+//     if (work) {
+//         // std::cout << "Write directly on the file"<< std::endl;
+//         _imp->proof << text_pushed;
+//         _imp->mutexProofLine.lock();
+//         ++_imp->proof_line;
+//         _imp->mutexProofLine.unlock();
+//     }
+//     else {
+//         // _imp->proof << text_pushed;
+//         push_work_queue(Work{text_pushed});
+//         // push_work_queue(Work{StringWithProofLine{text_pushed, 1}});
+//         _imp->mutexProofLine.lock();
+//         ++_imp->proof_line;
+//         _imp->mutexProofLine.unlock();
+//     }
+//     // ++_imp->proof_line;
+// }
 
 auto Proof::for_each_guess(const std::function<auto(Literal)->void> & f, vector<Literal> guesses, vector<Literal> extra_proof_conditions) const -> void
 {
@@ -262,6 +306,15 @@ auto Proof::for_each_guess(const std::function<auto(Literal)->void> & f, vector<
     for (auto & g : guesses)
         f(g);
 }
+
+auto Proof::need_lit(const Literal & lit, const std::optional<bool> & work_thread)
+{
+    overloaded{
+        [&](const TrueLiteral &) {},
+        [&](const FalseLiteral &) {},
+        [&]<typename T_>(const VariableConditionFrom<T_> & cond) { need_proof_name(cond, work_thread); }}
+        .visit(simplify_literal(lit));
+};
 
 void Proof::threadWorkEntry()
 {
@@ -285,15 +338,15 @@ void Proof::threadWorkEntry()
                     // _imp->not_empty_text.notify_one();
                     // lockText.unlock();
 
-                    // std::cout << "Text written from threadWork: " << proof_text << std::endl;
+                    // std::cout << "Text written from threadWork: " << proof_text << "\n";
                     _imp->proof << proof_text;
                 },
                 [&](const WorkJustifyUsingRUP & w) {
-                    // std::cout << "JustifyUsingRUP start" << std::endl;
-                    need_lit("u");
-                    need_proof_variable(w.lit, true);
-                    output_it("u", w.lit, w.guesses, w.extra_proof_conditions, true);
-                    // std::cout << "JustifyUsingRUP end" << std::endl;
+                    // std::cout << "Size proof_queue : " << _imp->proofWorkQueue.size() << "\n";
+                    // std::cout << "JustifyUsingRUP start\n";
+                    need_lit(w.lit, true);
+                    // need_proof_variable(w.lit, true);
+                    output_it("u", w.lit, w.guesses, w.extra_proof_conditions, true); //, true);
                     std::unique_lock<std::mutex> lock_number(_imp->mutexNumber);
                     _imp->number_justification--;
                     if (_imp->number_justification == 0) {
@@ -301,11 +354,13 @@ void Proof::threadWorkEntry()
                         // std::cout << "work _imp->number_justification = " << _imp->number_justification << std::endl;
                     }
                     lock_number.unlock();
+                    // std::cout << "JustifyUsingRUP end\n";
+
                 },
                 [&](const WorkJustifyUsingAssertion & w) {
-                    // std::cout << "JustifyUsingAssertion start" << std::endl;
-
-                    need_proof_variable(w.lit, true);
+                    // std::cout << "JustifyUsingAssertion start\n";
+                    need_lit(w.lit, true);
+                    // need_proof_variable(w.lit, true);
                     output_it("a", w.lit, w.guesses, w.extra_proof_conditions, true);
                     // std::cout << "JustifyUsingAssertion end" << std::endl;
                     std::unique_lock<std::mutex> lock_number(_imp->mutexNumber);
@@ -316,44 +371,39 @@ void Proof::threadWorkEntry()
                     }
                     lock_number.unlock();
                 },
-                [&](const WorkJustifyExplicitly & w) {
-                    std::cout << "JustifyExplicitly start" << std::endl;
-                    vector<ProofLine> to_delete;
-                    // add_proof_steps(w.x, to_delete);
-                    // w.x.add_proof_steps(*this, to_delete);
-                    w.add_proof_steps(*this, to_delete);
+                [&](const WorkJustifyExplicitly &) {
+                    // std::cout << "JustifyExplicitly start" << std::endl;
+                    // vector<ProofLine> to_delete;
+                    // // add_proof_steps(w.x, to_delete);
+                    // // w.x.add_proof_steps(*this, to_delete);
+                    // w.add_proof_steps(*this, to_delete);
 
-                    // infer(w.state, w.lit, JustifyUsingRUP{});
-                    need_proof_variable(w.lit, true);
-                    output_it("u", w.lit, w.guesses, w.extra_proof_conditions, true);
-                    delete_proof_lines(to_delete, true);
-                    // std::cout << "JustifyExplicitly end" << std::endl;
+                    // // infer(w.state, w.lit, JustifyUsingRUP{});
+                    // need_proof_variable(w.lit, true);
+                    // output_it("u", w.lit, w.guesses, w.extra_proof_conditions, true);
+                    // delete_proof_lines(to_delete, true);
+                    // // std::cout << "JustifyExplicitly end" << std::endl;
                 },
-                [&](const WorkGuess & w) {
-                    std::cout << "Guess start" << std::endl;
-                    if (! is_literally_true(w.lit)) {
-                        // we need this because it'll show up in the trail later
-                        need_proof_variable(w.lit, true);
-                        _imp->proof << "* guessing " << proof_variable(w.lit) << ", decision stack is [";
-                        for_each_guess([&](const Literal & lit) {
-                            if (! is_literally_true(lit)) {
-                                _imp->proof << " " << proof_variable(lit);
-                            }
-                        },
-                            w.guesses, w.extra_proof_conditions);
-                        _imp->proof << " ]\n";
-                    }
+                [&](const WorkGuess &) {
+                    // std::cout << "Guess start" << std::endl;
+                    // if (! is_literally_true(w.lit)) {
+                    //     // we need this because it'll show up in the trail later
+                    //     need_proof_variable(w.lit, true);
+                    //     _imp->proof << "* guessing " << proof_variable(w.lit) << ", decision stack is [";
+                    //     for_each_guess([&](const Literal & lit) {
+                    //         if (! is_literally_true(lit)) {
+                    //             _imp->proof << " " << proof_variable(lit);
+                    //         }
+                    //     },
+                    //         w.guesses, w.extra_proof_conditions);
+                    //     _imp->proof << " ]\n";
+                    // }
                     // std::cout << "Guess end" << std::endl;
                 },
                 [&](const WorkEnterProofLevel & w) {
+                    // std::cout << "WorkEnterProofLevel wrote : " << "# " << w.depth << '\n';
                     _imp->proof << "# " << w.depth << '\n';
                     _imp->active_proof_level_thread = w.depth;
-                },
-                [&](const StringWithProofLine & s) {
-                    _imp->proof << s.text;
-                    _imp->mutexProofLine.lock();
-                    _imp->proof_line += s.nb;
-                    _imp->mutexProofLine.unlock();
                 }};
             std::visit(visitor, work);
 
@@ -562,7 +612,8 @@ auto Proof::create_proof_integer_variable(Integer lower, Integer upper, const st
     return id;
 }
 
-auto Proof::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v, const std::optional<bool> & work) -> void
+//, const std::optional<bool> & work
+auto Proof::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v, const std::optional<bool> & work_thread) -> void
 {
     using namespace gcs::innards::opb_utils;
 
@@ -580,7 +631,9 @@ auto Proof::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v, const s
     _imp->gevars_that_exist[id].insert(v);
 
     if (_imp->opb_done) {
-        if (work) {
+        if (work_thread) {
+            // std::cout << "need_gevar wrote : "
+            //           << "* need " << gevar << '\n';
             _imp->proof << "* need " << gevar << '\n';
         }
         else {
@@ -594,7 +647,9 @@ auto Proof::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v, const s
     auto & [_, bit_vars] = _imp->integer_variable_bits.at(id);
 
     if (_imp->opb_done) {
-        if (work) {
+        if (work_thread) {
+            // std::cout << "need_gevar wrote : "
+            //           << "# 0\n";
             _imp->proof << "# 0\n";
         }
         else {
@@ -605,7 +660,9 @@ auto Proof::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v, const s
     // gevar -> bits
     auto gevar_implies_bits = implied_by(opb_sum(bit_vars) >= v, gevar);
     if (_imp->opb_done) {
-        if (work) {
+        if (work_thread) {
+            // std::cout << "need_gevar wrote : "
+            //           << "red " << gevar_implies_bits << " ; " << gevar << " 0\n";
             _imp->proof << "red " << gevar_implies_bits << " ; " << gevar << " 0\n";
             _imp->mutexProofLine.lock();
             ++_imp->proof_line;
@@ -629,7 +686,9 @@ auto Proof::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v, const s
     // !gevar -> bits
     auto not_gevar_implies_bits = implied_by(opb_sum(bit_vars) < v, negate_opb_var_name(gevar));
     if (_imp->opb_done) {
-        if (work) {
+        if (work_thread) {
+            // std::cout << "need_gevar wrote : "
+            //           << "red " << not_gevar_implies_bits << " ; " << gevar << " 1\n";
             _imp->proof << "red " << not_gevar_implies_bits << " ; " << gevar << " 1\n";
             _imp->mutexProofLine.lock();
             ++_imp->proof_line;
@@ -654,7 +713,9 @@ auto Proof::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v, const s
     // lower?
     if (bounds != _imp->bounds_for_gevars.end() && bounds->second.first == v) {
         if (_imp->opb_done) {
-            if (work) {
+            if (work_thread) {
+                // std::cout << "need_gevar wrote : "
+                //           << "u 1 " << gevar << " >= 1 ;\n";
                 _imp->proof << "u 1 " << gevar << " >= 1 ;\n";
                 _imp->mutexProofLine.lock();
                 ++_imp->proof_line;
@@ -677,7 +738,9 @@ auto Proof::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v, const s
     // upper?
     if (bounds != _imp->bounds_for_gevars.end() && bounds->second.second < v) {
         if (_imp->opb_done) {
-            if (work) {
+            if (work_thread) {
+                // std::cout << "need_gevar wrote : "
+                //           << "u 1 ~" << gevar << " >= 1 ;\n";
                 _imp->proof << "u 1 ~" << gevar << " >= 1 ;\n";
                 _imp->mutexProofLine.lock();
                 ++_imp->proof_line;
@@ -705,14 +768,16 @@ auto Proof::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v, const s
     if (higher_gevar != other_gevars.end()) {
         auto implies_higher = implies(opb_var_as_sum(proof_name(id >= *higher_gevar)), proof_name(id >= v));
         if (_imp->opb_done) {
-            if (work) {
-                _imp->proof << "u " << implies_higher << " ;\n";
+            if (work_thread) {
+                // std::cout << "need_gevar wrote : "
+                //           << "u " << implies_higher << " ;\n";
+                _imp->proof << "u " << implies_higher << " ;\n"; // pb?5w";
                 _imp->mutexProofLine.lock();
                 ++_imp->proof_line;
                 _imp->mutexProofLine.unlock();
             }
             else {
-                push_work_queue(Work{"u " + implies_higher.OPBInequality_to_string() + " ;\n"});
+                push_work_queue(Work{"u " + implies_higher.OPBInequality_to_string() + " ;\n"}); // pb?5"});
                 // push_work_queue(Work{StringWithProofLine{"u " + implies_higher.OPBInequality_to_string() + " ;\n", 1}});
                 _imp->mutexProofLine.lock();
                 ++_imp->proof_line;
@@ -729,14 +794,16 @@ auto Proof::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v, const s
     if (this_gevar != other_gevars.begin()) {
         auto implies_lower = implies(opb_var_as_sum(proof_name(id >= v)), proof_name(id >= *prev(this_gevar)));
         if (_imp->opb_done) {
-            if (work) {
-                _imp->proof << "u " << implies_lower << " ;\n";
+            if (work_thread) {
+                // std::cout << "need_gevar wrote : "
+                //           << "u " << implies_lower << " ;\n";
+                _imp->proof << "u " << implies_lower << " ;\n"; // pb?6w";
                 _imp->mutexProofLine.lock();
                 ++_imp->proof_line;
                 _imp->mutexProofLine.unlock();
             }
             else {
-                push_work_queue(Work{"u " + implies_lower.OPBInequality_to_string() + " ;\n"});
+                push_work_queue(Work{"u " + implies_lower.OPBInequality_to_string() + " ;\n"}); // pb?6"});
                 // push_work_queue(Work{StringWithProofLine{"u " + implies_lower.OPBInequality_to_string() + " ;\n", 1}});
                 _imp->mutexProofLine.lock();
                 ++_imp->proof_line;
@@ -750,8 +817,10 @@ auto Proof::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v, const s
     }
 
     if (_imp->opb_done) {
-        if (work) {
+        if (work_thread) {
             // _imp->proof << "# " << _imp->active_proof_level << "\n"; //pb w
+            // std::cout << "need_gevar wrote : "
+            //           << "# " << _imp->active_proof_level_thread << "\n";
             _imp->proof << "# " << _imp->active_proof_level_thread << "\n";
         }
         else {
@@ -760,7 +829,8 @@ auto Proof::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v, const s
     }
 }
 
-auto Proof::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID id, Integer v, const std::optional<bool> & work) -> void
+//, const std::optional<bool> & work
+auto Proof::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID id, Integer v, const std::optional<bool> & work_thread) -> void
 {
     using namespace gcs::innards::opb_utils;
 
@@ -779,10 +849,12 @@ auto Proof::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID id, Inte
     auto bounds = _imp->bounds_for_gevars.find(id);
     if (bounds != _imp->bounds_for_gevars.end() && bounds->second.first == v) {
         // it's a lower bound
-        need_gevar(id, v + 1_i, work);
+        need_gevar(id, v + 1_i, work_thread);
 
         if (_imp->opb_done) {
-            if (work) {
+            if (work_thread) {
+                // std::cout << "need_direct_encoding_for wrote : "
+                //           << "* need lower bound " << eqvar << '\n';
                 _imp->proof << "* need lower bound " << eqvar << '\n';
             }
             else {
@@ -793,7 +865,9 @@ auto Proof::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID id, Inte
             _imp->opb << "* need lower bound " << eqvar << '\n';
 
         if (_imp->opb_done) {
-            if (work) {
+            if (work_thread) {
+                // std::cout << "need_direct_encoding_for wrote : "
+                //           << "# 0\n";
                 _imp->proof << "# 0\n";
             }
             else {
@@ -809,11 +883,15 @@ auto Proof::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID id, Inte
         auto eqvar_false = implies(not_ge_v_plus_one, eqvar);
 
         if (_imp->opb_done) {
-            if (work) {
+            if (work_thread) {
+                // std::cout << "need_direct_encoding_for wrote : "
+                //           << "red " << eqvar_true << " ; " << eqvar << " 0\n";
                 _imp->proof << "red " << eqvar_true << " ; " << eqvar << " 0\n";
                 _imp->mutexProofLine.lock();
                 ++_imp->proof_line;
                 _imp->mutexProofLine.unlock();
+                // std::cout << "need_direct_encoding_for wrote : "
+                //           << "red " << eqvar_false << " ; " << eqvar << " 1\n";
                 _imp->proof << "red " << eqvar_false << " ; " << eqvar << " 1\n";
                 _imp->mutexProofLine.lock();
                 ++_imp->proof_line;
@@ -840,8 +918,10 @@ auto Proof::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID id, Inte
         }
 
         if (_imp->opb_done) {
-            if (work) {
+            if (work_thread) {
                 // _imp->proof << "# " << _imp->active_proof_level << "\n"; //pb w
+                // std::cout << "need_direct_encoding_for wrote : "
+                //           << "# " << _imp->active_proof_level_thread << "\n";
                 _imp->proof << "# " << _imp->active_proof_level_thread << "\n";
             }
             else {
@@ -851,10 +931,12 @@ auto Proof::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID id, Inte
     }
     else if (bounds != _imp->bounds_for_gevars.end() && bounds->second.second == v) {
         // it's an upper bound
-        need_gevar(id, v, work);
+        need_gevar(id, v, work_thread);
 
         if (_imp->opb_done) {
-            if (work) {
+            if (work_thread) {
+                // std::cout << "need_direct_encoding_for wrote : "
+                //           << "* need upper bound " << eqvar << '\n';
                 _imp->proof << "* need upper bound " << eqvar << '\n';
             }
             else {
@@ -866,7 +948,9 @@ auto Proof::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID id, Inte
         }
 
         if (_imp->opb_done) {
-            if (work) {
+            if (work_thread) {
+                // std::cout << "need_direct_encoding_for wrote : "
+                        //   << "# 0\n";
                 _imp->proof << "# 0\n";
             }
             else {
@@ -882,11 +966,15 @@ auto Proof::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID id, Inte
         auto eqvar_false = implies(ge_v, eqvar);
 
         if (_imp->opb_done) {
-            if (work) {
+            if (work_thread) {
+                // std::cout << "need_direct_encoding_for wrote : "
+                //           << "red " << eqvar_true << " ; " << eqvar << " 0\n";
                 _imp->proof << "red " << eqvar_true << " ; " << eqvar << " 0\n";
                 _imp->mutexProofLine.lock();
                 ++_imp->proof_line;
                 _imp->mutexProofLine.unlock();
+                // std::cout << "need_direct_encoding_for wrote : "
+                //           << "red " << eqvar_false << " ; " << eqvar << " 1\n";
                 _imp->proof << "red " << eqvar_false << " ; " << eqvar << " 1\n";
                 _imp->mutexProofLine.lock();
                 ++_imp->proof_line;
@@ -913,8 +1001,10 @@ auto Proof::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID id, Inte
         }
 
         if (_imp->opb_done) {
-            if (work) {
+            if (work_thread) {
                 // _imp->proof << "# " << _imp->active_proof_level << "\n"; //pb w
+                // std::cout << "need_direct_encoding_for wrote : "
+                //           << "# " << _imp->active_proof_level_thread << "\n";
                 _imp->proof << "# " << _imp->active_proof_level_thread << "\n";
             }
             else {
@@ -924,11 +1014,13 @@ auto Proof::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID id, Inte
     }
     else {
         // neither a lower nor an upper bound
-        need_gevar(id, v, work);
-        need_gevar(id, v + 1_i, work);
+        need_gevar(id, v, work_thread);
+        need_gevar(id, v + 1_i, work_thread);
 
         if (_imp->opb_done) {
-            if (work) {
+            if (work_thread) {
+                // std::cout << "need_direct_encoding_for wrote : "
+                //           << "* need " << eqvar << '\n';
                 _imp->proof << "* need " << eqvar << '\n';
             }
             else {
@@ -936,10 +1028,14 @@ auto Proof::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID id, Inte
             }
         }
         else
-            _imp->opb << "* need " << eqvar << '\n';
+            // std::cout << "need_direct_encoding_for wrote : "
+            //           << "* need " << eqvar << '\n';
+        _imp->opb << "* need " << eqvar << '\n';
 
         if (_imp->opb_done) {
-            if (work) {
+            if (work_thread) {
+                // std::cout << "need_direct_encoding_for wrote : "
+                //           << "# 0\n";
                 _imp->proof << "# 0\n";
             }
             else {
@@ -957,11 +1053,15 @@ auto Proof::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID id, Inte
         auto eqvar_false = implies(ge_v_but_not_v_plus_one, eqvar);
 
         if (_imp->opb_done) {
-            if (work) {
+            if (work_thread) {
+                // std::cout << "need_direct_encoding_for wrote : "
+                //           << "red " << eqvar_true << " ; " << eqvar << " 0\n";
                 _imp->proof << "red " << eqvar_true << " ; " << eqvar << " 0\n";
                 _imp->mutexProofLine.lock();
                 ++_imp->proof_line;
                 _imp->mutexProofLine.unlock();
+                // std::cout << "need_direct_encoding_for wrote : "
+                //           << "red " << eqvar_false << " ; " << eqvar << " 1\n";
                 _imp->proof << "red " << eqvar_false << " ; " << eqvar << " 1\n";
                 _imp->mutexProofLine.lock();
                 ++_imp->proof_line;
@@ -988,8 +1088,10 @@ auto Proof::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID id, Inte
         }
 
         if (_imp->opb_done) {
-            if (work) {
+            if (work_thread) {
                 // _imp->proof << "# " << _imp->active_proof_level << "\n"; // pb w
+                // std::cout << "need_direct_encoding_for wrote : "
+                //           << "# " << _imp->active_proof_level_thread << "\n";
                 _imp->proof << "# " << _imp->active_proof_level_thread << "\n";
             }
             else {
@@ -1124,16 +1226,16 @@ auto Proof::simplify_literal(const ProofLiteral & lit) -> SimpleLiteral
         .visit(flatten(lit));
 }
 
-auto Proof::need_proof_name(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> & cond) -> void
+auto Proof::need_proof_name(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> & cond, const std::optional<bool> & work_thread) -> void
 {
     switch (cond.op) {
     case VariableConditionOperator::Equal:
     case VariableConditionOperator::NotEqual:
-        need_direct_encoding_for(cond.var, cond.value);
+        need_direct_encoding_for(cond.var, cond.value, work_thread);
         break;
     case VariableConditionOperator::Less:
     case VariableConditionOperator::GreaterEqual:
-        need_gevar(cond.var, cond.value);
+        need_gevar(cond.var, cond.value, work_thread);
         break;
     }
 }
@@ -1182,7 +1284,7 @@ auto Proof::add_to_model(const WeightedPseudoBooleanLessEqual & ineq, const opti
                 }}
                 .visit(r);
 
-    emit_inequality_to(ineq, half_reif, _imp->opb);
+    emit_inequality_to(ineq, half_reif, true);
     _imp->opb << '\n';
     return ++_imp->model_constraints;
 }
@@ -1207,11 +1309,11 @@ auto Proof::add_to_model(const WeightedPseudoBooleanEquality & eq, const optiona
                 }}
                 .visit(r);
 
-    emit_inequality_to(eq.lhs <= eq.rhs, half_reif, _imp->opb);
+    emit_inequality_to(eq.lhs <= eq.rhs, half_reif, true);
     _imp->opb << '\n';
     auto first = ++_imp->model_constraints;
 
-    emit_inequality_to(eq.lhs >= eq.rhs, half_reif, _imp->opb);
+    emit_inequality_to(eq.lhs >= eq.rhs, half_reif, true);
     _imp->opb << '\n';
     auto second = ++_imp->model_constraints;
 
@@ -1256,9 +1358,10 @@ auto Proof::solution(const State & state) -> void
     push_work_queue(Work{state.optional_minimise_variable() ? "o" : "v"});
 
     for (auto & var : _imp->solution_variables)
-        if ((! state.optional_minimise_variable()) || (IntegerVariableID{var} != *state.optional_minimise_variable()))
-            _imp->proof << " " << proof_name(var == state(var));
-
+        if ((! state.optional_minimise_variable()) || (IntegerVariableID{var} != *state.optional_minimise_variable())) {
+            // _imp->proof << " " << proof_name(var == state(var));
+            push_work_queue(Work{" " + proof_name(var == state(var))});
+        }
     if (! state.optional_minimise_variable()) {
         // _imp->proof << '\n';
         push_work_queue(Work{"\n"});
@@ -1269,8 +1372,8 @@ auto Proof::solution(const State & state) -> void
     }
     else {
         auto do_it = [&](const SimpleIntegerVariableID & var, Integer val) {
-            _imp->proof << " " << proof_name(var == val);
-
+            // _imp->proof << " " << proof_name(var == val);
+            push_work_queue(Work{" " + proof_name(var == val)});
             auto & [negative_bit_coeff, bit_vars] = _imp->integer_variable_bits.at(var);
             if (val.raw_value < 0) {
                 for (auto & [coeff, var] : bit_vars) {
@@ -1345,7 +1448,8 @@ auto Proof::solution(const State & state) -> void
 
 auto Proof::backtrack(const State & state) -> void
 {
-    _imp->proof << "* backtracking\n";
+    // _imp->proof << "* backtracking\n";
+    push_work_queue(Work{"* backtracking\n"});
     WeightedPseudoBooleanSum backtrack;
     state.for_each_guess([&](const Literal & lit) {
         backtrack += 1_i * ! lit;
@@ -1403,8 +1507,7 @@ auto Proof::infer(const State & state, const Literal & lit, const Justification 
     // };
 
     vector<Literal> guesses_copy;
-    vector<Literal> guesses = state.get_guesses();
-    for (const auto & literal : guesses) {
+    for (const auto & literal : state.get_guesses()) {
         guesses_copy.push_back(std::visit([](const auto & value) -> Literal {
             return Literal(value);
         },
@@ -1425,13 +1528,13 @@ auto Proof::infer(const State & state, const Literal & lit, const Justification 
         },
         lit);
 
-    auto need_lit = [&]() {
-        overloaded{
-            [&](const TrueLiteral &) {},
-            [&](const FalseLiteral &) {},
-            [&]<typename T_>(const VariableConditionFrom<T_> & cond) { need_proof_name(cond); }}
-            .visit(simplify_literal(lit));
-    };
+    // auto need_lit = [&]() {
+    //     overloaded{
+    //         [&](const TrueLiteral &) {},
+    //         [&](const FalseLiteral &) {},
+    //         [&]<typename T_>(const VariableConditionFrom<T_> & cond) { need_proof_name(cond); }}
+    //         .visit(simplify_literal(lit));
+    // };
 
     overloaded{
         [&]([[maybe_unused]] const JustifyUsingRUP & j) {
@@ -1473,12 +1576,13 @@ auto Proof::infer(const State & state, const Literal & lit, const Justification 
             _imp->proof << "* explicit from " << x.where.file_name() << ":"
                         << x.where.line() << " in " << x.where.function_name() << '\n';
 #endif
-            need_lit();
+            need_lit(lit_copy);
             vector<ProofLine> to_delete;
             add_proof_steps(x, to_delete);
             // infer(state, lit_copy, JustifyUsingRUP{});
-            need_proof_variable(lit_copy);
-            Proof::output_it("u", lit_copy, guesses_copy, extra_proof_conditions_copy);
+            // need_proof_variable(lit_copy);
+            Proof::output_it("u", lit_copy, guesses_copy, extra_proof_conditions_copy, nullopt);
+            need_lit(lit_copy);
             delete_proof_lines(to_delete);
             /**********************************************************/
             // JustifyExplicitly je{x.add_proof_steps};
@@ -1486,24 +1590,20 @@ auto Proof::infer(const State & state, const Literal & lit, const Justification 
         },
         [&](const Guess &) {
             // std::cout << "JustifyGuess pushed" << std::endl;
-            // sleep(1);
-            // std::unique_lock<std::mutex> lock(_imp->myMutexWork);
             std::unique_lock<std::mutex> lock_number(_imp->mutexNumber);
             _imp->empty_justification.wait(lock_number, [&] { return (_imp->number_justification == 0); });
             // std::cout << _imp->number_justification << " = justify _imp->number_justification" << std::endl;
             lock_number.unlock();
-            // lock.unlock();
-            need_lit();
+
+            need_lit(lit_copy);
             if (! is_literally_true(lit_copy)) {
                 // we need this because it'll show up in the trail later
                 // need_proof_variable(lit_copy);
                 // _imp->proof << "* guessing " << proof_variable(lit) << ", decision stack is [";
-                push_work_queue(Work{"* guessing " + proof_variable(lit_copy) + ", decision stack is ["});
+                push_work_queue(Work{"* guessing " + debug_string(lit_copy) + ", decision stack is ["});
                 for_each_guess([&](const Literal & lit) {
-                    if (! is_literally_true(lit)) {
-                        // _imp->proof << " " << proof_variable(lit);
-                        push_work_queue(Work{" " + proof_variable(lit)});
-                    }
+                    // _imp->proof << " " << proof_variable(lit);
+                    push_work_queue(Work{" " + debug_string(lit)});
                 },
                     guesses_copy, extra_proof_conditions_copy);
                 // _imp->proof << " ]\n";
@@ -1569,12 +1669,13 @@ auto Proof::need_all_proof_names_in(const SumOf<Weighted<PseudoBooleanTerm>> & s
 }
 
 auto Proof::emit_inequality_to(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
-    const optional<HalfReifyOnConjunctionOf> & half_reif, ostream & stream) -> void
+    const optional<HalfReifyOnConjunctionOf> & half_reif, bool opb, const optional<bool> & work_thread) -> void
 {
     // build up the inequality, adjusting as we go for constant terms,
     // and converting from <= to >=.
     Integer rhs = -ineq.rhs;
     Integer reif_const = 0_i;
+    string text = "";
     for (auto & [w, v] : ineq.lhs.terms) {
         if (0_i == w)
             continue;
@@ -1587,13 +1688,15 @@ auto Proof::emit_inequality_to(const SumLessEqual<Weighted<PseudoBooleanTerm>> &
                     },
                     [&](const FalseLiteral &) {},
                     [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
-                        stream << -w << " " << proof_name(cond) << " ";
+                        // stream << -w << " " << proof_name(cond) << " ";
+                        text += (-w).to_string() + " " + proof_name(cond) + " ";
                         reif_const += max(0_i, w);
                     }}
                     .visit(simplify_literal(lit));
             },
             [&, w = w](const ProofFlag & flag) {
-                stream << -w << " " << proof_name(flag) << " ";
+                // stream << -w << " " << proof_name(flag) << " ";
+                text += (-w).to_string() + " " + proof_name(flag) + " ";
                 reif_const += max(0_i, w);
             },
             [&, w = w](const IntegerVariableID & var) {
@@ -1601,7 +1704,8 @@ auto Proof::emit_inequality_to(const SumLessEqual<Weighted<PseudoBooleanTerm>> &
                     [&](const SimpleIntegerVariableID & var) {
                         auto & [_, bit_vars] = _imp->integer_variable_bits.at(var);
                         for (auto & [bit_value, bit_name] : bit_vars) {
-                            stream << -w * bit_value << " " << bit_name << " ";
+                            // stream << -w * bit_value << " " << bit_name << " ";
+                            text += (-w * bit_value).to_string() + " " + bit_name + " ";
                             reif_const += max(0_i, w * bit_value);
                         }
                     },
@@ -1609,7 +1713,8 @@ auto Proof::emit_inequality_to(const SumLessEqual<Weighted<PseudoBooleanTerm>> &
                         if (! view.negate_first) {
                             auto & [_, bit_vars] = _imp->integer_variable_bits.at(view.actual_variable);
                             for (auto & [bit_value, bit_name] : bit_vars) {
-                                stream << -w * bit_value << " " << bit_name << " ";
+                                // stream << -w * bit_value << " " << bit_name << " ";
+                                text += (-w * bit_value).to_string() + " " + bit_name + " ";
                                 reif_const += max(0_i, w * bit_value);
                             }
                             rhs += w * view.then_add;
@@ -1618,7 +1723,8 @@ auto Proof::emit_inequality_to(const SumLessEqual<Weighted<PseudoBooleanTerm>> &
                         else {
                             auto & [_, bit_vars] = _imp->integer_variable_bits.at(view.actual_variable);
                             for (auto & [bit_value, bit_name] : bit_vars) {
-                                stream << w * bit_value << " " << bit_name << " ";
+                                // stream << w * bit_value << " " << bit_name << " ";
+                                text += (w * bit_value).to_string() + " " + bit_name + " ";
                                 reif_const += max(0_i, -w * bit_value);
                             }
                             rhs += w * view.then_add;
@@ -1633,7 +1739,8 @@ auto Proof::emit_inequality_to(const SumLessEqual<Weighted<PseudoBooleanTerm>> &
             [&, w = w](const ProofOnlySimpleIntegerVariableID & var) {
                 auto & [_, bit_vars] = _imp->integer_variable_bits.at(var);
                 for (auto & [bit_value, bit_name] : bit_vars) {
-                    stream << -w * bit_value << " " << bit_name << " ";
+                    // stream << -w * bit_value << " " << bit_name << " ";
+                    text += (-w * bit_value).to_string() + " " + bit_name + " ";
                     reif_const += max(0_i, w * bit_value);
                 }
             }}
@@ -1645,7 +1752,8 @@ auto Proof::emit_inequality_to(const SumLessEqual<Weighted<PseudoBooleanTerm>> &
         for (auto & r : *half_reif)
             overloaded{
                 [&](const ProofFlag & f) {
-                    stream << reif_const << " " << proof_name(! f) << " ";
+                    // stream << reif_const << " " << proof_name(! f) << " ";
+                    text += reif_const.to_string() + " " + proof_name(! f) + " ";
                 },
                 [&](const ProofLiteral & lit) {
                     overloaded{
@@ -1655,24 +1763,46 @@ auto Proof::emit_inequality_to(const SumLessEqual<Weighted<PseudoBooleanTerm>> &
                             throw UnimplementedException{};
                         },
                         [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
-                            stream << reif_const << " " << proof_name(! cond) << " ";
+                            // stream << reif_const << " " << proof_name(! cond) << " ";
+                            text += reif_const.to_string() + " " + proof_name(! cond) + " ";
                         }}
                         .visit(simplify_literal(lit));
                 }}
                 .visit(r);
     }
 
-    stream << ">= " << rhs << " ;";
+    // stream << ">= " << rhs << " ;";
+    text += ">= " + rhs.to_string() + " ;";
+    if (opb) {
+        _imp->opb << text;
+    }
+    else {
+        if (work_thread) {
+            // std::cout << "emit_inequality_to wrote : " << text << "\n";
+            _imp->proof << text;
+        }
+        else {
+            // std::cout << "emit_inequality_to pushed : " << text << "\n";
+            push_work_queue(Work{text});
+        }
+    }
 }
 
 auto Proof::emit_rup_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq) -> ProofLine
 {
     need_all_proof_names_in(ineq.lhs);
 
-    _imp->proof << "u ";
-    emit_inequality_to(ineq, nullopt, _imp->proof);
-    _imp->proof << '\n';
-    return ++_imp->proof_line;
+    // _imp->proof << "u ";
+    push_work_queue(Work{"u "});
+    emit_inequality_to(ineq, nullopt, false);
+    // _imp->proof << '\n';
+    push_work_queue(Work{"\n"}); // pb?1"});
+
+    _imp->mutexProofLine.lock();
+    ++_imp->proof_line;
+    _imp->mutexProofLine.unlock();
+
+    return _imp->proof_line;
 }
 
 auto Proof::emit_rup_proof_line_under_trail(const State & state, const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq) -> ProofLine
@@ -1688,8 +1818,9 @@ auto Proof::emit_red_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> 
 {
     need_all_proof_names_in(ineq.lhs);
 
-    _imp->proof << "red ";
-    emit_inequality_to(ineq, nullopt, _imp->proof);
+    // _imp->proof << "red ";
+    push_work_queue(Work{"red "});
+    emit_inequality_to(ineq, nullopt, false);
 
     auto witness_literal = [this](const ProofLiteral & lit) -> string {
         return overloaded{
@@ -1699,11 +1830,18 @@ auto Proof::emit_red_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> 
             .visit(simplify_literal(lit));
     };
 
-    for (auto & [f, t] : witness)
-        _imp->proof << " " << witness_literal(f) << " -> " << witness_literal(t);
-    _imp->proof << " ;\n";
+    for (auto & [f, t] : witness) {
+        // _imp->proof << " " << witness_literal(f) << " -> " << witness_literal(t);
+        push_work_queue(Work{" " + witness_literal(f) + " -> " + witness_literal(t)});
+    }
+    // _imp->proof << " ;\n";
+    push_work_queue(Work{"\n"});
 
-    return ++_imp->proof_line;
+    _imp->mutexProofLine.lock();
+    ++_imp->proof_line;
+    _imp->mutexProofLine.unlock();
+
+    return _imp->proof_line;
 }
 
 auto Proof::need_constraint_saying_variable_takes_at_least_one_value(IntegerVariableID var) -> ProofLine
@@ -1730,7 +1868,7 @@ auto Proof::need_constraint_saying_variable_takes_at_least_one_value(IntegerVari
                 }
 
                 // _imp->proof << ">= 1 ;\n";
-                push_work_queue(Work{">= 1 ;\n"});
+                push_work_queue(Work{">= 1 ;\n"}); // pb?3"});
 
                 _imp->mutexProofLine.lock();
                 ++_imp->proof_line;

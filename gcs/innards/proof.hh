@@ -20,54 +20,48 @@
 #include <queue>
 #include <string>
 #include <thread>
-
 #include <utility>
 #include <vector>
 
 
-struct WorkEnterProofLevel
-{
-    int depth;
-};
-
-struct StringWithProofLine
-{
-    std::string text;
-    long long nb;
-};
-
-struct WorkJustifyUsingRUP
-{
-    gcs::Literal lit;
-    std::vector<gcs::Literal> guesses;
-    std::vector<gcs::Literal> extra_proof_conditions;
-};
-struct WorkJustifyUsingAssertion
-{
-    gcs::Literal lit;
-    std::vector<gcs::Literal> guesses;
-    std::vector<gcs::Literal> extra_proof_conditions;
-};
-struct WorkJustifyExplicitly
-{
-    // const gcs::innards::JustifyExplicitly & x;
-    // gcs::innards::JustifyExplicitly x;
-    gcs::innards::ExplicitJustificationFunction add_proof_steps;
-    gcs::Literal lit;
-    std::vector<gcs::Literal> guesses;
-    std::vector<gcs::Literal> extra_proof_conditions;
-};
-struct WorkGuess
-{
-    gcs::Literal lit;
-    std::vector<gcs::Literal> guesses;
-    std::vector<gcs::Literal> extra_proof_conditions;
-};
-
-using Work = std::variant<std::string, StringWithProofLine, WorkJustifyUsingRUP, WorkJustifyUsingAssertion, WorkJustifyExplicitly, WorkGuess, WorkEnterProofLevel>;
-
 namespace gcs::innards
 {
+    struct WorkEnterProofLevel
+    {
+        int depth;
+    };
+
+    struct WorkJustifyUsingRUP
+    {
+        Literal lit;
+        std::vector<Literal> guesses;
+        std::vector<Literal> extra_proof_conditions;
+    };
+    struct WorkJustifyUsingAssertion
+    {
+        Literal lit;
+        std::vector<Literal> guesses;
+        std::vector<Literal> extra_proof_conditions;
+    };
+
+    struct WorkJustifyExplicitly
+    {
+        // const gcs::innards::JustifyExplicitly & x;
+        // gcs::innards::JustifyExplicitly x;
+        ExplicitJustificationFunction add_proof_steps;
+        Literal lit;
+        std::vector<Literal> guesses;
+        std::vector<Literal> extra_proof_conditions;
+    };
+    struct WorkGuess
+    {
+        Literal lit;
+        std::vector<Literal> guesses;
+        std::vector<Literal> extra_proof_conditions;
+    };
+
+    using Work = std::variant<std::string, WorkJustifyUsingRUP, WorkJustifyUsingAssertion, WorkJustifyExplicitly, WorkGuess, WorkEnterProofLevel>;
+
     /**
      * \brief Thrown if something Proof related goes wrong.
      *
@@ -172,35 +166,29 @@ namespace gcs::innards
         struct Imp;
         std::unique_ptr<Imp> _imp;
 
-        // std::thread thread_proof_work;
-        std::thread thread_proof_text;
-
-        // std::exception_ptr teptr;
-
         [[nodiscard]] auto xify(std::string &&) -> std::string;
 
-        auto need_gevar(SimpleIntegerVariableID id, Integer v, const std::optional<bool> & work = std::nullopt) -> void;
-
+        auto need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v, const std::optional<bool> & work_thread = std::nullopt) -> void;
         auto set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::string &) -> void;
         auto set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::string &) -> void;
         auto push_text_queue(std::string);
         auto push_work_queue(Work);
-        auto output_it(const std::string &, Literal, std::vector<Literal>, std::vector<Literal>, const std::optional<bool> & work = std::nullopt);
+        auto output_it(const std::string &, Literal, std::vector<Literal>, std::vector<Literal>, const std::optional<bool> & work_thread = std::nullopt);
         auto for_each_guess(const std::function<auto(Literal)->void> &, std::vector<Literal>, std::vector<Literal>) const -> void;
-
+        auto need_lit(const Literal &, const std::optional<bool> & work_thread = std::nullopt);
         auto emit_inequality_to(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
-            const std::optional<HalfReifyOnConjunctionOf> &, std::ostream &) -> void;
+            const std::optional<HalfReifyOnConjunctionOf> &, bool opb, const std::optional<bool> & work_thread = std::nullopt) -> void;
 
         [[nodiscard]] auto simplify_literal(const ProofLiteral & lit) -> SimpleLiteral;
 
-        auto need_proof_name(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> &) -> void;
+        auto need_proof_name(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> &, const std::optional<bool> & work_thread = std::nullopt) -> void;
 
         [[nodiscard]] auto proof_name(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> &) const -> const std::string &;
         [[nodiscard]] auto proof_name(const ProofFlag &) const -> const std::string &;
 
         auto need_all_proof_names_in(const SumOf<Weighted<PseudoBooleanTerm>> & sum) -> void;
 
-        auto need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID, Integer) -> void;
+        auto need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID, Integer, const std::optional<bool> & work_thread = std::nullopt) -> void;
 
     public:
         /**
