@@ -18,7 +18,7 @@ using std::vector;
 
 namespace
 {
-    Literals to_lits(const vector<IntegerVariableID> & vars)
+    auto to_lits(const vector<IntegerVariableID> & vars) -> Literals
     {
         Literals result;
         result.reserve(vars.size());
