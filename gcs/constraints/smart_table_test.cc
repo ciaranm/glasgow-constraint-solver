@@ -10,7 +10,6 @@
 
 using std::cout;
 using std::pair;
-using std::tuple;
 using std::vector;
 
 using namespace gcs;

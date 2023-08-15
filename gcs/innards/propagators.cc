@@ -18,8 +18,6 @@ using namespace gcs::innards;
 
 using std::atomic;
 using std::bit_ceil;
-using std::list;
-using std::make_optional;
 using std::move;
 using std::nullopt;
 using std::optional;

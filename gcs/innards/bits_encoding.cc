@@ -9,7 +9,6 @@
 using namespace gcs;
 using namespace gcs::innards;
 
-using std::abs;
 using std::bit_ceil;
 using std::countr_zero;
 using std::max;

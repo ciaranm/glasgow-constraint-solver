@@ -14,7 +14,6 @@
 #include <gcs/exception.hh>
 #include <util/overloaded.hh>
 
-using std::any_of;
 using std::copy_if;
 using std::count;
 using std::make_tuple;
@@ -33,7 +32,6 @@ using std::tuple;
 using std::unique_ptr;
 using std::unordered_map;
 using std::vector;
-using std::visit;
 
 using namespace gcs;
 using namespace gcs::innards;

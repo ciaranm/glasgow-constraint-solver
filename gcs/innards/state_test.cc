@@ -12,7 +12,6 @@ using namespace gcs::innards;
 
 using std::count;
 using std::make_optional;
-using std::optional;
 using std::pair;
 using std::vector;
 

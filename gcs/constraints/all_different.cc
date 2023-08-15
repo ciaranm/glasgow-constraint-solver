@@ -25,7 +25,6 @@ using std::adjacent_find;
 using std::cmp_not_equal;
 using std::count;
 using std::decay_t;
-using std::endl;
 using std::function;
 using std::is_same_v;
 using std::map;

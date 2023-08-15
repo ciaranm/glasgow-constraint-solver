@@ -15,11 +15,8 @@
 using namespace gcs;
 using namespace gcs::innards;
 
-using std::atomic;
 using std::deque;
 using std::make_optional;
-using std::make_shared;
-using std::make_unique;
 using std::move;
 using std::nullopt;
 using std::optional;

@@ -31,7 +31,6 @@ using std::istreambuf_iterator;
 using std::list;
 using std::map;
 using std::max;
-using std::min;
 using std::move;
 using std::nullopt;
 using std::ofstream;

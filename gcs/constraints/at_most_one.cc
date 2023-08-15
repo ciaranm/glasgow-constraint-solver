@@ -6,7 +6,6 @@
 
 using std::cmp_less;
 using std::move;
-using std::optional;
 using std::unique_ptr;
 using std::vector;
 

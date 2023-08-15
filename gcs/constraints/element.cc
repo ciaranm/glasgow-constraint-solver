@@ -18,7 +18,6 @@
 using namespace gcs;
 using namespace gcs::innards;
 
-using std::make_optional;
 using std::max;
 using std::min;
 using std::optional;

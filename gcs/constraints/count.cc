@@ -12,11 +12,9 @@
 using namespace gcs;
 using namespace gcs::innards;
 
-using std::optional;
 using std::pair;
 using std::string;
 using std::stringstream;
-using std::to_string;
 using std::tuple;
 using std::unique_ptr;
 using std::vector;
