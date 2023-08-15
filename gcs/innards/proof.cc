@@ -129,8 +129,8 @@ struct Proof::Imp
     fstream proof;
     bool opb_done = false;
 
-    bool use_friendly_names;
-    bool always_use_full_encoding;
+    bool use_friendly_names = true;
+    bool always_use_full_encoding = false;
     unordered_map<string, string> xification;
 };
 
