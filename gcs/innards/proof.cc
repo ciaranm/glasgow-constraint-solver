@@ -973,10 +973,19 @@ auto Proof::infer(const State & state, const Literal & lit, const Justification 
         .visit(why);
 }
 
-auto Proof::emit_proof_line(const string & s) -> ProofLine
+auto Proof::emit_proof_line(const string & s, ProofLevel level) -> ProofLine
 {
+    switch (level) {
+    case ProofLevel::Current: break;
+    case ProofLevel::Top: _imp->proof << "# 0\n"; break;
+    }
     _imp->proof << s << '\n';
-    return ++_imp->proof_line;
+    auto result = ++_imp->proof_line;
+    switch (level) {
+    case ProofLevel::Current: break;
+    case ProofLevel::Top: _imp->proof << "# " << _imp->active_proof_level << '\n'; break;
+    }
+    return result;
 }
 
 auto Proof::emit_proof_comment(const string & s) -> void
@@ -1101,28 +1110,47 @@ auto Proof::emit_inequality_to(const SumLessEqual<Weighted<PseudoBooleanTerm>> &
     stream << ">= " << rhs << " ;";
 }
 
-auto Proof::emit_rup_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq) -> ProofLine
+auto Proof::emit_rup_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level) -> ProofLine
 {
     need_all_proof_names_in(ineq.lhs);
+
+    switch (level) {
+    case ProofLevel::Current: break;
+    case ProofLevel::Top: _imp->proof << "# 0\n"; break;
+    }
 
     _imp->proof << "u ";
     emit_inequality_to(ineq, nullopt, _imp->proof);
     _imp->proof << '\n';
-    return ++_imp->proof_line;
+    auto result = ++_imp->proof_line;
+
+    switch (level) {
+    case ProofLevel::Current: break;
+    case ProofLevel::Top: _imp->proof << "# " << _imp->active_proof_level << '\n'; break;
+    }
+
+    return result;
 }
 
-auto Proof::emit_rup_proof_line_under_trail(const State & state, const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq) -> ProofLine
+auto Proof::emit_rup_proof_line_under_trail(const State & state, const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
+    ProofLevel level) -> ProofLine
 {
     auto terms = trail_variables_as_sum(state, ineq.rhs);
     for (auto & t : ineq.lhs.terms)
         terms += t;
-    return emit_rup_proof_line(terms <= ineq.rhs);
+    return emit_rup_proof_line(terms <= ineq.rhs, level);
 }
 
 auto Proof::emit_red_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
-    const std::vector<std::pair<ProofLiteral, ProofLiteral>> & witness) -> ProofLine
+    const std::vector<std::pair<ProofLiteral, ProofLiteral>> & witness,
+    ProofLevel level) -> ProofLine
 {
     need_all_proof_names_in(ineq.lhs);
+
+    switch (level) {
+    case ProofLevel::Current: break;
+    case ProofLevel::Top: _imp->proof << "# 0\n"; break;
+    }
 
     _imp->proof << "red ";
     emit_inequality_to(ineq, nullopt, _imp->proof);
@@ -1139,7 +1167,14 @@ auto Proof::emit_red_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> 
         _imp->proof << " " << witness_literal(f) << " -> " << witness_literal(t);
     _imp->proof << " ;\n";
 
-    return ++_imp->proof_line;
+    auto result = ++_imp->proof_line;
+
+    switch (level) {
+    case ProofLevel::Current: break;
+    case ProofLevel::Top: _imp->proof << "# " << _imp->active_proof_level << '\n'; break;
+    }
+
+    return result;
 }
 
 auto Proof::need_constraint_saying_variable_takes_at_least_one_value(IntegerVariableID var) -> ProofLine

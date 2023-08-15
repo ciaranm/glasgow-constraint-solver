@@ -113,6 +113,12 @@ namespace gcs::innards
     using SimpleLiteral = std::variant<VariableConditionFrom<SimpleIntegerVariableID>,
         ProofVariableCondition, TrueLiteral, FalseLiteral>;
 
+    enum class ProofLevel
+    {
+        Current,
+        Top
+    };
+
     /**
      * \brief Everything proof-related goes through here.
      *
@@ -264,7 +270,7 @@ namespace gcs::innards
         /**
          * Emit the specified text as a proof line.
          */
-        auto emit_proof_line(const std::string &) -> ProofLine;
+        auto emit_proof_line(const std::string &, ProofLevel level = ProofLevel::Current) -> ProofLine;
 
         /**
          * Emit the specified text as a comment.
@@ -275,19 +281,22 @@ namespace gcs::innards
          * Emit a RUP proof step for the specified expression, not subject to
          * the current trail.
          */
-        auto emit_rup_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> &) -> ProofLine;
+        auto emit_rup_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> &,
+            ProofLevel level = ProofLevel::Current) -> ProofLine;
 
         /**
          * Emit a RUP proof step for the specified expression, subject to the
          * current trail.
          */
-        auto emit_rup_proof_line_under_trail(const State &, const SumLessEqual<Weighted<PseudoBooleanTerm>> &) -> ProofLine;
+        auto emit_rup_proof_line_under_trail(const State &, const SumLessEqual<Weighted<PseudoBooleanTerm>> &,
+            ProofLevel level = ProofLevel::Current) -> ProofLine;
 
         /**
          * Emit a RED proof step for the specified expression.
          */
         auto emit_red_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> &,
-            const std::vector<std::pair<ProofLiteral, ProofLiteral>> & witness) -> ProofLine;
+            const std::vector<std::pair<ProofLiteral, ProofLiteral>> & witness,
+            ProofLevel level = ProofLevel::Current) -> ProofLine;
 
         /**
          * Set things up internally as if the specified variable was a real

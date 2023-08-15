@@ -42,7 +42,6 @@ namespace
 
                 if (auto proof = state.maybe_proof()) {
                     proof->emit_proof_comment("new table entry found");
-                    proof->enter_proof_level(0);
 
                     Integer sel_value(tuples.size());
                     proof->create_literals_for_introduced_variable_value(selector_var_id, sel_value, "autotable");
@@ -57,12 +56,10 @@ namespace
                     }
 
                     proof->emit_red_proof_line(forward_implication >= Integer(vars.size()),
-                        {{selector_var_id == sel_value, FalseLiteral{}}});
+                        {{selector_var_id == sel_value, FalseLiteral{}}}, ProofLevel::Top);
                     proof->emit_red_proof_line(reverse_implication >= 1_i,
-                        {{selector_var_id == sel_value, TrueLiteral{}}});
+                        {{selector_var_id == sel_value, TrueLiteral{}}}, ProofLevel::Top);
                     state.add_extra_proof_condition(selector_var_id != sel_value);
-
-                    proof->enter_proof_level(depth + 1);
                 }
 
                 tuples.emplace_back(move(tuple));
