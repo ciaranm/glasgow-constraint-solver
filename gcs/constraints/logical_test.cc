@@ -183,7 +183,7 @@ auto main(int, char *[]) -> int
         case 1: r = true; break;
         case 2: r = false; break;
         }
-        data.emplace_back(tuple{5, r, terms});
+        data.emplace_back(5, r, terms);
     }
 
     for (auto & [n_vars, reif, terms] : data) {
