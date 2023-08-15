@@ -13,8 +13,8 @@ namespace gcs
      */
     struct ProofOptions final
     {
-        explicit ProofOptions(const std::string &, const std::string &);
-        explicit ProofOptions(const std::string &, const std::string &, bool, bool);
+        explicit ProofOptions(std::string, std::string);
+        explicit ProofOptions(std::string, std::string, bool, bool);
         ProofOptions(const ProofOptions &) = default;
 
         std::string opb_file;                  ///< Filename for the OPB model

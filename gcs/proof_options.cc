@@ -2,15 +2,17 @@
 
 using namespace gcs;
 
-ProofOptions::ProofOptions(const std::string & o, const std::string & p) :
-    opb_file(o),
-    proof_file(p)
+using std::string;
+
+ProofOptions::ProofOptions(string o, string p) :
+    opb_file(move(o)),
+    proof_file(move(p))
 {
 }
 
-ProofOptions::ProofOptions(const std::string & o, const std::string & p, bool u, bool e) :
-    opb_file(o),
-    proof_file(p),
+ProofOptions::ProofOptions(string o, string p, bool u, bool e) :
+    opb_file(move(o)),
+    proof_file(move(p)),
     use_friendly_names(u),
     always_use_full_encoding(e)
 {
