@@ -90,7 +90,7 @@ auto Problem::create_state_for_new_search(optional<Proof> & optional_proof) cons
     if (optional_proof) {
         for (auto & [id, lower, upper, optional_name] : _imp->opb_variables)
             optional_proof->set_up_integer_variable(id, lower, upper,
-                optional_name ? *optional_name : "iv" + to_string(id.index), nullopt);
+                optional_name.value_or("iv" + to_string(id.index)), nullopt);
         result.log_inferences_to(*optional_proof);
     }
     return result;
