@@ -240,9 +240,10 @@ auto main(int, char *[]) -> int
                 },
                 ProofOptions{"linear_equality_test.opb", "linear_equality_test.veripb"});
 
+            using std::literals::string_literals::operator""s;
             if (! check_results(v0_range, v1_range, v2_range, constraints,
-                    mode == 0 ? "linear eq" : mode == 1 ? "linear ge"
-                                                        : "linear le",
+                    mode == 0 ? "linear eq"s : mode == 1 ? "linear ge"s
+                                                        : "linear le"s,
                     expected, actual))
                 return EXIT_FAILURE;
         }
