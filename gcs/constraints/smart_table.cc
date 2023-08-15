@@ -568,18 +568,16 @@ namespace
     // For PB model
     [[nodiscard]] auto make_binary_entry_flag(State & state, Propagators & propagators, const IntegerVariableID & var_1, const IntegerVariableID & var_2, const SmartEntryConstraint & c) -> ProofFlag
     {
-        ProofFlag flag, flag_lt, flag_gt;
-
         switch (c) {
-        case SmartEntryConstraint::Equal:
+        case SmartEntryConstraint::Equal: {
             // f => var1 == var2
-            flag = propagators.create_proof_flag("bin_eq");
+            auto flag = propagators.create_proof_flag("bin_eq");
             propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 == 0_i,
                 HalfReifyOnConjunctionOf{{flag}});
 
             // !f => var1 != var2
-            flag_lt = propagators.create_proof_flag("lt");
-            flag_gt = propagators.create_proof_flag("gt");
+            auto flag_lt = propagators.create_proof_flag("lt");
+            auto flag_gt = propagators.create_proof_flag("gt");
             propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i,
                 HalfReifyOnConjunctionOf{{flag_gt}});
             propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1 >= 0_i,
@@ -591,36 +589,44 @@ namespace
             propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * flag_lt + 1_i * flag_gt >= 1_i,
                 HalfReifyOnConjunctionOf{{! flag}});
             return flag;
-        case SmartEntryConstraint::GreaterThan:
-            flag = propagators.create_proof_flag("bin_gt");
+        }
+
+        case SmartEntryConstraint::GreaterThan: {
+            auto flag = propagators.create_proof_flag("bin_gt");
             propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i,
                 HalfReifyOnConjunctionOf{{flag}});
             propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1 >= 0_i,
                 HalfReifyOnConjunctionOf{{! flag}});
             return flag;
-        case SmartEntryConstraint::LessThan:
-            flag = propagators.create_proof_flag("bin_lt");
+        }
+
+        case SmartEntryConstraint::LessThan: {
+            auto flag = propagators.create_proof_flag("bin_lt");
             propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i,
                 HalfReifyOnConjunctionOf{{flag}});
             propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 >= 0_i,
                 HalfReifyOnConjunctionOf{{! flag}});
             return flag;
-        case SmartEntryConstraint::LessThanEqual:
-            flag = propagators.create_proof_flag("bin_le");
+        }
+
+        case SmartEntryConstraint::LessThanEqual: {
+            auto flag = propagators.create_proof_flag("bin_le");
             propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1 >= 0_i,
                 HalfReifyOnConjunctionOf{{flag}});
             propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i,
                 HalfReifyOnConjunctionOf{{! flag}});
             return flag;
-        case SmartEntryConstraint::NotEqual:
+        }
+
+        case SmartEntryConstraint::NotEqual: {
             // !f => var1 == var2
-            flag = propagators.create_proof_flag("bin_eq");
+            auto flag = propagators.create_proof_flag("bin_eq");
             propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 == 0_i,
                 HalfReifyOnConjunctionOf{{! flag}});
 
             // f => var1 != var2
-            flag_lt = propagators.create_proof_flag("lt");
-            flag_gt = propagators.create_proof_flag("gt");
+            auto flag_lt = propagators.create_proof_flag("lt");
+            auto flag_gt = propagators.create_proof_flag("gt");
 
             // Means we need f => fgt or flt
             propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * flag_lt + 1_i * flag_gt >= 1_i,
@@ -639,13 +645,17 @@ namespace
                 HalfReifyOnConjunctionOf{{! flag_lt}});
 
             return flag;
-        case SmartEntryConstraint::GreaterThanEqual:
-            flag = propagators.create_proof_flag("bin_ge");
+        }
+
+        case SmartEntryConstraint::GreaterThanEqual: {
+            auto flag = propagators.create_proof_flag("bin_ge");
             propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 >= 0_i,
                 HalfReifyOnConjunctionOf{{flag}});
             propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i,
                 HalfReifyOnConjunctionOf{{! flag}});
             return flag;
+        }
+
         case SmartEntryConstraint::NotIn:
         case SmartEntryConstraint::In:
             throw UnexpectedException{"Unexpected SmartEntry type encountered while creating PB model."};
