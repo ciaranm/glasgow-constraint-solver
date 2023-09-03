@@ -7,5 +7,5 @@ shift
 export PATH=$HOME/.local/bin:$PATH
 
 $prog --prove $@ || exit 1
-veripb ${progname}.{opb,veripb} || exit 1
+veripb --debug ${progname}.{opb,veripb} || exit 1
 rm -f ${progname}.{opb,veripb}
