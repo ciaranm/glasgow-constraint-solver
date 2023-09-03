@@ -30,7 +30,6 @@ jobs:
       
     - name: Install VeriPB using pip      
       run: pip install -r requirements.txt
-      if: matrix.os == 'ubuntu-latest'
 
     - name: Install boost
       uses: MarkusJx/install-boost@v2.4.1
@@ -54,4 +53,4 @@ jobs:
       # Execute tests defined by the CMake configuration.
       # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
       run: ctest -C ${{env.BUILD_TYPE}}
-      if: matrix.os == 'ubuntu-latest'
+
