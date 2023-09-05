@@ -20,6 +20,7 @@ add_library(glasgow_constraint_solver
         constraints/element.cc
         constraints/equals.cc
         constraints/in.cc
+        constraints/knapsack.cc
         constraints/lex.cc
         constraints/linear_equality.cc
         constraints/logical.cc
