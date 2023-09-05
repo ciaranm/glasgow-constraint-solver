@@ -85,13 +85,15 @@ namespace gcs::innards
 
     using ProofLiteral = std::variant<Literal, ProofVariableCondition>;
 
+    using ProofLiteralOrFlag = std::variant<ProofLiteral, ProofFlag>;
+
     /**
      * \brief Various things in Proof can reify on a conjunction of
      * ProofLiteral and ProofFlag.
      *
      * \ingroup Innards
      */
-    using HalfReifyOnConjunctionOf = std::vector<std::variant<ProofLiteral, ProofFlag>>;
+    using HalfReifyOnConjunctionOf = std::vector<ProofLiteralOrFlag>;
 
     /**
      * \brief Inside a Proof, a pseudo-Boolean expression can contain a ProofLiteral,
@@ -295,8 +297,21 @@ namespace gcs::innards
          * Emit a RED proof step for the specified expression.
          */
         auto emit_red_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> &,
-            const std::vector<std::pair<ProofLiteral, ProofLiteral>> & witness,
+            const std::vector<std::pair<ProofLiteralOrFlag, ProofLiteralOrFlag>> & witness,
             ProofLevel level = ProofLevel::Current) -> ProofLine;
+
+        /**
+         * Emit a pair of RED proofs step for the specified expression, reified on the specified flag.
+         */
+        auto emit_red_proof_lines_reifying(const SumLessEqual<Weighted<PseudoBooleanTerm>> &,
+            ProofFlag,
+            ProofLevel level = ProofLevel::Current) -> std::pair<ProofLine, ProofLine>;
+
+        /**
+         * Create a ProofFlag, and emit a RED proof step reifying it for the specified expression.
+         */
+        auto create_proof_flag_reifying(const SumLessEqual<Weighted<PseudoBooleanTerm>> &,
+            const std::string & flag_name, ProofLevel level = ProofLevel::Current) -> std::tuple<ProofFlag, ProofLine, ProofLine>;
 
         /**
          * Set things up internally as if the specified variable was a real
