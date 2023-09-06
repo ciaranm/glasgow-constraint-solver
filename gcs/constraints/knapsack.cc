@@ -18,7 +18,6 @@ using std::make_unique;
 using std::map;
 using std::max;
 using std::move;
-using std::multimap;
 using std::nullopt;
 using std::optional;
 using std::pair;
@@ -112,68 +111,128 @@ namespace
         return pair{state.infer(profit_var < 1_i + best_profit_bottom, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
                         auto trail = proof.trail_variables_as_sum(state, 1_i);
 
-                        multimap<Integer, tuple<Integer, optional<ProofFlag>, optional<ProofFlag>, optional<ProofFlag>, optional<ProofLine>, optional<ProofLine>>> options;
-                        options.emplace(0_i, tuple{0_i, nullopt, nullopt, nullopt, nullopt, nullopt});
+                        struct WeightData
+                        {
+                            ProofFlag flag;
+                            ProofLine fwd_reification;
+                            ProofLine rev_reification;
+                        };
+
+                        struct ProfitData
+                        {
+                            ProofFlag flag;
+                            ProofLine fwd_reification;
+                            ProofLine rev_reification;
+                        };
+
+                        struct StateData
+                        {
+                            bool feasible;
+                            ProofFlag weight_flag;
+                            ProofLine weight_line;
+                            ProofFlag profit_flag;
+                            ProofLine profit_line;
+                            ProofFlag both_flag;
+                        };
+
+                        map<Integer, optional<WeightData>> parent_layer_weights;
+                        map<Integer, optional<ProfitData>> parent_layer_profits;
+                        map<pair<Integer, Integer>, optional<StateData>> parent_layer_states;
+
+                        parent_layer_weights.emplace(0_i, nullopt);
+                        parent_layer_profits.emplace(0_i, nullopt);
+                        parent_layer_states.emplace(pair{0_i, 0_i}, nullopt);
+
+                        WeightedPseudoBooleanSum sum_of_weights_so_far, sum_of_profits_so_far;
 
                         for (const auto & [idx_pos, idx] : enumerate(undetermined_vars)) {
-                            multimap<Integer, tuple<Integer, optional<ProofFlag>, optional<ProofFlag>, optional<ProofFlag>, optional<ProofLine>, optional<ProofLine>>> new_options;
-                            vector<ProofFlag> options_at_current_level;
-                            for (const auto & [option_idx, option] : enumerate(options)) {
-                                const auto & [weight, profit_and_flag] = option;
-                                const auto & [profit, current_option_weight, current_option_profit, current_option_both, current_option_weight_line, current_option_profit_line] = profit_and_flag;
+                            map<Integer, optional<WeightData>> current_layer_weights;
+                            map<Integer, optional<ProfitData>> current_layer_profits;
+                            map<pair<Integer, Integer>, optional<StateData>> current_layer_states;
 
-                                WeightedPseudoBooleanSum sum_of_weights_so_far, sum_of_profits_so_far;
-                                for (const auto & [accum_idx_pos, accum_idx] : enumerate(undetermined_vars)) {
-                                    sum_of_weights_so_far += weights.at(accum_idx) * vars.at(accum_idx);
-                                    sum_of_profits_so_far += profits.at(accum_idx) * vars.at(accum_idx);
-                                    if (accum_idx_pos == idx_pos)
-                                        break;
-                                }
+                            sum_of_weights_so_far += weights.at(idx) * vars.at(idx);
+                            sum_of_profits_so_far += profits.at(idx) * vars.at(idx);
 
-                                vector<ProofFlag> take_weight_options, take_profit_options, take_both_options;
+                            for (const auto & [weight_and_profit, state_data] : parent_layer_states) {
+                                if (state_data && ! state_data->feasible)
+                                    continue;
+
+                                const auto & [weight, profit] = weight_and_profit;
+
+                                vector<ProofFlag> current_node_weight_children, current_node_profit_children, current_node_state_children;
                                 auto do_option = [&](bool take, const string & name, Integer new_weight, Integer new_profit) {
                                     auto opt_lhs_weight = trail, opt_lhs_profit = trail, opt_lhs_both = trail;
-                                    if (current_option_weight)
-                                        opt_lhs_weight += 1_i * ! *current_option_weight;
-                                    if (current_option_profit)
-                                        opt_lhs_profit += 1_i * ! *current_option_profit;
-                                    if (current_option_both)
-                                        opt_lhs_both += 1_i * ! *current_option_both;
+                                    if (state_data) {
+                                        opt_lhs_weight += 1_i * ! state_data->weight_flag;
+                                        opt_lhs_profit += 1_i * ! state_data->profit_flag;
+                                        opt_lhs_both += 1_i * ! state_data->both_flag;
+                                    }
                                     opt_lhs_weight += 1_i * (vars.at(idx) != (take ? 1_i : 0_i));
                                     opt_lhs_profit += 1_i * (vars.at(idx) != (take ? 1_i : 0_i));
                                     opt_lhs_both += 1_i * (vars.at(idx) != (take ? 1_i : 0_i));
 
-                                    proof.emit_proof_comment("*** " + name + " option " + to_string(idx_pos) + "." + to_string(option_idx));
-                                    proof.emit_proof_comment("define " + name + " >= weight " + to_string(idx_pos) + "." + to_string(option_idx));
-                                    auto [opt_sum_weights_ge_weight, opt_weight_line, _1] = proof.create_proof_flag_reifying(
-                                        sum_of_weights_so_far >= new_weight,
-                                        "option_" + to_string(option_idx) + "_" + name + "_sum_" + to_string(idx_pos) + "_weights_ge_" + to_string(new_weight.raw_value));
-                                    if (current_option_weight_line)
-                                        proof.emit_proof_line("p -1 " + to_string(*current_option_weight_line) + " +");
-                                    proof.emit_rup_proof_line(opt_lhs_weight + 1_i * opt_sum_weights_ge_weight >= 1_i);
-                                    proof.emit_rup_proof_line(opt_lhs_both + 1_i * opt_sum_weights_ge_weight >= 1_i);
+                                    auto weight_data = current_layer_weights.find(new_weight);
+                                    if (weight_data == current_layer_weights.end()) {
+                                        proof.emit_proof_comment("define " + name + " >= weight " + to_string(idx_pos));
+                                        auto [flag, fwd_reification, rev_reification] = proof.create_proof_flag_reifying(
+                                            sum_of_weights_so_far >= new_weight,
+                                            "sum_" + to_string(idx_pos) + "_weights_ge_" + to_string(new_weight.raw_value));
+                                        weight_data = current_layer_weights.emplace(
+                                                                               new_weight, WeightData{
+                                                                                               .flag = flag,                       //
+                                                                                               .fwd_reification = fwd_reification, //
+                                                                                               .rev_reification = rev_reification  //
+                                                                                           })
+                                                          .first;
+                                    }
 
-                                    proof.emit_proof_comment("define " + name + " <= profit " + to_string(idx_pos) + "." + to_string(option_idx));
-                                    auto [opt_sum_profits_le_profit, opt_profit_line, _2] = proof.create_proof_flag_reifying(
-                                        sum_of_profits_so_far <= new_profit,
-                                        "option_" + to_string(option_idx) + "_" + name + "_sum_" + to_string(idx_pos) + "_profits_le_" + to_string(new_profit.raw_value));
-                                    if (current_option_profit_line)
-                                        proof.emit_proof_line("p -1 " + to_string(*current_option_profit_line) + " +");
-                                    proof.emit_rup_proof_line(opt_lhs_profit + 1_i * opt_sum_profits_le_profit >= 1_i);
-                                    proof.emit_rup_proof_line(opt_lhs_both + 1_i * opt_sum_profits_le_profit >= 1_i);
+                                    if (state_data && weight_data->second)
+                                        proof.emit_proof_line("p " + to_string(weight_data->second->rev_reification) + " " + to_string(state_data->weight_line) + " +");
+                                    proof.emit_rup_proof_line(opt_lhs_weight + 1_i * weight_data->second->flag >= 1_i);
+                                    proof.emit_rup_proof_line(opt_lhs_both + 1_i * weight_data->second->flag >= 1_i);
 
-                                    proof.emit_proof_comment("define " + name + " both " + to_string(idx_pos) + "." + to_string(option_idx));
-                                    auto [opt_both_sums, _3, _4] = proof.create_proof_flag_reifying(
-                                        WeightedPseudoBooleanSum{} + 1_i * opt_sum_weights_ge_weight + 1_i * opt_sum_profits_le_profit >= 2_i,
-                                        "option_" + to_string(option_idx) + "_" + name + "_both_sums_" + to_string(idx_pos) + "_" + to_string(new_weight.raw_value) + "_" + to_string(new_profit.raw_value));
-                                    proof.emit_rup_proof_line(opt_lhs_both + 1_i * opt_both_sums >= 1_i);
+                                    auto profit_data = current_layer_profits.find(new_profit);
+                                    if (profit_data == current_layer_profits.end()) {
+                                        proof.emit_proof_comment("define " + name + " <= profit " + to_string(idx_pos));
+                                        auto [flag, fwd_reification, rev_reification] = proof.create_proof_flag_reifying(
+                                            sum_of_profits_so_far <= new_profit,
+                                            "sum_" + to_string(idx_pos) + "_profits_le_" + to_string(new_profit.raw_value));
+                                        profit_data = current_layer_profits.emplace(
+                                                                               new_profit, ProfitData{
+                                                                                               .flag = flag,                       //
+                                                                                               .fwd_reification = fwd_reification, //
+                                                                                               .rev_reification = rev_reification  //
+                                                                                           })
+                                                          .first;
+                                    }
+                                    if (state_data && profit_data->second)
+                                        proof.emit_proof_line("p " + to_string(profit_data->second->rev_reification) + " " + to_string(state_data->profit_line) + " +");
+                                    proof.emit_rup_proof_line(opt_lhs_profit + 1_i * profit_data->second->flag >= 1_i);
+                                    proof.emit_rup_proof_line(opt_lhs_both + 1_i * profit_data->second->flag >= 1_i);
 
-                                    if (new_weight <= remaining_weight) {
-                                        new_options.emplace(new_weight, tuple{new_profit, opt_sum_weights_ge_weight, opt_sum_profits_le_profit, opt_both_sums, opt_weight_line, opt_profit_line});
-                                        take_weight_options.push_back(opt_sum_weights_ge_weight);
-                                        take_profit_options.push_back(opt_sum_profits_le_profit);
-                                        take_both_options.push_back(opt_both_sums);
-                                        options_at_current_level.push_back(opt_both_sums);
+                                    auto new_state_data = current_layer_states.find(pair{new_weight, new_profit});
+                                    if (new_state_data == current_layer_states.end()) {
+                                        proof.emit_proof_comment("define " + name + " both " + to_string(idx_pos));
+                                        auto [flag, _1, _2] = proof.create_proof_flag_reifying(
+                                            WeightedPseudoBooleanSum{} + 1_i * weight_data->second->flag + 1_i * profit_data->second->flag >= 2_i,
+                                            "both_sums_" + to_string(idx_pos) + "_" + to_string(new_weight.raw_value) + "_" + to_string(new_profit.raw_value));
+                                        new_state_data = current_layer_states.emplace(
+                                                                                 pair{new_weight, new_profit}, StateData{
+                                                                                                                   .feasible = (new_weight <= remaining_weight),        //
+                                                                                                                   .weight_flag = weight_data->second->flag,            //
+                                                                                                                   .weight_line = weight_data->second->fwd_reification, //
+                                                                                                                   .profit_flag = profit_data->second->flag,            //
+                                                                                                                   .profit_line = profit_data->second->fwd_reification, //
+                                                                                                                   .both_flag = flag                                    //
+                                                                                                               })
+                                                             .first;
+                                    }
+                                    proof.emit_rup_proof_line(opt_lhs_both + 1_i * new_state_data->second->both_flag >= 1_i);
+
+                                    if (new_state_data->second->feasible) {
+                                        current_node_weight_children.push_back(weight_data->second->flag);
+                                        current_node_profit_children.push_back(profit_data->second->flag);
+                                        current_node_state_children.push_back(new_state_data->second->both_flag);
                                     }
                                     else {
                                         proof.emit_proof_comment("infeasible state: new weight is " + to_string(new_weight.raw_value) +
@@ -183,10 +242,10 @@ namespace
                                                 auto bound_line = proof.get_or_emit_pol_term_for_bound_in_bits(state, true, var, state.upper_bound(weight_var));
                                                 overloaded{
                                                     [&](const string & bound_line) {
-                                                        proof.emit_proof_line("p " + to_string(opt_weight_line) + " " + to_string(opb_weight_line) + " + " + bound_line + " +");
+                                                        proof.emit_proof_line("p " + to_string(weight_data->second->fwd_reification) + " " + to_string(opb_weight_line) + " + " + bound_line + " +");
                                                     },
                                                     [&](const ProofLine & bound_line) {
-                                                        proof.emit_proof_line("p " + to_string(opt_weight_line) + " " + to_string(opb_weight_line) + " + " + to_string(bound_line) + " +");
+                                                        proof.emit_proof_line("p " + to_string(weight_data->second->fwd_reification) + " " + to_string(opb_weight_line) + " + " + to_string(bound_line) + " +");
                                                     }}
                                                     .visit(bound_line);
                                             },
@@ -196,20 +255,20 @@ namespace
                                                 throw UnimplementedException{};
                                             }}
                                             .visit(weight_var);
-                                        proof.emit_rup_proof_line(trail + 1_i * ! opt_sum_weights_ge_weight >= 1_i);
-                                        proof.emit_rup_proof_line(trail + 1_i * ! opt_both_sums >= 1_i);
+                                        proof.emit_rup_proof_line(trail + 1_i * ! weight_data->second->flag >= 1_i);
+                                        proof.emit_rup_proof_line(trail + 1_i * ! new_state_data->second->both_flag >= 1_i);
                                     }
                                 };
 
                                 do_option(false, "excl", weight, profit);
                                 do_option(true, "incl", weight + weights.at(idx), profit + profits.at(idx));
 
-                                proof.emit_proof_comment("*** must either take or no take option " + to_string(idx_pos) + "." + to_string(option_idx));
+                                proof.emit_proof_comment("*** must either take or no take option " + to_string(idx_pos));
 
                                 // trail && current option -> take option or not take option
                                 auto trail_and_current_option = trail;
-                                if (current_option_both)
-                                    trail_and_current_option += 1_i * ! *current_option_both;
+                                if (state_data)
+                                    trail_and_current_option += 1_i * ! state_data->both_flag;
 
                                 auto combine = [&](const WeightedPseudoBooleanSum & sum, const vector<ProofFlag> & add) {
                                     auto result = sum;
@@ -218,28 +277,31 @@ namespace
                                     return result;
                                 };
 
-                                proof.emit_rup_proof_line(combine(trail_and_current_option, take_weight_options) >= 1_i);
-                                proof.emit_rup_proof_line(combine(trail_and_current_option, take_profit_options) >= 1_i);
-                                proof.emit_rup_proof_line(combine(trail_and_current_option, take_both_options) >= 1_i);
+                                proof.emit_rup_proof_line(combine(trail_and_current_option, current_node_weight_children) >= 1_i);
+                                proof.emit_rup_proof_line(combine(trail_and_current_option, current_node_profit_children) >= 1_i);
+                                proof.emit_rup_proof_line(combine(trail_and_current_option, current_node_state_children) >= 1_i);
                             }
 
                             // trail -> one of the new options
                             proof.emit_proof_comment("*** must take an option from this level " + to_string(idx_pos));
                             auto must_take_an_option = trail;
-                            for (auto & flag : options_at_current_level)
-                                must_take_an_option += 1_i * flag;
+                            for (const auto & [_, child] : current_layer_states)
+                                if (child->feasible)
+                                    must_take_an_option += 1_i * child->both_flag;
                             proof.emit_rup_proof_line(must_take_an_option >= 1_i);
 
-                            options = move(new_options);
+                            parent_layer_weights = move(current_layer_weights);
+                            parent_layer_profits = move(current_layer_profits);
+                            parent_layer_states = move(current_layer_states);
                         }
 
                         proof.emit_proof_comment("*** no final option supports weight");
-                        for (const auto & [weight, option_data] : options) {
-                            const auto & [_1, _2, current_option_profit, _3, _4, current_option_profit_line] = option_data;
-                            auto no_support = trail;
-                            if (current_option_profit)
-                                no_support += 1_i * ! *current_option_profit;
-                            proof.emit_proof_line("p " + to_string(opb_profit_line) + " " + to_string(*current_option_profit_line) + " +");
+                        for (const auto & [_, state] : parent_layer_states) {
+                            if (! state || ! state->feasible)
+                                continue;
+
+                            auto no_support = trail + 1_i * ! state->profit_flag;
+                            proof.emit_proof_line("p " + to_string(opb_profit_line) + " " + to_string(state->profit_line) + " +");
                             proof.emit_rup_proof_line(no_support + 1_i * (profit_var < 1_i + best_profit_bottom) >= 1_i);
                         }
                         proof.emit_rup_proof_line(trail + 1_i * (profit_var < 1_i + best_profit_bottom) >= 1_i);
