@@ -176,7 +176,8 @@ namespace
                                         options_at_current_level.push_back(opt_both_sums);
                                     }
                                     else {
-                                        proof.emit_proof_comment("infeasible state");
+                                        proof.emit_proof_comment("infeasible state: new weight is " + to_string(new_weight.raw_value) +
+                                            " but remaining is " + to_string(remaining_weight.raw_value));
                                         overloaded{
                                             [&](const SimpleIntegerVariableID & var) {
                                                 auto bound_line = proof.get_or_emit_pol_term_for_bound_in_bits(state, true, var, state.upper_bound(weight_var));
@@ -195,8 +196,8 @@ namespace
                                                 throw UnimplementedException{};
                                             }}
                                             .visit(weight_var);
-                                        proof.emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * ! opt_sum_weights_ge_weight >= 1_i);
-                                        proof.emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * ! opt_both_sums >= 1_i);
+                                        proof.emit_rup_proof_line(trail + 1_i * ! opt_sum_weights_ge_weight >= 1_i);
+                                        proof.emit_rup_proof_line(trail + 1_i * ! opt_both_sums >= 1_i);
                                     }
                                 };
 
@@ -241,6 +242,7 @@ namespace
                             proof.emit_proof_line("p " + to_string(opb_profit_line) + " " + to_string(*current_option_profit_line) + " +");
                             proof.emit_rup_proof_line(no_support + 1_i * (profit_var < 1_i + best_profit_bottom) >= 1_i);
                         }
+                        proof.emit_rup_proof_line(trail + 1_i * (profit_var < 1_i + best_profit_bottom) >= 1_i);
                     }}),
             PropagatorState::Enable};
     }
