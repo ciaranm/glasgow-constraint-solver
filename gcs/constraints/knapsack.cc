@@ -18,6 +18,7 @@ using std::make_unique;
 using std::map;
 using std::max;
 using std::move;
+using std::multimap;
 using std::nullopt;
 using std::optional;
 using std::pair;
@@ -73,7 +74,8 @@ namespace
     }
 
     auto knapsack(State & state, const vector<Integer> & weights, const vector<Integer> & profits,
-        const vector<IntegerVariableID> & vars, IntegerVariableID weight, IntegerVariableID profit) -> pair<Inference, PropagatorState>
+        const vector<IntegerVariableID> & vars, IntegerVariableID weight_var, IntegerVariableID profit_var,
+        const ProofLine opb_weight_line, const ProofLine opb_profit_line) -> pair<Inference, PropagatorState>
     {
         vector<size_t> undetermined_vars;
         Integer used_weight = 0_i, accumulated_profit = 0_i;
@@ -90,31 +92,31 @@ namespace
         }
 
         if (undetermined_vars.empty()) {
-            auto inference = state.infer(weight == used_weight, NoJustificationNeeded{});
+            auto inference = state.infer(weight_var == used_weight, NoJustificationNeeded{});
             if (inference != Inference::Contradiction)
-                increase_inference_to(inference, state.infer(profit == accumulated_profit, NoJustificationNeeded{}));
+                increase_inference_to(inference, state.infer(profit_var == accumulated_profit, NoJustificationNeeded{}));
             return pair{inference, PropagatorState::DisableUntilBacktrack};
         }
 
-        auto inference = state.infer(profit >= accumulated_profit, NoJustificationNeeded{});
+        auto inference = state.infer(profit_var >= accumulated_profit, NoJustificationNeeded{});
         if (Inference::Contradiction == inference)
             return pair{inference, PropagatorState::Enable};
 
-        inference = state.infer(weight >= used_weight, NoJustificationNeeded{});
+        inference = state.infer(weight_var >= used_weight, NoJustificationNeeded{});
         if (Inference::Contradiction == inference)
             return pair{inference, PropagatorState::Enable};
 
-        auto remaining_weight = state.upper_bound(weight - used_weight);
+        auto remaining_weight = state.upper_bound(weight_var) - used_weight;
         auto best_profit_bottom = knapsack_best_profit_bottom(weights, profits, vars, undetermined_vars, remaining_weight) + accumulated_profit;
 
-        return pair{state.infer(profit < 1_i + best_profit_bottom, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
+        return pair{state.infer(profit_var < 1_i + best_profit_bottom, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
                         auto trail = proof.trail_variables_as_sum(state, 1_i);
 
-                        map<Integer, tuple<Integer, optional<ProofFlag>, optional<ProofFlag>, optional<ProofFlag>, optional<ProofLine>, optional<ProofLine>>> options;
+                        multimap<Integer, tuple<Integer, optional<ProofFlag>, optional<ProofFlag>, optional<ProofFlag>, optional<ProofLine>, optional<ProofLine>>> options;
                         options.emplace(0_i, tuple{0_i, nullopt, nullopt, nullopt, nullopt, nullopt});
 
                         for (const auto & [idx_pos, idx] : enumerate(undetermined_vars)) {
-                            map<Integer, tuple<Integer, optional<ProofFlag>, optional<ProofFlag>, optional<ProofFlag>, optional<ProofLine>, optional<ProofLine>>> new_options;
+                            multimap<Integer, tuple<Integer, optional<ProofFlag>, optional<ProofFlag>, optional<ProofFlag>, optional<ProofLine>, optional<ProofLine>>> new_options;
                             vector<ProofFlag> options_at_current_level;
                             for (const auto & [option_idx, option] : enumerate(options)) {
                                 const auto & [weight, profit_and_flag] = option;
@@ -128,101 +130,78 @@ namespace
                                         break;
                                 }
 
-                                auto no_take_lhs_weight = trail, no_take_lhs_profit = trail, no_take_lhs_both = trail;
-                                if (current_option_weight)
-                                    no_take_lhs_weight += 1_i * ! *current_option_weight;
-                                if (current_option_profit)
-                                    no_take_lhs_profit += 1_i * ! *current_option_profit;
-                                if (current_option_both)
-                                    no_take_lhs_both += 1_i * ! *current_option_both;
-                                no_take_lhs_weight += 1_i * (vars.at(idx_pos) != 0_i);
-                                no_take_lhs_profit += 1_i * (vars.at(idx_pos) != 0_i);
-                                no_take_lhs_both += 1_i * (vars.at(idx_pos) != 0_i);
-
-                                proof.emit_proof_comment("*** no take option " + to_string(idx_pos) + "." + to_string(option_idx));
-                                proof.emit_proof_comment("define no take >= weight " + to_string(idx_pos) + "." + to_string(option_idx));
-                                auto [no_take_sum_weights_ge_weight, no_take_weight_line, _1] = proof.create_proof_flag_reifying(
-                                    sum_of_weights_so_far >= weight,
-                                    "option_" + to_string(option_idx) + "_no_take_sum_" + to_string(idx_pos) + "_weights_ge_" + to_string(weight.raw_value));
-                                if (current_option_weight_line)
-                                    proof.emit_proof_line("p -1 " + to_string(*current_option_weight_line) + " +");
-                                proof.emit_rup_proof_line(no_take_lhs_weight + 1_i * no_take_sum_weights_ge_weight >= 1_i);
-                                proof.emit_rup_proof_line(no_take_lhs_both + 1_i * no_take_sum_weights_ge_weight >= 1_i);
-
-                                proof.emit_proof_comment("define no take <= profit " + to_string(idx_pos) + "." + to_string(option_idx));
-                                auto [no_take_sum_profits_le_profit, no_take_profit_line, _2] = proof.create_proof_flag_reifying(
-                                    sum_of_profits_so_far <= profit,
-                                    "option_" + to_string(option_idx) + "_no_take_sum_" + to_string(idx_pos) + "_profits_le_" + to_string(profit.raw_value));
-                                if (current_option_profit_line)
-                                    proof.emit_proof_line("p -1 " + to_string(*current_option_profit_line) + " +");
-                                proof.emit_rup_proof_line(no_take_lhs_profit + 1_i * no_take_sum_profits_le_profit >= 1_i);
-                                proof.emit_rup_proof_line(no_take_lhs_both + 1_i * no_take_sum_profits_le_profit >= 1_i);
-
-                                proof.emit_proof_comment("define no take both " + to_string(idx_pos) + "." + to_string(option_idx));
-                                auto [no_take_both_sums, _3, _4] = proof.create_proof_flag_reifying(
-                                    WeightedPseudoBooleanSum{} + 1_i * no_take_sum_weights_ge_weight + 1_i * no_take_sum_profits_le_profit >= 2_i,
-                                    "option_" + to_string(option_idx) + "_no_take_both_sums_" + to_string(idx_pos) + "_" + to_string(weight.raw_value) + "_" + to_string(profit.raw_value));
-                                proof.emit_rup_proof_line(no_take_lhs_both + 1_i * no_take_both_sums >= 1_i);
-
-                                auto no_take = new_options.try_emplace(weight, tuple{profit, no_take_sum_weights_ge_weight, no_take_sum_profits_le_profit, no_take_both_sums, no_take_weight_line, no_take_profit_line}).first;
-                                get<0>(no_take->second) = max(get<0>(no_take->second), profit);
-                                if (get<0>(no_take->second) != profit)
-                                    proof.emit_proof_comment("!!! found better profit 1");
-
-                                optional<ProofFlag> take_weight_sum_if_permitted, take_profit_sum_if_permitted, take_both_sums_if_permitted;
-                                if (weight + weights.at(idx) <= remaining_weight) {
-                                    auto take_lhs_weight = trail, take_lhs_profit = trail, take_lhs_both = trail;
+                                vector<ProofFlag> take_weight_options, take_profit_options, take_both_options;
+                                auto do_option = [&](bool take, const string & name, Integer new_weight, Integer new_profit) {
+                                    auto opt_lhs_weight = trail, opt_lhs_profit = trail, opt_lhs_both = trail;
                                     if (current_option_weight)
-                                        take_lhs_weight += 1_i * ! *current_option_weight;
+                                        opt_lhs_weight += 1_i * ! *current_option_weight;
                                     if (current_option_profit)
-                                        take_lhs_profit += 1_i * ! *current_option_profit;
+                                        opt_lhs_profit += 1_i * ! *current_option_profit;
                                     if (current_option_both)
-                                        take_lhs_both += 1_i * ! *current_option_both;
-                                    take_lhs_weight += 1_i * (vars.at(idx_pos) != 1_i);
-                                    take_lhs_profit += 1_i * (vars.at(idx_pos) != 1_i);
-                                    take_lhs_both += 1_i * (vars.at(idx_pos) != 1_i);
+                                        opt_lhs_both += 1_i * ! *current_option_both;
+                                    opt_lhs_weight += 1_i * (vars.at(idx) != (take ? 1_i : 0_i));
+                                    opt_lhs_profit += 1_i * (vars.at(idx) != (take ? 1_i : 0_i));
+                                    opt_lhs_both += 1_i * (vars.at(idx) != (take ? 1_i : 0_i));
 
-                                    auto take_weight = weight + weights.at(idx);
-                                    auto take_profit = profit + profits.at(idx);
-
-                                    proof.emit_proof_comment("*** take option " + to_string(idx_pos) + "." + to_string(option_idx));
-                                    proof.emit_proof_comment("define take >= weight " + to_string(idx_pos) + "." + to_string(option_idx));
-                                    auto [take_sum_weights_ge_weight, take_weight_line, _1] = proof.create_proof_flag_reifying(
-                                        sum_of_weights_so_far >= take_weight,
-                                        "option_" + to_string(option_idx) + "_take_sum_" + to_string(idx_pos) + "_weights_ge_" + to_string(take_weight.raw_value));
+                                    proof.emit_proof_comment("*** " + name + " option " + to_string(idx_pos) + "." + to_string(option_idx));
+                                    proof.emit_proof_comment("define " + name + " >= weight " + to_string(idx_pos) + "." + to_string(option_idx));
+                                    auto [opt_sum_weights_ge_weight, opt_weight_line, _1] = proof.create_proof_flag_reifying(
+                                        sum_of_weights_so_far >= new_weight,
+                                        "option_" + to_string(option_idx) + "_" + name + "_sum_" + to_string(idx_pos) + "_weights_ge_" + to_string(new_weight.raw_value));
                                     if (current_option_weight_line)
                                         proof.emit_proof_line("p -1 " + to_string(*current_option_weight_line) + " +");
-                                    proof.emit_rup_proof_line(take_lhs_weight + 1_i * take_sum_weights_ge_weight >= 1_i);
-                                    proof.emit_rup_proof_line(take_lhs_both + 1_i * take_sum_weights_ge_weight >= 1_i);
+                                    proof.emit_rup_proof_line(opt_lhs_weight + 1_i * opt_sum_weights_ge_weight >= 1_i);
+                                    proof.emit_rup_proof_line(opt_lhs_both + 1_i * opt_sum_weights_ge_weight >= 1_i);
 
-                                    proof.emit_proof_comment("define take <= profit " + to_string(idx_pos) + "." + to_string(option_idx));
-                                    auto [take_sum_profits_le_profit, take_profit_line, _2] = proof.create_proof_flag_reifying(
-                                        sum_of_profits_so_far <= take_profit,
-                                        "option_" + to_string(option_idx) + "_take_sum_" + to_string(idx_pos) + "_profits_le_" + to_string(take_profit.raw_value));
+                                    proof.emit_proof_comment("define " + name + " <= profit " + to_string(idx_pos) + "." + to_string(option_idx));
+                                    auto [opt_sum_profits_le_profit, opt_profit_line, _2] = proof.create_proof_flag_reifying(
+                                        sum_of_profits_so_far <= new_profit,
+                                        "option_" + to_string(option_idx) + "_" + name + "_sum_" + to_string(idx_pos) + "_profits_le_" + to_string(new_profit.raw_value));
                                     if (current_option_profit_line)
                                         proof.emit_proof_line("p -1 " + to_string(*current_option_profit_line) + " +");
-                                    proof.emit_rup_proof_line(take_lhs_profit + 1_i * take_sum_profits_le_profit >= 1_i);
-                                    proof.emit_rup_proof_line(take_lhs_both + 1_i * take_sum_profits_le_profit >= 1_i);
+                                    proof.emit_rup_proof_line(opt_lhs_profit + 1_i * opt_sum_profits_le_profit >= 1_i);
+                                    proof.emit_rup_proof_line(opt_lhs_both + 1_i * opt_sum_profits_le_profit >= 1_i);
 
-                                    proof.emit_proof_comment("define take both " + to_string(idx_pos) + "." + to_string(option_idx));
-                                    auto [take_both_sums, _3, _4] = proof.create_proof_flag_reifying(
-                                        WeightedPseudoBooleanSum{} + 1_i * take_sum_weights_ge_weight + 1_i * take_sum_profits_le_profit >= 2_i,
-                                        "option_" + to_string(option_idx) + "_take_both_sums_" + to_string(idx_pos) + "_" + to_string(take_weight.raw_value) + "_" + to_string(take_profit.raw_value));
-                                    proof.emit_rup_proof_line(take_lhs_both + 1_i * take_both_sums >= 1_i);
+                                    proof.emit_proof_comment("define " + name + " both " + to_string(idx_pos) + "." + to_string(option_idx));
+                                    auto [opt_both_sums, _3, _4] = proof.create_proof_flag_reifying(
+                                        WeightedPseudoBooleanSum{} + 1_i * opt_sum_weights_ge_weight + 1_i * opt_sum_profits_le_profit >= 2_i,
+                                        "option_" + to_string(option_idx) + "_" + name + "_both_sums_" + to_string(idx_pos) + "_" + to_string(new_weight.raw_value) + "_" + to_string(new_profit.raw_value));
+                                    proof.emit_rup_proof_line(opt_lhs_both + 1_i * opt_both_sums >= 1_i);
 
-                                    take_weight_sum_if_permitted = take_sum_weights_ge_weight;
-                                    take_profit_sum_if_permitted = take_sum_profits_le_profit;
-                                    take_both_sums_if_permitted = take_both_sums;
+                                    if (new_weight <= remaining_weight) {
+                                        new_options.emplace(new_weight, tuple{new_profit, opt_sum_weights_ge_weight, opt_sum_profits_le_profit, opt_both_sums, opt_weight_line, opt_profit_line});
+                                        take_weight_options.push_back(opt_sum_weights_ge_weight);
+                                        take_profit_options.push_back(opt_sum_profits_le_profit);
+                                        take_both_options.push_back(opt_both_sums);
+                                        options_at_current_level.push_back(opt_both_sums);
+                                    }
+                                    else {
+                                        proof.emit_proof_comment("infeasible state");
+                                        overloaded{
+                                            [&](const SimpleIntegerVariableID & var) {
+                                                auto bound_line = proof.get_or_emit_pol_term_for_bound_in_bits(state, true, var, state.upper_bound(weight_var));
+                                                overloaded{
+                                                    [&](const string & bound_line) {
+                                                        proof.emit_proof_line("p " + to_string(opt_weight_line) + " " + to_string(opb_weight_line) + " + " + bound_line + " +");
+                                                    },
+                                                    [&](const ProofLine & bound_line) {
+                                                        proof.emit_proof_line("p " + to_string(opt_weight_line) + " " + to_string(opb_weight_line) + " + " + to_string(bound_line) + " +");
+                                                    }}
+                                                    .visit(bound_line);
+                                            },
+                                            [&](const ConstantIntegerVariableID &) {
+                                            },
+                                            [&](const ViewOfIntegerVariableID &) {
+                                                throw UnimplementedException{};
+                                            }}
+                                            .visit(weight_var);
+                                        proof.emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * ! opt_sum_weights_ge_weight >= 1_i);
+                                        proof.emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * ! opt_both_sums >= 1_i);
+                                    }
+                                };
 
-                                    auto take = new_options.try_emplace(weight + weights.at(idx), tuple{profit + profits.at(idx), take_sum_weights_ge_weight, take_sum_profits_le_profit, take_both_sums, take_weight_line, take_profit_line}).first;
-                                    get<0>(take->second) = max(get<0>(take->second), profit + profits.at(idx));
-                                    if (get<0>(take->second) != profit + profits.at(idx))
-                                        proof.emit_proof_comment("!!! found better profit 2");
-                                }
-                                else {
-                                    // trail && current option -> no take
-                                    proof.emit_proof_comment("!!! can't take");
-                                }
+                                do_option(false, "excl", weight, profit);
+                                do_option(true, "incl", weight + weights.at(idx), profit + profits.at(idx));
 
                                 proof.emit_proof_comment("*** must either take or no take option " + to_string(idx_pos) + "." + to_string(option_idx));
 
@@ -231,24 +210,16 @@ namespace
                                 if (current_option_both)
                                     trail_and_current_option += 1_i * ! *current_option_both;
 
-                                if (take_weight_sum_if_permitted)
-                                    proof.emit_rup_proof_line(trail_and_current_option + 1_i * *take_weight_sum_if_permitted + 1_i * no_take_sum_weights_ge_weight >= 1_i);
-                                else
-                                    proof.emit_rup_proof_line(trail_and_current_option + 1_i * no_take_sum_weights_ge_weight >= 1_i);
+                                auto combine = [&](const WeightedPseudoBooleanSum & sum, const vector<ProofFlag> & add) {
+                                    auto result = sum;
+                                    for (auto & a : add)
+                                        result += 1_i * a;
+                                    return result;
+                                };
 
-                                if (take_profit_sum_if_permitted)
-                                    proof.emit_rup_proof_line(trail_and_current_option + 1_i * *take_profit_sum_if_permitted + 1_i * no_take_sum_profits_le_profit >= 1_i);
-                                else
-                                    proof.emit_rup_proof_line(trail_and_current_option + 1_i * no_take_sum_profits_le_profit >= 1_i);
-
-                                if (take_both_sums_if_permitted)
-                                    proof.emit_rup_proof_line(trail_and_current_option + 1_i * *take_both_sums_if_permitted + 1_i * no_take_both_sums >= 1_i);
-                                else
-                                    proof.emit_rup_proof_line(trail_and_current_option + 1_i * no_take_both_sums >= 1_i);
-
-                                options_at_current_level.push_back(no_take_both_sums);
-                                if (take_both_sums_if_permitted)
-                                    options_at_current_level.push_back(*take_both_sums_if_permitted);
+                                proof.emit_rup_proof_line(combine(trail_and_current_option, take_weight_options) >= 1_i);
+                                proof.emit_rup_proof_line(combine(trail_and_current_option, take_profit_options) >= 1_i);
+                                proof.emit_rup_proof_line(combine(trail_and_current_option, take_both_options) >= 1_i);
                             }
 
                             // trail -> one of the new options
@@ -259,6 +230,16 @@ namespace
                             proof.emit_rup_proof_line(must_take_an_option >= 1_i);
 
                             options = move(new_options);
+                        }
+
+                        proof.emit_proof_comment("*** no final option supports weight");
+                        for (const auto & [weight, option_data] : options) {
+                            const auto & [_1, _2, current_option_profit, _3, _4, current_option_profit_line] = option_data;
+                            auto no_support = trail;
+                            if (current_option_profit)
+                                no_support += 1_i * ! *current_option_profit;
+                            proof.emit_proof_line("p " + to_string(opb_profit_line) + " " + to_string(*current_option_profit_line) + " +");
+                            proof.emit_rup_proof_line(no_support + 1_i * (profit_var < 1_i + best_profit_bottom) >= 1_i);
                         }
                     }}),
             PropagatorState::Enable};
@@ -288,14 +269,15 @@ auto Knapsack::install(Propagators & propagators, State & initial_state) && -> v
         if (initial_state.bounds(v) != pair{0_i, 1_i})
             throw UnexpectedException{"can only support 0-1 variables for knapsack"};
 
+    optional<ProofLine> weight_line, profit_line;
     if (propagators.want_definitions()) {
         WeightedPseudoBooleanSum weights_eq, profits_eq;
         for (const auto & [idx, v] : enumerate(_vars)) {
             weights_eq += _weights[idx] * v;
             profits_eq += _profits[idx] * v;
         }
-        propagators.define(initial_state, weights_eq == 1_i * _weight);
-        propagators.define(initial_state, profits_eq == 1_i * _profit);
+        weight_line = propagators.define(initial_state, weights_eq == 1_i * _weight).first;
+        profit_line = propagators.define(initial_state, profits_eq == 1_i * _profit).second;
     }
 
     Triggers triggers;
@@ -304,8 +286,9 @@ auto Knapsack::install(Propagators & propagators, State & initial_state) && -> v
     triggers.on_change.emplace_back(_profit);
 
     propagators.install(
-        [weights = move(_weights), profits = move(_profits), vars = move(_vars), weight = move(_weight), profit = move(_profit)](State & state) -> pair<Inference, PropagatorState> {
-            return knapsack(state, weights, profits, vars, weight, profit);
+        [weights = move(_weights), profits = move(_profits), vars = move(_vars), weight = move(_weight),
+            profit = move(_profit), weight_line = weight_line, profit_line = profit_line](State & state) -> pair<Inference, PropagatorState> {
+            return knapsack(state, weights, profits, vars, weight, profit, *weight_line, *profit_line);
         },
         triggers, "knapsack");
 }
