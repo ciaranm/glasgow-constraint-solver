@@ -125,6 +125,8 @@ struct Proof::Imp
 
     list<map<tuple<bool, SimpleIntegerVariableID, Integer>, variant<ProofLine, string>>> line_for_bound_in_bits;
 
+    set<string> preorders;
+
     string opb_file, proof_file;
     stringstream opb;
     fstream proof;
@@ -246,6 +248,7 @@ auto Proof::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariabl
             },
             [](const ProofOnlySimpleIntegerVariableID &) {
                 // currently there's no API for asking for literals for these
+                // TODO: MM: maybe there is now?
             }}
             .visit(id);
 
@@ -259,6 +262,7 @@ auto Proof::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariabl
             },
             [](const ProofOnlySimpleIntegerVariableID &) {
                 // currently there's no API for asking for literals for these
+                // TODO: MM: maybe there is now?
             }}
             .visit(id);
     }
@@ -651,6 +655,105 @@ auto Proof::proof_name(const ProofFlag & flag) const -> const string &
     return it->second;
 }
 
+auto Proof::need_proof_name(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> & cond) -> void
+{
+    switch (cond.op) {
+    case VariableConditionOperator::Equal:
+    case VariableConditionOperator::NotEqual:
+        need_direct_encoding_for(cond.var, cond.value);
+        break;
+    case VariableConditionOperator::Less:
+    case VariableConditionOperator::GreaterEqual:
+        need_gevar(cond.var, cond.value);
+        break;
+    }
+}
+
+auto Proof::need_all_proof_names_in(const SumOf<Weighted<PseudoBooleanTerm>> & sum) -> void
+{
+    // make sure we have any definitions for things that show up
+    for (auto & [_, v] : sum.terms)
+        overloaded{
+            [&](const ProofLiteral & lit) {
+                overloaded{
+                    [&](const TrueLiteral &) {},
+                    [&](const FalseLiteral &) {},
+                    [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
+                        need_proof_name(cond);
+                    }}
+                    .visit(simplify_literal(lit));
+            },
+            [&](const ProofFlag &) {},
+            [&](const IntegerVariableID &) {},
+            [&](const ProofOnlySimpleIntegerVariableID &) {}}
+            .visit(v);
+}
+
+auto Proof::all_proof_names_for_term(const PseudoBooleanTerm & term) -> std::vector<std::string>
+{
+    vector<string> proof_names = {};
+    overloaded{
+        [&](const ProofLiteral & lit) {
+            overloaded{
+                [&](const TrueLiteral &) {},
+                [&](const FalseLiteral &) {},
+                [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
+                    need_proof_name(cond);
+                    proof_names.emplace_back(proof_name(cond));
+                }}
+                .visit(simplify_literal(lit));
+        },
+        [&](const ProofFlag & pf) {
+            proof_names.emplace_back(proof_name(pf));
+        },
+        [&](const IntegerVariableID & iv) {
+            overloaded{
+                [&](const SimpleIntegerVariableID & siv) {
+                    if (_imp->integer_variable_bits.contains(siv)) {
+                        for (auto & [_, bit_name] : _imp->integer_variable_bits.at(siv).second) {
+                            proof_names.emplace_back(bit_name);
+                        }
+                    }
+                    else {
+                        // Must be a DirectOnly
+                        // Not sure how best to handle this
+                        throw UnimplementedException{"Can't get proof names for DirectOnly variable term - use literals instead."};
+                    }
+                },
+                [&](const ConstantIntegerVariableID &) {
+                    throw UnimplementedException{"Can't get proof names for constant variable term"};
+                },
+                [&](const ViewOfIntegerVariableID & viv) {
+                    if (_imp->integer_variable_bits.contains(viv.actual_variable)) {
+                        for (auto & [_, bit_name] : _imp->integer_variable_bits.at(viv.actual_variable).second) {
+                            proof_names.emplace_back(bit_name);
+                        }
+                    }
+                    else {
+                        // Must be a DirectOnly
+                        // Not sure how best to handle this
+                        throw UnimplementedException{"Can't get proof names for DirectOnly variable term - use literals instead."};
+                    }
+                }}
+                .visit(iv);
+        },
+        [&](const ProofOnlySimpleIntegerVariableID & piv) {
+            if (_imp->integer_variable_bits.contains(piv)) {
+                for (auto & [_, bit_name] : _imp->integer_variable_bits.at(piv).second) {
+                    proof_names.emplace_back(bit_name);
+                }
+            }
+            else {
+                // Must be a DirectOnly
+                // Not sure how best to handle this
+                throw UnimplementedException{"Can't get proof names for DirectOnly variable term - use literals instead."};
+            }
+        }}
+        .visit(term);
+
+    return proof_names;
+}
+
 auto Proof::simplify_literal(const ProofLiteral & lit) -> SimpleLiteral
 {
     return overloaded{
@@ -699,20 +802,6 @@ auto Proof::simplify_literal(const ProofLiteral & lit) -> SimpleLiteral
             return VariableConditionFrom<ProofOnlySimpleIntegerVariableID>{cond.var, cond.op, cond.value};
         }}
         .visit(flatten(lit));
-}
-
-auto Proof::need_proof_name(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> & cond) -> void
-{
-    switch (cond.op) {
-    case VariableConditionOperator::Equal:
-    case VariableConditionOperator::NotEqual:
-        need_direct_encoding_for(cond.var, cond.value);
-        break;
-    case VariableConditionOperator::Less:
-    case VariableConditionOperator::GreaterEqual:
-        need_gevar(cond.var, cond.value);
-        break;
-    }
 }
 
 auto Proof::add_cnf_to_model(const Literals & lits) -> std::optional<ProofLine>
@@ -990,26 +1079,6 @@ auto Proof::emit_proof_comment(const string & s) -> void
     _imp->proof << "* " << s << '\n';
 }
 
-auto Proof::need_all_proof_names_in(const SumOf<Weighted<PseudoBooleanTerm>> & sum) -> void
-{
-    // make sure we have any definitions for things that show up
-    for (auto & [_, v] : sum.terms)
-        overloaded{
-            [&](const ProofLiteral & lit) {
-                overloaded{
-                    [&](const TrueLiteral &) {},
-                    [&](const FalseLiteral &) {},
-                    [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
-                        need_proof_name(cond);
-                    }}
-                    .visit(simplify_literal(lit));
-            },
-            [&](const ProofFlag &) {},
-            [&](const IntegerVariableID &) {},
-            [&](const ProofOnlySimpleIntegerVariableID &) {}}
-            .visit(v);
-}
-
 auto Proof::emit_inequality_to(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
     const optional<HalfReifyOnConjunctionOf> & half_reif, ostream & stream) -> void
 {
@@ -1141,6 +1210,43 @@ auto Proof::emit_red_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> 
     need_all_proof_names_in(ineq.lhs);
 
     _imp->proof << "red ";
+    emit_inequality_to(ineq, nullopt, _imp->proof);
+
+    auto witness_literal = [this](const ProofLiteral & lit) -> string {
+        return overloaded{
+            [](const TrueLiteral &) -> string { return "1"; },
+            [](const FalseLiteral &) -> string { return "0"; },
+            [this]<typename T_>(const VariableConditionFrom<T_> & var) -> string { return proof_name(var); }}
+            .visit(simplify_literal(lit));
+    };
+
+    for (auto & [f, t] : witness)
+        _imp->proof << " " << witness_literal(f) << " -> " << witness_literal(t);
+    _imp->proof << " ;\n";
+
+    return ++_imp->proof_line;
+}
+
+auto Proof::load_preorder(const string & name, vector<PseudoBooleanTerm> & vars) -> void
+{
+    string load_preorder_string = "load_order " + name;
+
+    // Try to be generic and allow the preorder to be over any pseudo-Boolean terms
+    for (auto & v : vars) {
+        for (auto & s : all_proof_names_for_term(v)) {
+            load_preorder_string += " " + s;
+        }
+    }
+
+    _imp->proof << load_preorder_string << '\n';
+}
+
+auto Proof::emit_dom_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
+    const std::vector<std::pair<ProofLiteral, ProofLiteral>> & witness) -> ProofLine
+{
+    need_all_proof_names_in(ineq.lhs);
+
+    _imp->proof << "dom ";
     emit_inequality_to(ineq, nullopt, _imp->proof);
 
     auto witness_literal = [this](const ProofLiteral & lit) -> string {
@@ -1291,6 +1397,135 @@ auto Proof::new_guess() -> void
 auto Proof::undo_guess() -> void
 {
     _imp->line_for_bound_in_bits.pop_back();
+}
+
+auto Proof::define_obviously_transitive_preorder(const string & name, const vector<PseudoBooleanTerm> & terms, const WeightedPseudoBooleanSum & potential_function) -> void
+{
+    vector<vector<string>> pb_var_names{};
+    for (auto t : terms) {
+        pb_var_names.emplace_back(all_proof_names_for_term(t));
+    }
+
+    if (_imp->preorders.contains(name)) return;
+
+    _imp->preorders.insert(name);
+    _imp->proof << "pre_order " << name << '\n';
+
+    // Define the left and right vars
+    _imp->proof << "    vars" << '\n';
+    string right_var_str = "         right";
+    string left_var_str = "         left";
+    string fresh_right_var_str = "             fresh_right";
+
+    for (const auto & pb_names : pb_var_names) {
+        for (const auto & pb_name : pb_names) {
+            right_var_str += " r" + pb_name;
+            fresh_right_var_str += " rr" + pb_name;
+            left_var_str += " l" + pb_name;
+        }
+    }
+
+    _imp->proof << right_var_str << '\n';
+    _imp->proof << left_var_str << '\n';
+    _imp->proof << "    end" << '\n';
+
+    // Define the preorder condition f(rightvars) - f(leftvars) >= 1
+    _imp->proof << "    def" << '\n';
+    {
+        _imp->proof << "       ";
+        WeightedPseudoBooleanSum negated_potential_function{};
+        for (const auto & [coeff, term] : potential_function.terms) {
+            negated_potential_function += -coeff * term;
+        }
+        auto [rfunc_str, rhs1] = weighted_pb_sum_to_string(potential_function, "r");
+        _imp->proof << rfunc_str;
+        auto [lfunc_str, rhs2] = weighted_pb_sum_to_string(negated_potential_function, "l");
+        _imp->proof << lfunc_str;
+        _imp->proof << " >= " << 1_i + rhs1 + rhs2 << ";\n";
+    }
+    _imp->proof << "    end" << '\n';
+
+    // Prove transitivity for the preorder
+    // The requirement that preorder is "obviously transitive" basically means this has to work.
+    _imp->proof << "    transitivity" << '\n';
+    _imp->proof << "        vars" << '\n';
+    _imp->proof << fresh_right_var_str << '\n';
+    _imp->proof << "        end" << '\n';
+    _imp->proof << "        proof" << '\n';
+    _imp->proof << "            proofgoal #1" << '\n';
+    _imp->proof << "                p 1 2 + 3 +" << '\n';
+    _imp->proof << "                c -1" << '\n';
+    _imp->proof << "            qed" << '\n';
+    _imp->proof << "        qed" << '\n';
+    _imp->proof << "    qed" << '\n';
+    _imp->proof << "end" << '\n';
+}
+
+auto innards::Proof::weighted_pb_sum_to_string(const WeightedPseudoBooleanSum & sum, const string & prefix) -> pair<string, Integer>
+{
+    // Probably not the most elegant way to do this
+    // Repeats a lot of code from emit_inequality_to()
+    Integer rhs = 0_i;
+    stringstream stream;
+    for (auto & [w, v] : sum.terms) {
+        if (0_i == w)
+            continue;
+
+        overloaded{
+            [&, w = w](const ProofLiteral & lit) {
+                overloaded{
+                    [&](const TrueLiteral &) {
+                        rhs += w;
+                    },
+                    [&](const FalseLiteral &) {},
+                    [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
+                        stream << w << " " << prefix << proof_name(cond) << " ";
+                    }}
+                    .visit(simplify_literal(lit));
+            },
+            [&, w = w](const ProofFlag & flag) {
+                stream << w << " " << prefix << proof_name(flag) << " ";
+            },
+            [&, w = w](const IntegerVariableID & var) {
+                overloaded{
+                    [&](const SimpleIntegerVariableID & var) {
+                        auto & [_, bit_vars] = _imp->integer_variable_bits.at(var);
+                        for (auto & [bit_value, bit_name] : bit_vars) {
+                            stream << w * bit_value << " " << prefix << bit_name << " ";
+                        }
+                    },
+                    [&](const ViewOfIntegerVariableID & view) {
+                        if (! view.negate_first) {
+                            auto & [_, bit_vars] = _imp->integer_variable_bits.at(view.actual_variable);
+                            for (auto & [bit_value, bit_name] : bit_vars) {
+                                stream << w * bit_value << " " << prefix << bit_name << " ";
+                            }
+                            rhs += w * view.then_add;
+                        }
+                        else {
+                            auto & [_, bit_vars] = _imp->integer_variable_bits.at(view.actual_variable);
+                            for (auto & [bit_value, bit_name] : bit_vars) {
+                                stream << -w * bit_value << " " << bit_name << " ";
+                            }
+                            rhs += -w * view.then_add;
+                        }
+                    },
+                    [&](const ConstantIntegerVariableID & cvar) {
+                        rhs += -w * cvar.const_value;
+                    }}
+                    .visit(var);
+            },
+            [&, w = w](const ProofOnlySimpleIntegerVariableID & var) {
+                auto & [_, bit_vars] = _imp->integer_variable_bits.at(var);
+                for (auto & [bit_value, bit_name] : bit_vars) {
+                    stream << w * bit_value << " " << bit_name << " ";
+                }
+            }}
+            .visit(v);
+    }
+
+    return {
+        stream.str(), rhs};
 }
 
 auto gcs::innards::debug_string(const ProofOnlySimpleIntegerVariableID & var) -> string

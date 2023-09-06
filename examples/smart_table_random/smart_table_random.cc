@@ -254,12 +254,11 @@ auto test_smart_table(const int & n, mt19937 & rng, bool make_string_rep)
                 return true;
             }},
         ProofOptions{"random_table.opb", "random_table.veripb"});
-
+    cout << stats;
+    cout << "Num solutions: " << stats.solutions << endl;
+    if (make_string_rep) cout << string_rep.str() << endl;
+    // return false;
     if (0 != system("veripb random_table.opb random_table.veripb")) {
-        cout << stats;
-        cout << "Num solutions: " << stats.solutions << endl;
-        if (make_string_rep) cout << string_rep.str() << endl;
-        return false;
     }
 
     return true;
@@ -268,7 +267,7 @@ auto main(int argc, char * argv[]) -> int
 {
     random_device rand_dev;
     auto seed = rand_dev();
-    bool use_string_rep = false;
+    bool use_string_rep = true;
     if (argc >= 2)
         seed = stoll(argv[1]);
     if (argc >= 3)

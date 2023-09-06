@@ -143,7 +143,11 @@ namespace gcs::innards
 
         auto need_all_proof_names_in(const SumOf<Weighted<PseudoBooleanTerm>> & sum) -> void;
 
+        auto all_proof_names_for_term(const PseudoBooleanTerm & term) -> std::vector<std::string>;
+
         auto need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID, Integer) -> void;
+
+        auto weighted_pb_sum_to_string(const WeightedPseudoBooleanSum & sum, const std::string & prefix) -> std::pair<std::string, Integer>;
 
     public:
         /**
@@ -299,6 +303,23 @@ namespace gcs::innards
          * Emit a RED proof step for the specified expression.
          */
         auto emit_red_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> &,
+            const std::vector<std::pair<ProofLiteral, ProofLiteral>> & witness) -> ProofLine;
+
+        /**
+         * Define a preorder using a linear potential function f(x) s.t. vars1 < vars2 if f(vars2) - f(vars1) >= 1.
+         * (Preorders defined in this way can have their transitivity proof hardcoded).
+         */
+        auto define_obviously_transitive_preorder(const std::string &, const std::vector<PseudoBooleanTerm> &,
+            const WeightedPseudoBooleanSum &) -> void;
+
+        /**
+         * Load a preorder for use by the dominance rule.
+         */
+        auto load_preorder(const std::string &, std::vector<PseudoBooleanTerm> &) -> void;
+        /**
+         * Emit a DOM proof step for the specified expression.
+         */
+        auto emit_dom_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> &,
             const std::vector<std::pair<ProofLiteral, ProofLiteral>> & witness) -> ProofLine;
 
         /**

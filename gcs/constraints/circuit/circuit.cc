@@ -2,11 +2,11 @@
 #include <gcs/constraints/circuit/circuit.hh>
 #include <gcs/innards/propagators.hh>
 
-#include <util/enumerate.hh>
-
+#include <iostream>
 #include <list>
 #include <map>
 #include <string>
+#include <util/enumerate.hh>
 #include <utility>
 
 using namespace gcs;
@@ -14,6 +14,8 @@ using namespace gcs::innards;
 
 using std::cmp_less;
 using std::cmp_not_equal;
+using std::cout;
+using std::endl;
 using std::list;
 using std::make_optional;
 using std::make_pair;
@@ -23,6 +25,7 @@ using std::nullopt;
 using std::optional;
 using std::pair;
 using std::size_t;
+using std::string;
 using std::stringstream;
 using std::to_string;
 using std::tuple;
@@ -68,33 +71,46 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state) -> tu
     }
     auto unassigned_handle = initial_state.add_constraint_state(unassigned);
     long dummy = -1; // Not sure why this is necessary but I get a bad_any_cast otherwise
-    // Workaround: persistent constraint state as I don't want this to restore on backtrack
-    auto line_for_starting_cycle_handle = initial_state.add_persistent_constraint_state(dummy);
+
+    // Another workaround: persistent constraint state as I don't want this to restore on backtrack
+    auto prev_wlog_line_handle = initial_state.add_persistent_constraint_state(dummy);
 
     // Define encoding to eliminate sub-cycles
     vector<ProofOnlySimpleIntegerVariableID> position;
     if (propagators.want_definitions()) {
-
-        for (unsigned int idx = 0; idx < _succ.size(); ++idx) {
-            position.emplace_back(propagators.create_proof_only_integer_variable(0_i, Integer(_succ.size() - 1),
-                "pos" + to_string(idx), IntegerVariableProofRepresentation::Bits));
+        auto n = _succ.size();
+        for (unsigned int idx = 0; idx < n; ++idx) {
+            position.emplace_back(propagators.create_proof_only_integer_variable(0_i, Integer(n - 1),
+                "pos" + to_string(idx), IntegerVariableProofRepresentation::DirectOnly));
         }
 
-        for (unsigned int idx = 0; idx < _succ.size(); ++idx) {
+        for (unsigned int idx = 0; idx < n; ++idx) {
             // (succ[i] = j) -> pos[j] = pos[i] + 1
-            for (unsigned int jdx = 0; jdx < _succ.size(); ++jdx) {
+            for (unsigned int jdx = 0; jdx < n; ++jdx) {
                 // if (idx == jdx) continue;
-                auto cv3 = WeightedPseudoBooleanSum{} + 1_i * position[jdx] + -1_i * position[idx] + -1_i * 1_c;
+                // --- Old encoding using bit variables ---
+                //                auto cv3 = WeightedPseudoBooleanSum{} + 1_i * position[jdx] + -1_i * position[idx] + -1_i * 1_c;
+                //                propagators.define(initial_state, move(cv3) == 0_i, HalfReifyOnConjunctionOf{_succ[idx] == Integer{jdx}, position[jdx] != 0_i},
+                //                    "succ[" + to_string(idx) + "] = " + to_string(jdx) + " /\\ pos[" + to_string(jdx) +
+                //                        "] != 0 => pos[" + to_string(jdx) + "] = " + "pos[" + to_string(idx) + "] + 1");
+                //                auto cv4 = WeightedPseudoBooleanSum{} + 1_i * position[idx];
+                //                propagators.define(initial_state, move(cv4) == Integer{static_cast<long long>(n - 1)}, HalfReifyOnConjunctionOf{_succ[idx] == Integer{jdx}, position[jdx] == 0_i},
+                //                    "succ[" + to_string(idx) + "] = " + to_string(jdx) + " /\\ pos[" + to_string(jdx) +
+                //                        "] == 0 => pos[" + to_string(idx) + "] = n-1");
 
-                propagators.define(initial_state, move(cv3) == 0_i, HalfReifyOnConjunctionOf{_succ[idx] == Integer{jdx}, position[jdx] != 0_i},
-                    "succ[" + to_string(idx) + "] = " + to_string(jdx) + " /\\ pos[" + to_string(jdx) +
-                        "] != 0 => pos[" + to_string(jdx) + "] = " + "pos[" + to_string(idx) + "] + 1");
-
-                auto cv4 = WeightedPseudoBooleanSum{} + 1_i * position[idx];
-
-                propagators.define(initial_state, move(cv4) == Integer{static_cast<long long>(_succ.size() - 1)}, HalfReifyOnConjunctionOf{_succ[idx] == Integer{jdx}, position[jdx] == 0_i},
-                    "succ[" + to_string(idx) + "] = " + to_string(jdx) + " /\\ pos[" + to_string(jdx) +
-                        "] == 0 => pos[" + to_string(idx) + "] = n-1");
+                // New encoding using direct variables
+                for (unsigned int k = 0; k < n; ++k) {
+                    auto x_i_neq_j = 1_i * (_succ[idx] != Integer{jdx});
+                    auto p_i_neq_k = 1_i * (position[idx] != Integer{k});
+                    if (k == n - 1) {
+                        propagators.define(initial_state,
+                            WeightedPseudoBooleanSum{} + x_i_neq_j + p_i_neq_k + 1_i * (position[jdx] == 0_i) >= 1_i);
+                    }
+                    else {
+                        propagators.define(initial_state,
+                            WeightedPseudoBooleanSum{} + x_i_neq_j + p_i_neq_k + 1_i * (position[jdx] == Integer{k + 1}) >= 1_i);
+                    }
+                }
             }
         }
     }
@@ -102,18 +118,27 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state) -> tu
     // Infer succ[i] != i at top of search, but no other propagation defined here: use CircuitPrevent or CircuitSCC
     if (_succ.size() > 1) {
         propagators.install([succ = _succ, pos = position](State & state) -> pair<Inference, PropagatorState> {
+            // For experimentation only
+            //            state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) {
+            //                for (int i = 0; i < succ.size(); i++) {
+            //                    WeightedPseudoBooleanSum wsum = WeightedPseudoBooleanSum{} + 1_i * (succ[0] != Integer{i}) + 1_i * (pos[i] == 1_i);
+            //                    proof.emit_rup_proof_line_under_trail(state, wsum >= 1_i);
+            //                }
+            //            }});
+
             auto result = Inference::NoChange;
-            for (auto [idx, s] : enumerate(succ)) {
-                increase_inference_to(result, state.infer_not_equal(s, Integer(idx), JustifyUsingRUP{}));
-                if (result == Inference::Contradiction)
-                    break;
-            }
+            // TODO: Bring this back!
+            //            for (auto [idx, s] : enumerate(succ)) {
+            //                increase_inference_to(result, state.infer_not_equal(s, Integer(idx), JustifyUsingRUP{}));
+            //                if (result == Inference::Contradiction)
+            //                    break;
+            //            }
             return pair{result, PropagatorState::DisableUntilBacktrack};
         },
             Triggers{}, "circuit init");
     }
 
-    return tuple{position, line_for_starting_cycle_handle, unassigned_handle};
+    return tuple{position, prev_wlog_line_handle, unassigned_handle};
 }
 
 auto CircuitBase::describe_for_proof() -> std::string
@@ -123,7 +148,7 @@ auto CircuitBase::describe_for_proof() -> std::string
 
 auto gcs::prevent_small_cycles(
     const vector<IntegerVariableID> & succ,
-    const ConstraintStateHandle & line_for_starting_cycle_handle,
+    const ConstraintStateHandle & prev_wlog_line_handle,
     const ConstraintStateHandle & unassigned_handle,
     const vector<ProofOnlySimpleIntegerVariableID> & pos_vars,
     State & state) -> Inference
@@ -131,7 +156,7 @@ auto gcs::prevent_small_cycles(
 
     auto result = Inference::NoChange;
     auto & unassigned = any_cast<list<IntegerVariableID> &>(state.get_constraint_state(unassigned_handle));
-    auto & line_for_starting_cycle = any_cast<long &>(state.get_persistent_constraint_state(line_for_starting_cycle_handle));
+    auto & prev_wlog_line = any_cast<long &>(state.get_persistent_constraint_state(prev_wlog_line_handle));
     auto k = unassigned.size();
     auto n = succ.size();
     auto end = vector<long>(n, -1);
@@ -156,13 +181,7 @@ auto gcs::prevent_small_cycles(
         known_ends.pop_back();
         increase_inference_to(result,
             state.infer(succ[end[i]] != Integer{i}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
-                if (line_for_starting_cycle != -1)
-                    proof.delete_proof_lines({line_for_starting_cycle});
-                auto previous_proof_level = proof.get_proof_level();
-                proof.enter_proof_level(0);
-                proof.emit_proof_comment("Starting cycle for prevent");
-                line_for_starting_cycle = proof.emit_assertion_proof_line(WeightedPseudoBooleanSum{} + 1_i * (pos_vars[i] == 0_i) >= 1_i);
-                proof.enter_proof_level(previous_proof_level);
+                wlog_choose_vertex_as_position_0(i, succ, prev_wlog_line_handle, pos_vars, state);
                 proof.emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} + 1_i * (succ[end[i]] != Integer{i}) >= 1_i);
             }}));
     }
@@ -213,4 +232,60 @@ auto gcs::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigne
         }
     }
     return result;
+}
+
+auto gcs::wlog_choose_vertex_as_position_0(const long & v, const vector<IntegerVariableID> & succ, const ConstraintStateHandle & prev_wlog_line_handle, const vector<ProofOnlySimpleIntegerVariableID> & pos_vars, State & state) -> ProofLine
+{
+    // Uses the dominance rule to argue that, without loss of generality, we can choose the position of vertex v to be 0
+    auto & prev_wlog_line = any_cast<long &>(state.get_persistent_constraint_state(prev_wlog_line_handle));
+    string pveq = "p" + to_string(v) + "eq";
+    auto n = static_cast<long long>(succ.size());
+    auto dom_line = 0;
+    state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
+        vector<pair<ProofLiteral, ProofLiteral>> witness{};
+        vector<PseudoBooleanTerm> preorder_vars = {};
+
+        for (unsigned int i = 0; i < n; i++) {
+            for (unsigned j = 0; j < n - 1; j++) {
+                witness.emplace_back(pos_vars[i] == Integer{j}, pos_vars[i] == Integer{j + 1});
+            }
+            witness.emplace_back(pos_vars[i] == Integer{n - 1}, pos_vars[i] == 0_i);
+            preorder_vars.emplace_back(pos_vars[v] == Integer{i});
+        }
+
+        proof.emit_proof_comment(" WLOG choose pos[" + to_string(v) + "] = 0");
+
+        // Introduce a new dummy pre_order to allow us to argue by symmetry
+        const string preorder_name = "dummy_p" + to_string(v) + "eq0";
+        WeightedPseudoBooleanSum potential_function{};
+        for (unsigned int i = 0; i < n; i++) {
+            potential_function += Integer{1ll << i} * preorder_vars[i];
+        }
+
+        // Then argue by dominance
+        // Delete the previous wlog derivation, if there was one
+        if (prev_wlog_line != -1)
+            proof.delete_proof_lines({prev_wlog_line});
+
+        proof.define_obviously_transitive_preorder(preorder_name, preorder_vars, potential_function);
+
+        // TODO: Do we need to move all constraints to core set before changing the preorder
+        proof.load_preorder(preorder_name, preorder_vars);
+
+        // Go to root proof level (so we don't try to delete things multiple times)
+        auto previous_proof_level = proof.get_proof_level();
+        proof.enter_proof_level(0);
+
+        // Then finally:
+        prev_wlog_line = proof.emit_dom_proof_line(WeightedPseudoBooleanSum{} + 1_i * (pos_vars[v] == 0_i) >= 1_i, witness);
+        // And return to where we were
+        proof.enter_proof_level(previous_proof_level);
+
+        // Reload the default order (empty)
+        vector<PseudoBooleanTerm> empty_vars{};
+        proof.load_preorder("", empty_vars);
+
+    }});
+
+    return dom_line;
 }

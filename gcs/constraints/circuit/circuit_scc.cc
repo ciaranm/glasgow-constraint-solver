@@ -1,16 +1,22 @@
+#include <cstdlib>
 #include <gcs/constraints/circuit/circuit.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/propagators.hh>
+#include <iostream>
 #include <list>
 #include <set>
+#include <string>
 #include <tuple>
 #include <utility>
 #include <vector>
 
+using std::cout;
 using std::list;
 using std::min;
 using std::pair;
 using std::set;
+using std::string;
+using std::to_string;
 using std::unique_ptr;
 using std::vector;
 
@@ -21,8 +27,9 @@ namespace
 {
     auto select_root(const vector<IntegerVariableID> & succ, State & state) -> long
     {
-        // Might have a better way of selecting root in future
-        return 0;
+        // Generate a random integer n between 0 (inclusive) and succ.size() (exclusive)
+        long n = rand() % succ.size();
+        return n;
     }
 
     auto pos_min(const long a, const long b)
@@ -75,29 +82,52 @@ namespace
             return make_pair(result, back_edges);
     }
 
-    auto justify_disconnected_component(long root, const vector<IntegerVariableID> & succ, const vector<ProofOnlySimpleIntegerVariableID> & pos_vars, State & state)
+    auto justify_disconnected_component(long root, const vector<IntegerVariableID> & succ, const ConstraintStateHandle & prev_wlog_line_handle, const vector<ProofOnlySimpleIntegerVariableID> & pos_vars, State & state)
     {
-        set<long> reachable = {root};
+        set<long> curr_reachable = {root};
+        set<long> new_reachable = {root};
+        set<long> curr_reachable_in_n = {root};
+        set<long> new_reachable_in_n = {root};
+        wlog_choose_vertex_as_position_0(root, succ, prev_wlog_line_handle, pos_vars, state);
 
-        set<long> new_reachable = {};
-        state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) {
-            proof.emit_assertion_proof_line(WeightedPseudoBooleanSum{} + 1_i * (pos_vars[root] == 0_i) >= 1_i);
-        }});
+        auto steps = 1;
+        do {
+            curr_reachable = new_reachable;
+            new_reachable_in_n = {};
+            for (auto val : curr_reachable_in_n) {
+                set<long> next_from_val = {};
+                state.for_each_value(succ[val], [&](Integer v) -> void {
+                    new_reachable_in_n.insert(v.raw_value);
+                    new_reachable.insert(v.raw_value);
+                    next_from_val.insert(v.raw_value);
+                });
+                state.infer_true(JustifyExplicitly{
+                    [&](Proof & proof, vector<ProofLine> & del) {
+                        WeightedPseudoBooleanSum pos_sum{};
+                        pos_sum += 1_i * (pos_vars[val] != Integer{steps - 1});
+                        for (auto node : next_from_val) {
+                            pos_sum += 1_i * (pos_vars[node] == Integer{steps});
+                        }
+                        proof.emit_proof_comment("pos[" + to_string(steps - 1) + "] = " + to_string(val) + " => ");
+                        proof.emit_rup_proof_line_under_trail(state, pos_sum >= 1_i);
+                    }});
+            }
 
-        state.for_each_value(succ[root], [&](Integer v) -> void {
-            new_reachable.insert(v.raw_value);
-        });
-        state.infer_true(JustifyExplicitly{
-            [&](Proof & proof, vector<ProofLine> & del) {
-                WeightedPseudoBooleanSum pos_sum{};
-                for (auto node : new_reachable) {
-                    pos_sum += 1_i * (pos_vars[1] == Integer{node});
-                }
-            }});
+            state.infer_true(JustifyExplicitly{
+                [&](Proof & proof, vector<ProofLine> & del) {
+                    WeightedPseudoBooleanSum pos_sum{};
+                    for (auto node : new_reachable) {
+                        pos_sum += 1_i * (pos_vars[node] == Integer{steps});
+                    }
+                    proof.emit_proof_comment("Reachable after " + to_string(steps) + " steps:");
+                    proof.emit_rup_proof_line_under_trail(state, pos_sum >= 1_i);
+                }});
+            steps++;
+        } while (curr_reachable.size() != new_reachable.size());
     }
 
     auto check_sccs(const vector<IntegerVariableID> & succ, const bool & prune_root, const bool & fix_req,
-        const bool & prune_skip, const vector<ProofOnlySimpleIntegerVariableID> & pos_vars, State & state) -> Inference
+        const bool & prune_skip, const ConstraintStateHandle & prev_wlog_line_handle, const vector<ProofOnlySimpleIntegerVariableID> & pos_vars, State & state) -> Inference
     {
         auto result = Inference::NoChange;
         auto root = select_root(succ, state);
@@ -120,11 +150,21 @@ namespace
                 auto back_edges = explore_result.second;
 
                 if (back_edges.empty()) {
+                    state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) {
+                        proof.emit_proof_comment("No back edges:");
+                    }});
                     increase_inference_to(result, Inference::Contradiction);
                     return false;
                 }
                 else if (fix_req && back_edges.size() == 1) {
-                    increase_inference_to(result, state.infer(succ[back_edges[0].first] == Integer{back_edges[0].second}, JustifyUsingRUP{}));
+                    state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) {
+                        proof.emit_proof_comment("Fix required edge from root node:");
+                    }});
+                    increase_inference_to(result, state.infer(succ[back_edges[0].first] == Integer{back_edges[0].second}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) {
+                        cout << "Doing something?";
+                        proof.emit_proof_comment("hmm");
+                        proof.emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} + 1_i * (succ[back_edges[0].first] == Integer{back_edges[0].second}) >= 1_i);
+                    }}));
                 }
                 start_subtree = end_subtree + 1;
                 end_subtree = count - 1;
@@ -134,14 +174,19 @@ namespace
 
         if (count != succ.size()) {
             // The graph isn't even connected
-            justify_disconnected_component(0, succ, pos_vars, state);
+            justify_disconnected_component(0, succ, prev_wlog_line_handle, pos_vars, state);
             return Inference::Contradiction;
         }
 
         if (prune_root && start_subtree > 1) {
             state.for_each_value_while(succ[root], [&](Integer v) -> bool {
-                if (visit_number[v.raw_value] < start_subtree)
+                if (visit_number[v.raw_value] < start_subtree) {
+                    state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) {
+                        proof.emit_proof_comment("Prune impossible edges from root node:");
+                    }});
                     increase_inference_to(result, state.infer(succ[root] != v, JustifyUsingRUP{}));
+                }
+
                 return true;
             });
         }
@@ -151,14 +196,14 @@ namespace
 
     auto propagate_circuit_using_scc(const vector<IntegerVariableID> & succ, const bool & prune_root,
         const bool & fix_req, const bool & prune_skip, const vector<ProofOnlySimpleIntegerVariableID> & pos_vars,
-        const ConstraintStateHandle & line_for_starting_cycle, const ConstraintStateHandle & unassigned_handle, State & state)
+        const ConstraintStateHandle & prev_wlog_line_handle, const ConstraintStateHandle & unassigned_handle, State & state)
         -> Inference
     {
         auto result = propagate_non_gac_alldifferent(unassigned_handle, state);
         if (result == Inference::Contradiction) return result;
-        increase_inference_to(result, check_sccs(succ, prune_root, fix_req, prune_skip, pos_vars, state));
-        if (result == Inference::Contradiction) return result;
-        increase_inference_to(result, prevent_small_cycles(succ, line_for_starting_cycle, unassigned_handle, pos_vars, state));
+        increase_inference_to(result, check_sccs(succ, prune_root, fix_req, prune_skip, prev_wlog_line_handle, pos_vars, state));
+        //        if (result == Inference::Contradiction) return result;
+        //        increase_inference_to(result, prevent_small_cycles(succ, prev_wlog_line_handle, unassigned_handle, pos_vars, state));
         return result;
     }
 }
@@ -172,7 +217,7 @@ auto CircuitSCC::install(Propagators & propagators, State & initial_state) && ->
 {
     auto set_up_results = CircuitBase::set_up(propagators, initial_state);
     auto pos_vars = get<0>(set_up_results);
-    auto line_for_starting_cycle = get<1>(set_up_results);
+    auto prev_wlog_line_handle = get<1>(set_up_results);
     auto unassigned_handle = get<2>(set_up_results);
 
     Triggers triggers;
@@ -180,9 +225,9 @@ auto CircuitSCC::install(Propagators & propagators, State & initial_state) && ->
     propagators.install(
         [succ = _succ,
             pos_vars = pos_vars,
-            line_for_starting_cycle = line_for_starting_cycle,
+            prev_wlog_line_handle = prev_wlog_line_handle,
             unassigned_handle = unassigned_handle](State & state) -> pair<Inference, PropagatorState> {
-            auto result = propagate_circuit_using_scc(succ, true, true, true, pos_vars, line_for_starting_cycle, unassigned_handle, state);
+            auto result = propagate_circuit_using_scc(succ, false, false, false, pos_vars, prev_wlog_line_handle, unassigned_handle, state);
             return pair{result, PropagatorState::Enable};
         },
         triggers,

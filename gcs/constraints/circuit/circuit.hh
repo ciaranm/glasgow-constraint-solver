@@ -62,6 +62,9 @@ namespace gcs
     auto prevent_small_cycles(const std::vector<IntegerVariableID> &, const innards::ConstraintStateHandle &,
         const innards::ConstraintStateHandle &, const std::vector<innards::ProofOnlySimpleIntegerVariableID> & pos_vars,
         innards::State & state) -> innards::Inference;
+
+    auto wlog_choose_vertex_as_position_0(const long &, const std::vector<IntegerVariableID> &,
+        const innards::ConstraintStateHandle &, const std::vector<innards::ProofOnlySimpleIntegerVariableID> &, innards::State & state) -> innards::ProofLine;
 }
 
 #endif // GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CIRCUIT_HH

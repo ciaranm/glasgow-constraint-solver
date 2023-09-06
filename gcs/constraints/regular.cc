@@ -262,9 +262,9 @@ namespace
                 // Again, want to eliminate this node i.e. prove !state[i][k]
                 for (const auto & q : graph.nodes[i - 1]) {
                     // So first eliminate each previous state/variable combo
-                    state.for_each_value(vars[i], [&](Integer val) -> void {
-                        log_additional_inference({vars[i] != val}, {! state_at_pos_flags[i - 1][q], ! state_at_pos_flags[i][k]}, state);
-                    });
+                    //                    state.for_each_value(vars[i], [&](Integer val) -> void {
+                    //                        log_additional_inference({vars[i] != val}, {! state_at_pos_flags[i - 1][q], ! state_at_pos_flags[i][k]}, state);
+                    //                    });
 
                     // Then eliminate each previous state
                     log_additional_inference({}, {! state_at_pos_flags[i - 1][q], ! state_at_pos_flags[i][k]}, state);
