@@ -91,14 +91,10 @@ namespace
     struct FullNodeData
     {
         ProofFlag reif_flag;
-        ProofFlag weight_ge_reif_flag;
-        ProofLine forward_reif_for_weight_ge_line;
-        ProofFlag weight_le_reif_flag;
-        ProofLine forward_reif_for_weight_le_line;
-        ProofFlag profit_ge_reif_flag;
-        ProofLine forward_reif_for_profit_ge_line;
-        ProofFlag profit_le_reif_flag;
-        ProofLine forward_reif_for_profit_le_line;
+        NodeInequalityData weight_ge;
+        NodeInequalityData weight_le;
+        NodeInequalityData profit_ge;
+        NodeInequalityData profit_le;
     };
 
     template <bool doing_proof_>
@@ -139,10 +135,10 @@ namespace
                                   not_in_full_state = FalseLiteral{};
                 if constexpr (doing_proof_) {
                     if (completed_node_data) {
-                        not_in_weight_ge_state = ! completed_node_data->weight_ge_reif_flag;
-                        not_in_weight_le_state = ! completed_node_data->weight_le_reif_flag;
-                        not_in_profit_ge_state = ! completed_node_data->profit_ge_reif_flag;
-                        not_in_profit_le_state = ! completed_node_data->profit_le_reif_flag;
+                        not_in_weight_ge_state = ! completed_node_data->weight_ge.reif_flag;
+                        not_in_weight_le_state = ! completed_node_data->weight_le.reif_flag;
+                        not_in_profit_ge_state = ! completed_node_data->profit_ge.reif_flag;
+                        not_in_profit_le_state = ! completed_node_data->profit_le.reif_flag;
                         not_in_full_state = ! completed_node_data->reif_flag;
                     }
                 }
@@ -194,7 +190,8 @@ namespace
                                         1_i * profit_le_data->second.reif_flag + 1_i * profit_ge_data->second.reif_flag >=
                                     4_i,
                                 "s" + to_string(layer_number) + "w" + to_string(new_weight.raw_value) + "p" + to_string(new_profit.raw_value));
-                            node_data = growing_layer_nodes.emplace(pair{new_weight, new_profit}, FullNodeData{flag, weight_ge_data->second.reif_flag, weight_ge_data->second.forward_reif_line, weight_le_data->second.reif_flag, weight_le_data->second.forward_reif_line, profit_ge_data->second.reif_flag, profit_ge_data->second.forward_reif_line, profit_le_data->second.reif_flag, profit_le_data->second.forward_reif_line}).first;
+                            node_data = growing_layer_nodes.emplace(pair{new_weight, new_profit},
+                                    FullNodeData{flag, weight_ge_data->second, weight_le_data->second, profit_ge_data->second, profit_le_data->second}).first;
                         }
 
                         auto not_choice = all_vars.at(var_idx) != val;
@@ -203,7 +200,7 @@ namespace
                         if (completed_node_data)
                             state.maybe_proof()->emit_proof_line("p " +
                                 to_string(weight_ge_data->second.reverse_reif_line) + " " +
-                                to_string(completed_node_data->forward_reif_for_weight_ge_line) + " +");
+                                to_string(completed_node_data->weight_ge.forward_reif_line) + " +");
                         state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_weight_ge_state + 1_i * not_choice + 1_i * weight_ge_data->second.reif_flag >= 1_i);
                         state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_full_state + 1_i * not_choice + 1_i * weight_ge_data->second.reif_flag >= 1_i);
 
@@ -211,7 +208,7 @@ namespace
                         if (completed_node_data)
                             state.maybe_proof()->emit_proof_line("p " +
                                 to_string(weight_le_data->second.reverse_reif_line) + " " +
-                                to_string(completed_node_data->forward_reif_for_weight_le_line) + " +");
+                                to_string(completed_node_data->weight_le.forward_reif_line) + " +");
                         state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_weight_le_state + 1_i * not_choice + 1_i * weight_le_data->second.reif_flag >= 1_i);
                         state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_full_state + 1_i * not_choice + 1_i * weight_le_data->second.reif_flag >= 1_i);
 
@@ -219,7 +216,7 @@ namespace
                         if (completed_node_data)
                             state.maybe_proof()->emit_proof_line("p " +
                                 to_string(profit_le_data->second.reverse_reif_line) + " " +
-                                to_string(completed_node_data->forward_reif_for_profit_le_line) + " +");
+                                to_string(completed_node_data->profit_le.forward_reif_line) + " +");
                         state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_profit_le_state + 1_i * not_choice + 1_i * profit_le_data->second.reif_flag >= 1_i);
                         state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_full_state + 1_i * not_choice + 1_i * profit_le_data->second.reif_flag >= 1_i);
 
@@ -227,7 +224,7 @@ namespace
                         if (completed_node_data)
                             state.maybe_proof()->emit_proof_line("p " +
                                 to_string(profit_ge_data->second.reverse_reif_line) + " " +
-                                to_string(completed_node_data->forward_reif_for_profit_ge_line) + " +");
+                                to_string(completed_node_data->profit_ge.forward_reif_line) + " +");
                         state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_profit_ge_state + 1_i * not_choice + 1_i * profit_ge_data->second.reif_flag >= 1_i);
                         state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_full_state + 1_i * not_choice + 1_i * profit_ge_data->second.reif_flag >= 1_i);
 
@@ -313,9 +310,9 @@ namespace
                 if constexpr (doing_proof_) {
                     state.maybe_proof()->emit_proof_comment("infeasible state due to profit being too low");
                     auto profit_var_str = prepare_and_get_bound_p_term(state, profit_var, false);
-                    state.maybe_proof()->emit_proof_line("p " + to_string(final_states_iter->second->forward_reif_for_profit_le_line) +
+                    state.maybe_proof()->emit_proof_line("p " + to_string(final_states_iter->second->profit_le.forward_reif_line) +
                         " " + to_string(opb_profit_lines.second) + " + " + profit_var_str + " +");
-                    state.maybe_proof()->emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} + 1_i * ! final_states_iter->second->profit_le_reif_flag >= 1_i);
+                    state.maybe_proof()->emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} + 1_i * ! final_states_iter->second->profit_le.reif_flag >= 1_i);
                     state.maybe_proof()->emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} + 1_i * ! final_states_iter->second->reif_flag >= 1_i);
                 }
                 completed_layer_nodes.erase(final_states_iter++);
@@ -324,9 +321,9 @@ namespace
                 if constexpr (doing_proof_) {
                     state.maybe_proof()->emit_proof_comment("infeasible state due to weight being too low");
                     auto weight_var_str = prepare_and_get_bound_p_term(state, weight_var, false);
-                    state.maybe_proof()->emit_proof_line("p " + to_string(final_states_iter->second->forward_reif_for_weight_le_line) +
+                    state.maybe_proof()->emit_proof_line("p " + to_string(final_states_iter->second->weight_le.forward_reif_line) +
                         " " + to_string(opb_weight_lines.second) + " + " + weight_var_str + " +");
-                    state.maybe_proof()->emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} + 1_i * ! final_states_iter->second->weight_le_reif_flag >= 1_i);
+                    state.maybe_proof()->emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} + 1_i * ! final_states_iter->second->weight_le.reif_flag >= 1_i);
                     state.maybe_proof()->emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} + 1_i * ! final_states_iter->second->reif_flag >= 1_i);
                 }
                 completed_layer_nodes.erase(final_states_iter++);
@@ -359,20 +356,20 @@ namespace
             if constexpr (doing_proof_) {
                 state.maybe_proof()->emit_proof_comment("select from feasible terminal states");
                 for (auto & [_, data] : completed_layer_nodes) {
-                    auto no_support_weight_ge = trail + 1_i * ! data->weight_ge_reif_flag;
-                    state.maybe_proof()->emit_proof_line("p " + to_string(opb_weight_lines.first) + " " + to_string(data->forward_reif_for_weight_ge_line) + " +");
+                    auto no_support_weight_ge = trail + 1_i * ! data->weight_ge.reif_flag;
+                    state.maybe_proof()->emit_proof_line("p " + to_string(opb_weight_lines.first) + " " + to_string(data->weight_ge.forward_reif_line) + " +");
                     state.maybe_proof()->emit_rup_proof_line(no_support_weight_ge + 1_i * (weight_var >= committed_weight + lowest_weight) >= 1_i);
 
-                    auto no_support_weight_le = trail + 1_i * ! data->weight_le_reif_flag;
-                    state.maybe_proof()->emit_proof_line("p " + to_string(opb_weight_lines.first) + " " + to_string(data->forward_reif_for_weight_le_line) + " +");
-                    state.maybe_proof()->emit_rup_proof_line(no_support_weight_le + 1_i * (weight_var < 1_i + committed_weight + lowest_weight) >= 1_i);
+                    auto no_support_weight_le = trail + 1_i * ! data->weight_le.reif_flag;
+                    state.maybe_proof()->emit_proof_line("p " + to_string(opb_weight_lines.second) + " " + to_string(data->weight_le.forward_reif_line) + " +");
+                    state.maybe_proof()->emit_rup_proof_line(no_support_weight_le + 1_i * (weight_var < 1_i + committed_weight + highest_weight) >= 1_i);
 
-                    auto no_support_profit_ge = trail + 1_i * ! data->profit_ge_reif_flag;
-                    state.maybe_proof()->emit_proof_line("p " + to_string(opb_profit_lines.first) + " " + to_string(data->forward_reif_for_profit_ge_line) + " +");
+                    auto no_support_profit_ge = trail + 1_i * ! data->profit_ge.reif_flag;
+                    state.maybe_proof()->emit_proof_line("p " + to_string(opb_profit_lines.first) + " " + to_string(data->profit_ge.forward_reif_line) + " +");
                     state.maybe_proof()->emit_rup_proof_line(no_support_profit_ge + 1_i * (profit_var >= committed_profit + lowest_profit) >= 1_i);
 
-                    auto no_support_profit_le = trail + 1_i * ! data->profit_le_reif_flag;
-                    state.maybe_proof()->emit_proof_line("p " + to_string(opb_profit_lines.second) + " " + to_string(data->forward_reif_for_profit_le_line) + " +");
+                    auto no_support_profit_le = trail + 1_i * ! data->profit_le.reif_flag;
+                    state.maybe_proof()->emit_proof_line("p " + to_string(opb_profit_lines.second) + " " + to_string(data->profit_le.forward_reif_line) + " +");
                     state.maybe_proof()->emit_rup_proof_line(no_support_profit_le + 1_i * (profit_var < 1_i + committed_profit + highest_profit) >= 1_i);
                 }
 
