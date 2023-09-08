@@ -271,21 +271,29 @@ namespace
             return Inference::Contradiction;
         }
 
+        auto [lowest_weight, highest_weight] = minmax_element(completed_layer_nodes.begin(), completed_layer_nodes.end(),
+            [&](const pair<pair<Integer, Integer>, optional<FullNodeData>> & a,
+                const pair<pair<Integer, Integer>, optional<FullNodeData>> & b) { return a.first.first < b.first.first; });
         auto [lowest_profit, highest_profit] = minmax_element(completed_layer_nodes.begin(), completed_layer_nodes.end(),
             [&](const pair<pair<Integer, Integer>, optional<FullNodeData>> & a,
                 const pair<pair<Integer, Integer>, optional<FullNodeData>> & b) { return a.first.second < b.first.second; });
 
-        auto result = state.infer(profit_var < committed_profit + highest_profit->first.second + 1_i, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) {
-            if constexpr (doing_proof_) {
-                state.maybe_proof()->emit_proof_comment("select from feasible terminal states");
-                for (auto & [_, data] : completed_layer_nodes) {
-                    auto no_support = trail + 1_i * ! data->profit_reif_flag;
-                    proof.emit_proof_line("p " + to_string(opb_profit_line) + " " + to_string(data->forward_reif_for_profit_line) + " +");
-                    proof.emit_rup_proof_line(no_support + 1_i * (profit_var < 1_i + committed_profit + highest_profit->first.second) >= 1_i);
+        auto result = state.infer_all({profit_var < committed_profit + highest_profit->first.second + 1_i,
+                                          weight_var >= committed_weight + lowest_weight->first.second},
+            JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) {
+                if constexpr (doing_proof_) {
+                    state.maybe_proof()->emit_proof_comment("select from feasible terminal states");
+                    for (auto & [_, data] : completed_layer_nodes) {
+                        auto no_support = trail + 1_i * ! data->profit_reif_flag;
+                        proof.emit_proof_line("p " + to_string(opb_weight_line) + " " + to_string(data->forward_reif_for_weight_line) + " +");
+                        proof.emit_rup_proof_line(no_support + 1_i * (weight_var >= committed_weight + lowest_weight->first.second) >= 1_i);
+                        proof.emit_proof_line("p " + to_string(opb_profit_line) + " " + to_string(data->forward_reif_for_profit_line) + " +");
+                        proof.emit_rup_proof_line(no_support + 1_i * (profit_var < 1_i + committed_profit + highest_profit->first.second) >= 1_i);
+                    }
                 }
-            }
-            proof.emit_rup_proof_line(trail + 1_i * (profit_var < 1_i + committed_profit + highest_profit->first.second) >= 1_i);
-        }});
+                proof.emit_rup_proof_line(trail + 1_i * (weight_var >= committed_weight + lowest_weight->first.second) >= 1_i);
+                proof.emit_rup_proof_line(trail + 1_i * (profit_var < 1_i + committed_profit + highest_profit->first.second) >= 1_i);
+            }});
 
         if constexpr (doing_proof_) {
             state.maybe_proof()->forget_proof_level(scoped_proof_sublevel + 1);
