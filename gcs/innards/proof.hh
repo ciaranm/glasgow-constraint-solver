@@ -250,6 +250,11 @@ namespace gcs::innards
         auto infer(const State & state, const Literal & lit, const Justification & why) -> void;
 
         /**
+         * What is our current proof levvel?
+         */
+        [[nodiscard]] auto proof_level() -> int;
+
+        /**
          * Log that we are entering this proof level for deletions.
          */
         auto enter_proof_level(int depth) -> void;
@@ -284,6 +289,13 @@ namespace gcs::innards
          * the current trail.
          */
         auto emit_rup_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> &,
+            ProofLevel level = ProofLevel::Current) -> ProofLine;
+
+        /**
+         * Emit an assert proof step for the specified expression, not subject to
+         * the current trail.
+         */
+        auto emit_assert_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> &,
             ProofLevel level = ProofLevel::Current) -> ProofLine;
 
         /**

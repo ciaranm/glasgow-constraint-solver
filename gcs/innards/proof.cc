@@ -1131,6 +1131,28 @@ auto Proof::emit_rup_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> 
     return result;
 }
 
+auto Proof::emit_assert_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level) -> ProofLine
+{
+    need_all_proof_names_in(ineq.lhs);
+
+    switch (level) {
+    case ProofLevel::Current: break;
+    case ProofLevel::Top: _imp->proof << "# 0\n"; break;
+    }
+
+    _imp->proof << "a ";
+    emit_inequality_to(ineq, nullopt, _imp->proof);
+    _imp->proof << '\n';
+    auto result = ++_imp->proof_line;
+
+    switch (level) {
+    case ProofLevel::Current: break;
+    case ProofLevel::Top: _imp->proof << "# " << _imp->active_proof_level << '\n'; break;
+    }
+
+    return result;
+}
+
 auto Proof::emit_rup_proof_line_under_trail(const State & state, const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
     ProofLevel level) -> ProofLine
 {
@@ -1251,6 +1273,11 @@ auto Proof::need_constraint_saying_variable_takes_at_least_one_value(IntegerVari
             return need_constraint_saying_variable_takes_at_least_one_value(var.actual_variable);
         }}
         .visit(var);
+}
+
+auto Proof::proof_level() -> int
+{
+    return _imp->active_proof_level;
 }
 
 auto Proof::enter_proof_level(int depth) -> void
