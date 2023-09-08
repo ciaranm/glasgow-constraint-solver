@@ -31,8 +31,17 @@ using namespace gcs;
 
 auto check_results(const set<tuple<int, int, vector<int>>> & expected, const set<tuple<int, int, vector<int>>> & actual) -> bool
 {
-    if (expected != actual)
+    if (expected != actual) {
+        cerr << "expected != actual, expected " << expected.size() << " solutions, got " << actual.size() << endl;
+        for (auto & e : expected)
+            if (! actual.contains(e)) {
+                cerr << "missing: " << get<0>(e) << " " << get<1>(e);
+                for (auto & v : get<2>(e))
+                    cerr << " " << v;
+                cerr << endl;
+            }
         return false;
+    }
 
     if (0 != system("veripb knapsack_test.opb knapsack_test.veripb"))
         return false;
