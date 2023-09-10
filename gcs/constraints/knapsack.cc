@@ -126,7 +126,10 @@ namespace
         vector<WeightedPseudoBooleanSum> sums_so_far(coeffs.size());
 
         // for each variable in turn...
-        for (const auto & [layer_number, var_idx] : enumerate(undetermined_var_indices)) {
+        for (const auto & [the_layer_number, the_var_idx] : enumerate(undetermined_var_indices)) {
+            const auto & layer_number = the_layer_number; // clang
+            const auto & var_idx = the_var_idx; // clang
+
             for (const auto & [idx, c] : enumerate(coeffs))
                 sums_so_far.at(idx) += c.at(var_idx) * all_vars.at(var_idx);
 
@@ -134,7 +137,10 @@ namespace
             vector<map<Integer, NodeInequalityData>> growing_layer_ge_datas(totals.size()), growing_layer_le_datas(totals.size());
 
             // for each state on the prior layer...
-            for (auto & [sums, completed_node_data] : completed_layer_nodes) {
+            for (const auto & [the_sums, the_completed_node_data] : completed_layer_nodes) {
+                const auto & sums = the_sums;                               // clang...
+                const auto & completed_node_data = the_completed_node_data; // clang...
+
                 vector<PseudoBooleanTerm> not_in_ge_states(totals.size(), FalseLiteral{}), not_in_le_states(totals.size(), FalseLiteral{});
                 PseudoBooleanTerm not_in_full_state = FalseLiteral{};
                 if constexpr (doing_proof_) {
@@ -366,7 +372,8 @@ namespace
         }
         else {
             vector<Literal> inferences;
-            for (const auto & [x, _] : enumerate(totals)) {
+            for (const auto & [the_x, _] : enumerate(totals)) {
+                auto x = the_x; // clang
                 auto [lowest_iter, highest_iter] = minmax_element(completed_layer_nodes.begin(), completed_layer_nodes.end(),
                     [&](const pair<vector<Integer>, optional<FullNodeData>> & a,
                         const pair<vector<Integer>, optional<FullNodeData>> & b) { return a.first.at(x) < b.first.at(x); });
