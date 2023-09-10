@@ -54,7 +54,7 @@ auto main(int argc, char * argv[]) -> int
     }
 
     Problem p;
-    auto items = p.create_integer_variable_vector(7, 0_i, 1_i, "item");
+    auto items = p.create_integer_variable_vector(7, 0_i, 6_i, "item");
     auto profit = p.create_integer_variable(0_i, 10000_i, "profit");
     auto weight = p.create_integer_variable(0_i, 14_i, "weight");
 

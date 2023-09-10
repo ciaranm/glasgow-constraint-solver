@@ -16,6 +16,7 @@
 using std::cerr;
 using std::cmp_equal;
 using std::endl;
+using std::flush;
 using std::function;
 using std::max;
 using std::mt19937;
@@ -50,11 +51,11 @@ auto check_results(const set<tuple<vector<int>, vector<int>>> & expected, const 
     return true;
 }
 
-auto run_knapsack_test(const vector<vector<int>> & coeffs, const vector<pair<int, int>> & bounds) -> bool
+auto run_knapsack_test(int minval, int maxval, const vector<vector<int>> & coeffs, const vector<pair<int, int>> & bounds) -> bool
 {
-    cerr << "knapsack ";
+    cerr << "knapsack " << minval << " " << maxval;
     for (const auto & c : coeffs) {
-        cerr << "[";
+        cerr << " [";
         for (auto & w : c)
             cerr << " " << w << " ";
         cerr << "]";
@@ -63,7 +64,7 @@ auto run_knapsack_test(const vector<vector<int>> & coeffs, const vector<pair<int
     for (const auto & b : bounds) {
         cerr << " (" << b.first << ", " << b.second << ")";
     }
-    cerr << endl;
+    cerr << ":" << flush;
 
     set<tuple<vector<int>, vector<int>>> expected, actual;
     function<auto(int, vector<int>)->void> build = [&](int pos, vector<int> sol) {
@@ -85,19 +86,19 @@ auto run_knapsack_test(const vector<vector<int>> & coeffs, const vector<pair<int
                 expected.emplace(sums, sol);
         }
         else {
-            sol.push_back(0);
-            build(pos + 1, sol);
-            sol.pop_back();
-
-            sol.push_back(1);
-            build(pos + 1, sol);
-            sol.pop_back();
+            for (int val = minval; val <= maxval; ++val) {
+                sol.push_back(val);
+                build(pos + 1, sol);
+                sol.pop_back();
+            }
         }
     };
     build(0, {});
 
+    cerr << " " << expected.size() << endl;
+
     Problem p;
-    auto vs = p.create_integer_variable_vector(coeffs[0].size(), 0_i, 1_i);
+    auto vs = p.create_integer_variable_vector(coeffs[0].size(), Integer(minval), Integer(maxval));
     vector<IntegerVariableID> bs;
     for (unsigned i = 0; i < coeffs.size(); ++i)
         bs.push_back(p.create_integer_variable(Integer(bounds[i].first), Integer(bounds[i].second)));
@@ -124,41 +125,46 @@ auto run_knapsack_test(const vector<vector<int>> & coeffs, const vector<pair<int
 
 auto main(int, char *[]) -> int
 {
-    vector<tuple<vector<vector<int>>, vector<pair<int, int>>>> data = {
-        {{{2, 3, 4}, {2, 3, 4}}, {{0, 8}, {3, 1000}}},
-        {{{2, 3, 4}, {2, 3, 4}}, {{3, 8}, {3, 1000}}},
-        {{{2, 3, 4}, {2, 3, 4}}, {{0, 8}, {3, 5}}},
-        {{{1, 3, 4}, {2, 0, 8}}, {{0, 8}, {3, 1000}}},
-        {{{2, 0, 8}, {1, 3, 4}}, {{0, 8}, {3, 1000}}},
-        {{{2, 0, 8}, {2, 0, 8}}, {{0, 8}, {3, 1000}}},
-        {{{2, 2, 2, 2, 2}, {2, 2, 2, 2, 2}}, {{0, 5}, {5, 1000}}},
-        {{{3, 3, 2, 3}, {2, 5, 6, 8}}, {{0, 7}, {4, 1000}}},
-        {{{8, 2, 4, 3}, {6, 5, 5, 6}}, {{0, 4}, {13, 1000}}},
-        {{{5, 4, 8, 7}, {2, 5, 1, 5}}, {{0, 12}, {5, 1000}}},
-        {{{8, 7, 4, 8}, {4, 3, 4, 4}}, {{0, 18}, {10, 1000}}},
-        {{{7, 4, 4, 7}, {1, 2, 1, 0}}, {{18, 19}, {3, 8}}}};
+    vector<tuple<int, int, vector<vector<int>>, vector<pair<int, int>>>> data = {
+        {0, 1, {{2, 3, 4}, {2, 3, 4}}, {{0, 8}, {3, 1000}}},
+        {0, 1, {{2, 3, 4}, {2, 3, 4}}, {{3, 8}, {3, 1000}}},
+        {0, 1, {{2, 3, 4}, {2, 3, 4}}, {{0, 8}, {3, 5}}},
+        {0, 1, {{1, 3, 4}, {2, 0, 8}}, {{0, 8}, {3, 1000}}},
+        {0, 1, {{2, 0, 8}, {1, 3, 4}}, {{0, 8}, {3, 1000}}},
+        {0, 1, {{2, 0, 8}, {2, 0, 8}}, {{0, 8}, {3, 1000}}},
+        {0, 1, {{2, 2, 2, 2, 2}, {2, 2, 2, 2, 2}}, {{0, 5}, {5, 1000}}},
+        {0, 1, {{3, 3, 2, 3}, {2, 5, 6, 8}}, {{0, 7}, {4, 1000}}},
+        {0, 1, {{8, 2, 4, 3}, {6, 5, 5, 6}}, {{0, 4}, {13, 1000}}},
+        {0, 1, {{5, 4, 8, 7}, {2, 5, 1, 5}}, {{0, 12}, {5, 1000}}},
+        {0, 1, {{8, 7, 4, 8}, {4, 3, 4, 4}}, {{0, 18}, {10, 1000}}},
+        {0, 1, {{7, 4, 4, 7}, {1, 2, 1, 0}}, {{18, 19}, {3, 8}}}};
 
     random_device rand_dev;
     mt19937 rand(rand_dev());
     for (int x = 0; x < 10; ++x) {
-        uniform_int_distribution n_coeffs_dist(1, 4), size_dist(1, 4), item_dist(0, 8), bound_dist(0, 40), delta_dist(0, 30);
+        uniform_int_distribution n_coeffs_dist(1, 4), size_dist(1, 4), item_dist(0, 8), bound_dist(0, 40), delta_dist(0, 30),
+            minval_dist(0, 2), maxval_dist(1, 3);
         auto size = size_dist(rand);
         auto n_coeffs = n_coeffs_dist(rand);
+        auto minval = minval_dist(rand);
+        auto maxval = minval + maxval_dist(rand);
+
         vector<vector<int>> c(n_coeffs);
         for (auto i = 0; i < size; ++i)
             for (int k = 0; k < n_coeffs; ++k)
                 c[k].push_back(item_dist(rand));
 
         vector<pair<int, int>> boundses;
-        for (unsigned k = 0; k < n_coeffs; ++k) {
-            auto wb = bound_dist(rand);
-            boundses.emplace_back(max(0, wb - delta_dist(rand)), wb);
+        for (int k = 0; k < n_coeffs; ++k) {
+            auto wb = bound_dist(rand) + 10 * maxval;
+            boundses.emplace_back(max(0, wb - (15 * maxval + delta_dist(rand))), wb);
         }
-        data.emplace_back(c, boundses);
+
+        data.emplace_back(minval, maxval, c, boundses);
     }
 
-    for (auto & [coeffs, bounds] : data)
-        if (! run_knapsack_test(coeffs, bounds))
+    for (auto & [minval, maxval, coeffs, bounds] : data)
+        if (! run_knapsack_test(minval, maxval, coeffs, bounds))
             return EXIT_FAILURE;
 
     return EXIT_SUCCESS;

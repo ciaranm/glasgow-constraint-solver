@@ -376,12 +376,9 @@ namespace
             auto val = state.optional_single_value(v);
             if (! val)
                 undetermined_vars.push_back(idx);
-            else if (1_i == *val) {
+            else
                 for (const auto & [x, _] : enumerate(committed_sums))
-                    committed_sums.at(x) += coeffs.at(x).at(idx);
-            }
-            else if (0_i != *val)
-                throw UnexpectedException{"can only support 0-1 variables for knapsack"};
+                    committed_sums.at(x) += *val * coeffs.at(x).at(idx);
         }
 
         auto inference = Inference::NoChange;
@@ -431,13 +428,13 @@ auto Knapsack::install(Propagators & propagators, State & initial_state) && -> v
             if (c < 0_i)
                 throw UnexpectedException{"not sure what to do about negative coefficients for knapsack"};
 
+    for (auto & v : _vars)
+        if (initial_state.lower_bound(v) < 0_i)
+            throw UnexpectedException{"can only support non-negative variables for knapsack"};
+
     for (auto & t : _totals)
         if (initial_state.lower_bound(t) < 0_i)
             throw UnexpectedException{"not sure what to do about negative permitted totals for knapsack"};
-
-    for (auto & v : _vars)
-        if (initial_state.bounds(v) != pair{0_i, 1_i})
-            throw UnexpectedException{"can only support 0-1 variables for knapsack"};
 
     vector<pair<ProofLine, ProofLine>> eqns_lines;
     if (propagators.want_definitions()) {
