@@ -124,6 +124,8 @@ namespace
         }
 
         vector<WeightedPseudoBooleanSum> sums_so_far(coeffs.size());
+
+        // for each variable in turn...
         for (const auto & [layer_number, var_idx] : enumerate(undetermined_var_indices)) {
             for (const auto & [idx, c] : enumerate(coeffs))
                 sums_so_far.at(idx) += c.at(var_idx) * all_vars.at(var_idx);
@@ -131,6 +133,7 @@ namespace
             map<vector<Integer>, optional<FullNodeData>> growing_layer_nodes;
             vector<map<Integer, NodeInequalityData>> growing_layer_ge_datas(totals.size()), growing_layer_le_datas(totals.size());
 
+            // for each state on the prior layer...
             for (auto & [sums, completed_node_data] : completed_layer_nodes) {
                 vector<PseudoBooleanTerm> not_in_ge_states(totals.size(), FalseLiteral{}), not_in_le_states(totals.size(), FalseLiteral{});
                 PseudoBooleanTerm not_in_full_state = FalseLiteral{};
@@ -148,12 +151,17 @@ namespace
                 vector<vector<ProofFlag>> feasible_ge_flags(totals.size()), feasible_le_flags(totals.size());
                 vector<ProofFlag> feasible_node_flags;
 
+                // for each value in this variable's value...
                 state.for_each_value(all_vars.at(var_idx), [&](Integer val) {
+                    // for each equation, calculate the partial sums of all the
+                    // variables up to and including this one.
                     vector<Integer> new_sums(totals.size(), 0_i);
                     for (const auto & [x, v] : enumerate(totals))
                         new_sums.at(x) = sums.at(x) + val * coeffs.at(x).at(var_idx);
 
                     if constexpr (! doing_proof_) {
+                        // because everything is non-negative, we can eliminate states where the
+                        // partial sum is already too large.
                         bool bounds_violation = false;
                         for (const auto & [x, _] : enumerate(totals)) {
                             if (committed.at(x) + new_sums.at(x) > bounds.at(x).second) {
@@ -161,10 +169,14 @@ namespace
                                 break;
                             }
                         }
+
+                        // if we're feasible, add us to the growing layer
                         if (! bounds_violation)
                             growing_layer_nodes.emplace(new_sums, nullopt);
                     }
                     else {
+                        // build up extension variables representing partial sum >= actual value and
+                        // partial sum <= actual value for each equation.
                         vector<typename map<Integer, NodeInequalityData>::const_iterator> ge_datas, le_datas;
                         for (const auto & [x, _] : enumerate(totals)) {
                             auto ge_data = growing_layer_ge_datas.at(x).find(new_sums.at(x));
@@ -186,6 +198,9 @@ namespace
                             le_datas.push_back(le_data);
                         }
 
+                        // build an extension variable representing our entire
+                        // state, which is that each partial sum is both >= and
+                        // <= its actual value
                         auto node_data = growing_layer_nodes.find(new_sums);
                         if (node_data == growing_layer_nodes.end()) {
                             vector<NodeInequalityData> les, ges;
@@ -209,7 +224,10 @@ namespace
 
                         auto not_choice = all_vars.at(var_idx) != val;
 
+                        // show that if we were in our parent state, and made the current branching
+                        // choice, then our new state variables must be true.
                         for (const auto & [x, _] : enumerate(totals)) {
+                            // current choices and branch -> partial sum >= value
                             if (completed_node_data)
                                 state.maybe_proof()->emit_proof_line("p " +
                                         to_string(ge_datas.at(x)->second.reverse_reif_line) + " " +
@@ -220,6 +238,7 @@ namespace
                             state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_full_state + 1_i * not_choice + 1_i * ge_datas.at(x)->second.reif_flag >= 1_i,
                                 ProofLevel::Temporary);
 
+                            // current choices and branch -> partial sum <= value
                             if (completed_node_data)
                                 state.maybe_proof()->emit_proof_line("p " +
                                         to_string(le_datas.at(x)->second.reverse_reif_line) + " " +
@@ -231,6 +250,7 @@ namespace
                                 ProofLevel::Temporary);
                         }
 
+                        // current choices and branch -> current state
                         state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_full_state + 1_i * not_choice + 1_i * node_data->second->reif_flag >= 1_i,
                             ProofLevel::Temporary);
 
@@ -264,7 +284,7 @@ namespace
                 });
 
                 if constexpr (doing_proof_) {
-                    state.maybe_proof()->emit_proof_comment("select from feasible choices for child");
+                    // we must select at least one feasible choice from this variable's values
                     WeightedPseudoBooleanSum must_pick_one = trail + 1_i * not_in_full_state;
                     WeightedPseudoBooleanSum must_pick_one_val = must_pick_one, must_pick_one_node = must_pick_one;
 
@@ -288,6 +308,8 @@ namespace
                 }
             }
 
+            // because everything is non-negative, we can eliminate states where the
+            // partial sum is already too large.
             erase_if(growing_layer_nodes, [&](const auto & item) {
                 const auto & [sums, _] = item;
                 for (const auto & [x, _] : enumerate(totals))
@@ -297,6 +319,7 @@ namespace
             });
 
             if constexpr (doing_proof_) {
+                // we must select at least one of the feasible states from the layer we've just built
                 state.maybe_proof()->emit_proof_comment("select from feasible choices for layer");
                 WeightedPseudoBooleanSum must_pick_one = trail;
                 for (auto & [_, data] : growing_layer_nodes)
