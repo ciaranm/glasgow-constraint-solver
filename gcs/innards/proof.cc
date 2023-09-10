@@ -974,16 +974,10 @@ auto Proof::infer(const State & state, const Literal & lit, const Justification 
 
 auto Proof::emit_proof_line(const string & s, ProofLevel level) -> ProofLine
 {
-    switch (level) {
-    case ProofLevel::Current: break;
-    case ProofLevel::Top: _imp->proof << "# 0\n"; break;
-    }
+    switch_to_proof_level(level);
     _imp->proof << s << '\n';
     auto result = ++_imp->proof_line;
-    switch (level) {
-    case ProofLevel::Current: break;
-    case ProofLevel::Top: _imp->proof << "# " << _imp->active_proof_level << '\n'; break;
-    }
+    switch_to_current_proof_level_from(level);
     return result;
 }
 
@@ -1112,44 +1106,28 @@ auto Proof::emit_inequality_to(const SumLessEqual<Weighted<PseudoBooleanTerm>> &
 auto Proof::emit_rup_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level) -> ProofLine
 {
     need_all_proof_names_in(ineq.lhs);
-
-    switch (level) {
-    case ProofLevel::Current: break;
-    case ProofLevel::Top: _imp->proof << "# 0\n"; break;
-    }
+    switch_to_proof_level(level);
 
     _imp->proof << "u ";
     emit_inequality_to(ineq, nullopt, _imp->proof);
     _imp->proof << '\n';
     auto result = ++_imp->proof_line;
 
-    switch (level) {
-    case ProofLevel::Current: break;
-    case ProofLevel::Top: _imp->proof << "# " << _imp->active_proof_level << '\n'; break;
-    }
-
+    switch_to_current_proof_level_from(level);
     return result;
 }
 
 auto Proof::emit_assert_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level) -> ProofLine
 {
     need_all_proof_names_in(ineq.lhs);
-
-    switch (level) {
-    case ProofLevel::Current: break;
-    case ProofLevel::Top: _imp->proof << "# 0\n"; break;
-    }
+    switch_to_proof_level(level);
 
     _imp->proof << "a ";
     emit_inequality_to(ineq, nullopt, _imp->proof);
     _imp->proof << '\n';
     auto result = ++_imp->proof_line;
 
-    switch (level) {
-    case ProofLevel::Current: break;
-    case ProofLevel::Top: _imp->proof << "# " << _imp->active_proof_level << '\n'; break;
-    }
-
+    switch_to_current_proof_level_from(level);
     return result;
 }
 
@@ -1167,11 +1145,7 @@ auto Proof::emit_red_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> 
     ProofLevel level) -> ProofLine
 {
     need_all_proof_names_in(ineq.lhs);
-
-    switch (level) {
-    case ProofLevel::Current: break;
-    case ProofLevel::Top: _imp->proof << "# 0\n"; break;
-    }
+    switch_to_proof_level(level);
 
     _imp->proof << "red ";
     emit_inequality_to(ineq, nullopt, _imp->proof);
@@ -1194,12 +1168,7 @@ auto Proof::emit_red_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> 
     _imp->proof << " ;\n";
 
     auto result = ++_imp->proof_line;
-
-    switch (level) {
-    case ProofLevel::Current: break;
-    case ProofLevel::Top: _imp->proof << "# " << _imp->active_proof_level << '\n'; break;
-    }
-
+    switch_to_current_proof_level_from(level);
     return result;
 }
 
@@ -1207,11 +1176,7 @@ auto Proof::emit_red_proof_lines_reifying(const SumLessEqual<Weighted<PseudoBool
     ProofLevel level) -> pair<ProofLine, ProofLine>
 {
     need_all_proof_names_in(ineq.lhs);
-
-    switch (level) {
-    case ProofLevel::Current: break;
-    case ProofLevel::Top: _imp->proof << "# 0\n"; break;
-    }
+    switch_to_proof_level(level);
 
     _imp->proof << "red ";
     emit_inequality_to(ineq, {{reif}}, _imp->proof);
@@ -1226,11 +1191,7 @@ auto Proof::emit_red_proof_lines_reifying(const SumLessEqual<Weighted<PseudoBool
     _imp->proof << " ;\n";
     auto reverse_result = ++_imp->proof_line;
 
-    switch (level) {
-    case ProofLevel::Current: break;
-    case ProofLevel::Top: _imp->proof << "# " << _imp->active_proof_level << '\n'; break;
-    }
-
+    switch_to_current_proof_level_from(level);
     return pair{forward_result, reverse_result};
 }
 
@@ -1275,9 +1236,40 @@ auto Proof::need_constraint_saying_variable_takes_at_least_one_value(IntegerVari
         .visit(var);
 }
 
+auto Proof::switch_to_current_proof_level_from(ProofLevel level) -> void
+{
+    switch (level) {
+    case ProofLevel::Current:
+        break;
+    case ProofLevel::Top:
+    case ProofLevel::Temporary:
+        _imp->proof << "# " << _imp->active_proof_level << '\n';
+        break;
+    }
+}
+
+auto Proof::switch_to_proof_level(ProofLevel level) -> void
+{
+    switch (level) {
+    case ProofLevel::Current:
+        break;
+    case ProofLevel::Top:
+        _imp->proof << "# 0\n";
+        break;
+    case ProofLevel::Temporary:
+        _imp->proof << "# " << temporary_proof_level() << '\n';
+        break;
+    }
+}
+
 auto Proof::proof_level() -> int
 {
     return _imp->active_proof_level;
+}
+
+auto Proof::temporary_proof_level() -> int
+{
+    return _imp->active_proof_level + 1;
 }
 
 auto Proof::enter_proof_level(int depth) -> void

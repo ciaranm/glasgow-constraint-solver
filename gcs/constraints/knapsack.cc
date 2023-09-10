@@ -170,7 +170,8 @@ namespace
                             auto ge_data = growing_layer_ge_datas.at(x).find(new_sums.at(x));
                             if (ge_data == growing_layer_ge_datas.at(x).end()) {
                                 auto [flag, fwd, rev] = state.maybe_proof()->create_proof_flag_reifying(
-                                    sums_so_far.at(x) >= new_sums.at(x), "s" + to_string(layer_number) + "x" + to_string(x) + "ge" + to_string(new_sums.at(x).raw_value));
+                                    sums_so_far.at(x) >= new_sums.at(x), "s" + to_string(layer_number) + "x" + to_string(x) + "ge" + to_string(new_sums.at(x).raw_value),
+                                    ProofLevel::Temporary);
                                 ge_data = growing_layer_ge_datas.at(x).emplace(new_sums.at(x), NodeInequalityData{flag, fwd, rev}).first;
                             }
                             ge_datas.push_back(ge_data);
@@ -178,7 +179,8 @@ namespace
                             auto le_data = growing_layer_le_datas.at(x).find(new_sums.at(x));
                             if (le_data == growing_layer_le_datas.at(x).end()) {
                                 auto [flag, fwd, rev] = state.maybe_proof()->create_proof_flag_reifying(
-                                    sums_so_far.at(x) <= new_sums.at(x), "s" + to_string(layer_number) + "x" + to_string(x) + "le" + to_string(new_sums.at(x).raw_value));
+                                    sums_so_far.at(x) <= new_sums.at(x), "s" + to_string(layer_number) + "x" + to_string(x) + "le" + to_string(new_sums.at(x).raw_value),
+                                    ProofLevel::Temporary);
                                 le_data = growing_layer_le_datas.at(x).emplace(new_sums.at(x), NodeInequalityData{flag, fwd, rev}).first;
                             }
                             le_datas.push_back(le_data);
@@ -201,7 +203,7 @@ namespace
                             }
 
                             auto [flag, _1, _2] = state.maybe_proof()->create_proof_flag_reifying(all >= Integer(all.terms.size()),
-                                "s" + to_string(layer_number) + "x" + name);
+                                "s" + to_string(layer_number) + "x" + name, ProofLevel::Temporary);
                             node_data = growing_layer_nodes.emplace(new_sums, FullNodeData{flag, ges, les}).first;
                         }
 
@@ -210,20 +212,27 @@ namespace
                         for (const auto & [x, _] : enumerate(totals)) {
                             if (completed_node_data)
                                 state.maybe_proof()->emit_proof_line("p " +
-                                    to_string(ge_datas.at(x)->second.reverse_reif_line) + " " +
-                                    to_string(completed_node_data->ges.at(x).forward_reif_line) + " +");
-                            state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_ge_states.at(x) + 1_i * not_choice + 1_i * ge_datas.at(x)->second.reif_flag >= 1_i);
-                            state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_full_state + 1_i * not_choice + 1_i * ge_datas.at(x)->second.reif_flag >= 1_i);
+                                        to_string(ge_datas.at(x)->second.reverse_reif_line) + " " +
+                                        to_string(completed_node_data->ges.at(x).forward_reif_line) + " +",
+                                    ProofLevel::Temporary);
+                            state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_ge_states.at(x) + 1_i * not_choice + 1_i * ge_datas.at(x)->second.reif_flag >= 1_i,
+                                ProofLevel::Temporary);
+                            state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_full_state + 1_i * not_choice + 1_i * ge_datas.at(x)->second.reif_flag >= 1_i,
+                                ProofLevel::Temporary);
 
                             if (completed_node_data)
                                 state.maybe_proof()->emit_proof_line("p " +
-                                    to_string(le_datas.at(x)->second.reverse_reif_line) + " " +
-                                    to_string(completed_node_data->les.at(x).forward_reif_line) + " +");
-                            state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_le_states.at(x) + 1_i * not_choice + 1_i * le_datas.at(x)->second.reif_flag >= 1_i);
-                            state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_full_state + 1_i * not_choice + 1_i * le_datas.at(x)->second.reif_flag >= 1_i);
+                                        to_string(le_datas.at(x)->second.reverse_reif_line) + " " +
+                                        to_string(completed_node_data->les.at(x).forward_reif_line) + " +",
+                                    ProofLevel::Temporary);
+                            state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_le_states.at(x) + 1_i * not_choice + 1_i * le_datas.at(x)->second.reif_flag >= 1_i,
+                                ProofLevel::Temporary);
+                            state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_full_state + 1_i * not_choice + 1_i * le_datas.at(x)->second.reif_flag >= 1_i,
+                                ProofLevel::Temporary);
                         }
 
-                        state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_full_state + 1_i * not_choice + 1_i * node_data->second->reif_flag >= 1_i);
+                        state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_full_state + 1_i * not_choice + 1_i * node_data->second->reif_flag >= 1_i,
+                            ProofLevel::Temporary);
 
                         // because everything is non-negative, we can eliminate states where the
                         // partial sum is already too large.
@@ -231,9 +240,13 @@ namespace
                         for (const auto & [x, _] : enumerate(totals)) {
                             if (committed.at(x) + new_sums.at(x) > bounds.at(x).second) {
                                 auto weight_var_str = prepare_and_get_bound_p_term(state, totals.at(x), true);
-                                state.maybe_proof()->emit_proof_line("p " + to_string(ge_datas.at(x)->second.forward_reif_line) + " " + to_string(opb_lines->at(x).first) + " + " + weight_var_str + " +");
-                                state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_ge_states.at(x) + 1_i * not_choice >= 1_i);
-                                state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_full_state + 1_i * not_choice >= 1_i);
+                                state.maybe_proof()->emit_proof_line("p " + to_string(ge_datas.at(x)->second.forward_reif_line) + " " +
+                                        to_string(opb_lines->at(x).first) + " + " + weight_var_str + " +",
+                                    ProofLevel::Temporary);
+                                state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_ge_states.at(x) + 1_i * not_choice >= 1_i,
+                                    ProofLevel::Temporary);
+                                state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_full_state + 1_i * not_choice >= 1_i,
+                                    ProofLevel::Temporary);
                                 eliminated = true;
                                 break;
                             }
@@ -257,7 +270,7 @@ namespace
 
                     for (auto & f : feasible_choices)
                         must_pick_one_val += 1_i * (all_vars.at(var_idx) == f);
-                    state.maybe_proof()->emit_rup_proof_line(must_pick_one_val >= 1_i);
+                    state.maybe_proof()->emit_rup_proof_line(must_pick_one_val >= 1_i, ProofLevel::Temporary);
 
                     for (const auto & [x, _] : enumerate(totals)) {
                         auto must_pick_one_le = must_pick_one, must_pick_one_ge = must_pick_one;
@@ -265,13 +278,13 @@ namespace
                             must_pick_one_le += 1_i * f;
                         for (auto & f : feasible_ge_flags.at(x))
                             must_pick_one_ge += 1_i * f;
-                        state.maybe_proof()->emit_rup_proof_line(must_pick_one_le >= 1_i);
-                        state.maybe_proof()->emit_rup_proof_line(must_pick_one_ge >= 1_i);
+                        state.maybe_proof()->emit_rup_proof_line(must_pick_one_le >= 1_i, ProofLevel::Temporary);
+                        state.maybe_proof()->emit_rup_proof_line(must_pick_one_ge >= 1_i, ProofLevel::Temporary);
                     }
 
                     for (auto & f : feasible_node_flags)
                         must_pick_one_node += 1_i * f;
-                    state.maybe_proof()->emit_rup_proof_line(must_pick_one_node >= 1_i);
+                    state.maybe_proof()->emit_rup_proof_line(must_pick_one_node >= 1_i, ProofLevel::Temporary);
                 }
             }
 
@@ -288,7 +301,7 @@ namespace
                 WeightedPseudoBooleanSum must_pick_one = trail;
                 for (auto & [_, data] : growing_layer_nodes)
                     must_pick_one += 1_i * data->reif_flag;
-                state.maybe_proof()->emit_rup_proof_line(must_pick_one >= 1_i);
+                state.maybe_proof()->emit_rup_proof_line(must_pick_one >= 1_i, ProofLevel::Temporary);
             }
 
             completed_layer_nodes = move(growing_layer_nodes);
@@ -303,9 +316,12 @@ namespace
                     if constexpr (doing_proof_) {
                         auto weight_var_str = prepare_and_get_bound_p_term(state, totals.at(x), false);
                         state.maybe_proof()->emit_proof_line("p " + to_string(final_states_iter->second->les.at(x).forward_reif_line) +
-                            " " + to_string(opb_lines->at(x).second) + " + " + weight_var_str + " +");
-                        state.maybe_proof()->emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} + 1_i * ! final_states_iter->second->les.at(x).reif_flag >= 1_i);
-                        state.maybe_proof()->emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} + 1_i * ! final_states_iter->second->reif_flag >= 1_i);
+                                " " + to_string(opb_lines->at(x).second) + " + " + weight_var_str + " +",
+                            ProofLevel::Temporary);
+                        state.maybe_proof()->emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} + 1_i * ! final_states_iter->second->les.at(x).reif_flag >= 1_i,
+                            ProofLevel::Temporary);
+                        state.maybe_proof()->emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} + 1_i * ! final_states_iter->second->reif_flag >= 1_i,
+                            ProofLevel::Temporary);
                     }
                     completed_layer_nodes.erase(final_states_iter++);
                     eliminated = true;
@@ -320,10 +336,10 @@ namespace
         if (completed_layer_nodes.empty()) {
             if constexpr (doing_proof_) {
                 state.maybe_proof()->emit_proof_comment("no feasible choices remaining");
-                state.maybe_proof()->emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} >= 1_i);
+                state.maybe_proof()->emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} >= 1_i, ProofLevel::Temporary);
             }
 
-            return Inference::Contradiction;
+            return state.infer(FalseLiteral{}, JustifyUsingRUP{});
         }
         else {
             vector<Literal> inferences;
@@ -345,17 +361,23 @@ namespace
                             continue;
 
                         auto no_support_ge = trail + 1_i * ! data->ges.at(x).reif_flag;
-                        state.maybe_proof()->emit_proof_line("p " + to_string(opb_lines->at(x).first) + " " + to_string(data->ges.at(x).forward_reif_line) + " +");
-                        state.maybe_proof()->emit_rup_proof_line(no_support_ge + 1_i * (totals.at(x) >= committed.at(x) + lowest) >= 1_i);
+                        state.maybe_proof()->emit_proof_line("p " + to_string(opb_lines->at(x).first) + " " + to_string(data->ges.at(x).forward_reif_line) + " +",
+                            ProofLevel::Temporary);
+                        state.maybe_proof()->emit_rup_proof_line(no_support_ge + 1_i * (totals.at(x) >= committed.at(x) + lowest) >= 1_i,
+                            ProofLevel::Temporary);
 
                         auto no_support_le = trail + 1_i * ! data->les.at(x).reif_flag;
-                        state.maybe_proof()->emit_proof_line("p " + to_string(opb_lines->at(x).second) + " " + to_string(data->les.at(x).forward_reif_line) + " +");
-                        state.maybe_proof()->emit_rup_proof_line(no_support_le + 1_i * (totals.at(x) < 1_i + committed.at(x) + highest) >= 1_i);
+                        state.maybe_proof()->emit_proof_line("p " + to_string(opb_lines->at(x).second) + " " + to_string(data->les.at(x).forward_reif_line) + " +",
+                            ProofLevel::Temporary);
+                        state.maybe_proof()->emit_rup_proof_line(no_support_le + 1_i * (totals.at(x) < 1_i + committed.at(x) + highest) >= 1_i,
+                            ProofLevel::Temporary);
                     }
 
                     state.maybe_proof()->emit_proof_comment("deduce overall conclusions");
-                    state.maybe_proof()->emit_rup_proof_line(trail + 1_i * (totals.at(x) >= committed.at(x) + lowest) >= 1_i);
-                    state.maybe_proof()->emit_rup_proof_line(trail + 1_i * (totals.at(x) < 1_i + committed.at(x) + highest) >= 1_i);
+                    state.maybe_proof()->emit_rup_proof_line(trail + 1_i * (totals.at(x) >= committed.at(x) + lowest) >= 1_i,
+                        ProofLevel::Temporary);
+                    state.maybe_proof()->emit_rup_proof_line(trail + 1_i * (totals.at(x) < 1_i + committed.at(x) + highest) >= 1_i,
+                        ProofLevel::Temporary);
                 }
             }
 
@@ -401,10 +423,17 @@ namespace
         for (auto & t : totals)
             boundses.emplace_back(state.bounds(t));
 
+        int temporary_proof_level = 0;
+        if (state.maybe_proof())
+            temporary_proof_level = state.maybe_proof()->temporary_proof_level();
+
         if (state.maybe_proof())
             increase_inference_to(inference, knapsack_bc<true>(state, committed_sums, boundses, coeffs, totals, vars, undetermined_vars, eqn_lines));
         else
             increase_inference_to(inference, knapsack_bc<false>(state, committed_sums, boundses, coeffs, totals, vars, undetermined_vars, nullopt));
+
+        if (state.maybe_proof())
+            state.maybe_proof()->forget_proof_level(temporary_proof_level);
 
         return pair{inference, PropagatorState::Enable};
     }

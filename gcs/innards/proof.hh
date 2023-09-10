@@ -118,7 +118,8 @@ namespace gcs::innards
     enum class ProofLevel
     {
         Current,
-        Top
+        Top,
+        Temporary
     };
 
     /**
@@ -152,6 +153,9 @@ namespace gcs::innards
         auto need_all_proof_names_in(const SumOf<Weighted<PseudoBooleanTerm>> & sum) -> void;
 
         auto need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID, Integer) -> void;
+
+        auto switch_to_current_proof_level_from(ProofLevel) -> void;
+        auto switch_to_proof_level(ProofLevel) -> void;
 
     public:
         /**
@@ -250,9 +254,15 @@ namespace gcs::innards
         auto infer(const State & state, const Literal & lit, const Justification & why) -> void;
 
         /**
-         * What is our current proof levvel?
+         * What is our current proof level?
          */
         [[nodiscard]] auto proof_level() -> int;
+
+        /**
+         * Indicate that we will use a temporary proof level, and return it. Must
+         * be wiped out with forget_proof_level().
+         */
+        [[nodiscard]] auto temporary_proof_level() -> int;
 
         /**
          * Log that we are entering this proof level for deletions.
