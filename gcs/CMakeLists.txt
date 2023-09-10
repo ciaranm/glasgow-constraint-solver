@@ -20,6 +20,7 @@ add_library(glasgow_constraint_solver
         constraints/element.cc
         constraints/equals.cc
         constraints/in.cc
+        constraints/knapsack.cc
         constraints/lex.cc
         constraints/linear_equality.cc
         constraints/logical.cc
@@ -49,23 +50,25 @@ add_executable(comparison_test constraints/comparison_test.cc)
 add_executable(count_test constraints/count_test.cc)
 add_executable(element_test constraints/element_test.cc)
 add_executable(equals_test constraints/equals_test.cc)
+add_executable(knapsack_test constraints/knapsack_test.cc)
 add_executable(linear_equality_test constraints/linear_equality_test.cc)
 add_executable(logical_test constraints/logical_test.cc)
 add_executable(min_max_test constraints/min_max_test.cc)
 add_executable(n_value_test constraints/n_value_test.cc)
 add_executable(smart_table_test constraints/smart_table_test.cc)
 
-add_test(NAME abs COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:abs_test>)
-add_test(NAME arithmetic COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:arithmetic_test>)
-add_test(NAME comparison COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:comparison_test>)
-add_test(NAME count COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:count_test>)
-add_test(NAME element COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:element_test>)
-add_test(NAME equals COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:equals_test>)
-add_test(NAME linear_equality COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:linear_equality_test>)
-add_test(NAME logical COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:logical_test>)
-add_test(NAME min_max COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:min_max_test>)
-add_test(NAME n_value COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:n_value_test>)
-add_test(NAME smart_table COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:smart_table_test>)
+add_test(NAME abs_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:abs_test>)
+add_test(NAME arithmetic_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:arithmetic_test>)
+add_test(NAME comparison_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:comparison_test>)
+add_test(NAME count_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:count_test>)
+add_test(NAME element_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:element_test>)
+add_test(NAME equals_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:equals_test>)
+add_test(NAME knapsack_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:knapsack_test>)
+add_test(NAME linear_equality_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:linear_equality_test>)
+add_test(NAME logical_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:logical_test>)
+add_test(NAME min_max_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:min_max_test>)
+add_test(NAME n_value_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:n_value_test>)
+add_test(NAME smart_table_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:smart_table_test>)
 
 add_executable(state_test innards/state_test.cc)
 target_link_libraries(state_test PRIVATE Catch2::Catch2WithMain)
