@@ -115,6 +115,8 @@ namespace
         using NodeInequalityData = conditional_t<doing_proof_, NodeInequalityData, NoData>;
         using FullNodeData = conditional_t<doing_proof_, FullNodeData, NoData>;
 
+        auto inference = Inference::NoChange;
+
         map<vector<Integer>, optional<FullNodeData>> completed_layer_nodes;
         completed_layer_nodes.emplace(vector(totals.size(), 0_i), nullopt);
 
@@ -135,6 +137,7 @@ namespace
 
             map<vector<Integer>, optional<FullNodeData>> growing_layer_nodes;
             vector<map<Integer, NodeInequalityData>> growing_layer_ge_datas(totals.size()), growing_layer_le_datas(totals.size());
+            set<Integer> supported_values;
 
             // for each state on the prior layer...
             for (const auto & [the_sums, the_completed_node_data] : completed_layer_nodes) {
@@ -285,6 +288,7 @@ namespace
                                 feasible_ge_flags.at(x).push_back(ge_datas.at(x)->second.reif_flag);
                             }
                             feasible_node_flags.push_back(node_data->second->reif_flag);
+                            supported_values.emplace(val);
                         }
                     }
                 });
@@ -333,6 +337,26 @@ namespace
                 state.maybe_proof()->emit_rup_proof_line(must_pick_one >= 1_i, ProofLevel::Temporary);
             }
 
+            // we might have some values that never allowed a state to be created
+            state.for_each_value(all_vars.at(var_idx), [&](Integer val) {
+                    if (! supported_values.contains(val)) {
+                        if constexpr (doing_proof_) {
+                            state.maybe_proof()->emit_proof_comment("unsupported value on forward pass");
+                            for (auto & [_, data] : growing_layer_nodes) {
+                                state.maybe_proof()->emit_rup_proof_line(
+                                        WeightedPseudoBooleanSum{} + 1_i * ! data->reif_flag + 1_i * (all_vars.at(var_idx) != val) >= 1_i,
+                                        ProofLevel::Temporary);
+                            }
+                        }
+                        increase_inference_to(inference, state.infer(all_vars.at(var_idx) != val, JustifyUsingRUP{}));
+                        if (Inference::Contradiction == inference)
+                            return;
+                    }
+                    });
+
+            if (Inference::Contradiction == inference)
+                return inference;
+
             completed_layer_nodes = move(growing_layer_nodes);
         }
 
@@ -368,7 +392,7 @@ namespace
                 state.maybe_proof()->emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} >= 1_i, ProofLevel::Temporary);
             }
 
-            return state.infer(FalseLiteral{}, JustifyUsingRUP{});
+            increase_inference_to(inference, state.infer(FalseLiteral{}, JustifyUsingRUP{}));
         }
         else {
             vector<Literal> inferences;
@@ -411,8 +435,10 @@ namespace
                 }
             }
 
-            return state.infer_all(inferences, JustifyUsingRUP{});
+            increase_inference_to(inference, state.infer_all(inferences, JustifyUsingRUP{}));
         }
+
+        return inference;
     }
 
     auto knapsack(
