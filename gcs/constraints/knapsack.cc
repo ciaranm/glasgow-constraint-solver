@@ -38,17 +38,24 @@ using std::vector;
 
 Knapsack::Knapsack(vector<Integer> weights, vector<Integer> profits,
     vector<IntegerVariableID> vars, IntegerVariableID weight, IntegerVariableID profit) :
-    _weights(move(weights)),
-    _profits(move(profits)),
+    _coeffs({move(weights), move(profits)}),
     _vars(move(vars)),
-    _weight(weight),
-    _profit(profit)
+    _totals({weight, profit})
+{
+}
+
+Knapsack::Knapsack(vector<vector<Integer>> coefficients,
+    vector<IntegerVariableID> vars,
+    vector<IntegerVariableID> totals) :
+    _coeffs(move(coefficients)),
+    _vars(move(vars)),
+    _totals(move(totals))
 {
 }
 
 auto Knapsack::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<Knapsack>(_weights, _profits, _vars, _weight, _profit);
+    return make_unique<Knapsack>(_coeffs, _vars, _totals);
 }
 
 namespace
@@ -91,168 +98,153 @@ namespace
     struct FullNodeData
     {
         ProofFlag reif_flag;
-        NodeInequalityData weight_ge;
-        NodeInequalityData weight_le;
-        NodeInequalityData profit_ge;
-        NodeInequalityData profit_le;
+        vector<NodeInequalityData> ges;
+        vector<NodeInequalityData> les;
     };
 
     template <bool doing_proof_>
     auto knapsack_bc(
         State & state,
-        Integer committed_weight, Integer committed_profit,
-        pair<Integer, Integer> weight_bounds,
-        pair<Integer, Integer> profit_bounds,
-        const vector<Integer> & weights, const vector<Integer> & profits,
-        IntegerVariableID weight_var, IntegerVariableID profit_var,
+        const vector<Integer> & committed,
+        const vector<pair<Integer, Integer>> & bounds,
+        const vector<vector<Integer>> & coeffs,
+        const vector<IntegerVariableID> & totals,
         const vector<IntegerVariableID> & all_vars, const vector<size_t> & undetermined_var_indices,
-        const pair<ProofLine, ProofLine> & opb_weight_lines, const pair<ProofLine, ProofLine> & opb_profit_lines) -> Inference
+        const optional<vector<pair<ProofLine, ProofLine>>> & opb_lines) -> Inference
     {
         using NodeInequalityData = conditional_t<doing_proof_, NodeInequalityData, NoData>;
         using FullNodeData = conditional_t<doing_proof_, FullNodeData, NoData>;
 
-        map<pair<Integer, Integer>, optional<FullNodeData>> completed_layer_nodes;
-        completed_layer_nodes.emplace(pair{0_i, 0_i}, nullopt);
+        map<vector<Integer>, optional<FullNodeData>> completed_layer_nodes;
+        completed_layer_nodes.emplace(vector(totals.size(), 0_i), nullopt);
 
-        WeightedPseudoBooleanSum sum_of_weights_so_far, sum_of_profits_so_far, trail;
+        WeightedPseudoBooleanSum trail;
         if constexpr (doing_proof_) {
             trail = state.maybe_proof()->trail_variables_as_sum(state, 1_i);
-            state.maybe_proof()->emit_proof_comment("starting knapsack");
         }
 
+        vector<WeightedPseudoBooleanSum> sums_so_far(coeffs.size());
         for (const auto & [layer_number, var_idx] : enumerate(undetermined_var_indices)) {
-            sum_of_weights_so_far += weights.at(var_idx) * all_vars.at(var_idx);
-            sum_of_profits_so_far += profits.at(var_idx) * all_vars.at(var_idx);
+            for (const auto & [idx, c] : enumerate(coeffs))
+                sums_so_far.at(idx) += c.at(var_idx) * all_vars.at(var_idx);
 
-            map<pair<Integer, Integer>, optional<FullNodeData>> growing_layer_nodes;
-            map<Integer, NodeInequalityData> growing_layer_weights_ge_data, growing_layer_weights_le_data, growing_layer_profits_ge_data, growing_layer_profits_le_data;
+            map<vector<Integer>, optional<FullNodeData>> growing_layer_nodes;
+            vector<map<Integer, NodeInequalityData>> growing_layer_ge_datas(totals.size()), growing_layer_le_datas(totals.size());
 
-            for (auto & [weight_and_profit, completed_node_data] : completed_layer_nodes) {
-                auto [weight, profit] = weight_and_profit;
-
-                PseudoBooleanTerm not_in_weight_ge_state = FalseLiteral{}, not_in_weight_le_state = FalseLiteral{},
-                                  not_in_profit_ge_state = FalseLiteral{}, not_in_profit_le_state = FalseLiteral{},
-                                  not_in_full_state = FalseLiteral{};
+            for (auto & [sums, completed_node_data] : completed_layer_nodes) {
+                vector<PseudoBooleanTerm> not_in_ge_states(totals.size(), FalseLiteral{}), not_in_le_states(totals.size(), FalseLiteral{});
+                PseudoBooleanTerm not_in_full_state = FalseLiteral{};
                 if constexpr (doing_proof_) {
                     if (completed_node_data) {
-                        not_in_weight_ge_state = ! completed_node_data->weight_ge.reif_flag;
-                        not_in_weight_le_state = ! completed_node_data->weight_le.reif_flag;
-                        not_in_profit_ge_state = ! completed_node_data->profit_ge.reif_flag;
-                        not_in_profit_le_state = ! completed_node_data->profit_le.reif_flag;
+                        for (const auto & [x, _] : enumerate(totals)) {
+                            not_in_ge_states.at(x) = ! completed_node_data->ges.at(x).reif_flag;
+                            not_in_le_states.at(x) = ! completed_node_data->les.at(x).reif_flag;
+                        }
                         not_in_full_state = ! completed_node_data->reif_flag;
                     }
                 }
 
                 vector<Integer> feasible_choices;
-                vector<ProofFlag> feasible_weight_ge_flags, feasible_weight_le_flags, feasible_profit_ge_flags, feasible_profit_le_flags, feasible_node_flags;
+                vector<vector<ProofFlag>> feasible_ge_flags(totals.size()), feasible_le_flags(totals.size());
+                vector<ProofFlag> feasible_node_flags;
 
                 state.for_each_value(all_vars.at(var_idx), [&](Integer val) {
-                    auto new_weight = weight + val * weights.at(var_idx);
-                    auto new_profit = profit + val * profits.at(var_idx);
+                    vector<Integer> new_sums(totals.size(), 0_i);
+                    for (const auto & [x, v] : enumerate(totals))
+                        new_sums.at(x) = sums.at(x) + val * coeffs.at(x).at(var_idx);
 
                     if constexpr (! doing_proof_) {
-                        if (committed_weight + new_weight <= weight_bounds.second && committed_profit + new_profit <= profit_bounds.second)
-                            growing_layer_nodes.emplace(pair{new_weight, new_profit}, nullopt);
+                        bool bounds_violation = false;
+                        for (const auto & [x, _] : enumerate(totals)) {
+                            if (committed.at(x) + new_sums.at(x) > bounds.at(x).second) {
+                                bounds_violation = true;
+                                break;
+                            }
+                        }
+                        if (! bounds_violation)
+                            growing_layer_nodes.emplace(new_sums, nullopt);
                     }
                     else {
-                        auto weight_ge_data = growing_layer_weights_ge_data.find(new_weight);
-                        if (weight_ge_data == growing_layer_weights_ge_data.end()) {
-                            auto [flag, fwd, rev] = state.maybe_proof()->create_proof_flag_reifying(
-                                sum_of_weights_so_far >= new_weight, "s" + to_string(layer_number) + "wge" + to_string(new_weight.raw_value));
-                            weight_ge_data = growing_layer_weights_ge_data.emplace(new_weight, NodeInequalityData{flag, fwd, rev}).first;
+                        vector<typename map<Integer, NodeInequalityData>::const_iterator> ge_datas, le_datas;
+                        for (const auto & [x, _] : enumerate(totals)) {
+                            auto ge_data = growing_layer_ge_datas.at(x).find(new_sums.at(x));
+                            if (ge_data == growing_layer_ge_datas.at(x).end()) {
+                                auto [flag, fwd, rev] = state.maybe_proof()->create_proof_flag_reifying(
+                                    sums_so_far.at(x) >= new_sums.at(x), "s" + to_string(layer_number) + "x" + to_string(x) + "ge" + to_string(new_sums.at(x).raw_value));
+                                ge_data = growing_layer_ge_datas.at(x).emplace(new_sums.at(x), NodeInequalityData{flag, fwd, rev}).first;
+                            }
+                            ge_datas.push_back(ge_data);
+
+                            auto le_data = growing_layer_le_datas.at(x).find(new_sums.at(x));
+                            if (le_data == growing_layer_le_datas.at(x).end()) {
+                                auto [flag, fwd, rev] = state.maybe_proof()->create_proof_flag_reifying(
+                                    sums_so_far.at(x) <= new_sums.at(x), "s" + to_string(layer_number) + "x" + to_string(x) + "le" + to_string(new_sums.at(x).raw_value));
+                                le_data = growing_layer_le_datas.at(x).emplace(new_sums.at(x), NodeInequalityData{flag, fwd, rev}).first;
+                            }
+                            le_datas.push_back(le_data);
                         }
 
-                        auto weight_le_data = growing_layer_weights_le_data.find(new_weight);
-                        if (weight_le_data == growing_layer_weights_le_data.end()) {
-                            auto [flag, fwd, rev] = state.maybe_proof()->create_proof_flag_reifying(
-                                sum_of_weights_so_far <= new_weight, "s" + to_string(layer_number) + "wle" + to_string(new_weight.raw_value));
-                            weight_le_data = growing_layer_weights_le_data.emplace(new_weight, NodeInequalityData{flag, fwd, rev}).first;
-                        }
-
-                        auto profit_ge_data = growing_layer_profits_ge_data.find(new_profit);
-                        if (profit_ge_data == growing_layer_profits_ge_data.end()) {
-                            auto [flag, fwd, rev] = state.maybe_proof()->create_proof_flag_reifying(
-                                sum_of_profits_so_far >= new_profit, "s" + to_string(layer_number) + "pge" + to_string(new_profit.raw_value));
-                            profit_ge_data = growing_layer_profits_ge_data.emplace(new_profit, NodeInequalityData{flag, fwd, rev}).first;
-                        }
-
-                        auto profit_le_data = growing_layer_profits_le_data.find(new_profit);
-                        if (profit_le_data == growing_layer_profits_le_data.end()) {
-                            auto [flag, fwd, rev] = state.maybe_proof()->create_proof_flag_reifying(
-                                sum_of_profits_so_far <= new_profit, "s" + to_string(layer_number) + "ple" + to_string(new_profit.raw_value));
-                            profit_le_data = growing_layer_profits_le_data.emplace(new_profit, NodeInequalityData{flag, fwd, rev}).first;
-                        }
-
-                        auto node_data = growing_layer_nodes.find(pair{new_weight, new_profit});
+                        auto node_data = growing_layer_nodes.find(new_sums);
                         if (node_data == growing_layer_nodes.end()) {
-                            auto [flag, _1, _2] = state.maybe_proof()->create_proof_flag_reifying(
-                                WeightedPseudoBooleanSum{} + 1_i * weight_ge_data->second.reif_flag + 1_i * weight_le_data->second.reif_flag +
-                                        1_i * profit_le_data->second.reif_flag + 1_i * profit_ge_data->second.reif_flag >=
-                                    4_i,
-                                "s" + to_string(layer_number) + "w" + to_string(new_weight.raw_value) + "p" + to_string(new_profit.raw_value));
-                            node_data = growing_layer_nodes.emplace(pair{new_weight, new_profit},
-                                    FullNodeData{flag, weight_ge_data->second, weight_le_data->second, profit_ge_data->second, profit_le_data->second}).first;
+                            vector<NodeInequalityData> les, ges;
+                            WeightedPseudoBooleanSum all;
+                            string name;
+                            for (auto & l : le_datas) {
+                                all += 1_i * l->second.reif_flag;
+                                name += "_";
+                                name += to_string(l->first.raw_value);
+                                les.push_back(l->second);
+                            }
+                            for (auto & g : ge_datas) {
+                                all += 1_i * g->second.reif_flag;
+                                ges.push_back(g->second);
+                            }
+
+                            auto [flag, _1, _2] = state.maybe_proof()->create_proof_flag_reifying(all >= Integer(all.terms.size()),
+                                "s" + to_string(layer_number) + "x" + name);
+                            node_data = growing_layer_nodes.emplace(new_sums, FullNodeData{flag, ges, les}).first;
                         }
 
                         auto not_choice = all_vars.at(var_idx) != val;
 
-                        state.maybe_proof()->emit_proof_comment("weight ge state");
-                        if (completed_node_data)
-                            state.maybe_proof()->emit_proof_line("p " +
-                                to_string(weight_ge_data->second.reverse_reif_line) + " " +
-                                to_string(completed_node_data->weight_ge.forward_reif_line) + " +");
-                        state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_weight_ge_state + 1_i * not_choice + 1_i * weight_ge_data->second.reif_flag >= 1_i);
-                        state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_full_state + 1_i * not_choice + 1_i * weight_ge_data->second.reif_flag >= 1_i);
+                        for (const auto & [x, _] : enumerate(totals)) {
+                            if (completed_node_data)
+                                state.maybe_proof()->emit_proof_line("p " +
+                                    to_string(ge_datas.at(x)->second.reverse_reif_line) + " " +
+                                    to_string(completed_node_data->ges.at(x).forward_reif_line) + " +");
+                            state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_ge_states.at(x) + 1_i * not_choice + 1_i * ge_datas.at(x)->second.reif_flag >= 1_i);
+                            state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_full_state + 1_i * not_choice + 1_i * ge_datas.at(x)->second.reif_flag >= 1_i);
 
-                        state.maybe_proof()->emit_proof_comment("weight le state");
-                        if (completed_node_data)
-                            state.maybe_proof()->emit_proof_line("p " +
-                                to_string(weight_le_data->second.reverse_reif_line) + " " +
-                                to_string(completed_node_data->weight_le.forward_reif_line) + " +");
-                        state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_weight_le_state + 1_i * not_choice + 1_i * weight_le_data->second.reif_flag >= 1_i);
-                        state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_full_state + 1_i * not_choice + 1_i * weight_le_data->second.reif_flag >= 1_i);
+                            if (completed_node_data)
+                                state.maybe_proof()->emit_proof_line("p " +
+                                    to_string(le_datas.at(x)->second.reverse_reif_line) + " " +
+                                    to_string(completed_node_data->les.at(x).forward_reif_line) + " +");
+                            state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_le_states.at(x) + 1_i * not_choice + 1_i * le_datas.at(x)->second.reif_flag >= 1_i);
+                            state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_full_state + 1_i * not_choice + 1_i * le_datas.at(x)->second.reif_flag >= 1_i);
+                        }
 
-                        state.maybe_proof()->emit_proof_comment("profit le state");
-                        if (completed_node_data)
-                            state.maybe_proof()->emit_proof_line("p " +
-                                to_string(profit_le_data->second.reverse_reif_line) + " " +
-                                to_string(completed_node_data->profit_le.forward_reif_line) + " +");
-                        state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_profit_le_state + 1_i * not_choice + 1_i * profit_le_data->second.reif_flag >= 1_i);
-                        state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_full_state + 1_i * not_choice + 1_i * profit_le_data->second.reif_flag >= 1_i);
-
-                        state.maybe_proof()->emit_proof_comment("profit ge state");
-                        if (completed_node_data)
-                            state.maybe_proof()->emit_proof_line("p " +
-                                to_string(profit_ge_data->second.reverse_reif_line) + " " +
-                                to_string(completed_node_data->profit_ge.forward_reif_line) + " +");
-                        state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_profit_ge_state + 1_i * not_choice + 1_i * profit_ge_data->second.reif_flag >= 1_i);
-                        state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_full_state + 1_i * not_choice + 1_i * profit_ge_data->second.reif_flag >= 1_i);
-
-                        state.maybe_proof()->emit_proof_comment("all state");
                         state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_full_state + 1_i * not_choice + 1_i * node_data->second->reif_flag >= 1_i);
 
                         // because everything is non-negative, we can eliminate states where the
                         // partial sum is already too large.
-                        if (committed_weight + new_weight > weight_bounds.second) {
-                            state.maybe_proof()->emit_proof_comment("infeasible weight");
-                            auto weight_var_str = prepare_and_get_bound_p_term(state, weight_var, true);
-                            state.maybe_proof()->emit_proof_line("p " + to_string(weight_ge_data->second.forward_reif_line) + " " + to_string(opb_weight_lines.first) + " + " + weight_var_str + " +");
-                            state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_weight_ge_state + 1_i * not_choice >= 1_i);
-                            state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_full_state + 1_i * not_choice >= 1_i);
+                        bool eliminated = false;
+                        for (const auto & [x, _] : enumerate(totals)) {
+                            if (committed.at(x) + new_sums.at(x) > bounds.at(x).second) {
+                                auto weight_var_str = prepare_and_get_bound_p_term(state, totals.at(x), true);
+                                state.maybe_proof()->emit_proof_line("p " + to_string(ge_datas.at(x)->second.forward_reif_line) + " " + to_string(opb_lines->at(x).first) + " + " + weight_var_str + " +");
+                                state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_ge_states.at(x) + 1_i * not_choice >= 1_i);
+                                state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_full_state + 1_i * not_choice >= 1_i);
+                                eliminated = true;
+                                break;
+                            }
                         }
-                        else if (committed_profit + new_profit > profit_bounds.second) {
-                            state.maybe_proof()->emit_proof_comment("infeasible profit");
-                            auto profit_var_str = prepare_and_get_bound_p_term(state, profit_var, true);
-                            state.maybe_proof()->emit_proof_line("p " + to_string(profit_ge_data->second.forward_reif_line) + " " + to_string(opb_profit_lines.first) + " + " + profit_var_str + " +");
-                            state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_profit_ge_state + 1_i * not_choice >= 1_i);
-                            state.maybe_proof()->emit_rup_proof_line(trail + 1_i * not_in_full_state + 1_i * not_choice >= 1_i);
-                        }
-                        else {
+
+                        if (! eliminated) {
                             feasible_choices.push_back(val);
-                            feasible_weight_ge_flags.push_back(weight_ge_data->second.reif_flag);
-                            feasible_weight_le_flags.push_back(weight_le_data->second.reif_flag);
-                            feasible_profit_ge_flags.push_back(profit_ge_data->second.reif_flag);
-                            feasible_profit_le_flags.push_back(profit_le_data->second.reif_flag);
+                            for (const auto & [x, _] : enumerate(totals)) {
+                                feasible_le_flags.at(x).push_back(le_datas.at(x)->second.reif_flag);
+                                feasible_ge_flags.at(x).push_back(ge_datas.at(x)->second.reif_flag);
+                            }
                             feasible_node_flags.push_back(node_data->second->reif_flag);
                         }
                     }
@@ -261,34 +253,34 @@ namespace
                 if constexpr (doing_proof_) {
                     state.maybe_proof()->emit_proof_comment("select from feasible choices for child");
                     WeightedPseudoBooleanSum must_pick_one = trail + 1_i * not_in_full_state;
-                    auto must_pick_one_val = must_pick_one, must_pick_one_weight_ge = must_pick_one, must_pick_one_weight_le = must_pick_one,
-                         must_pick_one_profit_le = must_pick_one, must_pick_one_profit_ge = must_pick_one, must_pick_one_node = must_pick_one;
+                    WeightedPseudoBooleanSum must_pick_one_val = must_pick_one, must_pick_one_node = must_pick_one;
+
                     for (auto & f : feasible_choices)
                         must_pick_one_val += 1_i * (all_vars.at(var_idx) == f);
-                    for (auto & f : feasible_weight_ge_flags)
-                        must_pick_one_weight_ge += 1_i * f;
-                    for (auto & f : feasible_weight_le_flags)
-                        must_pick_one_weight_le += 1_i * f;
-                    for (auto & f : feasible_profit_ge_flags)
-                        must_pick_one_profit_ge += 1_i * f;
-                    for (auto & f : feasible_profit_le_flags)
-                        must_pick_one_profit_le += 1_i * f;
+                    state.maybe_proof()->emit_rup_proof_line(must_pick_one_val >= 1_i);
+
+                    for (const auto & [x, _] : enumerate(totals)) {
+                        auto must_pick_one_le = must_pick_one, must_pick_one_ge = must_pick_one;
+                        for (auto & f : feasible_le_flags.at(x))
+                            must_pick_one_le += 1_i * f;
+                        for (auto & f : feasible_ge_flags.at(x))
+                            must_pick_one_ge += 1_i * f;
+                        state.maybe_proof()->emit_rup_proof_line(must_pick_one_le >= 1_i);
+                        state.maybe_proof()->emit_rup_proof_line(must_pick_one_ge >= 1_i);
+                    }
+
                     for (auto & f : feasible_node_flags)
                         must_pick_one_node += 1_i * f;
-
-                    state.maybe_proof()->emit_rup_proof_line(must_pick_one_val >= 1_i);
-                    state.maybe_proof()->emit_rup_proof_line(must_pick_one_weight_ge >= 1_i);
-                    state.maybe_proof()->emit_rup_proof_line(must_pick_one_weight_le >= 1_i);
-                    state.maybe_proof()->emit_rup_proof_line(must_pick_one_profit_ge >= 1_i);
-                    state.maybe_proof()->emit_rup_proof_line(must_pick_one_profit_le >= 1_i);
                     state.maybe_proof()->emit_rup_proof_line(must_pick_one_node >= 1_i);
                 }
             }
 
             erase_if(growing_layer_nodes, [&](const auto & item) {
-                const auto & [weight_and_profit, _] = item;
-                const auto & [weight, profit] = weight_and_profit;
-                return committed_weight + weight > weight_bounds.second || committed_profit + profit > profit_bounds.second;
+                const auto & [sums, _] = item;
+                for (const auto & [x, _] : enumerate(totals))
+                    if (committed.at(x) + sums.at(x) > bounds.at(x).second)
+                        return true;
+                return false;
             });
 
             if constexpr (doing_proof_) {
@@ -304,33 +296,25 @@ namespace
 
         // states where the sum is too large are already gone, but we might
         // have remaining states where the final sum is too small.
-        for (auto final_states_iter = completed_layer_nodes.begin(), final_states_iter_end = completed_layer_nodes.end();
-             final_states_iter != final_states_iter_end;) {
-            if (committed_profit + final_states_iter->first.second < profit_bounds.first) {
-                if constexpr (doing_proof_) {
-                    state.maybe_proof()->emit_proof_comment("infeasible state due to profit being too low");
-                    auto profit_var_str = prepare_and_get_bound_p_term(state, profit_var, false);
-                    state.maybe_proof()->emit_proof_line("p " + to_string(final_states_iter->second->profit_le.forward_reif_line) +
-                        " " + to_string(opb_profit_lines.second) + " + " + profit_var_str + " +");
-                    state.maybe_proof()->emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} + 1_i * ! final_states_iter->second->profit_le.reif_flag >= 1_i);
-                    state.maybe_proof()->emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} + 1_i * ! final_states_iter->second->reif_flag >= 1_i);
+        for (auto final_states_iter = completed_layer_nodes.begin(), final_states_iter_end = completed_layer_nodes.end(); final_states_iter != final_states_iter_end;) {
+            bool eliminated = false;
+            for (const auto & [x, _] : enumerate(totals)) {
+                if (committed.at(x) + final_states_iter->first.at(x) < bounds.at(x).first) {
+                    if constexpr (doing_proof_) {
+                        auto weight_var_str = prepare_and_get_bound_p_term(state, totals.at(x), false);
+                        state.maybe_proof()->emit_proof_line("p " + to_string(final_states_iter->second->les.at(x).forward_reif_line) +
+                            " " + to_string(opb_lines->at(x).second) + " + " + weight_var_str + " +");
+                        state.maybe_proof()->emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} + 1_i * ! final_states_iter->second->les.at(x).reif_flag >= 1_i);
+                        state.maybe_proof()->emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} + 1_i * ! final_states_iter->second->reif_flag >= 1_i);
+                    }
+                    completed_layer_nodes.erase(final_states_iter++);
+                    eliminated = true;
+                    break;
                 }
-                completed_layer_nodes.erase(final_states_iter++);
             }
-            else if (committed_weight + final_states_iter->first.first < weight_bounds.first) {
-                if constexpr (doing_proof_) {
-                    state.maybe_proof()->emit_proof_comment("infeasible state due to weight being too low");
-                    auto weight_var_str = prepare_and_get_bound_p_term(state, weight_var, false);
-                    state.maybe_proof()->emit_proof_line("p " + to_string(final_states_iter->second->weight_le.forward_reif_line) +
-                        " " + to_string(opb_weight_lines.second) + " + " + weight_var_str + " +");
-                    state.maybe_proof()->emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} + 1_i * ! final_states_iter->second->weight_le.reif_flag >= 1_i);
-                    state.maybe_proof()->emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} + 1_i * ! final_states_iter->second->reif_flag >= 1_i);
-                }
-                completed_layer_nodes.erase(final_states_iter++);
-            }
-            else {
+
+            if (! eliminated)
                 ++final_states_iter;
-            }
         }
 
         if (completed_layer_nodes.empty()) {
@@ -342,145 +326,142 @@ namespace
             return Inference::Contradiction;
         }
         else {
-            auto [lowest_weight_iter, highest_weight_iter] = minmax_element(completed_layer_nodes.begin(), completed_layer_nodes.end(),
-                [&](const pair<pair<Integer, Integer>, optional<FullNodeData>> & a,
-                    const pair<pair<Integer, Integer>, optional<FullNodeData>> & b) { return a.first.first < b.first.first; });
-            auto [lowest_profit_iter, highest_profit_iter] = minmax_element(completed_layer_nodes.begin(), completed_layer_nodes.end(),
-                [&](const pair<pair<Integer, Integer>, optional<FullNodeData>> & a,
-                    const pair<pair<Integer, Integer>, optional<FullNodeData>> & b) { return a.first.second < b.first.second; });
-            auto lowest_weight = lowest_weight_iter->first.first;
-            auto highest_weight = highest_weight_iter->first.first;
-            auto lowest_profit = lowest_profit_iter->first.second;
-            auto highest_profit = highest_profit_iter->first.second;
+            vector<Literal> inferences;
+            for (const auto & [x, _] : enumerate(totals)) {
+                auto [lowest_iter, highest_iter] = minmax_element(completed_layer_nodes.begin(), completed_layer_nodes.end(),
+                    [&](const pair<vector<Integer>, optional<FullNodeData>> & a,
+                        const pair<vector<Integer>, optional<FullNodeData>> & b) { return a.first.at(x) < b.first.at(x); });
 
-            if constexpr (doing_proof_) {
-                state.maybe_proof()->emit_proof_comment("select from feasible terminal states");
-                for (auto & [_, data] : completed_layer_nodes) {
-                    auto no_support_weight_ge = trail + 1_i * ! data->weight_ge.reif_flag;
-                    state.maybe_proof()->emit_proof_line("p " + to_string(opb_weight_lines.first) + " " + to_string(data->weight_ge.forward_reif_line) + " +");
-                    state.maybe_proof()->emit_rup_proof_line(no_support_weight_ge + 1_i * (weight_var >= committed_weight + lowest_weight) >= 1_i);
+                auto lowest = lowest_iter->first.at(x);
+                inferences.emplace_back(totals.at(x) >= committed.at(x) + lowest);
 
-                    auto no_support_weight_le = trail + 1_i * ! data->weight_le.reif_flag;
-                    state.maybe_proof()->emit_proof_line("p " + to_string(opb_weight_lines.second) + " " + to_string(data->weight_le.forward_reif_line) + " +");
-                    state.maybe_proof()->emit_rup_proof_line(no_support_weight_le + 1_i * (weight_var < 1_i + committed_weight + highest_weight) >= 1_i);
+                auto highest = highest_iter->first.at(x);
+                inferences.emplace_back(totals.at(x) < committed.at(x) + highest + 1_i);
 
-                    auto no_support_profit_ge = trail + 1_i * ! data->profit_ge.reif_flag;
-                    state.maybe_proof()->emit_proof_line("p " + to_string(opb_profit_lines.first) + " " + to_string(data->profit_ge.forward_reif_line) + " +");
-                    state.maybe_proof()->emit_rup_proof_line(no_support_profit_ge + 1_i * (profit_var >= committed_profit + lowest_profit) >= 1_i);
+                if constexpr (doing_proof_) {
+                    state.maybe_proof()->emit_proof_comment("select from feasible terminal states");
+                    for (auto & [_, data] : completed_layer_nodes) {
+                        if (! data.has_value())
+                            continue;
 
-                    auto no_support_profit_le = trail + 1_i * ! data->profit_le.reif_flag;
-                    state.maybe_proof()->emit_proof_line("p " + to_string(opb_profit_lines.second) + " " + to_string(data->profit_le.forward_reif_line) + " +");
-                    state.maybe_proof()->emit_rup_proof_line(no_support_profit_le + 1_i * (profit_var < 1_i + committed_profit + highest_profit) >= 1_i);
+                        auto no_support_ge = trail + 1_i * ! data->ges.at(x).reif_flag;
+                        state.maybe_proof()->emit_proof_line("p " + to_string(opb_lines->at(x).first) + " " + to_string(data->ges.at(x).forward_reif_line) + " +");
+                        state.maybe_proof()->emit_rup_proof_line(no_support_ge + 1_i * (totals.at(x) >= committed.at(x) + lowest) >= 1_i);
+
+                        auto no_support_le = trail + 1_i * ! data->les.at(x).reif_flag;
+                        state.maybe_proof()->emit_proof_line("p " + to_string(opb_lines->at(x).second) + " " + to_string(data->les.at(x).forward_reif_line) + " +");
+                        state.maybe_proof()->emit_rup_proof_line(no_support_le + 1_i * (totals.at(x) < 1_i + committed.at(x) + highest) >= 1_i);
+                    }
+
+                    state.maybe_proof()->emit_proof_comment("deduce overall conclusions");
+                    state.maybe_proof()->emit_rup_proof_line(trail + 1_i * (totals.at(x) >= committed.at(x) + lowest) >= 1_i);
+                    state.maybe_proof()->emit_rup_proof_line(trail + 1_i * (totals.at(x) < 1_i + committed.at(x) + highest) >= 1_i);
                 }
-
-                state.maybe_proof()->emit_proof_comment("deduce overall conclusions");
-                state.maybe_proof()->emit_rup_proof_line(trail + 1_i * (weight_var >= committed_weight + lowest_weight) >= 1_i);
-                state.maybe_proof()->emit_rup_proof_line(trail + 1_i * (weight_var < 1_i + committed_weight + highest_weight) >= 1_i);
-                state.maybe_proof()->emit_rup_proof_line(trail + 1_i * (profit_var >= committed_profit + lowest_profit) >= 1_i);
-                state.maybe_proof()->emit_rup_proof_line(trail + 1_i * (profit_var < 1_i + committed_profit + highest_profit) >= 1_i);
             }
 
-            return state.infer_all({profit_var < committed_profit + highest_profit + 1_i,
-                                       profit_var >= committed_profit + lowest_profit,
-                                       weight_var < committed_weight + highest_weight + 1_i,
-                                       weight_var >= committed_weight + lowest_weight},
-                JustifyUsingRUP{});
+            return state.infer_all(inferences, JustifyUsingRUP{});
         }
     }
 
-    auto knapsack(State & state, const vector<Integer> & weights, const vector<Integer> & profits,
-        const vector<IntegerVariableID> & vars, IntegerVariableID weight_var, IntegerVariableID profit_var,
-        const pair<ProofLine, ProofLine> & opb_weight_lines, const pair<ProofLine, ProofLine> & opb_profit_lines) -> pair<Inference, PropagatorState>
+    auto knapsack(
+        State & state,
+        const vector<vector<Integer>> & coeffs,
+        const vector<IntegerVariableID> & vars,
+        const vector<IntegerVariableID> & totals,
+        const vector<pair<ProofLine, ProofLine>> & eqn_lines) -> pair<Inference, PropagatorState>
     {
         vector<size_t> undetermined_vars;
-        Integer used_weight = 0_i, accumulated_profit = 0_i;
+        vector<Integer> committed_sums(totals.size(), 0_i);
         for (const auto & [idx, v] : enumerate(vars)) {
             auto val = state.optional_single_value(v);
             if (! val)
                 undetermined_vars.push_back(idx);
             else if (1_i == *val) {
-                used_weight += weights[idx];
-                accumulated_profit += profits[idx];
+                for (const auto & [x, _] : enumerate(committed_sums))
+                    committed_sums.at(x) += coeffs.at(x).at(idx);
             }
             else if (0_i != *val)
                 throw UnexpectedException{"can only support 0-1 variables for knapsack"};
         }
 
+        auto inference = Inference::NoChange;
+
         if (undetermined_vars.empty()) {
-            auto inference = state.infer(weight_var == used_weight, NoJustificationNeeded{});
-            if (inference != Inference::Contradiction)
-                increase_inference_to(inference, state.infer(profit_var == accumulated_profit, NoJustificationNeeded{}));
-            return pair{inference, PropagatorState::DisableUntilBacktrack};
+            for (const auto & [x, t] : enumerate(totals)) {
+                increase_inference_to(inference, state.infer(totals.at(x) == committed_sums.at(x), NoJustificationNeeded{}));
+                if (Inference::Contradiction == inference)
+                    return pair{inference, PropagatorState::DisableUntilBacktrack};
+            }
         }
 
-        auto inference = state.infer(profit_var >= accumulated_profit, NoJustificationNeeded{});
-        if (Inference::Contradiction == inference)
-            return pair{inference, PropagatorState::Enable};
+        for (const auto & [x, v] : enumerate(totals)) {
+            increase_inference_to(inference, state.infer(v >= committed_sums.at(x), NoJustificationNeeded{}));
+            if (Inference::Contradiction == inference)
+                return pair{inference, PropagatorState::DisableUntilBacktrack};
+        }
 
-        inference = state.infer(weight_var >= used_weight, NoJustificationNeeded{});
-        if (Inference::Contradiction == inference)
-            return pair{inference, PropagatorState::Enable};
+        vector<pair<Integer, Integer>> boundses;
+        for (auto & t : totals)
+            boundses.emplace_back(state.bounds(t));
 
         if (state.maybe_proof())
-            return pair{knapsack_bc<true>(state, used_weight, accumulated_profit, state.bounds(weight_var), state.bounds(profit_var),
-                            weights, profits, weight_var, profit_var, vars, undetermined_vars, opb_weight_lines, opb_profit_lines),
-                PropagatorState::Enable};
+            increase_inference_to(inference, knapsack_bc<true>(state, committed_sums, boundses, coeffs, totals, vars, undetermined_vars, eqn_lines));
         else
-            return pair{knapsack_bc<false>(state, used_weight, accumulated_profit, state.bounds(weight_var), state.bounds(profit_var),
-                            weights, profits, weight_var, profit_var, vars, undetermined_vars, opb_weight_lines, opb_profit_lines),
-                PropagatorState::Enable};
+            increase_inference_to(inference, knapsack_bc<false>(state, committed_sums, boundses, coeffs, totals, vars, undetermined_vars, nullopt));
+
+        return pair{inference, PropagatorState::Enable};
     }
 }
 
 auto Knapsack::install(Propagators & propagators, State & initial_state) && -> void
 {
-    if (_weights.size() != _profits.size() || _weights.size() != _vars.size())
-        throw UnexpectedException{"not sure what to do about different array sizes for knapsack"};
+    if (_coeffs.size() != _totals.size())
+        throw UnexpectedException{"mismatch between coefficients and totals sizes for knapsack"};
 
-    for (auto & w : _weights)
-        if (w < 0_i)
-            throw UnexpectedException{"not sure what to do about negative weights for knapsack"};
+    if (_coeffs.empty())
+        throw UnexpectedException{"empty knapsack coefficients"};
+    unsigned n_vars = _coeffs.begin()->size();
 
-    for (auto & p : _profits)
-        if (p < 0_i)
-            throw UnexpectedException{"not sure what to do about negative profits for knapsack"};
+    for (auto & c : _coeffs)
+        if (c.size() != n_vars)
+            throw UnexpectedException{"not sure what to do about different coefficient array sizes for knapsack"};
 
-    if (initial_state.lower_bound(_weight) < 0_i)
-        throw UnexpectedException{"not sure what to do about negative permitted weight for knapsack"};
+    for (auto & cc : _coeffs)
+        for (auto & c : cc)
+            if (c < 0_i)
+                throw UnexpectedException{"not sure what to do about negative coefficients for knapsack"};
 
-    if (initial_state.lower_bound(_profit) < 0_i)
-        throw UnexpectedException{"not sure what to do about negative permitted profit for knapsack"};
+    for (auto & t : _totals)
+        if (initial_state.lower_bound(t) < 0_i)
+            throw UnexpectedException{"not sure what to do about negative permitted totals for knapsack"};
 
     for (auto & v : _vars)
         if (initial_state.bounds(v) != pair{0_i, 1_i})
             throw UnexpectedException{"can only support 0-1 variables for knapsack"};
 
-    pair<optional<ProofLine>, optional<ProofLine>> weight_lines, profit_lines;
+    vector<pair<ProofLine, ProofLine>> eqns_lines;
     if (propagators.want_definitions()) {
-        WeightedPseudoBooleanSum weights_eq, profits_eq;
-        for (const auto & [idx, v] : enumerate(_vars)) {
-            weights_eq += _weights[idx] * v;
-            profits_eq += _profits[idx] * v;
+        for (const auto & [cc_idx, cc] : enumerate(_coeffs)) {
+            WeightedPseudoBooleanSum sum_eq;
+            for (const auto & [idx, v] : enumerate(_vars))
+                sum_eq += cc.at(idx) * v;
+            auto [eq1, eq2] = propagators.define(initial_state, sum_eq == 1_i * _totals.at(cc_idx));
+            eqns_lines.emplace_back(eq1.value(), eq2.value());
         }
-        weight_lines = propagators.define(initial_state, weights_eq == 1_i * _weight);
-        profit_lines = propagators.define(initial_state, profits_eq == 1_i * _profit);
     }
 
     Triggers triggers;
     triggers.on_change = {_vars.begin(), _vars.end()};
-    triggers.on_change.emplace_back(_weight);
-    triggers.on_change.emplace_back(_profit);
+    triggers.on_change.insert(triggers.on_change.end(), _totals.begin(), _totals.end());
 
     propagators.install(
-        [weights = move(_weights), profits = move(_profits), vars = move(_vars), weight = move(_weight),
-            profit = move(_profit), weight_lines = weight_lines, profit_lines = profit_lines](State & state) -> pair<Inference, PropagatorState> {
-            return knapsack(state, weights, profits, vars, weight, profit, {weight_lines.first.value(), weight_lines.second.value()},
-                {profit_lines.first.value(), profit_lines.second.value()});
+        [coeffs = move(_coeffs), vars = move(_vars), totals = move(_totals), eqns_lines = move(eqns_lines)](State & state) -> pair<Inference, PropagatorState> {
+            return knapsack(state, coeffs, vars, totals, eqns_lines);
         },
         triggers, "knapsack");
 }
 
-auto Knapsack::describe_for_proof() -> std::string
+auto Knapsack::describe_for_proof() -> string
 {
     return "knapsack";
 }

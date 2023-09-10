@@ -17,14 +17,17 @@ namespace gcs
     class Knapsack : public Constraint
     {
     private:
-        const std::vector<Integer> _weights, _profits;
+        const std::vector<std::vector<Integer>> _coeffs;
         const std::vector<IntegerVariableID> _vars;
-        const IntegerVariableID _weight;
-        const IntegerVariableID _profit;
+        const std::vector<IntegerVariableID> _totals;
 
     public:
         explicit Knapsack(std::vector<Integer> weights, std::vector<Integer> profits,
             std::vector<IntegerVariableID> vars, IntegerVariableID weight, IntegerVariableID profit);
+
+        explicit Knapsack(std::vector<std::vector<Integer>> coefficients,
+            std::vector<IntegerVariableID> vars,
+            std::vector<IntegerVariableID> totals);
 
         virtual auto describe_for_proof() -> std::string override;
         virtual auto install(innards::Propagators &, innards::State &) && -> void override;
