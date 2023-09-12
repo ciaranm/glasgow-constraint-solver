@@ -157,6 +157,8 @@ namespace gcs::innards
         auto switch_to_current_proof_level_from(ProofLevel) -> void;
         auto switch_to_proof_level(ProofLevel) -> void;
 
+        auto end_proof() -> void;
+
     public:
         /**
          * \name Constructors, destructors, and the like.
@@ -244,9 +246,29 @@ namespace gcs::innards
         auto backtrack(const State &) -> void;
 
         /**
-         * Log that we have reached a contradiction at the end of the proof.
+         * Log that we have reached an unsatisfiable conclusion at the end of the proof.
          */
-        auto assert_contradiction() -> void;
+        auto conclude_unsatisfiable() -> void;
+
+        /**
+         * Log that we have reached an unsatisfiable conclusion at the end of the proof.
+         */
+        auto conclude_satisfiable() -> void;
+
+        /**
+         * Log that we have reached an optimality conclusion at the end of the proof.
+         */
+        auto conclude_optimality(Integer obj) -> void;
+
+        /**
+         * Log that we have found some bounds but not proved optimality at the end of the proof.
+         */
+        auto conclude_bounds(Integer lower, Integer upper) -> void;
+
+        /**
+         * Log that we have not reached a conclusion at the end of the proof.
+         */
+        auto conclude_none() -> void;
 
         /**
          * Log, if necessary, that we have inferred a particular literal.

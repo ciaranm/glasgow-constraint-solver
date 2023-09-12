@@ -22,6 +22,7 @@ namespace
         Propagators & propagators, State & state,
         SolveCallbacks & callbacks, optional<Proof> & optional_proof,
         bool & this_subtree_contains_solution,
+        optional<Integer> & objective_value,
         atomic<bool> * optional_abort_flag) -> bool
     {
         stats.max_depth = max(stats.max_depth, depth);
@@ -36,8 +37,11 @@ namespace
 
             auto branch_var = callbacks.branch ? callbacks.branch(state.current(), propagators) : branch_on_dom_then_deg(problem)(state.current(), propagators);
             if (branch_var == nullopt) {
-                if (optional_proof)
+                if (optional_proof) {
                     optional_proof->solution(state);
+                    if (state.optional_minimise_variable())
+                        objective_value = state(*state.optional_minimise_variable());
+                }
 
                 ++stats.solutions;
                 this_subtree_contains_solution = true;
@@ -62,7 +66,7 @@ namespace
                     state.guess(guess);
                     bool child_contains_solution = false;
                     if (! solve_with_state(depth + 1, stats, problem, propagators, state,
-                            callbacks, optional_proof, child_contains_solution, optional_abort_flag))
+                            callbacks, optional_proof, child_contains_solution, objective_value, optional_abort_flag))
                         result = false;
 
                     if (child_contains_solution)
@@ -127,15 +131,45 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
         return result;
     });
 
+    Integer objective_lower_bound_for_proof = 0_i;
+    if (optional_proof && state.optional_minimise_variable())
+        objective_lower_bound_for_proof = state.lower_bound(*state.optional_minimise_variable());
+
     if (presolve_success) {
         bool child_contains_solution = false;
+        optional<Integer> objective_value = nullopt;
         if (solve_with_state(0, stats, problem, propagators, state, callbacks, optional_proof,
-                child_contains_solution, optional_abort_flag))
-            if (optional_proof)
-                optional_proof->assert_contradiction();
+                child_contains_solution, objective_value, optional_abort_flag)) {
+            if (optional_proof) {
+                if (state.optional_minimise_variable()) {
+                    if (objective_value)
+                        optional_proof->conclude_optimality(*objective_value);
+                    else
+                        optional_proof->conclude_unsatisfiable();
+                }
+                else if (child_contains_solution) {
+                    optional_proof->conclude_satisfiable();
+                }
+                else
+                    optional_proof->conclude_unsatisfiable();
+            }
+        }
+        else {
+            // finished without a full conclusion
+            if (optional_proof) {
+                if (state.optional_minimise_variable()) {
+                    if (objective_value)
+                        optional_proof->conclude_bounds(objective_lower_bound_for_proof, *objective_value);
+                    else
+                        optional_proof->conclude_none();
+                }
+                else
+                    optional_proof->conclude_none();
+            }
+        }
     }
     else if (optional_proof)
-        optional_proof->assert_contradiction();
+        optional_proof->conclude_unsatisfiable();
 
     stats.solve_time = duration_cast<microseconds>(steady_clock::now() - start_time);
     propagators.fill_in_constraint_stats(stats);

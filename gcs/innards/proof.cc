@@ -625,7 +625,7 @@ auto Proof::start_proof(State & state) -> void
 
     _imp->proof.open(_imp->proof_file, ios::out);
 
-    _imp->proof << "pseudo-Boolean proof version 1.2\n";
+    _imp->proof << "pseudo-Boolean proof version 2.0\n";
 
     _imp->proof << "f " << _imp->model_constraints << " 0\n";
     _imp->proof_line += _imp->model_constraints;
@@ -826,7 +826,7 @@ auto Proof::solution(const State & state) -> void
 
     _imp->proof << "# 0\n";
 
-    _imp->proof << (state.optional_minimise_variable() ? "o" : "v");
+    _imp->proof << (state.optional_minimise_variable() ? "soli" : "solx");
 
     for (auto & var : _imp->solution_variables)
         if ((! state.optional_minimise_variable()) || (IntegerVariableID{var} != *state.optional_minimise_variable()))
@@ -899,16 +899,49 @@ auto Proof::backtrack(const State & state) -> void
     emit_rup_proof_line(move(backtrack) >= 1_i);
 }
 
-auto Proof::assert_contradiction() -> void
+auto Proof::end_proof() -> void
 {
-    _imp->proof << "* asserting contradiction\n";
-    _imp->proof << "u >= 1 ;\n";
-    ++_imp->proof_line;
-    _imp->proof << "c " << _imp->proof_line << " 0\n";
+    _imp->proof << "end pseudo-Boolean proof\n";
 
     // this is mostly for tests: we haven't necessarily destroyed the
     // Problem before running the verifier.
     _imp->proof << flush;
+}
+
+auto Proof::conclude_unsatisfiable() -> void
+{
+    _imp->proof << "* asserting contradiction\n";
+    _imp->proof << "u >= 1 ;\n";
+    ++_imp->proof_line;
+    _imp->proof << "output NONE\n";
+    _imp->proof << "conclusion UNSAT : " << _imp->proof_line << '\n';
+    end_proof();
+}
+
+auto Proof::conclude_satisfiable() -> void
+{
+    _imp->proof << "output NONE\n";
+    _imp->proof << "conclusion SAT\n";
+    end_proof();
+}
+
+auto Proof::conclude_optimality(Integer value) -> void
+{
+    conclude_bounds(value, value);
+}
+
+auto Proof::conclude_bounds(Integer lower, Integer upper) -> void
+{
+    _imp->proof << "output NONE\n";
+    _imp->proof << "conclusion BOUNDS " << lower << " " << upper << '\n';
+    end_proof();
+}
+
+auto Proof::conclude_none() -> void
+{
+    _imp->proof << "output NONE\n";
+    _imp->proof << "conclusion NONE\n";
+    end_proof();
 }
 
 auto Proof::infer(const State & state, const Literal & lit, const Justification & why) -> void
@@ -1303,7 +1336,7 @@ auto Proof::delete_proof_lines(const vector<ProofLine> & to_delete) -> void
 {
     if (! to_delete.empty()) {
         stringstream line;
-        line << "d";
+        line << "del id";
         for (const auto & l : to_delete)
             line << " " << l;
         _imp->proof << line.str() << '\n';
