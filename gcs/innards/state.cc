@@ -30,7 +30,6 @@ using std::move;
 using std::nullopt;
 using std::optional;
 using std::pair;
-using std::set;
 using std::string;
 using std::tuple;
 using std::vector;
@@ -331,9 +330,9 @@ auto State::change_state_for_equal(
                 return pair{Inference::Change, HowChanged::Instantiated};
             }
         },
-        [&](IntegerVariableSetState & svar) -> pair<Inference, HowChanged> {
+        [&](IntegerVariableIntervalSetState & svar) -> pair<Inference, HowChanged> {
             if (svar.values->contains(value)) {
-                if (svar.values->size() == 1) {
+                if (svar.values->lower() == svar.values->upper()) {
                     assign_to_state_of(var) = IntegerVariableConstantState{value};
                     return pair{Inference::NoChange, HowChanged::Dummy};
                 }
@@ -394,11 +393,9 @@ auto State::change_state_for_not_equal(
             else {
                 // Holey domain, convert to set. This should handle offsets...
                 if (rvar.lower < 0_i || rvar.upper >= Integer{Bits::number_of_bits}) {
-                    auto values = make_shared<set<Integer>>();
-                    for (Integer v = rvar.lower; v <= rvar.upper; ++v)
-                        if (v != value)
-                            values->insert(v);
-                    assign_to_state_of(var) = IntegerVariableSetState{values};
+                    auto values = make_shared<IntervalSet<Integer>>(rvar.lower, rvar.upper);
+                    values->erase(value);
+                    assign_to_state_of(var) = IntegerVariableIntervalSetState{values};
                 }
                 else {
                     IntegerVariableSmallSetState svar{Integer{0}, Bits{}};
@@ -435,27 +432,31 @@ auto State::change_state_for_not_equal(
             else
                 return pair{Inference::Change, HowChanged::InteriorValuesChanged};
         },
-        [&](IntegerVariableSetState & svar) -> pair<Inference, HowChanged> {
+        [&](IntegerVariableIntervalSetState & svar) -> pair<Inference, HowChanged> {
             if (! svar.values->contains(value))
                 return pair{Inference::NoChange, HowChanged::Dummy};
 
             // Knock out the value
-            bool is_bound = (value == *svar.values->begin() || value == *svar.values->rbegin());
-            if (1 == svar.values->size())
+            bool is_bound = (value == svar.values->lower() || value == svar.values->upper());
+            if (svar.values->lower() == svar.values->upper())
                 return pair{Inference::Contradiction, HowChanged::Dummy};
-            else if (2 == svar.values->size()) {
-                assign_to_state_of(var) = IntegerVariableConstantState{
-                    value == *svar.values->begin() ? *next(svar.values->begin()) : *svar.values->begin()};
-                return pair{Inference::Change, HowChanged::Instantiated};
-            }
             else if (svar.values.unique()) {
                 svar.values->erase(value);
+                if (svar.values->lower() == svar.values->upper()) {
+                    assign_to_state_of(var) = IntegerVariableConstantState{svar.values->lower()};
+                    return pair{Inference::Change, HowChanged::Instantiated};
+                }
+
                 return pair{Inference::Change, is_bound ? HowChanged::BoundsChanged : HowChanged::InteriorValuesChanged};
             }
             else {
-                auto new_values = make_shared<set<Integer>>(*svar.values);
+                auto new_values = make_shared<IntervalSet<Integer>>(*svar.values);
                 new_values->erase(value);
                 svar.values = new_values;
+                if (svar.values->lower() == svar.values->upper()) {
+                    assign_to_state_of(var) = IntegerVariableConstantState{svar.values->lower()};
+                    return pair{Inference::Change, HowChanged::Instantiated};
+                }
                 return pair{Inference::Change, is_bound ? HowChanged::BoundsChanged : HowChanged::InteriorValuesChanged};
             }
         }}
@@ -516,22 +517,18 @@ auto State::change_state_for_less_than(
             }
             return pc_before == pc_after ? pair{Inference::NoChange, HowChanged::Dummy} : pair{Inference::Change, HowChanged::BoundsChanged};
         },
-        [&](IntegerVariableSetState & svar) -> pair<Inference, HowChanged> {
-            // This should also be much smarter...
-            auto erase_from = svar.values->upper_bound(value - 1_i);
-            if (erase_from == svar.values->end())
+        [&](IntegerVariableIntervalSetState & svar) -> pair<Inference, HowChanged> {
+            if (svar.values->upper() < value)
                 return pair{Inference::NoChange, HowChanged::Dummy};
 
-            if (! svar.values.unique()) {
-                svar.values = make_shared<set<Integer>>(*svar.values);
-                erase_from = svar.values->upper_bound(value - 1_i);
-            }
+            if (! svar.values.unique())
+                svar.values = make_shared<IntervalSet<Integer>>(*svar.values);
 
-            svar.values->erase(erase_from, svar.values->end());
-            if (svar.values->size() == 0)
+            svar.values->erase_greater_than(value - 1_i);
+            if (svar.values->empty())
                 return pair{Inference::Contradiction, HowChanged::Dummy};
-            else if (svar.values->size() == 1) {
-                assign_to_state_of(var) = IntegerVariableConstantState{*svar.values->begin()};
+            else if (svar.values->lower() == svar.values->upper()) {
+                assign_to_state_of(var) = IntegerVariableConstantState{svar.values->lower()};
                 return pair{Inference::Change, HowChanged::Instantiated};
             }
             else
@@ -593,22 +590,18 @@ auto State::change_state_for_greater_than_or_equal(
             }
             return pc_before == pc_after ? pair{Inference::NoChange, HowChanged::Dummy} : pair{Inference::Change, HowChanged::BoundsChanged};
         },
-        [&](IntegerVariableSetState & svar) -> pair<Inference, HowChanged> {
-            // This should also be much smarter...
-            auto erase_to = svar.values->lower_bound(value);
-            if (erase_to == svar.values->begin())
+        [&](IntegerVariableIntervalSetState & svar) -> pair<Inference, HowChanged> {
+            if (svar.values->lower() >= value)
                 return pair{Inference::NoChange, HowChanged::Dummy};
 
-            if (! svar.values.unique()) {
-                svar.values = make_shared<set<Integer>>(*svar.values);
-                erase_to = svar.values->lower_bound(value);
-            }
+            if (! svar.values.unique())
+                svar.values = make_shared<IntervalSet<Integer>>(*svar.values);
 
-            svar.values->erase(svar.values->begin(), erase_to);
-            if (svar.values->size() == 0)
+            svar.values->erase_less_than(value);
+            if (svar.values->empty())
                 return pair{Inference::Contradiction, HowChanged::Dummy};
-            else if (svar.values->size() == 1) {
-                assign_to_state_of(var) = IntegerVariableConstantState{*svar.values->begin()};
+            else if (svar.values->lower() == svar.values->upper()) {
+                assign_to_state_of(var) = IntegerVariableConstantState{svar.values->lower()};
                 return pair{Inference::Change, HowChanged::Instantiated};
             }
             else
@@ -808,7 +801,7 @@ auto State::lower_bound(const IntegerVariableID var) const -> Integer
                    [](const IntegerVariableRangeState & v) { return v.upper; },
                    [](const IntegerVariableConstantState & v) { return v.value; },
                    [](const IntegerVariableSmallSetState & v) { return v.lower + Integer{Bits::number_of_bits} - Integer{v.bits.countl_zero()} - 1_i; },
-                   [](const IntegerVariableSetState & v) { return *v.values->rbegin(); }}
+                   [](const IntegerVariableIntervalSetState & v) { return v.values->upper(); }}
                     .visit(state_of(actual_var, space)) +
             then_add;
     }
@@ -817,7 +810,7 @@ auto State::lower_bound(const IntegerVariableID var) const -> Integer
                    [](const IntegerVariableRangeState & v) { return v.lower; },
                    [](const IntegerVariableConstantState & v) { return v.value; },
                    [](const IntegerVariableSmallSetState & v) { return v.lower + Integer{v.bits.countr_zero()}; },
-                   [](const IntegerVariableSetState & v) { return *v.values->begin(); }}
+                   [](const IntegerVariableIntervalSetState & v) { return v.values->lower(); }}
                    .visit(state_of(actual_var, space)) +
             then_add;
     }
@@ -833,7 +826,7 @@ auto State::upper_bound(const IntegerVariableID var) const -> Integer
                    [](const IntegerVariableRangeState & v) { return v.lower; },
                    [](const IntegerVariableConstantState & v) { return v.value; },
                    [](const IntegerVariableSmallSetState & v) { return v.lower + Integer{v.bits.countr_zero()}; },
-                   [](const IntegerVariableSetState & v) { return *v.values->begin(); }}
+                   [](const IntegerVariableIntervalSetState & v) { return v.values->lower(); }}
                     .visit(state_of(actual_var, space)) +
             then_add;
     }
@@ -842,7 +835,7 @@ auto State::upper_bound(const IntegerVariableID var) const -> Integer
                    [](const IntegerVariableRangeState & v) { return v.upper; },
                    [](const IntegerVariableConstantState & v) { return v.value; },
                    [](const IntegerVariableSmallSetState & v) { return v.lower + Integer{Bits::number_of_bits} - Integer{v.bits.countl_zero()} - 1_i; },
-                   [](const IntegerVariableSetState & v) { return *v.values->rbegin(); }}
+                   [](const IntegerVariableIntervalSetState & v) { return v.values->upper(); }}
                    .visit(state_of(actual_var, space)) +
             then_add;
     }
@@ -858,7 +851,7 @@ auto State::bounds(const VarType_ & var) const -> pair<Integer, Integer>
         [](const IntegerVariableSmallSetState & v) { return pair{
                                                          v.lower + Integer{v.bits.countr_zero()},
                                                          v.lower + Integer{Bits::number_of_bits} - Integer{v.bits.countl_zero()} - 1_i}; },
-        [](const IntegerVariableSetState & v) { return pair{*v.values->begin(), *v.values->rbegin()}; }}
+        [](const IntegerVariableIntervalSetState & v) { return pair{v.values->lower(), v.values->upper()}; }}
                       .visit(get_state.state);
 
     if (get<1>(get_state.var_negate_then_add))
@@ -881,7 +874,7 @@ auto State::in_domain(const VarType_ & var, const Integer val) const -> bool
             else
                 return v.bits.test((val - v.lower).raw_value);
         },
-        [val = actual_val](const IntegerVariableSetState & v) { return v.values->end() != v.values->find(val); }}
+        [val = actual_val](const IntegerVariableIntervalSetState & v) { return v.values->contains(val); }}
         .visit(get_state.state);
 }
 
@@ -893,7 +886,7 @@ auto State::domain_has_holes(const IntegerVariableID var) const -> bool
         [](const IntegerVariableRangeState &) { return false; },
         [](const IntegerVariableConstantState &) { return false; },
         [](const IntegerVariableSmallSetState &) { return true; },
-        [](const IntegerVariableSetState &) { return true; }}
+        [](const IntegerVariableIntervalSetState & v) { return v.values->has_holes(); }}
         .visit(state_of(actual_var, space));
 }
 
@@ -917,9 +910,9 @@ auto State::optional_single_value(const VarType_ & var) const -> optional<Intege
             else
                 return nullopt;
         },
-        [](const IntegerVariableSetState & v) -> optional<Integer> {
-            if (1 == v.values->size())
-                return make_optional(*v.values->begin());
+        [](const IntegerVariableIntervalSetState & v) -> optional<Integer> {
+            if (v.values->lower() == v.values->upper())
+                return make_optional(v.values->lower());
             else
                 return nullopt;
         }}.visit(get_state.state);
@@ -938,7 +931,7 @@ auto State::has_single_value(const IntegerVariableID var) const -> bool
         [](const IntegerVariableRangeState & v) -> bool { return v.lower == v.upper; },
         [](const IntegerVariableConstantState &) -> bool { return true; },
         [](const IntegerVariableSmallSetState & v) -> bool { return v.bits.has_single_bit(); },
-        [](const IntegerVariableSetState & v) -> bool { return 1 == v.values->size(); }}
+        [](const IntegerVariableIntervalSetState & v) -> bool { return v.values->lower() == v.values->upper(); }}
         .visit(state_of(actual_var, space));
 }
 
@@ -950,7 +943,7 @@ auto State::domain_size(const VarType_ & var) const -> Integer
         [](const IntegerVariableConstantState &) { return Integer{1}; },
         [](const IntegerVariableRangeState & r) { return r.upper - r.lower + Integer{1}; },
         [](const IntegerVariableSmallSetState & s) { return Integer{s.bits.popcount()}; },
-        [](const IntegerVariableSetState & s) { return Integer(s.values->size()); }}
+        [](const IntegerVariableIntervalSetState & s) { return Integer(s.values->size()); }}
         .visit(get_state.state);
 }
 
@@ -1012,12 +1005,14 @@ auto State::for_each_value_while(const VarType_ & var, const function<auto(Integ
                 }
             }
         },
-        [&](const IntegerVariableSetState & s) {
-            for (const auto & v : *s.values)
-                if (! f(apply(v))) {
-                    result = false;
-                    break;
-                }
+        [&](const IntegerVariableIntervalSetState & s) {
+            auto values = s.values;
+            for (const auto & [l, u] : values->intervals)
+                for (auto i = l; i <= u; ++i)
+                    if (! f(apply(i))) {
+                        result = false;
+                        return;
+                    }
         }}
         .visit(var_copy);
 
@@ -1064,12 +1059,13 @@ auto State::for_each_value_while_immutable(const VarType_ & var, const function<
                 }
             }
         },
-        [&](const IntegerVariableSetState & s) {
-            for (const auto & v : *s.values)
-                if (! f(apply(v))) {
-                    result = false;
-                    break;
-                }
+        [&](const IntegerVariableIntervalSetState & s) {
+            for (const auto & [l, u] : s.values->intervals)
+                for (auto i = l; i <= u; ++i)
+                    if (! f(apply(i))) {
+                        result = false;
+                        return;
+                    }
         }}
         .visit(var_ref);
 
@@ -1080,7 +1076,9 @@ auto State::operator()(const IntegerVariableID & i) const -> Integer
 {
     if (auto result = optional_single_value(i))
         return *result;
-    throw VariableDoesNotHaveUniqueValue{"Integer variable " + debug_string(i)};
+    auto [actual_var, negate_first, then_add] = deview(i);
+    IntegerVariableState space = IntegerVariableConstantState{0_i};
+    throw VariableDoesNotHaveUniqueValue{"Integer variable " + visit([&](const auto & i) { return debug_string(i) + " " + debug_string(state_of(i, space)); }, actual_var)};
 }
 
 auto State::new_epoch(bool subsearch) -> Timestamp

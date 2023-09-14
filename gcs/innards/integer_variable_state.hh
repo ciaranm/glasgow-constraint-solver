@@ -2,11 +2,11 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INTEGER_VARIABLE_STATE_HH
 
 #include <gcs/innards/bits.hh>
+#include <gcs/innards/interval_set.hh>
 #include <gcs/integer.hh>
 
 #include <memory>
 #include <optional>
-#include <set>
 #include <string>
 #include <variant>
 
@@ -72,11 +72,11 @@ namespace gcs::innards
      * \ingroup Innards
      * \sa State::state_of()
      */
-    struct IntegerVariableSetState
+    struct IntegerVariableIntervalSetState
     {
-        std::shared_ptr<std::set<Integer>> values;
+        std::shared_ptr<IntervalSet<Integer>> values;
 
-        explicit IntegerVariableSetState(std::shared_ptr<std::set<Integer>> v) :
+        explicit IntegerVariableIntervalSetState(std::shared_ptr<IntervalSet<Integer>> v) :
             values(v)
         {
         }
@@ -93,7 +93,7 @@ namespace gcs::innards
         IntegerVariableConstantState,
         IntegerVariableRangeState,
         IntegerVariableSmallSetState,
-        IntegerVariableSetState>;
+        IntegerVariableIntervalSetState>;
 
     /**
      * \brief Turn an IntegerVariableState into a semi-readable string for
