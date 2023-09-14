@@ -702,6 +702,97 @@ auto provable_entry_member(IntegerVariableID v) -> bool
         }}
         .visit(v);
 }
+
+auto consolidate_unary_entries(State & state, vector<SmartEntry> tuple) -> vector<SmartEntry>
+{
+    // TODO:
+    //  Using an IntervalSet data structure we could do this in a much better way, but this
+    //  will do for now
+    map<IntegerVariableID, vector<SmartEntry>> unary_entries{};
+    vector<SmartEntry> new_tuple{};
+    for (const auto & entry : tuple) {
+        overloaded{
+            [&](BinaryEntry binary_entry) {
+                new_tuple.emplace_back(binary_entry);
+            },
+            [&](UnaryValueEntry value_entry) {
+                auto & entries = unary_entries[value_entry.var];
+                entries.emplace_back(value_entry);
+            },
+            [&](UnarySetEntry set_entry) {
+                auto & entries = unary_entries[set_entry.var];
+                entries.emplace_back(set_entry);
+            }}
+            .visit(entry);
+    }
+
+    for (auto & var_and_entries : unary_entries) {
+        const auto & var = var_and_entries.first;
+        const auto & entries = var_and_entries.second;
+        vector<Integer> allowed_vals{};
+
+        state.for_each_value(var, [&](Integer v) {
+            bool val_allowed = true;
+            for (auto & entry : entries) {
+                overloaded{
+                    [&](BinaryEntry) {
+                        throw UnexpectedException{"Shouldn't have a binary entry here."};
+                    },
+                    [&](UnaryValueEntry value_entry) {
+                        switch (value_entry.constraint_type) {
+                        case SmartEntryConstraint::LessThan:
+                            val_allowed = val_allowed && v < value_entry.value;
+                            break;
+                        case SmartEntryConstraint::LessThanEqual:
+                            val_allowed = val_allowed && v <= value_entry.value;
+                            break;
+                        case SmartEntryConstraint::Equal:
+                            val_allowed = val_allowed && v == value_entry.value;
+                            break;
+                        case SmartEntryConstraint::NotEqual:
+                            val_allowed = val_allowed && v != value_entry.value;
+                            break;
+                        case SmartEntryConstraint::GreaterThan:
+                            val_allowed = val_allowed && v > value_entry.value;
+                            break;
+                        case SmartEntryConstraint::GreaterThanEqual:
+                            val_allowed = val_allowed && v >= value_entry.value;
+                            break;
+                        case SmartEntryConstraint::In:
+                        case SmartEntryConstraint::NotIn:
+                            throw UnexpectedException{"Unexpected SmartEntry type encountered."};
+                        }
+                    },
+                    [&](UnarySetEntry set_entry) {
+                        switch (set_entry.constraint_type) {
+                        case SmartEntryConstraint::In:
+                            val_allowed = val_allowed && std::count(set_entry.values.begin(), set_entry.values.end(), v);
+                            break;
+                        case SmartEntryConstraint::NotIn:
+                            val_allowed = val_allowed && ! std::count(set_entry.values.begin(), set_entry.values.end(), v);
+                            break;
+                        case SmartEntryConstraint::LessThan:
+                        case SmartEntryConstraint::LessThanEqual:
+                        case SmartEntryConstraint::Equal:
+                        case SmartEntryConstraint::NotEqual:
+                        case SmartEntryConstraint::GreaterThan:
+                        case SmartEntryConstraint::GreaterThanEqual:
+                            throw UnexpectedException{"Unexpected SmartEntry type encountered."};
+                        }
+                    }}
+                    .visit(entry);
+            }
+            if (val_allowed) {
+                allowed_vals.emplace_back(v);
+            }
+        });
+
+        auto new_entry_for_var = SmartTable::in_set(var, allowed_vals);
+        new_tuple.emplace_back(new_entry_for_var);
+    }
+    return new_tuple;
+}
+
 auto SmartTable::clone() const -> unique_ptr<Constraint>
 {
     return make_unique<SmartTable>(_vars, _tuples);
@@ -734,7 +825,7 @@ auto SmartTable::install(Propagators & propagators, State & initial_state) && ->
         for (unsigned int tuple_idx = 0; tuple_idx < _tuples.size(); ++tuple_idx) {
             WeightedPseudoBooleanSum entry_flags_sum{};
             WeightedPseudoBooleanSum entry_flags_neg_sum{};
-            for (const auto & entry : _tuples[tuple_idx]) {
+            for (const auto & entry : consolidate_unary_entries(initial_state, _tuples[tuple_idx])) {
                 overloaded{
                     [&](BinaryEntry binary_entry) {
                         //                        if(!provable_entry_member(binary_entry.var_1) || !provable_entry_member(binary_entry.var_2)) {
