@@ -100,7 +100,7 @@ auto Count::install(Propagators & propagators, State & initial_state) && -> void
             }
 
             auto how_many_is_less_than = Integer(vars.size() - how_many_definitely_do_not) + 1_i;
-            auto inf = state.infer(how_many < how_many_is_less_than, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) -> void {
+            auto inf = state.infer(how_many < how_many_is_less_than, JustifyExplicitly{[&](Proof & proof) -> void {
                 for (const auto & [idx, var] : enumerate(vars)) {
                     bool seen_any = false;
                     state.for_each_value_while_immutable(var, [&](const Integer & val) -> bool {
@@ -110,8 +110,8 @@ auto Count::install(Propagators & propagators, State & initial_state) && -> void
                     });
 
                     if (! seen_any)
-                        to_delete.push_back(proof.emit_rup_proof_line_under_trail(state,
-                            WeightedPseudoBooleanSum{} + 1_i * (! get<0>(flags[idx])) >= 1_i));
+                        proof.emit_rup_proof_line_under_trail(state,
+                            WeightedPseudoBooleanSum{} + 1_i * (! get<0>(flags[idx])) >= 1_i, ProofLevel::Temporary);
                 }
             }});
 

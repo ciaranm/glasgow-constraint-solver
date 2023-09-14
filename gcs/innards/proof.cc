@@ -960,10 +960,10 @@ auto Proof::infer(const State & state, const Literal & lit, const Justification 
                         << x.where.line() << " in " << x.where.function_name() << '\n';
 #endif
             need_lit();
-            vector<ProofLine> to_delete;
-            add_proof_steps(x, to_delete);
+            auto t = temporary_proof_level();
+            add_proof_steps(x);
             infer(state, lit, JustifyUsingRUP{});
-            delete_proof_lines(to_delete);
+            forget_proof_level(t);
         },
         [&](const Guess &) {
             need_lit();
@@ -1265,24 +1265,9 @@ auto Proof::trail_variables_as_sum(const State & state, Integer coeff) -> Weight
     return result;
 }
 
-auto Proof::add_proof_steps(const JustifyExplicitly & x, vector<ProofLine> & to_delete) -> void
+auto Proof::add_proof_steps(const JustifyExplicitly & x) -> void
 {
-    x.add_proof_steps(*this, to_delete);
-}
-
-auto Proof::delete_proof_lines(const vector<ProofLine> & to_delete) -> void
-{
-    if (! to_delete.empty()) {
-        stringstream line;
-        line << "del id";
-        for (const auto & l : to_delete)
-            line << " " << l;
-        _imp->proof << line.str() << '\n';
-
-        for (const auto & d : to_delete)
-            for (auto & level : _imp->proof_lines_by_level)
-                level.erase(d);
-    }
+    x.add_proof_steps(*this);
 }
 
 auto Proof::record_proof_line(ProofLine line, ProofLevel level) -> ProofLine

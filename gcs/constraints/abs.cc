@@ -57,15 +57,15 @@ auto Abs::install(Propagators & propagators, State & initial_state) && -> void
 
         state.for_each_value_while(v2, [&](Integer val) {
             if (! state.in_domain(v1, val) && ! state.in_domain(v1, -val) && state.in_domain(v2, val))
-                increase_inference_to(result, state.infer_not_equal(v2, val, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & del) {
-                    del.push_back(proof.emit_rup_proof_line_under_trail(state,
-                        WeightedPseudoBooleanSum{} + 1_i * (v1 != val) >= 1_i));
-                    del.push_back(proof.emit_rup_proof_line_under_trail(state,
-                        WeightedPseudoBooleanSum{} + 1_i * (v1 != -val) >= 1_i));
-                    del.push_back(proof.emit_rup_proof_line_under_trail(state,
-                        WeightedPseudoBooleanSum{} + 1_i * (*selector) + 1_i * (v2 != val) >= 1_i));
-                    del.push_back(proof.emit_rup_proof_line_under_trail(state,
-                        WeightedPseudoBooleanSum{} + 1_i * (! *selector) + 1_i * (v2 != val) >= 1_i));
+                increase_inference_to(result, state.infer_not_equal(v2, val, JustifyExplicitly{[&](Proof & proof) {
+                    proof.emit_rup_proof_line_under_trail(state,
+                        WeightedPseudoBooleanSum{} + 1_i * (v1 != val) >= 1_i, ProofLevel::Temporary);
+                    proof.emit_rup_proof_line_under_trail(state,
+                        WeightedPseudoBooleanSum{} + 1_i * (v1 != -val) >= 1_i, ProofLevel::Temporary);
+                    proof.emit_rup_proof_line_under_trail(state,
+                        WeightedPseudoBooleanSum{} + 1_i * (*selector) + 1_i * (v2 != val) >= 1_i, ProofLevel::Temporary);
+                    proof.emit_rup_proof_line_under_trail(state,
+                        WeightedPseudoBooleanSum{} + 1_i * (! *selector) + 1_i * (v2 != val) >= 1_i, ProofLevel::Temporary);
                 }}));
             return result != Inference::Contradiction;
         });

@@ -296,14 +296,9 @@ namespace gcs::innards
         auto forget_proof_level(int depth) -> void;
 
         /**
-         * Add the explicit proof steps given, accumulating lines to be deleted.
+         * Add the explicit proof steps given.
          */
-        auto add_proof_steps(const JustifyExplicitly &, std::vector<ProofLine> & to_delete) -> void;
-
-        /**
-         * Delete the specified proof lines.
-         */
-        auto delete_proof_lines(const std::vector<ProofLine> & to_delete) -> void;
+        auto add_proof_steps(const JustifyExplicitly &) -> void;
 
         /**
          * Emit the specified text as a proof line.

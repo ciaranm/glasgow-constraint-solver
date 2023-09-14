@@ -88,10 +88,10 @@ auto Element::install(Propagators & propagators, State & initial_state) && -> vo
                 return ! supported;
             });
             if (! supported) {
-                increase_inference_to(inf, state.infer_not_equal(var, val, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
+                increase_inference_to(inf, state.infer_not_equal(var, val, JustifyExplicitly{[&](Proof & proof) {
                     state.for_each_value_immutable(idx, [&](Integer i) {
-                        to_delete.push_back(proof.emit_rup_proof_line_under_trail(state,
-                            WeightedPseudoBooleanSum{} + 1_i * (var != val) + 1_i * (idx != i) >= 1_i));
+                        proof.emit_rup_proof_line_under_trail(state,
+                            WeightedPseudoBooleanSum{} + 1_i * (var != val) + 1_i * (idx != i) >= 1_i, ProofLevel::Temporary);
                     });
                 }}));
 
@@ -171,17 +171,17 @@ auto ElementConstantArray::install(Propagators & propagators, State & initial_st
         });
 
         auto inference = Inference::NoChange;
-        auto just = JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
+        auto just = JustifyExplicitly{[&](Proof & proof) {
             WeightedPseudoBooleanSum trail = proof.trail_variables_as_sum(state, 1_i);
             state.for_each_value_immutable(idx, [&](Integer i) {
                 trail += 1_i * (var == (*vals)[i.raw_value]);
             });
 
             state.for_each_value_immutable(idx, [&](Integer i) {
-                to_delete.push_back(proof.emit_rup_proof_line(trail + 1_i * (idx == i) >= 1_i));
+                proof.emit_rup_proof_line(trail + 1_i * (idx == i) >= 1_i, ProofLevel::Temporary);
             });
 
-            to_delete.push_back(proof.emit_rup_proof_line(trail >= 1_i));
+            proof.emit_rup_proof_line(trail >= 1_i, ProofLevel::Temporary);
         }};
 
         increase_inference_to(inference, state.infer_greater_than_or_equal(var, *smallest_seen, just));
@@ -270,7 +270,7 @@ auto Element2DConstantArray::install(Propagators & propagators, State & initial_
             if (*idxsel != state.allocate_integer_variable_with_state(0_i, Integer(vals->size() * vals->begin()->size())))
                 throw UnexpectedException{"something went horribly wrong with variable IDs"};
 
-            state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
+            state.infer_true(JustifyExplicitly{[&](Proof & proof) {
                 state.for_each_value_immutable(idx1, [&](Integer i1) {
                     state.for_each_value_immutable(idx2, [&](Integer i2) {
                         Integer idx = i1 * Integer(vals->size()) + i2;
@@ -294,11 +294,11 @@ auto Element2DConstantArray::install(Propagators & propagators, State & initial_
                         WeightedPseudoBooleanSum expr = trail;
                         expr += 1_i * (idx1 != i1);
                         expr += 1_i * (idx2 != i2);
-                        to_delete.push_back(proof.emit_rup_proof_line(expr >= 1_i));
+                        proof.emit_rup_proof_line(expr >= 1_i, ProofLevel::Temporary);
                     });
                     WeightedPseudoBooleanSum expr = trail;
                     expr += 1_i * (idx1 != i1);
-                    to_delete.push_back(proof.emit_rup_proof_line(expr >= 1_i));
+                    proof.emit_rup_proof_line(expr >= 1_i, ProofLevel::Temporary);
                 });
 
                 WeightedPseudoBooleanSum expr;
@@ -325,7 +325,7 @@ auto Element2DConstantArray::install(Propagators & propagators, State & initial_
         });
 
         auto inference = Inference::NoChange;
-        auto just = JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
+        auto just = JustifyExplicitly{[&](Proof & proof) {
             WeightedPseudoBooleanSum trail = proof.trail_variables_as_sum(state, 1_i);
             state.for_each_value_immutable(idx1, [&](Integer i1) {
                 state.for_each_value_immutable(idx2, [&](Integer i2) {
@@ -338,14 +338,14 @@ auto Element2DConstantArray::install(Propagators & propagators, State & initial_
                     WeightedPseudoBooleanSum expr = trail;
                     expr += 1_i * (idx1 != i1);
                     expr += 1_i * (idx2 != i2);
-                    to_delete.push_back(proof.emit_rup_proof_line(expr >= 1_i));
+                    proof.emit_rup_proof_line(expr >= 1_i, ProofLevel::Temporary);
                 });
                 WeightedPseudoBooleanSum expr = trail;
                 expr += 1_i * (idx1 != i1);
-                to_delete.push_back(proof.emit_rup_proof_line(expr >= 1_i));
+                proof.emit_rup_proof_line(expr >= 1_i, ProofLevel::Temporary);
             });
 
-            to_delete.push_back(proof.emit_rup_proof_line(trail >= 1_i));
+            proof.emit_rup_proof_line(trail >= 1_i, ProofLevel::Temporary);
         }};
 
         increase_inference_to(inference, state.infer_greater_than_or_equal(var, *smallest_seen, just));
