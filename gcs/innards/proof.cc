@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <deque>
 #include <fstream>
 #include <iterator>
 #include <list>
@@ -23,7 +24,9 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::cmp_less_equal;
 using std::copy;
+using std::deque;
 using std::flush;
 using std::fstream;
 using std::ios;
@@ -111,7 +114,6 @@ struct Proof::Imp
     unsigned long long model_variables = 0;
     ProofLine model_constraints = 0;
     ProofLine proof_line = 0;
-    int active_proof_level = 0;
 
     map<SimpleOrProofOnlyIntegerVariableID, ProofLine> variable_at_least_one_constraints;
     map<VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID>, string> direct_integer_variables;
@@ -123,6 +125,9 @@ struct Proof::Imp
     map<unsigned long long, string> proof_only_integer_variables;
 
     list<map<tuple<bool, SimpleIntegerVariableID, Integer>, variant<ProofLine, string>>> line_for_bound_in_bits;
+
+    int active_proof_level = 0;
+    deque<IntervalSet<ProofLine>> proof_lines_by_level;
 
     string opb_file, proof_file;
     stringstream opb;
@@ -142,6 +147,7 @@ Proof::Proof(const ProofOptions & proof_options) :
     _imp->use_friendly_names = proof_options.use_friendly_names;
     _imp->always_use_full_encoding = proof_options.always_use_full_encoding;
     _imp->line_for_bound_in_bits.emplace_back();
+    _imp->proof_lines_by_level.resize(2);
 }
 
 Proof::~Proof() = default;
@@ -362,14 +368,11 @@ auto Proof::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> void
 
     auto & [_, bit_vars] = _imp->integer_variable_bits.at(id);
 
-    if (_imp->opb_done)
-        _imp->proof << "# 0\n";
-
     // gevar -> bits
     auto gevar_implies_bits = implied_by(opb_sum(bit_vars) >= v, gevar);
     if (_imp->opb_done) {
         _imp->proof << "red " << gevar_implies_bits << " ; " << gevar << " 0\n";
-        ++_imp->proof_line;
+        record_proof_line(++_imp->proof_line, ProofLevel::Top);
     }
     else {
         _imp->opb << gevar_implies_bits << " ;\n";
@@ -381,7 +384,7 @@ auto Proof::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> void
     auto not_gevar_implies_bits = implied_by(opb_sum(bit_vars) < v, negate_opb_var_name(gevar));
     if (_imp->opb_done) {
         _imp->proof << "red " << not_gevar_implies_bits << " ; " << gevar << " 1\n";
-        ++_imp->proof_line;
+        record_proof_line(++_imp->proof_line, ProofLevel::Top);
     }
     else {
         _imp->opb << not_gevar_implies_bits << " ;\n";
@@ -395,7 +398,7 @@ auto Proof::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> void
     if (bounds != _imp->bounds_for_gevars.end() && bounds->second.first == v) {
         if (_imp->opb_done) {
             _imp->proof << "u 1 " << gevar << " >= 1 ;\n";
-            ++_imp->proof_line;
+            record_proof_line(++_imp->proof_line, ProofLevel::Top);
         }
         else {
             _imp->opb << "1 " << gevar << " >= 1 ;\n";
@@ -407,7 +410,7 @@ auto Proof::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> void
     if (bounds != _imp->bounds_for_gevars.end() && bounds->second.second < v) {
         if (_imp->opb_done) {
             _imp->proof << "u 1 ~" << gevar << " >= 1 ;\n";
-            ++_imp->proof_line;
+            record_proof_line(++_imp->proof_line, ProofLevel::Top);
         }
         else {
             _imp->opb << "1 ~" << gevar << " >= 1 ;\n";
@@ -424,7 +427,7 @@ auto Proof::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> void
         auto implies_higher = implies(opb_var_as_sum(proof_name(id >= *higher_gevar)), proof_name(id >= v));
         if (_imp->opb_done) {
             _imp->proof << "u " << implies_higher << " ;\n";
-            ++_imp->proof_line;
+            record_proof_line(++_imp->proof_line, ProofLevel::Top);
         }
         else {
             _imp->opb << implies_higher << " ;\n";
@@ -437,16 +440,13 @@ auto Proof::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> void
         auto implies_lower = implies(opb_var_as_sum(proof_name(id >= v)), proof_name(id >= *prev(this_gevar)));
         if (_imp->opb_done) {
             _imp->proof << "u " << implies_lower << " ;\n";
-            ++_imp->proof_line;
+            record_proof_line(++_imp->proof_line, ProofLevel::Top);
         }
         else {
             _imp->opb << implies_lower << " ;\n";
             ++_imp->model_constraints;
         }
     }
-
-    if (_imp->opb_done)
-        _imp->proof << "# " << _imp->active_proof_level << "\n";
 }
 
 auto Proof::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> void
@@ -475,9 +475,6 @@ auto Proof::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID id, Inte
         else
             _imp->opb << "* need lower bound " << eqvar << '\n';
 
-        if (_imp->opb_done)
-            _imp->proof << "# 0\n";
-
         auto not_ge_v_plus_one = opb_sum({pair{1_i, negate_opb_var_name(proof_name(id >= v + 1_i))}}) >= 1_i;
 
         // eqvar -> ! ge_v+1
@@ -488,9 +485,9 @@ auto Proof::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID id, Inte
 
         if (_imp->opb_done) {
             _imp->proof << "red " << eqvar_true << " ; " << eqvar << " 0\n";
-            ++_imp->proof_line;
+            record_proof_line(++_imp->proof_line, ProofLevel::Top);
             _imp->proof << "red " << eqvar_false << " ; " << eqvar << " 1\n";
-            ++_imp->proof_line;
+            record_proof_line(++_imp->proof_line, ProofLevel::Top);
         }
         else {
             _imp->opb << eqvar_true << " ;\n";
@@ -498,9 +495,6 @@ auto Proof::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID id, Inte
             _imp->model_constraints += 2;
             ++_imp->model_variables;
         }
-
-        if (_imp->opb_done)
-            _imp->proof << "# " << _imp->active_proof_level << "\n";
     }
     else if (bounds != _imp->bounds_for_gevars.end() && bounds->second.second == v) {
         // it's an upper bound
@@ -510,9 +504,6 @@ auto Proof::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID id, Inte
             _imp->proof << "* need upper bound " << eqvar << '\n';
         else
             _imp->opb << "* need upper bound " << eqvar << '\n';
-
-        if (_imp->opb_done)
-            _imp->proof << "# 0\n";
 
         auto ge_v = opb_sum({pair{1_i, proof_name(id >= v)}}) >= 1_i;
 
@@ -524,9 +515,9 @@ auto Proof::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID id, Inte
 
         if (_imp->opb_done) {
             _imp->proof << "red " << eqvar_true << " ; " << eqvar << " 0\n";
-            ++_imp->proof_line;
+            record_proof_line(++_imp->proof_line, ProofLevel::Top);
             _imp->proof << "red " << eqvar_false << " ; " << eqvar << " 1\n";
-            ++_imp->proof_line;
+            record_proof_line(++_imp->proof_line, ProofLevel::Top);
         }
         else {
             _imp->opb << eqvar_true << " ;\n";
@@ -534,9 +525,6 @@ auto Proof::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID id, Inte
             _imp->model_constraints += 2;
             ++_imp->model_variables;
         }
-
-        if (_imp->opb_done)
-            _imp->proof << "# " << _imp->active_proof_level << "\n";
     }
     else {
         // neither a lower nor an upper bound
@@ -547,9 +535,6 @@ auto Proof::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID id, Inte
             _imp->proof << "* need " << eqvar << '\n';
         else
             _imp->opb << "* need " << eqvar << '\n';
-
-        if (_imp->opb_done)
-            _imp->proof << "# 0\n";
 
         auto ge_v_but_not_v_plus_one = opb_sum({pair{1_i, proof_name(id >= v)},
                                            pair{1_i, negate_opb_var_name(proof_name(id >= v + 1_i))}}) >= 2_i;
@@ -562,9 +547,9 @@ auto Proof::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID id, Inte
 
         if (_imp->opb_done) {
             _imp->proof << "red " << eqvar_true << " ; " << eqvar << " 0\n";
-            ++_imp->proof_line;
+            record_proof_line(++_imp->proof_line, ProofLevel::Top);
             _imp->proof << "red " << eqvar_false << " ; " << eqvar << " 1\n";
-            ++_imp->proof_line;
+            record_proof_line(++_imp->proof_line, ProofLevel::Top);
         }
         else {
             _imp->opb << eqvar_true << " ;\n";
@@ -572,9 +557,6 @@ auto Proof::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID id, Inte
             _imp->model_constraints += 2;
             ++_imp->model_variables;
         }
-
-        if (_imp->opb_done)
-            _imp->proof << "# " << _imp->active_proof_level << "\n";
     }
 }
 
@@ -824,8 +806,6 @@ auto Proof::solution(const State & state) -> void
             .visit(*obj);
     }
 
-    _imp->proof << "# 0\n";
-
     _imp->proof << (state.optional_minimise_variable() ? "soli" : "solx");
 
     for (auto & var : _imp->solution_variables)
@@ -834,7 +814,7 @@ auto Proof::solution(const State & state) -> void
 
     if (! state.optional_minimise_variable()) {
         _imp->proof << '\n';
-        ++_imp->proof_line;
+        record_proof_line(++_imp->proof_line, ProofLevel::Top);
     }
     else {
         auto do_it = [&](const SimpleIntegerVariableID & var, Integer val) {
@@ -859,7 +839,7 @@ auto Proof::solution(const State & state) -> void
             }
 
             _imp->proof << '\n';
-            ++_imp->proof_line;
+            record_proof_line(++_imp->proof_line, ProofLevel::Top);
         };
 
         overloaded{
@@ -867,9 +847,8 @@ auto Proof::solution(const State & state) -> void
                 Integer obj_val = state(*state.optional_minimise_variable());
                 do_it(var, obj_val);
                 need_proof_name(var < obj_val);
-                _imp->proof << "# 0\n";
                 _imp->proof << "u 1 " << proof_name(var < obj_val) << " >= 1 ;\n";
-                ++_imp->proof_line;
+                record_proof_line(++_imp->proof_line, ProofLevel::Top);
             },
             [&](const ConstantIntegerVariableID &) {
                 throw UnimplementedException{};
@@ -879,14 +858,11 @@ auto Proof::solution(const State & state) -> void
                 do_it(var.actual_variable, obj_val);
                 auto lit = deview(var < state(var));
                 need_proof_name(lit);
-                _imp->proof << "# 0\n";
                 _imp->proof << "u 1 " << proof_name(lit) << " >= 1 ;\n";
-                ++_imp->proof_line;
+                record_proof_line(++_imp->proof_line, ProofLevel::Top);
             }}
             .visit(*state.optional_minimise_variable());
     }
-
-    _imp->proof << "# " << _imp->active_proof_level << "\n";
 }
 
 auto Proof::backtrack(const State & state) -> void
@@ -912,7 +888,7 @@ auto Proof::conclude_unsatisfiable() -> void
 {
     _imp->proof << "* asserting contradiction\n";
     _imp->proof << "u >= 1 ;\n";
-    ++_imp->proof_line;
+    record_proof_line(++_imp->proof_line, ProofLevel::Top);
     _imp->proof << "output NONE\n";
     _imp->proof << "conclusion UNSAT : " << _imp->proof_line << '\n';
     end_proof();
@@ -953,7 +929,7 @@ auto Proof::infer(const State & state, const Literal & lit, const Justification 
             _imp->proof << rule << " ";
             emit_inequality_to(move(terms) >= 1_i, nullopt, _imp->proof);
             _imp->proof << '\n';
-            ++_imp->proof_line;
+            record_proof_line(++_imp->proof_line, ProofLevel::Current);
         }
     };
 
@@ -1007,10 +983,8 @@ auto Proof::infer(const State & state, const Literal & lit, const Justification 
 
 auto Proof::emit_proof_line(const string & s, ProofLevel level) -> ProofLine
 {
-    switch_to_proof_level(level);
     _imp->proof << s << '\n';
-    auto result = ++_imp->proof_line;
-    switch_to_current_proof_level_from(level);
+    auto result = record_proof_line(++_imp->proof_line, level);
     return result;
 }
 
@@ -1139,29 +1113,20 @@ auto Proof::emit_inequality_to(const SumLessEqual<Weighted<PseudoBooleanTerm>> &
 auto Proof::emit_rup_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level) -> ProofLine
 {
     need_all_proof_names_in(ineq.lhs);
-    switch_to_proof_level(level);
 
     _imp->proof << "u ";
     emit_inequality_to(ineq, nullopt, _imp->proof);
     _imp->proof << '\n';
-    auto result = ++_imp->proof_line;
-
-    switch_to_current_proof_level_from(level);
-    return result;
+    return record_proof_line(++_imp->proof_line, level);
 }
 
 auto Proof::emit_assert_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level) -> ProofLine
 {
     need_all_proof_names_in(ineq.lhs);
-    switch_to_proof_level(level);
-
     _imp->proof << "a ";
     emit_inequality_to(ineq, nullopt, _imp->proof);
     _imp->proof << '\n';
-    auto result = ++_imp->proof_line;
-
-    switch_to_current_proof_level_from(level);
-    return result;
+    return record_proof_line(++_imp->proof_line, level);
 }
 
 auto Proof::emit_rup_proof_line_under_trail(const State & state, const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
@@ -1178,7 +1143,6 @@ auto Proof::emit_red_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> 
     ProofLevel level) -> ProofLine
 {
     need_all_proof_names_in(ineq.lhs);
-    switch_to_proof_level(level);
 
     _imp->proof << "red ";
     emit_inequality_to(ineq, nullopt, _imp->proof);
@@ -1200,31 +1164,27 @@ auto Proof::emit_red_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> 
         _imp->proof << " " << witness_literal(f) << " -> " << witness_literal(t);
     _imp->proof << " ;\n";
 
-    auto result = ++_imp->proof_line;
-    switch_to_current_proof_level_from(level);
-    return result;
+    return record_proof_line(++_imp->proof_line, level);
 }
 
 auto Proof::emit_red_proof_lines_reifying(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofFlag reif,
     ProofLevel level) -> pair<ProofLine, ProofLine>
 {
     need_all_proof_names_in(ineq.lhs);
-    switch_to_proof_level(level);
 
     _imp->proof << "red ";
     emit_inequality_to(ineq, {{reif}}, _imp->proof);
     _imp->proof << " " << proof_name(reif) << " -> 0";
     _imp->proof << " ;\n";
-    auto forward_result = ++_imp->proof_line;
+    auto forward_result = record_proof_line(++_imp->proof_line, level);
 
     auto negated_ineq = ineq.lhs >= ineq.rhs + 1_i;
     _imp->proof << "red ";
     emit_inequality_to(negated_ineq, {{! reif}}, _imp->proof);
     _imp->proof << " " << proof_name(reif) << " -> 1";
     _imp->proof << " ;\n";
-    auto reverse_result = ++_imp->proof_line;
+    auto reverse_result = record_proof_line(++_imp->proof_line, level);
 
-    switch_to_current_proof_level_from(level);
     return pair{forward_result, reverse_result};
 }
 
@@ -1249,17 +1209,13 @@ auto Proof::need_constraint_saying_variable_takes_at_least_one_value(IntegerVari
                 for (Integer v = lower; v <= upper; ++v)
                     need_proof_name(var == v);
 
-                _imp->proof << "# 0\n";
-
                 _imp->proof << "u ";
                 for (Integer v = lower; v <= upper; ++v)
                     _imp->proof << "1 " << proof_name(var == v) << " ";
 
                 _imp->proof << ">= 1 ;\n";
-                _imp->variable_at_least_one_constraints.emplace(var, ++_imp->proof_line);
-
-                _imp->proof << "# " << _imp->active_proof_level << "\n";
-                result = _imp->variable_at_least_one_constraints.emplace(var, _imp->proof_line).first;
+                auto line = record_proof_line(++_imp->proof_line, ProofLevel::Top);
+                result = _imp->variable_at_least_one_constraints.emplace(var, line).first;
             }
             return result->second;
         },
@@ -1267,32 +1223,6 @@ auto Proof::need_constraint_saying_variable_takes_at_least_one_value(IntegerVari
             return need_constraint_saying_variable_takes_at_least_one_value(var.actual_variable);
         }}
         .visit(var);
-}
-
-auto Proof::switch_to_current_proof_level_from(ProofLevel level) -> void
-{
-    switch (level) {
-    case ProofLevel::Current:
-        break;
-    case ProofLevel::Top:
-    case ProofLevel::Temporary:
-        _imp->proof << "# " << _imp->active_proof_level << '\n';
-        break;
-    }
-}
-
-auto Proof::switch_to_proof_level(ProofLevel level) -> void
-{
-    switch (level) {
-    case ProofLevel::Current:
-        break;
-    case ProofLevel::Top:
-        _imp->proof << "# 0\n";
-        break;
-    case ProofLevel::Temporary:
-        _imp->proof << "# " << temporary_proof_level() << '\n';
-        break;
-    }
 }
 
 auto Proof::proof_level() -> int
@@ -1307,13 +1237,21 @@ auto Proof::temporary_proof_level() -> int
 
 auto Proof::enter_proof_level(int depth) -> void
 {
-    _imp->proof << "# " << depth << '\n';
+    if (cmp_less_equal(_imp->proof_lines_by_level.size(), depth + 1))
+        _imp->proof_lines_by_level.resize(depth + 2);
     _imp->active_proof_level = depth;
 }
 
 auto Proof::forget_proof_level(int depth) -> void
 {
-    _imp->proof << "w " << depth << '\n';
+    auto & lines = _imp->proof_lines_by_level.at(depth);
+    for (auto & [l, u] : lines.intervals) {
+        if (l == u)
+            _imp->proof << "del id " << l << '\n';
+        else
+            _imp->proof << "del range " << l << " " << u + 1 << '\n';
+    }
+    lines.clear();
 }
 
 auto Proof::trail_variables_as_sum(const State & state, Integer coeff) -> WeightedPseudoBooleanSum
@@ -1340,7 +1278,28 @@ auto Proof::delete_proof_lines(const vector<ProofLine> & to_delete) -> void
         for (const auto & l : to_delete)
             line << " " << l;
         _imp->proof << line.str() << '\n';
+
+        for (const auto & d : to_delete)
+            for (auto & level : _imp->proof_lines_by_level)
+                level.erase(d);
     }
+}
+
+auto Proof::record_proof_line(ProofLine line, ProofLevel level) -> ProofLine
+{
+    switch (level) {
+    case ProofLevel::Top:
+        _imp->proof_lines_by_level.at(0).insert_at_end(line);
+        break;
+    case ProofLevel::Current:
+        _imp->proof_lines_by_level.at(_imp->active_proof_level).insert_at_end(line);
+        break;
+    case ProofLevel::Temporary:
+        _imp->proof_lines_by_level.at(_imp->active_proof_level + 1).insert_at_end(line);
+        break;
+    }
+
+    return line;
 }
 
 auto Proof::has_bit_representation(const SimpleIntegerVariableID & var) const -> bool

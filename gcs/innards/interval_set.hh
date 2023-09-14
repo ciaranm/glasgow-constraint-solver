@@ -133,6 +133,21 @@ namespace gcs::innards
         {
             return intervals.size() > 1;
         }
+
+        auto clear() -> void
+        {
+            intervals.clear();
+        }
+
+        auto insert_at_end(Int_ value) -> void
+        {
+            if (intervals.empty())
+                intervals.emplace_back(value, value);
+            else if (intervals.back().second == value - Int_(1))
+                intervals.back().second++;
+            else
+                intervals.emplace_back(value, value);
+        }
     };
 }
 

@@ -154,8 +154,7 @@ namespace gcs::innards
 
         auto need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID, Integer) -> void;
 
-        auto switch_to_current_proof_level_from(ProofLevel) -> void;
-        auto switch_to_proof_level(ProofLevel) -> void;
+        auto record_proof_line(ProofLine line, ProofLevel level) -> ProofLine;
 
         auto end_proof() -> void;
 
