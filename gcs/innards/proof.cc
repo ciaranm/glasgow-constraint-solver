@@ -872,7 +872,7 @@ auto Proof::backtrack(const State & state) -> void
     state.for_each_guess([&](const Literal & lit) {
         backtrack += 1_i * ! lit;
     });
-    emit_rup_proof_line(move(backtrack) >= 1_i);
+    emit_rup_proof_line(move(backtrack) >= 1_i, ProofLevel::Current);
 }
 
 auto Proof::end_proof() -> void
@@ -1331,7 +1331,7 @@ auto Proof::get_or_emit_pol_term_for_bound_in_bits(State & state, bool upper,
 
     step << ";";
 
-    auto line = emit_proof_line(step.str());
+    auto line = emit_proof_line(step.str(), ProofLevel::Current);
     _imp->line_for_bound_in_bits.back().emplace(tuple{upper, var, val}, line);
     return line;
 }

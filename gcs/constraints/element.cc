@@ -277,11 +277,11 @@ auto Element2DConstantArray::install(Propagators & propagators, State & initial_
                         proof.emit_red_proof_line(WeightedPseudoBooleanSum{} +
                                     2_i * ! (*idxsel == idx) + 1_i * (idx1 == i1) + 1_i * (idx2 == i2) >=
                                 2_i,
-                            {{*idxsel == idx, FalseLiteral{}}});
+                            {{*idxsel == idx, FalseLiteral{}}}, ProofLevel::Top);
                         proof.emit_red_proof_line(WeightedPseudoBooleanSum{} +
                                     1_i * (*idxsel == idx) + 1_i * (idx1 != i1) + 1_i * (idx2 != i2) >=
                                 1_i,
-                            {{*idxsel == idx, TrueLiteral{}}});
+                            {{*idxsel == idx, TrueLiteral{}}}, ProofLevel::Top);
                     });
                 });
 
@@ -304,7 +304,7 @@ auto Element2DConstantArray::install(Propagators & propagators, State & initial_
                 WeightedPseudoBooleanSum expr;
                 for (Integer v = 0_i, v_end = Integer(vals->size() * vals->begin()->size()); v != v_end; ++v)
                     expr += 1_i * (*idxsel == v);
-                proof.emit_rup_proof_line(expr >= 1_i);
+                proof.emit_rup_proof_line(expr >= 1_i, ProofLevel::Top);
             }});
         }
 

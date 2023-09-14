@@ -119,9 +119,9 @@ namespace
                         }
 
                         maybe_proof->emit_red_proof_line(forward_implication >= Integer(coeff_vars.terms.size()),
-                            {{future_var_id == sel_value, FalseLiteral{}}});
+                            {{future_var_id == sel_value, FalseLiteral{}}}, ProofLevel::Current);
                         maybe_proof->emit_red_proof_line(reverse_implication >= 1_i,
-                            {{future_var_id == sel_value, TrueLiteral{}}});
+                            {{future_var_id == sel_value, TrueLiteral{}}}, ProofLevel::Current);
                     }
                 }
             }

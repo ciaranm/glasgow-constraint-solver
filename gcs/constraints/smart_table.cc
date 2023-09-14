@@ -109,7 +109,7 @@ namespace
     {
         auto inference = state.infer(TrueLiteral{}, JustifyExplicitly{[&](Proof & proof) -> void {
             WeightedPseudoBooleanSum terms;
-            proof.emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} + 1_i * (! tuple_selector) + 1_i * lit >= 1_i, ProofLevel::Temporary);
+            proof.emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} + 1_i * (! tuple_selector) + 1_i * lit >= 1_i, ProofLevel::Current);
         }});
 
         if (inference != Inference::NoChange) {
@@ -472,7 +472,7 @@ namespace
                 switch (state.infer_not_equal(var, value, JustifyExplicitly{[&](Proof & proof) -> void {
                     for (unsigned int tuple_idx = 0; tuple_idx < tuples.size(); ++tuple_idx) {
                         proof.emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} + 1_i * (var != value) + 1_i * (! pb_selectors[tuple_idx]) >= 1_i,
-                            ProofLevel::Temporary);
+                            ProofLevel::Current);
                     }
                 }})) {
                 case Inference::NoChange: break;

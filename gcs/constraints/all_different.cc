@@ -242,7 +242,7 @@ namespace
             if (hall_values[v.offset])
                 proof_step << " " << constraint_numbers.at(vals[v.offset]) << " +";
 
-        proof.emit_proof_line(proof_step.str());
+        proof.emit_proof_line(proof_step.str(), ProofLevel::Current);
     }
 
     using Vertex = variant<Left, Right>;
@@ -337,7 +337,7 @@ namespace
                 if (hall_right[v.offset])
                     proof_step << " " << constraint_numbers.at(vals[v.offset]) << " +";
 
-            proof.emit_proof_line(proof_step.str());
+            proof.emit_proof_line(proof_step.str(), ProofLevel::Current);
         }
     }
 
