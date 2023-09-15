@@ -21,6 +21,13 @@ namespace po = boost::program_options;
 
 auto main(int argc, char * argv[]) -> int
 {
+    /**
+     * This example was created from a failing Random Smart Table test, showing the need for consolidating unary entries
+     * e.g. X1 < 3; X1 < 5 in the same tuple should be combined to just X1 < 3 in the PB encoding otherwise we can get
+     * unsupported values that don't unit propagate in the proof.
+     *
+     * See issue SmartTableRandom failure #40
+     */
     po::options_description display_options{"Program options"};
     display_options.add_options()            //
         ("help", "Display help information") //
@@ -28,9 +35,6 @@ auto main(int argc, char * argv[]) -> int
 
     po::options_description all_options{"All options"};
 
-    //    all_options.add_options()(
-    //        "n", po::value<int>()->default_value(3), "Integer value n.") //
-    //        ;
     all_options.add(display_options);
     po::variables_map options_vars;
 
@@ -54,10 +58,9 @@ auto main(int argc, char * argv[]) -> int
         return EXIT_SUCCESS;
     }
 
-    //    auto n = options_vars["n"].as<int>();
-
     Problem p;
 
+    // The Smart Table trees as output by random_smart_table.cc with seed 792395939
     //    Tree 0(1 nodes): x[2] < 1;  Tree 1(1 nodes): x[3] != 1;  Tree 2(1 nodes): x[1] > 0;  Tree 3(1 nodes): x[0] == 1;  x[3] in {3, 1, 2, -1};  x[2] notin {2, 0};  x[1] > 1;  x[2] == 0;
     //    Tree 0(1 nodes): x[3] >= 1;  Tree 1(1 nodes): x[2] in {0, 3, 1};  x[3] in {4, 1};  x[3] == 2;
     //    Tree 0(2 nodes): x[1] == x[0];  Tree 1(1 nodes): x[3] <= 2;  Tree 2(1 nodes): x[2] < 3;  x[3] < 0;  x[1] in {3, -1, 2};  x[1] > 3;  x[0] notin {0, 1};
