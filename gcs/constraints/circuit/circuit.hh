@@ -33,8 +33,8 @@ namespace gcs
 
     public:
         explicit CircuitBase(std::vector<IntegerVariableID> var, bool gac_all_different = false);
-        virtual auto clone() const -> std::unique_ptr<Constraint> override = 0;
-        virtual auto describe_for_proof() -> std::string override;
+        [[nodiscard]] auto clone() const -> std::unique_ptr<Constraint> override = 0;
+        auto describe_for_proof() -> std::string override;
         //        virtual auto install(innards::Propagators &, innards::State &) && -> void = 0;
     };
 
@@ -42,30 +42,52 @@ namespace gcs
     {
     public:
         using CircuitBase::CircuitBase;
-        virtual auto clone() const -> std::unique_ptr<Constraint> override;
-        virtual auto install(innards::Propagators &, innards::State &) && -> void override;
+        [[nodiscard]] auto clone() const -> std::unique_ptr<Constraint> override;
+        auto install(innards::Propagators &, innards::State &) && -> void override;
     };
 
+    /**
+     * Circuit constraint that propagates by identifying chains and removing the head of each chain from the domain of
+     * the tail "preventing" small cycles.
+     */
     class CircuitPrevent : public CircuitBase
     {
     public:
         using CircuitBase::CircuitBase;
-        virtual auto clone() const -> std::unique_ptr<Constraint> override;
-        virtual auto install(innards::Propagators &, innards::State &) && -> void override;
+        [[nodiscard]] auto clone() const -> std::unique_ptr<Constraint> override;
+        auto install(innards::Propagators &, innards::State &) && -> void override;
     };
 
+    /**
+     * The same prevent algorithm, but updating the chains incrementally.
+     */
     class CircuitPreventIncremental : public CircuitBase
     {
     public:
         using CircuitBase::CircuitBase;
-        virtual auto clone() const -> std::unique_ptr<Constraint> override;
-        virtual auto install(innards::Propagators &, innards::State &) && -> void override;
+        [[nodiscard]] auto clone() const -> std::unique_ptr<Constraint> override;
+        auto install(innards::Propagators &, innards::State &) && -> void override;
     };
 
     using Circuit = CircuitPreventIncremental;
 
     auto propagate_non_gac_alldifferent(
         const innards::ConstraintStateHandle & unassigned_handle, innards::State & state) -> innards::Inference;
+
+    auto output_cycle_to_proof(const std::vector<IntegerVariableID> & succ,
+        const long & start,
+        const long & length,
+        const ProofLine2DMap & lines_for_setting_pos,
+        innards::State & state,
+        innards::Proof & proof,
+        std::vector<innards::ProofLine> & to_delete,
+        const std::optional<Integer> & prevent_idx = std::nullopt,
+        const std::optional<Integer> & prevent_value = std::nullopt) -> void;
+
+    auto prevent_small_cycles(const std::vector<IntegerVariableID> &, const ProofLine2DMap &,
+        const innards::ConstraintStateHandle &, innards::State & state) -> innards::Inference;
+
+
 }
 
 #endif // GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CIRCUIT_HH

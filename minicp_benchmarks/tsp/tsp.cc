@@ -32,6 +32,8 @@ auto main(int argc, char * argv[]) -> int
         ("prove", "Create a proof");
 
     po::options_description all_options{"All options"};
+    all_options.add_options() //
+        ("propagator", po::value<string>()->default_value("prevent_incremental"), "Specify which circuit propagation algorithm to use (prevent/prevent_incremental)");
 
     all_options.add(display_options);
 
@@ -55,6 +57,14 @@ auto main(int argc, char * argv[]) -> int
         cout << endl;
         cout << display_options << endl;
         return EXIT_SUCCESS;
+    }
+
+    if (options_vars.contains("propagator")) {
+        const string propagator_value = options_vars["propagator"].as<string>();
+        if (propagator_value != "prevent" && propagator_value != "prevent_incremental") {
+            cerr << "Error: Invalid value for propagator. Use 'prevent' or 'prevent_incremental'." << endl;
+            return EXIT_FAILURE;
+        }
     }
 
     cout << "Replicating the TSP benchmark." << endl;
@@ -89,7 +99,16 @@ auto main(int argc, char * argv[]) -> int
     auto succ = p.create_integer_variable_vector(n, 0_i, Integer(n - 1));
     auto dist = p.create_integer_variable_vector(n, 0_i, 745_i);
 
-    p.post(Circuit{succ, false});
+    if (options_vars["propagator"].as<string>() == "prevent") {
+        p.post(CircuitPrevent{succ, false});
+    }
+    else if (options_vars["propagator"].as<string>() == "prevent_incremental") {
+        p.post(CircuitPreventIncremental{succ, false});
+    }
+    else {
+        p.post(Circuit{succ, false});
+    }
+
     for (unsigned i = 0; i < n; ++i)
         p.post(ElementConstantArray{dist[i], succ[i], &distances[i]});
 

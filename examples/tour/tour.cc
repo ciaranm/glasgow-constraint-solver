@@ -15,6 +15,7 @@ using std::cout;
 using std::endl;
 using std::make_optional;
 using std::nullopt;
+using std::string;
 using std::vector;
 
 namespace po = boost::program_options;
@@ -33,6 +34,8 @@ auto main(int argc, char * argv[]) -> int
         ("prove", "Create a proof");         //
 
     po::options_description all_options{"All options"};
+    all_options.add_options() //
+        ("propagator", po::value<string>()->default_value("prevent_incremental"), "Specify which circuit propagation algorithm to use (prevent/prevent_incremental)");
 
     all_options.add(display_options);
     po::variables_map options_vars;
@@ -55,6 +58,14 @@ auto main(int argc, char * argv[]) -> int
         cout << endl;
         cout << display_options << endl;
         return EXIT_SUCCESS;
+    }
+
+    if (options_vars.contains("propagator")) {
+        const string propagator_value = options_vars["propagator"].as<string>();
+        if (propagator_value != "prevent" && propagator_value != "prevent_incremental") {
+            cerr << "Error: Invalid value for propagator. Use 'prevent' or 'prevent_incremental'." << endl;
+            return EXIT_FAILURE;
+        }
     }
 
     int n = 20;
@@ -96,7 +107,15 @@ auto main(int argc, char * argv[]) -> int
         }
     }
 
-    p.post(Circuit{succ});
+    if (options_vars["propagator"].as<string>() == "prevent") {
+        p.post(CircuitPrevent{succ, false});
+    }
+    else if (options_vars["propagator"].as<string>() == "prevent_incremental") {
+        p.post(CircuitPreventIncremental{succ, false});
+    }
+    else {
+        p.post(Circuit{succ, false});
+    }
 
     // Minimise the distance between any two stops
     auto max_leg = p.create_integer_variable(0_i, 100_i, "max_leg");

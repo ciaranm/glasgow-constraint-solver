@@ -183,6 +183,7 @@ struct State::Imp
 
     list<vector<IntegerVariableState>> integer_variable_states{};
     list<vector<ConstraintState>> constraint_states{};
+    vector<ConstraintState> persistent_constraint_states{};
     list<vector<function<auto()->void>>> on_backtracks{};
     vector<HowChanged> how_changed{};
     vector<SimpleIntegerVariableID> changed{};
@@ -213,6 +214,7 @@ auto State::clone() const -> State
     auto result = State{};
     result._imp->integer_variable_states = _imp->integer_variable_states;
     result._imp->constraint_states = _imp->constraint_states;
+    result._imp->persistent_constraint_states = _imp->persistent_constraint_states;
     result._imp->on_backtracks = _imp->on_backtracks;
     result._imp->changed = _imp->changed;
     result._imp->optional_minimise_variable = _imp->optional_minimise_variable;
@@ -1246,9 +1248,21 @@ auto innards::State::add_constraint_state(const ConstraintState c) -> Constraint
     return ConstraintStateHandle{_imp->constraint_states.back().size() - 1};
 }
 
+auto innards::State::add_persistent_constraint_state(const ConstraintState c) -> ConstraintStateHandle
+{
+    // Does not restore on backtracking
+    _imp->persistent_constraint_states.push_back(c);
+    return ConstraintStateHandle{_imp->persistent_constraint_states.size() - 1};
+}
+
 auto innards::State::get_constraint_state(const ConstraintStateHandle h) -> ConstraintState &
 {
     return _imp->constraint_states.back()[h.index];
+}
+
+auto innards::State::get_persistent_constraint_state(const ConstraintStateHandle h) -> ConstraintState &
+{
+    return _imp->persistent_constraint_states[h.index];
 }
 
 namespace gcs

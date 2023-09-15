@@ -535,8 +535,34 @@ namespace gcs::innards
 
         ///@}
 
+        /**
+         * \name Constraint state related functions.
+         */
+         ///@{
+
+        /**
+         * Store a given std::any value as a constraint state that is accessible via
+         * the returned handle and restores on backtrack.
+         */
         [[nodiscard]] auto add_constraint_state(const ConstraintState c) -> ConstraintStateHandle;
+
+        /**
+         * Store a given std::any value as a constraint state that is accessible via
+         * the returned handle and does not restore on backtrack.
+         */
+        [[nodiscard]] auto add_persistent_constraint_state(const ConstraintState c) -> ConstraintStateHandle;
+
+        /**
+         * Return the constraint state for the given handle.
+         */
         [[nodiscard]] auto get_constraint_state(const ConstraintStateHandle h) -> ConstraintState &;
+
+        /**
+         * Return the persistent constraint state for the given handle.
+         *
+         */
+        [[nodiscard]] auto get_persistent_constraint_state(const ConstraintStateHandle h) -> ConstraintState &;
+        ///@}
     };
 }
 
