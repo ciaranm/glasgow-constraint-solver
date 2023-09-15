@@ -148,7 +148,7 @@ namespace
         vector<pair<Integer, Integer>> bounds;
         bounds.reserve(coeff_vars.terms.size());
 
-        auto justify = [&](const SimpleIntegerVariableID & change_var, Proof & proof, vector<ProofLine> & to_delete,
+        auto justify = [&](const SimpleIntegerVariableID & change_var, Proof & proof,
                            bool second_constraint_for_equality, const string & to_what) -> void {
             proof.emit_proof_comment("justifying integer linear inequality " + debug_string(IntegerVariableID{change_var}) + " " + to_what);
 
@@ -194,23 +194,23 @@ namespace
             }
             if (change_var_coeff != 1_i)
                 step << " " << abs(change_var_coeff) << " d";
-            to_delete.push_back(proof.emit_proof_line(step.str()));
+            proof.emit_proof_line(step.str(), ProofLevel::Temporary);
         };
 
         auto infer = [&](int p, const SimpleIntegerVariableID & var, Integer remainder, const auto coeff, bool second_constraint_for_equality) {
             if constexpr (is_same_v<decltype(coeff), const bool>) {
                 if (coeff) {
                     if (bounds[p].second >= (1_i + remainder))
-                        return state.infer_less_than(var, 1_i + remainder, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
-                            justify(var, proof, to_delete, second_constraint_for_equality, "< " + to_string((1_i + remainder).raw_value));
+                        return state.infer_less_than(var, 1_i + remainder, JustifyExplicitly{[&](Proof & proof) {
+                            justify(var, proof, second_constraint_for_equality, "< " + to_string((1_i + remainder).raw_value));
                         }});
                     else
                         return Inference::NoChange;
                 }
                 else {
                     if (bounds[p].first < -remainder)
-                        return state.infer_greater_than_or_equal(var, -remainder, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
-                            justify(var, proof, to_delete, second_constraint_for_equality, ">= " + to_string((-remainder).raw_value));
+                        return state.infer_greater_than_or_equal(var, -remainder, JustifyExplicitly{[&](Proof & proof) {
+                            justify(var, proof, second_constraint_for_equality, ">= " + to_string((-remainder).raw_value));
                         }});
                     else
                         return Inference::NoChange;
@@ -220,8 +220,8 @@ namespace
                 // lots of conditionals to get the rounding right...
                 if (coeff > 0_i && remainder >= 0_i) {
                     if (bounds[p].second >= (1_i + remainder / coeff))
-                        return state.infer_less_than(var, 1_i + remainder / coeff, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
-                            justify(var, proof, to_delete, second_constraint_for_equality, "< " + to_string((1_i + remainder / coeff).raw_value));
+                        return state.infer_less_than(var, 1_i + remainder / coeff, JustifyExplicitly{[&](Proof & proof) {
+                            justify(var, proof, second_constraint_for_equality, "< " + to_string((1_i + remainder / coeff).raw_value));
                         }});
                     else
                         return Inference::NoChange;
@@ -229,16 +229,16 @@ namespace
                 else if (coeff > 0_i && remainder < 0_i) {
                     auto div_with_rounding = -((-remainder + coeff - 1_i) / coeff);
                     if (bounds[p].second >= 1_i + div_with_rounding)
-                        return state.infer_less_than(var, 1_i + div_with_rounding, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
-                            justify(var, proof, to_delete, second_constraint_for_equality, "< " + to_string((1_i + div_with_rounding).raw_value));
+                        return state.infer_less_than(var, 1_i + div_with_rounding, JustifyExplicitly{[&](Proof & proof) {
+                            justify(var, proof, second_constraint_for_equality, "< " + to_string((1_i + div_with_rounding).raw_value));
                         }});
                     else
                         return Inference::NoChange;
                 }
                 else if (coeff < 0_i && remainder >= 0_i) {
                     if (bounds[p].first < remainder / coeff)
-                        return state.infer_greater_than_or_equal(var, remainder / coeff, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
-                            justify(var, proof, to_delete, second_constraint_for_equality, ">= " + to_string((remainder  / coeff).raw_value));
+                        return state.infer_greater_than_or_equal(var, remainder / coeff, JustifyExplicitly{[&](Proof & proof) {
+                            justify(var, proof, second_constraint_for_equality, ">= " + to_string((remainder / coeff).raw_value));
                         }});
                     else
                         return Inference::NoChange;
@@ -246,8 +246,8 @@ namespace
                 else if (coeff < 0_i && remainder < 0_i) {
                     auto div_with_rounding = (-remainder + -coeff - 1_i) / -coeff;
                     if (bounds[p].first < div_with_rounding)
-                        return state.infer_greater_than_or_equal(var, div_with_rounding, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
-                            justify(var, proof, to_delete, second_constraint_for_equality, ">= " + to_string((div_with_rounding).raw_value));
+                        return state.infer_greater_than_or_equal(var, div_with_rounding, JustifyExplicitly{[&](Proof & proof) {
+                            justify(var, proof, second_constraint_for_equality, ">= " + to_string((div_with_rounding).raw_value));
                         }});
                     else
                         return Inference::NoChange;

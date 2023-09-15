@@ -23,10 +23,10 @@ auto gcs::innards::debug_string(const IntegerVariableState & ivar) -> string
                     result += " " + to_string(i);
             return result;
         },
-        [](const IntegerVariableSetState & s) {
-            string result = "set";
-            for (const auto & v : *s.values)
-                result += " " + to_string(v.raw_value);
+        [](const IntegerVariableIntervalSetState & s) {
+            string result = "iset";
+            for (const auto & [l, u] : s.values->intervals)
+                result += " " + to_string(l.raw_value) + ".." + to_string(u.raw_value);
             return result;
         }}
         .visit(ivar);

@@ -437,11 +437,11 @@ auto NotEquals::install(Propagators & propagators, State & initial_state) && -> 
 
         if (convert_to_values_ne && propagators.want_definitions()) {
             propagators.install([v1 = _v1, v2 = _v2](State & state) -> pair<Inference, PropagatorState> {
-                state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
+                state.infer_true(JustifyExplicitly{[&](Proof & proof) -> void {
                     proof.emit_proof_comment("converting not equals to value encoding");
                     state.for_each_value(v1, [&](Integer val1) {
                         if (state.in_domain(v2, val1)) {
-                            proof.emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * (v1 != val1) + 1_i * (v2 != val1) >= 1_i);
+                            proof.emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * (v1 != val1) + 1_i * (v2 != val1) >= 1_i, ProofLevel::Top);
                         }
                     });
                 }});

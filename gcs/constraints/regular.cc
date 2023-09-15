@@ -125,7 +125,7 @@ namespace
     {
         if (! state.maybe_proof()) return;
         // Trying to cut down on repeated code
-        state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
+        state.infer_true(JustifyExplicitly{[&](Proof & proof) -> void {
             if (! comment.empty())
                 proof.emit_proof_comment(comment);
 
@@ -134,7 +134,7 @@ namespace
                 terms += 1_i * lit;
             for (const auto & flag : proof_flags)
                 terms += 1_i * flag;
-            proof.emit_rup_proof_line_under_trail(state, terms >= 1_i);
+            proof.emit_rup_proof_line_under_trail(state, terms >= 1_i, ProofLevel::Current);
         }});
     }
 
@@ -143,7 +143,7 @@ namespace
         const vector<long> & final_states, const vector<vector<ProofFlag>> & state_at_pos_flags, State & state)
     {
         auto num_vars = vars.size();
-        state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
+        state.infer_true(JustifyExplicitly{[&](Proof & proof) -> void {
             proof.emit_proof_comment("Initialising graph");
         }});
         // Forward phase: accumulate

@@ -68,7 +68,6 @@ namespace
         const ProofLine2DMap & lines_for_setting_pos,
         State & state,
         Proof & proof,
-        vector<ProofLine> & to_delete,
         const optional<Integer> & prevent_idx = nullopt,
         const optional<Integer> & prevent_value = nullopt) -> void
     {
@@ -104,7 +103,7 @@ namespace
                        << " + ";
         }
 
-        to_delete.push_back(proof.emit_proof_line(proof_step.str()));
+        proof.emit_proof_line(proof_step.str(), ProofLevel::Temporary);
     }
 
     // Slightly more complex propagator: prevent small cycles by finding chains and removing the head from the domain
@@ -135,9 +134,9 @@ namespace
         auto end = chain.end[next_idx];
 
         if (cmp_not_equal(chain.length[start], n) && next_idx == start) {
-            state.infer_false(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) -> void {
+            state.infer_false(JustifyExplicitly{[&](Proof & proof) -> void {
                 proof.emit_proof_comment("Contradicting cycle");
-                output_cycle_to_proof(succ, start, chain.length[start], lines_for_setting_pos, state, proof, to_delete);
+                output_cycle_to_proof(succ, start, chain.length[start], lines_for_setting_pos, state, proof);
             }});
             if (state.maybe_proof())
                 return Inference::Contradiction;
@@ -148,16 +147,16 @@ namespace
             chain.end[start] = end;
 
             if (cmp_less(chain.length[start], succ.size())) {
-                increase_inference_to(result, state.infer(succ[end] != Integer{start}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
+                increase_inference_to(result, state.infer(succ[end] != Integer{start}, JustifyExplicitly{[&](Proof & proof) {
                     proof.emit_proof_comment("Preventing cycle");
-                    output_cycle_to_proof(succ, start, chain.length[start], lines_for_setting_pos, state, proof, to_delete, make_optional(Integer{end}),
+                    output_cycle_to_proof(succ, start, chain.length[start], lines_for_setting_pos, state, proof, make_optional(Integer{end}),
                         make_optional(Integer{start}));
                     proof.infer(state, succ[end] != Integer{start}, JustifyUsingRUP{});
                     proof.emit_proof_comment("Done preventing cycle");
                 }}));
             }
             else {
-                state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
+                state.infer_true(JustifyExplicitly{[&](Proof & proof) -> void {
                     proof.emit_proof_comment("Completing cycle");
                 }});
                 increase_inference_to(result, state.infer(succ[end] == Integer{start}, JustifyUsingRUP{}));

@@ -95,7 +95,7 @@ namespace
         auto future_var_id = state.what_variable_id_will_be_created_next();
 
         WeightedPseudoBooleanSum trail;
-        function<void(Proof *, vector<ProofLine> *)> search = [&](Proof * maybe_proof, vector<ProofLine> * to_delete) {
+        function<void(Proof *)> search = [&](Proof * maybe_proof) {
             if (current.size() == coeff_vars.terms.size()) {
                 Integer actual_value{0_i};
                 for (const auto & [idx, cv] : enumerate(coeff_vars.terms)) {
@@ -119,9 +119,9 @@ namespace
                         }
 
                         maybe_proof->emit_red_proof_line(forward_implication >= Integer(coeff_vars.terms.size()),
-                            {{future_var_id == sel_value, FalseLiteral{}}});
+                            {{future_var_id == sel_value, FalseLiteral{}}}, ProofLevel::Current);
                         maybe_proof->emit_red_proof_line(reverse_implication >= 1_i,
-                            {{future_var_id == sel_value, TrueLiteral{}}});
+                            {{future_var_id == sel_value, TrueLiteral{}}}, ProofLevel::Current);
                     }
                 }
             }
@@ -129,7 +129,7 @@ namespace
                 const auto & var = get_var(coeff_vars.terms[current.size()]);
                 state.for_each_value(var, [&](Integer val) {
                     current.push_back(val);
-                    search(maybe_proof, to_delete);
+                    search(maybe_proof);
                     current.pop_back();
                 });
             }
@@ -139,20 +139,18 @@ namespace
                 for (const auto & [idx, val] : enumerate(current))
                     backtrack += 1_i * (get_var(coeff_vars.terms[idx]) != val);
 
-                auto line = maybe_proof->emit_rup_proof_line(backtrack >= 1_i);
-                if (! current.empty())
-                    to_delete->push_back(line);
+                maybe_proof->emit_rup_proof_line(backtrack >= 1_i, ProofLevel::Current);
             }
         };
 
         if (state.maybe_proof()) {
-            state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
+            state.infer_true(JustifyExplicitly{[&](Proof & proof) {
                 proof.emit_proof_comment("building GAC table for linear equality");
-                search(&proof, &to_delete);
+                search(&proof);
             }});
         }
         else
-            search(nullptr, nullptr);
+            search(nullptr);
 
         auto sel = state.allocate_integer_variable_with_state(0_i, Integer(permitted.size() - 1));
         if (sel != future_var_id)

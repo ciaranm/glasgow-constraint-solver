@@ -154,8 +154,7 @@ namespace gcs::innards
 
         auto need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID, Integer) -> void;
 
-        auto switch_to_current_proof_level_from(ProofLevel) -> void;
-        auto switch_to_proof_level(ProofLevel) -> void;
+        auto record_proof_line(ProofLine line, ProofLevel level) -> ProofLine;
 
         auto end_proof() -> void;
 
@@ -297,19 +296,14 @@ namespace gcs::innards
         auto forget_proof_level(int depth) -> void;
 
         /**
-         * Add the explicit proof steps given, accumulating lines to be deleted.
+         * Add the explicit proof steps given.
          */
-        auto add_proof_steps(const JustifyExplicitly &, std::vector<ProofLine> & to_delete) -> void;
-
-        /**
-         * Delete the specified proof lines.
-         */
-        auto delete_proof_lines(const std::vector<ProofLine> & to_delete) -> void;
+        auto add_proof_steps(const JustifyExplicitly &) -> void;
 
         /**
          * Emit the specified text as a proof line.
          */
-        auto emit_proof_line(const std::string &, ProofLevel level = ProofLevel::Current) -> ProofLine;
+        auto emit_proof_line(const std::string &, ProofLevel level) -> ProofLine;
 
         /**
          * Emit the specified text as a comment.
@@ -320,42 +314,37 @@ namespace gcs::innards
          * Emit a RUP proof step for the specified expression, not subject to
          * the current trail.
          */
-        auto emit_rup_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> &,
-            ProofLevel level = ProofLevel::Current) -> ProofLine;
+        auto emit_rup_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level) -> ProofLine;
 
         /**
          * Emit an assert proof step for the specified expression, not subject to
          * the current trail.
          */
-        auto emit_assert_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> &,
-            ProofLevel level = ProofLevel::Current) -> ProofLine;
+        auto emit_assert_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level) -> ProofLine;
 
         /**
          * Emit a RUP proof step for the specified expression, subject to the
          * current trail.
          */
-        auto emit_rup_proof_line_under_trail(const State &, const SumLessEqual<Weighted<PseudoBooleanTerm>> &,
-            ProofLevel level = ProofLevel::Current) -> ProofLine;
+        auto emit_rup_proof_line_under_trail(const State &, const SumLessEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level) -> ProofLine;
 
         /**
          * Emit a RED proof step for the specified expression.
          */
         auto emit_red_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> &,
-            const std::vector<std::pair<ProofLiteralOrFlag, ProofLiteralOrFlag>> & witness,
-            ProofLevel level = ProofLevel::Current) -> ProofLine;
+            const std::vector<std::pair<ProofLiteralOrFlag, ProofLiteralOrFlag>> & witness, ProofLevel level) -> ProofLine;
 
         /**
          * Emit a pair of RED proofs step for the specified expression, reified on the specified flag.
          */
         auto emit_red_proof_lines_reifying(const SumLessEqual<Weighted<PseudoBooleanTerm>> &,
-            ProofFlag,
-            ProofLevel level = ProofLevel::Current) -> std::pair<ProofLine, ProofLine>;
+            ProofFlag, ProofLevel level) -> std::pair<ProofLine, ProofLine>;
 
         /**
          * Create a ProofFlag, and emit a RED proof step reifying it for the specified expression.
          */
         auto create_proof_flag_reifying(const SumLessEqual<Weighted<PseudoBooleanTerm>> &,
-            const std::string & flag_name, ProofLevel level = ProofLevel::Current) -> std::tuple<ProofFlag, ProofLine, ProofLine>;
+            const std::string & flag_name, ProofLevel level) -> std::tuple<ProofFlag, ProofLine, ProofLine>;
 
         /**
          * Set things up internally as if the specified variable was a real

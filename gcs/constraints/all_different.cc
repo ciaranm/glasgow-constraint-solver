@@ -242,7 +242,7 @@ namespace
             if (hall_values[v.offset])
                 proof_step << " " << constraint_numbers.at(vals[v.offset]) << " +";
 
-        proof.emit_proof_line(proof_step.str());
+        proof.emit_proof_line(proof_step.str(), ProofLevel::Current);
     }
 
     using Vertex = variant<Left, Right>;
@@ -337,7 +337,7 @@ namespace
                 if (hall_right[v.offset])
                     proof_step << " " << constraint_numbers.at(vals[v.offset]) << " +";
 
-            proof.emit_proof_line(proof_step.str());
+            proof.emit_proof_line(proof_step.str(), ProofLevel::Current);
         }
     }
 
@@ -364,7 +364,7 @@ namespace
         if (cmp_not_equal(count(left_covered.begin(), left_covered.end(), 1), vars.size())) {
             // nope. we've got a maximum cardinality matching that leaves at least
             // one thing on the left uncovered.
-            return state.infer(FalseLiteral{}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
+            return state.infer(FalseLiteral{}, JustifyExplicitly{[&](Proof & proof) -> void {
                 prove_matching_is_too_small(vars, vals, constraint_numbers, proof, edges, left_covered, matching);
             }});
         }
@@ -518,7 +518,7 @@ namespace
             deletions.emplace_back(vars[delete_var_name.offset] != vals[delete_value.offset]);
         }
 
-        switch (state.infer_all(deletions, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
+        switch (state.infer_all(deletions, JustifyExplicitly{[&](Proof & proof) -> void {
             for (auto & [delete_var_name, delete_value] : edges) {
                 if (used_edges[delete_var_name.offset][delete_value.offset])
                     continue;

@@ -14,13 +14,13 @@
 namespace gcs::innards
 {
     /**
-     * \brief Write an explicit justification to the proof, and the specified
-     * lines will be deleted after the final RUP statement.
+     * \brief Write an explicit justification to the proof. Any ProofLevel::Temporary
+     * constraints will be wiped after the conclusion is derived.
      *
      * \ingroup Innards
      * \sa JustifyExplicitly
      */
-    using ExplicitJustificationFunction = std::function<auto(Proof &, std::vector<ProofLine> &)->void>;
+    using ExplicitJustificationFunction = std::function<auto(Proof &)->void>;
 
     /**
      * \brief Justification for something that is actually a guess, not an

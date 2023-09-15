@@ -70,6 +70,10 @@ add_test(NAME min_max_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash 
 add_test(NAME n_value_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:n_value_test>)
 add_test(NAME smart_table_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:smart_table_test>)
 
+add_executable(interval_set_test innards/interval_set_test.cc)
+target_link_libraries(interval_set_test PRIVATE Catch2::Catch2WithMain)
+add_test(NAME interval_set_test COMMAND $<TARGET_FILE:interval_set_test>)
+
 add_executable(state_test innards/state_test.cc)
 target_link_libraries(state_test PRIVATE Catch2::Catch2WithMain)
 add_test(NAME state_test COMMAND $<TARGET_FILE:state_test>)
