@@ -62,8 +62,8 @@ auto main(int argc, char * argv[]) -> int
 
     if (options_vars.contains("propagator")) {
         const string propagator_value = options_vars["propagator"].as<string>();
-        if (propagator_value != "prevent" && propagator_value != "prevent_incremental") {
-            cerr << "Error: Invalid value for propagator. Use 'prevent' or 'prevent_incremental'." << endl;
+        if (propagator_value != "prevent" && propagator_value != "prevent_incremental" && propagator_value != "scc") {
+            cerr << "Error: Invalid value for propagator. Use 'scc' or 'prevent' or 'prevent_incremental'." << endl;
             return EXIT_FAILURE;
         }
     }
@@ -112,6 +112,9 @@ auto main(int argc, char * argv[]) -> int
     }
     else if (options_vars["propagator"].as<string>() == "prevent_incremental") {
         p.post(CircuitPreventIncremental{succ, false});
+    }
+    else if (options_vars["propagator"].as<string>() == "scc") {
+        p.post(CircuitSCC{succ, false});
     }
     else {
         p.post(Circuit{succ, false});
