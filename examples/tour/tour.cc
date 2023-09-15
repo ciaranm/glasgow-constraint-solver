@@ -1,3 +1,4 @@
+#include <boost/program_options.hpp>
 #include <gcs/constraints/circuit.hh>
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/equals.hh>
@@ -9,13 +10,16 @@
 
 using namespace gcs;
 
+using std::cerr;
 using std::cout;
 using std::endl;
 using std::make_optional;
 using std::nullopt;
 using std::vector;
 
-auto main(int, char *[]) -> int
+namespace po = boost::program_options;
+
+auto main(int argc, char * argv[]) -> int
 {
     // Example for the circuit constraint: find a tour for some graph of locations
     // and minimise the distance between any two stops.
@@ -23,6 +27,35 @@ auto main(int, char *[]) -> int
     // This is based on the circuit benchmark instances from
     // K. G. Francis and P. J. Stuckey, ‘Explaining circuit propagation’, Constraints, vol. 19, no. 1, pp. 1–29, Jan. 2014,
     // doi: 10.1007/s10601-013-9148-0.
+        po::options_description display_options{"Program options"};
+        display_options.add_options()            //
+            ("help", "Display help information") //
+            ("prove", "Create a proof");         //
+
+        po::options_description all_options{"All options"};
+
+        all_options.add(display_options);
+        po::variables_map options_vars;
+
+        try {
+            po::store(po::command_line_parser(argc, argv)
+                          .options(all_options)
+                          .run(),
+                options_vars);
+            po::notify(options_vars);
+        }
+        catch (const po::error & e) {
+            cerr << "Error: " << e.what() << endl;
+            cerr << "Try " << argv[0] << " --help" << endl;
+            return EXIT_FAILURE;
+        }
+
+        if (options_vars.contains("help")) {
+            cout << "Usage: " << argv[0] << " [options] [size]" << endl;
+            cout << endl;
+            cout << display_options << endl;
+            return EXIT_SUCCESS;
+        }
 
     int n = 20;
     Problem p;
@@ -93,7 +126,7 @@ auto main(int, char *[]) -> int
                 cout << "\n\n";
                 return true;
             }},
-        ProofOptions("tour.opb", "tour.veripb"));
+        options_vars.contains("prove") ? make_optional<ProofOptions>("tour.opb", "tour.veripb") : nullopt);
 
     cout << stats;
     return EXIT_SUCCESS;
