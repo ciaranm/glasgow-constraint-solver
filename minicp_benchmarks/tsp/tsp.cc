@@ -1,4 +1,4 @@
-#include <gcs/constraints/circuit.hh>
+#include <gcs/constraints/circuit/circuit.hh>
 #include <gcs/constraints/element.hh>
 #include <gcs/constraints/linear_equality.hh>
 #include <gcs/problem.hh>

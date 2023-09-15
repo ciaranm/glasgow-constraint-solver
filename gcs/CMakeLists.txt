@@ -14,7 +14,10 @@ add_library(glasgow_constraint_solver
         constraints/all_different.cc
         constraints/arithmetic.cc
         constraints/at_most_one.cc
-        constraints/circuit.cc
+        constraints/circuit/circuit.cc
+        constraints/circuit/circuit_prevent.cc
+        constraints/circuit/circuit_prevent_inc.cc
+        constraints/circuit/circuit_scc.cc
         constraints/comparison.cc
         constraints/count.cc
         constraints/element.cc

@@ -1,5 +1,6 @@
+
 #include <gcs/constraints/all_different.hh>
-#include <gcs/constraints/circuit.hh>
+#include <gcs/constraints/circuit/circuit.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/propagators.hh>
 
@@ -37,15 +38,9 @@ struct Chain
     vector<long long> length;
 };
 
-Circuit::Circuit(vector<IntegerVariableID> v, const bool g) :
-    _succ(move(v)),
-    _gac_all_different(g)
-{
-}
-
 namespace
 {
-    auto propagate_non_gac_alldifferent(const optional<IntegerVariableID> & trigger_var,
+    auto propagate_non_gac_alldifferent_single(const optional<IntegerVariableID> & trigger_var,
         const vector<IntegerVariableID> & succ, State & state) -> Inference
     {
         auto result = Inference::NoChange;
@@ -108,7 +103,7 @@ namespace
 
     // Slightly more complex propagator: prevent small cycles by finding chains and removing the head from the domain
     // of the tail.
-    auto propagate_circuit_using_prevent(const vector<IntegerVariableID> & succ,
+    auto propagate_circuit_using_incremental_prevent(const vector<IntegerVariableID> & succ,
         const ProofLine2DMap & lines_for_setting_pos,
         State & state,
         const IntegerVariableID & trigger_var,
@@ -118,7 +113,7 @@ namespace
     {
         // propagate all-different first, to avoid infinite loops
         // Have to use check first
-        auto result = propagate_non_gac_alldifferent(trigger_var, succ, state);
+        auto result = propagate_non_gac_alldifferent_single(trigger_var, succ, state);
         if (result == Inference::Contradiction) return Inference::Contradiction;
 
         auto & chain = any_cast<Chain &>(state.get_constraint_state(chain_handle));
@@ -175,83 +170,16 @@ namespace
     }
 }
 
-auto Circuit::clone() const -> unique_ptr<Constraint>
+auto CircuitPreventIncremental::clone() const -> unique_ptr<Constraint>
 {
     return make_unique<Circuit>(_succ, _gac_all_different);
 }
 
-auto Circuit::install(Propagators & propagators, State & initial_state) && -> void
+auto CircuitPreventIncremental::install(Propagators & propagators, State & initial_state) && -> void
 {
-    // Can't have negative values
-    for (const auto & s : _succ)
-        propagators.trim_lower_bound(initial_state, s, 0_i, "Circuit");
+    auto [pos_vars, lines_for_setting_pos] = CircuitBase::set_up(propagators, initial_state);
 
-    // Can't have too-large values
-    for (const auto & s : _succ)
-        propagators.trim_upper_bound(initial_state, s, Integer(_succ.size() - 1), "Circuit");
-
-    if (_gac_all_different) {
-        // First define an all different constraint
-        AllDifferent all_diff{_succ};
-        move(all_diff).install(propagators, initial_state);
-    }
-    else if (propagators.want_definitions()) {
-        // Still need to define all-different
-        for (unsigned i = 0; i < _succ.size(); ++i)
-            for (unsigned j = i + 1; j < _succ.size(); ++j) {
-                auto selector = propagators.create_proof_flag("circuit_notequals");
-                propagators.define(initial_state, WeightedPseudoBooleanSum{} + 1_i * _succ[i] + -1_i * _succ[j] <= -1_i,
-                    HalfReifyOnConjunctionOf{selector});
-                propagators.define(initial_state, WeightedPseudoBooleanSum{} + -1_i * _succ[i] + 1_i * _succ[j] <= -1_i,
-                    HalfReifyOnConjunctionOf{! selector});
-            }
-    }
-
-    ProofLine2DMap lines_for_setting_pos{};
-    if (propagators.want_definitions()) {
-
-        // Define encoding to eliminate sub-cycles
-        vector<PseudoBooleanTerm> position;
-        auto n_minus_1 = ConstantIntegerVariableID{Integer{static_cast<long long>(_succ.size() - 1)}};
-
-        // Need extra proof variable: pos[i] = j means "the ith node visited in the circuit is the jth var"
-        // WLOG start at node 0, so pos[0] = 0
-        position.emplace_back(0_c);
-        // Hence we can only have succ[0] = 0 (self cycle) if there is only one node i.e. n - 1 = 0
-        auto proof_line = propagators.define(initial_state,
-            WeightedPseudoBooleanSum{} + 1_i * position[0] + -1_i * n_minus_1 == 0_i,
-            HalfReifyOnConjunctionOf{{_succ[0] == 0_i}});
-        lines_for_setting_pos.insert({{Integer{0_i}, Integer{0_i}}, proof_line.second.value()});
-
-        for (unsigned int idx = 1; idx < _succ.size(); ++idx) {
-            position.emplace_back(propagators.create_proof_only_integer_variable(0_i, Integer(_succ.size() - 1),
-                "pos" + to_string(idx), IntegerVariableProofRepresentation::Bits));
-        }
-
-        for (unsigned int idx = 1; idx < _succ.size(); ++idx) {
-            // (succ[0] = i) -> pos[i] = 1
-            proof_line = propagators.define(initial_state,
-                WeightedPseudoBooleanSum{} + 1_i * position[idx] + -1_i * 1_c == 0_i,
-                HalfReifyOnConjunctionOf{{_succ[0] == Integer{idx}}});
-            lines_for_setting_pos.insert({{Integer{idx}, Integer{0_i}}, proof_line.second.value()});
-
-            // (succ[i] = 0) -> pos[i] = n-1
-            proof_line = propagators.define(initial_state,
-                WeightedPseudoBooleanSum{} + 1_i * position[idx] + -1_i * n_minus_1 == 0_i,
-                HalfReifyOnConjunctionOf{{_succ[idx] == 0_i}});
-            lines_for_setting_pos.insert({{Integer{0_i}, Integer{idx}}, proof_line.second.value()});
-
-            // (succ[i] = j) -> pos[j] = pos[i] + 1
-            for (unsigned int jdx = 1; jdx < _succ.size(); ++jdx) {
-                proof_line = propagators.define(initial_state,
-                    WeightedPseudoBooleanSum{} + 1_i * position[jdx] + -1_i * position[idx] + -1_i * 1_c == 0_i,
-                    HalfReifyOnConjunctionOf{{_succ[idx] == Integer{jdx}}});
-                lines_for_setting_pos.insert({{Integer{jdx}, Integer{idx}}, proof_line.second.value()});
-            }
-        }
-    }
-
-    // Constraint states for prevent algorithm
+    // Constraint states for incremental prevent algorithm
 
     Chain chain;
 
@@ -269,7 +197,7 @@ auto Circuit::install(Propagators & propagators, State & initial_state) && -> vo
         propagators.install(
             [succ = _succ, idx = idx, lines_for_setting_pos = lines_for_setting_pos, chain_handle = chain_handle, want_proof = propagators.want_definitions()](State & state) -> pair<Inference, PropagatorState> {
                 bool should_disable = false;
-                auto result = propagate_circuit_using_prevent(
+                auto result = propagate_circuit_using_incremental_prevent(
                     succ, lines_for_setting_pos, state, succ[idx], idx, chain_handle, should_disable);
                 return pair{
                     result,
@@ -292,9 +220,4 @@ auto Circuit::install(Propagators & propagators, State & initial_state) && -> vo
         },
             Triggers{}, "circuit init");
     }
-}
-
-auto Circuit::describe_for_proof() -> std::string
-{
-    return "circuit (all different + no sub-cycles)";
 }

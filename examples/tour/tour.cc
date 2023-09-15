@@ -1,5 +1,5 @@
 #include <boost/program_options.hpp>
-#include <gcs/constraints/circuit.hh>
+#include <gcs/constraints/circuit/circuit.hh>
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/equals.hh>
 #include <gcs/problem.hh>
@@ -27,35 +27,35 @@ auto main(int argc, char * argv[]) -> int
     // This is based on the circuit benchmark instances from
     // K. G. Francis and P. J. Stuckey, ‘Explaining circuit propagation’, Constraints, vol. 19, no. 1, pp. 1–29, Jan. 2014,
     // doi: 10.1007/s10601-013-9148-0.
-        po::options_description display_options{"Program options"};
-        display_options.add_options()            //
-            ("help", "Display help information") //
-            ("prove", "Create a proof");         //
+    po::options_description display_options{"Program options"};
+    display_options.add_options()            //
+        ("help", "Display help information") //
+        ("prove", "Create a proof");         //
 
-        po::options_description all_options{"All options"};
+    po::options_description all_options{"All options"};
 
-        all_options.add(display_options);
-        po::variables_map options_vars;
+    all_options.add(display_options);
+    po::variables_map options_vars;
 
-        try {
-            po::store(po::command_line_parser(argc, argv)
-                          .options(all_options)
-                          .run(),
-                options_vars);
-            po::notify(options_vars);
-        }
-        catch (const po::error & e) {
-            cerr << "Error: " << e.what() << endl;
-            cerr << "Try " << argv[0] << " --help" << endl;
-            return EXIT_FAILURE;
-        }
+    try {
+        po::store(po::command_line_parser(argc, argv)
+                      .options(all_options)
+                      .run(),
+            options_vars);
+        po::notify(options_vars);
+    }
+    catch (const po::error & e) {
+        cerr << "Error: " << e.what() << endl;
+        cerr << "Try " << argv[0] << " --help" << endl;
+        return EXIT_FAILURE;
+    }
 
-        if (options_vars.contains("help")) {
-            cout << "Usage: " << argv[0] << " [options] [size]" << endl;
-            cout << endl;
-            cout << display_options << endl;
-            return EXIT_SUCCESS;
-        }
+    if (options_vars.contains("help")) {
+        cout << "Usage: " << argv[0] << " [options] [size]" << endl;
+        cout << endl;
+        cout << display_options << endl;
+        return EXIT_SUCCESS;
+    }
 
     int n = 20;
     Problem p;
