@@ -840,6 +840,15 @@ auto SmartTable::install(Propagators & propagators, State & initial_state) && ->
                     },
                     [&](const UnarySetEntry & unary_set_entry) {
                         auto var = unary_set_entry.var;
+                        auto flag = unary_set_entry.constraint_type == SmartEntryConstraint::In ? propagators.create_proof_flag("inset") : propagators.create_proof_flag("notinset");
+
+                        // InSet {<empty>} is the same as False
+                        if (unary_set_entry.values.empty() && unary_set_entry.constraint_type == SmartEntryConstraint::In) {
+                            propagators.define(initial_state, WeightedPseudoBooleanSum{} + 1_i * ! flag >= 1_i);
+                            entry_flags_sum += 1_i * flag;
+                            entry_flags_neg_sum += -1_i * flag;
+                            return;
+                        }
                         WeightedPseudoBooleanSum set_value_sum{};
                         WeightedPseudoBooleanSum neg_set_value_sum{};
                         initial_state.for_each_value(var, [&](Integer val) {
@@ -849,8 +858,6 @@ auto SmartTable::install(Propagators & propagators, State & initial_state) && ->
 
                         for (const auto & val : unary_set_entry.values)
                             neg_set_value_sum += 1_i * (var != val);
-
-                        auto flag = unary_set_entry.constraint_type == SmartEntryConstraint::In ? propagators.create_proof_flag("inset") : propagators.create_proof_flag("notinset");
 
                         auto set_rhs = Integer{static_cast<long long>(set_value_sum.terms.size())};
                         auto neg_set_rhs = Integer{static_cast<long long>(neg_set_value_sum.terms.size())};
