@@ -82,7 +82,7 @@ namespace
     }
 
     template <bool doing_proof_>
-    auto knapsack_bc(
+    auto knapsack_gac(
         State & state,
         const vector<Integer> & committed,
         const vector<pair<Integer, Integer>> & bounds,
@@ -519,9 +519,9 @@ namespace
             temporary_proof_level = state.maybe_proof()->temporary_proof_level();
 
         if (state.maybe_proof())
-            increase_inference_to(inference, knapsack_bc<true>(state, committed_sums, boundses, coeffs, totals, vars, undetermined_vars, eqn_lines));
+            increase_inference_to(inference, knapsack_gac<true>(state, committed_sums, boundses, coeffs, totals, vars, undetermined_vars, eqn_lines));
         else
-            increase_inference_to(inference, knapsack_bc<false>(state, committed_sums, boundses, coeffs, totals, vars, undetermined_vars, nullopt));
+            increase_inference_to(inference, knapsack_gac<false>(state, committed_sums, boundses, coeffs, totals, vars, undetermined_vars, nullopt));
 
         if (state.maybe_proof())
             state.maybe_proof()->forget_proof_level(temporary_proof_level);
