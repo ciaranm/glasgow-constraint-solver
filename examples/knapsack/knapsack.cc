@@ -1,4 +1,5 @@
 #include <gcs/constraints/knapsack.hh>
+#include <gcs/constraints/linear_equality.hh>
 #include <gcs/problem.hh>
 #include <gcs/search_heuristics.hh>
 #include <gcs/solve.hh>
@@ -54,12 +55,17 @@ auto main(int argc, char * argv[]) -> int
     }
 
     Problem p;
-    auto items = p.create_integer_variable_vector(7, 0_i, 1_i, "item");
-    auto profit = p.create_integer_variable(0_i, 10000_i, "profit");
-    auto weight = p.create_integer_variable(0_i, 14_i, "weight");
+    auto items = p.create_integer_variable_vector(6, 0_i, 1_i, "item");
+    auto profit = p.create_integer_variable(6_i, 10_i, "profit");
+    auto weight = p.create_integer_variable(5_i, 7_i, "weight");
 
-    vector<Integer> profits = {5_i, 10_i, 7_i, 1_i, 8_i, 11_i, 3_i};
-    vector<Integer> weights = {2_i, 5_i, 3_i, 1_i, 2_i, 6_i, 1_i};
+    vector<Integer> weights = {2_i, 5_i, 2_i, 3_i, 2_i, 3_i};
+    vector<Integer> profits = {2_i, 4_i, 2_i, 5_i, 4_i, 3_i};
+
+    auto oddity = p.create_integer_variable(0_i, 20_i, "oddity");
+    p.post(LinearEquality{WeightedSum{} + 1_i * profit + -2_i * oddity, 1_i, true});
+
+    p.post(WeightedSum{} + 1_i * items[5] == 0_i);
 
     p.post(Knapsack{weights, profits, items, weight, profit});
     p.maximise(profit);

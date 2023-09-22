@@ -379,6 +379,34 @@ namespace
                 ++final_states_iter;
         }
 
+        // same again, but for interior values that are not bounds
+        for (auto final_states_iter = completed_layers.back().begin(), final_states_iter_end = completed_layers.back().end(); final_states_iter != final_states_iter_end;) {
+            bool eliminated = false;
+            for (const auto & [x, _] : enumerate(totals)) {
+                auto val = committed.at(x) + final_states_iter->first.at(x);
+                if (! state.in_domain(totals.at(x), val)) {
+                    if constexpr (doing_proof_) {
+                        state.maybe_proof()->emit_proof_line("p " + to_string(final_states_iter->second->les.at(x).forward_reif_line) +
+                                " " + to_string(opb_lines->at(x).second) + " +",
+                            ProofLevel::Temporary);
+                        state.maybe_proof()->emit_proof_line("p " + to_string(final_states_iter->second->ges.at(x).forward_reif_line) +
+                                " " + to_string(opb_lines->at(x).first) + " +",
+                            ProofLevel::Temporary);
+                        state.maybe_proof()->emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} + 1_i * ! *final_states_iter->second->reif_flag + 1_i * (totals.at(x) == val) >= 1_i,
+                            ProofLevel::Temporary);
+                        state.maybe_proof()->emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} + 1_i * ! *final_states_iter->second->reif_flag >= 1_i,
+                            ProofLevel::Temporary);
+                    }
+                    completed_layers.back().erase(final_states_iter++);
+                    eliminated = true;
+                    break;
+                }
+            }
+
+            if (! eliminated)
+                ++final_states_iter;
+        }
+
         if (completed_layers.back().empty()) {
             if constexpr (doing_proof_) {
                 state.maybe_proof()->emit_proof_comment("no feasible choices remaining");
