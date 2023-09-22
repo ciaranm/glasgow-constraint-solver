@@ -329,6 +329,12 @@ namespace gcs::innards
         auto emit_rup_proof_line_under_trail(const State &, const SumLessEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level) -> ProofLine;
 
         /**
+         * Emit an assert proof step for the specified expression, subject to
+         * the current trail.
+         */
+        auto emit_assert_proof_line_under_trail(const State &, const SumLessEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level) -> ProofLine;
+
+        /**
          * Emit a RED proof step for the specified expression.
          */
         auto emit_red_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> &,

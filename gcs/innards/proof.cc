@@ -1138,6 +1138,14 @@ auto Proof::emit_rup_proof_line_under_trail(const State & state, const SumLessEq
     return emit_rup_proof_line(terms <= ineq.rhs, level);
 }
 
+auto Proof::emit_assert_proof_line_under_trail(const State & state, const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level) -> ProofLine
+{
+    auto terms = trail_variables_as_sum(state, ineq.rhs);
+    for (auto & t : ineq.lhs.terms)
+        terms += t;
+    return emit_assert_proof_line(terms <= ineq.rhs, level);
+}
+
 auto Proof::emit_red_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
     const std::vector<std::pair<ProofLiteralOrFlag, ProofLiteralOrFlag>> & witness,
     ProofLevel level) -> ProofLine
