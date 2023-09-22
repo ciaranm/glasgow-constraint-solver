@@ -435,8 +435,6 @@ namespace
             // now run backwards from the final state, eliminating states that
             // didn't lead to a feasible terminal state, and seeing if any
             // further values lose support
-            if (state.maybe_proof())
-                state.maybe_proof()->emit_proof_comment("!!! grepme");
             int var_number = undetermined_var_indices.size() - 1;
             for (auto layer = completed_layers.rbegin(); layer != completed_layers.rend() && next(layer) != completed_layers.rend(); ++layer, --var_number) {
                 set<vector<Integer>> reached;
