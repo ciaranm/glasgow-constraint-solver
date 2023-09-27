@@ -15,7 +15,27 @@
 #include <vector>
 namespace gcs
 {
-    using ProofLine2DMap = std::map<std::pair<Integer, Integer>, innards::ProofLine>;
+    struct ProofFlagData
+    {
+        innards::ProofFlag flag;
+        innards::ProofLine forwards_reif_line;
+        innards::ProofLine backwards_reif_line;
+    };
+
+    struct PosVarLineData
+    {
+        innards::ProofLine leq_line;
+        innards::ProofLine geq_line;
+    };
+
+    struct PosVarData
+    {
+        innards::ProofOnlySimpleIntegerVariableID var;
+        std::map<long, PosVarLineData> plus_one_lines;
+    };
+
+    using ProofFlagDataMap = std::map<long, std::map<long, ProofFlagData>>;
+    using PosVarDataMap = std::map<long, PosVarData>;
 
     /**
      * \brief Circuit constraint: requires the variables, representing graph nodes, take values
@@ -29,7 +49,7 @@ namespace gcs
     protected:
         const bool _gac_all_different;
         const std::vector<IntegerVariableID> _succ;
-        virtual auto set_up(innards::Propagators &, innards::State &) -> std::pair<std::vector<innards::ProofOnlySimpleIntegerVariableID>, ProofLine2DMap>;
+        virtual auto set_up(innards::Propagators &, innards::State &) -> PosVarDataMap;
 
     public:
         explicit CircuitBase(std::vector<IntegerVariableID> var, bool gac_all_different = false);
@@ -77,16 +97,14 @@ namespace gcs
     auto output_cycle_to_proof(const std::vector<IntegerVariableID> & succ,
         const long & start,
         const long & length,
-        const ProofLine2DMap & lines_for_setting_pos,
+        const PosVarDataMap & pos_var_data,
         innards::State & state,
         innards::Proof & proof,
-        std::vector<innards::ProofLine> & to_delete,
         const std::optional<Integer> & prevent_idx = std::nullopt,
         const std::optional<Integer> & prevent_value = std::nullopt) -> void;
 
-    auto prevent_small_cycles(const std::vector<IntegerVariableID> &, const ProofLine2DMap &,
-        const innards::ConstraintStateHandle &, innards::State & state) -> innards::Inference;
-
+    auto prevent_small_cycles(const std::vector<IntegerVariableID> & succ, const PosVarDataMap & pos_var_data,
+        const innards::ConstraintStateHandle & unassigned_handle, innards::State & state) -> innards::Inference;
 
 }
 

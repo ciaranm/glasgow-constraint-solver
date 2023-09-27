@@ -27,7 +27,7 @@ using std::to_string;
 using std::unique_ptr;
 using std::vector;
 
-auto check_small_cycles(const vector<IntegerVariableID> & succ, const ProofLine2DMap & lines_for_setting_pos, State & state) -> Inference
+auto check_small_cycles(const vector<IntegerVariableID> & succ, const PosVarDataMap & pos_var_data, State & state) -> Inference
 {
     auto n = succ.size();
     auto checked = vector<bool>(n, false);
@@ -46,8 +46,8 @@ auto check_small_cycles(const vector<IntegerVariableID> & succ, const ProofLine2
                     cycle_length++;
                     if (j == j0) {
                         if (cmp_less(cycle_length, n)) {
-                            state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
-                                output_cycle_to_proof(succ, j0, cycle_length, lines_for_setting_pos, state, proof, to_delete);
+                            state.infer_true(JustifyExplicitly{[&](Proof & proof) {
+                                output_cycle_to_proof(succ, j0, cycle_length, pos_var_data, state, proof);
                             }});
                             return Inference::Contradiction;
                         }
@@ -64,15 +64,15 @@ auto check_small_cycles(const vector<IntegerVariableID> & succ, const ProofLine2
 
 auto propagate_circuit_using_prevent(
     const vector<IntegerVariableID> & succ,
-    const ProofLine2DMap & lines_for_setting_pos,
+    const PosVarDataMap & pos_var_data,
     const ConstraintStateHandle & unassigned_handle,
     State & state)
 {
     auto result = propagate_non_gac_alldifferent(unassigned_handle, state);
     if (result == Inference::Contradiction) return result;
-    increase_inference_to(result, check_small_cycles(succ, lines_for_setting_pos, state));
+    increase_inference_to(result, check_small_cycles(succ, pos_var_data, state));
     if (result == Inference::Contradiction) return result;
-    increase_inference_to(result, prevent_small_cycles(succ, lines_for_setting_pos, unassigned_handle, state));
+    increase_inference_to(result, prevent_small_cycles(succ, pos_var_data, unassigned_handle, state));
     return result;
 }
 
@@ -90,15 +90,15 @@ auto CircuitPrevent::install(Propagators & propagators, State & initial_state) &
     }
     auto unassigned_handle = initial_state.add_constraint_state(unassigned);
 
-    auto [_, lines_for_setting_pos] = CircuitBase::set_up(propagators, initial_state);
+    auto pos_var_data = CircuitBase::set_up(propagators, initial_state);
 
     Triggers triggers;
     triggers.on_instantiated = {_succ.begin(), _succ.end()};
     propagators.install(
-        [succ = _succ, lines_for_setting_pos = lines_for_setting_pos,
+        [succ = _succ, pvd = pos_var_data,
             unassigned_handle = unassigned_handle](State & state) -> pair<Inference, PropagatorState> {
             return pair{
-                propagate_circuit_using_prevent(succ, lines_for_setting_pos, unassigned_handle, state),
+                propagate_circuit_using_prevent(succ, pvd, unassigned_handle, state),
                 PropagatorState::Enable};
         },
         triggers,

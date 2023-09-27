@@ -42,10 +42,9 @@ CircuitBase::CircuitBase(vector<IntegerVariableID> v, const bool g) :
 auto gcs::output_cycle_to_proof(const vector<IntegerVariableID> & succ,
     const long & start,
     const long & length,
-    const ProofLine2DMap & lines_for_setting_pos,
+    const PosVarDataMap & pos_var_data,
     State & state,
     Proof & proof,
-    vector<ProofLine> & to_delete,
     const optional<Integer> & prevent_idx,
     const optional<Integer> & prevent_value) -> void
 {
@@ -59,34 +58,36 @@ auto gcs::output_cycle_to_proof(const vector<IntegerVariableID> & succ,
 
     stringstream proof_step;
 
-    if (state.maybe_proof()) {
-        proof_step << "p ";
-        proof_step << lines_for_setting_pos.at(make_pair(current_val.value(), Integer(start))) << " ";
-    }
+    proof_step << "p ";
+    proof_step << pos_var_data.at(start).plus_one_lines.at(current_val->raw_value).geq_line << " ";
     long cycle_length = 1;
     while (cmp_not_equal(current_val->raw_value, start)) {
         auto last_val = current_val;
         auto next_var = succ[last_val->raw_value];
         current_val = state.optional_single_value(next_var);
 
-        if (current_val == nullopt || cycle_length == length - 1) break;
+        if (current_val == nullopt || cycle_length == length) break;
 
-        proof_step << lines_for_setting_pos.at(make_pair(current_val.value(), last_val.value()))
+        proof_step << pos_var_data.at(last_val->raw_value).plus_one_lines.at(current_val->raw_value).geq_line
                    << " + ";
         cycle_length++;
     }
 
     if (prevent_idx.has_value()) {
-        proof_step << lines_for_setting_pos.at(make_pair(prevent_value.value(), prevent_idx.value()))
+        proof.emit_proof_comment("Preventing sub-cycle for succ[" + to_string(prevent_idx->raw_value) + "] = " + to_string(prevent_value->raw_value));
+        proof_step << pos_var_data.at(prevent_idx->raw_value).plus_one_lines.at(prevent_value->raw_value).geq_line
                    << " + ";
     }
+    else {
+        proof.emit_proof_comment("Contradicting sub-cycle");
+    }
 
-    to_delete.push_back(proof.emit_proof_line(proof_step.str()));
+    proof.emit_proof_line(proof_step.str(), ProofLevel::Temporary);
 }
 
 auto gcs::prevent_small_cycles(
     const vector<IntegerVariableID> & succ,
-    const ProofLine2DMap & lines_for_setting_pos,
+    const PosVarDataMap & pos_var_data,
     const ConstraintStateHandle & unassigned_handle,
     State & state) -> Inference
 {
@@ -121,8 +122,8 @@ auto gcs::prevent_small_cycles(
         auto length = cycle_lengths.back();
         cycle_lengths.pop_back();
         increase_inference_to(result,
-            state.infer(succ[end[i]] != Integer{i}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
-                output_cycle_to_proof(succ, i, length, lines_for_setting_pos, state, proof, to_delete, Integer{end[i]}, Integer{i});
+            state.infer(succ[end[i]] != Integer{i}, JustifyExplicitly{[&](Proof & proof) {
+                output_cycle_to_proof(succ, i, length, pos_var_data, state, proof, Integer{end[i]}, Integer{i});
             }}));
     }
     return result;
@@ -174,7 +175,7 @@ auto gcs::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigne
     return result;
 }
 
-auto CircuitBase::set_up(Propagators & propagators, State & initial_state) -> pair<vector<ProofOnlySimpleIntegerVariableID>, ProofLine2DMap>
+auto CircuitBase::set_up(Propagators & propagators, State & initial_state) -> PosVarDataMap
 {
     // Can't have negative values
     for (const auto & s : _succ)
@@ -200,57 +201,55 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state) -> pa
     }
 
     // Define encoding to eliminate sub-cycles
-    ProofLine2DMap lines_for_setting_pos{};
-    vector<ProofOnlySimpleIntegerVariableID> position;
+    PosVarDataMap pos_var_data{};
+
     if (propagators.want_definitions()) {
 
+        auto n = static_cast<long long>(_succ.size());
         // Define encoding to eliminate sub-cycles
-        auto n_minus_1 = Integer{static_cast<long long>(_succ.size() - 1)};
-        auto n_minus_1_var = ConstantIntegerVariableID{n_minus_1};
-
         // Need extra proof variable: pos[i] = j means "the ith node visited in the circuit is the jth var"
         // WLOG start at node 0, so pos[0] = 0
-        position.emplace_back(propagators.create_proof_only_integer_variable(0_i, n_minus_1,
-            "pos" + to_string(0), IntegerVariableProofRepresentation::Bits));
-        propagators.define(initial_state, WeightedPseudoBooleanSum{} + 1_i * position[0] == 0_i);
+        pos_var_data.emplace(0,
+            PosVarData{propagators.create_proof_only_integer_variable(0_i, Integer{0_i}, "pos" + to_string(0), IntegerVariableProofRepresentation::Bits), map<long, PosVarLineData>{}});
 
         // Hence we can only have succ[0] = 0 (self cycle) if there is only one node i.e. n - 1 = 0
-        auto proof_line = propagators.define(initial_state,
-            WeightedPseudoBooleanSum{} + 1_i * position[0] + -1_i * n_minus_1_var == 0_i,
+        auto [leq_line, geq_line] = propagators.define(initial_state,
+            WeightedPseudoBooleanSum{} == Integer{n - 1},
             HalfReifyOnConjunctionOf{{_succ[0] == 0_i}});
-        lines_for_setting_pos.insert({{Integer{0_i}, Integer{0_i}}, proof_line.second.value()});
+        optional<ProofLine>();
+        pos_var_data.at(0).plus_one_lines.emplace(0, PosVarLineData{leq_line.value(), geq_line.value()});
 
         for (unsigned int idx = 1; idx < _succ.size(); ++idx) {
-            position.emplace_back(propagators.create_proof_only_integer_variable(0_i, n_minus_1,
-                "pos" + to_string(idx), IntegerVariableProofRepresentation::Bits));
+            pos_var_data.emplace(idx,
+                PosVarData{propagators.create_proof_only_integer_variable(0_i, Integer{n - 1}, "pos" + to_string(0), IntegerVariableProofRepresentation::Bits), map<long, PosVarLineData>{}});
         }
 
         for (unsigned int idx = 1; idx < _succ.size(); ++idx) {
             // (succ[0] = i) -> pos[i] = 1
-            proof_line = propagators.define(initial_state,
-                WeightedPseudoBooleanSum{} + 1_i * position[idx] + -1_i * 1_c == 0_i,
+            tie(leq_line, geq_line) = propagators.define(initial_state,
+                WeightedPseudoBooleanSum{} + 1_i * pos_var_data.at(idx).var + -1_i * 1_c == 0_i,
                 HalfReifyOnConjunctionOf{{_succ[0] == Integer{idx}}});
-            lines_for_setting_pos.insert({{Integer{idx}, Integer{0_i}}, proof_line.second.value()});
+            pos_var_data.at(0).plus_one_lines.emplace(idx, PosVarLineData{leq_line.value(), geq_line.value()});
 
             // (succ[i] = 0) -> pos[i] = n-1
-            proof_line = propagators.define(initial_state,
-                WeightedPseudoBooleanSum{} + 1_i * position[idx] + -1_i * n_minus_1_var == 0_i,
+            tie(leq_line, geq_line) = propagators.define(initial_state,
+                WeightedPseudoBooleanSum{} + 1_i * pos_var_data.at(idx).var == Integer{n - 1},
                 HalfReifyOnConjunctionOf{{_succ[idx] == 0_i}});
-            lines_for_setting_pos.insert({{Integer{0_i}, Integer{idx}}, proof_line.second.value()});
+            pos_var_data.at(idx).plus_one_lines.emplace(0, PosVarLineData{leq_line.value(), geq_line.value()});
 
             // (succ[i] = j) -> pos[j] = pos[i] + 1
             for (unsigned int jdx = 1; jdx < _succ.size(); ++jdx) {
-                proof_line = propagators.define(initial_state,
-                    WeightedPseudoBooleanSum{} + 1_i * position[jdx] + -1_i * position[idx] + -1_i * 1_c == 0_i,
+                tie(leq_line, geq_line) = propagators.define(initial_state,
+                    WeightedPseudoBooleanSum{} + 1_i * pos_var_data.at(jdx).var + -1_i * pos_var_data.at(idx).var == 1_i,
                     HalfReifyOnConjunctionOf{{_succ[idx] == Integer{jdx}}});
-                lines_for_setting_pos.insert({{Integer{jdx}, Integer{idx}}, proof_line.second.value()});
+                pos_var_data.at(idx).plus_one_lines.emplace(jdx, PosVarLineData{leq_line.value(), geq_line.value()});
             }
         }
     }
 
     // Infer succ[i] != i at top of search, but no other propagation defined here: use CircuitPrevent or CircuitSCC
     if (_succ.size() > 1) {
-        propagators.install([succ = _succ, pos = position](State & state) -> pair<Inference, PropagatorState> {
+        propagators.install([succ = _succ](State & state) -> pair<Inference, PropagatorState> {
             auto result = Inference::NoChange;
             for (auto [idx, s] : enumerate(succ)) {
                 increase_inference_to(result, state.infer_not_equal(s, Integer(static_cast<long long>(idx)), JustifyUsingRUP{}));
@@ -262,11 +261,10 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state) -> pa
             Triggers{}, "circuit init");
     }
 
-    return pair{position, lines_for_setting_pos};
+    return pos_var_data;
 }
 
 auto CircuitBase::describe_for_proof() -> std::string
 {
     return "circuit (all different + no sub-cycles)";
 }
-

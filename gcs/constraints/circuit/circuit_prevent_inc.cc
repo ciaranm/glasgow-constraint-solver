@@ -54,7 +54,7 @@ namespace
     // Slightly more complex propagator: prevent small cycles by finding chains and removing the head from the domain
     // of the tail.
     auto propagate_circuit_using_incremental_prevent(const vector<IntegerVariableID> & succ,
-        const ProofLine2DMap & lines_for_setting_pos,
+        const PosVarDataMap & pos_var_data,
         State & state,
         const IntegerVariableID & trigger_var,
         const long & trigger_idx,
@@ -79,9 +79,9 @@ namespace
         auto end = chain.end[next_idx];
 
         if (cmp_not_equal(chain.length[start], n) && next_idx == start) {
-            state.infer_false(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) -> void {
+            state.infer_false(JustifyExplicitly{[&](Proof & proof) -> void {
                 proof.emit_proof_comment("Contradicting cycle");
-                output_cycle_to_proof(succ, start, chain.length[start], lines_for_setting_pos, state, proof, to_delete);
+                output_cycle_to_proof(succ, start, chain.length[start], pos_var_data, state, proof);
             }});
             if (state.maybe_proof())
                 return Inference::Contradiction;
@@ -92,16 +92,16 @@ namespace
             chain.end[start] = end;
 
             if (cmp_less(chain.length[start], succ.size())) {
-                increase_inference_to(result, state.infer(succ[end] != Integer{start}, JustifyExplicitly{[&](Proof & proof, vector<ProofLine> & to_delete) {
+                increase_inference_to(result, state.infer(succ[end] != Integer{start}, JustifyExplicitly{[&](Proof & proof) {
                     proof.emit_proof_comment("Preventing cycle");
-                    output_cycle_to_proof(succ, start, chain.length[start], lines_for_setting_pos, state, proof, to_delete, make_optional(Integer{end}),
+                    output_cycle_to_proof(succ, start, chain.length[start], pos_var_data, state, proof, make_optional(Integer{end}),
                         make_optional(Integer{start}));
                     proof.infer(state, succ[end] != Integer{start}, JustifyUsingRUP{});
                     proof.emit_proof_comment("Done preventing cycle");
                 }}));
             }
             else {
-                state.infer_true(JustifyExplicitly{[&](Proof & proof, vector<ProofLine> &) -> void {
+                state.infer_true(JustifyExplicitly{[&](Proof & proof) -> void {
                     proof.emit_proof_comment("Completing cycle");
                 }});
                 increase_inference_to(result, state.infer(succ[end] == Integer{start}, JustifyUsingRUP{}));
@@ -127,8 +127,7 @@ auto CircuitPreventIncremental::clone() const -> unique_ptr<Constraint>
 
 auto CircuitPreventIncremental::install(Propagators & propagators, State & initial_state) && -> void
 {
-    auto [pos_vars, lines_for_setting_pos] = CircuitBase::set_up(propagators, initial_state);
-
+    auto pos_var_data = CircuitBase::set_up(propagators, initial_state);
     // Constraint states for incremental prevent algorithm
 
     Chain chain;
@@ -145,10 +144,10 @@ auto CircuitPreventIncremental::install(Propagators & propagators, State & initi
         Triggers triggers;
         triggers.on_instantiated = {var};
         propagators.install(
-            [succ = _succ, var = var, idx = idx, lines_for_setting_pos = lines_for_setting_pos, chain_handle = chain_handle, want_proof = propagators.want_definitions()](State & state) -> pair<Inference, PropagatorState> {
+            [succ = _succ, v = var, i = idx, pvd = pos_var_data, chain_handle = chain_handle, want_proof = propagators.want_definitions()](State & state) -> pair<Inference, PropagatorState> {
                 bool should_disable = false;
                 auto result = propagate_circuit_using_incremental_prevent(
-                    succ, lines_for_setting_pos, state, var, static_cast<long>(idx), chain_handle, should_disable);
+                    succ, pvd, state, v, static_cast<long>(i), chain_handle, should_disable);
                 return pair{
                     result,
                     should_disable ? PropagatorState::DisableUntilBacktrack : PropagatorState::Enable};
