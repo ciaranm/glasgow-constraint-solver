@@ -447,8 +447,9 @@ namespace
                 else if (prune_skip && visit_number[w.raw_value] < start_prev_subtree) {
                     state.infer_true(JustifyExplicitly{[&](Proof & proof) {
                         proof.emit_proof_comment("Pruning edge (" + to_string(node) + "," + to_string(w.raw_value) + ")" + " that would skip subtree");
+                        prove_unreachable(state, succ, prev_subroot, pos_var_data, succ[node] == w);
                     }});
-                    prove_unreachable(state, succ, prev_subroot, pos_var_data, succ[node] == w);
+
                     increase_inference_to(result, state.infer(succ[node] != w, NoJustificationNeeded{}));
                 }
                 lowlink[node] = pos_min(lowlink[node], visit_number[w.raw_value]);
@@ -502,9 +503,9 @@ namespace
                 if (back_edges.empty()) {
                     state.infer_true(JustifyExplicitly{[&](Proof & proof) {
                         proof.emit_proof_comment("No back edges:");
-                    }});
-                    if (state.maybe_proof())
                         prove_unreachable(state, succ, prev_subroot, pos_var_data);
+                    }});
+
                     increase_inference_to(result, Inference::Contradiction);
                     return false;
                 }
@@ -512,10 +513,9 @@ namespace
 
                     state.infer_true(JustifyExplicitly{[&](Proof & proof) {
                         proof.emit_proof_comment("Fix required back edge (" + to_string(back_edges[0].first) + ", " + to_string(back_edges[0].second) + "):");
+                        prove_unreachable(state, succ, back_edges[0].first, pos_var_data, succ[back_edges[0].first] != Integer{back_edges[0].second});
                     }});
 
-                    if (state.maybe_proof())
-                        prove_unreachable(state, succ, back_edges[0].first, pos_var_data, succ[back_edges[0].first] != Integer{back_edges[0].second});
                     increase_inference_to(result, state.infer(succ[back_edges[0].first] == Integer{back_edges[0].second}, NoJustificationNeeded{}));
                 }
                 start_subtree = end_subtree + 1;
@@ -528,11 +528,9 @@ namespace
         if (cmp_not_equal(count, succ.size()) && result != Inference::Contradiction) {
             state.infer_true(JustifyExplicitly{[&](Proof & proof) {
                 proof.emit_proof_comment("Disconnected graph:");
+                prove_unreachable(state, succ, root, pos_var_data);
             }});
 
-            // The graph isn't even connected
-            if (state.maybe_proof())
-                prove_unreachable(state, succ, root, pos_var_data);
             return Inference::Contradiction;
         }
 
@@ -541,8 +539,9 @@ namespace
                 if (visit_number[v.raw_value] < start_subtree) {
                     state.infer_true(JustifyExplicitly{[&](Proof & proof) {
                         proof.emit_proof_comment("Prune impossible edges from root node:");
+                        prove_unreachable(state, succ, root, pos_var_data, succ[root] == v);
                     }});
-                    prove_unreachable(state, succ, root, pos_var_data, succ[root] == v);
+
                     increase_inference_to(result, state.infer(succ[root] != v, JustifyUsingRUP{}));
                 }
 
