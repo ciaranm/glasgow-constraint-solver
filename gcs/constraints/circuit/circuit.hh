@@ -20,6 +20,7 @@ namespace gcs
         innards::ProofFlag flag;
         innards::ProofLine forwards_reif_line;
         innards::ProofLine backwards_reif_line;
+        std::map<long, innards::ProofLine> neq_lines;
     };
 
     struct PosVarLineData
@@ -36,6 +37,7 @@ namespace gcs
 
     using ProofFlagDataMap = std::map<long, std::map<long, ProofFlagData>>;
     using PosVarDataMap = std::map<long, PosVarData>;
+    using ShiftedPosDataMaps = std::map<long, std::vector<ProofFlagDataMap>>;
 
     /**
      * \brief Circuit constraint: requires the variables, representing graph nodes, take values
@@ -89,7 +91,7 @@ namespace gcs
         auto install(innards::Propagators &, innards::State &) && -> void override;
     };
 
-    using Circuit = CircuitPreventIncremental;
+    using Circuit = CircuitSCC;
 
     auto propagate_non_gac_alldifferent(
         const innards::ConstraintStateHandle & unassigned_handle, innards::State & state) -> innards::Inference;
