@@ -37,7 +37,13 @@ namespace gcs
 
     using ProofFlagDataMap = std::map<long, std::map<long, ProofFlagData>>;
     using PosVarDataMap = std::map<long, PosVarData>;
-    using ShiftedPosDataMaps = std::map<long, std::vector<ProofFlagDataMap>>;
+
+    struct ShiftedPosDataMaps
+    {
+        ProofFlagDataMap distance_at_least;
+        ProofFlagDataMap distance;
+        ProofFlagDataMap shifted_pos;
+    };
 
     /**
      * \brief Circuit constraint: requires the variables, representing graph nodes, take values

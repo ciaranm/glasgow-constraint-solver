@@ -52,7 +52,7 @@ namespace
             return min(a, b);
     }
 
-    auto create_shifted_pos(long i, long j, ProofFlagDataMap & distance_at_least, ProofFlagDataMap & distance, ProofFlagDataMap & shifted_pos,
+    auto create_shifted_pos(long i, long j, ShiftedPosDataMaps & flag_data,
         const PosVarDataMap & pos_var_data, map<long, set<long>> & used_shifted_pos_values, State & state, const long root, const long n)
     {
         used_shifted_pos_values[i].insert(j);
@@ -66,124 +66,145 @@ namespace
             };
 
         // distance_at_least[i][j] <=> pos[i] - pos[root] >= j
-        maybe_create_and_emplace_flag_data(distance_at_least, i, j,
+        maybe_create_and_emplace_flag_data(flag_data.distance_at_least, i, j,
             WeightedPseudoBooleanSum{} + 1_i * pos_var_data.at(i).var + -1_i * pos_var_data.at(root).var >= Integer{j}, "d" + to_string(i) + "ge" + to_string(j));
 
         // distance_at_least[i][j+1] <=> pos[i] - pos[root] >= j+1
-        maybe_create_and_emplace_flag_data(distance_at_least, i, j + 1,
+        maybe_create_and_emplace_flag_data(flag_data.distance_at_least, i, j + 1,
             WeightedPseudoBooleanSum{} + 1_i * pos_var_data.at(i).var + -1_i * pos_var_data.at(root).var >= Integer{j + 1}, "d" + to_string(i) + "ge" + to_string(j + 1));
 
         // distance_at_least[i][j-n].term <=> pos[i] - pos[root] >= j-n
-        maybe_create_and_emplace_flag_data(distance_at_least, i, j - n,
+        maybe_create_and_emplace_flag_data(flag_data.distance_at_least, i, j - n,
             WeightedPseudoBooleanSum{} + 1_i * pos_var_data.at(i).var + -1_i * pos_var_data.at(root).var >= Integer{j - n}, "d" + to_string(i) + "gem" + to_string(n - j));
 
         // distance_at_least[i][j+1-n].term <=> pos[i] - pos[root] >= j+1-n
-        maybe_create_and_emplace_flag_data(distance_at_least, i, j + 1 - n,
+        maybe_create_and_emplace_flag_data(flag_data.distance_at_least, i, j + 1 - n,
             WeightedPseudoBooleanSum{} + 1_i * pos_var_data.at(i).var + -1_i * pos_var_data.at(root).var >= Integer{j + 1 - n}, "d" + to_string(i) + "gem" + to_string(n - j - 1));
 
         // distance[i][j] <=> distance_at_least[i][j] /\ not distance_at_least[i][j+1]
-        maybe_create_and_emplace_flag_data(distance, i, j,
-            WeightedPseudoBooleanSum{} + 1_i * distance_at_least[i][j].flag + -1_i * distance_at_least[i][j + 1].flag >= 1_i, "d" + to_string(i) + "eq" + to_string(j));
+        maybe_create_and_emplace_flag_data(flag_data.distance, i, j,
+            WeightedPseudoBooleanSum{} + 1_i * flag_data.distance_at_least[i][j].flag + -1_i * flag_data.distance_at_least[i][j + 1].flag >= 1_i, "d" + to_string(i) + "eq" + to_string(j));
 
         // distance[i][j-n] <=> distance_at_least[i][j-n] /\ not distance_at_least[i][j-n + 1]
-        maybe_create_and_emplace_flag_data(distance, i, j - n,
-            WeightedPseudoBooleanSum{} + 1_i * distance_at_least[i][j - n].flag + -1_i * distance_at_least[i][j - n + 1].flag >= 1_i, "d" + to_string(i) + "eqm" + to_string(n - j));
+        maybe_create_and_emplace_flag_data(flag_data.distance, i, j - n,
+            WeightedPseudoBooleanSum{} + 1_i * flag_data.distance_at_least[i][j - n].flag + -1_i * flag_data.distance_at_least[i][j - n + 1].flag >= 1_i, "d" + to_string(i) + "eqm" + to_string(n - j));
 
         // shifted_pos[i][j] <=> distance[i][j] \/ distance[i][j-n]
-        maybe_create_and_emplace_flag_data(shifted_pos, i, j,
-            WeightedPseudoBooleanSum{} + 1_i * distance[i][j - n].flag + 1_i * distance[i][j].flag >= 1_i, "q" + to_string(i) + "eq" + to_string(j));
+        maybe_create_and_emplace_flag_data(flag_data.shifted_pos, i, j,
+            WeightedPseudoBooleanSum{} + 1_i * flag_data.distance[i][j - n].flag + 1_i * flag_data.distance[i][j].flag >= 1_i, "q" + to_string(i) + "eq" + to_string(j));
     }
 
-    auto prove_not_both(long i, long l, long k,
-        ProofFlagDataMap & distance_at_least,
-        ProofFlagDataMap & distance,
-        ProofFlagDataMap & shifted_pos,
-        const long & n, State & state) -> ProofLine
+    auto prove_not_both(long i, long l, long k, ShiftedPosDataMaps & flag_data, const PosVarDataMap & pos_var_data, const bool using_shifted_pos, const long & n, State & state) -> ProofLine
     {
-        if (shifted_pos[i][l].neq_lines.contains(k)) {
-            // Don't reprove this if we did it before
-            return shifted_pos[i][l].neq_lines[k];
+        ProofLine neq_line{};
+
+        if (using_shifted_pos) {
+            auto & shifted_pos = flag_data.shifted_pos;
+            auto & distance_at_least = flag_data.distance_at_least;
+            auto & distance = flag_data.distance;
+
+            if (shifted_pos[i][l].neq_lines.contains(k)) {
+                // Don't reprove this if we did it before
+                return shifted_pos[i][l].neq_lines[k];
+            }
+
+            state.infer_true(JustifyExplicitly{
+                [&](Proof & proof) {
+                    // proof.emit_proof_comment("************** " + to_string(i) + ", " + to_string(l) + ", " + to_string(k) + " ******************");
+                    stringstream proofline;
+                    proofline
+                        << " p " << distance_at_least[i][l + 1].backwards_reif_line
+                        << " " << distance_at_least[i][k].forwards_reif_line << " + s";
+                    proof.emit_proof_line(proofline.str(), ProofLevel::Temporary);
+
+                    proofline.str("");
+                    proofline << " p " << distance_at_least[i][l].forwards_reif_line
+                              << " " << distance_at_least[i][k - n + 1].backwards_reif_line << " + s";
+                    proof.emit_proof_line(proofline.str(), ProofLevel::Temporary);
+
+                    proofline.str("");
+                    proofline << " p " << distance_at_least[i][l - n + 1].backwards_reif_line
+                              << " " << distance_at_least[i][k - n].forwards_reif_line << " + s";
+                    proof.emit_proof_line(proofline.str(), ProofLevel::Temporary);
+
+                    proofline.str("");
+                    proofline << " p " << distance_at_least[i][l - n + 1].backwards_reif_line
+                              << " " << distance_at_least[i][k].forwards_reif_line << " + s";
+                    proof.emit_proof_line(proofline.str(), ProofLevel::Temporary);
+
+                    proof.emit_rup_proof_line(
+                        WeightedPseudoBooleanSum{} + 1_i * ! shifted_pos[i][k].flag + 1_i * ! distance[i][l].flag >= 1_i, ProofLevel::Temporary);
+
+                    proof.emit_proof_comment("NEQ");
+                    neq_line = proof.emit_rup_proof_line(
+                        WeightedPseudoBooleanSum{} + 1_i * ! shifted_pos[i][k].flag + 1_i * ! shifted_pos[i][l].flag >= 1_i, ProofLevel::Top);
+                }});
+
+            shifted_pos[i][l].neq_lines[k] = neq_line;
         }
+        else {
+            auto & shifted_pos = flag_data.shifted_pos;
+            if (shifted_pos[i][l].neq_lines.contains(k)) {
+                // Don't reprove this if we did it before
+                return shifted_pos[i][l].neq_lines[k];
+            }
+            state.infer_true(JustifyExplicitly{
+                [&](Proof & proof) {
+                    proof.emit_proof_comment("NEQ");
+                    neq_line = proof.emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * (pos_var_data.at(i).var != Integer{k}) + 1_i * (pos_var_data.at(i).var != Integer{l}) >= 1_i, ProofLevel::Top);
+                }});
 
-        ProofLine neq_line;
-        state.infer_true(JustifyExplicitly{
-            [&](Proof & proof) {
-                // proof.emit_proof_comment("************** " + to_string(i) + ", " + to_string(l) + ", " + to_string(k) + " ******************");
-                stringstream proofline;
-                proofline
-                    << " p " << distance_at_least[i][l + 1].backwards_reif_line
-                    << " " << distance_at_least[i][k].forwards_reif_line << " + s";
-                proof.emit_proof_line(proofline.str(), ProofLevel::Temporary);
-
-                proofline.str("");
-                proofline << " p " << distance_at_least[i][l].forwards_reif_line
-                          << " " << distance_at_least[i][k - n + 1].backwards_reif_line << " + s";
-                proof.emit_proof_line(proofline.str(), ProofLevel::Temporary);
-
-                proofline.str("");
-                proofline << " p " << distance_at_least[i][l - n + 1].backwards_reif_line
-                          << " " << distance_at_least[i][k - n].forwards_reif_line << " + s";
-                proof.emit_proof_line(proofline.str(), ProofLevel::Temporary);
-
-                proofline.str("");
-                proofline << " p " << distance_at_least[i][l - n + 1].backwards_reif_line
-                          << " " << distance_at_least[i][k].forwards_reif_line << " + s";
-                proof.emit_proof_line(proofline.str(), ProofLevel::Temporary);
-
-                proof.emit_rup_proof_line(
-                    WeightedPseudoBooleanSum{} + 1_i * ! shifted_pos[i][k].flag + 1_i * ! distance[i][l].flag >= 1_i, ProofLevel::Temporary);
-
-                proof.emit_proof_comment("NEQ");
-                neq_line = proof.emit_rup_proof_line(
-                    WeightedPseudoBooleanSum{} + 1_i * ! shifted_pos[i][k].flag + 1_i * ! shifted_pos[i][l].flag >= 1_i, ProofLevel::Top);
-            }});
-
-        shifted_pos[i][l].neq_lines[k] = neq_line;
+            shifted_pos[i][l].neq_lines[k] = neq_line;
+        }
         return neq_line;
     }
 
-    auto prove_unreachable(State & state, const vector<IntegerVariableID> & succ, const long & root, PosVarDataMap pos_var_data, const ConstraintStateHandle & proof_flag_data_handle, const Literal & assumption = TrueLiteral{})
+    auto prove_unreachable(
+        State & state,
+        const vector<IntegerVariableID> & succ,
+        const long & root,
+        const PosVarDataMap & pos_var_data,
+        const ConstraintStateHandle & proof_flag_data_handle,
+        const bool using_dominance,
+        const Literal & assumption = TrueLiteral{})
     {
+        const auto using_shifted_pos = ! using_dominance && root != 0;
         auto n = static_cast<long>(succ.size());
-        state.infer_true(JustifyExplicitly{[&](Proof & proof) {
-            proof.emit_proof_comment("=== REACHABILITY PROOF ===");
-        }});
+        map<long, set<long>> used_pos_vals{};
 
-        auto & data_maps_for_each_root = any_cast<ShiftedPosDataMaps &>(state.get_persistent_constraint_state(proof_flag_data_handle));
-        // distance_at_least[i][j] means pos[i] - pos[root] >= j
-        ProofFlagDataMap distance_at_least{};
-        // distance[i][j] means pos[i] - pos[root] == j
-        ProofFlagDataMap distance{};
-        // shifted_pos[i][j] means pos[i] - pos[root] = j mod n
-        ProofFlagDataMap shifted_pos{};
-
-        map<long, set<long>> used_shifted_pos_vals{};
-
+        auto & data_maps_for_each_root = any_cast<map<long, ShiftedPosDataMaps> &>(state.get_persistent_constraint_state(proof_flag_data_handle));
+        ShiftedPosDataMaps flag_data{};
         if (data_maps_for_each_root.count(root) != 0) {
             // Retrieved cached versions if we've started from this root before
-            distance_at_least = data_maps_for_each_root[root][0];
-            distance = data_maps_for_each_root[root][1];
-            shifted_pos = data_maps_for_each_root[root][2];
+            flag_data = data_maps_for_each_root[root];
+        }
+
+        ProofLine last_al1_pos_line{};
+        // Prove pos[root] = 0
+        if (using_dominance) {
+            // TODO:
+        }
+        else if (using_shifted_pos) {
+            create_shifted_pos(root, 0, flag_data, pos_var_data, used_pos_vals, state, root, n);
+
+            state.infer_true(JustifyExplicitly{[&](Proof & proof) {
+                proof.emit_proof_comment("AL1 position");
+                last_al1_pos_line = proof.emit_rup_proof_line(
+                    WeightedPseudoBooleanSum{} + 1_i * flag_data.shifted_pos[root][0].flag >= 1_i,
+                    ProofLevel::Current);
+            }});
         }
         else {
-            distance_at_least = ProofFlagDataMap{};
-            distance = ProofFlagDataMap{};
-            shifted_pos = ProofFlagDataMap{};
+            used_pos_vals[0].insert(0);
+            state.infer_true(JustifyExplicitly{[&](Proof & proof) {
+                proof.emit_proof_comment("AL1 position");
+                last_al1_pos_line = proof.emit_rup_proof_line(
+                    WeightedPseudoBooleanSum{} + 1_i * (pos_var_data.at(root).var == 0_i) >= 1_i,
+                    ProofLevel::Current);
+            }});
         }
 
-        create_shifted_pos(root, 0, distance_at_least, distance, shifted_pos, pos_var_data, used_shifted_pos_vals, state, root, n);
-        vector<ProofLine> al1_q_lines;
-
-        // Should be able to RUP shifted_pos[root][0] >= 1
-        state.infer_true(JustifyExplicitly{[&](Proof & proof) {
-            proof.emit_proof_comment("LAYER");
-            al1_q_lines.emplace_back(proof.emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} + 1_i * ! assumption + 1_i * shifted_pos[root][0].flag >= 1_i, ProofLevel::Current));
-        }});
-
-        // Now collect all the shifted_pos[i][1] for each `possible i
-        vector<ProofLine> next_node_implies_lines{};
-        WeightedPseudoBooleanSum possible_successor_sum{};
-        set<long> reached_nodes = {};
+        vector<ProofLine> al1_pos_lines = {last_al1_pos_line};
 
         auto skip_based_on_assumption = [&](IntegerVariableID var, Integer val, Literal assumption) -> bool {
             return overloaded{
@@ -221,132 +242,98 @@ namespace
                 .visit(assumption);
         };
 
-        state.for_each_value(succ[root], [&](Integer val) {
-            if (skip_based_on_assumption(succ[root], val, assumption)) return;
-
-            possible_successor_sum += 1_i * (succ[root] == val);
-            auto next_node = val.raw_value;
-            reached_nodes.insert(next_node);
-            create_shifted_pos(next_node, 1, distance_at_least, distance, shifted_pos, pos_var_data, used_shifted_pos_vals, state, root, n);
-
-            state.infer_true(JustifyExplicitly{[&](Proof & proof) {
-                stringstream proofline;
-
-                // Add to get succ[root] = next_node => distance_at_least[next_node][1]
-                proofline << "p ";
-                proofline << pos_var_data.at(root).plus_one_lines.at(next_node).geq_line << " ";
-                proofline << distance_at_least[next_node][1].backwards_reif_line << " + s";
-                proof.emit_proof_line(proofline.str(), ProofLevel::Temporary);
-
-                // Add to get succ[root] = next_node => !distance_at_least[next_node][2]
-                proofline.str("");
-                proofline << "p ";
-                proofline << pos_var_data.at(root).plus_one_lines.at(next_node).leq_line << " ";
-                proofline << distance_at_least[next_node][2].forwards_reif_line << " + s";
-
-                // Now RUP succ[root] = next_node => shifted_pos[next_node][1]
-                proof.emit_proof_line(proofline.str(), ProofLevel::Temporary);
-                next_node_implies_lines.emplace_back(proof.emit_rup_proof_line_under_trail(state,
-                    WeightedPseudoBooleanSum{} + 1_i * ! assumption + 1_i * shifted_pos[next_node][1].flag + 1_i * (succ[root] != val) >= 1_i, ProofLevel::Current));
-            }});
-        });
-
-        vector<ProofLine> am1_q_lines;
-        ProofLine al1_q_line;
-        // RUP that succ[root] takes some value
-        // allows us to derive at least 1 shifted_pos[node][1]
-        state.infer_true(JustifyExplicitly{[&](Proof & proof) {
-            proof.emit_proof_comment("Some value:");
-            auto al1_x_line = proof.emit_rup_proof_line_under_trail(state, possible_successor_sum + 1_i * ! assumption >= 1_i, ProofLevel::Temporary);
-            stringstream proofline;
-            proofline << "p ";
-            proofline << al1_x_line << " ";
-            for (const auto & l : next_node_implies_lines) {
-                proofline << l << " + ";
-            }
-            proof.emit_proof_comment("LAYER");
-            al1_q_lines.emplace_back(proof.emit_proof_line(proofline.str(), ProofLevel::Current));
-            al1_q_line = al1_q_lines.back();
-        }});
-
-        int count = 2;
-        auto all_reached_nodes = reached_nodes;
-
-        all_reached_nodes.insert(root);
+        long count = 1;
+        set<long> all_reached_nodes = {root};
+        set<long> last_reached_nodes = {root};
 
         while (cmp_less_equal(count, all_reached_nodes.size())) {
             set<long> new_reached_nodes{};
-            vector<ProofLine> q_implies_lines = {};
+            vector<ProofLine> last_pos_implies_lines = {};
 
-            for (const auto & node : reached_nodes) {
+            for (const auto & node : last_reached_nodes) {
+                WeightedPseudoBooleanSum possible_successor_sum{};
+                vector<ProofLine> successor_implies_lines{};
 
-                possible_successor_sum = {};
-                next_node_implies_lines = {};
+                // For each possible successor
                 state.for_each_value(succ[node], [&](Integer val) {
                     if (skip_based_on_assumption(succ[node], val, assumption)) return;
                     possible_successor_sum += 1_i * (succ[node] == val);
                     auto next_node = val.raw_value;
                     new_reached_nodes.insert(next_node);
-                    create_shifted_pos(next_node, count, distance_at_least, distance, shifted_pos, pos_var_data, used_shifted_pos_vals, state, root, n);
 
-                    // Have to account for when we circle back round to 0 and the count and count-n swap roles
-                    long next_distance = count;
-                    long next_distance_mod = count - n;
-                    if (next_node == 0) {
-                        next_distance = count - n;
-                        next_distance_mod = count;
+                    // successor_implies_lines += Prove pos[node][count - 1] /\ succ[node] = next_node => pos[next_node][count]
+                    if (using_shifted_pos) {
+                        // Have to account for when we circle back round to 0 and the count and count-n swap roles
+                        long next_distance = count;
+                        long next_distance_mod = count - n;
+                        if (next_node == 0) {
+                            next_distance = count - n;
+                            next_distance_mod = count;
+                        }
+
+                        create_shifted_pos(next_node, count, flag_data, pos_var_data, used_pos_vals, state, root, n);
+
+                        state.infer_true(JustifyExplicitly{[&](Proof & proof) {
+                            // Add to get succ[node]==next_node /\ distance_at_least[node][count - 1] => distance_at_least[next_node][count]
+                            stringstream proofline;
+                            proofline << "p ";
+                            proofline << pos_var_data.at(node).plus_one_lines.at(next_node).geq_line << " ";
+                            proofline << flag_data.distance_at_least[node][count - 1].forwards_reif_line << " + ";
+                            proofline << flag_data.distance_at_least[next_node][next_distance].backwards_reif_line << " + s";
+                            auto last_proof_line = proof.emit_proof_line(proofline.str(), ProofLevel::Temporary);
+
+                            // Further add to get succ[node]==next_node /\ distance_at_least[node][count - 1] /\ !distance_at_least[node][count] =>
+                            // distance_at_least[next_node][count] /\ !distance_at_Least[next_node][count + 1]
+                            proofline.str("");
+                            proofline << "p ";
+                            proofline << pos_var_data.at(node).plus_one_lines.at(next_node).leq_line << " ";
+                            proofline << flag_data.distance_at_least[node][count].backwards_reif_line << " + ";
+                            proofline << flag_data.distance_at_least[next_node][next_distance + 1].forwards_reif_line << " + s ";
+                            proofline << last_proof_line << " + ";
+                            proof.emit_proof_line(proofline.str(), ProofLevel::Temporary);
+
+                            // Now we can RUP succ[node]==next_node /\ distance[next_node][count] => distance[next_node][count + 1]
+                            proof.emit_rup_proof_line_under_trail(state,
+                                WeightedPseudoBooleanSum{} + 1_i * flag_data.distance[next_node][next_distance].flag + 1_i * (succ[node] != val) + 1_i * (! flag_data.distance[node][count - 1].flag) >= 1_i, ProofLevel::Temporary);
+
+                            // Add to get succ[node]==next_node /\ distance_at_least[node][count - 1 -n] => distance_at_least[next_node][count -n]
+                            proofline.str("");
+                            proofline << "p ";
+                            proofline << pos_var_data.at(node).plus_one_lines.at(next_node).geq_line << " ";
+                            proofline << flag_data.distance_at_least[node][count - 1 - n].forwards_reif_line << " + ";
+                            proofline << flag_data.distance_at_least[next_node][next_distance_mod].backwards_reif_line << " + s";
+                            last_proof_line = proof.emit_proof_line(proofline.str(), ProofLevel::Temporary);
+
+                            // Further add to get  succ[node]==next_node /\ distance_at_least[node][count - 1 - n] /\ !distance_at_least[node][count - n] =>
+                            // distance_at_least[next_node][count - n] /\ !distance_at_Least[next_node][count + 1 - n]
+                            proofline.str("");
+                            proofline << "p ";
+                            proofline << pos_var_data.at(node).plus_one_lines.at(next_node).leq_line << " ";
+                            proofline << flag_data.distance_at_least[node][count - n].backwards_reif_line << " + ";
+                            proofline << flag_data.distance_at_least[next_node][next_distance_mod + 1].forwards_reif_line << " + s ";
+                            proofline << last_proof_line << " + ";
+
+                            proof.emit_proof_line(proofline.str(), ProofLevel::Temporary);
+
+                            proof.emit_proof_comment("q" + to_string(node) + to_string(count - 1) + " implies q" + to_string(next_node) + to_string(count));
+                            // RUP shifted_pos[node][count-1] /\ succ[node] = next_node => shifted_pos[next_node][i]
+                            successor_implies_lines.emplace_back(proof.emit_rup_proof_line_under_trail(state,
+                                WeightedPseudoBooleanSum{} + 1_i * flag_data.shifted_pos[next_node][count].flag + 1_i * (succ[node] != val) + 1_i * (! flag_data.shifted_pos[node][count - 1].flag) >= 1_i, ProofLevel::Current));
+                        }});
                     }
-                    state.infer_true(JustifyExplicitly{[&](Proof & proof) {
-                        // Add to get succ[node]==next_node /\ distance_at_least[node][count - 1] => distance_at_least[next_node][count]
-                        stringstream proofline;
-                        proofline << "p ";
-                        proofline << pos_var_data.at(node).plus_one_lines.at(next_node).geq_line << " ";
-                        proofline << distance_at_least[node][count - 1].forwards_reif_line << " + ";
-                        proofline << distance_at_least[next_node][next_distance].backwards_reif_line << " + s";
-                        auto last_proof_line = proof.emit_proof_line(proofline.str(), ProofLevel::Temporary);
+                    else {
+                        // Not using shifted pos, just use the actual pos values
 
-                        // Further add to get succ[node]==next_node /\ distance_at_least[node][count - 1] /\ !distance_at_least[node][count] =>
-                        // distance_at_least[next_node][count] /\ !distance_at_Least[next_node][count + 1]
-                        proofline.str("");
-                        proofline << "p ";
-                        proofline << pos_var_data.at(node).plus_one_lines.at(next_node).leq_line << " ";
-                        proofline << distance_at_least[node][count].backwards_reif_line << " + ";
-                        proofline << distance_at_least[next_node][next_distance + 1].forwards_reif_line << " + s ";
-                        proofline << last_proof_line << " + ";
-                        proof.emit_proof_line(proofline.str(), ProofLevel::Temporary);
-
-                        // Now we can RUP succ[node]==next_node /\ distance[next_node][count] => distance[next_node][count + 1]
-                        proof.emit_rup_proof_line_under_trail(state,
-                            WeightedPseudoBooleanSum{} + 1_i * distance[next_node][next_distance].flag + 1_i * (succ[node] != val) + 1_i * (! distance[node][count - 1].flag) >= 1_i, ProofLevel::Temporary);
-
-                        // Add to get succ[node]==next_node /\ distance_at_least[node][count - 1 -n] => distance_at_least[next_node][count -n]
-                        proofline.str("");
-                        proofline << "p ";
-                        proofline << pos_var_data.at(node).plus_one_lines.at(next_node).geq_line << " ";
-                        proofline << distance_at_least[node][count - 1 - n].forwards_reif_line << " + ";
-                        proofline << distance_at_least[next_node][next_distance_mod].backwards_reif_line << " + s";
-                        last_proof_line = proof.emit_proof_line(proofline.str(), ProofLevel::Temporary);
-
-                        // Further add to get  succ[node]==next_node /\ distance_at_least[node][count - 1 - n] /\ !distance_at_least[node][count - n] =>
-                        // distance_at_least[next_node][count - n] /\ !distance_at_Least[next_node][count + 1 - n]
-                        proofline.str("");
-                        proofline << "p ";
-                        proofline << pos_var_data.at(node).plus_one_lines.at(next_node).leq_line << " ";
-                        proofline << distance_at_least[node][count - n].backwards_reif_line << " + ";
-                        proofline << distance_at_least[next_node][next_distance_mod + 1].forwards_reif_line << " + s ";
-                        proofline << last_proof_line << " + ";
-                        //                        proofline << distance[node][count - n - 1].forwards_reif_line << " + s";
-                        proof.emit_proof_line(proofline.str(), ProofLevel::Temporary);
-
-                        proof.emit_proof_comment("q" + to_string(node) + to_string(count - 1) + " implies q" + to_string(next_node) + to_string(count));
-                        // RUP shifted_pos[node][i-1] /\ succ[node] = next_node => shifted_pos[next_node][i]
-                        next_node_implies_lines.emplace_back(proof.emit_rup_proof_line_under_trail(state,
-                            WeightedPseudoBooleanSum{} + 1_i * shifted_pos[next_node][count].flag + 1_i * (succ[node] != val) + 1_i * (! shifted_pos[node][count - 1].flag) >= 1_i, ProofLevel::Current));
-                    }});
+                        used_pos_vals[next_node].insert(count);
+                        state.infer_true(JustifyExplicitly{[&](Proof & proof) {
+                            // succ[node] == next_node /\ pos[node] == count - 1 => pos[next_node] == count
+                            successor_implies_lines.emplace_back(proof.emit_rup_proof_line(
+                                WeightedPseudoBooleanSum{} + 1_i * (pos_var_data.at(node).var != Integer{count - 1}) + 1_i * (succ[node] != val) + 1_i * (pos_var_data.at(next_node).var == Integer{count}) >= 1_i, ProofLevel::Current));
+                        }});
+                    }
                 });
 
-                // RUP that succ[node] takes some value and then derive
-                // shifted_pos[node][i-1] => \/_possible_successors shifted_pos[next_node][i]
+                // last_pos_implies_lines += Prove pos[node][count - 1] => \/_{next_node} pos[next_node][count]
                 state.infer_true(JustifyExplicitly{[&](Proof & proof) {
                     proof.emit_proof_comment("Some value:");
                     auto al1_x_line = proof.emit_rup_proof_line_under_trail(state, possible_successor_sum + 1_i * ! assumption >= 1_i, ProofLevel::Temporary);
@@ -354,51 +341,54 @@ namespace
                     stringstream proofline;
                     proofline << "p ";
                     proofline << al1_x_line << " ";
-                    for (const auto & l : next_node_implies_lines) {
+                    for (const auto & l : successor_implies_lines) {
                         proofline << l << " + s ";
                     }
-                    q_implies_lines.emplace_back(proof.emit_proof_line(proofline.str(), ProofLevel::Current));
+                    last_pos_implies_lines.emplace_back(proof.emit_proof_line(proofline.str(), ProofLevel::Current));
                 }});
             }
 
-            // Finally, this allows us to rup at least 1 shifted_pos[node][k] for k in reached nodes
+            // Prove \/_{next_node} pos[next_node][count]
             state.infer_true(JustifyExplicitly{[&](Proof & proof) {
                 stringstream proofline;
                 proofline << "p ";
-                proofline << al1_q_line << " ";
-                for (const auto & l : q_implies_lines) {
+                proofline << last_al1_pos_line << " ";
+                for (const auto & l : last_pos_implies_lines) {
                     proofline << l << " + s ";
                 }
-                proof.emit_proof_comment("LAYER");
-                al1_q_lines.emplace_back(proof.emit_proof_line(proofline.str(), ProofLevel::Current));
-                al1_q_line = al1_q_lines.back();
+                proof.emit_proof_comment("AL1 position");
+                al1_pos_lines.emplace_back(proof.emit_proof_line(proofline.str(), ProofLevel::Current));
+                last_al1_pos_line = al1_pos_lines.back();
             }});
 
-            reached_nodes = new_reached_nodes;
+            last_reached_nodes = new_reached_nodes;
 
             // Continue until we've logged more layers than we have reached nodes (Hall violator)
             all_reached_nodes.insert(new_reached_nodes.begin(), new_reached_nodes.end());
             count++;
         }
 
+        vector<ProofLine> am1_pos_lines{};
+
+        // Prove at most one pos[node][count] for each count
         // In order to actually get the contradiction we need to retrieve the at_least_1_constraints
         // and in order to do that we need a clique of not-equals over the vars
         state.infer_true(JustifyExplicitly{
             [&](Proof & proof) {
                 for (const auto & i : all_reached_nodes) {
                     stringstream proofline;
-                    if (used_shifted_pos_vals[i].size() > 1) {
-                        auto k = ++used_shifted_pos_vals[i].begin();
-                        auto l = used_shifted_pos_vals[i].begin();
-                        proofline << "p " << prove_not_both(i, (*l), (*k), distance_at_least, distance, shifted_pos, n, state);
+                    if (used_pos_vals[i].size() > 1) {
+                        auto k = ++used_pos_vals[i].begin();
+                        auto l = used_pos_vals[i].begin();
+                        proofline << "p " << prove_not_both(i, (*l), (*k), flag_data, pos_var_data, using_shifted_pos, n, state);
                         vector<ProofLine> neq_lines{};
                         k++;
                         auto k_count = 2;
-                        while (k != used_shifted_pos_vals[i].end()) {
+                        while (k != used_pos_vals[i].end()) {
                             proofline << " " << k_count << " * ";
-                            l = used_shifted_pos_vals[i].begin();
+                            l = used_pos_vals[i].begin();
                             while (l != k) {
-                                proofline << prove_not_both(i, (*l), (*k), distance_at_least, distance, shifted_pos, n, state) << " + ";
+                                proofline << prove_not_both(i, (*l), (*k), flag_data, pos_var_data, using_shifted_pos, n, state) << " + ";
                                 l++;
                             }
                             proofline << k_count + 1 << " d ";
@@ -406,28 +396,28 @@ namespace
                             k_count++;
                         }
                         proof.emit_proof_comment("AM1");
-                        am1_q_lines.emplace_back(proof.emit_proof_line(proofline.str(), ProofLevel::Current));
+                        am1_pos_lines.emplace_back(proof.emit_proof_line(proofline.str(), ProofLevel::Current));
                     }
-                    else if (used_shifted_pos_vals[i].size() == 1) {
-                        auto idx = *used_shifted_pos_vals[i].begin();
+                    else if (used_pos_vals[i].size() == 1) {
+                        auto idx = *used_pos_vals[i].begin();
                         proof.emit_proof_comment("AM1");
-                        am1_q_lines.emplace_back(proof.emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * ! assumption + 1_i * ! (shifted_pos[i][idx].flag) >= 0_i, ProofLevel::Current));
+                        am1_pos_lines.emplace_back(proof.emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * ! assumption + 1_i * ! (flag_data.shifted_pos[i][idx].flag) >= 0_i, ProofLevel::Current));
                     }
                 }
             }});
 
-        // Finally we can derive our contradiction from the AL1 and AM1 lines
+        // Add together AL1 and AM1 lines for contradiction
         state.infer_true(JustifyExplicitly{
             [&](Proof & proof) {
                 stringstream proofline;
                 proofline << "p ";
-                proofline << al1_q_lines[0] << " ";
+                proofline << al1_pos_lines[0] << " ";
 
-                for (auto it = al1_q_lines.begin() + 1; it < al1_q_lines.end(); it++) {
+                for (auto it = al1_pos_lines.begin() + 1; it < al1_pos_lines.end(); it++) {
                     proofline << *it << " + ";
                 }
 
-                for (auto it = am1_q_lines.begin(); it < am1_q_lines.end(); it++) {
+                for (auto it = am1_pos_lines.begin(); it < am1_pos_lines.end(); it++) {
                     proofline << *it << " + ";
                 }
 
@@ -436,7 +426,7 @@ namespace
             }});
 
         // Update cache
-        data_maps_for_each_root[root] = vector<ProofFlagDataMap>{distance_at_least, distance, shifted_pos};
+        data_maps_for_each_root[root] = flag_data;
     }
 
     auto explore(const long & node,
@@ -476,7 +466,7 @@ namespace
                 else if (prune_skip && visit_number[w.raw_value] < start_prev_subtree) {
                     state.infer_true(JustifyExplicitly{[&](Proof & proof) {
                         proof.emit_proof_comment("Pruning edge (" + to_string(node) + "," + to_string(w.raw_value) + ")" + " that would skip subtree");
-                        prove_unreachable(state, succ, prev_subroot, pos_var_data, proof_flag_data_handle, succ[node] == w);
+                        prove_unreachable(state, succ, prev_subroot, pos_var_data, proof_flag_data_handle, false, succ[node] == w);
                     }});
 
                     increase_inference_to(result, state.infer(succ[node] != w, NoJustificationNeeded{}));
@@ -500,10 +490,10 @@ namespace
                     while (visit_number[unreachable_node] != -1) {
                         unreachable_node++;
                     }
-                    prove_unreachable(state, succ, unreachable_node, pos_var_data, proof_flag_data_handle);
+                    prove_unreachable(state, succ, unreachable_node, pos_var_data, proof_flag_data_handle, false);
                 }
                 else {
-                    prove_unreachable(state, succ, node, pos_var_data, proof_flag_data_handle);
+                    prove_unreachable(state, succ, node, pos_var_data, proof_flag_data_handle, false);
                 }
             }});
             return make_pair(Inference::Contradiction, back_edges);
@@ -537,7 +527,7 @@ namespace
                 if (back_edges.empty()) {
                     state.infer_true(JustifyExplicitly{[&](Proof & proof) {
                         proof.emit_proof_comment("No back edges:");
-                        prove_unreachable(state, succ, prev_subroot, pos_var_data, proof_flag_data_handle);
+                        prove_unreachable(state, succ, prev_subroot, pos_var_data, proof_flag_data_handle, false);
                     }});
 
                     increase_inference_to(result, Inference::Contradiction);
@@ -547,7 +537,7 @@ namespace
 
                     state.infer_true(JustifyExplicitly{[&](Proof & proof) {
                         proof.emit_proof_comment("Fix required back edge (" + to_string(back_edges[0].first) + ", " + to_string(back_edges[0].second) + "):");
-                        prove_unreachable(state, succ, back_edges[0].first, pos_var_data, proof_flag_data_handle, succ[back_edges[0].first] != Integer{back_edges[0].second});
+                        prove_unreachable(state, succ, back_edges[0].first, pos_var_data, proof_flag_data_handle, false, succ[back_edges[0].first] != Integer{back_edges[0].second});
                     }});
 
                     increase_inference_to(result, state.infer(succ[back_edges[0].first] == Integer{back_edges[0].second}, NoJustificationNeeded{}));
@@ -562,7 +552,7 @@ namespace
         if (cmp_not_equal(count, succ.size()) && result != Inference::Contradiction) {
             state.infer_true(JustifyExplicitly{[&](Proof & proof) {
                 proof.emit_proof_comment("Disconnected graph:");
-                prove_unreachable(state, succ, root, pos_var_data, proof_flag_data_handle);
+                prove_unreachable(state, succ, root, pos_var_data, proof_flag_data_handle, false);
             }});
 
             return Inference::Contradiction;
@@ -573,7 +563,7 @@ namespace
                 if (visit_number[v.raw_value] < start_subtree) {
                     state.infer_true(JustifyExplicitly{[&](Proof & proof) {
                         proof.emit_proof_comment("Prune impossible edges from root node:");
-                        prove_unreachable(state, succ, root, pos_var_data, proof_flag_data_handle, succ[root] == v);
+                        prove_unreachable(state, succ, root, pos_var_data, proof_flag_data_handle, false, succ[root] == v);
                     }});
 
                     increase_inference_to(result, state.infer(succ[root] != v, JustifyUsingRUP{}));
@@ -615,7 +605,7 @@ auto CircuitSCC::install(Propagators & propagators, State & initial_state) && ->
     }
     auto unassigned_handle = initial_state.add_constraint_state(unassigned);
 
-    auto proof_flag_data_handle = initial_state.add_persistent_constraint_state(ShiftedPosDataMaps{});
+    auto proof_flag_data_handle = initial_state.add_persistent_constraint_state(map<long, ShiftedPosDataMaps>{});
 
     Triggers triggers;
     triggers.on_change = {_succ.begin(), _succ.end()};
