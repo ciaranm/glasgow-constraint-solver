@@ -45,6 +45,15 @@ namespace gcs
         ProofFlagDataMap shifted_pos;
     };
 
+    struct SCCOptions
+    {
+        bool prune_root = true;
+        bool prune_skip = true;
+        bool fix_req = true;
+        bool prune_within = true;
+        bool prove_using_dominance = false;
+    };
+
     /**
      * \brief Circuit constraint: requires the variables, representing graph nodes, take values
      * such that each variable's value represents the index of the next node in a tour that visits
@@ -68,8 +77,11 @@ namespace gcs
 
     class CircuitSCC : public CircuitBase
     {
+    protected:
+        const SCCOptions scc_options;
+
     public:
-        using CircuitBase::CircuitBase;
+        explicit CircuitSCC(std::vector<IntegerVariableID> var, bool gac_all_different = false, SCCOptions scc_options = SCCOptions{});
         [[nodiscard]] auto clone() const -> std::unique_ptr<Constraint> override;
         auto install(innards::Propagators &, innards::State &) && -> void override;
     };

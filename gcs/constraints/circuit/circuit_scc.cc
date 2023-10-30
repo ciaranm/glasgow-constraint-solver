@@ -9,6 +9,7 @@
 #include <variant>
 #include <vector>
 
+using std::cmp_equal;
 using std::cmp_less;
 using std::cmp_less_equal;
 using std::cmp_not_equal;
@@ -94,7 +95,8 @@ namespace
             WeightedPseudoBooleanSum{} + 1_i * flag_data.distance[i][j - n].flag + 1_i * flag_data.distance[i][j].flag >= 1_i, "q" + to_string(i) + "eq" + to_string(j));
     }
 
-    auto prove_not_both(long i, long l, long k, ShiftedPosDataMaps & flag_data, const PosVarDataMap & pos_var_data, const bool using_shifted_pos, const long & n, State & state) -> ProofLine
+    auto prove_not_both(long i, long l, long k, ShiftedPosDataMaps & flag_data, const PosVarDataMap & pos_var_data,
+        const bool using_shifted_pos, const long & n, State & state) -> ProofLine
     {
         ProofLine neq_line{};
 
@@ -172,7 +174,9 @@ namespace
         auto n = static_cast<long>(succ.size());
         map<long, set<long>> used_pos_vals{};
 
-        auto & data_maps_for_each_root = any_cast<map<long, ShiftedPosDataMaps> &>(state.get_persistent_constraint_state(proof_flag_data_handle));
+        auto & data_maps_for_each_root = any_cast<map<long, ShiftedPosDataMaps> &>(
+            state.get_persistent_constraint_state(proof_flag_data_handle));
+
         ShiftedPosDataMaps flag_data{};
         if (data_maps_for_each_root.count(root) != 0) {
             // Retrieved cached versions if we've started from this root before
@@ -294,7 +298,11 @@ namespace
 
                             // Now we can RUP succ[node]==next_node /\ distance[next_node][count] => distance[next_node][count + 1]
                             proof.emit_rup_proof_line_under_trail(state,
-                                WeightedPseudoBooleanSum{} + 1_i * flag_data.distance[next_node][next_distance].flag + 1_i * (succ[node] != val) + 1_i * (! flag_data.distance[node][count - 1].flag) >= 1_i, ProofLevel::Temporary);
+                                WeightedPseudoBooleanSum{} +
+                                        1_i * flag_data.distance[next_node][next_distance].flag + 1_i * (succ[node] != val) +
+                                        1_i * (! flag_data.distance[node][count - 1].flag) >=
+                                    1_i,
+                                ProofLevel::Temporary);
 
                             // Add to get succ[node]==next_node /\ distance_at_least[node][count - 1 -n] => distance_at_least[next_node][count -n]
                             proofline.str("");
@@ -318,7 +326,10 @@ namespace
                             proof.emit_proof_comment("q" + to_string(node) + to_string(count - 1) + " implies q" + to_string(next_node) + to_string(count));
                             // RUP shifted_pos[node][count-1] /\ succ[node] = next_node => shifted_pos[next_node][i]
                             successor_implies_lines.emplace_back(proof.emit_rup_proof_line_under_trail(state,
-                                WeightedPseudoBooleanSum{} + 1_i * flag_data.shifted_pos[next_node][count].flag + 1_i * (succ[node] != val) + 1_i * (! flag_data.shifted_pos[node][count - 1].flag) >= 1_i, ProofLevel::Current));
+                                WeightedPseudoBooleanSum{} + 1_i * flag_data.shifted_pos[next_node][count].flag + 1_i * (succ[node] != val) +
+                                        1_i * (! flag_data.shifted_pos[node][count - 1].flag) >=
+                                    1_i,
+                                ProofLevel::Current));
                         }});
                     }
                     else {
@@ -328,7 +339,10 @@ namespace
                         state.infer_true(JustifyExplicitly{[&](Proof & proof) {
                             // succ[node] == next_node /\ pos[node] == count - 1 => pos[next_node] == count
                             successor_implies_lines.emplace_back(proof.emit_rup_proof_line(
-                                WeightedPseudoBooleanSum{} + 1_i * (pos_var_data.at(node).var != Integer{count - 1}) + 1_i * (succ[node] != val) + 1_i * (pos_var_data.at(next_node).var == Integer{count}) >= 1_i, ProofLevel::Current));
+                                WeightedPseudoBooleanSum{} + 1_i * (pos_var_data.at(node).var != Integer{count - 1}) +
+                                        1_i * (succ[node] != val) + 1_i * (pos_var_data.at(next_node).var == Integer{count}) >=
+                                    1_i,
+                                ProofLevel::Current));
                         }});
                     }
                 });
@@ -336,7 +350,8 @@ namespace
                 // last_pos_implies_lines += Prove pos[node][count - 1] => \/_{next_node} pos[next_node][count]
                 state.infer_true(JustifyExplicitly{[&](Proof & proof) {
                     proof.emit_proof_comment("Some value:");
-                    auto al1_x_line = proof.emit_rup_proof_line_under_trail(state, possible_successor_sum + 1_i * ! assumption >= 1_i, ProofLevel::Temporary);
+                    auto al1_x_line = proof.emit_rup_proof_line_under_trail(state,
+                        possible_successor_sum + 1_i * ! assumption >= 1_i, ProofLevel::Temporary);
 
                     stringstream proofline;
                     proofline << "p ";
@@ -401,7 +416,9 @@ namespace
                     else if (used_pos_vals[i].size() == 1) {
                         auto idx = *used_pos_vals[i].begin();
                         proof.emit_proof_comment("AM1");
-                        am1_pos_lines.emplace_back(proof.emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * ! assumption + 1_i * ! (flag_data.shifted_pos[i][idx].flag) >= 0_i, ProofLevel::Current));
+                        am1_pos_lines.emplace_back(proof.emit_rup_proof_line(
+                            WeightedPseudoBooleanSum{} + 1_i * ! assumption + 1_i * ! (flag_data.shifted_pos[i][idx].flag) >= 0_i,
+                            ProofLevel::Current));
                     }
                 }
             }});
@@ -429,7 +446,8 @@ namespace
         data_maps_for_each_root[root] = flag_data;
     }
 
-    auto explore(const long & node,
+    auto explore(
+        const long & node,
         long & count,
         vector<long> & lowlink,
         vector<long> & visit_number,
@@ -437,8 +455,8 @@ namespace
         long & end_prev_subtree,
         long & prev_subroot,
         long & root,
-        const bool & prune_skip,
         const vector<IntegerVariableID> & succ,
+        const SCCOptions & scc_options,
         const PosVarDataMap & pos_var_data,
         const ConstraintStateHandle & proof_flag_data_handle,
         State & state) -> pair<Inference, vector<pair<long, long>>>
@@ -446,11 +464,13 @@ namespace
         visit_number[node] = count;
         lowlink[node] = count;
         count++;
+
         Inference result = gcs::innards::Inference::NoChange;
         vector<pair<long, long>> back_edges{};
         state.for_each_value_while(succ[node], [&](Integer w) -> bool {
             if (visit_number[w.raw_value] == -1) {
-                auto explore_result = explore(w.raw_value, count, lowlink, visit_number, start_prev_subtree, end_prev_subtree, prev_subroot, root, prune_skip, succ, pos_var_data, proof_flag_data_handle, state);
+                auto explore_result = explore(w.raw_value, count, lowlink, visit_number, start_prev_subtree, end_prev_subtree,
+                    prev_subroot, root, succ, scc_options, pos_var_data, proof_flag_data_handle, state);
                 increase_inference_to(result, explore_result.first);
                 if (result == Inference::Contradiction) {
                     return false;
@@ -463,7 +483,7 @@ namespace
                 if (visit_number[w.raw_value] >= start_prev_subtree && visit_number[w.raw_value] <= end_prev_subtree) {
                     back_edges.emplace_back(node, w.raw_value);
                 }
-                else if (prune_skip && visit_number[w.raw_value] < start_prev_subtree) {
+                else if (scc_options.prune_skip && visit_number[w.raw_value] < start_prev_subtree) {
                     state.infer_true(JustifyExplicitly{[&](Proof & proof) {
                         proof.emit_proof_comment("Pruning edge (" + to_string(node) + "," + to_string(w.raw_value) + ")" + " that would skip subtree");
                         prove_unreachable(state, succ, prev_subroot, pos_var_data, proof_flag_data_handle, false, succ[node] == w);
@@ -490,10 +510,10 @@ namespace
                     while (visit_number[unreachable_node] != -1) {
                         unreachable_node++;
                     }
-                    prove_unreachable(state, succ, unreachable_node, pos_var_data, proof_flag_data_handle, false);
+                    prove_unreachable(state, succ, unreachable_node, pos_var_data, proof_flag_data_handle, scc_options.prove_using_dominance);
                 }
                 else {
-                    prove_unreachable(state, succ, node, pos_var_data, proof_flag_data_handle, false);
+                    prove_unreachable(state, succ, node, pos_var_data, proof_flag_data_handle, scc_options.prove_using_dominance);
                 }
             }});
             return make_pair(Inference::Contradiction, back_edges);
@@ -502,7 +522,7 @@ namespace
             return make_pair(result, back_edges);
     }
 
-    auto check_sccs(const vector<IntegerVariableID> & succ, const bool & prune_root, const bool & fix_req, const bool & prune_skip, const PosVarDataMap & pos_var_data, const ConstraintStateHandle & proof_flag_data_handle, State & state) -> Inference
+    auto check_sccs(const vector<IntegerVariableID> & succ, const SCCOptions & scc_options, const PosVarDataMap & pos_var_data, const ConstraintStateHandle & proof_flag_data_handle, State & state) -> Inference
     {
         auto result = Inference::NoChange;
         auto root = select_root();
@@ -517,7 +537,8 @@ namespace
 
         state.for_each_value_while(succ[root], [&](Integer v) -> bool {
             if (visit_number[v.raw_value] == -1) {
-                auto explore_result = explore(v.raw_value, count, lowlink, visit_number, start_subtree, end_subtree, prev_subroot, root, prune_skip, succ, pos_var_data, proof_flag_data_handle, state);
+                auto explore_result = explore(v.raw_value, count, lowlink, visit_number, start_subtree,
+                    end_subtree, prev_subroot, root, succ, scc_options, pos_var_data, proof_flag_data_handle, state);
                 increase_inference_to(result, explore_result.first);
                 if (result == Inference::Contradiction) {
                     return false;
@@ -527,17 +548,17 @@ namespace
                 if (back_edges.empty()) {
                     state.infer_true(JustifyExplicitly{[&](Proof & proof) {
                         proof.emit_proof_comment("No back edges:");
-                        prove_unreachable(state, succ, prev_subroot, pos_var_data, proof_flag_data_handle, false);
+                        prove_unreachable(state, succ, prev_subroot, pos_var_data, proof_flag_data_handle, scc_options.prove_using_dominance);
                     }});
 
                     increase_inference_to(result, Inference::Contradiction);
                     return false;
                 }
-                else if (fix_req && back_edges.size() == 1) {
+                else if (scc_options.fix_req && back_edges.size() == 1) {
 
                     state.infer_true(JustifyExplicitly{[&](Proof & proof) {
                         proof.emit_proof_comment("Fix required back edge (" + to_string(back_edges[0].first) + ", " + to_string(back_edges[0].second) + "):");
-                        prove_unreachable(state, succ, back_edges[0].first, pos_var_data, proof_flag_data_handle, false, succ[back_edges[0].first] != Integer{back_edges[0].second});
+                        prove_unreachable(state, succ, back_edges[0].first, pos_var_data, proof_flag_data_handle, scc_options.prove_using_dominance, succ[back_edges[0].first] != Integer{back_edges[0].second});
                     }});
 
                     increase_inference_to(result, state.infer(succ[back_edges[0].first] == Integer{back_edges[0].second}, NoJustificationNeeded{}));
@@ -552,18 +573,18 @@ namespace
         if (cmp_not_equal(count, succ.size()) && result != Inference::Contradiction) {
             state.infer_true(JustifyExplicitly{[&](Proof & proof) {
                 proof.emit_proof_comment("Disconnected graph:");
-                prove_unreachable(state, succ, root, pos_var_data, proof_flag_data_handle, false);
+                prove_unreachable(state, succ, root, pos_var_data, proof_flag_data_handle, scc_options.prove_using_dominance);
             }});
 
             return Inference::Contradiction;
         }
 
-        if (prune_root && start_subtree > 1) {
+        if (scc_options.prune_root && start_subtree > 1) {
             state.for_each_value_while(succ[root], [&](Integer v) -> bool {
                 if (visit_number[v.raw_value] < start_subtree) {
                     state.infer_true(JustifyExplicitly{[&](Proof & proof) {
                         proof.emit_proof_comment("Prune impossible edges from root node:");
-                        prove_unreachable(state, succ, root, pos_var_data, proof_flag_data_handle, false, succ[root] == v);
+                        prove_unreachable(state, succ, root, pos_var_data, proof_flag_data_handle, scc_options.prove_using_dominance, succ[root] == v);
                     }});
 
                     increase_inference_to(result, state.infer(succ[root] != v, JustifyUsingRUP{}));
@@ -576,22 +597,32 @@ namespace
         return result;
     }
 
-    auto propagate_circuit_using_scc(const vector<IntegerVariableID> & succ, const bool & prune_root,
-        const bool & fix_req, const bool & prune_skip, const PosVarDataMap & pos_var_data, const ConstraintStateHandle & proof_flag_data_handle, const ConstraintStateHandle & unassigned_handle, State & state)
+    auto propagate_circuit_using_scc(const vector<IntegerVariableID> & succ,
+        const SCCOptions & scc_options,
+        const PosVarDataMap & pos_var_data,
+        const ConstraintStateHandle & proof_flag_data_handle,
+        const ConstraintStateHandle & unassigned_handle,
+        State & state)
         -> Inference
     {
         auto result = propagate_non_gac_alldifferent(unassigned_handle, state);
         if (result == Inference::Contradiction) return result;
-        increase_inference_to(result, check_sccs(succ, prune_root, fix_req, prune_skip, pos_var_data, proof_flag_data_handle, state));
+        increase_inference_to(result, check_sccs(succ, scc_options, pos_var_data, proof_flag_data_handle, state));
         if (result == Inference::Contradiction) return result;
         increase_inference_to(result, prevent_small_cycles(succ, pos_var_data, unassigned_handle, state));
         return result;
     }
 }
 
+CircuitSCC::CircuitSCC(std::vector<IntegerVariableID> var, bool gacAllDifferent, const SCCOptions s) :
+    CircuitBase(std::move(var), gacAllDifferent),
+    scc_options(s)
+{
+}
+
 auto CircuitSCC::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<CircuitSCC>(_succ, _gac_all_different);
+    return make_unique<CircuitSCC>(_succ, _gac_all_different, scc_options);
 }
 
 auto CircuitSCC::install(Propagators & propagators, State & initial_state) && -> void
@@ -613,8 +644,9 @@ auto CircuitSCC::install(Propagators & propagators, State & initial_state) && ->
         [succ = _succ,
             pos_var_data = pos_var_data,
             proof_flag_data_handle = proof_flag_data_handle,
-            unassigned_handle = unassigned_handle](State & state) -> pair<Inference, PropagatorState> {
-            auto result = propagate_circuit_using_scc(succ, true, true, true, pos_var_data, proof_flag_data_handle, unassigned_handle, state);
+            unassigned_handle = unassigned_handle,
+            options = scc_options](State & state) -> pair<Inference, PropagatorState> {
+            auto result = propagate_circuit_using_scc(succ, options, pos_var_data, proof_flag_data_handle, unassigned_handle, state);
             return pair{result, PropagatorState::Enable};
         },
         triggers,

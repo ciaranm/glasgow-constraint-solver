@@ -122,7 +122,7 @@ namespace
 
 auto CircuitPreventIncremental::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<Circuit>(_succ, _gac_all_different);
+    return make_unique<CircuitPreventIncremental>(_succ, _gac_all_different);
 }
 
 auto CircuitPreventIncremental::install(Propagators & propagators, State & initial_state) && -> void
