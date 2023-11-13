@@ -13,10 +13,12 @@
 #include <map>
 #include <optional>
 #include <vector>
+
 namespace gcs
 {
     struct ProofFlagData
     {
+        std::string comment_name;
         innards::ProofFlag flag;
         innards::ProofLine forwards_reif_line;
         innards::ProofLine backwards_reif_line;
@@ -31,8 +33,15 @@ namespace gcs
 
     struct PosVarData
     {
+        std::string comment_name;
         innards::ProofOnlySimpleIntegerVariableID var;
         std::map<long, PosVarLineData> plus_one_lines;
+    };
+
+    struct PosAllDiffData
+    {
+        std::map<long, innards::ProofLine> at_most_1_lines;
+        std::map<long, innards::ProofLine> at_least_1_lines;
     };
 
     using ProofFlagDataMap = std::map<long, std::map<long, ProofFlagData>>;
@@ -40,9 +49,9 @@ namespace gcs
 
     struct ShiftedPosDataMaps
     {
-        ProofFlagDataMap distance_at_least;
-        ProofFlagDataMap distance;
-        ProofFlagDataMap shifted_pos;
+        std::map<long, ProofFlagData> greater_than;
+        ProofFlagDataMap shifted_pos_eq;
+        ProofFlagDataMap shifted_pos_geq;
     };
 
     struct SCCOptions
@@ -52,6 +61,7 @@ namespace gcs
         bool fix_req = true;
         bool prune_within = true;
         bool prove_using_dominance = false;
+        bool enable_comments = true;
     };
 
     /**

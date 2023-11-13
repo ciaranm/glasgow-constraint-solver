@@ -96,9 +96,9 @@ auto main(int argc, char * argv[]) -> int
             cout << "\n\n";
             return true;
         }},
-        make_optional<ProofOptions>("scc_prune_root.opb", "scc_prune_root.veripb"));
+        make_optional<ProofOptions>("scc_prune_skip.opb", "scc_prune_skip.veripb"));
 
-    system("veripb --trace --useColor scc_prune_root.opb scc_prune_root.veripb");
+    // system("veripb --trace --useColor scc_prune_skip.opb scc_prune_skip.veripb");
 
     cout << stats;
 

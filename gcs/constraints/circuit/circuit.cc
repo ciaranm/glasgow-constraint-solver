@@ -210,7 +210,7 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state) -> Po
         // Need extra proof variable: pos[i] = j means "the ith node visited in the circuit is the jth var"
         // WLOG start at node 0, so pos[0] = 0
         pos_var_data.emplace(0,
-            PosVarData{propagators.create_proof_only_integer_variable(0_i, Integer{n - 1}, "pos" + to_string(0), IntegerVariableProofRepresentation::Bits), map<long, PosVarLineData>{}});
+            PosVarData{"p[0]", propagators.create_proof_only_integer_variable(0_i, Integer{n - 1}, "pos" + to_string(0), IntegerVariableProofRepresentation::Bits), map<long, PosVarLineData>{}});
         propagators.define(initial_state, WeightedPseudoBooleanSum{} + 1_i * pos_var_data.at(0).var <= 0_i);
         // Hence we can only have succ[0] = 0 (self cycle) if there is only one node i.e. n - 1 = 0
         auto [leq_line, geq_line] = propagators.define(initial_state,
@@ -221,7 +221,7 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state) -> Po
 
         for (unsigned int idx = 1; idx < _succ.size(); ++idx) {
             pos_var_data.emplace(idx,
-                PosVarData{propagators.create_proof_only_integer_variable(0_i, Integer{n - 1}, "pos" + to_string(0), IntegerVariableProofRepresentation::Bits), map<long, PosVarLineData>{}});
+                PosVarData{"p[" + to_string(idx) + "]", propagators.create_proof_only_integer_variable(0_i, Integer{n - 1}, "pos" + to_string(0), IntegerVariableProofRepresentation::Bits), map<long, PosVarLineData>{}});
         }
 
         for (unsigned int idx = 1; idx < _succ.size(); ++idx) {
