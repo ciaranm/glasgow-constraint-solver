@@ -506,7 +506,7 @@ namespace
                 p_line << shifted_pos_geq.at(node).at(count - 1).forwards_reif_line << " + "
                        << shifted_pos_geq.at(next_node).at(count).backwards_reif_line << " + s ";
 
-                proof.emit_proof_line(p_line.str(), ProofLevel::Temporary);
+                proof.emit_proof_line(p_line.str(), ProofLevel::Current);
                 p_line.str("");
                 p_line << "p ";
                 if (next_node != root) {
@@ -523,7 +523,7 @@ namespace
                 p_line << shifted_pos_geq.at(node).at(count).backwards_reif_line << " + "
                        << shifted_pos_geq.at(next_node).at(count + 1).forwards_reif_line << " + s";
 
-                proof.emit_proof_line(p_line.str(), ProofLevel::Temporary);
+                proof.emit_proof_line(p_line.str(), ProofLevel::Current);
 
                 emit_proof_comment_if_enabled("Next implies: succ[" + to_string(node) + "] = " + to_string(next_node) + " and " +
                         shifted_pos_eq[node][count - 1].comment_name + " = " + to_string(count - 1) + " => " +
