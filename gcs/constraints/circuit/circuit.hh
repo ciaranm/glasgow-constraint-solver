@@ -107,18 +107,7 @@ namespace gcs
         [[nodiscard]] auto clone() const -> std::unique_ptr<Constraint> override;
         auto install(innards::Propagators &, innards::State &) && -> void override;
     };
-
-    /**
-     * The same prevent algorithm, but updating the chains incrementally.
-     */
-    class CircuitPreventIncremental : public CircuitBase
-    {
-    public:
-        using CircuitBase::CircuitBase;
-        [[nodiscard]] auto clone() const -> std::unique_ptr<Constraint> override;
-        auto install(innards::Propagators &, innards::State &) && -> void override;
-    };
-
+    
     using Circuit = CircuitSCC;
 
     auto propagate_non_gac_alldifferent(

@@ -58,7 +58,7 @@ auto main(int argc, char * argv[]) -> int
 
     po::options_description all_options{"All options"};
     all_options.add_options() //
-        ("propagator", po::value<string>()->default_value("prevent_incremental"), "Specify which circuit propagation algorithm to use (prevent/prevent_incremental)");
+        ("propagator", po::value<string>()->default_value("scc"), "Specify which circuit propagation algorithm to use (prevent/scc)");
 
     all_options.add(display_options);
     po::variables_map options_vars;
@@ -85,8 +85,8 @@ auto main(int argc, char * argv[]) -> int
 
     if (options_vars.contains("propagator")) {
         const string propagator_value = options_vars["propagator"].as<string>();
-        if (propagator_value != "prevent" && propagator_value != "prevent_incremental" && propagator_value != "scc") {
-            cerr << "Error: Invalid value for propagator. Use 'scc' or 'prevent' or 'prevent_incremental'." << endl;
+        if (propagator_value != "prevent" && propagator_value != "scc") {
+            cerr << "Error: Invalid value for propagator. Use 'scc' or 'prevent'." << endl;
             return EXIT_FAILURE;
         }
     }
@@ -98,9 +98,6 @@ auto main(int argc, char * argv[]) -> int
 
     if (options_vars["propagator"].as<string>() == "prevent") {
         p.post(CircuitPrevent{nodes});
-    }
-    else if (options_vars["propagator"].as<string>() == "prevent_incremental") {
-        p.post(CircuitPreventIncremental{nodes});
     }
     else if (options_vars["propagator"].as<string>() == "scc") {
         p.post(CircuitSCC{nodes});

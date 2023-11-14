@@ -16,7 +16,6 @@ add_library(glasgow_constraint_solver
         constraints/at_most_one.cc
         constraints/circuit/circuit.cc
         constraints/circuit/circuit_prevent.cc
-        constraints/circuit/circuit_prevent_inc.cc
         constraints/circuit/circuit_scc.cc
         constraints/comparison.cc
         constraints/count.cc
