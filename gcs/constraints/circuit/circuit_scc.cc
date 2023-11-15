@@ -517,7 +517,9 @@ namespace
                            << pos_var_data.at(node).plus_one_lines.at(next_node).leq_line << " + ";
                 }
                 else {
-                    p_line << pos_var_data.at(node).plus_one_lines.at(next_node).leq_line << " ";
+                    p_line << pos_var_data.at(node).plus_one_lines.at(next_node).geq_line << " "
+                           << root_greater_than.at(next_node).forwards_reif_line << " + ";
+                    p_line << pos_var_data.at(node).plus_one_lines.at(next_node).leq_line << " + s";
                 }
 
                 p_line << shifted_pos_geq.at(node).at(count).backwards_reif_line << " + "
