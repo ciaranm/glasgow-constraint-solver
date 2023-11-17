@@ -145,13 +145,13 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
                     if (objective_value)
                         optional_proof->conclude_optimality(*objective_value);
                     else
-                        optional_proof->conclude_unsatisfiable();
+                        optional_proof->conclude_unsatisfiable(true);
                 }
                 else if (child_contains_solution) {
                     optional_proof->conclude_satisfiable();
                 }
                 else
-                    optional_proof->conclude_unsatisfiable();
+                    optional_proof->conclude_unsatisfiable(false);
             }
         }
         else {
@@ -169,7 +169,7 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
         }
     }
     else if (optional_proof)
-        optional_proof->conclude_unsatisfiable();
+        optional_proof->conclude_unsatisfiable(state.optional_minimise_variable().has_value());
 
     stats.solve_time = duration_cast<microseconds>(steady_clock::now() - start_time);
     propagators.fill_in_constraint_stats(stats);

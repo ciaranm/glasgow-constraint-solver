@@ -247,7 +247,7 @@ namespace gcs::innards
         /**
          * Log that we have reached an unsatisfiable conclusion at the end of the proof.
          */
-        auto conclude_unsatisfiable() -> void;
+        auto conclude_unsatisfiable(bool is_optimisation) -> void;
 
         /**
          * Log that we have reached an unsatisfiable conclusion at the end of the proof.

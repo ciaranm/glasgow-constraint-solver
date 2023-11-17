@@ -884,13 +884,16 @@ auto Proof::end_proof() -> void
     _imp->proof << flush;
 }
 
-auto Proof::conclude_unsatisfiable() -> void
+auto Proof::conclude_unsatisfiable(bool is_optimisation) -> void
 {
     _imp->proof << "* asserting contradiction\n";
     _imp->proof << "u >= 1 ;\n";
     record_proof_line(++_imp->proof_line, ProofLevel::Top);
     _imp->proof << "output NONE\n";
-    _imp->proof << "conclusion UNSAT : " << _imp->proof_line << '\n';
+    if (is_optimisation)
+        _imp->proof << "conclusion BOUNDS INF INF\n";
+    else
+        _imp->proof << "conclusion UNSAT : " << _imp->proof_line << '\n';
     end_proof();
 }
 
