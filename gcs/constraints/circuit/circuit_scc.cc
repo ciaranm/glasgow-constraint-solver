@@ -244,10 +244,20 @@ namespace
             }
             else if (values.size() == 1) {
                 auto idx = *values.begin();
-                emit_proof_comment_if_enabled("AM1 ", options, state);
-                am1line = proof.emit_rup_proof_line(
-                    WeightedPseudoBooleanSum{} + 1_i * ! (flag_data.shifted_pos_eq[node][idx].flag) >= 0_i,
-                    ProofLevel::Current);
+                if (using_shifted_pos) {
+                    emit_proof_comment_if_enabled("AM1 " +
+                            flag_data.shifted_pos_eq[node][*values.begin()].comment_name,
+                        options, state);
+                    am1line = proof.emit_rup_proof_line(
+                        WeightedPseudoBooleanSum{} + 1_i * ! (flag_data.shifted_pos_eq[node][idx].flag) >= 0_i,
+                        ProofLevel::Current);
+                }
+                else {
+                    emit_proof_comment_if_enabled("AM1 p[" + to_string(node) + "]", options, state);
+                    am1line = proof.emit_rup_proof_line(
+                        WeightedPseudoBooleanSum{} + 1_i * ! (pos_var_data.at(node).var == Integer{idx}) >= 0_i,
+                        ProofLevel::Current);
+                }
             }
         }});
 
@@ -422,6 +432,8 @@ namespace
         const vector<IntegerVariableID> & succ, const SCCOptions & options, State & state) -> ProofLine
     {
         // Prove that (shift)pos[root]== 0
+        emit_proof_comment_if_enabled("AL1 pos = " + to_string(0), options, state);
+
         auto line = ProofLine{};
         if (root != 0) {
             create_shifted_pos(root, root, 0, flag_data_for_root, pos_var_data, pos_alldiff_data, succ, options, state);
@@ -519,11 +531,11 @@ namespace
                 else {
                     p_line << pos_var_data.at(node).plus_one_lines.at(next_node).geq_line << " "
                            << root_greater_than.at(next_node).forwards_reif_line << " + ";
-                    p_line << pos_var_data.at(node).plus_one_lines.at(next_node).leq_line << " + s";
+                    p_line << pos_var_data.at(node).plus_one_lines.at(next_node).leq_line << " + s ";
                 }
 
                 p_line << shifted_pos_geq.at(node).at(count).backwards_reif_line << " + "
-                       << shifted_pos_geq.at(next_node).at(count + 1).forwards_reif_line << " + s";
+                       << shifted_pos_geq.at(next_node).at(count + 1).forwards_reif_line << " + s ";
 
                 proof.emit_proof_line(p_line.str(), ProofLevel::Current);
 
@@ -908,7 +920,7 @@ namespace
                                               ProofLevel::Current)
                                        << " + ";
             final_contradiction_p_line << get<2>(node_then_subroot_then_root) << " + ";
-            final_contradiction_p_line << get<2>(subroot_then_node_then_root) << " + s";
+            final_contradiction_p_line << get<2>(subroot_then_node_then_root) << " + s ";
             proof.emit_proof_line(final_contradiction_p_line.str(), ProofLevel::Current);
 
             proof.emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} + 1_i * (succ[node] != Integer{next_node}) >= 1_i, ProofLevel::Current);
@@ -954,7 +966,8 @@ namespace
                         emit_proof_comment_if_enabled("Pruning edge that would skip subtree (" +
                                 to_string(node) + ", " + to_string(next_node) + ")",
                             options, state);
-                        prove_skipped_subtree(succ, node, next_node, data.root, data.prev_subroot, proof_data, options, state);
+                        prove_reachable_set_too_small(succ, data.prev_subroot, proof_data, options, state, succ[node] == w);
+                        //                        prove_skipped_subtree(succ, node, next_node, data.root, data.prev_subroot, proof_data, options, state);
                     }
 
                     increase_inference_to(result, state.infer(succ[node] != w, NoJustificationNeeded{}));
@@ -973,16 +986,16 @@ namespace
         if (data.lowlink[node] == data.visit_number[node]) {
             state.infer_true(JustifyExplicitly{[&](Proof &) {
                 emit_proof_comment_if_enabled("More than one SCC", options, state);
-                if (node == data.root) {
-                    int unreachable_node = 0;
-                    while (data.visit_number[unreachable_node] != -1) {
-                        unreachable_node++;
-                    }
-                    prove_reachable_set_too_small(succ, unreachable_node, proof_data, options, state);
-                }
-                else {
-                    prove_reachable_set_too_small(succ, node, proof_data, options, state);
-                }
+                //                if (node == data.root) {
+                //                    int unreachable_node = 0;
+                //                    while (data.visit_number[unreachable_node] != -1) {
+                //                        unreachable_node++;
+                //                    }
+                //                    prove_reachable_set_too_small(succ, unreachable_node, proof_data, options, state);
+                //                }
+                //                else {
+                prove_reachable_set_too_small(succ, node, proof_data, options, state);
+                //                }
             }});
             return make_pair(Inference::Contradiction, back_edges);
         }
@@ -1001,14 +1014,15 @@ namespace
         auto data = SCCPropagatorData(succ.size());
 
         state.for_each_value_while(succ[data.root], [&](Integer v) -> bool {
-            if (data.visit_number[v.raw_value] == -1) {
-                auto [explore_result, back_edges] = explore(v.raw_value, succ, data, proof_data, options, state);
+            auto next_node = v.raw_value;
+            if (data.visit_number[next_node] == -1) {
+                auto [explore_result, back_edges] = explore(next_node, succ, data, proof_data, options, state);
                 increase_inference_to(explore_result, result);
                 if (result == Inference::Contradiction) return false;
 
                 if (back_edges.empty()) {
                     emit_proof_comment_if_enabled("No back edges:", options, state);
-                    prove_reachable_set_too_small(succ, v.raw_value, proof_data, options, state);
+                    prove_reachable_set_too_small(succ, next_node, proof_data, options, state);
                     increase_inference_to(result, Inference::Contradiction);
                     return false;
                 }
@@ -1024,7 +1038,7 @@ namespace
                 }
                 data.start_prev_subtree = data.end_prev_subtree + 1;
                 data.end_prev_subtree = data.count - 1;
-                data.prev_subroot = v.raw_value;
+                data.prev_subroot = next_node;
             }
             return true;
         });
