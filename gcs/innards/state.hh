@@ -538,7 +538,7 @@ namespace gcs::innards
         /**
          * \name Constraint state related functions.
          */
-         ///@{
+        ///@{
 
         /**
          * Store a given std::any value as a constraint state that is accessible via
@@ -563,6 +563,8 @@ namespace gcs::innards
          */
         [[nodiscard]] auto get_persistent_constraint_state(const ConstraintStateHandle h) -> ConstraintState &;
         ///@}
+
+        auto current_domains_debug_strings(std::vector<IntegerVariableID> vars) -> std::vector<std::string>;
     };
 }
 

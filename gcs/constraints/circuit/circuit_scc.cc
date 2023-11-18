@@ -37,6 +37,8 @@ using std::vector;
 using namespace gcs;
 using namespace gcs::innards;
 
+static int DEBUG_GLOBAL_COUNT = 0;
+
 namespace
 {
 
@@ -240,7 +242,7 @@ namespace
                         options, state);
                 else
                     emit_proof_comment_if_enabled("AM1 p[" + to_string(node) + "]", options, state);
-                am1line = proof.emit_proof_line(proofline.str(), ProofLevel::Current);
+                am1line = proof.emit_proof_line(proofline.str(), ProofLevel::Top);
             }
             else if (values.size() == 1) {
                 auto idx = *values.begin();
@@ -250,13 +252,13 @@ namespace
                         options, state);
                     am1line = proof.emit_rup_proof_line(
                         WeightedPseudoBooleanSum{} + 1_i * ! (flag_data.shifted_pos_eq[node][idx].flag) >= 0_i,
-                        ProofLevel::Current);
+                        ProofLevel::Top);
                 }
                 else {
                     emit_proof_comment_if_enabled("AM1 p[" + to_string(node) + "]", options, state);
                     am1line = proof.emit_rup_proof_line(
                         WeightedPseudoBooleanSum{} + 1_i * ! (pos_var_data.at(node).var == Integer{idx}) >= 0_i,
-                        ProofLevel::Current);
+                        ProofLevel::Top);
                 }
             }
         }});
@@ -503,41 +505,44 @@ namespace
             state.infer_true(JustifyExplicitly{[&](Proof & proof) {
                 // Some painful adding up to get us to rup what we want
                 // Need to document that this always works
-                stringstream p_line;
-                p_line << "p ";
                 if (next_node != root) {
+                    stringstream p_line;
+                    p_line << "p ";
                     p_line << pos_var_data.at(node).plus_one_lines.at(next_node).leq_line << " "
                            << root_greater_than.at(node).forwards_reif_line << " + "
                            << root_greater_than.at(next_node).backwards_reif_line << " + "
                            << to_string(2 * n) << " d " << to_string(n) << " * "
-                           << pos_var_data.at(node).plus_one_lines.at(next_node).geq_line << " + ";
-                }
-                else {
-                    p_line << pos_var_data.at(node).plus_one_lines.at(next_node).geq_line << " ";
-                }
-                p_line << shifted_pos_geq.at(node).at(count - 1).forwards_reif_line << " + "
-                       << shifted_pos_geq.at(next_node).at(count).backwards_reif_line << " + s ";
+                           << pos_var_data.at(node).plus_one_lines.at(next_node).geq_line << " + "
+                           << shifted_pos_geq.at(node).at(count - 1).forwards_reif_line << " + "
+                           << shifted_pos_geq.at(next_node).at(count).backwards_reif_line << " + s";
+                    proof.emit_proof_line(p_line.str(), ProofLevel::Current);
 
-                proof.emit_proof_line(p_line.str(), ProofLevel::Current);
-                p_line.str("");
-                p_line << "p ";
-                if (next_node != root) {
+                    p_line.str("");
+                    p_line << "p ";
                     p_line << pos_var_data.at(node).plus_one_lines.at(next_node).geq_line << " "
                            << root_greater_than.at(node).backwards_reif_line << " + "
                            << root_greater_than.at(next_node).forwards_reif_line << " + "
                            << to_string(2 * n) << " d " << to_string(n) << " * "
-                           << pos_var_data.at(node).plus_one_lines.at(next_node).leq_line << " + ";
+                           << pos_var_data.at(node).plus_one_lines.at(next_node).leq_line << " + "
+                           << shifted_pos_geq.at(node).at(count).backwards_reif_line << " + "
+                           << shifted_pos_geq.at(next_node).at(count + 1).forwards_reif_line << " + s";
+                    proof.emit_proof_line(p_line.str(), ProofLevel::Current);
                 }
                 else {
-                    p_line << pos_var_data.at(node).plus_one_lines.at(next_node).geq_line << " "
-                           << root_greater_than.at(next_node).forwards_reif_line << " + ";
-                    p_line << pos_var_data.at(node).plus_one_lines.at(next_node).leq_line << " + s ";
+                    stringstream p_line;
+                    p_line << "p ";
+                    p_line << shifted_pos_geq[node][count - 1].forwards_reif_line << " ";
+                    p_line << pos_var_data.at(node).plus_one_lines.at(next_node).geq_line << " + s";
+                    proof.emit_proof_line(p_line.str(), ProofLevel::Current);
+                    p_line.str("");
+                    p_line << "p ";
+                    p_line << shifted_pos_geq[node][count].backwards_reif_line << " ";
+                    p_line << pos_var_data.at(node).plus_one_lines.at(next_node).leq_line << " + s";
+                    proof.emit_proof_line(p_line.str(), ProofLevel::Current);
+
+                    proof.emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * (! shifted_pos_eq[node][count - 1].flag) + 1_i * (succ[node] != Integer{next_node}) >= 1_i, ProofLevel::Current);
+                    // proof.emit_proof_line("fail", ProofLevel::Top);
                 }
-
-                p_line << shifted_pos_geq.at(node).at(count).backwards_reif_line << " + "
-                       << shifted_pos_geq.at(next_node).at(count + 1).forwards_reif_line << " + s ";
-
-                proof.emit_proof_line(p_line.str(), ProofLevel::Current);
 
                 emit_proof_comment_if_enabled("Next implies: succ[" + to_string(node) + "] = " + to_string(next_node) + " and " +
                         shifted_pos_eq[node][count - 1].comment_name + " = " + to_string(count - 1) + " => " +
@@ -686,7 +691,7 @@ namespace
         const Literal & assumption = TrueLiteral{}, const optional<OrderingAssumption> & ordering = nullopt)
     {
         if (! state.maybe_proof()) return;
-
+        DEBUG_GLOBAL_COUNT++;
         emit_proof_comment_if_enabled("REACHABLE SET  from " + to_string(root), options, state);
 
         map<long, set<long>> all_values_seen{};
@@ -849,8 +854,9 @@ namespace
 
         emit_proof_comment_if_enabled("Hall violator gives contradiction: ", options, state);
         state.infer_true(JustifyExplicitly{[&](Proof & proof) {
-            proof.emit_proof_line(contradiction_line.str(), ProofLevel::Current);
+            auto line = proof.emit_proof_line(contradiction_line.str(), ProofLevel::Current);
         }});
+        auto dummy = 0;
     }
 
     auto prove_skipped_subtree(const vector<IntegerVariableID> & succ, const long & node, const long & next_node, const long & root, const long & skipped_subroot,
@@ -938,8 +944,18 @@ namespace
 
         Inference result = gcs::innards::Inference::NoChange;
         vector<pair<long, long>> back_edges{};
+        // --- TEMPORARY ---
+        vector<string> current_domains{};
+        for (const auto & v : succ) {
+            current_domains.emplace_back("");
+            state.for_each_value(v, [&](Integer val) {
+                current_domains.back() = current_domains.back() + to_string(val.raw_value) + " ";
+            });
+        }
+        // ---
         state.for_each_value_while(succ[node], [&](Integer w) -> bool {
             auto next_node = w.raw_value;
+
             if (data.visit_number[next_node] == -1) {
                 auto explore_result = explore(next_node, succ, data, proof_data, options, state);
                 increase_inference_to(result, explore_result.first);
@@ -1017,10 +1033,19 @@ namespace
             auto next_node = v.raw_value;
             if (data.visit_number[next_node] == -1) {
                 auto [explore_result, back_edges] = explore(next_node, succ, data, proof_data, options, state);
-                increase_inference_to(explore_result, result);
+                increase_inference_to(result, explore_result);
                 if (result == Inference::Contradiction) return false;
 
                 if (back_edges.empty()) {
+                    // --- TEMPORARY ---
+                    vector<string> current_domains{};
+                    for (const auto & v : succ) {
+                        current_domains.emplace_back("");
+                        state.for_each_value(v, [&](Integer val) {
+                            current_domains.back() = current_domains.back() + to_string(val.raw_value) + " ";
+                        });
+                    }
+                    // ---
                     emit_proof_comment_if_enabled("No back edges:", options, state);
                     prove_reachable_set_too_small(succ, next_node, proof_data, options, state);
                     increase_inference_to(result, Inference::Contradiction);
@@ -1029,12 +1054,13 @@ namespace
                 else if (options.fix_req && back_edges.size() == 1) {
                     auto from_node = back_edges[0].first;
                     auto to_node = back_edges[0].second;
+                    if (! state.optional_single_value(succ[from_node])) {
+                        emit_proof_comment_if_enabled("Fix required back edge (" + to_string(from_node) + ", " + to_string(to_node) + "):",
+                            options, state);
 
-                    emit_proof_comment_if_enabled("Fix required back edge (" + to_string(from_node) + ", " + to_string(to_node) + "):",
-                        options, state);
-
-                    prove_reachable_set_too_small(succ, from_node, proof_data, options, state, succ[from_node] != Integer{to_node});
-                    increase_inference_to(result, state.infer(succ[from_node] == Integer{to_node}, NoJustificationNeeded{}));
+                        prove_reachable_set_too_small(succ, from_node, proof_data, options, state, succ[from_node] != Integer{to_node});
+                        increase_inference_to(result, state.infer(succ[from_node] == Integer{to_node}, NoJustificationNeeded{}));
+                    }
                 }
                 data.start_prev_subtree = data.end_prev_subtree + 1;
                 data.end_prev_subtree = data.count - 1;

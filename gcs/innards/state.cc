@@ -31,6 +31,7 @@ using std::nullopt;
 using std::optional;
 using std::pair;
 using std::string;
+using std::to_string;
 using std::tuple;
 using std::vector;
 using std::visit;
@@ -1263,6 +1264,19 @@ auto innards::State::get_constraint_state(const ConstraintStateHandle h) -> Cons
 auto innards::State::get_persistent_constraint_state(const ConstraintStateHandle h) -> ConstraintState &
 {
     return _imp->persistent_constraint_states[h.index];
+}
+
+auto innards::State::current_domains_debug_strings(vector<IntegerVariableID> vars) -> vector<string>
+{
+    vector<string> current_domains{};
+    for (const auto & v : vars) {
+        current_domains.emplace_back("");
+        for_each_value(v, [&](Integer val) {
+            current_domains.back() = current_domains.back() + to_string(val.raw_value) + " ";
+        });
+    }
+
+    return current_domains;
 }
 
 namespace gcs

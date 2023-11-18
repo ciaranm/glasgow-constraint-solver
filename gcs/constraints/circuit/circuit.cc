@@ -13,6 +13,7 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::cmp_equal;
 using std::cmp_less;
 using std::cmp_not_equal;
 using std::cout;
@@ -33,6 +34,8 @@ using std::tuple;
 using std::unique_ptr;
 using std::vector;
 
+static int DEBUG_GLOBAL_COUNT = 0;
+
 CircuitBase::CircuitBase(vector<IntegerVariableID> v, const bool g) :
     _gac_all_different(g),
     _succ(std::move(v))
@@ -48,7 +51,6 @@ auto gcs::output_cycle_to_proof(const vector<IntegerVariableID> & succ,
     const optional<Integer> & prevent_idx,
     const optional<Integer> & prevent_value) -> void
 {
-
     auto current_val = state.optional_single_value(succ[start]);
     if (current_val == nullopt)
         throw UnexpectedException("Circuit propagator tried to output a cycle that doesn't exist");
@@ -91,13 +93,12 @@ auto gcs::prevent_small_cycles(
     const ConstraintStateHandle & unassigned_handle,
     State & state) -> Inference
 {
-
     auto result = Inference::NoChange;
     auto & unassigned = any_cast<list<IntegerVariableID> &>(state.get_constraint_state(unassigned_handle));
     auto n = succ.size();
     auto end = vector<long>(n, -1);
     auto known_ends = vector<long>{};
-    auto cycle_lengths = vector<long>{};
+    auto chain_lengths = vector<long>{};
 
     for (auto var : unassigned) {
         state.for_each_value(var, [&](Integer val) {
@@ -111,7 +112,7 @@ auto gcs::prevent_small_cycles(
                 } while (state.has_single_value(succ[j]));
                 end[j0] = j;
                 known_ends.emplace_back(j0);
-                cycle_lengths.emplace_back(length);
+                chain_lengths.emplace_back(length);
             }
         });
     }
@@ -119,12 +120,17 @@ auto gcs::prevent_small_cycles(
     while (! known_ends.empty()) {
         auto i = known_ends.back();
         known_ends.pop_back();
-        auto length = cycle_lengths.back();
-        cycle_lengths.pop_back();
-        increase_inference_to(result,
-            state.infer(succ[end[i]] != Integer{i}, JustifyExplicitly{[&](Proof & proof) {
-                output_cycle_to_proof(succ, i, length, pos_var_data, state, proof, Integer{end[i]}, Integer{i});
-            }}));
+        auto length = chain_lengths.back();
+        chain_lengths.pop_back();
+        if (cmp_less(length, succ.size() - 1)) {
+            increase_inference_to(result,
+                state.infer(succ[end[i]] != Integer{i}, JustifyExplicitly{[&](Proof & proof) {
+                    output_cycle_to_proof(succ, i, length, pos_var_data, state, proof, Integer{end[i]}, Integer{i});
+                }}));
+        }
+        else {
+            increase_inference_to(result, state.infer(succ[end[i]] == Integer{i}, JustifyUsingRUP{}));
+        }
     }
     return result;
 }

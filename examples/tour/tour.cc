@@ -114,16 +114,16 @@ auto main(int argc, char * argv[]) -> int
         p.post(CircuitSCC{succ, false});
     }
     else {
-        p.post(Circuit{succ, false);
+        p.post(Circuit{succ, false});
     }
 
     // Minimise the distance between any two stops
     auto max_leg = p.create_integer_variable(0_i, 100_i, "max_leg");
     for (int loc1 = 0; loc1 < n; loc1++) {
-            for (int loc2 = 0; loc2 < n; loc2++) {
-                p.post(LessThanIf{ConstantIntegerVariableID{Integer{distance[loc1][loc2]}}, max_leg,
-                    succ[loc1] == Integer{loc2}});
-            }
+        for (int loc2 = 0; loc2 < n; loc2++) {
+            p.post(LessThanIf{ConstantIntegerVariableID{Integer{distance[loc1][loc2]}}, max_leg,
+                succ[loc1] == Integer{loc2}});
+        }
     }
 
     p.minimise(max_leg);
@@ -131,22 +131,22 @@ auto main(int argc, char * argv[]) -> int
     auto stats = solve_with(p,
         SolveCallbacks{
             .solution = [&](const CurrentState & s) -> bool {
-            for (const auto & v : succ) {
-                cout << s(v) << " ";
-            }
-            cout << endl;
-            cout << 0 << " -> " << s(succ[0]);
-            auto current = s(succ[0]);
-            while (current != 0_i) {
-                cout << " -> ";
-                cout << s(succ[current.raw_value]);
-                current = s(succ[current.raw_value]);
-            }
-            cout << "\n\n";
-            return true;
+                for (const auto & v : succ) {
+                    cout << s(v) << " ";
+                }
+                cout << endl;
+                cout << 0 << " -> " << s(succ[0]);
+                auto current = s(succ[0]);
+                while (current != 0_i) {
+                    cout << " -> ";
+                    cout << s(succ[current.raw_value]);
+                    current = s(succ[current.raw_value]);
+                }
+                cout << "\n\n";
+                return true;
             }},
         options_vars.contains("prove") ? make_optional<ProofOptions>("tour.opb", "tour.veripb") : nullopt);
 
     cout << stats;
     return EXIT_SUCCESS;
-    }
+}
