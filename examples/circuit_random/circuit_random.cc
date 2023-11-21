@@ -74,8 +74,8 @@ Stats run_circuit_problem(int n, const vector<vector<long>> & distances)
             }
         }
     }
-
-    p.post(Circuit{x});
+    SCCOptions options = {false, true, false, false, false, true};
+    p.post(Circuit{x, false, options});
 
     // Minimise the distance between any two stops
     auto max_leg = p.create_integer_variable(0_i, 100_i, "max_leg");
@@ -168,7 +168,7 @@ auto main(int argc, char * argv[]) -> int
             cout << endl;
         }
 
-        auto stats = run_circuit_problem(n, distances);
+        run_circuit_problem(n, distances);
     }
     else {
         int smallest_n = 3;

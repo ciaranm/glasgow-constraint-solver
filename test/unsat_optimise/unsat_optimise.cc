@@ -63,7 +63,7 @@ auto main(int argc, char * argv[]) -> int
     p.maximise(x);
     auto stats = solve_with(p,
         SolveCallbacks{
-            .solution = [&](const CurrentState & s) -> bool {
+            .solution = [&](const CurrentState &) -> bool {
                 cout << "Solution:" << endl;
                 return true;
             },

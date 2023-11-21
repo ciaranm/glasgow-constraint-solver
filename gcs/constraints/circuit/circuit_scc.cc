@@ -37,8 +37,6 @@ using std::vector;
 using namespace gcs;
 using namespace gcs::innards;
 
-static int DEBUG_GLOBAL_COUNT = 0;
-
 namespace
 {
 
@@ -581,6 +579,7 @@ namespace
         // Prove (shift)pos[next_node][count] => ! (shift)pos[mid][count]
         create_shifted_pos(root, middle, count, flag_data[root], pos_var_data, pos_alldiff_data,
             succ, options, state);
+        emit_proof_comment_if_enabled("Successor implies not mid", options, state);
         if (root != 0) {
             create_flag_for_greater_than(next_node, middle, flag_data[next_node], pos_var_data, pos_alldiff_data,
                 succ, options, state);
@@ -589,33 +588,36 @@ namespace
 
             auto & shifted_pos_geq = flag_data[root].shifted_pos_geq;
             auto & shifted_pos_eq = flag_data[root].shifted_pos_eq;
-            temp_p_line.add_and_saturate(shifted_pos_geq[next_node][count + 1].backwards_reif_line);
-            temp_p_line.add_and_saturate(shifted_pos_geq[middle][count].forwards_reif_line);
-            temp_p_line.add_and_saturate(flag_data[next_node].greater_than[middle].forwards_reif_line);
 
             state.infer_true(JustifyExplicitly{[&](Proof & proof) {
-                proof.emit_proof_line(temp_p_line.str(), ProofLevel::Temporary);
+                // TODO: All these should be ProofLevel::Temporary, but unfortunately that fails in specific instances
+                // e.g. build/circuit_random --n 9 --seed 1783129817
+                emit_proof_comment_if_enabled("First:", options, state);
+                temp_p_line.add_and_saturate(shifted_pos_geq[next_node][count + 1].backwards_reif_line);
+                temp_p_line.add_and_saturate(shifted_pos_geq[middle][count].forwards_reif_line);
+                temp_p_line.add_and_saturate(flag_data[next_node].greater_than[middle].forwards_reif_line);
+                proof.emit_proof_line(temp_p_line.str(), ProofLevel::Current);
 
                 proof.emit_rup_proof_line_under_trail(state,
                     WeightedPseudoBooleanSum{} + 1_i * ! flag_data[next_node].greater_than[middle].flag +
                             1_i * ! shifted_pos_eq[middle][count].flag +
                             1_i * (! shifted_pos_eq[next_node][count].flag) >=
                         1_i,
-                    ProofLevel::Temporary);
-
+                    ProofLevel::Current);
                 temp_p_line.clear();
+                //                emit_proof_comment_if_enabled("Second:", options, state);
                 temp_p_line.add_and_saturate(shifted_pos_geq[next_node][count].forwards_reif_line);
                 temp_p_line.add_and_saturate(shifted_pos_geq[middle][count + 1].backwards_reif_line);
                 temp_p_line.add_and_saturate(flag_data[next_node].greater_than[middle].backwards_reif_line);
 
-                proof.emit_proof_line(temp_p_line.str(), ProofLevel::Temporary);
-
+                proof.emit_proof_line(temp_p_line.str(), ProofLevel::Current);
+                //                emit_proof_comment_if_enabled("Then:", options, state);
                 proof.emit_rup_proof_line_under_trail(state,
                     WeightedPseudoBooleanSum{} + 1_i * flag_data[next_node].greater_than[middle].flag +
                             1_i * ! shifted_pos_eq[middle][count].flag +
                             1_i * (! shifted_pos_eq[next_node][count].flag) >=
                         1_i,
-                    ProofLevel::Temporary);
+                    ProofLevel::Current);
 
                 succesor_implies_not_mid_line = proof.emit_rup_proof_line_under_trail(state,
                     WeightedPseudoBooleanSum{} + 1_i * ! shifted_pos_eq[middle][count].flag +
@@ -691,7 +693,6 @@ namespace
         const Literal & assumption = TrueLiteral{}, const optional<OrderingAssumption> & ordering = nullopt)
     {
         if (! state.maybe_proof()) return;
-        DEBUG_GLOBAL_COUNT++;
         emit_proof_comment_if_enabled("REACHABLE SET  from " + to_string(root), options, state);
 
         map<long, set<long>> all_values_seen{};
@@ -854,9 +855,8 @@ namespace
 
         emit_proof_comment_if_enabled("Hall violator gives contradiction: ", options, state);
         state.infer_true(JustifyExplicitly{[&](Proof & proof) {
-            auto line = proof.emit_proof_line(contradiction_line.str(), ProofLevel::Current);
+            proof.emit_proof_line(contradiction_line.str(), ProofLevel::Current);
         }});
-        auto dummy = 0;
     }
 
     auto prove_skipped_subtree(const vector<IntegerVariableID> & succ, const long & node, const long & next_node, const long & root, const long & skipped_subroot,
@@ -944,15 +944,7 @@ namespace
 
         Inference result = gcs::innards::Inference::NoChange;
         vector<pair<long, long>> back_edges{};
-        // --- TEMPORARY ---
-        vector<string> current_domains{};
-        for (const auto & v : succ) {
-            current_domains.emplace_back("");
-            state.for_each_value(v, [&](Integer val) {
-                current_domains.back() = current_domains.back() + to_string(val.raw_value) + " ";
-            });
-        }
-        // ---
+
         state.for_each_value_while(succ[node], [&](Integer w) -> bool {
             auto next_node = w.raw_value;
 
@@ -983,7 +975,7 @@ namespace
                                 to_string(node) + ", " + to_string(next_node) + ")",
                             options, state);
                         prove_reachable_set_too_small(succ, data.prev_subroot, proof_data, options, state, succ[node] == w);
-                        //                        prove_skipped_subtree(succ, node, next_node, data.root, data.prev_subroot, proof_data, options, state);
+                        prove_skipped_subtree(succ, node, next_node, data.root, data.prev_subroot, proof_data, options, state);
                     }
 
                     increase_inference_to(result, state.infer(succ[node] != w, NoJustificationNeeded{}));
@@ -1037,15 +1029,6 @@ namespace
                 if (result == Inference::Contradiction) return false;
 
                 if (back_edges.empty()) {
-                    // --- TEMPORARY ---
-                    vector<string> current_domains{};
-                    for (const auto & v : succ) {
-                        current_domains.emplace_back("");
-                        state.for_each_value(v, [&](Integer val) {
-                            current_domains.back() = current_domains.back() + to_string(val.raw_value) + " ";
-                        });
-                    }
-                    // ---
                     emit_proof_comment_if_enabled("No back edges:", options, state);
                     prove_reachable_set_too_small(succ, next_node, proof_data, options, state);
                     increase_inference_to(result, Inference::Contradiction);
@@ -1107,6 +1090,15 @@ namespace
         auto proof_data = SCCProofData{pos_var_data, proof_flag_data_handle, pos_alldiff_data_handle};
         increase_inference_to(result, check_sccs(succ, scc_options, proof_data, state));
         if (result == Inference::Contradiction) return result;
+        auto & unassigned = any_cast<list<IntegerVariableID> &>(state.get_constraint_state(unassigned_handle));
+        // Remove any newly assigned vals from unassigned
+        auto it = unassigned.begin();
+        while (it != unassigned.end()) {
+            if (state.optional_single_value(*it))
+                it = unassigned.erase(it);
+            else
+                ++it;
+        }
         increase_inference_to(result, prevent_small_cycles(succ, pos_var_data, unassigned_handle, state));
         return result;
     }

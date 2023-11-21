@@ -34,8 +34,6 @@ using std::tuple;
 using std::unique_ptr;
 using std::vector;
 
-static int DEBUG_GLOBAL_COUNT = 0;
-
 CircuitBase::CircuitBase(vector<IntegerVariableID> v, const bool g) :
     _gac_all_different(g),
     _succ(std::move(v))
