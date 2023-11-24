@@ -180,9 +180,9 @@ auto Proof::set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableID id,
     auto [highest_bit_shift, highest_bit_coeff, negative_bit_coeff] = get_bits_encoding_coeffs(lower, upper);
     auto & bit_vars = _imp->integer_variable_bits.emplace(id, pair{negative_bit_coeff, vector<pair<Integer, string>>{}}).first->second.second;
     if (0_i != negative_bit_coeff)
-        bit_vars.emplace_back(negative_bit_coeff, xify(name + "_bn_" + to_string(highest_bit_shift + 1)));
+        bit_vars.emplace_back(negative_bit_coeff, xify(name + "n" + to_string(highest_bit_shift + 1)));
     for (int b = 0; b <= highest_bit_shift; ++b)
-        bit_vars.emplace_back(Integer{1ll << b}, xify(name + "_b_" + to_string(b)));
+        bit_vars.emplace_back(Integer{1ll << b}, xify(name + "b" + to_string(b)));
     _imp->model_variables += bit_vars.size();
 
     // lower bound
@@ -234,7 +234,7 @@ auto Proof::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariabl
     _imp->opb << "* variable " << name << " " << lower.raw_value << " .. " << upper.raw_value << " direct encoding\n";
 
     if (0_i == lower && 1_i == upper) {
-        auto eqvar = xify(name + "_t");
+        auto eqvar = xify(name + "t");
         _imp->opb << "1 " << eqvar << " >= 0 ;\n";
         ++_imp->model_variables;
         ++_imp->model_constraints;
@@ -269,7 +269,7 @@ auto Proof::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariabl
     }
     else {
         for (auto v = lower; v <= upper; ++v) {
-            auto eqvar = xify(name + "_eq_" + value_name(v));
+            auto eqvar = xify(name + "e" + value_name(v));
             _imp->opb << "1 " << eqvar << " ";
             ++_imp->model_variables;
 
@@ -283,7 +283,7 @@ auto Proof::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariabl
         _imp->variable_at_least_one_constraints.emplace(id, ++_imp->model_constraints);
 
         for (auto v = lower; v <= upper; ++v) {
-            auto eqvar = xify(name + "_eq_" + value_name(v));
+            auto eqvar = xify(name + "e" + value_name(v));
             _imp->opb << "-1 " << eqvar << " ";
         }
         _imp->opb << ">= -1 ;\n";
@@ -294,7 +294,7 @@ auto Proof::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariabl
 auto Proof::set_up_integer_variable(SimpleIntegerVariableID id, Integer lower, Integer upper,
     const optional<string> & optional_name, const optional<IntegerVariableProofRepresentation> & rep) -> void
 {
-    string name = "iv" + to_string(id.index);
+    string name = "i" + to_string(id.index);
     if (optional_name)
         name.append("_" + *optional_name);
     if (! rep) {
@@ -316,11 +316,11 @@ auto Proof::set_up_integer_variable(SimpleIntegerVariableID id, Integer lower, I
     _imp->solution_variables.push_back(id);
 }
 
-auto Proof::create_proof_flag(const string & n) -> ProofFlag
+auto Proof::create_proof_flag(const string &) -> ProofFlag
 {
     ProofFlag result{_imp->flags.size() / 2, true};
 
-    string name = xify("flag" + to_string(result.index) + "_" + n);
+    string name = xify("f" + to_string(result.index)); // + "_" + n);
     _imp->flags.emplace(pair{result.index, true}, name);
     _imp->flags.emplace(pair{result.index, false}, "~" + name);
     return result;
@@ -331,7 +331,7 @@ auto Proof::create_proof_integer_variable(Integer lower, Integer upper, const st
 {
     ProofOnlySimpleIntegerVariableID id{_imp->proof_only_integer_variables.size()};
     _imp->proof_only_integer_variables.emplace(id.index, s);
-    string name = "poiv" + to_string(id.index) + "_" + s;
+    string name = "p" + to_string(id.index) + "_" + s;
     switch (rep) {
     case IntegerVariableProofRepresentation::DirectOnly:
         set_up_direct_only_variable_encoding(id, lower, upper, name);
@@ -352,11 +352,11 @@ auto Proof::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> void
         return;
 
     string name = overloaded{
-        [&](const SimpleIntegerVariableID & id) { return "iv" + to_string(id.index); },
-        [&](const ProofOnlySimpleIntegerVariableID & id) { return "poiv" + to_string(id.index); }}
+        [&](const SimpleIntegerVariableID & id) { return "i" + to_string(id.index); },
+        [&](const ProofOnlySimpleIntegerVariableID & id) { return "p" + to_string(id.index); }}
                       .visit(id);
 
-    auto gevar = xify(name + "_ge_" + value_name(v));
+    auto gevar = xify(name + "g" + value_name(v));
     _imp->direct_integer_variables.emplace(id >= v, gevar);
     _imp->direct_integer_variables.emplace(id < v, "~" + gevar);
     _imp->gevars_that_exist[id].insert(v);
@@ -457,11 +457,11 @@ auto Proof::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID id, Inte
         return;
 
     string name = overloaded{
-        [&](const SimpleIntegerVariableID & id) { return "iv" + to_string(id.index); },
-        [&](const ProofOnlySimpleIntegerVariableID & id) { return "poiv" + to_string(id.index); }}
+        [&](const SimpleIntegerVariableID & id) { return "i" + to_string(id.index); },
+        [&](const ProofOnlySimpleIntegerVariableID & id) { return "p" + to_string(id.index); }}
                       .visit(id);
 
-    auto eqvar = xify(name + "_eq_" + value_name(v));
+    auto eqvar = xify(name + "e" + value_name(v));
     _imp->direct_integer_variables.emplace(id == v, eqvar);
     _imp->direct_integer_variables.emplace(id != v, "~" + eqvar);
 
@@ -563,11 +563,11 @@ auto Proof::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID id, Inte
 auto Proof::create_literals_for_introduced_variable_value(
     SimpleIntegerVariableID id, Integer val, const optional<string> & optional_name) -> void
 {
-    string name = "iv" + to_string(id.index);
+    string name = "i" + to_string(id.index);
     if (optional_name)
         name.append("_" + *optional_name);
 
-    auto x = xify(name + "_eq_" + value_name(val));
+    auto x = xify(name + "e" + value_name(val));
     _imp->direct_integer_variables.emplace(id == val, x);
     _imp->direct_integer_variables.emplace(id != val, "~" + x);
 }
