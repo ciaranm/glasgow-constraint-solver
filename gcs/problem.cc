@@ -89,8 +89,7 @@ auto Problem::create_state_for_new_search(optional<Proof> & optional_proof) cons
     auto result = _imp->initial_state.clone();
     if (optional_proof) {
         for (auto & [id, lower, upper, optional_name] : _imp->opb_variables)
-            optional_proof->set_up_integer_variable(id, lower, upper,
-                optional_name.value_or("iv" + to_string(id.index)), nullopt);
+            optional_proof->set_up_integer_variable(id, lower, upper, optional_name, nullopt);
         result.log_inferences_to(*optional_proof);
     }
     return result;
