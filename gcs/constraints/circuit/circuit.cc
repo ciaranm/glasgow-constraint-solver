@@ -99,7 +99,7 @@ auto gcs::prevent_small_cycles(
     auto chain_lengths = vector<long>{};
 
     for (auto var : unassigned) {
-        state.for_each_value(var, [&](Integer val) {
+        state.for_each_value_while(var, [&](Integer val) -> bool {
             auto j0 = val.raw_value;
             auto length = 0;
             if (state.has_single_value(succ[j0]) && (end[j0] < 0)) {
@@ -107,12 +107,25 @@ auto gcs::prevent_small_cycles(
                 do {
                     j = state.optional_single_value(succ[j])->raw_value;
                     length++;
+                    // Need to check this in case alldiff hasn't been fully propagated.
+                    if (j == j0) {
+                        state.infer_true(JustifyExplicitly{[&](Proof & proof) {
+                            output_cycle_to_proof(succ, j0, length, pos_var_data, state, proof);
+                        }});
+                        increase_inference_to(result, Inference::Contradiction);
+                        return false;
+                    }
                 } while (state.has_single_value(succ[j]));
                 end[j0] = j;
                 known_ends.emplace_back(j0);
                 chain_lengths.emplace_back(length);
             }
+
+            return true;
         });
+
+        if (result == Inference::Contradiction)
+            return result;
     }
 
     while (! known_ends.empty()) {

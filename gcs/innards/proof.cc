@@ -316,11 +316,11 @@ auto Proof::set_up_integer_variable(SimpleIntegerVariableID id, Integer lower, I
     _imp->solution_variables.push_back(id);
 }
 
-auto Proof::create_proof_flag(const string &) -> ProofFlag
+auto Proof::create_proof_flag(const string & n) -> ProofFlag
 {
     ProofFlag result{_imp->flags.size() / 2, true};
 
-    string name = xify("f" + to_string(result.index)); // + "_" + n);
+    string name = xify("f" + to_string(result.index) + "_" + n);
     _imp->flags.emplace(pair{result.index, true}, name);
     _imp->flags.emplace(pair{result.index, false}, "~" + name);
     return result;

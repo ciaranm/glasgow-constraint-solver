@@ -28,6 +28,7 @@ using std::nullopt;
 using std::pair;
 using std::random_device;
 using std::string;
+using std::to_string;
 using std::tuple;
 using std::uniform_real_distribution;
 using std::vector;
@@ -37,11 +38,12 @@ using std::chrono::steady_clock;
 namespace po = boost::program_options;
 
 // https://stackoverflow.com/questions/478898/how-do-i-execute-a-command-and-get-the-output-of-the-command-within-c-using-po
-std::string run_and_get_result(const char * cmd)
+std::string run_and_get_result(string cmd)
 {
+    auto cmd_str = cmd.c_str();
     std::array<char, 128> buffer;
     std::string result;
-    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd, "r"), pclose);
+    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd_str, "r"), pclose);
     if (! pipe) {
         throw std::runtime_error("popen() failed!");
     }
@@ -75,7 +77,7 @@ auto generate_random_graph(int n, double p, mt19937 & gen) -> vector<vector<long
     return distances;
 }
 
-auto test_circuit_problem(int n, const vector<vector<long>> & distances) -> tuple<microseconds, microseconds, microseconds, Stats>
+auto test_circuit_problem(int n, const vector<vector<long>> & distances, string name, long i, long j, int verify_up_to) -> tuple<microseconds, microseconds, microseconds, Stats>
 {
     Problem p;
     auto x = p.create_integer_variable_vector(n, 0_i, Integer{n - 1});
@@ -107,18 +109,20 @@ auto test_circuit_problem(int n, const vector<vector<long>> & distances) -> tupl
                 return true;
             },
         },
-        make_optional<ProofOptions>("circuit_experiment.opb", "circuit_experiment.veripb"));
+        make_optional<ProofOptions>(name + ".opb", name + ".veripb"));
 
-    auto verify_start_time = steady_clock::now();
-    if (0 != system("veripb circuit_experiment.opb circuit_experiment.veripb")) {
-        cout << proof;
-        cout << "n: " << n << endl;
-        throw new UnexpectedException{"Verification failed!"};
+    auto verification_time = microseconds{0};
+    if (i < verify_up_to) {
+        auto verify_start_time = steady_clock::now();
+        const auto command = "veripb " + name + ".opb " + name + ".veripb";
+        if (0 != system(command.c_str())) {
+            cout << proof;
+            cout << "n: " << n << endl;
+            throw new UnexpectedException{"Verification failed!"};
+        }
+        verification_time = duration_cast<microseconds>(steady_clock::now() - verify_start_time);
     }
-
     // system("python3 check_inferences.py");
-
-    auto verification_time = duration_cast<microseconds>(steady_clock::now() - verify_start_time);
 
     auto no_proof = solve_with(p,
         SolveCallbacks{
@@ -153,6 +157,9 @@ auto main(int argc, char * argv[]) -> int
 
     all_options.add_options()(
         "repetitions", po::value<int>()->default_value(5), "Number of repeats for each vertex count.");
+
+    all_options.add_options()(
+        "verify_up_to", po::value<int>()->default_value(30), "Largest n we want to verify on the spot for");
 
     all_options.add(display_options);
     po::variables_map options_vars;
@@ -207,28 +214,29 @@ auto main(int argc, char * argv[]) -> int
             std::ofstream outputFileApp("circuit_experiment_output.csv", std::ios::app);
             if (outputFileApp.is_open()) {
                 auto distances = generate_random_graph(i, edge_probability, gen);
-                auto [no_proof_time, proof_time, verification_time, stats] = test_circuit_problem(i, distances);
+                cout << "n = " << i << " instance = " << j << endl;
+                auto name = "circui_experiment_" + to_string(i) + "_" + to_string(j);
+                auto [no_proof_time, proof_time, verification_time, stats] = test_circuit_problem(i, distances, name, i, j, options_vars["verify_up_to"].as<int>());
                 auto slowdown = 1.0 * proof_time.count() / no_proof_time.count();
                 outputFileApp << i << ", "
                               << no_proof_time.count() << ", "
                               << proof_time.count() << ", "
                               << verification_time.count() << ", "
                               << slowdown << ", "
-                              << stats.recursions << ", "
-                              << stats.failures << ", "
+                              << stats.recursions << ", " << stats.failures << ", "
                               << stats.propagations << ", "
                               << stats.effectful_propagations << ", "
                               << stats.contradicting_propagations << ", "
                               << stats.solutions << ", "
                               << stats.max_depth << ", "
                               << stats.n_propagators << ", "
-                              << run_and_get_result("cat circuit_experiment.veripb | grep --count \"Disconnected graph\"") << ", "
-                              << run_and_get_result("cat circuit_experiment.veripb | grep --count \"Prune impossible edges from root node\"") << ", "
-                              << run_and_get_result("cat circuit_experiment.veripb | grep --count \"Pruning edge to the root\"") << ", "
-                              << run_and_get_result("cat circuit_experiment.veripb | grep --count \"Fix required back edge\"") << ", "
-                              << run_and_get_result("cat circuit_experiment.veripb | grep --count \"No back edges\"") << ", "
-                              << run_and_get_result("cat circuit_experiment.veripb | grep --count \"More than one SCC\"") << ", "
-                              << run_and_get_result("cat circuit_experiment.veripb | grep --count \"Pruning edge that would skip subtree\"") << "\n";
+                              << run_and_get_result("cat " + name + ".veripb | grep --count \"Disconnected graph\"") << ", "
+                              << run_and_get_result("cat " + name + ".veripb | grep --count \"Prune impossible edges from root node\"") << ", "
+                              << run_and_get_result("cat " + name + ".veripb | grep --count \"Pruning edge to the root\"") << ", "
+                              << run_and_get_result("cat " + name + ".veripb | grep --count \"Fix required back edge\"") << ", "
+                              << run_and_get_result("cat " + name + ".veripb | grep --count \"No back edges\"") << ", "
+                              << run_and_get_result("cat " + name + ".veripb | grep --count \"More than one SCC\"") << ", "
+                              << run_and_get_result("cat " + name + ".veripb | grep --count \"Pruning edge that would skip subtree\"") << "\n";
             }
             else {
                 std::cerr << "Unable to open the file." << std::endl;

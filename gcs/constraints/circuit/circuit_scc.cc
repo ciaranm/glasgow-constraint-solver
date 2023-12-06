@@ -150,9 +150,9 @@ namespace
     {
         // So that we can turn the comments off
         if (options.enable_comments) {
-            state.infer_true(JustifyExplicitly{[&](Proof & proof) {
-                proof.emit_proof_comment(comment);
-            }});
+            // TODO: will want a more integrated way of doing this in future
+            if (state.maybe_proof())
+                state.maybe_proof()->emit_proof_comment(comment);
         }
     }
 
@@ -178,7 +178,7 @@ namespace
                     PLine p_line;
                     p_line.add_and_saturate(shifted_pos_geq[i][k].forwards_reif_line);
                     p_line.add_and_saturate(shifted_pos_geq[i][l + 1].backwards_reif_line);
-                    proof.emit_proof_line(p_line.str(), ProofLevel::Current);
+                    proof.emit_proof_line(p_line.str(), ProofLevel::Temporary);
 
                     emit_proof_comment_if_enabled("Not both: " +
                             shifted_pos_eq[i][k].comment_name + "=" + to_string(k) + " and " +
@@ -527,11 +527,11 @@ namespace
                     else {
                         p_line << proof.emit_rup_proof_line(
                                       WeightedPseudoBooleanSum{} + 1_i * ! (succ[node] == Integer{next_node}) + 1_i * ! root_greater_than.at(node).flag >= 1_i,
-                                      ProofLevel::Current)
+                                      ProofLevel::Temporary)
                                << " ";
                         p_line << proof.emit_rup_proof_line(
                                       WeightedPseudoBooleanSum{} + 1_i * ! (succ[node] == Integer{next_node}) + 1_i * root_greater_than.at(next_node).flag >= 1_i,
-                                      ProofLevel::Current)
+                                      ProofLevel::Temporary)
                                << " + ";
                     }
 
@@ -540,7 +540,7 @@ namespace
                         << pos_var_data.at(node).plus_one_lines.at(next_node).geq_line << " + "
                         << shifted_pos_geq.at(node).at(count - 1).forwards_reif_line << " + "
                         << shifted_pos_geq.at(next_node).at(count).backwards_reif_line << " +";
-                    proof.emit_proof_line(p_line.str(), ProofLevel::Current);
+                    proof.emit_proof_line(p_line.str(), ProofLevel::Temporary);
 
                     p_line.str("");
                     p_line << "p ";
@@ -562,7 +562,7 @@ namespace
                         << pos_var_data.at(node).plus_one_lines.at(next_node).leq_line << " + "
                         << shifted_pos_geq.at(node).at(count).backwards_reif_line << " + "
                         << shifted_pos_geq.at(next_node).at(count + 1).forwards_reif_line << " +";
-                    proof.emit_proof_line(p_line.str(), ProofLevel::Current);
+                    proof.emit_proof_line(p_line.str(), ProofLevel::Temporary);
 
                     emit_proof_comment_if_enabled("Next implies: succ[" + to_string(node) + "] = " + to_string(next_node) + " and " +
                             shifted_pos_eq[node][count - 1].comment_name + " = " + to_string(count - 1) + " => " +
@@ -581,12 +581,12 @@ namespace
                     p_line << "p ";
                     p_line << shifted_pos_geq[node][count - 1].forwards_reif_line << " ";
                     p_line << pos_var_data.at(node).plus_one_lines.at(next_node).geq_line << " + s";
-                    proof.emit_proof_line(p_line.str(), ProofLevel::Current);
+                    proof.emit_proof_line(p_line.str(), ProofLevel::Temporary);
                     p_line.str("");
                     p_line << "p ";
                     p_line << shifted_pos_geq[node][count].backwards_reif_line << " ";
                     p_line << pos_var_data.at(node).plus_one_lines.at(next_node).leq_line << " + s";
-                    proof.emit_proof_line(p_line.str(), ProofLevel::Current);
+                    proof.emit_proof_line(p_line.str(), ProofLevel::Temporary);
 
                     emit_proof_comment_if_enabled("Next implies: succ[" + to_string(node) + "] = " + to_string(next_node) + " and " +
                             shifted_pos_eq[node][count - 1].comment_name + " = " + to_string(count - 1) + " => 0 >= 1",
@@ -639,26 +639,26 @@ namespace
 
                 temp_p_line.add_and_saturate(shifted_pos_geq[next_node][count + 1].backwards_reif_line);
                 temp_p_line.add_and_saturate(shifted_pos_geq[middle][count].forwards_reif_line);
-                auto geq_and_leq = proof.emit_proof_line(temp_p_line.str(), ProofLevel::Current);
+                auto geq_and_leq = proof.emit_proof_line(temp_p_line.str(), ProofLevel::Temporary);
 
                 temp_p_line.clear();
                 temp_p_line.add_and_saturate(shifted_pos_geq[next_node][count].forwards_reif_line);
                 temp_p_line.add_and_saturate(shifted_pos_geq[middle][count + 1].backwards_reif_line);
                 emit_proof_comment_if_enabled("Step 2", options, state);
-                auto leq_and_geq = proof.emit_proof_line(temp_p_line.str(), ProofLevel::Current);
+                auto leq_and_geq = proof.emit_proof_line(temp_p_line.str(), ProofLevel::Temporary);
 
                 temp_p_line.clear();
                 temp_p_line.add_and_saturate(geq_and_leq);
                 temp_p_line.add_and_saturate(flag_data[next_node].greater_than[middle].forwards_reif_line);
                 emit_proof_comment_if_enabled("Step 3", options, state);
-                proof.emit_proof_line(temp_p_line.str(), ProofLevel::Current);
+                proof.emit_proof_line(temp_p_line.str(), ProofLevel::Temporary);
                 temp_p_line.clear();
 
                 temp_p_line.add_and_saturate(leq_and_geq);
                 temp_p_line.add_and_saturate(proof.emit_rup_proof_line(
-                    WeightedPseudoBooleanSum{} + -1_i * pos_var_data.at(next_node).var + 1_i * pos_var_data.at(middle).var >= Integer{-n + 1}, ProofLevel::Current));
+                    WeightedPseudoBooleanSum{} + -1_i * pos_var_data.at(next_node).var + 1_i * pos_var_data.at(middle).var >= Integer{-n + 1}, ProofLevel::Temporary));
                 emit_proof_comment_if_enabled("Step 4", options, state);
-                proof.emit_proof_line(temp_p_line.str(), ProofLevel::Current);
+                proof.emit_proof_line(temp_p_line.str(), ProofLevel::Temporary);
                 temp_p_line.clear();
 
                 emit_proof_comment_if_enabled("Step 5", options, state);
@@ -669,7 +669,7 @@ namespace
                             1_i * ! shifted_pos_eq[middle][count].flag +
                             1_i * (! shifted_pos_eq[next_node][count].flag) >=
                         1_i,
-                    ProofLevel::Current);
+                    ProofLevel::Temporary);
 
                 proof.emit_rup_proof_line_under_trail(state,
                     WeightedPseudoBooleanSum{} +
@@ -677,19 +677,19 @@ namespace
                             1_i * ! shifted_pos_eq[middle][count].flag +
                             1_i * (! shifted_pos_eq[next_node][count].flag) >=
                         1_i,
-                    ProofLevel::Current);
+                    ProofLevel::Temporary);
 
                 temp_p_line.add_and_saturate(leq_and_geq);
                 temp_p_line.add_and_saturate(flag_data[next_node].greater_than[middle].backwards_reif_line);
                 emit_proof_comment_if_enabled("Step 6", options, state);
-                proof.emit_proof_line(temp_p_line.str(), ProofLevel::Current);
+                proof.emit_proof_line(temp_p_line.str(), ProofLevel::Temporary);
                 temp_p_line.clear();
 
                 temp_p_line.add_and_saturate(geq_and_leq);
                 temp_p_line.add_and_saturate(proof.emit_rup_proof_line(
-                    WeightedPseudoBooleanSum{} + -1_i * pos_var_data.at(middle).var + 1_i * pos_var_data.at(next_node).var >= Integer{-n + 1}, ProofLevel::Current));
+                    WeightedPseudoBooleanSum{} + -1_i * pos_var_data.at(middle).var + 1_i * pos_var_data.at(next_node).var >= Integer{-n + 1}, ProofLevel::Temporary));
                 emit_proof_comment_if_enabled("Step 7", options, state);
-                proof.emit_proof_line(temp_p_line.str(), ProofLevel::Current);
+                proof.emit_proof_line(temp_p_line.str(), ProofLevel::Temporary);
                 temp_p_line.clear();
 
                 proof.emit_rup_proof_line_under_trail(state,
@@ -699,7 +699,7 @@ namespace
                             1_i * ! shifted_pos_eq[middle][count].flag +
                             1_i * (! shifted_pos_eq[next_node][count].flag) >=
                         1_i,
-                    ProofLevel::Current);
+                    ProofLevel::Temporary);
 
                 emit_proof_comment_if_enabled("Step 8", options, state);
                 proof.emit_rup_proof_line_under_trail(state,
@@ -707,7 +707,7 @@ namespace
                             1_i * ! shifted_pos_eq[middle][count].flag +
                             1_i * (! shifted_pos_eq[next_node][count].flag) >=
                         1_i,
-                    ProofLevel::Current);
+                    ProofLevel::Temporary);
 
                 succesor_implies_not_mid_line = proof.emit_rup_proof_line_under_trail(state,
                     WeightedPseudoBooleanSum{} + 1_i * ! shifted_pos_eq[middle][count].flag +
@@ -758,7 +758,7 @@ namespace
             state.infer_true(JustifyExplicitly{[&](Proof & proof) {
                 p_line.add_and_saturate(proof.emit_rup_proof_line(
                     WeightedPseudoBooleanSum{} + 1_i * flag_data[root].greater_than[last].flag + 1_i * flag_data[last].greater_than[root].flag >= 1_i,
-                    ProofLevel::Current));
+                    ProofLevel::Temporary));
 
                 proof.emit_proof_line(p_line.str(), ProofLevel::Temporary);
                 exclusion_line = proof.emit_rup_proof_line_under_trail(state,
