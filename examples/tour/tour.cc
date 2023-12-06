@@ -111,7 +111,9 @@ auto main(int argc, char * argv[]) -> int
         p.post(CircuitPrevent{succ, false});
     }
     else if (options_vars["propagator"].as<string>() == "scc") {
-        p.post(CircuitSCC{succ, false});
+        SCCOptions options{};
+        options.enable_comments = false;
+        p.post(CircuitSCC{succ, false, options});
     }
     else {
         p.post(Circuit{succ, false});

@@ -93,15 +93,18 @@ namespace
         // Maybe this could be generalised (e.g. to other operations) and live in proof.cc?
         stringstream p_line;
         bool first_added;
+        int count;
 
         PLine() :
-            first_added(true)
+            first_added(true),
+            count(0)
         {
             p_line << "p ";
         }
 
         auto add_and_saturate(ProofLine line_number)
         {
+            count++;
             p_line << line_number;
             if (first_added) {
                 p_line << " ";
@@ -121,6 +124,14 @@ namespace
             p_line.str("");
             p_line << "p ";
             first_added = true;
+            count = 0;
+        }
+
+        auto divide_by(long div)
+        {
+            if (div > 1 && ! first_added)
+                p_line << " " << div << " d "
+                       << " ";
         }
     };
 
@@ -506,25 +517,64 @@ namespace
                 if (next_node != root) {
                     stringstream p_line;
                     p_line << "p ";
-                    p_line << pos_var_data.at(node).plus_one_lines.at(next_node).leq_line << " "
-                           << root_greater_than.at(node).forwards_reif_line << " + "
-                           << root_greater_than.at(next_node).backwards_reif_line << " + "
-                           << to_string(2 * n) << " d " << to_string(n) << " * "
-                           << pos_var_data.at(node).plus_one_lines.at(next_node).geq_line << " + "
-                           << shifted_pos_geq.at(node).at(count - 1).forwards_reif_line << " + "
-                           << shifted_pos_geq.at(next_node).at(count).backwards_reif_line << " + s";
+                    // aaaa so many edge cases
+                    if (next_node != 0) {
+                        p_line << pos_var_data.at(node).plus_one_lines.at(next_node).leq_line << " "
+                               << root_greater_than.at(node).forwards_reif_line << " + "
+                               << root_greater_than.at(next_node).backwards_reif_line << " + "
+                               << to_string(2 * n) << " d ";
+                    }
+                    else {
+                        p_line << proof.emit_rup_proof_line(
+                                      WeightedPseudoBooleanSum{} + 1_i * ! (succ[node] == Integer{next_node}) + 1_i * ! root_greater_than.at(node).flag >= 1_i,
+                                      ProofLevel::Current)
+                               << " ";
+                        p_line << proof.emit_rup_proof_line(
+                                      WeightedPseudoBooleanSum{} + 1_i * ! (succ[node] == Integer{next_node}) + 1_i * root_greater_than.at(next_node).flag >= 1_i,
+                                      ProofLevel::Current)
+                               << " + ";
+                    }
+
+                    p_line
+                        << to_string(n) << " * "
+                        << pos_var_data.at(node).plus_one_lines.at(next_node).geq_line << " + "
+                        << shifted_pos_geq.at(node).at(count - 1).forwards_reif_line << " + "
+                        << shifted_pos_geq.at(next_node).at(count).backwards_reif_line << " +";
                     proof.emit_proof_line(p_line.str(), ProofLevel::Current);
 
                     p_line.str("");
                     p_line << "p ";
+
+                    //                    if (next_node != 0) {
                     p_line << pos_var_data.at(node).plus_one_lines.at(next_node).geq_line << " "
                            << root_greater_than.at(node).backwards_reif_line << " + "
                            << root_greater_than.at(next_node).forwards_reif_line << " + "
-                           << to_string(2 * n) << " d " << to_string(n) << " * "
-                           << pos_var_data.at(node).plus_one_lines.at(next_node).leq_line << " + "
-                           << shifted_pos_geq.at(node).at(count).backwards_reif_line << " + "
-                           << shifted_pos_geq.at(next_node).at(count + 1).forwards_reif_line << " + s";
+                           << to_string(2 * n) << " d ";
+                    //                    }
+                    //                    else
+                    //                        p_line << proof.emit_rup_proof_line(
+                    //                                      WeightedPseudoBooleanSum{} + 1_i * ! (succ[node] == Integer{next_node}) + 1_i * root_greater_than.at(node).flag + 1_i * ! root_greater_than.at(next_node).flag >= 1_i,
+                    //                                      ProofLevel::Current)
+                    //                               << " ";
+
+                    p_line
+                        << to_string(n) << " * "
+                        << pos_var_data.at(node).plus_one_lines.at(next_node).leq_line << " + "
+                        << shifted_pos_geq.at(node).at(count).backwards_reif_line << " + "
+                        << shifted_pos_geq.at(next_node).at(count + 1).forwards_reif_line << " +";
                     proof.emit_proof_line(p_line.str(), ProofLevel::Current);
+
+                    emit_proof_comment_if_enabled("Next implies: succ[" + to_string(node) + "] = " + to_string(next_node) + " and " +
+                            shifted_pos_eq[node][count - 1].comment_name + " = " + to_string(count - 1) + " => " +
+                            shifted_pos_eq[next_node][count].comment_name + " = " + to_string(count),
+                        options, state);
+
+                    // RUP shifted_pos[node][count-1] /\ succ[node] = next_node => shifted_pos[next_node][i]
+                    successor_implies_line = proof.emit_rup_proof_line_under_trail(state,
+                        WeightedPseudoBooleanSum{} + 1_i * shifted_pos_eq[next_node][count].flag + 1_i * (succ[node] != Integer{next_node}) +
+                                1_i * (! shifted_pos_eq[node][count - 1].flag) >=
+                            1_i,
+                        ProofLevel::Current);
                 }
                 else {
                     stringstream p_line;
@@ -538,21 +588,13 @@ namespace
                     p_line << pos_var_data.at(node).plus_one_lines.at(next_node).leq_line << " + s";
                     proof.emit_proof_line(p_line.str(), ProofLevel::Current);
 
-                    proof.emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * (! shifted_pos_eq[node][count - 1].flag) + 1_i * (succ[node] != Integer{next_node}) >= 1_i, ProofLevel::Current);
+                    emit_proof_comment_if_enabled("Next implies: succ[" + to_string(node) + "] = " + to_string(next_node) + " and " +
+                            shifted_pos_eq[node][count - 1].comment_name + " = " + to_string(count - 1) + " => 0 >= 1",
+                        options, state);
+
+                    successor_implies_line = proof.emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * (! shifted_pos_eq[node][count - 1].flag) + 1_i * (succ[node] != Integer{next_node}) >= 1_i, ProofLevel::Current);
                     // proof.emit_proof_line("fail", ProofLevel::Top);
                 }
-
-                emit_proof_comment_if_enabled("Next implies: succ[" + to_string(node) + "] = " + to_string(next_node) + " and " +
-                        shifted_pos_eq[node][count - 1].comment_name + " = " + to_string(count - 1) + " => " +
-                        shifted_pos_eq[next_node][count].comment_name + " = " + to_string(count),
-                    options, state);
-
-                // RUP shifted_pos[node][count-1] /\ succ[node] = next_node => shifted_pos[next_node][i]
-                successor_implies_line = proof.emit_rup_proof_line_under_trail(state,
-                    WeightedPseudoBooleanSum{} + 1_i * shifted_pos_eq[next_node][count].flag + 1_i * (succ[node] != Integer{next_node}) +
-                            1_i * (! shifted_pos_eq[node][count - 1].flag) >=
-                        1_i,
-                    ProofLevel::Current);
             }});
         }
         else {
@@ -570,7 +612,7 @@ namespace
         return successor_implies_line;
     }
 
-    auto prove_pos_and_node_implies_not_mid(const long & root, const long & middle, const long & next_node, const long & count,
+    auto prove_not_same_val(const long & root, const long & middle, const long & next_node, const long & count,
         map<long, ShiftedPosDataMaps> & flag_data, const PosVarDataMap & pos_var_data, PosAllDiffData & pos_alldiff_data,
         const vector<IntegerVariableID> & succ, const SCCOptions & options, State & state)
     {
@@ -580,6 +622,7 @@ namespace
         create_shifted_pos(root, middle, count, flag_data[root], pos_var_data, pos_alldiff_data,
             succ, options, state);
         emit_proof_comment_if_enabled("Successor implies not mid", options, state);
+        auto n = static_cast<long>(succ.size());
         if (root != 0) {
             create_flag_for_greater_than(next_node, middle, flag_data[next_node], pos_var_data, pos_alldiff_data,
                 succ, options, state);
@@ -592,28 +635,75 @@ namespace
             state.infer_true(JustifyExplicitly{[&](Proof & proof) {
                 // TODO: All these should be ProofLevel::Temporary, but unfortunately that fails in specific instances
                 // e.g. build/circuit_random --n 9 --seed 1783129817
-                emit_proof_comment_if_enabled("First:", options, state);
+                emit_proof_comment_if_enabled("Step 1", options, state);
+
                 temp_p_line.add_and_saturate(shifted_pos_geq[next_node][count + 1].backwards_reif_line);
                 temp_p_line.add_and_saturate(shifted_pos_geq[middle][count].forwards_reif_line);
-                temp_p_line.add_and_saturate(flag_data[next_node].greater_than[middle].forwards_reif_line);
-                proof.emit_proof_line(temp_p_line.str(), ProofLevel::Current);
+                auto geq_and_leq = proof.emit_proof_line(temp_p_line.str(), ProofLevel::Current);
 
+                temp_p_line.clear();
+                temp_p_line.add_and_saturate(shifted_pos_geq[next_node][count].forwards_reif_line);
+                temp_p_line.add_and_saturate(shifted_pos_geq[middle][count + 1].backwards_reif_line);
+                emit_proof_comment_if_enabled("Step 2", options, state);
+                auto leq_and_geq = proof.emit_proof_line(temp_p_line.str(), ProofLevel::Current);
+
+                temp_p_line.clear();
+                temp_p_line.add_and_saturate(geq_and_leq);
+                temp_p_line.add_and_saturate(flag_data[next_node].greater_than[middle].forwards_reif_line);
+                emit_proof_comment_if_enabled("Step 3", options, state);
+                proof.emit_proof_line(temp_p_line.str(), ProofLevel::Current);
+                temp_p_line.clear();
+
+                temp_p_line.add_and_saturate(leq_and_geq);
+                temp_p_line.add_and_saturate(proof.emit_rup_proof_line(
+                    WeightedPseudoBooleanSum{} + -1_i * pos_var_data.at(next_node).var + 1_i * pos_var_data.at(middle).var >= Integer{-n + 1}, ProofLevel::Current));
+                emit_proof_comment_if_enabled("Step 4", options, state);
+                proof.emit_proof_line(temp_p_line.str(), ProofLevel::Current);
+                temp_p_line.clear();
+
+                emit_proof_comment_if_enabled("Step 5", options, state);
                 proof.emit_rup_proof_line_under_trail(state,
-                    WeightedPseudoBooleanSum{} + 1_i * ! flag_data[next_node].greater_than[middle].flag +
+                    WeightedPseudoBooleanSum{} +
+                            1_i * ! flag_data[root].greater_than[middle].flag +
+                            1_i * ! flag_data[next_node].greater_than[middle].flag +
                             1_i * ! shifted_pos_eq[middle][count].flag +
                             1_i * (! shifted_pos_eq[next_node][count].flag) >=
                         1_i,
                     ProofLevel::Current);
-                temp_p_line.clear();
-                //                emit_proof_comment_if_enabled("Second:", options, state);
-                temp_p_line.add_and_saturate(shifted_pos_geq[next_node][count].forwards_reif_line);
-                temp_p_line.add_and_saturate(shifted_pos_geq[middle][count + 1].backwards_reif_line);
-                temp_p_line.add_and_saturate(flag_data[next_node].greater_than[middle].backwards_reif_line);
 
-                proof.emit_proof_line(temp_p_line.str(), ProofLevel::Current);
-                //                emit_proof_comment_if_enabled("Then:", options, state);
                 proof.emit_rup_proof_line_under_trail(state,
-                    WeightedPseudoBooleanSum{} + 1_i * flag_data[next_node].greater_than[middle].flag +
+                    WeightedPseudoBooleanSum{} +
+                            1_i * ! flag_data[next_node].greater_than[middle].flag +
+                            1_i * ! shifted_pos_eq[middle][count].flag +
+                            1_i * (! shifted_pos_eq[next_node][count].flag) >=
+                        1_i,
+                    ProofLevel::Current);
+
+                temp_p_line.add_and_saturate(leq_and_geq);
+                temp_p_line.add_and_saturate(flag_data[next_node].greater_than[middle].backwards_reif_line);
+                emit_proof_comment_if_enabled("Step 6", options, state);
+                proof.emit_proof_line(temp_p_line.str(), ProofLevel::Current);
+                temp_p_line.clear();
+
+                temp_p_line.add_and_saturate(geq_and_leq);
+                temp_p_line.add_and_saturate(proof.emit_rup_proof_line(
+                    WeightedPseudoBooleanSum{} + -1_i * pos_var_data.at(middle).var + 1_i * pos_var_data.at(next_node).var >= Integer{-n + 1}, ProofLevel::Current));
+                emit_proof_comment_if_enabled("Step 7", options, state);
+                proof.emit_proof_line(temp_p_line.str(), ProofLevel::Current);
+                temp_p_line.clear();
+
+                proof.emit_rup_proof_line_under_trail(state,
+                    WeightedPseudoBooleanSum{} +
+                            1_i * ! flag_data[root].greater_than[next_node].flag +
+                            1_i * flag_data[next_node].greater_than[middle].flag +
+                            1_i * ! shifted_pos_eq[middle][count].flag +
+                            1_i * (! shifted_pos_eq[next_node][count].flag) >=
+                        1_i,
+                    ProofLevel::Current);
+
+                emit_proof_comment_if_enabled("Step 8", options, state);
+                proof.emit_rup_proof_line_under_trail(state,
+                    WeightedPseudoBooleanSum{} + 1_i * ! flag_data[next_node].greater_than[middle].flag +
                             1_i * ! shifted_pos_eq[middle][count].flag +
                             1_i * (! shifted_pos_eq[next_node][count].flag) >=
                         1_i,
@@ -677,7 +767,6 @@ namespace
             }});
         }
         else {
-            // TODO: This might not be enough, need to test
             state.infer_true(JustifyExplicitly{[&](Proof & proof) {
                 exclusion_line = proof.emit_rup_proof_line_under_trail(state,
                     WeightedPseudoBooleanSum{} + 1_i * ! assumption + 1_i * ! ordering.assumption_flag + 1_i * ! (pos_var_data.at(last).var == Integer{count}) >= 1_i,
@@ -762,7 +851,7 @@ namespace
                 .visit(assumption);
         };
 
-        // At most one lines
+        // At least one lines
         while (cmp_less_equal(count, all_reached_nodes.size())) {
             PLine add_for_at_least_1;
             add_for_at_least_1.add_and_saturate(last_al1_line);
@@ -773,6 +862,7 @@ namespace
             for (const auto & node : last_reached_nodes) {
                 WeightedPseudoBooleanSum possible_next_nodes_sum{};
                 PLine add_for_node_implies_at_least_1;
+                PLine add_for_node_implies_not_mid;
                 state.for_each_value(succ[node], [&](Integer val) {
                     if (skip_based_on_assumption(succ[node], val, assumption)) return;
                     possible_next_nodes_sum += 1_i * (succ[node] == val);
@@ -791,16 +881,17 @@ namespace
                     else if (ordering && ! seen_middle && next_node != ordering.value().middle) {
                         // If we see any other node, prove that we can't have middle == count for this
                         // node and pos combination
-                        add_for_not_mid.add_and_saturate(prove_pos_and_node_implies_not_mid(root, ordering.value().middle, next_node, count,
+                        add_for_node_implies_not_mid.add_and_saturate(prove_not_same_val(root, ordering.value().middle, next_node, count,
                             flag_data, pos_var_data, pos_alldiff_data, succ, options, state));
-                        new_reached_nodes.insert(next_node);
+                        if (next_node != root)
+                            new_reached_nodes.insert(next_node);
                     }
                     else if (ordering && next_node == ordering.value().middle) {
                         // Now we've seen "middle"
                         seen_middle = true;
                         new_reached_nodes.insert(next_node);
                     }
-                    else {
+                    else if (next_node != root) {
                         new_reached_nodes.insert(next_node);
                     }
                 });
@@ -813,11 +904,19 @@ namespace
 
                         add_for_at_least_1.add_and_saturate(
                             proof.emit_proof_line(add_for_node_implies_at_least_1.str(), ProofLevel::Current));
+
+                        if (ordering && ! seen_middle) {
+                            if (add_for_node_implies_not_mid.count >= 1) {
+                                add_for_not_mid.add_and_saturate(
+                                    proof.emit_proof_line(add_for_node_implies_not_mid.str(), ProofLevel::Current));
+                            }
+                        }
                     }});
             }
 
             emit_proof_comment_if_enabled("AL1 pos = " + to_string(count), options, state);
             state.infer_true(JustifyExplicitly{[&](Proof & proof) {
+                add_for_at_least_1.divide_by(add_for_at_least_1.count);
                 last_al1_line = proof.emit_proof_line(add_for_at_least_1.str(), ProofLevel::Current);
                 if (exclude_based_on_ordering) {
                     PLine new_last_al1_line;
@@ -832,6 +931,7 @@ namespace
 
             if (ordering && ! seen_middle) {
                 add_for_not_mid.add_and_saturate(last_al1_line);
+                emit_proof_comment_if_enabled("Not mid.", options, state);
                 state.infer_true(JustifyExplicitly{[&](Proof & proof) {
                     proof.emit_proof_line(add_for_not_mid.str(), ProofLevel::Current);
                 }});
@@ -974,7 +1074,7 @@ namespace
                         emit_proof_comment_if_enabled("Pruning edge that would skip subtree (" +
                                 to_string(node) + ", " + to_string(next_node) + ")",
                             options, state);
-                        prove_reachable_set_too_small(succ, data.prev_subroot, proof_data, options, state, succ[node] == w);
+                        // prove_reachable_set_too_small(succ, data.prev_subroot, proof_data, options, state, succ[node] == w);
                         prove_skipped_subtree(succ, node, next_node, data.root, data.prev_subroot, proof_data, options, state);
                     }
 

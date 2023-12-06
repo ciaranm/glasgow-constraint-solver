@@ -25,7 +25,7 @@ using std::uniform_real_distribution;
 using std::vector;
 namespace po = boost::program_options;
 
-static const double EDGE_PROBABILITY = 0.3;
+static const double EDGE_PROBABILITY = 0.7;
 
 auto create_graph_from_seed(int n, double p, unsigned int seed) -> pair<vector<vector<long>>, unsigned int>
 {
@@ -171,8 +171,8 @@ auto main(int argc, char * argv[]) -> int
         run_circuit_problem(n, distances);
     }
     else {
-        int smallest_n = 3;
-        int largest_n = 15;
+        int smallest_n = 8;
+        int largest_n = 20;
         int repetitions = 20;
 
         for (int n = smallest_n; n <= largest_n; ++n) {
