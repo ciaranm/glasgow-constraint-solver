@@ -2,6 +2,7 @@
 #include <gcs/innards/propagators.hh>
 #include <iostream>
 #include <list>
+#include <random>
 #include <set>
 #include <sstream>
 #include <string>
@@ -22,14 +23,17 @@ using std::make_pair;
 using std::map;
 using std::min;
 using std::move;
+using std::mt19937;
 using std::nullopt;
 using std::optional;
 using std::pair;
+using std::random_device;
 using std::set;
 using std::string;
 using std::stringstream;
 using std::to_string;
 using std::tuple;
+using std::uniform_int_distribution;
 using std::unique_ptr;
 using std::variant;
 using std::vector;
@@ -48,10 +52,9 @@ namespace
         long last;
     };
 
-    auto select_root() -> long
+    auto select_root(long n) -> long
     {
         // Might have better root selection in future
-        // e.g. random
         return 0;
     }
 
@@ -72,7 +75,7 @@ namespace
             visit_number(vector<long>(n, -1)),
             start_prev_subtree(0),
             end_prev_subtree(0),
-            root(select_root()),
+            root(select_root(n)),
             prev_subroot(root)
         {
             lowlink[root] = 0;
