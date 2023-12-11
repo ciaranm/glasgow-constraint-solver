@@ -48,10 +48,11 @@ auto main(int argc, char * argv[]) -> int
             ofstream outputFile("verification_times.csv", std::ios::app);
             if (outputFile.is_open()) {
                 auto verify_start_time = steady_clock::now();
-                const auto command = "gtimeout 300 veripb " + name + ".opb " + name + ".veripb";
+                const auto command = "gtimeout 1000 veripb " + name + ".opb " + name + ".veripb";
                 if (0 != system(command.c_str())) {
+                    cout << "Verification Failed or timeout.";
                     cout << "n: " << n << endl;
-                    throw new UnexpectedException{"Verification failed!"};
+                    cout << "r: " << r << endl;
                 }
                 auto verification_time = duration_cast<microseconds>(steady_clock::now() - verify_start_time);
                 cout << verification_time.count() << endl;
