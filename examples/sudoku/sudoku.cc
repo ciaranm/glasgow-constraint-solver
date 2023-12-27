@@ -1,6 +1,7 @@
 #include <gcs/constraints/all_different.hh>
 #include <gcs/constraints/equals.hh>
 #include <gcs/constraints/linear_equality.hh>
+#include <gcs/constraints/not_equals.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 

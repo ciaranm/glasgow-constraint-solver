@@ -28,6 +28,7 @@
 #include <gcs/constraints/logical.hh>
 #include <gcs/constraints/min_max.hh>
 #include <gcs/constraints/n_value.hh>
+#include <gcs/constraints/not_equals.hh>
 #include <gcs/constraints/regular.hh>
 #include <gcs/constraints/smart_table.hh>
 #include <gcs/constraints/table.hh>

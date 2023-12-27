@@ -65,24 +65,6 @@ namespace gcs
         virtual auto install(innards::Propagators &, innards::State &) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
     };
-
-    /**
-     * \brief Constrain that two variables are not equal.
-     *
-     * \ingroup Constraints
-     */
-    class NotEquals : public Constraint
-    {
-    private:
-        IntegerVariableID _v1, _v2;
-
-    public:
-        NotEquals(const IntegerVariableID v1, const IntegerVariableID v2);
-
-        virtual auto describe_for_proof() -> std::string override;
-        virtual auto install(innards::Propagators &, innards::State &) && -> void override;
-        virtual auto clone() const -> std::unique_ptr<Constraint> override;
-    };
 }
 
 #endif
