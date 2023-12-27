@@ -1,7 +1,9 @@
 #include <gcs/constraints/element.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
+
 #include <util/enumerate.hh>
+#include <util/stringify_tuple.hh>
 
 #include <cstdlib>
 #include <functional>
@@ -17,8 +19,6 @@ using std::cerr;
 using std::cmp_less;
 using std::endl;
 using std::function;
-using std::index_sequence;
-using std::make_index_sequence;
 using std::mt19937;
 using std::pair;
 using std::random_device;
@@ -30,27 +30,6 @@ using std::uniform_int_distribution;
 using std::vector;
 
 using namespace gcs;
-
-template <typename T_, size_t... i_>
-auto stringify_tuple(const T_ & t, index_sequence<i_...>) -> string
-{
-    string result = "(";
-    (..., (result.append(i_ == 0 ? "" : ", ").append(to_string(get<i_>(t)))));
-    result.append(")");
-    return result;
-}
-
-template <typename... T_>
-auto stringify_tuple(const tuple<T_...> & t) -> string
-{
-    return stringify_tuple(t, make_index_sequence<sizeof...(T_)>());
-}
-
-template <typename P_, typename Q_>
-auto stringify_tuple(const pair<P_, Q_> & t) -> string
-{
-    return stringify_tuple(t, make_index_sequence<2>());
-}
 
 template <typename Results_>
 auto check_results(const Results_ & expected, const Results_ & actual) -> bool
