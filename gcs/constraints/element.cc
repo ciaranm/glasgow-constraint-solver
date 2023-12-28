@@ -152,53 +152,48 @@ auto ElementConstantArray::install(Propagators & propagators, State & initial_st
                 propagators.define_cnf(initial_state, {_idx != Integer(idx), _var == v});
     }
 
-    Triggers index_triggers{
-        .on_change = {_idx}};
-
-    propagators.install([idx = _idx, var = _var, vals = _vals](State & state) -> pair<Inference, PropagatorState> {
-        optional<Integer> smallest_seen, largest_seen;
-        state.for_each_value_immutable(idx, [&](Integer i) {
-            auto this_val = vals->at(i.raw_value);
-            if (! smallest_seen)
-                smallest_seen = this_val;
-            else
-                smallest_seen = min(*smallest_seen, this_val);
-
-            if (! largest_seen)
-                largest_seen = this_val;
-            else
-                largest_seen = max(*largest_seen, this_val);
-        });
-
-        auto inference = Inference::NoChange;
-        auto just = JustifyExplicitly{[&](Proof & proof) {
-            WeightedPseudoBooleanSum trail = proof.trail_variables_as_sum(state, 1_i);
-            state.for_each_value_immutable(idx, [&](Integer i) {
-                trail += 1_i * (var == (*vals)[i.raw_value]);
-            });
-
-            state.for_each_value_immutable(idx, [&](Integer i) {
-                proof.emit_rup_proof_line(trail + 1_i * (idx == i) >= 1_i, ProofLevel::Temporary);
-            });
-
-            proof.emit_rup_proof_line(trail >= 1_i, ProofLevel::Temporary);
-        }};
-
-        increase_inference_to(inference, state.infer_greater_than_or_equal(var, *smallest_seen, just));
-        if (Inference::Contradiction != inference)
-            increase_inference_to(inference, state.infer_less_than(var, *largest_seen + 1_i, just));
-
-        return pair{inference, PropagatorState::Enable};
-    },
-        index_triggers, "element const array indices");
-
-    Triggers bounds_triggers{
+    Triggers triggers{
+        .on_change = {_idx},
         .on_bounds = {_var}};
 
     visit([&](auto & _idx) {
         propagators.install([idx = _idx, var = _var, vals = _vals](State & state) -> pair<Inference, PropagatorState> {
-            auto bounds = state.bounds(var);
+            optional<Integer> smallest_seen, largest_seen;
+            state.for_each_value_immutable(idx, [&](Integer i) {
+                auto this_val = vals->at(i.raw_value);
+                if (! smallest_seen)
+                    smallest_seen = this_val;
+                else
+                    smallest_seen = min(*smallest_seen, this_val);
+
+                if (! largest_seen)
+                    largest_seen = this_val;
+                else
+                    largest_seen = max(*largest_seen, this_val);
+            });
+
             auto inference = Inference::NoChange;
+            auto just = JustifyExplicitly{[&](Proof & proof) {
+                WeightedPseudoBooleanSum trail = proof.trail_variables_as_sum(state, 1_i);
+                state.for_each_value_immutable(idx, [&](Integer i) {
+                    trail += 1_i * (var == (*vals)[i.raw_value]);
+                });
+
+                state.for_each_value_immutable(idx, [&](Integer i) {
+                    proof.emit_rup_proof_line(trail + 1_i * (idx == i) >= 1_i, ProofLevel::Temporary);
+                });
+
+                proof.emit_rup_proof_line(trail >= 1_i, ProofLevel::Temporary);
+            }};
+
+            increase_inference_to(inference, state.infer_greater_than_or_equal(var, *smallest_seen, just));
+            if (Inference::Contradiction == inference)
+                return pair{inference, PropagatorState::Enable};
+            increase_inference_to(inference, state.infer_less_than(var, *largest_seen + 1_i, just));
+            if (Inference::Contradiction == inference)
+                return pair{inference, PropagatorState::Enable};
+
+            auto bounds = state.bounds(var);
 
             state.for_each_value_while(idx, [&](Integer i) -> bool {
                 auto this_val = vals->at(i.raw_value);
@@ -209,7 +204,7 @@ auto ElementConstantArray::install(Propagators & propagators, State & initial_st
 
             return pair{inference, PropagatorState::Enable};
         },
-            bounds_triggers, "element const array var bounds");
+            triggers, "element const array var bounds");
     },
         _idx);
 }
@@ -258,36 +253,83 @@ auto Element2DConstantArray::install(Propagators & propagators, State & initial_
                         propagators.define_cnf(initial_state, {_idx1 != Integer(idx1), _idx2 != Integer(idx2), _var == v});
     }
 
-    Triggers index_triggers{
-        .on_change = {_idx1, _idx2}};
+    Triggers triggers{
+        .on_change = {_idx1, _idx2},
+        .on_bounds = {_var}};
 
     optional<SimpleIntegerVariableID> idxsel;
-    propagators.install([idx1 = _idx1, idx2 = _idx2, var = _var, vals = _vals, idxsel = move(idxsel)](State & state) mutable -> pair<Inference, PropagatorState> {
-        if (state.maybe_proof() && ! idxsel) [[unlikely]] {
-            idxsel = state.what_variable_id_will_be_created_next();
-            for (auto i = 0_i, i_end = Integer(vals->size() * vals->begin()->size()); i != i_end; ++i)
-                state.maybe_proof()->create_literals_for_introduced_variable_value(*idxsel, i, "element2didx");
-            if (*idxsel != state.allocate_integer_variable_with_state(0_i, Integer(vals->size() * vals->begin()->size())))
-                throw UnexpectedException{"something went horribly wrong with variable IDs"};
+    visit([&](auto & _idx1, auto & _idx2) {
+        propagators.install([idx1 = _idx1, idx2 = _idx2, var = _var, vals = _vals, idxsel = move(idxsel)](State & state) mutable -> pair<Inference, PropagatorState> {
+            // turn 2d index into 1d index in proof
+            if (state.maybe_proof() && ! idxsel) [[unlikely]] {
+                idxsel = state.what_variable_id_will_be_created_next();
+                for (auto i = 0_i, i_end = Integer(vals->size() * vals->begin()->size()); i != i_end; ++i)
+                    state.maybe_proof()->create_literals_for_introduced_variable_value(*idxsel, i, "element2didx");
+                if (*idxsel != state.allocate_integer_variable_with_state(0_i, Integer(vals->size() * vals->begin()->size())))
+                    throw UnexpectedException{"something went horribly wrong with variable IDs"};
 
-            state.infer_true(JustifyExplicitly{[&](Proof & proof) {
+                state.infer_true(JustifyExplicitly{[&](Proof & proof) {
+                    state.for_each_value_immutable(idx1, [&](Integer i1) {
+                        state.for_each_value_immutable(idx2, [&](Integer i2) {
+                            Integer idx = i1 * Integer(vals->size()) + i2;
+                            proof.emit_red_proof_line(WeightedPseudoBooleanSum{} +
+                                        2_i * ! (*idxsel == idx) + 1_i * (idx1 == i1) + 1_i * (idx2 == i2) >=
+                                    2_i,
+                                {{*idxsel == idx, FalseLiteral{}}}, ProofLevel::Top);
+                            proof.emit_red_proof_line(WeightedPseudoBooleanSum{} +
+                                        1_i * (*idxsel == idx) + 1_i * (idx1 != i1) + 1_i * (idx2 != i2) >=
+                                    1_i,
+                                {{*idxsel == idx, TrueLiteral{}}}, ProofLevel::Top);
+                        });
+                    });
+
+                    WeightedPseudoBooleanSum trail;
+                    for (Integer v = 0_i, v_end = Integer(vals->size() * vals->begin()->size()); v != v_end; ++v)
+                        trail += 1_i * (*idxsel == v);
+
+                    state.for_each_value_immutable(idx1, [&](Integer i1) {
+                        state.for_each_value_immutable(idx2, [&](Integer i2) {
+                            WeightedPseudoBooleanSum expr = trail;
+                            expr += 1_i * (idx1 != i1);
+                            expr += 1_i * (idx2 != i2);
+                            proof.emit_rup_proof_line(expr >= 1_i, ProofLevel::Temporary);
+                        });
+                        WeightedPseudoBooleanSum expr = trail;
+                        expr += 1_i * (idx1 != i1);
+                        proof.emit_rup_proof_line(expr >= 1_i, ProofLevel::Temporary);
+                    });
+
+                    WeightedPseudoBooleanSum expr;
+                    for (Integer v = 0_i, v_end = Integer(vals->size() * vals->begin()->size()); v != v_end; ++v)
+                        expr += 1_i * (*idxsel == v);
+                    proof.emit_rup_proof_line(expr >= 1_i, ProofLevel::Top);
+                }});
+            }
+
+            // find smallest and largest possible values, for bounds on the var
+            optional<Integer> smallest_seen, largest_seen;
+            state.for_each_value_immutable(idx1, [&](Integer i1) {
+                state.for_each_value_immutable(idx2, [&](Integer i2) {
+                    auto this_val = vals->at(i1.raw_value).at(i2.raw_value);
+                    if (! smallest_seen)
+                        smallest_seen = this_val;
+                    else
+                        smallest_seen = min(*smallest_seen, this_val);
+
+                    if (! largest_seen)
+                        largest_seen = this_val;
+                    else
+                        largest_seen = max(*largest_seen, this_val);
+                });
+            });
+
+            auto just = JustifyExplicitly{[&](Proof & proof) {
+                WeightedPseudoBooleanSum trail = proof.trail_variables_as_sum(state, 1_i);
                 state.for_each_value_immutable(idx1, [&](Integer i1) {
                     state.for_each_value_immutable(idx2, [&](Integer i2) {
-                        Integer idx = i1 * Integer(vals->size()) + i2;
-                        proof.emit_red_proof_line(WeightedPseudoBooleanSum{} +
-                                    2_i * ! (*idxsel == idx) + 1_i * (idx1 == i1) + 1_i * (idx2 == i2) >=
-                                2_i,
-                            {{*idxsel == idx, FalseLiteral{}}}, ProofLevel::Top);
-                        proof.emit_red_proof_line(WeightedPseudoBooleanSum{} +
-                                    1_i * (*idxsel == idx) + 1_i * (idx1 != i1) + 1_i * (idx2 != i2) >=
-                                1_i,
-                            {{*idxsel == idx, TrueLiteral{}}}, ProofLevel::Top);
+                        trail += 1_i * (var == (*vals)[i1.raw_value][i2.raw_value]);
                     });
                 });
-
-                WeightedPseudoBooleanSum trail;
-                for (Integer v = 0_i, v_end = Integer(vals->size() * vals->begin()->size()); v != v_end; ++v)
-                    trail += 1_i * (*idxsel == v);
 
                 state.for_each_value_immutable(idx1, [&](Integer i1) {
                     state.for_each_value_immutable(idx2, [&](Integer i2) {
@@ -301,69 +343,20 @@ auto Element2DConstantArray::install(Propagators & propagators, State & initial_
                     proof.emit_rup_proof_line(expr >= 1_i, ProofLevel::Temporary);
                 });
 
-                WeightedPseudoBooleanSum expr;
-                for (Integer v = 0_i, v_end = Integer(vals->size() * vals->begin()->size()); v != v_end; ++v)
-                    expr += 1_i * (*idxsel == v);
-                proof.emit_rup_proof_line(expr >= 1_i, ProofLevel::Top);
-            }});
-        }
+                proof.emit_rup_proof_line(trail >= 1_i, ProofLevel::Temporary);
+            }};
 
-        optional<Integer> smallest_seen, largest_seen;
-        state.for_each_value_immutable(idx1, [&](Integer i1) {
-            state.for_each_value_immutable(idx2, [&](Integer i2) {
-                auto this_val = vals->at(i1.raw_value).at(i2.raw_value);
-                if (! smallest_seen)
-                    smallest_seen = this_val;
-                else
-                    smallest_seen = min(*smallest_seen, this_val);
+            auto inference = state.infer_greater_than_or_equal(var, *smallest_seen, just);
+            if (Inference::Contradiction == inference)
+                return pair{inference, PropagatorState::Enable};
 
-                if (! largest_seen)
-                    largest_seen = this_val;
-                else
-                    largest_seen = max(*largest_seen, this_val);
-            });
-        });
-
-        auto inference = Inference::NoChange;
-        auto just = JustifyExplicitly{[&](Proof & proof) {
-            WeightedPseudoBooleanSum trail = proof.trail_variables_as_sum(state, 1_i);
-            state.for_each_value_immutable(idx1, [&](Integer i1) {
-                state.for_each_value_immutable(idx2, [&](Integer i2) {
-                    trail += 1_i * (var == (*vals)[i1.raw_value][i2.raw_value]);
-                });
-            });
-
-            state.for_each_value_immutable(idx1, [&](Integer i1) {
-                state.for_each_value_immutable(idx2, [&](Integer i2) {
-                    WeightedPseudoBooleanSum expr = trail;
-                    expr += 1_i * (idx1 != i1);
-                    expr += 1_i * (idx2 != i2);
-                    proof.emit_rup_proof_line(expr >= 1_i, ProofLevel::Temporary);
-                });
-                WeightedPseudoBooleanSum expr = trail;
-                expr += 1_i * (idx1 != i1);
-                proof.emit_rup_proof_line(expr >= 1_i, ProofLevel::Temporary);
-            });
-
-            proof.emit_rup_proof_line(trail >= 1_i, ProofLevel::Temporary);
-        }};
-
-        increase_inference_to(inference, state.infer_greater_than_or_equal(var, *smallest_seen, just));
-        if (Inference::Contradiction != inference)
             increase_inference_to(inference, state.infer_less_than(var, *largest_seen + 1_i, just));
+            if (Inference::Contradiction == inference)
+                return pair{inference, PropagatorState::Enable};
 
-        return pair{inference, PropagatorState::Enable};
-    },
-        index_triggers, "element 2d const array indices");
-
-    Triggers bounds_triggers{
-        .on_bounds = {_var}};
-
-    visit([&](auto & _idx1, auto & _idx2) {
-        propagators.install([idx1 = _idx1, idx2 = _idx2, var = _var, vals = _vals](State & state) -> pair<Inference, PropagatorState> {
             auto bounds = state.bounds(var);
-            auto inference = Inference::NoChange;
 
+            // check each idx1 has a suitable element
             state.for_each_value_while(idx1, [&](Integer i1) -> bool {
                 bool suitable_idx2_found = false;
                 state.for_each_value_while_immutable(idx2, [&](Integer i2) -> bool {
@@ -380,6 +373,10 @@ auto Element2DConstantArray::install(Propagators & propagators, State & initial_
                 return inference != Inference::Contradiction;
             });
 
+            if (Inference::Contradiction == inference)
+                return pair{inference, PropagatorState::Enable};
+
+            // check each idx2 has a suitable element
             state.for_each_value_while(idx2, [&](Integer i2) -> bool {
                 bool suitable_idx1_found = false;
                 state.for_each_value_while_immutable(idx1, [&](Integer i1) -> bool {
@@ -398,7 +395,7 @@ auto Element2DConstantArray::install(Propagators & propagators, State & initial_
 
             return pair{inference, PropagatorState::Enable};
         },
-            bounds_triggers, "element 2d const array var bounds");
+            triggers, "element 2d const array var bounds");
     },
         _idx1, _idx2);
 }
