@@ -372,11 +372,10 @@ auto Propagators::propagate(State & state, atomic<bool> * optional_abort_flag) c
             return false;
     }
 
-    if (orig_idle_end != _imp->idle_end) {
-        state.on_backtrack([&, orig_idle_end = orig_idle_end]() {
-            _imp->idle_end = orig_idle_end;
-        });
-    }
+
+    state.on_backtrack([&, orig_idle_end = orig_idle_end]() {
+        _imp->idle_end = orig_idle_end;
+    });
 
     return ! contradiction;
 }
