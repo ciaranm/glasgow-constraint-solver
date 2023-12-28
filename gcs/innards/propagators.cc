@@ -12,6 +12,7 @@
 #include <bit>
 #include <chrono>
 #include <list>
+#include <utility>
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -23,6 +24,7 @@ using std::nullopt;
 using std::optional;
 using std::pair;
 using std::string;
+using std::swap;
 using std::vector;
 using std::visit;
 
@@ -43,7 +45,15 @@ struct Propagators::Imp
     vector<PropagationFunction> propagation_functions;
     vector<InitialisationFunction> initialisation_functions;
 
-    vector<uint8_t> propagator_is_disabled;
+    // Every propagation function's index appears exactly once in queue, and lookup[id] always tells
+    // us where that position is. The items from index 0 to enqueued_end - 1 are ready to be
+    // propagated, and the items between enqueued_end and idle_end - 1 do not need to be propagated.
+    // Anything from idle_end onwards is disabled until backtrack. If anything funky happens, such
+    // as new propagators being added, setting first to true will re-initialise the queue the next
+    // time propagation occurs.
+    vector<int> queue, lookup;
+    int enqueued_end, idle_end;
+
     unsigned long long total_propagations = 0, effectful_propagations = 0, contradicting_propagations = 0;
     vector<TriggerIDs> iv_triggers;
     vector<long> degrees;
@@ -137,7 +147,6 @@ auto Propagators::install(PropagationFunction && f, const Triggers & triggers, c
 {
     int id = _imp->propagation_functions.size();
     _imp->propagation_functions.emplace_back(move(f));
-    _imp->propagator_is_disabled.push_back(0);
 
     for (const auto & v : triggers.on_change) {
         trigger_on_change(v, id);
@@ -247,7 +256,6 @@ auto Propagators::define_and_install_table(State & state, const vector<IntegerVa
                                                      State & state) -> pair<Inference, PropagatorState> {
             return propagate_extensional(table, state);
         });
-        _imp->propagator_is_disabled.push_back(0);
     },
         move(permitted));
 }
@@ -261,19 +269,10 @@ auto Propagators::initialise(State & state) const -> void
 auto Propagators::requeue_all_propagators() -> void
 {
     _imp->first = true;
-    fill(_imp->propagator_is_disabled.begin(), _imp->propagator_is_disabled.end(), 0);
 }
 
 auto Propagators::propagate(State & state, atomic<bool> * optional_abort_flag) const -> bool
 {
-    vector<int> on_queue(_imp->propagation_functions.size(), 0);
-    unsigned propagation_queue_first = 0, propagation_queue_end = 0;
-    unsigned propagation_queue_size = bit_ceil(_imp->propagation_functions.size() + 1);
-    unsigned propagation_queue_mask = propagation_queue_size - 1;
-    vector<int> propagation_queue;
-    propagation_queue.reserve(propagation_queue_size);
-    vector<int> newly_disabled_propagators;
-
     switch (state.infer_on_objective_variable_before_propagation()) {
     case Inference::NoChange: break;
     case Inference::Change: break;
@@ -281,57 +280,67 @@ auto Propagators::propagate(State & state, atomic<bool> * optional_abort_flag) c
     }
 
     if (_imp->first) {
+        // filthy hack: to make trim_lower_bound etc work, on the first pass, we need to
+        // guarantee that we're running propagators in numerical order, except our queue
+        // runs backwards so we need to put them in backwards.
         _imp->first = false;
-        for (unsigned i = 0; i != _imp->propagation_functions.size(); ++i) {
-            propagation_queue[propagation_queue_end++] = i;
-            propagation_queue_end = propagation_queue_end & propagation_queue_mask;
-            on_queue[i] = 1;
+        _imp->queue.resize(_imp->propagation_functions.size());
+        _imp->lookup.resize(_imp->propagation_functions.size());
+        unsigned p = 0;
+        for (int i = _imp->propagation_functions.size() - 1; i >= 0; --i) {
+            _imp->queue[p] = i;
+            _imp->lookup[i] = p;
+            ++p;
         }
+
+        _imp->enqueued_end = _imp->propagation_functions.size();
+        _imp->idle_end = _imp->propagation_functions.size();
     }
+    else
+        _imp->enqueued_end = 0;
+
+    auto orig_idle_end = _imp->idle_end;
 
     bool contradiction = false;
     while (! contradiction) {
-        if (propagation_queue_first == propagation_queue_end) {
+        if (0 == _imp->enqueued_end) {
             state.extract_changed_variables([&](SimpleIntegerVariableID v, HowChanged h) {
                 if (v.index < _imp->iv_triggers.size()) {
                     auto & triggers = _imp->iv_triggers[v.index];
 
-                    // the 0 == (on_queue + is_disabled) thing is to turn two branches into
-                    // one, and is really saying (! on_queue && ! is_disabled). annoyingly,
-                    // this is a hotspot in some benchmarks...
-
                     if (h == HowChanged::Instantiated)
                         for (auto & p : triggers.on_instantiated)
-                            if (0 == (on_queue[p] + _imp->propagator_is_disabled[p])) {
-                                propagation_queue[propagation_queue_end++] = p;
-                                propagation_queue_end = propagation_queue_end & propagation_queue_mask;
-                                on_queue[p] = 1;
+                            if (_imp->lookup[p] >= _imp->enqueued_end && _imp->lookup[p] < _imp->idle_end) {
+                                auto being_swapped_item = _imp->queue[_imp->enqueued_end];
+                                swap(_imp->queue[_imp->lookup[p]], _imp->queue[_imp->enqueued_end]);
+                                swap(_imp->lookup[p], _imp->lookup[being_swapped_item]);
+                                ++_imp->enqueued_end;
                             }
 
                     if (h != HowChanged::InteriorValuesChanged)
                         for (auto & p : triggers.on_bounds)
-                            if (0 == (on_queue[p] + _imp->propagator_is_disabled[p])) {
-                                propagation_queue[propagation_queue_end++] = p;
-                                propagation_queue_end = propagation_queue_end & propagation_queue_mask;
-                                on_queue[p] = 1;
+                            if (_imp->lookup[p] >= _imp->enqueued_end && _imp->lookup[p] < _imp->idle_end) {
+                                auto being_swapped_item = _imp->queue[_imp->enqueued_end];
+                                swap(_imp->queue[_imp->lookup[p]], _imp->queue[_imp->enqueued_end]);
+                                swap(_imp->lookup[p], _imp->lookup[being_swapped_item]);
+                                ++_imp->enqueued_end;
                             }
 
                     for (auto & p : triggers.on_change)
-                        if (0 == (on_queue[p] + _imp->propagator_is_disabled[p])) {
-                            propagation_queue[propagation_queue_end++] = p;
-                            propagation_queue_end = propagation_queue_end & propagation_queue_mask;
-                            on_queue[p] = 1;
+                        if (_imp->lookup[p] >= _imp->enqueued_end && _imp->lookup[p] < _imp->idle_end) {
+                            auto being_swapped_item = _imp->queue[_imp->enqueued_end];
+                            swap(_imp->queue[_imp->lookup[p]], _imp->queue[_imp->enqueued_end]);
+                            swap(_imp->lookup[p], _imp->lookup[being_swapped_item]);
+                            ++_imp->enqueued_end;
                         }
                 }
             });
         }
 
-        if (propagation_queue_first == propagation_queue_end)
+        if (0 == _imp->enqueued_end)
             break;
 
-        int propagator_id = propagation_queue[propagation_queue_first++];
-        propagation_queue_first = propagation_queue_first & propagation_queue_mask;
-        on_queue[propagator_id] = 0;
+        int propagator_id = _imp->queue[--_imp->enqueued_end];
         auto [inference, propagator_state] = _imp->propagation_functions[propagator_id](state);
         ++_imp->total_propagations;
         switch (inference) {
@@ -351,10 +360,10 @@ auto Propagators::propagate(State & state, atomic<bool> * optional_abort_flag) c
             case PropagatorState::Enable:
                 break;
             case PropagatorState::DisableUntilBacktrack:
-                if (0 == _imp->propagator_is_disabled[propagator_id]) {
-                    _imp->propagator_is_disabled[propagator_id] = 1;
-                    newly_disabled_propagators.push_back(propagator_id);
-                }
+                --_imp->idle_end;
+                auto being_swapped_item = _imp->queue[_imp->idle_end];
+                swap(_imp->queue[_imp->enqueued_end], _imp->queue[_imp->idle_end]);
+                swap(_imp->lookup[propagator_id], _imp->lookup[being_swapped_item]);
                 break;
             }
         }
@@ -363,10 +372,9 @@ auto Propagators::propagate(State & state, atomic<bool> * optional_abort_flag) c
             return false;
     }
 
-    if (! newly_disabled_propagators.empty()) {
-        state.on_backtrack([&, to_enable = move(newly_disabled_propagators)]() {
-            for (const auto & p : to_enable)
-                _imp->propagator_is_disabled[p] = 0;
+    if (orig_idle_end != _imp->idle_end) {
+        state.on_backtrack([&, orig_idle_end = orig_idle_end]() {
+            _imp->idle_end = orig_idle_end;
         });
     }
 
