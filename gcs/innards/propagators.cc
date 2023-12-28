@@ -32,9 +32,7 @@ namespace
 {
     struct TriggerIDs
     {
-        vector<int> on_change;
-        vector<int> on_bounds;
-        vector<int> on_instantiated;
+        vector<pair<int, int> > ids_and_masks;
     };
 }
 
@@ -308,30 +306,14 @@ auto Propagators::propagate(State & state, atomic<bool> * optional_abort_flag) c
                 if (v.index < _imp->iv_triggers.size()) {
                     auto & triggers = _imp->iv_triggers[v.index];
 
-                    if (h == HowChanged::Instantiated)
-                        for (auto & p : triggers.on_instantiated)
+                    for (auto & [p, mask] : triggers.ids_and_masks)
+                        if (mask & (1 << static_cast<int>(h))) {
                             if (_imp->lookup[p] >= _imp->enqueued_end && _imp->lookup[p] < _imp->idle_end) {
                                 auto being_swapped_item = _imp->queue[_imp->enqueued_end];
                                 swap(_imp->queue[_imp->lookup[p]], _imp->queue[_imp->enqueued_end]);
                                 swap(_imp->lookup[p], _imp->lookup[being_swapped_item]);
                                 ++_imp->enqueued_end;
                             }
-
-                    if (h != HowChanged::InteriorValuesChanged)
-                        for (auto & p : triggers.on_bounds)
-                            if (_imp->lookup[p] >= _imp->enqueued_end && _imp->lookup[p] < _imp->idle_end) {
-                                auto being_swapped_item = _imp->queue[_imp->enqueued_end];
-                                swap(_imp->queue[_imp->lookup[p]], _imp->queue[_imp->enqueued_end]);
-                                swap(_imp->lookup[p], _imp->lookup[being_swapped_item]);
-                                ++_imp->enqueued_end;
-                            }
-
-                    for (auto & p : triggers.on_change)
-                        if (_imp->lookup[p] >= _imp->enqueued_end && _imp->lookup[p] < _imp->idle_end) {
-                            auto being_swapped_item = _imp->queue[_imp->enqueued_end];
-                            swap(_imp->queue[_imp->lookup[p]], _imp->queue[_imp->enqueued_end]);
-                            swap(_imp->lookup[p], _imp->lookup[being_swapped_item]);
-                            ++_imp->enqueued_end;
                         }
                 }
             });
@@ -423,7 +405,10 @@ auto Propagators::trigger_on_change(IntegerVariableID var, int t) -> void
         [&](const SimpleIntegerVariableID & v) {
             if (_imp->iv_triggers.size() <= v.index)
                 _imp->iv_triggers.resize(v.index + 1);
-            _imp->iv_triggers[v.index].on_change.push_back(t);
+            _imp->iv_triggers[v.index].ids_and_masks.emplace_back(t,
+                    (1 << static_cast<int>(HowChanged::InteriorValuesChanged)) |
+                    (1 << static_cast<int>(HowChanged::BoundsChanged)) |
+                    (1 << static_cast<int>(HowChanged::Instantiated)));
         },
         [&](const ViewOfIntegerVariableID & v) {
             trigger_on_change(v.actual_variable, t);
@@ -439,7 +424,9 @@ auto Propagators::trigger_on_bounds(IntegerVariableID var, int t) -> void
         [&](const SimpleIntegerVariableID & v) {
             if (_imp->iv_triggers.size() <= v.index)
                 _imp->iv_triggers.resize(v.index + 1);
-            _imp->iv_triggers[v.index].on_bounds.push_back(t);
+            _imp->iv_triggers[v.index].ids_and_masks.emplace_back(t,
+                    (1 << static_cast<int>(HowChanged::BoundsChanged)) |
+                    (1 << static_cast<int>(HowChanged::Instantiated)));
         },
         [&](const ViewOfIntegerVariableID & v) {
             trigger_on_bounds(v.actual_variable, t);
@@ -455,7 +442,8 @@ auto Propagators::trigger_on_instantiated(IntegerVariableID var, int t) -> void
         [&](const SimpleIntegerVariableID & v) {
             if (_imp->iv_triggers.size() <= v.index)
                 _imp->iv_triggers.resize(v.index + 1);
-            _imp->iv_triggers[v.index].on_instantiated.push_back(t);
+            _imp->iv_triggers[v.index].ids_and_masks.emplace_back(t,
+                    (1 << static_cast<int>(HowChanged::Instantiated)));
         },
         [&](const ViewOfIntegerVariableID & v) {
             trigger_on_instantiated(v.actual_variable, t);
