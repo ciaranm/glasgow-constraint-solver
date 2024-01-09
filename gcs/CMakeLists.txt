@@ -28,6 +28,7 @@ add_library(glasgow_constraint_solver
         constraints/logical.cc
         constraints/min_max.cc
         constraints/n_value.cc
+        constraints/not_equals.cc
         constraints/regular.cc
         constraints/smart_table.cc
         constraints/table.cc
@@ -61,6 +62,7 @@ add_executable(linear_equality_test constraints/linear_equality_test.cc)
 add_executable(logical_test constraints/logical_test.cc)
 add_executable(min_max_test constraints/min_max_test.cc)
 add_executable(n_value_test constraints/n_value_test.cc)
+add_executable(not_equals_test constraints/not_equals_test.cc)
 add_executable(smart_table_test constraints/smart_table_test.cc)
 
 add_test(NAME abs_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:abs_test>)

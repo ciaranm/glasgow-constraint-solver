@@ -15,8 +15,6 @@
 
 using std::cerr;
 using std::endl;
-using std::index_sequence;
-using std::make_index_sequence;
 using std::mt19937;
 using std::nullopt;
 using std::optional;

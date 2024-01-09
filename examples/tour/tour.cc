@@ -1,7 +1,7 @@
 #include <boost/program_options.hpp>
 #include <gcs/constraints/circuit/circuit.hh>
 #include <gcs/constraints/comparison.hh>
-#include <gcs/constraints/equals.hh>
+#include <gcs/constraints/not_equals.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
