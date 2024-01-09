@@ -6,10 +6,12 @@
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/equals.hh>
 #include <gcs/constraints/in.hh>
+#include <gcs/constraints/not_equals.hh>
 #include <iostream>
 #include <random>
 
 using namespace gcs;
+
 using std::cerr;
 using std::cmp_less;
 using std::cout;
@@ -106,7 +108,6 @@ Stats run_circuit_problem(int n, const vector<vector<long>> & distances)
                 cout << "\nMax leg = " << s(max_leg) << endl;
                 cout << "\n";
 
-                return true;
                 return true;
             },
         },

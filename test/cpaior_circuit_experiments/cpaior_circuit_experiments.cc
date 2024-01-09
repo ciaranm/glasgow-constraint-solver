@@ -7,8 +7,8 @@
 #include <fstream>
 #include <gcs/constraints/circuit/circuit.hh>
 #include <gcs/constraints/comparison.hh>
-#include <gcs/constraints/equals.hh>
 #include <gcs/constraints/in.hh>
+#include <gcs/constraints/not_equals.hh>
 #include <iostream>
 #include <memory>
 #include <random>
@@ -38,10 +38,10 @@ using std::chrono::steady_clock;
 namespace po = boost::program_options;
 
 // https://stackoverflow.com/questions/478898/how-do-i-execute-a-command-and-get-the-output-of-the-command-within-c-using-po
-std::string run_and_get_result(string cmd)
+std::string run_and_get_result(const string & cmd)
 {
     auto cmd_str = cmd.c_str();
-    std::array<char, 128> buffer;
+    std::array<char, 128> buffer{};
     std::string result;
     std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd_str, "r"), pclose);
     if (! pipe) {
@@ -77,7 +77,7 @@ auto generate_random_graph(int n, double p, mt19937 & gen) -> vector<vector<long
     return distances;
 }
 
-auto test_circuit_problem(int n, const vector<vector<long>> & distances, string name, long i, long j, int verify_up_to) -> tuple<microseconds, microseconds, microseconds, Stats>
+auto test_circuit_problem(int n, const vector<vector<long>> & distances, const string & name, long i, int verify_up_to) -> tuple<microseconds, microseconds, microseconds, Stats>
 {
     Problem p;
     auto x = p.create_integer_variable_vector(n, 0_i, Integer{n - 1});
@@ -105,7 +105,7 @@ auto test_circuit_problem(int n, const vector<vector<long>> & distances, string 
 
     auto proof = solve_with(p,
         SolveCallbacks{
-            .solution = [&](const CurrentState & s) -> bool {
+            .solution = [&](const CurrentState &) -> bool {
                 return true;
             },
         },
@@ -118,7 +118,7 @@ auto test_circuit_problem(int n, const vector<vector<long>> & distances, string 
         if (0 != system(command.c_str())) {
             cout << proof;
             cout << "n: " << n << endl;
-            throw new UnexpectedException{"Verification failed!"};
+            throw UnexpectedException{"Verification failed!"};
         }
         verification_time = duration_cast<microseconds>(steady_clock::now() - verify_start_time);
     }
@@ -126,7 +126,7 @@ auto test_circuit_problem(int n, const vector<vector<long>> & distances, string 
 
     auto no_proof = solve_with(p,
         SolveCallbacks{
-            .solution = [&](const CurrentState & s) -> bool {
+            .solution = [&](const CurrentState &) -> bool {
                 return true;
             },
         },
@@ -216,7 +216,7 @@ auto main(int argc, char * argv[]) -> int
                 auto distances = generate_random_graph(i, edge_probability, gen);
                 cout << "n = " << i << " instance = " << j << endl;
                 auto name = "circui_experiment_" + to_string(i) + "_" + to_string(j);
-                auto [no_proof_time, proof_time, verification_time, stats] = test_circuit_problem(i, distances, name, i, j, options_vars["verify_up_to"].as<int>());
+                auto [no_proof_time, proof_time, verification_time, stats] = test_circuit_problem(i, distances, name, i, options_vars["verify_up_to"].as<int>());
                 auto slowdown = 1.0 * proof_time.count() / no_proof_time.count();
                 outputFileApp << i << ", "
                               << no_proof_time.count() << ", "
