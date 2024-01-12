@@ -10,15 +10,20 @@
 
 #include <boost/program_options.hpp>
 
+#include <fmt/core.h>
+#include <fmt/ostream.h>
+
 using namespace gcs;
 
 using std::cerr;
 using std::cout;
-using std::endl;
 using std::make_optional;
 using std::nullopt;
 using std::string;
 using std::vector;
+
+using fmt::print;
+using fmt::println;
 
 using namespace std::literals::string_literals;
 
@@ -46,15 +51,15 @@ auto main(int argc, char * argv[]) -> int
         po::notify(options_vars);
     }
     catch (const po::error & e) {
-        cerr << "Error: " << e.what() << endl;
-        cerr << "Try " << argv[0] << " --help" << endl;
+        println(cerr, "Error: {}", e.what());
+        println(cerr, "Try {} --help", argv[0]);
         return EXIT_FAILURE;
     }
 
     if (options_vars.contains("help")) {
-        cout << "Usage: " << argv[0] << " [options]" << endl;
-        cout << endl;
-        cout << display_options << endl;
+        println("Usage: {} [options]", argv[0]);
+        println("");
+        display_options.print(cout);
         return EXIT_SUCCESS;
     }
 
@@ -76,8 +81,7 @@ auto main(int argc, char * argv[]) -> int
     auto stats = solve_with(p,
         SolveCallbacks{
             .solution = [&](const CurrentState & s) -> bool {
-                cout << "banana cakes = " << s(banana) << ", chocolate cakes = "
-                     << s(chocolate) << ", profit = " << s(profit) << endl;
+                println("banana cakes = {}, chocolate cakes = {}, profit = {}", s(banana), s(chocolate), s(profit));
                 return true;
             },
             .branch = branch_on_dom_then_deg(vector<IntegerVariableID>{banana, chocolate}),
@@ -87,7 +91,7 @@ auto main(int argc, char * argv[]) -> int
                                              "cake.opb", "cake.veripb", true, options_vars.count("full-proof-encoding"))
                                        : nullopt);
 
-    cout << stats;
+    print("{}", stats);
 
     return EXIT_SUCCESS;
 }

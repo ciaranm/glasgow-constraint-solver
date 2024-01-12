@@ -7,15 +7,20 @@
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <ranges>
 #include <vector>
 
 #include <boost/program_options.hpp>
+
+#include <fmt/core.h>
+#include <fmt/ostream.h>
+#include <fmt/ranges.h>
 
 using namespace gcs;
 
 using std::cerr;
 using std::cout;
-using std::endl;
+using std::cref;
 using std::getline;
 using std::ifstream;
 using std::make_optional;
@@ -23,6 +28,13 @@ using std::nullopt;
 using std::pair;
 using std::string;
 using std::vector;
+
+#if __cpp_lib_ranges >= 202110L
+using std::ranges::views::transform;
+#endif
+
+using fmt::print;
+using fmt::println;
 
 namespace po = boost::program_options;
 
@@ -54,15 +66,15 @@ auto main(int argc, char * argv[]) -> int
         po::notify(options_vars);
     }
     catch (const po::error & e) {
-        cerr << "Error: " << e.what() << endl;
-        cerr << "Try " << argv[0] << " --help" << endl;
+        println(cerr, "Error: {}", e.what());
+        println(cerr, "Try {} --help", argv[0]);
         return EXIT_FAILURE;
     }
 
     if (options_vars.contains("help")) {
-        cout << "Usage: " << argv[0] << " [options] [file]" << endl;
-        cout << endl;
-        cout << display_options << endl;
+        println("Usage: {} [options] [file]", argv[0]);
+        println("");
+        display_options.print(cout);
         return EXIT_SUCCESS;
     }
 
@@ -83,7 +95,7 @@ auto main(int argc, char * argv[]) -> int
             else if ("p" == command) {
                 int n_edges = 0;
                 if (! (inf >> command >> size >> n_edges)) {
-                    cerr << "Error reading p line in input" << endl;
+                    println(cerr, "Error reading p line in input");
                     return EXIT_FAILURE;
                 }
                 edges.reserve(n_edges);
@@ -91,19 +103,19 @@ auto main(int argc, char * argv[]) -> int
             else if ("e" == command) {
                 int f = 0, t = 0;
                 if (! (inf >> f >> t)) {
-                    cerr << "Error reading e line in input" << endl;
+                    println(cerr, "Error reading e line in input");
                     return EXIT_FAILURE;
                 }
                 edges.emplace_back(f - 1, t - 1);
             }
             else {
-                cerr << "Unknown command " << command << " in input" << endl;
+                println(cerr, "Unknown command {} in input", command);
                 return EXIT_FAILURE;
             }
         }
 
         if (0 == size) {
-            cerr << "Didn't find size in input" << endl;
+            println(cerr, "Didn't find size in input");
             return EXIT_FAILURE;
         }
     }
@@ -123,17 +135,17 @@ auto main(int argc, char * argv[]) -> int
     auto stats = solve_with(p,
         SolveCallbacks{
             .solution = [&](const CurrentState & s) -> bool {
-                cout << s(colours) + 1_i << " colours:";
-                for (auto & v : vertices)
-                    cout << " " << s(v);
-                cout << endl;
-
+#if __cpp_lib_ranges >= 202110L
+                println("{} colours: {}", s(colours) + 1_i, vertices | transform(cref(s)));
+#else
+                println("{} colours: {}", s(colours) + 1_i, s(vertices));
+#endif
                 return true;
             },
             .branch = branch_on_dom_then_deg(vertices)},
         options_vars.contains("prove") ? make_optional<ProofOptions>("colour.opb", "colour.veripb") : nullopt);
 
-    cout << stats;
+    print("{}", stats);
 
     return EXIT_SUCCESS;
 }

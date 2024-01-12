@@ -1,11 +1,15 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_STATS_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_STATS_HH
 
+#include <algorithm>
 #include <chrono>
 #include <iosfwd>
+#include <sstream>
 #include <string>
 #include <tuple>
 #include <vector>
+
+#include <fmt/ostream.h>
 
 namespace gcs
 {
@@ -39,5 +43,10 @@ namespace gcs
      */
     auto operator<<(std::ostream &, const Stats &) -> std::ostream &;
 }
+
+template <>
+struct fmt::formatter<gcs::Stats> : ostream_formatter
+{
+};
 
 #endif

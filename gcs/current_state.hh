@@ -84,6 +84,19 @@ namespace gcs
         [[nodiscard]] auto operator()(const IntegerVariableID &) const -> Integer;
 
         /**
+         * \brief Fetch the unique values for a vector of variables.
+         *
+         * This shouldn't really need to exist, and will go away once every supported
+         * compiler has views support. You should be able to do
+         * <code>vec | transform(cref(current_state))</code> instead.
+         */
+#if __cpp_lib_ranges >= 202110L
+        [[deprecated("use vec | transform(cref(current_state)) instead")]]
+#endif
+        [[nodiscard]] auto
+        operator()(const std::vector<IntegerVariableID> & vec) const -> std::vector<Integer>;
+
+        /**
          * \brief Does this variable have a unique value?
          *
          * \sa CurrentState::domain_size
