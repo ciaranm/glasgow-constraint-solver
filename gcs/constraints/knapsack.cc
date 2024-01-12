@@ -172,8 +172,10 @@ namespace
                         }
 
                         // if we're feasible, add us to the growing layer
-                        if (! bounds_violation)
+                        if (! bounds_violation) {
                             growing_layer_nodes.emplace(new_sums, nullopt);
+                            supported_values.emplace(val);
+                        }
                     }
                     else {
                         // build up extension variables representing partial sum >= actual value and
