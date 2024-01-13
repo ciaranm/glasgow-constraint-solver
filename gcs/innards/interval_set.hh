@@ -64,6 +64,7 @@ namespace gcs::innards
                         iter->second = value - Int_(1);
                         new_range.first = value + Int_(1);
                         intervals.insert(next(iter), new_range);
+                        return;
                     }
                 }
                 else if (iter->first > value)
