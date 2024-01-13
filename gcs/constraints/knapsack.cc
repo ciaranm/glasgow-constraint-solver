@@ -171,9 +171,21 @@ namespace
                             }
                         }
 
-                        // if we're feasible, add us to the growing layer
-                        if (! bounds_violation) {
-                            growing_layer_nodes.emplace(new_sums, nullopt);
+                        auto node_data = growing_layer_nodes.emplace(new_sums, FullNodeData{{}, {}, {}, {}}).first;
+                        node_data->second->predecessors.emplace_back(sums, val);
+
+                        // because everything is non-negative, we can eliminate states where the
+                        // partial sum is already too large.
+                        bool eliminated = false;
+                        for (const auto & [x, _] : enumerate(totals)) {
+                            if (committed.at(x) + new_sums.at(x) > bounds.at(x).second) {
+                                eliminated = true;
+                                break;
+                            }
+                        }
+
+                        if (! eliminated) {
+                            feasible_choices.push_back(val);
                             supported_values.emplace(val);
                         }
                     }
