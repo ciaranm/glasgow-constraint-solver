@@ -443,6 +443,14 @@ namespace
                 auto highest = highest_iter->first.at(x);
                 inferences.emplace_back(totals.at(x) < committed.at(x) + highest + 1_i);
 
+                state.for_each_value(totals.at(x), [&](Integer v) {
+                    if (v >= committed.at(x) + lowest && v < committed.at(x) + highest + 1_i)
+                        if (completed_layers.back().end() == find_if(completed_layers.back().begin(), completed_layers.back().end(), [&](const pair<vector<Integer>, optional<FullNodeData>> & a) {
+                                return a.first.at(x) + committed.at(x) == v;
+                            }))
+                            inferences.emplace_back(totals.at(x) != v);
+                });
+
                 if constexpr (doing_proof_) {
                     state.maybe_proof()->emit_proof_comment("select from feasible terminal states");
                     for (auto & [_, data] : completed_layers.back()) {
