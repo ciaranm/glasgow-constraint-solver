@@ -18,8 +18,10 @@ using std::cmp_equal;
 using std::endl;
 using std::flush;
 using std::function;
+using std::make_optional;
 using std::max;
 using std::mt19937;
+using std::nullopt;
 using std::pair;
 using std::random_device;
 using std::set;
@@ -31,7 +33,7 @@ using std::vector;
 
 using namespace gcs;
 
-auto check_results(const set<tuple<vector<int>, vector<int>>> & expected, const set<tuple<vector<int>, vector<int>>> & actual) -> bool
+auto check_results(bool proofs, const set<tuple<vector<int>, vector<int>>> & expected, const set<tuple<vector<int>, vector<int>>> & actual) -> bool
 {
     if (expected != actual) {
         cerr << "expected != actual, expected " << expected.size() << " solutions, got " << actual.size() << endl;
@@ -45,13 +47,14 @@ auto check_results(const set<tuple<vector<int>, vector<int>>> & expected, const 
         return false;
     }
 
-    if (0 != system("veripb knapsack_test.opb knapsack_test.veripb"))
-        return false;
+    if (proofs)
+        if (0 != system("veripb knapsack_test.opb knapsack_test.veripb"))
+            return false;
 
     return true;
 }
 
-auto run_knapsack_test(int minval, int maxval, const vector<vector<int>> & coeffs, const vector<pair<int, int>> & bounds) -> bool
+auto run_knapsack_test(bool proofs, int minval, int maxval, const vector<vector<int>> & coeffs, const vector<pair<int, int>> & bounds) -> bool
 {
     cerr << "knapsack " << minval << " " << maxval;
     for (const auto & c : coeffs) {
@@ -64,6 +67,10 @@ auto run_knapsack_test(int minval, int maxval, const vector<vector<int>> & coeff
     for (const auto & b : bounds) {
         cerr << " (" << b.first << ", " << b.second << ")";
     }
+
+    if (proofs)
+        cerr << " with proofs";
+
     cerr << ":" << flush;
 
     set<tuple<vector<int>, vector<int>>> expected, actual;
@@ -118,9 +125,9 @@ auto run_knapsack_test(int minval, int maxval, const vector<vector<int>> & coeff
             actual.emplace(bounds, sol);
             return true;
         },
-        ProofOptions{"knapsack_test.opb", "knapsack_test.veripb"});
+        proofs ? make_optional<ProofOptions>("knapsack_test.opb", "knapsack_test.veripb") : nullopt);
 
-    return check_results(expected, actual);
+    return check_results(proofs, expected, actual);
 }
 
 auto main(int, char *[]) -> int
@@ -165,8 +172,13 @@ auto main(int, char *[]) -> int
     }
 
     for (auto & [minval, maxval, coeffs, bounds] : data)
-        if (! run_knapsack_test(minval, maxval, coeffs, bounds))
+        if (! run_knapsack_test(false, minval, maxval, coeffs, bounds))
             return EXIT_FAILURE;
+
+    if (0 == system("veripb --help >/dev/null"))
+        for (auto & [minval, maxval, coeffs, bounds] : data)
+            if (! run_knapsack_test(true, minval, maxval, coeffs, bounds))
+                return EXIT_FAILURE;
 
     return EXIT_SUCCESS;
 }
