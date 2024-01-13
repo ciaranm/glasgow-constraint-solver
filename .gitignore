@@ -8,5 +8,6 @@ Doxyfile
 *.log
 *.opb
 *.veripb
+*.pbp
 XCSP3-CPP-Parser
 .idea

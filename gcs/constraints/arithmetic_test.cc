@@ -1,8 +1,7 @@
 #include <gcs/constraints/arithmetic.hh>
+#include <gcs/constraints/constraints_test_utils.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
-
-#include <util/stringify_tuple.hh>
 
 #include <cstdlib>
 #include <functional>
@@ -13,10 +12,16 @@
 #include <utility>
 #include <vector>
 
+#include <fmt/core.h>
+#include <fmt/ostream.h>
+#include <fmt/ranges.h>
+
 using std::cerr;
-using std::endl;
+using std::flush;
 using std::function;
+using std::make_optional;
 using std::mt19937;
+using std::nullopt;
 using std::pair;
 using std::random_device;
 using std::set;
@@ -26,54 +31,68 @@ using std::tuple;
 using std::uniform_int_distribution;
 using std::vector;
 
+using fmt::print;
+using fmt::println;
+
 using namespace gcs;
+using namespace gcs::test_innards;
 
-template <typename Results_>
-auto check_results(pair<int, int> v1_range, pair<int, int> v2_range, pair<int, int> v3_range, const string & name, const Results_ & expected, const Results_ & actual) -> bool
+namespace
 {
-    cerr << name << " " << stringify_tuple(v1_range) << " " << stringify_tuple(v2_range) << " " << stringify_tuple(v3_range);
-    if (expected != actual) {
-        cerr << " expected:";
-        for (auto & t : expected)
-            cerr << " " << stringify_tuple(t);
-        cerr << "; actual:";
-        for (auto & t : actual)
-            cerr << " " << stringify_tuple(t);
-        cerr << endl;
+    template <typename Arithmetic_>
+    struct NameOf;
 
-        return false;
-    }
-    cerr << endl;
+    template <>
+    struct NameOf<Plus>
+    {
+        static const constexpr auto name = "plus";
+    };
 
-    if (0 != system("veripb arithmetic_test.opb arithmetic_test.veripb"))
-        return false;
+    template <>
+    struct NameOf<Minus>
+    {
+        static const constexpr auto name = "minus";
+    };
 
-    return true;
+    template <>
+    struct NameOf<Times>
+    {
+        static const constexpr auto name = "times";
+    };
+
+    template <>
+    struct NameOf<Div>
+    {
+        static const constexpr auto name = "div";
+    };
+
+    template <>
+    struct NameOf<Mod>
+    {
+        static const constexpr auto name = "mod";
+    };
 }
 
 template <typename Arithmetic_>
-auto run_arithmetic_test(pair<int, int> v1_range, pair<int, int> v2_range, pair<int, int> v3_range, const function<auto(int, int, int)->bool> & is_satisfing) -> bool
+auto run_arithmetic_test(bool proofs, pair<int, int> v1_range, pair<int, int> v2_range, pair<int, int> v3_range, const function<auto(int, int, int)->bool> & is_satisfing) -> void
 {
+    print(cerr, "arithmetic {} {} {} {} {}", NameOf<Arithmetic_>::name, v1_range, v2_range, v3_range, proofs ? " with proofs:" : ":");
+    cerr << flush;
     set<tuple<int, int, int>> expected, actual;
-    for (int v1 = v1_range.first; v1 <= v1_range.second; ++v1)
-        for (int v2 = v2_range.first; v2 <= v2_range.second; ++v2)
-            for (int v3 = v3_range.first; v3 <= v3_range.second; ++v3)
-                if (is_satisfing(v1, v2, v3))
-                    expected.emplace(v1, v2, v3);
+
+    build_expected(expected, is_satisfing, v1_range, v2_range, v3_range);
+    println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;
     auto v1 = p.create_integer_variable(Integer(v1_range.first), Integer(v1_range.second));
     auto v2 = p.create_integer_variable(Integer(v2_range.first), Integer(v2_range.second));
     auto v3 = p.create_integer_variable(Integer(v3_range.first), Integer(v3_range.second));
     p.post(Arithmetic_{v1, v2, v3});
-    solve(
-        p, [&](const CurrentState & s) -> bool {
-            actual.emplace(s(v1).raw_value, s(v2).raw_value, s(v3).raw_value);
-            return true;
-        },
-        ProofOptions{"arithmetic_test.opb", "arithmetic_test.veripb"});
 
-    return check_results(v1_range, v2_range, v3_range, typeid(Arithmetic_).name(), expected, actual);
+    auto proof_name = proofs ? make_optional("arithmetic_test") : nullopt;
+    solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{v1, v2, v3});
+
+    check_results(proof_name, expected, actual);
 }
 
 auto main(int, char *[]) -> int
@@ -88,37 +107,25 @@ auto main(int, char *[]) -> int
 
     random_device rand_dev;
     mt19937 rand(rand_dev());
-    for (int x = 0; x < 10; ++x) {
-        uniform_int_distribution r1_lower_dist(-10, 10);
-        auto r1_lower = r1_lower_dist(rand);
-        uniform_int_distribution r1_upper_dist(r1_lower, r1_lower + 10);
-        auto r1_upper = r1_upper_dist(rand);
-
-        uniform_int_distribution r2_lower_dist(-10, 10);
-        auto r2_lower = r2_lower_dist(rand);
-        uniform_int_distribution r2_upper_dist(r2_lower, r2_lower + 10);
-        auto r2_upper = r2_upper_dist(rand);
-
-        uniform_int_distribution r3_lower_dist(-10, 10);
-        auto r3_lower = r3_lower_dist(rand);
-        uniform_int_distribution r3_upper_dist(r3_lower, r3_lower + 10);
-        auto r3_upper = r3_upper_dist(rand);
-
-        data.emplace_back(pair{r1_lower, r1_upper}, pair{r2_lower, r2_upper}, pair{r3_lower, r3_upper});
-    }
+    for (int x = 0; x < 10; ++x)
+        generate_random_data(rand, data, random_bounds(-10, 10, 5, 15), random_bounds(-10, 10, 5, 15), random_bounds(-10, 10, 5, 15));
 
     for (auto & [r1, r2, r3] : data) {
-        if (! run_arithmetic_test<Plus>(r1, r2, r3, [](int a, int b, int c) { return a + b == c; }))
-            return EXIT_FAILURE;
-        if (! run_arithmetic_test<Minus>(r1, r2, r3, [](int a, int b, int c) { return a - b == c; }))
-            return EXIT_FAILURE;
-        if (! run_arithmetic_test<Times>(r1, r2, r3, [](int a, int b, int c) { return a * b == c; }))
-            return EXIT_FAILURE;
-        if (! run_arithmetic_test<Div>(r1, r2, r3, [](int a, int b, int c) { return 0 != b && a / b == c; }))
-            return EXIT_FAILURE;
-        if (! run_arithmetic_test<Mod>(r1, r2, r3, [](int a, int b, int c) { return 0 != b && a % b == c; }))
-            return EXIT_FAILURE;
+        run_arithmetic_test<Plus>(false, r1, r2, r3, [](int a, int b, int c) { return a + b == c; });
+        run_arithmetic_test<Minus>(false, r1, r2, r3, [](int a, int b, int c) { return a - b == c; });
+        run_arithmetic_test<Times>(false, r1, r2, r3, [](int a, int b, int c) { return a * b == c; });
+        run_arithmetic_test<Div>(false, r1, r2, r3, [](int a, int b, int c) { return 0 != b && a / b == c; });
+        run_arithmetic_test<Mod>(false, r1, r2, r3, [](int a, int b, int c) { return 0 != b && a % b == c; });
     }
+
+    if (can_run_veripb())
+        for (auto & [r1, r2, r3] : data) {
+            run_arithmetic_test<Plus>(true, r1, r2, r3, [](int a, int b, int c) { return a + b == c; });
+            run_arithmetic_test<Minus>(true, r1, r2, r3, [](int a, int b, int c) { return a - b == c; });
+            run_arithmetic_test<Times>(true, r1, r2, r3, [](int a, int b, int c) { return a * b == c; });
+            run_arithmetic_test<Div>(true, r1, r2, r3, [](int a, int b, int c) { return 0 != b && a / b == c; });
+            run_arithmetic_test<Mod>(true, r1, r2, r3, [](int a, int b, int c) { return 0 != b && a % b == c; });
+        }
 
     return EXIT_SUCCESS;
 }
