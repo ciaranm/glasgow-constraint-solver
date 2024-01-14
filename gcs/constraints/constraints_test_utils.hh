@@ -177,7 +177,9 @@ namespace gcs::test_innards
     template <typename ResultsSet_, typename Get_>
     auto check_gac_supports(const ResultsSet_ & expected, const CurrentState & s, const std::vector<IntegerVariableID> & vars, const Get_ & get_from_expected) -> void
     {
-        for (const auto & [idx, var] : enumerate(vars)) {
+        for (const auto & [the_idx, the_var] : enumerate(vars)) {
+            const auto & idx = the_idx;
+            const auto & var = the_var;
             s.for_each_value(var, [&](Integer val) {
                 bool found_support = false;
                 for (auto & x : expected)
