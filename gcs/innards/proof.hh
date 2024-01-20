@@ -303,7 +303,12 @@ namespace gcs::innards
         /**
          * Emit the specified text as a proof line.
          */
-        auto emit_proof_line(const std::string &, ProofLevel level) -> ProofLine;
+        auto emit_proof_line(const std::string &, ProofLevel level
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+            ,
+            const std::source_location & w = std::source_location::current()
+#endif
+                ) -> ProofLine;
 
         /**
          * Emit the specified text as a comment.
@@ -314,37 +319,67 @@ namespace gcs::innards
          * Emit a RUP proof step for the specified expression, not subject to
          * the current trail.
          */
-        auto emit_rup_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level) -> ProofLine;
+        auto emit_rup_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+            ,
+            const std::source_location & w = std::source_location::current()
+#endif
+                ) -> ProofLine;
 
         /**
          * Emit an assert proof step for the specified expression, not subject to
          * the current trail.
          */
-        auto emit_assert_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level) -> ProofLine;
+        auto emit_assert_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+            ,
+            const std::source_location & w = std::source_location::current()
+#endif
+                ) -> ProofLine;
 
         /**
          * Emit a RUP proof step for the specified expression, subject to the
          * current trail.
          */
-        auto emit_rup_proof_line_under_trail(const State &, const SumLessEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level) -> ProofLine;
+        auto emit_rup_proof_line_under_trail(const State &, const SumLessEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+            ,
+            const std::source_location & w = std::source_location::current()
+#endif
+                ) -> ProofLine;
 
         /**
          * Emit an assert proof step for the specified expression, subject to
          * the current trail.
          */
-        auto emit_assert_proof_line_under_trail(const State &, const SumLessEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level) -> ProofLine;
+        auto emit_assert_proof_line_under_trail(const State &, const SumLessEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+            ,
+            const std::source_location & w = std::source_location::current()
+#endif
+                ) -> ProofLine;
 
         /**
          * Emit a RED proof step for the specified expression.
          */
         auto emit_red_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> &,
-            const std::vector<std::pair<ProofLiteralOrFlag, ProofLiteralOrFlag>> & witness, ProofLevel level) -> ProofLine;
+            const std::vector<std::pair<ProofLiteralOrFlag, ProofLiteralOrFlag>> & witness, ProofLevel level
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+            ,
+            const std::source_location & w = std::source_location::current()
+#endif
+                ) -> ProofLine;
 
         /**
          * Emit a pair of RED proofs step for the specified expression, reified on the specified flag.
          */
         auto emit_red_proof_lines_reifying(const SumLessEqual<Weighted<PseudoBooleanTerm>> &,
-            ProofFlag, ProofLevel level) -> std::pair<ProofLine, ProofLine>;
+            ProofFlag, ProofLevel level
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+            ,
+            const std::source_location & w = std::source_location::current()
+#endif
+                ) -> std::pair<ProofLine, ProofLine>;
 
         /**
          * Create a ProofFlag, and emit a RED proof step reifying it for the specified expression.

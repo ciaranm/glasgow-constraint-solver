@@ -984,8 +984,16 @@ auto Proof::infer(const State & state, const Literal & lit, const Justification 
         .visit(why);
 }
 
-auto Proof::emit_proof_line(const string & s, ProofLevel level) -> ProofLine
+auto Proof::emit_proof_line(const string & s, ProofLevel level
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+    ,
+    const std::source_location & where
+#endif
+    ) -> ProofLine
 {
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+    _imp->proof << "* emit proof line from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
+#endif
     _imp->proof << s << '\n';
     auto result = record_proof_line(++_imp->proof_line, level);
     return result;
@@ -1113,9 +1121,18 @@ auto Proof::emit_inequality_to(const SumLessEqual<Weighted<PseudoBooleanTerm>> &
     stream << ">= " << rhs << " ;";
 }
 
-auto Proof::emit_rup_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level) -> ProofLine
+auto Proof::emit_rup_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+    ,
+    const std::source_location & where
+#endif
+    ) -> ProofLine
 {
     need_all_proof_names_in(ineq.lhs);
+
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+    _imp->proof << "* emit rup proof line from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
+#endif
 
     _imp->proof << "u ";
     emit_inequality_to(ineq, nullopt, _imp->proof);
@@ -1123,9 +1140,18 @@ auto Proof::emit_rup_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> 
     return record_proof_line(++_imp->proof_line, level);
 }
 
-auto Proof::emit_assert_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level) -> ProofLine
+auto Proof::emit_assert_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+    ,
+    const std::source_location & where
+#endif
+    ) -> ProofLine
 {
     need_all_proof_names_in(ineq.lhs);
+
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+    _imp->proof << "* emit assert line from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
+#endif
     _imp->proof << "a ";
     emit_inequality_to(ineq, nullopt, _imp->proof);
     _imp->proof << '\n';
@@ -1133,28 +1159,56 @@ auto Proof::emit_assert_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm
 }
 
 auto Proof::emit_rup_proof_line_under_trail(const State & state, const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
-    ProofLevel level) -> ProofLine
+    ProofLevel level
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+    ,
+    const std::source_location & where
+#endif
+    ) -> ProofLine
 {
     auto terms = trail_variables_as_sum(state, ineq.rhs);
     for (auto & t : ineq.lhs.terms)
         terms += t;
-    return emit_rup_proof_line(terms <= ineq.rhs, level);
+    return emit_rup_proof_line(terms <= ineq.rhs, level
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+        ,
+        where
+#endif
+    );
 }
 
-auto Proof::emit_assert_proof_line_under_trail(const State & state, const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level) -> ProofLine
+auto Proof::emit_assert_proof_line_under_trail(const State & state, const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+    ,
+    const std::source_location & where
+#endif
+    ) -> ProofLine
 {
     auto terms = trail_variables_as_sum(state, ineq.rhs);
     for (auto & t : ineq.lhs.terms)
         terms += t;
-    return emit_assert_proof_line(terms <= ineq.rhs, level);
+    return emit_assert_proof_line(terms <= ineq.rhs, level
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+        ,
+        where
+#endif
+    );
 }
 
 auto Proof::emit_red_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
     const std::vector<std::pair<ProofLiteralOrFlag, ProofLiteralOrFlag>> & witness,
-    ProofLevel level) -> ProofLine
+    ProofLevel level
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+    ,
+    const std::source_location & where
+#endif
+    ) -> ProofLine
 {
     need_all_proof_names_in(ineq.lhs);
 
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+    _imp->proof << "* emit red line from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
+#endif
     _imp->proof << "red ";
     emit_inequality_to(ineq, nullopt, _imp->proof);
 
@@ -1179,9 +1233,18 @@ auto Proof::emit_red_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> 
 }
 
 auto Proof::emit_red_proof_lines_reifying(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofFlag reif,
-    ProofLevel level) -> pair<ProofLine, ProofLine>
+    ProofLevel level
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+    ,
+    const std::source_location & where
+#endif
+    ) -> pair<ProofLine, ProofLine>
 {
     need_all_proof_names_in(ineq.lhs);
+
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+    _imp->proof << "* emit red lines reifying from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
+#endif
 
     _imp->proof << "red ";
     emit_inequality_to(ineq, {{reif}}, _imp->proof);
