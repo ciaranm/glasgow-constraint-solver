@@ -149,18 +149,25 @@ namespace gcs::test_innards
     }
 
     template <typename ResultsSet_>
-    auto gac_not_achieved(const ResultsSet_ & expected, const IntegerVariableID & var, Integer val) -> void
+    auto gac_not_achieved(const ResultsSet_ & expected, const CurrentState & s,
+        const std::vector<IntegerVariableID> & all_vars, const IntegerVariableID & var, Integer val) -> void
     {
         using fmt::println;
         using std::cerr;
         println(cerr, "gac not achieved in test");
         println(cerr, "expected: {}", expected);
         println(cerr, "var {} value {} does not occur anywhere in expected", innards::debug_string(var), val);
+        for (const auto & v : all_vars) {
+            std::vector<Integer> values;
+            s.for_each_value(v, [&](Integer val) { values.push_back(val); });
+            println(cerr, "var {} has values {}", innards::debug_string(v), values);
+        }
         throw UnexpectedException{"gac not achieved"};
     }
 
     template <typename ResultsSet_, typename Get_>
-    auto check_gac_supports(const ResultsSet_ & expected, const CurrentState & s, const IntegerVariableID & var, const Get_ & get_from_expected) -> void
+    auto check_gac_supports(const ResultsSet_ & expected, const CurrentState & s,
+        const std::vector<IntegerVariableID> & all_vars, const IntegerVariableID & var, const Get_ & get_from_expected) -> void
     {
         s.for_each_value(var, [&](Integer val) {
             bool found_support = false;
@@ -170,12 +177,13 @@ namespace gcs::test_innards
                     break;
                 }
             if (! found_support)
-                gac_not_achieved(expected, var, val);
+                gac_not_achieved(expected, s, all_vars, var, val);
         });
     }
 
     template <typename ResultsSet_, typename Get_>
-    auto check_gac_supports(const ResultsSet_ & expected, const CurrentState & s, const std::vector<IntegerVariableID> & vars, const Get_ & get_from_expected) -> void
+    auto check_gac_supports(const ResultsSet_ & expected, const CurrentState & s,
+        const std::vector<IntegerVariableID> & all_vars, const std::vector<IntegerVariableID> & vars, const Get_ & get_from_expected) -> void
     {
         for (const auto & [the_idx, the_var] : enumerate(vars)) {
             const auto & idx = the_idx;
@@ -188,30 +196,51 @@ namespace gcs::test_innards
                         break;
                     }
                 if (! found_support)
-                    gac_not_achieved(expected, var, val);
+                    gac_not_achieved(expected, s, all_vars, var, val);
             });
         }
     }
 
-    template <typename ResultsSet_, typename... Args_>
-    auto solve_for_tests_checking_gac(Problem & p, const std::optional<std::string> & proof_name, const ResultsSet_ & expected,
-        ResultsSet_ & actual, const std::tuple<Args_...> & vars) -> void
+    inline auto add_to_all_vars(std::vector<IntegerVariableID> & all_vars, IntegerVariableID v) -> void
     {
+        all_vars.push_back(v);
+    }
+
+    inline auto add_to_all_vars(std::vector<IntegerVariableID> & all_vars, const std::vector<IntegerVariableID> & v) -> void
+    {
+        all_vars.insert(all_vars.end(), v.begin(), v.end());
+    }
+
+    template <typename ResultsSet_, typename... AllArgs_, typename... GACArgs_>
+    auto solve_for_tests_checking_gac_on(Problem & p, const std::optional<std::string> & proof_name, const ResultsSet_ & expected,
+        ResultsSet_ & actual, const std::tuple<AllArgs_...> & all_vars, const std::tuple<GACArgs_...> & gac_vars) -> void
+    {
+        std::vector<IntegerVariableID> all_vars_as_vector;
+        [&]<std::size_t... i_>(std::index_sequence<i_...>) {
+            (add_to_all_vars(all_vars_as_vector, get<i_>(all_vars)), ...);
+        }(std::index_sequence_for<AllArgs_...>());
         solve_for_tests_with_callbacks(
             p, proof_name,
             [&](const CurrentState & s) -> bool {
                 std::apply([&](const auto &... args) {
                     actual.emplace(extract_from_state(s, args)...);
                 },
-                    vars);
+                    all_vars);
                 return true;
             },
             [&](const CurrentState & s) -> bool {
                 [&]<std::size_t... i_>(std::index_sequence<i_...>) {
-                    (check_gac_supports(expected, s, get<i_>(vars), [&](const auto & x) { return get<i_>(x); }), ...);
-                }(std::index_sequence_for<Args_...>());
+                    (check_gac_supports(expected, s, all_vars_as_vector, get<i_>(gac_vars), [&](const auto & x) { return get<i_>(x); }), ...);
+                }(std::index_sequence_for<GACArgs_...>());
                 return true;
             });
+    }
+
+    template <typename ResultsSet_, typename... AllArgs_>
+    auto solve_for_tests_checking_gac(Problem & p, const std::optional<std::string> & proof_name, const ResultsSet_ & expected,
+        ResultsSet_ & actual, const std::tuple<AllArgs_...> & all_vars) -> void
+    {
+        solve_for_tests_checking_gac_on(p, proof_name, expected, actual, all_vars, all_vars);
     }
 
     struct RandomBounds
