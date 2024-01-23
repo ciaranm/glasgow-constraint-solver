@@ -1,6 +1,7 @@
 #include <gcs/exception.hh>
 
 #include <gcs/innards/extensional_utils.hh>
+#include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/linear_utils.hh>
 #include <gcs/innards/proof.hh>
 #include <gcs/innards/propagators.hh>
@@ -160,6 +161,21 @@ auto Propagators::install(PropagationFunction && f, const Triggers & triggers, c
         trigger_on_instantiated(v, id);
         increase_degree(v);
     }
+}
+
+auto Propagators::install_tracking(TrackingPropagationFunction && f, const Triggers & triggers, const string & n) -> void
+{
+    install([f = move(f)](State & state) -> pair<Inference, PropagatorState> {
+        try {
+            InferenceTracker tracker{state};
+            auto result = f(state, tracker);
+            return pair{tracker.inference_so_far(), result};
+        }
+        catch (const TrackedPropagationFailed &) {
+            return pair{Inference::Contradiction, PropagatorState::Enable};
+        }
+    },
+        triggers, n);
 }
 
 auto Propagators::install_initialiser(InitialisationFunction && f) -> void

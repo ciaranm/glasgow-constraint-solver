@@ -3,6 +3,7 @@
 
 #include <gcs/expression.hh>
 #include <gcs/extensional.hh>
+#include <gcs/innards/inference_tracker-fwd.hh>
 #include <gcs/innards/linear_utils.hh>
 #include <gcs/innards/literal.hh>
 #include <gcs/innards/proof.hh>
@@ -18,6 +19,8 @@
 namespace gcs::innards
 {
     using PropagationFunction = std::function<auto(State &)->std::pair<Inference, PropagatorState>>;
+
+    using TrackingPropagationFunction = std::function<auto(State &, InferenceTracker &)->PropagatorState>;
 
     using InitialisationFunction = std::function<auto(State &)->void>;
 
@@ -138,6 +141,12 @@ namespace gcs::innards
          * called even if its trigger condition is not met.
          */
         auto install(PropagationFunction &&, const Triggers & trigger_vars, const std::string & name) -> void;
+
+        /**
+         * Install the specified propagation function, which makes use of
+         * InferenceTracker to handle tracking inference levels.
+         */
+        auto install_tracking(TrackingPropagationFunction &&, const Triggers & trigger_vars, const std::string & name) -> void;
 
         /**
          * Install an initialiser, which will be called once just before search
