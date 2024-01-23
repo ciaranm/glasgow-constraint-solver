@@ -1,6 +1,7 @@
 #include <gcs/innards/propagators.hh>
 #include <gcs/search_heuristics.hh>
 
+#include <algorithm>
 #include <tuple>
 
 using std::optional;
@@ -68,6 +69,18 @@ auto gcs::guess_smallest_value_first() -> GuessCallback
         state.for_each_value(var, [&](Integer val) {
             result.push_back(var == val);
         });
+        return result;
+    };
+}
+
+auto gcs::guess_largest_value_first() -> GuessCallback
+{
+    return [](const CurrentState & state, IntegerVariableID var) -> vector<IntegerVariableCondition> {
+        vector<IntegerVariableCondition> result;
+        state.for_each_value(var, [&](Integer val) {
+            result.push_back(var == val);
+        });
+        reverse(result.begin(), result.end());
         return result;
     };
 }

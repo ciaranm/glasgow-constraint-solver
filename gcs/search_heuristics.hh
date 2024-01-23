@@ -68,6 +68,13 @@ namespace gcs
      * \ingroup SearchHeuristics
      */
     auto guess_smallest_value_first() -> GuessCallback;
+
+    /**
+     * Guess values from smallest to largest.
+     *
+     * \ingroup SearchHeuristics
+     */
+    auto guess_largest_value_first() -> GuessCallback;
 }
 
 #endif

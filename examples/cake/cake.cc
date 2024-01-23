@@ -85,7 +85,7 @@ auto main(int argc, char * argv[]) -> int
                 return true;
             },
             .branch = branch_on_dom_then_deg(vector<IntegerVariableID>{banana, chocolate}),
-            .guess = guess_smallest_value_first() //
+            .guess = guess_largest_value_first() //
         },
         options_vars.contains("prove") ? make_optional<ProofOptions>(
                                              "cake.opb", "cake.veripb", true, options_vars.count("full-proof-encoding"))
