@@ -904,13 +904,15 @@ auto Proof::conclude_satisfiable() -> void
     end_proof();
 }
 
-auto Proof::conclude_optimality(Integer value) -> void
+auto Proof::conclude_optimality(const State & state, Integer value) -> void
 {
-    conclude_bounds(value, value);
+    conclude_bounds(state, value, value);
 }
 
-auto Proof::conclude_bounds(Integer lower, Integer upper) -> void
+auto Proof::conclude_bounds(const State & state, Integer lower, Integer upper) -> void
 {
+    if (state.optional_minimise_variable())
+        emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * *state.optional_minimise_variable() >= lower, ProofLevel::Top);
     _imp->proof << "output NONE\n";
     _imp->proof << "conclusion BOUNDS " << lower << " " << upper << '\n';
     end_proof();
