@@ -143,7 +143,7 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
             if (optional_proof) {
                 if (state.optional_minimise_variable()) {
                     if (objective_value)
-                        optional_proof->conclude_optimality(*objective_value);
+                        optional_proof->conclude_optimality(state, *objective_value);
                     else
                         optional_proof->conclude_unsatisfiable(true);
                 }
@@ -159,7 +159,7 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
             if (optional_proof) {
                 if (state.optional_minimise_variable()) {
                     if (objective_value)
-                        optional_proof->conclude_bounds(objective_lower_bound_for_proof, *objective_value);
+                        optional_proof->conclude_bounds(state, objective_lower_bound_for_proof, *objective_value);
                     else
                         optional_proof->conclude_none();
                 }

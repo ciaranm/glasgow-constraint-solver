@@ -257,12 +257,12 @@ namespace gcs::innards
         /**
          * Log that we have reached an optimality conclusion at the end of the proof.
          */
-        auto conclude_optimality(Integer obj) -> void;
+        auto conclude_optimality(const State & state, Integer obj) -> void;
 
         /**
          * Log that we have found some bounds but not proved optimality at the end of the proof.
          */
-        auto conclude_bounds(Integer lower, Integer upper) -> void;
+        auto conclude_bounds(const State & state, Integer lower, Integer upper) -> void;
 
         /**
          * Log that we have not reached a conclusion at the end of the proof.
