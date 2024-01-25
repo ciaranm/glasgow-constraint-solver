@@ -311,11 +311,17 @@ namespace gcs::test_innards
         return RandomBounds{lower_min, lower_max, add_min, add_max};
     }
 
-    template <typename Random_, typename Raw_>
-    auto generate_random_data_item(Random_ &, Raw_ value);
+    template <typename Random_, typename Item_>
+    auto generate_random_data_item(Random_ & rand, std::vector<Item_> vec);
+
+    template <typename Random_>
+    auto generate_random_data_item(Random_ &, int value) -> int
+    {
+        return value;
+    }
 
     template <typename Random_, typename Int_>
-    auto generate_random_data_item(Random_ & rand, std::uniform_int_distribution<Int_> & dist)
+    auto generate_random_data_item(Random_ & rand, std::uniform_int_distribution<Int_> dist)
     {
         return dist(rand);
     }
@@ -329,16 +335,10 @@ namespace gcs::test_innards
         return std::pair{lower, upper};
     }
 
-    template <typename Random_, typename Item_>
-    auto generate_random_data_item(Random_ & rand, std::pair<Item_, Item_> values)
+    template <typename Random_, typename Item1_, typename Item2_>
+    auto generate_random_data_item(Random_ & rand, std::pair<Item1_, Item2_> values)
     {
         return std::pair{generate_random_data_item(rand, values.first), generate_random_data_item(rand, values.second)};
-    }
-
-    template <typename Random_, typename Raw_>
-    auto generate_random_data_item(Random_ &, Raw_ value)
-    {
-        return value;
     }
 
     template <typename Random_, typename Item_>
