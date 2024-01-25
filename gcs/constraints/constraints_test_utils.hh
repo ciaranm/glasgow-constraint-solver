@@ -148,13 +148,20 @@ namespace gcs::test_innards
             });
     }
 
+    enum class CheckConsistency
+    {
+        None,
+        BC,
+        GAC
+    };
+
     template <typename ResultsSet_>
-    auto gac_not_achieved(const ResultsSet_ & expected, const CurrentState & s,
+    auto consistency_not_achieved(const std::string & which, const ResultsSet_ & expected, const CurrentState & s,
         const std::vector<IntegerVariableID> & all_vars, const IntegerVariableID & var, Integer val) -> void
     {
         using fmt::println;
         using std::cerr;
-        println(cerr, "gac not achieved in test");
+        println(cerr, "{} not achieved in test", which);
         println(cerr, "expected: {}", expected);
         println(cerr, "var {} value {} does not occur anywhere in expected", innards::debug_string(var), val);
         for (const auto & v : all_vars) {
@@ -162,43 +169,91 @@ namespace gcs::test_innards
             s.for_each_value(v, [&](Integer val) { values.push_back(val); });
             println(cerr, "var {} has values {}", innards::debug_string(v), values);
         }
-        throw UnexpectedException{"gac not achieved"};
+        throw UnexpectedException{"consistency not achieved"};
     }
 
     template <typename ResultsSet_, typename Get_>
-    auto check_gac_supports(const ResultsSet_ & expected, const CurrentState & s,
-        const std::vector<IntegerVariableID> & all_vars, const IntegerVariableID & var, const Get_ & get_from_expected) -> void
+    auto check_support(const ResultsSet_ & expected, const CurrentState & s,
+        const std::vector<IntegerVariableID> & all_vars, const IntegerVariableID & var, CheckConsistency consistency, const Get_ & get_from_expected) -> void
     {
-        s.for_each_value(var, [&](Integer val) {
-            bool found_support = false;
-            for (auto & x : expected)
-                if (get_from_expected(x) == val.raw_value) {
-                    found_support = true;
-                    break;
-                }
-            if (! found_support)
-                gac_not_achieved(expected, s, all_vars, var, val);
-        });
-    }
+        switch (consistency) {
+        case CheckConsistency::None:
+            return;
 
-    template <typename ResultsSet_, typename Get_>
-    auto check_gac_supports(const ResultsSet_ & expected, const CurrentState & s,
-        const std::vector<IntegerVariableID> & all_vars, const std::vector<IntegerVariableID> & vars, const Get_ & get_from_expected) -> void
-    {
-        for (const auto & [the_idx, the_var] : enumerate(vars)) {
-            const auto & idx = the_idx;
-            const auto & var = the_var;
+        case CheckConsistency::GAC:
             s.for_each_value(var, [&](Integer val) {
                 bool found_support = false;
                 for (auto & x : expected)
-                    if (get_from_expected(x).at(idx) == val.raw_value) {
+                    if (get_from_expected(x) == val.raw_value) {
                         found_support = true;
                         break;
                     }
                 if (! found_support)
-                    gac_not_achieved(expected, s, all_vars, var, val);
+                    consistency_not_achieved("gac", expected, s, all_vars, var, val);
             });
+            return;
+
+        case CheckConsistency::BC:
+            for (const auto & val : std::vector{s.lower_bound(var), s.upper_bound(var)}) {
+                bool found_support = false;
+                for (auto & x : expected)
+                    if (get_from_expected(x) == val.raw_value) {
+                        found_support = true;
+                        break;
+                    }
+                if (! found_support)
+                    consistency_not_achieved("bc", expected, s, all_vars, var, val);
+            }
+            return;
         }
+
+        throw NonExhaustiveSwitch{};
+    }
+
+    template <typename ResultsSet_, typename Get_>
+    auto check_support(const ResultsSet_ & expected, const CurrentState & s,
+        const std::vector<IntegerVariableID> & all_vars, const std::vector<IntegerVariableID> & vars, CheckConsistency consistency, const Get_ & get_from_expected) -> void
+    {
+        switch (consistency) {
+        case CheckConsistency::None:
+            return;
+
+        case CheckConsistency::BC:
+            for (const auto & [the_idx, the_var] : enumerate(vars)) {
+                const auto & idx = the_idx;
+                const auto & var = the_var;
+                for (const auto & val : std::vector{s.lower_bound(var), s.upper_bound(var)}) {
+                    bool found_support = false;
+                    for (auto & x : expected)
+                        if (get_from_expected(x).at(idx) == val.raw_value) {
+                            found_support = true;
+                            break;
+                        }
+                    if (! found_support)
+                        consistency_not_achieved("gac", expected, s, all_vars, var, val);
+                }
+            }
+            return;
+
+        case CheckConsistency::GAC:
+            for (const auto & [the_idx, the_var] : enumerate(vars)) {
+                const auto & idx = the_idx;
+                const auto & var = the_var;
+                s.for_each_value(var, [&](Integer val) {
+                    bool found_support = false;
+                    for (auto & x : expected)
+                        if (get_from_expected(x).at(idx) == val.raw_value) {
+                            found_support = true;
+                            break;
+                        }
+                    if (! found_support)
+                        consistency_not_achieved("gac", expected, s, all_vars, var, val);
+                });
+            }
+            return;
+        }
+
+        throw NonExhaustiveSwitch{};
     }
 
     inline auto add_to_all_vars(std::vector<IntegerVariableID> & all_vars, IntegerVariableID v) -> void
@@ -211,27 +266,27 @@ namespace gcs::test_innards
         all_vars.insert(all_vars.end(), v.begin(), v.end());
     }
 
-    template <typename ResultsSet_, typename... AllArgs_, typename... GACArgs_>
-    auto solve_for_tests_checking_gac_on(Problem & p, const std::optional<std::string> & proof_name, const ResultsSet_ & expected,
-        ResultsSet_ & actual, const std::tuple<AllArgs_...> & all_vars, const std::tuple<GACArgs_...> & gac_vars) -> void
+    template <typename ResultsSet_, typename... AllArgs_>
+    auto solve_for_tests_checking_consistency(Problem & p, const std::optional<std::string> & proof_name, const ResultsSet_ & expected,
+        ResultsSet_ & actual, const std::tuple<std::pair<AllArgs_, CheckConsistency>...> & all_vars) -> void
     {
         std::vector<IntegerVariableID> all_vars_as_vector;
         [&]<std::size_t... i_>(std::index_sequence<i_...>) {
-            (add_to_all_vars(all_vars_as_vector, get<i_>(all_vars)), ...);
+            (add_to_all_vars(all_vars_as_vector, get<i_>(all_vars).first), ...);
         }(std::index_sequence_for<AllArgs_...>());
         solve_for_tests_with_callbacks(
             p, proof_name,
             [&](const CurrentState & s) -> bool {
                 std::apply([&](const auto &... args) {
-                    actual.emplace(extract_from_state(s, args)...);
+                    actual.emplace(extract_from_state(s, args.first)...);
                 },
                     all_vars);
                 return true;
             },
             [&](const CurrentState & s) -> bool {
                 [&]<std::size_t... i_>(std::index_sequence<i_...>) {
-                    (check_gac_supports(expected, s, all_vars_as_vector, get<i_>(gac_vars), [&](const auto & x) { return get<i_>(x); }), ...);
-                }(std::index_sequence_for<GACArgs_...>());
+                    (check_support(expected, s, all_vars_as_vector, get<i_>(all_vars).first, get<i_>(all_vars).second, [&](const auto & x) { return get<i_>(x); }), ...);
+                }(std::index_sequence_for<AllArgs_...>());
                 return true;
             });
     }
@@ -240,7 +295,10 @@ namespace gcs::test_innards
     auto solve_for_tests_checking_gac(Problem & p, const std::optional<std::string> & proof_name, const ResultsSet_ & expected,
         ResultsSet_ & actual, const std::tuple<AllArgs_...> & all_vars) -> void
     {
-        solve_for_tests_checking_gac_on(p, proof_name, expected, actual, all_vars, all_vars);
+        auto all_vars_are_gac = [&]<std::size_t... i_>(std::index_sequence<i_...>) {
+            return std::make_tuple(std::make_pair(get<i_>(all_vars), CheckConsistency::GAC)...);
+        }(std::index_sequence_for<AllArgs_...>());
+        solve_for_tests_checking_consistency(p, proof_name, expected, actual, all_vars_are_gac);
     }
 
     struct RandomBounds

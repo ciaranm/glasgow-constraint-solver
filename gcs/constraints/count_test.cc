@@ -62,7 +62,7 @@ auto run_count_test(bool proofs, pair<int, int> result_range, pair<int, int> voi
     p.post(Count{array, voi, result});
 
     auto proof_name = proofs ? make_optional("count_test") : nullopt;
-    solve_for_tests_checking_gac_on(p, proof_name, expected, actual, tuple{voi, result, array}, tuple{voi, result});
+    solve_for_tests_checking_consistency(p, proof_name, expected, actual, tuple{pair{voi, CheckConsistency::GAC}, pair{result, CheckConsistency::GAC}, pair{array, CheckConsistency::None}});
 
     check_results(proof_name, expected, actual);
 }
