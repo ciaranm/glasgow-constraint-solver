@@ -12,11 +12,13 @@
 #include <random>
 #include <set>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
 using std::cerr;
 using std::flush;
+using std::is_same_v;
 using std::make_optional;
 using std::mt19937;
 using std::nullopt;
@@ -69,7 +71,7 @@ auto run_linear_test(bool proofs, const string & mode, pair<int, int> v1_range, 
 
     auto proof_name = proofs ? make_optional("linear_equality_test") : nullopt;
 
-    if (1 == ineqs.size())
+    if ((! is_same_v<Constraint_, LinearEquality>) && 1 == ineqs.size())
         solve_for_tests_checking_consistency(p, proof_name, expected, actual, tuple{pair{v1, CheckConsistency::BC}, pair{v2, CheckConsistency::BC}, pair{v3, CheckConsistency::BC}});
     else
         solve_for_tests(p, proof_name, actual, tuple{v1, v2, v3});
