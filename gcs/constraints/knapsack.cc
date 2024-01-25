@@ -532,12 +532,12 @@ namespace
 
         if (undetermined_vars.empty()) {
             for (const auto & [x, t] : enumerate(totals)) {
-                inference.infer(totals.at(x) == committed_sums.at(x), NoJustificationNeeded{});
+                inference.infer(totals.at(x) == committed_sums.at(x), JustifyUsingRUP{});
             }
         }
 
         for (const auto & [x, v] : enumerate(totals))
-            inference.infer(v >= committed_sums.at(x), NoJustificationNeeded{});
+            inference.infer(v >= committed_sums.at(x), JustifyUsingRUP{});
 
         vector<pair<Integer, Integer>> boundses;
         for (auto & t : totals)
