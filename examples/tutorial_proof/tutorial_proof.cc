@@ -11,17 +11,20 @@
 
 #include <boost/program_options.hpp>
 
+#include <fmt/core.h>
+#include <fmt/ostream.h>
+
 using namespace gcs;
 
 using std::cerr;
 using std::cout;
-using std::endl;
 using std::make_optional;
 using std::nullopt;
 using std::string;
 using std::vector;
 
-using namespace std::literals::string_literals;
+using fmt::print;
+using fmt::println;
 
 namespace po = boost::program_options;
 
@@ -47,15 +50,15 @@ auto main(int argc, char * argv[]) -> int
         po::notify(options_vars);
     }
     catch (const po::error & e) {
-        cerr << "Error: " << e.what() << endl;
-        cerr << "Try " << argv[0] << " --help" << endl;
+        println(cerr, "Error: {}", e.what());
+        println(cerr, "Try {} --help", argv[0]);
         return EXIT_FAILURE;
     }
 
     if (options_vars.contains("help")) {
-        cout << "Usage: " << argv[0] << " [options]" << endl;
-        cout << endl;
-        cout << display_options << endl;
+        println("Usage: {} [options]", argv[0]);
+        println("");
+        display_options.print(cout);
         return EXIT_SUCCESS;
     }
 
@@ -75,8 +78,7 @@ auto main(int argc, char * argv[]) -> int
     auto stats = solve_with(p,
         SolveCallbacks{
             .solution = [&](const CurrentState & s) -> bool {
-                cout << "a = " << s(va) << " b = " << s(vb) << " c = " << s(vc)
-                     << " d = " << s(vd) << " obj = " << s(obj) << endl;
+                println("a = {} b = {} c = {} d = {} obj = {}", s(va), s(vb), s(vc), s(vd), s(obj));
                 return true;
             },
         },
@@ -84,7 +86,7 @@ auto main(int argc, char * argv[]) -> int
                                              "tutorial_proof.opb", "tutorial_proof.veripb", true, options_vars.count("full-proof-encoding"))
                                        : nullopt);
 
-    cout << stats;
+    print("{}", stats);
 
     return EXIT_SUCCESS;
 }

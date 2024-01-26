@@ -7,11 +7,15 @@
 #include <iostream>
 #include <vector>
 
+#include <fmt/core.h>
+#include <fmt/ostream.h>
+
 using namespace gcs;
 
-using std::cout;
-using std::endl;
 using std::vector;
+
+using fmt::print;
+using fmt::println;
 
 auto main(int, char *[]) -> int
 {
@@ -38,17 +42,16 @@ auto main(int, char *[]) -> int
 
     auto stats = solve(
         p, [&](const CurrentState & state) -> bool {
-            cout << " " << state(s) << state(e) << state(n) << state(d) << endl;
-            cout << " " << state(m) << state(o) << state(r) << state(e) << endl;
-            cout << state(m) << state(o) << state(n)
-                 << state(e) << state(y) << endl;
-            cout << endl;
+            println(" {}{}{}{}", state(s), state(e), state(n), state(d));
+            println(" {}{}{}{}", state(m), state(o), state(r), state(e));
+            println("{}{}{}{}{}", state(m), state(o), state(n), state(e), state(y));
+            println("");
 
             return true;
         },
         ProofOptions{"money.opb", "money.veripb"});
 
-    cout << stats;
+    print("{}", stats);
 
     return EXIT_SUCCESS;
 }

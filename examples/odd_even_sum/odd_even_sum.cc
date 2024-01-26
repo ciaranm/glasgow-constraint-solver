@@ -9,16 +9,19 @@
 
 #include <boost/program_options.hpp>
 
+#include <fmt/core.h>
+#include <fmt/ostream.h>
+
 using namespace gcs;
 
 using std::cerr;
 using std::cout;
-using std::endl;
 using std::make_optional;
 using std::nullopt;
 using std::string;
 
-using namespace std::literals::string_literals;
+using fmt::print;
+using fmt::println;
 
 namespace po = boost::program_options;
 
@@ -43,15 +46,15 @@ auto main(int argc, char * argv[]) -> int
         po::notify(options_vars);
     }
     catch (const po::error & e) {
-        cerr << "Error: " << e.what() << endl;
-        cerr << "Try " << argv[0] << " --help" << endl;
+        println(cerr, "Error: {}", e.what());
+        println(cerr, "Try {} --help", argv[0]);
         return EXIT_FAILURE;
     }
 
     if (options_vars.contains("help")) {
-        cout << "Usage: " << argv[0] << " [options]" << endl;
-        cout << endl;
-        cout << display_options << endl;
+        println("Usage: {} [options]", argv[0]);
+        println("");
+        display_options.print(cout);
         return EXIT_SUCCESS;
     }
 
@@ -68,12 +71,12 @@ auto main(int argc, char * argv[]) -> int
 
     auto stats = solve(
         p, [&](const CurrentState & s) -> bool {
-            cout << s(a) << " " << s(b) << " " << s(c) << " " << s(d) << " " << s(e) << endl;
+            println("{} {} {} {} {}", s(a), s(b), s(c), s(d), s(e));
             return true;
         },
         options_vars.count("prove") ? make_optional<ProofOptions>("odd_even_sum.opb", "odd_even_sum.veripb") : nullopt);
 
-    cout << stats;
+    print("{}", stats);
 
     return EXIT_SUCCESS;
 }
