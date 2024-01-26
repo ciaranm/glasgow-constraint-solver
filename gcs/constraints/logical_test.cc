@@ -82,7 +82,9 @@ auto main(int, char *[]) -> int
         generate_random_data(rand, data, vector(n_values, random_bounds(-2, 2, 1, 3)), random_bounds(-1, 1, 0, 3));
     }
 
-    for (auto & [r1, r2] : data) {
+    for (auto & [r1d, r2d] : data) {
+        auto r1 = r1d; // clang
+        auto r2 = r2d;
         run_logical_test<And>("and", false, r1, r2, [&](const vector<int> & v, int r) {
             bool result = true;
             for (auto & i : v)
@@ -104,7 +106,9 @@ auto main(int, char *[]) -> int
     }
 
     if (can_run_veripb())
-        for (auto & [r1, r2] : data) {
+        for (auto & [r1d, r2d] : data) {
+            auto r1 = r1d; // clang
+            auto r2 = r2d;
             run_logical_test<And>("and", true, r1, r2, [&](const vector<int> & v, int r) {
                 bool result = true;
                 for (auto & i : v)
