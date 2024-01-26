@@ -37,14 +37,14 @@ using namespace gcs;
 using namespace gcs::test_innards;
 
 template <typename Constraint_>
-auto run_equals_test(const string & which, bool proofs, pair<int, int> v1_range, pair<int, int> v2_range, const function<auto(int, int, int)->bool> & is_satisfing) -> void
+auto run_equals_test(const string & which, bool proofs, pair<int, int> v1_range, pair<int, int> v2_range, const function<auto(int, int, int)->bool> & is_satisfying) -> void
 {
     print(cerr, "equals {} {} {} {}", which, v1_range, v2_range, proofs ? " with proofs:" : ":");
     cerr << flush;
 
     pair<int, int> v3_range{0, 1};
     set<tuple<int, int, int>> expected, actual;
-    build_expected(expected, is_satisfing, v1_range, v2_range, v3_range);
+    build_expected(expected, is_satisfying, v1_range, v2_range, v3_range);
     println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;

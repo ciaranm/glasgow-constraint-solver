@@ -45,12 +45,12 @@ auto run_count_test(bool proofs, pair<int, int> result_range, pair<int, int> voi
     print(cerr, "count {} {} {} {}", result_range, voi_range, array_range, proofs ? " with proofs:" : ":");
     cerr << flush;
 
-    auto is_satisfing = [](int v, int n, const vector<int> & a) {
+    auto is_satisfying = [](int v, int n, const vector<int> & a) {
         return n == count(a.begin(), a.end(), v);
     };
 
     set<tuple<int, int, vector<int>>> expected, actual;
-    build_expected(expected, is_satisfing, voi_range, result_range, array_range);
+    build_expected(expected, is_satisfying, voi_range, result_range, array_range);
     println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;

@@ -45,7 +45,7 @@ auto run_linear_test(bool proofs, const string & mode, pair<int, int> v1_range, 
     print(cerr, "linear {} {} {} {} {} {}", mode, v1_range, v2_range, v3_range, ineqs, proofs ? " with proofs:" : ":");
     cerr << flush;
 
-    auto is_satisfing = [&](int a, int b, int c) {
+    auto is_satisfying = [&](int a, int b, int c) {
         for (auto & [linear, value] : ineqs)
             if (! compare(linear[0] * a + linear[1] * b + linear[2] * c, value))
                 return false;
@@ -53,7 +53,7 @@ auto run_linear_test(bool proofs, const string & mode, pair<int, int> v1_range, 
     };
 
     set<tuple<int, int, int>> expected, actual;
-    build_expected(expected, is_satisfing, v1_range, v2_range, v3_range);
+    build_expected(expected, is_satisfying, v1_range, v2_range, v3_range);
     println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;

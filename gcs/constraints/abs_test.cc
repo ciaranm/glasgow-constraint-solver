@@ -41,10 +41,10 @@ auto run_abs_test(bool proofs, pair<int, int> v1_range, pair<int, int> v2_range)
     print(cerr, "abs {} {} {}", v1_range, v2_range, proofs ? " with proofs:" : ":");
     cerr << flush;
 
-    auto is_satisfing = [](int a, int b) { return b == abs(a); };
+    auto is_satisfying = [](int a, int b) { return b == abs(a); };
 
     set<pair<int, int>> expected, actual;
-    build_expected(expected, is_satisfing, v1_range, v2_range);
+    build_expected(expected, is_satisfying, v1_range, v2_range);
     println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;

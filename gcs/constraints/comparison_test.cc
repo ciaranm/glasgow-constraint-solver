@@ -97,13 +97,13 @@ namespace
 }
 
 template <typename Constraint_>
-auto run_binary_comparison_test(bool proofs, pair<int, int> v1_range, pair<int, int> v2_range, const function<auto(int, int)->bool> & is_satisfing) -> void
+auto run_binary_comparison_test(bool proofs, pair<int, int> v1_range, pair<int, int> v2_range, const function<auto(int, int)->bool> & is_satisfying) -> void
 {
     print(cerr, "comparison {} {} {} {}", NameOf<Constraint_>::name, v1_range, v2_range, proofs ? " with proofs:" : ":");
     cerr << flush;
     set<pair<int, int>> expected, actual;
 
-    build_expected(expected, is_satisfing, v1_range, v2_range);
+    build_expected(expected, is_satisfying, v1_range, v2_range);
     println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;
@@ -118,7 +118,7 @@ auto run_binary_comparison_test(bool proofs, pair<int, int> v1_range, pair<int, 
 }
 
 template <typename Constraint_>
-auto run_reif_binary_comparison_test(bool proofs, pair<int, int> v1_range, pair<int, int> v2_range, const function<auto(int, int)->bool> & is_satisfing, bool full) -> void
+auto run_reif_binary_comparison_test(bool proofs, pair<int, int> v1_range, pair<int, int> v2_range, const function<auto(int, int)->bool> & is_satisfying, bool full) -> void
 {
     print(cerr, "{} comparison {} {} {} {}", full ? "full reif" : "reif", NameOf<Constraint_>::name, v1_range, v2_range, proofs ? " with proofs:" : ":");
     cerr << flush;
@@ -126,7 +126,7 @@ auto run_reif_binary_comparison_test(bool proofs, pair<int, int> v1_range, pair<
 
     build_expected(
         expected, [&](int a, int b, int r) -> bool {
-            return full ? (r == is_satisfing(a, b)) : ((! r) || is_satisfing(a, b));
+            return full ? (r == is_satisfying(a, b)) : ((! r) || is_satisfying(a, b));
         },
         v1_range, v2_range, pair{0, 1});
     println(cerr, " expecting {} solutions", expected.size());

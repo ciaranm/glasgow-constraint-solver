@@ -74,13 +74,13 @@ namespace
 }
 
 template <typename Arithmetic_>
-auto run_arithmetic_test(bool proofs, pair<int, int> v1_range, pair<int, int> v2_range, pair<int, int> v3_range, const function<auto(int, int, int)->bool> & is_satisfing) -> void
+auto run_arithmetic_test(bool proofs, pair<int, int> v1_range, pair<int, int> v2_range, pair<int, int> v3_range, const function<auto(int, int, int)->bool> & is_satisfying) -> void
 {
     print(cerr, "arithmetic {} {} {} {} {}", NameOf<Arithmetic_>::name, v1_range, v2_range, v3_range, proofs ? " with proofs:" : ":");
     cerr << flush;
     set<tuple<int, int, int>> expected, actual;
 
-    build_expected(expected, is_satisfing, v1_range, v2_range, v3_range);
+    build_expected(expected, is_satisfying, v1_range, v2_range, v3_range);
     println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;

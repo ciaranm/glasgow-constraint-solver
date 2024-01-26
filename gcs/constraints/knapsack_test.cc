@@ -48,7 +48,7 @@ auto run_knapsack_test(bool proofs, pair<int, int> valrange, const vector<vector
 
     set<tuple<vector<int>, vector<int>>> expected, actual;
 
-    auto is_satisfing = [&](const vector<int> & taken, const vector<int> & profits) {
+    auto is_satisfying = [&](const vector<int> & taken, const vector<int> & profits) {
         vector<int> sums(coeffs.size(), 0);
         for (const auto & [x, s] : enumerate(taken))
             for (unsigned i = 0; i < coeffs.size(); ++i)
@@ -60,7 +60,7 @@ auto run_knapsack_test(bool proofs, pair<int, int> valrange, const vector<vector
 
         return sums == profits;
     };
-    build_expected(expected, is_satisfing, vector{coeffs[0].size(), valrange}, bounds);
+    build_expected(expected, is_satisfying, vector{coeffs[0].size(), valrange}, bounds);
 
     println(cerr, " expecting {} solutions", expected.size());
 

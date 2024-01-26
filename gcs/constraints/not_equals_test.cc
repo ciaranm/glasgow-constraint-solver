@@ -76,13 +76,13 @@ auto check_results(pair<int, int> v1_range, pair<int, int> v2_range, const strin
 }
 
 auto check_gac_oneway(string direction, IntegerVariableID v1, IntegerVariableID v2, const CurrentState & s,
-    const function<auto(int, int)->bool> & is_satisfing) -> bool
+    const function<auto(int, int)->bool> & is_satisfying) -> bool
 {
     bool ok = true;
     s.for_each_value(v1, [&](Integer val1) {
         bool found_support = false;
         s.for_each_value(v2, [&](Integer val2) {
-            found_support = found_support || is_satisfing(val1.raw_value, val2.raw_value);
+            found_support = found_support || is_satisfying(val1.raw_value, val2.raw_value);
         });
         if (! found_support) {
             cerr << direction << " gac missing support: " << val1 << " from {";
@@ -97,12 +97,12 @@ auto check_gac_oneway(string direction, IntegerVariableID v1, IntegerVariableID 
 }
 
 template <typename Constraint_>
-auto run_binary_equals_test(pair<int, int> v1_range, pair<int, int> v2_range, const function<auto(int, int)->bool> & is_satisfing) -> bool
+auto run_binary_equals_test(pair<int, int> v1_range, pair<int, int> v2_range, const function<auto(int, int)->bool> & is_satisfying) -> bool
 {
     set<pair<int, int>> expected, actual;
     for (int v1 = v1_range.first; v1 <= v1_range.second; ++v1)
         for (int v2 = v2_range.first; v2 <= v2_range.second; ++v2)
-            if (is_satisfing(v1, v2))
+            if (is_satisfying(v1, v2))
                 expected.emplace(v1, v2);
 
     Problem p;
@@ -118,8 +118,8 @@ auto run_binary_equals_test(pair<int, int> v1_range, pair<int, int> v2_range, co
             },
             .trace = [&](const CurrentState & s) -> bool {
                 gac_violated = gac_violated ||
-                    ! check_gac_oneway(typeid(Constraint_).name() + " forward"s + " " + stringify_tuple(v1_range) + " " + stringify_tuple(v2_range), v1, v2, s, is_satisfing) ||
-                    ! check_gac_oneway(typeid(Constraint_).name() + " reverse"s + " " + stringify_tuple(v1_range) + " " + stringify_tuple(v2_range), v2, v1, s, [&](int a, int b) { return is_satisfing(b, a); });
+                    ! check_gac_oneway(typeid(Constraint_).name() + " forward"s + " " + stringify_tuple(v1_range) + " " + stringify_tuple(v2_range), v1, v2, s, is_satisfying) ||
+                    ! check_gac_oneway(typeid(Constraint_).name() + " reverse"s + " " + stringify_tuple(v1_range) + " " + stringify_tuple(v2_range), v2, v1, s, [&](int a, int b) { return is_satisfying(b, a); });
                 return true;
             }},
         ProofOptions{"equals_test.opb", "equals_test.veripb"});
