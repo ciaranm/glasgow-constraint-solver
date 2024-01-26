@@ -11,15 +11,20 @@
 
 #include <boost/program_options.hpp>
 
+#include <fmt/core.h>
+#include <fmt/ostream.h>
+
 using namespace gcs;
 
 using std::cerr;
 using std::cout;
-using std::endl;
 using std::ifstream;
 using std::make_optional;
 using std::nullopt;
 using std::vector;
+
+using fmt::print;
+using fmt::println;
 
 namespace po = boost::program_options;
 
@@ -52,15 +57,15 @@ auto main(int argc, char * argv[]) -> int
         po::notify(options_vars);
     }
     catch (const po::error & e) {
-        cerr << "Error: " << e.what() << endl;
-        cerr << "Try " << argv[0] << " --help" << endl;
+        println(cerr, "Error: {}", e.what());
+        println(cerr, "Try {} --help", argv[0]);
         return EXIT_FAILURE;
     }
 
     if (options_vars.contains("help")) {
-        cout << "Usage: " << argv[0] << " [options] [size]" << endl;
-        cout << endl;
-        cout << display_options << endl;
+        println("Usage: {} [options] [size]", argv[0]);
+        println("");
+        display_options.print(cout);
         return EXIT_SUCCESS;
     }
 
@@ -118,16 +123,16 @@ auto main(int argc, char * argv[]) -> int
         p, [&](const CurrentState & s) -> bool {
             for (int x = 0; x < size; ++x) {
                 for (int y = 0; y < size; ++y)
-                    cout << s(g1[x][y]) << "," << s(g2[x][y]) << " ";
-                cout << endl;
+                    print("{},{} ", s(g1[x][y]), s(g2[x][y]));
+                println("");
             }
-            cout << endl;
+            println("");
 
             return true;
         },
         options_vars.contains("prove") ? make_optional<ProofOptions>("ortho_latin.opb", "ortho_latin.veripb") : nullopt);
 
-    cout << stats;
+    print("{}", stats);
 
     return EXIT_SUCCESS;
 }

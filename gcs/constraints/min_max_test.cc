@@ -1,9 +1,8 @@
+#include <gcs/constraints/constraints_test_utils.hh>
 #include <gcs/constraints/min_max.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 #include <util/enumerate.hh>
-
-#include <util/stringify_tuple.hh>
 
 #include <cstdlib>
 #include <functional>
@@ -15,10 +14,16 @@
 #include <utility>
 #include <vector>
 
+#include <fmt/core.h>
+#include <fmt/ostream.h>
+#include <fmt/ranges.h>
+
 using std::cerr;
-using std::endl;
+using std::flush;
 using std::function;
+using std::make_optional;
 using std::mt19937;
+using std::nullopt;
 using std::pair;
 using std::random_device;
 using std::set;
@@ -28,154 +33,39 @@ using std::tuple;
 using std::uniform_int_distribution;
 using std::vector;
 
+using fmt::print;
+using fmt::println;
+
 using namespace gcs;
+using namespace gcs::test_innards;
 
-template <typename Results_>
-auto check_results(const Results_ & expected, const Results_ & actual) -> bool
+auto run_min_max_test(bool proofs, bool min, pair<int, int> result_range, const vector<pair<int, int>> & array_range) -> void
 {
-    if (expected != actual) {
-        cerr << " expected: " << expected.size() << endl;
-        for (auto & [v, a] : expected) {
-            cerr << "  " << v << " [";
-            for (auto & v : a)
-                cerr << " " << v;
-            cerr << " ]" << endl;
-        }
-        cerr << "; actual: " << actual.size() << endl;
-        for (auto & [v, a] : actual) {
-            cerr << "  " << v << " [";
-            for (auto & v : a)
-                cerr << " " << v;
-            cerr << " ]" << endl;
-        }
-        cerr << endl;
+    print(cerr, "{} {} {} {}", min ? "min" : "max", result_range, array_range, proofs ? " with proofs:" : ":");
+    cerr << flush;
 
-        return false;
-    }
-    cerr << endl;
+    auto is_satisfying = [&](int r, const vector<int> & a) {
+        return (! a.empty()) && (min ? (*min_element(a.begin(), a.end()) == r) : (*max_element(a.begin(), a.end()) == r));
+    };
 
-    if (0 != system("veripb min_max_test.opb min_max_test.veripb"))
-        return false;
-
-    return true;
-}
-
-auto grow(vector<int> & array, const vector<pair<int, int>> & array_range, const function<void()> & yield) -> void
-{
-    if (array.size() == array_range.size())
-        yield();
-    else {
-        for (int x = array_range[array.size()].first; x <= array_range[array.size()].second; ++x) {
-            array.push_back(x);
-            grow(array, array_range, yield);
-            array.pop_back();
-        }
-    }
-}
-
-auto run_min_max_test(pair<int, int> result_range, const vector<pair<int, int>> & array_range) -> bool
-{
-    cerr << "MinMaxArray " << stringify_tuple(result_range) << " "
-         << " [";
-    for (const auto & v : array_range)
-        cerr << " " << stringify_tuple(v);
-    cerr << " ]";
-
-    set<tuple<int, vector<int>>> expected, actual;
-    {
-        vector<int> array;
-        grow(array, array_range, [&]() {
-            auto min = *min_element(array.begin(), array.end());
-            if (min >= result_range.first && min <= result_range.second)
-                expected.emplace(min, array);
-        });
-    }
+    set<pair<int, vector<int>>> expected, actual;
+    build_expected(expected, is_satisfying, result_range, array_range);
+    println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;
     auto result = p.create_integer_variable(Integer(result_range.first), Integer(result_range.second), "result");
     vector<IntegerVariableID> array;
     for (const auto & [l, u] : array_range)
         array.push_back(p.create_integer_variable(Integer(l), Integer(u)));
+    if (min)
+        p.post(ArrayMin{array, result});
+    else
+        p.post(ArrayMax{array, result});
 
-    p.post(ArrayMin{array, result});
-    bool gac_violated = false;
-    solve_with(p,
-        SolveCallbacks{
-            .solution = [&](const CurrentState & s) -> bool {
-                vector<int> vals;
-                for (auto & a : array)
-                    vals.push_back(s(a).raw_value);
-                actual.emplace(s(result).raw_value, vals);
-                return true;
-            },
-            .trace = [&](const CurrentState & s) -> bool {
-                s.for_each_value(result, [&](Integer val) {
-                    bool violated = expected.end() == find_if(expected.begin(), expected.end(), [&](const auto & sol) {
-                        if (Integer{get<0>(sol)} != val)
-                            return false;
-                        for (const auto & [idx, val] : enumerate(get<1>(sol)))
-                            if (s.in_domain(array.at(idx), Integer{val}))
-                                return true;
-                        return false;
-                    });
-                    if (violated) {
-                        cerr << "gac violated for result" << endl;
-                        gac_violated = true;
-                    }
-                });
+    auto proof_name = proofs ? make_optional("min_max_test") : nullopt;
+    solve_for_tests_checking_consistency(p, proof_name, expected, actual, tuple{pair{result, CheckConsistency::GAC}, pair{array, CheckConsistency::GAC}});
 
-                for (const auto & [idx, var] : enumerate(array)) {
-                    s.for_each_value(var, [&, idx = idx](Integer val) {
-                        bool violated = expected.end() == find_if(expected.begin(), expected.end(), [&](const auto & sol) {
-                            bool ok = true;
-                            if (Integer{get<1>(sol).at(idx)} != val)
-                                ok = false;
-                            else if (! s.in_domain(result, Integer{get<0>(sol)}))
-                                ok = false;
-                            else
-                                for (const auto & [idx, val] : enumerate(get<1>(sol)))
-                                    if (! s.in_domain(array[idx], Integer{val}))
-                                        ok = false;
-                            return ok;
-                        });
-                        if (violated) {
-                            cerr << "gac violated for var " << idx << " val " << val << ", result is [";
-                            s.for_each_value(result, [&](Integer val) {
-                                cerr << " " << val;
-                            });
-                            cerr << " ], vars are [";
-                            for (auto & var : array) {
-                                cerr << " [";
-                                s.for_each_value(var, [&](Integer val) {
-                                    cerr << " " << val;
-                                });
-                                cerr << " ]";
-                            }
-                            cerr << " ]" << endl;
-                            gac_violated = true;
-                        }
-                    });
-                }
-
-                s.for_each_value(result, [&](Integer val) {
-                    bool violated = expected.end() == find_if(expected.begin(), expected.end(), [&](const auto & sol) {
-                        if (Integer{get<0>(sol)} != val)
-                            return false;
-                        for (const auto & [idx, val] : enumerate(get<1>(sol)))
-                            if (s.in_domain(array.at(idx), Integer{val}))
-                                return true;
-                        return false;
-                    });
-                    if (violated) {
-                        cerr << "gac violated for result" << endl;
-                        gac_violated = true;
-                    }
-                });
-                return true;
-            }},
-        ProofOptions{"min_max_test.opb", "min_max_test.veripb"});
-
-    return (! gac_violated) && check_results(expected, actual);
+    check_results(proof_name, expected, actual);
 }
 
 auto main(int, char *[]) -> int
@@ -187,34 +77,28 @@ auto main(int, char *[]) -> int
         {{1, 3}, {{0, 4}, {0, 5}, {0, 6}}},
         {{-1, 3}, {{-1, 2}, {1, 3}, {4, 5}}},
         {{1, 4}, {{1, 4}, {2, 3}, {0, 5}, {-2, 0}, {5, 7}}},
-        {{-5, 5}, {{-8, 0}, {4, 4}, {10, 10}, {2, 11}, {4, 10}}}};
+        {{-5, 5}, {{-8, 0}, {4, 4}, {10, 10}, {2, 11}, {4, 10}}},
+        {{0, 5}, {{4, 12}}},
+        {{2, 9}, {{-2, 3}, {-4, -1}, {-3, 5}}}};
 
     random_device rand_dev;
     mt19937 rand(rand_dev());
     for (int x = 0; x < 10; ++x) {
-        uniform_int_distribution result_lower_dist(-10, 10);
-        auto result_lower = result_lower_dist(rand);
-        uniform_int_distribution result_upper_dist(result_lower, result_lower + 10);
-        auto result_upper = result_upper_dist(rand);
-
-        vector<pair<int, int>> values;
         uniform_int_distribution n_values_dist(1, 5);
         auto n_values = n_values_dist(rand);
-        for (int i = 0; i < n_values; ++i) {
-            uniform_int_distribution val_lower_dist(-10, 10);
-            auto val_lower = val_lower_dist(rand);
-            uniform_int_distribution val_upper_dist(val_lower, val_lower + 10);
-            auto val_upper = val_upper_dist(rand);
-            values.emplace_back(val_lower, val_upper);
-        }
-
-        data.emplace_back(pair{result_lower, result_upper}, move(values));
+        generate_random_data(rand, data, random_bounds(-5, 5, 3, 7), vector(n_values, random_bounds(-5, 5, 3, 8)));
     }
 
     for (auto & [r1, r2] : data) {
-        if (! run_min_max_test(r1, r2))
-            return EXIT_FAILURE;
+        run_min_max_test(false, false, r1, r2);
+        run_min_max_test(false, true, r1, r2);
     }
+
+    if (can_run_veripb())
+        for (auto & [r1, r2] : data) {
+            run_min_max_test(true, false, r1, r2);
+            run_min_max_test(true, true, r1, r2);
+        }
 
     return EXIT_SUCCESS;
 }

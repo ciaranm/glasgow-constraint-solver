@@ -1,3 +1,4 @@
+#include <gcs/constraints/constraints_test_utils.hh>
 #include <gcs/constraints/linear_equality.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
@@ -11,12 +12,16 @@
 #include <random>
 #include <set>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
 using std::cerr;
-using std::endl;
+using std::flush;
+using std::is_same_v;
+using std::make_optional;
 using std::mt19937;
+using std::nullopt;
 using std::pair;
 using std::random_device;
 using std::set;
@@ -26,55 +31,62 @@ using std::tuple;
 using std::uniform_int_distribution;
 using std::vector;
 
+using fmt::print;
+using fmt::println;
+
 using namespace gcs;
+using namespace gcs::test_innards;
 
-template <typename Results_>
-auto check_results(
-    pair<int, int> v0_range,
-    pair<int, int> v1_range,
-    pair<int, int> v2_range,
-    const vector<pair<vector<int>, int>> & constraints,
-    const string & name,
-    const Results_ & expected,
-    const Results_ & actual) -> bool
+template <typename Constraint_>
+auto run_linear_test(bool proofs, const string & mode, pair<int, int> v1_range, pair<int, int> v2_range,
+    pair<int, int> v3_range, const vector<pair<vector<int>, int>> & ineqs,
+    const std::function<auto(int, int)->bool> & compare) -> void
 {
-    cerr << name << " " << stringify_tuple(v0_range) << " " << stringify_tuple(v1_range) << " " << stringify_tuple(v2_range)
-         << " " << expected.size();
-    if (expected != actual) {
-        cerr << " expected:";
-        for (auto & t : expected) {
-            cerr << " " << stringify_tuple(t);
-            if (! actual.contains(t))
-                cerr << "!";
-        }
-        cerr << "; actual:";
-        for (auto & t : actual) {
-            cerr << " " << stringify_tuple(t);
-            if (! expected.contains(t))
-                cerr << "!";
-        }
-        cerr << endl;
+    print(cerr, "linear {} {} {} {} {} {}", mode, v1_range, v2_range, v3_range, ineqs, proofs ? " with proofs:" : ":");
+    cerr << flush;
 
-        cerr << "constraints:" << endl;
-        for (const auto & [coeffs, val] : constraints) {
-            for (const auto & c : coeffs)
-                cerr << c << " ";
-            cerr << "<= " << val << endl;
-        }
+    auto is_satisfying = [&](int a, int b, int c) {
+        for (auto & [linear, value] : ineqs)
+            if (! compare(linear[0] * a + linear[1] * b + linear[2] * c, value))
+                return false;
+        return true;
+    };
 
-        return false;
+    set<tuple<int, int, int>> expected, actual;
+    build_expected(expected, is_satisfying, v1_range, v2_range, v3_range);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    auto v1 = p.create_integer_variable(Integer(v1_range.first), Integer(v1_range.second));
+    auto v2 = p.create_integer_variable(Integer(v2_range.first), Integer(v2_range.second));
+    auto v3 = p.create_integer_variable(Integer(v3_range.first), Integer(v3_range.second));
+    auto vs = vector{v1, v2, v3};
+    for (auto & [linear, value] : ineqs) {
+        WeightedSum c;
+        for (const auto & [idx, coeff] : enumerate(linear))
+            if (coeff != 0)
+                c += Integer{coeff} * vs[idx];
+        p.post(Constraint_{c, Integer{value}});
     }
-    cerr << endl;
 
-    if (0 != system("veripb linear_equality_test.opb linear_equality_test.veripb"))
-        return false;
+    auto proof_name = proofs ? make_optional("linear_equality_test") : nullopt;
 
-    return true;
+    if ((! is_same_v<Constraint_, LinearEquality>) && 1 == ineqs.size())
+        solve_for_tests_checking_consistency(p, proof_name, expected, actual, tuple{pair{v1, CheckConsistency::BC}, pair{v2, CheckConsistency::BC}, pair{v3, CheckConsistency::BC}});
+    else
+        solve_for_tests(p, proof_name, actual, tuple{v1, v2, v3});
+
+    check_results(proof_name, expected, actual);
 }
 
 auto main(int, char *[]) -> int
 {
     vector<tuple<pair<int, int>, pair<int, int>, pair<int, int>, vector<pair<vector<int>, int>>>> data;
+
+    data.emplace_back(
+        pair{0, 2}, pair{-2, 2}, pair{0, 5},
+        vector{
+            pair{vector{1, 2, 3}, 6}});
 
     data.emplace_back(
         pair{3, 8}, pair{-4, 7}, pair{2, 5},
@@ -128,104 +140,23 @@ auto main(int, char *[]) -> int
 
     random_device rand_dev;
     mt19937 rand(rand_dev());
-    for (int x = 0; x < 10; ++x) {
-        uniform_int_distribution r1_lower_dist(-10, 10);
-        auto r1_lower = r1_lower_dist(rand);
-        uniform_int_distribution r1_upper_dist(r1_lower, r1_lower + 10);
-        auto r1_upper = r1_upper_dist(rand);
+    uniform_int_distribution nc_dist(1, 5);
+    for (int x = 0; x < 10; ++x)
+        generate_random_data(rand, data, random_bounds(-10, 10, 5, 15), random_bounds(-10, 10, 5, 15),
+            random_bounds(-10, 10, 5, 15), vector(nc_dist(rand), pair{vector(3, uniform_int_distribution(-10, 10)), uniform_int_distribution(-200, 200)}));
 
-        uniform_int_distribution r2_lower_dist(-10, 10);
-        auto r2_lower = r2_lower_dist(rand);
-        uniform_int_distribution r2_upper_dist(r2_lower, r2_lower + 10);
-        auto r2_upper = r2_upper_dist(rand);
-
-        uniform_int_distribution r3_lower_dist(-10, 10);
-        auto r3_lower = r3_lower_dist(rand);
-        uniform_int_distribution r3_upper_dist(r3_lower, r3_lower + 10);
-        auto r3_upper = r3_upper_dist(rand);
-
-        vector<pair<vector<int>, int>> constraints;
-        uniform_int_distribution c_dist(2, 5);
-        for (int c = 0, c_end = c_dist(rand); c != c_end; ++c) {
-            vector<int> lin;
-            for (int v = 0; v < 3; ++v) {
-                uniform_int_distribution coeff_dist(-10, 10);
-                lin.push_back(coeff_dist(rand));
-            }
-            uniform_int_distribution val_dist(-200, 200);
-            constraints.emplace_back(move(lin), val_dist(rand));
-        }
-        data.emplace_back(pair{r1_lower, r1_upper}, pair{r2_lower, r2_upper}, pair{r3_lower, r3_upper},
-            move(constraints));
+    for (auto & [r1, r2, r3, constraints] : data) {
+        run_linear_test<LinearEquality>(false, "eq", r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
+        run_linear_test<LinearLessEqual>(false, "le", r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
+        run_linear_test<LinearGreaterThanEqual>(false, "ge", r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
     }
 
-    for (int mode = 0; mode <= 2; ++mode) {
-        for (auto & [v0_range, v1_range, v2_range, constraints] : data) {
-            set<tuple<int, int, int>> expected, actual;
-
-            for (int v0 = v0_range.first; v0 <= v0_range.second; ++v0)
-                for (int v1 = v1_range.first; v1 <= v1_range.second; ++v1)
-                    for (int v2 = v2_range.first; v2 <= v2_range.second; ++v2) {
-                        bool ok = true;
-                        for (auto & [linear, value] : constraints) {
-                            if (0 == mode) {
-                                if (linear[0] * v0 + linear[1] * v1 + linear[2] * v2 != value) {
-                                    ok = false;
-                                    break;
-                                }
-                            }
-                            else if (1 == mode) {
-                                if (linear[0] * v0 + linear[1] * v1 + linear[2] * v2 < value) {
-                                    ok = false;
-                                    break;
-                                }
-                            }
-                            else if (2 == mode) {
-                                if (linear[0] * v0 + linear[1] * v1 + linear[2] * v2 > value) {
-                                    ok = false;
-                                    break;
-                                }
-                            }
-                        }
-                        if (ok)
-                            expected.emplace(v0, v1, v2);
-                    }
-
-            Problem p;
-
-            auto vs = vector{
-                p.create_integer_variable(Integer{v0_range.first}, Integer{v0_range.second}),
-                p.create_integer_variable(Integer{v1_range.first}, Integer{v1_range.second}),
-                p.create_integer_variable(Integer{v2_range.first}, Integer{v2_range.second})};
-
-            for (auto & [linear, value] : constraints) {
-                WeightedSum c;
-                for (const auto & [idx, coeff] : enumerate(linear))
-                    if (coeff != 0)
-                        c += Integer{coeff} * vs[idx];
-                if (0 == mode)
-                    p.post(LinearEquality{move(c), Integer{value}});
-                else if (1 == mode)
-                    p.post(LinearGreaterThanEqual{move(c), Integer{value}});
-                else if (2 == mode)
-                    p.post(LinearLessEqual{move(c), Integer{value}});
-            }
-
-            solve(
-                p, [&](const CurrentState & s) -> bool {
-                    actual.emplace(s(vs[0]).raw_value, s(vs[1]).raw_value, s(vs[2]).raw_value);
-                    return true;
-                },
-                ProofOptions{"linear_equality_test.opb", "linear_equality_test.veripb"});
-
-            using std::literals::string_literals::operator""s;
-            if (! check_results(v0_range, v1_range, v2_range, constraints,
-                    mode == 0 ? "linear eq"s : mode == 1 ? "linear ge"s
-                                                        : "linear le"s,
-                    expected, actual))
-                return EXIT_FAILURE;
+    if (can_run_veripb())
+        for (auto & [r1, r2, r3, constraints] : data) {
+            run_linear_test<LinearEquality>(true, "eq", r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
+            run_linear_test<LinearLessEqual>(true, "le", r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
+            run_linear_test<LinearGreaterThanEqual>(true, "ge", r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
         }
-    }
 
     return EXIT_SUCCESS;
 }

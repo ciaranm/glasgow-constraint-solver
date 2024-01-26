@@ -8,6 +8,7 @@ using std::make_optional;
 using std::move;
 using std::optional;
 using std::string;
+using std::vector;
 
 VariableDoesNotHaveUniqueValue::VariableDoesNotHaveUniqueValue(const string & w) :
     _wat(w + " does not have a unique value")
@@ -42,6 +43,14 @@ auto CurrentState::clone() const -> CurrentState
 auto CurrentState::operator()(const IntegerVariableID & v) const -> Integer
 {
     return _full_state(v);
+}
+
+auto CurrentState::operator()(const vector<IntegerVariableID> & vec) const -> vector<Integer>
+{
+    vector<Integer> result;
+    for (auto & v : vec)
+        result.push_back((*this)(v));
+    return result;
 }
 
 auto CurrentState::has_single_value(const IntegerVariableID v) const -> bool

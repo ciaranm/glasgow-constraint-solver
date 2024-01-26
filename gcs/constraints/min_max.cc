@@ -37,7 +37,7 @@ auto ArrayMinMax::install(Propagators & propagators, State & initial_state) && -
     propagators.install([vars = _vars, result = _result, min = _min](State & state) -> pair<Inference, PropagatorState> {
         Inference inf = Inference::NoChange;
 
-        // result <= each var
+        // result <= upper bound of each vars
         for (auto & var : vars) {
             if (min)
                 increase_inference_to(inf, state.infer_less_than(result, state.upper_bound(var) + 1_i, JustifyUsingRUP{}));
@@ -53,7 +53,7 @@ auto ArrayMinMax::install(Propagators & propagators, State & initial_state) && -
             if (min)
                 increase_inference_to(inf, state.infer_greater_than_or_equal(var, state.lower_bound(result), JustifyUsingRUP{}));
             else
-                increase_inference_to(inf, state.infer_less_than(result, state.upper_bound(result) + 1_i, JustifyUsingRUP{}));
+                increase_inference_to(inf, state.infer_less_than(var, state.upper_bound(result) + 1_i, JustifyUsingRUP{}));
 
             if (Inference::Contradiction == inf)
                 return pair{inf, PropagatorState::Enable};
@@ -83,7 +83,7 @@ auto ArrayMinMax::install(Propagators & propagators, State & initial_state) && -
 
         // largest value in result uniquely supported?
         optional<IntegerVariableID> support_of_largest_1, support_of_largest_2;
-        auto largest_result = state.upper_bound(result);
+        auto largest_result = min ? state.upper_bound(result) : state.lower_bound(result);
         for (auto & var : vars) {
             if (state.in_domain(var, largest_result)) {
                 if (! support_of_largest_1)
@@ -97,8 +97,14 @@ auto ArrayMinMax::install(Propagators & propagators, State & initial_state) && -
 
         if (! support_of_largest_1)
             throw UnexpectedException{"missing support, bug in MinMaxArray propagator"};
-        else if (! support_of_largest_2)
-            increase_inference_to(inf, state.infer_less_than(*support_of_largest_1, largest_result + 1_i, JustifyUsingRUP{}));
+        else if (! support_of_largest_2) {
+            if (min) {
+                increase_inference_to(inf, state.infer_less_than(*support_of_largest_1, largest_result + 1_i, JustifyUsingRUP{}));
+            }
+            else {
+                increase_inference_to(inf, state.infer_greater_than_or_equal(*support_of_largest_1, largest_result, JustifyUsingRUP{}));
+            }
+        }
 
         return pair{inf, PropagatorState::Enable};
     },

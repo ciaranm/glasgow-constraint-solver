@@ -135,6 +135,16 @@ namespace gcs
     }
 
     /**
+     * \brief An Integer can be used with libfmt.
+     *
+     * \ingroup IntegerWrapper
+     */
+    constexpr inline auto format_as(Integer i) -> long long
+    {
+        return i.raw_value;
+    }
+
+    /**
      * \brief Absolute value of an Integer.
      *
      * \ingroup IntegerWrapper

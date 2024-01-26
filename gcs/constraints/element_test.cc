@@ -1,3 +1,4 @@
+#include <gcs/constraints/constraints_test_utils.hh>
 #include <gcs/constraints/element.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
@@ -15,11 +16,17 @@
 #include <utility>
 #include <vector>
 
+#include <fmt/core.h>
+#include <fmt/ostream.h>
+#include <fmt/ranges.h>
+
 using std::cerr;
 using std::cmp_less;
-using std::endl;
+using std::flush;
 using std::function;
+using std::make_optional;
 using std::mt19937;
+using std::nullopt;
 using std::pair;
 using std::random_device;
 using std::set;
@@ -29,130 +36,25 @@ using std::tuple;
 using std::uniform_int_distribution;
 using std::vector;
 
+using fmt::print;
+using fmt::println;
+
 using namespace gcs;
+using namespace gcs::test_innards;
 
-template <typename Results_>
-auto check_results(const Results_ & expected, const Results_ & actual) -> bool
+auto run_element_test(bool proofs, pair<int, int> var_range, pair<int, int> idx_range, const vector<pair<int, int>> & array_range) -> void
 {
-    if (expected != actual) {
-        cerr << " expected: " << expected.size() << endl;
-        for (auto & [v, i, a] : expected) {
-            cerr << "  " << v << " " << i << " [";
-            for (auto & v : a)
-                cerr << " " << v;
-            cerr << " ]" << endl;
-        }
-        cerr << "; actual: " << actual.size() << endl;
-        for (auto & [v, i, a] : actual) {
-            cerr << "  " << v << " " << i << " [";
-            for (auto & v : a)
-                cerr << " " << v;
-            cerr << " ]" << endl;
-        }
-        cerr << endl;
-
-        return false;
-    }
-    cerr << endl;
-
-    if (0 != system("veripb element_test.opb element_test.veripb"))
-        return false;
-
-    return true;
-}
-
-auto grow(vector<int> & array, const vector<pair<int, int>> & array_range, const function<void()> & yield) -> void
-{
-    if (array.size() == array_range.size())
-        yield();
-    else {
-        for (int x = array_range[array.size()].first; x <= array_range[array.size()].second; ++x) {
-            array.push_back(x);
-            grow(array, array_range, yield);
-            array.pop_back();
-        }
-    }
-}
-
-auto check_idx_gac(IntegerVariableID var, IntegerVariableID idx, const vector<IntegerVariableID> & vars, const CurrentState & s) -> bool
-{
-    bool ok = true;
-    s.for_each_value(idx, [&](Integer idx_val) {
-        bool found_support = false;
-        s.for_each_value(var, [&](Integer val) {
-            found_support = found_support || s.in_domain(vars[idx_val.raw_value], val);
-        });
-
-        if (! found_support) {
-            cerr << "idx missing support: " << idx_val << endl;
-            ok = false;
-        }
-    });
-    return ok;
-}
-
-auto check_var_gac(IntegerVariableID var, IntegerVariableID idx, const vector<IntegerVariableID> & vars, const CurrentState & s) -> bool
-{
-    bool ok = true;
-    s.for_each_value(var, [&](Integer var_val) {
-        bool found_support = false;
-        s.for_each_value(idx, [&](Integer idx_val) {
-            found_support = found_support || s.in_domain(vars[idx_val.raw_value], var_val);
-        });
-
-        if (! found_support) {
-            cerr << "var missing support: " << var_val << endl;
-            ok = false;
-        }
-    });
-    return ok;
-}
-
-auto check_vals_gac(IntegerVariableID var, IntegerVariableID idx, const vector<IntegerVariableID> & vars, const CurrentState & s) -> bool
-{
-    bool ok = true;
-    for (const auto & [index, avar] : enumerate(vars)) {
-        if (s.has_single_value(idx) && s(idx) == Integer(index)) {
-            s.for_each_value(avar, [&, index = index](Integer aval) {
-                if (! s.in_domain(var, aval)) {
-                    cerr << "avar " << index << " missing support: " << aval << " when idx is " << s(idx)
-                         << ", var is ";
-                    s.for_each_value(var, [&](Integer v) {
-                        cerr << " " << v;
-                    });
-                    cerr << ", all vars are [ ";
-                    for (auto & v : vars) {
-                        cerr << "[";
-                        s.for_each_value(v, [&](Integer val) {
-                            cerr << " " << val;
-                        });
-                        cerr << " ]";
-                    }
-                    cerr << " ]" << endl;
-                    ok = false;
-                }
-            });
-        }
-    }
-    return ok;
-}
-
-auto run_element_test(pair<int, int> var_range, pair<int, int> idx_range, const vector<pair<int, int>> & array_range) -> bool
-{
-    cerr << "Element " << stringify_tuple(var_range) << " " << stringify_tuple(idx_range) << " [";
-    for (const auto & v : array_range)
-        cerr << " " << stringify_tuple(v);
-    cerr << " ]";
+    print(cerr, "element {} {} {} {}", var_range, idx_range, array_range, proofs ? " with proofs:" : ":");
+    cerr << flush;
 
     set<tuple<int, int, vector<int>>> expected, actual;
-    for (int var = var_range.first; var <= var_range.second; ++var)
-        for (int idx = idx_range.first; idx <= idx_range.second; ++idx) {
-            vector<int> array;
-            grow(array, array_range, [&]() {
-                if (idx >= 0 && cmp_less(idx, array.size()) && array[idx] == var)
-                    expected.emplace(var, idx, array);
-            });
-        }
+    build_expected(
+        expected, [&](int v, int x, const vector<int> & a) {
+            return x >= 0 && cmp_less(x, a.size()) && a.at(x) == v;
+        },
+        var_range, idx_range, array_range);
+
+    println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;
     auto var = p.create_integer_variable(Integer(var_range.first), Integer(var_range.second), "var");
@@ -160,31 +62,46 @@ auto run_element_test(pair<int, int> var_range, pair<int, int> idx_range, const 
     vector<IntegerVariableID> array;
     for (const auto & [l, u] : array_range)
         array.push_back(p.create_integer_variable(Integer(l), Integer(u)));
-
     p.post(Element{var, idx, array});
-    bool gac_violated = false;
-    solve_with(p,
-        SolveCallbacks{
-            .solution = [&](const CurrentState & s) -> bool {
-                vector<int> vals;
-                for (auto & a : array)
-                    vals.push_back(s(a).raw_value);
-                actual.emplace(s(var).raw_value, s(idx).raw_value, vals);
-                return true;
-            },
-            .trace = [&](const CurrentState & s) -> bool {
-                gac_violated = gac_violated || ! check_idx_gac(var, idx, array, s) ||
-                    ! check_var_gac(var, idx, array, s) || ! check_vals_gac(var, idx, array, s);
-                return true;
-            }},
-        ProofOptions{"element_test.opb", "element_test.veripb"});
 
-    return (! gac_violated) && check_results(expected, actual);
+    auto proof_name = proofs ? make_optional("element_test") : nullopt;
+    solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{var, idx, array});
+
+    check_results(proof_name, expected, actual);
+}
+
+auto run_element_constant_test(bool proofs, pair<int, int> var_range, pair<int, int> idx_range, const vector<int> & array) -> void
+{
+    print(cerr, "element constant {} {} {} {}", var_range, idx_range, array, proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    set<tuple<int, int>> expected, actual;
+    build_expected(
+        expected, [&](int v, int x) {
+            return x >= 0 && cmp_less(x, array.size()) && array.at(x) == v;
+        },
+        var_range, idx_range);
+
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    auto var = p.create_integer_variable(Integer(var_range.first), Integer(var_range.second), "var");
+    auto idx = p.create_integer_variable(Integer(idx_range.first), Integer(idx_range.second), "idx");
+    vector<Integer> a;
+    for (const auto & v : array)
+        a.push_back(Integer(v));
+    p.post(ElementConstantArray{var, idx, &a});
+
+    auto proof_name = proofs ? make_optional("element_test") : nullopt;
+    solve_for_tests_checking_consistency(p, proof_name, expected, actual,
+        tuple{pair{var, CheckConsistency::BC}, pair{idx, CheckConsistency::GAC}});
+
+    check_results(proof_name, expected, actual);
 }
 
 auto main(int, char *[]) -> int
 {
-    vector<tuple<pair<int, int>, pair<int, int>, vector<pair<int, int>>>> data = {
+    vector<tuple<pair<int, int>, pair<int, int>, vector<pair<int, int>>>> var_data = {
         {{1, 2}, {0, 1}, {{1, 2}, {1, 2}}},
         {{1, 2}, {-2, 2}, {{1, 2}, {1, 2}}},
         {{1, 2}, {0, 1}, {{1, 2}, {1, 2}, {1, 2}}},
@@ -193,37 +110,43 @@ auto main(int, char *[]) -> int
         {{-5, 5}, {-3, 2}, {{-8, 0}, {4, 4}, {10, 10}, {2, 11}, {4, 10}}},
         {{7, 10}, {0, 9}, {{8, 18}, {9, 19}, {-1, 0}, {-6, 0}}}};
 
+    vector<tuple<pair<int, int>, pair<int, int>, vector<int>>> const_data = {
+        {{1, 2}, {1, 2}, {1, 2}},
+        {{1, 2}, {0, 1}, {1, 2}},
+        {{1, 2}, {0, 2}, {1, 2, 2}},
+        {{1, 2}, {0, 2}, {1, 2, 5}},
+        {{-4, 6}, {-3, 3}, {-7, 2, -4, -10}}};
+
     random_device rand_dev;
     mt19937 rand(rand_dev());
+
+    uniform_int_distribution n_values_dist(1, 4);
     for (int x = 0; x < 10; ++x) {
-        uniform_int_distribution var_lower_dist(-10, 10);
-        auto var_lower = var_lower_dist(rand);
-        uniform_int_distribution var_upper_dist(var_lower, var_lower + 10);
-        auto var_upper = var_upper_dist(rand);
-
-        uniform_int_distribution idx_lower_dist(-3, 10);
-        auto idx_lower = idx_lower_dist(rand);
-        uniform_int_distribution idx_upper_dist(idx_lower, idx_lower + 10);
-        auto idx_upper = idx_upper_dist(rand);
-
-        vector<pair<int, int>> values;
-        uniform_int_distribution n_values_dist(1, 5);
         auto n_values = n_values_dist(rand);
-        for (int i = 0; i < n_values; ++i) {
-            uniform_int_distribution val_lower_dist(-10, 10);
-            auto val_lower = val_lower_dist(rand);
-            uniform_int_distribution val_upper_dist(val_lower, val_lower + 10);
-            auto val_upper = val_upper_dist(rand);
-            values.emplace_back(val_lower, val_upper);
-        }
-
-        data.emplace_back(pair{var_lower, var_upper}, pair{idx_lower, idx_upper}, move(values));
+        generate_random_data(rand, var_data, random_bounds(-10, 10, 5, 15), random_bounds(-10, 10, 0, 10),
+            vector{size_t(n_values), random_bounds(-10, 10, 5, 15)});
     }
 
-    for (auto & [r1, r2, r3] : data) {
-        if (! run_element_test(r1, r2, r3))
-            return EXIT_FAILURE;
+    for (int x = 0; x < 10; ++x) {
+        uniform_int_distribution values_dist(-10, 10);
+        auto n_values = n_values_dist(rand);
+        generate_random_data(rand, const_data, random_bounds(-10, 10, 5, 15), random_bounds(-10, 10, 0, 10),
+            vector{size_t(n_values), values_dist});
     }
+
+    for (auto & [r1, r2, r3] : var_data)
+        run_element_test(false, r1, r2, r3);
+
+    if (can_run_veripb())
+        for (auto & [r1, r2, r3] : var_data)
+            run_element_test(true, r1, r2, r3);
+
+    for (auto & [r1, r2, r3] : const_data)
+        run_element_constant_test(false, r1, r2, r3);
+
+    if (can_run_veripb())
+        for (auto & [r1, r2, r3] : const_data)
+            run_element_constant_test(true, r1, r2, r3);
 
     return EXIT_SUCCESS;
 }

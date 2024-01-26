@@ -566,7 +566,7 @@ auto State::change_state_for_greater_than_or_equal(
         [&](IntegerVariableSmallSetState & svar) -> pair<Inference, HowChanged> {
             int last_bit_to_keep = (value - svar.lower).raw_value;
             if (last_bit_to_keep < 0)
-                return pair{Inference::Contradiction, HowChanged::Dummy};
+                return pair{Inference::NoChange, HowChanged::Dummy};
 
             auto pc_before = svar.bits.popcount();
 

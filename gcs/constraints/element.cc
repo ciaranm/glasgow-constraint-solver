@@ -2,6 +2,7 @@
 #include <gcs/constraints/element.hh>
 #include <gcs/constraints/equals.hh>
 #include <gcs/exception.hh>
+#include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proof.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
@@ -259,7 +260,8 @@ auto Element2DConstantArray::install(Propagators & propagators, State & initial_
 
     optional<SimpleIntegerVariableID> idxsel;
     visit([&](auto & _idx1, auto & _idx2) {
-        propagators.install([idx1 = _idx1, idx2 = _idx2, var = _var, vals = _vals, idxsel = move(idxsel)](State & state) mutable -> pair<Inference, PropagatorState> {
+        propagators.install_tracking([idx1 = _idx1, idx2 = _idx2, var = _var, vals = _vals, idxsel = move(idxsel)](
+                                         State & state, InferenceTracker & inference) mutable -> PropagatorState {
             // turn 2d index into 1d index in proof
             if (state.maybe_proof() && ! idxsel) [[unlikely]] {
                 idxsel = state.what_variable_id_will_be_created_next();
@@ -346,18 +348,13 @@ auto Element2DConstantArray::install(Propagators & propagators, State & initial_
                 proof.emit_rup_proof_line(trail >= 1_i, ProofLevel::Temporary);
             }};
 
-            auto inference = state.infer_greater_than_or_equal(var, *smallest_seen, just);
-            if (Inference::Contradiction == inference)
-                return pair{inference, PropagatorState::Enable};
-
-            increase_inference_to(inference, state.infer_less_than(var, *largest_seen + 1_i, just));
-            if (Inference::Contradiction == inference)
-                return pair{inference, PropagatorState::Enable};
+            inference.infer_greater_than_or_equal(var, *smallest_seen, just);
+            inference.infer_less_than(var, *largest_seen + 1_i, just);
 
             auto bounds = state.bounds(var);
 
             // check each idx1 has a suitable element
-            state.for_each_value_while(idx1, [&](Integer i1) -> bool {
+            state.for_each_value(idx1, [&](Integer i1) {
                 bool suitable_idx2_found = false;
                 state.for_each_value_while_immutable(idx2, [&](Integer i2) -> bool {
                     auto this_val = vals->at(i1.raw_value).at(i2.raw_value);
@@ -368,16 +365,11 @@ auto Element2DConstantArray::install(Propagators & propagators, State & initial_
                     return true;
                 });
                 if (! suitable_idx2_found)
-                    increase_inference_to(inference, state.infer(idx1 != i1, JustifyUsingRUP{}));
-
-                return inference != Inference::Contradiction;
+                    inference.infer(idx1 != i1, JustifyUsingRUP{});
             });
 
-            if (Inference::Contradiction == inference)
-                return pair{inference, PropagatorState::Enable};
-
             // check each idx2 has a suitable element
-            state.for_each_value_while(idx2, [&](Integer i2) -> bool {
+            state.for_each_value(idx2, [&](Integer i2) {
                 bool suitable_idx1_found = false;
                 state.for_each_value_while_immutable(idx1, [&](Integer i1) -> bool {
                     auto this_val = vals->at(i1.raw_value).at(i2.raw_value);
@@ -388,12 +380,10 @@ auto Element2DConstantArray::install(Propagators & propagators, State & initial_
                     return true;
                 });
                 if (! suitable_idx1_found)
-                    increase_inference_to(inference, state.infer(idx2 != i2, JustifyUsingRUP{}));
-
-                return inference != Inference::Contradiction;
+                    inference.infer(idx2 != i2, JustifyUsingRUP{});
             });
 
-            return pair{inference, PropagatorState::Enable};
+            return PropagatorState::Enable;
         },
             triggers, "element 2d const array var bounds");
     },

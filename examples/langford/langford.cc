@@ -6,18 +6,30 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <ranges>
 #include <vector>
 
 #include <boost/program_options.hpp>
+
+#include <fmt/core.h>
+#include <fmt/ostream.h>
+#include <fmt/ranges.h>
 
 using namespace gcs;
 
 using std::cerr;
 using std::cout;
-using std::endl;
+using std::cref;
 using std::make_optional;
 using std::nullopt;
 using std::vector;
+
+#if __cpp_lib_ranges >= 202110L
+using std::ranges::views::transform;
+#endif
+
+using fmt::print;
+using fmt::println;
 
 namespace po = boost::program_options;
 
@@ -50,15 +62,15 @@ auto main(int argc, char * argv[]) -> int
         po::notify(options_vars);
     }
     catch (const po::error & e) {
-        cerr << "Error: " << e.what() << endl;
-        cerr << "Try " << argv[0] << " --help" << endl;
+        println(cerr, "Error: {}", e.what());
+        println(cerr, "Try {} --help", argv[0]);
         return EXIT_FAILURE;
     }
 
     if (options_vars.contains("help")) {
-        cout << "Usage: " << argv[0] << " [options] [size]" << endl;
-        cout << endl;
-        cout << display_options << endl;
+        println("Usage: {} [options] [size]", argv[0]);
+        println("");
+        display_options.print(cout);
         return EXIT_SUCCESS;
     }
 
@@ -83,22 +95,21 @@ auto main(int argc, char * argv[]) -> int
     }
 
     auto stats = solve(
-        p, [&](const CurrentState & state) -> bool {
-            cout << "solution: ";
-            for (auto & s : solution)
-                cout << state(s) << " ";
-            cout << endl;
-            cout << "position: ";
-            for (auto & s : position)
-                cout << state(s) << " ";
-            cout << endl;
-            cout << endl;
+        p, [&](const CurrentState & s) -> bool {
+#if __cpp_lib_ranges >= 202110L
+            println("solution: {}", solution | transform(cref(s)));
+            println("position: {}", position | transform(cref(s)));
+#else
+            println("solution: {}", s(solution));
+            println("position: {}", s(position));
+#endif
+            println("");
 
             return true;
         },
         options_vars.contains("prove") ? make_optional<ProofOptions>("langford.opb", "langford.veripb") : nullopt);
 
-    cout << stats;
+    print("{}", stats);
 
     return EXIT_SUCCESS;
 }

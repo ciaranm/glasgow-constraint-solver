@@ -1,5 +1,6 @@
 #include <gcs/constraints/knapsack.hh>
 #include <gcs/exception.hh>
+#include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/opb_utils.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
@@ -84,12 +85,13 @@ namespace
     template <bool doing_proof_>
     auto knapsack_gac(
         State & state,
+        InferenceTracker & inference,
         const vector<Integer> & committed,
         const vector<pair<Integer, Integer>> & bounds,
         const vector<vector<Integer>> & coeffs,
         const vector<IntegerVariableID> & totals,
         const vector<IntegerVariableID> & all_vars, const vector<size_t> & undetermined_var_indices,
-        const optional<vector<pair<ProofLine, ProofLine>>> & opb_lines) -> Inference
+        const optional<vector<pair<ProofLine, ProofLine>>> & opb_lines) -> void
     {
         struct NodeInequalityData
         {
@@ -105,8 +107,6 @@ namespace
             vector<NodeInequalityData> les;
             vector<pair<vector<Integer>, Integer>> predecessors;
         };
-
-        auto inference = Inference::NoChange;
 
         list<map<vector<Integer>, optional<FullNodeData>>> completed_layers;
         completed_layers.emplace_back();
@@ -355,14 +355,9 @@ namespace
                                     ProofLevel::Temporary);
                             }
                         }
-                        increase_inference_to(inference, state.infer(all_vars.at(var_idx) != val, JustifyUsingRUP{}));
-                        if (Inference::Contradiction == inference)
-                            return;
+                        inference.infer(all_vars.at(var_idx) != val, JustifyUsingRUP{});
                     }
                     });
-
-            if (Inference::Contradiction == inference)
-                return inference;
 
             completed_layers.emplace_back(move(growing_layer_nodes));
         }
@@ -427,7 +422,7 @@ namespace
                 state.maybe_proof()->emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} >= 1_i, ProofLevel::Temporary);
             }
 
-            increase_inference_to(inference, state.infer(FalseLiteral{}, JustifyUsingRUP{}));
+            inference.infer_false(JustifyUsingRUP{});
         }
         else {
             vector<Literal> inferences;
@@ -442,6 +437,14 @@ namespace
 
                 auto highest = highest_iter->first.at(x);
                 inferences.emplace_back(totals.at(x) < committed.at(x) + highest + 1_i);
+
+                state.for_each_value(totals.at(x), [&](Integer v) {
+                    if (v >= committed.at(x) + lowest && v < committed.at(x) + highest + 1_i)
+                        if (completed_layers.back().end() == find_if(completed_layers.back().begin(), completed_layers.back().end(), [&](const pair<vector<Integer>, optional<FullNodeData>> & a) {
+                                return a.first.at(x) + committed.at(x) == v;
+                            }))
+                            inferences.emplace_back(totals.at(x) != v);
+                });
 
                 if constexpr (doing_proof_) {
                     state.maybe_proof()->emit_proof_comment("select from feasible terminal states");
@@ -470,9 +473,7 @@ namespace
                 }
             }
 
-            increase_inference_to(inference, state.infer_all(inferences, JustifyUsingRUP{}));
-            if (Inference::Contradiction == inference)
-                return inference;
+            inference.infer_all(inferences, JustifyUsingRUP{});
 
             // now run backwards from the final state, eliminating states that
             // didn't lead to a feasible terminal state, and seeing if any
@@ -502,26 +503,21 @@ namespace
                 }
 
                 auto var = all_vars.at(undetermined_var_indices.at(var_number));
-                state.for_each_value_while(var, [&](Integer val) {
+                state.for_each_value(var, [&](Integer val) {
                     if (! supported.contains(val))
-                        increase_inference_to(inference, state.infer(var != val, JustifyUsingRUP{}));
-                    return inference != Inference::Contradiction;
+                        inference.infer(var != val, JustifyUsingRUP{});
                 });
-
-                if (Inference::Contradiction == inference)
-                    return inference;
             }
         }
-
-        return inference;
     }
 
     auto knapsack(
         State & state,
+        InferenceTracker & inference,
         const vector<vector<Integer>> & coeffs,
         const vector<IntegerVariableID> & vars,
         const vector<IntegerVariableID> & totals,
-        const vector<pair<ProofLine, ProofLine>> & eqn_lines) -> pair<Inference, PropagatorState>
+        const vector<pair<ProofLine, ProofLine>> & eqn_lines) -> PropagatorState
     {
         vector<size_t> undetermined_vars;
         vector<Integer> committed_sums(totals.size(), 0_i);
@@ -534,21 +530,14 @@ namespace
                     committed_sums.at(x) += *val * coeffs.at(x).at(idx);
         }
 
-        auto inference = Inference::NoChange;
-
         if (undetermined_vars.empty()) {
             for (const auto & [x, t] : enumerate(totals)) {
-                increase_inference_to(inference, state.infer(totals.at(x) == committed_sums.at(x), NoJustificationNeeded{}));
-                if (Inference::Contradiction == inference)
-                    return pair{inference, PropagatorState::DisableUntilBacktrack};
+                inference.infer(totals.at(x) == committed_sums.at(x), JustifyUsingRUP{});
             }
         }
 
-        for (const auto & [x, v] : enumerate(totals)) {
-            increase_inference_to(inference, state.infer(v >= committed_sums.at(x), NoJustificationNeeded{}));
-            if (Inference::Contradiction == inference)
-                return pair{inference, PropagatorState::DisableUntilBacktrack};
-        }
+        for (const auto & [x, v] : enumerate(totals))
+            inference.infer(v >= committed_sums.at(x), JustifyUsingRUP{});
 
         vector<pair<Integer, Integer>> boundses;
         for (auto & t : totals)
@@ -559,14 +548,14 @@ namespace
             temporary_proof_level = state.maybe_proof()->temporary_proof_level();
 
         if (state.maybe_proof())
-            increase_inference_to(inference, knapsack_gac<true>(state, committed_sums, boundses, coeffs, totals, vars, undetermined_vars, eqn_lines));
+            knapsack_gac<true>(state, inference, committed_sums, boundses, coeffs, totals, vars, undetermined_vars, eqn_lines);
         else
-            increase_inference_to(inference, knapsack_gac<false>(state, committed_sums, boundses, coeffs, totals, vars, undetermined_vars, nullopt));
+            knapsack_gac<false>(state, inference, committed_sums, boundses, coeffs, totals, vars, undetermined_vars, nullopt);
 
         if (state.maybe_proof())
             state.maybe_proof()->forget_proof_level(temporary_proof_level);
 
-        return pair{inference, PropagatorState::Enable};
+        return PropagatorState::Enable;
     }
 }
 
@@ -611,9 +600,9 @@ auto Knapsack::install(Propagators & propagators, State & initial_state) && -> v
     triggers.on_change = {_vars.begin(), _vars.end()};
     triggers.on_change.insert(triggers.on_change.end(), _totals.begin(), _totals.end());
 
-    propagators.install(
-        [coeffs = move(_coeffs), vars = move(_vars), totals = move(_totals), eqns_lines = move(eqns_lines)](State & state) -> pair<Inference, PropagatorState> {
-            return knapsack(state, coeffs, vars, totals, eqns_lines);
+    propagators.install_tracking(
+        [coeffs = move(_coeffs), vars = move(_vars), totals = move(_totals), eqns_lines = move(eqns_lines)](State & state, InferenceTracker & inference) -> PropagatorState {
+            return knapsack(state, inference, coeffs, vars, totals, eqns_lines);
         },
         triggers, "knapsack");
 }

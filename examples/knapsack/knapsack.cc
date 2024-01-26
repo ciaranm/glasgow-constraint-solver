@@ -7,18 +7,30 @@
 #include <cstdlib>
 #include <iostream>
 #include <optional>
+#include <ranges>
 #include <vector>
 
 #include <boost/program_options.hpp>
+
+#include <fmt/core.h>
+#include <fmt/ostream.h>
+#include <fmt/ranges.h>
 
 using namespace gcs;
 
 using std::cerr;
 using std::cout;
-using std::endl;
+using std::cref;
 using std::make_optional;
 using std::nullopt;
 using std::vector;
+
+#if __cpp_lib_ranges >= 202110L
+using std::ranges::views::transform;
+#endif
+
+using fmt::print;
+using fmt::println;
 
 namespace po = boost::program_options;
 
@@ -42,15 +54,15 @@ auto main(int argc, char * argv[]) -> int
         po::notify(options_vars);
     }
     catch (const po::error & e) {
-        cerr << "Error: " << e.what() << endl;
-        cerr << "Try " << argv[0] << " --help" << endl;
+        println(cerr, "Error: {}", e.what());
+        println(cerr, "Try {} --help", argv[0]);
         return EXIT_FAILURE;
     }
 
     if (options_vars.contains("help")) {
-        cout << "Usage: " << argv[0] << " [options]" << endl;
-        cout << endl;
-        cout << display_options << endl;
+        println("Usage: {} [options]", argv[0]);
+        println("");
+        display_options.print(cout);
         return EXIT_SUCCESS;
     }
 
@@ -68,22 +80,23 @@ auto main(int argc, char * argv[]) -> int
     p.post(WeightedSum{} + 1_i * items[5] == 0_i);
 
     p.post(Knapsack{weights, profits, items, weight, profit});
+
     p.maximise(profit);
 
     auto stats = solve_with(p,
         SolveCallbacks{
             .solution = [&](const CurrentState & s) -> bool {
-                cout << "solution:";
-                for (auto & v : items)
-                    cout << " " << s(v);
-                cout << " profit " << s(profit) << " weight " << s(weight) << endl;
-
+#if __cpp_lib_ranges >= 202110L
+                println("solution: {} profit {} weight {}", items | transform(cref(s)), s(profit), s(weight));
+#else
+                println("solution: {} profit {} weight {}", s(items), s(profit), s(weight));
+#endif
                 return true;
             },
             .branch = branch_on_dom_then_deg(items)},
         options_vars.contains("prove") ? make_optional<ProofOptions>("knapsack.opb", "knapsack.veripb") : nullopt);
 
-    cout << stats;
+    print("{}", stats);
 
     return EXIT_SUCCESS;
 }

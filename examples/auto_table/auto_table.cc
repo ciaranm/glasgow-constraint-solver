@@ -12,15 +12,20 @@
 
 #include <boost/program_options.hpp>
 
+#include <fmt/core.h>
+#include <fmt/ostream.h>
+
 using namespace gcs;
 
 using std::cerr;
 using std::cout;
-using std::endl;
 using std::make_optional;
 using std::nullopt;
 using std::string;
 using std::vector;
+
+using fmt::print;
+using fmt::println;
 
 using namespace std::literals::string_literals;
 
@@ -47,15 +52,15 @@ auto main(int argc, char * argv[]) -> int
         po::notify(options_vars);
     }
     catch (const po::error & e) {
-        cerr << "Error: " << e.what() << endl;
-        cerr << "Try " << argv[0] << " --help" << endl;
+        println(cerr, "Error: {}", e.what());
+        println(cerr, "Try {} --help", argv[0]);
         return EXIT_FAILURE;
     }
 
     if (options_vars.contains("help")) {
-        cout << "Usage: " << argv[0] << " [options]" << endl;
-        cout << endl;
-        cout << display_options << endl;
+        println("Usage: {} [options]", argv[0]);
+        println("");
+        display_options.print(cout);
         return EXIT_SUCCESS;
     }
 
@@ -71,12 +76,12 @@ auto main(int argc, char * argv[]) -> int
     auto stats = solve_with(p,
         SolveCallbacks{
             .solution = [&](const CurrentState & s) -> bool {
-                cout << s(v[0]) << " " << s(v[1]) << " " << s(v[2]) << " " << s(v[3]) << " " << s(v[4]) << '\n';
+                println("{} {} {} {} {}", s(v[0]), s(v[1]), s(v[2]), s(v[3]), s(v[4]));
                 return true;
             }},
         options_vars.contains("prove") ? make_optional<ProofOptions>("auto_table.opb", "auto_table.veripb") : nullopt);
 
-    cout << stats;
+    print("{}", stats);
 
     return EXIT_SUCCESS;
 }

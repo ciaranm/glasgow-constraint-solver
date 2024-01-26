@@ -19,11 +19,13 @@
 
 #include <boost/program_options.hpp>
 
+#include <fmt/core.h>
+#include <fmt/ranges.h>
+
 using namespace gcs;
 
 using std::cerr;
 using std::cout;
-using std::endl;
 using std::make_optional;
 using std::nullopt;
 using std::optional;
@@ -31,6 +33,9 @@ using std::string;
 using std::to_string;
 using std::vector;
 using std::chrono::microseconds;
+
+using fmt::print;
+using fmt::println;
 
 namespace po = boost::program_options;
 
@@ -66,15 +71,15 @@ auto main(int argc, char * argv[]) -> int
         po::notify(options_vars);
     }
     catch (const po::error & e) {
-        cerr << "Error: " << e.what() << endl;
-        cerr << "Try " << argv[0] << " --help" << endl;
+        println(cerr, "Error: {}", e.what());
+        println(cerr, "Try {} --help", argv[0]);
         return EXIT_FAILURE;
     }
 
     if (options_vars.contains("help")) {
-        cout << "Usage: " << argv[0] << " [options] [instance]" << endl;
-        cout << endl;
-        cout << display_options << endl;
+        println("Usage: {} [options] [instance]", argv[0]);
+        println("");
+        display_options.print(cout);
         return EXIT_SUCCESS;
     }
 
@@ -150,7 +155,7 @@ auto main(int argc, char * argv[]) -> int
         west = {0, 0, 0, 1, 0, 4, 4, 0, 5};
     }
     else {
-        cerr << "Unknown instance (try size 5, 6, 7, or 9)" << endl;
+        println(cerr, "Unknown instance (try size 5, 6, 7, or 9)");
         return EXIT_FAILURE;
     }
 
@@ -254,31 +259,31 @@ auto main(int argc, char * argv[]) -> int
     auto stats = solve_with(p,
         SolveCallbacks{
             .solution = [&](const CurrentState & s) -> bool {
-                cout << "   ";
+                print("  ");
                 for (int c = 0; c < size; ++c)
-                    cout << " " << (north[c] != 0 ? to_string(north[c]) : " ");
-                cout << endl;
+                    print(" {}", (north[c] != 0 ? to_string(north[c]) : " "));
+                println("");
 
                 for (int r = 0; r < size; ++r) {
-                    cout << (west[r] != 0 ? to_string(west[r]) : " ") << "  ";
+                    print("{} ", (west[r] != 0 ? to_string(west[r]) : " "));
                     for (int c = 0; c < size; ++c)
-                        cout << " " << s(grid[r][c]);
-                    cout << "  " << (east[r] != 0 ? to_string(east[r]) : "");
-                    cout << endl;
+                        print(" {}", s(grid[r][c]));
+                    print("  {}", (east[r] != 0 ? to_string(east[r]) : ""));
+                    println("");
                 }
 
-                cout << "   ";
+                print("   ");
                 for (int c = 0; c < size; ++c)
-                    cout << " " << (south[c] != 0 ? to_string(south[c]) : " ");
-                cout << endl;
+                    print(" {}", (south[c] != 0 ? to_string(south[c]) : " "));
+                println("");
 
-                cout << endl;
+                println("");
                 return true;
             },
             .branch = branch_on_dom_then_deg(branch_vars)},
         options_vars.contains("prove") ? make_optional<ProofOptions>("skyscrapers.opb", "skyscrapers.veripb") : nullopt);
 
-    cout << stats;
+    print("{}", stats);
 
     return EXIT_SUCCESS;
 }
