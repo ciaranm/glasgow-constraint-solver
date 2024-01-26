@@ -118,9 +118,28 @@ namespace
                         if (any_false)
                             return pair{Inference::NoChange, PropagatorState::DisableUntilBacktrack};
                         else if (! undecided1)
-                            return pair{Inference::Contradiction, PropagatorState::Enable};
+                            return pair{state.infer(FalseLiteral{}, JustifyExplicitly{[&](Proof & proof) {
+                                            proof.emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} + 1_i * ! full_reif >= 1_i, ProofLevel::Temporary);
+                                            for (auto & l : lits)
+                                                switch (state.test_literal(l)) {
+                                                case LiteralIs::DefinitelyTrue:
+                                                    proof.emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} + 1_i * l >= 1_i, ProofLevel::Temporary);
+                                                    break;
+                                                case LiteralIs::DefinitelyFalse:
+                                                    proof.emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} + 1_i * ! l >= 1_i, ProofLevel::Temporary);
+                                                    break;
+                                                case LiteralIs::Undecided:
+                                                    break;
+                                                }
+                                        }}),
+                                PropagatorState::Enable};
                         else
-                            return pair{state.infer(! *undecided1, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
+                            return pair{state.infer(! *undecided1, JustifyExplicitly{[&](Proof & proof) {
+                                            for (auto & l : lits)
+                                                if (l != undecided1)
+                                                    proof.emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} + 1_i * l >= 1_i, ProofLevel::Temporary);
+                                        }}),
+                                PropagatorState::DisableUntilBacktrack};
                     }
 
                     case LiteralIs::Undecided: {
@@ -140,7 +159,11 @@ namespace
                         if (any_false)
                             return pair{state.infer(! full_reif, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
                         else if (all_true)
-                            return pair{state.infer(full_reif, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
+                            return pair{state.infer(full_reif, JustifyExplicitly{[&](Proof & proof) {
+                                            for (auto & l : lits)
+                                                proof.emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} + 1_i * l >= 1_i, ProofLevel::Temporary);
+                                        }}),
+                                PropagatorState::DisableUntilBacktrack};
                         else
                             return pair{Inference::NoChange, PropagatorState::Enable};
                     }

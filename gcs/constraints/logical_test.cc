@@ -1,4 +1,4 @@
-#include <gcs/constraints/equals.hh>
+#include <gcs/constraints/constraints_test_utils.hh>
 #include <gcs/constraints/logical.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
@@ -14,7 +14,9 @@
 #include <vector>
 
 using std::cerr;
-using std::endl;
+using std::flush;
+using std::function;
+using std::make_optional;
 using std::mt19937;
 using std::nullopt;
 using std::optional;
@@ -27,169 +29,101 @@ using std::tuple;
 using std::uniform_int_distribution;
 using std::vector;
 
-using namespace gcs;
-using namespace gcs::innards;
+using fmt::print;
+using fmt::println;
 
-namespace
-{
-    auto power_set(int n, vector<uint8_t> & s, const auto & yield) -> void
-    {
-        if (0 == n)
-            yield(s);
-        else {
-            s.push_back(true);
-            power_set(n - 1, s, yield);
-            s.pop_back();
-            s.push_back(false);
-            power_set(n - 1, s, yield);
-            s.pop_back();
-        }
-    }
-}
+using namespace gcs;
+using namespace gcs::test_innards;
 
 template <typename Logical_>
-auto run_logical_test(int n_vars, optional<bool> r, const vector<pair<int, bool>> & terms,
-    bool logic_start, const auto & logic) -> bool
+auto run_logical_test(const string & which, bool proofs, const vector<pair<int, int>> & vars, pair<int, int> full_reif,
+    const function<auto(const vector<int> &, int)->bool> & is_satisfying) -> void
 {
-    cerr << typeid(Logical_).name() << " " << n_vars << " " << (r == nullopt ? string{"null"} : to_string(*r)) << " (";
-    for (auto & [c, p] : terms)
-        cerr << " " << c << "," << p;
-    cerr << ")" << endl;
+    print(cerr, "logical {} {} {} {}", which, vars, full_reif, proofs ? " with proofs:" : ":");
+    cerr << flush;
 
-    set<pair<vector<uint8_t>, bool>> expected, actual;
-
-    vector<uint8_t> acc;
-    power_set(n_vars, acc, [&](const vector<uint8_t> & candidate) {
-        bool met = logic_start;
-        for (auto & [c, p] : terms)
-            met = logic(met, (c == -1 ? true : candidate.at(c)) == p);
-
-        if (r == nullopt)
-            expected.emplace(candidate, met);
-        else if (r != nullopt && *r == true && met)
-            expected.emplace(candidate, true);
-        else if (r != nullopt && *r == false && ! met)
-            expected.emplace(candidate, false);
-    });
+    set<pair<vector<int>, int>> expected, actual;
+    build_expected(expected, is_satisfying, vars, full_reif);
+    println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;
-    auto vs = p.create_integer_variable_vector(n_vars, 0_i, 1_i, "vs");
-    auto rv = p.create_integer_variable(0_i, 1_i, "rv");
+    vector<IntegerVariableID> vs;
+    for (const auto & [l, u] : vars)
+        vs.emplace_back(p.create_integer_variable(Integer(l), Integer(u)));
+    auto r = p.create_integer_variable(Integer(full_reif.first), Integer(full_reif.second));
 
-    Literals lits;
-    for (auto & [c, p] : terms)
-        lits.push_back(-1 == c ? (p ? Literal{TrueLiteral{}} : Literal{FalseLiteral{}}) : (p ? vs.at(c) == 1_i : vs.at(c) == 0_i));
-    p.post(Logical_{lits, r == nullopt ? Literal{rv == 1_i} : *r == true ? Literal{TrueLiteral{}}
-                                                                         : Literal{FalseLiteral{}}});
+    if (-1 == full_reif.first && -1 == full_reif.second)
+        p.post(Logical_{vs});
+    else
+        p.post(Logical_{vs, r});
 
-    if (r != nullopt)
-        p.post(Equals{rv, *r ? 1_c : 0_c});
+    auto proof_name = proofs ? make_optional("logical_test") : nullopt;
+    solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{vs, r});
 
-    solve(
-        p, [&](const CurrentState & s) -> bool {
-            vector<uint8_t> got;
-            for (auto & v : vs)
-                got.push_back(s(v) == 1_i ? 1 : 0);
-            actual.emplace(got, s(rv) == 1_i ? 1 : 0);
-            return true;
-        },
-        ProofOptions{"logical_test.opb", "logical_test.veripb"});
-
-    if (actual != expected) {
-        cerr << "actual:";
-        for (auto & a : actual) {
-            cerr << " (";
-            auto & [v, r] = a;
-            for (auto & vv : v)
-                cerr << (vv ? "t" : "f");
-            cerr << "), " << (r ? "t" : "f");
-            if (! expected.contains(a))
-                cerr << "!";
-            cerr << ";";
-        }
-        cerr << " expected:";
-        for (auto & a : expected) {
-            cerr << " (";
-            auto & [v, r] = a;
-            for (auto & vv : v)
-                cerr << (vv ? "t" : "f");
-            cerr << "), " << (r ? "t" : "f");
-            if (! actual.contains(a))
-                cerr << "!";
-            cerr << ";";
-        }
-        cerr << endl;
-    }
-
-    if (actual != expected)
-        return false;
-
-    if (0 != system("veripb logical_test.opb logical_test.veripb"))
-        return false;
-
-    return true;
+    check_results(proof_name, expected, actual);
 }
 
 auto main(int, char *[]) -> int
 {
-    vector<tuple<int, optional<bool>, vector<pair<int, bool>>>> data = {
-        {3, nullopt, {{0, true}, {1, true}, {2, true}}},
-        {3, nullopt, {{0, false}, {1, false}, {2, false}}},
-        {3, nullopt, {{0, false}, {1, false}, {2, true}}},
-        {2, nullopt, {{0, true}, {1, true}}},
-        {2, nullopt, {{0, true}, {0, false}, {1, true}}},
-        {5, nullopt, {{1, true}, {1, true}, {1, true}}},
-        {5, nullopt, {{1, false}, {1, false}, {1, false}}},
-        {3, false, {{0, true}, {1, true}, {2, true}}},
-        {3, false, {{0, false}, {1, false}, {2, true}}},
-        {2, false, {{0, true}, {1, true}}},
-        {2, false, {{0, true}, {0, false}, {1, true}}},
-        {5, false, {{1, true}, {1, true}, {1, true}}},
-        {5, false, {{1, false}, {1, false}, {1, false}}},
-        {3, true, {{0, true}, {1, true}, {2, true}}},
-        {3, true, {{0, false}, {1, false}, {2, true}}},
-        {2, true, {{0, true}, {1, true}}},
-        {2, true, {{0, true}, {0, false}, {1, true}}},
-        {5, true, {{1, true}, {1, true}, {1, true}}},
-        {5, true, {{1, false}, {1, false}, {1, false}}},
-        {2, false, {{0, false}, {-1, false}, {1, true}}},
-        {5, false, {{1, false}, {-1, false}, {3, true}, {4, false}}},
-        {5, false, {{4, false}, {-1, false}, {0, true}, {-1, true}, {1, true}}},
-        {5, false, {{-1, false}}},
-        {5, false, {{-1, true}}},
-        {5, false, {{4, true}, {0, true}, {3, false}}},
-        {3, nullopt, {{-1, true}, {2, true}, {1, true}}},
-        {5, nullopt, {{2, false}, {4, true}, {-1, true}, {-1, true}, {0, true}}},
-        {2, nullopt, {}},
-        {2, true, {}},
-        {2, false, {}}};
+    vector<tuple<vector<pair<int, int>>, pair<int, int>>> data = {
+        {{{0, 1}, {0, 1}, {0, 1}}, {0, 1}},
+        {{{0, 1}, {0, 1}, {0, 1}}, {-1, -1}},
+        {{{0, 1}, {1, 1}, {0, 1}}, {0, 1}},
+        {{{0, 1}, {0, 0}, {0, 1}}, {0, 1}},
+        {{{2, 5}, {-2, -1}, {1, 3}, {2, 5}}, {0, 2}},
+        {{{2, 5}, {2, 5}}, {0, 0}},
+        {{{-2, 1}, {2, 5}, {-2, 1}, {2, 5}}, {-1, 1}}};
 
     random_device rand_dev;
     mt19937 rand(rand_dev());
+    uniform_int_distribution n_values_dist(1, 4);
     for (int x = 0; x < 10; ++x) {
-        uniform_int_distribution n_clauses(0, 5);
-        uniform_int_distribution n_vars(-1, 4);
-        uniform_int_distribution full_reif(0, 2);
-        uniform_int_distribution positive(0, 1);
+        auto n_values = n_values_dist(rand);
+        generate_random_data(rand, data, vector(n_values, random_bounds(-2, 2, 1, 3)), random_bounds(-1, 1, 0, 3));
+    }
 
-        vector<pair<int, bool>> terms;
-        for (unsigned l = 0, l_end = n_clauses(rand); l != l_end; ++l)
-            terms.emplace_back(n_vars(rand), positive(rand) == 1);
-        optional<bool> r;
-        switch (full_reif(rand)) {
-        case 0: r = nullopt; break;
-        case 1: r = true; break;
-        case 2: r = false; break;
+    for (auto & [r1, r2] : data) {
+        run_logical_test<And>("and", false, r1, r2, [&](const vector<int> & v, int r) {
+            bool result = true;
+            for (auto & i : v)
+                result = result && (i != 0);
+            if (r2 == pair{-1, -1})
+                return result;
+            else
+                return result == (r != 0);
+        });
+        run_logical_test<Or>("or", false, r1, r2, [&](const vector<int> & v, int r) {
+            bool result = false;
+            for (auto & i : v)
+                result = result || (i != 0);
+            if (r2 == pair{-1, -1})
+                return result;
+            else
+                return result == (r != 0);
+        });
+    }
+
+    if (can_run_veripb())
+        for (auto & [r1, r2] : data) {
+            run_logical_test<And>("and", true, r1, r2, [&](const vector<int> & v, int r) {
+                bool result = true;
+                for (auto & i : v)
+                    result = result && (i != 0);
+                if (r2 == pair{-1, -1})
+                    return result;
+                else
+                    return result == (r != 0);
+            });
+            run_logical_test<Or>("or", true, r1, r2, [&](const vector<int> & v, int r) {
+                bool result = false;
+                for (auto & i : v)
+                    result = result || (i != 0);
+                if (r2 == pair{-1, -1})
+                    return result;
+                else
+                    return result == (r != 0);
+            });
         }
-        data.emplace_back(5, r, terms);
-    }
-
-    for (auto & [n_vars, reif, terms] : data) {
-        if (! run_logical_test<And>(n_vars, reif, terms, true, [&](bool b1, bool b2) { return b1 && b2; }))
-            return EXIT_FAILURE;
-        if (! run_logical_test<Or>(n_vars, reif, terms, false, [&](bool b1, bool b2) { return b1 || b2; }))
-            return EXIT_FAILURE;
-    }
 
     return EXIT_SUCCESS;
 }
