@@ -11,6 +11,7 @@ using namespace gcs::innards;
 
 using std::list;
 using std::map;
+using std::max;
 using std::pair;
 using std::set;
 using std::unique_ptr;
@@ -53,7 +54,7 @@ auto NValue::install(Propagators & propagators, State & initial_state) && -> voi
                 all_definite_values.insert(*val);
         }
 
-        increase_inference_to(inf, state.infer(n_values >= Integer(all_definite_values.size()), JustifyUsingRUP{}));
+        increase_inference_to(inf, state.infer(n_values >= max(1_i, Integer(all_definite_values.size())), JustifyUsingRUP{}));
         if (Inference::Contradiction == inf)
             return pair{inf, PropagatorState::Enable};
 
