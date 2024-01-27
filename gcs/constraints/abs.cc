@@ -1,4 +1,5 @@
 #include <gcs/constraints/abs.hh>
+#include <gcs/innards/proof.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
 
@@ -51,22 +52,25 @@ auto Abs::install(Propagators & propagators, State & initial_state) && -> void
         Inference result = Inference::NoChange;
         state.for_each_value_while(v1, [&](Integer val) {
             if (! state.in_domain(v2, abs(val)))
-                increase_inference_to(result, state.infer_not_equal(v1, val, JustifyUsingRUP{}));
+                increase_inference_to(result, state.infer_not_equal(v1, val, JustifyUsingRUPBecauseOf{{v2 != abs(val)}}));
             return result != Inference::Contradiction;
         });
 
         state.for_each_value_while(v2, [&](Integer val) {
-            if (! state.in_domain(v1, val) && ! state.in_domain(v1, -val) && state.in_domain(v2, val))
-                increase_inference_to(result, state.infer_not_equal(v2, val, JustifyExplicitly{[&](Proof & proof) {
-                    proof.emit_rup_proof_line_under_trail(state,
+            if (! state.in_domain(v1, val) && ! state.in_domain(v1, -val) && state.in_domain(v2, val)) {
+                Reason reason{v1 != val, v1 != -val};
+                auto just = [&](Proof & proof) {
+                    proof.emit_rup_proof_line_under_reason(state, reason,
                         WeightedPseudoBooleanSum{} + 1_i * (v1 != val) >= 1_i, ProofLevel::Temporary);
-                    proof.emit_rup_proof_line_under_trail(state,
+                    proof.emit_rup_proof_line_under_reason(state, reason,
                         WeightedPseudoBooleanSum{} + 1_i * (v1 != -val) >= 1_i, ProofLevel::Temporary);
-                    proof.emit_rup_proof_line_under_trail(state,
+                    proof.emit_rup_proof_line_under_reason(state, reason,
                         WeightedPseudoBooleanSum{} + 1_i * (*selector) + 1_i * (v2 != val) >= 1_i, ProofLevel::Temporary);
-                    proof.emit_rup_proof_line_under_trail(state,
+                    proof.emit_rup_proof_line_under_reason(state, reason,
                         WeightedPseudoBooleanSum{} + 1_i * (! *selector) + 1_i * (v2 != val) >= 1_i, ProofLevel::Temporary);
-                }}));
+                };
+                increase_inference_to(result, state.infer_not_equal(v2, val, JustifyExplicitlyBecauseOf{just, reason}));
+            }
             return result != Inference::Contradiction;
         });
 

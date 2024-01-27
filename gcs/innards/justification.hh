@@ -1,6 +1,7 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_JUSTIFICATION_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_JUSTIFICATION_HH
 
+#include <gcs/innards/literal.hh>
 #include <gcs/innards/proof-fwd.hh>
 
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
@@ -22,6 +23,8 @@ namespace gcs::innards
      */
     using ExplicitJustificationFunction = std::function<auto(Proof &)->void>;
 
+    using Reason = Literals;
+
     /**
      * \brief Justification for something that is actually a guess, not an
      * inferred decision.
@@ -31,6 +34,32 @@ namespace gcs::innards
      */
     struct Guess
     {
+    };
+
+    /**
+     * \brief Specify that an inference requires an explicit justification in
+     * the proof log.
+     *
+     * \ingroup Innards
+     * \sa Justification
+     */
+    struct JustifyExplicitlyBecauseOf
+    {
+        ExplicitJustificationFunction add_proof_steps;
+        Reason reason;
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+        std::source_location where;
+
+        explicit JustifyExplicitlyBecauseOf(const ExplicitJustificationFunction & a,
+            Reason r,
+            const std::source_location & w = std::source_location::current()) :
+            add_proof_steps(a),
+            reason(std::move(r)),
+            where(w)
+        {
+        }
+#else
+#endif
     };
 
     /**
@@ -77,6 +106,34 @@ namespace gcs::innards
     };
 
     /**
+     * \brief Specify that an inference can be justified using reverse unit
+     * propagation.
+     *
+     * \ingroup Innards
+     * \sa Justification
+     */
+    struct JustifyUsingRUPBecauseOf
+    {
+        Reason reason;
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+        std::source_location where;
+#endif
+
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+        explicit JustifyUsingRUPBecauseOf(Reason r, const std::source_location & w = std::source_location::current()) :
+            reason(std::move(r)),
+            where(w)
+        {
+        }
+#else
+        explicit JustifyUsingRUPBecauseOf(Reason r) :
+            reason(std::move(r))
+        {
+        }
+#endif
+    };
+
+    /**
      * \brief Specify that an inference needs to be asserted rather than
      * justified.
      *
@@ -102,7 +159,7 @@ namespace gcs::innards
      *
      * \ingroup Innards
      */
-    using Justification = std::variant<Guess, JustifyUsingRUP, JustifyUsingAssertion, JustifyExplicitly, NoJustificationNeeded>;
+    using Justification = std::variant<Guess, JustifyUsingRUP, JustifyUsingRUPBecauseOf, JustifyUsingAssertion, JustifyExplicitly, JustifyExplicitlyBecauseOf, NoJustificationNeeded>;
 }
 
 #endif

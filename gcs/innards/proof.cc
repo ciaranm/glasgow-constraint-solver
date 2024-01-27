@@ -965,6 +965,36 @@ auto Proof::infer(const State & state, bool is_contradicting, const Literal & li
             need_lit();
             output_it("u");
         },
+        [&]([[maybe_unused]] const JustifyUsingRUPBecauseOf & j) {
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+            _imp->proof << "* RUP on lit " << debug_string(lit) << " with reason from " << j.where.file_name() << ":"
+                        << j.where.line() << " in " << j.where.function_name() << '\n';
+#endif
+            need_lit();
+            for (auto & r : j.reason)
+                overloaded{
+                    [&](const TrueLiteral &) {
+                    },
+                    [&](const FalseLiteral &) {
+                    },
+                    [&](const VariableConditionFrom<SimpleIntegerVariableID> & cond) {
+                        need_proof_name(cond);
+                    },
+                    [&](const ProofVariableCondition &) {
+                    }}
+                    .visit(simplify_literal(r));
+
+            if (! is_literally_true(lit)) {
+                WeightedPseudoBooleanSum terms;
+                for (auto & r : j.reason)
+                    terms += 1_i * ! r;
+                terms += 1_i * lit;
+                _imp->proof << "u ";
+                emit_inequality_to(move(terms) >= 1_i, nullopt, _imp->proof);
+                _imp->proof << '\n';
+                record_proof_line(++_imp->proof_line, ProofLevel::Current);
+            }
+        },
         [&](const JustifyUsingAssertion &) {
             need_lit();
             output_it("a");
@@ -978,6 +1008,17 @@ auto Proof::infer(const State & state, bool is_contradicting, const Literal & li
             auto t = temporary_proof_level();
             x.add_proof_steps(*this);
             infer(state, is_contradicting, lit, JustifyUsingRUP{});
+            forget_proof_level(t);
+        },
+        [&](const JustifyExplicitlyBecauseOf & x) {
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+            _imp->proof << "* explicit on lit " << debug_string(lit) << " with reason from " << x.where.file_name() << ":"
+                        << x.where.line() << " in " << x.where.function_name() << '\n';
+#endif
+            need_lit();
+            auto t = temporary_proof_level();
+            x.add_proof_steps(*this);
+            infer(state, is_contradicting, lit, JustifyUsingRUPBecauseOf{x.reason});
             forget_proof_level(t);
         },
         [&](const Guess &) {
@@ -1179,6 +1220,41 @@ auto Proof::emit_rup_proof_line_under_trail(const State & state, const SumLessEq
     ) -> ProofLine
 {
     auto terms = trail_variables_as_sum(state, ineq.rhs);
+    for (auto & t : ineq.lhs.terms)
+        terms += t;
+    return emit_rup_proof_line(terms <= ineq.rhs, level
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+        ,
+        where
+#endif
+    );
+}
+
+auto Proof::emit_rup_proof_line_under_reason(const State &, const Reason & reason, const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
+    ProofLevel level
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+    ,
+    const std::source_location & where
+#endif
+    ) -> ProofLine
+{
+    for (auto & r : reason)
+        overloaded{
+            [&](const TrueLiteral &) {
+            },
+            [&](const FalseLiteral &) {
+            },
+            [&](const VariableConditionFrom<SimpleIntegerVariableID> & cond) {
+                need_proof_name(cond);
+            },
+            [&](const ProofVariableCondition &) {
+            }}
+            .visit(simplify_literal(r));
+
+    WeightedPseudoBooleanSum terms;
+    for (auto & r : reason)
+        terms += ineq.rhs * ! r;
+
     for (auto & t : ineq.lhs.terms)
         terms += t;
     return emit_rup_proof_line(terms <= ineq.rhs, level

@@ -44,14 +44,14 @@ auto NotEquals::install(Propagators & propagators, State & initial_state) && -> 
         }
     }
     else if (v1_is_constant) {
-        propagators.install([v1_is_constant = v1_is_constant, v2 = _v2](State & state) -> pair<Inference, PropagatorState> {
-            return pair{state.infer_not_equal(v2, *v1_is_constant, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
+        propagators.install([v1_is_constant = v1_is_constant, v1 = _v1, v2 = _v2](State & state) -> pair<Inference, PropagatorState> {
+            return pair{state.infer_not_equal(v2, *v1_is_constant, JustifyUsingRUPBecauseOf{{v1 == *v1_is_constant}}), PropagatorState::DisableUntilBacktrack};
         },
             Triggers{}, "not equals");
     }
     else if (v2_is_constant) {
-        propagators.install([v2_is_constant = v2_is_constant, v1 = _v1](State & state) -> pair<Inference, PropagatorState> {
-            return pair{state.infer_not_equal(v1, *v2_is_constant, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
+        propagators.install([v2_is_constant = v2_is_constant, v1 = _v1, v2 = _v2](State & state) -> pair<Inference, PropagatorState> {
+            return pair{state.infer_not_equal(v1, *v2_is_constant, JustifyUsingRUPBecauseOf{{v2 == *v2_is_constant}}), PropagatorState::DisableUntilBacktrack};
         },
             Triggers{}, "not equals");
     }
@@ -66,11 +66,11 @@ auto NotEquals::install(Propagators & propagators, State & initial_state) && -> 
             propagators.install([v1 = _v1, v2 = _v2, convert_to_values_ne = convert_to_values_ne](State & state) -> pair<Inference, PropagatorState> {
                 auto value1 = state.optional_single_value(v1);
                 if (value1)
-                    return pair{state.infer_not_equal(v2, *value1, convert_to_values_ne ? Justification{NoJustificationNeeded{}} : Justification{JustifyUsingRUP{}}),
+                    return pair{state.infer_not_equal(v2, *value1, convert_to_values_ne ? Justification{NoJustificationNeeded{}} : Justification{JustifyUsingRUPBecauseOf{{v1 == *value1}}}),
                         PropagatorState::DisableUntilBacktrack};
                 auto value2 = state.optional_single_value(v2);
                 if (value2)
-                    return pair{state.infer_not_equal(v1, *value2, convert_to_values_ne ? Justification{NoJustificationNeeded{}} : Justification{JustifyUsingRUP{}}),
+                    return pair{state.infer_not_equal(v1, *value2, convert_to_values_ne ? Justification{NoJustificationNeeded{}} : Justification{JustifyUsingRUPBecauseOf{{v2 == *value2}}}),
                         PropagatorState::DisableUntilBacktrack};
                 return pair{Inference::NoChange, PropagatorState::Enable};
             },
