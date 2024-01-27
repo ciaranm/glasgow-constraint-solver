@@ -4,7 +4,6 @@
 #include <gcs/solve.hh>
 
 #include <util/enumerate.hh>
-#include <util/stringify_tuple.hh>
 
 #include <cstdlib>
 #include <functional>
