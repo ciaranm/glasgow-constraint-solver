@@ -281,7 +281,7 @@ auto main(int argc, char * argv[]) -> int
                 return true;
             },
             .branch = branch_on_dom_then_deg(branch_vars)},
-        options_vars.contains("prove") ? make_optional<ProofOptions>("skyscrapers.opb", "skyscrapers.veripb") : nullopt);
+        options_vars.contains("prove") ? make_optional<ProofOptions>("skyscrapers.opb", "skyscrapers.pbp") : nullopt);
 
     print("{}", stats);
 

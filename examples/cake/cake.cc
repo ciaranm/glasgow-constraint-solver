@@ -88,7 +88,7 @@ auto main(int argc, char * argv[]) -> int
             .guess = guess_largest_value_first() //
         },
         options_vars.contains("prove") ? make_optional<ProofOptions>(
-                                             "cake.opb", "cake.veripb", true, options_vars.count("full-proof-encoding"))
+                                             "cake.opb", "cake.pbp", true, options_vars.count("full-proof-encoding"))
                                        : nullopt);
 
     print("{}", stats);

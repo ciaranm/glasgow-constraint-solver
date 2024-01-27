@@ -79,7 +79,7 @@ auto main(int argc, char * argv[]) -> int
                 println("{} {} {} {} {}", s(v[0]), s(v[1]), s(v[2]), s(v[3]), s(v[4]));
                 return true;
             }},
-        options_vars.contains("prove") ? make_optional<ProofOptions>("auto_table.opb", "auto_table.veripb") : nullopt);
+        options_vars.contains("prove") ? make_optional<ProofOptions>("auto_table.opb", "auto_table.pbp") : nullopt);
 
     print("{}", stats);
 

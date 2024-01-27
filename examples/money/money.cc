@@ -49,7 +49,7 @@ auto main(int, char *[]) -> int
 
             return true;
         },
-        ProofOptions{"money.opb", "money.veripb"});
+        ProofOptions{"money.opb", "money.pbp"});
 
     print("{}", stats);
 

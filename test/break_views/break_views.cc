@@ -29,7 +29,7 @@ auto main(int, char *[]) -> int
                 return true;
             },
         },
-        make_optional<ProofOptions>("break_views.opb", "break_views.veripb"));
+        make_optional<ProofOptions>("break_views.opb", "break_views.pbp"));
 
     cout << stats;
 

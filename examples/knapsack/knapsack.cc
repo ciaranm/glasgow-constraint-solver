@@ -94,7 +94,7 @@ auto main(int argc, char * argv[]) -> int
                 return true;
             },
             .branch = branch_on_dom_then_deg(items)},
-        options_vars.contains("prove") ? make_optional<ProofOptions>("knapsack.opb", "knapsack.veripb") : nullopt);
+        options_vars.contains("prove") ? make_optional<ProofOptions>("knapsack.opb", "knapsack.pbp") : nullopt);
 
     print("{}", stats);
 

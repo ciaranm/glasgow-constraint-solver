@@ -90,10 +90,10 @@ auto test_regular(const int & n, mt19937 & rng)
             .solution = [&](const CurrentState &) -> bool {
                 return true;
             }},
-        ProofOptions{"random_regular.opb", "random_regular.veripb"});
+        ProofOptions{"random_regular.opb", "random_regular.pbp"});
 
     //        cout << "Num solutions: " << stats.solutions << endl;
-    if (0 != system("veripb random_regular.opb random_regular.veripb")) {
+    if (0 != system("veripb random_regular.opb random_regular.pbp")) {
         cout << string_rep.str() << endl;
         return false;
     }

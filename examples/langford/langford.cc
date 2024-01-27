@@ -107,7 +107,7 @@ auto main(int argc, char * argv[]) -> int
 
             return true;
         },
-        options_vars.contains("prove") ? make_optional<ProofOptions>("langford.opb", "langford.veripb") : nullopt);
+        options_vars.contains("prove") ? make_optional<ProofOptions>("langford.opb", "langford.pbp") : nullopt);
 
     print("{}", stats);
 

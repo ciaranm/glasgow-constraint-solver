@@ -74,7 +74,7 @@ auto main(int argc, char * argv[]) -> int
             println("{} {} {} {} {}", s(a), s(b), s(c), s(d), s(e));
             return true;
         },
-        options_vars.count("prove") ? make_optional<ProofOptions>("odd_even_sum.opb", "odd_even_sum.veripb") : nullopt);
+        options_vars.count("prove") ? make_optional<ProofOptions>("odd_even_sum.opb", "odd_even_sum.pbp") : nullopt);
 
     print("{}", stats);
 

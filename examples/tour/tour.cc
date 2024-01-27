@@ -93,7 +93,7 @@ auto main(int, char *[]) -> int
                 cout << "\n\n";
                 return true;
             }},
-        ProofOptions("tour.opb", "tour.veripb"));
+        ProofOptions("tour.opb", "tour.pbp"));
 
     cout << stats;
     return EXIT_SUCCESS;

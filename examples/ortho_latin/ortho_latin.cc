@@ -130,7 +130,7 @@ auto main(int argc, char * argv[]) -> int
 
             return true;
         },
-        options_vars.contains("prove") ? make_optional<ProofOptions>("ortho_latin.opb", "ortho_latin.veripb") : nullopt);
+        options_vars.contains("prove") ? make_optional<ProofOptions>("ortho_latin.opb", "ortho_latin.pbp") : nullopt);
 
     print("{}", stats);
 

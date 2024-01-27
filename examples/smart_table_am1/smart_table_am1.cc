@@ -79,7 +79,7 @@ auto main(int argc, char * argv[]) -> int
                 cout << "]" << endl;
                 return true;
             }},
-        options_vars.contains("prove") ? make_optional<ProofOptions>("smart_table_am1.opb", "smart_table_am1.veripb") : nullopt);
+        options_vars.contains("prove") ? make_optional<ProofOptions>("smart_table_am1.opb", "smart_table_am1.pbp") : nullopt);
 
     cout << stats;
 

@@ -194,12 +194,12 @@ solve_with(p,
         .branch = branch_on_dom_then_deg(problem, vector<IntegerVariableID>{banana, chocolate}),
         .guess = guess_smallest_value_first()
     },
-    make_optional<ProofOptions>("cake.opb", "cake.veripb"));
+    make_optional<ProofOptions>("cake.opb", "cake.pbp"));
 ```
 
 This will produce a ``cake.opb`` file containing a low-level description of the model, as well as a
-``cake.veripb`` file containing the associated proof. To verify the proof, use ``veripb cake.opb
-cake.veripb``.
+``cake.pbp`` file containing the associated proof. To verify the proof, use ``veripb cake.opb
+cake.pbp``.
 
 Navigating the Source Code
 ==========================

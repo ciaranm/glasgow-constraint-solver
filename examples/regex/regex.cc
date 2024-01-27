@@ -78,10 +78,10 @@ auto main(int argc, char * argv[]) -> int
                 return true;
             },
         },
-        options_vars.contains("prove") ? make_optional<ProofOptions>("regex.opb", "regex.veripb") : nullopt);
+        options_vars.contains("prove") ? make_optional<ProofOptions>("regex.opb", "regex.pbp") : nullopt);
 
     cout << stats;
 
-    //    system("veripb --trace --useColor regex.opb regex.veripb");
+    //    system("veripb --trace --useColor regex.opb regex.pbp");
     return EXIT_SUCCESS;
 }

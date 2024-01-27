@@ -253,9 +253,9 @@ auto test_smart_table(const int & n, mt19937 & rng, bool make_string_rep)
 
                 return true;
             }},
-        ProofOptions{"random_table.opb", "random_table.veripb"});
+        ProofOptions{"random_table.opb", "random_table.pbp"});
 
-    if (0 != system("veripb random_table.opb random_table.veripb")) {
+    if (0 != system("veripb random_table.opb random_table.pbp")) {
         cout << stats;
         cout << "Num solutions: " << stats.solutions << endl;
         if (make_string_rep) cout << string_rep.str() << endl;

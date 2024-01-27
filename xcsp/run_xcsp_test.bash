@@ -11,5 +11,5 @@ export PATH=$HOME/.local/bin:$PATH
 echo writing output to $testname.out
 $prog --prove --all $testsdir/$testname.xml > $testname.out || exit 1
 grep -q "$checkfor" $testname.out || exit 1
-veripb xcsp.{opb,veripb} || exit 1
-rm -f xcsp.{opb,veripb} $testname.out
+veripb xcsp.{opb,pbp} || exit 1
+rm -f xcsp.{opb,pbp} $testname.out

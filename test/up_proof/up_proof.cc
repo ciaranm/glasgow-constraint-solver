@@ -50,7 +50,7 @@ auto main(int, char *[]) -> int
                 return true;
             },
         },
-        make_optional<ProofOptions>("up_proof.opb", "up_proof.veripb"));
+        make_optional<ProofOptions>("up_proof.opb", "up_proof.pbp"));
 
     cout << stats;
 

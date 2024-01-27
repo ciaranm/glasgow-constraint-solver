@@ -162,7 +162,7 @@ auto main(int argc, char * argv[]) -> int
             .guess = [&](const CurrentState & state, IntegerVariableID var) -> vector<IntegerVariableCondition> {
                 return vector<IntegerVariableCondition>{var == state.lower_bound(var), var != state.lower_bound(var)};
             }},
-        options_vars.contains("prove") ? make_optional<ProofOptions>("qap.opb", "qap.veripb") : nullopt);
+        options_vars.contains("prove") ? make_optional<ProofOptions>("qap.opb", "qap.pbp") : nullopt);
 
     cout << stats << endl;
 
