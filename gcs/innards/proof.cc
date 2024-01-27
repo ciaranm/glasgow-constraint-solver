@@ -671,8 +671,18 @@ auto Proof::simplify_literal(const ProofLiteral & lit) -> SimpleLiteral
                     }
                     throw NonExhaustiveSwitch{};
                 },
-                [&](const ConstantIntegerVariableID &) -> SimpleLiteral {
-                    throw UnimplementedException{};
+                [&](const ConstantIntegerVariableID & cvar) -> SimpleLiteral {
+                    switch (lit.op) {
+                    case VariableConditionOperator::NotEqual:
+                        return cvar.const_value != lit.value ? SimpleLiteral{TrueLiteral{}} : SimpleLiteral{FalseLiteral{}};
+                    case VariableConditionOperator::Equal:
+                        return cvar.const_value == lit.value ? SimpleLiteral{TrueLiteral{}} : SimpleLiteral{FalseLiteral{}};
+                    case VariableConditionOperator::Less:
+                        return cvar.const_value < lit.value ? SimpleLiteral{TrueLiteral{}} : SimpleLiteral{FalseLiteral{}};
+                    case VariableConditionOperator::GreaterEqual:
+                        return cvar.const_value >= lit.value ? SimpleLiteral{TrueLiteral{}} : SimpleLiteral{FalseLiteral{}};
+                    }
+                    throw NonExhaustiveSwitch{};
                 }}
                 .visit(lit.var);
         },
