@@ -151,7 +151,7 @@ namespace
                     proof.emit_proof_comment("Preventing cycle");
                     output_cycle_to_proof(succ, start, chain.length[start], lines_for_setting_pos, state, proof, make_optional(Integer{end}),
                         make_optional(Integer{start}));
-                    proof.infer(state, succ[end] != Integer{start}, JustifyUsingRUP{});
+                    proof.infer(state, false, succ[end] != Integer{start}, JustifyUsingRUP{});
                     proof.emit_proof_comment("Done preventing cycle");
                 }}));
             }

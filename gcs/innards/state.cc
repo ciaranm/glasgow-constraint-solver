@@ -619,7 +619,7 @@ auto State::prove_and_remember_change(const Inference & inference, const HowChan
 
     case Inference::Contradiction:
         if (_imp->maybe_proof)
-            _imp->maybe_proof->infer(*this, FalseLiteral{}, just);
+            _imp->maybe_proof->infer(*this, true, lit, just);
         break;
 
     case Inference::Change: {
@@ -635,7 +635,7 @@ auto State::prove_and_remember_change(const Inference & inference, const HowChan
         _imp->how_changed[simple_var.index] = max<HowChanged>(_imp->how_changed[simple_var.index], how_changed);
 
         if (_imp->maybe_proof)
-            _imp->maybe_proof->infer(*this, lit, just);
+            _imp->maybe_proof->infer(*this, false, lit, just);
         break;
     }
     }
@@ -649,12 +649,12 @@ auto State::infer(const Literal & lit, const Justification & just) -> Inference
         },
         [&](const TrueLiteral &) {
             if (_imp->maybe_proof)
-                _imp->maybe_proof->infer(*this, TrueLiteral{}, just);
+                _imp->maybe_proof->infer(*this, false, TrueLiteral{}, just);
             return Inference::NoChange;
         },
         [&](const FalseLiteral &) {
             if (_imp->maybe_proof)
-                _imp->maybe_proof->infer(*this, FalseLiteral{}, just);
+                _imp->maybe_proof->infer(*this, true, FalseLiteral{}, just);
             return Inference::Contradiction;
         }}
         .visit(lit);
@@ -679,13 +679,13 @@ auto State::infer(const VariableConditionFrom<VarType_> & cond, const Justificat
 auto State::infer_true(const Justification & just) -> void
 {
     if (_imp->maybe_proof)
-        _imp->maybe_proof->infer(*this, TrueLiteral{}, just);
+        _imp->maybe_proof->infer(*this, false, TrueLiteral{}, just);
 }
 
 auto State::infer_false(const Justification & just) -> void
 {
     if (_imp->maybe_proof)
-        _imp->maybe_proof->infer(*this, FalseLiteral{}, just);
+        _imp->maybe_proof->infer(*this, true, FalseLiteral{}, just);
 }
 
 template <IntegerVariableIDLike VarType_>

@@ -935,12 +935,13 @@ auto Proof::conclude_none() -> void
     end_proof();
 }
 
-auto Proof::infer(const State & state, const Literal & lit, const Justification & why) -> void
+auto Proof::infer(const State & state, bool is_contradicting, const Literal & lit, const Justification & why) -> void
 {
     auto output_it = [&](const string & rule) {
         if (! is_literally_true(lit)) {
             auto terms = trail_variables_as_sum(state, 1_i);
-            terms += 1_i * lit;
+            if (! is_contradicting)
+                terms += 1_i * lit;
             _imp->proof << rule << " ";
             emit_inequality_to(move(terms) >= 1_i, nullopt, _imp->proof);
             _imp->proof << '\n';
@@ -976,8 +977,8 @@ auto Proof::infer(const State & state, const Literal & lit, const Justification 
 #endif
             need_lit();
             auto t = temporary_proof_level();
-            add_proof_steps(x);
-            infer(state, lit, JustifyUsingRUP{});
+            x.add_proof_steps(*this);
+            infer(state, is_contradicting, lit, JustifyUsingRUP{});
             forget_proof_level(t);
         },
         [&](const Guess &) {

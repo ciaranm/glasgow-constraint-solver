@@ -272,7 +272,7 @@ namespace gcs::innards
         /**
          * Log, if necessary, that we have inferred a particular literal.
          */
-        auto infer(const State & state, const Literal & lit, const Justification & why) -> void;
+        auto infer(const State & state, bool is_contradicting, const Literal & lit, const Justification & why) -> void;
 
         /**
          * What is our current proof level?
