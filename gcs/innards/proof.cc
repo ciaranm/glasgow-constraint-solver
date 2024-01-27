@@ -940,8 +940,7 @@ auto Proof::infer(const State & state, bool is_contradicting, const Literal & li
     auto output_it = [&](const string & rule) {
         if (! is_literally_true(lit)) {
             auto terms = trail_variables_as_sum(state, 1_i);
-            if (! is_contradicting)
-                terms += 1_i * lit;
+            terms += 1_i * lit;
             _imp->proof << rule << " ";
             emit_inequality_to(move(terms) >= 1_i, nullopt, _imp->proof);
             _imp->proof << '\n';
