@@ -1351,11 +1351,6 @@ auto Proof::trail_variables_as_sum(const State & state, Integer coeff) -> Weight
     return result;
 }
 
-auto Proof::add_proof_steps(const JustifyExplicitly & x) -> void
-{
-    x.add_proof_steps(*this);
-}
-
 auto Proof::record_proof_line(ProofLine line, ProofLevel level) -> ProofLine
 {
     switch (level) {

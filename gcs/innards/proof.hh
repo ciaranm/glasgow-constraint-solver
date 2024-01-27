@@ -296,11 +296,6 @@ namespace gcs::innards
         auto forget_proof_level(int depth) -> void;
 
         /**
-         * Add the explicit proof steps given.
-         */
-        auto add_proof_steps(const JustifyExplicitly &) -> void;
-
-        /**
          * Emit the specified text as a proof line.
          */
         auto emit_proof_line(const std::string &, ProofLevel level
