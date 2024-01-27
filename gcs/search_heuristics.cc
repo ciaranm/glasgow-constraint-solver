@@ -2,10 +2,15 @@
 #include <gcs/search_heuristics.hh>
 
 #include <algorithm>
+#include <random>
 #include <tuple>
 
+using std::mt19937;
+using std::nullopt;
 using std::optional;
+using std::random_device;
 using std::tuple;
+using std::uniform_int_distribution;
 using std::vector;
 
 using namespace gcs;
@@ -60,6 +65,29 @@ auto gcs::branch_on_dom_then_deg(const vector<IntegerVariableID> & vars) -> Bran
 auto gcs::branch_on_dom_then_deg(const Problem & problem) -> BranchCallback
 {
     return branch_on_dom_then_deg(problem.all_normal_variables());
+}
+
+auto gcs::branch_randomly(const Problem & problem) -> BranchCallback
+{
+    return branch_randomly(problem.all_normal_variables());
+}
+
+auto gcs::branch_randomly(const vector<IntegerVariableID> & vars) -> BranchCallback
+{
+    random_device rand_dev;
+    mt19937 r(rand_dev());
+    return [vars = vars, rand = move(r)](const CurrentState & state, const innards::Propagators &) mutable -> optional<IntegerVariableID> {
+        vector<IntegerVariableID> feasible;
+        for (auto & var : vars)
+            if (state.domain_size(var) >= 2_i)
+                feasible.push_back(var);
+        if (feasible.empty())
+            return nullopt;
+        else {
+            uniform_int_distribution<size_t> dist(0, feasible.size() - 1);
+            return feasible[dist(rand)];
+        }
+    };
 }
 
 auto gcs::guess_smallest_value_first() -> GuessCallback

@@ -63,6 +63,20 @@ namespace gcs
     auto branch_on_dom_then_deg(const Problem & problem) -> BranchCallback;
 
     /**
+     * Branch on a randomly selected variable. This is usually not a good idea.
+     *
+     * \ingroup SearchHeuristics
+     */
+    auto branch_randomly(const std::vector<IntegerVariableID> &) -> BranchCallback;
+
+    /**
+     * Branch on a randomly selected variable. This is usually not a good idea.
+     *
+     * \ingroup SearchHeuristics
+     */
+    auto branch_randomly(const Problem & problem) -> BranchCallback;
+
+    /**
      * Guess values from smallest to largest.
      *
      * \ingroup SearchHeuristics
