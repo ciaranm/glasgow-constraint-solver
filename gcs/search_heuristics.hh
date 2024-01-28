@@ -89,6 +89,13 @@ namespace gcs
      * \ingroup SearchHeuristics
      */
     auto guess_largest_value_first() -> GuessCallback;
+
+    /**
+     * Guess values randomly.
+     *
+     * \ingroup SearchHeuristics
+     */
+    auto guess_randomly() -> GuessCallback;
 }
 
 #endif
