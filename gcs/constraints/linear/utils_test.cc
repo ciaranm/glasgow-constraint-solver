@@ -1,4 +1,4 @@
-#include <gcs/innards/linear_utils.hh>
+#include <gcs/constraints/linear/utils.hh>
 #include <gcs/variable_id.hh>
 
 #include <catch2/catch_test_macros.hpp>

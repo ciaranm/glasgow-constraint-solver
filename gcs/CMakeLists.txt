@@ -22,7 +22,12 @@ add_library(glasgow_constraint_solver
         constraints/in.cc
         constraints/knapsack.cc
         constraints/lex.cc
-        constraints/linear_equality.cc
+        constraints/linear/linear_equality.cc
+        constraints/linear/linear_greater_equal.cc
+        constraints/linear/linear_inequality.cc
+        constraints/linear/linear_less_equal.cc
+        constraints/linear/propagate.cc
+        constraints/linear/utils.cc
         constraints/logical.cc
         constraints/min_max.cc
         constraints/n_value.cc
@@ -33,7 +38,6 @@ add_library(glasgow_constraint_solver
         innards/bits_encoding.cc
         innards/extensional_utils.cc
         innards/integer_variable_state.cc
-        innards/linear_utils.cc
         innards/literal.cc
         innards/opb_utils.cc
         innards/proof.cc
@@ -57,7 +61,7 @@ add_executable(count_test constraints/count_test.cc)
 add_executable(element_test constraints/element_test.cc)
 add_executable(equals_test constraints/equals_test.cc)
 add_executable(knapsack_test constraints/knapsack_test.cc)
-add_executable(linear_equality_test constraints/linear_equality_test.cc)
+add_executable(linear_test constraints/linear/linear_test.cc)
 add_executable(logical_test constraints/logical_test.cc)
 add_executable(min_max_test constraints/min_max_test.cc)
 add_executable(n_value_test constraints/n_value_test.cc)
@@ -71,7 +75,7 @@ add_test(NAME count_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<
 add_test(NAME element_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:element_test>)
 add_test(NAME equals_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:equals_test>)
 add_test(NAME knapsack_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:knapsack_test>)
-add_test(NAME linear_equality_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:linear_equality_test>)
+add_test(NAME linear_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:linear_test>)
 add_test(NAME logical_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:logical_test>)
 add_test(NAME min_max_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:min_max_test>)
 add_test(NAME n_value_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:n_value_test>)
@@ -85,7 +89,7 @@ add_executable(state_test innards/state_test.cc)
 target_link_libraries(state_test PRIVATE Catch2::Catch2WithMain)
 add_test(NAME state_test COMMAND $<TARGET_FILE:state_test>)
 
-add_executable(linear_utils_test innards/linear_utils_test.cc)
+add_executable(linear_utils_test constraints/linear/utils_test.cc)
 target_link_libraries(linear_utils_test PRIVATE Catch2::Catch2WithMain)
 add_test(NAME linear_utils_test COMMAND $<TARGET_FILE:linear_utils_test>)
 

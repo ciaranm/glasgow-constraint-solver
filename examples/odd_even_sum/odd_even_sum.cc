@@ -1,4 +1,4 @@
-#include <gcs/constraints/linear_equality.hh>
+#include <gcs/constraints/linear.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 

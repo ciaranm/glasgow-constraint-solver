@@ -4,7 +4,6 @@
 #include <gcs/expression.hh>
 #include <gcs/extensional.hh>
 #include <gcs/innards/inference_tracker-fwd.hh>
-#include <gcs/innards/linear_utils.hh>
 #include <gcs/innards/literal.hh>
 #include <gcs/innards/proof.hh>
 #include <gcs/innards/propagators-fwd.hh>

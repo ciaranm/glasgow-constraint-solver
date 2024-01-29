@@ -1,8 +1,8 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROOF_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROOF_HH
 
+#include <gcs/expression.hh>
 #include <gcs/innards/justification.hh>
-#include <gcs/innards/linear_utils.hh>
 #include <gcs/innards/literal.hh>
 #include <gcs/innards/proof-fwd.hh>
 #include <gcs/innards/state-fwd.hh>

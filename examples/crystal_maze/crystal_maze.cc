@@ -1,6 +1,6 @@
 #include <gcs/constraints/abs.hh>
 #include <gcs/constraints/all_different.hh>
-#include <gcs/constraints/linear_equality.hh>
+#include <gcs/constraints/linear.hh>
 #include <gcs/constraints/not_equals.hh>
 #include <gcs/problem.hh>
 #include <gcs/search_heuristics.hh>

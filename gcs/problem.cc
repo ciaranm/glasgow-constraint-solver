@@ -5,7 +5,7 @@
 #include <gcs/innards/state.hh>
 #include <gcs/presolver.hh>
 
-#include <gcs/constraints/linear_equality.hh>
+#include <gcs/constraints/linear.hh>
 
 #include <util/overloaded.hh>
 

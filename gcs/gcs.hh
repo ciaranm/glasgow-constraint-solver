@@ -24,7 +24,7 @@
 #include <gcs/constraints/element.hh>
 #include <gcs/constraints/equals.hh>
 #include <gcs/constraints/knapsack.hh>
-#include <gcs/constraints/linear_equality.hh>
+#include <gcs/constraints/linear.hh>
 #include <gcs/constraints/logical.hh>
 #include <gcs/constraints/min_max.hh>
 #include <gcs/constraints/n_value.hh>

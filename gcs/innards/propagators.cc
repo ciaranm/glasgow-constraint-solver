@@ -2,7 +2,6 @@
 
 #include <gcs/innards/extensional_utils.hh>
 #include <gcs/innards/inference_tracker.hh>
-#include <gcs/innards/linear_utils.hh>
 #include <gcs/innards/proof.hh>
 #include <gcs/innards/propagators.hh>
 
