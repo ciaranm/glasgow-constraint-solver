@@ -103,8 +103,7 @@ namespace
                     // discover otherwise
                     bool upper = (get_coeff(cv) < 0_i) != second_constraint_for_equality;
 
-                    auto proof_line = proof.get_or_emit_pol_term_for_bound_in_bits(state, upper,
-                        get_var(cv), upper ? state.upper_bound(get_var(cv)) : state.lower_bound(get_var(cv)));
+                    auto proof_line = proof.need_line_defining_literal(upper ? get_var(cv) < state.upper_bound(get_var(cv) + 1_i) : get_var(cv) >= state.lower_bound(get_var(cv)));
 
                     terms_to_sum.emplace_back(abs(get_coeff(cv)), proof_line);
                 }
@@ -133,21 +132,42 @@ namespace
             proof.emit_proof_line(step.str(), ProofLevel::Temporary);
         };
 
+        auto reason = [&](const SimpleIntegerVariableID & var, bool invert) {
+            Reason reason;
+            for (const auto & cv : coeff_vars.terms) {
+                if (get_var(cv) != var) {
+                    if ((get_coeff(cv) < 0_i) != invert) {
+                        reason.emplace_back(get_var(cv) < state.upper_bound(get_var(cv)) + 1_i);
+                    }
+                    else {
+                        reason.emplace_back(get_var(cv) >= state.lower_bound(get_var(cv)));
+                    }
+                }
+            }
+            return reason;
+        };
+
         auto infer = [&](int p, const SimpleIntegerVariableID & var, Integer remainder, const auto coeff, bool second_constraint_for_equality) {
             if constexpr (is_same_v<decltype(coeff), const bool>) {
                 if (coeff) {
-                    if (bounds[p].second >= (1_i + remainder))
-                        return state.infer_less_than(var, 1_i + remainder, JustifyExplicitly{[&](Proof & proof) {
+                    if (bounds[p].second >= (1_i + remainder)) {
+                        auto justf = [&](Proof & proof) {
                             justify(var, proof, second_constraint_for_equality, "< " + to_string((1_i + remainder).raw_value));
-                        }});
+                        };
+                        auto just = JustifyExplicitlyBecauseOf{justf, reason(var, second_constraint_for_equality)};
+                        return state.infer_less_than(var, 1_i + remainder, just);
+                    }
                     else
                         return Inference::NoChange;
                 }
                 else {
-                    if (bounds[p].first < -remainder)
-                        return state.infer_greater_than_or_equal(var, -remainder, JustifyExplicitly{[&](Proof & proof) {
+                    if (bounds[p].first < -remainder) {
+                        auto justf = [&](Proof & proof) {
                             justify(var, proof, second_constraint_for_equality, ">= " + to_string((-remainder).raw_value));
-                        }});
+                        };
+                        auto just = JustifyExplicitlyBecauseOf{justf, reason(var, second_constraint_for_equality)};
+                        return state.infer_greater_than_or_equal(var, -remainder, just);
+                    }
                     else
                         return Inference::NoChange;
                 }
@@ -155,36 +175,48 @@ namespace
             else {
                 // lots of conditionals to get the rounding right...
                 if (coeff > 0_i && remainder >= 0_i) {
-                    if (bounds[p].second >= (1_i + remainder / coeff))
-                        return state.infer_less_than(var, 1_i + remainder / coeff, JustifyExplicitly{[&](Proof & proof) {
+                    if (bounds[p].second >= (1_i + remainder / coeff)) {
+                        auto justf = [&](Proof & proof) {
                             justify(var, proof, second_constraint_for_equality, "< " + to_string((1_i + remainder / coeff).raw_value));
-                        }});
+                        };
+                        auto just = JustifyExplicitlyBecauseOf{justf, reason(var, second_constraint_for_equality)};
+                        return state.infer_less_than(var, 1_i + remainder / coeff, just);
+                    }
                     else
                         return Inference::NoChange;
                 }
                 else if (coeff > 0_i && remainder < 0_i) {
                     auto div_with_rounding = -((-remainder + coeff - 1_i) / coeff);
-                    if (bounds[p].second >= 1_i + div_with_rounding)
-                        return state.infer_less_than(var, 1_i + div_with_rounding, JustifyExplicitly{[&](Proof & proof) {
+                    if (bounds[p].second >= 1_i + div_with_rounding) {
+                        auto justf = [&](Proof & proof) {
                             justify(var, proof, second_constraint_for_equality, "< " + to_string((1_i + div_with_rounding).raw_value));
-                        }});
+                        };
+                        auto just = JustifyExplicitlyBecauseOf{justf, reason(var, second_constraint_for_equality)};
+                        return state.infer_less_than(var, 1_i + div_with_rounding, just);
+                    }
                     else
                         return Inference::NoChange;
                 }
                 else if (coeff < 0_i && remainder >= 0_i) {
-                    if (bounds[p].first < remainder / coeff)
-                        return state.infer_greater_than_or_equal(var, remainder / coeff, JustifyExplicitly{[&](Proof & proof) {
+                    if (bounds[p].first < remainder / coeff) {
+                        auto justf = [&](Proof & proof) {
                             justify(var, proof, second_constraint_for_equality, ">= " + to_string((remainder / coeff).raw_value));
-                        }});
+                        };
+                        auto just = JustifyExplicitlyBecauseOf{justf, reason(var, second_constraint_for_equality)};
+                        return state.infer_greater_than_or_equal(var, remainder / coeff, just);
+                    }
                     else
                         return Inference::NoChange;
                 }
                 else if (coeff < 0_i && remainder < 0_i) {
                     auto div_with_rounding = (-remainder + -coeff - 1_i) / -coeff;
-                    if (bounds[p].first < div_with_rounding)
-                        return state.infer_greater_than_or_equal(var, div_with_rounding, JustifyExplicitly{[&](Proof & proof) {
+                    if (bounds[p].first < div_with_rounding) {
+                        auto justf = [&](Proof & proof) {
                             justify(var, proof, second_constraint_for_equality, ">= " + to_string((div_with_rounding).raw_value));
-                        }});
+                        };
+                        auto just = JustifyExplicitlyBecauseOf{justf, reason(var, second_constraint_for_equality)};
+                        return state.infer_greater_than_or_equal(var, div_with_rounding, just);
+                    }
                     else
                         return Inference::NoChange;
                 }
