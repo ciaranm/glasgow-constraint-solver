@@ -62,16 +62,7 @@ namespace
     {
         return overloaded{
             [&](const SimpleIntegerVariableID & var) -> string {
-                auto bound_line = state.maybe_proof()->get_or_emit_pol_term_for_bound_in_bits(state, upper,
-                    var, upper ? state.upper_bound(var) : state.lower_bound(var));
-                return overloaded{
-                    [&](const string & bound_line) -> string {
-                        return bound_line;
-                    },
-                    [&](const ProofLine & bound_line) -> string {
-                        return to_string(bound_line);
-                    }}
-                    .visit(bound_line);
+                return to_string(state.maybe_proof()->need_line_defining_literal(upper ? var < state.upper_bound(var) + 1_i : var >= state.lower_bound(var)));
             },
             [&](const ConstantIntegerVariableID &) -> string {
                 throw UnimplementedException{};
