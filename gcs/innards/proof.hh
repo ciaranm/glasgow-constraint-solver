@@ -419,6 +419,12 @@ namespace gcs::innards
         [[nodiscard]] auto need_constraint_saying_variable_takes_at_least_one_value(IntegerVariableID) -> ProofLine;
 
         /**
+         * Give the proof line specifying the definition of this literal in terms of its bit
+         * representation. Will emit the reification, if it does not already exist.
+         */
+        [[nodiscard]] auto need_line_defining_literal(const IntegerVariableCondition &) -> ProofLine;
+
+        /**
          * Does a variable have a bit representation?
          */
         [[nodiscard]] auto has_bit_representation(const SimpleIntegerVariableID &) const -> bool;

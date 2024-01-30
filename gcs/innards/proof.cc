@@ -119,7 +119,7 @@ struct Proof::Imp
     map<VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID>, string> direct_integer_variables;
     map<SimpleOrProofOnlyIntegerVariableID, pair<Integer, vector<pair<Integer, string>>>> integer_variable_bits;
     map<SimpleOrProofOnlyIntegerVariableID, pair<Integer, Integer>> bounds_for_gevars;
-    map<SimpleOrProofOnlyIntegerVariableID, set<Integer>> gevars_that_exist;
+    map<SimpleOrProofOnlyIntegerVariableID, map<Integer, ProofLine>> gevars_that_exist;
     list<SimpleIntegerVariableID> solution_variables;
     map<pair<unsigned long long, bool>, string> flags;
     map<unsigned long long, string> proof_only_integer_variables;
@@ -359,7 +359,6 @@ auto Proof::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> void
     auto gevar = xify(name + "g" + value_name(v));
     _imp->direct_integer_variables.emplace(id >= v, gevar);
     _imp->direct_integer_variables.emplace(id < v, "~" + gevar);
-    _imp->gevars_that_exist[id].insert(v);
 
     if (_imp->opb_done)
         _imp->proof << "* need " << gevar << std::endl;
@@ -373,11 +372,13 @@ auto Proof::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> void
     if (_imp->opb_done) {
         _imp->proof << "red " << gevar_implies_bits << " ; " << gevar << " 0\n";
         record_proof_line(++_imp->proof_line, ProofLevel::Top);
+        _imp->gevars_that_exist[id].emplace(v, _imp->proof_line);
     }
     else {
         _imp->opb << gevar_implies_bits << " ;\n";
         ++_imp->model_constraints;
         ++_imp->model_variables;
+        _imp->gevars_that_exist[id].emplace(v, _imp->proof_line);
     }
 
     // !gevar -> bits
@@ -424,7 +425,7 @@ auto Proof::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> void
 
     // implied by the next highest gevar, if there is one?
     if (higher_gevar != other_gevars.end()) {
-        auto implies_higher = implies(opb_var_as_sum(proof_name(id >= *higher_gevar)), proof_name(id >= v));
+        auto implies_higher = implies(opb_var_as_sum(proof_name(id >= higher_gevar->first)), proof_name(id >= v));
         if (_imp->opb_done) {
             _imp->proof << "u " << implies_higher << " ;\n";
             record_proof_line(++_imp->proof_line, ProofLevel::Top);
@@ -437,7 +438,7 @@ auto Proof::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> void
 
     // implies the next lowest gevar, if there is one?
     if (this_gevar != other_gevars.begin()) {
-        auto implies_lower = implies(opb_var_as_sum(proof_name(id >= v)), proof_name(id >= *prev(this_gevar)));
+        auto implies_lower = implies(opb_var_as_sum(proof_name(id >= v)), proof_name(id >= prev(this_gevar)->first));
         if (_imp->opb_done) {
             _imp->proof << "u " << implies_lower << " ;\n";
             record_proof_line(++_imp->proof_line, ProofLevel::Top);
@@ -1385,6 +1386,34 @@ auto Proof::need_constraint_saying_variable_takes_at_least_one_value(IntegerVari
             return need_constraint_saying_variable_takes_at_least_one_value(var.actual_variable);
         }}
         .visit(var);
+}
+
+auto Proof::need_line_defining_literal(const IntegerVariableCondition & cond) -> ProofLine
+{
+    return overloaded{
+        [&](const ConstantIntegerVariableID &) -> ProofLine {
+            throw UnimplementedException{};
+        },
+        [&](const SimpleIntegerVariableID & var) -> ProofLine {
+            switch (cond.op) {
+                using enum VariableConditionOperator;
+            case GreaterEqual:
+                need_gevar(var, cond.value);
+                return _imp->gevars_that_exist.at(var).at(cond.value);
+            case Less:
+                need_gevar(var, cond.value);
+                return _imp->gevars_that_exist.at(var).at(cond.value) + 1;
+            case Equal:
+                throw UnimplementedException{};
+            case NotEqual:
+                throw UnimplementedException{};
+            }
+            throw NonExhaustiveSwitch{};
+        },
+        [&](const ViewOfIntegerVariableID &) -> ProofLine {
+            throw UnimplementedException{};
+        }}
+        .visit(cond.var);
 }
 
 auto Proof::proof_level() -> int
