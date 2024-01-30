@@ -124,8 +124,6 @@ struct Proof::Imp
     map<pair<unsigned long long, bool>, string> flags;
     map<unsigned long long, string> proof_only_integer_variables;
 
-    list<map<tuple<bool, SimpleIntegerVariableID, Integer>, variant<ProofLine, string>>> line_for_bound_in_bits;
-
     int active_proof_level = 0;
     deque<IntervalSet<ProofLine>> proof_lines_by_level;
 
@@ -146,7 +144,6 @@ Proof::Proof(const ProofOptions & proof_options) :
     _imp->proof_file = proof_options.proof_file;
     _imp->use_friendly_names = proof_options.use_friendly_names;
     _imp->always_use_full_encoding = proof_options.always_use_full_encoding;
-    _imp->line_for_bound_in_bits.emplace_back();
     _imp->proof_lines_by_level.resize(2);
 }
 
@@ -191,27 +188,11 @@ auto Proof::set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableID id,
     _imp->opb << ">= " << lower << " ;\n";
     ++_imp->model_constraints;
 
-    overloaded{
-        [&](const SimpleIntegerVariableID & id) {
-            _imp->line_for_bound_in_bits.back().emplace(tuple{false, id, lower}, ProofLine{_imp->model_constraints});
-        },
-        [&](const ProofOnlySimpleIntegerVariableID &) {
-        }}
-        .visit(id);
-
     // upper bound
     for (auto & [coeff, var] : bit_vars)
         _imp->opb << -coeff << " " << var << " ";
     _imp->opb << ">= " << -upper << " ;\n";
     ++_imp->model_constraints;
-
-    overloaded{
-        [&](const SimpleIntegerVariableID & id) {
-            _imp->line_for_bound_in_bits.back().emplace(tuple{true, id, upper}, ProofLine{_imp->model_constraints});
-        },
-        [&](const ProofOnlySimpleIntegerVariableID &) {
-        }}
-        .visit(id);
 
     _imp->bounds_for_gevars.emplace(id, pair{lower, upper});
 
@@ -241,9 +222,6 @@ auto Proof::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariabl
 
         overloaded{
             [&](const SimpleIntegerVariableID & id) {
-                _imp->line_for_bound_in_bits.back().emplace(tuple{false, id, lower}, eqvar);
-                _imp->line_for_bound_in_bits.back().emplace(tuple{true, id, upper}, "~" + eqvar);
-
                 _imp->direct_integer_variables.emplace(id == 1_i, eqvar);
                 _imp->direct_integer_variables.emplace(id != 1_i, "~" + eqvar);
                 _imp->direct_integer_variables.emplace(id == 0_i, "~" + eqvar);
@@ -1476,60 +1454,6 @@ auto Proof::record_proof_line(ProofLine line, ProofLevel level) -> ProofLine
 auto Proof::has_bit_representation(const SimpleIntegerVariableID & var) const -> bool
 {
     return _imp->integer_variable_bits.contains(var);
-}
-
-auto Proof::get_or_emit_pol_term_for_bound_in_bits(State & state, bool upper,
-    const SimpleIntegerVariableID & var, Integer val) -> variant<ProofLine, string>
-{
-    if (! has_bit_representation(var))
-        throw UnexpectedException{"variable does not have a bit representation"};
-
-    auto it = _imp->line_for_bound_in_bits.back().find(tuple{upper, var, val});
-    if (it != _imp->line_for_bound_in_bits.back().end())
-        return it->second;
-
-    stringstream step;
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-    step << "* need line for bound in bits " << (upper ? debug_string(var < val + 1_i) : debug_string(var >= val)) << "\n";
-#endif
-    step << "u";
-    Integer big_number = 0_i;
-
-    auto & [_, bit_vars] = _imp->integer_variable_bits.at(var);
-    for (auto & [bit_coeff, bit_name] : bit_vars) {
-        step << " " << (upper ? -bit_coeff : bit_coeff) << " " << bit_name;
-        big_number += Integer{abs(bit_coeff)};
-    }
-
-    big_number += max(1_i, abs(val));
-    state.for_each_guess([&](const Literal & lit) {
-        overloaded{
-            [&](const TrueLiteral &) {},
-            [&](const FalseLiteral &) { throw UnimplementedException{}; },
-            [&]<typename T_>(const VariableConditionFrom<T_> & cond) { step << " " << big_number << " " << proof_name(! cond); }}
-            .visit(simplify_literal(lit));
-    });
-
-    if (upper)
-        step << " >= " << -val << " ";
-    else
-        step << " >= " << val << " ";
-
-    step << ";";
-
-    auto line = emit_proof_line(step.str(), ProofLevel::Current);
-    _imp->line_for_bound_in_bits.back().emplace(tuple{upper, var, val}, line);
-    return line;
-}
-
-auto Proof::new_guess() -> void
-{
-    _imp->line_for_bound_in_bits.emplace_back(_imp->line_for_bound_in_bits.back());
-}
-
-auto Proof::undo_guess() -> void
-{
-    _imp->line_for_bound_in_bits.pop_back();
 }
 
 auto gcs::innards::debug_string(const ProofOnlySimpleIntegerVariableID & var) -> string

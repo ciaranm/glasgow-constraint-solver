@@ -429,32 +429,6 @@ namespace gcs::innards
          */
         [[nodiscard]] auto has_bit_representation(const SimpleIntegerVariableID &) const -> bool;
 
-        /**
-         * Give the proof line specifying this variable's upper or lower bound,
-         * using the bit representation, or, if this is a literal axiom, return
-         * it as a string instead. Only callable if has_bit_representation()
-         * returns true.
-         */
-        [[nodiscard]] auto get_or_emit_pol_term_for_bound_in_bits(State & state, bool upper,
-            const SimpleIntegerVariableID & var, Integer val) -> std::variant<ProofLine, std::string>;
-
-        ///@}
-
-        /**
-         * \name Bookkeeping
-         */
-        ///@{
-
-        /**
-         * Called by State to let us know we've made a new guess.
-         */
-        auto new_guess() -> void;
-
-        /**
-         * Called by State to let us know we're backtracking from a guess.
-         */
-        auto undo_guess() -> void;
-
         ///@}
     };
 }

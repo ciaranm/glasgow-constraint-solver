@@ -772,9 +772,6 @@ auto State::infer_all(const vector<Literal> & lits, const Justification & just) 
 
 auto State::guess(const Literal & lit) -> void
 {
-    if (_imp->maybe_proof)
-        _imp->maybe_proof->new_guess();
-
     switch (infer(lit, Guess{})) {
     case Inference::NoChange:
     case Inference::Change:
@@ -1098,9 +1095,6 @@ auto State::new_epoch(bool subsearch) -> Timestamp
 
 auto State::backtrack(Timestamp t) -> void
 {
-    if (_imp->maybe_proof)
-        _imp->maybe_proof->undo_guess();
-
     _imp->integer_variable_states.resize(t.when);
     _imp->constraint_states.resize(t.when);
     _imp->changed.clear();
