@@ -137,6 +137,16 @@ auto main(int, char *[]) -> int
         vector{
             pair{vector{0, 0, 0}, -159}});
 
+    data.emplace_back(
+        pair{0, 1}, pair{0, 1}, pair{0, 1},
+        vector{
+            pair{vector{2, 2, 2}, 5}});
+
+    data.emplace_back(
+        pair{0, 1}, pair{0, 1}, pair{0, 1},
+        vector{
+            pair{vector{1, 1, 1}, 2}});
+
     random_device rand_dev;
     mt19937 rand(rand_dev());
     uniform_int_distribution nc_dist(1, 5);

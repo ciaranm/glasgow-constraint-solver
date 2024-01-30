@@ -420,9 +420,10 @@ namespace gcs::innards
 
         /**
          * Give the proof line specifying the definition of this literal in terms of its bit
-         * representation. Will emit the reification, if it does not already exist.
+         * representation. Will emit the reification, if it does not already exist. If this
+         * is a zero-one variable, returns an actual literal.
          */
-        [[nodiscard]] auto need_line_defining_literal(const IntegerVariableCondition &) -> ProofLine;
+        [[nodiscard]] auto need_pol_item_defining_literal(const IntegerVariableCondition &) -> std::variant<ProofLine, std::string>;
 
         /**
          * Does a variable have a bit representation?

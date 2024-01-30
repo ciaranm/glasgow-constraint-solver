@@ -119,7 +119,7 @@ struct Proof::Imp
     map<VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID>, string> direct_integer_variables;
     map<SimpleOrProofOnlyIntegerVariableID, pair<Integer, vector<pair<Integer, string>>>> integer_variable_bits;
     map<SimpleOrProofOnlyIntegerVariableID, pair<Integer, Integer>> bounds_for_gevars;
-    map<SimpleOrProofOnlyIntegerVariableID, map<Integer, ProofLine>> gevars_that_exist;
+    map<SimpleOrProofOnlyIntegerVariableID, map<Integer, pair<variant<ProofLine, string>, variant<ProofLine, string>>>> gevars_that_exist;
     list<SimpleIntegerVariableID> solution_variables;
     map<pair<unsigned long long, bool>, string> flags;
     map<unsigned long long, string> proof_only_integer_variables;
@@ -239,6 +239,8 @@ auto Proof::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariabl
             [&](const SimpleIntegerVariableID & id) {
                 _imp->direct_integer_variables.emplace(id >= 1_i, eqvar);
                 _imp->direct_integer_variables.emplace(id < 1_i, "~" + eqvar);
+                pair<variant<ProofLine, string>, variant<ProofLine, string>> names{eqvar, "~" + eqvar};
+                _imp->gevars_that_exist[id].emplace(1_i, names);
             },
             [](const ProofOnlySimpleIntegerVariableID &) {
                 // currently there's no API for asking for literals for these
@@ -350,13 +352,13 @@ auto Proof::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> void
     if (_imp->opb_done) {
         _imp->proof << "red " << gevar_implies_bits << " ; " << gevar << " 0\n";
         record_proof_line(++_imp->proof_line, ProofLevel::Top);
-        _imp->gevars_that_exist[id].emplace(v, _imp->proof_line);
+        _imp->gevars_that_exist[id].emplace(v, pair{_imp->proof_line, _imp->proof_line + 1});
     }
     else {
         _imp->opb << gevar_implies_bits << " ;\n";
         ++_imp->model_constraints;
         ++_imp->model_variables;
-        _imp->gevars_that_exist[id].emplace(v, _imp->proof_line);
+        _imp->gevars_that_exist[id].emplace(v, pair{_imp->model_constraints, _imp->model_constraints + 1});
     }
 
     // !gevar -> bits
@@ -1366,21 +1368,21 @@ auto Proof::need_constraint_saying_variable_takes_at_least_one_value(IntegerVari
         .visit(var);
 }
 
-auto Proof::need_line_defining_literal(const IntegerVariableCondition & cond) -> ProofLine
+auto Proof::need_pol_item_defining_literal(const IntegerVariableCondition & cond) -> variant<ProofLine, string>
 {
     return overloaded{
-        [&](const ConstantIntegerVariableID &) -> ProofLine {
+        [&](const ConstantIntegerVariableID &) -> variant<ProofLine, string> {
             throw UnimplementedException{};
         },
-        [&](const SimpleIntegerVariableID & var) -> ProofLine {
+        [&](const SimpleIntegerVariableID & var) -> variant<ProofLine, string> {
             switch (cond.op) {
                 using enum VariableConditionOperator;
             case GreaterEqual:
                 need_gevar(var, cond.value);
-                return _imp->gevars_that_exist.at(var).at(cond.value);
+                return _imp->gevars_that_exist.at(var).at(cond.value).first;
             case Less:
                 need_gevar(var, cond.value);
-                return _imp->gevars_that_exist.at(var).at(cond.value) + 1;
+                return _imp->gevars_that_exist.at(var).at(cond.value).second;
             case Equal:
                 throw UnimplementedException{};
             case NotEqual:
@@ -1388,7 +1390,7 @@ auto Proof::need_line_defining_literal(const IntegerVariableCondition & cond) ->
             }
             throw NonExhaustiveSwitch{};
         },
-        [&](const ViewOfIntegerVariableID &) -> ProofLine {
+        [&](const ViewOfIntegerVariableID &) -> variant<ProofLine, string> {
             throw UnimplementedException{};
         }}
         .visit(cond.var);

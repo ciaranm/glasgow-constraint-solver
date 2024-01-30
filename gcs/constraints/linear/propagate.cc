@@ -103,7 +103,7 @@ namespace
                     // discover otherwise
                     bool upper = (get_coeff(cv) < 0_i) != second_constraint_for_equality;
 
-                    auto proof_line = proof.need_line_defining_literal(upper ? get_var(cv) < state.upper_bound(get_var(cv) + 1_i) : get_var(cv) >= state.lower_bound(get_var(cv)));
+                    auto proof_line = proof.need_pol_item_defining_literal(upper ? get_var(cv) < state.upper_bound(get_var(cv) + 1_i) : get_var(cv) >= state.lower_bound(get_var(cv)));
 
                     terms_to_sum.emplace_back(abs(get_coeff(cv)), proof_line);
                 }
