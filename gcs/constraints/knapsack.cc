@@ -344,7 +344,7 @@ namespace
                         if constexpr (doing_proof_) {
                             state.maybe_proof()->emit_proof_comment("unsupported value on forward pass");
                             for (auto & [_, data] : growing_layer_nodes) {
-                                state.maybe_proof()->emit_rup_proof_line(
+                                state.maybe_proof()->emit_rup_proof_line_under_trail(state,
                                     WeightedPseudoBooleanSum{} + 1_i * ! *data->reif_flag + 1_i * (all_vars.at(var_idx) != val) >= 1_i,
                                     ProofLevel::Temporary);
                             }
