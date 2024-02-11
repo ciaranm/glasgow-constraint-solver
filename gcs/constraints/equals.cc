@@ -113,16 +113,14 @@ auto Equals::install(Propagators & propagators, State & initial_state, ProofMode
         }
     }
     else if (v1_is_constant) {
-        propagators.install([v1_is_constant = v1_is_constant, v1 = _v1, v2 = _v2](State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
-            return pair{state.infer_equal(logger, v2, *v1_is_constant, JustifyUsingRUPBecauseOf{{v1 == *v1_is_constant}}), PropagatorState::DisableUntilBacktrack};
-        },
-            Triggers{}, "equals");
+        propagators.install_initialiser([v1_is_constant = v1_is_constant, v1 = _v1, v2 = _v2](State & state, ProofLogger * const logger) -> Inference {
+            return state.infer_equal(logger, v2, *v1_is_constant, JustifyUsingRUPBecauseOf{{v1 == *v1_is_constant}});
+        });
     }
     else if (v2_is_constant) {
-        propagators.install([v2_is_constant = v2_is_constant, v1 = _v1, v2 = _v2](State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
-            return pair{state.infer_equal(logger, v1, *v2_is_constant, JustifyUsingRUPBecauseOf{{v2 == *v2_is_constant}}), PropagatorState::DisableUntilBacktrack};
-        },
-            Triggers{}, "equals");
+        propagators.install_initialiser([v2_is_constant = v2_is_constant, v1 = _v1, v2 = _v2](State & state, ProofLogger * const logger) -> Inference {
+            return state.infer_equal(logger, v1, *v2_is_constant, JustifyUsingRUPBecauseOf{{v2 == *v2_is_constant}});
+        });
     }
     else {
         Triggers triggers;
@@ -268,10 +266,9 @@ auto EqualsIff::install(Propagators & propagators, State & initial_state, ProofM
     if (lower_common > upper_common) {
         if (optional_model)
             optional_model->add_constraint({{! _cond}});
-        propagators.install([cond = _cond, v1 = _v1, v2 = _v2](State & state, ProofLogger * const logger) {
-            return pair{state.infer(logger, ! cond, JustifyUsingRUPBecauseOf{{v1 >= state.lower_bound(v1), v1 < state.upper_bound(v1) + 1_i, v2 >= state.lower_bound(v2), v2 < state.upper_bound(v2) + 1_i}}), PropagatorState::DisableUntilBacktrack};
-        },
-            Triggers{}, "equals iff");
+        propagators.install_initialiser([cond = _cond, v1 = _v1, v2 = _v2](State & state, ProofLogger * const logger) {
+            return state.infer(logger, ! cond, JustifyUsingRUPBecauseOf{{v1 >= state.lower_bound(v1), v1 < state.upper_bound(v1) + 1_i, v2 >= state.lower_bound(v2), v2 < state.upper_bound(v2) + 1_i}});
+        });
         return;
     }
 

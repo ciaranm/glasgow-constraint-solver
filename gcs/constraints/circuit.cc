@@ -279,16 +279,15 @@ auto Circuit::install(Propagators & propagators, State & initial_state, ProofMod
 
     // Infer succ[i] != i at top of search
     if (_succ.size() > 1) {
-        propagators.install([succ = _succ](State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
+        propagators.install_initialiser([succ = _succ](State & state, ProofLogger * const logger) -> Inference {
             auto result = Inference::NoChange;
             for (auto [idx, s] : enumerate(succ)) {
                 increase_inference_to(result, state.infer_not_equal(logger, s, Integer(idx), JustifyUsingRUP{}));
                 if (result == Inference::Contradiction)
                     break;
             }
-            return pair{result, PropagatorState::DisableUntilBacktrack};
-        },
-            Triggers{}, "circuit init");
+            return result;
+        });
     }
 }
 

@@ -20,7 +20,7 @@ namespace gcs::innards
 
     using TrackingPropagationFunction = std::function<auto(State &, ProofLogger * const, InferenceTracker &)->PropagatorState>;
 
-    using InitialisationFunction = std::function<auto(State &, ProofLogger * const)->void>;
+    using InitialisationFunction = std::function<auto(State &, ProofLogger * const)->Inference>;
 
     /**
      * \brief Tell Propagators when a Constraint's propagators should be triggered.
@@ -161,9 +161,9 @@ namespace gcs::innards
         [[nodiscard]] auto propagate(State &, ProofLogger * const, std::atomic<bool> * optional_abort_flag = nullptr) const -> bool;
 
         /**
-         * Call every initialiser.
+         * Call every initialiser, or until a contradiction is reached.
          */
-        auto initialise(State &, ProofLogger * const) const -> void;
+        [[nodiscard]] auto initialise(State &, ProofLogger * const) const -> bool;
 
         /**
          * Reset to do a root propagation.

@@ -136,9 +136,9 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
     if (callbacks.after_proof_started)
         callbacks.after_proof_started(state.current());
 
-    propagators.initialise(state, optional_proof ? optional_proof->logger() : nullptr);
+    auto initialisation_success = propagators.initialise(state, optional_proof ? optional_proof->logger() : nullptr);
 
-    auto presolve_success = problem.for_each_presolver([&](Presolver & presolver) -> bool {
+    auto presolve_success = (! initialisation_success) ? false : problem.for_each_presolver([&](Presolver & presolver) -> bool {
         auto result = presolver.run(problem, propagators, state, optional_proof ? optional_proof->logger() : nullptr);
         propagators.requeue_all_propagators();
         return result;
@@ -148,7 +148,7 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
     if (optional_proof && problem.optional_minimise_variable())
         objective_lower_bound_for_proof = state.lower_bound(*problem.optional_minimise_variable());
 
-    if (presolve_success) {
+    if (initialisation_success && presolve_success) {
         bool child_contains_solution = false;
         optional<Integer> objective_value = nullopt;
         if (solve_with_state(0, stats, problem, propagators, state, callbacks, optional_proof ? optional_proof->logger() : nullptr,

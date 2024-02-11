@@ -46,16 +46,14 @@ auto NotEquals::install(Propagators & propagators, State & initial_state, ProofM
         }
     }
     else if (v1_is_constant) {
-        propagators.install([v1_is_constant = v1_is_constant, v1 = _v1, v2 = _v2](State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
-            return pair{state.infer_not_equal(logger, v2, *v1_is_constant, JustifyUsingRUPBecauseOf{{v1 == *v1_is_constant}}), PropagatorState::DisableUntilBacktrack};
-        },
-            Triggers{}, "not equals");
+        propagators.install_initialiser([v1_is_constant = v1_is_constant, v1 = _v1, v2 = _v2](State & state, ProofLogger * const logger) -> Inference {
+            return state.infer_not_equal(logger, v2, *v1_is_constant, JustifyUsingRUPBecauseOf{{v1 == *v1_is_constant}});
+        });
     }
     else if (v2_is_constant) {
-        propagators.install([v2_is_constant = v2_is_constant, v1 = _v1, v2 = _v2](State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
-            return pair{state.infer_not_equal(logger, v1, *v2_is_constant, JustifyUsingRUPBecauseOf{{v2 == *v2_is_constant}}), PropagatorState::DisableUntilBacktrack};
-        },
-            Triggers{}, "not equals");
+        propagators.install_initialiser([v2_is_constant = v2_is_constant, v1 = _v1, v2 = _v2](State & state, ProofLogger * const logger) -> Inference {
+            return state.infer_not_equal(logger, v1, *v2_is_constant, JustifyUsingRUPBecauseOf{{v2 == *v2_is_constant}});
+        });
     }
     else {
         if (initial_state.domain_size(_v1) < 100_i && initial_state.domain_size(_v2) < 100_i)

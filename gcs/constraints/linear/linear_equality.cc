@@ -210,8 +210,9 @@ auto LinearEquality::install(Propagators & propagators, State &, ProofModel * co
 
             auto data = make_shared<optional<ExtensionalData>>(nullopt);
             propagators.install_initialiser([data = data, coeff_vars = sanitised_cv, value = _value + modifier](State & state,
-                                                ProofLogger * const logger) -> void {
+                                                ProofLogger * const logger) {
                 *data = build_table(coeff_vars, value, state, logger);
+                return Inference::NoChange;
             });
             propagators.install([data = data](State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
                 return propagate_extensional(data.get()->value(), state, logger);

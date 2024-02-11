@@ -85,10 +85,9 @@ auto Propagators::trim_lower_bound(const State & state, ProofModel * const optio
         if (state.upper_bound(var) >= val) {
             if (optional_model)
                 optional_model->add_constraint({var >= val});
-            install([var, val](State & state, ProofLogger * const logger) {
-                return pair{state.infer(logger, var >= val, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
-            },
-                Triggers{}, "trimmed lower bound");
+            install_initialiser([var, val](State & state, ProofLogger * const logger) {
+                return state.infer(logger, var >= val, JustifyUsingRUP{});
+            });
         }
         else
             model_contradiction(state, optional_model, "Trimmed lower bound of " + debug_string(var) + " due to " + x + " is outside its domain");
@@ -101,10 +100,9 @@ auto Propagators::trim_upper_bound(const State & state, ProofModel * const optio
         if (state.lower_bound(var) <= val) {
             if (optional_model)
                 optional_model->add_constraint({var < val + 1_i});
-            install([var, val](State & state, ProofLogger * const logger) {
-                return pair{state.infer(logger, var < val + 1_i, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
-            },
-                Triggers{}, "trimmed upper bound");
+            install_initialiser([var, val](State & state, ProofLogger * const logger) {
+                return state.infer(logger, var < val + 1_i, JustifyUsingRUP{});
+            });
         }
         else
             model_contradiction(state, optional_model, "Trimmed upper bound of " + debug_string(var) + " due to " + x + " is outside its domain");
@@ -244,10 +242,13 @@ auto Propagators::define_and_install_table(State & state, ProofModel * const opt
         move(permitted));
 }
 
-auto Propagators::initialise(State & state, ProofLogger * const logger) const -> void
+auto Propagators::initialise(State & state, ProofLogger * const logger) const -> bool
 {
     for (auto & f : _imp->initialisation_functions)
-        f(state, logger);
+        if (Inference::Contradiction == f(state, logger))
+            return false;
+
+    return true;
 }
 
 auto Propagators::requeue_all_propagators() -> void
