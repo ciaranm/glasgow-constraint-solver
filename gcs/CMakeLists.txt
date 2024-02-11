@@ -4,7 +4,7 @@ add_library(glasgow_constraint_solver
         exception.cc
         presolver.cc
         problem.cc
-        proof_options.cc
+        proof.cc
         search_heuristics.cc
         solve.cc
         stats.cc
@@ -35,12 +35,17 @@ add_library(glasgow_constraint_solver
         constraints/regular.cc
         constraints/smart_table.cc
         constraints/table.cc
-        innards/bits_encoding.cc
         innards/extensional_utils.cc
         innards/integer_variable_state.cc
         innards/literal.cc
-        innards/opb_utils.cc
-        innards/proof.cc
+        innards/proofs/bits_encoding.cc
+        innards/proofs/emit_inequality_to.cc
+        innards/proofs/proof_error.cc
+        innards/proofs/proof_logger.cc
+        innards/proofs/proof_model.cc
+        innards/proofs/proof_only_variables.cc
+        innards/proofs/simplify_literal.cc
+        innards/proofs/variable_constraints_tracker.cc
         innards/propagators.cc
         innards/state.cc
         innards/variable_id_utils.cc
@@ -93,6 +98,6 @@ add_executable(linear_utils_test constraints/linear/utils_test.cc)
 target_link_libraries(linear_utils_test PRIVATE Catch2::Catch2WithMain)
 add_test(NAME linear_utils_test COMMAND $<TARGET_FILE:linear_utils_test>)
 
-add_executable(bits_encoding_test innards/bits_encoding_test.cc)
+add_executable(bits_encoding_test innards/proofs/bits_encoding_test.cc)
 target_link_libraries(bits_encoding_test PRIVATE Catch2::Catch2WithMain)
 add_test(NAME bits_encoding_test COMMAND $<TARGET_FILE:bits_encoding_test>)

@@ -2,11 +2,13 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_EXTENSIONAL_UTILS_HH
 
 #include <gcs/extensional.hh>
+#include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/propagators-fwd.hh>
 #include <gcs/innards/state-fwd.hh>
 #include <gcs/integer.hh>
 #include <gcs/variable_id.hh>
 
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -32,7 +34,7 @@ namespace gcs::innards
      *
      * \sa Table
      */
-    auto propagate_extensional(const ExtensionalData &, State &) -> std::pair<Inference, PropagatorState>;
+    auto propagate_extensional(const ExtensionalData &, State &, innards::ProofLogger * const) -> std::pair<Inference, PropagatorState>;
 }
 
 #endif

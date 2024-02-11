@@ -2,7 +2,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_JUSTIFICATION_HH
 
 #include <gcs/innards/literal.hh>
-#include <gcs/innards/proof-fwd.hh>
+#include <gcs/innards/proofs/proof_logger-fwd.hh>
 
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
 #include <source_location>
@@ -21,7 +21,7 @@ namespace gcs::innards
      * \ingroup Innards
      * \sa JustifyExplicitly
      */
-    using ExplicitJustificationFunction = std::function<auto(Proof &)->void>;
+    using ExplicitJustificationFunction = std::function<auto()->void>;
 
     using Reason = Literals;
 

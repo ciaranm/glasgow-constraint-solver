@@ -1,4 +1,4 @@
-#include <gcs/innards/bits_encoding.hh>
+#include <gcs/innards/proofs/bits_encoding.hh>
 #include <gcs/integer.hh>
 
 #include <catch2/catch_test_macros.hpp>

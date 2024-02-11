@@ -1,5 +1,7 @@
 #include <gcs/constraints/regular.hh>
 #include <gcs/exception.hh>
+#include <gcs/innards/proofs/proof_logger.hh>
+#include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
 
 #include <any>
@@ -28,6 +30,7 @@ using std::ifstream;
 using std::ios;
 using std::move;
 using std::ofstream;
+using std::optional;
 using std::pair;
 using std::rename;
 using std::set;
@@ -121,31 +124,31 @@ namespace
         output_file.close();
     }
 
-    auto log_additional_inference(const vector<Literal> & literals, const vector<ProofFlag> & proof_flags, State & state, string comment = "") -> void
+    auto log_additional_inference(ProofLogger * const logger, const vector<Literal> & literals, const vector<ProofFlag> & proof_flags, State & state, string comment = "") -> void
     {
-        if (! state.maybe_proof()) return;
-        // Trying to cut down on repeated code
-        state.infer_true(JustifyExplicitly{[&](Proof & proof) -> void {
+        if (logger) {
+            // Trying to cut down on repeated code
             if (! comment.empty())
-                proof.emit_proof_comment(comment);
+                logger->emit_proof_comment(comment);
 
             WeightedPseudoBooleanSum terms;
             for (const auto & lit : literals)
                 terms += 1_i * lit;
             for (const auto & flag : proof_flags)
                 terms += 1_i * flag;
-            proof.emit_rup_proof_line_under_trail(state, terms >= 1_i, ProofLevel::Current);
-        }});
+            logger->emit_rup_proof_line_under_trail(state, terms >= 1_i, ProofLevel::Current);
+        }
     }
 
     auto initialise_graph(RegularGraph & graph, const vector<IntegerVariableID> & vars,
         const long num_states, vector<unordered_map<Integer, long>> & transitions,
-        const vector<long> & final_states, const vector<vector<ProofFlag>> & state_at_pos_flags, State & state)
+        const vector<long> & final_states, const vector<vector<ProofFlag>> & state_at_pos_flags, State & state, ProofLogger * const logger)
     {
         auto num_vars = vars.size();
-        state.infer_true(JustifyExplicitly{[&](Proof & proof) -> void {
-            proof.emit_proof_comment("Initialising graph");
-        }});
+
+        if (logger)
+            logger->emit_proof_comment("Initialising graph");
+
         // Forward phase: accumulate
         graph.nodes[0].insert(0);
         for (unsigned long i = 0; i < num_vars; ++i) {
@@ -158,22 +161,22 @@ namespace
                 }
             });
 
-            if (state.maybe_proof()) {
+            if (logger) {
                 for (long next_q = 0; next_q < num_states; ++next_q) {
                     if (graph.nodes[i + 1].contains(next_q)) continue;
                     // Want to eliminate this node i.e. prove !state[i+1][next_q]
                     for (const auto & q : graph.nodes[i]) {
                         // So first eliminate each previous state/variable combo
                         state.for_each_value(vars[i], [&](Integer val) -> void {
-                            log_additional_inference({vars[i] != val}, {! state_at_pos_flags[i][q], ! state_at_pos_flags[i + 1][next_q]}, state);
+                            log_additional_inference(logger, {vars[i] != val}, {! state_at_pos_flags[i][q], ! state_at_pos_flags[i + 1][next_q]}, state);
                         });
 
                         // Then eliminate each previous state
-                        log_additional_inference({}, {! state_at_pos_flags[i][q], ! state_at_pos_flags[i + 1][next_q]}, state);
+                        log_additional_inference(logger, {}, {! state_at_pos_flags[i][q], ! state_at_pos_flags[i + 1][next_q]}, state);
                     }
 
                     // Finally, can eliminate what we want
-                    log_additional_inference({}, {! state_at_pos_flags[i + 1][next_q]}, state);
+                    log_additional_inference(logger, {}, {! state_at_pos_flags[i + 1][next_q]}, state);
                 }
             }
         }
@@ -206,8 +209,8 @@ namespace
                     }
                     else {
                         graph.states_supporting[i][val].erase(q);
-                        if (state.maybe_proof())
-                            log_additional_inference({vars[i] != val}, {! state_at_pos_flags[i][q]}, state);
+                        if (logger)
+                            log_additional_inference(logger, {vars[i] != val}, {! state_at_pos_flags[i][q]}, state);
                     }
                 }
             });
@@ -216,8 +219,8 @@ namespace
             for (const auto & q : gn) {
                 if (! state_is_support[q]) {
                     graph.nodes[i].erase(q);
-                    if (state.maybe_proof())
-                        log_additional_inference({}, {! state_at_pos_flags[i][q]}, state, "back pass");
+                    if (logger)
+                        log_additional_inference(logger, {}, {! state_at_pos_flags[i][q]}, state, "back pass");
                 }
             }
         }
@@ -226,7 +229,7 @@ namespace
     }
 
     auto decrement_outdeg(RegularGraph & graph, const long i, const long k, const vector<IntegerVariableID> & vars,
-        const vector<vector<ProofFlag>> & state_at_pos_flags, State & state) -> void
+        const vector<vector<ProofFlag>> & state_at_pos_flags, State & state, ProofLogger * const logger) -> void
     {
         graph.out_deg[i][k]--;
         if (graph.out_deg[i][k] == 0 && i > 0) {
@@ -235,35 +238,37 @@ namespace
                 graph.out_edges[i - 1][l].erase(k);
                 for (const auto & val : edge.second) {
                     graph.states_supporting[i - 1][val].erase(l);
-                    if (state.maybe_proof())
-                        log_additional_inference({vars[i - 1] != val}, {! state_at_pos_flags[i - 1][l]}, state, "dec outdeg inner");
-                    decrement_outdeg(graph, i - 1, l, vars, state_at_pos_flags, state);
+                    if (logger)
+                        log_additional_inference(logger, {vars[i - 1] != val}, {! state_at_pos_flags[i - 1][l]}, state, "dec outdeg inner");
+                    decrement_outdeg(graph, i - 1, l, vars, state_at_pos_flags, state, logger);
                 }
             }
             graph.in_edges[i][k] = {};
-            if (state.maybe_proof())
-                log_additional_inference({}, {! state_at_pos_flags[i][k]}, state, "dec outdeg");
+            if (logger)
+                log_additional_inference(logger, {}, {! state_at_pos_flags[i][k]}, state, "dec outdeg");
         }
     }
 
-    auto decrement_indeg(RegularGraph & graph, const long i, const long k, const vector<IntegerVariableID> & vars, const vector<vector<ProofFlag>> & state_at_pos_flags, State & state) -> void
+    auto decrement_indeg(RegularGraph & graph, const long i, const long k,
+        const vector<IntegerVariableID> & vars, const vector<vector<ProofFlag>> & state_at_pos_flags, State & state,
+        ProofLogger * const logger) -> void
     {
         graph.in_deg[i][k]--;
         if (graph.in_deg[i][k] == 0 && cmp_less(i, graph.in_deg.size() - 1)) {
-            if (state.maybe_proof()) {
+            if (logger) {
                 // Again, want to eliminate this node i.e. prove !state[i][k]
                 for (const auto & q : graph.nodes[i - 1]) {
                     // So first eliminate each previous state/variable combo
                     state.for_each_value(vars[i], [&](Integer val) -> void {
-                        log_additional_inference({vars[i] != val}, {! state_at_pos_flags[i - 1][q], ! state_at_pos_flags[i][k]}, state);
+                        log_additional_inference(logger, {vars[i] != val}, {! state_at_pos_flags[i - 1][q], ! state_at_pos_flags[i][k]}, state);
                     });
 
                     // Then eliminate each previous state
-                    log_additional_inference({}, {! state_at_pos_flags[i - 1][q], ! state_at_pos_flags[i][k]}, state);
+                    log_additional_inference(logger, {}, {! state_at_pos_flags[i - 1][q], ! state_at_pos_flags[i][k]}, state);
                 }
 
                 // Finally, can eliminate what we want
-                log_additional_inference({}, {! state_at_pos_flags[i][k]}, state);
+                log_additional_inference(logger, {}, {! state_at_pos_flags[i][k]}, state);
             }
             for (const auto & edge : graph.out_edges[i][k]) {
                 auto l = edge.first;
@@ -271,7 +276,7 @@ namespace
 
                 for (const auto & val : edge.second) {
                     graph.states_supporting[i][val].erase(k);
-                    decrement_indeg(graph, i + 1, l, vars, state_at_pos_flags, state);
+                    decrement_indeg(graph, i + 1, l, vars, state_at_pos_flags, state, logger);
                 }
             }
 
@@ -286,13 +291,14 @@ namespace
         const vector<vector<ProofFlag>> & state_at_pos_flags,
         const ConstraintStateHandle & graph_handle,
         State & state,
+        ProofLogger * const logger,
         const bool print_graph,
         const string output_file_name) -> Inference
     {
         auto & graph = any_cast<RegularGraph &>(state.get_constraint_state(graph_handle));
 
         if (! graph.initialised)
-            initialise_graph(graph, vars, num_states, transitions, final_states, state_at_pos_flags, state);
+            initialise_graph(graph, vars, num_states, transitions, final_states, state_at_pos_flags, state, logger);
 
         bool changed = false;
         bool contradiction = false;
@@ -320,8 +326,8 @@ namespace
                                 graph.in_edges[i + 1][next_q].erase(q);
                         }
 
-                        decrement_outdeg(graph, i, q, vars, state_at_pos_flags, state);
-                        decrement_indeg(graph, i + 1, next_q, vars, state_at_pos_flags, state);
+                        decrement_outdeg(graph, i, q, vars, state_at_pos_flags, state, logger);
+                        decrement_indeg(graph, i + 1, next_q, vars, state_at_pos_flags, state, logger);
                     }
                     graph.states_supporting[i][val] = {};
                 }
@@ -332,7 +338,7 @@ namespace
             state.for_each_value(vars[i], [&](Integer val) -> void {
                 // Clean up domains
                 if (graph.states_supporting[i][val].empty()) {
-                    switch (state.infer_not_equal(vars[i], val, JustifyUsingRUP{})) {
+                    switch (state.infer_not_equal(logger, vars[i], val, JustifyUsingRUP{})) {
                     case Inference::Contradiction:
                         contradiction = true;
                         break;
@@ -389,11 +395,10 @@ auto Regular::clone() const -> unique_ptr<Constraint>
     return make_unique<Regular>(_vars, _symbols, _num_states, _transitions, _final_states, _print_graph);
 }
 
-auto Regular::install(Propagators & propagators, State & initial_state) && -> void
+auto Regular::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
-
     vector<vector<ProofFlag>> state_at_pos_flags;
-    if (propagators.want_definitions()) {
+    if (optional_model) {
         // Make 2D array of flags: state_at_pos_flags[i][q] means the DFA is in state q when it receives the
         // input value from vars[i], with an extra row of flags for the state after the last transition.
         // NB: Might be easier to have a 1D array of ProofOnlyIntegerVariables, but making literals of these is
@@ -402,32 +407,33 @@ auto Regular::install(Propagators & propagators, State & initial_state) && -> vo
             WeightedPseudoBooleanSum exactly_1_true{};
             state_at_pos_flags.emplace_back();
             for (unsigned int q = 0; q < _num_states; ++q) {
-                state_at_pos_flags[idx].emplace_back(propagators.create_proof_flag("state" + to_string(idx) + "is" + to_string(q)));
+                state_at_pos_flags[idx].emplace_back(optional_model->create_proof_flag("state" + to_string(idx) + "is" + to_string(q)));
                 exactly_1_true += 1_i * state_at_pos_flags[idx][q];
             }
-            propagators.define(initial_state, move(exactly_1_true) == 1_i);
+            optional_model->add_constraint(move(exactly_1_true) == 1_i);
         }
 
         // State at pos 0 is 0
-        propagators.define(initial_state, WeightedPseudoBooleanSum{} + 1_i * state_at_pos_flags[0][0] >= 1_i);
+        optional_model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * state_at_pos_flags[0][0] >= 1_i);
         // State at pos n is one of the final states
         WeightedPseudoBooleanSum pos_n_states;
         for (const auto & f : _final_states) {
             pos_n_states += 1_i * state_at_pos_flags[_vars.size()][f];
         }
-        propagators.define(initial_state, move(pos_n_states) >= 1_i);
+        optional_model->add_constraint(move(pos_n_states) >= 1_i);
 
         for (unsigned int idx = 0; idx < _vars.size(); ++idx) {
             for (unsigned int q = 0; q < _num_states; ++q) {
                 for (const auto & val : _symbols) {
                     if (_transitions[q][val] == -1) {
                         // No transition for q, v, so constrain ~(state_i = q /\ X_i = val)
-                        propagators.define(initial_state,
+                        optional_model->add_constraint(
                             WeightedPseudoBooleanSum{} + 1_i * (_vars[idx] != val) + (1_i * ! state_at_pos_flags[idx][q]) >= 1_i);
                     }
                     else {
                         auto new_q = _transitions[q][val];
-                        propagators.define(initial_state, WeightedPseudoBooleanSum{} + 1_i * ! state_at_pos_flags[idx][q] + 1_i * (_vars[idx] != val) + 1_i * state_at_pos_flags[idx + 1][new_q] >= 1_i);
+                        optional_model->add_constraint(
+                            WeightedPseudoBooleanSum{} + 1_i * ! state_at_pos_flags[idx][q] + 1_i * (_vars[idx] != val) + 1_i * state_at_pos_flags[idx + 1][new_q] >= 1_i);
                     }
                 }
             }
@@ -447,8 +453,9 @@ auto Regular::install(Propagators & propagators, State & initial_state) && -> vo
     }
 
     auto graph_idx = initial_state.add_constraint_state(graph);
-    propagators.install([v = move(_vars), n = _num_states, t = move(_transitions), f = move(_final_states), g = graph_idx, flags = state_at_pos_flags, p = _print_graph, gof = _GRAPH_OUTPUT_FILE](State & state) -> pair<Inference, PropagatorState> {
-        return pair{propagate_regular(v, n, t, f, flags, g, state, p, gof), PropagatorState::Enable};
+    propagators.install([v = move(_vars), n = _num_states, t = move(_transitions), f = move(_final_states), g = graph_idx, flags = state_at_pos_flags,
+                            p = _print_graph, gof = _GRAPH_OUTPUT_FILE](State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
+        return pair{propagate_regular(v, n, t, f, flags, g, state, logger, p, gof), PropagatorState::Enable};
     },
         triggers, "regular");
 }

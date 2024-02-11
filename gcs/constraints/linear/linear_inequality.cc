@@ -1,7 +1,8 @@
 #include <gcs/constraints/linear/linear_inequality.hh>
 #include <gcs/constraints/linear/propagate.hh>
 #include <gcs/constraints/linear/utils.hh>
-#include <gcs/innards/proof.hh>
+#include <gcs/innards/proofs/proof_logger.hh>
+#include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
 
@@ -24,21 +25,21 @@ auto LinearInequality::clone() const -> unique_ptr<Constraint>
     return make_unique<LinearInequality>(WeightedSum{_coeff_vars}, _value);
 }
 
-auto LinearInequality::install(Propagators & propagators, State & initial_state) && -> void
+auto LinearInequality::install(Propagators & propagators, State &, ProofModel * const optional_model) && -> void
 {
     optional<ProofLine> proof_line;
-    if (propagators.want_definitions()) {
+    if (optional_model) {
         WeightedPseudoBooleanSum terms;
         for (auto & [c, v] : _coeff_vars.terms)
             terms += c * v;
-        proof_line = propagators.define(initial_state, terms <= _value, nullopt);
+        proof_line = optional_model->add_constraint(terms <= _value, nullopt);
     }
 
     auto [sanitised_cv, modifier] = tidy_up_linear(_coeff_vars);
 
     if (visit([](const auto & s) { return s.terms.empty(); }, sanitised_cv) && modifier > _value) {
-        propagators.install([](State & state) -> pair<Inference, PropagatorState> {
-            return pair{state.infer(FalseLiteral{}, JustifyUsingRUP{}), PropagatorState::Enable};
+        propagators.install([](State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
+            return pair{state.infer(logger, FalseLiteral{}, JustifyUsingRUP{}), PropagatorState::Enable};
         },
             Triggers{}, "empty linear equality");
     }
@@ -49,20 +50,20 @@ auto LinearInequality::install(Propagators & propagators, State & initial_state)
 
     overloaded{
         [&, &modifier = modifier](const SumOf<Weighted<SimpleIntegerVariableID>> & lin) {
-            propagators.install([modifier = modifier, lin = lin, value = _value, proof_line = proof_line](State & state) {
-                return propagate_linear(lin, value + modifier, state, false, proof_line);
+            propagators.install([modifier = modifier, lin = lin, value = _value, proof_line = proof_line](State & state, ProofLogger * const logger) {
+                return propagate_linear(lin, value + modifier, state, logger, false, proof_line);
             },
                 triggers, "linear inequality");
         },
         [&, &modifier = modifier](const SumOf<PositiveOrNegative<SimpleIntegerVariableID>> & sum) {
-            propagators.install([modifier = modifier, sum = sum, value = _value, proof_line = proof_line](State & state) {
-                return propagate_sum(sum, value + modifier, state, false, proof_line);
+            propagators.install([modifier = modifier, sum = sum, value = _value, proof_line = proof_line](State & state, ProofLogger * const logger) {
+                return propagate_sum(sum, value + modifier, state, logger, false, proof_line);
             },
                 triggers, "linear inequality");
         },
         [&, &modifier = modifier](const SumOf<SimpleIntegerVariableID> & sum) {
-            propagators.install([modifier = modifier, sum = sum, value = _value, proof_line = proof_line](State & state) mutable {
-                return propagate_sum_all_positive(sum, value + modifier, state, false, proof_line);
+            propagators.install([modifier = modifier, sum = sum, value = _value, proof_line = proof_line](State & state, ProofLogger * const logger) {
+                return propagate_sum_all_positive(sum, value + modifier, state, logger, false, proof_line);
             },
                 triggers, "linear inequality");
         }}

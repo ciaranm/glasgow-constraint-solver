@@ -32,7 +32,7 @@ namespace gcs
             explicit ArrayMinMax(std::vector<IntegerVariableID> vars, const IntegerVariableID result, bool min);
 
             virtual auto describe_for_proof() -> std::string override;
-            virtual auto install(innards::Propagators &, innards::State &) && -> void override;
+            virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
             virtual auto clone() const -> std::unique_ptr<Constraint> override;
         };
     }

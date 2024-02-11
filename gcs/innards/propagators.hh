@@ -5,7 +5,6 @@
 #include <gcs/extensional.hh>
 #include <gcs/innards/inference_tracker-fwd.hh>
 #include <gcs/innards/literal.hh>
-#include <gcs/innards/proof.hh>
 #include <gcs/innards/propagators-fwd.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/problem.hh>
@@ -17,11 +16,11 @@
 
 namespace gcs::innards
 {
-    using PropagationFunction = std::function<auto(State &)->std::pair<Inference, PropagatorState>>;
+    using PropagationFunction = std::function<auto(State &, ProofLogger * const)->std::pair<Inference, PropagatorState>>;
 
-    using TrackingPropagationFunction = std::function<auto(State &, InferenceTracker &)->PropagatorState>;
+    using TrackingPropagationFunction = std::function<auto(State &, ProofLogger * const, InferenceTracker &)->PropagatorState>;
 
-    using InitialisationFunction = std::function<auto(State &)->void>;
+    using InitialisationFunction = std::function<auto(State &, ProofLogger * const)->void>;
 
     /**
      * \brief Tell Propagators when a Constraint's propagators should be triggered.
@@ -66,7 +65,7 @@ namespace gcs::innards
          * \name Constructors, destructors, etc.
          */
         ///@{
-        explicit Propagators(std::optional<innards::Proof> &);
+        explicit Propagators();
         ~Propagators();
 
         Propagators(const Propagators &) = delete;
@@ -85,46 +84,17 @@ namespace gcs::innards
         /**
          * Can be called by a Constraint if it is contradictory by definition.
          */
-        auto model_contradiction(const std::string & explain_yourself) -> void;
+        auto model_contradiction(const State &, innards::ProofModel * const, const std::string & explain_yourself) -> void;
 
         /**
          * Called by a Constraint if a variable's lower bound must, by definition, be at least a value.
          */
-        auto trim_lower_bound(const State &, IntegerVariableID var, Integer val, const std::string & explain_yourself) -> void;
+        auto trim_lower_bound(const State &, innards::ProofModel * const, IntegerVariableID var, Integer val, const std::string & explain_yourself) -> void;
 
         /**
          * Called by a Constraint if a variable's upper bound must, by definition, be at least a value.
          */
-        auto trim_upper_bound(const State &, IntegerVariableID var, Integer val, const std::string & explain_yourself) -> void;
-
-        ///@}
-
-        /**
-         * \name Definitions, for proofs.
-         */
-        ///@{
-
-        /**
-         * Are definitions actually wanted?
-         */
-        [[nodiscard]] auto want_definitions() const -> bool;
-
-        /**
-         * Add a pseudo-Boolean constraint to a Proof model.
-         */
-        auto define(const State &, const WeightedPseudoBooleanLessEqual & ineq,
-            const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> std::optional<ProofLine>;
-
-        /**
-         * Add a pair of pseudo-Boolean constraints representing an equality to a Proof model.
-         */
-        auto define(const State &, const WeightedPseudoBooleanEquality & eq,
-            const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> std::pair<std::optional<ProofLine>, std::optional<ProofLine>>;
-
-        /**
-         * Add a CNF definition to a Proof model.
-         */
-        auto define_cnf(const State &, const Literals & lits) -> std::optional<ProofLine>;
+        auto trim_upper_bound(const State &, innards::ProofModel * const, IntegerVariableID var, Integer val, const std::string & explain_yourself) -> void;
 
         ///@}
 
@@ -161,7 +131,7 @@ namespace gcs::innards
          *
          * \sa gcs::innards::propagate_extensional()
          */
-        auto define_and_install_table(State &, const std::vector<IntegerVariableID> &,
+        auto define_and_install_table(State &, innards::ProofModel * const, const std::vector<IntegerVariableID> &,
             ExtensionalTuples, const std::string & name) -> void;
 
         ///@}
@@ -178,17 +148,6 @@ namespace gcs::innards
         [[nodiscard]] auto create_auxilliary_integer_variable(State &, Integer, Integer, const std::string & name,
             const IntegerVariableProofRepresentation enc) -> IntegerVariableID;
 
-        /**
-         * Create a ProofFlag, that is used only in definitions.
-         */
-        [[nodiscard]] auto create_proof_flag(const std::string &) -> ProofFlag;
-
-        /**
-         * Create a variable ID that is used only in proof definitions, not state.
-         */
-        [[nodiscard]] auto create_proof_only_integer_variable(Integer, Integer, const std::string &,
-            const IntegerVariableProofRepresentation enc) -> ProofOnlySimpleIntegerVariableID;
-
         ///@}
 
         /**
@@ -199,12 +158,12 @@ namespace gcs::innards
         /**
          * Propagate every constraint, until either a fixed point or a contradiction is reached.
          */
-        [[nodiscard]] auto propagate(State &, std::atomic<bool> * optional_abort_flag = nullptr) const -> bool;
+        [[nodiscard]] auto propagate(State &, ProofLogger * const, std::atomic<bool> * optional_abort_flag = nullptr) const -> bool;
 
         /**
          * Call every initialiser.
          */
-        auto initialise(State &) const -> void;
+        auto initialise(State &, ProofLogger * const) const -> void;
 
         /**
          * Reset to do a root propagation.

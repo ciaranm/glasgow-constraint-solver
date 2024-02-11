@@ -40,7 +40,7 @@ namespace gcs
             explicit GACArithmetic(const IntegerVariableID v1, const IntegerVariableID v2, const IntegerVariableID result);
 
             virtual auto describe_for_proof() -> std::string override;
-            virtual auto install(innards::Propagators &, innards::State &) && -> void override;
+            virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
             virtual auto clone() const -> std::unique_ptr<Constraint> override;
         };
     }

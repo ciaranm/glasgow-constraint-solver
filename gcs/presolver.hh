@@ -1,11 +1,13 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PRESOLVER_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PRESOLVER_HH
 
+#include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/propagators-fwd.hh>
 #include <gcs/innards/state-fwd.hh>
 #include <gcs/problem-fwd.hh>
 
 #include <memory>
+#include <optional>
 #include <string>
 
 namespace gcs
@@ -29,7 +31,8 @@ namespace gcs
          * Called internally to execute the presolving process. Returns false if
          * unsatisfiability was detected.
          */
-        [[nodiscard]] virtual auto run(Problem &, innards::Propagators &, innards::State &) -> bool = 0;
+        [[nodiscard]] virtual auto run(Problem &, innards::Propagators &, innards::State &,
+            innards::ProofLogger * const) -> bool = 0;
 
         /**
          * Create a copy of the presolver. To be used internally.

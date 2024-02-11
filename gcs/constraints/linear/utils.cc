@@ -1,7 +1,6 @@
 #include <gcs/constraints/linear/utils.hh>
 
 #include <gcs/exception.hh>
-#include <gcs/innards/proof.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/innards/variable_id_utils.hh>
 

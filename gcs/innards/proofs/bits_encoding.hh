@@ -11,7 +11,7 @@ namespace gcs::innards
      * \brief Return the highest bit shift, highest bit coefficient, and negative bit
      * coefficient for a variable ranging from lower to upper.
      *
-     * Only used inside Proof. This is only in the API so it can be tested.
+     * Only used inside proof innards. This is only in the API so it can be tested.
      *
      * \ingroup Innards
      */

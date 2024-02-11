@@ -24,7 +24,8 @@ namespace gcs
         explicit Element(IntegerVariableID var, IntegerVariableID idx, std::vector<IntegerVariableID> vals);
 
         virtual auto describe_for_proof() -> std::string override;
-        virtual auto install(innards::Propagators &, innards::State &) && -> void override;
+        virtual auto install(innards::Propagators &, innards::State &,
+            innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
     };
 
@@ -45,7 +46,7 @@ namespace gcs
             std::vector<Integer> * vals);
 
         virtual auto describe_for_proof() -> std::string override;
-        virtual auto install(innards::Propagators &, innards::State &) && -> void override;
+        virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
     };
 
@@ -66,7 +67,7 @@ namespace gcs
             std::vector<std::vector<Integer>> * vals);
 
         virtual auto describe_for_proof() -> std::string override;
-        virtual auto install(innards::Propagators &, innards::State &) && -> void override;
+        virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
     };
 }

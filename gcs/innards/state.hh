@@ -5,7 +5,7 @@
 #include <gcs/innards/integer_variable_state.hh>
 #include <gcs/innards/justification.hh>
 #include <gcs/innards/literal.hh>
-#include <gcs/innards/proof-fwd.hh>
+#include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/state-fwd.hh>
 #include <gcs/innards/variable_id_utils.hh>
 
@@ -129,7 +129,7 @@ namespace gcs::innards
         [[nodiscard]] inline auto state_of(const ConstantIntegerVariableID &, innards::IntegerVariableState & space) const -> const innards::IntegerVariableState &;
         [[nodiscard]] inline auto state_of(const SimpleIntegerVariableID &) const -> const innards::IntegerVariableState &;
 
-        auto prove_and_remember_change(const Inference & inference, const HowChanged & how_changed, const Justification & just,
+        auto prove_and_remember_change(ProofLogger * const, const Inference & inference, const HowChanged & how_changed, const Justification & just,
             const Literal & lit, const DirectIntegerVariableID & actual_var) -> void;
 
     public:
@@ -187,45 +187,45 @@ namespace gcs::innards
         /**
          * Infer that a Literal must hold, for the specified Justification.
          */
-        [[nodiscard]] auto infer(const Literal & lit, const Justification & why) -> Inference;
+        [[nodiscard]] auto infer(ProofLogger * const, const Literal & lit, const Justification & why) -> Inference;
 
         /**
          * Infer that a Literal must hold, for the specified Justification. Performance overload for if we
          * know we have an IntegerVariableCondition.
          */
         template <IntegerVariableIDLike VarType_>
-        [[nodiscard]] auto infer(const VariableConditionFrom<VarType_> & lit, const Justification & why) -> Inference;
+        [[nodiscard]] auto infer(ProofLogger * const, const VariableConditionFrom<VarType_> & lit, const Justification & why) -> Inference;
 
         /**
          * Infer nothing, but still emit a justification if necessary.
          */
-        auto infer_true(const Justification & why) -> void;
+        auto infer_true(ProofLogger * const, const Justification & why) -> void;
 
         /**
          * Infer a contradiction, but still emit a justification if necessary.
          */
-        auto infer_false(const Justification & why) -> void;
+        auto infer_false(ProofLogger * const, const Justification & why) -> void;
 
         /**
          * Infer that a given IntegerVariableID or more specific type must be
          * equal to a particular value. Performance overload of State::infer().
          */
         template <IntegerVariableIDLike VarType_>
-        [[nodiscard]] auto infer_equal(const VarType_ &, Integer value, const Justification & why) -> Inference;
+        [[nodiscard]] auto infer_equal(ProofLogger * const, const VarType_ &, Integer value, const Justification & why) -> Inference;
 
         /**
          * Infer that a given IntegerVariableID or more specific type must not
          * equal to a particular value. Performance overload of State::infer().
          */
         template <IntegerVariableIDLike VarType_>
-        [[nodiscard]] auto infer_not_equal(const VarType_ &, Integer value, const Justification & why) -> Inference;
+        [[nodiscard]] auto infer_not_equal(ProofLogger * const, const VarType_ &, Integer value, const Justification & why) -> Inference;
 
         /**
          * Infer that a given IntegerVariableID or more specific type must be less
          * than a particular value. Performance overload of State::infer().
          */
         template <IntegerVariableIDLike VarType_>
-        [[nodiscard]] auto infer_less_than(const VarType_ &, Integer value, const Justification & why) -> Inference;
+        [[nodiscard]] auto infer_less_than(ProofLogger * const, const VarType_ &, Integer value, const Justification & why) -> Inference;
 
         /**
          * Infer that a given IntegerVariableID or more specific type must be
@@ -233,31 +233,14 @@ namespace gcs::innards
          * State::infer().
          */
         template <IntegerVariableIDLike VarType_>
-        [[nodiscard]] auto infer_greater_than_or_equal(const VarType_ &, Integer value, const Justification & why) -> Inference;
+        [[nodiscard]] auto infer_greater_than_or_equal(ProofLogger * const, const VarType_ &, Integer value, const Justification & why) -> Inference;
 
         /**
          * Infer each Literal in turn. If the justification is a
          * JustifyExplicitly, only output its justification once, for the first
          * Literal.
          */
-        [[nodiscard]] auto infer_all(const std::vector<Literal> & lit, const Justification & why) -> Inference;
-
-        ///@}
-
-        /**
-         * \name Proof-related functions
-         */
-        ///@{
-
-        /**
-         * The Proof, if we are proof logging, or nullptr if we are not.
-         */
-        [[nodiscard]] auto maybe_proof() const -> Proof *;
-
-        /**
-         * Set a Proof for proof logging of inference steps.
-         */
-        auto log_inferences_to(Proof &) -> void;
+        [[nodiscard]] auto infer_all(ProofLogger * const, const std::vector<Literal> & lit, const Justification & why) -> Inference;
 
         ///@}
 
@@ -272,7 +255,7 @@ namespace gcs::innards
          *
          * \sa State::new_epoch()
          */
-        auto guess(const Literal & lit) -> void;
+        auto guess(ProofLogger * const, const Literal & lit) -> void;
 
         /**
          * Add an additional proof condition, similar to guess except that it
@@ -313,42 +296,6 @@ namespace gcs::innards
          * the current epoch.
          */
         auto on_backtrack(std::function<auto()->void>) -> void;
-
-        ///@}
-
-        /**
-         * \name Optimisation
-         */
-        ///@{
-
-        /**
-         * Update the objective, if we have found a solution.
-         */
-        auto update_objective_to_current_solution() -> void;
-
-        /**
-         * Infer to make the objective variable consistent with the most
-         * recently found solution, if necessary.
-         *
-         * This exists because when backtracking after finding a new incumbent
-         * during search, we lose the update to the objective variable.
-         */
-        [[nodiscard]] auto infer_on_objective_variable_before_propagation() -> Inference;
-
-        /**
-         * We're going to be trying to minimise this variable.
-         */
-        auto minimise(IntegerVariableID) -> void;
-
-        /**
-         * We're going to be trying to maximise this variable.
-         */
-        auto maximise(IntegerVariableID) -> void;
-
-        /**
-         * What is our objective variable, to minimise?
-         */
-        [[nodiscard]] auto optional_minimise_variable() const -> std::optional<IntegerVariableID>;
 
         ///@}
 

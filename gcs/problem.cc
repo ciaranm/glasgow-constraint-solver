@@ -1,9 +1,11 @@
-#include <gcs/problem.hh>
 #include <gcs/constraints/in.hh>
 #include <gcs/exception.hh>
+#include <gcs/innards/proofs/proof_logger.hh>
+#include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/presolver.hh>
+#include <gcs/problem.hh>
 
 #include <gcs/constraints/linear.hh>
 
@@ -16,6 +18,7 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::deque;
+using std::function;
 using std::make_optional;
 using std::move;
 using std::nullopt;
@@ -34,6 +37,7 @@ struct Problem::Imp
     deque<tuple<SimpleIntegerVariableID, Integer, Integer, optional<string>>> opb_variables{};
     deque<unique_ptr<Presolver>> presolvers{};
     vector<IntegerVariableID> problem_variables{};
+    optional<IntegerVariableID> optional_minimise_variable{};
 };
 
 Problem::Problem() :
@@ -75,7 +79,7 @@ auto Problem::create_integer_variable_vector(
     size_t how_many,
     Integer lower,
     Integer upper,
-    const optional<string> & name) -> std::vector<IntegerVariableID>
+    const optional<string> & name) -> vector<IntegerVariableID>
 {
     vector<IntegerVariableID> result;
     result.reserve(how_many);
@@ -84,13 +88,13 @@ auto Problem::create_integer_variable_vector(
     return result;
 }
 
-auto Problem::create_state_for_new_search(optional<Proof> & optional_proof) const -> State
+auto Problem::create_state_for_new_search(
+    ProofModel * const model) const -> State
 {
     auto result = _imp->initial_state.clone();
-    if (optional_proof) {
+    if (model) {
         for (auto & [id, lower, upper, optional_name] : _imp->opb_variables)
-            optional_proof->set_up_integer_variable(id, lower, upper, optional_name, nullopt);
-        result.log_inferences_to(*optional_proof);
+            model->set_up_integer_variable(id, lower, upper, optional_name, nullopt);
     }
     return result;
 }
@@ -115,20 +119,20 @@ auto Problem::add_presolver(const Presolver & p) -> void
     _imp->presolvers.push_back(p.clone());
 }
 
-auto Problem::create_propagators(State & state, optional<Proof> & optional_proof) const -> Propagators
+auto Problem::create_propagators(State & state, ProofModel * const optional_proof_model) const -> Propagators
 {
-    auto result = Propagators{optional_proof};
+    Propagators result;
     for (auto & c : _imp->constraints) {
         auto cc = c->clone();
-        if (optional_proof)
-            optional_proof->posting(cc->describe_for_proof());
-        move(*cc).install(result, state);
+        if (optional_proof_model)
+            optional_proof_model->posting(cc->describe_for_proof());
+        move(*cc).install(result, state, optional_proof_model);
     }
 
     return result;
 }
 
-auto Problem::for_each_presolver(const std::function<auto(Presolver &)->bool> & f) const -> bool
+auto Problem::for_each_presolver(const function<auto(Presolver &)->bool> & f) const -> bool
 {
     for (auto & p : _imp->presolvers)
         if (! f(*p))
@@ -139,15 +143,20 @@ auto Problem::for_each_presolver(const std::function<auto(Presolver &)->bool> & 
 
 auto Problem::minimise(IntegerVariableID var) -> void
 {
-    _imp->initial_state.minimise(var);
+    _imp->optional_minimise_variable = var;
 }
 
 auto Problem::maximise(IntegerVariableID var) -> void
 {
-    _imp->initial_state.maximise(var);
+    _imp->optional_minimise_variable = -var;
 }
 
-auto Problem::all_normal_variables() const -> const std::vector<IntegerVariableID> &
+auto Problem::optional_minimise_variable() const -> optional<IntegerVariableID>
+{
+    return _imp->optional_minimise_variable;
+}
+
+auto Problem::all_normal_variables() const -> const vector<IntegerVariableID> &
 {
     return _imp->problem_variables;
 }

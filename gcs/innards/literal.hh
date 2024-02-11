@@ -50,6 +50,10 @@ namespace gcs::innards
      */
     using Literal = std::variant<IntegerVariableCondition, TrueLiteral, FalseLiteral>;
 
+    [[nodiscard]] auto operator!(const TrueLiteral &) -> FalseLiteral;
+
+    [[nodiscard]] auto operator!(const FalseLiteral &) -> TrueLiteral;
+
     /**
      * \brief Negate a Literal.
      *

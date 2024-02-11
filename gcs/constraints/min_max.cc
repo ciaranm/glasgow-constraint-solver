@@ -1,6 +1,8 @@
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/min_max.hh>
 #include <gcs/exception.hh>
+#include <gcs/innards/proofs/proof_logger.hh>
+#include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
 
 using namespace gcs;
@@ -25,7 +27,7 @@ auto ArrayMinMax::clone() const -> unique_ptr<Constraint>
     return make_unique<ArrayMinMax>(_vars, _result, _min);
 }
 
-auto ArrayMinMax::install(Propagators & propagators, State & initial_state) && -> void
+auto ArrayMinMax::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
     if (_vars.empty())
         throw UnexpectedException{"not sure how min and max are defined over an empty array"};
@@ -34,16 +36,16 @@ auto ArrayMinMax::install(Propagators & propagators, State & initial_state) && -
     for (const auto & v : _vars)
         triggers.on_change.emplace_back(v);
 
-    propagators.install([vars = _vars, result = _result, min = _min](State & state) -> pair<Inference, PropagatorState> {
+    propagators.install([vars = _vars, result = _result, min = _min](State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
         Inference inf = Inference::NoChange;
 
         // result <= upper bound of each vars
         for (auto & var : vars) {
             auto var_bounds = state.bounds(var);
             if (min)
-                increase_inference_to(inf, state.infer_less_than(result, var_bounds.second + 1_i, JustifyUsingRUPBecauseOf{{var < var_bounds.second + 1_i}}));
+                increase_inference_to(inf, state.infer_less_than(logger, result, var_bounds.second + 1_i, JustifyUsingRUPBecauseOf{{var < var_bounds.second + 1_i}}));
             else
-                increase_inference_to(inf, state.infer_greater_than_or_equal(result, var_bounds.first, JustifyUsingRUPBecauseOf{{var >= var_bounds.first}}));
+                increase_inference_to(inf, state.infer_greater_than_or_equal(logger, result, var_bounds.first, JustifyUsingRUPBecauseOf{{var >= var_bounds.first}}));
 
             if (Inference::Contradiction == inf)
                 return pair{inf, PropagatorState::Enable};
@@ -53,9 +55,9 @@ auto ArrayMinMax::install(Propagators & propagators, State & initial_state) && -
         auto result_bounds = state.bounds(result);
         for (auto & var : vars) {
             if (min)
-                increase_inference_to(inf, state.infer_greater_than_or_equal(var, result_bounds.first, JustifyUsingRUPBecauseOf{{result >= result_bounds.first}}));
+                increase_inference_to(inf, state.infer_greater_than_or_equal(logger, var, result_bounds.first, JustifyUsingRUPBecauseOf{{result >= result_bounds.first}}));
             else
-                increase_inference_to(inf, state.infer_less_than(var, state.upper_bound(result) + 1_i, JustifyUsingRUPBecauseOf{{result < result_bounds.second + 1_i}}));
+                increase_inference_to(inf, state.infer_less_than(logger, var, state.upper_bound(result) + 1_i, JustifyUsingRUPBecauseOf{{result < result_bounds.second + 1_i}}));
 
             if (Inference::Contradiction == inf)
                 return pair{inf, PropagatorState::Enable};
@@ -75,7 +77,7 @@ auto ArrayMinMax::install(Propagators & propagators, State & initial_state) && -
                 Reason reason;
                 for (auto & var : vars)
                     reason.emplace_back(var != value);
-                increase_inference_to(inf, state.infer_not_equal(result, value, JustifyUsingRUPBecauseOf{move(reason)}));
+                increase_inference_to(inf, state.infer_not_equal(logger, result, value, JustifyUsingRUPBecauseOf{move(reason)}));
                 if (Inference::Contradiction == inf)
                     return false;
             }
@@ -116,10 +118,10 @@ auto ArrayMinMax::install(Propagators & propagators, State & initial_state) && -
             }
 
             if (min) {
-                increase_inference_to(inf, state.infer_less_than(*support_of_largest_1, largest_result + 1_i, JustifyUsingRUPBecauseOf{move(reason)}));
+                increase_inference_to(inf, state.infer_less_than(logger, *support_of_largest_1, largest_result + 1_i, JustifyUsingRUPBecauseOf{move(reason)}));
             }
             else {
-                increase_inference_to(inf, state.infer_greater_than_or_equal(*support_of_largest_1, largest_result, JustifyUsingRUPBecauseOf{move(reason)}));
+                increase_inference_to(inf, state.infer_greater_than_or_equal(logger, *support_of_largest_1, largest_result, JustifyUsingRUPBecauseOf{move(reason)}));
             }
         }
 
@@ -127,10 +129,10 @@ auto ArrayMinMax::install(Propagators & propagators, State & initial_state) && -
     },
         triggers, "array min max");
 
-    if (propagators.want_definitions()) {
+    if (optional_model) {
         // result <= each var
         for (const auto & v : _vars) {
-            propagators.define(initial_state, WeightedPseudoBooleanSum{} + (_min ? -1_i : 1_i) * v + (_min ? 1_i : -1_i) * _result <= 0_i, nullopt);
+            optional_model->add_constraint(WeightedPseudoBooleanSum{} + (_min ? -1_i : 1_i) * v + (_min ? 1_i : -1_i) * _result <= 0_i, nullopt);
         }
 
         // result == i -> i in vars
@@ -139,7 +141,7 @@ auto ArrayMinMax::install(Propagators & propagators, State & initial_state) && -
             for (auto & v : _vars)
                 if (initial_state.in_domain(v, val))
                     lits.emplace_back(v == val);
-            propagators.define_cnf(initial_state, move(lits));
+            optional_model->add_constraint(move(lits));
         });
     }
 }

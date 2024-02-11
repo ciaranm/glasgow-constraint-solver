@@ -11,6 +11,7 @@ using namespace gcs::innards;
 
 using std::erase_if;
 using std::move;
+using std::optional;
 using std::sort;
 using std::string;
 using std::unique;
@@ -34,7 +35,7 @@ auto In::clone() const -> unique_ptr<Constraint>
     return make_unique<In>(_var, _val_vals);
 }
 
-auto In::install(Propagators & propagators, State & initial_state) && -> void
+auto In::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
     erase_if(_var_vals, [&](const IntegerVariableID & v) -> bool {
         auto const_val = initial_state.optional_single_value(v);
@@ -47,7 +48,7 @@ auto In::install(Propagators & propagators, State & initial_state) && -> void
     _val_vals.erase(unique(_val_vals.begin(), _val_vals.end()), _val_vals.end());
 
     if (_var_vals.empty() && _val_vals.empty())
-        propagators.model_contradiction("No values or variables present for an 'In' constraint");
+        propagators.model_contradiction(initial_state, optional_model, "No values or variables present for an 'In' constraint");
     else if (_var_vals.empty()) {
         vector<IntegerVariableID> vars;
         vars.emplace_back(_var);
@@ -56,7 +57,7 @@ auto In::install(Propagators & propagators, State & initial_state) && -> void
         for (auto & v : _val_vals)
             tuples.emplace_back(vector{{v}});
 
-        propagators.define_and_install_table(initial_state, move(vars), move(tuples), "in");
+        propagators.define_and_install_table(initial_state, optional_model, move(vars), move(tuples), "in");
     }
     else {
         throw UnimplementedException{};

@@ -1,6 +1,8 @@
 #include <gcs/constraints/all_different.hh>
 #include <gcs/exception.hh>
-#include <gcs/innards/proof.hh>
+#include <gcs/innards/proofs/proof_logger.hh>
+#include <gcs/innards/proofs/proof_model.hh>
+#include <gcs/innards/proofs/variable_constraints_tracker.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/innards/variable_id_utils.hh>
@@ -170,7 +172,7 @@ namespace
         const vector<IntegerVariableID> & vars,
         const vector<Integer> & vals,
         const map<Integer, ProofLine> & constraint_numbers,
-        Proof & proof,
+        ProofLogger & logger,
         const vector<pair<Left, Right>> & edges,
         const vector<uint8_t> & left_covered,
         const vector<optional<Right>> & matching) -> void
@@ -223,7 +225,7 @@ namespace
         vector<ProofLine> at_least_one_constraints;
         for (Left v{0}; v.offset != vars.size(); ++v.offset)
             if (hall_variables[v.offset])
-                at_least_one_constraints.push_back(proof.need_constraint_saying_variable_takes_at_least_one_value(vars[v.offset]));
+                at_least_one_constraints.push_back(logger.variable_constraints_tracker().need_constraint_saying_variable_takes_at_least_one_value(vars[v.offset]));
 
         // each variable in the violator has to take at least one value that is
         // left in its domain...
@@ -242,7 +244,7 @@ namespace
             if (hall_values[v.offset])
                 proof_step << " " << constraint_numbers.at(vals[v.offset]) << " +";
 
-        proof.emit_proof_line(proof_step.str(), ProofLevel::Current);
+        logger.emit_proof_line(proof_step.str(), ProofLevel::Current);
     }
 
     using Vertex = variant<Left, Right>;
@@ -262,7 +264,7 @@ namespace
         const vector<IntegerVariableID> & vars,
         const vector<Integer> & vals,
         const map<Integer, ProofLine> & constraint_numbers,
-        Proof & proof,
+        ProofLogger & logger,
         const vector<vector<Right>> & edges_out_from_variable,
         const vector<vector<Left>> & edges_out_from_value,
         const Right delete_value,
@@ -321,7 +323,7 @@ namespace
             vector<ProofLine> at_least_one_constraints;
             for (Left v{0}; v.offset != vars.size(); ++v.offset)
                 if (hall_left[v.offset])
-                    at_least_one_constraints.push_back(proof.need_constraint_saying_variable_takes_at_least_one_value(vars[v.offset]));
+                    at_least_one_constraints.push_back(logger.variable_constraints_tracker().need_constraint_saying_variable_takes_at_least_one_value(vars[v.offset]));
 
             stringstream proof_step;
             proof_step << "p";
@@ -337,7 +339,7 @@ namespace
                 if (hall_right[v.offset])
                     proof_step << " " << constraint_numbers.at(vals[v.offset]) << " +";
 
-            proof.emit_proof_line(proof_step.str(), ProofLevel::Current);
+            logger.emit_proof_line(proof_step.str(), ProofLevel::Current);
         }
     }
 
@@ -345,7 +347,8 @@ namespace
         const vector<IntegerVariableID> & vars,
         const vector<Integer> & vals,
         const map<Integer, ProofLine> & constraint_numbers,
-        State & state) -> Inference
+        State & state,
+        ProofLogger * const logger) -> Inference
     {
         // find a matching to check feasibility
         vector<pair<Left, Right>> edges;
@@ -364,8 +367,8 @@ namespace
         if (cmp_not_equal(count(left_covered.begin(), left_covered.end(), 1), vars.size())) {
             // nope. we've got a maximum cardinality matching that leaves at least
             // one thing on the left uncovered.
-            return state.infer(FalseLiteral{}, JustifyExplicitly{[&](Proof & proof) -> void {
-                prove_matching_is_too_small(vars, vals, constraint_numbers, proof, edges, left_covered, matching);
+            return state.infer(logger, FalseLiteral{}, JustifyExplicitly{[&]() -> void {
+                prove_matching_is_too_small(vars, vals, constraint_numbers, *logger, edges, left_covered, matching);
             }});
         }
 
@@ -518,13 +521,13 @@ namespace
             deletions.emplace_back(vars[delete_var_name.offset] != vals[delete_value.offset]);
         }
 
-        switch (state.infer_all(deletions, JustifyExplicitly{[&](Proof & proof) -> void {
+        switch (state.infer_all(logger, deletions, JustifyExplicitly{[&]() -> void {
             for (auto & [delete_var_name, delete_value] : edges) {
                 if (used_edges[delete_var_name.offset][delete_value.offset])
                     continue;
                 if (! sccs_already_done[components[vertex_to_offset(vars, vals, delete_value)]]) {
                     sccs_already_done[components[vertex_to_offset(vars, vals, delete_value)]] = 1;
-                    prove_deletion_using_sccs(vars, vals, constraint_numbers, proof, edges_out_from_variable, edges_out_from_value, delete_value, components);
+                    prove_deletion_using_sccs(vars, vals, constraint_numbers, *logger, edges_out_from_variable, edges_out_from_value, delete_value, components);
                 }
             }
         }})) {
@@ -543,10 +546,10 @@ namespace
     }
 }
 
-auto AllDifferent::install(Propagators & propagators, State & initial_state) && -> void
+auto AllDifferent::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
     map<Integer, ProofLine> constraint_numbers;
-    if (propagators.want_definitions()) {
+    if (optional_model) {
         auto max_upper = initial_state.upper_bound(*max_element(_vars.begin(), _vars.end(), [&](const IntegerVariableID & v, const IntegerVariableID & w) {
             return initial_state.upper_bound(v) < initial_state.upper_bound(w);
         }));
@@ -561,7 +564,7 @@ auto AllDifferent::install(Propagators & propagators, State & initial_state) && 
                 if (initial_state.in_domain(var, val))
                     am1 += 1_i * (var == val);
             if (am1.terms.size() >= 2)
-                constraint_numbers.emplace(val, nullopt_to_zero(propagators.define(initial_state, move(am1) <= 1_i)));
+                constraint_numbers.emplace(val, nullopt_to_zero(optional_model->add_constraint(move(am1) <= 1_i)));
         }
     }
 
@@ -583,8 +586,8 @@ auto AllDifferent::install(Propagators & propagators, State & initial_state) && 
     propagators.install(
         [vars = move(sanitised_vars),
             vals = move(compressed_vals),
-            save_constraint_numbers = move(constraint_numbers)](State & state) -> pair<Inference, PropagatorState> {
-            return pair{propagate_all_different(vars, vals, save_constraint_numbers, state),
+            save_constraint_numbers = move(constraint_numbers)](State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
+            return pair{propagate_all_different(vars, vals, save_constraint_numbers, state, logger),
                 PropagatorState::Enable};
         },
         triggers, "alldiff");
