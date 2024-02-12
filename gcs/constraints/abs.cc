@@ -1,4 +1,5 @@
 #include <gcs/constraints/abs.hh>
+#include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
@@ -49,34 +50,30 @@ auto Abs::install(Propagators & propagators, State & initial_state,
 
     // _v2 = abs(_v1)
     Triggers triggers{.on_change = {_v1, _v2}};
-    propagators.install([v1 = _v1, v2 = _v2, selector = selector](State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
-        // v2 = abs(v1)
-        Inference result = Inference::NoChange;
-        state.for_each_value_while(v1, [&](Integer val) {
+    propagators.install_tracking([v1 = _v1, v2 = _v2, selector = selector](
+                                     State & state, ProofLogger * const logger, InferenceTracker & inference) -> PropagatorState {
+        // we're not dealing with bounds. remove from v1 any value whose absolute value
+        // isn't in v2's domain.
+        state.for_each_value(v1, [&](Integer val) {
             if (! state.in_domain(v2, abs(val)))
-                increase_inference_to(result, state.infer_not_equal(logger, v1, val, JustifyUsingRUPBecauseOf{{v2 != abs(val)}}));
-            return result != Inference::Contradiction;
+                inference.infer_not_equal(logger, v1, val, JustifyUsingRUPBecauseOf{{v2 != abs(val)}});
         });
 
-        state.for_each_value_while(v2, [&](Integer val) {
+        // now remove from v2 any value whose +/-value isn't in v1's domain.
+        state.for_each_value(v2, [&](Integer val) {
             if (! state.in_domain(v1, val) && ! state.in_domain(v1, -val) && state.in_domain(v2, val)) {
                 Reason reason{v1 != val, v1 != -val};
                 auto just = [&]() {
-                    logger->emit_rup_proof_line_under_reason(state, reason,
-                        WeightedPseudoBooleanSum{} + 1_i * (v1 != val) >= 1_i, ProofLevel::Temporary);
-                    logger->emit_rup_proof_line_under_reason(state, reason,
-                        WeightedPseudoBooleanSum{} + 1_i * (v1 != -val) >= 1_i, ProofLevel::Temporary);
                     logger->emit_rup_proof_line_under_reason(state, reason,
                         WeightedPseudoBooleanSum{} + 1_i * (*selector) + 1_i * (v2 != val) >= 1_i, ProofLevel::Temporary);
                     logger->emit_rup_proof_line_under_reason(state, reason,
                         WeightedPseudoBooleanSum{} + 1_i * (! *selector) + 1_i * (v2 != val) >= 1_i, ProofLevel::Temporary);
                 };
-                increase_inference_to(result, state.infer_not_equal(logger, v2, val, JustifyExplicitlyBecauseOf{just, reason}));
+                inference.infer_not_equal(logger, v2, val, JustifyExplicitlyBecauseOf{just, reason});
             }
-            return result != Inference::Contradiction;
         });
 
-        return pair{result, PropagatorState::Enable};
+        return PropagatorState::Enable;
     },
         triggers, "abs");
 
