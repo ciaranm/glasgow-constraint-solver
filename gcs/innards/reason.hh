@@ -11,7 +11,7 @@ namespace gcs::innards
 {
     using Reason = Literals;
 
-    [[nodiscard]] auto generic_reason(State & state, const std::vector<IntegerVariableID> & vars) -> Reason;
+    [[nodiscard]] auto generic_reason(const State & state, const std::vector<IntegerVariableID> & vars) -> Reason;
 }
 
 #endif

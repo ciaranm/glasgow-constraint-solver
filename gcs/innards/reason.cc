@@ -4,7 +4,7 @@
 using namespace gcs;
 using namespace gcs::innards;
 
-auto gcs::innards::generic_reason(State & state, const std::vector<IntegerVariableID> & vars) -> Reason
+auto gcs::innards::generic_reason(const State & state, const std::vector<IntegerVariableID> & vars) -> Reason
 {
     Reason reason;
     for (const auto & var : vars) {

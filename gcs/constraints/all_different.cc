@@ -172,10 +172,11 @@ namespace
         const vector<IntegerVariableID> & vars,
         const vector<Integer> & vals,
         const map<Integer, ProofLine> & constraint_numbers,
+        const State & state,
         ProofLogger & logger,
         const vector<pair<Left, Right>> & edges,
         const vector<uint8_t> & left_covered,
-        const vector<optional<Right>> & matching) -> void
+        const vector<optional<Right>> & matching) -> JustifyExplicitly
     {
         vector<optional<Left>> inverse_matching(vals.size(), nullopt);
         for (const auto & [l, r] : enumerate(matching))
@@ -221,30 +222,40 @@ namespace
             hall_values[not_subset_witness.offset] = 1;
         }
 
-        // we are going to need the at least one value variables
-        vector<ProofLine> at_least_one_constraints;
+        vector<IntegerVariableID> hall_variable_ids;
         for (Left v{0}; v.offset != vars.size(); ++v.offset)
             if (hall_variables[v.offset])
-                at_least_one_constraints.push_back(logger.variable_constraints_tracker().need_constraint_saying_variable_takes_at_least_one_value(vars[v.offset]));
+                hall_variable_ids.push_back(vars[v.offset]);
+        auto reason = generic_reason(state, hall_variable_ids);
 
-        // each variable in the violator has to take at least one value that is
-        // left in its domain...
-        stringstream proof_step;
-        proof_step << "p";
-        bool first = true;
-        for (auto & c : at_least_one_constraints) {
-            proof_step << " " << c;
-            if (! first)
-                proof_step << " +";
-            first = false;
-        }
+        return JustifyExplicitly{
+            [&vars, &vals, &logger, &constraint_numbers, hall_variables = move(hall_variables), hall_values = move(hall_values)]() -> void {
+                // we are going to need the at least one value variables
+                vector<ProofLine> at_least_one_constraints;
+                for (Left v{0}; v.offset != vars.size(); ++v.offset)
+                    if (hall_variables[v.offset])
+                        at_least_one_constraints.push_back(logger.variable_constraints_tracker().need_constraint_saying_variable_takes_at_least_one_value(vars[v.offset]));
 
-        // and each value in the component can only be used once
-        for (Right v{0}; v.offset != vals.size(); ++v.offset)
-            if (hall_values[v.offset])
-                proof_step << " " << constraint_numbers.at(vals[v.offset]) << " +";
+                // each variable in the violator has to take at least one value that is
+                // left in its domain...
+                stringstream proof_step;
+                proof_step << "p";
+                bool first = true;
+                for (auto & c : at_least_one_constraints) {
+                    proof_step << " " << c;
+                    if (! first)
+                        proof_step << " +";
+                    first = false;
+                }
 
-        logger.emit_proof_line(proof_step.str(), ProofLevel::Current);
+                // and each value in the component can only be used once
+                for (Right v{0}; v.offset != vals.size(); ++v.offset)
+                    if (hall_values[v.offset])
+                        proof_step << " " << constraint_numbers.at(vals[v.offset]) << " +";
+
+                logger.emit_proof_line(proof_step.str(), ProofLevel::Current);
+            },
+            reason};
     }
 
     using Vertex = variant<Left, Right>;
@@ -264,11 +275,12 @@ namespace
         const vector<IntegerVariableID> & vars,
         const vector<Integer> & vals,
         const map<Integer, ProofLine> & constraint_numbers,
+        State & state,
         ProofLogger & logger,
         const vector<vector<Right>> & edges_out_from_variable,
         const vector<vector<Left>> & edges_out_from_value,
         const Right delete_value,
-        const vector<int> & components) -> void
+        const vector<int> & components) -> Justification
     {
         // we know a hall set exists, but we have to find it. starting
         // from but not including the end of the edge we're deleting,
@@ -279,7 +291,6 @@ namespace
         vector<uint8_t> explored(vars.size() + vals.size(), 0);
         vector<uint8_t> hall_left(vars.size(), 0);
         vector<uint8_t> hall_right(vals.size(), 0);
-        bool have_hall_left = false;
 
         in_to_explore[vertex_to_offset(vars, vals, delete_value)] = 1;
         to_explore.push_back(delete_value);
@@ -293,7 +304,6 @@ namespace
             visit([&](const auto & x) -> void {
                 if constexpr (is_same_v<decay_t<decltype(x)>, Left>) {
                     hall_left[x.offset] = 1;
-                    have_hall_left = true;
                     for (const auto & t : edges_out_from_variable[x.offset]) {
                         if (care_about_scc == components[vertex_to_offset(vars, vals, t)] && ! explored[vertex_to_offset(vars, vals, t)]) {
                             if (0 == in_to_explore[vertex_to_offset(vars, vals, t)]) {
@@ -318,28 +328,45 @@ namespace
                 n);
         }
 
-        if (have_hall_left) {
-            // we are going to need the at least one value variables
-            vector<ProofLine> at_least_one_constraints;
-            for (Left v{0}; v.offset != vars.size(); ++v.offset)
-                if (hall_left[v.offset])
-                    at_least_one_constraints.push_back(logger.variable_constraints_tracker().need_constraint_saying_variable_takes_at_least_one_value(vars[v.offset]));
+        vector<IntegerVariableID> hall_variable_ids;
+        for (Left v{0}; v.offset != vars.size(); ++v.offset)
+            if (hall_left[v.offset])
+                hall_variable_ids.push_back(vars[v.offset]);
 
-            stringstream proof_step;
-            proof_step << "p";
-            bool first = true;
-            for (auto & c : at_least_one_constraints) {
-                proof_step << " " << c;
-                if (! first)
-                    proof_step << " +";
-                first = false;
-            }
+        if (hall_variable_ids.empty()) {
+            // some other variable has been given this value
+            if (edges_out_from_value[delete_value.offset].empty())
+                throw UnexpectedException{"missing edge out from value in trivial scc"};
+            else
+                return JustifyUsingRUP{{vars[edges_out_from_value[delete_value.offset].begin()->offset] == vals[delete_value.offset]}};
+        }
+        else {
+            // a hall set is at work
+            return JustifyExplicitly{
+                [&vars, &vals, &logger, &constraint_numbers, hall_left = move(hall_left), hall_right = move(hall_right)]() {
+                    // we are going to need the at least one value variables
+                    vector<ProofLine> at_least_one_constraints;
+                    for (Left v{0}; v.offset != vars.size(); ++v.offset)
+                        if (hall_left[v.offset])
+                            at_least_one_constraints.push_back(logger.variable_constraints_tracker().need_constraint_saying_variable_takes_at_least_one_value(vars[v.offset]));
 
-            for (Right v{0}; v.offset != vals.size(); ++v.offset)
-                if (hall_right[v.offset])
-                    proof_step << " " << constraint_numbers.at(vals[v.offset]) << " +";
+                    stringstream proof_step;
+                    proof_step << "p";
+                    bool first = true;
+                    for (auto & c : at_least_one_constraints) {
+                        proof_step << " " << c;
+                        if (! first)
+                            proof_step << " +";
+                        first = false;
+                    }
 
-            logger.emit_proof_line(proof_step.str(), ProofLevel::Current);
+                    for (Right v{0}; v.offset != vals.size(); ++v.offset)
+                        if (hall_right[v.offset])
+                            proof_step << " " << constraint_numbers.at(vals[v.offset]) << " +";
+
+                    logger.emit_proof_line(proof_step.str(), ProofLevel::Current);
+                },
+                generic_reason(state, hall_variable_ids)};
         }
     }
 
@@ -367,10 +394,7 @@ namespace
         if (cmp_not_equal(count(left_covered.begin(), left_covered.end(), 1), vars.size())) {
             // nope. we've got a maximum cardinality matching that leaves at least
             // one thing on the left uncovered.
-            auto just = JustifyExplicitly{
-                [&]() -> void { prove_matching_is_too_small(vars, vals, constraint_numbers, *logger, edges, left_covered, matching); },
-                generic_reason(state, vars)};
-            return state.infer(logger, FalseLiteral{}, just);
+            return state.infer(logger, FalseLiteral{}, prove_matching_is_too_small(vars, vals, constraint_numbers, state, *logger, edges, left_covered, matching));
         }
 
         // we have a matching that uses every variable. however, some edges may
@@ -515,28 +539,27 @@ namespace
 
         // anything left can be deleted. need to do all of these together if we're doing
         // justifications, to avoid having to figure out an ordering for nested Hall sets
-        vector<Literal> deletions;
+        vector<vector<Literal>> deletions_by_scc(number_of_components);
+        vector<optional<Right>> representatives_for_scc(number_of_components);
         for (auto & [delete_var_name, delete_value] : edges) {
             if (used_edges[delete_var_name.offset][delete_value.offset])
                 continue;
-            deletions.emplace_back(vars[delete_var_name.offset] != vals[delete_value.offset]);
+            auto scc = components[vertex_to_offset(vars, vals, delete_value)];
+            deletions_by_scc[scc].emplace_back(vars[delete_var_name.offset] != vals[delete_value.offset]);
+            representatives_for_scc[scc] = delete_value;
         }
 
-        auto just = JustifyExplicitly{
-            [&]() -> void {
-                for (auto & [delete_var_name, delete_value] : edges) {
-                    if (used_edges[delete_var_name.offset][delete_value.offset])
-                        continue;
-                    if (! sccs_already_done[components[vertex_to_offset(vars, vals, delete_value)]]) {
-                        sccs_already_done[components[vertex_to_offset(vars, vals, delete_value)]] = 1;
-                        prove_deletion_using_sccs(vars, vals, constraint_numbers, *logger, edges_out_from_variable, edges_out_from_value, delete_value, components);
-                    }
-                } },
-            generic_reason(state, vars)};
-        switch (state.infer_all(logger, deletions, just)) {
-        case Inference::NoChange: break;
-        case Inference::Change: changed = true; break;
-        case Inference::Contradiction: return Inference::Contradiction;
+        for (int scc = 0; scc < number_of_components; ++scc) {
+            if (! representatives_for_scc[scc])
+                continue;
+
+            auto just = prove_deletion_using_sccs(vars, vals, constraint_numbers, state, *logger,
+                edges_out_from_variable, edges_out_from_value, *representatives_for_scc[scc], components);
+            switch (state.infer_all(logger, deletions_by_scc[scc], just)) {
+            case Inference::NoChange: break;
+            case Inference::Change: changed = true; break;
+            case Inference::Contradiction: return Inference::Contradiction;
+            }
         }
 
         return changed ? Inference::Change : Inference::NoChange;
