@@ -47,11 +47,11 @@ namespace
 
             auto branch_var = callbacks.branch ? callbacks.branch(state.current(), propagators) : branch_on_dom_then_deg(problem)(state.current(), propagators);
             if (branch_var == nullopt) {
-                if (logger) {
+                if (logger)
                     logger->solution(state, problem.all_normal_variables(), problem.optional_minimise_variable());
-                    if (problem.optional_minimise_variable())
-                        objective_value = state(*problem.optional_minimise_variable());
-                }
+
+                if (problem.optional_minimise_variable())
+                    objective_value = state(*problem.optional_minimise_variable());
 
                 ++stats.solutions;
                 this_subtree_contains_solution = true;

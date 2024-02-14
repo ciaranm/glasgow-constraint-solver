@@ -47,7 +47,9 @@ Circuit::Circuit(vector<IntegerVariableID> v, const bool g) :
 
 namespace
 {
-    auto propagate_non_gac_alldifferent(const optional<IntegerVariableID> & trigger_var,
+    auto propagate_non_gac_alldifferent(
+        const vector<IntegerVariableID> & all_vars,
+        const optional<IntegerVariableID> & trigger_var,
         const vector<IntegerVariableID> & succ, State & state, ProofLogger * const logger) -> Inference
     {
         auto result = Inference::NoChange;
@@ -56,7 +58,7 @@ namespace
             if (val) {
                 for (auto [other_idx, other] : enumerate(succ))
                     if (other != *trigger_var) {
-                        increase_inference_to(result, state.infer_not_equal(logger, other, *val, JustifyUsingRUP{}));
+                        increase_inference_to(result, state.infer_not_equal(logger, other, *val, JustifyUsingRUP{generic_reason(state, all_vars)}));
                         if (result == Inference::Contradiction) return Inference::Contradiction;
                     }
             }
@@ -107,7 +109,9 @@ namespace
 
     // Slightly more complex propagator: prevent small cycles by finding chains and removing the head from the domain
     // of the tail.
-    auto propagate_circuit_using_prevent(const vector<IntegerVariableID> & succ,
+    auto propagate_circuit_using_prevent(
+        const vector<IntegerVariableID> & all_vars,
+        const vector<IntegerVariableID> & succ,
         const ProofLine2DMap & lines_for_setting_pos,
         State & state,
         ProofLogger * const logger,
@@ -118,7 +122,7 @@ namespace
     {
         // propagate all-different first, to avoid infinite loops
         // Have to use check first
-        auto result = propagate_non_gac_alldifferent(trigger_var, succ, state, logger);
+        auto result = propagate_non_gac_alldifferent(all_vars, trigger_var, succ, state, logger);
         if (result == Inference::Contradiction) return Inference::Contradiction;
 
         auto & chain = any_cast<Chain &>(state.get_constraint_state(chain_handle));
@@ -134,10 +138,11 @@ namespace
         auto end = chain.end[next_idx];
 
         if (cmp_not_equal(chain.length[start], n) && next_idx == start) {
-            state.infer_false(logger, JustifyExplicitly{[&]() -> void {
+            auto justf = [&]() -> void {
                 logger->emit_proof_comment("Contradicting cycle");
                 output_cycle_to_proof(succ, start, chain.length[start], lines_for_setting_pos, state, *logger);
-            }});
+            };
+            state.infer_false(logger, JustifyExplicitly{justf, generic_reason(state, all_vars)});
             return Inference::Contradiction;
         }
         else {
@@ -146,18 +151,21 @@ namespace
             chain.end[start] = end;
 
             if (cmp_less(chain.length[start], succ.size())) {
-                increase_inference_to(result, state.infer(logger, succ[end] != Integer{start}, JustifyExplicitly{[&]() {
-                    logger->emit_proof_comment("Preventing cycle");
-                    output_cycle_to_proof(succ, start, chain.length[start], lines_for_setting_pos, state, *logger,
-                        make_optional(Integer{end}), make_optional(Integer{start}));
-                    logger->infer(state, false, succ[end] != Integer{start}, JustifyUsingRUP{});
-                    logger->emit_proof_comment("Done preventing cycle");
-                }}));
+                auto just = JustifyExplicitly{
+                    [&]() {
+                        logger->emit_proof_comment("Preventing cycle");
+                        output_cycle_to_proof(succ, start, chain.length[start], lines_for_setting_pos, state, *logger,
+                            make_optional(Integer{end}), make_optional(Integer{start}));
+                        logger->infer(state, false, succ[end] != Integer{start}, JustifyUsingRUP{generic_reason(state, all_vars)});
+                        logger->emit_proof_comment("Done preventing cycle");
+                    },
+                    generic_reason(state, all_vars)};
+                increase_inference_to(result, state.infer(logger, succ[end] != Integer{start}, just));
             }
             else {
                 if (logger)
                     logger->emit_proof_comment("Completing cycle");
-                increase_inference_to(result, state.infer(logger, succ[end] == Integer{start}, JustifyUsingRUP{}));
+                increase_inference_to(result, state.infer(logger, succ[end] == Integer{start}, JustifyUsingRUP{generic_reason(state, all_vars)}));
                 return result;
             }
 
@@ -264,11 +272,11 @@ auto Circuit::install(Propagators & propagators, State & initial_state, ProofMod
         Triggers triggers;
         triggers.on_instantiated = {_succ[idx]};
         propagators.install(
-            [succ = _succ, idx = idx, lines_for_setting_pos = lines_for_setting_pos, chain_handle = chain_handle](
+            [all_vars = _succ, succ = _succ, idx = idx, lines_for_setting_pos = lines_for_setting_pos, chain_handle = chain_handle](
                 State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
                 bool should_disable = false;
                 auto result = propagate_circuit_using_prevent(
-                    succ, lines_for_setting_pos, state, logger, succ[idx], idx, chain_handle, should_disable);
+                    all_vars, succ, lines_for_setting_pos, state, logger, succ[idx], idx, chain_handle, should_disable);
                 return pair{
                     result,
                     should_disable ? PropagatorState::DisableUntilBacktrack : PropagatorState::Enable};
@@ -282,7 +290,7 @@ auto Circuit::install(Propagators & propagators, State & initial_state, ProofMod
         propagators.install_initialiser([succ = _succ](State & state, ProofLogger * const logger) -> Inference {
             auto result = Inference::NoChange;
             for (auto [idx, s] : enumerate(succ)) {
-                increase_inference_to(result, state.infer_not_equal(logger, s, Integer(idx), JustifyUsingRUP{}));
+                increase_inference_to(result, state.infer_not_equal(logger, s, Integer(idx), JustifyUsingRUP{Literals{}}));
                 if (result == Inference::Contradiction)
                     break;
             }

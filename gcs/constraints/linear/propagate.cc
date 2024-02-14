@@ -152,7 +152,7 @@ namespace
                         auto justf = [&]() {
                             justify(var, *logger, second_constraint_for_equality, "< " + to_string((1_i + remainder).raw_value));
                         };
-                        auto just = JustifyExplicitlyBecauseOf{justf, reason(var, second_constraint_for_equality)};
+                        auto just = JustifyExplicitly{justf, reason(var, second_constraint_for_equality)};
                         return state.infer_less_than(logger, var, 1_i + remainder, just);
                     }
                     else
@@ -163,7 +163,7 @@ namespace
                         auto justf = [&]() {
                             justify(var, *logger, second_constraint_for_equality, ">= " + to_string((-remainder).raw_value));
                         };
-                        auto just = JustifyExplicitlyBecauseOf{justf, reason(var, second_constraint_for_equality)};
+                        auto just = JustifyExplicitly{justf, reason(var, second_constraint_for_equality)};
                         return state.infer_greater_than_or_equal(logger, var, -remainder, just);
                     }
                     else
@@ -177,7 +177,7 @@ namespace
                         auto justf = [&]() {
                             justify(var, *logger, second_constraint_for_equality, "< " + to_string((1_i + remainder / coeff).raw_value));
                         };
-                        auto just = JustifyExplicitlyBecauseOf{justf, reason(var, second_constraint_for_equality)};
+                        auto just = JustifyExplicitly{justf, reason(var, second_constraint_for_equality)};
                         return state.infer_less_than(logger, var, 1_i + remainder / coeff, just);
                     }
                     else
@@ -189,7 +189,7 @@ namespace
                         auto justf = [&]() {
                             justify(var, *logger, second_constraint_for_equality, "< " + to_string((1_i + div_with_rounding).raw_value));
                         };
-                        auto just = JustifyExplicitlyBecauseOf{justf, reason(var, second_constraint_for_equality)};
+                        auto just = JustifyExplicitly{justf, reason(var, second_constraint_for_equality)};
                         return state.infer_less_than(logger, var, 1_i + div_with_rounding, just);
                     }
                     else
@@ -200,7 +200,7 @@ namespace
                         auto justf = [&]() {
                             justify(var, *logger, second_constraint_for_equality, ">= " + to_string((remainder / coeff).raw_value));
                         };
-                        auto just = JustifyExplicitlyBecauseOf{justf, reason(var, second_constraint_for_equality)};
+                        auto just = JustifyExplicitly{justf, reason(var, second_constraint_for_equality)};
                         return state.infer_greater_than_or_equal(logger, var, remainder / coeff, just);
                     }
                     else
@@ -212,7 +212,7 @@ namespace
                         auto justf = [&]() {
                             justify(var, *logger, second_constraint_for_equality, ">= " + to_string((div_with_rounding).raw_value));
                         };
-                        auto just = JustifyExplicitlyBecauseOf{justf, reason(var, second_constraint_for_equality)};
+                        auto just = JustifyExplicitly{justf, reason(var, second_constraint_for_equality)};
                         return state.infer_greater_than_or_equal(logger, var, div_with_rounding, just);
                     }
                     else

@@ -124,7 +124,8 @@ namespace
         output_file.close();
     }
 
-    auto log_additional_inference(ProofLogger * const logger, const vector<Literal> & literals, const vector<ProofFlag> & proof_flags, State & state, string comment = "") -> void
+    auto log_additional_inference(ProofLogger * const logger, const vector<Literal> & literals, const vector<ProofFlag> & proof_flags,
+        State & state, const Reason & reason, string comment = "") -> void
     {
         if (logger) {
             // Trying to cut down on repeated code
@@ -136,13 +137,14 @@ namespace
                 terms += 1_i * lit;
             for (const auto & flag : proof_flags)
                 terms += 1_i * flag;
-            logger->emit_rup_proof_line_under_trail(state, terms >= 1_i, ProofLevel::Current);
+            logger->emit_rup_proof_line_under_reason(state, reason, terms >= 1_i, ProofLevel::Current);
         }
     }
 
     auto initialise_graph(RegularGraph & graph, const vector<IntegerVariableID> & vars,
         const long num_states, vector<unordered_map<Integer, long>> & transitions,
-        const vector<long> & final_states, const vector<vector<ProofFlag>> & state_at_pos_flags, State & state, ProofLogger * const logger)
+        const vector<long> & final_states, const vector<vector<ProofFlag>> & state_at_pos_flags,
+        State & state, const Reason & reason, ProofLogger * const logger)
     {
         auto num_vars = vars.size();
 
@@ -168,15 +170,17 @@ namespace
                     for (const auto & q : graph.nodes[i]) {
                         // So first eliminate each previous state/variable combo
                         state.for_each_value(vars[i], [&](Integer val) -> void {
-                            log_additional_inference(logger, {vars[i] != val}, {! state_at_pos_flags[i][q], ! state_at_pos_flags[i + 1][next_q]}, state);
+                            log_additional_inference(logger, {vars[i] != val},
+                                {! state_at_pos_flags[i][q], ! state_at_pos_flags[i + 1][next_q]}, state, reason);
                         });
 
                         // Then eliminate each previous state
-                        log_additional_inference(logger, {}, {! state_at_pos_flags[i][q], ! state_at_pos_flags[i + 1][next_q]}, state);
+                        log_additional_inference(logger, {}, {! state_at_pos_flags[i][q], ! state_at_pos_flags[i + 1][next_q]},
+                            state, reason);
                     }
 
                     // Finally, can eliminate what we want
-                    log_additional_inference(logger, {}, {! state_at_pos_flags[i + 1][next_q]}, state);
+                    log_additional_inference(logger, {}, {! state_at_pos_flags[i + 1][next_q]}, state, reason);
                 }
             }
         }
@@ -210,7 +214,7 @@ namespace
                     else {
                         graph.states_supporting[i][val].erase(q);
                         if (logger)
-                            log_additional_inference(logger, {vars[i] != val}, {! state_at_pos_flags[i][q]}, state);
+                            log_additional_inference(logger, {vars[i] != val}, {! state_at_pos_flags[i][q]}, state, reason);
                     }
                 }
             });
@@ -220,7 +224,7 @@ namespace
                 if (! state_is_support[q]) {
                     graph.nodes[i].erase(q);
                     if (logger)
-                        log_additional_inference(logger, {}, {! state_at_pos_flags[i][q]}, state, "back pass");
+                        log_additional_inference(logger, {}, {! state_at_pos_flags[i][q]}, state, reason, "back pass");
                 }
             }
         }
@@ -229,7 +233,7 @@ namespace
     }
 
     auto decrement_outdeg(RegularGraph & graph, const long i, const long k, const vector<IntegerVariableID> & vars,
-        const vector<vector<ProofFlag>> & state_at_pos_flags, State & state, ProofLogger * const logger) -> void
+        const vector<vector<ProofFlag>> & state_at_pos_flags, State & state, const Reason & reason, ProofLogger * const logger) -> void
     {
         graph.out_deg[i][k]--;
         if (graph.out_deg[i][k] == 0 && i > 0) {
@@ -239,19 +243,20 @@ namespace
                 for (const auto & val : edge.second) {
                     graph.states_supporting[i - 1][val].erase(l);
                     if (logger)
-                        log_additional_inference(logger, {vars[i - 1] != val}, {! state_at_pos_flags[i - 1][l]}, state, "dec outdeg inner");
-                    decrement_outdeg(graph, i - 1, l, vars, state_at_pos_flags, state, logger);
+                        log_additional_inference(logger, {vars[i - 1] != val}, {! state_at_pos_flags[i - 1][l]}, state, reason,
+                            "dec outdeg inner");
+                    decrement_outdeg(graph, i - 1, l, vars, state_at_pos_flags, state, reason, logger);
                 }
             }
             graph.in_edges[i][k] = {};
             if (logger)
-                log_additional_inference(logger, {}, {! state_at_pos_flags[i][k]}, state, "dec outdeg");
+                log_additional_inference(logger, {}, {! state_at_pos_flags[i][k]}, state, reason, "dec outdeg");
         }
     }
 
     auto decrement_indeg(RegularGraph & graph, const long i, const long k,
-        const vector<IntegerVariableID> & vars, const vector<vector<ProofFlag>> & state_at_pos_flags, State & state,
-        ProofLogger * const logger) -> void
+        const vector<IntegerVariableID> & vars, const vector<vector<ProofFlag>> & state_at_pos_flags,
+        State & state, const Reason & reason, ProofLogger * const logger) -> void
     {
         graph.in_deg[i][k]--;
         if (graph.in_deg[i][k] == 0 && cmp_less(i, graph.in_deg.size() - 1)) {
@@ -260,15 +265,16 @@ namespace
                 for (const auto & q : graph.nodes[i - 1]) {
                     // So first eliminate each previous state/variable combo
                     state.for_each_value(vars[i], [&](Integer val) -> void {
-                        log_additional_inference(logger, {vars[i] != val}, {! state_at_pos_flags[i - 1][q], ! state_at_pos_flags[i][k]}, state);
+                        log_additional_inference(logger, {vars[i] != val}, {! state_at_pos_flags[i - 1][q], ! state_at_pos_flags[i][k]},
+                            state, reason);
                     });
 
                     // Then eliminate each previous state
-                    log_additional_inference(logger, {}, {! state_at_pos_flags[i - 1][q], ! state_at_pos_flags[i][k]}, state);
+                    log_additional_inference(logger, {}, {! state_at_pos_flags[i - 1][q], ! state_at_pos_flags[i][k]}, state, reason);
                 }
 
                 // Finally, can eliminate what we want
-                log_additional_inference(logger, {}, {! state_at_pos_flags[i][k]}, state);
+                log_additional_inference(logger, {}, {! state_at_pos_flags[i][k]}, state, reason);
             }
             for (const auto & edge : graph.out_edges[i][k]) {
                 auto l = edge.first;
@@ -276,7 +282,7 @@ namespace
 
                 for (const auto & val : edge.second) {
                     graph.states_supporting[i][val].erase(k);
-                    decrement_indeg(graph, i + 1, l, vars, state_at_pos_flags, state, logger);
+                    decrement_indeg(graph, i + 1, l, vars, state_at_pos_flags, state, reason, logger);
                 }
             }
 
@@ -296,9 +302,10 @@ namespace
         const string output_file_name) -> Inference
     {
         auto & graph = any_cast<RegularGraph &>(state.get_constraint_state(graph_handle));
+        auto reason = generic_reason(state, vars);
 
         if (! graph.initialised)
-            initialise_graph(graph, vars, num_states, transitions, final_states, state_at_pos_flags, state, logger);
+            initialise_graph(graph, vars, num_states, transitions, final_states, state_at_pos_flags, state, reason, logger);
 
         bool changed = false;
         bool contradiction = false;
@@ -326,8 +333,8 @@ namespace
                                 graph.in_edges[i + 1][next_q].erase(q);
                         }
 
-                        decrement_outdeg(graph, i, q, vars, state_at_pos_flags, state, logger);
-                        decrement_indeg(graph, i + 1, next_q, vars, state_at_pos_flags, state, logger);
+                        decrement_outdeg(graph, i, q, vars, state_at_pos_flags, state, reason, logger);
+                        decrement_indeg(graph, i + 1, next_q, vars, state_at_pos_flags, state, reason, logger);
                     }
                     graph.states_supporting[i][val] = {};
                 }
@@ -338,7 +345,7 @@ namespace
             state.for_each_value(vars[i], [&](Integer val) -> void {
                 // Clean up domains
                 if (graph.states_supporting[i][val].empty()) {
-                    switch (state.infer_not_equal(logger, vars[i], val, JustifyUsingRUP{})) {
+                    switch (state.infer_not_equal(logger, vars[i], val, JustifyUsingRUP{reason})) {
                     case Inference::Contradiction:
                         contradiction = true;
                         break;

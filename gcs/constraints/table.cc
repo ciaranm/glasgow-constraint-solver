@@ -175,7 +175,7 @@ auto NegativeTable::install(Propagators & propagators, State &, ProofModel * con
                     if (! l1)
                         return pair{Inference::Contradiction, PropagatorState::Enable};
                     else if (! l2)
-                        increase_inference_to(inf, state.infer(logger, *l1, JustifyUsingRUP{}));
+                        increase_inference_to(inf, state.infer(logger, *l1, JustifyUsingRUP{generic_reason(state, vars)}));
                 }
             }
             return pair{inf, PropagatorState::Enable};

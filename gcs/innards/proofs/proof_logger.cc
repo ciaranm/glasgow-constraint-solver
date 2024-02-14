@@ -54,17 +54,6 @@ namespace
         }
         throw NonExhaustiveSwitch{};
     }
-
-    [[nodiscard]] auto trail_variables_as_sum(const State & state, Integer coeff) -> WeightedPseudoBooleanSum
-    {
-        WeightedPseudoBooleanSum result;
-        state.for_each_guess([&](const Literal & lit) {
-            if (! is_literally_true(lit))
-                result += coeff * ! lit;
-        });
-
-        return result;
-    }
 }
 
 struct ProofLogger::Imp
@@ -194,17 +183,6 @@ auto ProofLogger::conclude_none() -> void
 
 auto ProofLogger::infer(const State & state, bool is_contradicting, const Literal & lit, const Justification & why) -> void
 {
-    auto output_it = [&](const string & rule) {
-        if (! is_literally_true(lit)) {
-            auto terms = trail_variables_as_sum(state, 1_i);
-            terms += 1_i * lit;
-            _imp->proof << rule << " ";
-            emit_inequality_to(variable_constraints_tracker(), move(terms) >= 1_i, nullopt, _imp->proof);
-            _imp->proof << '\n';
-            record_proof_line(++_imp->proof_line, ProofLevel::Current);
-        }
-    };
-
     auto need_lit = [&]() {
         overloaded{
             [&](const TrueLiteral &) {},
@@ -215,14 +193,6 @@ auto ProofLogger::infer(const State & state, bool is_contradicting, const Litera
 
     overloaded{
         [&]([[maybe_unused]] const JustifyUsingRUP & j) {
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-            _imp->proof << "* RUP from " << j.where.file_name() << ":"
-                        << j.where.line() << " in " << j.where.function_name() << '\n';
-#endif
-            need_lit();
-            output_it("u");
-        },
-        [&]([[maybe_unused]] const JustifyUsingRUPBecauseOf & j) {
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
             _imp->proof << "* RUP on lit " << debug_string(lit) << " with reason from " << j.where.file_name() << ":"
                         << j.where.line() << " in " << j.where.function_name() << '\n';
@@ -252,22 +222,7 @@ auto ProofLogger::infer(const State & state, bool is_contradicting, const Litera
                 record_proof_line(++_imp->proof_line, ProofLevel::Current);
             }
         },
-        [&](const JustifyUsingAssertion &) {
-            need_lit();
-            output_it("a");
-        },
         [&](const JustifyExplicitly & x) {
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-            _imp->proof << "* explicit from " << x.where.file_name() << ":"
-                        << x.where.line() << " in " << x.where.function_name() << '\n';
-#endif
-            need_lit();
-            auto t = temporary_proof_level();
-            x.add_proof_steps();
-            infer(state, is_contradicting, lit, JustifyUsingRUP{});
-            forget_proof_level(t);
-        },
-        [&](const JustifyExplicitlyBecauseOf & x) {
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
             _imp->proof << "* explicit on lit " << debug_string(lit) << " with reason from " << x.where.file_name() << ":"
                         << x.where.line() << " in " << x.where.function_name() << '\n';
@@ -275,7 +230,12 @@ auto ProofLogger::infer(const State & state, bool is_contradicting, const Litera
             need_lit();
             auto t = temporary_proof_level();
             x.add_proof_steps();
-            infer(state, is_contradicting, lit, JustifyUsingRUPBecauseOf{x.reason});
+            infer(state, is_contradicting, lit, JustifyUsingRUP{x.reason
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+                                                    ,
+                                                    x.where
+#endif
+                                                });
             forget_proof_level(t);
         },
         [&](const Guess &) {
@@ -351,25 +311,6 @@ auto ProofLogger::emit_assert_proof_line(const SumLessEqual<Weighted<PseudoBoole
     return record_proof_line(++_imp->proof_line, level);
 }
 
-auto ProofLogger::emit_rup_proof_line_under_trail(const State & state, const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
-    ProofLevel level
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-    ,
-    const std::source_location & where
-#endif
-    ) -> ProofLine
-{
-    auto terms = trail_variables_as_sum(state, ineq.rhs);
-    for (auto & t : ineq.lhs.terms)
-        terms += t;
-    return emit_rup_proof_line(terms <= ineq.rhs, level
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-        ,
-        where
-#endif
-    );
-}
-
 auto ProofLogger::emit_rup_proof_line_under_reason(const State &, const Reason & reason, const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
     ProofLevel level
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
@@ -398,24 +339,6 @@ auto ProofLogger::emit_rup_proof_line_under_reason(const State &, const Reason &
     for (auto & t : ineq.lhs.terms)
         terms += t;
     return emit_rup_proof_line(terms <= ineq.rhs, level
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-        ,
-        where
-#endif
-    );
-}
-
-auto ProofLogger::emit_assert_proof_line_under_trail(const State & state, const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-    ,
-    const std::source_location & where
-#endif
-    ) -> ProofLine
-{
-    auto terms = trail_variables_as_sum(state, ineq.rhs);
-    for (auto & t : ineq.lhs.terms)
-        terms += t;
-    return emit_assert_proof_line(terms <= ineq.rhs, level
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
         ,
         where

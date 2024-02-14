@@ -37,7 +37,11 @@ auto NValue::install(Propagators & propagators, State & initial_state, ProofMode
     triggers.on_bounds.emplace_back(_n_values);
     triggers.on_change.insert(triggers.on_change.end(), _vars.begin(), _vars.end());
 
-    propagators.install([n_values = _n_values, vars = _vars](State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
+    vector<IntegerVariableID> all_vars = _vars;
+    all_vars.push_back(_n_values);
+
+    propagators.install([all_vars = move(all_vars), n_values = _n_values, vars = _vars](
+                            State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
         set<Integer> all_possible_values;
         for (const auto & var : vars) {
             state.for_each_value_while_immutable(var, [&](Integer v) -> bool {
@@ -46,7 +50,7 @@ auto NValue::install(Propagators & propagators, State & initial_state, ProofMode
             });
         }
 
-        auto inf = state.infer(logger, n_values < Integer(all_possible_values.size()) + 1_i, JustifyUsingRUP{});
+        auto inf = state.infer(logger, n_values < Integer(all_possible_values.size()) + 1_i, JustifyUsingRUP{generic_reason(state, all_vars)});
         if (Inference::Contradiction == inf)
             return pair{inf, PropagatorState::Enable};
 
@@ -57,7 +61,7 @@ auto NValue::install(Propagators & propagators, State & initial_state, ProofMode
                 all_definite_values.insert(*val);
         }
 
-        increase_inference_to(inf, state.infer(logger, n_values >= max(1_i, Integer(all_definite_values.size())), JustifyUsingRUP{}));
+        increase_inference_to(inf, state.infer(logger, n_values >= max(1_i, Integer(all_definite_values.size())), JustifyUsingRUP{generic_reason(state, all_vars)}));
         if (Inference::Contradiction == inf)
             return pair{inf, PropagatorState::Enable};
 

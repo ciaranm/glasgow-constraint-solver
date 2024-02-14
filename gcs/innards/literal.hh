@@ -108,6 +108,13 @@ namespace gcs::innards
      * \ingroup Innards
      */
     [[nodiscard]] auto debug_string(const Literal &) -> std::string;
+
+    /**
+     * \brief Turn a Literals into a semi-readable string for debugging.
+     *
+     * \ingroup Innards
+     */
+    [[nodiscard]] auto debug_string(const Literals &) -> std::string;
 }
 
 #endif

@@ -31,43 +31,43 @@ namespace
     {
         auto val1 = state.optional_single_value(v1);
         if (val1)
-            return pair{state.infer_equal(logger, v2, *val1, JustifyUsingRUPBecauseOf{{v1 == *val1, cond ? *cond : TrueLiteral{}}}), PropagatorState::DisableUntilBacktrack};
+            return pair{state.infer_equal(logger, v2, *val1, JustifyUsingRUP{{v1 == *val1, cond ? *cond : TrueLiteral{}}}), PropagatorState::DisableUntilBacktrack};
 
         auto val2 = state.optional_single_value(v2);
         if (val2)
-            return pair{state.infer_equal(logger, v1, *val2, JustifyUsingRUPBecauseOf{{v2 == *val2, cond ? *cond : TrueLiteral{}}}), PropagatorState::DisableUntilBacktrack};
+            return pair{state.infer_equal(logger, v1, *val2, JustifyUsingRUP{{v2 == *val2, cond ? *cond : TrueLiteral{}}}), PropagatorState::DisableUntilBacktrack};
 
         Inference result = Inference::NoChange;
         if (state.domain_has_holes(v1) || state.domain_has_holes(v2)) {
             state.for_each_value_while(v1, [&](Integer val) {
                 if (! state.in_domain(v2, val))
-                    increase_inference_to(result, state.infer_not_equal(logger, v1, val, JustifyUsingRUPBecauseOf{{v2 != val, cond ? *cond : TrueLiteral{}}}));
+                    increase_inference_to(result, state.infer_not_equal(logger, v1, val, JustifyUsingRUP{{v2 != val, cond ? *cond : TrueLiteral{}}}));
                 return result != Inference::Contradiction;
             });
 
             state.for_each_value_while(v2, [&](Integer val) {
                 if (! state.in_domain(v1, val))
-                    increase_inference_to(result, state.infer_not_equal(logger, v2, val, JustifyUsingRUPBecauseOf{{v1 != val, cond ? *cond : TrueLiteral{}}}));
+                    increase_inference_to(result, state.infer_not_equal(logger, v2, val, JustifyUsingRUP{{v1 != val, cond ? *cond : TrueLiteral{}}}));
                 return result != Inference::Contradiction;
             });
         }
         else {
             auto bounds1 = state.bounds(v1), bounds2 = state.bounds(v2);
             if (bounds1 != bounds2) {
-                increase_inference_to(result, state.infer_greater_than_or_equal(logger, v2, bounds1.first, JustifyUsingRUPBecauseOf{{v1 >= bounds1.first, cond ? *cond : TrueLiteral{}}}));
+                increase_inference_to(result, state.infer_greater_than_or_equal(logger, v2, bounds1.first, JustifyUsingRUP{{v1 >= bounds1.first, cond ? *cond : TrueLiteral{}}}));
                 if (result != Inference::Contradiction)
-                    increase_inference_to(result, state.infer_greater_than_or_equal(logger, v1, bounds2.first, JustifyUsingRUPBecauseOf{{v2 >= bounds2.first, cond ? *cond : TrueLiteral{}}}));
+                    increase_inference_to(result, state.infer_greater_than_or_equal(logger, v1, bounds2.first, JustifyUsingRUP{{v2 >= bounds2.first, cond ? *cond : TrueLiteral{}}}));
                 if (result != Inference::Contradiction)
-                    increase_inference_to(result, state.infer_less_than(logger, v2, bounds1.second + 1_i, JustifyUsingRUPBecauseOf{{v1 < bounds1.second + 1_i, cond ? *cond : TrueLiteral{}}}));
+                    increase_inference_to(result, state.infer_less_than(logger, v2, bounds1.second + 1_i, JustifyUsingRUP{{v1 < bounds1.second + 1_i, cond ? *cond : TrueLiteral{}}}));
                 if (result != Inference::Contradiction)
-                    increase_inference_to(result, state.infer_less_than(logger, v1, bounds2.second + 1_i, JustifyUsingRUPBecauseOf{{v2 < bounds2.second + 1_i, cond ? *cond : TrueLiteral{}}}));
+                    increase_inference_to(result, state.infer_less_than(logger, v1, bounds2.second + 1_i, JustifyUsingRUP{{v2 < bounds2.second + 1_i, cond ? *cond : TrueLiteral{}}}));
             }
         }
 
         return pair{result, PropagatorState::Enable};
     }
 
-    auto no_overlap_justification(const State & state, ProofLogger * const logger, IntegerVariableID v1, IntegerVariableID v2, Literal cond) -> JustifyExplicitlyBecauseOf
+    auto no_overlap_justification(const State & state, ProofLogger * const logger, IntegerVariableID v1, IntegerVariableID v2, Literal cond) -> JustifyExplicitly
     {
         auto v1_bounds = state.bounds(v1), v2_bounds = state.bounds(v2);
         Reason reason{{v1 >= v1_bounds.first, v1 < v1_bounds.second + 1_i}};
@@ -86,7 +86,7 @@ namespace
                     logger->emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * (v2 != val) + 1_i * (v1 == val) + 1_i * ! cond >= 1_i, ProofLevel::Temporary);
         };
 
-        return JustifyExplicitlyBecauseOf{justify, reason};
+        return JustifyExplicitly{justify, reason};
     }
 }
 
@@ -114,12 +114,12 @@ auto Equals::install(Propagators & propagators, State & initial_state, ProofMode
     }
     else if (v1_is_constant) {
         propagators.install_initialiser([v1_is_constant = v1_is_constant, v1 = _v1, v2 = _v2](State & state, ProofLogger * const logger) -> Inference {
-            return state.infer_equal(logger, v2, *v1_is_constant, JustifyUsingRUPBecauseOf{{v1 == *v1_is_constant}});
+            return state.infer_equal(logger, v2, *v1_is_constant, JustifyUsingRUP{{v1 == *v1_is_constant}});
         });
     }
     else if (v2_is_constant) {
         propagators.install_initialiser([v2_is_constant = v2_is_constant, v1 = _v1, v2 = _v2](State & state, ProofLogger * const logger) -> Inference {
-            return state.infer_equal(logger, v1, *v2_is_constant, JustifyUsingRUPBecauseOf{{v2 == *v2_is_constant}});
+            return state.infer_equal(logger, v1, *v2_is_constant, JustifyUsingRUP{{v2 == *v2_is_constant}});
         });
     }
     else {
@@ -195,19 +195,19 @@ auto EqualsIf::install(Propagators & propagators, State & initial_state, ProofMo
                         auto value2 = state.optional_single_value(v2);
                         if (value1 && value2) {
                             if (*value1 != *value2)
-                                return pair{state.infer(logger, ! cond, JustifyUsingRUPBecauseOf{{v1 == *value1, v2 == *value2}}), PropagatorState::DisableUntilBacktrack};
+                                return pair{state.infer(logger, ! cond, JustifyUsingRUP{{v1 == *value1, v2 == *value2}}), PropagatorState::DisableUntilBacktrack};
                             else
                                 return pair{Inference::NoChange, PropagatorState::DisableUntilBacktrack};
                         }
                         else if (value1) {
                             if (! state.in_domain(v2, *value1))
-                                return pair{state.infer(logger, ! cond, JustifyUsingRUPBecauseOf{{v1 == *value1, v2 != *value1}}), PropagatorState::DisableUntilBacktrack};
+                                return pair{state.infer(logger, ! cond, JustifyUsingRUP{{v1 == *value1, v2 != *value1}}), PropagatorState::DisableUntilBacktrack};
                             else
                                 return pair{Inference::NoChange, PropagatorState::Enable};
                         }
                         else if (value2) {
                             if (! state.in_domain(v1, *value2))
-                                return pair{state.infer(logger, ! cond, JustifyUsingRUPBecauseOf{{v2 == *value2, v1 != *value2}}), PropagatorState::DisableUntilBacktrack};
+                                return pair{state.infer(logger, ! cond, JustifyUsingRUP{{v2 == *value2, v1 != *value2}}), PropagatorState::DisableUntilBacktrack};
                             else
                                 return pair{Inference::NoChange, PropagatorState::Enable};
                         }
@@ -267,7 +267,7 @@ auto EqualsIff::install(Propagators & propagators, State & initial_state, ProofM
         if (optional_model)
             optional_model->add_constraint({{! _cond}});
         propagators.install_initialiser([cond = _cond, v1 = _v1, v2 = _v2](State & state, ProofLogger * const logger) {
-            return state.infer(logger, ! cond, JustifyUsingRUPBecauseOf{{v1 >= state.lower_bound(v1), v1 < state.upper_bound(v1) + 1_i, v2 >= state.lower_bound(v2), v2 < state.upper_bound(v2) + 1_i}});
+            return state.infer(logger, ! cond, JustifyUsingRUP{{v1 >= state.lower_bound(v1), v1 < state.upper_bound(v1) + 1_i, v2 >= state.lower_bound(v2), v2 < state.upper_bound(v2) + 1_i}});
         });
         return;
     }

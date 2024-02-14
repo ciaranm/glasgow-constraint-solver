@@ -47,6 +47,7 @@ add_library(glasgow_constraint_solver
         innards/proofs/simplify_literal.cc
         innards/proofs/variable_constraints_tracker.cc
         innards/propagators.cc
+        innards/reason.cc
         innards/state.cc
         innards/variable_id_utils.cc
         presolvers/auto_table.cc)

@@ -38,10 +38,9 @@ auto LinearInequality::install(Propagators & propagators, State &, ProofModel * 
     auto [sanitised_cv, modifier] = tidy_up_linear(_coeff_vars);
 
     if (visit([](const auto & s) { return s.terms.empty(); }, sanitised_cv) && modifier > _value) {
-        propagators.install([](State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
-            return pair{state.infer(logger, FalseLiteral{}, JustifyUsingRUP{}), PropagatorState::Enable};
-        },
-            Triggers{}, "empty linear equality");
+        propagators.install_initialiser([](State & state, ProofLogger * const logger) -> Inference {
+            return state.infer(logger, FalseLiteral{}, JustifyUsingRUP{Literals{}});
+        });
     }
 
     Triggers triggers;

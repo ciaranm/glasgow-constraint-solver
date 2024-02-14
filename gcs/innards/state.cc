@@ -747,7 +747,7 @@ auto State::infer_all(ProofLogger * const logger, const vector<Literal> & lits, 
     if (logger)
         visit([&](const auto & j) -> void {
             if constexpr (is_same_v<decay_t<decltype(j)>, JustifyExplicitly>)
-                just_not_first = JustifyUsingRUP{};
+                just_not_first = JustifyUsingRUP{j.reason};
             else
                 just_not_first = just;
         },

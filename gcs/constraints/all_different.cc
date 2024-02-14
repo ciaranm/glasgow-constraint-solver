@@ -367,9 +367,10 @@ namespace
         if (cmp_not_equal(count(left_covered.begin(), left_covered.end(), 1), vars.size())) {
             // nope. we've got a maximum cardinality matching that leaves at least
             // one thing on the left uncovered.
-            return state.infer(logger, FalseLiteral{}, JustifyExplicitly{[&]() -> void {
-                prove_matching_is_too_small(vars, vals, constraint_numbers, *logger, edges, left_covered, matching);
-            }});
+            auto just = JustifyExplicitly{
+                [&]() -> void { prove_matching_is_too_small(vars, vals, constraint_numbers, *logger, edges, left_covered, matching); },
+                generic_reason(state, vars)};
+            return state.infer(logger, FalseLiteral{}, just);
         }
 
         // we have a matching that uses every variable. however, some edges may
@@ -521,16 +522,18 @@ namespace
             deletions.emplace_back(vars[delete_var_name.offset] != vals[delete_value.offset]);
         }
 
-        switch (state.infer_all(logger, deletions, JustifyExplicitly{[&]() -> void {
-            for (auto & [delete_var_name, delete_value] : edges) {
-                if (used_edges[delete_var_name.offset][delete_value.offset])
-                    continue;
-                if (! sccs_already_done[components[vertex_to_offset(vars, vals, delete_value)]]) {
-                    sccs_already_done[components[vertex_to_offset(vars, vals, delete_value)]] = 1;
-                    prove_deletion_using_sccs(vars, vals, constraint_numbers, *logger, edges_out_from_variable, edges_out_from_value, delete_value, components);
-                }
-            }
-        }})) {
+        auto just = JustifyExplicitly{
+            [&]() -> void {
+                for (auto & [delete_var_name, delete_value] : edges) {
+                    if (used_edges[delete_var_name.offset][delete_value.offset])
+                        continue;
+                    if (! sccs_already_done[components[vertex_to_offset(vars, vals, delete_value)]]) {
+                        sccs_already_done[components[vertex_to_offset(vars, vals, delete_value)]] = 1;
+                        prove_deletion_using_sccs(vars, vals, constraint_numbers, *logger, edges_out_from_variable, edges_out_from_value, delete_value, components);
+                    }
+                } },
+            generic_reason(state, vars)};
+        switch (state.infer_all(logger, deletions, just)) {
         case Inference::NoChange: break;
         case Inference::Change: changed = true; break;
         case Inference::Contradiction: return Inference::Contradiction;

@@ -361,7 +361,7 @@ auto VariableConstraintsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID i
     auto bounds = _imp->bounds_for_gevars.find(id);
 
     // lower?
-    if (bounds != _imp->bounds_for_gevars.end() && bounds->second.first == v) {
+    if (bounds != _imp->bounds_for_gevars.end() && bounds->second.first >= v) {
         if (_imp->logger)
             visit([&](auto id) { _imp->logger->emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * (id >= v) >= 1_i, ProofLevel::Top); }, id);
         else

@@ -52,6 +52,15 @@ auto gcs::innards::debug_string(const Literal & lit) -> string
         .visit(lit);
 }
 
+auto gcs::innards::debug_string(const Literals & lits) -> string
+{
+    string result = "literals(";
+    for (auto & lit : lits)
+        result += debug_string(lit) + " ";
+    result += ")";
+    return result;
+}
+
 auto gcs::innards::is_literally_true_or_false(const Literal & lit) -> optional<bool>
 {
     return overloaded{
