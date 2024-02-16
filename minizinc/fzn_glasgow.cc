@@ -33,11 +33,11 @@ using std::cv_status;
 using std::exception;
 using std::flush;
 using std::ifstream;
-using std::jthread;
 using std::mutex;
 using std::nullopt;
 using std::optional;
 using std::string;
+using std::thread;
 using std::unique_lock;
 using std::unordered_map;
 using std::vector;
@@ -131,7 +131,7 @@ auto main(int argc, char * argv[]) -> int
     signal(SIGINT, &sig_int_or_term_handler);
     signal(SIGTERM, &sig_int_or_term_handler);
 
-    jthread timeout_thread;
+    thread timeout_thread;
     mutex timeout_mutex;
     condition_variable timeout_cv;
     bool actually_timed_out = false;
@@ -139,7 +139,7 @@ auto main(int argc, char * argv[]) -> int
     if (options_vars.contains("timeout")) {
         milliseconds limit{options_vars["timeout"].as<unsigned long long>()};
 
-        timeout_thread = jthread([limit = limit, &timeout_mutex, &timeout_cv, &actually_timed_out] {
+        timeout_thread = thread([limit = limit, &timeout_mutex, &timeout_cv, &actually_timed_out] {
             auto abort_time = system_clock::now() + limit;
             {
                 /* Sleep until either we've reached the time limit,
@@ -263,7 +263,25 @@ auto main(int argc, char * argv[]) -> int
     }
     catch (const exception & e) {
         println(cerr, "{}: error: {}", argv[0], e.what());
+
+        if (timeout_thread.joinable()) {
+            {
+                unique_lock<mutex> guard(timeout_mutex);
+                abort_flag.store(true);
+                timeout_cv.notify_all();
+            }
+            timeout_thread.join();
+        }
         return EXIT_FAILURE;
+    }
+
+    if (timeout_thread.joinable()) {
+        {
+            unique_lock<mutex> guard(timeout_mutex);
+            abort_flag.store(true);
+            timeout_cv.notify_all();
+        }
+        timeout_thread.join();
     }
 
     return EXIT_SUCCESS;
