@@ -193,17 +193,28 @@ auto main(int argc, char * argv[]) -> int
         }
 
         for (const auto & [annotations, args, id] : fzn.constraints) {
-            if (id == "int_lin_eq") {
-                const auto & coeffs = arrays.at(get<string>(args.at(0)));
+            if (id == "int_lin_eq" || id == "int_lin_le") {
+                vector<Integer> *coeffs = nullptr, extract_coeffs;
+                if (holds_alternative<string>(args.at(0)))
+                    coeffs = &arrays.at(get<string>(args.at(0)));
+                else {
+                    for (const auto & val : get<vector<j::FlatZincJso>>(args.at(0)))
+                        extract_coeffs.push_back(Integer{static_cast<long long>(get<double>(val))});
+                    coeffs = &extract_coeffs;
+                }
                 const auto & vars = get<vector<j::FlatZincJso>>(args.at(1));
                 Integer total{static_cast<long long>(get<double>(args.at(2)))};
-                if (coeffs.size() != vars.size())
+                if (coeffs->size() != vars.size())
                     throw FlatZincInterfaceError{fmt::format("Array length mismatch in {} in {}", id, fznname)};
 
                 SumOf<Weighted<IntegerVariableID>> terms;
-                for (size_t c = 0; c < coeffs.size(); ++c)
-                    terms += coeffs[c] * integer_variables.at(get<string>(vars[c]));
-                problem.post(terms == total);
+                for (size_t c = 0; c < coeffs->size(); ++c)
+                    terms += (*coeffs)[c] * integer_variables.at(get<string>(vars[c]));
+
+                if (id == "int_lin_eq")
+                    problem.post(terms == total);
+                else
+                    problem.post(terms <= total);
             }
             else
                 throw FlatZincInterfaceError{fmt::format("Unknown flatzinc constraint {} in {}", id, fznname)};
