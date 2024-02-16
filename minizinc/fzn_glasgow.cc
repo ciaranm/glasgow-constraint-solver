@@ -161,11 +161,11 @@ auto main(int argc, char * argv[]) -> int
         auto fznname = options_vars["file"].as<string>();
         ifstream infile{fznname};
         if (! infile)
-            throw FlatZincInterfaceError{format("Error reading from {}", fznname)};
+            throw FlatZincInterfaceError{fmt::format("Error reading from {}", fznname)};
 
         j::FlatZincJson fzn = nlohmann::json::parse(infile);
         if (fzn.version != "1.0")
-            throw FlatZincInterfaceError{format("Unknown flatzinc version {} in {}", fzn.version, fznname)};
+            throw FlatZincInterfaceError{fmt::format("Unknown flatzinc version {} in {}", fzn.version, fznname)};
 
         Problem problem;
 
@@ -173,11 +173,15 @@ auto main(int argc, char * argv[]) -> int
         for (const auto & [name, vardata] : fzn.variables) {
             string var_type = vardata["type"];
             if (var_type != "int")
-                throw FlatZincInterfaceError{format("Unknown flatzinc variable type {} for variable {} in {}", var_type, name, fznname)};
+                throw FlatZincInterfaceError{fmt::format("Unknown flatzinc variable type {} for variable {} in {}", var_type, name, fznname)};
 
             if (vardata["domain"].size() != 1)
-                throw FlatZincInterfaceError{format("Can't parse domain for variable {} in {}", name, fznname)};
-            integer_variables.emplace(name, problem.create_integer_variable(Integer{vardata["domain"][0][0].get<long long>()}, Integer{vardata["domain"][0][1].get<long long>()}, name));
+                throw FlatZincInterfaceError{fmt::format("Can't parse domain for variable {} in {}", name, fznname)};
+            integer_variables.emplace(name, //
+                    problem.create_integer_variable( //
+                        Integer{vardata["domain"][0][0].get<long long>()}, //
+                        Integer{vardata["domain"][0][1].get<long long>()}, //
+                        name));
         }
 
         unordered_map<string, vector<Integer>> arrays;
@@ -194,7 +198,7 @@ auto main(int argc, char * argv[]) -> int
                 const auto & vars = get<vector<j::FlatZincJso>>(args.at(1));
                 Integer total{static_cast<long long>(get<double>(args.at(2)))};
                 if (coeffs.size() != vars.size())
-                    throw FlatZincInterfaceError{format("Array length mismatch in {} in {}", id, fznname)};
+                    throw FlatZincInterfaceError{fmt::format("Array length mismatch in {} in {}", id, fznname)};
 
                 SumOf<Weighted<IntegerVariableID>> terms;
                 for (size_t c = 0; c < coeffs.size(); ++c)
@@ -202,7 +206,7 @@ auto main(int argc, char * argv[]) -> int
                 problem.post(terms == total);
             }
             else
-                throw FlatZincInterfaceError{format("Unknown flatzinc constraint {} in {}", id, fznname)};
+                throw FlatZincInterfaceError{fmt::format("Unknown flatzinc constraint {} in {}", id, fznname)};
         }
 
         switch (fzn.solve.method) {
