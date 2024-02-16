@@ -61,6 +61,17 @@ cmake -S . -B build -DGCS_ENABLE_XCSP=OFF
 cmake --build build
 ```
 
+By default, MiniZinc support will also be enabled, which will bring in external dependencies for
+parsing JSON. To turn this off, do:
+
+```shell
+cmake -S . -B build -DGCS_ENABLE_MINIZINC=OFF
+cmake --build build
+```
+
+Note that both XCSP and MiniZinc support are currently extremely minimal, and do not include most
+constraints or support for many language features.
+
 Using the XCSP Solver
 ---------------------
 
@@ -68,6 +79,23 @@ To use the XCSP solver, run:
 
 ```shell
 ./build/xcsp_glasgow_constraint_solver instance.xml
+```
+
+Using the MiniZinc Solver
+-------------------------
+
+The easiest way is probably to add symbolic links into your user solver directory, which you can
+find by running `minizinc --config-dirs` and looking for `userSolverConfigDir`. For example:
+
+```shell
+ln -s $HOME/glasgow-constraint-solver/minizinc/glasgow $HOME/.minizinc/solvers/glasgow
+ln -s $HOME/glasgow-constraint-solver/minizinc/glasgow.msc $HOME/.minizinc/solvers/glasgow.msc
+```
+
+Then you can run
+
+```shell
+minizinc --solver glasgow -a -s cake.mzn
 ```
 
 Manually Solving a Constraint Optimisation Problem
