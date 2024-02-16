@@ -153,6 +153,9 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
                 else
                     optional_proof->conclude_unsatisfiable(false);
             }
+
+            if (callbacks.completed)
+                callbacks.completed();
         }
         else {
             // finished without a full conclusion
@@ -168,8 +171,11 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
             }
         }
     }
-    else if (optional_proof)
+    else if (optional_proof) {
         optional_proof->conclude_unsatisfiable(state.optional_minimise_variable().has_value());
+        if (callbacks.completed)
+            callbacks.completed();
+    }
 
     stats.solve_time = duration_cast<microseconds>(steady_clock::now() - start_time);
     propagators.fill_in_constraint_stats(stats);

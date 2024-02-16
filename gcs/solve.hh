@@ -61,6 +61,14 @@ namespace gcs
     using AfterProofStartedCallback = std::function<auto(const CurrentState &)->void>;
 
     /**
+     * \brief Called by gcs::solve_with() after the solve has completed successfully (not
+     * aborted due to a callback returning false, or the abort flag being set).
+     *
+     * \ingroup SolveCallbacks
+     */
+    using CompletedCallback = std::function<auto()->void>;
+
+    /**
      * \brief Callbacks for gcs::solve_with().
      *
      * Every callback is optional.
@@ -74,6 +82,7 @@ namespace gcs
         BranchCallback branch = BranchCallback{};
         GuessCallback guess = GuessCallback{};
         AfterProofStartedCallback after_proof_started = AfterProofStartedCallback{};
+        CompletedCallback completed = CompletedCallback{};
     };
 
     /**
