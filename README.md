@@ -88,7 +88,7 @@ The easiest way is probably to add symbolic links into your user solver director
 find by running `minizinc --config-dirs` and looking for `userSolverConfigDir`. For example:
 
 ```shell
-ln -s $HOME/glasgow-constraint-solver/minizinc/glasgow $HOME/.minizinc/solvers/glasgow
+ln -s $HOME/glasgow-constraint-solver/minizinc $HOME/.minizinc/solvers/glasgow
 ln -s $HOME/glasgow-constraint-solver/minizinc/glasgow.msc $HOME/.minizinc/solvers/glasgow.msc
 ```
 

@@ -184,19 +184,34 @@ auto main(int argc, char * argv[]) -> int
                         name));
         }
 
-        unordered_map<string, vector<Integer>> arrays;
+        unordered_map<string, vector<Integer>> constant_arrays;
+        unordered_map<string, vector<IntegerVariableID>> variable_arrays;
         for (const auto & [name, arraydata] : fzn.arrays) {
             vector<Integer> values;
-            for (const auto & v : arraydata["a"])
-                values.push_back(Integer{v.get<long long>()});
-            arrays.emplace(name, move(values));
+            vector<IntegerVariableID> variables;
+            bool seen_variable = false;
+            for (const auto & v : arraydata["a"]) {
+                if (v.is_string()) {
+                    seen_variable = true;
+                    variables.push_back(integer_variables.at(string{v}));
+                }
+                else {
+                    auto val = Integer{v.get<long long>()};
+                    values.push_back(val);
+                    variables.push_back(ConstantIntegerVariableID{val});
+                }
+            }
+
+            if (! seen_variable)
+                constant_arrays.emplace(name, move(values));
+            variable_arrays.emplace(name, move(variables));
         }
 
         for (const auto & [annotations, args, id] : fzn.constraints) {
             if (id == "int_lin_eq" || id == "int_lin_le") {
                 vector<Integer> *coeffs = nullptr, extract_coeffs;
                 if (holds_alternative<string>(args.at(0)))
-                    coeffs = &arrays.at(get<string>(args.at(0)));
+                    coeffs = &constant_arrays.at(get<string>(args.at(0)));
                 else {
                     for (const auto & val : get<vector<j::FlatZincJso>>(args.at(0)))
                         extract_coeffs.push_back(Integer{static_cast<long long>(get<double>(val))});
@@ -216,6 +231,10 @@ auto main(int argc, char * argv[]) -> int
                 else
                     problem.post(terms <= total);
             }
+            else if (id == "glasgow_alldifferent") {
+                const auto & vars = variable_arrays.at(get<string>(args.at(0)));
+                problem.post(AllDifferent{vars});
+            }
             else
                 throw FlatZincInterfaceError{fmt::format("Unknown flatzinc constraint {} in {}", id, fznname)};
         }
@@ -234,8 +253,18 @@ auto main(int argc, char * argv[]) -> int
         auto stats = solve_with(problem,
             SolveCallbacks{
                 .solution = [&](const CurrentState & s) -> bool {
-                    for (const auto & name : fzn.output)
-                        println(cout, "{} = {};", name, s(integer_variables.at(name)));
+                    for (const auto & name : fzn.output) {
+                        if (integer_variables.contains(name))
+                            println(cout, "{} = {};", name, s(integer_variables.at(name)));
+                        else if (variable_arrays.contains(name)) {
+                            vector<string> vals;
+                            for (auto & v : variable_arrays.at(name))
+                                vals.push_back(fmt::format("{}", s(v)));
+                            println(cout, "{} = [{}];", name, fmt::join(vals, ", "));
+                        }
+                        else
+                            throw FlatZincInterfaceError{fmt::format("Unknown output item {} in {}", name, fznname)};
+                    }
                     println(cout, "----------");
                     cout << flush;
                     if (solution_limit) {
