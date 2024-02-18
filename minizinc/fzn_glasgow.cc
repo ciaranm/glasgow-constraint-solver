@@ -235,6 +235,11 @@ auto main(int argc, char * argv[]) -> int
                 const auto & vars = variable_arrays.at(get<string>(args.at(0)));
                 problem.post(AllDifferent{vars});
             }
+            else if (id == "glasgow_ne") {
+                const auto & var1 = integer_variables.at(get<string>(args.at(0)));
+                const auto & var2 = integer_variables.at(get<string>(args.at(1)));
+                problem.post(NotEquals{var1, var2});
+            }
             else
                 throw FlatZincInterfaceError{fmt::format("Unknown flatzinc constraint {} in {}", id, fznname)};
         }
