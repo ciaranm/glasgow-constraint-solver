@@ -189,7 +189,7 @@ namespace
                         set_difference(dom_2.begin(), dom_2.end(),
                             dom_1.begin(), dom_1.end(),
                             back_inserter(new_dom_2));
-                        if (state.maybe_proof() && new_dom_2.size() > dom_2.size()) {
+                        if (state.maybe_proof() && new_dom_2.size() < dom_2.size()) {
                             log_filtering_inference(tuple_selector, deview(binary_entry.var_2) != (dom_1[0]), state);
                         }
                     }
@@ -198,7 +198,7 @@ namespace
                         set_difference(dom_1.begin(), dom_1.end(),
                             dom_2.begin(), dom_2.end(),
                             back_inserter(new_dom_1));
-                        if (state.maybe_proof() && new_dom_1.size() > dom_1.size()) {
+                        if (state.maybe_proof() && new_dom_1.size() < dom_1.size()) {
                             log_filtering_inference(tuple_selector, deview(binary_entry.var_1) != (dom_2[0]), state);
                         }
                     }
