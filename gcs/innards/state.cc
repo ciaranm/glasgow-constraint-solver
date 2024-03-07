@@ -1266,19 +1266,6 @@ auto innards::State::get_persistent_constraint_state(const ConstraintStateHandle
     return _imp->persistent_constraint_states[h.index];
 }
 
-auto innards::State::current_domains_debug_strings(vector<IntegerVariableID> vars) -> vector<string>
-{
-    vector<string> current_domains{};
-    for (const auto & v : vars) {
-        current_domains.emplace_back("");
-        for_each_value(v, [&](Integer val) {
-            current_domains.back() = current_domains.back() + to_string(val.raw_value) + " ";
-        });
-    }
-
-    return current_domains;
-}
-
 namespace gcs
 {
     template auto State::in_domain(const IntegerVariableID &, Integer) const -> bool;

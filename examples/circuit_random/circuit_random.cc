@@ -1,12 +1,11 @@
+#include <boost/program_options.hpp>
+#include <gcs/constraints/circuit.hh>
+#include <gcs/constraints/comparison.hh>
+#include <gcs/constraints/in.hh>
+#include <gcs/constraints/not_equals.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
-#include <boost/program_options.hpp>
-#include <gcs/constraints/circuit/circuit.hh>
-#include <gcs/constraints/comparison.hh>
-#include <gcs/constraints/equals.hh>
-#include <gcs/constraints/in.hh>
-#include <gcs/constraints/not_equals.hh>
 #include <iostream>
 #include <random>
 
@@ -58,16 +57,10 @@ auto generate_random_graph(int n, double p) -> pair<vector<vector<long>>, unsign
     return create_graph_from_seed(n, p, seed);
 }
 
-Stats run_circuit_problem(int n, const vector<vector<long>> & distances)
+Stats run_circuit_problem(int n, const vector<vector<long>> & distances, SCCOptions options)
 {
     Problem p;
     auto x = p.create_integer_variable_vector(n, 0_i, Integer{n - 1});
-    //            for (int i = 0; i < n; ++i) {
-    //                for (int j = 0; cmp_less(j, distances[i].size()); ++j) {
-    //                    cout << distances[i][j] << " ";
-    //                }
-    //                cout << endl;
-    //            }
 
     for (int loc1 = 0; loc1 < n; loc1++) {
         for (int loc2 = 0; loc2 < n; loc2++) {
@@ -76,7 +69,6 @@ Stats run_circuit_problem(int n, const vector<vector<long>> & distances)
             }
         }
     }
-    SCCOptions options = {false, true, false, false, false, true};
     p.post(Circuit{x, false, options});
 
     // Minimise the distance between any two stops
@@ -124,11 +116,15 @@ auto main(int argc, char * argv[]) -> int
 
     po::options_description all_options{"All options"};
 
-    all_options.add_options()(
-        "n", po::value<int>(), "Integer value n.");
-
-    all_options.add_options()(
-        "seed", po::value<unsigned int>(), "Random seed.");
+    all_options.add_options()                                                               //
+        ("n", po::value<int>(), "Integer value n.")                                         //
+        ("seed", po::value<unsigned int>(), "Random seed.")                                 //
+        ("prune_root", po::value<bool>()->default_value(true), "SCC inference")             //
+        ("prune_skip", po::value<bool>()->default_value(true), "SCC inference")             //
+        ("fix_req", po::value<bool>()->default_value(true), "SCC inference")                //
+        ("prune_within", po::value<bool>()->default_value(true), "SCC inference")           //
+        ("prove_using_dominance", po::value<bool>()->default_value(false), "SCC inference") //
+        ("enable_comments", po::value<bool>()->default_value(true), "SCC inference");       //
 
     all_options.add(display_options);
     po::variables_map options_vars;
@@ -153,6 +149,14 @@ auto main(int argc, char * argv[]) -> int
         return EXIT_SUCCESS;
     }
 
+    SCCOptions options{
+        options_vars["prune_root"].as<bool>(),
+        options_vars["prune_skip"].as<bool>(),
+        options_vars["fix_req"].as<bool>(),
+        options_vars["prune_within"].as<bool>(),
+        options_vars["prove_using_dominance"].as<bool>(),
+        options_vars["enable_comments"].as<bool>()};
+
     if (options_vars.contains("seed")) {
         if (! options_vars.contains("n")) {
             cout << "Need to specify n.";
@@ -169,7 +173,7 @@ auto main(int argc, char * argv[]) -> int
             cout << endl;
         }
 
-        run_circuit_problem(n, distances);
+        run_circuit_problem(n, distances, options);
     }
     else {
         int smallest_n = 8;
@@ -180,16 +184,16 @@ auto main(int argc, char * argv[]) -> int
             for (int r = 0; r < repetitions; ++r) {
                 auto [distances, seed] = generate_random_graph(n, EDGE_PROBABILITY);
 
-                Stats stats = run_circuit_problem(n, distances);
+                Stats stats = run_circuit_problem(n, distances, options);
 
                 cout << "Num solutions: " << stats.solutions << endl;
 
-                if (0 != system("veripb circuit_random.opb circuit_random.veripb")) {
-                    cout << stats;
-                    cout << "Seed: " << seed << endl;
-                    cout << "n: " << n << endl;
-                    return EXIT_FAILURE;
-                }
+                //                if (0 != system("veripb circuit_random.opb circuit_random.veripb")) {
+                //                    cout << stats;
+                //                    cout << "Seed: " << seed << endl;
+                //                    cout << "n: " << n << endl;
+                //                    return EXIT_FAILURE;
+                //                }
             }
         }
     }

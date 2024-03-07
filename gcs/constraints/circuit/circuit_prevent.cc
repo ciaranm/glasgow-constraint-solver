@@ -1,4 +1,5 @@
-#include <gcs/constraints/circuit/circuit.hh>
+#include <gcs/constraints/circuit/circuit_base.hh>
+#include <gcs/constraints/circuit/circuit_prevent.hh>
 #include <gcs/innards/propagators.hh>
 
 #include <util/enumerate.hh>
@@ -9,6 +10,7 @@
 
 using namespace gcs;
 using namespace gcs::innards;
+using namespace gcs::innards::circuit;
 
 using std::cmp_less;
 using std::cmp_not_equal;

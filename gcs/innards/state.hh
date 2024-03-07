@@ -563,8 +563,6 @@ namespace gcs::innards
          */
         [[nodiscard]] auto get_persistent_constraint_state(const ConstraintStateHandle h) -> ConstraintState &;
         ///@}
-
-        auto current_domains_debug_strings(std::vector<IntegerVariableID> vars) -> std::vector<std::string>;
     };
 }
 

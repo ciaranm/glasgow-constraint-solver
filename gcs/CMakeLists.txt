@@ -14,8 +14,13 @@ add_library(glasgow_constraint_solver
         constraints/all_different.cc
         constraints/arithmetic.cc
         constraints/at_most_one.cc
-        constraints/circuit/circuit.cc
+        constraints/circuit/circuit_base.cc
+        constraints/circuit/circuit_disconnected_test.cc
+        constraints/circuit/circuit_multiple_sccs_test.cc
+        constraints/circuit/circuit_no_backedges_test.cc
         constraints/circuit/circuit_prevent.cc
+        constraints/circuit/circuit_prune_root_test.cc
+        constraints/circuit/circuit_prune_skip_test.cc
         constraints/circuit/circuit_scc.cc
         constraints/comparison.cc
         constraints/count.cc
@@ -55,6 +60,11 @@ add_executable(abs_test constraints/abs_test.cc)
 add_executable(arithmetic_test constraints/arithmetic_test.cc)
 add_executable(comparison_test constraints/comparison_test.cc)
 add_executable(count_test constraints/count_test.cc)
+add_executable(circuit_disconnected_test constraints/circuit/circuit_disconnected_test)
+add_executable(circuit_multiple_sccs_test constraints/circuit/circuit_multiple_sccs_test)
+add_executable(circuit_no_backedges_test constraints/circuit/circuit_no_backedges_test)
+add_executable(circuit_prune_root_test constraints/circuit/circuit_prune_root_test)
+add_executable(circuit_prune_skip_test constraints/circuit/circuit_prune_skip_test)
 add_executable(element_test constraints/element_test.cc)
 add_executable(equals_test constraints/equals_test.cc)
 add_executable(knapsack_test constraints/knapsack_test.cc)
@@ -65,8 +75,14 @@ add_executable(n_value_test constraints/n_value_test.cc)
 add_executable(not_equals_test constraints/not_equals_test.cc)
 add_executable(smart_table_test constraints/smart_table_test.cc)
 
+
 add_test(NAME abs_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:abs_test>)
 add_test(NAME arithmetic_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:arithmetic_test>)
+add_test(NAME circuit_disconnected COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:circuit_disconnected_test>)
+add_test(NAME circuit_multiple_sccs COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:circuit_multiple_sccs_test>)
+add_test(NAME circuit_no_backedges COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:circuit_no_backedges_test>)
+add_test(NAME circuit_prune_root COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:circuit_prune_root_test>)
+add_test(NAME circuit_prune_skip COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:circuit_prune_skip_test>)
 add_test(NAME comparison_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:comparison_test>)
 add_test(NAME count_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:count_test>)
 add_test(NAME element_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:element_test>)

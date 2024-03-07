@@ -1,5 +1,5 @@
 #include <boost/program_options.hpp>
-#include <gcs/constraints/circuit/circuit.hh>
+#include <gcs/constraints/circuit.hh>
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/not_equals.hh>
 #include <gcs/problem.hh>

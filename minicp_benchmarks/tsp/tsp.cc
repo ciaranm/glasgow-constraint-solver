@@ -1,4 +1,4 @@
-#include <gcs/constraints/circuit/circuit.hh>
+#include <gcs/constraints/circuit.hh>
 #include <gcs/constraints/element.hh>
 #include <gcs/problem.hh>
 #include <gcs/search_heuristics.hh>

@@ -1,6 +1,6 @@
-#include <gcs/constraints/circuit/circuit.hh>
+#include <gcs/constraints/circuit/circuit_base.hh>
+#include <gcs/constraints/circuit/circuit_scc.hh>
 #include <gcs/innards/propagators.hh>
-#include <iostream>
 #include <list>
 #include <random>
 #include <set>
@@ -14,7 +14,6 @@ using std::cmp_equal;
 using std::cmp_less;
 using std::cmp_less_equal;
 using std::cmp_not_equal;
-using std::cout;
 using std::get;
 using std::holds_alternative;
 using std::list;
@@ -40,6 +39,7 @@ using std::vector;
 
 using namespace gcs;
 using namespace gcs::innards;
+using namespace gcs::innards::circuit;
 
 namespace
 {
@@ -52,7 +52,7 @@ namespace
         long last;
     };
 
-    auto select_root(long n) -> long
+    auto select_root(long) -> long
     {
         // Might have better root selection in future
         return 0;
@@ -548,17 +548,10 @@ namespace
                     p_line.str("");
                     p_line << "p ";
 
-                    //                    if (next_node != 0) {
                     p_line << pos_var_data.at(node).plus_one_lines.at(next_node).geq_line << " "
                            << root_greater_than.at(node).backwards_reif_line << " + "
                            << root_greater_than.at(next_node).forwards_reif_line << " + "
                            << to_string(2 * n) << " d ";
-                    //                    }
-                    //                    else
-                    //                        p_line << proof.emit_rup_proof_line(
-                    //                                      WeightedPseudoBooleanSum{} + 1_i * ! (succ[node] == Integer{next_node}) + 1_i * root_greater_than.at(node).flag + 1_i * ! root_greater_than.at(next_node).flag >= 1_i,
-                    //                                      ProofLevel::Current)
-                    //                               << " ";
 
                     p_line
                         << to_string(n) << " * "
@@ -596,7 +589,6 @@ namespace
                         options, state);
 
                     successor_implies_line = proof.emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * (! shifted_pos_eq[node][count - 1].flag) + 1_i * (succ[node] != Integer{next_node}) >= 1_i, ProofLevel::Current);
-                    // proof.emit_proof_line("fail", ProofLevel::Top);
                 }
             }});
         }
@@ -636,8 +628,6 @@ namespace
             auto & shifted_pos_eq = flag_data[root].shifted_pos_eq;
 
             state.infer_true(JustifyExplicitly{[&](Proof & proof) {
-                // TODO: All these should be ProofLevel::Temporary, but unfortunately that fails in specific instances
-                // e.g. build/circuit_random --n 9 --seed 1783129817
                 emit_proof_comment_if_enabled("Step 1", options, state);
 
                 temp_p_line.add_and_saturate(shifted_pos_geq[next_node][count + 1].backwards_reif_line);

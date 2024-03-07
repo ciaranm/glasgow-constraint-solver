@@ -1,8 +1,7 @@
 #include <gcs/constraints/all_different.hh>
-#include <gcs/constraints/circuit/circuit.hh>
+#include <gcs/constraints/circuit/circuit_base.hh>
 #include <gcs/innards/propagators.hh>
 
-#include <iostream>
 #include <list>
 #include <map>
 #include <sstream>
@@ -16,8 +15,6 @@ using namespace gcs::innards;
 using std::cmp_equal;
 using std::cmp_less;
 using std::cmp_not_equal;
-using std::cout;
-using std::endl;
 using std::list;
 using std::make_optional;
 using std::make_pair;
@@ -34,13 +31,15 @@ using std::tuple;
 using std::unique_ptr;
 using std::vector;
 
+using namespace gcs::innards::circuit;
+
 CircuitBase::CircuitBase(vector<IntegerVariableID> v, const bool g) :
     _gac_all_different(g),
     _succ(std::move(v))
 {
 }
 
-auto gcs::output_cycle_to_proof(const vector<IntegerVariableID> & succ,
+auto gcs::innards::circuit::output_cycle_to_proof(const vector<IntegerVariableID> & succ,
     const long & start,
     const long & length,
     const PosVarDataMap & pos_var_data,
@@ -85,7 +84,7 @@ auto gcs::output_cycle_to_proof(const vector<IntegerVariableID> & succ,
     proof.emit_proof_line(proof_step.str(), ProofLevel::Current);
 }
 
-auto gcs::prevent_small_cycles(
+auto gcs::innards::circuit::prevent_small_cycles(
     const vector<IntegerVariableID> & succ,
     const PosVarDataMap & pos_var_data,
     const ConstraintStateHandle & unassigned_handle,
@@ -138,15 +137,19 @@ auto gcs::prevent_small_cycles(
                 state.infer(succ[end[i]] != Integer{i}, JustifyExplicitly{[&](Proof & proof) {
                     output_cycle_to_proof(succ, i, length, pos_var_data, state, proof, Integer{end[i]}, Integer{i});
                 }}));
+            if (result == Inference::Contradiction)
+                return result;
         }
         else {
             increase_inference_to(result, state.infer(succ[end[i]] == Integer{i}, JustifyUsingRUP{}));
+            if (result == Inference::Contradiction)
+                return result;
         }
     }
     return result;
 }
 
-auto gcs::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle, State & state) -> innards::Inference
+auto gcs::innards::circuit::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle, State & state) -> innards::Inference
 {
     auto & unassigned = any_cast<list<IntegerVariableID> &>(state.get_constraint_state(unassigned_handle));
 
@@ -154,15 +157,14 @@ auto gcs::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigne
     vector<pair<IntegerVariableID, Integer>> to_propagate;
     {
         // Collect any newly assigned values
-        auto i = unassigned.begin();
-        while (i != unassigned.end()) {
+        for (auto i = unassigned.begin(); i != unassigned.end();) {
             auto s = *i;
             if (auto val = state.optional_single_value(s)) {
                 to_propagate.emplace_back(s, *val);
                 unassigned.erase(i++);
             }
             else
-                ++i;
+                i++;
         }
     }
 

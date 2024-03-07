@@ -1,5 +1,5 @@
 #include <boost/program_options.hpp>
-#include <gcs/constraints/circuit/circuit.hh>
+#include <gcs/constraints/circuit.hh>
 #include <gcs/constraints/in.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
@@ -25,20 +25,6 @@ auto post_constraints(Problem & p, vector<IntegerVariableID> & nodes)
      * doi: 10.1007/s10601-013-9148-0.
      *
      * There is only one SCC, but multiple subtrees explored below the root in the DFS.
-     *  ┌──────────┐ ┌────────┐
-     *  │          v v        │
-     *  │        ┌──0──┐      │
-     *  │        │  │  │      │
-     *  │     ┌──┘  │  └──┐   │
-     *  │     ▼     ▼     ▼   │
-     *  │    ┌1<────4<┐   5───┘
-     *  │    │ │    │ │   │
-     *  │  ┌─┘ └─┐  │ │   ▼
-     *  │  │     │  │ └───6
-     *  │  ▼     ▼  │     │
-     *  └──2<────3<─┘     │
-     *           ^        │
-     *           └────────┘
      **/
 
     p.post(In{nodes[0], {1_i, 4_i, 5_i}});
