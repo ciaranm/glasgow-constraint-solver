@@ -11,10 +11,18 @@ add_library(glasgow_constraint_solver
         variable_condition.cc
         variable_id.cc
         constraints/abs.cc
-        constraints/all_different.cc
+        constraints/all_different/gac_all_different.cc
+        constraints/all_different/vc_all_different.cc
         constraints/arithmetic.cc
         constraints/at_most_one.cc
-        constraints/circuit.cc
+        constraints/circuit/circuit_base.cc
+        constraints/circuit/circuit_disconnected_test.cc
+        constraints/circuit/circuit_multiple_sccs_test.cc
+        constraints/circuit/circuit_no_backedges_test.cc
+        constraints/circuit/circuit_prevent.cc
+        constraints/circuit/circuit_prune_root_test.cc
+        constraints/circuit/circuit_prune_skip_test.cc
+        constraints/circuit/circuit_scc.cc
         constraints/comparison.cc
         constraints/count.cc
         constraints/element.cc
@@ -40,7 +48,8 @@ add_library(glasgow_constraint_solver
         innards/propagators.cc
         innards/state.cc
         innards/variable_id_utils.cc
-        presolvers/auto_table.cc)
+        presolvers/auto_table.cc
+)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 link_libraries(glasgow_constraint_solver)
@@ -76,6 +85,21 @@ add_test(NAME logical_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash 
 add_test(NAME min_max_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:min_max_test>)
 add_test(NAME n_value_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:n_value_test>)
 add_test(NAME smart_table_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:smart_table_test>)
+
+add_executable(circuit_disconnected_test constraints/circuit/circuit_disconnected_test)
+add_test(NAME circuit_disconnected COMMAND ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:circuit_disconnected_test>)
+
+add_executable(circuit_multiple_sccs_test constraints/circuit/circuit_multiple_sccs_test)
+add_test(NAME circuit_multiple_sccs COMMAND ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:circuit_multiple_sccs_test>)
+
+add_executable(circuit_no_backedges_test constraints/circuit/circuit_no_backedges_test)
+add_test(NAME circuit_no_backedges COMMAND ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:circuit_no_backedges_test>)
+
+add_executable(circuit_prune_root_test constraints/circuit/circuit_prune_root_test)
+add_test(NAME circuit_prune_root COMMAND ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:circuit_prune_root_test>)
+
+add_executable(circuit_prune_skip_test constraints/circuit/circuit_prune_skip_test)
+add_test(NAME circuit_prune_skip COMMAND ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:circuit_prune_skip_test>)
 
 add_executable(interval_set_test innards/interval_set_test.cc)
 target_link_libraries(interval_set_test PRIVATE Catch2::Catch2WithMain)

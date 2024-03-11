@@ -13,6 +13,7 @@
 #include <exception>
 #include <functional>
 #include <iosfwd>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -146,9 +147,6 @@ namespace gcs::innards
         [[nodiscard]] auto simplify_literal(const ProofLiteral & lit) -> SimpleLiteral;
 
         auto need_proof_name(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> &) -> void;
-
-        [[nodiscard]] auto proof_name(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> &) const -> const std::string &;
-        [[nodiscard]] auto proof_name(const ProofFlag &) const -> const std::string &;
 
         auto need_all_proof_names_in(const SumOf<Weighted<PseudoBooleanTerm>> & sum) -> void;
 
@@ -366,7 +364,34 @@ namespace gcs::innards
                 ) -> ProofLine;
 
         /**
-         * Emit a pair of RED proofs step for the specified expression, reified on the specified flag.
+         * Emit subproofs, using a map of proofgoals to explicit justifications
+         */
+        auto emit_subproofs(const std::map<std::string, JustifyExplicitly> & subproofs) -> auto;
+
+        /**
+         * Emit a RED proof step for flag => specified expresion, creating a half reification.
+         */
+        auto emit_red_proof_lines_forward_reifying(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
+            ProofFlag reif, ProofLevel level, const std::optional<std::map<std::string, JustifyExplicitly>> & subproof = std::nullopt
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+            ,
+            const std::source_location & w = std::source_location::current()
+#endif
+                ) -> ProofLine;
+
+        /**
+         * Emit a RED proof step for ~flag => ~specified expresion, creating a reverse half reification.
+         */
+        auto emit_red_proof_lines_reverse_reifying(const SumLessEqual<Weighted<PseudoBooleanTerm>> &,
+            ProofFlag, ProofLevel level, const std::optional<std::map<std::string, JustifyExplicitly>> & subproof = std::nullopt
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+            ,
+            const std::source_location & w = std::source_location::current()
+#endif
+                ) -> ProofLine;
+
+        /**
+         * Emit a pair of RED proofs step for the specified expression, fully reified on the specified flag.
          */
         auto emit_red_proof_lines_reifying(const SumLessEqual<Weighted<PseudoBooleanTerm>> &,
             ProofFlag, ProofLevel level
@@ -395,7 +420,8 @@ namespace gcs::innards
          * \name Helpful things for making proof text.
          */
         ///@{
-
+        [[nodiscard]] auto proof_name(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> &) const -> const std::string &;
+        [[nodiscard]] auto proof_name(const ProofFlag &) const -> const std::string &;
         /**
          * Return the sequence of current guesses, each with the given coefficient.
          */

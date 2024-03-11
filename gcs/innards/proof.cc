@@ -1244,6 +1244,70 @@ auto Proof::emit_red_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> 
     return record_proof_line(++_imp->proof_line, level);
 }
 
+auto Proof::emit_subproofs(const map<string, JustifyExplicitly> & subproofs)
+{
+    _imp->proof << " begin\n";
+    ++_imp->proof_line;
+    for (const auto & [proofgoal, proof] : subproofs) {
+        ++_imp->proof_line;
+        _imp->proof
+            << "     proofgoal " << proofgoal << "\n";
+        proof.add_proof_steps(*this);
+        _imp->proof << "     end -1\n";
+    }
+    _imp->proof << "end\n";
+}
+
+auto Proof::emit_red_proof_lines_forward_reifying(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofFlag reif,
+    ProofLevel level, const optional<map<string, JustifyExplicitly>> & subproofs
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+    ,
+    const std::source_location & w
+#endif
+    ) -> ProofLine
+{
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+    _imp->proof << "* emit red lines forward reifying from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
+#endif
+
+    need_all_proof_names_in(ineq.lhs);
+    _imp->proof << "red ";
+    emit_inequality_to(ineq, {{reif}}, _imp->proof);
+    _imp->proof << " " << proof_name(reif) << " -> 0";
+    _imp->proof << " ;";
+    if (subproofs)
+        emit_subproofs(subproofs.value());
+    else
+        _imp->proof << "\n";
+
+    return record_proof_line(++_imp->proof_line, level);
+}
+
+auto Proof::emit_red_proof_lines_reverse_reifying(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofFlag reif,
+    ProofLevel level, const optional<map<string, JustifyExplicitly>> & subproofs
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+    ,
+    const std::source_location & w
+#endif
+    ) -> ProofLine
+{
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+    _imp->proof << "* emit red lines reverse reifying from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
+#endif
+
+    need_all_proof_names_in(ineq.lhs);
+    auto negated_ineq = ineq.lhs >= ineq.rhs + 1_i;
+    _imp->proof << "red ";
+    emit_inequality_to(negated_ineq, {{! reif}}, _imp->proof);
+    _imp->proof << " " << proof_name(reif) << " -> 1";
+    _imp->proof << " ;";
+    if (subproofs)
+        emit_subproofs(subproofs.value());
+    else
+        _imp->proof << "\n";
+    return record_proof_line(++_imp->proof_line, level);
+}
+
 auto Proof::emit_red_proof_lines_reifying(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofFlag reif,
     ProofLevel level
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
@@ -1252,25 +1316,12 @@ auto Proof::emit_red_proof_lines_reifying(const SumLessEqual<Weighted<PseudoBool
 #endif
     ) -> pair<ProofLine, ProofLine>
 {
-    need_all_proof_names_in(ineq.lhs);
-
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
     _imp->proof << "* emit red lines reifying from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
 #endif
 
-    _imp->proof << "red ";
-    emit_inequality_to(ineq, {{reif}}, _imp->proof);
-    _imp->proof << " " << proof_name(reif) << " -> 0";
-    _imp->proof << " ;\n";
-    auto forward_result = record_proof_line(++_imp->proof_line, level);
-
-    auto negated_ineq = ineq.lhs >= ineq.rhs + 1_i;
-    _imp->proof << "red ";
-    emit_inequality_to(negated_ineq, {{! reif}}, _imp->proof);
-    _imp->proof << " " << proof_name(reif) << " -> 1";
-    _imp->proof << " ;\n";
-    auto reverse_result = record_proof_line(++_imp->proof_line, level);
-
+    auto forward_result = emit_red_proof_lines_forward_reifying(ineq, reif, level);
+    auto reverse_result = emit_red_proof_lines_reverse_reifying(ineq, reif, level);
     return pair{forward_result, reverse_result};
 }
 

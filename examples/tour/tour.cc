@@ -1,3 +1,4 @@
+#include <boost/program_options.hpp>
 #include <gcs/constraints/circuit.hh>
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/not_equals.hh>
@@ -9,13 +10,17 @@
 
 using namespace gcs;
 
+using std::cerr;
 using std::cout;
 using std::endl;
 using std::make_optional;
 using std::nullopt;
+using std::string;
 using std::vector;
 
-auto main(int, char *[]) -> int
+namespace po = boost::program_options;
+
+auto main(int argc, char * argv[]) -> int
 {
     // Example for the circuit constraint: find a tour for some graph of locations
     // and minimise the distance between any two stops.
@@ -23,6 +28,45 @@ auto main(int, char *[]) -> int
     // This is based on the circuit benchmark instances from
     // K. G. Francis and P. J. Stuckey, ‘Explaining circuit propagation’, Constraints, vol. 19, no. 1, pp. 1–29, Jan. 2014,
     // doi: 10.1007/s10601-013-9148-0.
+    po::options_description display_options{"Program options"};
+    display_options.add_options()            //
+        ("help", "Display help information") //
+        ("prove", "Create a proof");         //
+
+    po::options_description all_options{"All options"};
+    all_options.add_options() //
+        ("propagator", po::value<string>()->default_value("scc"), "Specify which circuit propagation algorithm to use (prevent/scc)");
+
+    all_options.add(display_options);
+    po::variables_map options_vars;
+
+    try {
+        po::store(po::command_line_parser(argc, argv)
+                      .options(all_options)
+                      .run(),
+            options_vars);
+        po::notify(options_vars);
+    }
+    catch (const po::error & e) {
+        cerr << "Error: " << e.what() << endl;
+        cerr << "Try " << argv[0] << " --help" << endl;
+        return EXIT_FAILURE;
+    }
+
+    if (options_vars.contains("help")) {
+        cout << "Usage: " << argv[0] << " [options] [size]" << endl;
+        cout << endl;
+        cout << display_options << endl;
+        return EXIT_SUCCESS;
+    }
+
+    if (options_vars.contains("propagator")) {
+        const string propagator_value = options_vars["propagator"].as<string>();
+        if (propagator_value != "prevent" && propagator_value != "scc") {
+            cerr << "Error: Invalid value for propagator. Use 'scc' or 'prevent'." << endl;
+            return EXIT_FAILURE;
+        }
+    }
 
     int n = 20;
     Problem p;
@@ -63,7 +107,17 @@ auto main(int, char *[]) -> int
         }
     }
 
-    p.post(Circuit{succ});
+    if (options_vars["propagator"].as<string>() == "prevent") {
+        p.post(CircuitPrevent{succ, false});
+    }
+    else if (options_vars["propagator"].as<string>() == "scc") {
+        SCCOptions options{};
+        options.enable_comments = false;
+        p.post(CircuitSCC{succ, false, options});
+    }
+    else {
+        p.post(Circuit{succ, false});
+    }
 
     // Minimise the distance between any two stops
     auto max_leg = p.create_integer_variable(0_i, 100_i, "max_leg");
@@ -93,7 +147,7 @@ auto main(int, char *[]) -> int
                 cout << "\n\n";
                 return true;
             }},
-        ProofOptions("tour.opb", "tour.pbp"));
+        options_vars.contains("prove") ? make_optional<ProofOptions>("tour.opb", "tour.pbp") : nullopt);
 
     cout << stats;
     return EXIT_SUCCESS;
