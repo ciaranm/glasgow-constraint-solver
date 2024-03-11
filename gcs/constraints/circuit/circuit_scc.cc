@@ -1,5 +1,7 @@
+#include <gcs/constraints/all_different/vc_all_different.hh>
 #include <gcs/constraints/circuit/circuit_base.hh>
 #include <gcs/constraints/circuit/circuit_scc.hh>
+
 #include <gcs/innards/propagators.hh>
 #include <list>
 #include <random>

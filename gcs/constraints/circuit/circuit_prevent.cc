@@ -1,5 +1,7 @@
+#include <gcs/constraints/all_different/vc_all_different.hh>
 #include <gcs/constraints/circuit/circuit_base.hh>
 #include <gcs/constraints/circuit/circuit_prevent.hh>
+
 #include <gcs/innards/propagators.hh>
 
 #include <util/enumerate.hh>

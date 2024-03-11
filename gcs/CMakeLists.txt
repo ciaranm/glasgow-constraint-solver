@@ -11,7 +11,8 @@ add_library(glasgow_constraint_solver
         variable_condition.cc
         variable_id.cc
         constraints/abs.cc
-        constraints/all_different.cc
+        constraints/all_different/gac_all_different.cc
+        constraints/all_different/vc_all_different.cc
         constraints/arithmetic.cc
         constraints/at_most_one.cc
         constraints/circuit/circuit_base.cc
@@ -47,7 +48,11 @@ add_library(glasgow_constraint_solver
         innards/propagators.cc
         innards/state.cc
         innards/variable_id_utils.cc
-        presolvers/auto_table.cc)
+        presolvers/auto_table.cc
+        constraints/all_different/vc_all_different.cc
+        constraints/all_different/vc_all_different.hh
+        constraints/all_different/gac_all_different.hh
+)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 link_libraries(glasgow_constraint_solver)

@@ -52,9 +52,6 @@ namespace gcs::innards::circuit
         ProofFlagDataMap shifted_pos_geq;
     };
 
-    auto propagate_non_gac_alldifferent(
-        const ConstraintStateHandle & unassigned_handle, State & state) -> Inference;
-
     auto output_cycle_to_proof(const std::vector<IntegerVariableID> & succ,
         const long & start,
         const long & length,

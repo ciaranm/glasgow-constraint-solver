@@ -1,4 +1,5 @@
 #include <gcs/constraints/all_different.hh>
+#include <gcs/constraints/all_different/vc_all_different.hh>
 #include <gcs/constraints/circuit/circuit_base.hh>
 #include <gcs/innards/propagators.hh>
 
@@ -149,51 +150,6 @@ auto gcs::innards::circuit::prevent_small_cycles(
     return result;
 }
 
-auto gcs::innards::circuit::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle, State & state) -> innards::Inference
-{
-    auto & unassigned = any_cast<list<IntegerVariableID> &>(state.get_constraint_state(unassigned_handle));
-
-    auto result = Inference::NoChange;
-    vector<pair<IntegerVariableID, Integer>> to_propagate;
-    {
-        // Collect any newly assigned values
-        for (auto i = unassigned.begin(); i != unassigned.end();) {
-            auto s = *i;
-            if (auto val = state.optional_single_value(s)) {
-                to_propagate.emplace_back(s, *val);
-                unassigned.erase(i++);
-            }
-            else
-                i++;
-        }
-    }
-
-    while (! to_propagate.empty()) {
-        auto [var, val] = to_propagate.back();
-        to_propagate.pop_back();
-        auto i = unassigned.begin();
-
-        for (auto other : to_propagate) {
-            if (other.second == val) return Inference::Contradiction;
-        }
-
-        while (i != unassigned.end()) {
-            auto other = *i;
-            if (other != var) {
-                increase_inference_to(result, state.infer_not_equal(other, val, JustifyUsingRUP{}));
-                if (result == Inference::Contradiction) return Inference::Contradiction;
-                if (auto other_val = state.optional_single_value(other)) {
-                    to_propagate.emplace_back(other, *other_val);
-                    unassigned.erase(i++);
-                }
-                else
-                    ++i;
-            }
-        }
-    }
-    return result;
-}
-
 auto CircuitBase::set_up(Propagators & propagators, State & initial_state) -> PosVarDataMap
 {
     // Can't have negative values
@@ -206,17 +162,12 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state) -> Po
 
     // Define all different, either gac or non-gac
     if (_gac_all_different) {
-        AllDifferent all_diff{_succ};
+        GACAllDifferent all_diff{_succ};
         std::move(all_diff).install(propagators, initial_state);
     }
-    else if (propagators.want_definitions()) {
-        // Still need to define all-different
-        for (unsigned i = 0; i < _succ.size(); ++i)
-            for (unsigned j = i + 1; j < _succ.size(); ++j) {
-                auto selector = propagators.create_proof_flag("circuit_notequals");
-                propagators.define(initial_state, WeightedPseudoBooleanSum{} + 1_i * _succ[i] + -1_i * _succ[j] <= -1_i, HalfReifyOnConjunctionOf{selector});
-                propagators.define(initial_state, WeightedPseudoBooleanSum{} + -1_i * _succ[i] + 1_i * _succ[j] <= -1_i, HalfReifyOnConjunctionOf{! selector});
-            }
+    else {
+        // Still need to define the all different encoding.
+        define_clique_not_equals_encoding(initial_state, propagators, _succ);
     }
 
     // Define encoding to eliminate sub-cycles

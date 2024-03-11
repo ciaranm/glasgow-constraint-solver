@@ -1,4 +1,4 @@
-#include <gcs/constraints/all_different.hh>
+#include <gcs/constraints/all_different/gac_all_different.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/proof.hh>
 #include <gcs/innards/propagators.hh>
@@ -39,14 +39,14 @@ using std::variant;
 using std::vector;
 using std::visit;
 
-AllDifferent::AllDifferent(vector<IntegerVariableID> v) :
+GACAllDifferent::GACAllDifferent(vector<IntegerVariableID> v) :
     _vars(move(v))
 {
 }
 
-auto AllDifferent::clone() const -> unique_ptr<Constraint>
+auto GACAllDifferent::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<AllDifferent>(_vars);
+    return make_unique<GACAllDifferent>(_vars);
 }
 
 namespace
@@ -543,7 +543,7 @@ namespace
     }
 }
 
-auto AllDifferent::install(Propagators & propagators, State & initial_state) && -> void
+auto GACAllDifferent::install(Propagators & propagators, State & initial_state) && -> void
 {
     map<Integer, ProofLine> constraint_numbers;
     if (propagators.want_definitions()) {
@@ -590,7 +590,7 @@ auto AllDifferent::install(Propagators & propagators, State & initial_state) && 
         triggers, "alldiff");
 }
 
-auto AllDifferent::describe_for_proof() -> std::string
+auto GACAllDifferent::describe_for_proof() -> std::string
 {
     return "all different";
 }
