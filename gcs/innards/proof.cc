@@ -1262,7 +1262,7 @@ auto Proof::emit_red_proof_lines_forward_reifying(const SumLessEqual<Weighted<Ps
     ProofLevel level, const optional<map<string, JustifyExplicitly>> & subproofs
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
     ,
-    const std::source_location & w
+    const std::source_location & where
 #endif
     ) -> ProofLine
 {
@@ -1287,7 +1287,7 @@ auto Proof::emit_red_proof_lines_reverse_reifying(const SumLessEqual<Weighted<Ps
     ProofLevel level, const optional<map<string, JustifyExplicitly>> & subproofs
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
     ,
-    const std::source_location & w
+    const std::source_location & where
 #endif
     ) -> ProofLine
 {
