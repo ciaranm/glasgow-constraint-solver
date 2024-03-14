@@ -16,6 +16,7 @@
 #include <exception>
 #include <fstream>
 #include <iostream>
+#include <list>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -33,6 +34,7 @@ using std::cv_status;
 using std::exception;
 using std::flush;
 using std::ifstream;
+using std::list;
 using std::mutex;
 using std::nullopt;
 using std::optional;
@@ -76,6 +78,60 @@ namespace
     {
         abort_flag.store(true);
         was_terminated.store(true);
+    }
+
+    struct ExtractedData
+    {
+        unordered_map<string, IntegerVariableID> integer_variables;
+        unordered_map<string, vector<Integer>> constant_arrays;
+        unordered_map<string, vector<IntegerVariableID>> variable_arrays;
+        list<vector<Integer>> unnamed_constant_arrays;
+    };
+
+    auto arg_as_array_of_integer(ExtractedData & data, const auto & args, int idx) -> vector<Integer> *
+    {
+        auto a = args.at(idx);
+        if (holds_alternative<string>(a)) {
+            auto name = get<string>(a);
+            auto iter = data.constant_arrays.find(name);
+            if (iter == data.constant_arrays.end())
+                throw FlatZincInterfaceError{fmt::format("Can't find constant array named {}", name)};
+            return &iter->second;
+        }
+        else {
+            vector<Integer> result;
+            for (const auto & val : get<vector<j::FlatZincJso>>(a))
+                result.push_back(Integer{static_cast<long long>(get<double>(val))});
+            data.unnamed_constant_arrays.push_back(move(result));
+            return &data.unnamed_constant_arrays.back();
+        }
+    }
+
+    auto arg_as_array_of_var(ExtractedData & data, const auto & args, int idx) -> vector<IntegerVariableID>
+    {
+        auto a = args.at(idx);
+        if (holds_alternative<string>(a)) {
+            auto name = get<string>(a);
+            auto iter = data.variable_arrays.find(name);
+            if (iter == data.variable_arrays.end())
+                throw FlatZincInterfaceError{fmt::format("Can't find variable array named {}", name)};
+            return iter->second;
+        }
+        else {
+            throw UnimplementedException{};
+        }
+    }
+
+    auto arg_as_var(ExtractedData & data, const auto & args, int idx) -> IntegerVariableID
+    {
+        auto a = args.at(idx);
+        if (! holds_alternative<string>(a))
+            throw FlatZincInterfaceError{"Didn't get a string for arg_as_var?"};
+        auto name = get<string>(a);
+        auto iter = data.integer_variables.find(name);
+        if (iter == data.integer_variables.end())
+            throw FlatZincInterfaceError{fmt::format("Can't find variable named {}", name)};
+        return iter->second;
     }
 }
 
@@ -168,24 +224,31 @@ auto main(int argc, char * argv[]) -> int
             throw FlatZincInterfaceError{fmt::format("Unknown flatzinc version {} in {}", fzn.version, fznname)};
 
         Problem problem;
+        ExtractedData data;
 
-        unordered_map<string, IntegerVariableID> integer_variables;
         for (const auto & [name, vardata] : fzn.variables) {
             string var_type = vardata["type"];
             if (var_type != "int")
                 throw FlatZincInterfaceError{fmt::format("Unknown flatzinc variable type {} for variable {} in {}", var_type, name, fznname)};
 
-            if (vardata["domain"].size() != 1)
-                throw FlatZincInterfaceError{fmt::format("Can't parse domain for variable {} in {}", name, fznname)};
-            integer_variables.emplace(name, //
+            if (! vardata.contains("domain")) {
+                data.integer_variables.emplace(name, //
                     problem.create_integer_variable( //
+                        Integer::min_value(),
+                        Integer::max_value(),
+                        name));
+            }
+            else {
+                if (vardata["domain"].size() != 1)
+                    throw FlatZincInterfaceError{fmt::format("Can't parse domain for variable {} in {}", name, fznname)};
+                data.integer_variables.emplace(name,                       //
+                    problem.create_integer_variable(                       //
                         Integer{vardata["domain"][0][0].get<long long>()}, //
                         Integer{vardata["domain"][0][1].get<long long>()}, //
                         name));
+            }
         }
 
-        unordered_map<string, vector<Integer>> constant_arrays;
-        unordered_map<string, vector<IntegerVariableID>> variable_arrays;
         for (const auto & [name, arraydata] : fzn.arrays) {
             vector<Integer> values;
             vector<IntegerVariableID> variables;
@@ -193,7 +256,7 @@ auto main(int argc, char * argv[]) -> int
             for (const auto & v : arraydata["a"]) {
                 if (v.is_string()) {
                     seen_variable = true;
-                    variables.push_back(integer_variables.at(string{v}));
+                    variables.push_back(data.integer_variables.at(string{v}));
                 }
                 else {
                     auto val = Integer{v.get<long long>()};
@@ -203,20 +266,57 @@ auto main(int argc, char * argv[]) -> int
             }
 
             if (! seen_variable)
-                constant_arrays.emplace(name, move(values));
-            variable_arrays.emplace(name, move(variables));
+                data.constant_arrays.emplace(name, move(values));
+            data.variable_arrays.emplace(name, move(variables));
         }
 
         for (const auto & [annotations, args, id] : fzn.constraints) {
-            if (id == "int_lin_eq" || id == "int_lin_le") {
-                vector<Integer> *coeffs = nullptr, extract_coeffs;
-                if (holds_alternative<string>(args.at(0)))
-                    coeffs = &constant_arrays.at(get<string>(args.at(0)));
-                else {
-                    for (const auto & val : get<vector<j::FlatZincJso>>(args.at(0)))
-                        extract_coeffs.push_back(Integer{static_cast<long long>(get<double>(val))});
-                    coeffs = &extract_coeffs;
-                }
+            if (id == "array_int_element") {
+                const auto & idx = arg_as_var(data, args, 0);
+                auto array = arg_as_array_of_integer(data, args, 1);
+                const auto & var = arg_as_var(data, args, 2);
+
+                problem.post(ElementConstantArray{var, idx - 1_i, array});
+            }
+            else if (id == "array_int_maximum" || id == "array_int_minimum") {
+                const auto & var = arg_as_var(data, args, 0);
+                const auto & vars = arg_as_array_of_var(data, args, 1);
+                if (id.ends_with("maximum"))
+                    problem.post(ArrayMax{vars, var});
+                else
+                    problem.post(ArrayMin{vars, var});
+            }
+            else if (id == "array_var_int_element") {
+                const auto & idx = arg_as_var(data, args, 0);
+                auto array = arg_as_array_of_var(data, args, 1);
+                const auto & var = arg_as_var(data, args, 2);
+
+                problem.post(Element{var, idx - 1_i, array});
+            }
+            else if (id == "int_abs") {
+                const auto & var1 = arg_as_var(data, args, 0);
+                const auto & var2 = arg_as_var(data, args, 1);
+                problem.post(Abs{var1, var2});
+            }
+            else if (id == "int_div") {
+                throw UnimplementedException{};
+            }
+            else if (id == "int_eq") {
+                const auto & var1 = arg_as_var(data, args, 0);
+                const auto & var2 = arg_as_var(data, args, 1);
+                problem.post(Equals{var1, var2});
+            }
+            else if (id == "int_eq_reif") {
+                throw UnimplementedException{};
+            }
+            else if (id == "int_le" || id == "int_lt") {
+                throw UnimplementedException{};
+            }
+            else if (id == "int_le_reif" || id == "int_lt_reif") {
+                throw UnimplementedException{};
+            }
+            else if (id == "int_lin_eq" || id == "int_lin_le") {
+                auto coeffs = arg_as_array_of_integer(data, args, 0);
                 const auto & vars = get<vector<j::FlatZincJso>>(args.at(1));
                 Integer total{static_cast<long long>(get<double>(args.at(2)))};
                 if (coeffs->size() != vars.size())
@@ -224,21 +324,51 @@ auto main(int argc, char * argv[]) -> int
 
                 SumOf<Weighted<IntegerVariableID>> terms;
                 for (size_t c = 0; c < coeffs->size(); ++c)
-                    terms += (*coeffs)[c] * integer_variables.at(get<string>(vars[c]));
+                    terms += (*coeffs)[c] * data.integer_variables.at(get<string>(vars[c]));
 
-                if (id == "int_lin_eq")
+                if (id.ends_with("_eq"))
                     problem.post(terms == total);
                 else
                     problem.post(terms <= total);
             }
-            else if (id == "glasgow_alldifferent") {
-                const auto & vars = variable_arrays.at(get<string>(args.at(0)));
-                problem.post(AllDifferent{vars});
+            else if (id == "int_lin_eq_reif" || id == "int_lin_le_reif") {
+                throw UnimplementedException{};
             }
-            else if (id == "glasgow_ne") {
-                const auto & var1 = integer_variables.at(get<string>(args.at(0)));
-                const auto & var2 = integer_variables.at(get<string>(args.at(1)));
+            else if (id == "int_lin_ne") {
+                throw UnimplementedException{};
+            }
+            else if (id == "int_lin_ne_reif") {
+                throw UnimplementedException{};
+            }
+            else if (id == "int_max" || id == "int_min") {
+                throw UnimplementedException{};
+            }
+            else if (id == "int_mod") {
+                throw UnimplementedException{};
+            }
+            else if (id == "int_ne" || id == "glasgow_ne") {
+                const auto & var1 = arg_as_var(data, args, 0);
+                const auto & var2 = arg_as_var(data, args, 1);
                 problem.post(NotEquals{var1, var2});
+            }
+            else if (id == "int_ne_reif") {
+                throw UnimplementedException{};
+            }
+            else if (id == "int_plus") {
+                throw UnimplementedException{};
+            }
+            else if (id == "int_pow") {
+                throw UnimplementedException{};
+            }
+            else if (id == "int_times") {
+                throw UnimplementedException{};
+            }
+            else if (id == "set_in") {
+                throw UnimplementedException{};
+            }
+            else if (id == "glasgow_alldifferent") {
+                const auto & vars = arg_as_array_of_var(data, args, 0);
+                problem.post(AllDifferent{vars});
             }
             else
                 throw FlatZincInterfaceError{fmt::format("Unknown flatzinc constraint {} in {}", id, fznname)};
@@ -247,10 +377,10 @@ auto main(int argc, char * argv[]) -> int
         switch (fzn.solve.method) {
         case j::Method::SATISFY: break;
         case j::Method::MINIMIZE:
-            problem.minimise(integer_variables.at(get<string>(*fzn.solve.objective)));
+            problem.minimise(data.integer_variables.at(get<string>(*fzn.solve.objective)));
             break;
         case j::Method::MAXIMIZE:
-            problem.maximise(integer_variables.at(get<string>(*fzn.solve.objective)));
+            problem.maximise(data.integer_variables.at(get<string>(*fzn.solve.objective)));
             break;
         }
 
@@ -259,11 +389,11 @@ auto main(int argc, char * argv[]) -> int
             SolveCallbacks{
                 .solution = [&](const CurrentState & s) -> bool {
                     for (const auto & name : fzn.output) {
-                        if (integer_variables.contains(name))
-                            println(cout, "{} = {};", name, s(integer_variables.at(name)));
-                        else if (variable_arrays.contains(name)) {
+                        if (data.integer_variables.contains(name))
+                            println(cout, "{} = {};", name, s(data.integer_variables.at(name)));
+                        else if (data.variable_arrays.contains(name)) {
                             vector<string> vals;
-                            for (auto & v : variable_arrays.at(name))
+                            for (auto & v : data.variable_arrays.at(name))
                                 vals.push_back(fmt::format("{}", s(v)));
                             println(cout, "{} = [{}];", name, fmt::join(vals, ", "));
                         }

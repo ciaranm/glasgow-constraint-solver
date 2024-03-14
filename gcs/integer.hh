@@ -2,6 +2,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INTEGER_HH
 
 #include <functional>
+#include <limits>
 #include <ostream>
 #include <string>
 
@@ -70,6 +71,16 @@ namespace gcs
         }
 
         ///@}
+
+        static inline const constexpr auto min_value() -> Integer
+        {
+            return Integer(std::numeric_limits<decltype(raw_value)>::min());
+        }
+
+        static inline const constexpr auto max_value() -> Integer
+        {
+            return Integer(std::numeric_limits<decltype(raw_value)>::max());
+        }
     };
 
     ///@{

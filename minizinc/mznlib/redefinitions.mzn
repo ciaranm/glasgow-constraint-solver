@@ -1,4 +1,3 @@
-
 predicate glasgow_ne(var int: a, var int: b);
 
 predicate int_lin_ne(array[int] of int: as, array[int] of var int: bs, int: c) =
