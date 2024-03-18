@@ -9,3 +9,4 @@ constraint alldifferent(as);
 constraint sum(as) = 20;
 solve maximize x + y;
 
+output ["OPTSOL: " ++ show(x + y)];

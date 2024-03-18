@@ -19,5 +19,4 @@ constraint 75*c <= 500;
 % maximize our profit
 solve maximize 400*b + 450*c;
 
-output ["no. of banana cakes = \(b)\n",
-         "no. of chocolate cakes = \(c)\n"];
+output ["OPTSOL: " ++ show(400 * b + 450 * c)];

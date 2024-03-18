@@ -4,3 +4,4 @@ var bool: c;
 constraint (a == b) <-> c;
 
 solve satisfy;
+output ["ENUMSOL: " ++ show(a) ++ " " ++ show(b) ++ " " ++ show(c)];

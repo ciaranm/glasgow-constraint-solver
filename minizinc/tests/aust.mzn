@@ -18,6 +18,4 @@ constraint nsw != v;
 
 solve satisfy;
 
-output ["wa=\(wa)\t nt=\(nt)\t sa=\(sa)\n",
-        "q=\(q)\t nsw=\(nsw)\t v=\(v)\n",
-         "t=", show(t),  "\n"];
+output ["ENUMSOL: wa=\(wa) nt=\(nt) sa=\(sa) q=\(q) nsw=\(nsw) v=\(v) t=\(t)"];

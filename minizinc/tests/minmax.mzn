@@ -6,3 +6,4 @@ var 1..6: d;
 constraint (c = max(a, b));
 constraint (d = min(a, b));
 solve maximize (c - d);
+output ["OPTSOL: " ++ show(c - d)];

@@ -8,3 +8,5 @@ var 5..17: z;
 constraint (x + y == 6);
 constraint (z == as[x] + bs[y]);
 solve satisfy;
+
+output ["ENUMSOL: " ++ show(x) ++ " " ++ show(y) ++ " " ++ show(z)];

@@ -1,0 +1,33 @@
+#!/bin/bash
+
+builddir=$(dirname $1 )
+minizincdir=$2
+testname=$3
+enumeration=$4
+
+export PATH=$builddir:$HOME/.local/bin:$PATH
+
+minizinc --solver $minizincdir/glasgow-for-tests.msc -a $minizincdir/tests/$testname.mzn | tee $testname.glasgow.out || exit 1
+minizinc -a $minizincdir/tests/$testname.mzn | tee $testname.default.out || exit 2
+
+if [[ "$enumeration" == "true" ]] ; then
+    grep -q '^ENUMSOL:' < $testname.glasgow.out || exit 3
+    grep '^ENUMSOL:' < $testname.glasgow.out | sort > $testname.glasgow.sols
+    grep '^ENUMSOL:' < $testname.default.out | sort > $testname.default.sols
+
+    if ! diff -u $testname.glasgow.sols $testname.default.sols ; then
+        echo "found different enumeration solutions"
+        exit 4
+    fi
+else
+    grep -q '^OPTSOL:' < $testname.glasgow.out || exit 5
+    grep '^OPTSOL:' < $testname.glasgow.out | tail -n1 > $testname.glasgow.sols
+    grep '^OPTSOL:' < $testname.default.out | tail -n1 > $testname.default.sols
+
+    if ! diff -u $testname.glasgow.sols $testname.default.sols ; then
+        echo "found different objective solutions"
+        exit 6
+    fi
+fi
+
+exit 0

@@ -31,4 +31,4 @@ constraint alldifferent(xs);
 
 solve satisfy;
 
-output [join(" ", [show(x) | x in xs])];
+output ["ENUMSOL: " ++ join(" ", [show(x) | x in xs])];

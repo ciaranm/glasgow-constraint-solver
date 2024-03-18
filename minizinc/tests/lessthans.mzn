@@ -10,3 +10,4 @@ constraint (int_lt_reif(a, c, d));
 constraint (int_le_reif(b, c, e));
 
 solve satisfy;
+output ["ENUMSOL: " ++ show(a) ++ " " ++ show(b) ++ " " ++ show(c) ++ " " ++ show(d) ++ " " ++ show(e)];

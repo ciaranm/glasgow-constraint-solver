@@ -4,3 +4,4 @@ var 1..3: x;
 var 1..3: y;
 constraint (a[x] == b[y]);
 solve maximize x + y;
+output ["OPTSOL: " ++ show(x + y)];
