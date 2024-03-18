@@ -1,0 +1,11 @@
+{
+    "id": "com.github.ciaranm.glasgow-constraint-solver",
+    "name": "Glasgow",
+    "description": "The Glasgow Constraint Solver",
+    "version": "0.0.0",
+    "mznlib": "mznlib",
+    "executable": "minizinc/../build/fzn-glasgow",
+    "tags": ["cp", "int"],
+    "stdFlags": ["-a", "-n", "-s", "-t"],
+    "inputType": "JSON"
+}

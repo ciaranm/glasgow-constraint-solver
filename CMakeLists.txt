@@ -49,6 +49,7 @@ enable_testing()
 
 option(GCS_ENABLE_DOXYGEN "Add a doxygen target to generate the documentation" OFF)
 option(GCS_ENABLE_XCSP "Support for the XCSP modelling language" ON)
+option(GCS_ENABLE_MINIZINC "Support for the MiniZinc modelling language" ON)
 option(GCS_ENABLE_EXAMPLES "Build examples" ON)
 option(GCS_DEBUG_MODE "Disable compiler optimisation for debugging" OFF)
 
@@ -84,6 +85,10 @@ if (GCS_ENABLE_XCSP)
     add_subdirectory(xcsp)
 endif (GCS_ENABLE_XCSP)
 
+if (GCS_ENABLE_MINIZINC)
+    add_subdirectory(minizinc)
+endif (GCS_ENABLE_MINIZINC)
+
 Include(FetchContent)
 Set(FETCHCONTENT_QUIET FALSE)
 
@@ -93,6 +98,7 @@ FetchContent_Declare(
         GIT_TAG 6e79e682b726f524310d55dec8ddac4e9c52fb5f # v3.4.0
 )
 FetchContent_MakeAvailable(Catch2)
+SET(CATCH_CONFIG_ENABLE_ALL_STRINGMAKERS ON)
 
 FetchContent_Declare(
         fmt
@@ -101,4 +107,12 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(fmt)
 
-SET(CATCH_CONFIG_ENABLE_ALL_STRINGMAKERS ON)
+if (GCS_ENABLE_MINIZINC)
+    set(JSON_BuildTests OFF CACHE INTERNAL "")
+    FetchContent_Declare(
+        json
+        GIT_REPOSITORY https://github.com/nlohmann/json.git
+        GIT_TAG 9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03 # v3.11.3
+    )
+    FetchContent_MakeAvailable(json)
+endif (GCS_ENABLE_MINIZINC)
