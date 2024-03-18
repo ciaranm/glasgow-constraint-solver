@@ -38,6 +38,7 @@ using std::list;
 using std::mutex;
 using std::nullopt;
 using std::optional;
+using std::pair;
 using std::string;
 using std::thread;
 using std::unique_lock;
@@ -82,7 +83,7 @@ namespace
 
     struct ExtractedData
     {
-        unordered_map<string, IntegerVariableID> integer_variables;
+        unordered_map<string, pair<IntegerVariableID, bool>> integer_variables;
         unordered_map<string, vector<Integer>> constant_arrays;
         unordered_map<string, vector<IntegerVariableID>> variable_arrays;
         list<vector<Integer>> unnamed_constant_arrays;
@@ -131,7 +132,7 @@ namespace
         auto iter = data.integer_variables.find(name);
         if (iter == data.integer_variables.end())
             throw FlatZincInterfaceError{fmt::format("Can't find variable named {}", name)};
-        return iter->second;
+        return iter->second.first;
     }
 }
 
@@ -228,25 +229,31 @@ auto main(int argc, char * argv[]) -> int
 
         for (const auto & [name, vardata] : fzn.variables) {
             string var_type = vardata["type"];
-            if (var_type != "int")
+            if (var_type == "bool") {
+                data.integer_variables.emplace(name, pair{problem.create_integer_variable(0_i, 1_i, name), true});
+            }
+            else if (var_type == "int") {
+                if (! vardata.contains("domain")) {
+                    data.integer_variables.emplace(name,      //
+                        pair{problem.create_integer_variable( //
+                                 Integer::min_value(),
+                                 Integer::max_value(),
+                                 name),
+                            false});
+                }
+                else {
+                    if (vardata["domain"].size() != 1)
+                        throw FlatZincInterfaceError{fmt::format("Can't parse domain for variable {} in {}", name, fznname)};
+                    data.integer_variables.emplace(name,                            //
+                        pair{problem.create_integer_variable(                       //
+                                 Integer{vardata["domain"][0][0].get<long long>()}, //
+                                 Integer{vardata["domain"][0][1].get<long long>()}, //
+                                 name),
+                            false});
+                }
+            }
+            else
                 throw FlatZincInterfaceError{fmt::format("Unknown flatzinc variable type {} for variable {} in {}", var_type, name, fznname)};
-
-            if (! vardata.contains("domain")) {
-                data.integer_variables.emplace(name, //
-                    problem.create_integer_variable( //
-                        Integer::min_value(),
-                        Integer::max_value(),
-                        name));
-            }
-            else {
-                if (vardata["domain"].size() != 1)
-                    throw FlatZincInterfaceError{fmt::format("Can't parse domain for variable {} in {}", name, fznname)};
-                data.integer_variables.emplace(name,                       //
-                    problem.create_integer_variable(                       //
-                        Integer{vardata["domain"][0][0].get<long long>()}, //
-                        Integer{vardata["domain"][0][1].get<long long>()}, //
-                        name));
-            }
         }
 
         for (const auto & [name, arraydata] : fzn.arrays) {
@@ -256,7 +263,7 @@ auto main(int argc, char * argv[]) -> int
             for (const auto & v : arraydata["a"]) {
                 if (v.is_string()) {
                     seen_variable = true;
-                    variables.push_back(data.integer_variables.at(string{v}));
+                    variables.push_back(data.integer_variables.at(string{v}).first);
                 }
                 else {
                     auto val = Integer{v.get<long long>()};
@@ -307,13 +314,32 @@ auto main(int argc, char * argv[]) -> int
                 problem.post(Equals{var1, var2});
             }
             else if (id == "int_eq_reif") {
-                throw UnimplementedException{};
+                const auto & var1 = arg_as_var(data, args, 0);
+                const auto & var2 = arg_as_var(data, args, 1);
+                const auto & reif = arg_as_var(data, args, 2);
+                problem.post(EqualsIff{var1, var2, reif == 1_i});
             }
-            else if (id == "int_le" || id == "int_lt") {
-                throw UnimplementedException{};
+            else if (id == "int_le") {
+                const auto & var1 = arg_as_var(data, args, 0);
+                const auto & var2 = arg_as_var(data, args, 1);
+                problem.post(LessThanEqual{var1, var2});
             }
-            else if (id == "int_le_reif" || id == "int_lt_reif") {
-                throw UnimplementedException{};
+            else if (id == "int_lt") {
+                const auto & var1 = arg_as_var(data, args, 0);
+                const auto & var2 = arg_as_var(data, args, 1);
+                problem.post(LessThan{var1, var2});
+            }
+            else if (id == "int_le_reif") {
+                const auto & var1 = arg_as_var(data, args, 0);
+                const auto & var2 = arg_as_var(data, args, 1);
+                const auto & reif = arg_as_var(data, args, 2);
+                problem.post(LessThanEqualIff{var1, var2, reif == 1_i});
+            }
+            else if (id == "int_lt_reif") {
+                const auto & var1 = arg_as_var(data, args, 0);
+                const auto & var2 = arg_as_var(data, args, 1);
+                const auto & reif = arg_as_var(data, args, 2);
+                problem.post(LessThanIff{var1, var2, reif == 1_i});
             }
             else if (id == "int_lin_eq" || id == "int_lin_le") {
                 auto coeffs = arg_as_array_of_integer(data, args, 0);
@@ -324,7 +350,7 @@ auto main(int argc, char * argv[]) -> int
 
                 SumOf<Weighted<IntegerVariableID>> terms;
                 for (size_t c = 0; c < coeffs->size(); ++c)
-                    terms += (*coeffs)[c] * data.integer_variables.at(get<string>(vars[c]));
+                    terms += (*coeffs)[c] * data.integer_variables.at(get<string>(vars[c])).first;
 
                 if (id.ends_with("_eq"))
                     problem.post(terms == total);
@@ -340,8 +366,17 @@ auto main(int argc, char * argv[]) -> int
             else if (id == "int_lin_ne_reif") {
                 throw UnimplementedException{};
             }
-            else if (id == "int_max" || id == "int_min") {
-                throw UnimplementedException{};
+            else if (id == "int_max") {
+                const auto & var1 = arg_as_var(data, args, 0);
+                const auto & var2 = arg_as_var(data, args, 1);
+                const auto & var3 = arg_as_var(data, args, 2);
+                problem.post(Max{var1, var2, var3});
+            }
+            else if (id == "int_min") {
+                const auto & var1 = arg_as_var(data, args, 0);
+                const auto & var2 = arg_as_var(data, args, 1);
+                const auto & var3 = arg_as_var(data, args, 2);
+                problem.post(Min{var1, var2, var3});
             }
             else if (id == "int_mod") {
                 throw UnimplementedException{};
@@ -351,8 +386,11 @@ auto main(int argc, char * argv[]) -> int
                 const auto & var2 = arg_as_var(data, args, 1);
                 problem.post(NotEquals{var1, var2});
             }
-            else if (id == "int_ne_reif") {
-                throw UnimplementedException{};
+            else if (id == "int_ne_reif" || id == "glasgow_ne_reif") {
+                const auto & var1 = arg_as_var(data, args, 0);
+                const auto & var2 = arg_as_var(data, args, 1);
+                const auto & reif = arg_as_var(data, args, 2);
+                problem.post(EqualsIff{var1, var2, reif != 1_i});
             }
             else if (id == "int_plus") {
                 throw UnimplementedException{};
@@ -377,10 +415,10 @@ auto main(int argc, char * argv[]) -> int
         switch (fzn.solve.method) {
         case j::Method::SATISFY: break;
         case j::Method::MINIMIZE:
-            problem.minimise(data.integer_variables.at(get<string>(*fzn.solve.objective)));
+            problem.minimise(data.integer_variables.at(get<string>(*fzn.solve.objective)).first);
             break;
         case j::Method::MAXIMIZE:
-            problem.maximise(data.integer_variables.at(get<string>(*fzn.solve.objective)));
+            problem.maximise(data.integer_variables.at(get<string>(*fzn.solve.objective)).first);
             break;
         }
 
@@ -389,8 +427,13 @@ auto main(int argc, char * argv[]) -> int
             SolveCallbacks{
                 .solution = [&](const CurrentState & s) -> bool {
                     for (const auto & name : fzn.output) {
-                        if (data.integer_variables.contains(name))
-                            println(cout, "{} = {};", name, s(data.integer_variables.at(name)));
+                        if (data.integer_variables.contains(name)) {
+                            auto vardata = data.integer_variables.at(name);
+                            if (vardata.second)
+                                println(cout, "{} = {};", name, s(vardata.first) == 1_i ? "true" : "false");
+                            else
+                                println(cout, "{} = {};", name, s(vardata.first));
+                        }
                         else if (data.variable_arrays.contains(name)) {
                             vector<string> vals;
                             for (auto & v : data.variable_arrays.at(name))

@@ -1,4 +1,5 @@
 predicate glasgow_ne(var int: a, var int: b);
+predicate glasgow_ne_reif(var int: a, var int: b, var bool: c);
 
 predicate int_lin_ne(array[int] of int: as, array[int] of var int: bs, int: c) =
     if ((as == [-1, 1] \/ as == [1, -1]) /\ c == 0) then
