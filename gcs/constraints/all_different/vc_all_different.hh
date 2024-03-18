@@ -11,9 +11,10 @@ namespace gcs
     namespace innards
     {
         [[nodiscard]] auto propagate_non_gac_alldifferent(
-            const ConstraintStateHandle & unassigned_handle, State & state) -> innards::Inference;
+            const ConstraintStateHandle & unassigned_handle, State & state,
+            ProofLogger * const logger) -> innards::Inference;
 
-        auto define_clique_not_equals_encoding(gcs::innards::State & state, Propagators & propagators,
+        auto define_clique_not_equals_encoding(ProofModel & model,
             const std::vector<IntegerVariableID> & vars) -> void;
     }
 
@@ -33,7 +34,7 @@ namespace gcs
         explicit VCAllDifferent(std::vector<IntegerVariableID> vars);
 
         virtual auto describe_for_proof() -> std::string override;
-        virtual auto install(innards::Propagators &, innards::State &) && -> void override;
+        virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
     };
 }

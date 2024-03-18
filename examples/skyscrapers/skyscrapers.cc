@@ -2,7 +2,7 @@
 #include <gcs/constraints/arithmetic.hh>
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/equals.hh>
-#include <gcs/constraints/linear_equality.hh>
+#include <gcs/constraints/linear.hh>
 #include <gcs/presolvers/auto_table.hh>
 #include <gcs/problem.hh>
 #include <gcs/search_heuristics.hh>

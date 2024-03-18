@@ -8,7 +8,7 @@
 #include <gcs/extensional.hh>
 #include <gcs/integer.hh>
 #include <gcs/problem.hh>
-#include <gcs/proof_options.hh>
+#include <gcs/proof.hh>
 #include <gcs/search_heuristics.hh>
 #include <gcs/solve.hh>
 #include <gcs/stats.hh>
@@ -24,7 +24,7 @@
 #include <gcs/constraints/element.hh>
 #include <gcs/constraints/equals.hh>
 #include <gcs/constraints/knapsack.hh>
-#include <gcs/constraints/linear_equality.hh>
+#include <gcs/constraints/linear.hh>
 #include <gcs/constraints/logical.hh>
 #include <gcs/constraints/min_max.hh>
 #include <gcs/constraints/n_value.hh>

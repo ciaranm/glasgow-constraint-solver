@@ -14,7 +14,7 @@ namespace gcs
     public:
         using CircuitBase::CircuitBase;
         [[nodiscard]] auto clone() const -> std::unique_ptr<Constraint> override;
-        auto install(innards::Propagators &, innards::State &) && -> void override;
+        virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
     };
 }
 #endif // GLASGOW_CONSTRAINT_SOLVER_CIRCUIT_PREVENT_HH

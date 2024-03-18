@@ -113,7 +113,7 @@ namespace gcs::test_innards
     auto solve_for_tests_with_callbacks(Problem & p, const std::optional<std::string> & proof_name, const SolutionCallback_ & f, const TraceCallback_ & t) -> void
     {
         solve_with(p,
-            SolveCallbacks{.solution = f, .trace = t, .branch = branch_randomly(p)},
+            SolveCallbacks{.solution = f, .trace = t, .branch = branch_randomly(p), .guess = guess_randomly()},
             proof_name ? make_optional<ProofOptions>(*proof_name + ".opb", *proof_name + ".pbp") : std::nullopt);
     }
 

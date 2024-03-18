@@ -6,6 +6,7 @@
 
 using std::min;
 using std::move;
+using std::optional;
 using std::unique_ptr;
 using std::vector;
 
@@ -23,7 +24,7 @@ auto LexSmartTable::clone() const -> unique_ptr<Constraint>
     return make_unique<LexSmartTable>(_vars_1, _vars_2);
 }
 
-auto LexSmartTable::install(Propagators & propagators, State & initial_state) && -> void
+auto LexSmartTable::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
     // Build the constraint as smart table
     // Question: Do we trust this encoding as a smart table?
@@ -46,7 +47,7 @@ auto LexSmartTable::install(Propagators & propagators, State & initial_state) &&
     all_vars.insert(all_vars.end(), _vars_2.begin(), _vars_2.end());
 
     auto smt_table = SmartTable{all_vars, tuples};
-    move(smt_table).install(propagators, initial_state);
+    move(smt_table).install(propagators, initial_state, optional_model);
 }
 
 auto LexSmartTable::describe_for_proof() -> std::string

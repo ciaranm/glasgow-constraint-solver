@@ -1,89 +1,27 @@
-#include <gcs/exception.hh>
-#include <gcs/innards/linear_utils.hh>
-#include <gcs/innards/proof.hh>
+#include <gcs/constraints/linear/propagate.hh>
+#include <gcs/constraints/linear/utils.hh>
+#include <gcs/innards/proofs/proof_logger.hh>
+#include <gcs/innards/proofs/variable_constraints_tracker.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/innards/variable_id_utils.hh>
 
 #include <util/enumerate.hh>
-#include <util/overloaded.hh>
 
-#include <algorithm>
-#include <cstdlib>
 #include <sstream>
+#include <string>
 #include <type_traits>
-#include <vector>
-
-using namespace gcs;
-using namespace gcs::innards;
 
 using std::is_same_v;
+using std::optional;
 using std::pair;
-using std::remove_if;
-using std::sort;
 using std::string;
 using std::stringstream;
 using std::to_string;
 using std::variant;
 using std::vector;
 
-auto gcs::innards::tidy_up_linear(const WeightedSum & coeff_vars) -> pair<TidiedUpLinear, Integer>
-{
-    SumOf<Weighted<SimpleIntegerVariableID>> simplified_sum;
-    Integer modifier{0_i};
-    for (const auto & [c, v] : coeff_vars.terms)
-        overloaded{
-            [&, &c = c](const SimpleIntegerVariableID & v) { simplified_sum += c * v; },
-            [&, &c = c](const ConstantIntegerVariableID & v) { modifier -= c * v.const_value; },
-            [&, &c = c](const ViewOfIntegerVariableID & v) {
-                simplified_sum += (v.negate_first ? -c : c) * v.actual_variable;
-                modifier -= c * v.then_add;
-            }}
-            .visit(v);
-
-    sort(simplified_sum.terms.begin(), simplified_sum.terms.end(),
-        [](const Weighted<SimpleIntegerVariableID> & a, const Weighted<SimpleIntegerVariableID> & b) {
-            return a.variable < b.variable;
-        });
-
-    // same variable appears twice? bring in its coefficient, and rewrite future
-    // coefficients to be zero
-    auto c = simplified_sum.terms.begin();
-    while (c != simplified_sum.terms.end()) {
-        auto c_next = next(c);
-        while (c_next != simplified_sum.terms.end() && c_next->variable == c->variable) {
-            c->coefficient += c_next->coefficient;
-            c_next->coefficient = 0_i;
-            ++c_next;
-        }
-        c = c_next;
-    }
-
-    // remove zero coefficients
-    simplified_sum.terms.erase(remove_if(simplified_sum.terms.begin(), simplified_sum.terms.end(),
-                                   [](const Weighted<SimpleIntegerVariableID> & cv) {
-                                       return cv.coefficient == 0_i;
-                                   }),
-        simplified_sum.terms.end());
-
-    if (simplified_sum.terms.end() == find_if(simplified_sum.terms.begin(), simplified_sum.terms.end(), [](const Weighted<SimpleIntegerVariableID> & cv) -> bool {
-            return cv.coefficient != 1_i;
-        })) {
-        SumOf<SimpleIntegerVariableID> simple_result;
-        for (auto & [_, v] : simplified_sum.terms)
-            simple_result.terms.emplace_back(v);
-        return pair{simple_result, modifier};
-    }
-    else if (simplified_sum.terms.end() == find_if(simplified_sum.terms.begin(), simplified_sum.terms.end(), [](const Weighted<SimpleIntegerVariableID> & cv) -> bool {
-                 return cv.coefficient != 1_i && cv.coefficient != -1_i;
-             })) {
-        SumOf<PositiveOrNegative<SimpleIntegerVariableID>> sum_result;
-        for (auto & [c, v] : simplified_sum.terms)
-            sum_result.terms.push_back(PositiveOrNegative<SimpleIntegerVariableID>{c == 1_i, v});
-        return pair{sum_result, modifier};
-    }
-    else
-        return pair{simplified_sum, modifier};
-}
+using namespace gcs;
+using namespace gcs::innards;
 
 namespace
 {
@@ -142,15 +80,15 @@ namespace
         return true;
     }
 
-    auto propagate_linear_or_sum(const auto & coeff_vars, Integer value, State & state, bool equality,
-        const std::optional<ProofLine> & proof_line) -> pair<Inference, PropagatorState>
+    auto propagate_linear_or_sum(const auto & coeff_vars, Integer value, State & state, ProofLogger * const logger,
+        bool equality, const optional<ProofLine> & proof_line) -> pair<Inference, PropagatorState>
     {
         vector<pair<Integer, Integer>> bounds;
         bounds.reserve(coeff_vars.terms.size());
 
-        auto justify = [&](const SimpleIntegerVariableID & change_var, Proof & proof,
+        auto justify = [&](const SimpleIntegerVariableID & change_var, ProofLogger & logger,
                            bool second_constraint_for_equality, const string & to_what) -> void {
-            proof.emit_proof_comment("justifying integer linear inequality " + debug_string(IntegerVariableID{change_var}) + " " + to_what);
+            logger.emit_proof_comment("justifying integer linear inequality " + debug_string(IntegerVariableID{change_var}) + " " + to_what);
 
             vector<pair<Integer, variant<ProofLine, string>>> terms_to_sum;
             terms_to_sum.emplace_back(1_i, second_constraint_for_equality ? *proof_line + 1 : *proof_line);
@@ -162,19 +100,14 @@ namespace
                     continue;
                 }
 
-                if (proof.has_bit_representation(get_var(cv))) {
-                    // the following line of logic is definitely correct until you inevitably
-                    // discover otherwise
-                    bool upper = (get_coeff(cv) < 0_i) != second_constraint_for_equality;
+                // the following line of logic is definitely correct until you inevitably
+                // discover otherwise
+                bool upper = (get_coeff(cv) < 0_i) != second_constraint_for_equality;
 
-                    auto proof_line = proof.get_or_emit_pol_term_for_bound_in_bits(state, upper,
-                        get_var(cv), upper ? state.upper_bound(get_var(cv)) : state.lower_bound(get_var(cv)));
+                auto proof_line = logger.variable_constraints_tracker().need_pol_item_defining_literal(
+                    upper ? get_var(cv) < state.upper_bound(get_var(cv) + 1_i) : get_var(cv) >= state.lower_bound(get_var(cv)));
 
-                    terms_to_sum.emplace_back(abs(get_coeff(cv)), proof_line);
-                }
-                else {
-                    throw UnimplementedException{};
-                }
+                terms_to_sum.emplace_back(abs(get_coeff(cv)), proof_line);
             }
 
             stringstream step;
@@ -194,24 +127,45 @@ namespace
             }
             if (change_var_coeff != 1_i)
                 step << " " << abs(change_var_coeff) << " d";
-            proof.emit_proof_line(step.str(), ProofLevel::Temporary);
+            logger.emit_proof_line(step.str(), ProofLevel::Temporary);
+        };
+
+        auto reason = [&](const SimpleIntegerVariableID & var, bool invert) {
+            Reason reason;
+            for (const auto & cv : coeff_vars.terms) {
+                if (get_var(cv) != var) {
+                    if ((get_coeff(cv) < 0_i) != invert) {
+                        reason.emplace_back(get_var(cv) < state.upper_bound(get_var(cv)) + 1_i);
+                    }
+                    else {
+                        reason.emplace_back(get_var(cv) >= state.lower_bound(get_var(cv)));
+                    }
+                }
+            }
+            return reason;
         };
 
         auto infer = [&](int p, const SimpleIntegerVariableID & var, Integer remainder, const auto coeff, bool second_constraint_for_equality) {
             if constexpr (is_same_v<decltype(coeff), const bool>) {
                 if (coeff) {
-                    if (bounds[p].second >= (1_i + remainder))
-                        return state.infer_less_than(var, 1_i + remainder, JustifyExplicitly{[&](Proof & proof) {
-                            justify(var, proof, second_constraint_for_equality, "< " + to_string((1_i + remainder).raw_value));
-                        }});
+                    if (bounds[p].second >= (1_i + remainder)) {
+                        auto justf = [&]() {
+                            justify(var, *logger, second_constraint_for_equality, "< " + to_string((1_i + remainder).raw_value));
+                        };
+                        auto just = JustifyExplicitly{justf, reason(var, second_constraint_for_equality)};
+                        return state.infer_less_than(logger, var, 1_i + remainder, just);
+                    }
                     else
                         return Inference::NoChange;
                 }
                 else {
-                    if (bounds[p].first < -remainder)
-                        return state.infer_greater_than_or_equal(var, -remainder, JustifyExplicitly{[&](Proof & proof) {
-                            justify(var, proof, second_constraint_for_equality, ">= " + to_string((-remainder).raw_value));
-                        }});
+                    if (bounds[p].first < -remainder) {
+                        auto justf = [&]() {
+                            justify(var, *logger, second_constraint_for_equality, ">= " + to_string((-remainder).raw_value));
+                        };
+                        auto just = JustifyExplicitly{justf, reason(var, second_constraint_for_equality)};
+                        return state.infer_greater_than_or_equal(logger, var, -remainder, just);
+                    }
                     else
                         return Inference::NoChange;
                 }
@@ -219,36 +173,48 @@ namespace
             else {
                 // lots of conditionals to get the rounding right...
                 if (coeff > 0_i && remainder >= 0_i) {
-                    if (bounds[p].second >= (1_i + remainder / coeff))
-                        return state.infer_less_than(var, 1_i + remainder / coeff, JustifyExplicitly{[&](Proof & proof) {
-                            justify(var, proof, second_constraint_for_equality, "< " + to_string((1_i + remainder / coeff).raw_value));
-                        }});
+                    if (bounds[p].second >= (1_i + remainder / coeff)) {
+                        auto justf = [&]() {
+                            justify(var, *logger, second_constraint_for_equality, "< " + to_string((1_i + remainder / coeff).raw_value));
+                        };
+                        auto just = JustifyExplicitly{justf, reason(var, second_constraint_for_equality)};
+                        return state.infer_less_than(logger, var, 1_i + remainder / coeff, just);
+                    }
                     else
                         return Inference::NoChange;
                 }
                 else if (coeff > 0_i && remainder < 0_i) {
                     auto div_with_rounding = -((-remainder + coeff - 1_i) / coeff);
-                    if (bounds[p].second >= 1_i + div_with_rounding)
-                        return state.infer_less_than(var, 1_i + div_with_rounding, JustifyExplicitly{[&](Proof & proof) {
-                            justify(var, proof, second_constraint_for_equality, "< " + to_string((1_i + div_with_rounding).raw_value));
-                        }});
+                    if (bounds[p].second >= 1_i + div_with_rounding) {
+                        auto justf = [&]() {
+                            justify(var, *logger, second_constraint_for_equality, "< " + to_string((1_i + div_with_rounding).raw_value));
+                        };
+                        auto just = JustifyExplicitly{justf, reason(var, second_constraint_for_equality)};
+                        return state.infer_less_than(logger, var, 1_i + div_with_rounding, just);
+                    }
                     else
                         return Inference::NoChange;
                 }
                 else if (coeff < 0_i && remainder >= 0_i) {
-                    if (bounds[p].first < remainder / coeff)
-                        return state.infer_greater_than_or_equal(var, remainder / coeff, JustifyExplicitly{[&](Proof & proof) {
-                            justify(var, proof, second_constraint_for_equality, ">= " + to_string((remainder / coeff).raw_value));
-                        }});
+                    if (bounds[p].first < remainder / coeff) {
+                        auto justf = [&]() {
+                            justify(var, *logger, second_constraint_for_equality, ">= " + to_string((remainder / coeff).raw_value));
+                        };
+                        auto just = JustifyExplicitly{justf, reason(var, second_constraint_for_equality)};
+                        return state.infer_greater_than_or_equal(logger, var, remainder / coeff, just);
+                    }
                     else
                         return Inference::NoChange;
                 }
                 else if (coeff < 0_i && remainder < 0_i) {
                     auto div_with_rounding = (-remainder + -coeff - 1_i) / -coeff;
-                    if (bounds[p].first < div_with_rounding)
-                        return state.infer_greater_than_or_equal(var, div_with_rounding, JustifyExplicitly{[&](Proof & proof) {
-                            justify(var, proof, second_constraint_for_equality, ">= " + to_string((div_with_rounding).raw_value));
-                        }});
+                    if (bounds[p].first < div_with_rounding) {
+                        auto justf = [&]() {
+                            justify(var, *logger, second_constraint_for_equality, ">= " + to_string((div_with_rounding).raw_value));
+                        };
+                        auto just = JustifyExplicitly{justf, reason(var, second_constraint_for_equality)};
+                        return state.infer_greater_than_or_equal(logger, var, div_with_rounding, just);
+                    }
                     else
                         return Inference::NoChange;
                 }
@@ -353,20 +319,20 @@ namespace
     }
 }
 
-auto gcs::innards::propagate_linear(const SumOf<Weighted<SimpleIntegerVariableID>> & coeff_vars, Integer value, State & state, bool equality,
-    const std::optional<ProofLine> & proof_line) -> pair<Inference, PropagatorState>
+auto gcs::innards::propagate_linear(const SumOf<Weighted<SimpleIntegerVariableID>> & coeff_vars, Integer value, State & state,
+    ProofLogger * const logger, bool equality, const optional<ProofLine> & proof_line) -> pair<Inference, PropagatorState>
 {
-    return propagate_linear_or_sum(coeff_vars, value, state, equality, proof_line);
+    return propagate_linear_or_sum(coeff_vars, value, state, logger, equality, proof_line);
 }
 
-auto gcs::innards::propagate_sum(const SumOf<PositiveOrNegative<SimpleIntegerVariableID>> & coeff_vars, Integer value, State & state, bool equality,
-    const std::optional<ProofLine> & proof_line) -> pair<Inference, PropagatorState>
+auto gcs::innards::propagate_sum(const SumOf<PositiveOrNegative<SimpleIntegerVariableID>> & coeff_vars, Integer value, State & state,
+    ProofLogger * const logger, bool equality, const optional<ProofLine> & proof_line) -> pair<Inference, PropagatorState>
 {
-    return propagate_linear_or_sum(coeff_vars, value, state, equality, proof_line);
+    return propagate_linear_or_sum(coeff_vars, value, state, logger, equality, proof_line);
 }
 
-auto gcs::innards::propagate_sum_all_positive(const SumOf<SimpleIntegerVariableID> & coeff_vars, Integer value, State & state, bool equality,
-    const std::optional<ProofLine> & proof_line) -> pair<Inference, PropagatorState>
+auto gcs::innards::propagate_sum_all_positive(const SumOf<SimpleIntegerVariableID> & coeff_vars, Integer value, State & state,
+    ProofLogger * const logger, bool equality, const optional<ProofLine> & proof_line) -> pair<Inference, PropagatorState>
 {
-    return propagate_linear_or_sum(coeff_vars, value, state, equality, proof_line);
+    return propagate_linear_or_sum(coeff_vars, value, state, logger, equality, proof_line);
 }

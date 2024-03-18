@@ -1,9 +1,9 @@
 #include <gcs/exception.hh>
-
 #include <gcs/innards/extensional_utils.hh>
 #include <gcs/innards/inference_tracker.hh>
-#include <gcs/innards/linear_utils.hh>
-#include <gcs/innards/proof.hh>
+#include <gcs/innards/proofs/proof_logger.hh>
+#include <gcs/innards/proofs/proof_model.hh>
+#include <gcs/innards/proofs/variable_constraints_tracker.hh>
 #include <gcs/innards/propagators.hh>
 
 #include <util/enumerate.hh>
@@ -39,8 +39,6 @@ namespace
 
 struct Propagators::Imp
 {
-    optional<Proof> & optional_proof;
-
     vector<PropagationFunction> propagation_functions;
     vector<InitialisationFunction> initialisation_functions;
 
@@ -57,15 +55,10 @@ struct Propagators::Imp
     vector<TriggerIDs> iv_triggers;
     vector<long> degrees;
     bool first = true;
-
-    Imp(optional<Proof> & o) :
-        optional_proof(o)
-    {
-    }
 };
 
-Propagators::Propagators(optional<Proof> & o) :
-    _imp(new Imp(o))
+Propagators::Propagators() :
+    _imp(new Imp())
 {
 }
 
@@ -75,71 +68,45 @@ Propagators::Propagators(Propagators &&) = default;
 
 auto Propagators::operator=(Propagators &&) -> Propagators & = default;
 
-auto Propagators::model_contradiction(const string & explain_yourself) -> void
+auto Propagators::model_contradiction(const State &, ProofModel * const optional_model, const string & explain_yourself) -> void
 {
-    if (_imp->optional_proof)
-        _imp->optional_proof->add_cnf_to_model({});
+    if (optional_model)
+        optional_model->add_constraint({});
 
-    install([explain_yourself = explain_yourself](State &) -> pair<Inference, PropagatorState> {
+    install([explain_yourself = explain_yourself](State &, ProofLogger * const) -> pair<Inference, PropagatorState> {
         return pair{Inference::Contradiction, PropagatorState::Enable};
     },
         Triggers{}, "model contradiction");
 }
 
-auto Propagators::trim_lower_bound(const State & state, IntegerVariableID var, Integer val, const string & x) -> void
+auto Propagators::trim_lower_bound(const State & state, ProofModel * const optional_model, IntegerVariableID var, Integer val, const string & x) -> void
 {
     if (state.lower_bound(var) < val) {
         if (state.upper_bound(var) >= val) {
-            define_cnf(state, {var >= val});
-            install([var, val](State & state) {
-                return pair{state.infer(var >= val, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
-            },
-                Triggers{}, "trimmed lower bound");
+            if (optional_model)
+                optional_model->add_constraint({var >= val});
+            install_initialiser([var, val](State & state, ProofLogger * const logger) {
+                return state.infer(logger, var >= val, JustifyUsingRUP{Literals{}});
+            });
         }
         else
-            model_contradiction("Trimmed lower bound of " + debug_string(var) + " due to " + x + " is outside its domain");
+            model_contradiction(state, optional_model, "Trimmed lower bound of " + debug_string(var) + " due to " + x + " is outside its domain");
     }
 }
 
-auto Propagators::trim_upper_bound(const State & state, IntegerVariableID var, Integer val, const string & x) -> void
+auto Propagators::trim_upper_bound(const State & state, ProofModel * const optional_model, IntegerVariableID var, Integer val, const string & x) -> void
 {
     if (state.upper_bound(var) > val) {
         if (state.lower_bound(var) <= val) {
-            define_cnf(state, {var < val + 1_i});
-            install([var, val](State & state) {
-                return pair{state.infer(var < val + 1_i, JustifyUsingRUP{}), PropagatorState::DisableUntilBacktrack};
-            },
-                Triggers{}, "trimmed upper bound");
+            if (optional_model)
+                optional_model->add_constraint({var < val + 1_i});
+            install_initialiser([var, val](State & state, ProofLogger * const logger) {
+                return state.infer(logger, var < val + 1_i, JustifyUsingRUP{Literals{}});
+            });
         }
         else
-            model_contradiction("Trimmed upper bound of " + debug_string(var) + " due to " + x + " is outside its domain");
+            model_contradiction(state, optional_model, "Trimmed upper bound of " + debug_string(var) + " due to " + x + " is outside its domain");
     }
-}
-
-auto Propagators::define_cnf(const State &, const Literals & c) -> optional<ProofLine>
-{
-    if (_imp->optional_proof)
-        return _imp->optional_proof->add_cnf_to_model(c);
-    else
-        return nullopt;
-}
-
-auto Propagators::define(const State &, const WeightedPseudoBooleanLessEqual & ineq,
-    const optional<HalfReifyOnConjunctionOf> & half_reif) -> optional<ProofLine>
-{
-    if (_imp->optional_proof)
-        return _imp->optional_proof->add_to_model(ineq, half_reif);
-    else
-        return nullopt;
-}
-
-auto Propagators::define(const State &, const WeightedPseudoBooleanEquality & eq,
-    const optional<HalfReifyOnConjunctionOf> & half_reif) -> pair<optional<ProofLine>, optional<ProofLine>>
-{
-    if (_imp->optional_proof)
-        return _imp->optional_proof->add_to_model(eq, half_reif);
-    else
-        return pair{nullopt, nullopt};
 }
 
 auto Propagators::install(PropagationFunction && f, const Triggers & triggers, const string &) -> void
@@ -165,10 +132,10 @@ auto Propagators::install(PropagationFunction && f, const Triggers & triggers, c
 
 auto Propagators::install_tracking(TrackingPropagationFunction && f, const Triggers & triggers, const string & n) -> void
 {
-    install([f = move(f)](State & state) -> pair<Inference, PropagatorState> {
+    install([f = move(f)](State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
         try {
             InferenceTracker tracker{state};
-            auto result = f(state, tracker);
+            auto result = f(state, logger, tracker);
             return pair{tracker.inference_so_far(), result};
         }
         catch (const TrackedPropagationFailed &) {
@@ -228,21 +195,22 @@ namespace
     }
 }
 
-auto Propagators::define_and_install_table(State & state, const vector<IntegerVariableID> & vars,
+auto Propagators::define_and_install_table(State & state, ProofModel * const optional_model, const vector<IntegerVariableID> & vars,
     ExtensionalTuples permitted, const string & x) -> void
 {
     visit([&](auto && permitted) {
         if (depointinate(permitted).empty()) {
-            model_contradiction("Empty table constraint from " + x);
+            model_contradiction(state, optional_model, "Empty table constraint from " + x);
             return;
         }
 
         int id = _imp->propagation_functions.size();
-        auto selector = create_auxilliary_integer_variable(state, 0_i, Integer(depointinate(permitted).size() - 1), "table",
-            IntegerVariableProofRepresentation::DirectOnly);
+        auto selector = state.allocate_integer_variable_with_state(0_i, Integer(depointinate(permitted).size() - 1));
+        if (optional_model)
+            optional_model->set_up_integer_variable(selector, 0_i, Integer(depointinate(permitted).size() - 1), "aux_table", nullopt);
 
         // pb encoding, if necessary
-        if (want_definitions()) {
+        if (optional_model) {
             for (const auto & [tuple_idx, tuple] : enumerate(depointinate(permitted))) {
                 // selector == tuple_idx -> /\_i vars[i] == tuple[i]
                 bool infeasible = false;
@@ -255,9 +223,9 @@ auto Propagators::define_and_install_table(State & state, const vector<IntegerVa
                         add_lit_unless_immediately_true(lits, var, tuple[var_idx]);
                 }
                 if (infeasible)
-                    define_cnf(state, {selector != Integer(tuple_idx)});
+                    optional_model->add_constraint({selector != Integer(tuple_idx)});
                 else
-                    define(state, lits >= Integer(lits.terms.size() - 1));
+                    optional_model->add_constraint(lits >= Integer(lits.terms.size() - 1));
             }
         }
 
@@ -267,17 +235,20 @@ auto Propagators::define_and_install_table(State & state, const vector<IntegerVa
         trigger_on_change(selector, id);
 
         _imp->propagation_functions.emplace_back([&, table = ExtensionalData{selector, move(vars), move(permitted)}](
-                                                     State & state) -> pair<Inference, PropagatorState> {
-            return propagate_extensional(table, state);
+                                                     State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
+            return propagate_extensional(table, state, logger);
         });
     },
         move(permitted));
 }
 
-auto Propagators::initialise(State & state) const -> void
+auto Propagators::initialise(State & state, ProofLogger * const logger) const -> bool
 {
     for (auto & f : _imp->initialisation_functions)
-        f(state);
+        if (Inference::Contradiction == f(state, logger))
+            return false;
+
+    return true;
 }
 
 auto Propagators::requeue_all_propagators() -> void
@@ -285,14 +256,8 @@ auto Propagators::requeue_all_propagators() -> void
     _imp->first = true;
 }
 
-auto Propagators::propagate(State & state, atomic<bool> * optional_abort_flag) const -> bool
+auto Propagators::propagate(State & state, ProofLogger * const logger, atomic<bool> * optional_abort_flag) const -> bool
 {
-    switch (state.infer_on_objective_variable_before_propagation()) {
-    case Inference::NoChange: break;
-    case Inference::Change: break;
-    case Inference::Contradiction: return false;
-    }
-
     if (_imp->first) {
         // filthy hack: to make trim_lower_bound etc work, on the first pass, we need to
         // guarantee that we're running propagators in numerical order, except our queue
@@ -339,7 +304,7 @@ auto Propagators::propagate(State & state, atomic<bool> * optional_abort_flag) c
             break;
 
         int propagator_id = _imp->queue[--_imp->enqueued_end];
-        auto [inference, propagator_state] = _imp->propagation_functions[propagator_id](state);
+        auto [inference, propagator_state] = _imp->propagation_functions[propagator_id](state, logger);
         ++_imp->total_propagations;
         switch (inference) {
         case Inference::NoChange:
@@ -376,35 +341,6 @@ auto Propagators::propagate(State & state, atomic<bool> * optional_abort_flag) c
     });
 
     return ! contradiction;
-}
-
-auto Propagators::create_auxilliary_integer_variable(State & state, Integer l, Integer u, const std::string & s,
-    const IntegerVariableProofRepresentation rep) -> IntegerVariableID
-{
-    auto result = state.allocate_integer_variable_with_state(l, u);
-    if (_imp->optional_proof)
-        _imp->optional_proof->set_up_integer_variable(result, l, u, "aux_" + s, rep);
-    return result;
-}
-
-auto Propagators::create_proof_flag(const std::string & n) -> ProofFlag
-{
-    if (! _imp->optional_proof)
-        throw UnexpectedException{"trying to create a proof flag but proof logging is not enabled"};
-    return _imp->optional_proof->create_proof_flag(n);
-}
-
-auto Propagators::create_proof_only_integer_variable(Integer l, Integer u, const std::string & s,
-    const IntegerVariableProofRepresentation rep) -> ProofOnlySimpleIntegerVariableID
-{
-    if (! _imp->optional_proof)
-        throw UnexpectedException{"trying to create a proof variable but proof logging is not enabled"};
-    return _imp->optional_proof->create_proof_integer_variable(l, u, s, rep);
-}
-
-auto Propagators::want_definitions() const -> bool
-{
-    return _imp->optional_proof != nullopt;
 }
 
 auto Propagators::fill_in_constraint_stats(Stats & stats) const -> void

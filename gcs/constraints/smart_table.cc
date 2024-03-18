@@ -1,4 +1,6 @@
 #include <gcs/constraints/smart_table.hh>
+#include <gcs/innards/proofs/proof_logger.hh>
+#include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
 
 #include <algorithm>
@@ -20,6 +22,7 @@ using std::make_tuple;
 using std::make_unique;
 using std::map;
 using std::move;
+using std::optional;
 using std::pair;
 using std::set;
 using std::set_difference;
@@ -105,19 +108,15 @@ namespace
             .visit(v);
     }
 
-    auto log_filtering_inference(const ProofFlag & tuple_selector, const Literal & lit, State & state)
+    auto log_filtering_inference(ProofLogger * const logger, const ProofFlag & tuple_selector, const Literal & lit,
+        State & state, const Reason & reason)
     {
-        auto inference = state.infer(TrueLiteral{}, JustifyExplicitly{[&](Proof & proof) -> void {
-            WeightedPseudoBooleanSum terms;
-            proof.emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} + 1_i * (! tuple_selector) + 1_i * lit >= 1_i, ProofLevel::Current);
-        }});
-
-        if (inference != Inference::NoChange) {
-            throw UnexpectedException{"Failed to infer TrueLiteral."};
-        }
+        logger->emit_rup_proof_line_under_reason(state, reason,
+            WeightedPseudoBooleanSum{} + 1_i * (! tuple_selector) + 1_i * lit >= 1_i, ProofLevel::Current);
     }
 
-    auto filter_edge(const SmartEntry & edge, VariableDomainMap & supported_by_tree, const ProofFlag & tuple_selector, State & state) -> void
+    auto filter_edge(const SmartEntry & edge, VariableDomainMap & supported_by_tree, const ProofFlag & tuple_selector, State & state,
+        const Reason & reason, ProofLogger * const logger) -> void
     {
         // Currently filter both domains - might be overkill
         // If the tree was in a better form, think this can be optimised to do less redundant filtering.
@@ -137,11 +136,11 @@ namespace
                         [&](Integer val) { return val > dom_1[0]; });
                     copy_if(dom_1.begin(), dom_1.end(), back_inserter(new_dom_1),
                         [&](Integer val) { return val < dom_2[dom_2.size() - 1]; });
-                    if (state.maybe_proof()) {
+                    if (logger) {
                         if (new_dom_2.size() < dom_2.size())
-                            log_filtering_inference(tuple_selector, deview(binary_entry.var_2) >= (dom_1[0] + 1_i), state);
+                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) >= (dom_1[0] + 1_i), state, reason);
                         if (new_dom_1.size() < dom_1.size())
-                            log_filtering_inference(tuple_selector, deview(binary_entry.var_1) < dom_2[dom_2.size() - 1], state);
+                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) < dom_2[dom_2.size() - 1], state, reason);
                     }
                     break;
                 case SmartEntryConstraint::LessThanEqual:
@@ -149,11 +148,11 @@ namespace
                         [&](Integer val) { return val >= dom_1[0]; });
                     copy_if(dom_1.begin(), dom_1.end(), back_inserter(new_dom_1),
                         [&](Integer val) { return val <= dom_2[dom_2.size() - 1]; });
-                    if (state.maybe_proof()) {
+                    if (logger) {
                         if (new_dom_2.size() < dom_2.size())
-                            log_filtering_inference(tuple_selector, deview(binary_entry.var_2) >= (dom_1[0]), state);
+                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) >= (dom_1[0]), state, reason);
                         if (new_dom_1.size() < dom_1.size())
-                            log_filtering_inference(tuple_selector, deview(binary_entry.var_1) < (dom_2[dom_2.size() - 1] + 1_i), state);
+                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) < (dom_2[dom_2.size() - 1] + 1_i), state, reason);
                     }
                     break;
                 case SmartEntryConstraint::Equal:
@@ -162,14 +161,14 @@ namespace
                         back_inserter(new_dom_1));
                     new_dom_2 = new_dom_1;
 
-                    if (state.maybe_proof()) {
+                    if (logger) {
                         // This one seems particularly annoying. Is it necessary? - not sure
                         if (new_dom_1.size() < dom_1.size()) {
                             vector<Integer> discarded_dom1;
                             set_difference(dom_1.begin(), dom_1.end(), dom_2.begin(), dom_2.end(),
                                 back_inserter(discarded_dom1));
                             for (const auto & val : discarded_dom1) {
-                                log_filtering_inference(tuple_selector, deview(binary_entry.var_1) != val, state);
+                                log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) != val, state, reason);
                             }
                         }
 
@@ -178,7 +177,7 @@ namespace
                             set_difference(dom_2.begin(), dom_2.end(), dom_1.begin(), dom_1.end(),
                                 back_inserter(discarded_dom2));
                             for (const auto & val : discarded_dom2) {
-                                log_filtering_inference(tuple_selector, deview(binary_entry.var_2) != val, state);
+                                log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) != val, state, reason);
                             }
                         }
                     }
@@ -189,8 +188,8 @@ namespace
                         set_difference(dom_2.begin(), dom_2.end(),
                             dom_1.begin(), dom_1.end(),
                             back_inserter(new_dom_2));
-                        if (state.maybe_proof() && new_dom_2.size() < dom_2.size()) {
-                            log_filtering_inference(tuple_selector, deview(binary_entry.var_2) != (dom_1[0]), state);
+                        if (logger && new_dom_2.size() < dom_2.size()) {
+                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) != (dom_1[0]), state, reason);
                         }
                     }
                     else if (dom_2.size() == 1) {
@@ -198,8 +197,8 @@ namespace
                         set_difference(dom_1.begin(), dom_1.end(),
                             dom_2.begin(), dom_2.end(),
                             back_inserter(new_dom_1));
-                        if (state.maybe_proof() && new_dom_1.size() < dom_1.size()) {
-                            log_filtering_inference(tuple_selector, deview(binary_entry.var_1) != (dom_2[0]), state);
+                        if (logger && new_dom_1.size() < dom_1.size()) {
+                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) != (dom_2[0]), state, reason);
                         }
                     }
                     else {
@@ -212,11 +211,11 @@ namespace
                         [&](Integer val) { return val > dom_2[0]; });
                     copy_if(dom_2.begin(), dom_2.end(), back_inserter(new_dom_2),
                         [&](Integer val) { return val < dom_1[dom_1.size() - 1]; });
-                    if (state.maybe_proof()) {
+                    if (logger) {
                         if (new_dom_1.size() < dom_1.size())
-                            log_filtering_inference(tuple_selector, deview(binary_entry.var_1) >= (dom_2[0] + 1_i), state);
+                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) >= (dom_2[0] + 1_i), state, reason);
                         if (new_dom_2.size() < dom_2.size())
-                            log_filtering_inference(tuple_selector, deview(binary_entry.var_2) < dom_1[dom_1.size() - 1], state);
+                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) < dom_1[dom_1.size() - 1], state, reason);
                     }
                     break;
                 case SmartEntryConstraint::GreaterThanEqual:
@@ -224,11 +223,11 @@ namespace
                         [&](Integer val) { return val >= dom_2[0]; });
                     copy_if(dom_2.begin(), dom_2.end(), back_inserter(new_dom_2),
                         [&](Integer val) { return val <= dom_1[dom_1.size() - 1]; });
-                    if (state.maybe_proof()) {
+                    if (logger) {
                         if (new_dom_1.size() < dom_1.size())
-                            log_filtering_inference(tuple_selector, deview(binary_entry.var_1) >= (dom_2[0]), state);
+                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) >= (dom_2[0]), state, reason);
                         if (new_dom_2.size() < dom_2.size())
-                            log_filtering_inference(tuple_selector, deview(binary_entry.var_2) < (dom_1[dom_1.size() - 1] + 1_i), state);
+                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) < (dom_1[dom_1.size() - 1] + 1_i), state, reason);
                     }
                     break;
                 default:
@@ -301,12 +300,13 @@ namespace
             .visit(edge);
     }
 
-    [[nodiscard]] auto filter_and_check_valid(const TreeEdges & tree, VariableDomainMap & supported_by_tree, const ProofFlag & tuple_selector, State & state) -> bool
+    [[nodiscard]] auto filter_and_check_valid(const TreeEdges & tree, VariableDomainMap & supported_by_tree,
+        const ProofFlag & tuple_selector, State & state, const Reason & reason, ProofLogger * const logger) -> bool
     {
         for (int l = tree.size() - 1; l >= 0; --l) {
             for (const auto & edge : tree[l]) {
 
-                filter_edge(edge, supported_by_tree, tuple_selector, state);
+                filter_edge(edge, supported_by_tree, tuple_selector, state, reason, logger);
 
                 bool domain_became_empty = false;
                 overloaded{
@@ -342,11 +342,13 @@ namespace
         unsupported[var] = new_unsupported;
     }
 
-    auto filter_again_and_remove_supported(const TreeEdges & tree, VariableDomainMap & supported_by_tree, VariableDomainMap & unsupported, const ProofFlag & tuple_selector, State & state) -> void
+    auto filter_again_and_remove_supported(const TreeEdges & tree, VariableDomainMap & supported_by_tree,
+        VariableDomainMap & unsupported, const ProofFlag & tuple_selector, State & state, const Reason & reason,
+        ProofLogger * const logger) -> void
     {
         for (int l = tree.size() - 1; l >= 0; --l) {
             for (const auto & edge : tree[l]) {
-                filter_edge(edge, supported_by_tree, tuple_selector, state);
+                filter_edge(edge, supported_by_tree, tuple_selector, state, reason, logger);
 
                 // Collect supported vals for this tree
                 overloaded{
@@ -398,7 +400,8 @@ namespace
     }
 
     [[nodiscard]] auto propagate_using_smart_str(const vector<IntegerVariableID> & selectors, const vector<IntegerVariableID> & vars,
-        const SmartTuples & tuples, const vector<Forest> & forests, State & state, vector<ProofFlag> pb_selectors) -> Inference
+        const SmartTuples & tuples, const vector<Forest> & forests, State & state, const Reason & reason,
+        vector<ProofFlag> pb_selectors, ProofLogger * const logger) -> Inference
     {
 
         bool changed = false, contradiction = false;
@@ -430,10 +433,10 @@ namespace
                 }
 
                 // First pass of filtering supported_by_tree and check of validity
-                if (! filter_and_check_valid(tree, supported_by_tree, pb_selectors[tuple_idx], state)) {
+                if (! filter_and_check_valid(tree, supported_by_tree, pb_selectors[tuple_idx], state, reason, logger)) {
                     // Not feasible
 
-                    switch (state.infer_equal(selectors[tuple_idx], 0_i, NoJustificationNeeded{})) {
+                    switch (state.infer_equal(logger, selectors[tuple_idx], 0_i, NoJustificationNeeded{})) {
                     case Inference::NoChange: break;
                     case Inference::Change: changed = true; break;
                     case Inference::Contradiction: contradiction = true; break;
@@ -445,7 +448,7 @@ namespace
                     return Inference::Contradiction;
                 }
 
-                filter_again_and_remove_supported(tree, supported_by_tree, unsupported, pb_selectors[tuple_idx], state);
+                filter_again_and_remove_supported(tree, supported_by_tree, unsupported, pb_selectors[tuple_idx], state, reason, logger);
             }
 
             if (state.optional_single_value(selectors[tuple_idx]) != 0_i) {
@@ -469,12 +472,14 @@ namespace
 
         for (const auto & var : vars) {
             for (const auto & value : unsupported[var]) {
-                switch (state.infer_not_equal(var, value, JustifyExplicitly{[&](Proof & proof) -> void {
+                auto justf = [&]() -> void {
                     for (unsigned int tuple_idx = 0; tuple_idx < tuples.size(); ++tuple_idx) {
-                        proof.emit_rup_proof_line_under_trail(state, WeightedPseudoBooleanSum{} + 1_i * (var != value) + 1_i * (! pb_selectors[tuple_idx]) >= 1_i,
+                        logger->emit_rup_proof_line_under_reason(state, reason,
+                            WeightedPseudoBooleanSum{} + 1_i * (var != value) + 1_i * (! pb_selectors[tuple_idx]) >= 1_i,
                             ProofLevel::Current);
                     }
-                }})) {
+                };
+                switch (state.infer_not_equal(logger, var, value, JustifyExplicitly{justf, reason})) {
                 case Inference::NoChange: break;
                 case Inference::Change: changed = true; break;
                 case Inference::Contradiction: contradiction = true; break;
@@ -567,92 +572,92 @@ namespace
     }
 
     // For PB model
-    [[nodiscard]] auto make_binary_entry_flag(State & state, Propagators & propagators, const IntegerVariableID & var_1, const IntegerVariableID & var_2, const SmartEntryConstraint & c) -> ProofFlag
+    [[nodiscard]] auto make_binary_entry_flag(State &, ProofModel & model, const IntegerVariableID & var_1, const IntegerVariableID & var_2, const SmartEntryConstraint & c) -> ProofFlag
     {
         switch (c) {
         case SmartEntryConstraint::Equal: {
             // f => var1 == var2
-            auto flag = propagators.create_proof_flag("bin_eq");
-            propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 == 0_i,
+            auto flag = model.create_proof_flag("bin_eq");
+            model.add_constraint(WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 == 0_i,
                 HalfReifyOnConjunctionOf{{flag}});
 
             // !f => var1 != var2
-            auto flag_lt = propagators.create_proof_flag("lt");
-            auto flag_gt = propagators.create_proof_flag("gt");
-            propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i,
+            auto flag_lt = model.create_proof_flag("lt");
+            auto flag_gt = model.create_proof_flag("gt");
+            model.add_constraint(WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i,
                 HalfReifyOnConjunctionOf{{flag_gt}});
-            propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1 >= 0_i,
+            model.add_constraint(WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1 >= 0_i,
                 HalfReifyOnConjunctionOf{{! flag_gt}});
-            propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i,
+            model.add_constraint(WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i,
                 HalfReifyOnConjunctionOf{{flag_lt}});
-            propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 >= 0_i,
+            model.add_constraint(WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 >= 0_i,
                 HalfReifyOnConjunctionOf{{! flag_lt}});
-            propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * flag_lt + 1_i * flag_gt >= 1_i,
+            model.add_constraint(WeightedPseudoBooleanSum{} + 1_i * flag_lt + 1_i * flag_gt >= 1_i,
                 HalfReifyOnConjunctionOf{{! flag}});
             return flag;
         }
 
         case SmartEntryConstraint::GreaterThan: {
-            auto flag = propagators.create_proof_flag("bin_gt");
-            propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i,
+            auto flag = model.create_proof_flag("bin_gt");
+            model.add_constraint(WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i,
                 HalfReifyOnConjunctionOf{{flag}});
-            propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1 >= 0_i,
+            model.add_constraint(WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1 >= 0_i,
                 HalfReifyOnConjunctionOf{{! flag}});
             return flag;
         }
 
         case SmartEntryConstraint::LessThan: {
-            auto flag = propagators.create_proof_flag("bin_lt");
-            propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i,
+            auto flag = model.create_proof_flag("bin_lt");
+            model.add_constraint(WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i,
                 HalfReifyOnConjunctionOf{{flag}});
-            propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 >= 0_i,
+            model.add_constraint(WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 >= 0_i,
                 HalfReifyOnConjunctionOf{{! flag}});
             return flag;
         }
 
         case SmartEntryConstraint::LessThanEqual: {
-            auto flag = propagators.create_proof_flag("bin_le");
-            propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1 >= 0_i,
+            auto flag = model.create_proof_flag("bin_le");
+            model.add_constraint(WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1 >= 0_i,
                 HalfReifyOnConjunctionOf{{flag}});
-            propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i,
+            model.add_constraint(WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i,
                 HalfReifyOnConjunctionOf{{! flag}});
             return flag;
         }
 
         case SmartEntryConstraint::NotEqual: {
             // !f => var1 == var2
-            auto flag = propagators.create_proof_flag("bin_eq");
-            propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 == 0_i,
+            auto flag = model.create_proof_flag("bin_eq");
+            model.add_constraint(WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 == 0_i,
                 HalfReifyOnConjunctionOf{{! flag}});
 
             // f => var1 != var2
-            auto flag_lt = propagators.create_proof_flag("lt");
-            auto flag_gt = propagators.create_proof_flag("gt");
+            auto flag_lt = model.create_proof_flag("lt");
+            auto flag_gt = model.create_proof_flag("gt");
 
             // Means we need f => fgt or flt
-            propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * flag_lt + 1_i * flag_gt >= 1_i,
+            model.add_constraint(WeightedPseudoBooleanSum{} + 1_i * flag_lt + 1_i * flag_gt >= 1_i,
                 HalfReifyOnConjunctionOf{{flag}});
 
             // And then fgt <==> var1 > var2
-            propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i,
+            model.add_constraint(WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i,
                 HalfReifyOnConjunctionOf{{flag_gt}});
-            propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1 >= 0_i,
+            model.add_constraint(WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1 >= 0_i,
                 HalfReifyOnConjunctionOf{{! flag_gt}});
 
             // flt <==> var1 < var2
-            propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i,
+            model.add_constraint(WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i,
                 HalfReifyOnConjunctionOf{{flag_lt}});
-            propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 >= 0_i,
+            model.add_constraint(WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 >= 0_i,
                 HalfReifyOnConjunctionOf{{! flag_lt}});
 
             return flag;
         }
 
         case SmartEntryConstraint::GreaterThanEqual: {
-            auto flag = propagators.create_proof_flag("bin_ge");
-            propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 >= 0_i,
+            auto flag = model.create_proof_flag("bin_ge");
+            model.add_constraint(WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 >= 0_i,
                 HalfReifyOnConjunctionOf{{flag}});
-            propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i,
+            model.add_constraint(WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i,
                 HalfReifyOnConjunctionOf{{! flag}});
             return flag;
         }
@@ -799,7 +804,7 @@ auto SmartTable::clone() const -> unique_ptr<Constraint>
     return make_unique<SmartTable>(_vars, _tuples);
 }
 
-auto SmartTable::install(Propagators & propagators, State & initial_state) && -> void
+auto SmartTable::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
     vector<IntegerVariableID> selectors;
     vector<ProofFlag> pb_selectors;
@@ -808,17 +813,16 @@ auto SmartTable::install(Propagators & propagators, State & initial_state) && ->
         selectors.emplace_back(initial_state.allocate_integer_variable_with_state(0_i, 1_i));
     }
 
-    if (propagators.want_definitions()) {
-
+    if (optional_model) {
         for (unsigned int i = 0; i < _tuples.size(); ++i) {
-            pb_selectors.emplace_back(propagators.create_proof_flag("t" + to_string(i)));
+            pb_selectors.emplace_back(optional_model->create_proof_flag("t" + to_string(i)));
         }
         WeightedPseudoBooleanSum sum_pb_selectors{};
 
         for (const auto & s : pb_selectors)
             sum_pb_selectors += 1_i * s;
 
-        propagators.define(initial_state, sum_pb_selectors >= 1_i);
+        optional_model->add_constraint(sum_pb_selectors >= 1_i);
 
         // Would need a hash function for unordered map, but this shouldn't be too slow
         map<BinaryEntryData, ProofFlag> smart_entry_flags;
@@ -834,18 +838,19 @@ auto SmartTable::install(Propagators & propagators, State & initial_state) && ->
                         //                        }
                         auto binary_entry_data = make_tuple(binary_entry.var_1, binary_entry.var_2, binary_entry.constraint_type);
                         if (! smart_entry_flags.contains(binary_entry_data))
-                            smart_entry_flags[binary_entry_data] = make_binary_entry_flag(initial_state, propagators, binary_entry.var_1, binary_entry.var_2, binary_entry.constraint_type);
+                            smart_entry_flags[binary_entry_data] = make_binary_entry_flag(initial_state, *optional_model,
+                                binary_entry.var_1, binary_entry.var_2, binary_entry.constraint_type);
 
                         entry_flags_sum += 1_i * smart_entry_flags[binary_entry_data];
                         entry_flags_neg_sum += -1_i * smart_entry_flags[binary_entry_data];
                     },
                     [&](const UnarySetEntry & unary_set_entry) {
                         auto var = unary_set_entry.var;
-                        auto flag = unary_set_entry.constraint_type == SmartEntryConstraint::In ? propagators.create_proof_flag("inset") : propagators.create_proof_flag("notinset");
+                        auto flag = unary_set_entry.constraint_type == SmartEntryConstraint::In ? optional_model->create_proof_flag("inset") : optional_model->create_proof_flag("notinset");
 
                         // InSet {<empty>} is the same as False
                         if (unary_set_entry.values.empty() && unary_set_entry.constraint_type == SmartEntryConstraint::In) {
-                            propagators.define(initial_state, WeightedPseudoBooleanSum{} + 1_i * ! flag >= 1_i);
+                            optional_model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * ! flag >= 1_i);
                             entry_flags_sum += 1_i * flag;
                             entry_flags_neg_sum += -1_i * flag;
                             return;
@@ -862,9 +867,9 @@ auto SmartTable::install(Propagators & propagators, State & initial_state) && ->
 
                         auto set_rhs = Integer{static_cast<long long>(set_value_sum.terms.size())};
                         auto neg_set_rhs = Integer{static_cast<long long>(neg_set_value_sum.terms.size())};
-                        propagators.define(initial_state, move(set_value_sum) >= set_rhs,
+                        optional_model->add_constraint(move(set_value_sum) >= set_rhs,
                             HalfReifyOnConjunctionOf{{unary_set_entry.constraint_type == SmartEntryConstraint::In ? flag : ! flag}});
-                        propagators.define(initial_state, move(neg_set_value_sum) >= neg_set_rhs,
+                        optional_model->add_constraint(move(neg_set_value_sum) >= neg_set_rhs,
                             HalfReifyOnConjunctionOf{{unary_set_entry.constraint_type == SmartEntryConstraint::In ? ! flag : flag}});
 
                         entry_flags_sum += 1_i * flag;
@@ -878,9 +883,9 @@ auto SmartTable::install(Propagators & propagators, State & initial_state) && ->
                     .visit(entry);
             }
             auto tuple_len = Integer{static_cast<long long>(entry_flags_sum.terms.size())};
-            propagators.define(initial_state, move(entry_flags_sum) >= tuple_len,
+            optional_model->add_constraint(move(entry_flags_sum) >= tuple_len,
                 HalfReifyOnConjunctionOf{{pb_selectors[tuple_idx]}});
-            propagators.define(initial_state, move(entry_flags_neg_sum) >= -tuple_len + 1_i,
+            optional_model->add_constraint(move(entry_flags_neg_sum) >= -tuple_len + 1_i,
                 HalfReifyOnConjunctionOf{{! pb_selectors[tuple_idx]}});
         }
     }
@@ -892,9 +897,11 @@ auto SmartTable::install(Propagators & propagators, State & initial_state) && ->
     vector<Forest> forests = build_forests(_tuples);
 
     propagators.install(
-        [selectors, vars = _vars, tuples = move(_tuples), forests = move(forests), pb_selectors = move(pb_selectors)](State & state) -> pair<Inference, PropagatorState> {
+        [selectors, vars = _vars, tuples = move(_tuples), forests = move(forests), pb_selectors = move(pb_selectors)](
+            State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
+            auto reason = generic_reason(state, vars);
             return pair{
-                propagate_using_smart_str(selectors, vars, tuples, forests, state, pb_selectors),
+                propagate_using_smart_str(selectors, vars, tuples, forests, state, reason, pb_selectors, logger),
                 PropagatorState::Enable};
         },
         triggers,

@@ -6,6 +6,7 @@
 
 using std::cmp_less;
 using std::move;
+using std::optional;
 using std::unique_ptr;
 using std::vector;
 
@@ -23,7 +24,8 @@ auto AtMostOneSmartTable::clone() const -> unique_ptr<Constraint>
     return make_unique<AtMostOneSmartTable>(_vars, _val);
 }
 
-auto AtMostOneSmartTable::install(Propagators & propagators, State & initial_state) && -> void
+auto AtMostOneSmartTable::install(Propagators & propagators, State & initial_state,
+    ProofModel * const optional_model) && -> void
 {
     // Build the constraint as smart table
     // Question: Do we trust this encoding as a smart table?
@@ -45,7 +47,7 @@ auto AtMostOneSmartTable::install(Propagators & propagators, State & initial_sta
     all_vars.emplace_back(_val);
 
     SmartTable smt_table{all_vars, tuples};
-    move(smt_table).install(propagators, initial_state);
+    move(smt_table).install(propagators, initial_state, optional_model);
 }
 
 auto AtMostOneSmartTable::describe_for_proof() -> std::string

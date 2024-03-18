@@ -1,15 +1,8 @@
-#ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INNARDS_LINEAR_UTILS_HH
-#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INNARDS_LINEAR_UTILS_HH
+#ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_LINEAR_UTILS_HH
+#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_LINEAR_UTILS_HH
 
 #include <gcs/expression.hh>
-#include <gcs/innards/proof-fwd.hh>
-#include <gcs/innards/propagators-fwd.hh>
-#include <gcs/innards/state-fwd.hh>
-#include <gcs/variable_id.hh>
-
-#include <optional>
-#include <variant>
-#include <vector>
+#include <ostream>
 
 namespace gcs::innards
 {
@@ -61,30 +54,6 @@ namespace gcs::innards
      * \ingroup Innards
      */
     [[nodiscard]] auto tidy_up_linear(const WeightedSum &) -> std::pair<TidiedUpLinear, Integer>;
-
-    /**
-     * \brief Propagate a linear equality or inequality.
-     *
-     * \ingroup Innards
-     */
-    auto propagate_linear(const SumOf<Weighted<SimpleIntegerVariableID>> &, Integer, State &, bool equality,
-        const std::optional<ProofLine> & proof_line) -> std::pair<Inference, PropagatorState>;
-
-    /**
-     * \brief Propagate a simple sum equality or inequality.
-     *
-     * \ingroup Innards
-     */
-    auto propagate_sum(const SumOf<PositiveOrNegative<SimpleIntegerVariableID>> &, Integer, State &, bool equality,
-        const std::optional<ProofLine> & proof_line) -> std::pair<Inference, PropagatorState>;
-
-    /**
-     * \brief Propagate an all-positive sum equality or inequality.
-     *
-     * \ingroup Innards
-     */
-    auto propagate_sum_all_positive(const SumOf<SimpleIntegerVariableID> &, Integer, State &, bool equality,
-        const std::optional<ProofLine> & proof_line) -> std::pair<Inference, PropagatorState>;
 }
 
 #endif

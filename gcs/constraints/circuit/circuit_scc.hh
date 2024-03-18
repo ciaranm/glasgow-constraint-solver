@@ -1,9 +1,8 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_CIRCUIT_SCC_HH
 #define GLASGOW_CONSTRAINT_SOLVER_CIRCUIT_SCC_HH
+
 #include <gcs/constraint.hh>
 #include <gcs/constraints/circuit/circuit_base.hh>
-#include <gcs/innards/proof-fwd.hh>
-#include <gcs/innards/proof.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/variable_id.hh>
 #include <list>
@@ -31,7 +30,8 @@ namespace gcs
     public:
         explicit CircuitSCC(std::vector<IntegerVariableID> var, bool gac_all_different = false, SCCOptions scc_options = SCCOptions{});
         [[nodiscard]] auto clone() const -> std::unique_ptr<Constraint> override;
-        auto install(innards::Propagators &, innards::State &) && -> void override;
+        virtual auto install(innards::Propagators &, innards::State &,
+            innards::ProofModel * const) && -> void override;
     };
 }
 

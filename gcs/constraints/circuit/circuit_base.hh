@@ -2,11 +2,11 @@
 #define GLASGOW_CONSTRAINT_SOLVER_CIRCUIT_BASE_HH
 
 #include <gcs/constraint.hh>
-#include <gcs/innards/proof-fwd.hh>
-#include <gcs/innards/proof.hh>
-
+#include <gcs/innards/proofs/proof_logger.hh>
+#include <gcs/innards/proofs/proof_only_variables.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/variable_id.hh>
+
 #include <list>
 #include <map>
 #include <optional>
@@ -57,12 +57,12 @@ namespace gcs::innards::circuit
         const long & length,
         const PosVarDataMap & pos_var_data,
         State & state,
-        Proof & proof,
+        ProofLogger & logger,
         const std::optional<Integer> & prevent_idx = std::nullopt,
         const std::optional<Integer> & prevent_value = std::nullopt) -> void;
 
     [[nodiscard]] auto prevent_small_cycles(const std::vector<IntegerVariableID> & succ, const PosVarDataMap & pos_var_data,
-        const ConstraintStateHandle & unassigned_handle, State & state) -> Inference;
+        const ConstraintStateHandle & unassigned_handle, State & state, ProofLogger * const logger) -> Inference;
 
     /**
      * \brief Circuit constraint: requires the variables, representing graph nodes, take values
@@ -76,7 +76,7 @@ namespace gcs::innards::circuit
     protected:
         const bool _gac_all_different;
         const std::vector<IntegerVariableID> _succ;
-        virtual auto set_up(innards::Propagators &, innards::State &) -> innards::circuit::PosVarDataMap;
+        virtual auto set_up(innards::Propagators &, innards::State &, ProofModel * const) -> innards::circuit::PosVarDataMap;
 
     public:
         explicit CircuitBase(std::vector<IntegerVariableID> var, bool gac_all_different = false);

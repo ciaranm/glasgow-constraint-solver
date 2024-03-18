@@ -14,17 +14,17 @@ using std::string;
 
 auto gcs::innards::operator!(const Literal & lit) -> Literal
 {
-    return overloaded{
-        [](const IntegerVariableCondition & ilit) {
-            return Literal{! ilit};
-        },
-        [](const TrueLiteral &) -> Literal {
-            return FalseLiteral{};
-        },
-        [](const FalseLiteral &) -> Literal {
-            return TrueLiteral{};
-        }}
-        .visit(lit);
+    return visit([&](const auto & f) { return Literal{! f}; }, lit);
+}
+
+auto gcs::innards::operator!(const TrueLiteral &) -> FalseLiteral
+{
+    return FalseLiteral{};
+}
+
+auto gcs::innards::operator!(const FalseLiteral &) -> TrueLiteral
+{
+    return TrueLiteral{};
 }
 
 auto gcs::innards::debug_string(const Literal & lit) -> string
@@ -50,6 +50,15 @@ auto gcs::innards::debug_string(const Literal & lit) -> string
             return "false";
         }}
         .visit(lit);
+}
+
+auto gcs::innards::debug_string(const Literals & lits) -> string
+{
+    string result = "literals(";
+    for (auto & lit : lits)
+        result += debug_string(lit) + " ";
+    result += ")";
+    return result;
 }
 
 auto gcs::innards::is_literally_true_or_false(const Literal & lit) -> optional<bool>

@@ -3,6 +3,7 @@
 
 #include <gcs/innards/inference_tracker-fwd.hh>
 #include <gcs/innards/justification.hh>
+#include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/state.hh>
 
 namespace gcs::innards
@@ -45,55 +46,55 @@ namespace gcs::innards
             return inference;
         }
 
-        auto infer(const Literal & lit, const Justification & why) -> void
+        auto infer(ProofLogger * const logger, const Literal & lit, const Justification & why) -> void
         {
-            track(state.infer(lit, why));
+            track(state.infer(logger, lit, why));
         }
 
-        auto infer_true(const Justification & why) -> void
+        auto infer_true(ProofLogger * const logger, const Justification & why) -> void
         {
-            state.infer_true(why);
+            state.infer_true(logger, why);
         }
 
-        auto infer_false(const Justification & why) -> void
+        auto infer_false(ProofLogger * const logger, const Justification & why) -> void
         {
-            state.infer_false(why);
+            state.infer_false(logger, why);
             track(Inference::Contradiction);
         }
 
         template <IntegerVariableIDLike VarType_>
-        auto infer(const VariableConditionFrom<VarType_> & lit, const Justification & why) -> void
+        auto infer(ProofLogger * const logger, const VariableConditionFrom<VarType_> & lit, const Justification & why) -> void
         {
-            track(state.infer(lit, why));
+            track(state.infer(logger, lit, why));
         }
 
         template <IntegerVariableIDLike VarType_>
-        auto infer_equal(const VarType_ & var, Integer value, const Justification & why) -> void
+        auto infer_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & why) -> void
         {
-            track(state.infer_equal(var, value, why));
+            track(state.infer_equal(logger, var, value, why));
         }
 
         template <IntegerVariableIDLike VarType_>
-        auto infer_not_equal(const VarType_ & var, Integer value, const Justification & why) -> void
+        auto infer_not_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & why) -> void
         {
-            track(state.infer_not_equal(var, value, why));
+            track(state.infer_not_equal(logger, var, value, why));
         }
 
         template <IntegerVariableIDLike VarType_>
-        auto infer_less_than(const VarType_ & var, Integer value, const Justification & why) -> void
+        auto infer_less_than(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & why) -> void
         {
-            track(state.infer_less_than(var, value, why));
+            track(state.infer_less_than(logger, var, value, why));
         }
 
         template <IntegerVariableIDLike VarType_>
-        auto infer_greater_than_or_equal(const VarType_ & var, Integer value, const Justification & why) -> void
+        auto infer_greater_than_or_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & why) -> void
         {
-            track(state.infer_greater_than_or_equal(var, value, why));
+            track(state.infer_greater_than_or_equal(logger, var, value, why));
         }
 
-        auto infer_all(const std::vector<Literal> & lit, const Justification & why) -> void
+        auto infer_all(ProofLogger * const logger, const std::vector<Literal> & lit, const Justification & why) -> void
         {
-            track(state.infer_all(lit, why));
+            track(state.infer_all(logger, lit, why));
         }
     };
 }

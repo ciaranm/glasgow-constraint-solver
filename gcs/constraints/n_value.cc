@@ -1,4 +1,6 @@
 #include <gcs/constraints/n_value.hh>
+#include <gcs/innards/proofs/proof_logger.hh>
+#include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
 
@@ -12,6 +14,7 @@ using namespace gcs::innards;
 using std::list;
 using std::map;
 using std::max;
+using std::optional;
 using std::pair;
 using std::set;
 using std::unique_ptr;
@@ -28,13 +31,17 @@ auto NValue::clone() const -> unique_ptr<Constraint>
     return make_unique<NValue>(_n_values, _vars);
 }
 
-auto NValue::install(Propagators & propagators, State & initial_state) && -> void
+auto NValue::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
     Triggers triggers;
     triggers.on_bounds.emplace_back(_n_values);
     triggers.on_change.insert(triggers.on_change.end(), _vars.begin(), _vars.end());
 
-    propagators.install([n_values = _n_values, vars = _vars](State & state) -> pair<Inference, PropagatorState> {
+    vector<IntegerVariableID> all_vars = _vars;
+    all_vars.push_back(_n_values);
+
+    propagators.install([all_vars = move(all_vars), n_values = _n_values, vars = _vars](
+                            State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
         set<Integer> all_possible_values;
         for (const auto & var : vars) {
             state.for_each_value_while_immutable(var, [&](Integer v) -> bool {
@@ -43,7 +50,7 @@ auto NValue::install(Propagators & propagators, State & initial_state) && -> voi
             });
         }
 
-        auto inf = state.infer(n_values < Integer(all_possible_values.size()) + 1_i, JustifyUsingRUP{});
+        auto inf = state.infer(logger, n_values < Integer(all_possible_values.size()) + 1_i, JustifyUsingRUP{generic_reason(state, all_vars)});
         if (Inference::Contradiction == inf)
             return pair{inf, PropagatorState::Enable};
 
@@ -54,7 +61,7 @@ auto NValue::install(Propagators & propagators, State & initial_state) && -> voi
                 all_definite_values.insert(*val);
         }
 
-        increase_inference_to(inf, state.infer(n_values >= max(1_i, Integer(all_definite_values.size())), JustifyUsingRUP{}));
+        increase_inference_to(inf, state.infer(logger, n_values >= max(1_i, Integer(all_definite_values.size())), JustifyUsingRUP{generic_reason(state, all_vars)}));
         if (Inference::Contradiction == inf)
             return pair{inf, PropagatorState::Enable};
 
@@ -62,7 +69,7 @@ auto NValue::install(Propagators & propagators, State & initial_state) && -> voi
     },
         triggers, "nvalue");
 
-    if (propagators.want_definitions()) {
+    if (optional_model) {
         map<Integer, list<IntegerVariableID>> all_possible_values;
         for (const auto & var : _vars) {
             initial_state.for_each_value_while_immutable(var, [&](Integer v) -> bool {
@@ -73,18 +80,18 @@ auto NValue::install(Propagators & propagators, State & initial_state) && -> voi
 
         list<ProofFlag> flags;
         for (auto [v, vars] : all_possible_values) {
-            auto flag = propagators.create_proof_flag("nvalue");
+            auto flag = optional_model->create_proof_flag("nvalue");
             WeightedPseudoBooleanSum forward;
             for (auto & var : vars)
                 forward += 1_i * (var == v);
             forward += 1_i * ! flag;
-            propagators.define(initial_state, forward >= 1_i);
+            optional_model->add_constraint(forward >= 1_i);
 
             WeightedPseudoBooleanSum reverse;
             for (auto & var : vars)
                 reverse += 1_i * (var != v);
             reverse += Integer(vars.size()) * flag;
-            propagators.define(initial_state, reverse >= Integer(vars.size()));
+            optional_model->add_constraint(reverse >= Integer(vars.size()));
 
             flags.push_back(flag);
         }
@@ -96,8 +103,8 @@ auto NValue::install(Propagators & propagators, State & initial_state) && -> voi
         }
         forward += -1_i * _n_values;
         reverse += 1_i * _n_values;
-        propagators.define(initial_state, forward >= 0_i);
-        propagators.define(initial_state, reverse >= 0_i);
+        optional_model->add_constraint(forward >= 0_i);
+        optional_model->add_constraint(reverse >= 0_i);
     }
 }
 

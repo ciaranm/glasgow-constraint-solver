@@ -1,0 +1,11 @@
+#ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INNARDS_PROOFS_PROOF_ONLY_VARIABLES_FWD_HH
+#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INNARDS_PROOFS_PROOF_ONLY_VARIABLES_FWD_HH
+
+namespace gcs::innards
+{
+    class ProofOnlySimpleIntegerVariableID;
+
+    class ProofFlag;
+}
+
+#endif

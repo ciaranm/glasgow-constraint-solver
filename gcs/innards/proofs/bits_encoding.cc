@@ -1,6 +1,4 @@
-/* vim: set sw=4 sts=4 et foldmethod=syntax : */
-
-#include <gcs/innards/bits_encoding.hh>
+#include <gcs/innards/proofs/bits_encoding.hh>
 
 #include <algorithm>
 #include <bit>

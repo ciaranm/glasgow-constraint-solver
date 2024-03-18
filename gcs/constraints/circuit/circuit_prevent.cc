@@ -31,7 +31,8 @@ using std::to_string;
 using std::unique_ptr;
 using std::vector;
 
-auto check_small_cycles(const vector<IntegerVariableID> & succ, const PosVarDataMap & pos_var_data, State & state) -> Inference
+auto check_small_cycles(const vector<IntegerVariableID> & succ, const PosVarDataMap & pos_var_data, State & state,
+    ProofLogger * const logger) -> Inference
 {
     auto n = succ.size();
     auto checked = vector<bool>(n, false);
@@ -50,9 +51,8 @@ auto check_small_cycles(const vector<IntegerVariableID> & succ, const PosVarData
                     cycle_length++;
                     if (j == j0) {
                         if (cmp_less(cycle_length, n)) {
-                            state.infer_true(JustifyExplicitly{[&](Proof & proof) {
-                                output_cycle_to_proof(succ, j0, cycle_length, pos_var_data, state, proof);
-                            }});
+                            if (logger)
+                                output_cycle_to_proof(succ, j0, cycle_length, pos_var_data, state, *logger);
                             return Inference::Contradiction;
                         }
 
@@ -70,13 +70,18 @@ auto propagate_circuit_using_prevent(
     const vector<IntegerVariableID> & succ,
     const PosVarDataMap & pos_var_data,
     const ConstraintStateHandle & unassigned_handle,
-    State & state)
+    State & state,
+    ProofLogger * const logger)
 {
-    auto result = propagate_non_gac_alldifferent(unassigned_handle, state);
-    if (result == Inference::Contradiction) return result;
-    increase_inference_to(result, check_small_cycles(succ, pos_var_data, state));
-    if (result == Inference::Contradiction) return result;
-    increase_inference_to(result, prevent_small_cycles(succ, pos_var_data, unassigned_handle, state));
+    auto result = propagate_non_gac_alldifferent(unassigned_handle, state, logger);
+    if (result == Inference::Contradiction)
+        return result;
+
+    increase_inference_to(result, check_small_cycles(succ, pos_var_data, state, logger));
+    if (result == Inference::Contradiction)
+        return result;
+
+    increase_inference_to(result, prevent_small_cycles(succ, pos_var_data, unassigned_handle, state, logger));
     return result;
 }
 
@@ -85,7 +90,8 @@ auto CircuitPrevent::clone() const -> unique_ptr<Constraint>
     return make_unique<CircuitPrevent>(_succ, _gac_all_different);
 }
 
-auto CircuitPrevent::install(Propagators & propagators, State & initial_state) && -> void
+auto CircuitPrevent::install(innards::Propagators & propagators, innards::State & initial_state,
+    innards::ProofModel * const model) && -> void
 {
     // Keep track of unassigned vars
     list<IntegerVariableID> unassigned{};
@@ -94,15 +100,15 @@ auto CircuitPrevent::install(Propagators & propagators, State & initial_state) &
     }
     auto unassigned_handle = initial_state.add_constraint_state(unassigned);
 
-    auto pos_var_data = CircuitBase::set_up(propagators, initial_state);
+    auto pos_var_data = CircuitBase::set_up(propagators, initial_state, model);
 
     Triggers triggers;
     triggers.on_instantiated = {_succ.begin(), _succ.end()};
     propagators.install(
         [succ = _succ, pvd = pos_var_data,
-            unassigned_handle = unassigned_handle](State & state) -> pair<Inference, PropagatorState> {
+            unassigned_handle = unassigned_handle](State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
             return pair{
-                propagate_circuit_using_prevent(succ, pvd, unassigned_handle, state),
+                propagate_circuit_using_prevent(succ, pvd, unassigned_handle, state, logger),
                 PropagatorState::Enable};
         },
         triggers,

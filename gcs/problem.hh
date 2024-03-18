@@ -3,10 +3,11 @@
 
 #include <gcs/constraint.hh>
 #include <gcs/expression.hh>
-#include <gcs/innards/proof-fwd.hh>
+#include <gcs/innards/proofs/proof_logger-fwd.hh>
+#include <gcs/innards/proofs/proof_model-fwd.hh>
 #include <gcs/innards/state-fwd.hh>
 #include <gcs/presolver.hh>
-#include <gcs/proof_options.hh>
+#include <gcs/proof.hh>
 #include <gcs/stats.hh>
 #include <gcs/variable_condition.hh>
 #include <gcs/variable_id.hh>
@@ -134,13 +135,19 @@ namespace gcs
          * @{
          */
 
-        [[nodiscard]] auto create_state_for_new_search(std::optional<innards::Proof> &) const -> innards::State;
+        [[nodiscard]] auto create_state_for_new_search(
+            innards::ProofModel * const) const -> innards::State;
 
-        [[nodiscard]] auto create_propagators(innards::State &, std::optional<innards::Proof> &) const -> innards::Propagators;
+        [[nodiscard]] auto create_propagators(innards::State &, innards::ProofModel * const) const -> innards::Propagators;
 
         [[nodiscard]] auto for_each_presolver(const std::function<auto(Presolver &)->bool> &) const -> bool;
 
         auto all_normal_variables() const -> const std::vector<IntegerVariableID> &;
+
+        /**
+         * What is our objective variable, to minimise?
+         */
+        [[nodiscard]] auto optional_minimise_variable() const -> std::optional<IntegerVariableID>;
 
         ///@}
     };

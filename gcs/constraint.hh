@@ -1,10 +1,12 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINT_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINT_HH
 
+#include <gcs/innards/proofs/proof_model-fwd.hh>
 #include <gcs/innards/propagators-fwd.hh>
 #include <gcs/innards/state-fwd.hh>
 
 #include <memory>
+#include <optional>
 #include <string>
 
 namespace gcs
@@ -43,7 +45,8 @@ namespace gcs
          * can only be called once, and after calling it neither install() nor
          * clone() may be called on this instance.
          */
-        virtual auto install(innards::Propagators &, innards::State &) && -> void = 0;
+        virtual auto install(innards::Propagators &, innards::State &,
+            innards::ProofModel * const) && -> void = 0;
 
         /**
          * Create a copy of the constraint. To be used internally.

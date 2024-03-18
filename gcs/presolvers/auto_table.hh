@@ -21,7 +21,8 @@ namespace gcs
     public:
         explicit AutoTable(const std::vector<IntegerVariableID> & vars);
 
-        virtual auto run(Problem &, innards::Propagators &, innards::State &) -> bool override;
+        virtual auto run(Problem &, innards::Propagators &, innards::State &,
+            innards::ProofLogger * const) -> bool override;
         virtual auto clone() const -> std::unique_ptr<Presolver> override;
     };
 }

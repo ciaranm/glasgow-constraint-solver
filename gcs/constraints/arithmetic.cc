@@ -11,6 +11,7 @@ using namespace gcs::innards;
 
 using std::llroundl;
 using std::move;
+using std::optional;
 using std::pow;
 using std::unique_ptr;
 using std::vector;
@@ -30,7 +31,7 @@ auto GACArithmetic<op_>::clone() const -> unique_ptr<Constraint>
 }
 
 template <ArithmeticOperator op_>
-auto GACArithmetic<op_>::install(Propagators & propagators, State & initial_state) && -> void
+auto GACArithmetic<op_>::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
     bool v2_zero_is_ok = (op_ != ArithmeticOperator::Div && op_ != ArithmeticOperator::Mod);
 
@@ -54,7 +55,7 @@ auto GACArithmetic<op_>::install(Propagators & propagators, State & initial_stat
         });
     });
 
-    propagators.define_and_install_table(initial_state, vector{_v1, _v2, _result}, move(permitted), "arithmetic");
+    propagators.define_and_install_table(initial_state, optional_model, vector{_v1, _v2, _result}, move(permitted), "arithmetic");
 }
 
 template <ArithmeticOperator op_>

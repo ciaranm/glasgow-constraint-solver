@@ -1,6 +1,8 @@
 #include <gcs/innards/extensional_utils.hh>
+#include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/state.hh>
 
+using std::optional;
 using std::pair;
 using std::vector;
 using std::visit;
@@ -53,7 +55,7 @@ namespace
     }
 }
 
-auto gcs::innards::propagate_extensional(const ExtensionalData & table, State & state) -> pair<Inference, PropagatorState>
+auto gcs::innards::propagate_extensional(const ExtensionalData & table, State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState>
 {
     bool changed = false, contradiction = false;
 
@@ -68,7 +70,7 @@ auto gcs::innards::propagate_extensional(const ExtensionalData & table, State & 
                 }
 
             if (! is_feasible) {
-                switch (state.infer(table.selector != Integer(tuple_idx), NoJustificationNeeded{})) {
+                switch (state.infer(logger, table.selector != Integer(tuple_idx), NoJustificationNeeded{})) {
                 case Inference::NoChange: break;
                 case Inference::Change: changed = true; break;
                 case Inference::Contradiction: contradiction = true; break;
@@ -97,7 +99,7 @@ auto gcs::innards::propagate_extensional(const ExtensionalData & table, State & 
                 });
 
                 if (! supported) {
-                    switch (state.infer(table.vars[idx] != val, JustifyUsingRUP{})) {
+                    switch (state.infer(logger, table.vars[idx] != val, JustifyUsingRUP{generic_reason(state, table.vars)})) {
                     case Inference::NoChange: break;
                     case Inference::Change: changed = true; break;
                     case Inference::Contradiction: contradiction = true; break;

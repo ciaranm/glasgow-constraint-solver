@@ -112,3 +112,17 @@ auto gcs::guess_largest_value_first() -> GuessCallback
         return result;
     };
 }
+
+auto gcs::guess_randomly() -> GuessCallback
+{
+    return [](const CurrentState & state, IntegerVariableID var) -> vector<IntegerVariableCondition> {
+        random_device rand_dev;
+        mt19937 r(rand_dev());
+        vector<IntegerVariableCondition> result;
+        state.for_each_value(var, [&](Integer val) {
+            result.push_back(var == val);
+        });
+        shuffle(result.begin(), result.end(), r);
+        return result;
+    };
+}

@@ -1,7 +1,9 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_JUSTIFICATION_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_JUSTIFICATION_HH
 
-#include <gcs/innards/proof-fwd.hh>
+#include <gcs/innards/literal.hh>
+#include <gcs/innards/proofs/proof_logger-fwd.hh>
+#include <gcs/innards/reason.hh>
 
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
 #include <source_location>
@@ -20,7 +22,7 @@ namespace gcs::innards
      * \ingroup Innards
      * \sa JustifyExplicitly
      */
-    using ExplicitJustificationFunction = std::function<auto(Proof &)->void>;
+    using ExplicitJustificationFunction = std::function<auto()->void>;
 
     /**
      * \brief Justification for something that is actually a guess, not an
@@ -43,17 +45,26 @@ namespace gcs::innards
     struct JustifyExplicitly
     {
         ExplicitJustificationFunction add_proof_steps;
+        Reason reason;
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
         std::source_location where;
+#endif
 
         explicit JustifyExplicitly(const ExplicitJustificationFunction & a,
-                const std::source_location & w = std::source_location::current()) :
+            Reason r
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+            ,
+            const std::source_location & w = std::source_location::current()
+#endif
+                ) :
             add_proof_steps(a),
+            reason(std::move(r))
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+            ,
             where(w)
+#endif
         {
         }
-#else
-#endif
     };
 
     /**
@@ -65,26 +76,23 @@ namespace gcs::innards
      */
     struct JustifyUsingRUP
     {
+        Reason reason;
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
         std::source_location where;
+#endif
 
-        explicit JustifyUsingRUP(const std::source_location & w = std::source_location::current()) :
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+        explicit JustifyUsingRUP(Reason r, const std::source_location & w = std::source_location::current()) :
+            reason(std::move(r)),
             where(w)
         {
         }
 #else
+        explicit JustifyUsingRUP(Reason r) :
+            reason(std::move(r))
+        {
+        }
 #endif
-    };
-
-    /**
-     * \brief Specify that an inference needs to be asserted rather than
-     * justified.
-     *
-     * \ingroup Innards
-     * \sa Justification
-     */
-    struct JustifyUsingAssertion
-    {
     };
 
     /**
@@ -102,7 +110,7 @@ namespace gcs::innards
      *
      * \ingroup Innards
      */
-    using Justification = std::variant<Guess, JustifyUsingRUP, JustifyUsingAssertion, JustifyExplicitly, NoJustificationNeeded>;
+    using Justification = std::variant<Guess, JustifyUsingRUP, JustifyExplicitly, NoJustificationNeeded>;
 }
 
 #endif

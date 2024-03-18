@@ -1,5 +1,6 @@
 #include <gcs/constraints/all_different/vc_all_different.hh>
-#include <gcs/innards/proof.hh>
+#include <gcs/innards/proofs/proof_logger.hh>
+#include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
 #include <util/enumerate.hh>
 
@@ -35,7 +36,8 @@ using std::variant;
 using std::vector;
 using std::visit;
 
-auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle, State & state) -> innards::Inference
+auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle, State & state,
+    ProofLogger * const logger) -> innards::Inference
 {
     auto & unassigned = any_cast<list<IntegerVariableID> &>(state.get_constraint_state(unassigned_handle));
 
@@ -66,7 +68,7 @@ auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & 
         while (i != unassigned.end()) {
             auto other = *i;
             if (other != var) {
-                increase_inference_to(result, state.infer_not_equal(other, val, JustifyUsingRUP{}));
+                increase_inference_to(result, state.infer_not_equal(logger, other, val, JustifyUsingRUP{{var == val}}));
                 if (result == Inference::Contradiction) return Inference::Contradiction;
                 if (auto other_val = state.optional_single_value(other)) {
                     to_propagate.emplace_back(other, *other_val);
@@ -80,13 +82,13 @@ auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & 
     return result;
 }
 
-auto gcs::innards::define_clique_not_equals_encoding(gcs::innards::State & state, gcs::innards::Propagators & propagators, const vector<gcs::IntegerVariableID> & vars) -> void
+auto gcs::innards::define_clique_not_equals_encoding(ProofModel & model, const vector<gcs::IntegerVariableID> & vars) -> void
 {
     for (unsigned i = 0; i < vars.size(); ++i)
         for (unsigned j = i + 1; j < vars.size(); ++j) {
-            auto selector = propagators.create_proof_flag("notequals");
-            propagators.define(state, WeightedPseudoBooleanSum{} + 1_i * vars[i] + -1_i * vars[j] <= -1_i, HalfReifyOnConjunctionOf{selector});
-            propagators.define(state, WeightedPseudoBooleanSum{} + -1_i * vars[i] + 1_i * vars[j] <= -1_i, HalfReifyOnConjunctionOf{! selector});
+            auto selector = model.create_proof_flag("notequals");
+            model.add_constraint(WeightedPseudoBooleanSum{} + 1_i * vars[i] + -1_i * vars[j] <= -1_i, HalfReifyOnConjunctionOf{selector});
+            model.add_constraint(WeightedPseudoBooleanSum{} + -1_i * vars[i] + 1_i * vars[j] <= -1_i, HalfReifyOnConjunctionOf{! selector});
         }
 }
 
@@ -100,10 +102,11 @@ auto VCAllDifferent::clone() const -> unique_ptr<Constraint>
     return make_unique<VCAllDifferent>(_vars);
 }
 
-auto VCAllDifferent::install(Propagators & propagators, State & initial_state) && -> void
+auto VCAllDifferent::install(innards::Propagators & propagators, innards::State & initial_state,
+    innards::ProofModel * const model) && -> void
 {
-    if (propagators.want_definitions()) {
-        define_clique_not_equals_encoding(initial_state, propagators, _vars);
+    if (model) {
+        define_clique_not_equals_encoding(*model, _vars);
     }
 
     auto sanitised_vars = move(_vars);
@@ -126,8 +129,8 @@ auto VCAllDifferent::install(Propagators & propagators, State & initial_state) &
 
     propagators.install(
         [vars = move(sanitised_vars), unassigned_handle = unassigned_handle,
-            vals = move(compressed_vals)](State & state) -> pair<Inference, PropagatorState> {
-            return pair{propagate_non_gac_alldifferent(unassigned_handle, state), PropagatorState::Enable};
+            vals = move(compressed_vals)](State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
+            return pair{propagate_non_gac_alldifferent(unassigned_handle, state, logger), PropagatorState::Enable};
         },
         triggers, "vcalldiff");
 }

@@ -3,7 +3,7 @@
 
 #include <gcs/current_state.hh>
 #include <gcs/problem.hh>
-#include <gcs/proof_options.hh>
+#include <gcs/proof.hh>
 #include <gcs/stats.hh>
 
 #include <atomic>

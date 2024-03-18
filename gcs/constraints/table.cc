@@ -1,5 +1,7 @@
 #include <gcs/constraints/table.hh>
 #include <gcs/exception.hh>
+#include <gcs/innards/proofs/proof_logger.hh>
+#include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
 
@@ -52,7 +54,7 @@ namespace
     }
 }
 
-auto Table::install(Propagators & propagators, State & initial_state) && -> void
+auto Table::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
     visit([&](auto & tuples) {
         for (auto & tuple : depointinate(tuples))
@@ -61,7 +63,7 @@ auto Table::install(Propagators & propagators, State & initial_state) && -> void
     },
         _tuples);
 
-    propagators.define_and_install_table(initial_state, vector<IntegerVariableID>{_vars}, move(_tuples), "table");
+    propagators.define_and_install_table(initial_state, optional_model, vector<IntegerVariableID>{_vars}, move(_tuples), "table");
 }
 
 auto Table::describe_for_proof() -> string
@@ -126,19 +128,19 @@ namespace gcs
     using ::operator!=;
 }
 
-auto NegativeTable::install(Propagators & propagators, State & initial_state) && -> void
+auto NegativeTable::install(Propagators & propagators, State &, ProofModel * const optional_model) && -> void
 {
     visit([&](auto & tuples) {
         for (auto & tuple : depointinate(tuples))
             if (tuple.size() != _vars.size())
                 throw UnexpectedException{"table size mismatch"};
 
-        if (propagators.want_definitions()) {
+        if (optional_model) {
             for (auto & t : depointinate(tuples)) {
                 Literals lits;
                 for (const auto & [idx, v] : enumerate(_vars))
                     add_literal(lits, v, t[idx]);
-                propagators.define_cnf(initial_state, move(lits));
+                optional_model->add_constraint(move(lits));
             }
         }
     },
@@ -149,7 +151,7 @@ auto NegativeTable::install(Propagators & propagators, State & initial_state) &&
         triggers.on_change.emplace_back(v);
 
     visit([&](const auto & tuples) {
-        propagators.install([vars = move(_vars), tuples = move(tuples)](State & state) -> pair<Inference, PropagatorState> {
+        propagators.install([vars = move(_vars), tuples = move(tuples)](State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
             auto inf = Inference::NoChange;
             for (auto & t : depointinate(tuples)) {
                 bool falsified = false;
@@ -173,7 +175,7 @@ auto NegativeTable::install(Propagators & propagators, State & initial_state) &&
                     if (! l1)
                         return pair{Inference::Contradiction, PropagatorState::Enable};
                     else if (! l2)
-                        increase_inference_to(inf, state.infer(*l1, JustifyUsingRUP{}));
+                        increase_inference_to(inf, state.infer(logger, *l1, JustifyUsingRUP{generic_reason(state, vars)}));
                 }
             }
             return pair{inf, PropagatorState::Enable};
