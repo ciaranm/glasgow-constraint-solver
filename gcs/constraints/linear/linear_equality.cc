@@ -20,6 +20,7 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::decay_t;
 using std::function;
 using std::is_same_v;
 using std::make_shared;
@@ -404,13 +405,13 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
                 } break;
 
                 case LiteralIs::DefinitelyTrue: {
-                    if constexpr (is_same_v<decltype(sanitised_cv), const SumOf<Weighted<SimpleIntegerVariableID>>>) {
+                    if constexpr (is_same_v<decay_t<decltype(sanitised_cv)>, SumOf<Weighted<SimpleIntegerVariableID>>>) {
                         return propagate_linear(sanitised_cv, value, state, logger, true, proof_line, cond);
                     }
-                    else if constexpr (is_same_v<decltype(sanitised_cv), const SumOf<PositiveOrNegative<SimpleIntegerVariableID>>>) {
+                    else if constexpr (is_same_v<decay_t<decltype(sanitised_cv)>, SumOf<PositiveOrNegative<SimpleIntegerVariableID>>>) {
                         return propagate_sum(sanitised_cv, value, state, logger, true, proof_line, cond);
                     }
-                    else if constexpr (is_same_v<decltype(sanitised_cv), const SumOf<SimpleIntegerVariableID>>) {
+                    else if constexpr (is_same_v<decay_t<decltype(sanitised_cv)>, SumOf<SimpleIntegerVariableID>>) {
                         return propagate_sum_all_positive(sanitised_cv, value, state, logger, true, proof_line, cond);
                     }
                     else
