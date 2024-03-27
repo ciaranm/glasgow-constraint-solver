@@ -414,8 +414,7 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
                     else if constexpr (is_same_v<decay_t<decltype(sanitised_cv)>, SumOf<SimpleIntegerVariableID>>) {
                         return propagate_sum_all_positive(sanitised_cv, value, state, logger, true, proof_line, cond);
                     }
-                    else
-                        static_assert(false, "missing type");
+                    throw NonExhaustiveSwitch{};
                 } break;
 
                 case LiteralIs::DefinitelyFalse: {
