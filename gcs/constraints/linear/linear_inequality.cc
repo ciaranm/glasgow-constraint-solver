@@ -49,20 +49,23 @@ auto LinearInequality::install(Propagators & propagators, State &, ProofModel * 
 
     overloaded{
         [&, &modifier = modifier](const SumOf<Weighted<SimpleIntegerVariableID>> & lin) {
-            propagators.install([modifier = modifier, lin = lin, value = _value, proof_line = proof_line](State & state, ProofLogger * const logger) {
-                return propagate_linear(lin, value + modifier, state, logger, false, proof_line);
+            propagators.install([modifier = modifier, lin = lin, value = _value, proof_line = proof_line](
+                                    State & state, ProofLogger * const logger) {
+                return propagate_linear(lin, value + modifier, state, logger, false, proof_line, nullopt);
             },
                 triggers, "linear inequality");
         },
         [&, &modifier = modifier](const SumOf<PositiveOrNegative<SimpleIntegerVariableID>> & sum) {
-            propagators.install([modifier = modifier, sum = sum, value = _value, proof_line = proof_line](State & state, ProofLogger * const logger) {
-                return propagate_sum(sum, value + modifier, state, logger, false, proof_line);
+            propagators.install([modifier = modifier, sum = sum, value = _value, proof_line = proof_line](
+                                    State & state, ProofLogger * const logger) {
+                return propagate_sum(sum, value + modifier, state, logger, false, proof_line, nullopt);
             },
                 triggers, "linear inequality");
         },
         [&, &modifier = modifier](const SumOf<SimpleIntegerVariableID> & sum) {
-            propagators.install([modifier = modifier, sum = sum, value = _value, proof_line = proof_line](State & state, ProofLogger * const logger) {
-                return propagate_sum_all_positive(sum, value + modifier, state, logger, false, proof_line);
+            propagators.install([modifier = modifier, sum = sum, value = _value, proof_line = proof_line](
+                                    State & state, ProofLogger * const logger) {
+                return propagate_sum_all_positive(sum, value + modifier, state, logger, false, proof_line, nullopt);
             },
                 triggers, "linear inequality");
         }}

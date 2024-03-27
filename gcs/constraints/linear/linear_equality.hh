@@ -3,12 +3,13 @@
 
 #include <gcs/constraint.hh>
 #include <gcs/expression.hh>
+#include <gcs/innards/literal.hh>
 
 namespace gcs
 {
     /**
      * \brief Constrain that the sum of the variables multiplied by their associated
-     * coefficients is equal to the specified value.
+     * coefficients is equal to the specified value, if and only if a condition holds.
      *
      * If gac is specifed, achieves generalised arc consistency. This is very
      * expensive for large variables.
@@ -16,21 +17,35 @@ namespace gcs
      * \ingroup Constraints
      * \sa LinearLessEqual
      * \sa LinearGreaterThanEqual
+     * \sa LinearEquality
      */
-    class LinearEquality : public Constraint
+    class LinearEqualityIff : public Constraint
     {
     private:
         WeightedSum _coeff_vars;
         Integer _value;
+        innards::Literal _cond;
         bool _gac;
 
     public:
-        explicit LinearEquality(WeightedSum coeff_vars, Integer value, bool gac = false);
+        explicit LinearEqualityIff(WeightedSum coeff_vars, Integer value, innards::Literal cond, bool gac = false);
 
         virtual auto describe_for_proof() -> std::string override;
         virtual auto install(innards::Propagators &, innards::State &,
             innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
+    };
+
+    class LinearEquality : public LinearEqualityIff
+    {
+    public:
+        explicit LinearEquality(WeightedSum coeff_vars, Integer value, bool gac = false);
+    };
+
+    class LinearNotEquals : public LinearEqualityIff
+    {
+    public:
+        explicit LinearNotEquals(WeightedSum coeff_vars, Integer value, bool gac = false);
     };
 }
 

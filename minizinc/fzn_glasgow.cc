@@ -341,7 +341,7 @@ auto main(int argc, char * argv[]) -> int
                 const auto & reif = arg_as_var(data, args, 2);
                 problem.post(LessThanIff{var1, var2, reif == 1_i});
             }
-            else if (id == "int_lin_eq" || id == "int_lin_le") {
+            else if (id == "int_lin_eq" || id == "int_lin_le" || id == "int_lin_ne") {
                 auto coeffs = arg_as_array_of_integer(data, args, 0);
                 const auto & vars = get<vector<j::FlatZincJso>>(args.at(1));
                 Integer total{static_cast<long long>(get<double>(args.at(2)))};
@@ -353,18 +353,30 @@ auto main(int argc, char * argv[]) -> int
                     terms += (*coeffs)[c] * data.integer_variables.at(get<string>(vars[c])).first;
 
                 if (id.ends_with("_eq"))
-                    problem.post(terms == total);
+                    problem.post(LinearEquality{terms, total});
+                else if (id.ends_with("_ne"))
+                    problem.post(LinearNotEquals{terms, total});
                 else
                     problem.post(terms <= total);
             }
-            else if (id == "int_lin_eq_reif" || id == "int_lin_le_reif") {
-                throw UnimplementedException{};
-            }
-            else if (id == "int_lin_ne") {
-                throw UnimplementedException{};
-            }
-            else if (id == "int_lin_ne_reif") {
-                throw UnimplementedException{};
+            else if (id == "int_lin_eq_reif" || id == "int_lin_le_reif" || id == "int_lin_ne_reif") {
+                auto coeffs = arg_as_array_of_integer(data, args, 0);
+                const auto & vars = get<vector<j::FlatZincJso>>(args.at(1));
+                Integer total{static_cast<long long>(get<double>(args.at(2)))};
+                if (coeffs->size() != vars.size())
+                    throw FlatZincInterfaceError{fmt::format("Array length mismatch in {} in {}", id, fznname)};
+                const auto & reif = arg_as_var(data, args, 3);
+
+                SumOf<Weighted<IntegerVariableID>> terms;
+                for (size_t c = 0; c < coeffs->size(); ++c)
+                    terms += (*coeffs)[c] * data.integer_variables.at(get<string>(vars[c])).first;
+
+                if (id.ends_with("_eq_reif"))
+                    problem.post(LinearEqualityIff{terms, total, reif == 1_i});
+                else if (id.ends_with("_ne_reif"))
+                    problem.post(LinearEqualityIff{terms, total, reif != 1_i});
+                else
+                    throw UnimplementedException{};
             }
             else if (id == "int_max") {
                 const auto & var1 = arg_as_var(data, args, 0);
@@ -381,12 +393,12 @@ auto main(int argc, char * argv[]) -> int
             else if (id == "int_mod") {
                 throw UnimplementedException{};
             }
-            else if (id == "int_ne" || id == "glasgow_ne") {
+            else if (id == "int_ne") {
                 const auto & var1 = arg_as_var(data, args, 0);
                 const auto & var2 = arg_as_var(data, args, 1);
                 problem.post(NotEquals{var1, var2});
             }
-            else if (id == "int_ne_reif" || id == "glasgow_ne_reif") {
+            else if (id == "int_ne_reif") {
                 const auto & var1 = arg_as_var(data, args, 0);
                 const auto & var2 = arg_as_var(data, args, 1);
                 const auto & reif = arg_as_var(data, args, 2);
