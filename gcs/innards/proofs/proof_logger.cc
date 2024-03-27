@@ -239,6 +239,36 @@ auto ProofLogger::infer(const State & state, bool is_contradicting, const Litera
                 record_proof_line(++_imp->proof_line, ProofLevel::Current);
             }
         },
+        [&]([[maybe_unused]] const AssertRatherThanJustifying & j) {
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+            _imp->proof << "* assert on lit " << debug_string(lit) << " with reason from " << j.where.file_name() << ":"
+                        << j.where.line() << " in " << j.where.function_name() << '\n';
+#endif
+            need_lit();
+            for (auto & r : j.reason)
+                overloaded{
+                    [&](const TrueLiteral &) {
+                    },
+                    [&](const FalseLiteral &) {
+                    },
+                    [&](const VariableConditionFrom<SimpleIntegerVariableID> & cond) {
+                        variable_constraints_tracker().need_proof_name(cond);
+                    },
+                    [&](const ProofVariableCondition &) {
+                    }}
+                    .visit(simplify_literal(r));
+
+            if (! is_literally_true(lit)) {
+                WeightedPseudoBooleanSum terms;
+                for (auto & r : j.reason)
+                    terms += 1_i * ! r;
+                terms += 1_i * lit;
+                _imp->proof << "a ";
+                emit_inequality_to(variable_constraints_tracker(), move(terms) >= 1_i, nullopt, _imp->proof);
+                _imp->proof << '\n';
+                record_proof_line(++_imp->proof_line, ProofLevel::Current);
+            }
+        },
         [&](const JustifyExplicitly & x) {
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
             _imp->proof << "* explicit on lit " << debug_string(lit) << " with reason from " << x.where.file_name() << ":"

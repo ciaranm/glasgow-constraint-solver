@@ -96,6 +96,33 @@ namespace gcs::innards
     };
 
     /**
+     * \brief Specify that an inference will be asserted rather than justified.
+     *
+     * \ingroup Innards
+     * \sa Justification
+     */
+    struct AssertRatherThanJustifying
+    {
+        Reason reason;
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+        std::source_location where;
+#endif
+
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+        explicit AssertRatherThanJustifying(Reason r, const std::source_location & w = std::source_location::current()) :
+            reason(std::move(r)),
+            where(w)
+        {
+        }
+#else
+        explicit AssertRatherThanJustifying(Reason r) :
+            reason(std::move(r))
+        {
+        }
+#endif
+    };
+
+    /**
      * \brief Specify that an inference does not require justification.
      *
      * \ingroup Innards
@@ -110,7 +137,7 @@ namespace gcs::innards
      *
      * \ingroup Innards
      */
-    using Justification = std::variant<Guess, JustifyUsingRUP, JustifyExplicitly, NoJustificationNeeded>;
+    using Justification = std::variant<Guess, JustifyUsingRUP, JustifyExplicitly, AssertRatherThanJustifying, NoJustificationNeeded>;
 }
 
 #endif
