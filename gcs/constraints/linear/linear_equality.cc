@@ -183,18 +183,8 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
                 ltflag = optional_model->create_proof_flag("lineqlt");
                 optional_model->add_constraint(terms <= _value - 1_i, HalfReifyOnConjunctionOf{{*ltflag}});
 
-                // eq -> ! gt and ! lt
-                optional_model->add_constraint(WeightedPseudoBooleanSum{} + 2_i * ! cond + 1_i * ! *gtflag + 1_i * ! *ltflag >= 2_i);
-                // gt -> ! eq and ! lt
-                optional_model->add_constraint(WeightedPseudoBooleanSum{} + 2_i * ! *gtflag + 1_i * ! cond + 1_i * ! *ltflag >= 2_i);
-                // lt -> ! eq and ! gt
-                optional_model->add_constraint(WeightedPseudoBooleanSum{} + 2_i * ! *ltflag + 1_i * ! *gtflag + 1_i * ! cond >= 2_i);
-                // lt \/ eq \/ gt
-                optional_model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * *ltflag + 1_i * *gtflag + 1_i * cond >= 1_i);
-                // cond -> eq
-                optional_model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * ! cond + 1_i * cond >= 1_i);
-                // ! cond -> ! eq
-                optional_model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * cond + 1_i * ! cond >= 1_i);
+                // lt + eq + gt = 1
+                optional_model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * *ltflag + 1_i * *gtflag + 1_i * cond == 1_i);
             }}
             .visit(_cond);
     }
