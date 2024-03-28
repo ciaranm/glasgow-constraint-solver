@@ -122,12 +122,15 @@ namespace
     }
 
     auto justify_bounds(State & state, const auto & coeff_vars, const SimpleIntegerVariableID & change_var, ProofLogger & logger,
-        bool second_constraint_for_equality, const string & to_what, const ProofLine proof_line) -> void
+        bool second_constraint_for_equality, const string & to_what, const optional<ProofLine> & proof_line) -> void
     {
         logger.emit_proof_comment("justifying integer linear inequality " + debug_string(IntegerVariableID{change_var}) + " " + to_what);
 
         vector<pair<Integer, variant<ProofLine, string>>> terms_to_sum;
-        terms_to_sum.emplace_back(1_i, second_constraint_for_equality ? proof_line + 1 : proof_line);
+        if (proof_line)
+            terms_to_sum.emplace_back(1_i, second_constraint_for_equality ? *proof_line + 1 : *proof_line);
+        else
+            throw UnexpectedException{"no proof line?"};
 
         Integer change_var_coeff = 0_i;
         for (const auto & cv : coeff_vars.terms) {
@@ -174,7 +177,7 @@ namespace
             if (bounds[p].second >= (1_i + remainder)) {
                 auto justf = [&]() {
                     justify_bounds(state, coeff_vars, var, *logger, second_constraint_for_equality,
-                        "< " + to_string((1_i + remainder).raw_value), *proof_line);
+                        "< " + to_string((1_i + remainder).raw_value), proof_line);
                 };
                 auto just = JustifyExplicitly{justf, bounds_reason(state, coeff_vars, var, second_constraint_for_equality, add_to_reason)};
                 return state.infer_less_than(logger, var, 1_i + remainder, just);
@@ -186,7 +189,7 @@ namespace
             if (bounds[p].first < -remainder) {
                 auto justf = [&]() {
                     justify_bounds(state, coeff_vars, var, *logger, second_constraint_for_equality,
-                        ">= " + to_string((-remainder).raw_value), *proof_line);
+                        ">= " + to_string((-remainder).raw_value), proof_line);
                 };
                 auto just = JustifyExplicitly{justf, bounds_reason(state, coeff_vars, var, second_constraint_for_equality, add_to_reason)};
                 return state.infer_greater_than_or_equal(logger, var, -remainder, just);
@@ -205,7 +208,7 @@ namespace
             if (bounds[p].second >= (1_i + remainder / coeff)) {
                 auto justf = [&]() {
                     justify_bounds(state, coeff_vars, var, *logger, second_constraint_for_equality,
-                        "< " + to_string((1_i + remainder / coeff).raw_value), *proof_line);
+                        "< " + to_string((1_i + remainder / coeff).raw_value), proof_line);
                 };
                 auto just = JustifyExplicitly{justf, bounds_reason(state, coeff_vars, var, second_constraint_for_equality, add_to_reason)};
                 return state.infer_less_than(logger, var, 1_i + remainder / coeff, just);
@@ -218,7 +221,7 @@ namespace
             if (bounds[p].second >= 1_i + div_with_rounding) {
                 auto justf = [&]() {
                     justify_bounds(state, coeff_vars, var, *logger, second_constraint_for_equality,
-                        "< " + to_string((1_i + div_with_rounding).raw_value), *proof_line);
+                        "< " + to_string((1_i + div_with_rounding).raw_value), proof_line);
                 };
                 auto just = JustifyExplicitly{justf, bounds_reason(state, coeff_vars, var, second_constraint_for_equality, add_to_reason)};
                 return state.infer_less_than(logger, var, 1_i + div_with_rounding, just);
@@ -230,7 +233,7 @@ namespace
             if (bounds[p].first < remainder / coeff) {
                 auto justf = [&]() {
                     justify_bounds(state, coeff_vars, var, *logger, second_constraint_for_equality,
-                        ">= " + to_string((remainder / coeff).raw_value), *proof_line);
+                        ">= " + to_string((remainder / coeff).raw_value), proof_line);
                 };
                 auto just = JustifyExplicitly{justf, bounds_reason(state, coeff_vars, var, second_constraint_for_equality, add_to_reason)};
                 return state.infer_greater_than_or_equal(logger, var, remainder / coeff, just);
@@ -243,7 +246,7 @@ namespace
             if (bounds[p].first < div_with_rounding) {
                 auto justf = [&]() {
                     justify_bounds(state, coeff_vars, var, *logger, second_constraint_for_equality,
-                        ">= " + to_string((div_with_rounding).raw_value), *proof_line);
+                        ">= " + to_string((div_with_rounding).raw_value), proof_line);
                 };
                 auto just = JustifyExplicitly{justf, bounds_reason(state, coeff_vars, var, second_constraint_for_equality, add_to_reason)};
                 return state.infer_greater_than_or_equal(logger, var, div_with_rounding, just);

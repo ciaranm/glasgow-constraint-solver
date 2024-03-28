@@ -160,7 +160,7 @@ namespace
 auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofModel * const optional_model) && -> void
 {
     optional<ProofLine> proof_line;
-    optional<ProofFlag> gtflag, ltflag, eqflag;
+    optional<ProofFlag> gtflag, ltflag;
     if (optional_model) {
         WeightedPseudoBooleanSum terms;
         for (auto & [c, v] : _coeff_vars.terms)
@@ -176,8 +176,7 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
                 optional_model->add_constraint(terms <= _value - 1_i, HalfReifyOnConjunctionOf{{! neflag}});
             },
             [&](const IntegerVariableCondition & cond) {
-                eqflag = optional_model->create_proof_flag("lineq");
-                proof_line = optional_model->add_constraint(terms == _value, HalfReifyOnConjunctionOf{{*eqflag}}).first.value();
+                proof_line = optional_model->add_constraint(terms == _value, HalfReifyOnConjunctionOf{{cond}}).first.value();
 
                 gtflag = optional_model->create_proof_flag("lineqgt");
                 optional_model->add_constraint(terms >= _value + 1_i, HalfReifyOnConjunctionOf{{*gtflag}});
@@ -185,17 +184,17 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
                 optional_model->add_constraint(terms <= _value - 1_i, HalfReifyOnConjunctionOf{{*ltflag}});
 
                 // eq -> ! gt and ! lt
-                optional_model->add_constraint(WeightedPseudoBooleanSum{} + 2_i * ! *eqflag + 1_i * ! *gtflag + 1_i * ! *ltflag >= 2_i);
+                optional_model->add_constraint(WeightedPseudoBooleanSum{} + 2_i * ! cond + 1_i * ! *gtflag + 1_i * ! *ltflag >= 2_i);
                 // gt -> ! eq and ! lt
-                optional_model->add_constraint(WeightedPseudoBooleanSum{} + 2_i * ! *gtflag + 1_i * ! *eqflag + 1_i * ! *ltflag >= 2_i);
+                optional_model->add_constraint(WeightedPseudoBooleanSum{} + 2_i * ! *gtflag + 1_i * ! cond + 1_i * ! *ltflag >= 2_i);
                 // lt -> ! eq and ! gt
-                optional_model->add_constraint(WeightedPseudoBooleanSum{} + 2_i * ! *ltflag + 1_i * ! *gtflag + 1_i * ! *eqflag >= 2_i);
+                optional_model->add_constraint(WeightedPseudoBooleanSum{} + 2_i * ! *ltflag + 1_i * ! *gtflag + 1_i * ! cond >= 2_i);
                 // lt \/ eq \/ gt
-                optional_model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * *ltflag + 1_i * *gtflag + 1_i * *eqflag >= 1_i);
+                optional_model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * *ltflag + 1_i * *gtflag + 1_i * cond >= 1_i);
                 // cond -> eq
-                optional_model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * ! cond + 1_i * *eqflag >= 1_i);
+                optional_model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * ! cond + 1_i * cond >= 1_i);
                 // ! cond -> ! eq
-                optional_model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * cond + 1_i * ! *eqflag >= 1_i);
+                optional_model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * cond + 1_i * ! cond >= 1_i);
             }}
             .visit(_cond);
     }
