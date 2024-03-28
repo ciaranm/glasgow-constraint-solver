@@ -282,8 +282,8 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
         for (auto & [_, v] : _coeff_vars.terms)
             triggers.on_change.push_back(v);
 
-        return visit([&](const auto & sanitised_cv) {
-            propagators.install([sanitised_cv = sanitised_cv, value = _value + modifier, cond = _cond, all_vars = move(all_vars)](
+        return visit([&, modifier = modifier](const auto & sanitised_cv) {
+            propagators.install([sanitised_cv = sanitised_cv, value = _value + modifier, all_vars = move(all_vars)](
                                     State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
                 auto single_unset = sanitised_cv.terms.end();
                 Integer accum = 0_i;
@@ -332,7 +332,7 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
     } break;
 
     case LiteralIs::Undecided: {
-        if (visit([modifier = modifier, value = _value, cond = _cond](const auto & s) { return s.terms.empty(); }, sanitised_cv)) {
+        if (visit([](const auto & s) { return s.terms.empty(); }, sanitised_cv)) {
             if (modifier == _value) {
                 propagators.install_initialiser([cond = _cond](State & state, ProofLogger * const logger) -> Inference {
                     return state.infer(logger, cond, NoJustificationNeeded{});
@@ -354,9 +354,9 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
             [&](const IntegerVariableCondition & cond) { triggers.on_change.push_back(cond.var); }}
             .visit(_cond);
 
-        visit([&](const auto & sanitised_cv) {
+        visit([&, modifier = modifier](const auto & sanitised_cv) {
             propagators.install([sanitised_cv = sanitised_cv, value = _value + modifier, cond = _cond, proof_line = proof_line,
-                                    all_vars = move(all_vars), eqflag = eqflag, ltflag = ltflag, gtflag = gtflag](
+                                    all_vars = move(all_vars), ltflag = ltflag, gtflag = gtflag](
                                     State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
                 switch (state.test_literal(cond)) {
                 case LiteralIs::Undecided: {
