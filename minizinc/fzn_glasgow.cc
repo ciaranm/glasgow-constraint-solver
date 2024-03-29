@@ -7,6 +7,7 @@
 #include <fmt/core.h>
 #include <fmt/ostream.h>
 #include <fmt/ranges.h>
+#include <fmt/std.h>
 
 #include <atomic>
 #include <chrono>
@@ -118,21 +119,35 @@ namespace
                 throw FlatZincInterfaceError{fmt::format("Can't find variable array named {}", name)};
             return iter->second;
         }
+        else if (holds_alternative<vector<j::FlatZincJso>>(a)) {
+            vector<IntegerVariableID> result;
+            for (const auto & v : get<vector<j::FlatZincJso>>(a))
+                result.push_back(data.integer_variables.at(get<string>(v)).first);
+            return result;
+        }
         else {
-            throw UnimplementedException{};
+            throw UnimplementedException{fmt::format(
+                "don't know how to parse array of variables at index {} with alternative {} of type {}",
+                idx, a.index(), typeid(args.at(idx)).name())};
         }
     }
 
     auto arg_as_var(ExtractedData & data, const auto & args, int idx) -> IntegerVariableID
     {
         auto a = args.at(idx);
-        if (! holds_alternative<string>(a))
-            throw FlatZincInterfaceError{"Didn't get a string for arg_as_var?"};
-        auto name = get<string>(a);
-        auto iter = data.integer_variables.find(name);
-        if (iter == data.integer_variables.end())
-            throw FlatZincInterfaceError{fmt::format("Can't find variable named {}", name)};
-        return iter->second.first;
+        if (holds_alternative<string>(a)) {
+            auto name = get<string>(a);
+            auto iter = data.integer_variables.find(name);
+            if (iter == data.integer_variables.end())
+                throw FlatZincInterfaceError{fmt::format("Can't find variable named {}", name)};
+            return iter->second.first;
+        }
+        else if (holds_alternative<double>(a)) {
+            auto val = Integer{static_cast<long long>(get<double>(a))};
+            return ConstantIntegerVariableID{val};
+        }
+        else
+            throw FlatZincInterfaceError{"Didn't get a string or number for arg_as_var?"};
     }
 }
 
@@ -241,15 +256,26 @@ auto main(int argc, char * argv[]) -> int
                                  name),
                             false});
                 }
-                else {
-                    if (vardata["domain"].size() != 1)
-                        throw FlatZincInterfaceError{fmt::format("Can't parse domain for variable {} in {}", name, fznname)};
+                else if (vardata["domain"].size() == 1) {
                     data.integer_variables.emplace(name,                            //
                         pair{problem.create_integer_variable(                       //
                                  Integer{vardata["domain"][0][0].get<long long>()}, //
                                  Integer{vardata["domain"][0][1].get<long long>()}, //
                                  name),
                             false});
+                }
+                else {
+                    auto size = vardata["domain"].size();
+                    auto var = problem.create_integer_variable(                   //
+                        Integer{vardata["domain"][0][0].get<long long>()},        //
+                        Integer{vardata["domain"][size - 1][1].get<long long>()}, //
+                        name);
+                    data.integer_variables.emplace(name, pair{var, false});
+                    for (unsigned i = 0; i < size - 1; ++i) {
+                        problem.post(Or{{! (var >= Integer{vardata["domain"][i][1].get<long long>()} + 1_i),
+                                            var >= Integer{vardata["domain"][i + 1][0].get<long long>()}},
+                            innards::TrueLiteral{}});
+                    }
                 }
             }
             else
@@ -308,7 +334,7 @@ auto main(int argc, char * argv[]) -> int
             else if (id == "int_div") {
                 throw UnimplementedException{};
             }
-            else if (id == "int_eq") {
+            else if (id == "int_eq" || id == "bool2int" || id == "bool_eq") {
                 const auto & var1 = arg_as_var(data, args, 0);
                 const auto & var2 = arg_as_var(data, args, 1);
                 problem.post(Equals{var1, var2});
@@ -343,14 +369,14 @@ auto main(int argc, char * argv[]) -> int
             }
             else if (id == "int_lin_eq" || id == "int_lin_le" || id == "int_lin_ne") {
                 auto coeffs = arg_as_array_of_integer(data, args, 0);
-                const auto & vars = get<vector<j::FlatZincJso>>(args.at(1));
+                const auto & vars = arg_as_array_of_var(data, args, 1);
                 Integer total{static_cast<long long>(get<double>(args.at(2)))};
                 if (coeffs->size() != vars.size())
                     throw FlatZincInterfaceError{fmt::format("Array length mismatch in {} in {}", id, fznname)};
 
                 SumOf<Weighted<IntegerVariableID>> terms;
                 for (size_t c = 0; c < coeffs->size(); ++c)
-                    terms += (*coeffs)[c] * data.integer_variables.at(get<string>(vars[c])).first;
+                    terms += (*coeffs)[c] * vars[c];
 
                 if (id.ends_with("_eq"))
                     problem.post(LinearEquality{terms, total});
@@ -361,7 +387,7 @@ auto main(int argc, char * argv[]) -> int
             }
             else if (id == "int_lin_eq_reif" || id == "int_lin_le_reif" || id == "int_lin_ne_reif") {
                 auto coeffs = arg_as_array_of_integer(data, args, 0);
-                const auto & vars = get<vector<j::FlatZincJso>>(args.at(1));
+                const auto & vars = arg_as_array_of_var(data, args, 1);
                 Integer total{static_cast<long long>(get<double>(args.at(2)))};
                 if (coeffs->size() != vars.size())
                     throw FlatZincInterfaceError{fmt::format("Array length mismatch in {} in {}", id, fznname)};
@@ -369,7 +395,7 @@ auto main(int argc, char * argv[]) -> int
 
                 SumOf<Weighted<IntegerVariableID>> terms;
                 for (size_t c = 0; c < coeffs->size(); ++c)
-                    terms += (*coeffs)[c] * data.integer_variables.at(get<string>(vars[c])).first;
+                    terms += (*coeffs)[c] * vars[c];
 
                 if (id.ends_with("_eq_reif"))
                     problem.post(LinearEqualityIff{terms, total, reif == 1_i});
@@ -393,7 +419,7 @@ auto main(int argc, char * argv[]) -> int
             else if (id == "int_mod") {
                 throw UnimplementedException{};
             }
-            else if (id == "int_ne") {
+            else if (id == "int_ne" || id == "bool_not") {
                 const auto & var1 = arg_as_var(data, args, 0);
                 const auto & var2 = arg_as_var(data, args, 1);
                 problem.post(NotEquals{var1, var2});
@@ -414,6 +440,58 @@ auto main(int argc, char * argv[]) -> int
                 throw UnimplementedException{};
             }
             else if (id == "set_in") {
+                throw UnimplementedException{};
+            }
+            else if (id == "array_bool_and") {
+                throw UnimplementedException{};
+            }
+            else if (id == "array_bool_element") {
+                throw UnimplementedException{};
+            }
+            else if (id == "array_bool_xor") {
+                throw UnimplementedException{};
+            }
+            else if (id == "array_var_bool_element") {
+                throw UnimplementedException{};
+            }
+            else if (id == "bool_and") {
+                throw UnimplementedException{};
+            }
+            else if (id == "bool_clause") {
+                const auto & pos = arg_as_array_of_var(data, args, 0);
+                const auto & neg = arg_as_array_of_var(data, args, 1);
+                innards::Literals lits;
+                for (auto & v : pos)
+                    lits.push_back(v == 1_i);
+                for (auto & v : neg)
+                    lits.push_back(v == 0_i);
+                problem.post(Or{lits, innards::TrueLiteral{}});
+            }
+            else if (id == "bool_eq_reif") {
+                throw UnimplementedException{};
+            }
+            else if (id == "bool_le") {
+                throw UnimplementedException{};
+            }
+            else if (id == "bool_le_reif") {
+                throw UnimplementedException{};
+            }
+            else if (id == "bool_lin_eq") {
+                throw UnimplementedException{};
+            }
+            else if (id == "bool_lin_le") {
+                throw UnimplementedException{};
+            }
+            else if (id == "bool_lt") {
+                throw UnimplementedException{};
+            }
+            else if (id == "bool_lt_reif") {
+                throw UnimplementedException{};
+            }
+            else if (id == "bool_or") {
+                throw UnimplementedException{};
+            }
+            else if (id == "bool_xor") {
                 throw UnimplementedException{};
             }
             else if (id == "glasgow_alldifferent") {
