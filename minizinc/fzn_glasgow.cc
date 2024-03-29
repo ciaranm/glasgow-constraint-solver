@@ -565,7 +565,7 @@ auto main(int argc, char * argv[]) -> int
             println(cout, "%%%mzn-stat: failures={}", stats.failures);
             println(cout, "%%%mzn-stat: nodes={}", stats.recursions);
             println(cout, "%%%mzn-stat: peakDepth={}", stats.max_depth);
-            println(cout, "%%%mzn-stat: solveTime={:.3f}", duration_cast<milliseconds>(stats.solve_time).count() * 1000.0);
+            println(cout, "%%%mzn-stat: solveTime={:.3f}", duration_cast<milliseconds>(stats.solve_time).count() / 1000.0);
             cout << flush;
         }
     }
