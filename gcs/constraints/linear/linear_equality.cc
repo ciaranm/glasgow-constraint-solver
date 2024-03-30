@@ -47,11 +47,6 @@ auto LinearEqualityIff::clone() const -> unique_ptr<Constraint>
 
 namespace
 {
-    auto to_coeff(Integer v)
-    {
-        return v;
-    }
-
     auto get_var(const PositiveOrNegative<SimpleIntegerVariableID> & cv) -> SimpleIntegerVariableID
     {
         return cv.variable;
@@ -101,8 +96,7 @@ namespace
             if (current.size() == coeff_vars.terms.size()) {
                 Integer actual_value{0_i};
                 for (const auto & [idx, cv] : enumerate(coeff_vars.terms)) {
-                    auto coeff = get_coeff(cv);
-                    actual_value += to_coeff(coeff) * current[idx];
+                    actual_value += get_coeff(cv) * current[idx];
                 }
                 if (actual_value == value) {
                     permitted.push_back(current);
@@ -168,14 +162,17 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
 
         overloaded{
             [&](const TrueLiteral &) {
+                // condition is definitely true, it's just an inequality
                 proof_line = optional_model->add_constraint(terms == _value, nullopt).first.value();
             },
             [&](const FalseLiteral &) {
+                // condition is definitely false, the flag implies either greater or less
                 auto neflag = optional_model->create_proof_flag("linne");
                 optional_model->add_constraint(terms >= _value + 1_i, HalfReifyOnConjunctionOf{{neflag}});
                 optional_model->add_constraint(terms <= _value - 1_i, HalfReifyOnConjunctionOf{{! neflag}});
             },
             [&](const IntegerVariableCondition & cond) {
+                // condition unknown, the condition implies it is neither greater nor less
                 proof_line = optional_model->add_constraint(terms == _value, HalfReifyOnConjunctionOf{{cond}}).first.value();
 
                 gtflag = optional_model->create_proof_flag("lineqgt");
@@ -205,42 +202,32 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
 
     switch (state.test_literal(_cond)) {
     case LiteralIs::DefinitelyTrue: {
+        // condition is definitely true, an empty sum matches iff the modifiers sum to the value
         if (visit([](const auto & s) { return s.terms.empty(); }, sanitised_cv) && modifier != _value) {
             propagators.install_initialiser([cond = _cond](State & state, ProofLogger * const logger) -> Inference {
                 return state.infer(logger, FalseLiteral{}, JustifyUsingRUP{Literals{cond}});
             });
         }
 
+        // easy case: we're doing bounds consistency, and the condition is fixed
         Triggers triggers;
         for (auto & [_, v] : _coeff_vars.terms)
             triggers.on_bounds.push_back(v);
 
-        overloaded{
-            [&, modifier = modifier](const SumOf<Weighted<SimpleIntegerVariableID>> & lin) {
+        visit(
+            [&, modifier = modifier](const auto & lin) {
                 propagators.install([modifier = modifier, lin = lin, value = _value, proof_line = proof_line, cond = _cond](
                                         State & state, ProofLogger * const logger) {
                     return propagate_linear(lin, value + modifier, state, logger, true, proof_line, cond);
                 },
                     triggers, "linear equality");
             },
-            [&, modifier = modifier](const SumOf<PositiveOrNegative<SimpleIntegerVariableID>> & sum) {
-                propagators.install([modifier = modifier, sum = sum, value = _value, proof_line = proof_line, cond = _cond](
-                                        State & state, ProofLogger * const logger) {
-                    return propagate_sum(sum, value + modifier, state, logger, true, proof_line, cond);
-                },
-                    triggers, "linear equality");
-            },
-            [&, modifier = modifier](const SumOf<SimpleIntegerVariableID> & sum) {
-                propagators.install([modifier = modifier, sum = sum, value = _value, proof_line = proof_line, cond = _cond](
-                                        State & state, ProofLogger * const logger) {
-                    return propagate_sum_all_positive(sum, value + modifier, state, logger, true, proof_line, cond);
-                },
-                    triggers, "linear equality");
-            }}
-            .visit(sanitised_cv);
+            sanitised_cv);
 
+        // also doing gac?
         if (_gac) {
             visit([&, modifier = modifier](auto & sanitised_cv) {
+                // we're watching everything
                 Triggers triggers;
                 for (auto & cv : sanitised_cv.terms)
                     triggers.on_change.push_back(get_var(cv));
@@ -261,12 +248,15 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
     } break;
 
     case LiteralIs::DefinitelyFalse: {
+        // condition is definitely false, an empty sum matches iff the modifiers sum to something other than the value
         if (visit([](const auto & s) { return s.terms.empty(); }, sanitised_cv) && modifier == _value) {
             propagators.install_initialiser([cond = _cond](State & state, ProofLogger * const logger) -> Inference {
                 return state.infer(logger, FalseLiteral{}, JustifyUsingRUP{Literals{cond}});
             });
         }
 
+        // strictly speaking, we care when we're down to only one variable left unassigned, and then there's one
+        // value it potentially mustn't have
         Triggers triggers;
         for (auto & [_, v] : _coeff_vars.terms)
             triggers.on_change.push_back(v);
@@ -274,46 +264,7 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
         return visit([&, modifier = modifier](const auto & sanitised_cv) {
             propagators.install([sanitised_cv = sanitised_cv, value = _value + modifier, all_vars = move(all_vars)](
                                     State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
-                auto single_unset = sanitised_cv.terms.end();
-                Integer accum = 0_i;
-                for (auto i = sanitised_cv.terms.begin(), i_end = sanitised_cv.terms.end(); i != i_end; ++i) {
-                    auto val = state.optional_single_value(get_var(*i));
-                    if (val)
-                        accum += get_coeff(*i) * *val;
-                    else {
-                        if (single_unset != sanitised_cv.terms.end()) {
-                            // at least two unset variables, do nothing for now
-                            return pair{Inference::NoChange, PropagatorState::Enable};
-                        }
-                        else
-                            single_unset = i;
-                    }
-                }
-
-                if (single_unset == sanitised_cv.terms.end()) {
-                    // everything set, do a sanity check
-                    if (accum == value) {
-                        state.infer_false(logger, JustifyUsingRUP{generic_reason(state, all_vars)});
-                        return pair{Inference::Contradiction, PropagatorState::Enable};
-                    }
-                    else
-                        return pair{Inference::NoChange, PropagatorState::DisableUntilBacktrack};
-                }
-                else {
-                    // exactly one thing remaining
-                    Integer residual = value - accum;
-                    if (0_i == residual % get_coeff(*single_unset)) {
-                        Integer forbidden = residual / get_coeff(*single_unset);
-                        if (state.in_domain(get_var(*single_unset), forbidden)) {
-                            return pair{state.infer(logger, get_var(*single_unset) != forbidden, JustifyUsingRUP{generic_reason(state, all_vars)}),
-                                PropagatorState::DisableUntilBacktrack};
-                        }
-                        else
-                            return pair{Inference::NoChange, PropagatorState::DisableUntilBacktrack};
-                    }
-                    else
-                        return pair{Inference::NoChange, PropagatorState::Enable};
-                }
+                return propagate_linear_not_equals(sanitised_cv, value, state, logger, all_vars);
             },
                 triggers, "linear nonequality");
         },
@@ -321,6 +272,8 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
     } break;
 
     case LiteralIs::Undecided: {
+        // don't know whether the condition is true or not. if we have an empty sum, it's forced
+        // one way or another
         if (visit([](const auto & s) { return s.terms.empty(); }, sanitised_cv)) {
             if (modifier == _value) {
                 propagators.install_initialiser([cond = _cond](State & state, ProofLogger * const logger) -> Inference {
@@ -334,6 +287,8 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
             }
         }
 
+        // we care when the condition changes, or once we're down to a single unassigned variable
+        // because that might force the condition one way or another.
         Triggers triggers;
         for (auto & [_, v] : _coeff_vars.terms)
             triggers.on_change.push_back(v);
@@ -348,8 +303,19 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
                                     all_vars = move(all_vars), ltflag = ltflag, gtflag = gtflag](
                                     State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
                 switch (state.test_literal(cond)) {
+                case LiteralIs::DefinitelyTrue: {
+                    // we now know the condition definitely holds, so it's a linear equality
+                    return propagate_linear(sanitised_cv, value, state, logger, true, proof_line, cond);
+                } break;
+
+                case LiteralIs::DefinitelyFalse: {
+                    // we now know the condition definitely doesn't hold, so it's a linear not-equals
+                    return propagate_linear_not_equals(sanitised_cv, value, state, logger, all_vars);
+                } break;
+
                 case LiteralIs::Undecided: {
-                    return pair{Inference::NoChange, PropagatorState::Enable};
+                    // we still don't know whether the condition holds. if we're down to a single unassigned
+                    // variable, we might have some information.
                     auto single_unset = sanitised_cv.terms.end();
                     Integer accum = 0_i;
                     for (auto i = sanitised_cv.terms.begin(), i_end = sanitised_cv.terms.end(); i != i_end; ++i) {
@@ -367,7 +333,7 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
                     }
 
                     if (single_unset == sanitised_cv.terms.end()) {
-                        // everything set, the condition is forced
+                        // every variable is assigned, so we know what the condition must be
                         if (accum == value) {
                             return pair{state.infer(logger, cond, JustifyUsingRUP{generic_reason(state, all_vars)}),
                                 PropagatorState::DisableUntilBacktrack};
@@ -378,97 +344,28 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
                         }
                     }
                     else {
-                        // exactly one thing remaining
+                        // exactly one thing remaining. perhaps the value that would make the equality
+                        // work doesn't occur in its domain?
                         Integer residual = value - accum;
                         if (0_i == residual % get_coeff(*single_unset)) {
                             Integer would_make_equal = residual / get_coeff(*single_unset);
                             if (! state.in_domain(get_var(*single_unset), would_make_equal)) {
-                                return pair{state.infer(logger, ! cond, NoJustificationNeeded{}), PropagatorState::DisableUntilBacktrack};
-                            }
-                            else
-                                return pair{Inference::NoChange, PropagatorState::DisableUntilBacktrack};
-                        }
-                        else
-                            return pair{state.infer(logger, ! cond, NoJustificationNeeded{}), PropagatorState::DisableUntilBacktrack};
-                    }
-                } break;
-
-                case LiteralIs::DefinitelyTrue: {
-                    if constexpr (is_same_v<decay_t<decltype(sanitised_cv)>, SumOf<Weighted<SimpleIntegerVariableID>>>) {
-                        return propagate_linear(sanitised_cv, value, state, logger, true, proof_line, cond);
-                    }
-                    else if constexpr (is_same_v<decay_t<decltype(sanitised_cv)>, SumOf<PositiveOrNegative<SimpleIntegerVariableID>>>) {
-                        return propagate_sum(sanitised_cv, value, state, logger, true, proof_line, cond);
-                    }
-                    else if constexpr (is_same_v<decay_t<decltype(sanitised_cv)>, SumOf<SimpleIntegerVariableID>>) {
-                        return propagate_sum_all_positive(sanitised_cv, value, state, logger, true, proof_line, cond);
-                    }
-                    throw NonExhaustiveSwitch{};
-                } break;
-
-                case LiteralIs::DefinitelyFalse: {
-                    auto single_unset = sanitised_cv.terms.end();
-                    Integer accum = 0_i;
-                    for (auto i = sanitised_cv.terms.begin(), i_end = sanitised_cv.terms.end(); i != i_end; ++i) {
-                        auto val = state.optional_single_value(get_var(*i));
-                        if (val)
-                            accum += get_coeff(*i) * *val;
-                        else {
-                            if (single_unset != sanitised_cv.terms.end()) {
-                                // at least two unset variables, do nothing for now
-                                return pair{Inference::NoChange, PropagatorState::Enable};
-                            }
-                            else
-                                single_unset = i;
-                        }
-                    }
-
-                    if (single_unset == sanitised_cv.terms.end()) {
-                        // everything set, do a sanity check
-                        if (accum == value) {
-                            // cond is viewed as false, but needs to be true, this will contradict
-                            auto reason = generic_reason(state, all_vars);
-                            auto just = [&]() {
-                                logger->emit_rup_proof_line_under_reason(state, reason,
-                                    WeightedPseudoBooleanSum{} + 1_i * ! *gtflag >= 1_i, ProofLevel::Temporary);
-                                logger->emit_rup_proof_line_under_reason(state, reason,
-                                    WeightedPseudoBooleanSum{} + 1_i * ! *ltflag >= 1_i, ProofLevel::Temporary);
-                            };
-                            return pair{state.infer(logger, cond, JustifyExplicitly{just, reason}), PropagatorState::Enable};
-                        }
-                        else
-                            return pair{Inference::NoChange, PropagatorState::DisableUntilBacktrack};
-                    }
-                    else {
-                        // exactly one thing remaining
-                        Integer residual = value - accum;
-                        if (0_i == residual % get_coeff(*single_unset)) {
-                            Integer forbidden = residual / get_coeff(*single_unset);
-                            if (state.in_domain(get_var(*single_unset), forbidden)) {
-                                vector<IntegerVariableID> vars;
-                                for (const auto & cv : sanitised_cv.terms)
-                                    vars.push_back(get_var(cv));
-                                overloaded{
-                                    [&](const TrueLiteral &) {},
-                                    [&](const FalseLiteral &) {},
-                                    [&](const IntegerVariableCondition & cond) { vars.push_back(cond.var); }}
-                                    .visit(cond);
-
-                                auto reason = generic_reason(state, all_vars);
-                                auto just = [&]() {
-                                    logger->emit_rup_proof_line_under_reason(state, reason, WeightedPseudoBooleanSum{} + 1_i * (get_var(*single_unset) != forbidden) + 1_i * ! *gtflag >= 1_i,
-                                        ProofLevel::Temporary);
-                                    logger->emit_rup_proof_line_under_reason(state, reason, WeightedPseudoBooleanSum{} + 1_i * (get_var(*single_unset) != forbidden) + 1_i * ! *ltflag >= 1_i,
-                                        ProofLevel::Temporary);
-                                };
-                                return pair{state.infer(logger, get_var(*single_unset) != forbidden, JustifyExplicitly{just, reason}),
+                                // no way for the remaining variable to take that value, so the condition
+                                // has to be false
+                                return pair{state.infer(logger, ! cond, JustifyUsingRUP{generic_reason(state, all_vars)}),
                                     PropagatorState::DisableUntilBacktrack};
                             }
-                            else
-                                return pair{Inference::NoChange, PropagatorState::DisableUntilBacktrack};
+                            else {
+                                // could go either way, but this might change as more values are lost
+                                return pair{Inference::NoChange, PropagatorState::Enable};
+                            }
                         }
-                        else
-                            return pair{Inference::NoChange, PropagatorState::Enable};
+                        else {
+                            // the value that would make the equality work isn't an integer, so the condition
+                            // has to be false
+                            return pair{state.infer(logger, ! cond, JustifyUsingRUP{generic_reason(state, all_vars)}),
+                                PropagatorState::DisableUntilBacktrack};
+                        }
                     }
                 } break;
                 }

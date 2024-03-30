@@ -14,28 +14,17 @@ namespace gcs::innards
      *
      * \ingroup Innards
      */
-    auto propagate_linear(const SumOf<Weighted<SimpleIntegerVariableID>> &, Integer, State &,
+    auto propagate_linear(const auto & terms, Integer, State &,
         ProofLogger * const logger, bool equality,
         const std::optional<ProofLine> & proof_line,
         const std::optional<Literal> & add_to_reason) -> std::pair<Inference, PropagatorState>;
 
     /**
-     * \brief Propagate a simple sum equality or inequality.
+     * \brief Propagate a not-equals
      *
      * \ingroup Innards
      */
-    auto propagate_sum(const SumOf<PositiveOrNegative<SimpleIntegerVariableID>> &, Integer, State &,
-        ProofLogger * const logger, bool equality,
-        const std::optional<ProofLine> & proof_line,
-        const std::optional<Literal> & add_to_reason) -> std::pair<Inference, PropagatorState>;
-
-    /**
-     * \brief Propagate an all-positive sum equality or inequality.
-     *
-     * \ingroup Innards
-     */
-    auto propagate_sum_all_positive(const SumOf<SimpleIntegerVariableID> &, Integer, State &,
-        ProofLogger * const logger, bool equality,
-        const std::optional<ProofLine> & proof_line,
-        const std::optional<Literal> & add_to_reason) -> std::pair<Inference, PropagatorState>;
+    auto propagate_linear_not_equals(const auto & terms, Integer, State &,
+        ProofLogger * const logger,
+        const std::vector<IntegerVariableID> & all_vars_for_reason) -> std::pair<Inference, PropagatorState>;
 }

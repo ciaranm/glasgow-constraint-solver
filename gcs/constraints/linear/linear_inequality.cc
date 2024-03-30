@@ -47,29 +47,15 @@ auto LinearInequality::install(Propagators & propagators, State &, ProofModel * 
     for (auto & [_, v] : _coeff_vars.terms)
         triggers.on_bounds.push_back(v);
 
-    overloaded{
-        [&, &modifier = modifier](const SumOf<Weighted<SimpleIntegerVariableID>> & lin) {
+    visit(
+        [&, &modifier = modifier](const auto & lin) {
             propagators.install([modifier = modifier, lin = lin, value = _value, proof_line = proof_line](
                                     State & state, ProofLogger * const logger) {
                 return propagate_linear(lin, value + modifier, state, logger, false, proof_line, nullopt);
             },
                 triggers, "linear inequality");
         },
-        [&, &modifier = modifier](const SumOf<PositiveOrNegative<SimpleIntegerVariableID>> & sum) {
-            propagators.install([modifier = modifier, sum = sum, value = _value, proof_line = proof_line](
-                                    State & state, ProofLogger * const logger) {
-                return propagate_sum(sum, value + modifier, state, logger, false, proof_line, nullopt);
-            },
-                triggers, "linear inequality");
-        },
-        [&, &modifier = modifier](const SumOf<SimpleIntegerVariableID> & sum) {
-            propagators.install([modifier = modifier, sum = sum, value = _value, proof_line = proof_line](
-                                    State & state, ProofLogger * const logger) {
-                return propagate_sum_all_positive(sum, value + modifier, state, logger, false, proof_line, nullopt);
-            },
-                triggers, "linear inequality");
-        }}
-        .visit(sanitised_cv);
+        sanitised_cv);
 }
 
 auto LinearInequality::describe_for_proof() -> std::string
