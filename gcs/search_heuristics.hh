@@ -34,6 +34,13 @@ namespace gcs
         const BranchVariableComparator &) -> BranchCallback;
 
     /**
+     * Branch in order from the supplied variables.
+     *
+     * \ingroup SearchHeuristics
+     */
+    auto branch_in_order(const std::vector<IntegerVariableID> &) -> BranchCallback;
+
+    /**
      * Branch on smallest domain from the supplied variables.
      *
      * \ingroup SearchHeuristics
@@ -63,6 +70,13 @@ namespace gcs
     auto branch_on_dom_then_deg(const Problem & problem) -> BranchCallback;
 
     /**
+     * Try each branching heuristic in turn.
+     *
+     * \ingroup SearchHeuristics
+     */
+    auto branch_sequence(const std::vector<BranchCallback> &) -> BranchCallback;
+
+    /**
      * Branch on a randomly selected variable. This is usually not a good idea.
      *
      * \ingroup SearchHeuristics
@@ -89,6 +103,13 @@ namespace gcs
      * \ingroup SearchHeuristics
      */
     auto guess_largest_value_first() -> GuessCallback;
+
+    /**
+     * Guess the median.
+     *
+     * \ingroup SearchHeuristics
+     */
+    auto guess_median_value() -> GuessCallback;
 
     /**
      * Guess values randomly.

@@ -30,6 +30,18 @@ auto gcs::branch_on_smallest_with_respect_to(const vector<IntegerVariableID> & v
     };
 }
 
+auto gcs::branch_in_order(const std::vector<IntegerVariableID> & vars) -> BranchCallback
+{
+    return [vars = vars](const CurrentState & state, const innards::Propagators &) -> optional<IntegerVariableID> {
+        for (auto & v : vars) {
+            auto size = state.domain_size(v);
+            if (size >= 2_i)
+                return v;
+        }
+        return nullopt;
+    };
+}
+
 auto gcs::branch_on_dom(const vector<IntegerVariableID> & vars) -> BranchCallback
 {
     return [vars = vars](const CurrentState & state, const innards::Propagators &) -> optional<IntegerVariableID> {
@@ -90,6 +102,18 @@ auto gcs::branch_randomly(const vector<IntegerVariableID> & vars) -> BranchCallb
     };
 }
 
+auto gcs::branch_sequence(const vector<BranchCallback> & branchers) -> BranchCallback
+{
+    return [branchers = branchers](const CurrentState & state, const innards::Propagators & p) -> optional<IntegerVariableID> {
+        for (const auto & b : branchers) {
+            auto result = b(state, p);
+            if (result)
+                return result;
+        }
+        return nullopt;
+    };
+}
+
 auto gcs::guess_smallest_value_first() -> GuessCallback
 {
     return [](const CurrentState & state, IntegerVariableID var) -> vector<IntegerVariableCondition> {
@@ -110,6 +134,17 @@ auto gcs::guess_largest_value_first() -> GuessCallback
         });
         reverse(result.begin(), result.end());
         return result;
+    };
+}
+
+auto gcs::guess_median_value() -> GuessCallback
+{
+    return [](const CurrentState & state, IntegerVariableID var) -> vector<IntegerVariableCondition> {
+        vector<IntegerVariableCondition> result;
+        state.for_each_value(var, [&](Integer val) {
+            result.push_back(var == val);
+        });
+        return vector<IntegerVariableCondition>{result.at(result.size() / 2), ! result.at(result.size() / 2)};
     };
 }
 
