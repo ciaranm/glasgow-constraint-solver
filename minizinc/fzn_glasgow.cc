@@ -1,5 +1,6 @@
-#include "flatzinc_json_parser.hh"
 #include <gcs/gcs.hh>
+
+#include <nlohmann/json.hpp>
 
 #include <boost/program_options.hpp>
 
@@ -40,6 +41,7 @@ using std::mutex;
 using std::nullopt;
 using std::optional;
 using std::pair;
+using std::shared_ptr;
 using std::string;
 using std::thread;
 using std::unique_lock;
@@ -53,7 +55,6 @@ using fmt::print;
 using fmt::println;
 
 namespace po = boost::program_options;
-namespace j = gcs::flatzincjson;
 
 class FlatZincInterfaceError : public exception
 {
@@ -88,13 +89,14 @@ namespace
         unordered_map<string, vector<Integer>> constant_arrays;
         unordered_map<string, vector<IntegerVariableID>> variable_arrays;
         list<vector<Integer>> unnamed_constant_arrays;
+        vector<IntegerVariableID> branch_variables, all_variables;
     };
 
     auto arg_as_array_of_integer(ExtractedData & data, const auto & args, int idx) -> vector<Integer> *
     {
         auto a = args.at(idx);
-        if (holds_alternative<string>(a)) {
-            auto name = get<string>(a);
+        if (a.is_string()) {
+            string name = a;
             auto iter = data.constant_arrays.find(name);
             if (iter == data.constant_arrays.end())
                 throw FlatZincInterfaceError{fmt::format("Can't find constant array named {}", name)};
@@ -102,8 +104,8 @@ namespace
         }
         else {
             vector<Integer> result;
-            for (const auto & val : get<vector<j::FlatZincJso>>(a))
-                result.push_back(Integer{static_cast<long long>(get<double>(val))});
+            for (const auto & val : a)
+                result.push_back(Integer{static_cast<long long>(val)});
             data.unnamed_constant_arrays.push_back(move(result));
             return &data.unnamed_constant_arrays.back();
         }
@@ -112,42 +114,45 @@ namespace
     auto arg_as_array_of_var(ExtractedData & data, const auto & args, int idx) -> vector<IntegerVariableID>
     {
         auto a = args.at(idx);
-        if (holds_alternative<string>(a)) {
-            auto name = get<string>(a);
+        if (a.is_string()) {
+            string name = a;
             auto iter = data.variable_arrays.find(name);
             if (iter == data.variable_arrays.end())
                 throw FlatZincInterfaceError{fmt::format("Can't find variable array named {}", name)};
             return iter->second;
         }
-        else if (holds_alternative<vector<j::FlatZincJso>>(a)) {
+        else if (a.is_array()) {
             vector<IntegerVariableID> result;
-            for (const auto & v : get<vector<j::FlatZincJso>>(a))
-                result.push_back(data.integer_variables.at(get<string>(v)).first);
+            for (const string v : a)
+                result.push_back(data.integer_variables.at(v).first);
             return result;
         }
         else {
             throw UnimplementedException{fmt::format(
-                "don't know how to parse array of variables at index {} with alternative {} of type {}",
-                idx, a.index(), typeid(args.at(idx)).name())};
+                "don't know how to parse array of variables at index {}", idx)};
         }
     }
 
     auto arg_as_var(ExtractedData & data, const auto & args, int idx) -> IntegerVariableID
     {
         auto a = args.at(idx);
-        if (holds_alternative<string>(a)) {
-            auto name = get<string>(a);
+        if (a.is_string()) {
+            string name = a;
             auto iter = data.integer_variables.find(name);
             if (iter == data.integer_variables.end())
                 throw FlatZincInterfaceError{fmt::format("Can't find variable named {}", name)};
             return iter->second.first;
         }
-        else if (holds_alternative<double>(a)) {
-            auto val = Integer{static_cast<long long>(get<double>(a))};
+        else if (a.is_number()) {
+            auto val = Integer{static_cast<long long>(a)};
+            return ConstantIntegerVariableID{val};
+        }
+        else if (a.is_boolean()) {
+            auto val = Integer{static_cast<bool>(a) ? 1_i : 0_i};
             return ConstantIntegerVariableID{val};
         }
         else
-            throw FlatZincInterfaceError{"Didn't get a string or number for arg_as_var?"};
+            throw FlatZincInterfaceError{fmt::format("Didn't get a string or number for arg_as_var? arg is \"{}\"", a.dump())};
     }
 }
 
@@ -235,34 +240,31 @@ auto main(int argc, char * argv[]) -> int
         if (! infile)
             throw FlatZincInterfaceError{fmt::format("Error reading from {}", fznname)};
 
-        j::FlatZincJson fzn = nlohmann::json::parse(infile);
-        if (fzn.version != "1.0")
-            throw FlatZincInterfaceError{fmt::format("Unknown flatzinc version {} in {}", fzn.version, fznname)};
+        auto fzn = nlohmann::json::parse(infile);
+        if (fzn["version"] != "1.0")
+            throw FlatZincInterfaceError{fmt::format("Unknown flatzinc version {} in {}", string{fzn["version"]}, fznname)};
 
         Problem problem;
         ExtractedData data;
 
-        for (const auto & [name, vardata] : fzn.variables) {
+        for (auto v = fzn["variables"].begin(), v_end = fzn["variables"].end(); v != v_end; ++v) {
+            auto name = v.key();
+            auto vardata = v.value();
             string var_type = vardata["type"];
             if (var_type == "bool") {
-                data.integer_variables.emplace(name, pair{problem.create_integer_variable(0_i, 1_i, name), true});
+                auto var = problem.create_integer_variable(0_i, 1_i, name);
+                data.integer_variables.emplace(name, pair{var, true});
+                if ((! vardata.contains("defined")) || (! vardata["defined"].get<bool>()))
+                    data.branch_variables.push_back(var);
+                data.all_variables.push_back(var);
             }
             else if (var_type == "int") {
                 if (! vardata.contains("domain")) {
-                    data.integer_variables.emplace(name,      //
-                        pair{problem.create_integer_variable( //
-                                 Integer::min_value(),
-                                 Integer::max_value(),
-                                 name),
-                            false});
-                }
-                else if (vardata["domain"].size() == 1) {
-                    data.integer_variables.emplace(name,                            //
-                        pair{problem.create_integer_variable(                       //
-                                 Integer{vardata["domain"][0][0].get<long long>()}, //
-                                 Integer{vardata["domain"][0][1].get<long long>()}, //
-                                 name),
-                            false});
+                    auto var = problem.create_integer_variable(Integer::min_value(), Integer::max_value(), name);
+                    data.integer_variables.emplace(name, pair{var, false});
+                    if ((! vardata.contains("defined")) || (! vardata["defined"].get<bool>()))
+                        data.branch_variables.push_back(var);
+                    data.all_variables.push_back(var);
                 }
                 else {
                     auto size = vardata["domain"].size();
@@ -271,6 +273,9 @@ auto main(int argc, char * argv[]) -> int
                         Integer{vardata["domain"][size - 1][1].get<long long>()}, //
                         name);
                     data.integer_variables.emplace(name, pair{var, false});
+                    if ((! vardata.contains("defined")) || (! vardata["defined"].get<bool>()))
+                        data.branch_variables.push_back(var);
+                    data.all_variables.push_back(var);
                     for (unsigned i = 0; i < size - 1; ++i) {
                         problem.post(Or{{! (var >= Integer{vardata["domain"][i][1].get<long long>()} + 1_i),
                                             var >= Integer{vardata["domain"][i + 1][0].get<long long>()}},
@@ -282,7 +287,10 @@ auto main(int argc, char * argv[]) -> int
                 throw FlatZincInterfaceError{fmt::format("Unknown flatzinc variable type {} for variable {} in {}", var_type, name, fznname)};
         }
 
-        for (const auto & [name, arraydata] : fzn.arrays) {
+        for (auto a = fzn["arrays"].begin(), a_end = fzn["arrays"].end(); a != a_end; ++a) {
+            auto name = a.key();
+            auto arraydata = a.value();
+
             vector<Integer> values;
             vector<IntegerVariableID> variables;
             bool seen_variable = false;
@@ -303,7 +311,9 @@ auto main(int argc, char * argv[]) -> int
             data.variable_arrays.emplace(name, move(variables));
         }
 
-        for (const auto & [annotations, args, id] : fzn.constraints) {
+        for (const auto & constraint : fzn["constraints"]) {
+            string id = constraint["id"];
+            auto args = constraint["args"];
             if (id == "array_int_element") {
                 const auto & idx = arg_as_var(data, args, 0);
                 auto array = arg_as_array_of_integer(data, args, 1);
@@ -370,7 +380,7 @@ auto main(int argc, char * argv[]) -> int
             else if (id == "int_lin_eq" || id == "int_lin_le" || id == "int_lin_ne") {
                 auto coeffs = arg_as_array_of_integer(data, args, 0);
                 const auto & vars = arg_as_array_of_var(data, args, 1);
-                Integer total{static_cast<long long>(get<double>(args.at(2)))};
+                Integer total{static_cast<long long>(args.at(2))};
                 if (coeffs->size() != vars.size())
                     throw FlatZincInterfaceError{fmt::format("Array length mismatch in {} in {}", id, fznname)};
 
@@ -388,7 +398,7 @@ auto main(int argc, char * argv[]) -> int
             else if (id == "int_lin_eq_reif" || id == "int_lin_le_reif" || id == "int_lin_ne_reif") {
                 auto coeffs = arg_as_array_of_integer(data, args, 0);
                 const auto & vars = arg_as_array_of_var(data, args, 1);
-                Integer total{static_cast<long long>(get<double>(args.at(2)))};
+                Integer total{static_cast<long long>(args.at(2))};
                 if (coeffs->size() != vars.size())
                     throw FlatZincInterfaceError{fmt::format("Array length mismatch in {} in {}", id, fznname)};
                 const auto & reif = arg_as_var(data, args, 3);
@@ -467,6 +477,17 @@ auto main(int argc, char * argv[]) -> int
                     lits.push_back(v == 0_i);
                 problem.post(Or{lits, innards::TrueLiteral{}});
             }
+            else if (id == "bool_clause_reif") {
+                const auto & pos = arg_as_array_of_var(data, args, 0);
+                const auto & neg = arg_as_array_of_var(data, args, 1);
+                const auto & reif = arg_as_var(data, args, 2);
+                innards::Literals lits;
+                for (auto & v : pos)
+                    lits.push_back(v == 1_i);
+                for (auto & v : neg)
+                    lits.push_back(v == 0_i);
+                problem.post(Or{lits, reif == 1_i});
+            }
             else if (id == "bool_eq_reif") {
                 throw UnimplementedException{};
             }
@@ -498,27 +519,106 @@ auto main(int argc, char * argv[]) -> int
                 const auto & vars = arg_as_array_of_var(data, args, 0);
                 problem.post(AllDifferent{vars});
             }
+            else if (id == "glasgow_count_eq") {
+                const auto & vars = arg_as_array_of_var(data, args, 0);
+                const auto & varmatch = arg_as_var(data, args, 1);
+                const auto & varcount = arg_as_var(data, args, 2);
+                problem.post(Count{vars, varmatch, varcount});
+            }
             else
                 throw FlatZincInterfaceError{fmt::format("Unknown flatzinc constraint {} in {}", id, fznname)};
         }
 
-        switch (fzn.solve.method) {
-        case j::Method::SATISFY: break;
-        case j::Method::MINIMIZE:
-            problem.minimise(data.integer_variables.at(get<string>(*fzn.solve.objective)).first);
-            break;
-        case j::Method::MAXIMIZE:
-            problem.maximise(data.integer_variables.at(get<string>(*fzn.solve.objective)).first);
-            break;
+        auto solve_method = fzn["solve"]["method"];
+        if (solve_method == "satisfy") {
+        }
+        else if (solve_method == "minimize") {
+            problem.minimise(data.integer_variables.at(fzn["solve"]["objective"]).first);
+        }
+        else if (solve_method == "maximize") {
+            problem.maximise(data.integer_variables.at(fzn["solve"]["objective"]).first);
+        }
+        else
+            throw FlatZincInterfaceError{fmt::format("Unknown solve method {} in {}", string{solve_method}, fznname)};
+
+        BranchCallback branch = branch_on_dom_then_deg(data.branch_variables);
+        GuessCallback guess = guess_smallest_value_first();
+        if (fzn["solve"].contains("ann")) {
+            auto parse_int_search = [&data](const auto & ann) {
+                BranchCallback branch;
+                GuessCallback guess;
+
+                auto args = ann["args"];
+                data.branch_variables = arg_as_array_of_var(data, args, 0);
+                string var_heuristic = args[1];
+                string val_heuristic = args[2];
+                string method = args[3];
+
+                if (var_heuristic == "first_fail") {
+                    branch = branch_on_dom(data.branch_variables);
+                }
+                else if (var_heuristic == "input_order") {
+                    branch = branch_in_order(data.branch_variables);
+                }
+                else if (var_heuristic == "dom_w_deg") {
+                    // not technically "w" but it'll do for now
+                    branch = branch_on_dom_then_deg(data.branch_variables);
+                }
+                else {
+                    println(cerr, "Warning: treating unknown int_search variable heuristic {} as dom_w_deg instead", var_heuristic);
+                }
+
+                if (val_heuristic == "indomain" || val_heuristic == "indomain_min") {
+                    guess = guess_smallest_value_first();
+                }
+                else if (val_heuristic == "indomain_max") {
+                    guess = guess_largest_value_first();
+                }
+                else if (val_heuristic == "indomain_median") {
+                    guess = guess_median_value();
+                }
+                else {
+                    println(cerr, "Warning: treating unknown int_search value heuristic {} as indomain_min instead", val_heuristic);
+                }
+
+                if (method != "complete") {
+                    println(cerr, "Warning: treating unknown int_search method {} as complete instead", method);
+                }
+
+                return pair{branch, guess};
+            };
+
+            auto anns = fzn["solve"]["ann"];
+            for (const auto & ann : anns) {
+                if (ann["id"] == "int_search") {
+                    tie(branch, guess) = parse_int_search(ann);
+                }
+                else if (ann["id"] == "seq_search") {
+                    if (ann["args"].size() > 1)
+                        println(cerr, "Warning: only using first item of seq_search for value ordering");
+                    for (const auto & sub_ann : ann["args"][0]) {
+                        tie(branch, guess) = parse_int_search(sub_ann);
+                    }
+                }
+            }
+        }
+
+        if (options_vars.contains("statistics")) {
+            println(cout, "%%%mzn-stat: intVariables={}", data.integer_variables.size());
+            println(cout, "%%%mzn-stat: branchableVariables={}", data.branch_variables.size());
+            println(cout, "%%%mzn-stat-end");
+            cout << flush;
         }
 
         bool completed = false;
         auto stats = solve_with(problem,
             SolveCallbacks{
                 .solution = [&](const CurrentState & s) -> bool {
-                    for (const auto & name : fzn.output) {
+                    for (const string name : fzn["output"]) {
                         if (data.integer_variables.contains(name)) {
                             auto vardata = data.integer_variables.at(name);
+                            if (! s.has_single_value(data.integer_variables.at(name).first))
+                                throw UnimplementedException{fmt::format("Variable {} does not have a unique value", name)};
                             if (vardata.second)
                                 println(cout, "{} = {};", name, s(vardata.first) == 1_i ? "true" : "false");
                             else
@@ -526,9 +626,12 @@ auto main(int argc, char * argv[]) -> int
                         }
                         else if (data.variable_arrays.contains(name)) {
                             vector<string> vals;
-                            for (auto & v : data.variable_arrays.at(name))
+                            for (auto & v : data.variable_arrays.at(name)) {
+                                if (! s.has_single_value(v))
+                                    throw UnimplementedException{fmt::format("Variable inside array {} does not have a unique value", name)};
                                 vals.push_back(fmt::format("{}", s(v)));
-                            println(cout, "{} = [{}];", name, fmt::join(vals, ", "));
+                                println(cout, "{} = [{}];", name, fmt::join(vals, ", "));
+                            }
                         }
                         else
                             throw FlatZincInterfaceError{fmt::format("Unknown output item {} in {}", name, fznname)};
@@ -544,6 +647,9 @@ auto main(int argc, char * argv[]) -> int
 
                     return true;
                 },
+                .branch = branch_sequence(vector{branch, branch_on_dom_then_deg(data.branch_variables),
+                    branch_on_dom_then_deg(data.all_variables)}),
+                .guess = guess,
                 .completed = [&] { completed = true; }},
             nullopt, &abort_flag);
 
@@ -564,8 +670,11 @@ auto main(int argc, char * argv[]) -> int
         if (options_vars.contains("statistics")) {
             println(cout, "%%%mzn-stat: failures={}", stats.failures);
             println(cout, "%%%mzn-stat: nodes={}", stats.recursions);
+            println(cout, "%%%mzn-stat: propagations={}", stats.propagations);
+            println(cout, "%%%mzn-stat: effectfulPropagations={}", stats.effectful_propagations);
             println(cout, "%%%mzn-stat: peakDepth={}", stats.max_depth);
             println(cout, "%%%mzn-stat: solveTime={:.3f}", duration_cast<milliseconds>(stats.solve_time).count() / 1000.0);
+            println(cout, "%%%mzn-stat-end");
             cout << flush;
         }
     }
