@@ -149,7 +149,7 @@ auto LinearInequalityIff::install(Propagators & propagators, State & state, Proo
     case LiteralIs::DefinitelyTrue: {
         // definitely true, it's a less-than-or-equal
         visit(
-            [&, &modifier = modifier](const auto & lin) {
+            [&, modifier = modifier](const auto & lin) {
                 propagators.install([modifier = modifier, lin = lin, value = _value, cond = _cond, proof_line = proof_line](
                                         State & state, ProofLogger * const logger) {
                     return propagate_linear(lin, value + modifier, state, logger, false, proof_line, cond);
@@ -166,7 +166,7 @@ auto LinearInequalityIff::install(Propagators & propagators, State & state, Proo
             v.coefficient = -v.coefficient;
         auto [sanitised_neg_cv, neg_modifier] = tidy_up_linear(neg_coeff_vars);
         visit(
-            [&, &modifier = modifier](const auto & lin) {
+            [&, neg_modifier = neg_modifier](const auto & lin) {
                 propagators.install([neg_modifier = neg_modifier, lin = lin, value = -_value - 1_i, cond = _cond, proof_line = proof_line](
                                         State & state, ProofLogger * const logger) {
                     return propagate_linear(lin, value + neg_modifier, state, logger, false, *proof_line + 1, ! cond);
