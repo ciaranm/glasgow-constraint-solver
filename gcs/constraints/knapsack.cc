@@ -356,7 +356,8 @@ namespace
                                 ProofLevel::Temporary);
                         }
                     }
-                    inference.infer(logger, vars_including_assigned.at(var_idx) != val, JustifyUsingRUP{generic_reason(state, reason_variables)});
+                    inference.infer(logger, vars_including_assigned.at(var_idx) != val, JustifyUsingRUP{},
+                        generic_reason(state, reason_variables));
                 }
             });
 
@@ -427,7 +428,7 @@ namespace
                 logger->emit_rup_proof_line_under_reason(state, generic_reason(state, reason_variables), WeightedPseudoBooleanSum{} >= 1_i, ProofLevel::Temporary);
             }
 
-            inference.infer_false(logger, JustifyUsingRUP{generic_reason(state, reason_variables)});
+            inference.infer_false(logger, JustifyUsingRUP{}, generic_reason(state, reason_variables));
         }
         else {
             vector<Literal> inferences;
@@ -482,7 +483,7 @@ namespace
                 }
             }
 
-            inference.infer_all(logger, inferences, JustifyUsingRUP{generic_reason(state, reason_variables)});
+            inference.infer_all(logger, inferences, JustifyUsingRUP{}, generic_reason(state, reason_variables));
 
             // now run backwards from the final state, eliminating states that
             // didn't lead to a feasible terminal state, and seeing if any
@@ -514,7 +515,7 @@ namespace
                 auto var = vars_including_assigned.at(undetermined_var_indices.at(var_number));
                 state.for_each_value(var, [&](Integer val) {
                     if (! supported.contains(val))
-                        inference.infer(logger, var != val, JustifyUsingRUP{generic_reason(state, reason_variables)});
+                        inference.infer(logger, var != val, JustifyUsingRUP{}, generic_reason(state, reason_variables));
                 });
             }
         }
@@ -546,12 +547,12 @@ namespace
                 all_vars_assigned.push_back(v == state(v));
 
             for (const auto & [x, t] : enumerate(totals)) {
-                inference.infer(logger, totals.at(x) == committed_sums.at(x), JustifyUsingRUP{all_vars_assigned});
+                inference.infer(logger, totals.at(x) == committed_sums.at(x), JustifyUsingRUP{}, all_vars_assigned);
             }
         }
 
         for (const auto & [x, v] : enumerate(totals))
-            inference.infer(logger, v >= committed_sums.at(x), JustifyUsingRUP{generic_reason(state, vars)});
+            inference.infer(logger, v >= committed_sums.at(x), JustifyUsingRUP{}, generic_reason(state, vars));
 
         vector<pair<Integer, Integer>> boundses;
         for (auto & t : totals)

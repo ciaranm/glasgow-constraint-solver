@@ -345,7 +345,7 @@ namespace
             state.for_each_value(vars[i], [&](Integer val) -> void {
                 // Clean up domains
                 if (graph.states_supporting[i][val].empty()) {
-                    switch (state.infer_not_equal(logger, vars[i], val, JustifyUsingRUP{reason})) {
+                    switch (state.infer_not_equal(logger, vars[i], val, JustifyUsingRUP{}, reason)) {
                     case Inference::Contradiction:
                         contradiction = true;
                         break;

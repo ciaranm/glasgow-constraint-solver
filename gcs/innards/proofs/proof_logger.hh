@@ -7,6 +7,7 @@
 #include <gcs/innards/proofs/pseudo_boolean.hh>
 #include <gcs/innards/proofs/reification.hh>
 #include <gcs/innards/proofs/variable_constraints_tracker-fwd.hh>
+#include <gcs/innards/reason.hh>
 #include <gcs/innards/state-fwd.hh>
 #include <gcs/proof.hh>
 
@@ -25,7 +26,8 @@ namespace gcs::innards
 
         auto end_proof() -> void;
 
-        auto emit_subproofs(const std::map<std::string, JustifyExplicitly> & subproofs) -> auto;
+        auto emit_subproofs(const std::map<std::string, JustifyExplicitly> & subproofs,
+            const Reason & reason) -> auto;
 
     public:
         /**
@@ -90,7 +92,8 @@ namespace gcs::innards
         /**
          * Log, if necessary, that we have inferred a particular literal.
          */
-        auto infer(const State & state, bool is_contradicting, const Literal & lit, const Justification & why) -> void;
+        auto infer(const State & state, bool is_contradicting, const Literal & lit, const Justification & why,
+            const Reason & reason) -> void;
 
         /**
          * What is our current proof level?

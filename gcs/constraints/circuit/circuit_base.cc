@@ -135,16 +135,16 @@ auto gcs::innards::circuit::prevent_small_cycles(
         auto length = chain_lengths.back();
         chain_lengths.pop_back();
         if (cmp_less(length, succ.size() - 1)) {
-            auto justf = [&]() {
+            auto justf = [&](const Reason &) {
                 output_cycle_to_proof(succ, i, length, pos_var_data, state, *logger, Integer{end[i]}, Integer{i});
             };
             increase_inference_to(result,
-                state.infer(logger, succ[end[i]] != Integer{i}, JustifyExplicitly{justf, generic_reason(state, succ)}));
+                state.infer(logger, succ[end[i]] != Integer{i}, JustifyExplicitly{justf}, generic_reason(state, succ)));
             if (result == Inference::Contradiction)
                 return result;
         }
         else {
-            increase_inference_to(result, state.infer(logger, succ[end[i]] == Integer{i}, JustifyUsingRUP{generic_reason(state, succ)}));
+            increase_inference_to(result, state.infer(logger, succ[end[i]] == Integer{i}, JustifyUsingRUP{}, generic_reason(state, succ)));
             if (result == Inference::Contradiction)
                 return result;
         }
@@ -227,7 +227,7 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state, Proof
         propagators.install([succ = _succ](State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
             auto result = Inference::NoChange;
             for (auto [idx, s] : enumerate(succ)) {
-                increase_inference_to(result, state.infer_not_equal(logger, s, Integer(static_cast<long long>(idx)), JustifyUsingRUP{generic_reason(state, succ)}));
+                increase_inference_to(result, state.infer_not_equal(logger, s, Integer(static_cast<long long>(idx)), JustifyUsingRUP{}, generic_reason(state, succ)));
                 if (result == Inference::Contradiction)
                     break;
             }

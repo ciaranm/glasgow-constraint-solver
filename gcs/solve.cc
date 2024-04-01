@@ -37,7 +37,8 @@ namespace
 
         bool objective_failure = false;
         if (problem.optional_minimise_variable() && objective_value) {
-            if (state.infer(logger, *problem.optional_minimise_variable() < *objective_value, NoJustificationNeeded{}) == Inference::Contradiction)
+            if (state.infer(logger, *problem.optional_minimise_variable() < *objective_value, NoJustificationNeeded{},
+                    Reason{}) == Inference::Contradiction)
                 objective_failure = true;
         }
 

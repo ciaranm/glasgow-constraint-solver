@@ -17,12 +17,13 @@ namespace gcs::innards
 {
     /**
      * \brief Write an explicit justification to the proof. Any ProofLevel::Temporary
-     * constraints will be wiped after the conclusion is derived.
+     * constraints will be wiped after the conclusion is derived. The reason used for
+     * the outside inference is provided for convenience.
      *
      * \ingroup Innards
      * \sa JustifyExplicitly
      */
-    using ExplicitJustificationFunction = std::function<auto()->void>;
+    using ExplicitJustificationFunction = std::function<auto(const Reason & reason)->void>;
 
     /**
      * \brief Justification for something that is actually a guess, not an
@@ -45,20 +46,17 @@ namespace gcs::innards
     struct JustifyExplicitly
     {
         ExplicitJustificationFunction add_proof_steps;
-        Reason reason;
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
         std::source_location where;
 #endif
 
-        explicit JustifyExplicitly(const ExplicitJustificationFunction & a,
-            Reason r
+        explicit JustifyExplicitly(const ExplicitJustificationFunction & a
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
             ,
             const std::source_location & w = std::source_location::current()
 #endif
                 ) :
-            add_proof_steps(a),
-            reason(std::move(r))
+            add_proof_steps(a)
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
             ,
             where(w)
@@ -76,20 +74,17 @@ namespace gcs::innards
      */
     struct JustifyUsingRUP
     {
-        Reason reason;
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
         std::source_location where;
 #endif
 
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
-        explicit JustifyUsingRUP(Reason r, const std::source_location & w = std::source_location::current()) :
-            reason(std::move(r)),
+        explicit JustifyUsingRUP(const std::source_location & w = std::source_location::current()) :
             where(w)
         {
         }
 #else
-        explicit JustifyUsingRUP(Reason r) :
-            reason(std::move(r))
+        explicit JustifyUsingRUP()
         {
         }
 #endif
@@ -103,20 +98,17 @@ namespace gcs::innards
      */
     struct AssertRatherThanJustifying
     {
-        Reason reason;
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
         std::source_location where;
 #endif
 
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
-        explicit AssertRatherThanJustifying(Reason r, const std::source_location & w = std::source_location::current()) :
-            reason(std::move(r)),
+        explicit AssertRatherThanJustifying(const std::source_location & w = std::source_location::current()) :
             where(w)
         {
         }
 #else
-        explicit AssertRatherThanJustifying(Reason r) :
-            reason(std::move(r))
+        explicit AssertRatherThanJustifying()
         {
         }
 #endif

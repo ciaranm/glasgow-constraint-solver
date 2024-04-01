@@ -344,7 +344,7 @@ namespace
             if (i != root) {
                 // Redundance subproof:
                 auto subproofs = make_optional(map<string, JustifyExplicitly>{});
-                auto justf = [&]() {
+                auto justf = [&](const Reason &) {
                     logger.emit_proof_line("     p -2 " + logger.variable_constraints_tracker().proof_name(greater_than_flag) + " w", ProofLevel::Top);
                     for (long k = 0; cmp_less(k, succ.size()); k++) {
                         PLine p_line;
@@ -367,7 +367,7 @@ namespace
                     }
                     logger.emit_rup_proof_line(WeightedPseudoBooleanSum{} >= 1_i, ProofLevel::Top);
                 };
-                subproofs.value().emplace(to_string(forwards_reif_line), JustifyExplicitly{justf, {}});
+                subproofs.value().emplace(to_string(forwards_reif_line), JustifyExplicitly{justf});
 
                 backwards_reif_line = logger.emit_red_proof_lines_reverse_reifying(
                     WeightedPseudoBooleanSum{} + 1_i * pos_var_data.at(root).var + -1_i * pos_var_data.at(i).var >= 0_i,
@@ -1025,7 +1025,7 @@ namespace
                         }
                     }
 
-                    increase_inference_to(result, state.infer(logger, succ[node] != w, NoJustificationNeeded{}));
+                    increase_inference_to(result, state.infer(logger, succ[node] != w, NoJustificationNeeded{}, Reason{}));
                 }
                 data.lowlink[node] = pos_min(data.lowlink[node], data.visit_number[next_node]);
             }
@@ -1086,7 +1086,7 @@ namespace
                             prove_reachable_set_too_small(state, *logger, reason, succ, from_node, proof_data,
                                 succ[from_node] != Integer{to_node});
                         }
-                        increase_inference_to(result, state.infer(logger, succ[from_node] == Integer{to_node}, NoJustificationNeeded{}));
+                        increase_inference_to(result, state.infer(logger, succ[from_node] == Integer{to_node}, NoJustificationNeeded{}, Reason{}));
                     }
                 }
                 data.start_prev_subtree = data.end_prev_subtree + 1;
@@ -1114,7 +1114,7 @@ namespace
                         logger->emit_proof_comment("Prune impossible edges from root node");
                         prove_reachable_set_too_small(state, *logger, reason, succ, data.root, proof_data, succ[data.root] == v);
                     }
-                    increase_inference_to(result, state.infer(logger, succ[data.root] != v, JustifyUsingRUP{reason}));
+                    increase_inference_to(result, state.infer(logger, succ[data.root] != v, JustifyUsingRUP{}, reason));
                 }
                 return true;
             });

@@ -50,7 +50,8 @@ auto NValue::install(Propagators & propagators, State & initial_state, ProofMode
             });
         }
 
-        auto inf = state.infer(logger, n_values < Integer(all_possible_values.size()) + 1_i, JustifyUsingRUP{generic_reason(state, all_vars)});
+        auto inf = state.infer(logger, n_values < Integer(all_possible_values.size()) + 1_i, JustifyUsingRUP{},
+            generic_reason(state, all_vars));
         if (Inference::Contradiction == inf)
             return pair{inf, PropagatorState::Enable};
 
@@ -61,7 +62,7 @@ auto NValue::install(Propagators & propagators, State & initial_state, ProofMode
                 all_definite_values.insert(*val);
         }
 
-        increase_inference_to(inf, state.infer(logger, n_values >= max(1_i, Integer(all_definite_values.size())), JustifyUsingRUP{generic_reason(state, all_vars)}));
+        increase_inference_to(inf, state.infer(logger, n_values >= max(1_i, Integer(all_definite_values.size())), JustifyUsingRUP{}, generic_reason(state, all_vars)));
         if (Inference::Contradiction == inf)
             return pair{inf, PropagatorState::Enable};
 

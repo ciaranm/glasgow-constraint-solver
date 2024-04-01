@@ -129,7 +129,7 @@ auto LinearInequalityIff::install(Propagators & propagators, State & state, Proo
     if (visit([](const auto & s) { return s.terms.empty(); }, sanitised_cv)) {
         propagators.install_initialiser([modifier = modifier, value = _value, cond = _cond](
                                             State & state, ProofLogger * const logger) -> Inference {
-            return state.infer(logger, 0_i <= value + modifier ? cond : ! cond, JustifyUsingRUP{Literals{}});
+            return state.infer(logger, 0_i <= value + modifier ? cond : ! cond, JustifyUsingRUP{}, Reason{});
         });
     }
 
@@ -221,13 +221,13 @@ auto LinearInequalityIff::install(Propagators & propagators, State & state, Proo
                     }
 
                     if (min_possible > value + modifier) {
-                        auto just = [&]() { return justify_cond(state, sanitised_cv, *logger, *proof_line); };
-                        return pair{state.infer(logger, ! cond, JustifyExplicitly{just, generic_reason(state, vars)}),
+                        auto just = [&](const Reason &) { return justify_cond(state, sanitised_cv, *logger, *proof_line); };
+                        return pair{state.infer(logger, ! cond, JustifyExplicitly{just}, generic_reason(state, vars)),
                             PropagatorState::Enable};
                     }
                     else if (max_possible <= value + modifier) {
-                        auto just = [&]() { return justify_cond(state, sanitised_neg_cv, *logger, *proof_line + 1); };
-                        return pair{state.infer(logger, cond, JustifyExplicitly{just, generic_reason(state, vars)}),
+                        auto just = [&](const Reason &) { return justify_cond(state, sanitised_neg_cv, *logger, *proof_line + 1); };
+                        return pair{state.infer(logger, cond, JustifyExplicitly{just}, generic_reason(state, vars)),
                             PropagatorState::Enable};
                     }
                     else

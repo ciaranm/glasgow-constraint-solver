@@ -70,7 +70,7 @@ auto gcs::innards::propagate_extensional(const ExtensionalData & table, State & 
                 }
 
             if (! is_feasible) {
-                switch (state.infer(logger, table.selector != Integer(tuple_idx), NoJustificationNeeded{})) {
+                switch (state.infer(logger, table.selector != Integer(tuple_idx), NoJustificationNeeded{}, Reason{})) {
                 case Inference::NoChange: break;
                 case Inference::Change: changed = true; break;
                 case Inference::Contradiction: contradiction = true; break;
@@ -99,7 +99,7 @@ auto gcs::innards::propagate_extensional(const ExtensionalData & table, State & 
                 });
 
                 if (! supported) {
-                    switch (state.infer(logger, table.vars[idx] != val, JustifyUsingRUP{generic_reason(state, table.vars)})) {
+                    switch (state.infer(logger, table.vars[idx] != val, JustifyUsingRUP{}, generic_reason(state, table.vars))) {
                     case Inference::NoChange: break;
                     case Inference::Change: changed = true; break;
                     case Inference::Contradiction: contradiction = true; break;

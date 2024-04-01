@@ -41,7 +41,7 @@ namespace
             propagators.install_initialiser([full_reif = _full_reif, lits = _lits](State & state, ProofLogger * const logger) -> Inference {
                 Inference inf = Inference::NoChange;
                 for (auto & l : lits) {
-                    increase_inference_to(inf, state.infer(logger, l, JustifyUsingRUP{Literals{full_reif}}));
+                    increase_inference_to(inf, state.infer(logger, l, JustifyUsingRUP{}, Reason{Literals{full_reif}}));
                     if (inf == Inference::Contradiction)
                         break;
                 }
@@ -81,7 +81,7 @@ namespace
                 // we saw a false literal, the reif variable must be forced off and
                 // then we don't do anything else
                 propagators.install_initialiser([full_reif = _full_reif](State & state, ProofLogger * const logger) -> Inference {
-                    return state.infer(logger, ! full_reif, JustifyUsingRUP{Literals{}});
+                    return state.infer(logger, ! full_reif, JustifyUsingRUP{}, Reason{});
                 });
 
                 if (optional_model) {
@@ -95,7 +95,7 @@ namespace
                     case LiteralIs::DefinitelyTrue: {
                         Inference inf = Inference::NoChange;
                         for (auto & l : lits) {
-                            increase_inference_to(inf, state.infer(logger, l, JustifyUsingRUP{Literals{full_reif}}));
+                            increase_inference_to(inf, state.infer(logger, l, JustifyUsingRUP{}, Reason{Literals{full_reif}}));
                             if (inf == Inference::Contradiction)
                                 break;
                         }
@@ -125,7 +125,7 @@ namespace
                             for (auto & lit : lits)
                                 why.push_back(lit);
                             why.push_back(! full_reif);
-                            return pair{state.infer(logger, FalseLiteral{}, JustifyUsingRUP{why}), PropagatorState::Enable};
+                            return pair{state.infer(logger, FalseLiteral{}, JustifyUsingRUP{}, Reason{why}), PropagatorState::Enable};
                         }
                         else {
                             Literals why;
@@ -133,7 +133,7 @@ namespace
                                 if (l != *undecided1)
                                     why.push_back(l);
                             why.push_back(! full_reif);
-                            return pair{state.infer(logger, ! *undecided1, JustifyUsingRUP{why}), PropagatorState::DisableUntilBacktrack};
+                            return pair{state.infer(logger, ! *undecided1, JustifyUsingRUP{}, Reason{why}), PropagatorState::DisableUntilBacktrack};
                         }
                     }
 
@@ -152,16 +152,16 @@ namespace
                             }
 
                         if (any_false) {
-                            return pair{state.infer(logger, ! full_reif, JustifyUsingRUP{Literals{! *any_false}}),
+                            return pair{state.infer(logger, ! full_reif, JustifyUsingRUP{}, Reason{Literals{! *any_false}}),
                                 PropagatorState::DisableUntilBacktrack};
                         }
                         else if (all_true) {
-                            auto justf = [&]() {
+                            auto justf = [&](const Reason & reason) {
                                 for (auto & l : lits)
-                                    logger->emit_rup_proof_line_under_reason(state, lits,
+                                    logger->emit_rup_proof_line_under_reason(state, reason,
                                         WeightedPseudoBooleanSum{} + 1_i * l >= 1_i, ProofLevel::Temporary);
                             };
-                            return pair{state.infer(logger, full_reif, JustifyExplicitly{justf, lits}),
+                            return pair{state.infer(logger, full_reif, JustifyExplicitly{justf}, Reason{lits}),
                                 PropagatorState::DisableUntilBacktrack};
                         }
                         else

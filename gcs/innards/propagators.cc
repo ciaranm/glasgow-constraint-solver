@@ -86,7 +86,7 @@ auto Propagators::trim_lower_bound(const State & state, ProofModel * const optio
             if (optional_model)
                 optional_model->add_constraint({var >= val});
             install_initialiser([var, val](State & state, ProofLogger * const logger) {
-                return state.infer(logger, var >= val, JustifyUsingRUP{Literals{}});
+                return state.infer(logger, var >= val, JustifyUsingRUP{}, Reason{});
             });
         }
         else
@@ -101,7 +101,7 @@ auto Propagators::trim_upper_bound(const State & state, ProofModel * const optio
             if (optional_model)
                 optional_model->add_constraint({var < val + 1_i});
             install_initialiser([var, val](State & state, ProofLogger * const logger) {
-                return state.infer(logger, var < val + 1_i, JustifyUsingRUP{Literals{}});
+                return state.infer(logger, var < val + 1_i, JustifyUsingRUP{}, Reason{});
             });
         }
         else

@@ -436,7 +436,7 @@ namespace
                 if (! filter_and_check_valid(tree, supported_by_tree, pb_selectors[tuple_idx], state, reason, logger)) {
                     // Not feasible
 
-                    switch (state.infer_equal(logger, selectors[tuple_idx], 0_i, NoJustificationNeeded{})) {
+                    switch (state.infer_equal(logger, selectors[tuple_idx], 0_i, NoJustificationNeeded{}, Reason{})) {
                     case Inference::NoChange: break;
                     case Inference::Change: changed = true; break;
                     case Inference::Contradiction: contradiction = true; break;
@@ -472,14 +472,14 @@ namespace
 
         for (const auto & var : vars) {
             for (const auto & value : unsupported[var]) {
-                auto justf = [&]() -> void {
+                auto justf = [&](const Reason & reason) -> void {
                     for (unsigned int tuple_idx = 0; tuple_idx < tuples.size(); ++tuple_idx) {
                         logger->emit_rup_proof_line_under_reason(state, reason,
                             WeightedPseudoBooleanSum{} + 1_i * (var != value) + 1_i * (! pb_selectors[tuple_idx]) >= 1_i,
                             ProofLevel::Current);
                     }
                 };
-                switch (state.infer_not_equal(logger, var, value, JustifyExplicitly{justf, reason})) {
+                switch (state.infer_not_equal(logger, var, value, JustifyExplicitly{justf}, reason)) {
                 case Inference::NoChange: break;
                 case Inference::Change: changed = true; break;
                 case Inference::Contradiction: contradiction = true; break;

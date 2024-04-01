@@ -198,7 +198,8 @@ auto ProofLogger::conclude_none() -> void
     end_proof();
 }
 
-auto ProofLogger::infer(const State & state, bool is_contradicting, const Literal & lit, const Justification & why) -> void
+auto ProofLogger::infer(const State & state, bool is_contradicting, const Literal & lit, const Justification & why,
+    const Reason & reason) -> void
 {
     auto need_lit = [&]() {
         overloaded{
@@ -215,7 +216,7 @@ auto ProofLogger::infer(const State & state, bool is_contradicting, const Litera
                         << j.where.line() << " in " << j.where.function_name() << '\n';
 #endif
             need_lit();
-            for (auto & r : j.reason)
+            for (auto & r : reason)
                 overloaded{
                     [&](const TrueLiteral &) {
                     },
@@ -230,7 +231,7 @@ auto ProofLogger::infer(const State & state, bool is_contradicting, const Litera
 
             if (! is_literally_true(lit)) {
                 WeightedPseudoBooleanSum terms;
-                for (auto & r : j.reason)
+                for (auto & r : reason)
                     terms += 1_i * ! r;
                 terms += 1_i * lit;
                 _imp->proof << "u ";
@@ -245,7 +246,7 @@ auto ProofLogger::infer(const State & state, bool is_contradicting, const Litera
                         << j.where.line() << " in " << j.where.function_name() << '\n';
 #endif
             need_lit();
-            for (auto & r : j.reason)
+            for (auto & r : reason)
                 overloaded{
                     [&](const TrueLiteral &) {
                     },
@@ -260,7 +261,7 @@ auto ProofLogger::infer(const State & state, bool is_contradicting, const Litera
 
             if (! is_literally_true(lit)) {
                 WeightedPseudoBooleanSum terms;
-                for (auto & r : j.reason)
+                for (auto & r : reason)
                     terms += 1_i * ! r;
                 terms += 1_i * lit;
                 _imp->proof << "a ";
@@ -276,13 +277,13 @@ auto ProofLogger::infer(const State & state, bool is_contradicting, const Litera
 #endif
             need_lit();
             auto t = temporary_proof_level();
-            x.add_proof_steps();
-            infer(state, is_contradicting, lit, JustifyUsingRUP{x.reason
+            x.add_proof_steps(reason);
+            infer(state, is_contradicting, lit, JustifyUsingRUP{
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
-                                                    ,
                                                     x.where
 #endif
-                                                });
+                                                },
+                reason);
             forget_proof_level(t);
         },
         [&](const Guess &) {
@@ -481,7 +482,7 @@ auto ProofLogger::variable_constraints_tracker() -> VariableConstraintsTracker &
     return _imp->tracker;
 }
 
-auto ProofLogger::emit_subproofs(const map<string, JustifyExplicitly> & subproofs)
+auto ProofLogger::emit_subproofs(const map<string, JustifyExplicitly> & subproofs, const Reason & reason)
 {
     _imp->proof << " begin\n";
     ++_imp->proof_line;
@@ -489,7 +490,7 @@ auto ProofLogger::emit_subproofs(const map<string, JustifyExplicitly> & subproof
         ++_imp->proof_line;
         _imp->proof
             << "     proofgoal " << proofgoal << "\n";
-        proof.add_proof_steps();
+        proof.add_proof_steps(reason);
         _imp->proof << "     end -1\n";
     }
     _imp->proof << "end\n";
@@ -513,7 +514,7 @@ auto ProofLogger::emit_red_proof_lines_forward_reifying(const SumLessEqual<Weigh
     _imp->proof << " " << witness_literal(variable_constraints_tracker(), reif) << " -> 0";
     _imp->proof << " ;";
     if (subproofs)
-        emit_subproofs(subproofs.value());
+        emit_subproofs(subproofs.value(), Reason{});
     else
         _imp->proof << "\n";
 
@@ -539,7 +540,7 @@ auto ProofLogger::emit_red_proof_lines_reverse_reifying(const SumLessEqual<Weigh
     _imp->proof << " " << witness_literal(variable_constraints_tracker(), reif) << " -> 1";
     _imp->proof << " ;";
     if (subproofs)
-        emit_subproofs(subproofs.value());
+        emit_subproofs(subproofs.value(), Reason{});
     else
         _imp->proof << "\n";
     return record_proof_line(++_imp->proof_line, level);

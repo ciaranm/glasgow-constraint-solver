@@ -205,7 +205,7 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
         // condition is definitely true, an empty sum matches iff the modifiers sum to the value
         if (visit([](const auto & s) { return s.terms.empty(); }, sanitised_cv) && modifier != _value) {
             propagators.install_initialiser([cond = _cond](State & state, ProofLogger * const logger) -> Inference {
-                return state.infer(logger, FalseLiteral{}, JustifyUsingRUP{Literals{cond}});
+                return state.infer(logger, FalseLiteral{}, JustifyUsingRUP{}, Reason{{cond}});
             });
         }
 
@@ -251,7 +251,7 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
         // condition is definitely false, an empty sum matches iff the modifiers sum to something other than the value
         if (visit([](const auto & s) { return s.terms.empty(); }, sanitised_cv) && modifier == _value) {
             propagators.install_initialiser([cond = _cond](State & state, ProofLogger * const logger) -> Inference {
-                return state.infer(logger, FalseLiteral{}, JustifyUsingRUP{Literals{cond}});
+                return state.infer(logger, FalseLiteral{}, JustifyUsingRUP{}, Reason{{cond}});
             });
         }
 
@@ -277,12 +277,12 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
         if (visit([](const auto & s) { return s.terms.empty(); }, sanitised_cv)) {
             if (modifier == _value) {
                 propagators.install_initialiser([cond = _cond](State & state, ProofLogger * const logger) -> Inference {
-                    return state.infer(logger, cond, NoJustificationNeeded{});
+                    return state.infer(logger, cond, NoJustificationNeeded{}, Reason{});
                 });
             }
             else {
                 propagators.install_initialiser([cond = _cond](State & state, ProofLogger * const logger) -> Inference {
-                    return state.infer(logger, ! cond, NoJustificationNeeded{});
+                    return state.infer(logger, ! cond, NoJustificationNeeded{}, Reason{});
                 });
             }
         }
@@ -335,11 +335,11 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
                     if (single_unset == sanitised_cv.terms.end()) {
                         // every variable is assigned, so we know what the condition must be
                         if (accum == value) {
-                            return pair{state.infer(logger, cond, JustifyUsingRUP{generic_reason(state, all_vars)}),
+                            return pair{state.infer(logger, cond, JustifyUsingRUP{}, generic_reason(state, all_vars)),
                                 PropagatorState::DisableUntilBacktrack};
                         }
                         else {
-                            return pair{state.infer(logger, ! cond, JustifyUsingRUP{generic_reason(state, all_vars)}),
+                            return pair{state.infer(logger, ! cond, JustifyUsingRUP{}, generic_reason(state, all_vars)),
                                 PropagatorState::DisableUntilBacktrack};
                         }
                     }
@@ -352,7 +352,7 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
                             if (! state.in_domain(get_var(*single_unset), would_make_equal)) {
                                 // no way for the remaining variable to take that value, so the condition
                                 // has to be false
-                                return pair{state.infer(logger, ! cond, JustifyUsingRUP{generic_reason(state, all_vars)}),
+                                return pair{state.infer(logger, ! cond, JustifyUsingRUP{}, generic_reason(state, all_vars)),
                                     PropagatorState::DisableUntilBacktrack};
                             }
                             else {
@@ -363,7 +363,7 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
                         else {
                             // the value that would make the equality work isn't an integer, so the condition
                             // has to be false
-                            return pair{state.infer(logger, ! cond, JustifyUsingRUP{generic_reason(state, all_vars)}),
+                            return pair{state.infer(logger, ! cond, JustifyUsingRUP{}, generic_reason(state, all_vars)),
                                 PropagatorState::DisableUntilBacktrack};
                         }
                     }

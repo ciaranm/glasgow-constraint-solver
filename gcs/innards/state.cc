@@ -613,8 +613,8 @@ auto State::change_state_for_greater_than_or_equal(
         .visit(get_state.state);
 }
 
-auto State::prove_and_remember_change(ProofLogger * const logger, const Inference & inference, const HowChanged & how_changed, const Justification & just,
-    const Literal & lit, const DirectIntegerVariableID & actual_var) -> void
+auto State::prove_and_remember_change(ProofLogger * const logger, const Inference & inference, const HowChanged & how_changed,
+    const Justification & just, const Reason & reason, const Literal & lit, const DirectIntegerVariableID & actual_var) -> void
 {
     switch (inference) {
     case Inference::NoChange:
@@ -622,7 +622,7 @@ auto State::prove_and_remember_change(ProofLogger * const logger, const Inferenc
 
     case Inference::Contradiction:
         if (logger)
-            logger->infer(*this, true, lit, just);
+            logger->infer(*this, true, lit, just, reason);
         break;
 
     case Inference::Change: {
@@ -638,110 +638,110 @@ auto State::prove_and_remember_change(ProofLogger * const logger, const Inferenc
         _imp->how_changed[simple_var.index] = max<HowChanged>(_imp->how_changed[simple_var.index], how_changed);
 
         if (logger)
-            logger->infer(*this, false, lit, just);
+            logger->infer(*this, false, lit, just, reason);
         break;
     }
     }
 }
 
-auto State::infer(ProofLogger * const logger, const Literal & lit, const Justification & just) -> Inference
+auto State::infer(ProofLogger * const logger, const Literal & lit, const Justification & just, const Reason & reason) -> Inference
 {
     return overloaded{
         [&](const IntegerVariableCondition & cond) -> Inference {
-            return infer(logger, cond, just);
+            return infer(logger, cond, just, reason);
         },
         [&](const TrueLiteral &) {
             if (logger)
-                logger->infer(*this, false, TrueLiteral{}, just);
+                logger->infer(*this, false, TrueLiteral{}, just, reason);
             return Inference::NoChange;
         },
         [&](const FalseLiteral &) {
             if (logger)
-                logger->infer(*this, true, FalseLiteral{}, just);
+                logger->infer(*this, true, FalseLiteral{}, just, reason);
             return Inference::Contradiction;
         }}
         .visit(lit);
 }
 
 template <IntegerVariableIDLike VarType_>
-auto State::infer(ProofLogger * const logger, const VariableConditionFrom<VarType_> & cond, const Justification & just) -> Inference
+auto State::infer(ProofLogger * const logger, const VariableConditionFrom<VarType_> & cond, const Justification & just,
+    const Reason & reason) -> Inference
 {
     switch (cond.op) {
     case VariableConditionOperator::Equal:
-        return infer_equal(logger, cond.var, cond.value, just);
+        return infer_equal(logger, cond.var, cond.value, just, reason);
     case VariableConditionOperator::NotEqual:
-        return infer_not_equal(logger, cond.var, cond.value, just);
+        return infer_not_equal(logger, cond.var, cond.value, just, reason);
     case VariableConditionOperator::Less:
-        return infer_less_than(logger, cond.var, cond.value, just);
+        return infer_less_than(logger, cond.var, cond.value, just, reason);
     case VariableConditionOperator::GreaterEqual:
-        return infer_greater_than_or_equal(logger, cond.var, cond.value, just);
+        return infer_greater_than_or_equal(logger, cond.var, cond.value, just, reason);
     }
     throw NonExhaustiveSwitch{};
 }
 
-auto State::infer_true(ProofLogger * const logger, const Justification & just) -> void
+auto State::infer_false(ProofLogger * const logger, const Justification & just, const Reason & reason) -> void
 {
     if (logger)
-        logger->infer(*this, false, TrueLiteral{}, just);
-}
-
-auto State::infer_false(ProofLogger * const logger, const Justification & just) -> void
-{
-    if (logger)
-        logger->infer(*this, true, FalseLiteral{}, just);
+        logger->infer(*this, true, FalseLiteral{}, just, reason);
 }
 
 template <IntegerVariableIDLike VarType_>
-auto State::infer_not_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & just) -> Inference
+auto State::infer_not_equal(ProofLogger * const logger, const VarType_ & var, Integer value,
+    const Justification & just, const Reason & reason) -> Inference
 {
     auto [actual_var, negate_first, then_add] = deview(var);
     auto [inference, how_changed] = change_state_for_not_equal(actual_var, (negate_first ? -value + then_add : value - then_add));
-    prove_and_remember_change(logger, inference, how_changed, just, var != value, actual_var);
+    prove_and_remember_change(logger, inference, how_changed, just, reason, var != value, actual_var);
     return inference;
 }
 
 template <IntegerVariableIDLike VarType_>
-auto State::infer_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & just) -> Inference
+auto State::infer_equal(ProofLogger * const logger, const VarType_ & var, Integer value,
+    const Justification & just, const Reason & reason) -> Inference
 {
     auto [actual_var, negate_first, then_add] = deview(var);
     auto [inference, how_changed] = change_state_for_equal(actual_var, (negate_first ? -value + then_add : value - then_add));
-    prove_and_remember_change(logger, inference, how_changed, just, var == value, actual_var);
+    prove_and_remember_change(logger, inference, how_changed, just, reason, var == value, actual_var);
     return inference;
 }
 
 template <IntegerVariableIDLike VarType_>
-auto State::infer_less_than(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & just) -> Inference
+auto State::infer_less_than(ProofLogger * const logger, const VarType_ & var, Integer value,
+    const Justification & just, const Reason & reason) -> Inference
 {
     auto [actual_var, negate_first, then_add] = deview(var);
     if (negate_first) {
         auto [inference, how_changed] = change_state_for_greater_than_or_equal(actual_var, -value + then_add + 1_i);
-        prove_and_remember_change(logger, inference, how_changed, just, var < value, actual_var);
+        prove_and_remember_change(logger, inference, how_changed, just, reason, var < value, actual_var);
         return inference;
     }
     else {
         auto [inference, how_changed] = change_state_for_less_than(actual_var, value - then_add);
-        prove_and_remember_change(logger, inference, how_changed, just, var < value, actual_var);
+        prove_and_remember_change(logger, inference, how_changed, just, reason, var < value, actual_var);
         return inference;
     }
 }
 
 template <IntegerVariableIDLike VarType_>
-auto State::infer_greater_than_or_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & just) -> Inference
+auto State::infer_greater_than_or_equal(ProofLogger * const logger, const VarType_ & var, Integer value,
+    const Justification & just, const Reason & reason) -> Inference
 {
     auto [actual_var, negate_first, then_add] = deview(var);
     if (negate_first) {
         auto [inference, how_changed] = change_state_for_less_than(actual_var, -value + then_add + 1_i);
-        prove_and_remember_change(logger, inference, how_changed, just, var >= value, actual_var);
+        prove_and_remember_change(logger, inference, how_changed, just, reason, var >= value, actual_var);
         return inference;
     }
     else {
         auto [inference, how_changed] = change_state_for_greater_than_or_equal(actual_var, value - then_add);
-        prove_and_remember_change(logger, inference, how_changed, just, var >= value, actual_var);
+        prove_and_remember_change(logger, inference, how_changed, just, reason, var >= value, actual_var);
         return inference;
     }
 }
 
-auto State::infer_all(ProofLogger * const logger, const vector<Literal> & lits, const Justification & just) -> Inference
+auto State::infer_all(ProofLogger * const logger, const vector<Literal> & lits, const Justification & just,
+    const Reason & reason) -> Inference
 {
     bool first = true;
 
@@ -750,7 +750,7 @@ auto State::infer_all(ProofLogger * const logger, const vector<Literal> & lits, 
     if (logger)
         visit([&](const auto & j) -> void {
             if constexpr (is_same_v<decay_t<decltype(j)>, JustifyExplicitly>)
-                just_not_first = JustifyUsingRUP{j.reason};
+                just_not_first = JustifyUsingRUP{};
             else
                 just_not_first = just;
         },
@@ -758,7 +758,7 @@ auto State::infer_all(ProofLogger * const logger, const vector<Literal> & lits, 
 
     Inference result = Inference::NoChange;
     for (const auto & lit : lits) {
-        switch (first ? infer(logger, lit, just) : infer(logger, lit, just_not_first)) {
+        switch (first ? infer(logger, lit, just, reason) : infer(logger, lit, just_not_first, reason)) {
         case Inference::NoChange:
             break;
         case Inference::Change:
@@ -775,7 +775,7 @@ auto State::infer_all(ProofLogger * const logger, const vector<Literal> & lits, 
 
 auto State::guess(ProofLogger * const logger, const Literal & lit) -> void
 {
-    switch (infer(logger, lit, Guess{})) {
+    switch (infer(logger, lit, Guess{}, Reason{})) {
     case Inference::NoChange:
     case Inference::Change:
         _imp->guesses.push_back(lit);
@@ -1257,28 +1257,28 @@ namespace gcs
     template auto State::for_each_value_while_immutable(const ViewOfIntegerVariableID &, const std::function<auto(Integer)->bool> &) const -> bool;
     template auto State::for_each_value_while_immutable(const ConstantIntegerVariableID &, const std::function<auto(Integer)->bool> &) const -> bool;
 
-    template auto State::infer(ProofLogger * const, const VariableConditionFrom<IntegerVariableID> &, const Justification &) -> Inference;
-    template auto State::infer(ProofLogger * const, const VariableConditionFrom<SimpleIntegerVariableID> &, const Justification &) -> Inference;
-    template auto State::infer(ProofLogger * const, const VariableConditionFrom<ViewOfIntegerVariableID> &, const Justification &) -> Inference;
-    template auto State::infer(ProofLogger * const, const VariableConditionFrom<ConstantIntegerVariableID> &, const Justification &) -> Inference;
+    template auto State::infer(ProofLogger * const, const VariableConditionFrom<IntegerVariableID> &, const Justification &, const Reason &) -> Inference;
+    template auto State::infer(ProofLogger * const, const VariableConditionFrom<SimpleIntegerVariableID> &, const Justification &, const Reason &) -> Inference;
+    template auto State::infer(ProofLogger * const, const VariableConditionFrom<ViewOfIntegerVariableID> &, const Justification &, const Reason &) -> Inference;
+    template auto State::infer(ProofLogger * const, const VariableConditionFrom<ConstantIntegerVariableID> &, const Justification &, const Reason &) -> Inference;
 
-    template auto State::infer_equal(ProofLogger * const, const IntegerVariableID &, Integer, const Justification &) -> Inference;
-    template auto State::infer_equal(ProofLogger * const, const SimpleIntegerVariableID &, Integer, const Justification &) -> Inference;
-    template auto State::infer_equal(ProofLogger * const, const ViewOfIntegerVariableID &, Integer, const Justification &) -> Inference;
-    template auto State::infer_equal(ProofLogger * const, const ConstantIntegerVariableID &, Integer, const Justification &) -> Inference;
+    template auto State::infer_equal(ProofLogger * const, const IntegerVariableID &, Integer, const Justification &, const Reason &) -> Inference;
+    template auto State::infer_equal(ProofLogger * const, const SimpleIntegerVariableID &, Integer, const Justification &, const Reason &) -> Inference;
+    template auto State::infer_equal(ProofLogger * const, const ViewOfIntegerVariableID &, Integer, const Justification &, const Reason &) -> Inference;
+    template auto State::infer_equal(ProofLogger * const, const ConstantIntegerVariableID &, Integer, const Justification &, const Reason &) -> Inference;
 
-    template auto State::infer_not_equal(ProofLogger * const, const IntegerVariableID &, Integer, const Justification &) -> Inference;
-    template auto State::infer_not_equal(ProofLogger * const, const SimpleIntegerVariableID &, Integer, const Justification &) -> Inference;
-    template auto State::infer_not_equal(ProofLogger * const, const ViewOfIntegerVariableID &, Integer, const Justification &) -> Inference;
-    template auto State::infer_not_equal(ProofLogger * const, const ConstantIntegerVariableID &, Integer, const Justification &) -> Inference;
+    template auto State::infer_not_equal(ProofLogger * const, const IntegerVariableID &, Integer, const Justification &, const Reason &) -> Inference;
+    template auto State::infer_not_equal(ProofLogger * const, const SimpleIntegerVariableID &, Integer, const Justification &, const Reason &) -> Inference;
+    template auto State::infer_not_equal(ProofLogger * const, const ViewOfIntegerVariableID &, Integer, const Justification &, const Reason &) -> Inference;
+    template auto State::infer_not_equal(ProofLogger * const, const ConstantIntegerVariableID &, Integer, const Justification &, const Reason &) -> Inference;
 
-    template auto State::infer_less_than(ProofLogger * const, const IntegerVariableID &, Integer, const Justification &) -> Inference;
-    template auto State::infer_less_than(ProofLogger * const, const SimpleIntegerVariableID &, Integer, const Justification &) -> Inference;
-    template auto State::infer_less_than(ProofLogger * const, const ViewOfIntegerVariableID &, Integer, const Justification &) -> Inference;
-    template auto State::infer_less_than(ProofLogger * const, const ConstantIntegerVariableID &, Integer, const Justification &) -> Inference;
+    template auto State::infer_less_than(ProofLogger * const, const IntegerVariableID &, Integer, const Justification &, const Reason &) -> Inference;
+    template auto State::infer_less_than(ProofLogger * const, const SimpleIntegerVariableID &, Integer, const Justification &, const Reason &) -> Inference;
+    template auto State::infer_less_than(ProofLogger * const, const ViewOfIntegerVariableID &, Integer, const Justification &, const Reason &) -> Inference;
+    template auto State::infer_less_than(ProofLogger * const, const ConstantIntegerVariableID &, Integer, const Justification &, const Reason &) -> Inference;
 
-    template auto State::infer_greater_than_or_equal(ProofLogger * const, const IntegerVariableID &, Integer, const Justification &) -> Inference;
-    template auto State::infer_greater_than_or_equal(ProofLogger * const, const SimpleIntegerVariableID &, Integer, const Justification &) -> Inference;
-    template auto State::infer_greater_than_or_equal(ProofLogger * const, const ViewOfIntegerVariableID &, Integer, const Justification &) -> Inference;
-    template auto State::infer_greater_than_or_equal(ProofLogger * const, const ConstantIntegerVariableID &, Integer, const Justification &) -> Inference;
+    template auto State::infer_greater_than_or_equal(ProofLogger * const, const IntegerVariableID &, Integer, const Justification &, const Reason &) -> Inference;
+    template auto State::infer_greater_than_or_equal(ProofLogger * const, const SimpleIntegerVariableID &, Integer, const Justification &, const Reason &) -> Inference;
+    template auto State::infer_greater_than_or_equal(ProofLogger * const, const ViewOfIntegerVariableID &, Integer, const Justification &, const Reason &) -> Inference;
+    template auto State::infer_greater_than_or_equal(ProofLogger * const, const ConstantIntegerVariableID &, Integer, const Justification &, const Reason &) -> Inference;
 }

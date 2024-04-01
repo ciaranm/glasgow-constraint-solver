@@ -111,8 +111,7 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
 
             // can't have more that this many occurrences of the value of interest
             auto how_many_is_less_than = Integer(vars.size() - how_many_definitely_do_not) + 1_i;
-            auto reason = generic_reason(state, all_vars);
-            auto justf = [&]() -> void {
+            auto justf = [&](const Reason & reason) -> void {
                 for (const auto & [idx, var] : enumerate(vars)) {
                     bool seen_any = false;
                     state.for_each_value_while_immutable(var, [&](const Integer & val) -> bool {
@@ -126,7 +125,7 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
                             WeightedPseudoBooleanSum{} + 1_i * (! get<0>(flags[idx])) >= 1_i, ProofLevel::Temporary);
                 }
             };
-            inference.infer(logger, how_many < how_many_is_less_than, JustifyExplicitly{justf, reason});
+            inference.infer(logger, how_many < how_many_is_less_than, JustifyExplicitly{justf}, generic_reason(state, all_vars));
 
             // must have at least this many occurrences of the value of interest
             int how_many_must = 0;
@@ -136,7 +135,7 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
                     if (state.optional_single_value(v) == voi)
                         ++how_many_must;
             }
-            inference.infer(logger, how_many >= Integer(how_many_must), JustifyUsingRUP{reason});
+            inference.infer(logger, how_many >= Integer(how_many_must), JustifyUsingRUP{}, generic_reason(state, all_vars));
 
             // is each value of interest supported? also track how_many bounds supports
             // whilst we're here
@@ -155,7 +154,7 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
                 }
 
                 if (how_many_might < state.lower_bound(how_many)) {
-                    auto justf = [&]() -> void {
+                    auto justf = [&](const Reason & reason) -> void {
                         for (const auto & [idx, var] : enumerate(vars)) {
                             if (! state.in_domain(var, voi)) {
                                 // need to help the checker see that the equality flag must be zero
@@ -166,12 +165,12 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
                             }
                         }
                     };
-                    inference.infer(logger, value_of_interest != voi, JustifyExplicitly{justf, reason});
+                    inference.infer(logger, value_of_interest != voi, JustifyExplicitly{justf}, generic_reason(state, all_vars));
                 }
                 else if (how_many_must > state.upper_bound(how_many)) {
                     // unlike above, we don't need to help, because the equality flag will propagate
                     // from the fixed assignment
-                    inference.infer(logger, value_of_interest != voi, JustifyUsingRUP{reason});
+                    inference.infer(logger, value_of_interest != voi, JustifyUsingRUP{}, generic_reason(state, all_vars));
                 }
                 else {
                     if ((! lowest_how_many_must) || (how_many_must < *lowest_how_many_must))
@@ -186,21 +185,20 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
             // what are the supports on possible values we've seen?
             if (lowest_how_many_must) {
                 auto just = JustifyExplicitly{
-                    [&]() -> void {
+                    [&](const Reason & reason) -> void {
                         state.for_each_value_while_immutable(value_of_interest, [&](Integer voi) -> bool {
                             logger->emit_rup_proof_line_under_reason(state, reason,
                                 WeightedPseudoBooleanSum{} + 1_i * (value_of_interest != voi) + 1_i * (how_many >= *lowest_how_many_must) >= 1_i,
                                 ProofLevel::Temporary);
                             return true;
                         });
-                    },
-                    reason};
-                inference.infer(logger, how_many >= *lowest_how_many_must, just);
+                    }};
+                inference.infer(logger, how_many >= *lowest_how_many_must, just, generic_reason(state, all_vars));
             }
 
             if (highest_how_many_might) {
                 auto just = JustifyExplicitly{
-                    [&]() -> void {
+                    [&](const Reason & reason) -> void {
                         state.for_each_value_while_immutable(value_of_interest, [&](Integer voi) -> bool {
                             for (const auto & [idx, var] : enumerate(vars)) {
                                 if (! state.in_domain(var, voi)) {
@@ -218,9 +216,8 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
                                 ProofLevel::Temporary);
                             return true;
                         });
-                    },
-                    reason};
-                inference.infer(logger, how_many < *highest_how_many_might + 1_i, just);
+                    }};
+                inference.infer(logger, how_many < *highest_how_many_might + 1_i, just, generic_reason(state, all_vars));
             }
 
             return PropagatorState::Enable;

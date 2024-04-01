@@ -175,24 +175,23 @@ namespace
     {
         if (coeff) {
             if (bounds[p].second >= (1_i + remainder)) {
-                auto justf = [&]() {
+                auto justf = [&](const Reason &) {
                     justify_bounds(state, coeff_vars, var, *logger, second_constraint_for_equality,
                         "< " + to_string((1_i + remainder).raw_value), proof_line);
                 };
-                auto just = JustifyExplicitly{justf, bounds_reason(state, coeff_vars, var, second_constraint_for_equality, add_to_reason)};
-                return state.infer_less_than(logger, var, 1_i + remainder, just);
+                return state.infer_less_than(logger, var, 1_i + remainder, JustifyExplicitly{justf}, bounds_reason(state, coeff_vars, var, second_constraint_for_equality, add_to_reason));
             }
             else
                 return Inference::NoChange;
         }
         else {
             if (bounds[p].first < -remainder) {
-                auto justf = [&]() {
+                auto justf = [&](const Reason &) {
                     justify_bounds(state, coeff_vars, var, *logger, second_constraint_for_equality,
                         ">= " + to_string((-remainder).raw_value), proof_line);
                 };
-                auto just = JustifyExplicitly{justf, bounds_reason(state, coeff_vars, var, second_constraint_for_equality, add_to_reason)};
-                return state.infer_greater_than_or_equal(logger, var, -remainder, just);
+                return state.infer_greater_than_or_equal(logger, var, -remainder, JustifyExplicitly{justf},
+                    bounds_reason(state, coeff_vars, var, second_constraint_for_equality, add_to_reason));
             }
             else
                 return Inference::NoChange;
@@ -206,12 +205,12 @@ namespace
         // lots of conditionals to get the rounding right...
         if (coeff > 0_i && remainder >= 0_i) {
             if (bounds[p].second >= (1_i + remainder / coeff)) {
-                auto justf = [&]() {
+                auto justf = [&](const Reason &) {
                     justify_bounds(state, coeff_vars, var, *logger, second_constraint_for_equality,
                         "< " + to_string((1_i + remainder / coeff).raw_value), proof_line);
                 };
-                auto just = JustifyExplicitly{justf, bounds_reason(state, coeff_vars, var, second_constraint_for_equality, add_to_reason)};
-                return state.infer_less_than(logger, var, 1_i + remainder / coeff, just);
+                return state.infer_less_than(logger, var, 1_i + remainder / coeff, JustifyExplicitly{justf},
+                    bounds_reason(state, coeff_vars, var, second_constraint_for_equality, add_to_reason));
             }
             else
                 return Inference::NoChange;
@@ -219,24 +218,24 @@ namespace
         else if (coeff > 0_i && remainder < 0_i) {
             auto div_with_rounding = -((-remainder + coeff - 1_i) / coeff);
             if (bounds[p].second >= 1_i + div_with_rounding) {
-                auto justf = [&]() {
+                auto justf = [&](const Reason &) {
                     justify_bounds(state, coeff_vars, var, *logger, second_constraint_for_equality,
                         "< " + to_string((1_i + div_with_rounding).raw_value), proof_line);
                 };
-                auto just = JustifyExplicitly{justf, bounds_reason(state, coeff_vars, var, second_constraint_for_equality, add_to_reason)};
-                return state.infer_less_than(logger, var, 1_i + div_with_rounding, just);
+                return state.infer_less_than(logger, var, 1_i + div_with_rounding, JustifyExplicitly{justf},
+                    bounds_reason(state, coeff_vars, var, second_constraint_for_equality, add_to_reason));
             }
             else
                 return Inference::NoChange;
         }
         else if (coeff < 0_i && remainder >= 0_i) {
             if (bounds[p].first < remainder / coeff) {
-                auto justf = [&]() {
+                auto justf = [&](const Reason &) {
                     justify_bounds(state, coeff_vars, var, *logger, second_constraint_for_equality,
                         ">= " + to_string((remainder / coeff).raw_value), proof_line);
                 };
-                auto just = JustifyExplicitly{justf, bounds_reason(state, coeff_vars, var, second_constraint_for_equality, add_to_reason)};
-                return state.infer_greater_than_or_equal(logger, var, remainder / coeff, just);
+                return state.infer_greater_than_or_equal(logger, var, remainder / coeff, JustifyExplicitly{justf},
+                    bounds_reason(state, coeff_vars, var, second_constraint_for_equality, add_to_reason));
             }
             else
                 return Inference::NoChange;
@@ -244,12 +243,12 @@ namespace
         else if (coeff < 0_i && remainder < 0_i) {
             auto div_with_rounding = (-remainder + -coeff - 1_i) / -coeff;
             if (bounds[p].first < div_with_rounding) {
-                auto justf = [&]() {
+                auto justf = [&](const Reason &) {
                     justify_bounds(state, coeff_vars, var, *logger, second_constraint_for_equality,
                         ">= " + to_string((div_with_rounding).raw_value), proof_line);
                 };
-                auto just = JustifyExplicitly{justf, bounds_reason(state, coeff_vars, var, second_constraint_for_equality, add_to_reason)};
-                return state.infer_greater_than_or_equal(logger, var, div_with_rounding, just);
+                return state.infer_greater_than_or_equal(logger, var, div_with_rounding, JustifyExplicitly{justf},
+                    bounds_reason(state, coeff_vars, var, second_constraint_for_equality, add_to_reason));
             }
             else
                 return Inference::NoChange;
@@ -400,7 +399,7 @@ auto gcs::innards::propagate_linear_not_equals(const auto & coeff_vars, Integer 
         // every variable is set, do a sanity check
         if (accum == value) {
             // we've set every variable and have equality
-            state.infer_false(logger, JustifyUsingRUP{generic_reason(state, all_vars_for_reason)});
+            state.infer_false(logger, JustifyUsingRUP{}, generic_reason(state, all_vars_for_reason));
             return pair{Inference::Contradiction, PropagatorState::Enable};
         }
         else
@@ -416,7 +415,7 @@ auto gcs::innards::propagate_linear_not_equals(const auto & coeff_vars, Integer 
                 // the forbidden value is in the domain, so disallow it, and then
                 // we won't do anything else.
                 return pair{state.infer(logger, get_var(*single_unset) != forbidden,
-                                JustifyUsingRUP{generic_reason(state, all_vars_for_reason)}),
+                                JustifyUsingRUP{}, generic_reason(state, all_vars_for_reason)),
                     PropagatorState::DisableUntilBacktrack};
             }
             else {
