@@ -192,7 +192,7 @@ auto LinearInequalityIff::install(Propagators & propagators, State & state, Proo
         },
             sanitised_cv);
 
-        visit([&](const auto & sanitised_cv, const auto & sanitised_neg_cv) -> void {
+        visit([&, modifier = modifier, neg_modifier = neg_modifier](const auto & sanitised_cv, const auto & sanitised_neg_cv) -> void {
             propagators.install([cond = _cond, sanitised_cv = sanitised_cv, sanitised_neg_cv = sanitised_neg_cv,
                                     value = _value, modifier = modifier, neg_modifier = neg_modifier, proof_line = proof_line,
                                     vars = vars](
