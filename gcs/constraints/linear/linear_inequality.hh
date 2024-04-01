@@ -3,6 +3,7 @@
 
 #include <gcs/constraint.hh>
 #include <gcs/expression.hh>
+#include <gcs/innards/literal.hh>
 #include <gcs/innards/propagators-fwd.hh>
 #include <gcs/innards/state-fwd.hh>
 
@@ -14,21 +15,22 @@ namespace gcs
     {
         /**
          * \brief Constrain that the sum of the variables multiplied by their
-         * associated coefficients is either less than or equal to, or greater than
-         * or equal to, the specified value.
+         * associated coefficients is less than or equal to the specified
+         * value, if and only if the condition holds.
          *
          * \ingroup innards
          * \sa LinearLessEqual
          * \sa LinearGreaterThanEqual
          */
-        class LinearInequality : public Constraint
+        class LinearInequalityIff : public Constraint
         {
         private:
             WeightedSum _coeff_vars;
             Integer _value;
+            Literal _cond;
 
         public:
-            explicit LinearInequality(WeightedSum coeff_vars, Integer value);
+            explicit LinearInequalityIff(WeightedSum coeff_vars, Integer value, Literal cond);
 
             virtual auto install(innards::Propagators &, innards::State &,
                 innards::ProofModel * const) && -> void override;

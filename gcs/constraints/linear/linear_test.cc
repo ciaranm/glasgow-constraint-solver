@@ -83,51 +83,53 @@ auto run_linear_reif_test(bool proofs, const string & mode, pair<int, int> v1_ra
     pair<int, int> v3_range, const vector<pair<vector<int>, int>> & ineqs,
     const std::function<auto(int, int)->bool> & compare) -> void
 {
-    print(cerr, "linear {} reif {} {} {} {} {}", mode, v1_range, v2_range, v3_range, ineqs, proofs ? " with proofs:" : ":");
-    cerr << flush;
+    for (const auto & v4_range : vector<pair<int, int>>{{0, 0}, {1, 1}, {0, 1}}) {
+        print(cerr, "linear {} reif {} {} {} {} {} {}", mode, v1_range, v2_range, v3_range, v4_range, ineqs, proofs ? " with proofs:" : ":");
+        cerr << flush;
 
-    auto is_satisfying = [&](int a, int b, int c, int d) {
-        set<bool> mismatches;
+        auto is_satisfying = [&](int a, int b, int c, int d) {
+            set<bool> mismatches;
+            for (auto & [linear, value] : ineqs) {
+                bool mismatch = false;
+                if (! compare(linear[0] * a + linear[1] * b + linear[2] * c, value))
+                    mismatch = true;
+                mismatches.emplace(mismatch);
+            }
+            if (mismatches.contains(false) && mismatches.contains(true))
+                return false;
+            else if (mismatches.contains(true))
+                return 0 == d;
+            else
+                return 1 == d;
+        };
+
+        set<tuple<int, int, int, int>> expected, actual;
+        build_expected(expected, is_satisfying, v1_range, v2_range, v3_range, v4_range);
+        println(cerr, " expecting {} solutions", expected.size());
+
+        Problem p;
+        auto v1 = p.create_integer_variable(Integer(v1_range.first), Integer(v1_range.second));
+        auto v2 = p.create_integer_variable(Integer(v2_range.first), Integer(v2_range.second));
+        auto v3 = p.create_integer_variable(Integer(v3_range.first), Integer(v3_range.second));
+        auto v4 = p.create_integer_variable(Integer(v4_range.first), Integer(v4_range.second));
+        auto vs = vector{v1, v2, v3};
         for (auto & [linear, value] : ineqs) {
-            bool mismatch = false;
-            if (! compare(linear[0] * a + linear[1] * b + linear[2] * c, value))
-                mismatch = true;
-            mismatches.emplace(mismatch);
+            WeightedSum c;
+            for (const auto & [idx, coeff] : enumerate(linear))
+                if (coeff != 0)
+                    c += Integer{coeff} * vs[idx];
+            p.post(Constraint_{c, Integer{value}, v4 == 1_i});
         }
-        if (mismatches.contains(false) && mismatches.contains(true))
-            return false;
-        else if (mismatches.contains(true))
-            return 0 == d;
+
+        auto proof_name = proofs ? make_optional("linear_equality_test") : nullopt;
+
+        if ((! is_same_v<Constraint_, LinearEqualityIff>)&&1 == ineqs.size() && v4_range.first == v4_range.second)
+            solve_for_tests_checking_consistency(p, proof_name, expected, actual, tuple{pair{v1, CheckConsistency::BC}, pair{v2, CheckConsistency::BC}, pair{v3, CheckConsistency::BC}, pair{v4, CheckConsistency::None}});
         else
-            return 1 == d;
-    };
+            solve_for_tests(p, proof_name, actual, tuple{v1, v2, v3, v4});
 
-    set<tuple<int, int, int, int>> expected, actual;
-    build_expected(expected, is_satisfying, v1_range, v2_range, v3_range, pair{0, 1});
-    println(cerr, " expecting {} solutions", expected.size());
-
-    Problem p;
-    auto v1 = p.create_integer_variable(Integer(v1_range.first), Integer(v1_range.second));
-    auto v2 = p.create_integer_variable(Integer(v2_range.first), Integer(v2_range.second));
-    auto v3 = p.create_integer_variable(Integer(v3_range.first), Integer(v3_range.second));
-    auto v4 = p.create_integer_variable(0_i, 1_i);
-    auto vs = vector{v1, v2, v3};
-    for (auto & [linear, value] : ineqs) {
-        WeightedSum c;
-        for (const auto & [idx, coeff] : enumerate(linear))
-            if (coeff != 0)
-                c += Integer{coeff} * vs[idx];
-        p.post(Constraint_{c, Integer{value}, v4 == 1_i});
+        check_results(proof_name, expected, actual);
     }
-
-    auto proof_name = proofs ? make_optional("linear_equality_test") : nullopt;
-
-    if ((! is_same_v<Constraint_, LinearEqualityIff>)&&1 == ineqs.size())
-        solve_for_tests_checking_consistency(p, proof_name, expected, actual, tuple{pair{v1, CheckConsistency::BC}, pair{v2, CheckConsistency::BC}, pair{v3, CheckConsistency::BC}, pair{v4, CheckConsistency::None}});
-    else
-        solve_for_tests(p, proof_name, actual, tuple{v1, v2, v3, v4});
-
-    check_results(proof_name, expected, actual);
 }
 
 auto main(int, char *[]) -> int
@@ -199,6 +201,10 @@ auto main(int, char *[]) -> int
         vector{
             pair{vector{1, 1, 1}, 2}});
 
+    data.emplace_back(
+        pair{-7, 5}, pair{7, 12}, pair{-3, 12},
+        vector{pair{vector{4, -8, 10}, 94}});
+
     random_device rand_dev;
     mt19937 rand(rand_dev());
     uniform_int_distribution nc_dist(1, 5);
@@ -212,6 +218,8 @@ auto main(int, char *[]) -> int
         run_linear_test<LinearLessEqual>(false, "le", r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
         run_linear_test<LinearGreaterThanEqual>(false, "ge", r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
         run_linear_reif_test<LinearEqualityIff>(false, "eq", r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
+        run_linear_reif_test<LinearLessEqualIff>(false, "le", r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
+        run_linear_reif_test<LinearGreaterThanEqualIff>(false, "ge", r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
     }
 
     if (can_run_veripb())
@@ -221,6 +229,8 @@ auto main(int, char *[]) -> int
             run_linear_test<LinearLessEqual>(true, "le", r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
             run_linear_test<LinearGreaterThanEqual>(true, "ge", r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
             run_linear_reif_test<LinearEqualityIff>(true, "eq", r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
+            run_linear_reif_test<LinearLessEqualIff>(true, "le", r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
+            run_linear_reif_test<LinearGreaterThanEqualIff>(true, "ge", r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
         }
 
     return EXIT_SUCCESS;

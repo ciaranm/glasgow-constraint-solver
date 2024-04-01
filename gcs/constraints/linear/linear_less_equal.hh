@@ -13,10 +13,25 @@ namespace gcs
      * \sa LinearEquality
      * \sa LinearGreaterThanEqual
      */
-    class LinearLessEqual : public innards::LinearInequality
+    class LinearLessEqual : public innards::LinearInequalityIff
     {
     public:
         explicit LinearLessEqual(WeightedSum coeff_vars, Integer value);
+    };
+
+    /**
+     * \brief Constrain that the sum of the variables multiplied by their
+     * associated coefficients is less than or equal to the specified value,
+     * if and only if a condition holds.
+     *
+     * \ingroup innards
+     * \sa LinearEquality
+     * \sa LinearGreaterThanEqual
+     */
+    class LinearLessEqualIff : public innards::LinearInequalityIff
+    {
+    public:
+        explicit LinearLessEqualIff(WeightedSum coeff_vars, Integer value, innards::Literal cond);
     };
 }
 

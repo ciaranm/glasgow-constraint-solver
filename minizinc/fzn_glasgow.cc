@@ -412,7 +412,7 @@ auto main(int argc, char * argv[]) -> int
                 else if (id.ends_with("_ne_reif"))
                     problem.post(LinearEqualityIff{terms, total, reif != 1_i});
                 else
-                    throw UnimplementedException{};
+                    problem.post(LinearLessEqualIff{terms, total, reif == 1_i});
             }
             else if (id == "int_max") {
                 const auto & var1 = arg_as_var(data, args, 0);
