@@ -3,9 +3,9 @@
 
 namespace gcs::innards
 {
-    class ProofOnlySimpleIntegerVariableID;
+    struct ProofOnlySimpleIntegerVariableID;
 
-    class ProofFlag;
+    struct ProofFlag;
 }
 
 #endif

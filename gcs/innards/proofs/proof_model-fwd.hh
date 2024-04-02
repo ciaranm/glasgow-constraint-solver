@@ -3,7 +3,7 @@
 
 namespace gcs::innards
 {
-    struct ProofModel;
+    class ProofModel;
 
     /**
      * How should an IntegerVariableID be encoded in a proof?
