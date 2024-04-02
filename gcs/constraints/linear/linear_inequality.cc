@@ -104,7 +104,6 @@ namespace
 auto LinearInequalityIff::install(Propagators & propagators, State & state, ProofModel * const optional_model) && -> void
 {
     optional<ProofLine> proof_line;
-    optional<ProofFlag> reif_flag;
     if (optional_model) {
         WeightedPseudoBooleanSum terms;
         for (auto & [c, v] : _coeff_vars.terms)

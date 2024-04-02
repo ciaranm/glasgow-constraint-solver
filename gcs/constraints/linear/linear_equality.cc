@@ -299,8 +299,7 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
             .visit(_cond);
 
         visit([&, modifier = modifier](const auto & sanitised_cv) {
-            propagators.install([sanitised_cv = sanitised_cv, value = _value + modifier, cond = _cond, proof_line = proof_line,
-                                    all_vars = move(all_vars), ltflag = ltflag, gtflag = gtflag](
+            propagators.install([sanitised_cv = sanitised_cv, value = _value + modifier, cond = _cond, proof_line = proof_line, all_vars = move(all_vars)](
                                     State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
                 switch (state.test_literal(cond)) {
                 case LiteralIs::DefinitelyTrue: {

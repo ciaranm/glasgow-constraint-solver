@@ -72,7 +72,7 @@ namespace
     auto no_overlap_justification(const State & state, ProofLogger * const logger,
         IntegerVariableID v1, IntegerVariableID v2, Literal cond) -> pair<JustifyExplicitly, Reason>
     {
-        auto v1_bounds = state.bounds(v1), v2_bounds = state.bounds(v2);
+        auto v1_bounds = state.bounds(v1);
         Literals reason{{v1 >= v1_bounds.first, v1 < v1_bounds.second + 1_i}};
 
         for (Integer val = v1_bounds.first; val <= v1_bounds.second; ++val)
@@ -81,7 +81,7 @@ namespace
             else
                 reason.emplace_back(v1 != val);
 
-        auto justify = [&state = state, logger = logger, v1 = v1, v2 = v2, v1_bounds = v1_bounds, v2_bounds = v2_bounds, cond = cond](
+        auto justify = [&state = state, logger = logger, v1 = v1, v2 = v2, v1_bounds = v1_bounds, cond = cond](
                            const Reason &) {
             for (Integer val = v1_bounds.first; val <= v1_bounds.second; ++val)
                 if (state.in_domain(v1, val))
