@@ -43,9 +43,9 @@ auto ArrayMinMax::install(Propagators & propagators, State & initial_state, Proo
         for (auto & var : vars) {
             auto var_bounds = state.bounds(var);
             if (min)
-                increase_inference_to(inf, state.infer_less_than(logger, result, var_bounds.second + 1_i, JustifyUsingRUP{}, Reason{{var < var_bounds.second + 1_i}}));
+                increase_inference_to(inf, state.infer_less_than(logger, result, var_bounds.second + 1_i, JustifyUsingRUP{}, Reason{[=]() { return Literals{{var < var_bounds.second + 1_i}}; }}));
             else
-                increase_inference_to(inf, state.infer_greater_than_or_equal(logger, result, var_bounds.first, JustifyUsingRUP{}, Reason{{var >= var_bounds.first}}));
+                increase_inference_to(inf, state.infer_greater_than_or_equal(logger, result, var_bounds.first, JustifyUsingRUP{}, Reason{[=]() { return Literals{{var >= var_bounds.first}}; }}));
 
             if (Inference::Contradiction == inf)
                 return pair{inf, PropagatorState::Enable};
@@ -55,9 +55,9 @@ auto ArrayMinMax::install(Propagators & propagators, State & initial_state, Proo
         auto result_bounds = state.bounds(result);
         for (auto & var : vars) {
             if (min)
-                increase_inference_to(inf, state.infer_greater_than_or_equal(logger, var, result_bounds.first, JustifyUsingRUP{}, Reason{{result >= result_bounds.first}}));
+                increase_inference_to(inf, state.infer_greater_than_or_equal(logger, var, result_bounds.first, JustifyUsingRUP{}, Reason{[=]() { return Literals{{result >= result_bounds.first}}; }}));
             else
-                increase_inference_to(inf, state.infer_less_than(logger, var, state.upper_bound(result) + 1_i, JustifyUsingRUP{}, Reason{{result < result_bounds.second + 1_i}}));
+                increase_inference_to(inf, state.infer_less_than(logger, var, state.upper_bound(result) + 1_i, JustifyUsingRUP{}, Reason{[=]() { return Literals{{result < result_bounds.second + 1_i}}; }}));
 
             if (Inference::Contradiction == inf)
                 return pair{inf, PropagatorState::Enable};
@@ -74,10 +74,10 @@ auto ArrayMinMax::install(Propagators & propagators, State & initial_state, Proo
             }
 
             if (! found_support) {
-                Reason reason;
+                Literals reason;
                 for (auto & var : vars)
                     reason.emplace_back(var != value);
-                increase_inference_to(inf, state.infer_not_equal(logger, result, value, JustifyUsingRUP{}, reason));
+                increase_inference_to(inf, state.infer_not_equal(logger, result, value, JustifyUsingRUP{}, Reason{[=]() { return reason; }}));
                 if (Inference::Contradiction == inf)
                     return false;
             }
@@ -105,7 +105,7 @@ auto ArrayMinMax::install(Propagators & propagators, State & initial_state, Proo
         if (! support_of_largest_1)
             throw UnexpectedException{"missing support, bug in MinMaxArray propagator"};
         else if (! support_of_largest_2) {
-            Reason reason;
+            Literals reason;
             reason.emplace_back(result == largest_result);
 
             for (auto & var : vars) {
@@ -118,10 +118,10 @@ auto ArrayMinMax::install(Propagators & propagators, State & initial_state, Proo
             }
 
             if (min) {
-                increase_inference_to(inf, state.infer_less_than(logger, *support_of_largest_1, largest_result + 1_i, JustifyUsingRUP{}, reason));
+                increase_inference_to(inf, state.infer_less_than(logger, *support_of_largest_1, largest_result + 1_i, JustifyUsingRUP{}, Reason{[=]() { return reason; }}));
             }
             else {
-                increase_inference_to(inf, state.infer_greater_than_or_equal(logger, *support_of_largest_1, largest_result, JustifyUsingRUP{}, reason));
+                increase_inference_to(inf, state.infer_greater_than_or_equal(logger, *support_of_largest_1, largest_result, JustifyUsingRUP{}, Reason{[=]() { return reason; }}));
             }
         }
 

@@ -216,23 +216,29 @@ auto ProofLogger::infer(const State & state, bool is_contradicting, const Litera
                         << j.where.line() << " in " << j.where.function_name() << '\n';
 #endif
             need_lit();
-            for (auto & r : reason)
-                overloaded{
-                    [&](const TrueLiteral &) {
-                    },
-                    [&](const FalseLiteral &) {
-                    },
-                    [&](const VariableConditionFrom<SimpleIntegerVariableID> & cond) {
-                        variable_constraints_tracker().need_proof_name(cond);
-                    },
-                    [&](const ProofVariableCondition &) {
-                    }}
-                    .visit(simplify_literal(r));
+            optional<Literals> reason_literals;
+            if (reason)
+                reason_literals = reason();
+
+            if (reason_literals)
+                for (auto & r : *reason_literals)
+                    overloaded{
+                        [&](const TrueLiteral &) {
+                        },
+                        [&](const FalseLiteral &) {
+                        },
+                        [&](const VariableConditionFrom<SimpleIntegerVariableID> & cond) {
+                            variable_constraints_tracker().need_proof_name(cond);
+                        },
+                        [&](const ProofVariableCondition &) {
+                        }}
+                        .visit(simplify_literal(r));
 
             if (! is_literally_true(lit)) {
                 WeightedPseudoBooleanSum terms;
-                for (auto & r : reason)
-                    terms += 1_i * ! r;
+                if (reason_literals)
+                    for (auto & r : *reason_literals)
+                        terms += 1_i * ! r;
                 terms += 1_i * lit;
                 _imp->proof << "u ";
                 emit_inequality_to(variable_constraints_tracker(), move(terms) >= 1_i, nullopt, _imp->proof);
@@ -246,23 +252,29 @@ auto ProofLogger::infer(const State & state, bool is_contradicting, const Litera
                         << j.where.line() << " in " << j.where.function_name() << '\n';
 #endif
             need_lit();
-            for (auto & r : reason)
-                overloaded{
-                    [&](const TrueLiteral &) {
-                    },
-                    [&](const FalseLiteral &) {
-                    },
-                    [&](const VariableConditionFrom<SimpleIntegerVariableID> & cond) {
-                        variable_constraints_tracker().need_proof_name(cond);
-                    },
-                    [&](const ProofVariableCondition &) {
-                    }}
-                    .visit(simplify_literal(r));
+            optional<Literals> reason_literals;
+            if (reason)
+                reason_literals = reason();
+
+            if (reason_literals)
+                for (auto & r : *reason_literals)
+                    overloaded{
+                        [&](const TrueLiteral &) {
+                        },
+                        [&](const FalseLiteral &) {
+                        },
+                        [&](const VariableConditionFrom<SimpleIntegerVariableID> & cond) {
+                            variable_constraints_tracker().need_proof_name(cond);
+                        },
+                        [&](const ProofVariableCondition &) {
+                        }}
+                        .visit(simplify_literal(r));
 
             if (! is_literally_true(lit)) {
                 WeightedPseudoBooleanSum terms;
-                for (auto & r : reason)
-                    terms += 1_i * ! r;
+                if (reason)
+                    for (auto & r : *reason_literals)
+                        terms += 1_i * ! r;
                 terms += 1_i * lit;
                 _imp->proof << "a ";
                 emit_inequality_to(variable_constraints_tracker(), move(terms) >= 1_i, nullopt, _imp->proof);
@@ -367,22 +379,27 @@ auto ProofLogger::emit_rup_proof_line_under_reason(const State &, const Reason &
 #endif
     ) -> ProofLine
 {
-    for (auto & r : reason)
-        overloaded{
-            [&](const TrueLiteral &) {
-            },
-            [&](const FalseLiteral &) {
-            },
-            [&](const VariableConditionFrom<SimpleIntegerVariableID> & cond) {
-                variable_constraints_tracker().need_proof_name(cond);
-            },
-            [&](const ProofVariableCondition &) {
-            }}
-            .visit(simplify_literal(r));
+    optional<Literals> reason_literals;
+    if (reason)
+        reason_literals = reason();
+    if (reason_literals)
+        for (auto & r : *reason_literals)
+            overloaded{
+                [&](const TrueLiteral &) {
+                },
+                [&](const FalseLiteral &) {
+                },
+                [&](const VariableConditionFrom<SimpleIntegerVariableID> & cond) {
+                    variable_constraints_tracker().need_proof_name(cond);
+                },
+                [&](const ProofVariableCondition &) {
+                }}
+                .visit(simplify_literal(r));
 
     WeightedPseudoBooleanSum terms;
-    for (auto & r : reason)
-        terms += ineq.rhs * ! r;
+    if (reason_literals)
+        for (auto & r : *reason_literals)
+            terms += ineq.rhs * ! r;
 
     for (auto & t : ineq.lhs.terms)
         terms += t;

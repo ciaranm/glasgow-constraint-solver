@@ -5,11 +5,12 @@
 #include <gcs/innards/state-fwd.hh>
 #include <gcs/variable_id.hh>
 
+#include <functional>
 #include <vector>
 
 namespace gcs::innards
 {
-    using Reason = Literals;
+    using Reason = std::function<auto()->Literals>;
 
     [[nodiscard]] auto generic_reason(const State & state, const std::vector<IntegerVariableID> & vars) -> Reason;
 }

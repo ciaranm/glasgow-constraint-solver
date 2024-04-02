@@ -56,7 +56,7 @@ auto Abs::install(Propagators & propagators, State & initial_state,
         // isn't in v2's domain.
         state.for_each_value(v1, [&](Integer val) {
             if (! state.in_domain(v2, abs(val)))
-                inference.infer_not_equal(logger, v1, val, JustifyUsingRUP{}, Reason{v2 != abs(val)});
+                inference.infer_not_equal(logger, v1, val, JustifyUsingRUP{}, Reason{[=]() { return Literals{v2 != abs(val)}; }});
         });
 
         // now remove from v2 any value whose +/-value isn't in v1's domain.
@@ -68,7 +68,7 @@ auto Abs::install(Propagators & propagators, State & initial_state,
                     logger->emit_rup_proof_line_under_reason(state, reason,
                         WeightedPseudoBooleanSum{} + 1_i * (! *selector) + 1_i * (v2 != val) >= 1_i, ProofLevel::Temporary);
                 };
-                inference.infer_not_equal(logger, v2, val, JustifyExplicitly{just}, Reason{v1 != val, v1 != -val});
+                inference.infer_not_equal(logger, v2, val, JustifyExplicitly{just}, Reason{[=]() { return Literals{{v1 != val, v1 != -val}}; }});
             }
         });
 

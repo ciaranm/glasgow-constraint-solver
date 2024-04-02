@@ -6,7 +6,7 @@ using namespace gcs::innards;
 
 auto gcs::innards::generic_reason(const State & state, const std::vector<IntegerVariableID> & vars) -> Reason
 {
-    Reason reason;
+    Literals reason;
     for (const auto & var : vars) {
         auto bounds = state.bounds(var);
         if (bounds.first == bounds.second)
@@ -22,5 +22,5 @@ auto gcs::innards::generic_reason(const State & state, const std::vector<Integer
         }
     }
 
-    return reason;
+    return [=]() { return reason; };
 }

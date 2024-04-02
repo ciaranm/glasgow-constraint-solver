@@ -338,7 +338,7 @@ namespace
             if (edges_out_from_value[delete_value.offset].empty())
                 throw UnexpectedException{"missing edge out from value in trivial scc"};
             else
-                return pair{JustifyUsingRUP{}, Reason{vars[edges_out_from_value[delete_value.offset].begin()->offset] == vals[delete_value.offset]}};
+                return pair{JustifyUsingRUP{}, Reason{[=]() { return Literals{{vars[edges_out_from_value[delete_value.offset].begin()->offset] == vals[delete_value.offset]}}; }}};
         }
         else {
             // a hall set is at work

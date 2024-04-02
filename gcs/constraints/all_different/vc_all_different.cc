@@ -68,7 +68,7 @@ auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & 
         while (i != unassigned.end()) {
             auto other = *i;
             if (other != var) {
-                increase_inference_to(result, state.infer_not_equal(logger, other, val, JustifyUsingRUP{}, Reason{{var == val}}));
+                increase_inference_to(result, state.infer_not_equal(logger, other, val, JustifyUsingRUP{}, Reason{[=]() { return Literals{{var == val}}; }}));
                 if (result == Inference::Contradiction) return Inference::Contradiction;
                 if (auto other_val = state.optional_single_value(other)) {
                     to_propagate.emplace_back(other, *other_val);

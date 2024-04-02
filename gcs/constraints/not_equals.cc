@@ -47,12 +47,12 @@ auto NotEquals::install(Propagators & propagators, State & initial_state, ProofM
     }
     else if (v1_is_constant) {
         propagators.install_initialiser([v1_is_constant = v1_is_constant, v1 = _v1, v2 = _v2](State & state, ProofLogger * const logger) -> Inference {
-            return state.infer_not_equal(logger, v2, *v1_is_constant, JustifyUsingRUP{}, Reason{{v1 == *v1_is_constant}});
+            return state.infer_not_equal(logger, v2, *v1_is_constant, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v1 == *v1_is_constant}}; }});
         });
     }
     else if (v2_is_constant) {
         propagators.install_initialiser([v2_is_constant = v2_is_constant, v1 = _v1, v2 = _v2](State & state, ProofLogger * const logger) -> Inference {
-            return state.infer_not_equal(logger, v1, *v2_is_constant, JustifyUsingRUP{}, Reason{{v2 == *v2_is_constant}});
+            return state.infer_not_equal(logger, v1, *v2_is_constant, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v2 == *v2_is_constant}}; }});
         });
     }
     else {
@@ -72,7 +72,7 @@ auto NotEquals::install(Propagators & propagators, State & initial_state, ProofM
                             PropagatorState::DisableUntilBacktrack};
                     else
                         return pair{state.infer_not_equal(logger, v2, *value1,
-                                        JustifyUsingRUP{}, Reason{{v1 == *value1}}),
+                                        JustifyUsingRUP{}, Reason{[=]() { return Literals{{v1 == *value1}}; }}),
                             PropagatorState::DisableUntilBacktrack};
                 }
                 auto value2 = state.optional_single_value(v2);
@@ -81,7 +81,7 @@ auto NotEquals::install(Propagators & propagators, State & initial_state, ProofM
                         return pair{state.infer_not_equal(logger, v1, *value2, NoJustificationNeeded{}, Reason{}),
                             PropagatorState::DisableUntilBacktrack};
                     else
-                        return pair{state.infer_not_equal(logger, v1, *value2, JustifyUsingRUP{}, Reason{{v2 == *value2}}),
+                        return pair{state.infer_not_equal(logger, v1, *value2, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v2 == *value2}}; }}),
                             PropagatorState::DisableUntilBacktrack};
                 }
                 return pair{Inference::NoChange, PropagatorState::Enable};

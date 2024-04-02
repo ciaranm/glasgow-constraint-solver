@@ -63,10 +63,10 @@ auto CompareLessThanReif::install(Propagators & propagators, State & initial_sta
                                     cond = _cond, or_equal = _or_equal, full_reif = _full_reif](State & state, ProofLogger * const logger) {
                 auto actual = (or_equal ? *v1_is_constant <= *v2_is_constant : *v1_is_constant < *v2_is_constant);
                 if (actual && full_reif)
-                    return pair{state.infer(logger, cond, JustifyUsingRUP{}, Reason{{v1 == *v1_is_constant, v2 == *v2_is_constant}}),
+                    return pair{state.infer(logger, cond, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v1 == *v1_is_constant, v2 == *v2_is_constant}}; }}),
                         PropagatorState::DisableUntilBacktrack};
                 else if (! actual)
-                    return pair{state.infer(logger, ! cond, JustifyUsingRUP{}, Reason{{v1 == *v1_is_constant, v2 == *v2_is_constant}}),
+                    return pair{state.infer(logger, ! cond, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v1 == *v1_is_constant, v2 == *v2_is_constant}}; }}),
                         PropagatorState::DisableUntilBacktrack};
                 else
                     return pair{Inference::NoChange, PropagatorState::DisableUntilBacktrack};
@@ -94,11 +94,11 @@ auto CompareLessThanReif::install(Propagators & propagators, State & initial_sta
                                 State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
             if (cond_is == LiteralIs::DefinitelyTrue)
                 return pair{state.infer_greater_than_or_equal(logger, v2, or_equal ? v1_is_constant : v1_is_constant + 1_i,
-                                JustifyUsingRUP{}, Reason{{cond, v1 >= v1_is_constant}}),
+                                JustifyUsingRUP{}, Reason{[=]() { return Literals{{cond, v1 >= v1_is_constant}}; }}),
                     PropagatorState::DisableUntilBacktrack};
             else
                 return pair{state.infer_less_than(logger, v2, or_equal ? v1_is_constant : v1_is_constant - 1_i, JustifyUsingRUP{},
-                                Reason{{cond, v1 < v1_is_constant + 1_i}}),
+                                Reason{[=]() { return Literals{{cond, v1 < v1_is_constant + 1_i}}; }}),
                     PropagatorState::DisableUntilBacktrack};
         },
             Triggers{}, "compare less than reif");
@@ -109,11 +109,11 @@ auto CompareLessThanReif::install(Propagators & propagators, State & initial_sta
                                 State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
             if (cond_is == LiteralIs::DefinitelyTrue)
                 return pair{state.infer_less_than(logger, v1, or_equal ? v2_is_constant + 1_i : v2_is_constant, JustifyUsingRUP{},
-                                Reason{{cond, v2 < v2_is_constant + 1_i}}),
+                                Reason{[=]() { return Literals{{cond, v2 < v2_is_constant + 1_i}}; }}),
                     PropagatorState::DisableUntilBacktrack};
             else
                 return pair{state.infer_greater_than_or_equal(logger, v1, or_equal ? v2_is_constant + 1_i : v2_is_constant,
-                                JustifyUsingRUP{}, Reason{{cond, v2 >= v2_is_constant}}),
+                                JustifyUsingRUP{}, Reason{[=]() { return Literals{{cond, v2 >= v2_is_constant}}; }}),
                     PropagatorState::DisableUntilBacktrack};
         },
             Triggers{}, "compare less than reif");
@@ -135,9 +135,9 @@ auto CompareLessThanReif::install(Propagators & propagators, State & initial_sta
             case LiteralIs::DefinitelyTrue: {
                 auto inf = Inference::NoChange;
                 auto v1_bounds = state.bounds(v1), v2_bounds = state.bounds(v2);
-                increase_inference_to(inf, state.infer_less_than(logger, v1, v2_bounds.second + (or_equal ? 1_i : 0_i), JustifyUsingRUP{}, Reason{{cond, v2 < v2_bounds.second + 1_i}}));
+                increase_inference_to(inf, state.infer_less_than(logger, v1, v2_bounds.second + (or_equal ? 1_i : 0_i), JustifyUsingRUP{}, Reason{[=]() { return Literals{{cond, v2 < v2_bounds.second + 1_i}}; }}));
                 if (Inference::Contradiction != inf)
-                    increase_inference_to(inf, state.infer_greater_than_or_equal(logger, v2, v1_bounds.first + (or_equal ? 0_i : 1_i), JustifyUsingRUP{}, Reason{{cond, v1 >= v1_bounds.first}}));
+                    increase_inference_to(inf, state.infer_greater_than_or_equal(logger, v2, v1_bounds.first + (or_equal ? 0_i : 1_i), JustifyUsingRUP{}, Reason{[=]() { return Literals{{cond, v1 >= v1_bounds.first}}; }}));
                 return pair{inf,
                     v1_bounds.second < (v2_bounds.first + (or_equal ? 1_i : 0_i)) ? PropagatorState::DisableUntilBacktrack : PropagatorState::Enable};
             } break;
@@ -146,7 +146,7 @@ auto CompareLessThanReif::install(Propagators & propagators, State & initial_sta
                 if (full_reif) {
                     auto v2_lower = state.lower_bound(v2);
                     return pair{state.infer_greater_than_or_equal(logger, v1, v2_lower + (or_equal ? 1_i : 0_i),
-                                    JustifyUsingRUP{}, Reason{{! cond, v2 >= v2_lower}}),
+                                    JustifyUsingRUP{}, Reason{[=]() { return Literals{{! cond, v2 >= v2_lower}}; }}),
                         PropagatorState::Enable};
                 }
                 else
@@ -154,12 +154,16 @@ auto CompareLessThanReif::install(Propagators & propagators, State & initial_sta
                 break;
 
             case LiteralIs::Undecided:
-                if (full_reif && (or_equal ? state.upper_bound(v1) <= state.lower_bound(v2) : state.upper_bound(v1) < state.lower_bound(v2)))
-                    return pair{state.infer(logger, cond, JustifyUsingRUP{}, Reason{{v1 < state.upper_bound(v1) + 1_i, v2 >= state.lower_bound(v2)}}), PropagatorState::Enable};
+                if (full_reif && (or_equal ? state.upper_bound(v1) <= state.lower_bound(v2) : state.upper_bound(v1) < state.lower_bound(v2))) {
+                    auto v1_bounds = state.bounds(v1), v2_bounds = state.bounds(v2);
+                    return pair{state.infer(logger, cond, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v1 < v1_bounds.second + 1_i, v2 >= v2_bounds.first}}; }}), PropagatorState::Enable};
+                }
                 else if (or_equal
                         ? state.lower_bound(v1) > state.upper_bound(v2)
-                        : state.lower_bound(v1) >= state.upper_bound(v2))
-                    return pair{state.infer(logger, ! cond, JustifyUsingRUP{}, Reason{{v1 >= state.lower_bound(v1), v2 < state.upper_bound(v2) + 1_i}}), PropagatorState::Enable};
+                        : state.lower_bound(v1) >= state.upper_bound(v2)) {
+                    auto v1_bounds = state.bounds(v1), v2_bounds = state.bounds(v2);
+                    return pair{state.infer(logger, ! cond, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v1 >= v1_bounds.first, v2 < v2_bounds.second + 1_i}}; }}), PropagatorState::Enable};
+                }
                 else
                     return pair{Inference::NoChange, PropagatorState::Enable};
                 break;

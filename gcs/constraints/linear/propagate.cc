@@ -83,7 +83,7 @@ namespace
     auto bounds_reason(State & state, const auto & coeff_vars, const SimpleIntegerVariableID & var, bool invert,
         const optional<Literal> & add_to_reason) -> Reason
     {
-        Reason reason;
+        Literals reason;
         for (const auto & cv : coeff_vars.terms) {
             if (get_var(cv) != var) {
                 if ((get_coeff(cv) < 0_i) != invert) {
@@ -118,7 +118,7 @@ namespace
                 .visit(*add_to_reason);
         }
 
-        return reason;
+        return Reason{[=]() { return reason; }};
     }
 
     auto justify_bounds(State & state, const auto & coeff_vars, const SimpleIntegerVariableID & change_var, ProofLogger & logger,
