@@ -93,19 +93,19 @@ add_test(NAME min_max_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash 
 add_test(NAME n_value_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:n_value_test>)
 add_test(NAME smart_table_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:smart_table_test>)
 
-add_executable(circuit_disconnected_test constraints/circuit/circuit_disconnected_test)
+add_executable(circuit_disconnected_test constraints/circuit/circuit_disconnected_test.cc)
 add_test(NAME circuit_disconnected COMMAND ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:circuit_disconnected_test>)
 
-add_executable(circuit_multiple_sccs_test constraints/circuit/circuit_multiple_sccs_test)
+add_executable(circuit_multiple_sccs_test constraints/circuit/circuit_multiple_sccs_test.cc)
 add_test(NAME circuit_multiple_sccs COMMAND ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:circuit_multiple_sccs_test>)
 
-add_executable(circuit_no_backedges_test constraints/circuit/circuit_no_backedges_test)
+add_executable(circuit_no_backedges_test constraints/circuit/circuit_no_backedges_test.cc)
 add_test(NAME circuit_no_backedges COMMAND ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:circuit_no_backedges_test>)
 
-add_executable(circuit_prune_root_test constraints/circuit/circuit_prune_root_test)
+add_executable(circuit_prune_root_test constraints/circuit/circuit_prune_root_test.cc)
 add_test(NAME circuit_prune_root COMMAND ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:circuit_prune_root_test>)
 
-add_executable(circuit_prune_skip_test constraints/circuit/circuit_prune_skip_test)
+add_executable(circuit_prune_skip_test constraints/circuit/circuit_prune_skip_test.cc)
 add_test(NAME circuit_prune_skip COMMAND ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:circuit_prune_skip_test>)
 
 add_executable(interval_set_test innards/interval_set_test.cc)
