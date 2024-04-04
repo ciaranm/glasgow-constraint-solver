@@ -1,4 +1,5 @@
 #include <gcs/gcs.hh>
+#include <gcs/innards/interval_set.hh>
 
 #include <nlohmann/json.hpp>
 
@@ -27,6 +28,10 @@
 #include <vector>
 
 using namespace gcs;
+
+using gcs::innards::IntervalSet;
+using gcs::innards::Literals;
+using gcs::innards::TrueLiteral;
 
 using std::atomic;
 using std::cerr;
@@ -87,7 +92,7 @@ namespace
     {
         unordered_map<string, pair<IntegerVariableID, bool>> integer_variables;
         unordered_map<string, vector<Integer>> constant_arrays;
-        unordered_map<string, vector<IntegerVariableID>> variable_arrays;
+        unordered_map<string, pair<vector<IntegerVariableID>, bool>> variable_arrays;
         list<vector<Integer>> unnamed_constant_arrays;
         vector<IntegerVariableID> branch_variables, all_variables;
     };
@@ -111,6 +116,15 @@ namespace
         }
     }
 
+    auto arg_as_set_of_integer(ExtractedData &, const auto & args, int idx) -> IntervalSet<Integer>
+    {
+        auto a = args.at(idx)["set"];
+        IntervalSet<Integer> result;
+        for (const auto & range : a)
+            result.insert_at_end(Integer{static_cast<long long>(range[0])}, Integer{static_cast<long long>(range[1])});
+        return result;
+    }
+
     auto arg_as_array_of_var(ExtractedData & data, const auto & args, int idx) -> vector<IntegerVariableID>
     {
         auto a = args.at(idx);
@@ -119,7 +133,7 @@ namespace
             auto iter = data.variable_arrays.find(name);
             if (iter == data.variable_arrays.end())
                 throw FlatZincInterfaceError{fmt::format("Can't find variable array named {}", name)};
-            return iter->second;
+            return iter->second.first;
         }
         else if (a.is_array()) {
             vector<IntegerVariableID> result;
@@ -279,7 +293,7 @@ auto main(int argc, char * argv[]) -> int
                     for (unsigned i = 0; i < size - 1; ++i) {
                         problem.post(Or{{! (var >= Integer{vardata["domain"][i][1].get<long long>()} + 1_i),
                                             var >= Integer{vardata["domain"][i + 1][0].get<long long>()}},
-                            innards::TrueLiteral{}});
+                            TrueLiteral{}});
                     }
                 }
             }
@@ -293,11 +307,12 @@ auto main(int argc, char * argv[]) -> int
 
             vector<Integer> values;
             vector<IntegerVariableID> variables;
-            bool seen_variable = false;
+            bool seen_variable = false, seen_a_bool = false;
             for (const auto & v : arraydata["a"]) {
                 if (v.is_string()) {
                     seen_variable = true;
                     variables.push_back(data.integer_variables.at(string{v}).first);
+                    seen_a_bool = seen_a_bool || data.integer_variables.at(string{v}).second;
                 }
                 else {
                     auto val = Integer{v.get<long long>()};
@@ -308,13 +323,13 @@ auto main(int argc, char * argv[]) -> int
 
             if (! seen_variable)
                 data.constant_arrays.emplace(name, move(values));
-            data.variable_arrays.emplace(name, move(variables));
+            data.variable_arrays.emplace(name, pair{move(variables), seen_a_bool});
         }
 
         for (const auto & constraint : fzn["constraints"]) {
             string id = constraint["id"];
             auto args = constraint["args"];
-            if (id == "array_int_element") {
+            if (id == "array_int_element" || id == "array_bool_element") {
                 const auto & idx = arg_as_var(data, args, 0);
                 auto array = arg_as_array_of_integer(data, args, 1);
                 const auto & var = arg_as_var(data, args, 2);
@@ -329,7 +344,7 @@ auto main(int argc, char * argv[]) -> int
                 else
                     problem.post(ArrayMin{vars, var});
             }
-            else if (id == "array_var_int_element") {
+            else if (id == "array_var_int_element" || id == "array_var_bool_element") {
                 const auto & idx = arg_as_var(data, args, 0);
                 auto array = arg_as_array_of_var(data, args, 1);
                 const auto & var = arg_as_var(data, args, 2);
@@ -342,42 +357,45 @@ auto main(int argc, char * argv[]) -> int
                 problem.post(Abs{var1, var2});
             }
             else if (id == "int_div") {
-                throw UnimplementedException{};
+                const auto & var1 = arg_as_var(data, args, 0);
+                const auto & var2 = arg_as_var(data, args, 1);
+                const auto & var3 = arg_as_var(data, args, 2);
+                problem.post(Div{var1, var2, var3});
             }
             else if (id == "int_eq" || id == "bool2int" || id == "bool_eq") {
                 const auto & var1 = arg_as_var(data, args, 0);
                 const auto & var2 = arg_as_var(data, args, 1);
                 problem.post(Equals{var1, var2});
             }
-            else if (id == "int_eq_reif") {
+            else if (id == "int_eq_reif" || id == "bool_eq_reif") {
                 const auto & var1 = arg_as_var(data, args, 0);
                 const auto & var2 = arg_as_var(data, args, 1);
                 const auto & reif = arg_as_var(data, args, 2);
                 problem.post(EqualsIff{var1, var2, reif == 1_i});
             }
-            else if (id == "int_le") {
+            else if (id == "int_le" || id == "bool_le") {
                 const auto & var1 = arg_as_var(data, args, 0);
                 const auto & var2 = arg_as_var(data, args, 1);
                 problem.post(LessThanEqual{var1, var2});
             }
-            else if (id == "int_lt") {
+            else if (id == "int_lt" || id == "bool_lt") {
                 const auto & var1 = arg_as_var(data, args, 0);
                 const auto & var2 = arg_as_var(data, args, 1);
                 problem.post(LessThan{var1, var2});
             }
-            else if (id == "int_le_reif") {
+            else if (id == "int_le_reif" || id == "bool_le_reif") {
                 const auto & var1 = arg_as_var(data, args, 0);
                 const auto & var2 = arg_as_var(data, args, 1);
                 const auto & reif = arg_as_var(data, args, 2);
                 problem.post(LessThanEqualIff{var1, var2, reif == 1_i});
             }
-            else if (id == "int_lt_reif") {
+            else if (id == "int_lt_reif" || id == "bool_lt_reif") {
                 const auto & var1 = arg_as_var(data, args, 0);
                 const auto & var2 = arg_as_var(data, args, 1);
                 const auto & reif = arg_as_var(data, args, 2);
                 problem.post(LessThanIff{var1, var2, reif == 1_i});
             }
-            else if (id == "int_lin_eq" || id == "int_lin_le" || id == "int_lin_ne") {
+            else if (id == "int_lin_eq" || id == "int_lin_le" || id == "int_lin_ne" || id == "bool_lin_eq" || id == "bool_lin_le") {
                 auto coeffs = arg_as_array_of_integer(data, args, 0);
                 const auto & vars = arg_as_array_of_var(data, args, 1);
                 Integer total{static_cast<long long>(args.at(2))};
@@ -427,7 +445,10 @@ auto main(int argc, char * argv[]) -> int
                 problem.post(Min{var1, var2, var3});
             }
             else if (id == "int_mod") {
-                throw UnimplementedException{};
+                const auto & var1 = arg_as_var(data, args, 0);
+                const auto & var2 = arg_as_var(data, args, 1);
+                const auto & var3 = arg_as_var(data, args, 2);
+                problem.post(Mod{var1, var2, var3});
             }
             else if (id == "int_ne" || id == "bool_not") {
                 const auto & var1 = arg_as_var(data, args, 0);
@@ -441,79 +462,113 @@ auto main(int argc, char * argv[]) -> int
                 problem.post(EqualsIff{var1, var2, reif != 1_i});
             }
             else if (id == "int_plus") {
-                throw UnimplementedException{};
+                const auto & var1 = arg_as_var(data, args, 0);
+                const auto & var2 = arg_as_var(data, args, 1);
+                const auto & var3 = arg_as_var(data, args, 2);
+                problem.post(Plus{var1, var2, var3});
             }
             else if (id == "int_pow") {
-                throw UnimplementedException{};
+                const auto & var1 = arg_as_var(data, args, 0);
+                const auto & var2 = arg_as_var(data, args, 1);
+                const auto & var3 = arg_as_var(data, args, 2);
+                problem.post(Power{var1, var2, var3});
             }
             else if (id == "int_times") {
-                throw UnimplementedException{};
+                const auto & var1 = arg_as_var(data, args, 0);
+                const auto & var2 = arg_as_var(data, args, 1);
+                const auto & var3 = arg_as_var(data, args, 2);
+                problem.post(Times{var1, var2, var3});
             }
             else if (id == "set_in") {
-                throw UnimplementedException{};
+                const auto & var = arg_as_var(data, args, 0);
+                const auto & set = arg_as_set_of_integer(data, args, 1);
+
+                // var is inside the range as a whole
+                problem.post(WeightedSum{} + 1_i * var >= set.intervals[0].first);
+                problem.post(WeightedSum{} + 1_i * var <= set.intervals[set.intervals.size() - 1].second);
+
+                // var isn't inside any of the gaps between ranges
+                for (unsigned i = 0; i < set.intervals.size() - 1; ++i)
+                    problem.post(Or{{! (var >= set.intervals[i].second + 1_i), var >= set.intervals[i + 1].first},
+                        TrueLiteral{}});
             }
             else if (id == "array_bool_and") {
-                throw UnimplementedException{};
-            }
-            else if (id == "array_bool_element") {
-                throw UnimplementedException{};
+                const auto & vars = arg_as_array_of_var(data, args, 0);
+                const auto & reif = arg_as_var(data, args, 1);
+                Literals lits;
+                for (auto & v : vars)
+                    lits.push_back(v == 1_i);
+                problem.post(And{lits, reif == 1_i});
             }
             else if (id == "array_bool_xor") {
-                throw UnimplementedException{};
-            }
-            else if (id == "array_var_bool_element") {
-                throw UnimplementedException{};
+                const auto & vars = arg_as_array_of_var(data, args, 0);
+                problem.post(ParityOdd{vars});
             }
             else if (id == "bool_and") {
-                throw UnimplementedException{};
+                const auto & var1 = arg_as_var(data, args, 0);
+                const auto & var2 = arg_as_var(data, args, 1);
+                const auto & reif = arg_as_var(data, args, 2);
+                problem.post(And{Literals{{var1 == 1_i, var2 == 1_i}}, reif == 1_i});
             }
             else if (id == "bool_clause") {
                 const auto & pos = arg_as_array_of_var(data, args, 0);
                 const auto & neg = arg_as_array_of_var(data, args, 1);
-                innards::Literals lits;
+                Literals lits;
                 for (auto & v : pos)
                     lits.push_back(v == 1_i);
                 for (auto & v : neg)
                     lits.push_back(v == 0_i);
-                problem.post(Or{lits, innards::TrueLiteral{}});
+                problem.post(Or{lits, TrueLiteral{}});
             }
             else if (id == "bool_clause_reif") {
                 const auto & pos = arg_as_array_of_var(data, args, 0);
                 const auto & neg = arg_as_array_of_var(data, args, 1);
                 const auto & reif = arg_as_var(data, args, 2);
-                innards::Literals lits;
+                Literals lits;
                 for (auto & v : pos)
                     lits.push_back(v == 1_i);
                 for (auto & v : neg)
                     lits.push_back(v == 0_i);
                 problem.post(Or{lits, reif == 1_i});
             }
-            else if (id == "bool_eq_reif") {
-                throw UnimplementedException{};
-            }
-            else if (id == "bool_le") {
-                throw UnimplementedException{};
-            }
-            else if (id == "bool_le_reif") {
-                throw UnimplementedException{};
-            }
-            else if (id == "bool_lin_eq") {
-                throw UnimplementedException{};
-            }
-            else if (id == "bool_lin_le") {
-                throw UnimplementedException{};
-            }
-            else if (id == "bool_lt") {
-                throw UnimplementedException{};
-            }
-            else if (id == "bool_lt_reif") {
-                throw UnimplementedException{};
-            }
             else if (id == "bool_or") {
-                throw UnimplementedException{};
+                const auto & var1 = arg_as_var(data, args, 0);
+                const auto & var2 = arg_as_var(data, args, 1);
+                const auto & reif = arg_as_var(data, args, 2);
+                problem.post(Or{Literals{{var1 == 1_i, var2 == 1_i}}, reif == 1_i});
             }
             else if (id == "bool_xor") {
-                throw UnimplementedException{};
+                const auto & var1 = arg_as_var(data, args, 0);
+                const auto & var2 = arg_as_var(data, args, 1);
+                if (args.size() == 3) {
+                    const auto & reif = arg_as_var(data, args, 2);
+                    problem.post(EqualsIff{var1, var2, reif != 1_i});
+                }
+                else
+                    problem.post(NotEquals{var1, var2});
+            }
+            else if (id == "set_in_reif") {
+                const auto & var = arg_as_var(data, args, 0);
+                const auto & set = arg_as_set_of_integer(data, args, 1);
+                const auto & reif = arg_as_var(data, args, 2);
+
+                // reif -> var is inside the range as a whole
+                problem.post(Or{{reif != 1_i, var >= set.intervals[0].first}, TrueLiteral{}});
+                problem.post(Or{{reif != 1_i, var < set.intervals[set.intervals.size() - 1].second + 1_i}, TrueLiteral{}});
+
+                // reif -> var isn't inside any of the gaps between ranges
+                for (unsigned i = 0; i < set.intervals.size() - 1; ++i)
+                    problem.post(Or{{reif != 1_i,
+                                        ! (var >= set.intervals[i].second + 1_i),
+                                        var >= set.intervals[i + 1].first},
+                        TrueLiteral{}});
+
+                // ! reif -> var isn't inside this range
+                for (unsigned i = 0; i < set.intervals.size(); ++i)
+                    problem.post(Or{{reif == 1_i,
+                                        var < set.intervals[i].first,
+                                        var >= set.intervals[i].second + 1_i},
+                        TrueLiteral{}});
             }
             else if (id == "glasgow_alldifferent") {
                 const auto & vars = arg_as_array_of_var(data, args, 0);
@@ -541,8 +596,8 @@ auto main(int argc, char * argv[]) -> int
         else
             throw FlatZincInterfaceError{fmt::format("Unknown solve method {} in {}", string{solve_method}, fznname)};
 
-        BranchCallback branch = branch_on_dom_then_deg(data.branch_variables);
-        GuessCallback guess = guess_smallest_value_first();
+        vector<BranchCallback> branchers;
+        GuessCallback guessers;
         if (fzn["solve"].contains("ann")) {
             auto parse_int_search = [&data](const auto & ann) {
                 BranchCallback branch;
@@ -566,6 +621,7 @@ auto main(int argc, char * argv[]) -> int
                 }
                 else {
                     println(cerr, "Warning: treating unknown int_search variable heuristic {} as dom_w_deg instead", var_heuristic);
+                    branch = branch_on_dom_then_deg(data.branch_variables);
                 }
 
                 if (val_heuristic == "indomain" || val_heuristic == "indomain_min") {
@@ -579,6 +635,7 @@ auto main(int argc, char * argv[]) -> int
                 }
                 else {
                     println(cerr, "Warning: treating unknown int_search value heuristic {} as indomain_min instead", val_heuristic);
+                    guess = guess_smallest_value_first();
                 }
 
                 if (method != "complete") {
@@ -590,14 +647,20 @@ auto main(int argc, char * argv[]) -> int
 
             auto anns = fzn["solve"]["ann"];
             for (const auto & ann : anns) {
-                if (ann["id"] == "int_search") {
-                    tie(branch, guess) = parse_int_search(ann);
+                if (ann["id"] == "int_search" || ann["id"] == "bool_search") {
+                    auto [branch, guess] = parse_int_search(ann);
+                    branchers.push_back(branch);
+                    guessers = guess;
                 }
                 else if (ann["id"] == "seq_search") {
-                    if (ann["args"].size() > 1)
-                        println(cerr, "Warning: only using first item of seq_search for value ordering");
+                    bool first = true;
                     for (const auto & sub_ann : ann["args"][0]) {
-                        tie(branch, guess) = parse_int_search(sub_ann);
+                        auto [branch, guess] = parse_int_search(sub_ann);
+                        branchers.push_back(branch);
+                        if (first) {
+                            guessers = guess;
+                            first = false;
+                        }
                     }
                 }
             }
@@ -609,6 +672,9 @@ auto main(int argc, char * argv[]) -> int
             println(cout, "%%%mzn-stat-end");
             cout << flush;
         }
+
+        branchers.push_back(branch_on_dom_then_deg(data.branch_variables));
+        branchers.push_back(branch_on_dom_then_deg(data.all_variables));
 
         bool completed = false;
         auto stats = solve_with(problem,
@@ -626,10 +692,13 @@ auto main(int argc, char * argv[]) -> int
                         }
                         else if (data.variable_arrays.contains(name)) {
                             vector<string> vals;
-                            for (auto & v : data.variable_arrays.at(name)) {
+                            for (auto & v : data.variable_arrays.at(name).first) {
                                 if (! s.has_single_value(v))
                                     throw UnimplementedException{fmt::format("Variable inside array {} does not have a unique value", name)};
-                                vals.push_back(fmt::format("{}", s(v)));
+                                if (data.variable_arrays.at(name).second)
+                                    vals.push_back(fmt::format("{}", s(v) == 1_i ? "true" : "false"));
+                                else
+                                    vals.push_back(fmt::format("{}", s(v)));
                                 println(cout, "{} = [{}];", name, fmt::join(vals, ", "));
                             }
                         }
@@ -647,9 +716,8 @@ auto main(int argc, char * argv[]) -> int
 
                     return true;
                 },
-                .branch = branch_sequence(vector{branch, branch_on_dom_then_deg(data.branch_variables),
-                    branch_on_dom_then_deg(data.all_variables)}),
-                .guess = guess,
+                .branch = branch_sequence(branchers),
+                .guess = guessers,
                 .completed = [&] { completed = true; }},
             nullopt, &abort_flag);
 
