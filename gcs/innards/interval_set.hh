@@ -149,6 +149,16 @@ namespace gcs::innards
             else
                 intervals.emplace_back(value, value);
         }
+
+        auto insert_at_end(Int_ lower, Int_ upper) -> void
+        {
+            if (intervals.empty())
+                intervals.emplace_back(lower, upper);
+            else if (intervals.back().second == lower - Int_(1))
+                intervals.back().second = upper;
+            else
+                intervals.emplace_back(lower, upper);
+        }
     };
 }
 
