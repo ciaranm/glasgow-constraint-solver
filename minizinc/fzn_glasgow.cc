@@ -574,6 +574,13 @@ auto main(int argc, char * argv[]) -> int
                 const auto & vars = arg_as_array_of_var(data, args, 0);
                 problem.post(AllDifferent{vars});
             }
+            else if (id == "glasgow_circuit") {
+                const auto & vars = arg_as_array_of_var(data, args, 0);
+                vector<IntegerVariableID> vars_shifted;
+                for (const auto & v : vars)
+                    vars_shifted.push_back(v - 1_i);
+                problem.post(Circuit{vars});
+            }
             else if (id == "glasgow_count_eq") {
                 const auto & vars = arg_as_array_of_var(data, args, 0);
                 const auto & varmatch = arg_as_var(data, args, 1);
