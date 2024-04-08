@@ -36,6 +36,7 @@ add_library(glasgow_constraint_solver
         constraints/mult_bc.cc
         constraints/n_value.cc
         constraints/not_equals.cc
+        constraints/parity.cc
         constraints/regular.cc
         constraints/smart_table.cc
         constraints/table.cc
@@ -79,6 +80,7 @@ add_executable(min_max_test constraints/min_max_test.cc)
 add_executable(mult_bc_test constraints/mult_bc_test.cc)
 add_executable(n_value_test constraints/n_value_test.cc)
 add_executable(not_equals_test constraints/not_equals_test.cc)
+add_executable(parity_test constraints/parity_test.cc)
 add_executable(smart_table_test constraints/smart_table_test.cc)
 
 add_test(NAME abs_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:abs_test>)
@@ -94,6 +96,7 @@ add_test(NAME logical_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash 
 add_test(NAME min_max_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:min_max_test>)
 add_test(NAME n_value_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:n_value_test>)
 add_test(NAME smart_table_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:smart_table_test>)
+add_test(NAME parity_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:parity_test>)
 
 add_executable(circuit_disconnected_test constraints/circuit/circuit_disconnected_test.cc)
 add_test(NAME circuit_disconnected COMMAND ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:circuit_disconnected_test>)
