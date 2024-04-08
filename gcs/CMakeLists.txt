@@ -33,6 +33,7 @@ add_library(glasgow_constraint_solver
         constraints/linear/utils.cc
         constraints/logical.cc
         constraints/min_max.cc
+        constraints/mult_bc.cc
         constraints/n_value.cc
         constraints/not_equals.cc
         constraints/regular.cc
@@ -75,6 +76,7 @@ add_executable(knapsack_test constraints/knapsack_test.cc)
 add_executable(linear_test constraints/linear/linear_test.cc)
 add_executable(logical_test constraints/logical_test.cc)
 add_executable(min_max_test constraints/min_max_test.cc)
+add_executable(mult_bc_test constraints/mult_bc_test.cc)
 add_executable(n_value_test constraints/n_value_test.cc)
 add_executable(not_equals_test constraints/not_equals_test.cc)
 add_executable(smart_table_test constraints/smart_table_test.cc)
