@@ -1,12 +1,12 @@
 % Simple nurse rostering
 include "regular.mzn";
-int: num_nurses = 7;
+int: num_nurses = 4;
 set of int: NURSES = 1..num_nurses;
-int: num_days = 10;
+int: num_days = 5;
 set of int: DAYS = 1..num_days;
-int: req_day = 3;
-int: req_night = 2;
-int: min_night = 2;
+int: req_day = 2;
+int: req_night = 1;
+int: min_night = 1;
 int: S = 3;
 set of int: SHIFTS = 1..S;
 int: d = 1; int: n = 2; int: o = 3;
@@ -29,6 +29,6 @@ regular([roster[i,j] | j in DAYS], Q, S, t, q0, STATES) /\
 sum(j in DAYS)(bool2int(roster[i,j] == n)) >= min_night
 );
 solve satisfy;
-output [ name[fix(roster[i,j])]
-++ if j==num_days then "\n" else " " endif
+output ["ENUMSOL: "] ++ [ name[fix(roster[i,j])]
+++ if j==num_days then "|" else " " endif
 | i in NURSES, j in DAYS ];
