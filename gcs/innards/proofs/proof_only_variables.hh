@@ -34,6 +34,29 @@ namespace gcs::innards
 
     using SimpleOrProofOnlyIntegerVariableID = std::variant<SimpleIntegerVariableID, ProofOnlySimpleIntegerVariableID>;
 
+    struct ProofBitVariable
+    {
+        SimpleOrProofOnlyIntegerVariableID for_var;
+        unsigned long long position;
+        bool is_neg_bit;
+
+        explicit ProofBitVariable(SimpleOrProofOnlyIntegerVariableID v, unsigned long long n, bool neg = false) :
+            for_var(v),
+            position(n),
+            is_neg_bit(neg)
+        {
+        }
+
+#if (_LIBCPP_VERSION)
+        // again need workaround for clang/libcpp on MacOS
+        [[nodiscard]] inline auto operator<(const ProofBitVariable & other) const -> bool
+        {
+            return std::tuple{for_var, position, is_neg_bit} < std::tuple{other.for_var, other.position, other.is_neg_bit};
+        }
+#endif
+
+        [[nodiscard]] auto operator<=>(const ProofBitVariable &) const = default;
+    };
     using ProofVariableCondition = VariableConditionFrom<ProofOnlySimpleIntegerVariableID>;
 
     using ProofLiteral = std::variant<Literal, ProofVariableCondition>;

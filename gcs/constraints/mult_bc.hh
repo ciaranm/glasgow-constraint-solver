@@ -18,13 +18,13 @@ namespace gcs
     class MultBC : public Constraint
     {
     private:
-        IntegerVariableID _v1, _v2, _v3;
+        SimpleIntegerVariableID _v1, _v2, _v3;
 
     public:
-        MultBC(IntegerVariableID v1, IntegerVariableID v2, IntegerVariableID v3);
+        MultBC(SimpleIntegerVariableID v1, SimpleIntegerVariableID v2, SimpleIntegerVariableID v3);
 
         virtual auto describe_for_proof() -> std::string override;
-        virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel *) && -> void override;
+        virtual auto install(innards::Propagators & propagators, innards::State &, innards::ProofModel *) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
     };
 }

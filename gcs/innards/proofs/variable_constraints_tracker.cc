@@ -175,7 +175,8 @@ auto VariableConstraintsTracker::need_all_proof_names_in(const SumOf<Weighted<Ps
             },
             [&](const ProofFlag &) {},
             [&](const IntegerVariableID &) {},
-            [&](const ProofOnlySimpleIntegerVariableID &) {}}
+            [&](const ProofOnlySimpleIntegerVariableID &) {},
+            [&](const ProofBitVariable &) {}}
             .visit(v);
 }
 
@@ -219,6 +220,23 @@ auto VariableConstraintsTracker::for_each_bit(const SimpleOrProofOnlyIntegerVari
         f(c, n);
 }
 
+auto VariableConstraintsTracker::get_bit(const gcs::innards::SimpleOrProofOnlyIntegerVariableID & var, unsigned long position) -> std::pair<Integer, std::string>
+{
+    auto it = _imp->integer_variable_bits.find(var);
+    if (it == _imp->integer_variable_bits.end())
+        throw ProofError("missing bits");
+
+    return it->second.second[position];
+}
+
+auto VariableConstraintsTracker::num_bits(const gcs::innards::SimpleOrProofOnlyIntegerVariableID & var) -> unsigned long long
+{
+    auto it = _imp->integer_variable_bits.find(var);
+    if (it == _imp->integer_variable_bits.end())
+        throw ProofError("missing bits");
+
+    return it->second.second.size();
+}
 auto VariableConstraintsTracker::track_bits(const SimpleOrProofOnlyIntegerVariableID & id, Integer negative_coeff,
     const std::vector<std::pair<Integer, std::string>> & bit_vars) -> void
 {
@@ -402,10 +420,10 @@ auto VariableConstraintsTracker::track_bounds(const SimpleOrProofOnlyIntegerVari
     _imp->bounds_for_gevars.emplace(id, pair{lower, upper});
 }
 
-auto VariableConstraintsTracker::create_proof_flag(const string &) -> ProofFlag
+auto VariableConstraintsTracker::create_proof_flag(const string & n) -> ProofFlag
 {
     ProofFlag result{allocate_flag_index(), true};
-    string name = rewrite_variable_name("f" + to_string(result.index)); // + "_" + n);
+    string name = rewrite_variable_name("f" + to_string(result.index) + "_" + n);
     track_flag(result, name);
     return result;
 }

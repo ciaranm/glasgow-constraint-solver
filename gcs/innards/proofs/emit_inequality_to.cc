@@ -78,7 +78,13 @@ auto gcs::innards::emit_inequality_to(
                     stream << -w * bit_value << " " << bit_name << " ";
                     reif_const += max(0_i, w * bit_value);
                 });
-            }}
+            },
+            [&, w = w](const ProofBitVariable & bit) {
+                auto [_, bit_name] = variable_constraints_tracker.get_bit(bit.for_var, bit.position);
+                stream << -w << " " << bit_name << " ";
+                reif_const += max(0_i, w);
+            },
+        }
             .visit(v);
     }
 

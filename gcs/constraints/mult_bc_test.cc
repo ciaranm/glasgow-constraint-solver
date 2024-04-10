@@ -72,7 +72,7 @@ auto main(int, char *[]) -> int
 
     random_device rand_dev;
     mt19937 rand(rand_dev());
-    for (int x = 0; x < 10; ++x)
+    for (int x = 0; x < 100; ++x)
         generate_random_data(rand, data, random_bounds(-10, 10, 5, 15), random_bounds(-10, 10, 5, 15), random_bounds(-10, 10, 5, 15));
 
     for (auto & [r1, r2, r3] : data) {
@@ -90,12 +90,12 @@ auto main(int, char *[]) -> int
 // auto main(int, char *[]) -> int
 //{
 //     Problem p;
-//     auto v1 = p.create_integer_variable(-6_i, 3_i);
-//     auto v2 = p.create_integer_variable(-10_i, 3_i);
-//     auto v3 = p.create_integer_variable(-1_i, 7_i);
+//     auto v1 = p.create_integer_variable(-3_i, 12_i);
+//     auto v2 = p.create_integer_variable(-8_i, 3_i);
+//     auto v3 = p.create_integer_variable(-6_i, 7_i);
 //     p.post(MultBC{v1, v2, v3});
 //     solve(
 //         p, [&](const CurrentState &) -> bool { return true; }, make_optional(ProofOptions{"mult_bc.opb", "mult_bc.pbp"}));
-//     system("veripb --trace --useColor mult_bc.opb mult_bc.pbp");
+//     system("veripb --trace --traceFailed --useColor mult_bc.opb mult_bc.pbp");
 //     return EXIT_SUCCESS;
 // }
