@@ -587,6 +587,44 @@ auto main(int argc, char * argv[]) -> int
                 const auto & varcount = arg_as_var(data, args, 2);
                 problem.post(Count{vars, varmatch, varcount});
             }
+            else if (id == "glasgow_regular") {
+                const auto & vars = arg_as_array_of_var(data, args, 0);
+                const auto & num_states = static_cast<long long>(args.at(1));
+                const auto & num_symbols = static_cast<long long>(args.at(2));
+                vector<Integer> symbols{};
+                for (int i = 0; i <= num_symbols - 1; i++) {
+                    symbols.emplace_back(i);
+                }
+                const auto & raw_transitions = arg_as_array_of_integer(data, args, 3);
+                const auto & start_state = static_cast<long long>(args.at(4));
+
+                vector<vector<long>> transitions;
+                for (int i = 0; i < num_states; i++) {
+                    transitions.emplace_back();
+                    for (int j = 0; j < num_symbols; j++) {
+                        // Swap 0 and start state to ensure start state is always 0 for gcs::regular
+                        auto t_value = raw_transitions->at(i * num_symbols + j).raw_value;
+                        if (t_value == start_state) {
+                            transitions[i].emplace_back(0);
+                        }
+                        else if (t_value == 1) {
+                            transitions[i].emplace_back(start_state - 1);
+                        }
+                        else
+                            transitions[i].emplace_back(t_value - 1);
+                    }
+                }
+
+                const auto & final_states = arg_as_set_of_integer(data, args, 5);
+                vector<long> final_states_raw{};
+                for (long i = 1; i < num_states + 1; i++) {
+                    if (final_states.contains(Integer{i})) {
+                        final_states_raw.emplace_back(i - 1);
+                    }
+                }
+
+                problem.post(Regular{vars, symbols, num_states, transitions, final_states_raw});
+            }
             else
                 throw FlatZincInterfaceError{fmt::format("Unknown flatzinc constraint {} in {}", id, fznname)};
         }
