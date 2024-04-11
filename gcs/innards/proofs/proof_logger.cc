@@ -396,14 +396,27 @@ auto ProofLogger::emit_rup_proof_line_under_reason(const State &, const Reason &
                 }}
                 .visit(simplify_literal(r));
 
-    WeightedPseudoBooleanSum terms;
-    if (reason_literals)
-        for (auto & r : *reason_literals)
-            terms += ineq.rhs * ! r;
+    variable_constraints_tracker().need_all_proof_names_in(ineq.lhs);
 
-    for (auto & t : ineq.lhs.terms)
-        terms += t;
-    return emit_rup_proof_line(terms <= ineq.rhs, level
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+    _imp->proof << "* emit rup proof line from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
+#endif
+
+    stringstream rup_line;
+    rup_line << "u ";
+
+    if (reason_literals) {
+        vector<ProofLiteralOrFlag> reason_proof_literals{};
+        for (auto & r : *reason_literals)
+            reason_proof_literals.emplace_back(r);
+        emit_inequality_to(variable_constraints_tracker(), ineq, HalfReifyOnConjunctionOf{reason_proof_literals}, rup_line);
+    }
+    else {
+        emit_inequality_to(variable_constraints_tracker(), ineq, nullopt, rup_line);
+    }
+
+    return emit_proof_line(
+        rup_line.str(), level
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
         ,
         where
