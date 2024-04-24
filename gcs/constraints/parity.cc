@@ -50,7 +50,7 @@ auto ParityOdd::describe_for_proof() -> string
     return "parity odd";
 }
 
-auto ParityOdd::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
+auto ParityOdd::install(Propagators & propagators, State &, ProofModel * const optional_model) && -> void
 {
     if (optional_model) {
         PseudoBooleanTerm acc = FalseLiteral{}, not_acc = TrueLiteral{};
