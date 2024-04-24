@@ -45,7 +45,7 @@ auto gcs::innards::simplify_literal(const ProofLiteral & lit) -> SimpleLiteral
                     case VariableConditionOperator::Less:
                         if (view.negate_first)
                             return VariableConditionFrom<SimpleIntegerVariableID>{view.actual_variable, VariableConditionOperator::GreaterEqual,
-                                lit.value - view.then_add + 1_i};
+                                -lit.value + view.then_add + 1_i};
                         else
                             return VariableConditionFrom<SimpleIntegerVariableID>{view.actual_variable, VariableConditionOperator::Less,
                                 (lit.value - view.then_add)};
@@ -53,7 +53,7 @@ auto gcs::innards::simplify_literal(const ProofLiteral & lit) -> SimpleLiteral
                     case VariableConditionOperator::GreaterEqual:
                         if (view.negate_first)
                             return VariableConditionFrom<SimpleIntegerVariableID>{view.actual_variable, VariableConditionOperator::Less,
-                                lit.value - view.then_add + 1_i};
+                                -lit.value + view.then_add + 1_i};
                         else
                             return VariableConditionFrom<SimpleIntegerVariableID>{view.actual_variable, VariableConditionOperator::GreaterEqual,
                                 lit.value - view.then_add};
