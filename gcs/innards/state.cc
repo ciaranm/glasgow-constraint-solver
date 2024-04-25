@@ -651,8 +651,6 @@ auto State::infer(ProofLogger * const logger, const Literal & lit, const Justifi
             return infer(logger, cond, just, reason);
         },
         [&](const TrueLiteral &) {
-            if (logger)
-                logger->infer(*this, false, TrueLiteral{}, just, reason);
             return Inference::NoChange;
         },
         [&](const FalseLiteral &) {
