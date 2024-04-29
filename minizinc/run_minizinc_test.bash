@@ -4,6 +4,7 @@ builddir=$(dirname $1 )
 minizincdir=$2
 testname=$3
 enumeration=$4
+doproofs=$5
 
 export PATH=$builddir:$HOME/.local/bin:$PATH
 
@@ -33,6 +34,11 @@ else
         echo "found different objective solutions"
         exit 6
     fi
+fi
+
+if [[ $doproofs == "true" ]] && veripb --help >/dev/null ; then
+    minizinc --solver $minizincdir/glasgow-for-tests.msc -a $minizincdir/tests/$testname.mzn --prove $testname | tee $testname.glasgow.out || exit 7
+    veripb $testname.opb $testname.pbp || exit 8
 fi
 
 exit 0

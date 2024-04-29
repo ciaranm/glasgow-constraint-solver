@@ -6,6 +6,7 @@
     "mznlib": "mznlib",
     "executable": "false",
     "tags": ["cp", "int"],
-    "stdFlags": ["-a", "-n", "-s", "-t"]
+    "stdFlags": ["-a", "-n", "-s", "-t"],
+    "extraFlags": [["--prove", "Write a proof to this file (suffix .opb and .pbp will be added)", "string", ""]]
 }
 

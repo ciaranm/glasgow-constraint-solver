@@ -137,8 +137,11 @@ namespace
         }
         else if (a.is_array()) {
             vector<IntegerVariableID> result;
-            for (const string v : a)
-                result.push_back(data.integer_variables.at(v).first);
+            for (const auto & v : a)
+                if (v.is_string())
+                    result.push_back(data.integer_variables.at(v).first);
+                else
+                    throw FlatZincInterfaceError{fmt::format("Don't know how to parse entry {} in array of variables", v.dump())};
             return result;
         }
         else {
@@ -178,8 +181,8 @@ auto main(int argc, char * argv[]) -> int
         ("all-solutions,a", "Print all solutions, or solve an optimisation problem to optimality") //
         ("n-solutions,n", po::value<unsigned long long>(), "Stop after this many solutions")       //
         ("statistics,s", "Print statistics")                                                       //
-        ("timeout,t", po::value<unsigned long long>(), "Timeout in ms");                           //
-
+        ("timeout,t", po::value<unsigned long long>(), "Timeout in ms")                            //
+        ("prove", po::value<string>(), "Write proofs to this file (.opb and .pbp)");               //
     po::options_description all_options{"All options"};
     all_options.add_options() //
         ("file", po::value<string>(), "FlatZinc file used as input");
@@ -726,6 +729,12 @@ auto main(int argc, char * argv[]) -> int
         branchers.push_back(branch_on_dom_then_deg(data.branch_variables));
         branchers.push_back(branch_on_dom_then_deg(data.all_variables));
 
+        optional<ProofOptions> proof_options;
+        if (options_vars.contains("prove")) {
+            string basename = options_vars["prove"].as<string>();
+            proof_options.emplace(basename + ".opb", basename + ".pbp");
+        }
+
         bool completed = false;
         auto stats = solve_with(problem,
             SolveCallbacks{
@@ -769,7 +778,7 @@ auto main(int argc, char * argv[]) -> int
                 .branch = branch_sequence(branchers),
                 .guess = guessers,
                 .completed = [&] { completed = true; }},
-            nullopt, &abort_flag);
+            proof_options, &abort_flag);
 
         if (timeout_thread.joinable()) {
             {
