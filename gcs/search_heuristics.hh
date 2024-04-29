@@ -70,6 +70,20 @@ namespace gcs
     auto branch_on_dom_then_deg(const Problem & problem) -> BranchCallback;
 
     /**
+     * Branch on domain with smallest value in its domain, from the supplied variables.
+     *
+     * \ingroup SearchHeuristics
+     */
+    auto branch_on_dom_with_smallest_value(const std::vector<IntegerVariableID> &) -> BranchCallback;
+
+    /**
+     * Branch on domain with smallest value in its domain, from all variables.
+     *
+     * \ingroup SearchHeuristics
+     */
+    auto branch_on_dom_with_smallest_value(const Problem & problem) -> BranchCallback;
+
+    /**
      * Try each branching heuristic in turn.
      *
      * \ingroup SearchHeuristics

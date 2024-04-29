@@ -102,6 +102,18 @@ auto gcs::branch_randomly(const vector<IntegerVariableID> & vars) -> BranchCallb
     };
 }
 
+auto gcs::branch_on_dom_with_smallest_value(const vector<IntegerVariableID> & vars) -> BranchCallback
+{
+    return branch_on_smallest_with_respect_to(vars, [](const CurrentState & state, const innards::Propagators &, const IntegerVariableID & a, const IntegerVariableID & b) {
+        return state.lower_bound(a) < state.lower_bound(b);
+    });
+}
+
+auto gcs::branch_on_dom_with_smallest_value(const Problem & problem) -> BranchCallback
+{
+    return branch_on_dom_with_smallest_value(problem.all_normal_variables());
+}
+
 auto gcs::branch_sequence(const vector<BranchCallback> & branchers) -> BranchCallback
 {
     return [branchers = branchers](const CurrentState & state, const innards::Propagators & p) -> optional<IntegerVariableID> {
