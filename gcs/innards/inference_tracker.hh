@@ -18,18 +18,6 @@ namespace gcs::innards
         State & state;
         Inference inference;
 
-        auto track(const Inference inf) -> void
-        {
-            switch (inf) {
-            case Inference::NoChange: break;
-            case Inference::Change:
-                inference = inf;
-                break;
-            [[unlikely]] case Inference::Contradiction:
-                throw TrackedPropagationFailed{};
-            }
-        }
-
     public:
         explicit InferenceTracker(State & s) :
             state(s),
@@ -44,6 +32,18 @@ namespace gcs::innards
         [[nodiscard]] auto inference_so_far() const -> Inference
         {
             return inference;
+        }
+
+        auto track(const Inference inf) -> void
+        {
+            switch (inf) {
+            case Inference::NoChange: break;
+            case Inference::Change:
+                inference = inf;
+                break;
+            [[unlikely]] case Inference::Contradiction:
+                throw TrackedPropagationFailed{};
+            }
         }
 
         auto infer(ProofLogger * const logger, const Literal & lit, const Justification & why, const Reason & reason) -> void

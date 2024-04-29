@@ -23,6 +23,7 @@ add_library(glasgow_constraint_solver
         constraints/element.cc
         constraints/equals.cc
         constraints/in.cc
+        constraints/inverse.cc
         constraints/knapsack.cc
         constraints/lex.cc
         constraints/linear/linear_equality.cc
@@ -72,6 +73,7 @@ add_executable(comparison_test constraints/comparison_test.cc)
 add_executable(count_test constraints/count_test.cc)
 add_executable(element_test constraints/element_test.cc)
 add_executable(equals_test constraints/equals_test.cc)
+add_executable(inverse_test constraints/inverse_test.cc)
 add_executable(knapsack_test constraints/knapsack_test.cc)
 add_executable(linear_test constraints/linear/linear_test.cc)
 add_executable(logical_test constraints/logical_test.cc)
@@ -88,6 +90,7 @@ add_test(NAME comparison_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.ba
 add_test(NAME count_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:count_test>)
 add_test(NAME element_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:element_test>)
 add_test(NAME equals_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:equals_test>)
+add_test(NAME inverse_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:inverse_test>)
 add_test(NAME knapsack_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:knapsack_test>)
 add_test(NAME linear_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:linear_test>)
 add_test(NAME logical_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:logical_test>)
