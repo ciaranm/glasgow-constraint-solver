@@ -18,6 +18,7 @@
 #include <cstdlib>
 #include <exception>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <list>
 #include <mutex>
@@ -40,6 +41,7 @@ using std::cout;
 using std::cv_status;
 using std::exception;
 using std::flush;
+using std::function;
 using std::ifstream;
 using std::list;
 using std::mutex;
@@ -652,69 +654,78 @@ auto main(int argc, char * argv[]) -> int
         vector<BranchCallback> branchers;
         GuessCallback guessers;
         if (fzn["solve"].contains("ann")) {
-            auto parse_int_search = [&data](const auto & ann) {
-                BranchCallback branch;
-                GuessCallback guess;
+            function<auto(const nlohmann::json &)->pair<BranchCallback, GuessCallback>> parse_search = [&data, &parse_search](
+                                                                                                           const nlohmann::json & ann) {
+                if (ann["id"] == "bool_search" || ann["id"] == "int_search") {
+                    BranchCallback branch;
+                    GuessCallback guess;
 
-                auto args = ann["args"];
-                data.branch_variables = arg_as_array_of_var(data, args, 0);
-                string var_heuristic = args[1];
-                string val_heuristic = args[2];
-                string method = args[3];
+                    auto args = ann["args"];
+                    data.branch_variables = arg_as_array_of_var(data, args, 0);
+                    string var_heuristic = args[1];
+                    string val_heuristic = args[2];
+                    string method = args[3];
 
-                if (var_heuristic == "first_fail") {
-                    branch = branch_on_dom(data.branch_variables);
-                }
-                else if (var_heuristic == "input_order") {
-                    branch = branch_in_order(data.branch_variables);
-                }
-                else if (var_heuristic == "dom_w_deg") {
-                    // not technically "w" but it'll do for now
-                    branch = branch_on_dom_then_deg(data.branch_variables);
-                }
-                else {
-                    println(cerr, "Warning: treating unknown int_search variable heuristic {} as dom_w_deg instead", var_heuristic);
-                    branch = branch_on_dom_then_deg(data.branch_variables);
-                }
+                    if (var_heuristic == "first_fail") {
+                        branch = branch_on_dom(data.branch_variables);
+                    }
+                    else if (var_heuristic == "input_order") {
+                        branch = branch_in_order(data.branch_variables);
+                    }
+                    else if (var_heuristic == "dom_w_deg") {
+                        // not technically "w" but it'll do for now
+                        branch = branch_on_dom_then_deg(data.branch_variables);
+                    }
+                    else if (var_heuristic == "smallest") {
+                        branch = branch_on_dom_with_smallest_value(data.branch_variables);
+                    }
+                    else {
+                        println(cerr, "Warning: treating unknown int_search variable heuristic {} as dom_w_deg instead", var_heuristic);
+                        branch = branch_on_dom_then_deg(data.branch_variables);
+                    }
 
-                if (val_heuristic == "indomain" || val_heuristic == "indomain_min") {
-                    guess = guess_smallest_value_first();
-                }
-                else if (val_heuristic == "indomain_max") {
-                    guess = guess_largest_value_first();
-                }
-                else if (val_heuristic == "indomain_median") {
-                    guess = guess_median_value();
-                }
-                else {
-                    println(cerr, "Warning: treating unknown int_search value heuristic {} as indomain_min instead", val_heuristic);
-                    guess = guess_smallest_value_first();
-                }
+                    if (val_heuristic == "indomain" || val_heuristic == "indomain_min") {
+                        guess = guess_smallest_value_first();
+                    }
+                    else if (val_heuristic == "indomain_max") {
+                        guess = guess_largest_value_first();
+                    }
+                    else if (val_heuristic == "indomain_median") {
+                        guess = guess_median_value();
+                    }
+                    else {
+                        println(cerr, "Warning: treating unknown int_search value heuristic {} as indomain_min instead", val_heuristic);
+                        guess = guess_smallest_value_first();
+                    }
 
-                if (method != "complete") {
-                    println(cerr, "Warning: treating unknown int_search method {} as complete instead", method);
-                }
+                    if (method != "complete") {
+                        println(cerr, "Warning: treating unknown int_search method {} as complete instead", method);
+                    }
 
-                return pair{branch, guess};
+                    return pair{branch, guess};
+                }
+                else if (ann["id"] == "seq_search") {
+                    bool first = true;
+                    vector<BranchCallback> branchers;
+                    GuessCallback guesser;
+                    for (const auto & sub_ann : ann["args"][0]) {
+                        auto [branch, guess] = parse_search(sub_ann);
+                        branchers.push_back(branch);
+                        if (first) {
+                            guesser = guesser;
+                            first = false;
+                        }
+                    }
+                    return pair{branch_sequence(branchers), guesser};
+                }
             };
 
             auto anns = fzn["solve"]["ann"];
             for (const auto & ann : anns) {
-                if (ann["id"] == "int_search" || ann["id"] == "bool_search") {
-                    auto [branch, guess] = parse_int_search(ann);
+                if (ann["id"] == "int_search" || ann["id"] == "bool_search" || ann["id"] == "seq_search") {
+                    auto [branch, guess] = parse_search(ann);
                     branchers.push_back(branch);
                     guessers = guess;
-                }
-                else if (ann["id"] == "seq_search") {
-                    bool first = true;
-                    for (const auto & sub_ann : ann["args"][0]) {
-                        auto [branch, guess] = parse_int_search(sub_ann);
-                        branchers.push_back(branch);
-                        if (first) {
-                            guessers = guess;
-                            first = false;
-                        }
-                    }
                 }
             }
         }
