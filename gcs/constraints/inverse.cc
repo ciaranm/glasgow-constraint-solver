@@ -82,7 +82,7 @@ auto Inverse::install(Propagators & propagators, State & initial_state, ProofMod
     triggers.on_change.insert(triggers.on_change.end(), _x.begin(), _x.end());
     triggers.on_change.insert(triggers.on_change.end(), _y.begin(), _y.end());
 
-    shared_ptr<map<Integer, ProofLine>> x_value_am1s, y_value_am1s;
+    shared_ptr<map<Integer, ProofLine>> x_value_am1s;
     if (optional_model) {
         auto build_am1s = [](const vector<IntegerVariableID> & x, Integer x_start, State &, ProofLogger * const logger,
                               const auto & map) {
@@ -116,30 +116,20 @@ auto Inverse::install(Propagators & propagators, State & initial_state, ProofMod
         };
 
         x_value_am1s = make_shared<map<Integer, ProofLine>>();
-        y_value_am1s = make_shared<map<Integer, ProofLine>>();
         propagators.install_initialiser([x = _x, x_start = _x_start, x_value_am1s = x_value_am1s, build_am1s = build_am1s](
-                                            State & state, ProofLogger * const logger) -> Inference {
-            build_am1s(x, x_start, state, logger, x_value_am1s);
-            return Inference::NoChange;
-        });
-        propagators.install_initialiser([x = _y, x_start = _y_start, x_value_am1s = y_value_am1s, build_am1s = build_am1s](
                                             State & state, ProofLogger * const logger) -> Inference {
             build_am1s(x, x_start, state, logger, x_value_am1s);
             return Inference::NoChange;
         });
     }
 
-    vector<Integer> x_values, y_values;
+    vector<Integer> x_values;
     for (const auto & [i, _] : enumerate(_x))
         x_values.push_back(Integer(i) + _x_start);
-    for (const auto & [i, _] : enumerate(_y))
-        y_values.push_back(Integer(i) + _y_start);
 
     propagators.install_tracking([x = _x, y = _y, x_start = _x_start, y_start = _y_start,
-                                     x_values = move(x_values), y_values = move(y_values), x_value_am1s = x_value_am1s, y_value_am1s = y_value_am1s](
+                                     x_values = move(x_values), x_value_am1s = x_value_am1s](
                                      State & state, ProofLogger * const logger, InferenceTracker & inf) -> PropagatorState {
-        inf.track(propagate_gac_all_different(x, x_values, *x_value_am1s, state, logger));
-        inf.track(propagate_gac_all_different(y, y_values, *y_value_am1s, state, logger));
         for (const auto & [i, x_i] : enumerate(x)) {
             state.for_each_value(x_i, [&](Integer x_i_value) {
                 if (! state.in_domain(y.at((x_i_value - y_start).raw_value), Integer(i) + x_start))
@@ -157,6 +147,8 @@ auto Inverse::install(Propagators & propagators, State & initial_state, ProofMod
                         [&]() { return Literals{x.at((y_i_value - x_start).raw_value) != Integer(i) + y_start}; });
             });
         }
+
+        inf.track(propagate_gac_all_different(x, x_values, *x_value_am1s, state, logger));
 
         return PropagatorState::Enable;
     },
