@@ -36,20 +36,6 @@ using std::tuple;
 using std::vector;
 using std::visit;
 
-auto gcs::innards::increase_inference_to(Inference & current, const Inference updated) -> void
-{
-    switch (updated) {
-    case Inference::NoChange: break;
-    case Inference::Change:
-        if (current != Inference::Contradiction)
-            current = updated;
-        break;
-    case Inference::Contradiction:
-        current = updated;
-        break;
-    }
-}
-
 namespace
 {
     auto deview(const SimpleIntegerVariableID & var) -> tuple<SimpleIntegerVariableID, bool, Integer>

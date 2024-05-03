@@ -205,8 +205,8 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
     case LiteralIs::DefinitelyTrue: {
         // condition is definitely true, an empty sum matches iff the modifiers sum to the value
         if (visit([](const auto & s) { return s.terms.empty(); }, sanitised_cv) && modifier != _value) {
-            propagators.install_initialiser([cond = _cond](State & state, ProofLogger * const logger) -> Inference {
-                return state.infer(logger, FalseLiteral{}, JustifyUsingRUP{}, Reason{[=]() { return Literals{{cond}}; }});
+            propagators.install_initialiser([cond = _cond](const State &, InferenceTracker & inference, ProofLogger * const logger) {
+                inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{}, Reason{[=]() { return Literals{{cond}}; }});
             });
         }
 
@@ -234,8 +234,8 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
                     triggers.on_change.push_back(get_var(cv));
 
                 auto data = make_shared<optional<ExtensionalData>>(nullopt);
-                propagators.install_initialiser([data = data, coeff_vars = sanitised_cv, value = _value + modifier](State & state,
-                                                    ProofLogger * const logger) {
+                propagators.install_initialiser([data = data, coeff_vars = sanitised_cv, value = _value + modifier](
+                                                    State & state, InferenceTracker &, ProofLogger * const logger) {
                     *data = build_table(coeff_vars, value, state, logger);
                     return Inference::NoChange;
                 });
@@ -252,8 +252,8 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
     case LiteralIs::DefinitelyFalse: {
         // condition is definitely false, an empty sum matches iff the modifiers sum to something other than the value
         if (visit([](const auto & s) { return s.terms.empty(); }, sanitised_cv) && modifier == _value) {
-            propagators.install_initialiser([cond = _cond](State & state, ProofLogger * const logger) -> Inference {
-                return state.infer(logger, FalseLiteral{}, JustifyUsingRUP{}, Reason{[=]() { return Literals{{cond}}; }});
+            propagators.install_initialiser([cond = _cond](const State &, InferenceTracker & inference, ProofLogger * const logger) {
+                inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{}, Reason{[=]() { return Literals{{cond}}; }});
             });
         }
 
@@ -278,13 +278,13 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
         // one way or another
         if (visit([](const auto & s) { return s.terms.empty(); }, sanitised_cv)) {
             if (modifier == _value) {
-                propagators.install_initialiser([cond = _cond](State & state, ProofLogger * const logger) -> Inference {
-                    return state.infer(logger, cond, NoJustificationNeeded{}, Reason{});
+                propagators.install_initialiser([cond = _cond](const State &, InferenceTracker & inference, ProofLogger * const logger) {
+                    inference.infer(logger, cond, NoJustificationNeeded{}, Reason{});
                 });
             }
             else {
-                propagators.install_initialiser([cond = _cond](State & state, ProofLogger * const logger) -> Inference {
-                    return state.infer(logger, ! cond, NoJustificationNeeded{}, Reason{});
+                propagators.install_initialiser([cond = _cond](const State &, InferenceTracker & inference, ProofLogger * const logger) {
+                    inference.infer(logger, ! cond, NoJustificationNeeded{}, Reason{});
                 });
             }
         }

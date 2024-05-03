@@ -256,15 +256,17 @@ auto Element2DConstantArray::install(Propagators & propagators, State & initial_
     all_vars.push_back(_idx2);
     all_vars.push_back(_var);
 
-    propagators.install_initialiser([idx1 = _idx1, idx2 = _idx2, var = _var, vals = _vals](
-                                        State & state, ProofLogger * const logger) -> Inference {
+    optional<SimpleIntegerVariableID> idxsel;
+    if (optional_model) {
+        idxsel = initial_state.allocate_integer_variable_with_state(0_i, Integer(_vals->size() * _vals->begin()->size()));
+    }
+
+    propagators.install_initialiser([idx1 = _idx1, idx2 = _idx2, idxsel = *idxsel, var = _var, vals = _vals](
+                                        const State & state, InferenceTracker &, ProofLogger * const logger) -> void {
         // turn 2d index into 1d index in proof
         if (logger) {
-            auto idxsel = state.what_variable_id_will_be_created_next();
             for (auto i = 0_i, i_end = Integer(vals->size() * vals->begin()->size()); i != i_end; ++i)
                 logger->variable_constraints_tracker().create_literals_for_introduced_variable_value(idxsel, i, "element2didx");
-            if (idxsel != state.allocate_integer_variable_with_state(0_i, Integer(vals->size() * vals->begin()->size())))
-                throw UnexpectedException{"something went horribly wrong with variable IDs"};
 
             state.for_each_value_immutable(idx1, [&](Integer i1) {
                 state.for_each_value_immutable(idx2, [&](Integer i2) {
@@ -301,8 +303,6 @@ auto Element2DConstantArray::install(Propagators & propagators, State & initial_
                 expr += 1_i * (idxsel == v);
             logger->emit_rup_proof_line(expr >= 1_i, ProofLevel::Top);
         }
-
-        return Inference::NoChange;
     });
 
     visit([&](auto & _idx1, auto & _idx2) {

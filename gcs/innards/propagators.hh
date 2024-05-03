@@ -18,7 +18,7 @@ namespace gcs::innards
 {
     using PropagationFunction = std::function<auto(const State &, InferenceTracker &, ProofLogger * const)->PropagatorState>;
 
-    using InitialisationFunction = std::function<auto(State &, ProofLogger * const)->Inference>;
+    using InitialisationFunction = std::function<auto(State &, InferenceTracker &, ProofLogger * const)->void>;
 
     /**
      * \brief Tell Propagators when a Constraint's propagators should be triggered.

@@ -24,14 +24,6 @@ namespace gcs::innards
      */
 
     /**
-     * Increase the first argument until it is at least the second argument.
-     *
-     * \ingroup Innards
-     * \sa Inference
-     */
-    auto increase_inference_to(Inference &, const Inference) -> void;
-
-    /**
      * \brief Used to indicate a point for backtracking
      *
      * \sa State::guess()

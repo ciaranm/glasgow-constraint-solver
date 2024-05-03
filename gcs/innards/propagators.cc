@@ -87,8 +87,8 @@ auto Propagators::trim_lower_bound(const State & state, ProofModel * const optio
         if (state.upper_bound(var) >= val) {
             if (optional_model)
                 optional_model->add_constraint({var >= val});
-            install_initialiser([var, val](State & state, ProofLogger * const logger) {
-                return state.infer(logger, var >= val, JustifyUsingRUP{}, Reason{});
+            install_initialiser([var, val](const State &, InferenceTracker & inference, ProofLogger * const logger) {
+                inference.infer(logger, var >= val, JustifyUsingRUP{}, Reason{});
             });
         }
         else
@@ -102,8 +102,8 @@ auto Propagators::trim_upper_bound(const State & state, ProofModel * const optio
         if (state.lower_bound(var) <= val) {
             if (optional_model)
                 optional_model->add_constraint({var < val + 1_i});
-            install_initialiser([var, val](State & state, ProofLogger * const logger) {
-                return state.infer(logger, var < val + 1_i, JustifyUsingRUP{}, Reason{});
+            install_initialiser([var, val](const State &, InferenceTracker & inference, ProofLogger * const logger) {
+                inference.infer(logger, var < val + 1_i, JustifyUsingRUP{}, Reason{});
             });
         }
         else
@@ -240,9 +240,15 @@ auto Propagators::define_and_install_table(State & state, ProofModel * const opt
 
 auto Propagators::initialise(State & state, ProofLogger * const logger) const -> bool
 {
-    for (auto & f : _imp->initialisation_functions)
-        if (Inference::Contradiction == f(state, logger))
+    for (auto & f : _imp->initialisation_functions) {
+        InferenceTracker inf(state);
+        try {
+            f(state, inf, logger);
+        }
+        catch (const TrackedPropagationFailed &) {
             return false;
+        }
+    }
 
     return true;
 }

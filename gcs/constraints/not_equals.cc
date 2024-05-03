@@ -47,13 +47,15 @@ auto NotEquals::install(Propagators & propagators, State & initial_state, ProofM
         }
     }
     else if (v1_is_constant) {
-        propagators.install_initialiser([v1_is_constant = v1_is_constant, v1 = _v1, v2 = _v2](State & state, ProofLogger * const logger) -> Inference {
-            return state.infer_not_equal(logger, v2, *v1_is_constant, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v1 == *v1_is_constant}}; }});
+        propagators.install_initialiser([v1_is_constant = v1_is_constant, v1 = _v1, v2 = _v2](
+                                            const State &, InferenceTracker & inference, ProofLogger * const logger) -> void {
+            inference.infer_not_equal(logger, v2, *v1_is_constant, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v1 == *v1_is_constant}}; }});
         });
     }
     else if (v2_is_constant) {
-        propagators.install_initialiser([v2_is_constant = v2_is_constant, v1 = _v1, v2 = _v2](State & state, ProofLogger * const logger) -> Inference {
-            return state.infer_not_equal(logger, v1, *v2_is_constant, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v2 == *v2_is_constant}}; }});
+        propagators.install_initialiser([v2_is_constant = v2_is_constant, v1 = _v1, v2 = _v2](
+                                            const State &, InferenceTracker & inference, ProofLogger * const logger) -> void {
+            inference.infer_not_equal(logger, v1, *v2_is_constant, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v2 == *v2_is_constant}}; }});
         });
     }
     else {
@@ -96,14 +98,14 @@ auto NotEquals::install(Propagators & propagators, State & initial_state, ProofM
             _v1, _v2);
 
         if (convert_to_values_ne && optional_model) {
-            propagators.install_initialiser([v1 = _v1, v2 = _v2](State & state, ProofLogger * const logger) -> Inference {
+            propagators.install_initialiser([v1 = _v1, v2 = _v2](
+                                                const State & state, InferenceTracker &, ProofLogger * const logger) -> void {
                 logger->emit_proof_comment("converting not equals to value encoding");
                 state.for_each_value(v1, [&](Integer val1) {
                     if (state.in_domain(v2, val1)) {
                         logger->emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * (v1 != val1) + 1_i * (v2 != val1) >= 1_i, ProofLevel::Top);
                     }
                 });
-                return Inference::NoChange;
             });
         }
     }

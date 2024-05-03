@@ -115,13 +115,15 @@ auto Equals::install(Propagators & propagators, State & initial_state, ProofMode
         }
     }
     else if (v1_is_constant) {
-        propagators.install_initialiser([v1_is_constant = v1_is_constant, v1 = _v1, v2 = _v2](State & state, ProofLogger * const logger) -> Inference {
-            return state.infer_equal(logger, v2, *v1_is_constant, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v1 == *v1_is_constant}}; }});
+        propagators.install_initialiser([v1_is_constant = v1_is_constant, v1 = _v1, v2 = _v2](
+                                            const State &, InferenceTracker & inference, ProofLogger * const logger) -> void {
+            inference.infer_equal(logger, v2, *v1_is_constant, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v1 == *v1_is_constant}}; }});
         });
     }
     else if (v2_is_constant) {
-        propagators.install_initialiser([v2_is_constant = v2_is_constant, v1 = _v1, v2 = _v2](State & state, ProofLogger * const logger) -> Inference {
-            return state.infer_equal(logger, v1, *v2_is_constant, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v2 == *v2_is_constant}}; }});
+        propagators.install_initialiser([v2_is_constant = v2_is_constant, v1 = _v1, v2 = _v2](
+                                            const State &, InferenceTracker & inference, ProofLogger * const logger) -> void {
+            inference.infer_equal(logger, v1, *v2_is_constant, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v2 == *v2_is_constant}}; }});
         });
     }
     else {
@@ -278,10 +280,11 @@ auto EqualsIff::install(Propagators & propagators, State & initial_state, ProofM
     if (lower_common > upper_common) {
         if (optional_model)
             optional_model->add_constraint({{! _cond}});
-        propagators.install_initialiser([cond = _cond, v1 = _v1, v2 = _v2](State & state, ProofLogger * const logger) {
+        propagators.install_initialiser([cond = _cond, v1 = _v1, v2 = _v2](
+                                            const State & state, InferenceTracker & inference, ProofLogger * const logger) {
             auto v1_bounds = state.bounds(v1);
             auto v2_bounds = state.bounds(v2);
-            return state.infer(logger, ! cond, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v1 >= v1_bounds.first, v1 < v1_bounds.second + 1_i, v2 >= v2_bounds.first, v2 < v2_bounds.second + 1_i}}; }});
+            inference.infer(logger, ! cond, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v1 >= v1_bounds.first, v1 < v1_bounds.second + 1_i, v2 >= v2_bounds.first, v2 < v2_bounds.second + 1_i}}; }});
         });
         return;
     }

@@ -84,8 +84,8 @@ auto Inverse::install(Propagators & propagators, State & initial_state, ProofMod
 
     shared_ptr<map<Integer, ProofLine>> x_value_am1s;
     if (optional_model) {
-        auto build_am1s = [](const vector<IntegerVariableID> & x, Integer x_start, State &, ProofLogger * const logger,
-                              const auto & map) {
+        auto build_am1s = [](const vector<IntegerVariableID> & x, Integer x_start, const State &,
+                              InferenceTracker &, ProofLogger * const logger, const auto & map) {
             for (Integer v = x_start; v < x_start + Integer(x.size()); ++v) {
                 // make an am1 for x[i] = v
                 auto temporary_proof_level = logger->temporary_proof_level();
@@ -117,9 +117,8 @@ auto Inverse::install(Propagators & propagators, State & initial_state, ProofMod
 
         x_value_am1s = make_shared<map<Integer, ProofLine>>();
         propagators.install_initialiser([x = _x, x_start = _x_start, x_value_am1s = x_value_am1s, build_am1s = build_am1s](
-                                            State & state, ProofLogger * const logger) -> Inference {
-            build_am1s(x, x_start, state, logger, x_value_am1s);
-            return Inference::NoChange;
+                                            const State & state, InferenceTracker & inference, ProofLogger * const logger) -> void {
+            build_am1s(x, x_start, state, inference, logger, x_value_am1s);
         });
     }
 

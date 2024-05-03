@@ -39,14 +39,10 @@ namespace
 
         if (reif_state == LiteralIs::DefinitelyTrue) {
             // definitely true, just force all the literals
-            propagators.install_initialiser([full_reif = _full_reif, lits = _lits](State & state, ProofLogger * const logger) -> Inference {
-                Inference inf = Inference::NoChange;
-                for (auto & l : lits) {
-                    increase_inference_to(inf, state.infer(logger, l, JustifyUsingRUP{}, Reason{[=]() { return Literals{{full_reif}}; }}));
-                    if (inf == Inference::Contradiction)
-                        break;
-                }
-                return inf;
+            propagators.install_initialiser([full_reif = _full_reif, lits = _lits](
+                                                const State &, InferenceTracker & inference, ProofLogger * const logger) {
+                for (auto & l : lits)
+                    inference.infer(logger, l, JustifyUsingRUP{}, Reason{[=]() { return Literals{{full_reif}}; }});
             });
 
             if (optional_model) {
@@ -81,8 +77,9 @@ namespace
             if (saw_false) {
                 // we saw a false literal, the reif variable must be forced off and
                 // then we don't do anything else
-                propagators.install_initialiser([full_reif = _full_reif](State & state, ProofLogger * const logger) -> Inference {
-                    return state.infer(logger, ! full_reif, JustifyUsingRUP{}, Reason{});
+                propagators.install_initialiser([full_reif = _full_reif](
+                                                    const State &, InferenceTracker & inference, ProofLogger * const logger) -> void {
+                    inference.infer(logger, ! full_reif, JustifyUsingRUP{}, Reason{});
                 });
 
                 if (optional_model) {
