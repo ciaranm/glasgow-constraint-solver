@@ -7,7 +7,6 @@
 
 #include <any>
 #include <cstdio>
-#include <fstream>
 #include <functional>
 #include <list>
 #include <optional>
@@ -25,12 +24,9 @@ using namespace gcs::innards;
 using std::any_cast;
 using std::cmp_less;
 using std::cmp_not_equal;
-using std::fstream;
 using std::getline;
-using std::ifstream;
 using std::ios;
 using std::move;
-using std::ofstream;
 using std::optional;
 using std::pair;
 using std::rename;
@@ -65,65 +61,6 @@ namespace
         {
         }
     };
-
-    auto print_graph_edges(const RegularGraph & graph, const string & output_file_name)
-    {
-        // Remove last line of file (...very hacky)
-        ifstream in(output_file_name);
-
-        ofstream out("temp.tmp");
-
-        string line;
-        getline(in, line);
-        for (string tmp; getline(in, tmp); line.swap(tmp)) {
-            out << line << '\n';
-        }
-        out.close();
-        rename("temp.tmp", output_file_name.c_str());
-
-        ofstream output_file(output_file_name, ios::app);
-        // Debugging and demonstration purposes only
-        output_file << "[";
-        int l = 0;
-        for (const auto & layer : graph.out_edges) {
-            output_file << "\t[";
-            int k = 0;
-            for (const auto & node : layer) {
-                output_file << "{";
-                int j = 0;
-                for (const auto & state_and_vals : node) {
-                    if (graph.in_edges[l + 1][state_and_vals.first].contains(k)) {
-                        output_file << state_and_vals.first << ": [";
-                        int i = 0;
-                        for (const auto & val : state_and_vals.second) {
-                            if (graph.in_edges[l + 1][state_and_vals.first].at(k).contains(val)) {
-                                output_file << val.raw_value;
-                                if (cmp_not_equal(i, state_and_vals.second.size() - 1))
-                                    output_file << ", ";
-                                i++;
-                            }
-                        }
-                        output_file << "]";
-                        if (cmp_not_equal(j, node.size() - 1))
-                            output_file << ",";
-                    }
-                    j++;
-                }
-                output_file << "}";
-                if (cmp_not_equal(k, layer.size() - 1))
-                    output_file << ",";
-                k++;
-            }
-            output_file << "]";
-            if (cmp_not_equal(l, graph.out_edges.size() - 1)) {
-                output_file << ",\n";
-            }
-            l++;
-        }
-        output_file << "],\n";
-        output_file << "]";
-        output_file.close();
-    }
 
     auto log_additional_inference(ProofLogger * const logger, const vector<Literal> & literals, const vector<ProofFlag> & proof_flags,
         const State & state, const Reason & reason, string comment = "") -> void
@@ -299,9 +236,7 @@ namespace
         const ConstraintStateHandle & graph_handle,
         const State & state,
         InferenceTracker & inference,
-        ProofLogger * const logger,
-        const bool print_graph,
-        const string output_file_name) -> void
+        ProofLogger * const logger) -> void
     {
         auto & graph = any_cast<RegularGraph &>(state.get_constraint_state(graph_handle));
         auto reason = generic_reason(state, vars);
@@ -347,31 +282,24 @@ namespace
                     inference.infer_not_equal(logger, vars[i], val, JustifyUsingRUP{}, reason);
             });
         }
-
-        if (print_graph) {
-            print_graph_edges(graph, output_file_name);
-        }
     }
 }
 
-Regular::Regular(vector<IntegerVariableID> v, vector<Integer> s, long n, vector<unordered_map<Integer, long>> t, vector<long> f, bool p) :
+Regular::Regular(vector<IntegerVariableID> v, vector<Integer> s, long n, vector<unordered_map<Integer, long>> t, vector<long> f) :
     _vars(move(v)),
     _symbols(move(s)),
     _num_states(n),
     _transitions(move(t)),
-    _final_states(move(f)),
-    _print_graph(p),
-    _GRAPH_OUTPUT_FILE("regular_graph_output.py")
+    _final_states(move(f))
 {
 }
 
-Regular::Regular(vector<IntegerVariableID> v, vector<Integer> s, long n, vector<vector<long>> transitions, vector<long> f, bool p) :
+Regular::Regular(vector<IntegerVariableID> v, vector<Integer> s, long n, vector<vector<long>> transitions, vector<long> f) :
     _vars(move(v)),
     _symbols(move(s)),
     _num_states(n),
     _transitions(vector<unordered_map<Integer, long>>(n, unordered_map<Integer, long>{})),
-    _final_states(move(f)),
-    _print_graph(p)
+    _final_states(move(f))
 {
     for (size_t i = 0; i < transitions.size(); i++) {
         for (size_t j = 0; j < transitions[i].size(); j++) {
@@ -382,7 +310,7 @@ Regular::Regular(vector<IntegerVariableID> v, vector<Integer> s, long n, vector<
 
 auto Regular::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<Regular>(_vars, _symbols, _num_states, _transitions, _final_states, _print_graph);
+    return make_unique<Regular>(_vars, _symbols, _num_states, _transitions, _final_states);
 }
 
 auto Regular::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
@@ -434,18 +362,10 @@ auto Regular::install(Propagators & propagators, State & initial_state, ProofMod
     triggers.on_change = {_vars.begin(), _vars.end()};
 
     RegularGraph graph = RegularGraph(_vars.size(), _num_states);
-    if (_print_graph) {
-        ofstream output_file;
-        output_file.open(_GRAPH_OUTPUT_FILE);
-        output_file << "graphs = [\n";
-        output_file << "]";
-        output_file.close();
-    }
-
     auto graph_idx = initial_state.add_constraint_state(graph);
-    propagators.install([v = move(_vars), n = _num_states, t = move(_transitions), f = move(_final_states), g = graph_idx, flags = state_at_pos_flags,
-                            p = _print_graph, gof = _GRAPH_OUTPUT_FILE](const State & state, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
-        propagate_regular(v, n, t, f, flags, g, state, inference, logger, p, gof);
+    propagators.install([v = move(_vars), n = _num_states, t = move(_transitions), f = move(_final_states), g = graph_idx, flags = state_at_pos_flags](
+                const State & state, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
+        propagate_regular(v, n, t, f, flags, g, state, inference, logger);
         return PropagatorState::Enable;
     },
         triggers, "regular");
