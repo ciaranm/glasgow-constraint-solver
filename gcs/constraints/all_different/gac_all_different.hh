@@ -2,6 +2,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GAC_ALL_DIFFERENT_HH
 
 #include <gcs/constraint.hh>
+#include <gcs/innards/inference_tracker-fwd.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/variable_id.hh>
 
@@ -12,12 +13,13 @@ namespace gcs
 {
     namespace innards
     {
-        [[nodiscard]] auto propagate_gac_all_different(
+        auto propagate_gac_all_different(
             const std::vector<IntegerVariableID> & vars,
             const std::vector<Integer> & vals,
             const std::map<Integer, ProofLine> & am1_value_constraint_numbers,
-            State & state,
-            ProofLogger * const logger) -> Inference;
+            const State & state,
+            InferenceTracker & inference,
+            ProofLogger * const logger) -> void;
     }
 
     /**

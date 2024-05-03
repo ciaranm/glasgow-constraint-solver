@@ -1,6 +1,7 @@
 #include <gcs/constraints/all_different/vc_all_different.hh>
 #include <gcs/constraints/circuit/circuit_base.hh>
 #include <gcs/constraints/circuit/circuit_scc.hh>
+#include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/variable_constraints_tracker.hh>
 #include <gcs/innards/propagators.hh>
 
@@ -446,7 +447,7 @@ namespace
         return line;
     }
 
-    auto prove_mid_is_at_least(State & state, ProofLogger & logger, const Reason & reason,
+    auto prove_mid_is_at_least(const State & state, InferenceTracker &, ProofLogger & logger, const Reason & reason,
         const long & root, const OrderingAssumption & ordering, const long & val, const Literal & assumption,
         ShiftedPosDataMaps & flag_data_for_root,
         const PosVarDataMap & pos_var_data, PosAllDiffData & pos_alldiff_data,
@@ -477,7 +478,7 @@ namespace
         }
     }
 
-    auto prove_pos_and_node_implies_next_node(State & state, ProofLogger & logger, const Reason & reason,
+    auto prove_pos_and_node_implies_next_node(const State & state, InferenceTracker &, ProofLogger & logger, const Reason & reason,
         const long & root, const long & node, const long & next_node, const long & count,
         ShiftedPosDataMaps & flag_data_for_root, const PosVarDataMap & pos_var_data, PosAllDiffData & pos_alldiff_data,
         const vector<IntegerVariableID> & succ)
@@ -579,7 +580,7 @@ namespace
         return successor_implies_line;
     }
 
-    auto prove_not_same_val(State & state, ProofLogger & logger, const Reason & reason,
+    auto prove_not_same_val(const State & state, InferenceTracker &, ProofLogger & logger, const Reason & reason,
         const long & root, const long & middle, const long & next_node, const long & count,
         map<long, ShiftedPosDataMaps> & flag_data, const PosVarDataMap & pos_var_data, PosAllDiffData & pos_alldiff_data,
         const vector<IntegerVariableID> & succ)
@@ -690,7 +691,7 @@ namespace
         return succesor_implies_not_mid_line;
     }
 
-    auto prove_exclude_last_based_on_ordering(State & state, ProofLogger & logger, const Reason & reason,
+    auto prove_exclude_last_based_on_ordering(const State & state, InferenceTracker &, ProofLogger & logger, const Reason & reason,
         const OrderingAssumption & ordering, const long & root, const long & count, const Literal & assumption,
         map<long, ShiftedPosDataMaps> & flag_data, const PosVarDataMap & pos_var_data, PosAllDiffData & pos_alldiff_data,
         const vector<IntegerVariableID> & succ) -> ProofLine
@@ -732,9 +733,9 @@ namespace
         return exclusion_line;
     }
 
-    auto prove_reachable_set_too_small(State & state, ProofLogger & logger, const Reason & reason,
+    auto prove_reachable_set_too_small(const State & state, InferenceTracker & inference, ProofLogger & logger, const Reason & reason,
         const vector<IntegerVariableID> & succ, const long & root, SCCProofData & proof_data,
-        const Literal & assumption = TrueLiteral{}, const optional<OrderingAssumption> & ordering = nullopt)
+        const Literal & assumption = TrueLiteral{}, const optional<OrderingAssumption> & ordering = nullopt) -> void
     {
         logger.emit_proof_comment("REACHABLE SET from " + to_string(root));
 
@@ -760,7 +761,7 @@ namespace
                 throw UnexpectedException{"SCC Proof Error: First component of ordering assumption must be root of reachability argument."};
             }
             // Mid is not the root, so it must be at least 1
-            prove_mid_is_at_least(state, logger, reason, root, ordering.value(), 1, assumption, flag_data_for_root, pos_var_data,
+            prove_mid_is_at_least(state, inference, logger, reason, root, ordering.value(), 1, assumption, flag_data_for_root, pos_var_data,
                 pos_alldiff_data, succ);
         }
 
@@ -826,7 +827,7 @@ namespace
                     all_values_seen[next_node].insert(count);
 
                     add_for_node_implies_at_least_1.add_and_saturate(
-                        prove_pos_and_node_implies_next_node(state, logger, reason, root, node, next_node, count,
+                        prove_pos_and_node_implies_next_node(state, inference, logger, reason, root, node, next_node, count,
                             flag_data_for_root, pos_var_data, pos_alldiff_data, succ));
 
                     if (ordering && next_node == ordering.value().last && ! seen_middle) {
@@ -836,7 +837,7 @@ namespace
                     else if (ordering && ! seen_middle && next_node != ordering.value().middle) {
                         // If we see any other node, prove that we can't have middle == count for this
                         // node and pos combination
-                        add_for_node_implies_not_mid.add_and_saturate(prove_not_same_val(state, logger, reason,
+                        add_for_node_implies_not_mid.add_and_saturate(prove_not_same_val(state, inference, logger, reason,
                             root, ordering.value().middle, next_node, count,
                             flag_data, pos_var_data, pos_alldiff_data, succ));
                         if (next_node != root)
@@ -873,8 +874,8 @@ namespace
             if (exclude_based_on_ordering) {
                 PLine new_last_al1_line;
                 new_last_al1_line.add_and_saturate(
-                    prove_exclude_last_based_on_ordering(state, logger, reason, ordering.value(), root, count, assumption, flag_data,
-                        pos_var_data, pos_alldiff_data, succ));
+                    prove_exclude_last_based_on_ordering(state, inference, logger, reason, ordering.value(), root, count,
+                        assumption, flag_data, pos_var_data, pos_alldiff_data, succ));
                 new_last_al1_line.add_and_saturate(last_al1_line);
                 last_al1_line = logger.emit_proof_line(new_last_al1_line.str(), ProofLevel::Current);
             }
@@ -884,7 +885,7 @@ namespace
                 add_for_not_mid.add_and_saturate(last_al1_line);
                 logger.emit_proof_comment("Not mid");
                 logger.emit_proof_line(add_for_not_mid.str(), ProofLevel::Current);
-                prove_mid_is_at_least(state, logger, reason, root, ordering.value(), count + 1, assumption, flag_data_for_root,
+                prove_mid_is_at_least(state, inference, logger, reason, root, ordering.value(), count + 1, assumption, flag_data_for_root,
                     pos_var_data, pos_alldiff_data, succ);
             }
 
@@ -905,7 +906,7 @@ namespace
         logger.emit_proof_line(contradiction_line.str(), ProofLevel::Current);
     }
 
-    auto prove_skipped_subtree(State & state, ProofLogger & logger, const Reason & reason,
+    auto prove_skipped_subtree(const State & state, InferenceTracker & inference, ProofLogger & logger, const Reason & reason,
         const vector<IntegerVariableID> & succ, const long & node, const long & next_node, const long & root, const long & skipped_subroot,
         SCCProofData & proof_data)
     {
@@ -930,7 +931,7 @@ namespace
             skipped_subroot,
             root};
 
-        prove_reachable_set_too_small(state, logger, reason, succ, next_node, proof_data, succ[node] == Integer{next_node}, ordering1);
+        prove_reachable_set_too_small(state, inference, logger, reason, succ, next_node, proof_data, succ[node] == Integer{next_node}, ordering1);
 
         auto subroot_gt_node = create_flag_for_greater_than(
             logger, skipped_subroot, node, flag_data[skipped_subroot], pos_var_data, pos_all_diff_data, succ);
@@ -946,7 +947,7 @@ namespace
             node,
             root};
 
-        prove_reachable_set_too_small(state, logger, reason, succ, skipped_subroot, proof_data, succ[node] == Integer{next_node}, ordering2);
+        prove_reachable_set_too_small(state, inference, logger, reason, succ, skipped_subroot, proof_data, succ[node] == Integer{next_node}, ordering2);
 
         stringstream final_contradiction_p_line;
         final_contradiction_p_line << "p ";
@@ -981,28 +982,22 @@ namespace
             WeightedPseudoBooleanSum{} + 1_i * (succ[node] != Integer{next_node}) >= 1_i, ProofLevel::Current);
     }
 
-    auto explore(State & state, ProofLogger * const logger, const Reason & reason,
+    auto explore(const State & state, InferenceTracker & inference, ProofLogger * const logger, const Reason & reason,
         const long & node, const vector<IntegerVariableID> & succ, SCCPropagatorData & data, SCCProofData & proof_data,
         const SCCOptions & options)
-        -> pair<Inference, vector<pair<long, long>>>
+        -> vector<pair<long, long>>
     {
         data.visit_number[node] = data.count;
         data.lowlink[node] = data.count;
         data.count++;
 
-        Inference result = gcs::innards::Inference::NoChange;
         vector<pair<long, long>> back_edges{};
 
         state.for_each_value_while(succ[node], [&](Integer w) -> bool {
             auto next_node = w.raw_value;
 
             if (data.visit_number[next_node] == -1) {
-                auto explore_result = explore(state, logger, reason, next_node, succ, data, proof_data, options);
-                increase_inference_to(result, explore_result.first);
-                if (result == Inference::Contradiction) {
-                    return false;
-                }
-                auto w_back_edges = explore_result.second;
+                auto w_back_edges = explore(state, inference, logger, reason, next_node, succ, data, proof_data, options);
                 back_edges.insert(back_edges.end(), w_back_edges.begin(), w_back_edges.end());
                 data.lowlink[node] = pos_min(data.lowlink[node], data.lowlink[next_node]);
             }
@@ -1016,16 +1011,17 @@ namespace
                         if (next_node == data.root) {
                             logger->emit_proof_comment("Pruning edge to the root from a subtree other than the first (" +
                                 to_string(node) + ", " + to_string(next_node) + ")");
-                            prove_reachable_set_too_small(state, *logger, reason, succ, data.prev_subroot, proof_data, succ[node] == w);
+                            prove_reachable_set_too_small(state, inference, *logger, reason, succ, data.prev_subroot, proof_data, succ[node] == w);
                         }
                         else {
                             logger->emit_proof_comment("Pruning edge that would skip subtree (" +
                                 to_string(node) + ", " + to_string(next_node) + ")");
-                            prove_skipped_subtree(state, *logger, reason, succ, node, next_node, data.root, data.prev_subroot, proof_data);
+                            prove_skipped_subtree(state, inference, *logger, reason, succ, node, next_node,
+                                data.root, data.prev_subroot, proof_data);
                         }
                     }
 
-                    increase_inference_to(result, state.infer(logger, succ[node] != w, NoJustificationNeeded{}, Reason{}));
+                    inference.infer(logger, succ[node] != w, NoJustificationNeeded{}, Reason{});
                 }
                 data.lowlink[node] = pos_min(data.lowlink[node], data.visit_number[next_node]);
             }
@@ -1033,48 +1029,40 @@ namespace
             return true;
         });
 
-        if (result == Inference::Contradiction) {
-            // Shortcut if we contradicted at a deeper layer, trying to prove contradiction again will cause problems.
-            return make_pair(result, back_edges);
-        }
-
         if (data.lowlink[node] == data.visit_number[node]) {
             if (logger) {
                 logger->emit_proof_comment("More than one SCC");
-                prove_reachable_set_too_small(state, *logger, reason, succ, node, proof_data);
+                prove_reachable_set_too_small(state, inference, *logger, reason, succ, node, proof_data);
             }
-            return make_pair(Inference::Contradiction, back_edges);
+            inference.infer_false(logger, JustifyUsingRUP{}, reason);
         }
         else
-            return make_pair(result, back_edges);
+            return back_edges;
     }
 
     auto check_sccs(
-        State & state,
+        const State & state,
+        InferenceTracker & inference,
         ProofLogger * const logger,
         const Reason & reason,
         const vector<IntegerVariableID> & succ,
         const SCCOptions & options,
         SCCProofData & proof_data)
-        -> Inference
+        -> void
     {
-        auto result = Inference::NoChange;
         auto data = SCCPropagatorData(succ.size());
 
         state.for_each_value_while(succ[data.root], [&](Integer v) -> bool {
             auto next_node = v.raw_value;
             if (data.visit_number[next_node] == -1) {
-                auto [explore_result, back_edges] = explore(state, logger, reason, next_node, succ, data, proof_data, options);
-                increase_inference_to(result, explore_result);
-                if (result == Inference::Contradiction) return false;
+                auto back_edges = explore(state, inference, logger, reason, next_node, succ, data, proof_data, options);
 
                 if (back_edges.empty()) {
                     if (logger) {
                         logger->emit_proof_comment("No back edges");
-                        prove_reachable_set_too_small(state, *logger, reason, succ, next_node, proof_data);
+                        prove_reachable_set_too_small(state, inference, *logger, reason, succ, next_node, proof_data);
                     }
-                    increase_inference_to(result, Inference::Contradiction);
-                    return false;
+                    inference.infer_false(logger, JustifyUsingRUP{}, reason);
                 }
                 else if (options.fix_req && back_edges.size() == 1) {
                     auto from_node = back_edges[0].first;
@@ -1083,10 +1071,10 @@ namespace
                         if (logger) {
                             logger->emit_proof_comment("Fix required back edge (" + to_string(from_node) + ", " + to_string(to_node) + "):");
 
-                            prove_reachable_set_too_small(state, *logger, reason, succ, from_node, proof_data,
+                            prove_reachable_set_too_small(state, inference, *logger, reason, succ, from_node, proof_data,
                                 succ[from_node] != Integer{to_node});
                         }
-                        increase_inference_to(result, state.infer(logger, succ[from_node] == Integer{to_node}, NoJustificationNeeded{}, Reason{}));
+                        inference.infer(logger, succ[from_node] == Integer{to_node}, NoJustificationNeeded{}, Reason{});
                     }
                 }
                 data.start_prev_subtree = data.end_prev_subtree + 1;
@@ -1096,35 +1084,30 @@ namespace
             return true;
         });
 
-        if (result == Inference::Contradiction) return result;
-
         if (cmp_not_equal(data.count, succ.size())) {
             if (logger) {
                 logger->emit_proof_comment("Disconnected graph");
-                prove_reachable_set_too_small(state, *logger, reason, succ, data.root, proof_data);
+                prove_reachable_set_too_small(state, inference, *logger, reason, succ, data.root, proof_data);
             }
-
-            return Inference::Contradiction;
+            inference.infer_false(logger, JustifyUsingRUP{}, reason);
         }
 
         if (options.prune_root && data.start_prev_subtree > 1) {
-            state.for_each_value_while(succ[data.root], [&](Integer v) -> bool {
+            state.for_each_value(succ[data.root], [&](Integer v) {
                 if (data.visit_number[v.raw_value] < data.start_prev_subtree) {
                     if (logger) {
                         logger->emit_proof_comment("Prune impossible edges from root node");
-                        prove_reachable_set_too_small(state, *logger, reason, succ, data.root, proof_data, succ[data.root] == v);
+                        prove_reachable_set_too_small(state, inference, *logger, reason, succ, data.root, proof_data, succ[data.root] == v);
                     }
-                    increase_inference_to(result, state.infer(logger, succ[data.root] != v, JustifyUsingRUP{}, reason));
+                    inference.infer(logger, succ[data.root] != v, JustifyUsingRUP{}, reason);
                 }
-                return true;
             });
         }
-
-        return result;
     }
 
     auto propagate_circuit_using_scc(
-        State & state,
+        const State & state,
+        InferenceTracker & inference,
         ProofLogger * const logger,
         const Reason & reason,
         const vector<IntegerVariableID> & succ,
@@ -1133,14 +1116,12 @@ namespace
         const ConstraintStateHandle & proof_flag_data_handle,
         const ConstraintStateHandle & pos_alldiff_data_handle,
         const ConstraintStateHandle & unassigned_handle)
-        -> Inference
+        -> void
     {
         auto & pos_var_data = any_cast<PosVarDataMap &>(state.get_persistent_constraint_state(pos_var_data_handle));
-        auto result = propagate_non_gac_alldifferent(unassigned_handle, state, logger);
-        if (result == Inference::Contradiction) return result;
+        propagate_non_gac_alldifferent(unassigned_handle, state, inference, logger);
         auto proof_data = SCCProofData{pos_var_data, proof_flag_data_handle, pos_alldiff_data_handle};
-        increase_inference_to(result, check_sccs(state, logger, reason, succ, scc_options, proof_data));
-        if (result == Inference::Contradiction) return result;
+        check_sccs(state, inference, logger, reason, succ, scc_options, proof_data);
         auto & unassigned = any_cast<list<IntegerVariableID> &>(state.get_constraint_state(unassigned_handle));
         // Remove any newly assigned vals from unassigned
         auto it = unassigned.begin();
@@ -1150,8 +1131,7 @@ namespace
             else
                 ++it;
         }
-        increase_inference_to(result, prevent_small_cycles(succ, pos_var_data, unassigned_handle, state, logger));
-        return result;
+        prevent_small_cycles(succ, pos_var_data, unassigned_handle, state, inference, logger);
     }
 }
 
@@ -1188,11 +1168,11 @@ auto CircuitSCC::install(Propagators & propagators, State & initial_state, Proof
             proof_flag_data_handle = proof_flag_data_handle,
             pos_alldiff_data_handle = pos_alldiff_data_handle,
             unassigned_handle = unassigned_handle,
-            options = scc_options](State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
+            options = scc_options](const State & state, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
             auto reason = generic_reason(state, succ);
-            auto result = propagate_circuit_using_scc(state, logger, reason,
+            propagate_circuit_using_scc(state, inference, logger, reason,
                 succ, options, pos_var_data_handle, proof_flag_data_handle, pos_alldiff_data_handle, unassigned_handle);
-            return pair{result, PropagatorState::Enable};
+            return PropagatorState::Enable;
         },
         triggers,
         "circuit");

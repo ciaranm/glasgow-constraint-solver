@@ -1,5 +1,6 @@
 #include <gcs/constraints/not_equals.hh>
 #include <gcs/exception.hh>
+#include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
@@ -63,28 +64,32 @@ auto NotEquals::install(Propagators & propagators, State & initial_state, ProofM
         triggers.on_instantiated = {_v1, _v2};
 
         visit([&](auto & _v1, auto & _v2) {
-            propagators.install([v1 = _v1, v2 = _v2, convert_to_values_ne = convert_to_values_ne](State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
+            propagators.install([v1 = _v1, v2 = _v2, convert_to_values_ne = convert_to_values_ne](
+                                    const State & state, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
                 auto value1 = state.optional_single_value(v1);
                 if (value1) {
-                    if (convert_to_values_ne)
-                        return pair{state.infer_not_equal(logger, v2, *value1,
-                                        NoJustificationNeeded{}, Reason{}),
-                            PropagatorState::DisableUntilBacktrack};
-                    else
-                        return pair{state.infer_not_equal(logger, v2, *value1,
-                                        JustifyUsingRUP{}, Reason{[=]() { return Literals{{v1 == *value1}}; }}),
-                            PropagatorState::DisableUntilBacktrack};
+                    if (convert_to_values_ne) {
+                        inference.infer_not_equal(logger, v2, *value1, NoJustificationNeeded{}, Reason{});
+                        return PropagatorState::DisableUntilBacktrack;
+                    }
+                    else {
+                        inference.infer_not_equal(logger, v2, *value1,
+                            JustifyUsingRUP{}, Reason{[=]() { return Literals{{v1 == *value1}}; }});
+                        return PropagatorState::DisableUntilBacktrack;
+                    }
                 }
                 auto value2 = state.optional_single_value(v2);
                 if (value2) {
-                    if (convert_to_values_ne)
-                        return pair{state.infer_not_equal(logger, v1, *value2, NoJustificationNeeded{}, Reason{}),
-                            PropagatorState::DisableUntilBacktrack};
-                    else
-                        return pair{state.infer_not_equal(logger, v1, *value2, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v2 == *value2}}; }}),
-                            PropagatorState::DisableUntilBacktrack};
+                    if (convert_to_values_ne) {
+                        inference.infer_not_equal(logger, v1, *value2, NoJustificationNeeded{}, Reason{});
+                        return PropagatorState::DisableUntilBacktrack;
+                    }
+                    else {
+                        inference.infer_not_equal(logger, v1, *value2, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v2 == *value2}}; }});
+                        return PropagatorState::DisableUntilBacktrack;
+                    }
                 }
-                return pair{Inference::NoChange, PropagatorState::Enable};
+                return PropagatorState::Enable;
             },
                 triggers, "not equals");
         },

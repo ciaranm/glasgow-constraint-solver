@@ -1,5 +1,6 @@
 #include <gcs/constraints/table.hh>
 #include <gcs/exception.hh>
+#include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
@@ -151,8 +152,8 @@ auto NegativeTable::install(Propagators & propagators, State &, ProofModel * con
         triggers.on_change.emplace_back(v);
 
     visit([&](const auto & tuples) {
-        propagators.install([vars = move(_vars), tuples = move(tuples)](State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
-            auto inf = Inference::NoChange;
+        propagators.install([vars = move(_vars), tuples = move(tuples)](
+                                const State & state, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
             for (auto & t : depointinate(tuples)) {
                 bool falsified = false;
                 optional<Literal> l1, l2;
@@ -173,12 +174,12 @@ auto NegativeTable::install(Propagators & propagators, State &, ProofModel * con
 
                 if (! falsified) {
                     if (! l1)
-                        return pair{Inference::Contradiction, PropagatorState::Enable};
+                        inference.infer_false(logger, JustifyUsingRUP{}, generic_reason(state, vars));
                     else if (! l2)
-                        increase_inference_to(inf, state.infer(logger, *l1, JustifyUsingRUP{}, generic_reason(state, vars)));
+                        inference.infer(logger, *l1, JustifyUsingRUP{}, generic_reason(state, vars));
                 }
             }
-            return pair{inf, PropagatorState::Enable};
+            return PropagatorState::Enable;
         },
             triggers, "negative table");
     },

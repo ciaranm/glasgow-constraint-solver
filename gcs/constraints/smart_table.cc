@@ -1,4 +1,5 @@
 #include <gcs/constraints/smart_table.hh>
+#include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
@@ -109,14 +110,14 @@ namespace
     }
 
     auto log_filtering_inference(ProofLogger * const logger, const ProofFlag & tuple_selector, const Literal & lit,
-        State & state, const Reason & reason)
+        const State & state, InferenceTracker &, const Reason & reason)
     {
         logger->emit_rup_proof_line_under_reason(state, reason,
             WeightedPseudoBooleanSum{} + 1_i * (! tuple_selector) + 1_i * lit >= 1_i, ProofLevel::Current);
     }
 
-    auto filter_edge(const SmartEntry & edge, VariableDomainMap & supported_by_tree, const ProofFlag & tuple_selector, State & state,
-        const Reason & reason, ProofLogger * const logger) -> void
+    auto filter_edge(const SmartEntry & edge, VariableDomainMap & supported_by_tree, const ProofFlag & tuple_selector,
+        const State & state, InferenceTracker & inference, const Reason & reason, ProofLogger * const logger) -> void
     {
         // Currently filter both domains - might be overkill
         // If the tree was in a better form, think this can be optimised to do less redundant filtering.
@@ -138,9 +139,11 @@ namespace
                         [&](Integer val) { return val < dom_2[dom_2.size() - 1]; });
                     if (logger) {
                         if (new_dom_2.size() < dom_2.size())
-                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) >= (dom_1[0] + 1_i), state, reason);
+                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) >= (dom_1[0] + 1_i),
+                                state, inference, reason);
                         if (new_dom_1.size() < dom_1.size())
-                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) < dom_2[dom_2.size() - 1], state, reason);
+                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) < dom_2[dom_2.size() - 1],
+                                state, inference, reason);
                     }
                     break;
                 case SmartEntryConstraint::LessThanEqual:
@@ -150,9 +153,9 @@ namespace
                         [&](Integer val) { return val <= dom_2[dom_2.size() - 1]; });
                     if (logger) {
                         if (new_dom_2.size() < dom_2.size())
-                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) >= (dom_1[0]), state, reason);
+                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) >= (dom_1[0]), state, inference, reason);
                         if (new_dom_1.size() < dom_1.size())
-                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) < (dom_2[dom_2.size() - 1] + 1_i), state, reason);
+                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) < (dom_2[dom_2.size() - 1] + 1_i), state, inference, reason);
                     }
                     break;
                 case SmartEntryConstraint::Equal:
@@ -168,7 +171,7 @@ namespace
                             set_difference(dom_1.begin(), dom_1.end(), dom_2.begin(), dom_2.end(),
                                 back_inserter(discarded_dom1));
                             for (const auto & val : discarded_dom1) {
-                                log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) != val, state, reason);
+                                log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) != val, state, inference, reason);
                             }
                         }
 
@@ -177,7 +180,7 @@ namespace
                             set_difference(dom_2.begin(), dom_2.end(), dom_1.begin(), dom_1.end(),
                                 back_inserter(discarded_dom2));
                             for (const auto & val : discarded_dom2) {
-                                log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) != val, state, reason);
+                                log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) != val, state, inference, reason);
                             }
                         }
                     }
@@ -189,7 +192,7 @@ namespace
                             dom_1.begin(), dom_1.end(),
                             back_inserter(new_dom_2));
                         if (logger && new_dom_2.size() < dom_2.size()) {
-                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) != (dom_1[0]), state, reason);
+                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) != (dom_1[0]), state, inference, reason);
                         }
                     }
                     else if (dom_2.size() == 1) {
@@ -198,7 +201,7 @@ namespace
                             dom_2.begin(), dom_2.end(),
                             back_inserter(new_dom_1));
                         if (logger && new_dom_1.size() < dom_1.size()) {
-                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) != (dom_2[0]), state, reason);
+                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) != (dom_2[0]), state, inference, reason);
                         }
                     }
                     else {
@@ -213,9 +216,9 @@ namespace
                         [&](Integer val) { return val < dom_1[dom_1.size() - 1]; });
                     if (logger) {
                         if (new_dom_1.size() < dom_1.size())
-                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) >= (dom_2[0] + 1_i), state, reason);
+                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) >= (dom_2[0] + 1_i), state, inference, reason);
                         if (new_dom_2.size() < dom_2.size())
-                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) < dom_1[dom_1.size() - 1], state, reason);
+                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) < dom_1[dom_1.size() - 1], state, inference, reason);
                     }
                     break;
                 case SmartEntryConstraint::GreaterThanEqual:
@@ -225,9 +228,9 @@ namespace
                         [&](Integer val) { return val <= dom_1[dom_1.size() - 1]; });
                     if (logger) {
                         if (new_dom_1.size() < dom_1.size())
-                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) >= (dom_2[0]), state, reason);
+                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) >= (dom_2[0]), state, inference, reason);
                         if (new_dom_2.size() < dom_2.size())
-                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) < (dom_1[dom_1.size() - 1] + 1_i), state, reason);
+                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) < (dom_1[dom_1.size() - 1] + 1_i), state, inference, reason);
                     }
                     break;
                 default:
@@ -301,12 +304,13 @@ namespace
     }
 
     [[nodiscard]] auto filter_and_check_valid(const TreeEdges & tree, VariableDomainMap & supported_by_tree,
-        const ProofFlag & tuple_selector, State & state, const Reason & reason, ProofLogger * const logger) -> bool
+        const ProofFlag & tuple_selector, const State & state, InferenceTracker & inference,
+        const Reason & reason, ProofLogger * const logger) -> bool
     {
         for (int l = tree.size() - 1; l >= 0; --l) {
             for (const auto & edge : tree[l]) {
 
-                filter_edge(edge, supported_by_tree, tuple_selector, state, reason, logger);
+                filter_edge(edge, supported_by_tree, tuple_selector, state, inference, reason, logger);
 
                 bool domain_became_empty = false;
                 overloaded{
@@ -343,12 +347,12 @@ namespace
     }
 
     auto filter_again_and_remove_supported(const TreeEdges & tree, VariableDomainMap & supported_by_tree,
-        VariableDomainMap & unsupported, const ProofFlag & tuple_selector, State & state, const Reason & reason,
-        ProofLogger * const logger) -> void
+        VariableDomainMap & unsupported, const ProofFlag & tuple_selector, const State & state,
+        InferenceTracker & inference, const Reason & reason, ProofLogger * const logger) -> void
     {
         for (int l = tree.size() - 1; l >= 0; --l) {
             for (const auto & edge : tree[l]) {
-                filter_edge(edge, supported_by_tree, tuple_selector, state, reason, logger);
+                filter_edge(edge, supported_by_tree, tuple_selector, state, inference, reason, logger);
 
                 // Collect supported vals for this tree
                 overloaded{
@@ -399,13 +403,10 @@ namespace
         return unrestricted;
     }
 
-    [[nodiscard]] auto propagate_using_smart_str(const vector<IntegerVariableID> & selectors, const vector<IntegerVariableID> & vars,
-        const SmartTuples & tuples, const vector<Forest> & forests, State & state, const Reason & reason,
-        vector<ProofFlag> pb_selectors, ProofLogger * const logger) -> Inference
+    auto propagate_using_smart_str(const vector<IntegerVariableID> & selectors, const vector<IntegerVariableID> & vars,
+        const SmartTuples & tuples, const vector<Forest> & forests, const State & state, InferenceTracker & inference, const Reason & reason,
+        vector<ProofFlag> pb_selectors, ProofLogger * const logger) -> void
     {
-
-        bool changed = false, contradiction = false;
-
         VariableDomainMap unsupported{};
         // Initialise unsupported values to everything in each variable's current domain.
         for (const auto & var : vars) {
@@ -433,22 +434,14 @@ namespace
                 }
 
                 // First pass of filtering supported_by_tree and check of validity
-                if (! filter_and_check_valid(tree, supported_by_tree, pb_selectors[tuple_idx], state, reason, logger)) {
+                if (! filter_and_check_valid(tree, supported_by_tree, pb_selectors[tuple_idx], state, inference, reason, logger)) {
                     // Not feasible
-
-                    switch (state.infer_equal(logger, selectors[tuple_idx], 0_i, NoJustificationNeeded{}, Reason{})) {
-                    case Inference::NoChange: break;
-                    case Inference::Change: changed = true; break;
-                    case Inference::Contradiction: contradiction = true; break;
-                    }
+                    inference.infer_equal(logger, selectors[tuple_idx], 0_i, NoJustificationNeeded{}, Reason{});
                     break;
                 }
 
-                if (contradiction) {
-                    return Inference::Contradiction;
-                }
-
-                filter_again_and_remove_supported(tree, supported_by_tree, unsupported, pb_selectors[tuple_idx], state, reason, logger);
+                filter_again_and_remove_supported(tree, supported_by_tree, unsupported, pb_selectors[tuple_idx],
+                    state, inference, reason, logger);
             }
 
             if (state.optional_single_value(selectors[tuple_idx]) != 0_i) {
@@ -466,9 +459,6 @@ namespace
                 break;
             }
         }
-        if (! some_tuple_still_feasible) {
-            contradiction = true;
-        }
 
         for (const auto & var : vars) {
             for (const auto & value : unsupported[var]) {
@@ -479,18 +469,12 @@ namespace
                             ProofLevel::Current);
                     }
                 };
-                switch (state.infer_not_equal(logger, var, value, JustifyExplicitly{justf}, reason)) {
-                case Inference::NoChange: break;
-                case Inference::Change: changed = true; break;
-                case Inference::Contradiction: contradiction = true; break;
-                }
+                inference.infer_not_equal(logger, var, value, JustifyExplicitly{justf}, reason);
             }
         }
 
-        return contradiction
-            ? Inference::Contradiction
-            : changed ? Inference::Change
-                      : Inference::NoChange;
+        if (! some_tuple_still_feasible)
+            inference.infer_false(logger, JustifyUsingRUP{}, reason);
     }
 
     auto build_tree(const IntegerVariableID & root, int current_level, vector<vector<SmartEntry>> & entry_tree,
@@ -898,11 +882,10 @@ auto SmartTable::install(Propagators & propagators, State & initial_state, Proof
 
     propagators.install(
         [selectors, vars = _vars, tuples = move(_tuples), forests = move(forests), pb_selectors = move(pb_selectors)](
-            State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
+            const State & state, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
             auto reason = generic_reason(state, vars);
-            return pair{
-                propagate_using_smart_str(selectors, vars, tuples, forests, state, reason, pb_selectors, logger),
-                PropagatorState::Enable};
+            propagate_using_smart_str(selectors, vars, tuples, forests, state, inference, reason, pb_selectors, logger);
+            return PropagatorState::Enable;
         },
         triggers,
         "smart table");

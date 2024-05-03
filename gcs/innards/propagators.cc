@@ -35,11 +35,13 @@ namespace
     {
         vector<pair<int, int> > ids_and_masks;
     };
+
+    using WrappedPropagationFunction = std::function<auto(State &, ProofLogger * const)->pair<Inference, PropagatorState>>;
 }
 
 struct Propagators::Imp
 {
-    vector<PropagationFunction> propagation_functions;
+    vector<WrappedPropagationFunction> propagation_functions;
     vector<InitialisationFunction> initialisation_functions;
 
     // Every propagation function's index appears exactly once in queue, and lookup[id] always tells
@@ -73,8 +75,8 @@ auto Propagators::model_contradiction(const State &, ProofModel * const optional
     if (optional_model)
         optional_model->add_constraint({});
 
-    install([explain_yourself = explain_yourself](State &, ProofLogger * const) -> pair<Inference, PropagatorState> {
-        return pair{Inference::Contradiction, PropagatorState::Enable};
+    install([explain_yourself = explain_yourself](const State &, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
+        inference.infer_false(logger, JustifyUsingRUP{}, Reason{[=]() { return Literals{}; }});
     },
         Triggers{}, "model contradiction");
 }
@@ -112,7 +114,16 @@ auto Propagators::trim_upper_bound(const State & state, ProofModel * const optio
 auto Propagators::install(PropagationFunction && f, const Triggers & triggers, const string &) -> void
 {
     int id = _imp->propagation_functions.size();
-    _imp->propagation_functions.emplace_back(move(f));
+    _imp->propagation_functions.emplace_back([f = move(f)](State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
+        try {
+            InferenceTracker tracker{state};
+            auto result = f(state, tracker, logger);
+            return pair{tracker.inference_so_far(), result};
+        }
+        catch (const TrackedPropagationFailed &) {
+            return pair{Inference::Contradiction, PropagatorState::Enable};
+        }
+    });
 
     for (const auto & v : triggers.on_change) {
         trigger_on_change(v, id);
@@ -128,21 +139,6 @@ auto Propagators::install(PropagationFunction && f, const Triggers & triggers, c
         trigger_on_instantiated(v, id);
         increase_degree(v);
     }
-}
-
-auto Propagators::install_tracking(TrackingPropagationFunction && f, const Triggers & triggers, const string & n) -> void
-{
-    install([f = move(f)](State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
-        try {
-            InferenceTracker tracker{state};
-            auto result = f(state, logger, tracker);
-            return pair{tracker.inference_so_far(), result};
-        }
-        catch (const TrackedPropagationFailed &) {
-            return pair{Inference::Contradiction, PropagatorState::Enable};
-        }
-    },
-        triggers, n);
 }
 
 auto Propagators::install_initialiser(InitialisationFunction && f) -> void
@@ -204,7 +200,6 @@ auto Propagators::define_and_install_table(State & state, ProofModel * const opt
             return;
         }
 
-        int id = _imp->propagation_functions.size();
         auto selector = state.allocate_integer_variable_with_state(0_i, Integer(depointinate(permitted).size() - 1));
         if (optional_model)
             optional_model->set_up_integer_variable(selector, 0_i, Integer(depointinate(permitted).size() - 1), "aux_table", nullopt);
@@ -229,15 +224,16 @@ auto Propagators::define_and_install_table(State & state, ProofModel * const opt
             }
         }
 
-        // set up triggers before we move vars away
+        Triggers triggers;
         for (auto & v : vars)
-            trigger_on_change(v, id);
-        trigger_on_change(selector, id);
+            triggers.on_change.push_back(v);
+        triggers.on_change.push_back(selector);
 
-        _imp->propagation_functions.emplace_back([&, table = ExtensionalData{selector, move(vars), move(permitted)}](
-                                                     State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
-            return propagate_extensional(table, state, logger);
-        });
+        install([table = ExtensionalData{selector, move(vars), move(permitted)}](
+                    const State & state, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
+            return propagate_extensional(table, state, inference, logger);
+        },
+            triggers, "extenstional");
     },
         move(permitted));
 }

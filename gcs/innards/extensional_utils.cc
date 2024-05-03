@@ -1,4 +1,5 @@
 #include <gcs/innards/extensional_utils.hh>
+#include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/state.hh>
 
@@ -12,17 +13,17 @@ using namespace gcs::innards;
 
 namespace
 {
-    auto feasible(State & state, const IntegerVariableID & var, const Integer val) -> bool
+    auto feasible(const State & state, const IntegerVariableID & var, const Integer val) -> bool
     {
         return state.in_domain(var, val);
     }
 
-    auto feasible(State &, const IntegerVariableID &, const Wildcard &) -> bool
+    auto feasible(const State &, const IntegerVariableID &, const Wildcard &) -> bool
     {
         return true;
     }
 
-    auto feasible(State & state, const IntegerVariableID & var, const IntegerOrWildcard & v) -> bool
+    auto feasible(const State & state, const IntegerVariableID & var, const IntegerOrWildcard & v) -> bool
     {
         return visit([&](auto & v) { return feasible(state, var, v); }, v);
     }
@@ -55,13 +56,12 @@ namespace
     }
 }
 
-auto gcs::innards::propagate_extensional(const ExtensionalData & table, State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState>
+auto gcs::innards::propagate_extensional(const ExtensionalData & table, const State & state, InferenceTracker & inference,
+    ProofLogger * const logger) -> PropagatorState
 {
-    bool changed = false, contradiction = false;
-
     // check whether selectable tuples are still feasible
     visit([&](const auto & tuples) {
-        state.for_each_value_while(table.selector, [&](Integer tuple_idx) -> bool {
+        state.for_each_value(table.selector, [&](Integer tuple_idx) {
             bool is_feasible = true;
             for (unsigned idx = 0; idx < table.vars.size(); ++idx)
                 if (! feasible(state, table.vars[idx], get_tuple_value(tuples, tuple_idx.raw_value, idx))) {
@@ -69,26 +69,16 @@ auto gcs::innards::propagate_extensional(const ExtensionalData & table, State & 
                     break;
                 }
 
-            if (! is_feasible) {
-                switch (state.infer(logger, table.selector != Integer(tuple_idx), NoJustificationNeeded{}, Reason{})) {
-                case Inference::NoChange: break;
-                case Inference::Change: changed = true; break;
-                case Inference::Contradiction: contradiction = true; break;
-                }
-            }
-
-            return ! contradiction;
+            if (! is_feasible)
+                inference.infer(logger, table.selector != Integer(tuple_idx), NoJustificationNeeded{}, Reason{});
         });
     },
         table.tuples);
 
-    if (contradiction)
-        return pair{Inference::Contradiction, PropagatorState::Enable};
-
     // check for supports in selectable tuples
     visit([&](const auto & tuples) {
         for (unsigned idx = 0; idx < table.vars.size(); ++idx) {
-            state.for_each_value_while(table.vars[idx], [&](Integer val) -> bool {
+            state.for_each_value(table.vars[idx], [&](Integer val) {
                 bool supported = false;
                 state.for_each_value_while(table.selector, [&](Integer tuple_idx) -> bool {
                     if (match(get_tuple_value(tuples, tuple_idx.raw_value, idx), val)) {
@@ -98,26 +88,12 @@ auto gcs::innards::propagate_extensional(const ExtensionalData & table, State & 
                     return true;
                 });
 
-                if (! supported) {
-                    switch (state.infer(logger, table.vars[idx] != val, JustifyUsingRUP{}, generic_reason(state, table.vars))) {
-                    case Inference::NoChange: break;
-                    case Inference::Change: changed = true; break;
-                    case Inference::Contradiction: contradiction = true; break;
-                    }
-                }
-
-                return ! contradiction;
+                if (! supported)
+                    inference.infer(logger, table.vars[idx] != val, JustifyUsingRUP{}, generic_reason(state, table.vars));
             });
-
-            if (contradiction)
-                break;
         }
     },
         table.tuples);
 
-    return pair{contradiction
-            ? Inference::Contradiction
-            : changed ? Inference::Change
-                      : Inference::NoChange,
-        PropagatorState::Enable};
+    return PropagatorState::Enable;
 }

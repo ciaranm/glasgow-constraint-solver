@@ -1,6 +1,7 @@
 #include <gcs/constraints/linear/linear_inequality.hh>
 #include <gcs/constraints/linear/propagate.hh>
 #include <gcs/constraints/linear/utils.hh>
+#include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/proofs/variable_constraints_tracker.hh>
@@ -65,7 +66,7 @@ namespace
         return 1_i;
     }
 
-    auto justify_cond(State & state, const auto & coeff_vars, ProofLogger & logger,
+    auto justify_cond(const State & state, const auto & coeff_vars, ProofLogger & logger,
         const ProofLine & proof_line) -> void
     {
         vector<pair<Integer, variant<ProofLine, string>>> terms_to_sum;
@@ -150,8 +151,8 @@ auto LinearInequalityIff::install(Propagators & propagators, State & state, Proo
         visit(
             [&, modifier = modifier](const auto & lin) {
                 propagators.install([modifier = modifier, lin = lin, value = _value, cond = _cond, proof_line = proof_line](
-                                        State & state, ProofLogger * const logger) {
-                    return propagate_linear(lin, value + modifier, state, logger, false, proof_line, cond);
+                                        const State & state, InferenceTracker & inference, ProofLogger * const logger) {
+                    return propagate_linear(lin, value + modifier, state, inference, logger, false, proof_line, cond);
                 },
                     triggers, "linear inequality");
             },
@@ -167,8 +168,8 @@ auto LinearInequalityIff::install(Propagators & propagators, State & state, Proo
         visit(
             [&, neg_modifier = neg_modifier](const auto & lin) {
                 propagators.install([neg_modifier = neg_modifier, lin = lin, value = -_value - 1_i, cond = _cond, proof_line = proof_line](
-                                        State & state, ProofLogger * const logger) {
-                    return propagate_linear(lin, value + neg_modifier, state, logger, false, *proof_line + 1, ! cond);
+                                        const State & state, InferenceTracker & inference, ProofLogger * const logger) {
+                    return propagate_linear(lin, value + neg_modifier, state, inference, logger, false, *proof_line + 1, ! cond);
                 },
                     triggers, "linear inequality");
             },
@@ -195,13 +196,13 @@ auto LinearInequalityIff::install(Propagators & propagators, State & state, Proo
             propagators.install([cond = _cond, sanitised_cv = sanitised_cv, sanitised_neg_cv = sanitised_neg_cv,
                                     value = _value, modifier = modifier, neg_modifier = neg_modifier, proof_line = proof_line,
                                     vars = vars](
-                                    State & state, ProofLogger * const logger) {
+                                    const State & state, InferenceTracker & inference, ProofLogger * const logger) {
                 switch (state.test_literal(cond)) {
                 case LiteralIs::DefinitelyTrue: {
-                    return propagate_linear(sanitised_cv, value + modifier, state, logger, false, proof_line, cond);
+                    return propagate_linear(sanitised_cv, value + modifier, state, inference, logger, false, proof_line, cond);
                 } break;
                 case LiteralIs::DefinitelyFalse: {
-                    return propagate_linear(sanitised_neg_cv, -value + neg_modifier - 1_i, state, logger, false,
+                    return propagate_linear(sanitised_neg_cv, -value + neg_modifier - 1_i, state, inference, logger, false,
                         *proof_line + 1, ! cond);
                 } break;
                 case LiteralIs::Undecided: {
@@ -221,16 +222,16 @@ auto LinearInequalityIff::install(Propagators & propagators, State & state, Proo
 
                     if (min_possible > value + modifier) {
                         auto just = [&](const Reason &) { return justify_cond(state, sanitised_cv, *logger, *proof_line); };
-                        return pair{state.infer(logger, ! cond, JustifyExplicitly{just}, generic_reason(state, vars)),
-                            PropagatorState::Enable};
+                        inference.infer(logger, ! cond, JustifyExplicitly{just}, generic_reason(state, vars));
+                        return PropagatorState::Enable;
                     }
                     else if (max_possible <= value + modifier) {
                         auto just = [&](const Reason &) { return justify_cond(state, sanitised_neg_cv, *logger, *proof_line + 1); };
-                        return pair{state.infer(logger, cond, JustifyExplicitly{just}, generic_reason(state, vars)),
-                            PropagatorState::Enable};
+                        inference.infer(logger, cond, JustifyExplicitly{just}, generic_reason(state, vars));
+                        return PropagatorState::Enable;
                     }
                     else
-                        return pair{Inference::NoChange, PropagatorState::Enable};
+                        return PropagatorState::Enable;
                 } break;
                 }
                 throw NonExhaustiveSwitch{};

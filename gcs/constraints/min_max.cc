@@ -1,6 +1,7 @@
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/min_max.hh>
 #include <gcs/exception.hh>
+#include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
@@ -36,31 +37,24 @@ auto ArrayMinMax::install(Propagators & propagators, State & initial_state, Proo
     for (const auto & v : _vars)
         triggers.on_change.emplace_back(v);
 
-    propagators.install([vars = _vars, result = _result, min = _min](State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
-        Inference inf = Inference::NoChange;
-
+    propagators.install([vars = _vars, result = _result, min = _min](
+                            const State & state, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
         // result <= upper bound of each vars
         for (auto & var : vars) {
             auto var_bounds = state.bounds(var);
             if (min)
-                increase_inference_to(inf, state.infer_less_than(logger, result, var_bounds.second + 1_i, JustifyUsingRUP{}, Reason{[=]() { return Literals{{var < var_bounds.second + 1_i}}; }}));
+                inference.infer_less_than(logger, result, var_bounds.second + 1_i, JustifyUsingRUP{}, Reason{[=]() { return Literals{{var < var_bounds.second + 1_i}}; }});
             else
-                increase_inference_to(inf, state.infer_greater_than_or_equal(logger, result, var_bounds.first, JustifyUsingRUP{}, Reason{[=]() { return Literals{{var >= var_bounds.first}}; }}));
-
-            if (Inference::Contradiction == inf)
-                return pair{inf, PropagatorState::Enable};
+                inference.infer_greater_than_or_equal(logger, result, var_bounds.first, JustifyUsingRUP{}, Reason{[=]() { return Literals{{var >= var_bounds.first}}; }});
         }
 
         // each var >= result
         auto result_bounds = state.bounds(result);
         for (auto & var : vars) {
             if (min)
-                increase_inference_to(inf, state.infer_greater_than_or_equal(logger, var, result_bounds.first, JustifyUsingRUP{}, Reason{[=]() { return Literals{{result >= result_bounds.first}}; }}));
+                inference.infer_greater_than_or_equal(logger, var, result_bounds.first, JustifyUsingRUP{}, Reason{[=]() { return Literals{{result >= result_bounds.first}}; }});
             else
-                increase_inference_to(inf, state.infer_less_than(logger, var, state.upper_bound(result) + 1_i, JustifyUsingRUP{}, Reason{[=]() { return Literals{{result < result_bounds.second + 1_i}}; }}));
-
-            if (Inference::Contradiction == inf)
-                return pair{inf, PropagatorState::Enable};
+                inference.infer_less_than(logger, var, state.upper_bound(result) + 1_i, JustifyUsingRUP{}, Reason{[=]() { return Literals{{result < result_bounds.second + 1_i}}; }});
         }
 
         // result in union(vars)
@@ -77,16 +71,11 @@ auto ArrayMinMax::install(Propagators & propagators, State & initial_state, Proo
                 Literals reason;
                 for (auto & var : vars)
                     reason.emplace_back(var != value);
-                increase_inference_to(inf, state.infer_not_equal(logger, result, value, JustifyUsingRUP{}, Reason{[=]() { return reason; }}));
-                if (Inference::Contradiction == inf)
-                    return false;
+                inference.infer_not_equal(logger, result, value, JustifyUsingRUP{}, Reason{[=]() { return reason; }});
             }
 
             return true;
         });
-
-        if (Inference::Contradiction == inf)
-            return pair{inf, PropagatorState::Enable};
 
         // largest value in result uniquely supported?
         optional<IntegerVariableID> support_of_largest_1, support_of_largest_2;
@@ -118,14 +107,14 @@ auto ArrayMinMax::install(Propagators & propagators, State & initial_state, Proo
             }
 
             if (min) {
-                increase_inference_to(inf, state.infer_less_than(logger, *support_of_largest_1, largest_result + 1_i, JustifyUsingRUP{}, Reason{[=]() { return reason; }}));
+                inference.infer_less_than(logger, *support_of_largest_1, largest_result + 1_i, JustifyUsingRUP{}, Reason{[=]() { return reason; }});
             }
             else {
-                increase_inference_to(inf, state.infer_greater_than_or_equal(logger, *support_of_largest_1, largest_result, JustifyUsingRUP{}, Reason{[=]() { return reason; }}));
+                inference.infer_greater_than_or_equal(logger, *support_of_largest_1, largest_result, JustifyUsingRUP{}, Reason{[=]() { return reason; }});
             }
         }
 
-        return pair{inf, PropagatorState::Enable};
+        return PropagatorState::Enable;
     },
         triggers, "array min max");
 

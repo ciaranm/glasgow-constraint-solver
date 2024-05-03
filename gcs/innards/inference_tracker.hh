@@ -51,10 +51,10 @@ namespace gcs::innards
             track(state.infer(logger, lit, why, reason));
         }
 
-        auto infer_false(ProofLogger * const logger, const Justification & why, const Reason & reason) -> void
+        [[noreturn]] auto infer_false(ProofLogger * const logger, const Justification & why, const Reason & reason) -> void
         {
             state.infer_false(logger, why, reason);
-            track(Inference::Contradiction);
+            throw TrackedPropagationFailed{};
         }
 
         template <IntegerVariableIDLike VarType_>

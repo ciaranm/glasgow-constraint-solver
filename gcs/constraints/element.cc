@@ -13,6 +13,7 @@
 #include <util/enumerate.hh>
 
 #include <algorithm>
+#include <memory>
 #include <optional>
 #include <set>
 #include <utility>
@@ -21,10 +22,12 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::make_shared;
 using std::max;
 using std::min;
 using std::optional;
 using std::pair;
+using std::shared_ptr;
 using std::unique_ptr;
 using std::vector;
 using std::visit;
@@ -67,11 +70,9 @@ auto Element::install(Propagators & propagators, State & initial_state, ProofMod
     all_vars.push_back(_idx);
 
     propagators.install([all_vars = move(all_vars), idx = _idx, var = _var, vals = _vals](
-                            State & state, ProofLogger * const logger) mutable -> pair<Inference, PropagatorState> {
-        Inference inf = Inference::NoChange;
-
+                            const State & state, InferenceTracker & inference, ProofLogger * const logger) mutable -> PropagatorState {
         // update idx to only contain possible indices
-        state.for_each_value_while(idx, [&](Integer ival) {
+        state.for_each_value(idx, [&](Integer ival) {
             bool supported = false;
             state.for_each_value_while_immutable(vals[ival.raw_value], [&](Integer vval) {
                 if (state.in_domain(var, vval))
@@ -79,15 +80,11 @@ auto Element::install(Propagators & propagators, State & initial_state, ProofMod
                 return ! supported;
             });
             if (! supported)
-                increase_inference_to(inf, state.infer_not_equal(logger, idx, ival, JustifyUsingRUP{}, generic_reason(state, all_vars)));
-            return inf != Inference::Contradiction;
+                inference.infer_not_equal(logger, idx, ival, JustifyUsingRUP{}, generic_reason(state, all_vars));
         });
 
-        if (Inference::Contradiction == inf)
-            return pair{inf, PropagatorState::Enable};
-
         // update var to only contain supported values
-        state.for_each_value_while(var, [&](Integer val) {
+        state.for_each_value(var, [&](Integer val) {
             bool supported = false;
             state.for_each_value_while_immutable(idx, [&](Integer v) {
                 if (state.in_domain(vals[v.raw_value], val))
@@ -101,28 +98,20 @@ auto Element::install(Propagators & propagators, State & initial_state, ProofMod
                             WeightedPseudoBooleanSum{} + 1_i * (var != val) + 1_i * (idx != i) >= 1_i, ProofLevel::Temporary);
                     });
                 };
-                increase_inference_to(inf, state.infer_not_equal(logger, var, val, JustifyExplicitly{justf}, generic_reason(state, all_vars)));
-
-                if (Inference::Contradiction == inf)
-                    return false;
+                inference.infer_not_equal(logger, var, val, JustifyExplicitly{justf}, generic_reason(state, all_vars));
             }
-            return true;
         });
-
-        if (Inference::Contradiction == inf)
-            return pair{inf, PropagatorState::Enable};
 
         // if idx has only one value, force that val
         auto idx_is = state.optional_single_value(idx);
         if (idx_is) {
-            state.for_each_value_while(vals[idx_is->raw_value], [&](Integer val) {
+            state.for_each_value(vals[idx_is->raw_value], [&](Integer val) {
                 if (! state.in_domain(var, val))
-                    increase_inference_to(inf, state.infer_not_equal(logger, vals[idx_is->raw_value], val, JustifyUsingRUP{}, generic_reason(state, all_vars)));
-                return inf != Inference::Contradiction;
+                    inference.infer_not_equal(logger, vals[idx_is->raw_value], val, JustifyUsingRUP{}, generic_reason(state, all_vars));
             });
         }
 
-        return pair{inf, PropagatorState::Enable};
+        return PropagatorState::Enable;
     },
         triggers, "element index");
 }
@@ -166,7 +155,8 @@ auto ElementConstantArray::install(Propagators & propagators, State & initial_st
 
     vector<IntegerVariableID> all_vars{_idx, _var};
     visit([&](auto & _idx) {
-        propagators.install([all_vars = all_vars, idx = _idx, var = _var, vals = _vals](State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
+        propagators.install([all_vars = all_vars, idx = _idx, var = _var, vals = _vals](
+                                const State & state, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
             optional<Integer> smallest_seen, largest_seen;
             state.for_each_value_immutable(idx, [&](Integer i) {
                 auto this_val = vals->at(i.raw_value);
@@ -181,7 +171,6 @@ auto ElementConstantArray::install(Propagators & propagators, State & initial_st
                     largest_seen = max(*largest_seen, this_val);
             });
 
-            auto inference = Inference::NoChange;
             auto just = JustifyExplicitly{
                 [&](const Reason & reason) {
                     WeightedPseudoBooleanSum conditions;
@@ -196,23 +185,18 @@ auto ElementConstantArray::install(Propagators & propagators, State & initial_st
                     logger->emit_rup_proof_line_under_reason(state, reason, conditions >= 1_i, ProofLevel::Temporary);
                 }};
 
-            increase_inference_to(inference, state.infer_greater_than_or_equal(logger, var, *smallest_seen, just, generic_reason(state, all_vars)));
-            if (Inference::Contradiction == inference)
-                return pair{inference, PropagatorState::Enable};
-            increase_inference_to(inference, state.infer_less_than(logger, var, *largest_seen + 1_i, just, generic_reason(state, all_vars)));
-            if (Inference::Contradiction == inference)
-                return pair{inference, PropagatorState::Enable};
+            inference.infer_greater_than_or_equal(logger, var, *smallest_seen, just, generic_reason(state, all_vars));
+            inference.infer_less_than(logger, var, *largest_seen + 1_i, just, generic_reason(state, all_vars));
 
             auto bounds = state.bounds(var);
 
-            state.for_each_value_while(idx, [&](Integer i) -> bool {
+            state.for_each_value(idx, [&](Integer i) {
                 auto this_val = vals->at(i.raw_value);
                 if (this_val < bounds.first || this_val > bounds.second)
-                    increase_inference_to(inference, state.infer(logger, idx != i, JustifyUsingRUP{}, generic_reason(state, all_vars)));
-                return inference != Inference::Contradiction;
+                    inference.infer(logger, idx != i, JustifyUsingRUP{}, generic_reason(state, all_vars));
             });
 
-            return pair{inference, PropagatorState::Enable};
+            return PropagatorState::Enable;
         },
             triggers, "element const array var bounds");
     },
@@ -272,54 +256,58 @@ auto Element2DConstantArray::install(Propagators & propagators, State & initial_
     all_vars.push_back(_idx2);
     all_vars.push_back(_var);
 
-    optional<SimpleIntegerVariableID> idxsel;
-    visit([&](auto & _idx1, auto & _idx2) {
-        propagators.install_tracking([all_vars = move(all_vars), idx1 = _idx1, idx2 = _idx2, var = _var, vals = _vals, idxsel = move(idxsel)](
-                                         State & state, ProofLogger * const logger, InferenceTracker & inference) mutable -> PropagatorState {
-            // turn 2d index into 1d index in proof
-            if (logger && ! idxsel) [[unlikely]] {
-                idxsel = state.what_variable_id_will_be_created_next();
-                for (auto i = 0_i, i_end = Integer(vals->size() * vals->begin()->size()); i != i_end; ++i)
-                    logger->variable_constraints_tracker().create_literals_for_introduced_variable_value(*idxsel, i, "element2didx");
-                if (*idxsel != state.allocate_integer_variable_with_state(0_i, Integer(vals->size() * vals->begin()->size())))
-                    throw UnexpectedException{"something went horribly wrong with variable IDs"};
+    propagators.install_initialiser([idx1 = _idx1, idx2 = _idx2, var = _var, vals = _vals](
+                                        State & state, ProofLogger * const logger) -> Inference {
+        // turn 2d index into 1d index in proof
+        if (logger) {
+            auto idxsel = state.what_variable_id_will_be_created_next();
+            for (auto i = 0_i, i_end = Integer(vals->size() * vals->begin()->size()); i != i_end; ++i)
+                logger->variable_constraints_tracker().create_literals_for_introduced_variable_value(idxsel, i, "element2didx");
+            if (idxsel != state.allocate_integer_variable_with_state(0_i, Integer(vals->size() * vals->begin()->size())))
+                throw UnexpectedException{"something went horribly wrong with variable IDs"};
 
-                state.for_each_value_immutable(idx1, [&](Integer i1) {
-                    state.for_each_value_immutable(idx2, [&](Integer i2) {
-                        Integer idx = i1 * Integer(vals->size()) + i2;
-                        logger->emit_red_proof_line(WeightedPseudoBooleanSum{} +
-                                    2_i * ! (*idxsel == idx) + 1_i * (idx1 == i1) + 1_i * (idx2 == i2) >=
-                                2_i,
-                            {{*idxsel == idx, FalseLiteral{}}}, ProofLevel::Top);
-                        logger->emit_red_proof_line(WeightedPseudoBooleanSum{} +
-                                    1_i * (*idxsel == idx) + 1_i * (idx1 != i1) + 1_i * (idx2 != i2) >=
-                                1_i,
-                            {{*idxsel == idx, TrueLiteral{}}}, ProofLevel::Top);
-                    });
+            state.for_each_value_immutable(idx1, [&](Integer i1) {
+                state.for_each_value_immutable(idx2, [&](Integer i2) {
+                    Integer idx = i1 * Integer(vals->size()) + i2;
+                    logger->emit_red_proof_line(WeightedPseudoBooleanSum{} +
+                                2_i * ! (idxsel == idx) + 1_i * (idx1 == i1) + 1_i * (idx2 == i2) >=
+                            2_i,
+                        {{idxsel == idx, FalseLiteral{}}}, ProofLevel::Top);
+                    logger->emit_red_proof_line(WeightedPseudoBooleanSum{} +
+                                1_i * (idxsel == idx) + 1_i * (idx1 != i1) + 1_i * (idx2 != i2) >=
+                            1_i,
+                        {{idxsel == idx, TrueLiteral{}}}, ProofLevel::Top);
                 });
+            });
 
-                WeightedPseudoBooleanSum trail;
-                for (Integer v = 0_i, v_end = Integer(vals->size() * vals->begin()->size()); v != v_end; ++v)
-                    trail += 1_i * (*idxsel == v);
+            WeightedPseudoBooleanSum trail;
+            for (Integer v = 0_i, v_end = Integer(vals->size() * vals->begin()->size()); v != v_end; ++v)
+                trail += 1_i * (idxsel == v);
 
-                state.for_each_value_immutable(idx1, [&](Integer i1) {
-                    state.for_each_value_immutable(idx2, [&](Integer i2) {
-                        WeightedPseudoBooleanSum expr = trail;
-                        expr += 1_i * (idx1 != i1);
-                        expr += 1_i * (idx2 != i2);
-                        logger->emit_rup_proof_line(expr >= 1_i, ProofLevel::Temporary);
-                    });
+            state.for_each_value_immutable(idx1, [&](Integer i1) {
+                state.for_each_value_immutable(idx2, [&](Integer i2) {
                     WeightedPseudoBooleanSum expr = trail;
                     expr += 1_i * (idx1 != i1);
+                    expr += 1_i * (idx2 != i2);
                     logger->emit_rup_proof_line(expr >= 1_i, ProofLevel::Temporary);
                 });
+                WeightedPseudoBooleanSum expr = trail;
+                expr += 1_i * (idx1 != i1);
+                logger->emit_rup_proof_line(expr >= 1_i, ProofLevel::Temporary);
+            });
 
-                WeightedPseudoBooleanSum expr;
-                for (Integer v = 0_i, v_end = Integer(vals->size() * vals->begin()->size()); v != v_end; ++v)
-                    expr += 1_i * (*idxsel == v);
-                logger->emit_rup_proof_line(expr >= 1_i, ProofLevel::Top);
-            }
+            WeightedPseudoBooleanSum expr;
+            for (Integer v = 0_i, v_end = Integer(vals->size() * vals->begin()->size()); v != v_end; ++v)
+                expr += 1_i * (idxsel == v);
+            logger->emit_rup_proof_line(expr >= 1_i, ProofLevel::Top);
+        }
 
+        return Inference::NoChange;
+    });
+
+    visit([&](auto & _idx1, auto & _idx2) {
+        propagators.install([all_vars = move(all_vars), idx1 = _idx1, idx2 = _idx2, var = _var, vals = _vals](
+                                const State & state, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
             // find smallest and largest possible values, for bounds on the var
             optional<Integer> smallest_seen, largest_seen;
             state.for_each_value_immutable(idx1, [&](Integer i1) {

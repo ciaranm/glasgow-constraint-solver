@@ -1,5 +1,6 @@
 #include <gcs/constraints/parity.hh>
 #include <gcs/exception.hh>
+#include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
@@ -89,7 +90,7 @@ auto ParityOdd::install(Propagators & propagators, State &, ProofModel * const o
     }
 
     propagators.install([lits = _lits](
-                            State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
+                            const State & state, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
         long how_many_0 = 0, how_many_1 = 0, how_many_unknown = 0;
         optional<Literal> an_unknown;
         Literals reason;
@@ -108,7 +109,7 @@ auto ParityOdd::install(Propagators & propagators, State &, ProofModel * const o
             case LiteralIs::Undecided:
                 // two or more undecided literals? can't do anything
                 if (++how_many_unknown > 1)
-                    return pair{Inference::NoChange, PropagatorState::Enable};
+                    return PropagatorState::Enable;
                 an_unknown = l;
                 break;
             }
@@ -116,15 +117,19 @@ auto ParityOdd::install(Propagators & propagators, State &, ProofModel * const o
 
         if (0 == how_many_unknown) {
             if (how_many_1 % 2 == 1)
-                return pair{Inference::NoChange, PropagatorState::DisableUntilBacktrack};
+                return PropagatorState::DisableUntilBacktrack;
             else
-                return pair{state.infer(logger, FalseLiteral{}, JustifyUsingRUP{}, Reason{[=]() { return reason; }}), PropagatorState::DisableUntilBacktrack};
+                inference.infer_false(logger, JustifyUsingRUP{}, Reason{[=]() { return reason; }});
         }
         else {
-            if (how_many_1 % 2 == 1)
-                return pair{state.infer(logger, ! *an_unknown, JustifyUsingRUP{}, Reason{[=]() { return reason; }}), PropagatorState::DisableUntilBacktrack};
-            else
-                return pair{state.infer(logger, *an_unknown, JustifyUsingRUP{}, Reason{[=]() { return reason; }}), PropagatorState::DisableUntilBacktrack};
+            if (how_many_1 % 2 == 1) {
+                inference.infer(logger, ! *an_unknown, JustifyUsingRUP{}, Reason{[=]() { return reason; }});
+                return PropagatorState::DisableUntilBacktrack;
+            }
+            else {
+                inference.infer(logger, *an_unknown, JustifyUsingRUP{}, Reason{[=]() { return reason; }});
+                return PropagatorState::DisableUntilBacktrack;
+            }
         }
     },
         triggers, "parity odd");

@@ -16,9 +16,7 @@
 
 namespace gcs::innards
 {
-    using PropagationFunction = std::function<auto(State &, ProofLogger * const)->std::pair<Inference, PropagatorState>>;
-
-    using TrackingPropagationFunction = std::function<auto(State &, ProofLogger * const, InferenceTracker &)->PropagatorState>;
+    using PropagationFunction = std::function<auto(const State &, InferenceTracker &, ProofLogger * const)->PropagatorState>;
 
     using InitialisationFunction = std::function<auto(State &, ProofLogger * const)->Inference>;
 
@@ -104,18 +102,13 @@ namespace gcs::innards
         ///@{
 
         /**
-         * Install the specified propagation function, which will be called
-         * when triggered. All constraints are called at least once when search
-         * starts, even if no Triggers are specified, and a constraint may be
-         * called even if its trigger condition is not met.
+         * Install the specified propagation function, which makes use of
+         * InferenceTracker to handle tracking inference levels. All
+         * constraints are called at least once when search starts, even if no
+         * Triggers are specified, and a constraint may be called even if its
+         * trigger condition is not met.
          */
         auto install(PropagationFunction &&, const Triggers & trigger_vars, const std::string & name) -> void;
-
-        /**
-         * Install the specified propagation function, which makes use of
-         * InferenceTracker to handle tracking inference levels.
-         */
-        auto install_tracking(TrackingPropagationFunction &&, const Triggers & trigger_vars, const std::string & name) -> void;
 
         /**
          * Install an initialiser, which will be called once just before search

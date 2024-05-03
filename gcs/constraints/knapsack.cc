@@ -60,7 +60,7 @@ auto Knapsack::clone() const -> unique_ptr<Constraint>
 
 namespace
 {
-    auto prepare_and_get_bound_p_term(State & state, ProofLogger * const logger, IntegerVariableID var, bool upper) -> string
+    auto prepare_and_get_bound_p_term(const State & state, ProofLogger * const logger, IntegerVariableID var, bool upper) -> string
     {
         return overloaded{
             [&](const SimpleIntegerVariableID & var) -> string {
@@ -80,7 +80,7 @@ namespace
 
     template <bool doing_proof_>
     auto knapsack_gac(
-        State & state,
+        const State & state,
         ProofLogger * const logger,
         const vector<IntegerVariableID> & reason_variables,
         InferenceTracker & inference,
@@ -522,7 +522,7 @@ namespace
     }
 
     auto knapsack(
-        State & state,
+        const State & state,
         ProofLogger * const logger,
         InferenceTracker & inference,
         const vector<vector<Integer>> & coeffs,
@@ -620,9 +620,9 @@ auto Knapsack::install(Propagators & propagators, State & initial_state, ProofMo
     triggers.on_change = {_vars.begin(), _vars.end()};
     triggers.on_change.insert(triggers.on_change.end(), _totals.begin(), _totals.end());
 
-    propagators.install_tracking(
+    propagators.install(
         [coeffs = move(_coeffs), vars = move(_vars), totals = move(_totals), eqns_lines = move(eqns_lines)](
-            State & state, ProofLogger * const logger, InferenceTracker & inference) -> PropagatorState {
+            const State & state, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
             return knapsack(state, logger, inference, coeffs, vars, totals, eqns_lines);
         },
         triggers, "knapsack");

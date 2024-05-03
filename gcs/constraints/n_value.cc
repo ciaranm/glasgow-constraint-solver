@@ -1,4 +1,5 @@
 #include <gcs/constraints/n_value.hh>
+#include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
@@ -41,7 +42,7 @@ auto NValue::install(Propagators & propagators, State & initial_state, ProofMode
     all_vars.push_back(_n_values);
 
     propagators.install([all_vars = move(all_vars), n_values = _n_values, vars = _vars](
-                            State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
+                            const State & state, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
         set<Integer> all_possible_values;
         for (const auto & var : vars) {
             state.for_each_value_while_immutable(var, [&](Integer v) -> bool {
@@ -50,10 +51,8 @@ auto NValue::install(Propagators & propagators, State & initial_state, ProofMode
             });
         }
 
-        auto inf = state.infer(logger, n_values < Integer(all_possible_values.size()) + 1_i, JustifyUsingRUP{},
+        inference.infer(logger, n_values < Integer(all_possible_values.size()) + 1_i, JustifyUsingRUP{},
             generic_reason(state, all_vars));
-        if (Inference::Contradiction == inf)
-            return pair{inf, PropagatorState::Enable};
 
         set<Integer> all_definite_values;
         for (const auto & var : vars) {
@@ -62,11 +61,9 @@ auto NValue::install(Propagators & propagators, State & initial_state, ProofMode
                 all_definite_values.insert(*val);
         }
 
-        increase_inference_to(inf, state.infer(logger, n_values >= max(1_i, Integer(all_definite_values.size())), JustifyUsingRUP{}, generic_reason(state, all_vars)));
-        if (Inference::Contradiction == inf)
-            return pair{inf, PropagatorState::Enable};
+        inference.infer(logger, n_values >= max(1_i, Integer(all_definite_values.size())), JustifyUsingRUP{}, generic_reason(state, all_vars));
 
-        return pair{inf, PropagatorState::Enable};
+        return PropagatorState::Enable;
     },
         triggers, "nvalue");
 

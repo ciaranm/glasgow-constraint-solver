@@ -1,5 +1,6 @@
 #include <gcs/constraints/regular.hh>
 #include <gcs/exception.hh>
+#include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
@@ -125,7 +126,7 @@ namespace
     }
 
     auto log_additional_inference(ProofLogger * const logger, const vector<Literal> & literals, const vector<ProofFlag> & proof_flags,
-        State & state, const Reason & reason, string comment = "") -> void
+        const State & state, const Reason & reason, string comment = "") -> void
     {
         if (logger) {
             // Trying to cut down on repeated code
@@ -144,7 +145,7 @@ namespace
     auto initialise_graph(RegularGraph & graph, const vector<IntegerVariableID> & vars,
         const long num_states, vector<unordered_map<Integer, long>> & transitions,
         const vector<long> & final_states, const vector<vector<ProofFlag>> & state_at_pos_flags,
-        State & state, const Reason & reason, ProofLogger * const logger)
+        const State & state, const Reason & reason, ProofLogger * const logger)
     {
         auto num_vars = vars.size();
 
@@ -233,7 +234,7 @@ namespace
     }
 
     auto decrement_outdeg(RegularGraph & graph, const long i, const long k, const vector<IntegerVariableID> & vars,
-        const vector<vector<ProofFlag>> & state_at_pos_flags, State & state, const Reason & reason, ProofLogger * const logger) -> void
+        const vector<vector<ProofFlag>> & state_at_pos_flags, const State & state, const Reason & reason, ProofLogger * const logger) -> void
     {
         graph.out_deg[i][k]--;
         if (graph.out_deg[i][k] == 0 && i > 0) {
@@ -256,7 +257,7 @@ namespace
 
     auto decrement_indeg(RegularGraph & graph, const long i, const long k,
         const vector<IntegerVariableID> & vars, const vector<vector<ProofFlag>> & state_at_pos_flags,
-        State & state, const Reason & reason, ProofLogger * const logger) -> void
+        const State & state, const Reason & reason, ProofLogger * const logger) -> void
     {
         graph.in_deg[i][k]--;
         if (graph.in_deg[i][k] == 0 && cmp_less(i, graph.in_deg.size() - 1)) {
@@ -296,19 +297,17 @@ namespace
         const vector<long> & final_states,
         const vector<vector<ProofFlag>> & state_at_pos_flags,
         const ConstraintStateHandle & graph_handle,
-        State & state,
+        const State & state,
+        InferenceTracker & inference,
         ProofLogger * const logger,
         const bool print_graph,
-        const string output_file_name) -> Inference
+        const string output_file_name) -> void
     {
         auto & graph = any_cast<RegularGraph &>(state.get_constraint_state(graph_handle));
         auto reason = generic_reason(state, vars);
 
         if (! graph.initialised)
             initialise_graph(graph, vars, num_states, transitions, final_states, state_at_pos_flags, state, reason, logger);
-
-        bool changed = false;
-        bool contradiction = false;
 
         for (size_t i = 0; i < graph.states_supporting.size(); i++) {
             for (const auto & val_and_states : graph.states_supporting[i]) {
@@ -344,30 +343,14 @@ namespace
         for (size_t i = 0; i < graph.states_supporting.size(); i++) {
             state.for_each_value(vars[i], [&](Integer val) -> void {
                 // Clean up domains
-                if (graph.states_supporting[i][val].empty()) {
-                    switch (state.infer_not_equal(logger, vars[i], val, JustifyUsingRUP{}, reason)) {
-                    case Inference::Contradiction:
-                        contradiction = true;
-                        break;
-                    case Inference::Change:
-                        changed = true;
-                        break;
-                    case Inference::NoChange:
-                        break;
-                    }
-                }
+                if (graph.states_supporting[i][val].empty())
+                    inference.infer_not_equal(logger, vars[i], val, JustifyUsingRUP{}, reason);
             });
         }
 
         if (print_graph) {
             print_graph_edges(graph, output_file_name);
         }
-
-        if (contradiction)
-            return Inference::Contradiction;
-        else if (changed)
-            return Inference::Change;
-        return Inference::NoChange;
     }
 }
 
@@ -461,8 +444,9 @@ auto Regular::install(Propagators & propagators, State & initial_state, ProofMod
 
     auto graph_idx = initial_state.add_constraint_state(graph);
     propagators.install([v = move(_vars), n = _num_states, t = move(_transitions), f = move(_final_states), g = graph_idx, flags = state_at_pos_flags,
-                            p = _print_graph, gof = _GRAPH_OUTPUT_FILE](State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
-        return pair{propagate_regular(v, n, t, f, flags, g, state, logger, p, gof), PropagatorState::Enable};
+                            p = _print_graph, gof = _GRAPH_OUTPUT_FILE](const State & state, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
+        propagate_regular(v, n, t, f, flags, g, state, inference, logger, p, gof);
+        return PropagatorState::Enable;
     },
         triggers, "regular");
 }

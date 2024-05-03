@@ -506,13 +506,13 @@ namespace gcs::innards
         /**
          * Return the constraint state for the given handle.
          */
-        [[nodiscard]] auto get_constraint_state(const ConstraintStateHandle h) -> ConstraintState &;
+        [[nodiscard]] auto get_constraint_state(const ConstraintStateHandle h) const -> ConstraintState &;
 
         /**
          * Return the persistent constraint state for the given handle.
          *
          */
-        [[nodiscard]] auto get_persistent_constraint_state(const ConstraintStateHandle h) -> ConstraintState &;
+        [[nodiscard]] auto get_persistent_constraint_state(const ConstraintStateHandle h) const -> ConstraintState &;
 
         ///@}
     };

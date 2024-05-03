@@ -1,5 +1,6 @@
 #include <gcs/constraints/all_different/gac_all_different.hh>
 #include <gcs/exception.hh>
+#include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/proofs/variable_constraints_tracker.hh>
@@ -275,7 +276,7 @@ namespace
         const vector<IntegerVariableID> & vars,
         const vector<Integer> & vals,
         const map<Integer, ProofLine> & constraint_numbers,
-        State & state,
+        const State & state,
         ProofLogger & logger,
         const vector<vector<Right>> & edges_out_from_variable,
         const vector<vector<Left>> & edges_out_from_value,
@@ -381,8 +382,9 @@ auto gcs::innards::propagate_gac_all_different(
     const vector<IntegerVariableID> & vars,
     const vector<Integer> & vals,
     const map<Integer, ProofLine> & constraint_numbers,
-    State & state,
-    ProofLogger * const logger) -> Inference
+    const State & state,
+    InferenceTracker & tracker,
+    ProofLogger * const logger) -> void
 {
     // find a matching to check feasibility
     vector<pair<Left, Right>> edges;
@@ -402,7 +404,7 @@ auto gcs::innards::propagate_gac_all_different(
         // nope. we've got a maximum cardinality matching that leaves at least
         // one thing on the left uncovered.
         auto [just, reason] = prove_matching_is_too_small(vars, vals, constraint_numbers, state, *logger, edges, left_covered, matching);
-        return state.infer(logger, FalseLiteral{}, just, reason);
+        return tracker.infer(logger, FalseLiteral{}, just, reason);
     }
 
     // we have a matching that uses every variable. however, some edges may
@@ -543,8 +545,6 @@ auto gcs::innards::propagate_gac_all_different(
     // avoid outputting duplicate proof lines
     vector<uint8_t> sccs_already_done(number_of_components + 1, 0);
 
-    bool changed = false;
-
     // anything left can be deleted. need to do all of these together if we're doing
     // justifications, to avoid having to figure out an ordering for nested Hall sets
     vector<vector<Literal>> deletions_by_scc(number_of_components);
@@ -563,14 +563,8 @@ auto gcs::innards::propagate_gac_all_different(
 
         auto [just, reason] = prove_deletion_using_sccs(vars, vals, constraint_numbers, state, *logger,
             edges_out_from_variable, edges_out_from_value, *representatives_for_scc[scc], components);
-        switch (state.infer_all(logger, deletions_by_scc[scc], just, reason)) {
-        case Inference::NoChange: break;
-        case Inference::Change: changed = true; break;
-        case Inference::Contradiction: return Inference::Contradiction;
-        }
+        tracker.infer_all(logger, deletions_by_scc[scc], just, reason);
     }
-
-    return changed ? Inference::Change : Inference::NoChange;
 }
 
 auto GACAllDifferent::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
@@ -613,9 +607,10 @@ auto GACAllDifferent::install(Propagators & propagators, State & initial_state, 
     propagators.install(
         [vars = move(sanitised_vars),
             vals = move(compressed_vals),
-            save_constraint_numbers = move(constraint_numbers)](State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
-            return pair{propagate_gac_all_different(vars, vals, save_constraint_numbers, state, logger),
-                PropagatorState::Enable};
+            save_constraint_numbers = move(constraint_numbers)](const State & state, InferenceTracker & inference,
+            ProofLogger * const logger) -> PropagatorState {
+            propagate_gac_all_different(vars, vals, save_constraint_numbers, state, inference, logger);
+            return PropagatorState::Enable;
         },
         triggers, "alldiff");
 }
