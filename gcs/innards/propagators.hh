@@ -11,14 +11,62 @@
 
 #include <atomic>
 #include <functional>
+#include <memory>
 #include <utility>
 #include <vector>
 
 namespace gcs::innards
 {
-    using PropagationFunction = std::function<auto(const State &, InferenceTracker &, ProofLogger * const)->PropagatorState>;
+    template <typename StateType_, typename ReturnType_>
+    struct ConstraintFunctionHolderBase
+    {
+        virtual auto operator()(StateType_, InferenceTracker &, ProofLogger * const) -> ReturnType_ = 0;
+    };
 
-    using InitialisationFunction = std::function<auto(State &, InferenceTracker &, ProofLogger * const)->void>;
+    template <typename Func_, typename StateType_, typename ReturnType_>
+    struct ConstraintFunctionHolder : ConstraintFunctionHolderBase<StateType_, ReturnType_>
+    {
+        Func_ func;
+
+        explicit ConstraintFunctionHolder(Func_ && f) :
+            func(std::move(f))
+        {
+        }
+
+        auto operator()(StateType_ state, InferenceTracker & inference, ProofLogger * const logger) -> ReturnType_ override
+        {
+            return func(state, inference, logger);
+        }
+    };
+
+    template <typename StateType_, typename ReturnType_>
+    struct ConstraintFunction
+    {
+        std::unique_ptr<ConstraintFunctionHolderBase<StateType_, ReturnType_>> func;
+
+        auto operator()(StateType_ state, InferenceTracker & inference, ProofLogger * const logger) -> ReturnType_
+        {
+            return (*func)(state, inference, logger);
+        }
+
+        template <typename Func_>
+        explicit(false) ConstraintFunction(Func_ && f) :
+            func(new ConstraintFunctionHolder<Func_, StateType_, ReturnType_>{std::move(f)})
+        {
+        }
+
+        ~ConstraintFunction() = default;
+
+        ConstraintFunction(const ConstraintFunction &) = delete;
+        auto operator=(ConstraintFunction &) -> ConstraintFunction & = delete;
+
+        ConstraintFunction(ConstraintFunction &&) = default;
+        auto operator=(ConstraintFunction &&) -> ConstraintFunction & = default;
+    };
+
+    using PropagationFunction = ConstraintFunction<const State &, PropagatorState>;
+
+    using InitialisationFunction = ConstraintFunction<State &, void>;
 
     /**
      * \brief Tell Propagators when a Constraint's propagators should be triggered.
