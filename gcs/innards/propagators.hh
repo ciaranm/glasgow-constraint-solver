@@ -151,7 +151,9 @@ namespace gcs::innards
         /**
          * Propagate every constraint, until either a fixed point or a contradiction is reached.
          */
-        [[nodiscard]] auto propagate(State &, ProofLogger * const, std::atomic<bool> * optional_abort_flag = nullptr) const -> bool;
+        [[nodiscard]] auto propagate(State &, ProofLogger * const,
+            const std::optional<std::pair<Literal, HowChanged>> & start_from_guess_rather_than_all_propagators,
+            std::atomic<bool> * optional_abort_flag = nullptr) const -> bool;
 
         /**
          * Call every initialiser, or until a contradiction is reached.

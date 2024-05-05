@@ -90,27 +90,27 @@ namespace gcs::innards
         [[nodiscard]] auto change_state_for_literal(
             const VarType_ & var,
             VariableConditionOperator op,
-            Integer value) -> std::pair<Inference, HowChanged>;
+            Integer value) -> HowChanged;
 
         template <DirectIntegerVariableIDLike VarType_>
         [[nodiscard]] auto change_state_for_equal(
             const VarType_ & var,
-            Integer value) -> std::pair<Inference, HowChanged>;
+            Integer value) -> HowChanged;
 
         template <DirectIntegerVariableIDLike VarType_>
         [[nodiscard]] auto change_state_for_not_equal(
             const VarType_ & var,
-            Integer value) -> std::pair<Inference, HowChanged>;
+            Integer value) -> HowChanged;
 
         template <DirectIntegerVariableIDLike VarType_>
         [[nodiscard]] auto change_state_for_less_than(
             const VarType_ & var,
-            Integer value) -> std::pair<Inference, HowChanged>;
+            Integer value) -> HowChanged;
 
         template <DirectIntegerVariableIDLike VarType_>
         [[nodiscard]] auto change_state_for_greater_than_or_equal(
             const VarType_ & var,
-            Integer value) -> std::pair<Inference, HowChanged>;
+            Integer value) -> HowChanged;
 
         [[nodiscard]] inline auto assign_to_state_of(const DirectIntegerVariableID) -> innards::IntegerVariableState &;
 
@@ -122,7 +122,7 @@ namespace gcs::innards
         [[nodiscard]] inline auto state_of(const ConstantIntegerVariableID &, innards::IntegerVariableState & space) const -> const innards::IntegerVariableState &;
         [[nodiscard]] inline auto state_of(const SimpleIntegerVariableID &) const -> const innards::IntegerVariableState &;
 
-        auto prove_and_remember_change(ProofLogger * const, const Inference & inference, const HowChanged & how_changed,
+        auto prove_and_remember_change(ProofLogger * const, const HowChanged & how_changed,
             const Justification & just, const Reason &,
             const Literal & lit, const DirectIntegerVariableID & actual_var) -> void;
 
@@ -181,7 +181,7 @@ namespace gcs::innards
         /**
          * Infer that a Literal must hold, for the specified Justification.
          */
-        [[nodiscard]] auto infer(ProofLogger * const, const Literal & lit, const Justification & why, const Reason & reason) -> Inference;
+        [[nodiscard]] auto infer(ProofLogger * const, const Literal & lit, const Justification & why, const Reason & reason) -> HowChanged;
 
         /**
          * Infer that a Literal must hold, for the specified Justification. Performance overload for if we
@@ -189,7 +189,7 @@ namespace gcs::innards
          */
         template <IntegerVariableIDLike VarType_>
         [[nodiscard]] auto infer(ProofLogger * const, const VariableConditionFrom<VarType_> & lit, const Justification & why,
-            const Reason & reason) -> Inference;
+            const Reason & reason) -> HowChanged;
 
         /**
          * Infer a contradiction, but still emit a justification if necessary.
@@ -203,7 +203,7 @@ namespace gcs::innards
          */
         template <IntegerVariableIDLike VarType_>
         [[nodiscard]] auto infer_equal(ProofLogger * const, const VarType_ &, Integer value, const Justification & why,
-            const Reason & reason) -> Inference;
+            const Reason & reason) -> HowChanged;
 
         /**
          * Infer that a given IntegerVariableID or more specific type must not
@@ -211,7 +211,7 @@ namespace gcs::innards
          */
         template <IntegerVariableIDLike VarType_>
         [[nodiscard]] auto infer_not_equal(ProofLogger * const, const VarType_ &, Integer value,
-            const Justification & why, const Reason & reason) -> Inference;
+            const Justification & why, const Reason & reason) -> HowChanged;
 
         /**
          * Infer that a given IntegerVariableID or more specific type must be less
@@ -219,7 +219,7 @@ namespace gcs::innards
          */
         template <IntegerVariableIDLike VarType_>
         [[nodiscard]] auto infer_less_than(ProofLogger * const, const VarType_ &, Integer value,
-            const Justification & why, const Reason & reason) -> Inference;
+            const Justification & why, const Reason & reason) -> HowChanged;
 
         /**
          * Infer that a given IntegerVariableID or more specific type must be
@@ -228,15 +228,7 @@ namespace gcs::innards
          */
         template <IntegerVariableIDLike VarType_>
         [[nodiscard]] auto infer_greater_than_or_equal(ProofLogger * const, const VarType_ &, Integer value,
-            const Justification & why, const Reason & reason) -> Inference;
-
-        /**
-         * Infer each Literal in turn. If the justification is a
-         * JustifyExplicitly, only output its justification once, for the first
-         * Literal.
-         */
-        [[nodiscard]] auto infer_all(ProofLogger * const, const std::vector<Literal> & lit, const Justification & why,
-            const Reason & reason) -> Inference;
+            const Justification & why, const Reason & reason) -> HowChanged;
 
         ///@}
 
@@ -251,7 +243,7 @@ namespace gcs::innards
          *
          * \sa State::new_epoch()
          */
-        auto guess(ProofLogger * const, const Literal & lit) -> void;
+        auto guess(ProofLogger * const, const Literal & lit) -> HowChanged;
 
         /**
          * Add an additional proof condition, similar to guess except that it
@@ -269,9 +261,8 @@ namespace gcs::innards
         auto for_each_guess(const std::function<auto(Literal)->void> &) const -> void;
 
         /**
-         * Create a new epoch, that can be backtracked to. Only legal if we are in a fully
-         * propagated state, i.e. if extract_changed_variables() would do nothing. If
-         * subsearch is true, also clears anything from add_extra_proof_condition() when
+         * Create a new epoch, that can be backtracked to. If subsearch is
+         * true, also clears anything from add_extra_proof_condition() when
          * backtracking.
          *
          * \sa State::guess()
@@ -449,20 +440,6 @@ namespace gcs::innards
          * \sa State::has_single_value()
          */
         [[nodiscard]] auto operator()(const IntegerVariableID &) const -> Integer;
-
-        ///@}
-
-        /**
-         * \name Propagation and helpers.
-         */
-        ///@{
-
-        /**
-         * Call the associated function once for each variable that has changed
-         * since this function was last called, telling us what has happened to
-         * it. Used for propagation.
-         */
-        auto extract_changed_variables(const std::function<auto(SimpleIntegerVariableID, HowChanged)->void> &) -> void;
 
         ///@}
 

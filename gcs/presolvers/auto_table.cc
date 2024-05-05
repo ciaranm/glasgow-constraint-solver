@@ -16,6 +16,7 @@ using namespace gcs::innards;
 
 using std::make_unique;
 using std::move;
+using std::nullopt;
 using std::optional;
 using std::pair;
 using std::to_string;
@@ -30,12 +31,13 @@ AutoTable::AutoTable(const vector<IntegerVariableID> & v) :
 namespace
 {
     auto solve_subproblem(unsigned depth, SimpleTuples & tuples, const vector<IntegerVariableID> & vars,
-        Propagators & propagators, State & state, ProofLogger * const logger, SimpleIntegerVariableID selector_var_id) -> void
+        Propagators & propagators, State & state, ProofLogger * const logger, SimpleIntegerVariableID selector_var_id,
+        const optional<pair<Literal, HowChanged>> & guess) -> void
     {
         if (logger)
             logger->enter_proof_level(depth + 1);
 
-        if (propagators.propagate(state, logger, nullptr)) {
+        if (propagators.propagate(state, logger, guess, nullptr)) {
             auto branch_var = branch_on_dom_then_deg(vars)(state.current(), propagators);
             if (! branch_var) {
                 vector<Integer> tuple;
@@ -69,8 +71,9 @@ namespace
             else {
                 state.for_each_value(*branch_var, [&](Integer val) {
                     auto timestamp = state.new_epoch();
-                    state.guess(logger, *branch_var == val);
-                    solve_subproblem(depth + 1, tuples, vars, propagators, state, logger, selector_var_id);
+                    auto guess_change = state.guess(logger, *branch_var == val);
+                    solve_subproblem(depth + 1, tuples, vars, propagators, state, logger, selector_var_id,
+                        pair{*branch_var == val, guess_change});
                     state.backtrack(timestamp);
                 });
             }
@@ -94,7 +97,7 @@ auto AutoTable::run(Problem &, Propagators & propagators, State & initial_state,
     auto selector_var_id = initial_state.what_variable_id_will_be_created_next();
     if (logger)
         logger->emit_proof_comment("starting autotabulation");
-    solve_subproblem(0, tuples, _vars, propagators, initial_state, logger, selector_var_id);
+    solve_subproblem(0, tuples, _vars, propagators, initial_state, logger, selector_var_id, nullopt);
 
     if (logger)
         logger->emit_proof_comment("creating autotable with " + to_string(tuples.size()) + " entries");

@@ -48,19 +48,19 @@ TEST_CASE("State infers >=")
 
     SECTION("var >= value")
     {
-        CHECK(state.infer(nullptr, var >= 3_i, NoJustificationNeeded{}, Reason{}) == Inference::Change);
+        CHECK(state.infer(nullptr, var >= 3_i, NoJustificationNeeded{}, Reason{}) == HowChanged::BoundsChanged);
         check_range(state, var, 3_i, 10_i);
     }
 
     SECTION("var + offset >= value")
     {
-        CHECK(state.infer(nullptr, var + 1_i >= 5_i, NoJustificationNeeded{}, Reason{}) == Inference::Change);
+        CHECK(state.infer(nullptr, var + 1_i >= 5_i, NoJustificationNeeded{}, Reason{}) == HowChanged::BoundsChanged);
         check_range(state, var, 4_i, 10_i);
     }
 
     SECTION("-var + offset >= value")
     {
-        CHECK(state.infer(nullptr, -var + 1_i >= -7_i, NoJustificationNeeded{}, Reason{}) == Inference::Change);
+        CHECK(state.infer(nullptr, -var + 1_i >= -7_i, NoJustificationNeeded{}, Reason{}) == HowChanged::BoundsChanged);
         check_range(state, var, 1_i, 8_i);
     }
 }
@@ -72,19 +72,19 @@ TEST_CASE("State infers <")
 
     SECTION("var < value")
     {
-        CHECK(state.infer(nullptr, var < 7_i, NoJustificationNeeded{}, Reason{}) == Inference::Change);
+        CHECK(state.infer(nullptr, var < 7_i, NoJustificationNeeded{}, Reason{}) == HowChanged::BoundsChanged);
         check_range(state, var, 1_i, 6_i);
     }
 
     SECTION("var + offset < value")
     {
-        CHECK(state.infer(nullptr, var + 1_i < 4_i, NoJustificationNeeded{}, Reason{}) == Inference::Change);
+        CHECK(state.infer(nullptr, var + 1_i < 4_i, NoJustificationNeeded{}, Reason{}) == HowChanged::BoundsChanged);
         check_range(state, var, 1_i, 2_i);
     }
 
     SECTION("-var + offset < value")
     {
-        CHECK(state.infer(nullptr, -var + 1_i < -2_i, NoJustificationNeeded{}, Reason{}) == Inference::Change);
+        CHECK(state.infer(nullptr, -var + 1_i < -2_i, NoJustificationNeeded{}, Reason{}) == HowChanged::BoundsChanged);
         check_range(state, var, 4_i, 10_i);
     }
 }
@@ -96,7 +96,7 @@ TEST_CASE("State infers !=")
 
     SECTION("var != value")
     {
-        CHECK(state.infer(nullptr, var != 7_i, NoJustificationNeeded{}, Reason{}) == Inference::Change);
+        CHECK(state.infer(nullptr, var != 7_i, NoJustificationNeeded{}, Reason{}) == HowChanged::InteriorValuesChanged);
         CHECK(state.bounds(var) == pair{1_i, 10_i});
         for (auto i = 1_i; i <= 10_i; ++i)
             CHECK(state.in_domain(var, i) == (i != 7_i));
@@ -104,7 +104,7 @@ TEST_CASE("State infers !=")
 
     SECTION("var + offset != value")
     {
-        CHECK(state.infer(nullptr, var + 1_i != 7_i, NoJustificationNeeded{}, Reason{}) == Inference::Change);
+        CHECK(state.infer(nullptr, var + 1_i != 7_i, NoJustificationNeeded{}, Reason{}) == HowChanged::InteriorValuesChanged);
         CHECK(state.bounds(var) == pair{1_i, 10_i});
         for (auto i = 1_i; i <= 10_i; ++i)
             CHECK(state.in_domain(var, i) == (i != 6_i));
@@ -112,7 +112,7 @@ TEST_CASE("State infers !=")
 
     SECTION("-var + offset != value")
     {
-        CHECK(state.infer(nullptr, -var + 1_i != -7_i, NoJustificationNeeded{}, Reason{}) == Inference::Change);
+        CHECK(state.infer(nullptr, -var + 1_i != -7_i, NoJustificationNeeded{}, Reason{}) == HowChanged::InteriorValuesChanged);
         CHECK(state.bounds(var) == pair{1_i, 10_i});
         for (auto i = 1_i; i <= 10_i; ++i)
             CHECK(state.in_domain(var, i) == (i != 8_i));
@@ -126,21 +126,21 @@ TEST_CASE("State infers =")
 
     SECTION("var = value")
     {
-        CHECK(state.infer(nullptr, var == 7_i, NoJustificationNeeded{}, Reason{}) == Inference::Change);
+        CHECK(state.infer(nullptr, var == 7_i, NoJustificationNeeded{}, Reason{}) == HowChanged::Instantiated);
         check_range(state, var, 7_i, 7_i);
         CHECK(state.optional_single_value(var) == make_optional(7_i));
     }
 
     SECTION("var + offset = value")
     {
-        CHECK(state.infer(nullptr, var + 1_i == 7_i, NoJustificationNeeded{}, Reason{}) == Inference::Change);
+        CHECK(state.infer(nullptr, var + 1_i == 7_i, NoJustificationNeeded{}, Reason{}) == HowChanged::Instantiated);
         check_range(state, var, 6_i, 6_i);
         CHECK(state.optional_single_value(var) == make_optional(6_i));
     }
 
     SECTION("-var + offset = value")
     {
-        CHECK(state.infer(nullptr, -var + 1_i == -7_i, NoJustificationNeeded{}, Reason{}) == Inference::Change);
+        CHECK(state.infer(nullptr, -var + 1_i == -7_i, NoJustificationNeeded{}, Reason{}) == HowChanged::Instantiated);
         check_range(state, var, 8_i, 8_i);
         CHECK(state.optional_single_value(var) == make_optional(8_i));
     }

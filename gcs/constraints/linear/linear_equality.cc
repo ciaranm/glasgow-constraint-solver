@@ -235,9 +235,8 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
 
                 auto data = make_shared<optional<ExtensionalData>>(nullopt);
                 propagators.install_initialiser([data = data, coeff_vars = sanitised_cv, value = _value + modifier](
-                                                    State & state, InferenceTracker &, ProofLogger * const logger) {
+                                                    State & state, InferenceTracker &, ProofLogger * const logger) -> void {
                     *data = build_table(coeff_vars, value, state, logger);
-                    return Inference::NoChange;
                 });
                 propagators.install([data = data](
                                         const State & state, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
