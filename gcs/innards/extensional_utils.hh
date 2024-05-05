@@ -2,8 +2,6 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_EXTENSIONAL_UTILS_HH
 
 #include <gcs/extensional.hh>
-#include <gcs/innards/inference_tracker-fwd.hh>
-#include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/propagators-fwd.hh>
 #include <gcs/innards/state-fwd.hh>
 #include <gcs/integer.hh>
@@ -35,8 +33,7 @@ namespace gcs::innards
      *
      * \sa Table
      */
-    auto propagate_extensional(const ExtensionalData &, const State &, InferenceTracker &,
-        innards::ProofLogger * const) -> PropagatorState;
+    auto propagate_extensional(const ExtensionalData &, const State &, auto & inference_tracker) -> PropagatorState;
 }
 
 #endif

@@ -235,7 +235,7 @@ namespace
         const vector<vector<ProofFlag>> & state_at_pos_flags,
         const ConstraintStateHandle & graph_handle,
         const State & state,
-        InferenceTracker & inference,
+        auto & inference,
         ProofLogger * const logger) -> void
     {
         auto & graph = any_cast<RegularGraph &>(state.get_constraint_state(graph_handle));
@@ -279,7 +279,7 @@ namespace
             state.for_each_value(vars[i], [&](Integer val) -> void {
                 // Clean up domains
                 if (graph.states_supporting[i][val].empty())
-                    inference.infer_not_equal(logger, vars[i], val, JustifyUsingRUP{}, reason);
+                    inference.infer_not_equal(vars[i], val, JustifyUsingRUP{}, reason);
             });
         }
     }
@@ -364,7 +364,7 @@ auto Regular::install(Propagators & propagators, State & initial_state, ProofMod
     RegularGraph graph = RegularGraph(_vars.size(), _num_states);
     auto graph_idx = initial_state.add_constraint_state(graph);
     propagators.install([v = move(_vars), n = _num_states, t = move(_transitions), f = move(_final_states), g = graph_idx, flags = state_at_pos_flags](
-                const State & state, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
+                            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
         propagate_regular(v, n, t, f, flags, g, state, inference, logger);
         return PropagatorState::Enable;
     },

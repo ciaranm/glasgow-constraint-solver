@@ -15,12 +15,14 @@
 #include <list>
 #include <set>
 #include <utility>
+#include <variant>
 
 using namespace gcs;
 using namespace gcs::innards;
 
 using std::atomic;
 using std::bit_ceil;
+using std::in_place_type;
 using std::list;
 using std::move;
 using std::nullopt;
@@ -29,6 +31,7 @@ using std::pair;
 using std::set;
 using std::string;
 using std::swap;
+using std::variant;
 using std::vector;
 using std::visit;
 
@@ -38,6 +41,14 @@ namespace
     {
         vector<pair<int, int> > ids_and_masks;
     };
+
+    auto make_inference_tracker(State & state, ProofLogger * const maybe_proof) -> variant<SimpleInferenceTracker, LoggingInferenceTracker>
+    {
+        if (maybe_proof)
+            return variant<SimpleInferenceTracker, LoggingInferenceTracker>{in_place_type<LoggingInferenceTracker>, state, *maybe_proof};
+        else
+            return variant<SimpleInferenceTracker, LoggingInferenceTracker>{in_place_type<SimpleInferenceTracker>, state};
+    }
 }
 
 struct Propagators::Imp
@@ -66,8 +77,8 @@ auto Propagators::model_contradiction(const State &, ProofModel * const optional
     if (optional_model)
         optional_model->add_constraint({});
 
-    install_initialiser([explain_yourself = explain_yourself](const State &, InferenceTracker & inference, ProofLogger * const logger) -> void {
-        inference.infer_false(logger, JustifyUsingRUP{}, Reason{[=]() { return Literals{}; }});
+    install_initialiser([explain_yourself = explain_yourself](const State &, auto & inference, ProofLogger * const) -> void {
+        inference.infer_false(JustifyUsingRUP{}, Reason{[=]() { return Literals{}; }});
     });
 }
 
@@ -77,8 +88,8 @@ auto Propagators::trim_lower_bound(const State & state, ProofModel * const optio
         if (state.upper_bound(var) >= val) {
             if (optional_model)
                 optional_model->add_constraint({var >= val});
-            install_initialiser([var, val](const State &, InferenceTracker & inference, ProofLogger * const logger) {
-                inference.infer(logger, var >= val, JustifyUsingRUP{}, Reason{});
+            install_initialiser([var, val](const State &, auto & inference, ProofLogger * const) {
+                inference.infer(var >= val, JustifyUsingRUP{}, Reason{});
             });
         }
         else
@@ -92,8 +103,8 @@ auto Propagators::trim_upper_bound(const State & state, ProofModel * const optio
         if (state.lower_bound(var) <= val) {
             if (optional_model)
                 optional_model->add_constraint({var < val + 1_i});
-            install_initialiser([var, val](const State &, InferenceTracker & inference, ProofLogger * const logger) {
-                inference.infer(logger, var < val + 1_i, JustifyUsingRUP{}, Reason{});
+            install_initialiser([var, val](const State &, auto & inference, ProofLogger * const) {
+                inference.infer(var < val + 1_i, JustifyUsingRUP{}, Reason{});
             });
         }
         else
@@ -211,8 +222,8 @@ auto Propagators::define_and_install_table(State & state, ProofModel * const opt
         triggers.on_change.push_back(selector);
 
         install([table = ExtensionalData{selector, move(vars), move(permitted)}](
-                    const State & state, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
-            return propagate_extensional(table, state, inference, logger);
+                    const State & state, auto & inference, ProofLogger * const) -> PropagatorState {
+            return propagate_extensional(table, state, inference);
         },
             triggers, "extenstional");
     },
@@ -222,13 +233,17 @@ auto Propagators::define_and_install_table(State & state, ProofModel * const opt
 auto Propagators::initialise(State & state, ProofLogger * const logger) const -> bool
 {
     for (auto & f : _imp->initialisation_functions) {
-        InferenceTracker inf(state);
-        try {
-            f(state, inf, logger);
-        }
-        catch (const TrackedPropagationFailed &) {
+        if (! visit([&](auto && inference) -> bool {
+                try {
+                    f(state, inference, logger);
+                    return true;
+                }
+                catch (const TrackedPropagationFailed &) {
+                    return false;
+                }
+            },
+                make_inference_tracker(state, logger)))
             return false;
-        }
     }
 
     return true;
@@ -285,22 +300,24 @@ auto Propagators::propagate(State & state, ProofLogger * const logger,
         on_queue.erase(propagator_id);
 
         try {
-            InferenceTracker inference{state};
-            auto propagator_state = _imp->propagation_functions.at(propagator_id)(state, inference, logger);
-            ++_imp->total_propagations;
+            visit([&](auto && inference) -> void {
+                auto propagator_state = _imp->propagation_functions.at(propagator_id)(state, inference, logger);
+                ++_imp->total_propagations;
 
-            for (const auto & [literal, how_changed] : inference.changes) {
-                ++_imp->effectful_propagations;
-                requeue_literal(literal, how_changed);
-            }
+                for (const auto & [literal, how_changed] : inference.changes) {
+                    ++_imp->effectful_propagations;
+                    requeue_literal(literal, how_changed);
+                }
 
-            switch (propagator_state) {
-            case PropagatorState::Enable:
-                break;
-            case PropagatorState::DisableUntilBacktrack:
-                disabled.insert(propagator_id);
-                break;
-            }
+                switch (propagator_state) {
+                case PropagatorState::Enable:
+                    break;
+                case PropagatorState::DisableUntilBacktrack:
+                    disabled.insert(propagator_id);
+                    break;
+                }
+            },
+                make_inference_tracker(state, logger));
         }
         catch (const TrackedPropagationFailed &) {
             contradiction = true;

@@ -39,8 +39,7 @@ namespace
 
         bool objective_failure = false;
         if (problem.optional_minimise_variable() && objective_value) {
-            if (state.infer(logger, *problem.optional_minimise_variable() < *objective_value, NoJustificationNeeded{},
-                    Reason{}) == HowChanged::Contradiction)
+            if (state.infer(*problem.optional_minimise_variable() < *objective_value) == HowChanged::Contradiction)
                 objective_failure = true;
         }
 
@@ -74,7 +73,7 @@ namespace
 
                     auto result = true;
                     auto timestamp = state.new_epoch();
-                    auto guess_change = state.guess(logger, guess);
+                    auto guess_change = state.guess(guess);
                     bool child_contains_solution = false;
                     if (! solve_with_state(depth + 1, stats, problem, propagators, state,
                             callbacks, logger, child_contains_solution, objective_value, pair{guess, guess_change}, optional_abort_flag))

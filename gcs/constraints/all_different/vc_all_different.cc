@@ -38,7 +38,7 @@ using std::vector;
 using std::visit;
 
 auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle,
-    const State & state, InferenceTracker & inference, ProofLogger * const logger) -> void
+    const State & state, auto & inference, ProofLogger * const) -> void
 {
     auto & unassigned = any_cast<list<IntegerVariableID> &>(state.get_constraint_state(unassigned_handle));
 
@@ -64,7 +64,7 @@ auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & 
         for (auto other : to_propagate) {
             if (other.second == val) {
                 // we're already in a contradicting state
-                inference.infer_not_equal(logger, var, val, JustifyUsingRUP{},
+                inference.infer_not_equal(var, val, JustifyUsingRUP{},
                     Reason{[var = other.first, val = val]() { return Literals{{var == val}}; }});
             }
         }
@@ -72,7 +72,7 @@ auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & 
         while (i != unassigned.end()) {
             auto other = *i;
             if (other != var) {
-                inference.infer_not_equal(logger, other, val, JustifyUsingRUP{}, Reason{[var = var, val = val]() { return Literals{{var == val}}; }});
+                inference.infer_not_equal(other, val, JustifyUsingRUP{}, Reason{[var = var, val = val]() { return Literals{{var == val}}; }});
                 if (auto other_val = state.optional_single_value(other)) {
                     to_propagate.emplace_back(other, *other_val);
                     unassigned.erase(i++);
@@ -83,6 +83,11 @@ auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & 
         }
     }
 }
+
+template auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle,
+    const State & state, SimpleInferenceTracker & inference, ProofLogger * const logger) -> void;
+template auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle,
+    const State & state, LoggingInferenceTracker & inference, ProofLogger * const logger) -> void;
 
 auto gcs::innards::define_clique_not_equals_encoding(ProofModel & model, const vector<gcs::IntegerVariableID> & vars) -> void
 {
@@ -131,7 +136,7 @@ auto VCAllDifferent::install(innards::Propagators & propagators, innards::State 
 
     propagators.install(
         [vars = move(sanitised_vars), unassigned_handle = unassigned_handle,
-            vals = move(compressed_vals)](const State & state, InferenceTracker & tracker, ProofLogger * const logger) -> PropagatorState {
+            vals = move(compressed_vals)](const State & state, auto & tracker, ProofLogger * const logger) -> PropagatorState {
             propagate_non_gac_alldifferent(unassigned_handle, state, tracker, logger);
             return PropagatorState::Enable;
         },

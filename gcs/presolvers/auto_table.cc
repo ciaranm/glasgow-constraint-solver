@@ -71,7 +71,7 @@ namespace
             else {
                 state.for_each_value(*branch_var, [&](Integer val) {
                     auto timestamp = state.new_epoch();
-                    auto guess_change = state.guess(logger, *branch_var == val);
+                    auto guess_change = state.guess(*branch_var == val);
                     solve_subproblem(depth + 1, tuples, vars, propagators, state, logger, selector_var_id,
                         pair{*branch_var == val, guess_change});
                     state.backtrack(timestamp);
@@ -92,7 +92,7 @@ auto AutoTable::run(Problem &, Propagators & propagators, State & initial_state,
     SimpleTuples tuples;
 
     auto timestamp = initial_state.new_epoch(true);
-    initial_state.guess(logger, TrueLiteral{});
+    initial_state.guess(TrueLiteral{});
 
     auto selector_var_id = initial_state.what_variable_id_will_be_created_next();
     if (logger)
@@ -114,8 +114,8 @@ auto AutoTable::run(Problem &, Propagators & propagators, State & initial_state,
 
     Triggers triggers;
     triggers.on_change = {_vars.begin(), _vars.end()};
-    propagators.install([data = move(data)](const State & state, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
-        return propagate_extensional(data, state, inference, logger);
+    propagators.install([data = move(data)](const State & state, auto & inference, ProofLogger * const) -> PropagatorState {
+        return propagate_extensional(data, state, inference);
     },
         triggers, "autotable");
 

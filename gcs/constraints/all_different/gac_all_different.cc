@@ -383,7 +383,7 @@ auto gcs::innards::propagate_gac_all_different(
     const vector<Integer> & vals,
     const map<Integer, ProofLine> & constraint_numbers,
     const State & state,
-    InferenceTracker & tracker,
+    auto & inference,
     ProofLogger * const logger) -> void
 {
     // find a matching to check feasibility
@@ -404,7 +404,7 @@ auto gcs::innards::propagate_gac_all_different(
         // nope. we've got a maximum cardinality matching that leaves at least
         // one thing on the left uncovered.
         auto [just, reason] = prove_matching_is_too_small(vars, vals, constraint_numbers, state, *logger, edges, left_covered, matching);
-        return tracker.infer(logger, FalseLiteral{}, just, reason);
+        return inference.infer(FalseLiteral{}, just, reason);
     }
 
     // we have a matching that uses every variable. however, some edges may
@@ -563,7 +563,7 @@ auto gcs::innards::propagate_gac_all_different(
 
         auto [just, reason] = prove_deletion_using_sccs(vars, vals, constraint_numbers, state, *logger,
             edges_out_from_variable, edges_out_from_value, *representatives_for_scc[scc], components);
-        tracker.infer_all(logger, deletions_by_scc[scc], just, reason);
+        inference.infer_all(deletions_by_scc[scc], just, reason);
     }
 }
 
@@ -607,7 +607,7 @@ auto GACAllDifferent::install(Propagators & propagators, State & initial_state, 
     propagators.install(
         [vars = move(sanitised_vars),
             vals = move(compressed_vals),
-            save_constraint_numbers = move(constraint_numbers)](const State & state, InferenceTracker & inference,
+            save_constraint_numbers = move(constraint_numbers)](const State & state, auto & inference,
             ProofLogger * const logger) -> PropagatorState {
             propagate_gac_all_different(vars, vals, save_constraint_numbers, state, inference, logger);
             return PropagatorState::Enable;
@@ -619,3 +619,19 @@ auto GACAllDifferent::describe_for_proof() -> std::string
 {
     return "all different";
 }
+
+template auto gcs::innards::propagate_gac_all_different(
+    const vector<IntegerVariableID> & vars,
+    const vector<Integer> & vals,
+    const map<Integer, ProofLine> & constraint_numbers,
+    const State & state,
+    SimpleInferenceTracker & inference,
+    ProofLogger * const logger) -> void;
+
+template auto gcs::innards::propagate_gac_all_different(
+    const vector<IntegerVariableID> & vars,
+    const vector<Integer> & vals,
+    const map<Integer, ProofLine> & constraint_numbers,
+    const State & state,
+    LoggingInferenceTracker & inference,
+    ProofLogger * const logger) -> void;

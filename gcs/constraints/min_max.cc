@@ -38,23 +38,23 @@ auto ArrayMinMax::install(Propagators & propagators, State & initial_state, Proo
         triggers.on_change.emplace_back(v);
 
     propagators.install([vars = _vars, result = _result, min = _min](
-                            const State & state, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
+                            const State & state, auto & inference, ProofLogger * const) -> PropagatorState {
         // result <= upper bound of each vars
         for (auto & var : vars) {
             auto var_bounds = state.bounds(var);
             if (min)
-                inference.infer_less_than(logger, result, var_bounds.second + 1_i, JustifyUsingRUP{}, Reason{[=]() { return Literals{{var < var_bounds.second + 1_i}}; }});
+                inference.infer_less_than(result, var_bounds.second + 1_i, JustifyUsingRUP{}, Reason{[=]() { return Literals{{var < var_bounds.second + 1_i}}; }});
             else
-                inference.infer_greater_than_or_equal(logger, result, var_bounds.first, JustifyUsingRUP{}, Reason{[=]() { return Literals{{var >= var_bounds.first}}; }});
+                inference.infer_greater_than_or_equal(result, var_bounds.first, JustifyUsingRUP{}, Reason{[=]() { return Literals{{var >= var_bounds.first}}; }});
         }
 
         // each var >= result
         auto result_bounds = state.bounds(result);
         for (auto & var : vars) {
             if (min)
-                inference.infer_greater_than_or_equal(logger, var, result_bounds.first, JustifyUsingRUP{}, Reason{[=]() { return Literals{{result >= result_bounds.first}}; }});
+                inference.infer_greater_than_or_equal(var, result_bounds.first, JustifyUsingRUP{}, Reason{[=]() { return Literals{{result >= result_bounds.first}}; }});
             else
-                inference.infer_less_than(logger, var, state.upper_bound(result) + 1_i, JustifyUsingRUP{}, Reason{[=]() { return Literals{{result < result_bounds.second + 1_i}}; }});
+                inference.infer_less_than(var, state.upper_bound(result) + 1_i, JustifyUsingRUP{}, Reason{[=]() { return Literals{{result < result_bounds.second + 1_i}}; }});
         }
 
         // result in union(vars)
@@ -71,7 +71,7 @@ auto ArrayMinMax::install(Propagators & propagators, State & initial_state, Proo
                 Literals reason;
                 for (auto & var : vars)
                     reason.emplace_back(var != value);
-                inference.infer_not_equal(logger, result, value, JustifyUsingRUP{}, Reason{[=]() { return reason; }});
+                inference.infer_not_equal(result, value, JustifyUsingRUP{}, Reason{[=]() { return reason; }});
             }
 
             return true;
@@ -107,10 +107,10 @@ auto ArrayMinMax::install(Propagators & propagators, State & initial_state, Proo
             }
 
             if (min) {
-                inference.infer_less_than(logger, *support_of_largest_1, largest_result + 1_i, JustifyUsingRUP{}, Reason{[=]() { return reason; }});
+                inference.infer_less_than(*support_of_largest_1, largest_result + 1_i, JustifyUsingRUP{}, Reason{[=]() { return reason; }});
             }
             else {
-                inference.infer_greater_than_or_equal(logger, *support_of_largest_1, largest_result, JustifyUsingRUP{}, Reason{[=]() { return reason; }});
+                inference.infer_greater_than_or_equal(*support_of_largest_1, largest_result, JustifyUsingRUP{}, Reason{[=]() { return reason; }});
             }
         }
 

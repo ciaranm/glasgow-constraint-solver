@@ -56,8 +56,7 @@ namespace
     }
 }
 
-auto gcs::innards::propagate_extensional(const ExtensionalData & table, const State & state, InferenceTracker & inference,
-    ProofLogger * const logger) -> PropagatorState
+auto gcs::innards::propagate_extensional(const ExtensionalData & table, const State & state, auto & inference) -> PropagatorState
 {
     // check whether selectable tuples are still feasible
     visit([&](const auto & tuples) {
@@ -70,7 +69,7 @@ auto gcs::innards::propagate_extensional(const ExtensionalData & table, const St
                 }
 
             if (! is_feasible)
-                inference.infer(logger, table.selector != Integer(tuple_idx), NoJustificationNeeded{}, Reason{});
+                inference.infer(table.selector != Integer(tuple_idx), NoJustificationNeeded{}, Reason{});
         });
     },
         table.tuples);
@@ -89,7 +88,7 @@ auto gcs::innards::propagate_extensional(const ExtensionalData & table, const St
                 });
 
                 if (! supported)
-                    inference.infer(logger, table.vars[idx] != val, JustifyUsingRUP{}, generic_reason(state, table.vars));
+                    inference.infer(table.vars[idx] != val, JustifyUsingRUP{}, generic_reason(state, table.vars));
             });
         }
     },
@@ -97,3 +96,6 @@ auto gcs::innards::propagate_extensional(const ExtensionalData & table, const St
 
     return PropagatorState::Enable;
 }
+
+template auto gcs::innards::propagate_extensional(const ExtensionalData & table, const State & state, SimpleInferenceTracker & inference) -> PropagatorState;
+template auto gcs::innards::propagate_extensional(const ExtensionalData & table, const State & state, LoggingInferenceTracker & inference) -> PropagatorState;

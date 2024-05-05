@@ -62,14 +62,14 @@ auto CompareLessThanReif::install(Propagators & propagators, State & initial_sta
         case LiteralIs::Undecided:
             propagators.install([v1 = _v1, v2 = _v2, v1_is_constant = v1_is_constant, v2_is_constant = v2_is_constant,
                                     cond = _cond, or_equal = _or_equal, full_reif = _full_reif](
-                                    const State &, InferenceTracker & inference, ProofLogger * const logger) {
+                                    const State &, auto & inference, ProofLogger * const) {
                 auto actual = (or_equal ? *v1_is_constant <= *v2_is_constant : *v1_is_constant < *v2_is_constant);
                 if (actual && full_reif) {
-                    inference.infer(logger, cond, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v1 == *v1_is_constant, v2 == *v2_is_constant}}; }});
+                    inference.infer(cond, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v1 == *v1_is_constant, v2 == *v2_is_constant}}; }});
                     return PropagatorState::DisableUntilBacktrack;
                 }
                 else if (! actual) {
-                    inference.infer(logger, ! cond, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v1 == *v1_is_constant, v2 == *v2_is_constant}}; }});
+                    inference.infer(! cond, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v1 == *v1_is_constant, v2 == *v2_is_constant}}; }});
                     return PropagatorState::DisableUntilBacktrack;
                 }
                 else
@@ -95,14 +95,14 @@ auto CompareLessThanReif::install(Propagators & propagators, State & initial_sta
 
     if (v1_is_constant && (LiteralIs::DefinitelyTrue == cond_is || (_full_reif && LiteralIs::DefinitelyFalse == cond_is))) {
         propagators.install([v1_is_constant = *v1_is_constant, v1 = _v1, v2 = _v2, or_equal = _or_equal, cond = _cond, cond_is = cond_is](
-                                const State &, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
+                                const State &, auto & inference, ProofLogger * const) -> PropagatorState {
             if (cond_is == LiteralIs::DefinitelyTrue) {
-                inference.infer_greater_than_or_equal(logger, v2, or_equal ? v1_is_constant : v1_is_constant + 1_i,
+                inference.infer_greater_than_or_equal(v2, or_equal ? v1_is_constant : v1_is_constant + 1_i,
                     JustifyUsingRUP{}, Reason{[=]() { return Literals{{cond, v1 >= v1_is_constant}}; }});
                 return PropagatorState::DisableUntilBacktrack;
             }
             else {
-                inference.infer_less_than(logger, v2, or_equal ? v1_is_constant : v1_is_constant - 1_i, JustifyUsingRUP{},
+                inference.infer_less_than(v2, or_equal ? v1_is_constant : v1_is_constant - 1_i, JustifyUsingRUP{},
                     Reason{[=]() { return Literals{{cond, v1 < v1_is_constant + 1_i}}; }});
                 return PropagatorState::DisableUntilBacktrack;
             }
@@ -112,14 +112,14 @@ auto CompareLessThanReif::install(Propagators & propagators, State & initial_sta
 
     if (v2_is_constant && (LiteralIs::DefinitelyTrue == cond_is || (_full_reif && LiteralIs::DefinitelyFalse == cond_is))) {
         propagators.install([v2_is_constant = *v2_is_constant, v1 = _v1, v2 = _v2, or_equal = _or_equal, cond = _cond, cond_is = cond_is](
-                                const State &, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
+                                const State &, auto & inference, ProofLogger * const) -> PropagatorState {
             if (cond_is == LiteralIs::DefinitelyTrue) {
-                inference.infer_less_than(logger, v1, or_equal ? v2_is_constant + 1_i : v2_is_constant, JustifyUsingRUP{},
+                inference.infer_less_than(v1, or_equal ? v2_is_constant + 1_i : v2_is_constant, JustifyUsingRUP{},
                     Reason{[=]() { return Literals{{cond, v2 < v2_is_constant + 1_i}}; }});
                 return PropagatorState::DisableUntilBacktrack;
             }
             else {
-                inference.infer_greater_than_or_equal(logger, v1, or_equal ? v2_is_constant + 1_i : v2_is_constant,
+                inference.infer_greater_than_or_equal(v1, or_equal ? v2_is_constant + 1_i : v2_is_constant,
                     JustifyUsingRUP{}, Reason{[=]() { return Literals{{cond, v2 >= v2_is_constant}}; }});
                 return PropagatorState::DisableUntilBacktrack;
             }
@@ -138,20 +138,20 @@ auto CompareLessThanReif::install(Propagators & propagators, State & initial_sta
 
     visit([&](auto & _v1, auto & _v2, auto & _cond) {
         propagators.install([v1 = _v1, v2 = _v2, cond = _cond, full_reif = _full_reif, or_equal = _or_equal](
-                                const State & state, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
+                                const State & state, auto & inference, ProofLogger * const) -> PropagatorState {
             auto cond_is = state.test_literal(cond);
             switch (cond_is) {
             case LiteralIs::DefinitelyTrue: {
                 auto v1_bounds = state.bounds(v1), v2_bounds = state.bounds(v2);
-                inference.infer_less_than(logger, v1, v2_bounds.second + (or_equal ? 1_i : 0_i), JustifyUsingRUP{}, Reason{[=]() { return Literals{{cond, v2 < v2_bounds.second + 1_i}}; }});
-                inference.infer_greater_than_or_equal(logger, v2, v1_bounds.first + (or_equal ? 0_i : 1_i), JustifyUsingRUP{}, Reason{[=]() { return Literals{{cond, v1 >= v1_bounds.first}}; }});
+                inference.infer_less_than(v1, v2_bounds.second + (or_equal ? 1_i : 0_i), JustifyUsingRUP{}, Reason{[=]() { return Literals{{cond, v2 < v2_bounds.second + 1_i}}; }});
+                inference.infer_greater_than_or_equal(v2, v1_bounds.first + (or_equal ? 0_i : 1_i), JustifyUsingRUP{}, Reason{[=]() { return Literals{{cond, v1 >= v1_bounds.first}}; }});
                 return v1_bounds.second < (v2_bounds.first + (or_equal ? 1_i : 0_i)) ? PropagatorState::DisableUntilBacktrack : PropagatorState::Enable;
             } break;
 
             case LiteralIs::DefinitelyFalse:
                 if (full_reif) {
                     auto v2_lower = state.lower_bound(v2);
-                    inference.infer_greater_than_or_equal(logger, v1, v2_lower + (or_equal ? 1_i : 0_i),
+                    inference.infer_greater_than_or_equal(v1, v2_lower + (or_equal ? 1_i : 0_i),
                         JustifyUsingRUP{}, Reason{[=]() { return Literals{{! cond, v2 >= v2_lower}}; }});
                     return PropagatorState::Enable;
                 }
@@ -162,14 +162,14 @@ auto CompareLessThanReif::install(Propagators & propagators, State & initial_sta
             case LiteralIs::Undecided:
                 if (full_reif && (or_equal ? state.upper_bound(v1) <= state.lower_bound(v2) : state.upper_bound(v1) < state.lower_bound(v2))) {
                     auto v1_bounds = state.bounds(v1), v2_bounds = state.bounds(v2);
-                    inference.infer(logger, cond, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v1 < v1_bounds.second + 1_i, v2 >= v2_bounds.first}}; }});
+                    inference.infer(cond, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v1 < v1_bounds.second + 1_i, v2 >= v2_bounds.first}}; }});
                     return PropagatorState::Enable;
                 }
                 else if (or_equal
                         ? state.lower_bound(v1) > state.upper_bound(v2)
                         : state.lower_bound(v1) >= state.upper_bound(v2)) {
                     auto v1_bounds = state.bounds(v1), v2_bounds = state.bounds(v2);
-                    inference.infer(logger, ! cond, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v1 >= v1_bounds.first, v2 < v2_bounds.second + 1_i}}; }});
+                    inference.infer(! cond, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v1 >= v1_bounds.first, v2 < v2_bounds.second + 1_i}}; }});
                     return PropagatorState::Enable;
                 }
                 else

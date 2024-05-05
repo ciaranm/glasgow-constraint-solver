@@ -3,10 +3,8 @@
 
 #include <gcs/current_state.hh>
 #include <gcs/innards/integer_variable_state.hh>
-#include <gcs/innards/justification.hh>
 #include <gcs/innards/literal.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
-#include <gcs/innards/reason.hh>
 #include <gcs/innards/state-fwd.hh>
 #include <gcs/innards/variable_id_utils.hh>
 
@@ -122,10 +120,6 @@ namespace gcs::innards
         [[nodiscard]] inline auto state_of(const ConstantIntegerVariableID &, innards::IntegerVariableState & space) const -> const innards::IntegerVariableState &;
         [[nodiscard]] inline auto state_of(const SimpleIntegerVariableID &) const -> const innards::IntegerVariableState &;
 
-        auto prove_and_remember_change(ProofLogger * const, const HowChanged & how_changed,
-            const Justification & just, const Reason &,
-            const Literal & lit, const DirectIntegerVariableID & actual_var) -> void;
-
     public:
         /**
          * \name Constructors, destructors, etc.
@@ -179,47 +173,37 @@ namespace gcs::innards
         ///@{
 
         /**
-         * Infer that a Literal must hold, for the specified Justification.
+         * Infer that a Literal must hold.
          */
-        [[nodiscard]] auto infer(ProofLogger * const, const Literal & lit, const Justification & why, const Reason & reason) -> HowChanged;
+        [[nodiscard]] auto infer(const Literal & lit) -> HowChanged;
 
         /**
-         * Infer that a Literal must hold, for the specified Justification. Performance overload for if we
+         * Infer that a Literal must hold. Performance overload for if we
          * know we have an IntegerVariableCondition.
          */
         template <IntegerVariableIDLike VarType_>
-        [[nodiscard]] auto infer(ProofLogger * const, const VariableConditionFrom<VarType_> & lit, const Justification & why,
-            const Reason & reason) -> HowChanged;
-
-        /**
-         * Infer a contradiction, but still emit a justification if necessary.
-         */
-        auto infer_false(ProofLogger * const, const Justification & why,
-            const Reason & reason) -> void;
+        [[nodiscard]] auto infer(const VariableConditionFrom<VarType_> & lit) -> HowChanged;
 
         /**
          * Infer that a given IntegerVariableID or more specific type must be
          * equal to a particular value. Performance overload of State::infer().
          */
         template <IntegerVariableIDLike VarType_>
-        [[nodiscard]] auto infer_equal(ProofLogger * const, const VarType_ &, Integer value, const Justification & why,
-            const Reason & reason) -> HowChanged;
+        [[nodiscard]] auto infer_equal(const VarType_ &, Integer value) -> HowChanged;
 
         /**
          * Infer that a given IntegerVariableID or more specific type must not
          * equal to a particular value. Performance overload of State::infer().
          */
         template <IntegerVariableIDLike VarType_>
-        [[nodiscard]] auto infer_not_equal(ProofLogger * const, const VarType_ &, Integer value,
-            const Justification & why, const Reason & reason) -> HowChanged;
+        [[nodiscard]] auto infer_not_equal(const VarType_ &, Integer value) -> HowChanged;
 
         /**
          * Infer that a given IntegerVariableID or more specific type must be less
          * than a particular value. Performance overload of State::infer().
          */
         template <IntegerVariableIDLike VarType_>
-        [[nodiscard]] auto infer_less_than(ProofLogger * const, const VarType_ &, Integer value,
-            const Justification & why, const Reason & reason) -> HowChanged;
+        [[nodiscard]] auto infer_less_than(const VarType_ &, Integer value) -> HowChanged;
 
         /**
          * Infer that a given IntegerVariableID or more specific type must be
@@ -227,8 +211,7 @@ namespace gcs::innards
          * State::infer().
          */
         template <IntegerVariableIDLike VarType_>
-        [[nodiscard]] auto infer_greater_than_or_equal(ProofLogger * const, const VarType_ &, Integer value,
-            const Justification & why, const Reason & reason) -> HowChanged;
+        [[nodiscard]] auto infer_greater_than_or_equal(const VarType_ &, Integer value) -> HowChanged;
 
         ///@}
 
@@ -243,7 +226,7 @@ namespace gcs::innards
          *
          * \sa State::new_epoch()
          */
-        auto guess(ProofLogger * const, const Literal & lit) -> HowChanged;
+        auto guess(const Literal & lit) -> HowChanged;
 
         /**
          * Add an additional proof condition, similar to guess except that it

@@ -51,12 +51,12 @@ auto Abs::install(Propagators & propagators, State & initial_state,
     // _v2 = abs(_v1)
     Triggers triggers{.on_change = {_v1, _v2}};
     propagators.install([v1 = _v1, v2 = _v2, selector = selector](
-                            const State & state, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
+                            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
         // we're not dealing with bounds. remove from v1 any value whose absolute value
         // isn't in v2's domain.
         state.for_each_value(v1, [&](Integer val) {
             if (! state.in_domain(v2, abs(val)))
-                inference.infer_not_equal(logger, v1, val, JustifyUsingRUP{}, Reason{[=]() { return Literals{v2 != abs(val)}; }});
+                inference.infer_not_equal(v1, val, JustifyUsingRUP{}, Reason{[=]() { return Literals{v2 != abs(val)}; }});
         });
 
         // now remove from v2 any value whose +/-value isn't in v1's domain.
@@ -68,7 +68,7 @@ auto Abs::install(Propagators & propagators, State & initial_state,
                     logger->emit_rup_proof_line_under_reason(state, reason,
                         WeightedPseudoBooleanSum{} + 1_i * (! *selector) + 1_i * (v2 != val) >= 1_i, ProofLevel::Temporary);
                 };
-                inference.infer_not_equal(logger, v2, val, JustifyExplicitly{just}, Reason{[=]() { return Literals{{v1 != val, v1 != -val}}; }});
+                inference.infer_not_equal(v2, val, JustifyExplicitly{just}, Reason{[=]() { return Literals{{v1 != val, v1 != -val}}; }});
             }
         });
 

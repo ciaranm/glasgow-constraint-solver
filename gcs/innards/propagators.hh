@@ -3,7 +3,7 @@
 
 #include <gcs/expression.hh>
 #include <gcs/extensional.hh>
-#include <gcs/innards/inference_tracker-fwd.hh>
+#include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/literal.hh>
 #include <gcs/innards/propagators-fwd.hh>
 #include <gcs/innards/state.hh>
@@ -20,7 +20,8 @@ namespace gcs::innards
     template <typename StateType_, typename ReturnType_>
     struct ConstraintFunctionHolderBase
     {
-        virtual auto operator()(StateType_, InferenceTracker &, ProofLogger * const) -> ReturnType_ = 0;
+        virtual auto operator()(StateType_, SimpleInferenceTracker &, ProofLogger * const) -> ReturnType_ = 0;
+        virtual auto operator()(StateType_, LoggingInferenceTracker &, ProofLogger * const) -> ReturnType_ = 0;
     };
 
     template <typename Func_, typename StateType_, typename ReturnType_>
@@ -33,7 +34,12 @@ namespace gcs::innards
         {
         }
 
-        auto operator()(StateType_ state, InferenceTracker & inference, ProofLogger * const logger) -> ReturnType_ override
+        auto operator()(StateType_ state, SimpleInferenceTracker & inference, ProofLogger * const logger) -> ReturnType_ override
+        {
+            return func(state, inference, logger);
+        }
+
+        auto operator()(StateType_ state, LoggingInferenceTracker & inference, ProofLogger * const logger) -> ReturnType_ override
         {
             return func(state, inference, logger);
         }
@@ -44,7 +50,12 @@ namespace gcs::innards
     {
         std::unique_ptr<ConstraintFunctionHolderBase<StateType_, ReturnType_>> func;
 
-        auto operator()(StateType_ state, InferenceTracker & inference, ProofLogger * const logger) -> ReturnType_
+        auto operator()(StateType_ state, SimpleInferenceTracker & inference, ProofLogger * const logger) -> ReturnType_
+        {
+            return (*func)(state, inference, logger);
+        }
+
+        auto operator()(StateType_ state, LoggingInferenceTracker & inference, ProofLogger * const logger) -> ReturnType_
         {
             return (*func)(state, inference, logger);
         }
