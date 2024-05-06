@@ -633,5 +633,13 @@ template auto gcs::innards::propagate_gac_all_different(
     const vector<Integer> & vals,
     const map<Integer, ProofLine> & constraint_numbers,
     const State & state,
-    LoggingInferenceTracker & inference,
+    LogUsingReasonsInferenceTracker & inference,
+    ProofLogger * const logger) -> void;
+
+template auto gcs::innards::propagate_gac_all_different(
+    const vector<IntegerVariableID> & vars,
+    const vector<Integer> & vals,
+    const map<Integer, ProofLine> & constraint_numbers,
+    const State & state,
+    LogUsingGuessesInferenceTracker & inference,
     ProofLogger * const logger) -> void;

@@ -98,4 +98,5 @@ auto gcs::innards::propagate_extensional(const ExtensionalData & table, const St
 }
 
 template auto gcs::innards::propagate_extensional(const ExtensionalData & table, const State & state, SimpleInferenceTracker & inference) -> PropagatorState;
-template auto gcs::innards::propagate_extensional(const ExtensionalData & table, const State & state, LoggingInferenceTracker & inference) -> PropagatorState;
+template auto gcs::innards::propagate_extensional(const ExtensionalData & table, const State & state, LogUsingReasonsInferenceTracker & inference) -> PropagatorState;
+template auto gcs::innards::propagate_extensional(const ExtensionalData & table, const State & state, LogUsingGuessesInferenceTracker & inference) -> PropagatorState;

@@ -87,7 +87,9 @@ auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & 
 template auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle,
     const State & state, SimpleInferenceTracker & inference, ProofLogger * const logger) -> void;
 template auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle,
-    const State & state, LoggingInferenceTracker & inference, ProofLogger * const logger) -> void;
+    const State & state, LogUsingReasonsInferenceTracker & inference, ProofLogger * const logger) -> void;
+template auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle,
+    const State & state, LogUsingGuessesInferenceTracker & inference, ProofLogger * const logger) -> void;
 
 auto gcs::innards::define_clique_not_equals_encoding(ProofModel & model, const vector<gcs::IntegerVariableID> & vars) -> void
 {

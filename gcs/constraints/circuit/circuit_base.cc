@@ -246,5 +246,13 @@ template auto gcs::innards::circuit::prevent_small_cycles(
     const PosVarDataMap & pos_var_data,
     const ConstraintStateHandle & unassigned_handle,
     const State & state,
-    LoggingInferenceTracker & inference,
+    LogUsingGuessesInferenceTracker & inference,
+    ProofLogger * const logger) -> void;
+
+template auto gcs::innards::circuit::prevent_small_cycles(
+    const vector<IntegerVariableID> & succ,
+    const PosVarDataMap & pos_var_data,
+    const ConstraintStateHandle & unassigned_handle,
+    const State & state,
+    LogUsingReasonsInferenceTracker & inference,
     ProofLogger * const logger) -> void;

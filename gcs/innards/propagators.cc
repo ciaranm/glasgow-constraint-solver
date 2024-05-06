@@ -42,12 +42,12 @@ namespace
         vector<pair<int, int> > ids_and_masks;
     };
 
-    auto make_inference_tracker(State & state, ProofLogger * const maybe_proof) -> variant<SimpleInferenceTracker, LoggingInferenceTracker>
+    auto make_inference_tracker(State & state, ProofLogger * const maybe_proof) -> variant<SimpleInferenceTracker, LogUsingReasonsInferenceTracker>
     {
         if (maybe_proof)
-            return variant<SimpleInferenceTracker, LoggingInferenceTracker>{in_place_type<LoggingInferenceTracker>, state, *maybe_proof};
+            return variant<SimpleInferenceTracker, LogUsingReasonsInferenceTracker>{in_place_type<LogUsingReasonsInferenceTracker>, state, *maybe_proof};
         else
-            return variant<SimpleInferenceTracker, LoggingInferenceTracker>{in_place_type<SimpleInferenceTracker>, state};
+            return variant<SimpleInferenceTracker, LogUsingReasonsInferenceTracker>{in_place_type<SimpleInferenceTracker>, state};
     }
 }
 

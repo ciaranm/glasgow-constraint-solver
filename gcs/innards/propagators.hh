@@ -21,7 +21,8 @@ namespace gcs::innards
     struct ConstraintFunctionHolderBase
     {
         virtual auto operator()(StateType_, SimpleInferenceTracker &, ProofLogger * const) -> ReturnType_ = 0;
-        virtual auto operator()(StateType_, LoggingInferenceTracker &, ProofLogger * const) -> ReturnType_ = 0;
+        virtual auto operator()(StateType_, LogUsingReasonsInferenceTracker &, ProofLogger * const) -> ReturnType_ = 0;
+        virtual auto operator()(StateType_, LogUsingGuessesInferenceTracker &, ProofLogger * const) -> ReturnType_ = 0;
     };
 
     template <typename Func_, typename StateType_, typename ReturnType_>
@@ -39,7 +40,12 @@ namespace gcs::innards
             return func(state, inference, logger);
         }
 
-        auto operator()(StateType_ state, LoggingInferenceTracker & inference, ProofLogger * const logger) -> ReturnType_ override
+        auto operator()(StateType_ state, LogUsingReasonsInferenceTracker & inference, ProofLogger * const logger) -> ReturnType_ override
+        {
+            return func(state, inference, logger);
+        }
+
+        auto operator()(StateType_ state, LogUsingGuessesInferenceTracker & inference, ProofLogger * const logger) -> ReturnType_ override
         {
             return func(state, inference, logger);
         }
@@ -55,7 +61,12 @@ namespace gcs::innards
             return (*func)(state, inference, logger);
         }
 
-        auto operator()(StateType_ state, LoggingInferenceTracker & inference, ProofLogger * const logger) -> ReturnType_
+        auto operator()(StateType_ state, LogUsingReasonsInferenceTracker & inference, ProofLogger * const logger) -> ReturnType_
+        {
+            return (*func)(state, inference, logger);
+        }
+
+        auto operator()(StateType_ state, LogUsingGuessesInferenceTracker & inference, ProofLogger * const logger) -> ReturnType_
         {
             return (*func)(state, inference, logger);
         }

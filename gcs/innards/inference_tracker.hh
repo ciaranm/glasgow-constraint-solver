@@ -92,40 +92,6 @@ namespace gcs::innards
         }
     };
 
-    class LoggingInferenceTracker : public InferenceTrackerCore<LoggingInferenceTracker>
-    {
-    public:
-        State & state;
-        ProofLogger & logger;
-        std::vector<std::pair<Literal, HowChanged>> changes;
-
-        explicit LoggingInferenceTracker(State & s, ProofLogger & l) :
-            state(s),
-            logger(l)
-        {
-        }
-
-        LoggingInferenceTracker(const LoggingInferenceTracker &) = delete;
-        LoggingInferenceTracker(LoggingInferenceTracker &&) noexcept = default;
-
-        auto track(const Literal & lit, HowChanged how, const Justification & why, const Reason & reason) -> void
-        {
-            switch (how) {
-            case HowChanged::Unchanged:
-                break;
-            case HowChanged::BoundsChanged:
-            case HowChanged::InteriorValuesChanged:
-            case HowChanged::Instantiated:
-                logger.infer(state, false, lit, why, reason);
-                changes.emplace_back(lit, how);
-                break;
-            [[unlikely]] case HowChanged::Contradiction:
-                logger.infer(state, true, lit, why, reason);
-                throw TrackedPropagationFailed{};
-            }
-        }
-    };
-
     class SimpleInferenceTracker : public InferenceTrackerCore<SimpleInferenceTracker>
     {
     public:
@@ -151,6 +117,81 @@ namespace gcs::innards
                 changes.emplace_back(lit, how);
                 break;
             [[unlikely]] case HowChanged::Contradiction:
+                throw TrackedPropagationFailed{};
+            }
+        }
+    };
+
+    class LogUsingGuessesInferenceTracker : public InferenceTrackerCore<LogUsingGuessesInferenceTracker>
+    {
+    public:
+        State & state;
+        ProofLogger & logger;
+        std::vector<std::pair<Literal, HowChanged>> changes;
+
+        explicit LogUsingGuessesInferenceTracker(State & s, ProofLogger & l) :
+            state(s),
+            logger(l)
+        {
+        }
+
+        LogUsingGuessesInferenceTracker(const LogUsingGuessesInferenceTracker &) = delete;
+        LogUsingGuessesInferenceTracker(LogUsingGuessesInferenceTracker &&) noexcept = default;
+
+        auto guesses_reason() -> Reason
+        {
+            Literals guesses;
+            state.for_each_guess([&](const Literal & lit) { guesses.push_back(lit); });
+            return [=]() { return guesses; };
+        }
+
+        auto track(const Literal & lit, HowChanged how, const Justification & why, const Reason &) -> void
+        {
+            switch (how) {
+            case HowChanged::Unchanged:
+                break;
+            case HowChanged::BoundsChanged:
+            case HowChanged::InteriorValuesChanged:
+            case HowChanged::Instantiated:
+                logger.infer(state, false, lit, why, guesses_reason());
+                changes.emplace_back(lit, how);
+                break;
+            [[unlikely]] case HowChanged::Contradiction:
+                logger.infer(state, true, lit, why, guesses_reason());
+                throw TrackedPropagationFailed{};
+            }
+        }
+    };
+
+    class LogUsingReasonsInferenceTracker : public InferenceTrackerCore<LogUsingReasonsInferenceTracker>
+    {
+    public:
+        State & state;
+        ProofLogger & logger;
+        std::vector<std::pair<Literal, HowChanged>> changes;
+
+        explicit LogUsingReasonsInferenceTracker(State & s, ProofLogger & l) :
+            state(s),
+            logger(l)
+        {
+        }
+
+        LogUsingReasonsInferenceTracker(const LogUsingReasonsInferenceTracker &) = delete;
+        LogUsingReasonsInferenceTracker(LogUsingReasonsInferenceTracker &&) noexcept = default;
+
+        auto track(const Literal & lit, HowChanged how, const Justification & why, const Reason & reason) -> void
+        {
+            switch (how) {
+            case HowChanged::Unchanged:
+                break;
+            case HowChanged::BoundsChanged:
+            case HowChanged::InteriorValuesChanged:
+            case HowChanged::Instantiated:
+                logger.infer(state, false, lit, why, reason);
+                changes.emplace_back(lit, how);
+                break;
+            [[unlikely]] case HowChanged::Contradiction:
+                logger.infer(state, true, lit, why, reason);
                 throw TrackedPropagationFailed{};
             }
         }

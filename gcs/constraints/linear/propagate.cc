@@ -349,15 +349,27 @@ template auto gcs::innards::propagate_linear(const SumOf<SimpleIntegerVariableID
     bool equality, const optional<ProofLine> & proof_line, const optional<Literal> & add_to_reason) -> PropagatorState;
 
 template auto gcs::innards::propagate_linear(const SumOf<Weighted<SimpleIntegerVariableID>> & coeff_vars,
-    Integer value, const State & state, LoggingInferenceTracker &, ProofLogger * const logger,
+    Integer value, const State & state, LogUsingReasonsInferenceTracker &, ProofLogger * const logger,
     bool equality, const optional<ProofLine> & proof_line, const optional<Literal> & add_to_reason) -> PropagatorState;
 
 template auto gcs::innards::propagate_linear(const SumOf<PositiveOrNegative<SimpleIntegerVariableID>> & coeff_vars,
-    Integer value, const State & state, LoggingInferenceTracker &, ProofLogger * const logger,
+    Integer value, const State & state, LogUsingReasonsInferenceTracker &, ProofLogger * const logger,
     bool equality, const optional<ProofLine> & proof_line, const optional<Literal> & add_to_reason) -> PropagatorState;
 
 template auto gcs::innards::propagate_linear(const SumOf<SimpleIntegerVariableID> & coeff_vars,
-    Integer value, const State & state, LoggingInferenceTracker &, ProofLogger * const logger,
+    Integer value, const State & state, LogUsingReasonsInferenceTracker &, ProofLogger * const logger,
+    bool equality, const optional<ProofLine> & proof_line, const optional<Literal> & add_to_reason) -> PropagatorState;
+
+template auto gcs::innards::propagate_linear(const SumOf<Weighted<SimpleIntegerVariableID>> & coeff_vars,
+    Integer value, const State & state, LogUsingGuessesInferenceTracker &, ProofLogger * const logger,
+    bool equality, const optional<ProofLine> & proof_line, const optional<Literal> & add_to_reason) -> PropagatorState;
+
+template auto gcs::innards::propagate_linear(const SumOf<PositiveOrNegative<SimpleIntegerVariableID>> & coeff_vars,
+    Integer value, const State & state, LogUsingGuessesInferenceTracker &, ProofLogger * const logger,
+    bool equality, const optional<ProofLine> & proof_line, const optional<Literal> & add_to_reason) -> PropagatorState;
+
+template auto gcs::innards::propagate_linear(const SumOf<SimpleIntegerVariableID> & coeff_vars,
+    Integer value, const State & state, LogUsingGuessesInferenceTracker &, ProofLogger * const logger,
     bool equality, const optional<ProofLine> & proof_line, const optional<Literal> & add_to_reason) -> PropagatorState;
 
 auto gcs::innards::propagate_linear_not_equals(const auto & coeff_vars, Integer value, const State & state,
@@ -430,13 +442,25 @@ template auto gcs::innards::propagate_linear_not_equals(const SumOf<SimpleIntege
     const vector<IntegerVariableID> & all_vars_for_reason) -> PropagatorState;
 
 template auto gcs::innards::propagate_linear_not_equals(const SumOf<Weighted<SimpleIntegerVariableID>> & terms, Integer,
-    const State &, LoggingInferenceTracker &, ProofLogger * const logger,
+    const State &, LogUsingReasonsInferenceTracker &, ProofLogger * const logger,
     const vector<IntegerVariableID> & all_vars_for_reason) -> PropagatorState;
 
 template auto gcs::innards::propagate_linear_not_equals(const SumOf<PositiveOrNegative<SimpleIntegerVariableID>> & terms, Integer,
-    const State &, LoggingInferenceTracker &, ProofLogger * const logger,
+    const State &, LogUsingReasonsInferenceTracker &, ProofLogger * const logger,
     const vector<IntegerVariableID> & all_vars_for_reason) -> PropagatorState;
 
 template auto gcs::innards::propagate_linear_not_equals(const SumOf<SimpleIntegerVariableID> & terms, Integer,
-    const State &, LoggingInferenceTracker &, ProofLogger * const logger,
+    const State &, LogUsingReasonsInferenceTracker &, ProofLogger * const logger,
+    const vector<IntegerVariableID> & all_vars_for_reason) -> PropagatorState;
+
+template auto gcs::innards::propagate_linear_not_equals(const SumOf<Weighted<SimpleIntegerVariableID>> & terms, Integer,
+    const State &, LogUsingGuessesInferenceTracker &, ProofLogger * const logger,
+    const vector<IntegerVariableID> & all_vars_for_reason) -> PropagatorState;
+
+template auto gcs::innards::propagate_linear_not_equals(const SumOf<PositiveOrNegative<SimpleIntegerVariableID>> & terms, Integer,
+    const State &, LogUsingGuessesInferenceTracker &, ProofLogger * const logger,
+    const vector<IntegerVariableID> & all_vars_for_reason) -> PropagatorState;
+
+template auto gcs::innards::propagate_linear_not_equals(const SumOf<SimpleIntegerVariableID> & terms, Integer,
+    const State &, LogUsingGuessesInferenceTracker &, ProofLogger * const logger,
     const vector<IntegerVariableID> & all_vars_for_reason) -> PropagatorState;
