@@ -133,8 +133,8 @@ auto gcs::innards::circuit::prevent_small_cycles(
         auto length = chain_lengths.back();
         chain_lengths.pop_back();
         if (cmp_less(length, succ.size() - 1)) {
-            auto justf = [&](const Reason &) {
-                output_cycle_to_proof(succ, i, length, pos_var_data, state, *logger, Integer{end[i]}, Integer{i});
+            auto justf = [&](const State & state, const Reason &, ProofLogger & logger) {
+                output_cycle_to_proof(succ, i, length, pos_var_data, state, logger, Integer{end[i]}, Integer{i});
             };
             inference.infer(succ[end[i]] != Integer{i}, JustifyExplicitly{justf}, generic_reason(state, succ));
         }
@@ -216,7 +216,7 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state, Proof
 
     // Infer succ[i] != i at top of search, but no other propagation defined here: use CircuitPrevent or CircuitSCC
     if (_succ.size() > 1) {
-        propagators.install([succ = _succ](const State & state, auto & inference, ProofLogger * const) -> PropagatorState {
+        propagators.install([succ = _succ](const State & state, auto & inference) -> PropagatorState {
             for (auto [idx, s] : enumerate(succ)) {
                 inference.infer_not_equal(s, Integer(static_cast<long long>(idx)), JustifyUsingRUP{}, generic_reason(state, succ));
             }
@@ -255,4 +255,12 @@ template auto gcs::innards::circuit::prevent_small_cycles(
     const ConstraintStateHandle & unassigned_handle,
     const State & state,
     LogUsingReasonsInferenceTracker & inference,
+    ProofLogger * const logger) -> void;
+
+template auto gcs::innards::circuit::prevent_small_cycles(
+    const vector<IntegerVariableID> & succ,
+    const PosVarDataMap & pos_var_data,
+    const ConstraintStateHandle & unassigned_handle,
+    const State & state,
+    LazyProofGenerationInferenceTracker & inference,
     ProofLogger * const logger) -> void;

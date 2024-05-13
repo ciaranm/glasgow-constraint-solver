@@ -38,7 +38,7 @@ auto ArrayMinMax::install(Propagators & propagators, State & initial_state, Proo
         triggers.on_change.emplace_back(v);
 
     propagators.install([vars = _vars, result = _result, min = _min](
-                            const State & state, auto & inference, ProofLogger * const) -> PropagatorState {
+                            const State & state, auto & inference) -> PropagatorState {
         // result <= upper bound of each vars
         for (auto & var : vars) {
             auto var_bounds = state.bounds(var);

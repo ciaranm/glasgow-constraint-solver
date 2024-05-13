@@ -363,8 +363,8 @@ auto Regular::install(Propagators & propagators, State & initial_state, ProofMod
 
     RegularGraph graph = RegularGraph(_vars.size(), _num_states);
     auto graph_idx = initial_state.add_constraint_state(graph);
-    propagators.install([v = move(_vars), n = _num_states, t = move(_transitions), f = move(_final_states), g = graph_idx, flags = state_at_pos_flags](
-                            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+    propagators.install_eager_only([v = move(_vars), n = _num_states, t = move(_transitions), f = move(_final_states), g = graph_idx, flags = state_at_pos_flags](
+                                       const State & state, ProofLogger * const logger, auto & inference) -> PropagatorState {
         propagate_regular(v, n, t, f, flags, g, state, inference, logger);
         return PropagatorState::Enable;
     },

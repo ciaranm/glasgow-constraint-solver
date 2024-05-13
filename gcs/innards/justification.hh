@@ -23,7 +23,7 @@ namespace gcs::innards
      * \ingroup Innards
      * \sa JustifyExplicitly
      */
-    using ExplicitJustificationFunction = std::function<auto(const Reason & reason)->void>;
+    using ExplicitJustificationFunction = std::function<auto(const State &, const Reason & reason, ProofLogger &)->void>;
 
     /**
      * \brief Justification for something that is actually a guess, not an

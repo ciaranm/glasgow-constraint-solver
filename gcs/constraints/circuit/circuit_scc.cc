@@ -344,8 +344,8 @@ namespace
             long backwards_reif_line;
             if (i != root) {
                 // Redundance subproof:
-                auto subproofs = make_optional(map<string, JustifyExplicitly>{});
-                auto justf = [&](const Reason &) {
+                auto subproofs = make_optional(map<string, Subproof>{});
+                auto subproof = [&](ProofLogger & logger) {
                     logger.emit_proof_line("     p -2 " + logger.variable_constraints_tracker().proof_name(greater_than_flag) + " w", ProofLevel::Top);
                     for (long k = 0; cmp_less(k, succ.size()); k++) {
                         PLine p_line;
@@ -368,7 +368,7 @@ namespace
                     }
                     logger.emit_rup_proof_line(WeightedPseudoBooleanSum{} >= 1_i, ProofLevel::Top);
                 };
-                subproofs.value().emplace(to_string(forwards_reif_line), JustifyExplicitly{justf});
+                subproofs.value().emplace(to_string(forwards_reif_line), move(subproof));
 
                 backwards_reif_line = logger.emit_red_proof_lines_reverse_reifying(
                     WeightedPseudoBooleanSum{} + 1_i * pos_var_data.at(root).var + -1_i * pos_var_data.at(i).var >= 0_i,
@@ -1119,7 +1119,7 @@ namespace
         -> void
     {
         auto & pos_var_data = any_cast<PosVarDataMap &>(state.get_persistent_constraint_state(pos_var_data_handle));
-        propagate_non_gac_alldifferent(unassigned_handle, state, inference, logger);
+        propagate_non_gac_alldifferent(unassigned_handle, state, inference);
         auto proof_data = SCCProofData{pos_var_data, proof_flag_data_handle, pos_alldiff_data_handle};
         check_sccs(state, inference, logger, reason, succ, scc_options, proof_data);
         auto & unassigned = any_cast<list<IntegerVariableID> &>(state.get_constraint_state(unassigned_handle));
@@ -1162,13 +1162,13 @@ auto CircuitSCC::install(Propagators & propagators, State & initial_state, Proof
 
     Triggers triggers;
     triggers.on_change = {_succ.begin(), _succ.end()};
-    propagators.install(
+    propagators.install_eager_only(
         [succ = _succ,
             pos_var_data_handle = pos_var_data_handle,
             proof_flag_data_handle = proof_flag_data_handle,
             pos_alldiff_data_handle = pos_alldiff_data_handle,
             unassigned_handle = unassigned_handle,
-            options = scc_options](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            options = scc_options](const State & state, ProofLogger * const logger, auto & inference) -> PropagatorState {
             auto reason = generic_reason(state, succ);
             propagate_circuit_using_scc(state, inference, logger, reason,
                 succ, options, pos_var_data_handle, proof_flag_data_handle, pos_alldiff_data_handle, unassigned_handle);

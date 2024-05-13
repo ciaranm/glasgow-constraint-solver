@@ -62,7 +62,7 @@ auto CompareLessThanReif::install(Propagators & propagators, State & initial_sta
         case LiteralIs::Undecided:
             propagators.install([v1 = _v1, v2 = _v2, v1_is_constant = v1_is_constant, v2_is_constant = v2_is_constant,
                                     cond = _cond, or_equal = _or_equal, full_reif = _full_reif](
-                                    const State &, auto & inference, ProofLogger * const) {
+                                    const State &, auto & inference) {
                 auto actual = (or_equal ? *v1_is_constant <= *v2_is_constant : *v1_is_constant < *v2_is_constant);
                 if (actual && full_reif) {
                     inference.infer(cond, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v1 == *v1_is_constant, v2 == *v2_is_constant}}; }});
@@ -95,7 +95,7 @@ auto CompareLessThanReif::install(Propagators & propagators, State & initial_sta
 
     if (v1_is_constant && (LiteralIs::DefinitelyTrue == cond_is || (_full_reif && LiteralIs::DefinitelyFalse == cond_is))) {
         propagators.install([v1_is_constant = *v1_is_constant, v1 = _v1, v2 = _v2, or_equal = _or_equal, cond = _cond, cond_is = cond_is](
-                                const State &, auto & inference, ProofLogger * const) -> PropagatorState {
+                                const State &, auto & inference) -> PropagatorState {
             if (cond_is == LiteralIs::DefinitelyTrue) {
                 inference.infer_greater_than_or_equal(v2, or_equal ? v1_is_constant : v1_is_constant + 1_i,
                     JustifyUsingRUP{}, Reason{[=]() { return Literals{{cond, v1 >= v1_is_constant}}; }});
@@ -112,7 +112,7 @@ auto CompareLessThanReif::install(Propagators & propagators, State & initial_sta
 
     if (v2_is_constant && (LiteralIs::DefinitelyTrue == cond_is || (_full_reif && LiteralIs::DefinitelyFalse == cond_is))) {
         propagators.install([v2_is_constant = *v2_is_constant, v1 = _v1, v2 = _v2, or_equal = _or_equal, cond = _cond, cond_is = cond_is](
-                                const State &, auto & inference, ProofLogger * const) -> PropagatorState {
+                                const State &, auto & inference) -> PropagatorState {
             if (cond_is == LiteralIs::DefinitelyTrue) {
                 inference.infer_less_than(v1, or_equal ? v2_is_constant + 1_i : v2_is_constant, JustifyUsingRUP{},
                     Reason{[=]() { return Literals{{cond, v2 < v2_is_constant + 1_i}}; }});
@@ -138,7 +138,7 @@ auto CompareLessThanReif::install(Propagators & propagators, State & initial_sta
 
     visit([&](auto & _v1, auto & _v2, auto & _cond) {
         propagators.install([v1 = _v1, v2 = _v2, cond = _cond, full_reif = _full_reif, or_equal = _or_equal](
-                                const State & state, auto & inference, ProofLogger * const) -> PropagatorState {
+                                const State & state, auto & inference) -> PropagatorState {
             auto cond_is = state.test_literal(cond);
             switch (cond_is) {
             case LiteralIs::DefinitelyTrue: {

@@ -14,12 +14,12 @@ ProofOptions::ProofOptions(string o, string p) :
 {
 }
 
-ProofOptions::ProofOptions(string o, string p, bool u, bool e, bool r) :
+ProofOptions::ProofOptions(string o, string p, bool u, bool e, ProofLoggingStyle s) :
     opb_file(move(o)),
     proof_file(move(p)),
     use_friendly_names(u),
     always_use_full_encoding(e),
-    use_reasons(r)
+    proof_style(s)
 {
 }
 

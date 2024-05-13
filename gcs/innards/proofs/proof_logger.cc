@@ -289,7 +289,7 @@ auto ProofLogger::infer(const State & state, bool is_contradicting, const Litera
 #endif
             need_lit();
             auto t = temporary_proof_level();
-            x.add_proof_steps(reason);
+            x.add_proof_steps(state, reason, *this);
             infer(state, is_contradicting, lit, JustifyUsingRUP{
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
                                                     x.where
@@ -512,7 +512,7 @@ auto ProofLogger::variable_constraints_tracker() -> VariableConstraintsTracker &
     return _imp->tracker;
 }
 
-auto ProofLogger::emit_subproofs(const map<string, JustifyExplicitly> & subproofs, const Reason & reason)
+auto ProofLogger::emit_subproofs(const map<string, Subproof> & subproofs, const Reason &)
 {
     _imp->proof << " begin\n";
     ++_imp->proof_line;
@@ -520,14 +520,15 @@ auto ProofLogger::emit_subproofs(const map<string, JustifyExplicitly> & subproof
         ++_imp->proof_line;
         _imp->proof
             << "     proofgoal " << proofgoal << "\n";
-        proof.add_proof_steps(reason);
+        proof(*this);
         _imp->proof << "     end -1\n";
     }
     _imp->proof << "end\n";
 }
 
-auto ProofLogger::emit_red_proof_lines_forward_reifying(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLiteralOrFlag reif,
-    ProofLevel level, const optional<map<string, JustifyExplicitly>> & subproofs
+auto ProofLogger::emit_red_proof_lines_forward_reifying(
+    const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLiteralOrFlag reif,
+    ProofLevel level, const optional<map<string, Subproof>> & subproofs
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
     ,
     const std::source_location & where
@@ -551,8 +552,9 @@ auto ProofLogger::emit_red_proof_lines_forward_reifying(const SumLessEqual<Weigh
     return record_proof_line(++_imp->proof_line, level);
 }
 
-auto ProofLogger::emit_red_proof_lines_reverse_reifying(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLiteralOrFlag reif,
-    ProofLevel level, const optional<map<string, JustifyExplicitly>> & subproofs
+auto ProofLogger::emit_red_proof_lines_reverse_reifying(
+    const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLiteralOrFlag reif,
+    ProofLevel level, const optional<map<string, Subproof>> & subproofs
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
     ,
     const std::source_location & where

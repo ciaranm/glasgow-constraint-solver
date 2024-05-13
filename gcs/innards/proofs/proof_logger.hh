@@ -16,6 +16,8 @@
 
 namespace gcs::innards
 {
+    using Subproof = std::function<auto(ProofLogger &)->void>;
+
     class ProofLogger
     {
     private:
@@ -26,7 +28,7 @@ namespace gcs::innards
 
         auto end_proof() -> void;
 
-        auto emit_subproofs(const std::map<std::string, JustifyExplicitly> & subproofs,
+        auto emit_subproofs(const std::map<std::string, Subproof> & subproofs,
             const Reason & reason) -> auto;
 
     public:
@@ -179,7 +181,7 @@ namespace gcs::innards
          * Emit a RED proof step for flag => specified expresion, creating a half reification.
          */
         auto emit_red_proof_lines_forward_reifying(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
-            ProofLiteralOrFlag reif, ProofLevel level, const std::optional<std::map<std::string, JustifyExplicitly>> & subproof = std::nullopt
+            ProofLiteralOrFlag reif, ProofLevel level, const std::optional<std::map<std::string, Subproof>> & subproof = std::nullopt
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
             ,
             const std::source_location & w = std::source_location::current()
@@ -190,7 +192,7 @@ namespace gcs::innards
          * Emit a RED proof step for ~flag => ~specified expresion, creating a reverse half reification.
          */
         auto emit_red_proof_lines_reverse_reifying(const SumLessEqual<Weighted<PseudoBooleanTerm>> &,
-            ProofLiteralOrFlag, ProofLevel level, const std::optional<std::map<std::string, JustifyExplicitly>> & subproof = std::nullopt
+            ProofLiteralOrFlag, ProofLevel level, const std::optional<std::map<std::string, Subproof>> & subproof = std::nullopt
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
             ,
             const std::source_location & w = std::source_location::current()

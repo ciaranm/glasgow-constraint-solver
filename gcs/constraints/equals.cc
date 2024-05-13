@@ -67,8 +67,8 @@ namespace
         return PropagatorState::Enable;
     }
 
-    auto no_overlap_justification(const State & state, ProofLogger * const logger,
-        IntegerVariableID v1, IntegerVariableID v2, Literal cond) -> pair<JustifyExplicitly, Reason>
+    auto no_overlap_justification(const State & state, IntegerVariableID v1, IntegerVariableID v2,
+        Literal cond) -> pair<JustifyExplicitly, Reason>
     {
         auto v1_bounds = state.bounds(v1);
         Literals reason{{v1 >= v1_bounds.first, v1 < v1_bounds.second + 1_i}};
@@ -79,13 +79,13 @@ namespace
             else
                 reason.emplace_back(v1 != val);
 
-        auto justify = [&state = state, logger = logger, v1 = v1, v2 = v2, v1_bounds = v1_bounds, cond = cond](
-                           const Reason &) {
+        auto justify = [v1 = v1, v2 = v2, v1_bounds = v1_bounds, cond = cond](
+                           const State & state, const Reason &, ProofLogger & logger) {
             for (Integer val = v1_bounds.first; val <= v1_bounds.second; ++val)
                 if (state.in_domain(v1, val))
-                    logger->emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * (v1 != val) + 1_i * (v2 == val) + 1_i * ! cond >= 1_i, ProofLevel::Temporary);
+                    logger.emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * (v1 != val) + 1_i * (v2 == val) + 1_i * ! cond >= 1_i, ProofLevel::Temporary);
                 else
-                    logger->emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * (v2 != val) + 1_i * (v1 == val) + 1_i * ! cond >= 1_i, ProofLevel::Temporary);
+                    logger.emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * (v2 != val) + 1_i * (v1 == val) + 1_i * ! cond >= 1_i, ProofLevel::Temporary);
         };
 
         return pair{JustifyExplicitly{justify}, Reason{[=]() { return reason; }}};
@@ -116,13 +116,13 @@ auto Equals::install(Propagators & propagators, State & initial_state, ProofMode
     }
     else if (v1_is_constant) {
         propagators.install_initialiser([v1_is_constant = v1_is_constant, v1 = _v1, v2 = _v2](
-                                            const State &, auto & inference, ProofLogger * const) -> void {
+                                            const State &, ProofLogger * const, auto & inference) -> void {
             inference.infer_equal(v2, *v1_is_constant, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v1 == *v1_is_constant}}; }});
         });
     }
     else if (v2_is_constant) {
         propagators.install_initialiser([v2_is_constant = v2_is_constant, v1 = _v1, v2 = _v2](
-                                            const State &, auto & inference, ProofLogger * const) -> void {
+                                            const State &, ProofLogger * const, auto & inference) -> void {
             inference.infer_equal(v1, *v2_is_constant, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v2 == *v2_is_constant}}; }});
         });
     }
@@ -131,7 +131,7 @@ auto Equals::install(Propagators & propagators, State & initial_state, ProofMode
         triggers.on_change = {_v1, _v2};
 
         visit([&](auto & _v1, auto & _v2) {
-            propagators.install([v1 = _v1, v2 = _v2](const State & state, auto & inference, ProofLogger * const) -> PropagatorState {
+            propagators.install([v1 = _v1, v2 = _v2](const State & state, auto & inference) -> PropagatorState {
                 return enforce_equality(v1, v2, state, inference, nullopt);
             },
                 triggers, "equals");
@@ -182,8 +182,7 @@ auto EqualsIf::install(Propagators & propagators, State & initial_state, ProofMo
             }
 
             visit([&](auto & _v1, auto & _v2) {
-                propagators.install([v1 = _v1, v2 = _v2, cond = cond](const State & state, auto & inference,
-                                        ProofLogger * const logger) -> PropagatorState {
+                propagators.install([v1 = _v1, v2 = _v2, cond = cond](const State & state, auto & inference) -> PropagatorState {
                     switch (state.test_literal(cond)) {
                     case LiteralIs::DefinitelyTrue: {
                         // condition is true, force equality
@@ -232,7 +231,7 @@ auto EqualsIf::install(Propagators & propagators, State & initial_state, ProofMo
                             });
 
                             if (! overlap) {
-                                auto [just, reason] = no_overlap_justification(state, logger, v1, v2, cond);
+                                auto [just, reason] = no_overlap_justification(state, v1, v2, cond);
                                 inference.infer(! cond, just, reason);
                                 return PropagatorState::DisableUntilBacktrack;
                             }
@@ -281,7 +280,7 @@ auto EqualsIff::install(Propagators & propagators, State & initial_state, ProofM
         if (optional_model)
             optional_model->add_constraint({{! _cond}});
         propagators.install_initialiser([cond = _cond, v1 = _v1, v2 = _v2](
-                                            const State & state, auto & inference, ProofLogger * const) {
+                                            const State & state, ProofLogger * const, auto & inference) {
             auto v1_bounds = state.bounds(v1);
             auto v2_bounds = state.bounds(v2);
             inference.infer(! cond, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v1 >= v1_bounds.first, v1 < v1_bounds.second + 1_i, v2 >= v2_bounds.first, v2 < v2_bounds.second + 1_i}}; }});
@@ -311,7 +310,7 @@ auto EqualsIff::install(Propagators & propagators, State & initial_state, ProofM
 
             visit([&](auto & _v1, auto & _v2) {
                 propagators.install([v1 = _v1, v2 = _v2, cond = cond](
-                                        const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+                                        const State & state, auto & inference) -> PropagatorState {
                     switch (state.test_literal(cond)) {
                     case LiteralIs::DefinitelyTrue: {
                         // condition is true, force equality
@@ -375,7 +374,7 @@ auto EqualsIff::install(Propagators & propagators, State & initial_state, ProofM
                             });
 
                             if (! overlap) {
-                                auto [just, reason] = no_overlap_justification(state, logger, v1, v2, cond);
+                                auto [just, reason] = no_overlap_justification(state, v1, v2, cond);
                                 inference.infer(! cond, just, reason);
                                 return PropagatorState::DisableUntilBacktrack;
                             }

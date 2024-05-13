@@ -22,6 +22,7 @@ using namespace gcs::innards;
 
 using std::atomic;
 using std::bit_ceil;
+using std::function;
 using std::in_place_type;
 using std::list;
 using std::move;
@@ -41,19 +42,11 @@ namespace
     {
         vector<pair<int, int> > ids_and_masks;
     };
-
-    auto make_inference_tracker(State & state, ProofLogger * const maybe_proof) -> variant<SimpleInferenceTracker, LogUsingReasonsInferenceTracker>
-    {
-        if (maybe_proof)
-            return variant<SimpleInferenceTracker, LogUsingReasonsInferenceTracker>{in_place_type<LogUsingReasonsInferenceTracker>, state, *maybe_proof};
-        else
-            return variant<SimpleInferenceTracker, LogUsingReasonsInferenceTracker>{in_place_type<SimpleInferenceTracker>, state};
-    }
 }
 
 struct Propagators::Imp
 {
-    vector<PropagationFunction> propagation_functions;
+    vector<variant<PropagationFunction, EagerPropagationFunction>> propagation_functions;
     vector<InitialisationFunction> initialisation_functions;
 
     unsigned long long total_propagations = 0, effectful_propagations = 0, contradicting_propagations = 0;
@@ -77,7 +70,7 @@ auto Propagators::model_contradiction(const State &, ProofModel * const optional
     if (optional_model)
         optional_model->add_constraint({});
 
-    install_initialiser([explain_yourself = explain_yourself](const State &, auto & inference, ProofLogger * const) -> void {
+    install_initialiser([explain_yourself = explain_yourself](const State &, ProofLogger * const, auto & inference) -> void {
         inference.infer_false(JustifyUsingRUP{}, Reason{[=]() { return Literals{}; }});
     });
 }
@@ -88,7 +81,7 @@ auto Propagators::trim_lower_bound(const State & state, ProofModel * const optio
         if (state.upper_bound(var) >= val) {
             if (optional_model)
                 optional_model->add_constraint({var >= val});
-            install_initialiser([var, val](const State &, auto & inference, ProofLogger * const) {
+            install_initialiser([var, val](const State &, ProofLogger * const, auto & inference) {
                 inference.infer(var >= val, JustifyUsingRUP{}, Reason{});
             });
         }
@@ -103,7 +96,7 @@ auto Propagators::trim_upper_bound(const State & state, ProofModel * const optio
         if (state.lower_bound(var) <= val) {
             if (optional_model)
                 optional_model->add_constraint({var < val + 1_i});
-            install_initialiser([var, val](const State &, auto & inference, ProofLogger * const) {
+            install_initialiser([var, val](const State &, ProofLogger * const, auto & inference) {
                 inference.infer(var < val + 1_i, JustifyUsingRUP{}, Reason{});
             });
         }
@@ -113,6 +106,27 @@ auto Propagators::trim_upper_bound(const State & state, ProofModel * const optio
 }
 
 auto Propagators::install(PropagationFunction && f, const Triggers & triggers, const string &) -> void
+{
+    int id = _imp->propagation_functions.size();
+    _imp->propagation_functions.emplace_back(move(f));
+
+    for (const auto & v : triggers.on_change) {
+        trigger_on_change(v, id);
+        increase_degree(v);
+    }
+
+    for (const auto & v : triggers.on_bounds) {
+        trigger_on_bounds(v, id);
+        increase_degree(v);
+    }
+
+    for (const auto & v : triggers.on_instantiated) {
+        trigger_on_instantiated(v, id);
+        increase_degree(v);
+    }
+}
+
+auto Propagators::install_eager_only(EagerPropagationFunction && f, const Triggers & triggers, const string &) -> void
 {
     int id = _imp->propagation_functions.size();
     _imp->propagation_functions.emplace_back(move(f));
@@ -222,7 +236,7 @@ auto Propagators::define_and_install_table(State & state, ProofModel * const opt
         triggers.on_change.push_back(selector);
 
         install([table = ExtensionalData{selector, move(vars), move(permitted)}](
-                    const State & state, auto & inference, ProofLogger * const) -> PropagatorState {
+                    const State & state, auto & inference) -> PropagatorState {
             return propagate_extensional(table, state, inference);
         },
             triggers, "extenstional");
@@ -230,19 +244,19 @@ auto Propagators::define_and_install_table(State & state, ProofModel * const opt
         move(permitted));
 }
 
-auto Propagators::initialise(State & state, ProofLogger * const logger) const -> bool
+auto Propagators::initialise(State & state, ProofLogger * const logger, SomeKindOfInferenceTracker & inference) const -> bool
 {
     for (auto & f : _imp->initialisation_functions) {
         if (! visit([&](auto && inference) -> bool {
                 try {
-                    f(state, inference, logger);
+                    f(state, logger, inference);
                     return true;
                 }
                 catch (const TrackedPropagationFailed &) {
                     return false;
                 }
             },
-                make_inference_tracker(state, logger)))
+                inference))
             return false;
     }
 
@@ -250,6 +264,7 @@ auto Propagators::initialise(State & state, ProofLogger * const logger) const ->
 }
 
 auto Propagators::propagate(State & state, ProofLogger * const logger,
+    SomeKindOfInferenceTracker & inference,
     const optional<pair<Literal, HowChanged>> & start_from_guess_rather_than_all_propagators,
     atomic<bool> * optional_abort_flag) const -> bool
 {
@@ -294,20 +309,29 @@ auto Propagators::propagate(State & state, ProofLogger * const logger,
     }
 
     bool contradiction = false;
-    while ((! contradiction) && (! queue.empty())) {
-        int propagator_id = *queue.begin();
-        queue.erase(queue.begin());
-        on_queue.erase(propagator_id);
+    visit([&](auto && inference) -> void {
+        while ((! contradiction) && (! queue.empty())) {
+            int propagator_id = *queue.begin();
+            queue.erase(queue.begin());
+            on_queue.erase(propagator_id);
 
-        try {
-            visit([&](auto && inference) -> void {
-                auto propagator_state = _imp->propagation_functions.at(propagator_id)(state, inference, logger);
+            try {
+                auto propagator_state = overloaded{
+                    [&](PropagationFunction & f) -> PropagatorState {
+                        return f(state, inference);
+                    },
+                    [&](EagerPropagationFunction & f) {
+                        return inference.run_in_eager_mode([&](auto & eager_inference) -> PropagatorState {
+                            return f(state, logger, eager_inference);
+                        });
+                    }}.visit(_imp->propagation_functions.at(propagator_id));
                 ++_imp->total_propagations;
 
                 for (const auto & [literal, how_changed] : inference.changes) {
                     ++_imp->effectful_propagations;
                     requeue_literal(literal, how_changed);
                 }
+                inference.changes.clear();
 
                 switch (propagator_state) {
                 case PropagatorState::Enable:
@@ -316,18 +340,25 @@ auto Propagators::propagate(State & state, ProofLogger * const logger,
                     disabled.insert(propagator_id);
                     break;
                 }
-            },
-                make_inference_tracker(state, logger));
-        }
-        catch (const TrackedPropagationFailed &) {
-            contradiction = true;
-            ++_imp->contradicting_propagations;
-            break;
+            }
+            catch (const TrackedPropagationFailed &) {
+                contradiction = true;
+                ++_imp->contradicting_propagations;
+                inference.changes.clear();
+                break;
+            }
+
+            if (optional_abort_flag && optional_abort_flag->load())
+                contradiction = true;
         }
 
-        if (optional_abort_flag && optional_abort_flag->load())
-            return false;
-    }
+        if constexpr (std::is_same_v<std::decay_t<decltype(inference)>, LazyProofGenerationInferenceTracker>) {
+            inference.for_each_pending_proof_step([&](const Literal & lit, const Justification & just, const Reason & why) {
+                inference.logger.infer(state, false, lit, just, why);
+            });
+        }
+    },
+        inference);
 
 #if 0
     state.on_backtrack([&, orig_idle_end = orig_idle_end]() {

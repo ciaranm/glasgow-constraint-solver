@@ -38,7 +38,7 @@ using std::vector;
 using std::visit;
 
 auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle,
-    const State & state, auto & inference, ProofLogger * const) -> void
+    const State & state, auto & inference) -> void
 {
     auto & unassigned = any_cast<list<IntegerVariableID> &>(state.get_constraint_state(unassigned_handle));
 
@@ -85,11 +85,13 @@ auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & 
 }
 
 template auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle,
-    const State & state, SimpleInferenceTracker & inference, ProofLogger * const logger) -> void;
+    const State & state, SimpleInferenceTracker & inference) -> void;
 template auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle,
-    const State & state, LogUsingReasonsInferenceTracker & inference, ProofLogger * const logger) -> void;
+    const State & state, LogUsingReasonsInferenceTracker & inference) -> void;
 template auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle,
-    const State & state, LogUsingGuessesInferenceTracker & inference, ProofLogger * const logger) -> void;
+    const State & state, LogUsingGuessesInferenceTracker & inference) -> void;
+template auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle,
+    const State & state, LazyProofGenerationInferenceTracker & inference) -> void;
 
 auto gcs::innards::define_clique_not_equals_encoding(ProofModel & model, const vector<gcs::IntegerVariableID> & vars) -> void
 {
@@ -138,8 +140,8 @@ auto VCAllDifferent::install(innards::Propagators & propagators, innards::State 
 
     propagators.install(
         [vars = move(sanitised_vars), unassigned_handle = unassigned_handle,
-            vals = move(compressed_vals)](const State & state, auto & tracker, ProofLogger * const logger) -> PropagatorState {
-            propagate_non_gac_alldifferent(unassigned_handle, state, tracker, logger);
+            vals = move(compressed_vals)](const State & state, auto & tracker) -> PropagatorState {
+            propagate_non_gac_alldifferent(unassigned_handle, state, tracker);
             return PropagatorState::Enable;
         },
         triggers, "vcalldiff");

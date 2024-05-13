@@ -24,6 +24,8 @@ namespace gcs::innards
 
         InferenceTrackerCore(const InferenceTrackerCore &) = delete;
 
+        std::vector<std::pair<Literal, HowChanged>> changes;
+
         auto operator=(const InferenceTrackerCore &) -> InferenceTrackerCore & = delete;
 
         auto infer(const Literal & lit, const Justification & why, const Reason & reason) -> void
@@ -96,7 +98,6 @@ namespace gcs::innards
     {
     public:
         State & state;
-        std::vector<std::pair<Literal, HowChanged>> changes;
 
         explicit SimpleInferenceTracker(State & s) :
             state(s)
@@ -120,6 +121,12 @@ namespace gcs::innards
                 throw TrackedPropagationFailed{};
             }
         }
+
+        template <typename Func_>
+        auto run_in_eager_mode(const Func_ & func)
+        {
+            return func(*this);
+        }
     };
 
     class LogUsingGuessesInferenceTracker : public InferenceTrackerCore<LogUsingGuessesInferenceTracker>
@@ -127,7 +134,6 @@ namespace gcs::innards
     public:
         State & state;
         ProofLogger & logger;
-        std::vector<std::pair<Literal, HowChanged>> changes;
 
         explicit LogUsingGuessesInferenceTracker(State & s, ProofLogger & l) :
             state(s),
@@ -161,6 +167,12 @@ namespace gcs::innards
                 throw TrackedPropagationFailed{};
             }
         }
+
+        template <typename Func_>
+        auto run_in_eager_mode(const Func_ & func)
+        {
+            return func(*this);
+        }
     };
 
     class LogUsingReasonsInferenceTracker : public InferenceTrackerCore<LogUsingReasonsInferenceTracker>
@@ -168,7 +180,6 @@ namespace gcs::innards
     public:
         State & state;
         ProofLogger & logger;
-        std::vector<std::pair<Literal, HowChanged>> changes;
 
         explicit LogUsingReasonsInferenceTracker(State & s, ProofLogger & l) :
             state(s),
@@ -195,7 +206,47 @@ namespace gcs::innards
                 throw TrackedPropagationFailed{};
             }
         }
+
+        template <typename Func_>
+        auto run_in_eager_mode(const Func_ & func)
+        {
+            return func(*this);
+        }
     };
+
+    class LazyProofGenerationInferenceTracker : public InferenceTrackerCore<LazyProofGenerationInferenceTracker>
+    {
+    private:
+        struct Imp;
+        std::unique_ptr<Imp> _imp;
+
+    public:
+        State & state;
+        ProofLogger & logger;
+
+        explicit LazyProofGenerationInferenceTracker(State & s, ProofLogger & l);
+        ~LazyProofGenerationInferenceTracker();
+
+        LazyProofGenerationInferenceTracker(const LazyProofGenerationInferenceTracker &) = delete;
+        LazyProofGenerationInferenceTracker(LazyProofGenerationInferenceTracker &&) noexcept = default;
+
+        auto track(const Literal & lit, HowChanged how, const Justification & why, const Reason & reason) -> void;
+
+        auto for_each_pending_proof_step(const std::function<auto(const Literal &, const Justification &, const Reason &)->void> &) -> void;
+
+        template <typename Func_>
+        auto run_in_eager_mode(const Func_ & func)
+        {
+            LogUsingGuessesInferenceTracker inference{state, logger};
+            return func(inference);
+        }
+    };
+
+    using SomeKindOfInferenceTracker = std::variant<
+        SimpleInferenceTracker,
+        LogUsingGuessesInferenceTracker,
+        LogUsingReasonsInferenceTracker,
+        LazyProofGenerationInferenceTracker>;
 }
 
 #endif

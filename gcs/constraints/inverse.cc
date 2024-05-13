@@ -117,7 +117,7 @@ auto Inverse::install(Propagators & propagators, State & initial_state, ProofMod
 
         x_value_am1s = make_shared<map<Integer, ProofLine>>();
         propagators.install_initialiser([x = _x, x_start = _x_start, x_value_am1s = x_value_am1s, build_am1s = build_am1s](
-                                            const State & state, auto & inference, ProofLogger * const logger) -> void {
+                                            const State & state, ProofLogger * const logger, auto & inference) -> void {
             build_am1s(x, x_start, state, inference, logger, x_value_am1s);
         });
     }
@@ -128,13 +128,13 @@ auto Inverse::install(Propagators & propagators, State & initial_state, ProofMod
 
     propagators.install([x = _x, y = _y, x_start = _x_start, y_start = _y_start,
                             x_values = move(x_values), x_value_am1s = x_value_am1s](
-                            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+                            const State & state, auto & inference) -> PropagatorState {
         for (const auto & [i, x_i] : enumerate(x)) {
             state.for_each_value(x_i, [&](Integer x_i_value) {
                 if (! state.in_domain(y.at((x_i_value - y_start).raw_value), Integer(i) + x_start))
                     inference.infer(x_i != x_i_value,
                         JustifyUsingRUP{},
-                        [&]() { return Literals{y.at((x_i_value - y_start).raw_value) != Integer(i) + x_start}; });
+                        [lit = y.at((x_i_value - y_start).raw_value) != Integer(i) + x_start]() { return Literals{lit}; });
             });
         }
 
@@ -143,11 +143,11 @@ auto Inverse::install(Propagators & propagators, State & initial_state, ProofMod
                 if (! state.in_domain(x.at((y_i_value - x_start).raw_value), Integer(i) + y_start))
                     inference.infer(y_i != y_i_value,
                         JustifyUsingRUP{},
-                        [&]() { return Literals{x.at((y_i_value - x_start).raw_value) != Integer(i) + y_start}; });
+                        [lit = x.at((y_i_value - x_start).raw_value) != Integer(i) + y_start]() { return Literals{lit}; });
             });
         }
 
-        propagate_gac_all_different(x, x_values, *x_value_am1s, state, inference, logger);
+        propagate_gac_all_different(x, x_values, *x_value_am1s, state, inference);
 
         return PropagatorState::Enable;
     },

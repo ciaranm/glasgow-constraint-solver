@@ -462,9 +462,9 @@ namespace
 
         for (const auto & var : vars) {
             for (const auto & value : unsupported[var]) {
-                auto justf = [&](const Reason & reason) -> void {
+                auto justf = [&](const State &, const Reason & reason, ProofLogger & logger) -> void {
                     for (unsigned int tuple_idx = 0; tuple_idx < tuples.size(); ++tuple_idx) {
-                        logger->emit_rup_proof_line_under_reason(state, reason,
+                        logger.emit_rup_proof_line_under_reason(state, reason,
                             WeightedPseudoBooleanSum{} + 1_i * (var != value) + 1_i * (! pb_selectors[tuple_idx]) >= 1_i,
                             ProofLevel::Current);
                     }
@@ -880,9 +880,9 @@ auto SmartTable::install(Propagators & propagators, State & initial_state, Proof
 
     vector<Forest> forests = build_forests(_tuples);
 
-    propagators.install(
+    propagators.install_eager_only(
         [selectors, vars = _vars, tuples = move(_tuples), forests = move(forests), pb_selectors = move(pb_selectors)](
-            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            const State & state, ProofLogger * const logger, auto & inference) -> PropagatorState {
             auto reason = generic_reason(state, vars);
             propagate_using_smart_str(selectors, vars, tuples, forests, state, inference, reason, pb_selectors, logger);
             return PropagatorState::Enable;

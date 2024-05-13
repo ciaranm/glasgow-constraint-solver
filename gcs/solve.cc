@@ -12,6 +12,7 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::atomic;
+using std::in_place_type;
 using std::max;
 using std::nullopt;
 using std::optional;
@@ -23,7 +24,7 @@ using std::chrono::steady_clock;
 namespace
 {
     auto solve_with_state(unsigned long long depth, Stats & stats, Problem & problem,
-        Propagators & propagators, State & state,
+        Propagators & propagators, State & state, SomeKindOfInferenceTracker & inference_tracker,
         SolveCallbacks & callbacks,
         ProofLogger * const logger,
         bool & this_subtree_contains_solution,
@@ -43,7 +44,7 @@ namespace
                 objective_failure = true;
         }
 
-        if ((! objective_failure) && propagators.propagate(state, logger, guess, optional_abort_flag)) {
+        if ((! objective_failure) && propagators.propagate(state, logger, inference_tracker, guess, optional_abort_flag)) {
             if (optional_abort_flag && optional_abort_flag->load())
                 return false;
 
@@ -75,8 +76,9 @@ namespace
                     auto timestamp = state.new_epoch();
                     auto guess_change = state.guess(guess);
                     bool child_contains_solution = false;
-                    if (! solve_with_state(depth + 1, stats, problem, propagators, state,
-                            callbacks, logger, child_contains_solution, objective_value, pair{guess, guess_change}, optional_abort_flag))
+                    if (! solve_with_state(depth + 1, stats, problem, propagators, state, inference_tracker,
+                            callbacks, logger, child_contains_solution, objective_value,
+                            pair{guess, guess_change}, optional_abort_flag))
                         result = false;
 
                     if (child_contains_solution)
@@ -125,6 +127,23 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
         optional_proof.emplace(*optional_proof_options);
 
     auto state = problem.create_state_for_new_search(optional_proof ? optional_proof->model() : nullptr);
+
+    SomeKindOfInferenceTracker inference_tracker = [&]() -> SomeKindOfInferenceTracker {
+        if (optional_proof_options) {
+            switch (optional_proof_options->proof_style) {
+            case ProofLoggingStyle::Reasons:
+                return SomeKindOfInferenceTracker{in_place_type<LogUsingReasonsInferenceTracker>, state, *optional_proof->logger()};
+            case ProofLoggingStyle::Guesses:
+                return SomeKindOfInferenceTracker{in_place_type<LogUsingGuessesInferenceTracker>, state, *optional_proof->logger()};
+            case ProofLoggingStyle::Lazy:
+                return SomeKindOfInferenceTracker{in_place_type<LazyProofGenerationInferenceTracker>, state, *optional_proof->logger()};
+            }
+            throw NonExhaustiveSwitch{};
+        }
+        else
+            return SomeKindOfInferenceTracker{in_place_type<SimpleInferenceTracker>, state};
+    }();
+
     auto propagators = problem.create_propagators(state, optional_proof ? optional_proof->model() : nullptr);
 
     if (optional_proof) {
@@ -138,7 +157,8 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
     if (callbacks.after_proof_started)
         callbacks.after_proof_started(state.current());
 
-    auto initialisation_success = propagators.initialise(state, optional_proof ? optional_proof->logger() : nullptr);
+    auto initialisation_success = propagators.initialise(state, optional_proof ? optional_proof->logger() : nullptr,
+        inference_tracker);
 
     auto presolve_success = (! initialisation_success) ? false : problem.for_each_presolver([&](Presolver & presolver) -> bool {
         auto result = presolver.run(problem, propagators, state, optional_proof ? optional_proof->logger() : nullptr);
@@ -152,7 +172,8 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
     if (initialisation_success && presolve_success) {
         bool child_contains_solution = false;
         optional<Integer> objective_value = nullopt;
-        if (solve_with_state(0, stats, problem, propagators, state, callbacks, optional_proof ? optional_proof->logger() : nullptr,
+        if (solve_with_state(0, stats, problem, propagators, state, inference_tracker, callbacks,
+                optional_proof ? optional_proof->logger() : nullptr,
                 child_contains_solution, objective_value, nullopt, optional_abort_flag)) {
             if (optional_proof) {
                 if (problem.optional_minimise_variable()) {

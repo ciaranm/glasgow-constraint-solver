@@ -76,7 +76,7 @@ namespace
         auto & inference,
         ProofLogger * const logger) -> void
     {
-        propagate_non_gac_alldifferent(unassigned_handle, state, inference, logger);
+        propagate_non_gac_alldifferent(unassigned_handle, state, inference);
         check_small_cycles(succ, pos_var_data, state, inference, logger);
         prevent_small_cycles(succ, pos_var_data, unassigned_handle, state, inference, logger);
     }
@@ -101,9 +101,9 @@ auto CircuitPrevent::install(innards::Propagators & propagators, innards::State 
 
     Triggers triggers;
     triggers.on_instantiated = {_succ.begin(), _succ.end()};
-    propagators.install(
+    propagators.install_eager_only(
         [succ = _succ, pvd = pos_var_data,
-            unassigned_handle = unassigned_handle](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            unassigned_handle = unassigned_handle](const State & state, ProofLogger * const logger, auto & inference) -> PropagatorState {
             propagate_circuit_using_prevent(succ, pvd, unassigned_handle, state, inference, logger);
             return PropagatorState::Enable;
         },

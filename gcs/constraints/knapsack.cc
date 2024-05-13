@@ -620,9 +620,9 @@ auto Knapsack::install(Propagators & propagators, State & initial_state, ProofMo
     triggers.on_change = {_vars.begin(), _vars.end()};
     triggers.on_change.insert(triggers.on_change.end(), _totals.begin(), _totals.end());
 
-    propagators.install(
+    propagators.install_eager_only(
         [coeffs = move(_coeffs), vars = move(_vars), totals = move(_totals), eqns_lines = move(eqns_lines)](
-            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            const State & state, ProofLogger * const logger, auto & inference) -> PropagatorState {
             return knapsack(state, logger, inference, coeffs, vars, totals, eqns_lines);
         },
         triggers, "knapsack");
