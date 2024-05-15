@@ -27,6 +27,27 @@ Getting Started
 
 This section describes how to build the solver, and how to create and solve a simple problem.
 
+Dependencies (Ubuntu)
+---------------------
+
+You will need a C++20 compiler, such as GCC 10.3, as well as CMake and Git. You will need to install
+the Boost C++ libraries yourself; other dependencies will be pulled in automatically by CMake.
+
+```shell
+apt install build-essentials git cmake libboost-all-dev
+```
+
+Dependencies (MacOS X using Brew)
+---------------------------------
+
+You will need a C++ 20 compiler, such as Clang 15, as well as CMake and Git. You will need to
+install the Boost C++ libraries yourself; other dependencies will be pulled in automatically by
+CMake.
+
+```shell
+brew install boost git
+```
+
 Compiling
 ---------
 
@@ -53,8 +74,9 @@ cmake --build build
 cmake --build build --target docs
 ```
 
-By default, XCSP support will be enabled, which requires libxml2 (``libxml2-dev`` on Ubuntu) and
-which will use Git to fetch an external dependency for parsing XCSP. To turn this off, do:
+By default, XCSP support will be enabled, which requires libxml2 (``libxml2-dev`` on Ubuntu,
+``libxml2'' with Brew) and which will use Git to fetch an external dependency for parsing XCSP. To
+turn this off, do:
 
 ```shell
 cmake -S . -B build -DGCS_ENABLE_XCSP=OFF
