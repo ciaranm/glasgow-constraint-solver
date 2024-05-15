@@ -10,7 +10,7 @@ export PATH=$builddir:$HOME/.local/bin:$PATH
 
 if ! which minizinc ; then
     echo "can't run minizinc, skipping test" 1>&2
-    exit 0
+    exit 66
 fi
 
 minizinc --solver $minizincdir/glasgow-for-tests.msc -a $minizincdir/tests/$testname.mzn | tee $testname.glasgow.out || exit 1
