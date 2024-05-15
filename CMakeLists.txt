@@ -32,6 +32,12 @@ if (COMPILER_SUPPORTS_NO_STRINGOP_OVERREAD)
     add_compile_options(-Wno-stringop-overread) # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=104336
 endif (COMPILER_SUPPORTS_NO_STRINGOP_OVERREAD)
 
+unset(COMPILER_SUPPORTS_NO_ANNOYING_WARNINGS_ABOUT_MOVE CACHE)
+CHECK_CXX_COMPILER_FLAG(-Wno-unqualified-std-cast-call COMPILER_SUPPORTS_NO_ANNOYING_WARNINGS_ABOUT_MOVE)
+if (COMPILER_SUPPORTS_NO_ANNOYING_WARNINGS_ABOUT_MOVE)
+    add_compile_options(-Wno-unqualified-std-cast-call)
+endif (COMPILER_SUPPORTS_NO_ANNOYING_WARNINGS_ABOUT_MOVE)
+
 add_compile_options(-g)
 add_compile_options(-g3)
 add_compile_options(-gdwarf-3)
