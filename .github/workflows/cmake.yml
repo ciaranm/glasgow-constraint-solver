@@ -45,7 +45,7 @@ jobs:
       if: startsWith(matrix.os, 'macos')
 
     - name: Install VeriPB using pipx
-      run: pipx install VeriPB
+      run: pipx install ./VeriPB
       if: startsWith(matrix.os, 'macos')
 
     - name: Install boost
