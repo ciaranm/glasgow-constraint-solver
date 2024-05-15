@@ -45,10 +45,7 @@ jobs:
       if: startsWith(matrix.os, 'macos')
 
     - name: Install VeriPB using pipx
-      run: pipx install ./VeriPB
-      env:
-          CPPFLAGS: '-I`brew --prefix gmp`/include'
-          LDFLAGS: '-L`brew --prefix gmp`/lib'
+      run: env CPPFLAGS="-I`brew --prefix gmp`/include" LDFLAGS="-L`brew --prefix gmp`/lib" pipx install ./VeriPB
       if: startsWith(matrix.os, 'macos')
 
     - name: Install boost
