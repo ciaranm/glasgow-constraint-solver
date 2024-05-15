@@ -654,8 +654,8 @@ auto main(int argc, char * argv[]) -> int
         vector<BranchCallback> branchers;
         GuessCallback guessers;
         if (fzn["solve"].contains("ann")) {
-            function<auto(const nlohmann::json &)->pair<BranchCallback, GuessCallback>> parse_search = [&data, &parse_search](
-                                                                                                           const nlohmann::json & ann) {
+            function<auto(const nlohmann::json &)->optional<pair<BranchCallback, GuessCallback>>> parse_search;
+            parse_search = [&data, &parse_search](const nlohmann::json & ann) -> optional<pair<BranchCallback, GuessCallback>> {
                 if (ann["id"] == "bool_search" || ann["id"] == "int_search") {
                     BranchCallback branch;
                     GuessCallback guess;
@@ -709,23 +709,31 @@ auto main(int argc, char * argv[]) -> int
                     vector<BranchCallback> branchers;
                     GuessCallback guesser;
                     for (const auto & sub_ann : ann["args"][0]) {
-                        auto [branch, guess] = parse_search(sub_ann);
-                        branchers.push_back(branch);
-                        if (first) {
-                            guesser = guesser;
-                            first = false;
+                        auto subsearch = parse_search(sub_ann);
+                        if (subsearch) {
+                            auto [branch, guess] = *subsearch;
+                            branchers.push_back(branch);
+                            if (first) {
+                                guesser = guess;
+                                first = false;
+                            }
                         }
                     }
                     return pair{branch_sequence(branchers), guesser};
                 }
+                else
+                    return nullopt;
             };
 
             auto anns = fzn["solve"]["ann"];
             for (const auto & ann : anns) {
                 if (ann["id"] == "int_search" || ann["id"] == "bool_search" || ann["id"] == "seq_search") {
-                    auto [branch, guess] = parse_search(ann);
-                    branchers.push_back(branch);
-                    guessers = guess;
+                    auto search = parse_search(ann);
+                    if (search) {
+                        auto [branch, guess] = *search;
+                        branchers.push_back(branch);
+                        guessers = guess;
+                    }
                 }
             }
         }
