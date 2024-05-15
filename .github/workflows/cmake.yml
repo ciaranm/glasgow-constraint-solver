@@ -36,10 +36,6 @@ jobs:
         cache: 'pip'
       if: startsWith(matrix.os, 'ubuntu')
 
-    - name: Install GMP using Brew
-      run: brew install gmp
-      if: startsWith(matrix.os, 'macos-13')
-
     - name: Install VeriPB using pip
       run: pip install -r requirements.txt
       if: startsWith(matrix.os, 'ubuntu')
@@ -51,8 +47,8 @@ jobs:
     - name: Install VeriPB using pipx
       run: pipx install ./VeriPB
       env:
-          CPPFLAGS: '-I/opt/homebrew/include'
-          LDFLAGS: '-L/opt/homebrew/lib'
+          CPPFLAGS: '-I`brew --prefix gmp`/include'
+          LDFLAGS: '-L`brew --prefix gmp`/lib'
       if: startsWith(matrix.os, 'macos')
 
     - name: Install boost
