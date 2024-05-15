@@ -36,6 +36,10 @@ jobs:
         cache: 'pip'
       if: startsWith(matrix.os, 'ubuntu')
 
+    - name: Install GMP using Brew
+      run: brew install gmp
+      if: startsWith(matrix.os, 'macos-13')
+
     - name: Install VeriPB using pip
       run: pip install -r requirements.txt
       if: startsWith(matrix.os, 'ubuntu')
