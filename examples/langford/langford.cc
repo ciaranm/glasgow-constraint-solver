@@ -6,7 +6,6 @@
 
 #include <cstdlib>
 #include <iostream>
-#include <ranges>
 #include <vector>
 
 #include <boost/program_options.hpp>
@@ -14,6 +13,8 @@
 #include <fmt/core.h>
 #include <fmt/ostream.h>
 #include <fmt/ranges.h>
+
+#include <range/v3/all.hpp>
 
 using namespace gcs;
 
@@ -24,12 +25,10 @@ using std::make_optional;
 using std::nullopt;
 using std::vector;
 
-#if __cpp_lib_ranges >= 202110L
-using std::ranges::views::transform;
-#endif
-
 using fmt::print;
 using fmt::println;
+
+using ranges::views::transform;
 
 namespace po = boost::program_options;
 
@@ -96,13 +95,8 @@ auto main(int argc, char * argv[]) -> int
 
     auto stats = solve(
         p, [&](const CurrentState & s) -> bool {
-#if __cpp_lib_ranges >= 202110L
             println("solution: {}", solution | transform(cref(s)));
             println("position: {}", position | transform(cref(s)));
-#else
-            println("solution: {}", s(solution));
-            println("position: {}", s(position));
-#endif
             println("");
 
             return true;

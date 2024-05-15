@@ -7,7 +7,6 @@
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
-#include <ranges>
 #include <vector>
 
 #include <boost/program_options.hpp>
@@ -15,6 +14,8 @@
 #include <fmt/core.h>
 #include <fmt/ostream.h>
 #include <fmt/ranges.h>
+
+#include <range/v3/all.hpp>
 
 using namespace gcs;
 
@@ -29,12 +30,10 @@ using std::pair;
 using std::string;
 using std::vector;
 
-#if __cpp_lib_ranges >= 202110L
-using std::ranges::views::transform;
-#endif
-
 using fmt::print;
 using fmt::println;
+
+using ranges::views::transform;
 
 namespace po = boost::program_options;
 
@@ -135,11 +134,7 @@ auto main(int argc, char * argv[]) -> int
     auto stats = solve_with(p,
         SolveCallbacks{
             .solution = [&](const CurrentState & s) -> bool {
-#if __cpp_lib_ranges >= 202110L
                 println("{} colours: {}", s(colours) + 1_i, vertices | transform(cref(s)));
-#else
-                println("{} colours: {}", s(colours) + 1_i, s(vertices));
-#endif
                 return true;
             },
             .branch = branch_on_dom_then_deg(vertices)},
