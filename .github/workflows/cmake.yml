@@ -51,8 +51,8 @@ jobs:
     - name: Install VeriPB using pipx
       run: pipx install ./VeriPB
       env:
-          CPPFLAGS="-I/opt/homebrew/include"
-          LDFLAGS="-L/opt/homebrew/include"
+          CPPFLAGS: '-I/opt/homebrew/include'
+          LDFLAGS: '-L/opt/homebrew/include'
       if: startsWith(matrix.os, 'macos')
 
     - name: Install boost
