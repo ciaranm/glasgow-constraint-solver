@@ -36,7 +36,7 @@ jobs:
       uses: MarkusJx/install-boost@v2.4.5
       id: install-boost
       with:
-        boost_version: ${{ startsWith('macos-14', matrix.os) && '1.78.0.beta1' || '1.84.0' }}
+        boost_version: '1.84.0'
         arch: ${{ startsWith('macos-14', matrix.os) && 'aarch64' || 'x86' }}
 
     - name: Configure CMake
