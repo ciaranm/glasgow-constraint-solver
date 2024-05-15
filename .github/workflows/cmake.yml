@@ -44,15 +44,11 @@ jobs:
       run: git -c core.hooksPath=/dev/null clone --depth 1 https://gitlab.com/MIAOresearch/software/VeriPB.git
       if: startsWith(matrix.os, 'macos')
 
-    - name: Install GMP using Brew
-      run: brew install gmp
-      if: startsWith(matrix.os, 'macos')
-
     - name: Install VeriPB using pipx
       run: pipx install ./VeriPB
       env:
           CPPFLAGS: '-I/opt/homebrew/include'
-          LDFLAGS: '-L/opt/homebrew/include'
+          LDFLAGS: '-L/opt/homebrew/lib'
       if: startsWith(matrix.os, 'macos')
 
     - name: Install boost
