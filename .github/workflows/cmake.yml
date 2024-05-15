@@ -26,6 +26,9 @@ jobs:
       env:
           MATRIX_OS: ${{ matrix.os }}
 
+    - name: Checkout
+      uses: actions/checkout@v4
+
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
@@ -38,7 +41,7 @@ jobs:
       if: startsWith(matrix.os, 'ubuntu')
 
     - name: Fetch VeriPB
-      run: git clone --depth 1 https://gitlab.com/MIAOresearch/software/VeriPB.git
+      run: git -c core.hooksPath=/dev/null clone --depth 1 https://gitlab.com/MIAOresearch/software/VeriPB.git
       if: startsWith(matrix.os, 'macos')
 
     - name: Install VeriPB using pipx
@@ -51,9 +54,6 @@ jobs:
       with:
         boost_version: '1.84.0.beta1'
         arch: ${{ startsWith(matrix.os, 'macos-14') && 'aarch64' || 'x86' }}
-
-    - name: Checkout
-      uses: actions/checkout@v4
       
     - name: Configure CMake
       # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
