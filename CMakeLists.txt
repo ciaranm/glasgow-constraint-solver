@@ -113,6 +113,13 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(fmt)
 
+FetchContent_Declare(
+        range-v3
+        GIT_REPOSITORY https://github.com/ericniebler/range-v3.git
+        GIT_TAG a81477931a8aa2ad025c6bda0609f38e09e4d7ec # v0.12.0
+)
+FetchContent_MakeAvailable(range-v3)
+
 if (GCS_ENABLE_MINIZINC)
     set(JSON_BuildTests OFF CACHE INTERNAL "")
     FetchContent_Declare(
