@@ -31,15 +31,15 @@ jobs:
       with:
         python-version: '3.10'
         cache: 'pip'
-      if: ${{ startsWith('ubuntu', matrix.os) }}
+      runs-on: ubuntu-22.04
 
     - name: Install VeriPB using pip
       run: pip install -r requirements.txt
-      if: ${{ startsWith('ubuntu', matrix.os) }}
+      runs-on: ubuntu-22.04
 
     - name: Install VeriPB using pipx
       run: pipx install -r requirements.txt
-      if: ${{ startsWith('macos', matrix.os) }}
+      runs-on: [macos-13, macos-14]
 
     - name: Install boost
       uses: MarkusJx/install-boost@v2.4.5
