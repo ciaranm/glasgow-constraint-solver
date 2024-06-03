@@ -36,13 +36,12 @@ jobs:
         cache: 'pip'
       if: startsWith(matrix.os, 'ubuntu')
 
-    - name: Install VeriPB using pip
-      run: pip install -r requirements.txt
-      if: startsWith(matrix.os, 'ubuntu')
-
     - name: Fetch VeriPB
       run: git -c core.hooksPath=/dev/null clone --depth 1 https://gitlab.com/MIAOresearch/software/VeriPB.git
-      if: startsWith(matrix.os, 'macos')
+
+    - name: Install VeriPB using pip
+      run: pip install ./VeriPB
+      if: startsWith(matrix.os, 'ubuntu')
 
     - name: Install VeriPB using pipx
       run: env CPPFLAGS="-I`brew --prefix gmp`/include" LDFLAGS="-L`brew --prefix gmp`/lib" pipx install ./VeriPB
