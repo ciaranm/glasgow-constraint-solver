@@ -20,6 +20,8 @@ namespace gcs::innards
     template <typename ReturnType_, typename... Args_>
     struct ConstraintFunctionHolderBase
     {
+        virtual ~ConstraintFunctionHolderBase() = default;
+
         virtual auto operator()(Args_..., SimpleInferenceTracker &) -> ReturnType_ = 0;
         virtual auto operator()(Args_..., LogUsingReasonsInferenceTracker &) -> ReturnType_ = 0;
         virtual auto operator()(Args_..., LogUsingGuessesInferenceTracker &) -> ReturnType_ = 0;
