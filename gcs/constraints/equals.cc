@@ -81,13 +81,11 @@ namespace
 
         auto justify = [v1 = v1, v2 = v2, v1_values = state.copy_of_values(v1), cond = cond](
                            const Reason &, ProofLogger & logger) {
-            for (const auto & [l, u] : v1_values.intervals)
-                for (Integer i = l; i <= u; ++i)
-                    logger.emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * (v1 != i) + 1_i * (v2 == i) + 1_i * ! cond >= 1_i, ProofLevel::Temporary);
+            for (Integer i : v1_values.each())
+                logger.emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * (v1 != i) + 1_i * (v2 == i) + 1_i * ! cond >= 1_i, ProofLevel::Temporary);
 
-            for (unsigned p = 0; p < v1_values.intervals.size() - 1; ++p)
-                for (Integer i = v1_values.intervals.at(p).second + 1_i, i_end = v1_values.intervals.at(p + 1).first; i != i_end; ++i)
-                    logger.emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * (v2 != i) + 1_i * (v1 == i) + 1_i * ! cond >= 1_i, ProofLevel::Temporary);
+            for (Integer i : v1_values.each_gap())
+                logger.emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * (v2 != i) + 1_i * (v1 == i) + 1_i * ! cond >= 1_i, ProofLevel::Temporary);
         };
 
         return pair{JustifyExplicitly{justify}, Reason{[=]() { return reason; }}};

@@ -8,6 +8,18 @@ using namespace gcs::innards;
 using std::pair;
 using std::vector;
 
+namespace
+{
+    template <typename T_>
+    auto intervals_of(const IntervalSet<T_> & i) -> vector<pair<T_, T_>>
+    {
+        vector<pair<T_, T_>> result;
+        for (auto [l, u] : i.each_interval())
+            result.emplace_back(l, u);
+        return result;
+    }
+}
+
 TEST_CASE("Interval set")
 {
     IntervalSet<int> set(5, 10);
@@ -115,12 +127,12 @@ TEST_CASE("Poking holes")
     set.erase_greater_than(10);
     set.erase(7);
 
-    CHECK(set.intervals == vector<pair<int, int>>{{1, 2}, {4, 6}, {8, 10}});
+    CHECK(intervals_of(set) == vector<pair<int, int>>{{1, 2}, {4, 6}, {8, 10}});
     for (int i = 1; i <= 12; ++i)
         CHECK(set.contains(i) == (i == 1 || i == 2 || i == 4 || i == 5 || i == 6 || i == 8 || i == 9 || i == 10));
 
     set.erase_less_than(6);
-    CHECK(set.intervals == vector<pair<int, int>>{{6, 6}, {8, 10}});
+    CHECK(intervals_of(set) == vector<pair<int, int>>{{6, 6}, {8, 10}});
 
     for (int i = 1; i <= 12; ++i)
         CHECK(set.contains(i) == (i == 6 || i == 8 || i == 9 || i == 10));
@@ -133,9 +145,9 @@ TEST_CASE("Poking more holes")
     set.erase_greater_than(10);
     set.erase(7);
 
-    CHECK(set.intervals == vector<pair<int, int>>{{1, 2}, {4, 6}, {8, 10}});
+    CHECK(intervals_of(set) == vector<pair<int, int>>{{1, 2}, {4, 6}, {8, 10}});
     set.erase_greater_than(5);
-    CHECK(set.intervals == vector<pair<int, int>>{{1, 2}, {4, 5}});
+    CHECK(intervals_of(set) == vector<pair<int, int>>{{1, 2}, {4, 5}});
 
     for (int i = 1; i <= 12; ++i)
         CHECK(set.contains(i) == (i == 1 || i == 2 || i == 4 || i == 5));
@@ -146,7 +158,7 @@ TEST_CASE("Wipeout from below")
     IntervalSet<int> set(5, 10);
     set.erase_greater_than(2);
     CHECK(set.size() == 0);
-    CHECK(set.intervals == vector<pair<int, int>>{});
+    CHECK(intervals_of(set) == vector<pair<int, int>>{});
 }
 
 TEST_CASE("Wipeout from above")
@@ -154,7 +166,7 @@ TEST_CASE("Wipeout from above")
     IntervalSet<int> set(5, 10);
     set.erase_less_than(12);
     CHECK(set.size() == 0);
-    CHECK(set.intervals == vector<pair<int, int>>{});
+    CHECK(intervals_of(set) == vector<pair<int, int>>{});
 }
 
 TEST_CASE("Erase on bounds")
@@ -163,15 +175,15 @@ TEST_CASE("Erase on bounds")
     set.erase_greater_than(6);
     set.erase_less_than(1);
     CHECK(set.size() == 6);
-    CHECK(set.intervals == vector<pair<int, int>>{{1, 6}});
+    CHECK(intervals_of(set) == vector<pair<int, int>>{{1, 6}});
     set.erase_greater_than(5);
     set.erase_less_than(2);
     CHECK(set.size() == 4);
-    CHECK(set.intervals == vector<pair<int, int>>{{2, 5}});
+    CHECK(intervals_of(set) == vector<pair<int, int>>{{2, 5}});
     set.erase(2);
     CHECK(set.size() == 3);
-    CHECK(set.intervals == vector<pair<int, int>>{{3, 5}});
+    CHECK(intervals_of(set) == vector<pair<int, int>>{{3, 5}});
     set.erase(5);
     CHECK(set.size() == 2);
-    CHECK(set.intervals == vector<pair<int, int>>{{3, 4}});
+    CHECK(intervals_of(set) == vector<pair<int, int>>{{3, 4}});
 }

@@ -489,13 +489,12 @@ auto main(int argc, char * argv[]) -> int
                 const auto & set = arg_as_set_of_integer(data, args, 1);
 
                 // var is inside the range as a whole
-                problem.post(WeightedSum{} + 1_i * var >= set.intervals[0].first);
-                problem.post(WeightedSum{} + 1_i * var <= set.intervals[set.intervals.size() - 1].second);
+                problem.post(WeightedSum{} + 1_i * var >= set.lower());
+                problem.post(WeightedSum{} + 1_i * var <= set.upper());
 
                 // var isn't inside any of the gaps between ranges
-                for (unsigned i = 0; i < set.intervals.size() - 1; ++i)
-                    problem.post(Or{{! (var >= set.intervals[i].second + 1_i), var >= set.intervals[i + 1].first},
-                        TrueLiteral{}});
+                for (auto [l, u] : set.each_gap_interval())
+                    problem.post(Or{{var < l, var >= u}, TrueLiteral{}});
             }
             else if (id == "array_bool_and") {
                 const auto & vars = arg_as_array_of_var(data, args, 0);
@@ -558,22 +557,16 @@ auto main(int argc, char * argv[]) -> int
                 const auto & reif = arg_as_var(data, args, 2);
 
                 // reif -> var is inside the range as a whole
-                problem.post(Or{{reif != 1_i, var >= set.intervals[0].first}, TrueLiteral{}});
-                problem.post(Or{{reif != 1_i, var < set.intervals[set.intervals.size() - 1].second + 1_i}, TrueLiteral{}});
+                problem.post(Or{{reif != 1_i, var >= set.lower()}, TrueLiteral{}});
+                problem.post(Or{{reif != 1_i, var < set.upper() + 1_i}, TrueLiteral{}});
 
                 // reif -> var isn't inside any of the gaps between ranges
-                for (unsigned i = 0; i < set.intervals.size() - 1; ++i)
-                    problem.post(Or{{reif != 1_i,
-                                        ! (var >= set.intervals[i].second + 1_i),
-                                        var >= set.intervals[i + 1].first},
-                        TrueLiteral{}});
+                for (auto [l, u] : set.each_gap_interval())
+                    problem.post(Or{{reif != 1_i, var < l, var >= u}, TrueLiteral{}});
 
                 // ! reif -> var isn't inside this range
-                for (unsigned i = 0; i < set.intervals.size(); ++i)
-                    problem.post(Or{{reif == 1_i,
-                                        var < set.intervals[i].first,
-                                        var >= set.intervals[i].second + 1_i},
-                        TrueLiteral{}});
+                for (auto [l, u] : set.each_interval())
+                    problem.post(Or{{reif == 1_i, var < l, var >= u + 1_i}, TrueLiteral{}});
             }
             else if (id == "glasgow_alldifferent") {
                 const auto & vars = arg_as_array_of_var(data, args, 0);

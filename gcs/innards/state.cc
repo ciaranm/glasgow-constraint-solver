@@ -900,12 +900,11 @@ auto State::for_each_value_while(const VarType_ & var, const function<auto(Integ
         },
         [&](const IntegerVariableIntervalSetState & s) {
             auto values = s.values;
-            for (const auto & [l, u] : values->intervals)
-                for (auto i = l; i <= u; ++i)
-                    if (! f(apply(i))) {
-                        result = false;
-                        return;
-                    }
+            for (auto i : values->each())
+                if (! f(apply(i))) {
+                    result = false;
+                    return;
+                }
         }}
         .visit(var_copy);
 
@@ -953,12 +952,11 @@ auto State::for_each_value_while_immutable(const VarType_ & var, const function<
             }
         },
         [&](const IntegerVariableIntervalSetState & s) {
-            for (const auto & [l, u] : s.values->intervals)
-                for (auto i = l; i <= u; ++i)
-                    if (! f(apply(i))) {
-                        result = false;
-                        return;
-                    }
+            for (auto i : s.values->each())
+                if (! f(apply(i))) {
+                    result = false;
+                    return;
+                }
         }}
         .visit(var_ref);
 
