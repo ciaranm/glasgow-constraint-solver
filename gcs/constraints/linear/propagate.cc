@@ -132,7 +132,7 @@ namespace
 
         return JustifyExplicitly{[remembered_bounds = move(remembered_bounds), &coeff_vars,
                                      change_var, proof_line, second_constraint_for_equality](
-                                     const State &, const Reason &, ProofLogger & logger) {
+                                     const Reason &, ProofLogger & logger) -> void {
             vector<pair<Integer, variant<ProofLine, string>>> terms_to_sum;
             if (proof_line)
                 terms_to_sum.emplace_back(1_i, second_constraint_for_equality ? *proof_line + 1 : *proof_line);

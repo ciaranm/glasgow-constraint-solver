@@ -229,7 +229,7 @@ namespace
 
         return pair{JustifyExplicitly{
                         [&vars, &vals, &constraint_numbers, hall_variables = move(hall_variables), hall_values = move(hall_values)](
-                            const State &, const Reason &, ProofLogger & logger) -> void {
+                            const Reason &, ProofLogger & logger) -> void {
                             // we are going to need the at least one value variables
                             vector<ProofLine> at_least_one_constraints;
                             for (Left v{0}; v.offset != vars.size(); ++v.offset)
@@ -343,7 +343,7 @@ namespace
             // a hall set is at work
             return pair{JustifyExplicitly{
                             [&vars, &vals, &constraint_numbers, hall_left = move(hall_left), hall_right = move(hall_right)](
-                                const State &, const Reason &, ProofLogger & logger) {
+                                const Reason &, ProofLogger & logger) {
                                 // we are going to need the at least one value variables
                                 vector<ProofLine> at_least_one_constraints;
                                 for (Left v{0}; v.offset != vars.size(); ++v.offset)

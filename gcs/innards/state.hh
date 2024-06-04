@@ -380,6 +380,12 @@ namespace gcs::innards
         auto for_each_value_while_immutable(const VarType_ &, const std::function<auto(Integer)->bool> &) const -> bool;
 
         /**
+         * Return the contents of the domain.
+         */
+        template <IntegerVariableIDLike VarType_>
+        auto copy_of_values(const VarType_ &) const -> IntervalSet<Integer>;
+
+        /**
          * Returns true if this variable's domain is potentially not just
          * contiguous values. May spuriously claim holes are present.
          */

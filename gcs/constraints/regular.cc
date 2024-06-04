@@ -63,7 +63,7 @@ namespace
     };
 
     auto log_additional_inference(ProofLogger * const logger, const vector<Literal> & literals, const vector<ProofFlag> & proof_flags,
-        const State & state, const Reason & reason, string comment = "") -> void
+        const Reason & reason, string comment = "") -> void
     {
         if (logger) {
             // Trying to cut down on repeated code
@@ -75,7 +75,7 @@ namespace
                 terms += 1_i * lit;
             for (const auto & flag : proof_flags)
                 terms += 1_i * flag;
-            logger->emit_rup_proof_line_under_reason(state, reason, terms >= 1_i, ProofLevel::Current);
+            logger->emit_rup_proof_line_under_reason(reason, terms >= 1_i, ProofLevel::Current);
         }
     }
 
@@ -109,16 +109,15 @@ namespace
                         // So first eliminate each previous state/variable combo
                         state.for_each_value(vars[i], [&](Integer val) -> void {
                             log_additional_inference(logger, {vars[i] != val},
-                                {! state_at_pos_flags[i][q], ! state_at_pos_flags[i + 1][next_q]}, state, reason);
+                                {! state_at_pos_flags[i][q], ! state_at_pos_flags[i + 1][next_q]}, reason);
                         });
 
                         // Then eliminate each previous state
-                        log_additional_inference(logger, {}, {! state_at_pos_flags[i][q], ! state_at_pos_flags[i + 1][next_q]},
-                            state, reason);
+                        log_additional_inference(logger, {}, {! state_at_pos_flags[i][q], ! state_at_pos_flags[i + 1][next_q]}, reason);
                     }
 
                     // Finally, can eliminate what we want
-                    log_additional_inference(logger, {}, {! state_at_pos_flags[i + 1][next_q]}, state, reason);
+                    log_additional_inference(logger, {}, {! state_at_pos_flags[i + 1][next_q]}, reason);
                 }
             }
         }
@@ -152,7 +151,7 @@ namespace
                     else {
                         graph.states_supporting[i][val].erase(q);
                         if (logger)
-                            log_additional_inference(logger, {vars[i] != val}, {! state_at_pos_flags[i][q]}, state, reason);
+                            log_additional_inference(logger, {vars[i] != val}, {! state_at_pos_flags[i][q]}, reason);
                     }
                 }
             });
@@ -162,7 +161,7 @@ namespace
                 if (! state_is_support[q]) {
                     graph.nodes[i].erase(q);
                     if (logger)
-                        log_additional_inference(logger, {}, {! state_at_pos_flags[i][q]}, state, reason, "back pass");
+                        log_additional_inference(logger, {}, {! state_at_pos_flags[i][q]}, reason, "back pass");
                 }
             }
         }
@@ -181,14 +180,13 @@ namespace
                 for (const auto & val : edge.second) {
                     graph.states_supporting[i - 1][val].erase(l);
                     if (logger)
-                        log_additional_inference(logger, {vars[i - 1] != val}, {! state_at_pos_flags[i - 1][l]}, state, reason,
-                            "dec outdeg inner");
+                        log_additional_inference(logger, {vars[i - 1] != val}, {! state_at_pos_flags[i - 1][l]}, reason, "dec outdeg inner");
                     decrement_outdeg(graph, i - 1, l, vars, state_at_pos_flags, state, reason, logger);
                 }
             }
             graph.in_edges[i][k] = {};
             if (logger)
-                log_additional_inference(logger, {}, {! state_at_pos_flags[i][k]}, state, reason, "dec outdeg");
+                log_additional_inference(logger, {}, {! state_at_pos_flags[i][k]}, reason, "dec outdeg");
         }
     }
 
@@ -204,15 +202,15 @@ namespace
                     // So first eliminate each previous state/variable combo
                     state.for_each_value(vars[i], [&](Integer val) -> void {
                         log_additional_inference(logger, {vars[i] != val}, {! state_at_pos_flags[i - 1][q], ! state_at_pos_flags[i][k]},
-                            state, reason);
+                            reason);
                     });
 
                     // Then eliminate each previous state
-                    log_additional_inference(logger, {}, {! state_at_pos_flags[i - 1][q], ! state_at_pos_flags[i][k]}, state, reason);
+                    log_additional_inference(logger, {}, {! state_at_pos_flags[i - 1][q], ! state_at_pos_flags[i][k]}, reason);
                 }
 
                 // Finally, can eliminate what we want
-                log_additional_inference(logger, {}, {! state_at_pos_flags[i][k]}, state, reason);
+                log_additional_inference(logger, {}, {! state_at_pos_flags[i][k]}, reason);
             }
             for (const auto & edge : graph.out_edges[i][k]) {
                 auto l = edge.first;

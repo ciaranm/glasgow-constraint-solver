@@ -159,7 +159,7 @@ namespace gcs::innards
          * Emit a RUP proof step for the specified expression, subject to a
          * given reason.
          */
-        auto emit_rup_proof_line_under_reason(const State &, const Reason &, const SumLessEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level
+        auto emit_rup_proof_line_under_reason(const Reason &, const SumLessEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
             ,
             const std::source_location & w = std::source_location::current()

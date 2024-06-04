@@ -289,7 +289,7 @@ auto ProofLogger::infer(const State & state, bool is_contradicting, const Litera
 #endif
             need_lit();
             auto t = temporary_proof_level();
-            x.add_proof_steps(state, reason, *this);
+            x.add_proof_steps(reason, *this);
             infer(state, is_contradicting, lit, JustifyUsingRUP{
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
                                                     x.where
@@ -371,7 +371,7 @@ auto ProofLogger::emit_assert_proof_line(const SumLessEqual<Weighted<PseudoBoole
     return record_proof_line(++_imp->proof_line, level);
 }
 
-auto ProofLogger::emit_rup_proof_line_under_reason(const State &, const Reason & reason, const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
+auto ProofLogger::emit_rup_proof_line_under_reason(const Reason & reason, const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
     ProofLevel level
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
     ,

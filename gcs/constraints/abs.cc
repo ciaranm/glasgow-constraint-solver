@@ -62,10 +62,10 @@ auto Abs::install(Propagators & propagators, State & initial_state,
         // now remove from v2 any value whose +/-value isn't in v1's domain.
         state.for_each_value(v2, [&](Integer val) {
             if (! state.in_domain(v1, val) && ! state.in_domain(v1, -val) && state.in_domain(v2, val)) {
-                auto just = [selector, v1, v2, val](const State & state, const Reason & reason, ProofLogger & logger) {
-                    logger.emit_rup_proof_line_under_reason(state, reason,
+                auto just = [selector, v1, v2, val](const Reason & reason, ProofLogger & logger) {
+                    logger.emit_rup_proof_line_under_reason(reason,
                         WeightedPseudoBooleanSum{} + 1_i * (*selector) + 1_i * (v2 != val) >= 1_i, ProofLevel::Temporary);
-                    logger.emit_rup_proof_line_under_reason(state, reason,
+                    logger.emit_rup_proof_line_under_reason(reason,
                         WeightedPseudoBooleanSum{} + 1_i * (! *selector) + 1_i * (v2 != val) >= 1_i, ProofLevel::Temporary);
                 };
                 inference.infer_not_equal(v2, val, JustifyExplicitly{just}, Reason{[=]() { return Literals{{v1 != val, v1 != -val}}; }});

@@ -8,6 +8,8 @@
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
 
+#include <util/enumerate.hh>
+
 #include <sstream>
 
 using namespace gcs;
@@ -66,19 +68,19 @@ namespace
         return 1_i;
     }
 
-    auto justify_cond(const State & state, const auto & coeff_vars, ProofLogger & logger,
-        const ProofLine & proof_line) -> void
+    auto justify_cond(const auto & coeff_vars, const vector<pair<Integer, Integer>> & bounds,
+        ProofLogger & logger, const ProofLine & proof_line) -> void
     {
         vector<pair<Integer, variant<ProofLine, string>>> terms_to_sum;
         terms_to_sum.emplace_back(1_i, proof_line);
 
-        for (const auto & cv : coeff_vars.terms) {
+        for (const auto & [idx, cv] : enumerate(coeff_vars.terms)) {
             // the following line of logic is definitely correct until you inevitably
             // discover otherwise
             bool upper = (get_coeff(cv) < 0_i);
 
             auto literal_defining_proof_line = logger.variable_constraints_tracker().need_pol_item_defining_literal(
-                upper ? get_var(cv) < state.upper_bound(get_var(cv) + 1_i) : get_var(cv) >= state.lower_bound(get_var(cv)));
+                upper ? get_var(cv) < bounds.at(idx).second + 1_i : get_var(cv) >= bounds.at(idx).first);
 
             terms_to_sum.emplace_back(abs(get_coeff(cv)), literal_defining_proof_line);
         }
@@ -221,15 +223,25 @@ auto LinearInequalityIff::install(Propagators & propagators, State & state, Proo
                     }
 
                     if (min_possible > value + modifier) {
-                        auto just = [sanitised_cv, proof_line](const State & state, const Reason &, ProofLogger & logger) -> void {
-                            justify_cond(state, sanitised_cv, logger, *proof_line);
+                        vector<pair<Integer, Integer>> remembered_bounds;
+                        for (const auto & cv : sanitised_cv.terms)
+                            remembered_bounds.push_back(state.bounds(get_var(cv)));
+
+                        auto just = [&sanitised_cv, proof_line, remembered_bounds = move(remembered_bounds)](
+                                        const Reason &, ProofLogger & logger) -> void {
+                            justify_cond(sanitised_cv, remembered_bounds, logger, *proof_line);
                         };
                         inference.infer(! cond, JustifyExplicitly{just}, generic_reason(state, vars));
                         return PropagatorState::Enable;
                     }
                     else if (max_possible <= value + modifier) {
-                        auto just = [&](const State & state, const Reason &, ProofLogger & logger) -> void {
-                            justify_cond(state, sanitised_neg_cv, logger, *proof_line + 1);
+                        vector<pair<Integer, Integer>> remembered_bounds;
+                        for (const auto & cv : sanitised_cv.terms)
+                            remembered_bounds.push_back(state.bounds(get_var(cv)));
+
+                        auto just = [&sanitised_neg_cv, remembered_bounds = move(remembered_bounds), proof_line](
+                                        const Reason &, ProofLogger & logger) -> void {
+                            justify_cond(sanitised_neg_cv, remembered_bounds, logger, *proof_line + 1);
                         };
                         inference.infer(cond, JustifyExplicitly{just}, generic_reason(state, vars));
                         return PropagatorState::Enable;

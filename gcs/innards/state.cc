@@ -965,6 +965,31 @@ auto State::for_each_value_while_immutable(const VarType_ & var, const function<
     return result;
 }
 
+template <IntegerVariableIDLike VarType_>
+auto State::copy_of_values(const VarType_ & var) const -> IntervalSet<Integer>
+{
+    GetStateAndOffsetOf<VarType_> get_state{*this, var};
+    if ((! get<1>(get_state.var_negate_then_add)) && (0_i == get<2>(get_state.var_negate_then_add)) &&
+        holds_alternative<IntegerVariableIntervalSetState>(get_state.state)) {
+        return *get<IntegerVariableIntervalSetState>(get_state.state).values;
+    }
+    else if ((! get<1>(get_state.var_negate_then_add)) && (0_i == get<2>(get_state.var_negate_then_add)) &&
+        holds_alternative<IntegerVariableRangeState>(get_state.state)) {
+        IntervalSet<Integer> result;
+        result.insert_at_end(
+            get<IntegerVariableRangeState>(get_state.state).lower,
+            get<IntegerVariableRangeState>(get_state.state).upper);
+        return result;
+    }
+    else {
+        IntervalSet<Integer> result;
+        for_each_value_immutable(var, [&](Integer i) {
+            result.insert_at_end(i);
+        });
+        return result;
+    }
+}
+
 auto State::operator()(const IntegerVariableID & i) const -> Integer
 {
     if (auto result = optional_single_value(i))
@@ -1137,6 +1162,11 @@ namespace gcs
     template auto State::for_each_value_while_immutable(const SimpleIntegerVariableID &, const std::function<auto(Integer)->bool> &) const -> bool;
     template auto State::for_each_value_while_immutable(const ViewOfIntegerVariableID &, const std::function<auto(Integer)->bool> &) const -> bool;
     template auto State::for_each_value_while_immutable(const ConstantIntegerVariableID &, const std::function<auto(Integer)->bool> &) const -> bool;
+
+    template auto State::copy_of_values(const IntegerVariableID &) const -> IntervalSet<Integer>;
+    template auto State::copy_of_values(const SimpleIntegerVariableID &) const -> IntervalSet<Integer>;
+    template auto State::copy_of_values(const ViewOfIntegerVariableID &) const -> IntervalSet<Integer>;
+    template auto State::copy_of_values(const ConstantIntegerVariableID &) const -> IntervalSet<Integer>;
 
     template auto State::infer(const VariableConditionFrom<IntegerVariableID> &) -> HowChanged;
     template auto State::infer(const VariableConditionFrom<SimpleIntegerVariableID> &) -> HowChanged;

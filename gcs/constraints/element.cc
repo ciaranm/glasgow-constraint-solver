@@ -92,11 +92,11 @@ auto Element::install(Propagators & propagators, State & initial_state, ProofMod
                 return ! supported;
             });
             if (! supported) {
-                auto justf = [idx, var, val](const State & state, const Reason & reason, ProofLogger & logger) {
-                    state.for_each_value_immutable(idx, [&](Integer i) {
-                        logger.emit_rup_proof_line_under_reason(state, reason,
-                            WeightedPseudoBooleanSum{} + 1_i * (var != val) + 1_i * (idx != i) >= 1_i, ProofLevel::Temporary);
-                    });
+                auto justf = [idx, idxvals = state.copy_of_values(idx), var, val](const Reason & reason, ProofLogger & logger) {
+                    for (const auto & [l, u] : idxvals.intervals)
+                        for (Integer i = l; i <= u; ++i)
+                            logger.emit_rup_proof_line_under_reason(reason,
+                                WeightedPseudoBooleanSum{} + 1_i * (var != val) + 1_i * (idx != i) >= 1_i, ProofLevel::Temporary);
                 };
                 inference.infer_not_equal(var, val, JustifyExplicitly{justf}, generic_reason(state, all_vars));
             }
@@ -172,17 +172,17 @@ auto ElementConstantArray::install(Propagators & propagators, State & initial_st
             });
 
             auto just = JustifyExplicitly{
-                [idx, var, &vals](const State & state, const Reason & reason, ProofLogger & logger) {
+                [idx, idxvals = state.copy_of_values(idx), var, &vals](const Reason & reason, ProofLogger & logger) {
                     WeightedPseudoBooleanSum conditions;
-                    state.for_each_value_immutable(idx, [&](Integer i) {
-                        conditions += 1_i * (var == (*vals)[i.raw_value]);
-                    });
+                    for (const auto & [l, u] : idxvals.intervals)
+                        for (Integer i = l; i <= u; ++i)
+                            conditions += 1_i * (var == (*vals)[i.raw_value]);
 
-                    state.for_each_value_immutable(idx, [&](Integer i) {
-                        logger.emit_rup_proof_line_under_reason(state, reason, conditions + 1_i * (idx == i) >= 1_i, ProofLevel::Temporary);
-                    });
+                    for (const auto & [l, u] : idxvals.intervals)
+                        for (Integer i = l; i <= u; ++i)
+                            logger.emit_rup_proof_line_under_reason(reason, conditions + 1_i * (idx == i) >= 1_i, ProofLevel::Temporary);
 
-                    logger.emit_rup_proof_line_under_reason(state, reason, conditions >= 1_i, ProofLevel::Temporary);
+                    logger.emit_rup_proof_line_under_reason(reason, conditions >= 1_i, ProofLevel::Temporary);
                 }};
 
             inference.infer_greater_than_or_equal(var, *smallest_seen, just, generic_reason(state, all_vars));
@@ -326,27 +326,31 @@ auto Element2DConstantArray::install(Propagators & propagators, State & initial_
             });
 
             auto just = JustifyExplicitly{
-                [idx1, idx2, var, vals](const State & state, const Reason & reason, ProofLogger & logger) {
+                [idx1, idx2, idx1vals = state.copy_of_values(idx1), idx2vals = state.copy_of_values(idx2), var, vals](
+                    const Reason & reason, ProofLogger & logger) {
                     WeightedPseudoBooleanSum conditions;
-                    state.for_each_value_immutable(idx1, [&](Integer i1) {
-                        state.for_each_value_immutable(idx2, [&](Integer i2) {
-                            conditions += 1_i * (var == (*vals)[i1.raw_value][i2.raw_value]);
-                        });
-                    });
+                    for (const auto & [l1, u1] : idx1vals.intervals)
+                        for (Integer i1 = l1; i1 <= u1; ++i1)
+                            for (const auto & [l2, u2] : idx2vals.intervals)
+                                for (Integer i2 = l2; i2 <= u2; ++i2)
+                                    conditions += 1_i * (var == (*vals)[i1.raw_value][i2.raw_value]);
 
-                    state.for_each_value_immutable(idx1, [&](Integer i1) {
-                        state.for_each_value_immutable(idx2, [&](Integer i2) {
+                    for (const auto & [l1, u1] : idx1vals.intervals)
+                        for (Integer i1 = l1; i1 <= u1; ++i1) {
+                            for (const auto & [l2, u2] : idx2vals.intervals)
+                                for (Integer i2 = l2; i2 <= u2; ++i2) {
+                                    WeightedPseudoBooleanSum expr = conditions;
+                                    expr += 1_i * (idx1 != i1);
+                                    expr += 1_i * (idx2 != i2);
+                                    logger.emit_rup_proof_line_under_reason(reason, expr >= 1_i, ProofLevel::Temporary);
+                                }
+
                             WeightedPseudoBooleanSum expr = conditions;
                             expr += 1_i * (idx1 != i1);
-                            expr += 1_i * (idx2 != i2);
-                            logger.emit_rup_proof_line_under_reason(state, reason, expr >= 1_i, ProofLevel::Temporary);
-                        });
-                        WeightedPseudoBooleanSum expr = conditions;
-                        expr += 1_i * (idx1 != i1);
-                        logger.emit_rup_proof_line_under_reason(state, reason, expr >= 1_i, ProofLevel::Temporary);
-                    });
+                            logger.emit_rup_proof_line_under_reason(reason, expr >= 1_i, ProofLevel::Temporary);
+                        }
 
-                    logger.emit_rup_proof_line_under_reason(state, reason, conditions >= 1_i, ProofLevel::Temporary);
+                    logger.emit_rup_proof_line_under_reason(reason, conditions >= 1_i, ProofLevel::Temporary);
                 }};
 
             auto reason = generic_reason(state, all_vars);

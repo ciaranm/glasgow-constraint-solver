@@ -79,13 +79,15 @@ namespace
             else
                 reason.emplace_back(v1 != val);
 
-        auto justify = [v1 = v1, v2 = v2, v1_bounds = v1_bounds, cond = cond](
-                           const State & state, const Reason &, ProofLogger & logger) {
-            for (Integer val = v1_bounds.first; val <= v1_bounds.second; ++val)
-                if (state.in_domain(v1, val))
-                    logger.emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * (v1 != val) + 1_i * (v2 == val) + 1_i * ! cond >= 1_i, ProofLevel::Temporary);
-                else
-                    logger.emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * (v2 != val) + 1_i * (v1 == val) + 1_i * ! cond >= 1_i, ProofLevel::Temporary);
+        auto justify = [v1 = v1, v2 = v2, v1_values = state.copy_of_values(v1), cond = cond](
+                           const Reason &, ProofLogger & logger) {
+            for (const auto & [l, u] : v1_values.intervals)
+                for (Integer i = l; i <= u; ++i)
+                    logger.emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * (v1 != i) + 1_i * (v2 == i) + 1_i * ! cond >= 1_i, ProofLevel::Temporary);
+
+            for (unsigned p = 0; p < v1_values.intervals.size() - 1; ++p)
+                for (Integer i = v1_values.intervals.at(p).second + 1_i, i_end = v1_values.intervals.at(p + 1).first; i != i_end; ++i)
+                    logger.emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * (v2 != i) + 1_i * (v1 == i) + 1_i * ! cond >= 1_i, ProofLevel::Temporary);
         };
 
         return pair{JustifyExplicitly{justify}, Reason{[=]() { return reason; }}};

@@ -152,9 +152,9 @@ namespace
                             return PropagatorState::DisableUntilBacktrack;
                         }
                         else if (all_true) {
-                            auto justf = [lits](const State & state, const Reason & reason, ProofLogger & logger) {
+                            auto justf = [lits](const Reason & reason, ProofLogger & logger) {
                                 for (auto & l : lits)
-                                    logger.emit_rup_proof_line_under_reason(state, reason,
+                                    logger.emit_rup_proof_line_under_reason(reason,
                                         WeightedPseudoBooleanSum{} + 1_i * l >= 1_i, ProofLevel::Temporary);
                             };
                             inference.infer(full_reif, JustifyExplicitly{justf}, Reason{[=]() { return lits; }});
