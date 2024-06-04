@@ -58,7 +58,7 @@ auto ArrayMinMax::install(Propagators & propagators, State & initial_state, Proo
         }
 
         // result in union(vars)
-        state.for_each_value(result, [&](Integer value) {
+        for (auto value : state.each_value_mutable(result)) {
             bool found_support = false;
             for (auto & var : vars) {
                 if (state.in_domain(var, value)) {
@@ -73,9 +73,7 @@ auto ArrayMinMax::install(Propagators & propagators, State & initial_state, Proo
                     reason.emplace_back(var != value);
                 inference.infer_not_equal(logger, result, value, JustifyUsingRUP{}, Reason{[=]() { return reason; }});
             }
-
-            return true;
-        });
+        }
 
         // largest value in result uniquely supported?
         optional<IntegerVariableID> support_of_largest_1, support_of_largest_2;
@@ -125,13 +123,13 @@ auto ArrayMinMax::install(Propagators & propagators, State & initial_state, Proo
         }
 
         // result == i -> i in vars
-        initial_state.for_each_value(_result, [&](Integer val) {
+        for (auto val : initial_state.each_value_immutable(_result)) {
             Literals lits{{_result != val}};
             for (auto & v : _vars)
                 if (initial_state.in_domain(v, val))
                     lits.emplace_back(v == val);
             optional_model->add_constraint(move(lits));
-        });
+        }
     }
 }
 

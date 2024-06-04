@@ -819,8 +819,11 @@ namespace
                 WeightedPseudoBooleanSum possible_next_nodes_sum{};
                 PLine add_for_node_implies_at_least_1;
                 PLine add_for_node_implies_not_mid;
-                state.for_each_value(succ[node], [&](Integer val) {
-                    if (skip_based_on_assumption(succ[node], val, assumption)) return;
+
+                for (auto val : state.each_value_immutable(succ[node])) {
+                    if (skip_based_on_assumption(succ[node], val, assumption))
+                        continue;
+
                     possible_next_nodes_sum += 1_i * (succ[node] == val);
                     auto next_node = val.raw_value;
 
@@ -851,7 +854,7 @@ namespace
                     else if (next_node != root) {
                         new_reached_nodes.insert(next_node);
                     }
-                });
+                }
 
                 add_for_node_implies_at_least_1.add_and_saturate(
                     logger.emit_rup_proof_line_under_reason(state, reason,
@@ -993,7 +996,7 @@ namespace
 
         vector<pair<long, long>> back_edges{};
 
-        state.for_each_value_while(succ[node], [&](Integer w) -> bool {
+        for (const auto & w : state.each_value_mutable(succ[node])) {
             auto next_node = w.raw_value;
 
             if (data.visit_number[next_node] == -1) {
@@ -1025,9 +1028,7 @@ namespace
                 }
                 data.lowlink[node] = pos_min(data.lowlink[node], data.visit_number[next_node]);
             }
-
-            return true;
-        });
+        }
 
         if (data.lowlink[node] == data.visit_number[node]) {
             if (logger) {
@@ -1052,7 +1053,7 @@ namespace
     {
         auto data = SCCPropagatorData(succ.size());
 
-        state.for_each_value_while(succ[data.root], [&](Integer v) -> bool {
+        for (const auto & v : state.each_value_mutable(succ[data.root])) {
             auto next_node = v.raw_value;
             if (data.visit_number[next_node] == -1) {
                 auto back_edges = explore(state, inference, logger, reason, next_node, succ, data, proof_data, options);
@@ -1081,8 +1082,7 @@ namespace
                 data.end_prev_subtree = data.count - 1;
                 data.prev_subroot = next_node;
             }
-            return true;
-        });
+        }
 
         if (cmp_not_equal(data.count, succ.size())) {
             if (logger) {
@@ -1093,7 +1093,7 @@ namespace
         }
 
         if (options.prune_root && data.start_prev_subtree > 1) {
-            state.for_each_value(succ[data.root], [&](Integer v) {
+            for (const auto & v : state.each_value_mutable(succ[data.root])) {
                 if (data.visit_number[v.raw_value] < data.start_prev_subtree) {
                     if (logger) {
                         logger->emit_proof_comment("Prune impossible edges from root node");
@@ -1101,7 +1101,7 @@ namespace
                     }
                     inference.infer(logger, succ[data.root] != v, JustifyUsingRUP{}, reason);
                 }
-            });
+            }
         }
     }
 

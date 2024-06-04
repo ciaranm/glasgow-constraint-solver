@@ -102,7 +102,7 @@ auto gcs::innards::circuit::prevent_small_cycles(
     auto chain_lengths = vector<long>{};
 
     for (auto var : unassigned) {
-        state.for_each_value_while(var, [&](Integer val) -> bool {
+        for (const auto & val : state.each_value_immutable(var)) {
             auto j0 = val.raw_value;
             auto length = 0;
             if (state.has_single_value(succ[j0]) && (end[j0] < 0)) {
@@ -115,16 +115,13 @@ auto gcs::innards::circuit::prevent_small_cycles(
                         if (logger)
                             output_cycle_to_proof(succ, j0, length, pos_var_data, state, *logger);
                         inference.infer_false(logger, JustifyUsingRUP{}, generic_reason(state, succ));
-                        return false;
                     }
                 } while (state.has_single_value(succ[j]));
                 end[j0] = j;
                 known_ends.emplace_back(j0);
                 chain_lengths.emplace_back(length);
             }
-
-            return true;
-        });
+        }
     }
 
     while (! known_ends.empty()) {

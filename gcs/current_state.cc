@@ -4,6 +4,7 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::generator;
 using std::make_optional;
 using std::move;
 using std::optional;
@@ -81,4 +82,9 @@ auto CurrentState::in_domain(const IntegerVariableID v, Integer n) const -> bool
 auto CurrentState::for_each_value(const IntegerVariableID v, std::function<auto(Integer)->void> f) const -> void
 {
     _full_state.for_each_value(v, f);
+}
+
+auto CurrentState::each_value(const IntegerVariableID v) const -> generator<Integer>
+{
+    return _full_state.each_value_mutable(v);
 }

@@ -167,7 +167,8 @@ namespace gcs::test_innards
         println(cerr, "var {} value {} does not occur anywhere in expected", innards::debug_string(var), val);
         for (const auto & v : all_vars) {
             std::vector<Integer> values;
-            s.for_each_value(v, [&](Integer val) { values.push_back(val); });
+            for (Integer i : s.each_value(v))
+                values.push_back(i);
             println(cerr, "var {} has values {}", innards::debug_string(v), values);
         }
         throw UnexpectedException{"consistency not achieved"};
@@ -182,7 +183,7 @@ namespace gcs::test_innards
             return;
 
         case CheckConsistency::GAC:
-            s.for_each_value(var, [&](Integer val) {
+            for (auto val : s.each_value(var)) {
                 bool found_support = false;
                 for (auto & x : expected)
                     if (get_from_expected(x) == val.raw_value) {
@@ -191,7 +192,7 @@ namespace gcs::test_innards
                     }
                 if (! found_support)
                     consistency_not_achieved("gac", expected, s, all_vars, var, val);
-            });
+            }
             return;
 
         case CheckConsistency::BC:
@@ -240,7 +241,7 @@ namespace gcs::test_innards
             for (const auto & [the_idx, the_var] : enumerate(vars)) {
                 const auto & idx = the_idx;
                 const auto & var = the_var;
-                s.for_each_value(var, [&](Integer val) {
+                for (auto val : s.each_value(var)) {
                     bool found_support = false;
                     for (auto & x : expected)
                         if (get_from_expected(x).at(idx) == val.raw_value) {
@@ -249,7 +250,7 @@ namespace gcs::test_innards
                         }
                     if (! found_support)
                         consistency_not_achieved("gac", expected, s, all_vars, var, val);
-                });
+                }
             }
             return;
         }

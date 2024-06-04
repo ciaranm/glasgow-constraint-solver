@@ -54,13 +54,12 @@ auto Abs::install(Propagators & propagators, State & initial_state,
                             const State & state, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
         // we're not dealing with bounds. remove from v1 any value whose absolute value
         // isn't in v2's domain.
-        state.for_each_value(v1, [&](Integer val) {
+        for (const auto & val : state.each_value_mutable(v1))
             if (! state.in_domain(v2, abs(val)))
                 inference.infer_not_equal(logger, v1, val, JustifyUsingRUP{}, Reason{[=]() { return Literals{v2 != abs(val)}; }});
-        });
 
         // now remove from v2 any value whose +/-value isn't in v1's domain.
-        state.for_each_value(v2, [&](Integer val) {
+        for (const auto & val : state.each_value_mutable(v2)) {
             if (! state.in_domain(v1, val) && ! state.in_domain(v1, -val) && state.in_domain(v2, val)) {
                 auto just = [&](const Reason & reason) {
                     logger->emit_rup_proof_line_under_reason(state, reason,
@@ -70,7 +69,7 @@ auto Abs::install(Propagators & propagators, State & initial_state,
                 };
                 inference.infer_not_equal(logger, v2, val, JustifyExplicitly{just}, Reason{[=]() { return Literals{{v1 != val, v1 != -val}}; }});
             }
-        });
+        }
 
         return PropagatorState::Enable;
     },

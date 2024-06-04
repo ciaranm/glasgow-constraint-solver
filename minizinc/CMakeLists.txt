@@ -8,6 +8,8 @@ target_link_libraries(fzn-glasgow LINK_PUBLIC ${Boost_LIBRARIES})
 target_link_libraries(fzn-glasgow PRIVATE fmt::fmt)
 target_link_libraries(fzn-glasgow PRIVATE nlohmann_json::nlohmann_json)
 
+include_directories(${CMAKE_SOURCE_DIR}/generator/src/generator/include)
+
 add_test(NAME minizinc-abs COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ abs true true)
 set_tests_properties(minizinc-abs PROPERTIES SKIP_RETURN_CODE 66)
 

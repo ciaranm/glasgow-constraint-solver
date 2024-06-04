@@ -468,7 +468,7 @@ auto ProofLogger::enter_proof_level(int depth) -> void
 auto ProofLogger::forget_proof_level(int depth) -> void
 {
     auto & lines = _imp->proof_lines_by_level.at(depth);
-    for (auto & [l, u] : lines.intervals) {
+    for (const auto & [l, u] : lines.each_interval()) {
         if (l == u)
             _imp->proof << "del id " << l << '\n';
         else

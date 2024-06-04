@@ -128,7 +128,7 @@ auto LinearInequalityIff::install(Propagators & propagators, State & state, Proo
     // empty sum? we know what the condition must be.
     if (visit([](const auto & s) { return s.terms.empty(); }, sanitised_cv)) {
         propagators.install_initialiser([modifier = modifier, value = _value, cond = _cond](
-                                            const State & state, InferenceTracker & inference, ProofLogger * const logger) -> void {
+                                            const State &, InferenceTracker & inference, ProofLogger * const logger) -> void {
             inference.infer(logger, 0_i <= value + modifier ? cond : ! cond, JustifyUsingRUP{}, Reason{});
         });
     }

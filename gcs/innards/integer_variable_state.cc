@@ -25,7 +25,7 @@ auto gcs::innards::debug_string(const IntegerVariableState & ivar) -> string
         },
         [](const IntegerVariableIntervalSetState & s) {
             string result = "iset";
-            for (const auto & [l, u] : s.values->intervals)
+            for (const auto & [l, u] : s.values->each_interval())
                 result += " " + to_string(l.raw_value) + ".." + to_string(u.raw_value);
             return result;
         }}

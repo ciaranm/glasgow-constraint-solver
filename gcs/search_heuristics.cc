@@ -130,9 +130,9 @@ auto gcs::guess_smallest_value_first() -> GuessCallback
 {
     return [](const CurrentState & state, IntegerVariableID var) -> vector<IntegerVariableCondition> {
         vector<IntegerVariableCondition> result;
-        state.for_each_value(var, [&](Integer val) {
+        for (auto val : state.each_value(var)) {
             result.push_back(var == val);
-        });
+        }
         return result;
     };
 }
@@ -141,9 +141,9 @@ auto gcs::guess_largest_value_first() -> GuessCallback
 {
     return [](const CurrentState & state, IntegerVariableID var) -> vector<IntegerVariableCondition> {
         vector<IntegerVariableCondition> result;
-        state.for_each_value(var, [&](Integer val) {
+        for (auto val : state.each_value(var)) {
             result.push_back(var == val);
-        });
+        }
         reverse(result.begin(), result.end());
         return result;
     };
@@ -153,9 +153,9 @@ auto gcs::guess_median_value() -> GuessCallback
 {
     return [](const CurrentState & state, IntegerVariableID var) -> vector<IntegerVariableCondition> {
         vector<IntegerVariableCondition> result;
-        state.for_each_value(var, [&](Integer val) {
+        for (auto val : state.each_value(var)) {
             result.push_back(var == val);
-        });
+        }
         return vector<IntegerVariableCondition>{result.at(result.size() / 2), ! result.at(result.size() / 2)};
     };
 }
@@ -166,9 +166,9 @@ auto gcs::guess_randomly() -> GuessCallback
         random_device rand_dev;
         mt19937 r(rand_dev());
         vector<IntegerVariableCondition> result;
-        state.for_each_value(var, [&](Integer val) {
+        for (auto val : state.each_value(var)) {
             result.push_back(var == val);
-        });
+        }
         shuffle(result.begin(), result.end(), r);
         return result;
     };

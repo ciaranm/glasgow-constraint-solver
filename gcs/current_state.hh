@@ -10,6 +10,12 @@
 #include <memory>
 #include <optional>
 
+#if __has_cpp_attribute(__cpp_lib_generator)
+#include <generator>
+#else
+#include <__generator.hpp>
+#endif
+
 namespace gcs
 {
     /**
@@ -128,8 +134,17 @@ namespace gcs
         /**
          * \brief Calls the supplied function once for each value in the
          * variable's domain.
+         *
+         * \sa CurrentState::each_value()
          */
         auto for_each_value(const IntegerVariableID, std::function<auto(Integer)->void>) const -> void;
+
+        /**
+         * \brief Returns a generator that gives each value in the variable's domain.
+         *
+         * \sa CurrentState::for_each_value()
+         */
+        auto each_value(const IntegerVariableID) const -> std::generator<Integer>;
 
         ///@}
     };

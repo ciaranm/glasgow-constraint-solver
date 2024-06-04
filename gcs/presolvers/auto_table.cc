@@ -67,12 +67,12 @@ namespace
                 tuples.emplace_back(move(tuple));
             }
             else {
-                state.for_each_value(*branch_var, [&](Integer val) {
+                for (auto val : state.each_value_mutable(*branch_var)) {
                     auto timestamp = state.new_epoch();
                     state.guess(logger, *branch_var == val);
                     solve_subproblem(depth + 1, tuples, vars, propagators, state, logger, selector_var_id);
                     state.backtrack(timestamp);
-                });
+                }
             }
         }
 

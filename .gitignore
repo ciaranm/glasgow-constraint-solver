@@ -10,4 +10,5 @@ Doxyfile
 *.veripb
 *.pbp
 XCSP3-CPP-Parser
+generator
 .idea

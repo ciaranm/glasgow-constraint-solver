@@ -58,6 +58,8 @@ add_library(glasgow_constraint_solver
         presolvers/auto_table.cc
 )
 
+include_directories(${CMAKE_SOURCE_DIR}/generator/src/generator/include)
+
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 link_libraries(glasgow_constraint_solver)
 target_link_libraries(glasgow_constraint_solver PUBLIC fmt::fmt)
@@ -115,7 +117,7 @@ add_executable(circuit_prune_skip_test constraints/circuit/circuit_prune_skip_te
 add_test(NAME circuit_prune_skip COMMAND ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:circuit_prune_skip_test>)
 
 add_executable(interval_set_test innards/interval_set_test.cc)
-target_link_libraries(interval_set_test PRIVATE Catch2::Catch2WithMain)
+target_link_libraries(interval_set_test PRIVATE Catch2::Catch2WithMain range-v3)
 add_test(NAME interval_set_test COMMAND $<TARGET_FILE:interval_set_test>)
 
 add_executable(state_test innards/state_test.cc)

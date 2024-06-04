@@ -17,6 +17,12 @@
 #include <memory>
 #include <optional>
 
+#if __has_cpp_attribute(__cpp_lib_generator)
+#include <generator>
+#else
+#include <__generator.hpp>
+#endif
+
 namespace gcs::innards
 {
     /**
@@ -364,6 +370,7 @@ namespace gcs::innards
          *
          * \sa State::for_each_value_while()
          * \sa State::for_each_value_while_immutable()
+         * \sa State::each_value_mutable()
          */
         template <IntegerVariableIDLike VarType_>
         auto for_each_value(const VarType_ &, const std::function<auto(Integer)->void> &) const -> void;
@@ -375,6 +382,7 @@ namespace gcs::innards
          *
          * \sa State::for_each_value()
          * \sa State::for_each_value_while_immutable()
+         * \sa State::each_value_immutable()
          */
         template <IntegerVariableIDLike VarType_>
         auto for_each_value_immutable(const VarType_ &, const std::function<auto(Integer)->void> &) const -> void;
@@ -388,6 +396,7 @@ namespace gcs::innards
          *
          * \sa State::for_each_value()
          * \sa State::for_each_value_while_immutable()
+         * \sa State::each_value_mutable()
          */
         template <IntegerVariableIDLike VarType_>
         auto for_each_value_while(const VarType_ &, const std::function<auto(Integer)->bool> &) const -> bool;
@@ -401,9 +410,37 @@ namespace gcs::innards
          *
          * \sa State::for_each_value()
          * \sa State::for_each_value_while()
+         * \sa State::each_value_immutable()
          */
         template <IntegerVariableIDLike VarType_>
         auto for_each_value_while_immutable(const VarType_ &, const std::function<auto(Integer)->bool> &) const -> bool;
+
+        /**
+         * Provide a generator that iterates over each value in a variable's domain. The
+         * variable's domain must not be modified whilst the generator is alive. Call using
+         * either IntegerVariableID or one of its more specific types.
+         *
+         * \sa State::each_value_mutable()
+         */
+        template <IntegerVariableIDLike VarType_>
+        auto each_value_immutable(const VarType_ &) const -> std::generator<Integer>;
+
+        /**
+         * Provide a generator that iterates over each value in a variable's domain. The
+         * variable's domain may be modified whilst the generator is alive, but the generator
+         * will run over the values pre-modification. Call using either IntegerVariableID or
+         * one of its more specific types.
+         *
+         * \sa State::each_value_immutable()
+         */
+        template <IntegerVariableIDLike VarType_>
+        auto each_value_mutable(const VarType_ &) const -> std::generator<Integer>;
+
+        /**
+         * Return the contents of the domain.
+         */
+        template <IntegerVariableIDLike VarType_>
+        auto copy_of_values(const VarType_ &) const -> IntervalSet<Integer>;
 
         /**
          * Returns true if this variable's domain is potentially not just
@@ -433,6 +470,7 @@ namespace gcs::innards
         {
             return LiteralIs::DefinitelyTrue;
         }
+
         /**
          * A FalseLiteral is definitely true. Performance overload.
          */

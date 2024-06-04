@@ -599,10 +599,9 @@ auto GACAllDifferent::install(Propagators & propagators, State & initial_state, 
     vector<Integer> compressed_vals;
 
     for (auto & var : sanitised_vars)
-        initial_state.for_each_value(var, [&](Integer val) {
+        for (const auto & val : initial_state.each_value_immutable(var))
             if (compressed_vals.end() == find(compressed_vals.begin(), compressed_vals.end(), val))
                 compressed_vals.push_back(val);
-        });
 
     propagators.install(
         [vars = move(sanitised_vars),
