@@ -168,28 +168,36 @@ namespace gcs::innards
 
         [[nodiscard]] auto each() const -> std::generator<Int_>
         {
-            for (const auto & [l, u] : intervals)
-                for (Int_ i = l; i <= u; ++i)
-                    co_yield i;
+            return [](const Intervals & intervals) -> std::generator<Int_> {
+                for (const auto & [l, u] : intervals)
+                    for (Int_ i = l; i <= u; ++i)
+                        co_yield i;
+            }(intervals);
         }
 
         [[nodiscard]] auto each_interval() const -> std::generator<std::pair<Int_, Int_>>
         {
-            for (const auto & i : intervals)
-                co_yield i;
+            return [](const Intervals & intervals) -> std::generator<std::pair<Int_, Int_>> {
+                for (const auto & i : intervals)
+                    co_yield i;
+            }(intervals);
         }
 
         [[nodiscard]] auto each_gap() const -> std::generator<Int_>
         {
-            for (std::size_t p = 0; p < intervals.size() - 1; ++p)
-                for (Int_ i = intervals[p].second + Int_{1}; i != intervals[p + 1].first; ++i)
-                    co_yield i;
+            return [](const Intervals & intervals) -> std::generator<Int_> {
+                for (std::size_t p = 0; p < intervals.size() - 1; ++p)
+                    for (Int_ i = intervals[p].second + Int_{1}; i != intervals[p + 1].first; ++i)
+                        co_yield i;
+            }(intervals);
         }
 
         [[nodiscard]] auto each_gap_interval() const -> std::generator<std::pair<Int_, Int_>>
         {
-            for (std::size_t p = 0; p < intervals.size() - 1; ++p)
-                co_yield std::pair{intervals[p].second + Int_{1}, intervals[p + 1].first};
+            return [](const Intervals & intervals) -> std::generator<std::pair<Int_, Int_>> {
+                for (std::size_t p = 0; p < intervals.size() - 1; ++p)
+                    co_yield std::pair{intervals[p].second + Int_{1}, intervals[p + 1].first};
+            }(intervals);
         }
     };
 }
