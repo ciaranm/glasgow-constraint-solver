@@ -19,6 +19,7 @@ using namespace gcs::innards;
 using std::countr_zero;
 using std::decay_t;
 using std::function;
+using std::generator;
 using std::get;
 using std::is_same_v;
 using std::list;
@@ -964,6 +965,100 @@ auto State::for_each_value_while_immutable(const VarType_ & var, const function<
 }
 
 template <IntegerVariableIDLike VarType_>
+auto State::each_value_immutable(const VarType_ & var) const -> generator<Integer>
+{
+    auto [actual_var, negate_first, then_add] = deview(var);
+
+    auto apply = [negate_first = negate_first, then_add = then_add](Integer v) -> Integer {
+        return (negate_first ? -v : v) + then_add;
+    };
+
+    GetStateAndOffsetOf<VarType_> get_state{*this, var};
+    const IntegerVariableState & var_ref = get_state.state;
+
+    return overloaded{
+        [&](const IntegerVariableConstantState & c) {
+            return [](const IntegerVariableConstantState & c, auto apply) -> generator<Integer> {
+                co_yield apply(c.value);
+            }(c, apply);
+        },
+        [&](const IntegerVariableRangeState & r) {
+            return [](const IntegerVariableRangeState & r, auto apply) -> generator<Integer> {
+                for (auto v = r.lower; v <= r.upper; ++v)
+                    co_yield apply(v);
+            }(r, apply);
+        },
+        [&](const IntegerVariableSmallSetState & r) {
+            return [](const IntegerVariableSmallSetState & r, auto apply) -> generator<Integer> {
+                for (unsigned w = 0; w < Bits::n_words; ++w) {
+                    auto b = r.bits.data[w];
+                    while (true) {
+                        int z = countr_zero(b);
+                        if (z == Bits::bits_per_word)
+                            break;
+                        b &= ~(Bits::BitWord{1} << z);
+                        co_yield apply(r.lower + Integer{w * Bits::bits_per_word} + Integer{z});
+                    }
+                }
+            }(r, apply);
+        },
+        [&](const IntegerVariableIntervalSetState & s) {
+            return [](const IntegerVariableIntervalSetState & s, auto apply) -> generator<Integer> {
+                for (auto i : s.values->each())
+                    co_yield apply(i);
+            }(s, apply);
+        }}
+        .visit(var_ref);
+}
+
+template <IntegerVariableIDLike VarType_>
+auto State::each_value_mutable(const VarType_ & var) const -> generator<Integer>
+{
+    auto [actual_var, negate_first, then_add] = deview(var);
+
+    GetStateAndOffsetOf<VarType_> get_state{*this, var};
+    const IntegerVariableState & var_ref = get_state.state;
+
+    auto apply = [negate_first = negate_first, then_add = then_add](Integer v) -> Integer {
+        return (negate_first ? -v : v) + then_add;
+    };
+
+    return overloaded{
+        [&](const IntegerVariableConstantState & c) {
+            return [](IntegerVariableConstantState c, auto apply) -> generator<Integer> {
+                co_yield apply(c.value);
+            }(c, apply);
+        },
+        [&](const IntegerVariableRangeState & r) {
+            return [](IntegerVariableRangeState r, auto apply) -> generator<Integer> {
+                for (auto v = r.lower; v <= r.upper; ++v)
+                    co_yield apply(v);
+            }(r, apply);
+        },
+        [&](const IntegerVariableSmallSetState & r) {
+            return [](IntegerVariableSmallSetState r, auto apply) -> generator<Integer> {
+                for (unsigned w = 0; w < Bits::n_words; ++w) {
+                    auto b = r.bits.data[w];
+                    while (true) {
+                        int z = countr_zero(b);
+                        if (z == Bits::bits_per_word)
+                            break;
+                        b &= ~(Bits::BitWord{1} << z);
+                        co_yield apply(r.lower + Integer{w * Bits::bits_per_word} + Integer{z});
+                    }
+                }
+            }(r, apply);
+        },
+        [&](const IntegerVariableIntervalSetState s) {
+            return [](IntegerVariableIntervalSetState s, auto apply) -> generator<Integer> {
+                for (auto i : s.values->each())
+                    co_yield apply(i);
+            }(s, apply);
+        }}
+        .visit(var_ref);
+}
+
+template <IntegerVariableIDLike VarType_>
 auto State::copy_of_values(const VarType_ & var) const -> IntervalSet<Integer>
 {
     GetStateAndOffsetOf<VarType_> get_state{*this, var};
@@ -1160,6 +1255,16 @@ namespace gcs
     template auto State::for_each_value_while_immutable(const SimpleIntegerVariableID &, const std::function<auto(Integer)->bool> &) const -> bool;
     template auto State::for_each_value_while_immutable(const ViewOfIntegerVariableID &, const std::function<auto(Integer)->bool> &) const -> bool;
     template auto State::for_each_value_while_immutable(const ConstantIntegerVariableID &, const std::function<auto(Integer)->bool> &) const -> bool;
+
+    template auto State::each_value_immutable(const IntegerVariableID &) const -> generator<Integer>;
+    template auto State::each_value_immutable(const SimpleIntegerVariableID &) const -> generator<Integer>;
+    template auto State::each_value_immutable(const ViewOfIntegerVariableID &) const -> generator<Integer>;
+    template auto State::each_value_immutable(const ConstantIntegerVariableID &) const -> generator<Integer>;
+
+    template auto State::each_value_mutable(const IntegerVariableID &) const -> generator<Integer>;
+    template auto State::each_value_mutable(const SimpleIntegerVariableID &) const -> generator<Integer>;
+    template auto State::each_value_mutable(const ViewOfIntegerVariableID &) const -> generator<Integer>;
+    template auto State::each_value_mutable(const ConstantIntegerVariableID &) const -> generator<Integer>;
 
     template auto State::copy_of_values(const IntegerVariableID &) const -> IntervalSet<Integer>;
     template auto State::copy_of_values(const SimpleIntegerVariableID &) const -> IntervalSet<Integer>;

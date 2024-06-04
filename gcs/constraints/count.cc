@@ -98,11 +98,12 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
             vector<uint8_t> seen_anys;
             for (auto & var : vars) {
                 bool seen_any = false;
-                state.for_each_value_while_immutable(value_of_interest, [&](const Integer & voi) {
-                    if (state.in_domain(var, voi))
+                for (const auto & voi : state.each_value_immutable(value_of_interest)) {
+                    if (state.in_domain(var, voi)) {
                         seen_any = true;
-                    return ! seen_any;
-                });
+                        break;
+                    }
+                }
 
                 seen_anys.push_back(seen_any);
                 if (! seen_any)
@@ -135,7 +136,7 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
             // is each value of interest supported? also track how_many bounds supports
             // whilst we're here
             optional<Integer> lowest_how_many_must, highest_how_many_might;
-            state.for_each_value_while(value_of_interest, [&](Integer voi) {
+            for (const auto & voi : state.each_value_mutable(value_of_interest)) {
                 Integer how_many_must = 0_i, how_many_might = 0_i;
                 for (const auto & var : vars) {
                     if (auto sv = state.optional_single_value(var)) {
@@ -172,9 +173,7 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
                     if ((! highest_how_many_might) || (how_many_might > *highest_how_many_might))
                         highest_how_many_might = how_many_might;
                 }
-
-                return true;
-            });
+            }
 
             // what are the supports on possible values we've seen?
             if (lowest_how_many_must) {
