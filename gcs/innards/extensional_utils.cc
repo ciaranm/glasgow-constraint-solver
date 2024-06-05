@@ -60,7 +60,7 @@ auto gcs::innards::propagate_extensional(const ExtensionalData & table, const St
 {
     // check whether selectable tuples are still feasible
     visit([&](const auto & tuples) {
-        state.for_each_value(table.selector, [&](Integer tuple_idx) {
+        for (auto tuple_idx : state.each_value_mutable(table.selector)) {
             bool is_feasible = true;
             for (unsigned idx = 0; idx < table.vars.size(); ++idx)
                 if (! feasible(state, table.vars[idx], get_tuple_value(tuples, tuple_idx.raw_value, idx))) {
@@ -70,26 +70,25 @@ auto gcs::innards::propagate_extensional(const ExtensionalData & table, const St
 
             if (! is_feasible)
                 inference.infer(table.selector != Integer(tuple_idx), NoJustificationNeeded{}, Reason{});
-        });
+        }
     },
         table.tuples);
 
     // check for supports in selectable tuples
     visit([&](const auto & tuples) {
         for (unsigned idx = 0; idx < table.vars.size(); ++idx) {
-            state.for_each_value(table.vars[idx], [&](Integer val) {
+            for (auto val : state.each_value_mutable(table.vars[idx])) {
                 bool supported = false;
-                state.for_each_value_while(table.selector, [&](Integer tuple_idx) -> bool {
+                for (auto tuple_idx : state.each_value_immutable(table.selector)) {
                     if (match(get_tuple_value(tuples, tuple_idx.raw_value, idx), val)) {
                         supported = true;
-                        return false;
+                        break;
                     }
-                    return true;
-                });
+                }
 
                 if (! supported)
                     inference.infer(table.vars[idx] != val, JustifyUsingRUP{}, generic_reason(state, table.vars));
-            });
+            }
         }
     },
         table.tuples);

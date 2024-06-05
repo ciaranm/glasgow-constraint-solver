@@ -344,6 +344,7 @@ namespace gcs::innards
          *
          * \sa State::for_each_value_while()
          * \sa State::for_each_value_while_immutable()
+         * \sa State::each_value_mutable()
          */
         template <IntegerVariableIDLike VarType_>
         auto for_each_value(const VarType_ &, const std::function<auto(Integer)->void> &) const -> void;
@@ -355,6 +356,7 @@ namespace gcs::innards
          *
          * \sa State::for_each_value()
          * \sa State::for_each_value_while_immutable()
+         * \sa State::each_value_immutable()
          */
         template <IntegerVariableIDLike VarType_>
         auto for_each_value_immutable(const VarType_ &, const std::function<auto(Integer)->void> &) const -> void;
@@ -368,6 +370,7 @@ namespace gcs::innards
          *
          * \sa State::for_each_value()
          * \sa State::for_each_value_while_immutable()
+         * \sa State::each_value_mutable()
          */
         template <IntegerVariableIDLike VarType_>
         auto for_each_value_while(const VarType_ &, const std::function<auto(Integer)->bool> &) const -> bool;
@@ -381,6 +384,7 @@ namespace gcs::innards
          *
          * \sa State::for_each_value()
          * \sa State::for_each_value_while()
+         * \sa State::each_value_immutable()
          */
         template <IntegerVariableIDLike VarType_>
         auto for_each_value_while_immutable(const VarType_ &, const std::function<auto(Integer)->bool> &) const -> bool;

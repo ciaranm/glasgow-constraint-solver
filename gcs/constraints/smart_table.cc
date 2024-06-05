@@ -407,9 +407,9 @@ namespace
         VariableDomainMap unsupported{};
         // Initialise unsupported values to everything in each variable's current domain.
         for (const auto & var : vars) {
-            state.for_each_value(var, [&](Integer value) {
+            for (auto value : state.each_value_immutable(var)) {
                 unsupported[var].emplace_back(value);
-            });
+            }
         }
 
         // Check that feasible tuples are still feasible
@@ -424,11 +424,9 @@ namespace
                 // Initialise supported by tree to current variable domains
                 VariableDomainMap supported_by_tree{};
 
-                for (const auto & var : vars) {
-                    state.for_each_value(var, [&](Integer value) {
+                for (const auto & var : vars)
+                    for (auto value : state.each_value_immutable(var))
                         supported_by_tree[var].emplace_back(value);
-                    });
-                }
 
                 // First pass of filtering supported_by_tree and check of validity
                 if (! filter_and_check_valid(tree, supported_by_tree, pb_selectors[tuple_idx], reason, logger)) {
@@ -718,7 +716,7 @@ auto consolidate_unary_entries(State & state, vector<SmartEntry> tuple) -> vecto
         const auto & entries = var_and_entries.second;
         vector<Integer> allowed_vals{};
 
-        state.for_each_value(var, [&](Integer v) {
+        for (auto v : state.each_value_mutable(var)) {
             bool val_allowed = true;
             for (auto & entry : entries) {
                 overloaded{
@@ -772,7 +770,7 @@ auto consolidate_unary_entries(State & state, vector<SmartEntry> tuple) -> vecto
             if (val_allowed) {
                 allowed_vals.emplace_back(v);
             }
-        });
+        }
 
         auto new_entry_for_var = SmartTable::in_set(var, allowed_vals);
         new_tuple.emplace_back(new_entry_for_var);
@@ -838,10 +836,10 @@ auto SmartTable::install(Propagators & propagators, State & initial_state, Proof
                         }
                         WeightedPseudoBooleanSum set_value_sum{};
                         WeightedPseudoBooleanSum neg_set_value_sum{};
-                        initial_state.for_each_value(var, [&](Integer val) {
+                        for (auto val : initial_state.each_value_immutable(var)) {
                             if (! count(unary_set_entry.values.begin(), unary_set_entry.values.end(), val))
                                 set_value_sum += 1_i * (var != val);
-                        });
+                        }
 
                         for (const auto & val : unary_set_entry.values)
                             neg_set_value_sum += 1_i * (var != val);
