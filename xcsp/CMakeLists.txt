@@ -2,7 +2,7 @@ include(ExternalProject)
 ExternalProject_Add(XCSP3-CPP-Parser
     PREFIX ${CMAKE_SOURCE_DIR}/XCSP3-CPP-Parser
     GIT_REPOSITORY https://github.com/xcsp3team/XCSP3-CPP-Parser.git
-    GIT_TAG c1a12b0a850a294d2065018d0bfa2fc9404fc30f
+    GIT_TAG 807f475c5b705d085215de61b811c1fbf0152398
     INSTALL_COMMAND "")
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
