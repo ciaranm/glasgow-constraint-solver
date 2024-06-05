@@ -146,7 +146,7 @@ namespace
                 vector<ProofFlag> feasible_node_flags;
 
                 // for each value in this variable's value...
-                state.for_each_value(vars_including_assigned.at(var_idx), [&](Integer val) {
+                for (auto val : state.each_value_mutable(vars_including_assigned.at(var_idx))) {
                     // for each equation, calculate the partial sums of all the
                     // variables up to and including this one.
                     vector<Integer> new_sums(totals.size(), 0_i);
@@ -298,7 +298,7 @@ namespace
                             supported_values.emplace(val);
                         }
                     }
-                });
+                }
 
                 if constexpr (doing_proof_) {
                     // we must select at least one feasible choice from this variable's values
@@ -346,7 +346,7 @@ namespace
             }
 
             // we might have some values that never allowed a state to be created
-            state.for_each_value(vars_including_assigned.at(var_idx), [&](Integer val) {
+            for (auto val : state.each_value_mutable(vars_including_assigned.at(var_idx))) {
                 if (! supported_values.contains(val)) {
                     if constexpr (doing_proof_) {
                         logger->emit_proof_comment("unsupported value on forward pass");
@@ -359,7 +359,7 @@ namespace
                     inference.infer(vars_including_assigned.at(var_idx) != val, JustifyUsingRUP{},
                         generic_reason(state, reason_variables));
                 }
-            });
+            }
 
             completed_layers.emplace_back(move(growing_layer_nodes));
         }
@@ -444,13 +444,13 @@ namespace
                 auto highest = highest_iter->first.at(x);
                 inferences.emplace_back(totals.at(x) < committed.at(x) + highest + 1_i);
 
-                state.for_each_value(totals.at(x), [&](Integer v) {
+                for (auto v : state.each_value_immutable(totals.at(x))) {
                     if (v >= committed.at(x) + lowest && v < committed.at(x) + highest + 1_i)
                         if (completed_layers.back().end() == find_if(completed_layers.back().begin(), completed_layers.back().end(), [&](const pair<vector<Integer>, optional<FullNodeData>> & a) {
                                 return a.first.at(x) + committed.at(x) == v;
                             }))
                             inferences.emplace_back(totals.at(x) != v);
-                });
+                }
 
                 if constexpr (doing_proof_) {
                     logger->emit_proof_comment("select from feasible terminal states");
@@ -513,10 +513,10 @@ namespace
                 }
 
                 auto var = vars_including_assigned.at(undetermined_var_indices.at(var_number));
-                state.for_each_value(var, [&](Integer val) {
+                for (auto val : state.each_value_mutable(var)) {
                     if (! supported.contains(val))
                         inference.infer(var != val, JustifyUsingRUP{}, generic_reason(state, reason_variables));
-                });
+                }
             }
         }
     }

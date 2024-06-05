@@ -45,10 +45,8 @@ auto NValue::install(Propagators & propagators, State & initial_state, ProofMode
                             const State & state, auto & inference) -> PropagatorState {
         set<Integer> all_possible_values;
         for (const auto & var : vars) {
-            state.for_each_value_while_immutable(var, [&](Integer v) -> bool {
+            for (auto v : state.each_value_immutable(var))
                 all_possible_values.insert(v);
-                return true;
-            });
         }
 
         inference.infer(n_values < Integer(all_possible_values.size()) + 1_i, JustifyUsingRUP{},
@@ -70,10 +68,8 @@ auto NValue::install(Propagators & propagators, State & initial_state, ProofMode
     if (optional_model) {
         map<Integer, list<IntegerVariableID>> all_possible_values;
         for (const auto & var : _vars) {
-            initial_state.for_each_value_while_immutable(var, [&](Integer v) -> bool {
+            for (auto v : initial_state.each_value_immutable(var))
                 all_possible_values.emplace(v, list<IntegerVariableID>{}).first->second.push_back(var);
-                return true;
-            });
         }
 
         list<ProofFlag> flags;

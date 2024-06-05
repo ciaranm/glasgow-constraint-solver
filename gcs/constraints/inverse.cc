@@ -130,21 +130,19 @@ auto Inverse::install(Propagators & propagators, State & initial_state, ProofMod
                             x_values = move(x_values), x_value_am1s = x_value_am1s](
                             const State & state, auto & inference) -> PropagatorState {
         for (const auto & [i, x_i] : enumerate(x)) {
-            state.for_each_value(x_i, [&](Integer x_i_value) {
+            for (auto x_i_value : state.each_value_mutable(x_i))
                 if (! state.in_domain(y.at((x_i_value - y_start).raw_value), Integer(i) + x_start))
                     inference.infer(x_i != x_i_value,
                         JustifyUsingRUP{},
                         [lit = y.at((x_i_value - y_start).raw_value) != Integer(i) + x_start]() { return Literals{lit}; });
-            });
         }
 
         for (const auto & [i, y_i] : enumerate(y)) {
-            state.for_each_value(y_i, [&](Integer y_i_value) {
+            for (auto y_i_value : state.each_value_mutable(y_i))
                 if (! state.in_domain(x.at((y_i_value - x_start).raw_value), Integer(i) + y_start))
                     inference.infer(y_i != y_i_value,
                         JustifyUsingRUP{},
                         [lit = x.at((y_i_value - x_start).raw_value) != Integer(i) + y_start]() { return Literals{lit}; });
-            });
         }
 
         propagate_gac_all_different(x, x_values, *x_value_am1s, state, inference);

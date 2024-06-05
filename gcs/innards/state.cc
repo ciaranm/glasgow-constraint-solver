@@ -1076,9 +1076,8 @@ auto State::copy_of_values(const VarType_ & var) const -> IntervalSet<Integer>
     }
     else {
         IntervalSet<Integer> result;
-        for_each_value_immutable(var, [&](Integer i) {
+        for (Integer i : each_value_immutable(var))
             result.insert_at_end(i);
-        });
         return result;
     }
 }

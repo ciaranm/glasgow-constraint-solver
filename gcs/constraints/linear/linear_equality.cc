@@ -124,11 +124,11 @@ namespace
             }
             else {
                 const auto & var = get_var(coeff_vars.terms[current.size()]);
-                state.for_each_value(var, [&](Integer val) {
+                for (auto val : state.each_value_mutable(var)) {
                     current.push_back(val);
                     search(logger);
                     current.pop_back();
-                });
+                }
             }
 
             if (logger) {

@@ -44,15 +44,13 @@ namespace
         }
 
         if (state.domain_has_holes(v1) || state.domain_has_holes(v2)) {
-            state.for_each_value(v1, [&](Integer val) {
+            for (auto val : state.each_value_mutable(v1))
                 if (! state.in_domain(v2, val))
                     inference.infer_not_equal(v1, val, JustifyUsingRUP{}, Reason{[=]() { return Literals{v2 != val, cond ? *cond : TrueLiteral{}}; }});
-            });
 
-            state.for_each_value(v2, [&](Integer val) {
+            for (auto val : state.each_value_mutable(v2))
                 if (! state.in_domain(v1, val))
                     inference.infer_not_equal(v2, val, JustifyUsingRUP{}, Reason{[=]() { return Literals{v1 != val, cond ? *cond : TrueLiteral{}}; }});
-            });
         }
         else {
             auto bounds1 = state.bounds(v1), bounds2 = state.bounds(v2);
@@ -224,11 +222,11 @@ auto EqualsIf::install(Propagators & propagators, State & initial_state, ProofMo
                         else {
                             // not equals is forced if there's no overlap between domains
                             bool overlap = false;
-                            state.for_each_value_while(v1, [&](Integer val) {
-                                if (state.in_domain(v2, val))
+                            for (auto val : state.each_value_immutable(v1))
+                                if (state.in_domain(v2, val)) {
                                     overlap = true;
-                                return ! overlap;
-                            });
+                                    break;
+                                }
 
                             if (! overlap) {
                                 auto [just, reason] = no_overlap_justification(state, v1, v2, cond);
@@ -367,11 +365,11 @@ auto EqualsIff::install(Propagators & propagators, State & initial_state, ProofM
                         else {
                             // not equals is forced if there's no overlap between domains
                             bool overlap = false;
-                            state.for_each_value_while(v1, [&](Integer val) {
-                                if (state.in_domain(v2, val))
+                            for (auto val : state.each_value_immutable(v1))
+                                if (state.in_domain(v2, val)) {
                                     overlap = true;
-                                return ! overlap;
-                            });
+                                    break;
+                                }
 
                             if (! overlap) {
                                 auto [just, reason] = no_overlap_justification(state, v1, v2, cond);

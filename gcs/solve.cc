@@ -97,10 +97,9 @@ namespace
                             return false;
                 }
                 else {
-                    if (! state.for_each_value_while(*branch_var, [&](Integer val) {
-                            return recurse(*branch_var == val);
-                        }))
-                        return false;
+                    for (auto val : state.each_value_mutable(*branch_var))
+                        if (! recurse(*branch_var == val))
+                            return false;
                 }
             }
         }
