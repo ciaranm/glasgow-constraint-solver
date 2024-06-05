@@ -59,10 +59,11 @@ add_library(glasgow_constraint_solver
         presolvers/auto_table.cc
 )
 
+include_directories(${CMAKE_SOURCE_DIR}/generator/src/generator/include)
+
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 link_libraries(glasgow_constraint_solver)
 target_link_libraries(glasgow_constraint_solver PUBLIC fmt::fmt)
-target_link_libraries(glasgow_constraint_solver PUBLIC stdgenerator)
 
 add_executable(solve_test solve_test.cc)
 target_link_libraries(solve_test PRIVATE Catch2::Catch2WithMain)

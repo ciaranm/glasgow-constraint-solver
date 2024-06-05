@@ -120,12 +120,14 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(range-v3)
 
-FetchContent_Declare(
+include(ExternalProject)
+ExternalProject_Add(
         generator
+        PREFIX ${CMAKE_SOURCE_DIR}/generator
         GIT_REPOSITORY https://github.com/todoubaba/generator
         GIT_TAG a849a206f35c2447ab5e605edc5fcf44f673c628 # no release
+        INSTALL_COMMAND ""
 )
-FetchContent_MakeAvailable(generator)
 
 if (GCS_ENABLE_MINIZINC)
     set(JSON_BuildTests OFF CACHE INTERNAL "")
