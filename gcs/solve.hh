@@ -10,6 +10,12 @@
 #include <functional>
 #include <vector>
 
+#if __has_cpp_attribute(__cpp_lib_generator)
+#include <generator>
+#else
+#include <__generator.hpp>
+#endif
+
 namespace gcs
 {
     /**
@@ -35,23 +41,15 @@ namespace gcs
     using TraceCallback = std::function<auto(const CurrentState &)->bool>;
 
     /**
-     * \brief Called by gcs::solve_with() to determine the branch variable when
-     * searching, should return nullopt if every variable is instantiated.
+     * \brief Called by gcs::solve_with() to determine branching when
+     * searching, should return a generator of IntegerVariableCondition
+     * instances that corresponds to a complete branching choice, or
+     * that yields nothing if every variable is instantiated.
      *
      * \ingroup SolveCallbacks
      * \sa SearchHeuristics
      */
-    using BranchCallback = std::function<auto(const CurrentState &, const innards::Propagators &)->std::optional<IntegerVariableID>>;
-
-    /**
-     * \brief Called by gcs::solve_with() when branching on the specified
-     * variable, should return a vector of conditions that describe a complete
-     * branching choice.
-     *
-     * \ingroup SolveCallbacks
-     * \sa SearchHeuristics
-     */
-    using GuessCallback = std::function<auto(const CurrentState &, IntegerVariableID)->std::vector<IntegerVariableCondition>>;
+    using BranchCallback = std::function<auto(const CurrentState &, const innards::Propagators &)->std::generator<IntegerVariableCondition>>;
 
     /**
      * \brief Called by gcs::solve_with() after the proof has been started.
@@ -80,7 +78,6 @@ namespace gcs
         SolutionCallback solution = SolutionCallback{};
         TraceCallback trace = TraceCallback{};
         BranchCallback branch = BranchCallback{};
-        GuessCallback guess = GuessCallback{};
         AfterProofStartedCallback after_proof_started = AfterProofStartedCallback{};
         CompletedCallback completed = CompletedCallback{};
     };

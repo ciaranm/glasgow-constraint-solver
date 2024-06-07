@@ -88,3 +88,8 @@ auto CurrentState::each_value(const IntegerVariableID v) const -> generator<Inte
 {
     return _full_state.each_value_mutable(v);
 }
+
+auto CurrentState::copy_of_values(const IntegerVariableID v) const -> innards::IntervalSet<Integer>
+{
+    return _full_state.copy_of_values(v);
+}

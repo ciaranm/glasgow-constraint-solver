@@ -88,7 +88,7 @@ auto main(int argc, char * argv[]) -> int
                 println("solution: {} profit {} weight {}", items | transform(cref(s)), s(profit), s(weight));
                 return true;
             },
-            .branch = branch_on_dom_then_deg(items)},
+            .branch = branch_with(variable_order::dom_then_deg(items), value_order::smallest_first())},
         options_vars.contains("prove") ? make_optional<ProofOptions>("knapsack.opb", "knapsack.pbp") : nullopt);
 
     print("{}", stats);

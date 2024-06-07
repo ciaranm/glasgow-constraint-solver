@@ -1,6 +1,8 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INNARDS_INTERVAL_SET_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INNARDS_INTERVAL_SET_HH
 
+#include <gcs/innards/interval_set-fwd.hh>
+
 #include <cstdlib>
 #include <vector>
 
@@ -197,6 +199,15 @@ namespace gcs::innards
             return [](const Intervals & intervals) -> std::generator<std::pair<Int_, Int_>> {
                 for (std::size_t p = 0; p < intervals.size() - 1; ++p)
                     co_yield std::pair{intervals[p].second + Int_{1}, intervals[p + 1].first};
+            }(intervals);
+        }
+
+        [[nodiscard]] auto each_reversed() const -> std::generator<Int_>
+        {
+            return [](const Intervals & intervals) -> std::generator<Int_> {
+                for (auto lu = intervals.rbegin(); lu != intervals.rend(); ++lu)
+                    for (Int_ i = lu->second; i >= lu->first; --i)
+                        co_yield i;
             }(intervals);
         }
     };

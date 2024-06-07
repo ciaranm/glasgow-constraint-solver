@@ -40,8 +40,9 @@ namespace
             logger->enter_proof_level(depth + 1);
 
         if (propagators.propagate(state, logger, inference_tracker, guess, nullptr)) {
-            auto branch_var = branch_on_dom_then_deg(vars)(state.current(), propagators);
-            if (! branch_var) {
+            auto brancher = branch_with(variable_order::dom_then_deg(vars), value_order::smallest_first())(state.current(), propagators);
+            auto branch_iter = brancher.begin();
+            if (branch_iter == brancher.end()) {
                 vector<Integer> tuple;
                 for (auto & var : vars)
                     tuple.push_back(state(var));
@@ -71,11 +72,12 @@ namespace
                 tuples.emplace_back(move(tuple));
             }
             else {
-                for (auto val : state.each_value_mutable(*branch_var)) {
+                for (; branch_iter != brancher.end(); ++branch_iter) {
                     auto timestamp = state.new_epoch();
-                    auto guess_change = state.guess(*branch_var == val);
+                    auto branch = *branch_iter;
+                    auto guess_change = state.guess(branch);
                     solve_subproblem(depth + 1, tuples, vars, propagators, state, inference_tracker, logger, selector_var_id,
-                        pair{*branch_var == val, guess_change});
+                        pair{branch, guess_change});
                     state.backtrack(timestamp);
                 }
             }

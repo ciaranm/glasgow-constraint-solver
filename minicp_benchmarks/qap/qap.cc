@@ -158,10 +158,7 @@ auto main(int argc, char * argv[]) -> int
                 cout << "cost: " << s(cost) << endl;
                 return true;
             },
-            .branch = branch_on_dom(xs),
-            .guess = [&](const CurrentState & state, IntegerVariableID var) -> vector<IntegerVariableCondition> {
-                return vector<IntegerVariableCondition>{var == state.lower_bound(var), var != state.lower_bound(var)};
-            }},
+            .branch = branch_with(variable_order::dom(xs), value_order::smallest_in())},
         options_vars.contains("prove") ? make_optional<ProofOptions>("qap.opb", "qap.pbp") : nullopt);
 
     cout << stats << endl;
