@@ -112,10 +112,7 @@ auto main(int argc, char * argv[]) -> int
 
                 return true;
             },
-            .branch = branch_on_dom(series),
-            .guess = [&](const CurrentState & state, IntegerVariableID var) -> vector<IntegerVariableCondition> {
-                return vector<IntegerVariableCondition>{var == state.lower_bound(var), var != state.lower_bound(var)};
-            }},
+            .branch = branch_with(variable_order::dom(series), value_order::smallest_in())},
         options_vars.contains("prove") ? make_optional<ProofOptions>("magic_series.opb", "magic_series.pbp") : nullopt);
 
     cout << stats;

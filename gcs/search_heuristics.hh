@@ -15,122 +15,236 @@ namespace gcs
      */
 
     /**
-     * Used by gcs::branch_on_smallest_with_respect_to as a less-than comparator.
-     *
-     * \ingroup SearchHeuristics
-     * \sa gcs::branch_on_smallest_with_respect_to()
-     */
-    using BranchVariableComparator = std::function<auto(const CurrentState &,
-            const innards::Propagators &, IntegerVariableID, IntegerVariableID)->bool>;
-
-    /**
-     * Branch on whichever variable is smallest with respect to the provided
-     * less-than comparator.
+     * Specifies how to decide which variable to branch on, for SolveCallbacks. Usually this will be used
+     * via the gcs::branch_with() function, which takes a BranchVariableSelector from the gcs::variable_order::
+     * namespace and a BranchValueGenerator from the gcs::value_order:: namespace, but more elaborate options
+     * that decide both a variable and a value together can be programmed. Can also be combined with other
+     * heuristics in turn using gcs::branch_sequence(), e.g. to specify different value-orderings for different
+     * variables. Returning nullopt means all relevant variables are already assigned.
      *
      * \ingroup SearchHeuristics
      */
-    auto branch_on_smallest_with_respect_to(
-        const std::vector<IntegerVariableID> &,
-        const BranchVariableComparator &) -> BranchCallback;
+    using BranchVariableSelector = std::function<auto(
+        const CurrentState &, const innards::Propagators &)
+                                                     ->std::optional<IntegerVariableID>>;
 
     /**
-     * Branch in order from the supplied variables.
-     *
-     * \ingroup SearchHeuristics
-     */
-    auto branch_in_order(const std::vector<IntegerVariableID> &) -> BranchCallback;
-
-    /**
-     * Branch on smallest domain from the supplied variables.
-     *
-     * \ingroup SearchHeuristics
-     */
-    auto branch_on_dom(const std::vector<IntegerVariableID> &) -> BranchCallback;
-
-    /**
-     * Branch on smallest domain from all variables.
-     *
-     * \ingroup SearchHeuristics
-     */
-    auto branch_on_dom(const Problem & problem) -> BranchCallback;
-
-    /**
-     * Branch on smallest domain, tie-breaking on degree, from the supplied
+     * Given a branch variable, how do we branch on it? Usually this will be used via the gcs::branch_with()
+     * function, which takes a BranchVariableSelector from the gcs::variable_order:: namespace and a
+     * BranchValueGenerator from the gcs::value_order:: namespace, but more elaborate options that decide
+     * both a variable and a value together can be programmed. Can also be combined with other heuristics
+     * in turn using gcs::branch_sequence(), e.g. to specify different value-orderings for different
      * variables.
      *
      * \ingroup SearchHeuristics
      */
-    auto branch_on_dom_then_deg(const std::vector<IntegerVariableID> &) -> BranchCallback;
+    using BranchValueGenerator = std::function<auto(
+        const CurrentState &, const innards::Propagators &, const IntegerVariableID &)
+                                                   ->std::generator<IntegerVariableCondition>>;
 
     /**
-     * Branch on smallest domain, tie-breaking on degree, from all variables.
+     * Combine a BranchVariableSelector from gcs::variable_order:: with a BranchValueGenerator
+     * from gcs::value_order:: to produce a BranchCallback for SolveCallbacks.
      *
      * \ingroup SearchHeuristics
      */
-    auto branch_on_dom_then_deg(const Problem & problem) -> BranchCallback;
+    [[nodiscard]] auto branch_with(BranchVariableSelector, BranchValueGenerator) -> BranchCallback;
 
     /**
-     * Branch on domain with smallest value in its domain, from the supplied variables.
+     * Combine two BranchCallback instances, first trying the first instance, and if it returns
+     * nullopt, instead trying the second instance.
      *
      * \ingroup SearchHeuristics
      */
-    auto branch_on_dom_with_smallest_value(const std::vector<IntegerVariableID> &) -> BranchCallback;
+    [[nodiscard]] auto branch_sequence(BranchCallback, BranchCallback) -> BranchCallback;
 
     /**
-     * Branch on domain with smallest value in its domain, from all variables.
+     * Variable ordering heuristics.
      *
      * \ingroup SearchHeuristics
      */
-    auto branch_on_dom_with_smallest_value(const Problem & problem) -> BranchCallback;
+    namespace variable_order
+    {
+        /**
+         * Used by gcs::variable_order::in_order_of() to implement a variable ordering heuristic
+         * that picks the smallest variable wrt this comparator.
+         *
+         * \ingroup SearchHeuristics
+         */
+        using VariableComparator = std::function<auto(const CurrentState &, const innards::Propagators &,
+            const IntegerVariableID &, const IntegerVariableID &)
+                                                     ->bool>;
+
+        /**
+         * Branch on the smallest non-assigned variable wrt this comparator.
+         *
+         * \ingroup SearchHeuristics
+         * \sa gcs::branch_with()
+         */
+        [[nodiscard]] auto in_order_of(const Problem &, VariableComparator) -> BranchVariableSelector;
+
+        /**
+         * Branch on the smallest non-assigned variable wrt this comparator.
+         *
+         * \ingroup SearchHeuristics
+         * \sa gcs::branch_with()
+         */
+        [[nodiscard]] auto in_order_of(std::vector<IntegerVariableID>, VariableComparator) -> BranchVariableSelector;
+
+        /**
+         * Branch on the non-assigned variable with smallest domain.
+         *
+         * \ingroup SearchHeuristics
+         * \sa gcs::branch_with()
+         */
+        [[nodiscard]] auto dom(const Problem &) -> BranchVariableSelector;
+
+        /**
+         * Branch on the non-assigned variable with smallest domain.
+         *
+         * \ingroup SearchHeuristics
+         * \sa gcs::branch_with()
+         */
+        [[nodiscard]] auto dom(std::vector<IntegerVariableID>) -> BranchVariableSelector;
+
+        /**
+         * Branch on the non-assigned variable with smallest domain, tie-breaking on highest
+         * constraint degree.
+         *
+         * \ingroup SearchHeuristics
+         * \sa gcs::branch_with()
+         */
+        [[nodiscard]] auto dom_then_deg(const Problem &) -> BranchVariableSelector;
+
+        /**
+         * Branch on the non-assigned variable with smallest domain, tie-breaking on highest
+         * constraint degree.
+         *
+         * \ingroup SearchHeuristics
+         * \sa gcs::branch_with()
+         */
+        [[nodiscard]] auto dom_then_deg(std::vector<IntegerVariableID>) -> BranchVariableSelector;
+
+        /**
+         * Branch on non-assigned variables in this order.
+         *
+         * \ingroup SearchHeuristics
+         * \sa gcs::branch_with()
+         */
+        [[nodiscard]] auto in_order(std::vector<IntegerVariableID>) -> BranchVariableSelector;
+
+        /**
+         * Branch on the non-assigned variable with the smallest value in its domain.
+         *
+         * \ingroup SearchHeuristics
+         * \sa gcs::branch_with()
+         */
+        [[nodiscard]] auto with_smallest_value(const Problem &) -> BranchVariableSelector;
+
+        /**
+         * Branch on the non-assigned variable with the smallest value in its domain.
+         *
+         * \ingroup SearchHeuristics
+         * \sa gcs::branch_with()
+         */
+        [[nodiscard]] auto with_smallest_value(std::vector<IntegerVariableID>) -> BranchVariableSelector;
+
+        /**
+         * Branch on the non-assigned variable with the largest value in its domain.
+         *
+         * \ingroup SearchHeuristics
+         * \sa gcs::branch_with()
+         */
+        [[nodiscard]] auto with_largest_value(const Problem &) -> BranchVariableSelector;
+
+        /**
+         * Branch on the non-assigned variable with the largest value in its domain.
+         *
+         * \ingroup SearchHeuristics
+         * \sa gcs::branch_with()
+         */
+        [[nodiscard]] auto with_largest_value(std::vector<IntegerVariableID>) -> BranchVariableSelector;
+
+        /**
+         * Branch on a random non-assigned variable.
+         *
+         * \ingroup SearchHeuristics
+         * \sa gcs::branch_with()
+         */
+        [[nodiscard]] auto random(const Problem &) -> BranchVariableSelector;
+
+        /**
+         * Branch on a random non-assigned variable.
+         *
+         * \ingroup SearchHeuristics
+         * \sa gcs::branch_with()
+         */
+        [[nodiscard]] auto random(std::vector<IntegerVariableID>) -> BranchVariableSelector;
+    }
 
     /**
-     * Try each branching heuristic in turn.
+     * Value ordering heuristics.
      *
      * \ingroup SearchHeuristics
      */
-    auto branch_sequence(const std::vector<BranchCallback> &) -> BranchCallback;
+    namespace value_order
+    {
+        /**
+         * Accept then reject the smallest value in the variable's domain.
+         *
+         * \ingroup SearchHeuristics
+         */
+        [[nodiscard]] auto smallest_in() -> BranchValueGenerator;
 
-    /**
-     * Branch on a randomly selected variable. This is usually not a good idea.
-     *
-     * \ingroup SearchHeuristics
-     */
-    auto branch_randomly(const std::vector<IntegerVariableID> &) -> BranchCallback;
+        /**
+         * Reject then accept the smallest value in the variable's domain.
+         *
+         * \ingroup SearchHeuristics
+         */
+        [[nodiscard]] auto smallest_out() -> BranchValueGenerator;
 
-    /**
-     * Branch on a randomly selected variable. This is usually not a good idea.
-     *
-     * \ingroup SearchHeuristics
-     */
-    auto branch_randomly(const Problem & problem) -> BranchCallback;
+        /**
+         * Iterate from smallest value to largest.
+         *
+         * \ingroup SearchHeuristics
+         */
+        [[nodiscard]] auto smallest_first() -> BranchValueGenerator;
 
-    /**
-     * Guess values from smallest to largest.
-     *
-     * \ingroup SearchHeuristics
-     */
-    auto guess_smallest_value_first() -> GuessCallback;
+        /**
+         * Accept then reject the largest value in the variable's domain.
+         *
+         * \ingroup SearchHeuristics
+         */
+        [[nodiscard]] auto largest_in() -> BranchValueGenerator;
 
-    /**
-     * Guess values from smallest to largest.
-     *
-     * \ingroup SearchHeuristics
-     */
-    auto guess_largest_value_first() -> GuessCallback;
+        /**
+         * Reject then accept the largest value in the variable's domain.
+         *
+         * \ingroup SearchHeuristics
+         */
+        [[nodiscard]] auto largest_out() -> BranchValueGenerator;
 
-    /**
-     * Guess the median.
-     *
-     * \ingroup SearchHeuristics
-     */
-    auto guess_median_value() -> GuessCallback;
+        /**
+         * Iterate from largest value to smallest.
+         *
+         * \ingroup SearchHeuristics
+         */
+        [[nodiscard]] auto largest_first() -> BranchValueGenerator;
 
-    /**
-     * Guess values randomly.
-     *
-     * \ingroup SearchHeuristics
-     */
-    auto guess_randomly() -> GuessCallback;
+        /**
+         * Iterate over values in a random order.
+         *
+         * \ingroup SearchHeuristics
+         */
+        [[nodiscard]] auto random() -> BranchValueGenerator;
+
+        /**
+         * Accept then reject the median value in the domain.
+         *
+         * \ingroup SearchHeuristics
+         */
+        [[nodiscard]] auto median() -> BranchValueGenerator;
+    }
 }
 
 #endif

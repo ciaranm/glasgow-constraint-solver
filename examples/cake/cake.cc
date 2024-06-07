@@ -83,12 +83,12 @@ auto main(int argc, char * argv[]) -> int
                 println("banana cakes = {}, chocolate cakes = {}, profit = {}", s(banana), s(chocolate), s(profit));
                 return true;
             },
-            .branch = branch_on_dom_then_deg(vector<IntegerVariableID>{banana, chocolate}),
-            .guess = guess_largest_value_first() //
-        },
-        options_vars.contains("prove") ? make_optional<ProofOptions>(
-                                             "cake.opb", "cake.pbp", true, options_vars.count("full-proof-encoding"))
-                                       : nullopt);
+            .branch = branch_with(
+                variable_order::dom_then_deg(vector<IntegerVariableID>{banana, chocolate}),
+                value_order::largest_first())},
+        options_vars.contains("prove")
+            ? make_optional<ProofOptions>("cake.opb", "cake.pbp", true, options_vars.count("full-proof-encoding"))
+            : nullopt);
 
     print("{}", stats);
 

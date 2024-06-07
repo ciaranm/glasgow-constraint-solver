@@ -126,10 +126,7 @@ auto main(int argc, char * argv[]) -> int
                 cout << "distance: " << s(obj) << endl;
                 return true;
             },
-            .branch = branch_on_dom(succ),
-            .guess = [&](const CurrentState & state, IntegerVariableID var) -> vector<IntegerVariableCondition> {
-                return vector<IntegerVariableCondition>{var == state.lower_bound(var), var != state.lower_bound(var)};
-            }},
+            .branch = branch_with(variable_order::dom(succ), value_order::smallest_in())},
         options_vars.contains("prove") ? make_optional<ProofOptions>("tsp.opb", "tsp.pbp") : nullopt);
 
     cout << stats;

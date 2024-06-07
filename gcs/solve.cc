@@ -46,8 +46,13 @@ namespace
             if (optional_abort_flag && optional_abort_flag->load())
                 return false;
 
-            auto branch_var = callbacks.branch ? callbacks.branch(state.current(), propagators) : branch_on_dom_then_deg(problem)(state.current(), propagators);
-            if (branch_var == nullopt) {
+            auto create_branch_generator = callbacks.branch
+                ? callbacks.branch
+                : branch_with(variable_order::dom_then_deg(problem), value_order::smallest_first());
+            auto branch_generator = create_branch_generator(state.current(), propagators);
+            auto branch_iter = branch_generator.begin();
+
+            if (branch_iter == branch_generator.end()) {
                 if (logger)
                     logger->solution(state, problem.all_normal_variables(), problem.optional_minimise_variable());
 
@@ -87,16 +92,10 @@ namespace
                     return result;
                 };
 
-                if (callbacks.guess) {
-                    auto guesses = callbacks.guess(state.current(), *branch_var);
-                    for (auto & guess : guesses)
-                        if (! recurse(guess))
-                            return false;
-                }
-                else {
-                    for (auto val : state.each_value_mutable(*branch_var))
-                        if (! recurse(*branch_var == val))
-                            return false;
+                for (; branch_iter != branch_generator.end(); ++branch_iter) {
+                    auto guess = *branch_iter;
+                    if (! recurse(guess))
+                        return false;
                 }
             }
         }

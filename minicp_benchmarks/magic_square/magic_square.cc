@@ -133,10 +133,7 @@ auto main(int argc, char * argv[]) -> int
             .solution = [&](const CurrentState &) -> bool {
                 return ++n_solutions < 10000;
             },
-            .branch = branch_on_dom(grid_flat),
-            .guess = [&](const CurrentState & state, IntegerVariableID var) -> vector<IntegerVariableCondition> {
-                return vector<IntegerVariableCondition>{var == state.lower_bound(var), var != state.lower_bound(var)};
-            }},
+            .branch = branch_with(variable_order::dom(grid_flat), value_order::smallest_in())},
         options_vars.contains("prove") ? make_optional<ProofOptions>("magic_square.opb", "magic_square.pbp") : nullopt);
 
     cout << stats;
