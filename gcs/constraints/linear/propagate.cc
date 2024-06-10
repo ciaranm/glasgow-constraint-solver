@@ -15,6 +15,7 @@
 using std::is_same_v;
 using std::optional;
 using std::pair;
+using std::shared_ptr;
 using std::string;
 using std::stringstream;
 using std::to_string;
@@ -123,16 +124,17 @@ namespace
     }
 
     auto bounds_justification(const State & state, const auto & coeff_vars, const SimpleIntegerVariableID change_var,
-        bool second_constraint_for_equality, const optional<ProofLine> & proof_line) -> JustifyExplicitly
+        bool second_constraint_for_equality, const optional<ProofLine> & proof_line,
+        const shared_ptr<const RUPDependencies> & rup_dependencies) -> JustifyExplicitly
     {
         vector<pair<Integer, Integer>> remembered_bounds;
         for (const auto & cv : coeff_vars.terms) {
             remembered_bounds.emplace_back(state.bounds(get_var(cv)));
         }
 
-        return JustifyExplicitly{[remembered_bounds = move(remembered_bounds), &coeff_vars,
-                                     change_var, proof_line, second_constraint_for_equality](
-                                     const Reason &, ProofLogger & logger) -> void {
+        auto justf = [remembered_bounds = move(remembered_bounds), &coeff_vars,
+                         change_var, proof_line, second_constraint_for_equality](
+                         const Reason &, ProofLogger & logger) -> void {
             vector<pair<Integer, variant<ProofLine, string>>> terms_to_sum;
             if (proof_line)
                 terms_to_sum.emplace_back(1_i, second_constraint_for_equality ? *proof_line + 1 : *proof_line);
@@ -174,25 +176,28 @@ namespace
             if (change_var_coeff != 1_i)
                 step << " " << abs(change_var_coeff) << " d";
             logger.emit_proof_line(step.str(), ProofLevel::Temporary);
-        }};
+        };
+
+        return JustifyExplicitly{justf, rup_dependencies};
     }
 
     auto infer(const State & state, auto & inference,
         const vector<pair<Integer, Integer>> & bounds, const auto & coeff_vars,
         int p, const SimpleIntegerVariableID & var, Integer remainder, const bool coeff, bool second_constraint_for_equality,
-        const optional<ProofLine> & proof_line, const optional<Literal> & add_to_reason) -> void
+        const optional<ProofLine> & proof_line, const optional<Literal> & add_to_reason,
+        const shared_ptr<const RUPDependencies> & rup_dependencies) -> void
     {
         if (coeff) {
             if (bounds[p].second >= (1_i + remainder)) {
                 inference.infer_less_than(var, 1_i + remainder,
-                    bounds_justification(state, coeff_vars, var, second_constraint_for_equality, proof_line),
+                    bounds_justification(state, coeff_vars, var, second_constraint_for_equality, proof_line, rup_dependencies),
                     bounds_reason(state, coeff_vars, var, second_constraint_for_equality, add_to_reason));
             }
         }
         else {
             if (bounds[p].first < -remainder) {
                 inference.infer_greater_than_or_equal(var, -remainder,
-                    bounds_justification(state, coeff_vars, var, second_constraint_for_equality, proof_line),
+                    bounds_justification(state, coeff_vars, var, second_constraint_for_equality, proof_line, rup_dependencies),
                     bounds_reason(state, coeff_vars, var, second_constraint_for_equality, add_to_reason));
             }
         }
@@ -201,13 +206,14 @@ namespace
     auto infer(const State & state, auto & inference,
         const vector<pair<Integer, Integer>> & bounds, const auto & coeff_vars,
         int p, const SimpleIntegerVariableID & var, Integer remainder, const Integer coeff, bool second_constraint_for_equality,
-        const optional<ProofLine> & proof_line, const optional<Literal> & add_to_reason) -> void
+        const optional<ProofLine> & proof_line, const optional<Literal> & add_to_reason,
+        const shared_ptr<const RUPDependencies> & rup_dependencies) -> void
     {
         // lots of conditionals to get the rounding right...
         if (coeff > 0_i && remainder >= 0_i) {
             if (bounds[p].second >= (1_i + remainder / coeff)) {
                 inference.infer_less_than(var, 1_i + remainder / coeff,
-                    bounds_justification(state, coeff_vars, var, second_constraint_for_equality, proof_line),
+                    bounds_justification(state, coeff_vars, var, second_constraint_for_equality, proof_line, rup_dependencies),
                     bounds_reason(state, coeff_vars, var, second_constraint_for_equality, add_to_reason));
             }
         }
@@ -215,14 +221,14 @@ namespace
             auto div_with_rounding = -((-remainder + coeff - 1_i) / coeff);
             if (bounds[p].second >= 1_i + div_with_rounding) {
                 inference.infer_less_than(var, 1_i + div_with_rounding,
-                    bounds_justification(state, coeff_vars, var, second_constraint_for_equality, proof_line),
+                    bounds_justification(state, coeff_vars, var, second_constraint_for_equality, proof_line, rup_dependencies),
                     bounds_reason(state, coeff_vars, var, second_constraint_for_equality, add_to_reason));
             }
         }
         else if (coeff < 0_i && remainder >= 0_i) {
             if (bounds[p].first < remainder / coeff) {
                 inference.infer_greater_than_or_equal(var, remainder / coeff,
-                    bounds_justification(state, coeff_vars, var, second_constraint_for_equality, proof_line),
+                    bounds_justification(state, coeff_vars, var, second_constraint_for_equality, proof_line, rup_dependencies),
                     bounds_reason(state, coeff_vars, var, second_constraint_for_equality, add_to_reason));
             }
         }
@@ -230,7 +236,7 @@ namespace
             auto div_with_rounding = (-remainder + -coeff - 1_i) / -coeff;
             if (bounds[p].first < div_with_rounding) {
                 inference.infer_greater_than_or_equal(var, div_with_rounding,
-                    bounds_justification(state, coeff_vars, var, second_constraint_for_equality, proof_line),
+                    bounds_justification(state, coeff_vars, var, second_constraint_for_equality, proof_line, rup_dependencies),
                     bounds_reason(state, coeff_vars, var, second_constraint_for_equality, add_to_reason));
             }
         }
@@ -240,7 +246,8 @@ namespace
 }
 
 auto gcs::innards::propagate_linear(const auto & coeff_vars, Integer value, const State & state,
-    auto & inference, bool equality, const optional<ProofLine> & proof_line, const optional<Literal> & add_to_reason) -> PropagatorState
+    auto & inference, bool equality, const optional<ProofLine> & proof_line, const optional<Literal> & add_to_reason,
+    const shared_ptr<const RUPDependencies> & rup_dependencies) -> PropagatorState
 {
     vector<pair<Integer, Integer>> bounds;
     bounds.reserve(coeff_vars.terms.size());
@@ -272,7 +279,7 @@ auto gcs::innards::propagate_linear(const auto & coeff_vars, Integer value, cons
         Integer remainder = value - lower_without_me;
 
         infer(state, inference, bounds, coeff_vars, p, get_var(cv), remainder, get_coeff_or_bool(cv),
-            false, proof_line, add_to_reason);
+            false, proof_line, add_to_reason, rup_dependencies);
         bounds[p] = state.bounds(get_var(cv)); // might be tighter than expected if we had holes
 
         if constexpr (is_same_v<decltype(cv), const SimpleIntegerVariableID &>)
@@ -309,7 +316,7 @@ auto gcs::innards::propagate_linear(const auto & coeff_vars, Integer value, cons
             Integer inv_remainder = -value - inv_lower_without_me;
 
             infer(state, inference, bounds, coeff_vars, p, get_var(cv), inv_remainder, negate(get_coeff_or_bool(cv)),
-                true, proof_line, add_to_reason);
+                true, proof_line, add_to_reason, rup_dependencies);
             bounds[p] = state.bounds(get_var(cv)); // might be tighter than expected if we had holes
 
             if constexpr (is_same_v<decltype(cv), const SimpleIntegerVariableID &>)
@@ -326,51 +333,63 @@ auto gcs::innards::propagate_linear(const auto & coeff_vars, Integer value, cons
 
 template auto gcs::innards::propagate_linear(const SumOf<Weighted<SimpleIntegerVariableID>> & coeff_vars,
     Integer value, const State & state, SimpleInferenceTracker &,
-    bool equality, const optional<ProofLine> & proof_line, const optional<Literal> & add_to_reason) -> PropagatorState;
+    bool equality, const optional<ProofLine> & proof_line, const optional<Literal> & add_to_reason,
+    const shared_ptr<const RUPDependencies> &) -> PropagatorState;
 
 template auto gcs::innards::propagate_linear(const SumOf<PositiveOrNegative<SimpleIntegerVariableID>> & coeff_vars,
     Integer value, const State & state, SimpleInferenceTracker &,
-    bool equality, const optional<ProofLine> & proof_line, const optional<Literal> & add_to_reason) -> PropagatorState;
+    bool equality, const optional<ProofLine> & proof_line, const optional<Literal> & add_to_reason,
+    const shared_ptr<const RUPDependencies> &) -> PropagatorState;
 
 template auto gcs::innards::propagate_linear(const SumOf<SimpleIntegerVariableID> & coeff_vars,
     Integer value, const State & state, SimpleInferenceTracker &,
-    bool equality, const optional<ProofLine> & proof_line, const optional<Literal> & add_to_reason) -> PropagatorState;
+    bool equality, const optional<ProofLine> & proof_line, const optional<Literal> & add_to_reason,
+    const shared_ptr<const RUPDependencies> &) -> PropagatorState;
 
 template auto gcs::innards::propagate_linear(const SumOf<Weighted<SimpleIntegerVariableID>> & coeff_vars,
     Integer value, const State & state, LogUsingReasonsInferenceTracker &,
-    bool equality, const optional<ProofLine> & proof_line, const optional<Literal> & add_to_reason) -> PropagatorState;
+    bool equality, const optional<ProofLine> & proof_line, const optional<Literal> & add_to_reason,
+    const shared_ptr<const RUPDependencies> &) -> PropagatorState;
 
 template auto gcs::innards::propagate_linear(const SumOf<PositiveOrNegative<SimpleIntegerVariableID>> & coeff_vars,
     Integer value, const State & state, LogUsingReasonsInferenceTracker &,
-    bool equality, const optional<ProofLine> & proof_line, const optional<Literal> & add_to_reason) -> PropagatorState;
+    bool equality, const optional<ProofLine> & proof_line, const optional<Literal> & add_to_reason,
+    const shared_ptr<const RUPDependencies> &) -> PropagatorState;
 
 template auto gcs::innards::propagate_linear(const SumOf<SimpleIntegerVariableID> & coeff_vars,
     Integer value, const State & state, LogUsingReasonsInferenceTracker &,
-    bool equality, const optional<ProofLine> & proof_line, const optional<Literal> & add_to_reason) -> PropagatorState;
+    bool equality, const optional<ProofLine> & proof_line, const optional<Literal> & add_to_reason,
+    const shared_ptr<const RUPDependencies> &) -> PropagatorState;
 
 template auto gcs::innards::propagate_linear(const SumOf<Weighted<SimpleIntegerVariableID>> & coeff_vars,
     Integer value, const State & state, LogUsingGuessesInferenceTracker &,
-    bool equality, const optional<ProofLine> & proof_line, const optional<Literal> & add_to_reason) -> PropagatorState;
+    bool equality, const optional<ProofLine> & proof_line, const optional<Literal> & add_to_reason,
+    const shared_ptr<const RUPDependencies> &) -> PropagatorState;
 
 template auto gcs::innards::propagate_linear(const SumOf<PositiveOrNegative<SimpleIntegerVariableID>> & coeff_vars,
     Integer value, const State & state, LogUsingGuessesInferenceTracker &,
-    bool equality, const optional<ProofLine> & proof_line, const optional<Literal> & add_to_reason) -> PropagatorState;
+    bool equality, const optional<ProofLine> & proof_line, const optional<Literal> & add_to_reason,
+    const shared_ptr<const RUPDependencies> &) -> PropagatorState;
 
 template auto gcs::innards::propagate_linear(const SumOf<SimpleIntegerVariableID> & coeff_vars,
     Integer value, const State & state, LogUsingGuessesInferenceTracker &,
-    bool equality, const optional<ProofLine> & proof_line, const optional<Literal> & add_to_reason) -> PropagatorState;
+    bool equality, const optional<ProofLine> & proof_line, const optional<Literal> & add_to_reason,
+    const shared_ptr<const RUPDependencies> &) -> PropagatorState;
 
 template auto gcs::innards::propagate_linear(const SumOf<Weighted<SimpleIntegerVariableID>> & coeff_vars,
     Integer value, const State & state, LazyProofGenerationInferenceTracker &,
-    bool equality, const optional<ProofLine> & proof_line, const optional<Literal> & add_to_reason) -> PropagatorState;
+    bool equality, const optional<ProofLine> & proof_line, const optional<Literal> & add_to_reason,
+    const shared_ptr<const RUPDependencies> &) -> PropagatorState;
 
 template auto gcs::innards::propagate_linear(const SumOf<PositiveOrNegative<SimpleIntegerVariableID>> & coeff_vars,
     Integer value, const State & state, LazyProofGenerationInferenceTracker &,
-    bool equality, const optional<ProofLine> & proof_line, const optional<Literal> & add_to_reason) -> PropagatorState;
+    bool equality, const optional<ProofLine> & proof_line, const optional<Literal> & add_to_reason,
+    const shared_ptr<const RUPDependencies> &) -> PropagatorState;
 
 template auto gcs::innards::propagate_linear(const SumOf<SimpleIntegerVariableID> & coeff_vars,
     Integer value, const State & state, LazyProofGenerationInferenceTracker &,
-    bool equality, const optional<ProofLine> & proof_line, const optional<Literal> & add_to_reason) -> PropagatorState;
+    bool equality, const optional<ProofLine> & proof_line, const optional<Literal> & add_to_reason,
+    const shared_ptr<const RUPDependencies> &) -> PropagatorState;
 
 auto gcs::innards::propagate_linear_not_equals(const auto & coeff_vars, Integer value, const State & state,
     auto & inference,

@@ -36,8 +36,10 @@ namespace
         ProofLogger * const logger, SimpleIntegerVariableID selector_var_id,
         const optional<pair<Literal, HowChanged>> & guess) -> void
     {
-        if (logger)
+        if (logger) {
             logger->enter_proof_level(depth + 1);
+            logger->emit_proof_comment("autotable depth " + to_string(depth + 1));
+        }
 
         if (propagators.propagate(state, logger, inference_tracker, guess, nullptr)) {
             auto brancher = branch_with(variable_order::dom_then_deg(vars), value_order::smallest_first())(state.current(), propagators);
@@ -101,7 +103,7 @@ auto AutoTable::run(Problem &, Propagators & propagators, State & initial_state,
     auto selector_var_id = initial_state.what_variable_id_will_be_created_next();
     if (logger) {
         logger->emit_proof_comment("starting autotabulation");
-        SomeKindOfInferenceTracker inference_tracker{in_place_type<LogUsingGuessesInferenceTracker>, initial_state, *logger};
+        SomeKindOfInferenceTracker inference_tracker{in_place_type<LogUsingReasonsInferenceTracker>, initial_state, *logger};
         solve_subproblem(0, tuples, _vars, propagators, initial_state, inference_tracker, logger, selector_var_id, nullopt);
     }
     else {

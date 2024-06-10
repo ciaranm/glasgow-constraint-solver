@@ -15,9 +15,11 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::make_shared;
 using std::nullopt;
 using std::optional;
 using std::pair;
+using std::shared_ptr;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
@@ -107,20 +109,32 @@ namespace
 auto LinearInequalityIff::install(Propagators & propagators, State & state, ProofModel * const optional_model) && -> void
 {
     optional<ProofLine> proof_line;
+    shared_ptr<RUPDependencies> rup_dependencies;
     if (optional_model) {
+        rup_dependencies = make_shared<RUPDependencies>();
+
         WeightedPseudoBooleanSum terms;
         for (auto & [c, v] : _coeff_vars.terms)
             terms += c * v;
+
+        for (auto & [_, v] : _coeff_vars.terms)
+            rup_dependencies->push_back(v);
+
         overloaded{
             [&](const TrueLiteral &) {
                 proof_line = optional_model->add_constraint(terms <= _value, nullopt);
+                add_dependency(*rup_dependencies, proof_line);
             },
             [&](const FalseLiteral &) {
                 proof_line = optional_model->add_constraint(terms >= _value + 1_i, nullopt);
+                add_dependency(*rup_dependencies, proof_line);
             },
             [&](const IntegerVariableCondition & cond) {
                 proof_line = optional_model->add_constraint(terms <= _value, HalfReifyOnConjunctionOf{cond});
-                optional_model->add_constraint(terms >= _value + 1_i, HalfReifyOnConjunctionOf{! cond});
+                auto second_proof_line = optional_model->add_constraint(terms >= _value + 1_i, HalfReifyOnConjunctionOf{! cond});
+                add_dependency(*rup_dependencies, proof_line);
+                add_dependency(*rup_dependencies, second_proof_line);
+                add_dependency(*rup_dependencies, cond.var);
             }}
             .visit(_cond);
     }
@@ -152,9 +166,10 @@ auto LinearInequalityIff::install(Propagators & propagators, State & state, Proo
         // definitely true, it's a less-than-or-equal
         visit(
             [&, modifier = modifier](const auto & lin) {
-                propagators.install([modifier = modifier, lin = lin, value = _value, cond = _cond, proof_line = proof_line](
+                propagators.install([modifier = modifier, lin = lin, value = _value, cond = _cond, proof_line = proof_line,
+                                        rup_dependencies = rup_dependencies](
                                         const State & state, auto & inference) {
-                    return propagate_linear(lin, value + modifier, state, inference, false, proof_line, cond);
+                    return propagate_linear(lin, value + modifier, state, inference, false, proof_line, cond, rup_dependencies);
                 },
                     triggers, "linear inequality");
             },
@@ -169,9 +184,10 @@ auto LinearInequalityIff::install(Propagators & propagators, State & state, Proo
         auto [sanitised_neg_cv, neg_modifier] = tidy_up_linear(neg_coeff_vars);
         visit(
             [&, neg_modifier = neg_modifier](const auto & lin) {
-                propagators.install([neg_modifier = neg_modifier, lin = lin, value = -_value - 1_i, cond = _cond, proof_line = proof_line](
+                propagators.install([neg_modifier = neg_modifier, lin = lin, value = -_value - 1_i, cond = _cond, proof_line = proof_line,
+                                        rup_dependencies = rup_dependencies](
                                         const State & state, auto & inference) {
-                    return propagate_linear(lin, value + neg_modifier, state, inference, false, *proof_line + 1, ! cond);
+                    return propagate_linear(lin, value + neg_modifier, state, inference, false, *proof_line + 1, ! cond, rup_dependencies);
                 },
                     triggers, "linear inequality");
             },
@@ -197,15 +213,15 @@ auto LinearInequalityIff::install(Propagators & propagators, State & state, Proo
         visit([&, modifier = modifier, neg_modifier = neg_modifier](const auto & sanitised_cv, const auto & sanitised_neg_cv) -> void {
             propagators.install([cond = _cond, sanitised_cv = sanitised_cv, sanitised_neg_cv = sanitised_neg_cv,
                                     value = _value, modifier = modifier, neg_modifier = neg_modifier, proof_line = proof_line,
-                                    vars = vars](
+                                    vars = vars, rup_dependencies = rup_dependencies](
                                     const State & state, auto & inference) {
                 switch (state.test_literal(cond)) {
                 case LiteralIs::DefinitelyTrue: {
-                    return propagate_linear(sanitised_cv, value + modifier, state, inference, false, proof_line, cond);
+                    return propagate_linear(sanitised_cv, value + modifier, state, inference, false, proof_line, cond, rup_dependencies);
                 } break;
                 case LiteralIs::DefinitelyFalse: {
                     return propagate_linear(sanitised_neg_cv, -value + neg_modifier - 1_i, state, inference, false,
-                        *proof_line + 1, ! cond);
+                        *proof_line + 1, ! cond, rup_dependencies);
                 } break;
                 case LiteralIs::Undecided: {
                     // still don't know. see whether the condition is forced either way.

@@ -11,9 +11,11 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::make_shared;
 using std::nullopt;
 using std::optional;
 using std::pair;
+using std::shared_ptr;
 using std::unique_ptr;
 
 CompareLessThanReif::CompareLessThanReif(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond, bool full_reif, bool or_equal) :
@@ -33,10 +35,15 @@ auto CompareLessThanReif::clone() const -> unique_ptr<Constraint>
 auto CompareLessThanReif::install(Propagators & propagators, State & initial_state,
     ProofModel * const optional_model) && -> void
 {
+    shared_ptr<RUPDependencies> rup_dependencies;
     if (optional_model) {
+        rup_dependencies = make_shared<RUPDependencies>();
         auto do_less = [&](IntegerVariableID v1, IntegerVariableID v2, optional<HalfReifyOnConjunctionOf> cond, bool or_equal) {
-            optional_model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * v1 + -1_i * v2 <= (or_equal ? 0_i : -1_i), cond);
+            add_dependency(*rup_dependencies, optional_model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * v1 + -1_i * v2 <= (or_equal ? 0_i : -1_i), cond));
         };
+
+        rup_dependencies->push_back(_v1);
+        rup_dependencies->push_back(_v2);
 
         overloaded{
             [&](const TrueLiteral &) {
@@ -49,6 +56,7 @@ auto CompareLessThanReif::install(Propagators & propagators, State & initial_sta
                 do_less(_v1, _v2, HalfReifyOnConjunctionOf{{cond}}, _or_equal);
                 if (_full_reif)
                     do_less(_v2, _v1, HalfReifyOnConjunctionOf{{! cond}}, ! _or_equal);
+                rup_dependencies->push_back(cond.var);
             }}
             .visit(_cond);
     }
@@ -61,15 +69,15 @@ auto CompareLessThanReif::install(Propagators & propagators, State & initial_sta
         switch (cond_is) {
         case LiteralIs::Undecided:
             propagators.install([v1 = _v1, v2 = _v2, v1_is_constant = v1_is_constant, v2_is_constant = v2_is_constant,
-                                    cond = _cond, or_equal = _or_equal, full_reif = _full_reif](
+                                    cond = _cond, or_equal = _or_equal, full_reif = _full_reif, rup_dependencies = rup_dependencies](
                                     const State &, auto & inference) {
                 auto actual = (or_equal ? *v1_is_constant <= *v2_is_constant : *v1_is_constant < *v2_is_constant);
                 if (actual && full_reif) {
-                    inference.infer(cond, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v1 == *v1_is_constant, v2 == *v2_is_constant}}; }});
+                    inference.infer(cond, JustifyUsingRUP{rup_dependencies}, Reason{[=]() { return Literals{{v1 == *v1_is_constant, v2 == *v2_is_constant}}; }});
                     return PropagatorState::DisableUntilBacktrack;
                 }
                 else if (! actual) {
-                    inference.infer(! cond, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v1 == *v1_is_constant, v2 == *v2_is_constant}}; }});
+                    inference.infer(! cond, JustifyUsingRUP{rup_dependencies}, Reason{[=]() { return Literals{{v1 == *v1_is_constant, v2 == *v2_is_constant}}; }});
                     return PropagatorState::DisableUntilBacktrack;
                 }
                 else
@@ -94,15 +102,16 @@ auto CompareLessThanReif::install(Propagators & propagators, State & initial_sta
     }
 
     if (v1_is_constant && (LiteralIs::DefinitelyTrue == cond_is || (_full_reif && LiteralIs::DefinitelyFalse == cond_is))) {
-        propagators.install([v1_is_constant = *v1_is_constant, v1 = _v1, v2 = _v2, or_equal = _or_equal, cond = _cond, cond_is = cond_is](
+        propagators.install([v1_is_constant = *v1_is_constant, v1 = _v1, v2 = _v2, or_equal = _or_equal,
+                                cond = _cond, cond_is = cond_is, rup_dependencies = rup_dependencies](
                                 const State &, auto & inference) -> PropagatorState {
             if (cond_is == LiteralIs::DefinitelyTrue) {
                 inference.infer_greater_than_or_equal(v2, or_equal ? v1_is_constant : v1_is_constant + 1_i,
-                    JustifyUsingRUP{}, Reason{[=]() { return Literals{{cond, v1 >= v1_is_constant}}; }});
+                    JustifyUsingRUP{rup_dependencies}, Reason{[=]() { return Literals{{cond, v1 >= v1_is_constant}}; }});
                 return PropagatorState::DisableUntilBacktrack;
             }
             else {
-                inference.infer_less_than(v2, or_equal ? v1_is_constant : v1_is_constant - 1_i, JustifyUsingRUP{},
+                inference.infer_less_than(v2, or_equal ? v1_is_constant : v1_is_constant - 1_i, JustifyUsingRUP{rup_dependencies},
                     Reason{[=]() { return Literals{{cond, v1 < v1_is_constant + 1_i}}; }});
                 return PropagatorState::DisableUntilBacktrack;
             }
@@ -111,16 +120,17 @@ auto CompareLessThanReif::install(Propagators & propagators, State & initial_sta
     }
 
     if (v2_is_constant && (LiteralIs::DefinitelyTrue == cond_is || (_full_reif && LiteralIs::DefinitelyFalse == cond_is))) {
-        propagators.install([v2_is_constant = *v2_is_constant, v1 = _v1, v2 = _v2, or_equal = _or_equal, cond = _cond, cond_is = cond_is](
+        propagators.install([v2_is_constant = *v2_is_constant, v1 = _v1, v2 = _v2, or_equal = _or_equal,
+                                cond = _cond, cond_is = cond_is, rup_dependencies = rup_dependencies](
                                 const State &, auto & inference) -> PropagatorState {
             if (cond_is == LiteralIs::DefinitelyTrue) {
-                inference.infer_less_than(v1, or_equal ? v2_is_constant + 1_i : v2_is_constant, JustifyUsingRUP{},
+                inference.infer_less_than(v1, or_equal ? v2_is_constant + 1_i : v2_is_constant, JustifyUsingRUP{rup_dependencies},
                     Reason{[=]() { return Literals{{cond, v2 < v2_is_constant + 1_i}}; }});
                 return PropagatorState::DisableUntilBacktrack;
             }
             else {
                 inference.infer_greater_than_or_equal(v1, or_equal ? v2_is_constant + 1_i : v2_is_constant,
-                    JustifyUsingRUP{}, Reason{[=]() { return Literals{{cond, v2 >= v2_is_constant}}; }});
+                    JustifyUsingRUP{rup_dependencies}, Reason{[=]() { return Literals{{cond, v2 >= v2_is_constant}}; }});
                 return PropagatorState::DisableUntilBacktrack;
             }
         },
@@ -137,14 +147,15 @@ auto CompareLessThanReif::install(Propagators & propagators, State & initial_sta
         .visit(_cond);
 
     visit([&](auto & _v1, auto & _v2, auto & _cond) {
-        propagators.install([v1 = _v1, v2 = _v2, cond = _cond, full_reif = _full_reif, or_equal = _or_equal](
+        propagators.install([v1 = _v1, v2 = _v2, cond = _cond, full_reif = _full_reif, or_equal = _or_equal,
+                                rup_dependencies = rup_dependencies](
                                 const State & state, auto & inference) -> PropagatorState {
             auto cond_is = state.test_literal(cond);
             switch (cond_is) {
             case LiteralIs::DefinitelyTrue: {
                 auto v1_bounds = state.bounds(v1), v2_bounds = state.bounds(v2);
-                inference.infer_less_than(v1, v2_bounds.second + (or_equal ? 1_i : 0_i), JustifyUsingRUP{}, Reason{[=]() { return Literals{{cond, v2 < v2_bounds.second + 1_i}}; }});
-                inference.infer_greater_than_or_equal(v2, v1_bounds.first + (or_equal ? 0_i : 1_i), JustifyUsingRUP{}, Reason{[=]() { return Literals{{cond, v1 >= v1_bounds.first}}; }});
+                inference.infer_less_than(v1, v2_bounds.second + (or_equal ? 1_i : 0_i), JustifyUsingRUP{rup_dependencies}, Reason{[=]() { return Literals{{cond, v2 < v2_bounds.second + 1_i}}; }});
+                inference.infer_greater_than_or_equal(v2, v1_bounds.first + (or_equal ? 0_i : 1_i), JustifyUsingRUP{rup_dependencies}, Reason{[=]() { return Literals{{cond, v1 >= v1_bounds.first}}; }});
                 return v1_bounds.second < (v2_bounds.first + (or_equal ? 1_i : 0_i)) ? PropagatorState::DisableUntilBacktrack : PropagatorState::Enable;
             } break;
 
@@ -152,7 +163,7 @@ auto CompareLessThanReif::install(Propagators & propagators, State & initial_sta
                 if (full_reif) {
                     auto v2_lower = state.lower_bound(v2);
                     inference.infer_greater_than_or_equal(v1, v2_lower + (or_equal ? 1_i : 0_i),
-                        JustifyUsingRUP{}, Reason{[=]() { return Literals{{! cond, v2 >= v2_lower}}; }});
+                        JustifyUsingRUP{rup_dependencies}, Reason{[=]() { return Literals{{! cond, v2 >= v2_lower}}; }});
                     return PropagatorState::Enable;
                 }
                 else
@@ -162,14 +173,14 @@ auto CompareLessThanReif::install(Propagators & propagators, State & initial_sta
             case LiteralIs::Undecided:
                 if (full_reif && (or_equal ? state.upper_bound(v1) <= state.lower_bound(v2) : state.upper_bound(v1) < state.lower_bound(v2))) {
                     auto v1_bounds = state.bounds(v1), v2_bounds = state.bounds(v2);
-                    inference.infer(cond, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v1 < v1_bounds.second + 1_i, v2 >= v2_bounds.first}}; }});
+                    inference.infer(cond, JustifyUsingRUP{rup_dependencies}, Reason{[=]() { return Literals{{v1 < v1_bounds.second + 1_i, v2 >= v2_bounds.first}}; }});
                     return PropagatorState::Enable;
                 }
                 else if (or_equal
                         ? state.lower_bound(v1) > state.upper_bound(v2)
                         : state.lower_bound(v1) >= state.upper_bound(v2)) {
                     auto v1_bounds = state.bounds(v1), v2_bounds = state.bounds(v2);
-                    inference.infer(! cond, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v1 >= v1_bounds.first, v2 < v2_bounds.second + 1_i}}; }});
+                    inference.infer(! cond, JustifyUsingRUP{rup_dependencies}, Reason{[=]() { return Literals{{v1 >= v1_bounds.first, v2 < v2_bounds.second + 1_i}}; }});
                     return PropagatorState::Enable;
                 }
                 else

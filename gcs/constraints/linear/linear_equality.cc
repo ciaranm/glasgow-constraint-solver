@@ -29,6 +29,7 @@ using std::move;
 using std::nullopt;
 using std::optional;
 using std::pair;
+using std::shared_ptr;
 using std::stringstream;
 using std::unique_ptr;
 using std::vector;
@@ -156,33 +157,45 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
 {
     optional<ProofLine> proof_line;
     optional<ProofFlag> gtflag, ltflag;
+    shared_ptr<RUPDependencies> rup_dependencies;
     if (optional_model) {
+        rup_dependencies = make_shared<RUPDependencies>();
+
         WeightedPseudoBooleanSum terms;
         for (auto & [c, v] : _coeff_vars.terms)
             terms += c * v;
 
+        for (auto & [_, v] : _coeff_vars.terms)
+            rup_dependencies->push_back(v);
+
         overloaded{
             [&](const TrueLiteral &) {
                 // condition is definitely true, it's just an inequality
-                proof_line = optional_model->add_constraint(terms == _value, nullopt).first.value();
+                auto lines = optional_model->add_constraint(terms == _value, nullopt);
+                add_dependency(*rup_dependencies, lines);
+                proof_line = lines.first.value();
             },
             [&](const FalseLiteral &) {
                 // condition is definitely false, the flag implies either greater or less
                 auto neflag = optional_model->create_proof_flag("linne");
-                optional_model->add_constraint(terms >= _value + 1_i, HalfReifyOnConjunctionOf{{neflag}});
-                optional_model->add_constraint(terms <= _value - 1_i, HalfReifyOnConjunctionOf{{! neflag}});
+                add_dependency(*rup_dependencies, optional_model->add_constraint(terms >= _value + 1_i, HalfReifyOnConjunctionOf{{neflag}}));
+                add_dependency(*rup_dependencies, optional_model->add_constraint(terms <= _value - 1_i, HalfReifyOnConjunctionOf{{! neflag}}));
             },
             [&](const IntegerVariableCondition & cond) {
                 // condition unknown, the condition implies it is neither greater nor less
-                proof_line = optional_model->add_constraint(terms == _value, HalfReifyOnConjunctionOf{{cond}}).first.value();
+                auto lines = optional_model->add_constraint(terms == _value, HalfReifyOnConjunctionOf{{cond}});
+                add_dependency(*rup_dependencies, lines);
+                proof_line = lines.first.value();
 
                 gtflag = optional_model->create_proof_flag("lineqgt");
-                optional_model->add_constraint(terms >= _value + 1_i, HalfReifyOnConjunctionOf{{*gtflag}});
+                add_dependency(*rup_dependencies, optional_model->add_constraint(terms >= _value + 1_i, HalfReifyOnConjunctionOf{{*gtflag}}));
                 ltflag = optional_model->create_proof_flag("lineqlt");
-                optional_model->add_constraint(terms <= _value - 1_i, HalfReifyOnConjunctionOf{{*ltflag}});
+                add_dependency(*rup_dependencies, optional_model->add_constraint(terms <= _value - 1_i, HalfReifyOnConjunctionOf{{*ltflag}}));
 
                 // lt + eq + gt = 1
-                optional_model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * *ltflag + 1_i * *gtflag + 1_i * cond == 1_i);
+                add_dependency(*rup_dependencies, optional_model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * *ltflag + 1_i * *gtflag + 1_i * cond == 1_i));
+
+                add_dependency(*rup_dependencies, cond.var);
             }}
             .visit(_cond);
     }
@@ -217,9 +230,10 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
 
         visit(
             [&, modifier = modifier](const auto & lin) {
-                propagators.install([modifier = modifier, lin = lin, value = _value, proof_line = proof_line, cond = _cond](
+                propagators.install([modifier = modifier, lin = lin, value = _value, proof_line = proof_line, cond = _cond,
+                                        rup_dependencies = rup_dependencies](
                                         const State & state, auto & inference) {
-                    return propagate_linear(lin, value + modifier, state, inference, true, proof_line, cond);
+                    return propagate_linear(lin, value + modifier, state, inference, true, proof_line, cond, rup_dependencies);
                 },
                     triggers, "linear equality");
             },
@@ -300,12 +314,13 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
             .visit(_cond);
 
         visit([&, modifier = modifier](const auto & sanitised_cv) {
-            propagators.install([sanitised_cv = sanitised_cv, value = _value + modifier, cond = _cond, proof_line = proof_line, all_vars = move(all_vars)](
+            propagators.install([sanitised_cv = sanitised_cv, value = _value + modifier, cond = _cond, proof_line = proof_line,
+                                    all_vars = move(all_vars), rup_dependencies = rup_dependencies](
                                     const State & state, auto & inference) -> PropagatorState {
                 switch (state.test_literal(cond)) {
                 case LiteralIs::DefinitelyTrue: {
                     // we now know the condition definitely holds, so it's a linear equality
-                    return propagate_linear(sanitised_cv, value, state, inference, true, proof_line, cond);
+                    return propagate_linear(sanitised_cv, value, state, inference, true, proof_line, cond, rup_dependencies);
                 } break;
 
                 case LiteralIs::DefinitelyFalse: {

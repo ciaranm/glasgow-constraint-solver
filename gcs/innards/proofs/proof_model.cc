@@ -272,15 +272,15 @@ auto ProofModel::set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableI
     for (auto & [coeff, var] : bits)
         _imp->opb << coeff << " " << var << " ";
     _imp->opb << ">= " << lower << " ;\n";
-    ++_imp->number_of_constraints;
+    auto lower_line = ++_imp->number_of_constraints;
 
     // upper bound
     for (auto & [coeff, var] : bits)
         _imp->opb << -coeff << " " << var << " ";
     _imp->opb << ">= " << -upper << " ;\n";
-    ++_imp->number_of_constraints;
+    auto upper_line = ++_imp->number_of_constraints;
 
-    variable_constraints_tracker().track_bounds(id, lower, upper);
+    variable_constraints_tracker().track_bounds(id, lower, lower_line, upper, upper_line);
 
     if (_imp->always_use_full_encoding)
         overloaded{

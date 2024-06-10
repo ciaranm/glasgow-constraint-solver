@@ -23,6 +23,7 @@ using std::nullopt;
 using std::optional;
 using std::ostream;
 using std::pair;
+using std::shared_ptr;
 using std::string;
 using std::stringstream;
 using std::to_string;
@@ -161,7 +162,7 @@ auto ProofLogger::end_proof() -> void
 auto ProofLogger::conclude_unsatisfiable(bool is_optimisation) -> void
 {
     _imp->proof << "* asserting contradiction\n";
-    _imp->proof << "u >= 1 ;\n";
+    _imp->proof << "rup >= 1 ;\n";
     record_proof_line(++_imp->proof_line, ProofLevel::Top);
     _imp->proof << "output NONE\n";
     if (is_optimisation)
@@ -240,8 +241,10 @@ auto ProofLogger::infer(const State & state, bool is_contradicting, const Litera
                     for (auto & r : *reason_literals)
                         terms += 1_i * ! r;
                 terms += 1_i * lit;
-                _imp->proof << "u ";
+                _imp->proof << "rup ";
                 emit_inequality_to(variable_constraints_tracker(), move(terms) >= 1_i, nullopt, _imp->proof);
+                if (j.rup_dependencies)
+                    emit_rup_dependencies_to(_imp->proof, *j.rup_dependencies);
                 _imp->proof << '\n';
                 record_proof_line(++_imp->proof_line, ProofLevel::Current);
             }
@@ -289,13 +292,29 @@ auto ProofLogger::infer(const State & state, bool is_contradicting, const Litera
 #endif
             need_lit();
             auto t = temporary_proof_level();
-            x.add_proof_steps(reason, *this);
-            infer(state, is_contradicting, lit, JustifyUsingRUP{
+            if (x.rup_dependencies) {
+                auto dependencies = make_shared<RUPDependencies>(*x.rup_dependencies);
+                auto extra_lines = _imp->proof_line + 1;
+                x.add_proof_steps(reason, *this);
+                for (; extra_lines <= _imp->proof_line; ++extra_lines)
+                    dependencies->push_back(extra_lines);
+                infer(state, is_contradicting, lit, JustifyUsingRUP{dependencies
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
-                                                    x.where
+                                                        ,
+                                                        x.where
 #endif
-                                                },
-                reason);
+                                                    },
+                    reason);
+            }
+            else {
+                x.add_proof_steps(reason, *this);
+                infer(state, is_contradicting, lit, JustifyUsingRUP{
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+                                                        x.where
+#endif
+                                                    },
+                    reason);
+            }
             forget_proof_level(t);
         },
         [&](const Guess &) {
@@ -334,7 +353,41 @@ auto ProofLogger::emit_proof_comment(const string & s) -> void
     _imp->proof << "* " << s << '\n';
 }
 
-auto ProofLogger::emit_rup_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level
+auto ProofLogger::emit_rup_dependencies_to(ostream & s, const RUPDependencies & dependencies) -> void
+{
+    for (const auto & dep : dependencies) {
+        overloaded{
+            [&](const IntegerVariableID & var) {
+                overloaded{
+                    [&](const SimpleIntegerVariableID & var) {
+                        for (auto l : variable_constraints_tracker().each_proof_line_defining(var))
+                            s << " " << l;
+                    },
+                    [&](const ViewOfIntegerVariableID & var) {
+                        for (auto l : variable_constraints_tracker().each_proof_line_defining(var.actual_variable))
+                            s << " " << l;
+                    },
+                    [&](const ConstantIntegerVariableID &) {
+                    }}
+                    .visit(var);
+            },
+            [&](const ProofOnlySimpleIntegerVariableID & var) {
+                for (auto l : variable_constraints_tracker().each_proof_line_defining(var))
+                    s << " " << l;
+            },
+            [&](const ProofLine & line) {
+                s << " " << line;
+            },
+            [&](const std::pair<ProofLine, ProofLine> & lines) {
+                for (auto l = lines.first; l != lines.second; ++l)
+                    s << " " << l;
+            }}
+            .visit(dep);
+    }
+}
+
+auto ProofLogger::emit_rup_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level,
+    const optional<RUPDependencies> & dependencies
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
     ,
     const std::source_location & where
@@ -347,8 +400,12 @@ auto ProofLogger::emit_rup_proof_line(const SumLessEqual<Weighted<PseudoBooleanT
     _imp->proof << "* emit rup proof line from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
 #endif
 
-    _imp->proof << "u ";
+    _imp->proof << "rup ";
     emit_inequality_to(variable_constraints_tracker(), ineq, nullopt, _imp->proof);
+
+    if (dependencies)
+        emit_rup_dependencies_to(_imp->proof, *dependencies);
+
     _imp->proof << '\n';
     return record_proof_line(++_imp->proof_line, level);
 }
@@ -372,7 +429,7 @@ auto ProofLogger::emit_assert_proof_line(const SumLessEqual<Weighted<PseudoBoole
 }
 
 auto ProofLogger::emit_rup_proof_line_under_reason(const Reason & reason, const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
-    ProofLevel level
+    ProofLevel level, const shared_ptr<const RUPDependencies> & dependencies
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
     ,
     const std::source_location & where
@@ -403,7 +460,7 @@ auto ProofLogger::emit_rup_proof_line_under_reason(const Reason & reason, const 
 #endif
 
     stringstream rup_line;
-    rup_line << "u ";
+    rup_line << "rup ";
 
     if (reason_literals) {
         vector<ProofLiteralOrFlag> reason_proof_literals{};
@@ -414,6 +471,9 @@ auto ProofLogger::emit_rup_proof_line_under_reason(const Reason & reason, const 
     else {
         emit_inequality_to(variable_constraints_tracker(), ineq, nullopt, rup_line);
     }
+
+    if (dependencies)
+        emit_rup_dependencies_to(rup_line, *dependencies);
 
     return emit_proof_line(
         rup_line.str(), level
