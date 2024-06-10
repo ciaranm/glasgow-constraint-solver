@@ -14,6 +14,7 @@ namespace gcs::innards
      * \ingroup Innards
      */
     using HalfReifyOnConjunctionOf = std::vector<ProofLiteralOrFlag>;
+
 }
 
 #endif

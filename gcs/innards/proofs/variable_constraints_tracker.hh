@@ -5,6 +5,7 @@
 #include <gcs/innards/proofs/proof_model-fwd.hh>
 #include <gcs/innards/proofs/proof_only_variables.hh>
 #include <gcs/innards/proofs/pseudo_boolean.hh>
+#include <gcs/innards/proofs/reification.hh>
 #include <gcs/innards/proofs/variable_constraints_tracker-fwd.hh>
 #include <gcs/proof.hh>
 #include <gcs/variable_condition.hh>
@@ -125,6 +126,11 @@ namespace gcs::innards
          */
         auto get_bit(const SimpleOrProofOnlyIntegerVariableID & var, unsigned long position) -> std::pair<Integer, std::string>;
 
+        /**
+         * Get the name and coefficient for the bit position in the representation of the given var.
+         */
+        auto get_bit(const ProofBitVariable & bit) -> std::pair<Integer, std::string>;
+
         auto num_bits(const SimpleOrProofOnlyIntegerVariableID & var) -> unsigned long long;
         /**
          * If there is a negative bit for this variable, return its coefficient, otherwise
@@ -175,6 +181,11 @@ namespace gcs::innards
          * Create a proof flag with a new identifier.
          */
         [[nodiscard]] auto create_proof_flag(const std::string &) -> ProofFlag;
+
+        /**
+         * Reify a PB constraint on a conjunction of ProofFlags or ProofLiterals
+         */
+        [[nodiscard]] auto reify(const WeightedPseudoBooleanLessEqual &, const HalfReifyOnConjunctionOf &) -> WeightedPseudoBooleanLessEqual;
     };
 }
 

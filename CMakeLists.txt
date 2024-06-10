@@ -32,6 +32,13 @@ if (COMPILER_SUPPORTS_NO_STRINGOP_OVERREAD)
     add_compile_options(-Wno-stringop-overread) # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=104336
 endif (COMPILER_SUPPORTS_NO_STRINGOP_OVERREAD)
 
+
+unset(COMPILER_SUPPORTS_UNQUALIFIED_STD_CAST_CALL CACHE)
+CHECK_CXX_COMPILER_FLAG(-Wunqualified-std-cast-call COMPILER_SUPPORTS_UNQUALIFIED_STD_CAST_CALL)
+if (COMPILER_SUPPORTS_UNQUALIFIED_STD_CAST_CALL)
+    add_compile_options(-Wunqualified-std-cast-call)
+endif (COMPILER_SUPPORTS_UNQUALIFIED_STD_CAST_CALL)
+
 add_compile_options(-g)
 add_compile_options(-g3)
 add_compile_options(-gdwarf-3)
@@ -43,7 +50,7 @@ if (NOT GCS_DEBUG_MODE)
     add_compile_options(-O3)
 endif (NOT GCS_DEBUG_MODE)
 
-# add_compile_options(-DGCS_TRACK_ALL_PROPAGATIONS=1)
+#add_compile_options(-DGCS_TRACK_ALL_PROPAGATIONS=1)
 
 enable_testing()
 
@@ -110,9 +117,9 @@ FetchContent_MakeAvailable(fmt)
 if (GCS_ENABLE_MINIZINC)
     set(JSON_BuildTests OFF CACHE INTERNAL "")
     FetchContent_Declare(
-        json
-        GIT_REPOSITORY https://github.com/nlohmann/json.git
-        GIT_TAG 9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03 # v3.11.3
+            json
+            GIT_REPOSITORY https://github.com/nlohmann/json.git
+            GIT_TAG 9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03 # v3.11.3
     )
     FetchContent_MakeAvailable(json)
 endif (GCS_ENABLE_MINIZINC)

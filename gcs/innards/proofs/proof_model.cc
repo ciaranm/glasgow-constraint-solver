@@ -111,7 +111,8 @@ auto ProofModel::add_constraint(const WeightedPseudoBooleanLessEqual & ineq, con
                         [&](const FalseLiteral &) {},
                         [&]<typename T_>(const VariableConditionFrom<T_> & cond) { variable_constraints_tracker().need_proof_name(cond); }}
                         .visit(simplify_literal(lit));
-                }}
+                },
+                [&](ProofBitVariable) {}}
                 .visit(r);
 
     emit_inequality_to(variable_constraints_tracker(), ineq, half_reif, _imp->opb);
@@ -133,7 +134,8 @@ auto ProofModel::add_constraint(const WeightedPseudoBooleanEquality & eq, const 
                         [&](const FalseLiteral &) {},
                         [&]<typename T_>(const VariableConditionFrom<T_> & cond) { variable_constraints_tracker().need_proof_name(cond); }}
                         .visit(simplify_literal(lit));
-                }}
+                },
+                [&](const ProofBitVariable &) {}}
                 .visit(r);
 
     emit_inequality_to(variable_constraints_tracker(), eq.lhs <= eq.rhs, half_reif, _imp->opb);

@@ -15,6 +15,8 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::map;
+using std::max;
+using std::min;
 using std::optional;
 using std::pair;
 using std::string;
@@ -226,7 +228,20 @@ auto VariableConstraintsTracker::get_bit(const gcs::innards::SimpleOrProofOnlyIn
     if (it == _imp->integer_variable_bits.end())
         throw ProofError("missing bits");
 
-    return it->second.second[position];
+    return it->second.second.at(position);
+}
+
+auto VariableConstraintsTracker::get_bit(const ProofBitVariable & bit) -> std::pair<Integer, std::string>
+{
+    auto it = _imp->integer_variable_bits.find(bit.for_var);
+    if (it == _imp->integer_variable_bits.end())
+        throw ProofError("missing bits");
+
+    auto bit_data = it->second.second.at(bit.position);
+
+    if (! bit.positive)
+        bit_data.second = "~" + bit_data.second;
+    return bit_data;
 }
 
 auto VariableConstraintsTracker::num_bits(const gcs::innards::SimpleOrProofOnlyIntegerVariableID & var) -> unsigned long long
@@ -426,4 +441,120 @@ auto VariableConstraintsTracker::create_proof_flag(const string & n) -> ProofFla
     string name = rewrite_variable_name("f" + to_string(result.index) + "_" + n);
     track_flag(result, name);
     return result;
+}
+
+auto VariableConstraintsTracker::reify(const WeightedPseudoBooleanLessEqual & ineq, const HalfReifyOnConjunctionOf & half_reif) -> WeightedPseudoBooleanLessEqual
+{
+
+    auto contains_false_literal = false;
+    for (const auto & l : half_reif) {
+        // ugh..
+        contains_false_literal |= overloaded{
+            [&](const ProofFlag &) { return false; },
+            [&](const ProofLiteral & pl) {
+                return overloaded{
+                    [&](Literal lit) {
+                        return overloaded{
+                            [&](const TrueLiteral &) { return false; },
+                            [&](const FalseLiteral &) { return true; },
+                            [&](const IntegerVariableCondition &) { return false; }}
+                            .visit(lit);
+                    },
+                    [&](const ProofVariableCondition &) { return false; },
+                }
+                    .visit(pl);
+            },
+            [&](const ProofBitVariable &) { return false; }}
+                                      .visit(l);
+    }
+
+    // build up the inequality, adjusting as we go for constant terms,
+    // and converting from <= to >=.
+    Integer rhs = -ineq.rhs;
+    Integer reif_const = 0_i;
+
+    for (auto & [w, v] : ineq.lhs.terms) {
+        if (0_i == w)
+            continue;
+
+        overloaded{
+            [&, w = w](const ProofLiteral & lit) {
+                overloaded{
+                    [&](const TrueLiteral &) {
+                        rhs += w;
+                    },
+                    [&](const FalseLiteral &) {},
+                    [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
+                        reif_const += max(0_i, w);
+                    }}
+                    .visit(simplify_literal(lit));
+            },
+            [&, w = w](const ProofFlag & flag) {
+                reif_const += max(0_i, w);
+            },
+            [&, w = w](const IntegerVariableID & var) {
+                overloaded{
+                    [&](const SimpleIntegerVariableID & var) {
+                        for_each_bit(var, [&](Integer bit_value, const string & bit_name) {
+                            reif_const += max(0_i, w * bit_value);
+                        });
+                    },
+                    [&](const ViewOfIntegerVariableID & view) {
+                        if (! view.negate_first) {
+                            for_each_bit(view.actual_variable,
+                                [&](Integer bit_value, const string & bit_name) {
+                                    reif_const += max(0_i, w * bit_value);
+                                });
+                            rhs += w * view.then_add;
+                            reif_const += max(0_i, -w * view.then_add);
+                        }
+                        else {
+                            for_each_bit(view.actual_variable,
+                                [&](Integer bit_value, const string & bit_name) {
+                                    reif_const += max(0_i, -w * bit_value);
+                                });
+                            rhs += w * view.then_add;
+                            reif_const += max(0_i, -w * view.then_add);
+                        }
+                    },
+                    [&](const ConstantIntegerVariableID & cvar) {
+                        rhs += w * cvar.const_value;
+                    }}
+                    .visit(var);
+            },
+            [&, w = w](const ProofOnlySimpleIntegerVariableID & var) {
+                for_each_bit(var, [&](Integer bit_value, const string &) {
+                    reif_const += max(0_i, w * bit_value);
+                });
+            },
+            [&, w = w](const ProofBitVariable & bit) {
+                reif_const += max(0_i, w);
+            },
+        }
+            .visit(v);
+    }
+
+    reif_const += rhs;
+    reif_const = max(reif_const, 1_i);
+    WeightedPseudoBooleanSum new_lhs = ineq.lhs;
+    for (auto & r : half_reif)
+        overloaded{
+            [&](const ProofFlag & f) {
+                new_lhs += -Integer{reif_const} * ! f;
+            },
+            [&](const ProofLiteral & lit) {
+                new_lhs += -Integer{reif_const} * ! lit;
+            },
+            [&](const ProofBitVariable & bit) {
+                new_lhs += -Integer{reif_const} * ! bit;
+            }}
+            .visit(r);
+
+    if (contains_false_literal) {
+        // This might be a bad idea...
+        return new_lhs >= -rhs + reif_const;
+    }
+    else {
+        return new_lhs <= -rhs;
+    }
 }

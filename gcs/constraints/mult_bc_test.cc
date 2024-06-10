@@ -60,42 +60,42 @@ auto run_mult_test(bool proofs, pair<int, int> v1_range, pair<int, int> v2_range
     check_results(proof_name, expected, actual);
 }
 
-auto main(int, char *[]) -> int
-{
-    vector<tuple<pair<int, int>, pair<int, int>, pair<int, int>>> data = {
-        {{2, 5}, {1, 6}, {1, 12}},
-        {{1, 6}, {2, 5}, {5, 8}},
-        {{1, 3}, {1, 3}, {0, 10}},
-        {{1, 3}, {1, 3}, {1, 3}},
-        {{1, 5}, {6, 8}, {-10, 10}},
-        {{1, 1}, {2, 4}, {-5, 5}}};
-
-    random_device rand_dev;
-    mt19937 rand(rand_dev());
-    for (int x = 0; x < 100; ++x)
-        generate_random_data(rand, data, random_bounds(-10, 10, 5, 15), random_bounds(-10, 10, 5, 15), random_bounds(-10, 10, 5, 15));
-
-    for (auto & [r1, r2, r3] : data) {
-        run_mult_test(false, r1, r2, r3, [](int a, int b, int c) { return a * b == c; });
-    }
-
-    if (can_run_veripb())
-        for (auto & [r1, r2, r3] : data) {
-            run_mult_test(true, r1, r2, r3, [](int a, int b, int c) { return a * b == c; });
-        }
-
-    return EXIT_SUCCESS;
-}
-
 // auto main(int, char *[]) -> int
 //{
-//     Problem p;
-//     auto v1 = p.create_integer_variable(-3_i, 12_i);
-//     auto v2 = p.create_integer_variable(-8_i, 3_i);
-//     auto v3 = p.create_integer_variable(-6_i, 7_i);
-//     p.post(MultBC{v1, v2, v3});
-//     solve(
-//         p, [&](const CurrentState &) -> bool { return true; }, make_optional(ProofOptions{"mult_bc.opb", "mult_bc.pbp"}));
-//     system("veripb --trace --traceFailed --useColor mult_bc.opb mult_bc.pbp");
+//     vector<tuple<pair<int, int>, pair<int, int>, pair<int, int>>> data = {
+//         {{2, 5}, {1, 6}, {1, 12}},
+//         {{1, 6}, {2, 5}, {5, 8}},
+//         {{1, 3}, {1, 3}, {0, 10}},
+//         {{1, 3}, {1, 3}, {1, 3}},
+//         {{1, 5}, {6, 8}, {-10, 10}},
+//         {{1, 1}, {2, 4}, {-5, 5}}};
+//
+//     random_device rand_dev;
+//     mt19937 rand(rand_dev());
+//     for (int x = 0; x < 1000; ++x)
+//         generate_random_data(rand, data, random_bounds(-10, 10, 5, 15), random_bounds(-10, 10, 5, 15), random_bounds(-10, 10, 5, 15));
+//
+//     for (auto & [r1, r2, r3] : data) {
+//         run_mult_test(false, r1, r2, r3, [](int a, int b, int c) { return a * b == c; });
+//     }
+//
+//     if (can_run_veripb())
+//         for (auto & [r1, r2, r3] : data) {
+//             run_mult_test(true, r1, r2, r3, [](int a, int b, int c) { return a * b == c; });
+//         }
+//
 //     return EXIT_SUCCESS;
 // }
+
+auto main(int, char *[]) -> int
+{
+    Problem p;
+    auto v1 = p.create_integer_variable(4_i, 18_i);
+    auto v2 = p.create_integer_variable(-6_i, 9_i);
+    auto v3 = p.create_integer_variable(3_i, 14_i);
+    p.post(MultBC{v1, v2, v3});
+    solve(
+        p, [&](const CurrentState &) -> bool { return true; }, make_optional(ProofOptions{"mult_bc.opb", "mult_bc.pbp"}));
+    system("veripb --trace --traceFailed --useColor mult_bc.opb mult_bc.pbp");
+    return EXIT_SUCCESS;
+}
