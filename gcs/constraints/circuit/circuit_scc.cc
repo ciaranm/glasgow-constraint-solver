@@ -344,8 +344,8 @@ namespace
             long backwards_reif_line;
             if (i != root) {
                 // Redundance subproof:
-                auto subproofs = make_optional(map<string, JustifyExplicitly>{});
-                auto justf = [&](const Reason &) {
+                auto subproofs = make_optional(map<string, Subproof>{});
+                auto subproof = [&](ProofLogger & logger) {
                     logger.emit_proof_line("     p -2 " + logger.variable_constraints_tracker().proof_name(greater_than_flag) + " w", ProofLevel::Top);
                     for (long k = 0; cmp_less(k, succ.size()); k++) {
                         PLine p_line;
@@ -368,7 +368,7 @@ namespace
                     }
                     logger.emit_rup_proof_line(WeightedPseudoBooleanSum{} >= 1_i, ProofLevel::Top);
                 };
-                subproofs.value().emplace(to_string(forwards_reif_line), JustifyExplicitly{justf});
+                subproofs.value().emplace(to_string(forwards_reif_line), subproof);
 
                 backwards_reif_line = logger.emit_red_proof_lines_reverse_reifying(
                     WeightedPseudoBooleanSum{} + 1_i * pos_var_data.at(root).var + -1_i * pos_var_data.at(i).var >= 0_i,

@@ -512,7 +512,7 @@ auto ProofLogger::variable_constraints_tracker() -> VariableConstraintsTracker &
     return _imp->tracker;
 }
 
-auto ProofLogger::emit_subproofs(const map<string, JustifyExplicitly> & subproofs, const Reason & reason)
+auto ProofLogger::emit_subproofs(const map<string, Subproof> & subproofs)
 {
     _imp->proof << " begin\n";
     ++_imp->proof_line;
@@ -520,14 +520,14 @@ auto ProofLogger::emit_subproofs(const map<string, JustifyExplicitly> & subproof
         ++_imp->proof_line;
         _imp->proof
             << "     proofgoal " << proofgoal << "\n";
-        proof.add_proof_steps(reason);
+        proof(*this);
         _imp->proof << "     end -1\n";
     }
     _imp->proof << "end\n";
 }
 
 auto ProofLogger::emit_red_proof_lines_forward_reifying(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLiteralOrFlag reif,
-    ProofLevel level, const optional<map<string, JustifyExplicitly>> & subproofs
+    ProofLevel level, const optional<map<string, Subproof>> & subproofs
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
     ,
     const std::source_location & where
@@ -544,7 +544,7 @@ auto ProofLogger::emit_red_proof_lines_forward_reifying(const SumLessEqual<Weigh
     _imp->proof << " " << witness_literal(variable_constraints_tracker(), reif) << " -> 0";
     _imp->proof << " ;";
     if (subproofs)
-        emit_subproofs(subproofs.value(), Reason{});
+        emit_subproofs(subproofs.value());
     else
         _imp->proof << "\n";
 
@@ -552,7 +552,7 @@ auto ProofLogger::emit_red_proof_lines_forward_reifying(const SumLessEqual<Weigh
 }
 
 auto ProofLogger::emit_red_proof_lines_reverse_reifying(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLiteralOrFlag reif,
-    ProofLevel level, const optional<map<string, JustifyExplicitly>> & subproofs
+    ProofLevel level, const optional<map<string, Subproof>> & subproofs
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
     ,
     const std::source_location & where
@@ -570,7 +570,7 @@ auto ProofLogger::emit_red_proof_lines_reverse_reifying(const SumLessEqual<Weigh
     _imp->proof << " " << witness_literal(variable_constraints_tracker(), reif) << " -> 1";
     _imp->proof << " ;";
     if (subproofs)
-        emit_subproofs(subproofs.value(), Reason{});
+        emit_subproofs(subproofs.value());
     else
         _imp->proof << "\n";
     return record_proof_line(++_imp->proof_line, level);
