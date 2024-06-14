@@ -444,6 +444,7 @@ namespace gcs::innards
         {
             return LiteralIs::DefinitelyTrue;
         }
+
         /**
          * A FalseLiteral is definitely true. Performance overload.
          */
