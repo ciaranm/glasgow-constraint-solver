@@ -1,5 +1,4 @@
 #include <gcs/exception.hh>
-#include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/innards/variable_id_utils.hh>
 #include <gcs/problem.hh>
@@ -167,14 +166,10 @@ struct State::GetMutableStateAndOffsetOf<ViewOfIntegerVariableID>
 
 struct State::Imp
 {
-    ProofLogger * maybe_proof_logger;
-
     list<vector<IntegerVariableState>> integer_variable_states{};
     list<vector<ConstraintState>> constraint_states{};
     vector<ConstraintState> persistent_constraint_states{};
     list<vector<function<auto()->void>>> on_backtracks{};
-    vector<HowChanged> how_changed{};
-    vector<SimpleIntegerVariableID> changed{};
     vector<Literal> guesses{};
     vector<Literal> extra_proof_conditions{};
 
@@ -204,10 +199,8 @@ auto State::clone() const -> State
     result._imp->constraint_states = _imp->constraint_states;
     result._imp->persistent_constraint_states = _imp->persistent_constraint_states;
     result._imp->on_backtracks = _imp->on_backtracks;
-    result._imp->changed = _imp->changed;
     result._imp->optional_minimise_variable = _imp->optional_minimise_variable;
     result._imp->optional_objective_incumbent = _imp->optional_objective_incumbent;
-    result._imp->maybe_proof_logger = _imp->maybe_proof_logger;
     return result;
 }
 
@@ -279,60 +272,60 @@ auto State::state_of(const DirectIntegerVariableID & v, IntegerVariableState & s
 template <DirectIntegerVariableIDLike VarType_>
 auto State::change_state_for_equal(
     const VarType_ & var,
-    Integer value) -> pair<Inference, HowChanged>
+    Integer value) -> HowChanged
 {
     GetMutableStateAndOffsetOf<VarType_> get_state{*this, var};
 
     // Has to be equal. If the value isn't in the domain, we've found a
     // contradiction, otherwise update to a constant value.
     return overloaded{
-        [&](IntegerVariableConstantState & c) -> pair<Inference, HowChanged> {
+        [&](IntegerVariableConstantState & c) -> HowChanged {
             if (c.value == value)
-                return pair{Inference::NoChange, HowChanged::Dummy};
+                return HowChanged::Unchanged;
             else
-                return pair{Inference::Contradiction, HowChanged::Dummy};
+                return HowChanged::Contradiction;
         },
-        [&](IntegerVariableRangeState & rvar) -> pair<Inference, HowChanged> {
+        [&](IntegerVariableRangeState & rvar) -> HowChanged {
             if (value < rvar.lower || value > rvar.upper)
-                return pair{Inference::Contradiction, HowChanged::Dummy};
+                return HowChanged::Contradiction;
             else if (rvar.lower == rvar.upper && rvar.lower == value) {
                 assign_to_state_of(var) = IntegerVariableConstantState{value};
-                return pair{Inference::NoChange, HowChanged::Dummy};
+                return HowChanged::Unchanged;
             }
             else {
                 assign_to_state_of(var) = IntegerVariableConstantState{value};
-                return pair{Inference::Change, HowChanged::Instantiated};
+                return HowChanged::Instantiated;
             }
         },
-        [&](IntegerVariableSmallSetState & svar) -> pair<Inference, HowChanged> {
+        [&](IntegerVariableSmallSetState & svar) -> HowChanged {
             if (value < svar.lower || value > (svar.lower + Integer{Bits::number_of_bits - 1})) {
-                return pair{Inference::Contradiction, HowChanged::Dummy};
+                return HowChanged::Contradiction;
             }
             else if (! svar.bits.test((value - svar.lower).raw_value)) {
-                return pair{Inference::Contradiction, HowChanged::Dummy};
+                return HowChanged::Contradiction;
             }
             else if (svar.bits.popcount() == 1) {
                 assign_to_state_of(var) = IntegerVariableConstantState{value};
-                return pair{Inference::NoChange, HowChanged::Dummy};
+                return HowChanged::Unchanged;
             }
             else {
                 assign_to_state_of(var) = IntegerVariableConstantState{value};
-                return pair{Inference::Change, HowChanged::Instantiated};
+                return HowChanged::Instantiated;
             }
         },
-        [&](IntegerVariableIntervalSetState & svar) -> pair<Inference, HowChanged> {
+        [&](IntegerVariableIntervalSetState & svar) -> HowChanged {
             if (svar.values->contains(value)) {
                 if (svar.values->lower() == svar.values->upper()) {
                     assign_to_state_of(var) = IntegerVariableConstantState{value};
-                    return pair{Inference::NoChange, HowChanged::Dummy};
+                    return HowChanged::Unchanged;
                 }
                 else {
                     assign_to_state_of(var) = IntegerVariableConstantState{value};
-                    return pair{Inference::Change, HowChanged::Instantiated};
+                    return HowChanged::Instantiated;
                 }
             }
             else
-                return pair{Inference::Contradiction, HowChanged::Dummy};
+                return HowChanged::Unchanged;
         }}
         .visit(get_state.state);
 }
@@ -340,45 +333,45 @@ auto State::change_state_for_equal(
 template <DirectIntegerVariableIDLike VarType_>
 auto State::change_state_for_not_equal(
     const VarType_ & var,
-    Integer value) -> pair<Inference, HowChanged>
+    Integer value) -> HowChanged
 {
     GetMutableStateAndOffsetOf<VarType_> get_state{*this, var};
 
     return overloaded{
-        [&](IntegerVariableConstantState & cvar) -> pair<Inference, HowChanged> {
+        [&](IntegerVariableConstantState & cvar) -> HowChanged {
             // Constant equal to the value, potential problem!
             return cvar.value != value
-                ? pair{Inference::NoChange, HowChanged::Dummy}
-                : pair{Inference::Contradiction, HowChanged::Dummy};
+                ? HowChanged::Unchanged
+                : HowChanged::Contradiction;
         },
-        [&](IntegerVariableRangeState & rvar) -> pair<Inference, HowChanged> {
+        [&](IntegerVariableRangeState & rvar) -> HowChanged {
             if (value < rvar.lower || value > rvar.upper) {
                 // not in the domain, no problem
-                return pair{Inference::NoChange, HowChanged::Dummy};
+                return HowChanged::Unchanged;
             }
             else if (rvar.lower == rvar.upper) {
                 // Constant equal to the value, problem!
-                return pair{Inference::Contradiction, HowChanged::Dummy};
+                return HowChanged::Contradiction;
             }
             else if (rvar.lower == value) {
                 // Can just bump the bound
                 ++rvar.lower;
                 if (rvar.lower == rvar.upper) {
                     assign_to_state_of(var) = IntegerVariableConstantState{rvar.lower};
-                    return pair{Inference::Change, HowChanged::Instantiated};
+                    return HowChanged::Instantiated;
                 }
                 else
-                    return pair{Inference::Change, HowChanged::BoundsChanged};
+                    return HowChanged::BoundsChanged;
             }
             else if (rvar.upper == value) {
                 --rvar.upper;
 
                 if (rvar.lower == rvar.upper) {
                     assign_to_state_of(var) = IntegerVariableConstantState{rvar.lower};
-                    return pair{Inference::Change, HowChanged::Instantiated};
+                    return HowChanged::Instantiated;
                 }
                 else
-                    return pair{Inference::Change, HowChanged::BoundsChanged};
+                    return HowChanged::BoundsChanged;
             }
             else {
                 // Holey domain, convert to set. This should handle offsets...
@@ -394,17 +387,17 @@ auto State::change_state_for_not_equal(
                             svar.bits.set(v.raw_value);
                     assign_to_state_of(var) = move(svar);
                 }
-                return pair{Inference::Change, HowChanged::InteriorValuesChanged};
+                return HowChanged::InteriorValuesChanged;
             }
         },
-        [&](IntegerVariableSmallSetState & svar) -> pair<Inference, HowChanged> {
+        [&](IntegerVariableSmallSetState & svar) -> HowChanged {
             if (value < svar.lower || value > (svar.lower + Integer{Bits::number_of_bits - 1})) {
                 // out of bounds, not in domain
-                return pair{Inference::NoChange, HowChanged::Dummy};
+                return HowChanged::Unchanged;
             }
             else if (! svar.bits.test((value - svar.lower).raw_value)) {
                 // not in domain, no problem
-                return pair{Inference::NoChange, HowChanged::Dummy};
+                return HowChanged::Unchanged;
             }
 
             // Knock out the value
@@ -413,31 +406,31 @@ auto State::change_state_for_not_equal(
             svar.bits.reset((value - svar.lower).raw_value);
             if (svar.bits.has_single_bit()) {
                 assign_to_state_of(var) = IntegerVariableConstantState{svar.lower + Integer{svar.bits.countr_zero()}};
-                return pair{Inference::Change, HowChanged::Instantiated};
+                return HowChanged::Instantiated;
             }
             else if (svar.bits.none())
-                return pair{Inference::Contradiction, HowChanged::Dummy};
+                return HowChanged::Contradiction;
             else if (is_bound)
-                return pair{Inference::Change, HowChanged::BoundsChanged};
+                return HowChanged::BoundsChanged;
             else
-                return pair{Inference::Change, HowChanged::InteriorValuesChanged};
+                return HowChanged::InteriorValuesChanged;
         },
-        [&](IntegerVariableIntervalSetState & svar) -> pair<Inference, HowChanged> {
+        [&](IntegerVariableIntervalSetState & svar) -> HowChanged {
             if (! svar.values->contains(value))
-                return pair{Inference::NoChange, HowChanged::Dummy};
+                return HowChanged::Unchanged;
 
             // Knock out the value
             bool is_bound = (value == svar.values->lower() || value == svar.values->upper());
             if (svar.values->lower() == svar.values->upper())
-                return pair{Inference::Contradiction, HowChanged::Dummy};
+                return HowChanged::Contradiction;
             else if (svar.values.unique()) {
                 svar.values->erase(value);
                 if (svar.values->lower() == svar.values->upper()) {
                     assign_to_state_of(var) = IntegerVariableConstantState{svar.values->lower()};
-                    return pair{Inference::Change, HowChanged::Instantiated};
+                    return HowChanged::Instantiated;
                 }
 
-                return pair{Inference::Change, is_bound ? HowChanged::BoundsChanged : HowChanged::InteriorValuesChanged};
+                return is_bound ? HowChanged::BoundsChanged : HowChanged::InteriorValuesChanged;
             }
             else {
                 auto new_values = make_shared<IntervalSet<Integer>>(*svar.values);
@@ -445,9 +438,9 @@ auto State::change_state_for_not_equal(
                 svar.values = new_values;
                 if (svar.values->lower() == svar.values->upper()) {
                     assign_to_state_of(var) = IntegerVariableConstantState{svar.values->lower()};
-                    return pair{Inference::Change, HowChanged::Instantiated};
+                    return HowChanged::Instantiated;
                 }
-                return pair{Inference::Change, is_bound ? HowChanged::BoundsChanged : HowChanged::InteriorValuesChanged};
+                return is_bound ? HowChanged::BoundsChanged : HowChanged::InteriorValuesChanged;
             }
         }}
         .visit(get_state.state);
@@ -456,36 +449,36 @@ auto State::change_state_for_not_equal(
 template <DirectIntegerVariableIDLike VarType_>
 auto State::change_state_for_less_than(
     const VarType_ & var,
-    Integer value) -> pair<Inference, HowChanged>
+    Integer value) -> HowChanged
 {
     GetMutableStateAndOffsetOf<VarType_> get_state{*this, var};
 
     return overloaded{
-        [&](IntegerVariableConstantState & c) -> pair<Inference, HowChanged> {
+        [&](IntegerVariableConstantState & c) -> HowChanged {
             // Ok if the constant is less, otherwise contradiction
-            return pair{c.value < value ? Inference::NoChange : Inference::Contradiction, HowChanged::Dummy};
+            return c.value < value ? HowChanged::Unchanged : HowChanged::Contradiction;
         },
-        [&](IntegerVariableRangeState & rvar) -> pair<Inference, HowChanged> {
+        [&](IntegerVariableRangeState & rvar) -> HowChanged {
             if (rvar.upper >= value) {
                 rvar.upper = value - 1_i;
                 if (rvar.lower == rvar.upper) {
                     assign_to_state_of(var) = IntegerVariableConstantState{rvar.lower};
-                    return pair{Inference::Change, HowChanged::Instantiated};
+                    return HowChanged::Instantiated;
                 }
                 else if (rvar.lower > rvar.upper)
-                    return pair{Inference::Contradiction, HowChanged::Dummy};
+                    return HowChanged::Contradiction;
                 else
-                    return pair{Inference::Change, HowChanged::BoundsChanged};
+                    return HowChanged::BoundsChanged;
             }
             else
-                return pair{Inference::NoChange, HowChanged::Dummy};
+                return HowChanged::Unchanged;
         },
-        [&](IntegerVariableSmallSetState & svar) -> pair<Inference, HowChanged> {
+        [&](IntegerVariableSmallSetState & svar) -> HowChanged {
             auto pc_before = svar.bits.popcount();
 
             int first_bit_to_clear = (value - svar.lower).raw_value;
             if (first_bit_to_clear < 0)
-                return pair{Inference::Contradiction, HowChanged::Dummy};
+                return HowChanged::Contradiction;
 
             int word_to_modify = first_bit_to_clear / Bits::bits_per_word;
             if (word_to_modify < Bits::n_words) {
@@ -496,33 +489,33 @@ auto State::change_state_for_less_than(
                     svar.bits.data[w] = 0;
             }
             else
-                return pair{Inference::NoChange, HowChanged::Dummy};
+                return HowChanged::Unchanged;
 
             auto pc_after = svar.bits.popcount();
             if (pc_after == 0)
-                return pair{Inference::Contradiction, HowChanged::Dummy};
+                return HowChanged::Contradiction;
             if (pc_after == 1) {
                 assign_to_state_of(var) = IntegerVariableConstantState{svar.lower + Integer{svar.bits.countr_zero()}};
-                return pair{Inference::Change, HowChanged::Instantiated};
+                return HowChanged::Instantiated;
             }
-            return pc_before == pc_after ? pair{Inference::NoChange, HowChanged::Dummy} : pair{Inference::Change, HowChanged::BoundsChanged};
+            return pc_before == pc_after ? HowChanged::Unchanged : HowChanged::BoundsChanged;
         },
-        [&](IntegerVariableIntervalSetState & svar) -> pair<Inference, HowChanged> {
+        [&](IntegerVariableIntervalSetState & svar) -> HowChanged {
             if (svar.values->upper() < value)
-                return pair{Inference::NoChange, HowChanged::Dummy};
+                return HowChanged::Unchanged;
 
             if (! svar.values.unique())
                 svar.values = make_shared<IntervalSet<Integer>>(*svar.values);
 
             svar.values->erase_greater_than(value - 1_i);
             if (svar.values->empty())
-                return pair{Inference::Contradiction, HowChanged::Dummy};
+                return HowChanged::Contradiction;
             else if (svar.values->lower() == svar.values->upper()) {
                 assign_to_state_of(var) = IntegerVariableConstantState{svar.values->lower()};
-                return pair{Inference::Change, HowChanged::Instantiated};
+                return HowChanged::Instantiated;
             }
             else
-                return pair{Inference::Change, HowChanged::BoundsChanged};
+                return HowChanged::BoundsChanged;
         }}
         .visit(get_state.state);
 }
@@ -530,33 +523,33 @@ auto State::change_state_for_less_than(
 template <DirectIntegerVariableIDLike VarType_>
 auto State::change_state_for_greater_than_or_equal(
     const VarType_ & var,
-    Integer value) -> pair<Inference, HowChanged>
+    Integer value) -> HowChanged
 {
     GetMutableStateAndOffsetOf<VarType_> get_state{*this, var};
 
     return overloaded{
-        [&](IntegerVariableConstantState & c) -> pair<Inference, HowChanged> {
+        [&](IntegerVariableConstantState & c) -> HowChanged {
             // Ok if the constant is greater or equal, otherwise contradiction
-            return pair{c.value >= value ? Inference::NoChange : Inference::Contradiction, HowChanged::Dummy};
+            return c.value >= value ? HowChanged::Unchanged : HowChanged::Contradiction;
         },
-        [&](IntegerVariableRangeState & rvar) -> pair<Inference, HowChanged> {
+        [&](IntegerVariableRangeState & rvar) -> HowChanged {
             if (rvar.lower < value) {
                 rvar.lower = value;
                 if (rvar.lower == rvar.upper) {
                     assign_to_state_of(var) = IntegerVariableConstantState{rvar.lower};
-                    return pair{Inference::Change, HowChanged::Instantiated};
+                    return HowChanged::Instantiated;
                 }
                 else if (rvar.lower > rvar.upper)
-                    return pair{Inference::Contradiction, HowChanged::Dummy};
+                    return HowChanged::Contradiction;
                 else
-                    return pair{Inference::Change, HowChanged::BoundsChanged};
+                    return HowChanged::BoundsChanged;
             }
-            return pair{Inference::NoChange, HowChanged::Dummy};
+            return HowChanged::Unchanged;
         },
-        [&](IntegerVariableSmallSetState & svar) -> pair<Inference, HowChanged> {
+        [&](IntegerVariableSmallSetState & svar) -> HowChanged {
             int last_bit_to_keep = (value - svar.lower).raw_value;
             if (last_bit_to_keep < 0)
-                return pair{Inference::NoChange, HowChanged::Dummy};
+                return HowChanged::Unchanged;
 
             auto pc_before = svar.bits.popcount();
 
@@ -569,206 +562,122 @@ auto State::change_state_for_greater_than_or_equal(
                     svar.bits.data[w] = 0;
             }
             else
-                return pair{Inference::NoChange, HowChanged::Dummy};
+                return HowChanged::Unchanged;
 
             auto pc_after = svar.bits.popcount();
             if (pc_after == 0)
-                return pair{Inference::Contradiction, HowChanged::Dummy};
+                return HowChanged::Contradiction;
             if (pc_after == 1) {
                 assign_to_state_of(var) = IntegerVariableConstantState{svar.lower + Integer{svar.bits.countr_zero()}};
-                return pair{Inference::Change, HowChanged::Instantiated};
+                return HowChanged::Instantiated;
             }
-            return pc_before == pc_after ? pair{Inference::NoChange, HowChanged::Dummy} : pair{Inference::Change, HowChanged::BoundsChanged};
+            return pc_before == pc_after ? HowChanged::Unchanged : HowChanged::BoundsChanged;
         },
-        [&](IntegerVariableIntervalSetState & svar) -> pair<Inference, HowChanged> {
+        [&](IntegerVariableIntervalSetState & svar) -> HowChanged {
             if (svar.values->lower() >= value)
-                return pair{Inference::NoChange, HowChanged::Dummy};
+                return HowChanged::Unchanged;
 
             if (! svar.values.unique())
                 svar.values = make_shared<IntervalSet<Integer>>(*svar.values);
 
             svar.values->erase_less_than(value);
             if (svar.values->empty())
-                return pair{Inference::Contradiction, HowChanged::Dummy};
+                return HowChanged::Contradiction;
             else if (svar.values->lower() == svar.values->upper()) {
                 assign_to_state_of(var) = IntegerVariableConstantState{svar.values->lower()};
-                return pair{Inference::Change, HowChanged::Instantiated};
+                return HowChanged::Instantiated;
             }
             else
-                return pair{Inference::Change, HowChanged::BoundsChanged};
+                return HowChanged::BoundsChanged;
         }}
         .visit(get_state.state);
 }
 
-auto State::prove_and_remember_change(ProofLogger * const logger, const Inference & inference, const HowChanged & how_changed,
-    const Justification & just, const Reason & reason, const Literal & lit, const DirectIntegerVariableID & actual_var) -> void
-{
-    switch (inference) {
-    case Inference::NoChange:
-        break;
-
-    case Inference::Contradiction:
-        if (logger)
-            logger->infer(*this, true, lit, just, reason);
-        break;
-
-    case Inference::Change: {
-        // we know now that the variable definitely isn't a constant
-        auto simple_var = get<SimpleIntegerVariableID>(actual_var);
-
-        if (_imp->how_changed.size() <= simple_var.index)
-            _imp->how_changed.resize(simple_var.index + 1, HowChanged::Dummy);
-
-        if (_imp->how_changed[simple_var.index] == HowChanged::Dummy)
-            _imp->changed.push_back(simple_var);
-
-        _imp->how_changed[simple_var.index] = max<HowChanged>(_imp->how_changed[simple_var.index], how_changed);
-
-        if (logger)
-            logger->infer(*this, false, lit, just, reason);
-        break;
-    }
-    }
-}
-
-auto State::infer(ProofLogger * const logger, const Literal & lit, const Justification & just, const Reason & reason) -> Inference
+auto State::infer(const Literal & lit) -> HowChanged
 {
     return overloaded{
-        [&](const IntegerVariableCondition & cond) -> Inference {
-            return infer(logger, cond, just, reason);
+        [&](const IntegerVariableCondition & cond) -> HowChanged {
+            return infer(cond);
         },
         [&](const TrueLiteral &) {
-            return Inference::NoChange;
+            return HowChanged::Unchanged;
         },
         [&](const FalseLiteral &) {
-            if (logger)
-                logger->infer(*this, true, FalseLiteral{}, just, reason);
-            return Inference::Contradiction;
+            return HowChanged::Contradiction;
         }}
         .visit(lit);
 }
 
 template <IntegerVariableIDLike VarType_>
-auto State::infer(ProofLogger * const logger, const VariableConditionFrom<VarType_> & cond, const Justification & just,
-    const Reason & reason) -> Inference
+auto State::infer(const VariableConditionFrom<VarType_> & cond) -> HowChanged
 {
     switch (cond.op) {
     case VariableConditionOperator::Equal:
-        return infer_equal(logger, cond.var, cond.value, just, reason);
+        return infer_equal(cond.var, cond.value);
     case VariableConditionOperator::NotEqual:
-        return infer_not_equal(logger, cond.var, cond.value, just, reason);
+        return infer_not_equal(cond.var, cond.value);
     case VariableConditionOperator::Less:
-        return infer_less_than(logger, cond.var, cond.value, just, reason);
+        return infer_less_than(cond.var, cond.value);
     case VariableConditionOperator::GreaterEqual:
-        return infer_greater_than_or_equal(logger, cond.var, cond.value, just, reason);
+        return infer_greater_than_or_equal(cond.var, cond.value);
     }
     throw NonExhaustiveSwitch{};
 }
 
-auto State::infer_false(ProofLogger * const logger, const Justification & just, const Reason & reason) -> void
-{
-    if (logger)
-        logger->infer(*this, true, FalseLiteral{}, just, reason);
-}
-
 template <IntegerVariableIDLike VarType_>
-auto State::infer_not_equal(ProofLogger * const logger, const VarType_ & var, Integer value,
-    const Justification & just, const Reason & reason) -> Inference
+auto State::infer_not_equal(const VarType_ & var, Integer value) -> HowChanged
 {
     auto [actual_var, negate_first, then_add] = deview(var);
-    auto [inference, how_changed] = change_state_for_not_equal(actual_var, (negate_first ? -value + then_add : value - then_add));
-    prove_and_remember_change(logger, inference, how_changed, just, reason, var != value, actual_var);
-    return inference;
+    return change_state_for_not_equal(actual_var, (negate_first ? -value + then_add : value - then_add));
 }
 
 template <IntegerVariableIDLike VarType_>
-auto State::infer_equal(ProofLogger * const logger, const VarType_ & var, Integer value,
-    const Justification & just, const Reason & reason) -> Inference
+auto State::infer_equal(const VarType_ & var, Integer value) -> HowChanged
 {
     auto [actual_var, negate_first, then_add] = deview(var);
-    auto [inference, how_changed] = change_state_for_equal(actual_var, (negate_first ? -value + then_add : value - then_add));
-    prove_and_remember_change(logger, inference, how_changed, just, reason, var == value, actual_var);
-    return inference;
+    return change_state_for_equal(actual_var, (negate_first ? -value + then_add : value - then_add));
 }
 
 template <IntegerVariableIDLike VarType_>
-auto State::infer_less_than(ProofLogger * const logger, const VarType_ & var, Integer value,
-    const Justification & just, const Reason & reason) -> Inference
+auto State::infer_less_than(const VarType_ & var, Integer value) -> HowChanged
 {
     auto [actual_var, negate_first, then_add] = deview(var);
     if (negate_first) {
-        auto [inference, how_changed] = change_state_for_greater_than_or_equal(actual_var, -value + then_add + 1_i);
-        prove_and_remember_change(logger, inference, how_changed, just, reason, var < value, actual_var);
-        return inference;
+        return change_state_for_greater_than_or_equal(actual_var, -value + then_add + 1_i);
     }
     else {
-        auto [inference, how_changed] = change_state_for_less_than(actual_var, value - then_add);
-        prove_and_remember_change(logger, inference, how_changed, just, reason, var < value, actual_var);
-        return inference;
+        return change_state_for_less_than(actual_var, value - then_add);
     }
 }
 
 template <IntegerVariableIDLike VarType_>
-auto State::infer_greater_than_or_equal(ProofLogger * const logger, const VarType_ & var, Integer value,
-    const Justification & just, const Reason & reason) -> Inference
+auto State::infer_greater_than_or_equal(const VarType_ & var, Integer value) -> HowChanged
 {
     auto [actual_var, negate_first, then_add] = deview(var);
     if (negate_first) {
-        auto [inference, how_changed] = change_state_for_less_than(actual_var, -value + then_add + 1_i);
-        prove_and_remember_change(logger, inference, how_changed, just, reason, var >= value, actual_var);
-        return inference;
+        return change_state_for_less_than(actual_var, -value + then_add + 1_i);
     }
     else {
-        auto [inference, how_changed] = change_state_for_greater_than_or_equal(actual_var, value - then_add);
-        prove_and_remember_change(logger, inference, how_changed, just, reason, var >= value, actual_var);
-        return inference;
+        return change_state_for_greater_than_or_equal(actual_var, value - then_add);
     }
 }
 
-auto State::infer_all(ProofLogger * const logger, const vector<Literal> & lits, const Justification & just,
-    const Reason & reason) -> Inference
+auto State::guess(const Literal & lit) -> HowChanged
 {
-    bool first = true;
-
-    // only do explicit justifications once
-    Justification just_not_first{NoJustificationNeeded{}};
-    if (logger)
-        visit([&](const auto & j) -> void {
-            if constexpr (is_same_v<decay_t<decltype(j)>, JustifyExplicitly>)
-                just_not_first = JustifyUsingRUP{};
-            else
-                just_not_first = just;
-        },
-            just);
-
-    Inference result = Inference::NoChange;
-    for (const auto & lit : lits) {
-        switch (first ? infer(logger, lit, just, reason) : infer(logger, lit, just_not_first, reason)) {
-        case Inference::NoChange:
-            break;
-        case Inference::Change:
-            result = Inference::Change;
-            break;
-        case Inference::Contradiction:
-            return Inference::Contradiction;
-        }
-        first = false;
-    }
-
-    return result;
-}
-
-auto State::guess(ProofLogger * const logger, const Literal & lit) -> void
-{
-    switch (infer(logger, lit, Guess{}, Reason{})) {
-    case Inference::NoChange:
-    case Inference::Change:
+    auto result = infer(lit);
+    switch (result) {
+    case HowChanged::Unchanged:
+    case HowChanged::InteriorValuesChanged:
+    case HowChanged::BoundsChanged:
+    case HowChanged::Instantiated:
         _imp->guesses.push_back(lit);
-        return;
+        return result;
 
-    case Inference::Contradiction:
+    case HowChanged::Contradiction:
         throw UnexpectedException{"couldn't infer a branch variable"};
     }
+
+    throw NonExhaustiveSwitch{};
 }
 
 auto State::add_extra_proof_condition(const Literal & lit) -> void
@@ -1056,31 +965,6 @@ auto State::for_each_value_while_immutable(const VarType_ & var, const function<
 }
 
 template <IntegerVariableIDLike VarType_>
-auto State::copy_of_values(const VarType_ & var) const -> IntervalSet<Integer>
-{
-    GetStateAndOffsetOf<VarType_> get_state{*this, var};
-    if ((! get<1>(get_state.var_negate_then_add)) && (0_i == get<2>(get_state.var_negate_then_add)) &&
-        holds_alternative<IntegerVariableIntervalSetState>(get_state.state)) {
-        return *get<IntegerVariableIntervalSetState>(get_state.state).values;
-    }
-    else if ((! get<1>(get_state.var_negate_then_add)) && (0_i == get<2>(get_state.var_negate_then_add)) &&
-        holds_alternative<IntegerVariableRangeState>(get_state.state)) {
-        IntervalSet<Integer> result;
-        result.insert_at_end(
-            get<IntegerVariableRangeState>(get_state.state).lower,
-            get<IntegerVariableRangeState>(get_state.state).upper);
-        return result;
-    }
-    else {
-        IntervalSet<Integer> result;
-        for_each_value_immutable(var, [&](Integer i) {
-            result.insert_at_end(i);
-        });
-        return result;
-    }
-}
-
-template <IntegerVariableIDLike VarType_>
 auto State::each_value_immutable(const VarType_ & var) const -> generator<Integer>
 {
     auto [actual_var, negate_first, then_add] = deview(var);
@@ -1174,6 +1058,30 @@ auto State::each_value_mutable(const VarType_ & var) const -> generator<Integer>
         .visit(var_ref);
 }
 
+template <IntegerVariableIDLike VarType_>
+auto State::copy_of_values(const VarType_ & var) const -> IntervalSet<Integer>
+{
+    GetStateAndOffsetOf<VarType_> get_state{*this, var};
+    if ((! get<1>(get_state.var_negate_then_add)) && (0_i == get<2>(get_state.var_negate_then_add)) &&
+        holds_alternative<IntegerVariableIntervalSetState>(get_state.state)) {
+        return *get<IntegerVariableIntervalSetState>(get_state.state).values;
+    }
+    else if ((! get<1>(get_state.var_negate_then_add)) && (0_i == get<2>(get_state.var_negate_then_add)) &&
+        holds_alternative<IntegerVariableRangeState>(get_state.state)) {
+        IntervalSet<Integer> result;
+        result.insert_at_end(
+            get<IntegerVariableRangeState>(get_state.state).lower,
+            get<IntegerVariableRangeState>(get_state.state).upper);
+        return result;
+    }
+    else {
+        IntervalSet<Integer> result;
+        for (Integer i : each_value_immutable(var))
+            result.insert_at_end(i);
+        return result;
+    }
+}
+
 auto State::operator()(const IntegerVariableID & i) const -> Integer
 {
     if (auto result = optional_single_value(i))
@@ -1185,9 +1093,6 @@ auto State::operator()(const IntegerVariableID & i) const -> Integer
 
 auto State::new_epoch(bool subsearch) -> Timestamp
 {
-    if (! _imp->changed.empty())
-        throw UnimplementedException{};
-
     _imp->integer_variable_states.push_back(_imp->integer_variable_states.back());
     _imp->constraint_states.push_back(_imp->constraint_states.back());
     _imp->on_backtracks.emplace_back();
@@ -1202,7 +1107,6 @@ auto State::backtrack(Timestamp t) -> void
 {
     _imp->integer_variable_states.resize(t.when);
     _imp->constraint_states.resize(t.when);
-    _imp->changed.clear();
     _imp->guesses.erase(_imp->guesses.begin() + t.how_many_guesses, _imp->guesses.end());
     if (t.how_many_extra_proof_conditions)
         _imp->extra_proof_conditions.erase(_imp->extra_proof_conditions.begin() + *t.how_many_extra_proof_conditions,
@@ -1213,14 +1117,6 @@ auto State::backtrack(Timestamp t) -> void
             f();
         _imp->on_backtracks.pop_back();
     }
-}
-
-auto State::extract_changed_variables(const function<auto(SimpleIntegerVariableID, HowChanged)->void> & f) -> void
-{
-    for (auto & c : _imp->changed)
-        f(c, _imp->how_changed[c.index]);
-    _imp->changed.clear();
-    fill(_imp->how_changed.begin(), _imp->how_changed.end(), HowChanged::Dummy);
 }
 
 auto State::for_each_guess(const function<auto(Literal)->void> & f) const -> void
@@ -1374,28 +1270,28 @@ namespace gcs
     template auto State::copy_of_values(const ViewOfIntegerVariableID &) const -> IntervalSet<Integer>;
     template auto State::copy_of_values(const ConstantIntegerVariableID &) const -> IntervalSet<Integer>;
 
-    template auto State::infer(ProofLogger * const, const VariableConditionFrom<IntegerVariableID> &, const Justification &, const Reason &) -> Inference;
-    template auto State::infer(ProofLogger * const, const VariableConditionFrom<SimpleIntegerVariableID> &, const Justification &, const Reason &) -> Inference;
-    template auto State::infer(ProofLogger * const, const VariableConditionFrom<ViewOfIntegerVariableID> &, const Justification &, const Reason &) -> Inference;
-    template auto State::infer(ProofLogger * const, const VariableConditionFrom<ConstantIntegerVariableID> &, const Justification &, const Reason &) -> Inference;
+    template auto State::infer(const VariableConditionFrom<IntegerVariableID> &) -> HowChanged;
+    template auto State::infer(const VariableConditionFrom<SimpleIntegerVariableID> &) -> HowChanged;
+    template auto State::infer(const VariableConditionFrom<ViewOfIntegerVariableID> &) -> HowChanged;
+    template auto State::infer(const VariableConditionFrom<ConstantIntegerVariableID> &) -> HowChanged;
 
-    template auto State::infer_equal(ProofLogger * const, const IntegerVariableID &, Integer, const Justification &, const Reason &) -> Inference;
-    template auto State::infer_equal(ProofLogger * const, const SimpleIntegerVariableID &, Integer, const Justification &, const Reason &) -> Inference;
-    template auto State::infer_equal(ProofLogger * const, const ViewOfIntegerVariableID &, Integer, const Justification &, const Reason &) -> Inference;
-    template auto State::infer_equal(ProofLogger * const, const ConstantIntegerVariableID &, Integer, const Justification &, const Reason &) -> Inference;
+    template auto State::infer_equal(const IntegerVariableID &, Integer) -> HowChanged;
+    template auto State::infer_equal(const SimpleIntegerVariableID &, Integer) -> HowChanged;
+    template auto State::infer_equal(const ViewOfIntegerVariableID &, Integer) -> HowChanged;
+    template auto State::infer_equal(const ConstantIntegerVariableID &, Integer) -> HowChanged;
 
-    template auto State::infer_not_equal(ProofLogger * const, const IntegerVariableID &, Integer, const Justification &, const Reason &) -> Inference;
-    template auto State::infer_not_equal(ProofLogger * const, const SimpleIntegerVariableID &, Integer, const Justification &, const Reason &) -> Inference;
-    template auto State::infer_not_equal(ProofLogger * const, const ViewOfIntegerVariableID &, Integer, const Justification &, const Reason &) -> Inference;
-    template auto State::infer_not_equal(ProofLogger * const, const ConstantIntegerVariableID &, Integer, const Justification &, const Reason &) -> Inference;
+    template auto State::infer_not_equal(const IntegerVariableID &, Integer) -> HowChanged;
+    template auto State::infer_not_equal(const SimpleIntegerVariableID &, Integer) -> HowChanged;
+    template auto State::infer_not_equal(const ViewOfIntegerVariableID &, Integer) -> HowChanged;
+    template auto State::infer_not_equal(const ConstantIntegerVariableID &, Integer) -> HowChanged;
 
-    template auto State::infer_less_than(ProofLogger * const, const IntegerVariableID &, Integer, const Justification &, const Reason &) -> Inference;
-    template auto State::infer_less_than(ProofLogger * const, const SimpleIntegerVariableID &, Integer, const Justification &, const Reason &) -> Inference;
-    template auto State::infer_less_than(ProofLogger * const, const ViewOfIntegerVariableID &, Integer, const Justification &, const Reason &) -> Inference;
-    template auto State::infer_less_than(ProofLogger * const, const ConstantIntegerVariableID &, Integer, const Justification &, const Reason &) -> Inference;
+    template auto State::infer_less_than(const IntegerVariableID &, Integer) -> HowChanged;
+    template auto State::infer_less_than(const SimpleIntegerVariableID &, Integer) -> HowChanged;
+    template auto State::infer_less_than(const ViewOfIntegerVariableID &, Integer) -> HowChanged;
+    template auto State::infer_less_than(const ConstantIntegerVariableID &, Integer) -> HowChanged;
 
-    template auto State::infer_greater_than_or_equal(ProofLogger * const, const IntegerVariableID &, Integer, const Justification &, const Reason &) -> Inference;
-    template auto State::infer_greater_than_or_equal(ProofLogger * const, const SimpleIntegerVariableID &, Integer, const Justification &, const Reason &) -> Inference;
-    template auto State::infer_greater_than_or_equal(ProofLogger * const, const ViewOfIntegerVariableID &, Integer, const Justification &, const Reason &) -> Inference;
-    template auto State::infer_greater_than_or_equal(ProofLogger * const, const ConstantIntegerVariableID &, Integer, const Justification &, const Reason &) -> Inference;
+    template auto State::infer_greater_than_or_equal(const IntegerVariableID &, Integer) -> HowChanged;
+    template auto State::infer_greater_than_or_equal(const SimpleIntegerVariableID &, Integer) -> HowChanged;
+    template auto State::infer_greater_than_or_equal(const ViewOfIntegerVariableID &, Integer) -> HowChanged;
+    template auto State::infer_greater_than_or_equal(const ConstantIntegerVariableID &, Integer) -> HowChanged;
 }

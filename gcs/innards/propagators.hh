@@ -3,7 +3,7 @@
 
 #include <gcs/expression.hh>
 #include <gcs/extensional.hh>
-#include <gcs/innards/inference_tracker-fwd.hh>
+#include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/literal.hh>
 #include <gcs/innards/propagators-fwd.hh>
 #include <gcs/innards/state.hh>
@@ -11,14 +11,99 @@
 
 #include <atomic>
 #include <functional>
+#include <memory>
 #include <utility>
 #include <vector>
 
 namespace gcs::innards
 {
-    using PropagationFunction = std::function<auto(const State &, InferenceTracker &, ProofLogger * const)->PropagatorState>;
+    template <typename ReturnType_, typename... Args_>
+    struct ConstraintFunctionHolderBase
+    {
+        virtual ~ConstraintFunctionHolderBase() = default;
 
-    using InitialisationFunction = std::function<auto(State &, InferenceTracker &, ProofLogger * const)->void>;
+        virtual auto operator()(Args_..., SimpleInferenceTracker &) -> ReturnType_ = 0;
+        virtual auto operator()(Args_..., LogUsingReasonsInferenceTracker &) -> ReturnType_ = 0;
+        virtual auto operator()(Args_..., LogUsingGuessesInferenceTracker &) -> ReturnType_ = 0;
+        virtual auto operator()(Args_..., LazyProofGenerationInferenceTracker &) -> ReturnType_ = 0;
+    };
+
+    template <typename Func_, typename ReturnType_, typename... Args_>
+    struct ConstraintFunctionHolder : ConstraintFunctionHolderBase<ReturnType_, Args_...>
+    {
+        Func_ func;
+
+        explicit ConstraintFunctionHolder(Func_ && f) :
+            func(std::move(f))
+        {
+        }
+
+        auto operator()(Args_... args, SimpleInferenceTracker & inference) -> ReturnType_ override
+        {
+            return func(args..., inference);
+        }
+
+        auto operator()(Args_... args, LogUsingReasonsInferenceTracker & inference) -> ReturnType_ override
+        {
+            return func(args..., inference);
+        }
+
+        auto operator()(Args_... args, LogUsingGuessesInferenceTracker & inference) -> ReturnType_ override
+        {
+            return func(args..., inference);
+        }
+
+        auto operator()(Args_... args, LazyProofGenerationInferenceTracker & inference) -> ReturnType_ override
+        {
+            return func(args..., inference);
+        }
+    };
+
+    template <typename ReturnType_, typename... Args_>
+    struct ConstraintFunction
+    {
+        std::unique_ptr<ConstraintFunctionHolderBase<ReturnType_, Args_...>> func;
+
+        auto operator()(Args_... args, SimpleInferenceTracker & inference) -> ReturnType_
+        {
+            return (*func)(args..., inference);
+        }
+
+        auto operator()(Args_... args, LogUsingReasonsInferenceTracker & inference) -> ReturnType_
+        {
+            return (*func)(args..., inference);
+        }
+
+        auto operator()(Args_... args, LogUsingGuessesInferenceTracker & inference) -> ReturnType_
+        {
+            return (*func)(args..., inference);
+        }
+
+        auto operator()(Args_... args, LazyProofGenerationInferenceTracker & inference) -> ReturnType_
+        {
+            return (*func)(args..., inference);
+        }
+
+        template <typename Func_>
+        explicit(false) ConstraintFunction(Func_ && f) :
+            func(new ConstraintFunctionHolder<Func_, ReturnType_, Args_...>{std::move(f)})
+        {
+        }
+
+        ~ConstraintFunction() = default;
+
+        ConstraintFunction(const ConstraintFunction &) = delete;
+        auto operator=(ConstraintFunction &) -> ConstraintFunction & = delete;
+
+        ConstraintFunction(ConstraintFunction &&) = default;
+        auto operator=(ConstraintFunction &&) -> ConstraintFunction & = default;
+    };
+
+    using PropagationFunction = ConstraintFunction<PropagatorState, const State &>;
+
+    using EagerPropagationFunction = ConstraintFunction<PropagatorState, const State &, ProofLogger * const>;
+
+    using InitialisationFunction = ConstraintFunction<void, State &, ProofLogger * const>;
 
     /**
      * \brief Tell Propagators when a Constraint's propagators should be triggered.
@@ -111,6 +196,12 @@ namespace gcs::innards
         auto install(PropagationFunction &&, const Triggers & trigger_vars, const std::string & name) -> void;
 
         /**
+         * Install the specified propagation function which cannot be used for lazy
+         * proof generation. Ideally nothing will use this.
+         */
+        auto install_eager_only(EagerPropagationFunction &&, const Triggers & trigger_vars, const std::string & name) -> void;
+
+        /**
          * Install an initialiser, which will be called once just before search
          * starts.
          */
@@ -151,12 +242,16 @@ namespace gcs::innards
         /**
          * Propagate every constraint, until either a fixed point or a contradiction is reached.
          */
-        [[nodiscard]] auto propagate(State &, ProofLogger * const, std::atomic<bool> * optional_abort_flag = nullptr) const -> bool;
+        [[nodiscard]] auto propagate(State &,
+            ProofLogger * const,
+            SomeKindOfInferenceTracker &,
+            const std::optional<std::pair<Literal, HowChanged>> & start_from_guess_rather_than_all_propagators,
+            std::atomic<bool> * optional_abort_flag = nullptr) const -> bool;
 
         /**
          * Call every initialiser, or until a contradiction is reached.
          */
-        [[nodiscard]] auto initialise(State &, ProofLogger * const) const -> bool;
+        [[nodiscard]] auto initialise(State &, ProofLogger * const, SomeKindOfInferenceTracker &) const -> bool;
 
         /**
          * Reset to do a root propagation.

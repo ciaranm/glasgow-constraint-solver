@@ -2,7 +2,6 @@
 #define GLASGOW_CONSTRAINT_SOLVER_CIRCUIT_BASE_HH
 
 #include <gcs/constraint.hh>
-#include <gcs/innards/inference_tracker-fwd.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_only_variables.hh>
 #include <gcs/innards/state.hh>
@@ -63,7 +62,7 @@ namespace gcs::innards::circuit
         const std::optional<Integer> & prevent_value = std::nullopt) -> void;
 
     auto prevent_small_cycles(const std::vector<IntegerVariableID> & succ, const PosVarDataMap & pos_var_data,
-        const ConstraintStateHandle & unassigned_handle, const State & state, InferenceTracker &, ProofLogger * const logger) -> void;
+        const ConstraintStateHandle & unassigned_handle, const State & state, auto &, ProofLogger * const logger) -> void;
 
     /**
      * \brief Circuit constraint: requires the variables, representing graph nodes, take values

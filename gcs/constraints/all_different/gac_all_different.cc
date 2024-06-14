@@ -174,7 +174,6 @@ namespace
         const vector<Integer> & vals,
         const map<Integer, ProofLine> & constraint_numbers,
         const State & state,
-        ProofLogger & logger,
         const vector<pair<Left, Right>> & edges,
         const vector<uint8_t> & left_covered,
         const vector<optional<Right>> & matching) -> pair<JustifyExplicitly, Reason>
@@ -229,8 +228,8 @@ namespace
                 hall_variable_ids.push_back(vars[v.offset]);
 
         return pair{JustifyExplicitly{
-                        [&vars, &vals, &logger, &constraint_numbers, hall_variables = move(hall_variables), hall_values = move(hall_values)](
-                            const Reason &) -> void {
+                        [&vars, &vals, &constraint_numbers, hall_variables = move(hall_variables), hall_values = move(hall_values)](
+                            const Reason &, ProofLogger & logger) -> void {
                             // we are going to need the at least one value variables
                             vector<ProofLine> at_least_one_constraints;
                             for (Left v{0}; v.offset != vars.size(); ++v.offset)
@@ -277,7 +276,6 @@ namespace
         const vector<Integer> & vals,
         const map<Integer, ProofLine> & constraint_numbers,
         const State & state,
-        ProofLogger & logger,
         const vector<vector<Right>> & edges_out_from_variable,
         const vector<vector<Left>> & edges_out_from_value,
         const Right delete_value,
@@ -344,7 +342,8 @@ namespace
         else {
             // a hall set is at work
             return pair{JustifyExplicitly{
-                            [&vars, &vals, &logger, &constraint_numbers, hall_left = move(hall_left), hall_right = move(hall_right)](const Reason &) {
+                            [&vars, &vals, &constraint_numbers, hall_left = move(hall_left), hall_right = move(hall_right)](
+                                const Reason &, ProofLogger & logger) {
                                 // we are going to need the at least one value variables
                                 vector<ProofLine> at_least_one_constraints;
                                 for (Left v{0}; v.offset != vars.size(); ++v.offset)
@@ -383,8 +382,7 @@ auto gcs::innards::propagate_gac_all_different(
     const vector<Integer> & vals,
     const map<Integer, ProofLine> & constraint_numbers,
     const State & state,
-    InferenceTracker & tracker,
-    ProofLogger * const logger) -> void
+    auto & inference) -> void
 {
     // find a matching to check feasibility
     vector<pair<Left, Right>> edges;
@@ -403,8 +401,8 @@ auto gcs::innards::propagate_gac_all_different(
     if (cmp_not_equal(count(left_covered.begin(), left_covered.end(), 1), vars.size())) {
         // nope. we've got a maximum cardinality matching that leaves at least
         // one thing on the left uncovered.
-        auto [just, reason] = prove_matching_is_too_small(vars, vals, constraint_numbers, state, *logger, edges, left_covered, matching);
-        return tracker.infer(logger, FalseLiteral{}, just, reason);
+        auto [just, reason] = prove_matching_is_too_small(vars, vals, constraint_numbers, state, edges, left_covered, matching);
+        return inference.infer(FalseLiteral{}, just, reason);
     }
 
     // we have a matching that uses every variable. however, some edges may
@@ -561,9 +559,9 @@ auto gcs::innards::propagate_gac_all_different(
         if (! representatives_for_scc[scc])
             continue;
 
-        auto [just, reason] = prove_deletion_using_sccs(vars, vals, constraint_numbers, state, *logger,
+        auto [just, reason] = prove_deletion_using_sccs(vars, vals, constraint_numbers, state,
             edges_out_from_variable, edges_out_from_value, *representatives_for_scc[scc], components);
-        tracker.infer_all(logger, deletions_by_scc[scc], just, reason);
+        inference.infer_all(deletions_by_scc[scc], just, reason);
     }
 }
 
@@ -606,9 +604,8 @@ auto GACAllDifferent::install(Propagators & propagators, State & initial_state, 
     propagators.install(
         [vars = move(sanitised_vars),
             vals = move(compressed_vals),
-            save_constraint_numbers = move(constraint_numbers)](const State & state, InferenceTracker & inference,
-            ProofLogger * const logger) -> PropagatorState {
-            propagate_gac_all_different(vars, vals, save_constraint_numbers, state, inference, logger);
+            save_constraint_numbers = move(constraint_numbers)](const State & state, auto & inference) -> PropagatorState {
+            propagate_gac_all_different(vars, vals, save_constraint_numbers, state, inference);
             return PropagatorState::Enable;
         },
         triggers, "alldiff");
@@ -618,3 +615,31 @@ auto GACAllDifferent::describe_for_proof() -> std::string
 {
     return "all different";
 }
+
+template auto gcs::innards::propagate_gac_all_different(
+    const vector<IntegerVariableID> & vars,
+    const vector<Integer> & vals,
+    const map<Integer, ProofLine> & constraint_numbers,
+    const State & state,
+    SimpleInferenceTracker & inference) -> void;
+
+template auto gcs::innards::propagate_gac_all_different(
+    const vector<IntegerVariableID> & vars,
+    const vector<Integer> & vals,
+    const map<Integer, ProofLine> & constraint_numbers,
+    const State & state,
+    LogUsingReasonsInferenceTracker & inference) -> void;
+
+template auto gcs::innards::propagate_gac_all_different(
+    const vector<IntegerVariableID> & vars,
+    const vector<Integer> & vals,
+    const map<Integer, ProofLine> & constraint_numbers,
+    const State & state,
+    LogUsingGuessesInferenceTracker & inference) -> void;
+
+template auto gcs::innards::propagate_gac_all_different(
+    const vector<IntegerVariableID> & vars,
+    const vector<Integer> & vals,
+    const map<Integer, ProofLine> & constraint_numbers,
+    const State & state,
+    LazyProofGenerationInferenceTracker & inference) -> void;

@@ -11,9 +11,11 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::make_shared;
 using std::max;
 using std::optional;
 using std::pair;
+using std::shared_ptr;
 using std::unique_ptr;
 using std::vector;
 
@@ -48,39 +50,43 @@ auto Abs::install(Propagators & propagators, State & initial_state,
     if (optional_model)
         selector = optional_model->create_proof_flag("abs");
 
+    shared_ptr<RUPDependencies> rup_dependencies;
+    if (optional_model) {
+        rup_dependencies = make_shared<RUPDependencies>();
+        add_dependency(*rup_dependencies, optional_model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * _v2 + -1_i * _v1 == 0_i, HalfReifyOnConjunctionOf{*selector}));
+        add_dependency(*rup_dependencies, optional_model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * _v1 + 1_i * _v2 == 0_i, HalfReifyOnConjunctionOf{! *selector}));
+        add_dependency(*rup_dependencies, optional_model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * _v1 <= -1_i, HalfReifyOnConjunctionOf{! *selector}));
+        add_dependency(*rup_dependencies, optional_model->add_constraint(WeightedPseudoBooleanSum{} + -1_i * _v1 <= 0_i, HalfReifyOnConjunctionOf{*selector}));
+        rup_dependencies->push_back(_v1);
+        rup_dependencies->push_back(_v2);
+    }
+
     // _v2 = abs(_v1)
     Triggers triggers{.on_change = {_v1, _v2}};
-    propagators.install([v1 = _v1, v2 = _v2, selector = selector](
-                            const State & state, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
+    propagators.install([v1 = _v1, v2 = _v2, selector = selector, rup_dependencies = rup_dependencies](
+                            const State & state, auto & inference) -> PropagatorState {
         // we're not dealing with bounds. remove from v1 any value whose absolute value
         // isn't in v2's domain.
         for (const auto & val : state.each_value_mutable(v1))
             if (! state.in_domain(v2, abs(val)))
-                inference.infer_not_equal(logger, v1, val, JustifyUsingRUP{}, Reason{[=]() { return Literals{v2 != abs(val)}; }});
+                inference.infer_not_equal(v1, val, JustifyUsingRUP{rup_dependencies}, Reason{[=]() { return Literals{v2 != abs(val)}; }});
 
         // now remove from v2 any value whose +/-value isn't in v1's domain.
         for (const auto & val : state.each_value_mutable(v2)) {
             if (! state.in_domain(v1, val) && ! state.in_domain(v1, -val) && state.in_domain(v2, val)) {
-                auto just = [&](const Reason & reason) {
-                    logger->emit_rup_proof_line_under_reason(state, reason,
-                        WeightedPseudoBooleanSum{} + 1_i * (*selector) + 1_i * (v2 != val) >= 1_i, ProofLevel::Temporary);
-                    logger->emit_rup_proof_line_under_reason(state, reason,
-                        WeightedPseudoBooleanSum{} + 1_i * (! *selector) + 1_i * (v2 != val) >= 1_i, ProofLevel::Temporary);
+                auto just = [selector, v1, v2, val, rup_dependencies](const Reason & reason, ProofLogger & logger) {
+                    logger.emit_rup_proof_line_under_reason(reason,
+                        WeightedPseudoBooleanSum{} + 1_i * (*selector) + 1_i * (v2 != val) >= 1_i, ProofLevel::Temporary, rup_dependencies);
+                    logger.emit_rup_proof_line_under_reason(reason,
+                        WeightedPseudoBooleanSum{} + 1_i * (! *selector) + 1_i * (v2 != val) >= 1_i, ProofLevel::Temporary, rup_dependencies);
                 };
-                inference.infer_not_equal(logger, v2, val, JustifyExplicitly{just}, Reason{[=]() { return Literals{{v1 != val, v1 != -val}}; }});
+                inference.infer_not_equal(v2, val, JustifyExplicitly{just, rup_dependencies}, Reason{[=]() { return Literals{{v1 != val, v1 != -val}}; }});
             }
         }
 
         return PropagatorState::Enable;
     },
         triggers, "abs");
-
-    if (optional_model) {
-        optional_model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * _v2 + -1_i * _v1 == 0_i, HalfReifyOnConjunctionOf{*selector});
-        optional_model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * _v1 + 1_i * _v2 == 0_i, HalfReifyOnConjunctionOf{! *selector});
-        optional_model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * _v1 <= -1_i, HalfReifyOnConjunctionOf{! *selector});
-        optional_model->add_constraint(WeightedPseudoBooleanSum{} + -1_i * _v1 <= 0_i, HalfReifyOnConjunctionOf{*selector});
-    }
 }
 
 auto Abs::describe_for_proof() -> std::string

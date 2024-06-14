@@ -6,28 +6,17 @@ namespace gcs::innards
     class State;
 
     /**
-     * Has a propagator made any changes?
-     *
-     * \ingroup Innards
-     */
-    enum class Inference
-    {
-        NoChange,
-        Change,
-        Contradiction
-    };
-
-    /**
      * How has a variable's state changed? Must be kept in order of importance.
      *
      * \ingroup Innards
      */
     enum class HowChanged
     {
-        Dummy = -1,
+        Unchanged = -1,
         InteriorValuesChanged = 0,
         BoundsChanged = 1,
-        Instantiated = 2
+        Instantiated = 2,
+        Contradiction = 3
     };
 }
 

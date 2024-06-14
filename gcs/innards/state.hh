@@ -3,10 +3,8 @@
 
 #include <gcs/current_state.hh>
 #include <gcs/innards/integer_variable_state.hh>
-#include <gcs/innards/justification.hh>
 #include <gcs/innards/literal.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
-#include <gcs/innards/reason.hh>
 #include <gcs/innards/state-fwd.hh>
 #include <gcs/innards/variable_id_utils.hh>
 
@@ -96,27 +94,27 @@ namespace gcs::innards
         [[nodiscard]] auto change_state_for_literal(
             const VarType_ & var,
             VariableConditionOperator op,
-            Integer value) -> std::pair<Inference, HowChanged>;
+            Integer value) -> HowChanged;
 
         template <DirectIntegerVariableIDLike VarType_>
         [[nodiscard]] auto change_state_for_equal(
             const VarType_ & var,
-            Integer value) -> std::pair<Inference, HowChanged>;
+            Integer value) -> HowChanged;
 
         template <DirectIntegerVariableIDLike VarType_>
         [[nodiscard]] auto change_state_for_not_equal(
             const VarType_ & var,
-            Integer value) -> std::pair<Inference, HowChanged>;
+            Integer value) -> HowChanged;
 
         template <DirectIntegerVariableIDLike VarType_>
         [[nodiscard]] auto change_state_for_less_than(
             const VarType_ & var,
-            Integer value) -> std::pair<Inference, HowChanged>;
+            Integer value) -> HowChanged;
 
         template <DirectIntegerVariableIDLike VarType_>
         [[nodiscard]] auto change_state_for_greater_than_or_equal(
             const VarType_ & var,
-            Integer value) -> std::pair<Inference, HowChanged>;
+            Integer value) -> HowChanged;
 
         [[nodiscard]] inline auto assign_to_state_of(const DirectIntegerVariableID) -> innards::IntegerVariableState &;
 
@@ -127,10 +125,6 @@ namespace gcs::innards
         [[nodiscard]] inline auto state_of(const DirectIntegerVariableID &, innards::IntegerVariableState & space) const -> const innards::IntegerVariableState &;
         [[nodiscard]] inline auto state_of(const ConstantIntegerVariableID &, innards::IntegerVariableState & space) const -> const innards::IntegerVariableState &;
         [[nodiscard]] inline auto state_of(const SimpleIntegerVariableID &) const -> const innards::IntegerVariableState &;
-
-        auto prove_and_remember_change(ProofLogger * const, const Inference & inference, const HowChanged & how_changed,
-            const Justification & just, const Reason &,
-            const Literal & lit, const DirectIntegerVariableID & actual_var) -> void;
 
     public:
         /**
@@ -185,47 +179,37 @@ namespace gcs::innards
         ///@{
 
         /**
-         * Infer that a Literal must hold, for the specified Justification.
+         * Infer that a Literal must hold.
          */
-        [[nodiscard]] auto infer(ProofLogger * const, const Literal & lit, const Justification & why, const Reason & reason) -> Inference;
+        [[nodiscard]] auto infer(const Literal & lit) -> HowChanged;
 
         /**
-         * Infer that a Literal must hold, for the specified Justification. Performance overload for if we
+         * Infer that a Literal must hold. Performance overload for if we
          * know we have an IntegerVariableCondition.
          */
         template <IntegerVariableIDLike VarType_>
-        [[nodiscard]] auto infer(ProofLogger * const, const VariableConditionFrom<VarType_> & lit, const Justification & why,
-            const Reason & reason) -> Inference;
-
-        /**
-         * Infer a contradiction, but still emit a justification if necessary.
-         */
-        auto infer_false(ProofLogger * const, const Justification & why,
-            const Reason & reason) -> void;
+        [[nodiscard]] auto infer(const VariableConditionFrom<VarType_> & lit) -> HowChanged;
 
         /**
          * Infer that a given IntegerVariableID or more specific type must be
          * equal to a particular value. Performance overload of State::infer().
          */
         template <IntegerVariableIDLike VarType_>
-        [[nodiscard]] auto infer_equal(ProofLogger * const, const VarType_ &, Integer value, const Justification & why,
-            const Reason & reason) -> Inference;
+        [[nodiscard]] auto infer_equal(const VarType_ &, Integer value) -> HowChanged;
 
         /**
          * Infer that a given IntegerVariableID or more specific type must not
          * equal to a particular value. Performance overload of State::infer().
          */
         template <IntegerVariableIDLike VarType_>
-        [[nodiscard]] auto infer_not_equal(ProofLogger * const, const VarType_ &, Integer value,
-            const Justification & why, const Reason & reason) -> Inference;
+        [[nodiscard]] auto infer_not_equal(const VarType_ &, Integer value) -> HowChanged;
 
         /**
          * Infer that a given IntegerVariableID or more specific type must be less
          * than a particular value. Performance overload of State::infer().
          */
         template <IntegerVariableIDLike VarType_>
-        [[nodiscard]] auto infer_less_than(ProofLogger * const, const VarType_ &, Integer value,
-            const Justification & why, const Reason & reason) -> Inference;
+        [[nodiscard]] auto infer_less_than(const VarType_ &, Integer value) -> HowChanged;
 
         /**
          * Infer that a given IntegerVariableID or more specific type must be
@@ -233,16 +217,7 @@ namespace gcs::innards
          * State::infer().
          */
         template <IntegerVariableIDLike VarType_>
-        [[nodiscard]] auto infer_greater_than_or_equal(ProofLogger * const, const VarType_ &, Integer value,
-            const Justification & why, const Reason & reason) -> Inference;
-
-        /**
-         * Infer each Literal in turn. If the justification is a
-         * JustifyExplicitly, only output its justification once, for the first
-         * Literal.
-         */
-        [[nodiscard]] auto infer_all(ProofLogger * const, const std::vector<Literal> & lit, const Justification & why,
-            const Reason & reason) -> Inference;
+        [[nodiscard]] auto infer_greater_than_or_equal(const VarType_ &, Integer value) -> HowChanged;
 
         ///@}
 
@@ -257,7 +232,7 @@ namespace gcs::innards
          *
          * \sa State::new_epoch()
          */
-        auto guess(ProofLogger * const, const Literal & lit) -> void;
+        auto guess(const Literal & lit) -> HowChanged;
 
         /**
          * Add an additional proof condition, similar to guess except that it
@@ -275,9 +250,8 @@ namespace gcs::innards
         auto for_each_guess(const std::function<auto(Literal)->void> &) const -> void;
 
         /**
-         * Create a new epoch, that can be backtracked to. Only legal if we are in a fully
-         * propagated state, i.e. if extract_changed_variables() would do nothing. If
-         * subsearch is true, also clears anything from add_extra_proof_condition() when
+         * Create a new epoch, that can be backtracked to. If subsearch is
+         * true, also clears anything from add_extra_proof_condition() when
          * backtracking.
          *
          * \sa State::guess()
@@ -487,20 +461,6 @@ namespace gcs::innards
          * \sa State::has_single_value()
          */
         [[nodiscard]] auto operator()(const IntegerVariableID &) const -> Integer;
-
-        ///@}
-
-        /**
-         * \name Propagation and helpers.
-         */
-        ///@{
-
-        /**
-         * Call the associated function once for each variable that has changed
-         * since this function was last called, telling us what has happened to
-         * it. Used for propagation.
-         */
-        auto extract_changed_variables(const std::function<auto(SimpleIntegerVariableID, HowChanged)->void> &) -> void;
 
         ///@}
 

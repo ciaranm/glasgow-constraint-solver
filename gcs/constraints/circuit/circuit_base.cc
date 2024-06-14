@@ -92,7 +92,7 @@ auto gcs::innards::circuit::prevent_small_cycles(
     const PosVarDataMap & pos_var_data,
     const ConstraintStateHandle & unassigned_handle,
     const State & state,
-    InferenceTracker & inference,
+    auto & inference,
     ProofLogger * const logger) -> void
 {
     auto & unassigned = any_cast<list<IntegerVariableID> &>(state.get_constraint_state(unassigned_handle));
@@ -114,7 +114,7 @@ auto gcs::innards::circuit::prevent_small_cycles(
                     if (j == j0) {
                         if (logger)
                             output_cycle_to_proof(succ, j0, length, pos_var_data, state, *logger);
-                        inference.infer_false(logger, JustifyUsingRUP{}, generic_reason(state, succ));
+                        inference.infer_false(JustifyUsingRUP{}, generic_reason(state, succ));
                     }
                 } while (state.has_single_value(succ[j]));
                 end[j0] = j;
@@ -130,13 +130,13 @@ auto gcs::innards::circuit::prevent_small_cycles(
         auto length = chain_lengths.back();
         chain_lengths.pop_back();
         if (cmp_less(length, succ.size() - 1)) {
-            auto justf = [&](const Reason &) {
-                output_cycle_to_proof(succ, i, length, pos_var_data, state, *logger, Integer{end[i]}, Integer{i});
+            auto justf = [&](const Reason &, ProofLogger & logger) {
+                output_cycle_to_proof(succ, i, length, pos_var_data, state, logger, Integer{end[i]}, Integer{i});
             };
-            inference.infer(logger, succ[end[i]] != Integer{i}, JustifyExplicitly{justf}, generic_reason(state, succ));
+            inference.infer(succ[end[i]] != Integer{i}, JustifyExplicitly{justf}, generic_reason(state, succ));
         }
         else {
-            inference.infer(logger, succ[end[i]] == Integer{i}, JustifyUsingRUP{}, generic_reason(state, succ));
+            inference.infer(succ[end[i]] == Integer{i}, JustifyUsingRUP{}, generic_reason(state, succ));
         }
     }
 }
@@ -213,9 +213,9 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state, Proof
 
     // Infer succ[i] != i at top of search, but no other propagation defined here: use CircuitPrevent or CircuitSCC
     if (_succ.size() > 1) {
-        propagators.install([succ = _succ](const State & state, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
+        propagators.install([succ = _succ](const State & state, auto & inference) -> PropagatorState {
             for (auto [idx, s] : enumerate(succ)) {
-                inference.infer_not_equal(logger, s, Integer(static_cast<long long>(idx)), JustifyUsingRUP{}, generic_reason(state, succ));
+                inference.infer_not_equal(s, Integer(static_cast<long long>(idx)), JustifyUsingRUP{}, generic_reason(state, succ));
             }
             return PropagatorState::DisableUntilBacktrack;
         },
@@ -229,3 +229,35 @@ auto CircuitBase::describe_for_proof() -> std::string
 {
     return "circuit (all different + no sub-cycles)";
 }
+
+template auto gcs::innards::circuit::prevent_small_cycles(
+    const vector<IntegerVariableID> & succ,
+    const PosVarDataMap & pos_var_data,
+    const ConstraintStateHandle & unassigned_handle,
+    const State & state,
+    SimpleInferenceTracker & inference,
+    ProofLogger * const logger) -> void;
+
+template auto gcs::innards::circuit::prevent_small_cycles(
+    const vector<IntegerVariableID> & succ,
+    const PosVarDataMap & pos_var_data,
+    const ConstraintStateHandle & unassigned_handle,
+    const State & state,
+    LogUsingGuessesInferenceTracker & inference,
+    ProofLogger * const logger) -> void;
+
+template auto gcs::innards::circuit::prevent_small_cycles(
+    const vector<IntegerVariableID> & succ,
+    const PosVarDataMap & pos_var_data,
+    const ConstraintStateHandle & unassigned_handle,
+    const State & state,
+    LogUsingReasonsInferenceTracker & inference,
+    ProofLogger * const logger) -> void;
+
+template auto gcs::innards::circuit::prevent_small_cycles(
+    const vector<IntegerVariableID> & succ,
+    const PosVarDataMap & pos_var_data,
+    const ConstraintStateHandle & unassigned_handle,
+    const State & state,
+    LazyProofGenerationInferenceTracker & inference,
+    ProofLogger * const logger) -> void;

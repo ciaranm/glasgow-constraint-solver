@@ -42,14 +42,14 @@ auto NValue::install(Propagators & propagators, State & initial_state, ProofMode
     all_vars.push_back(_n_values);
 
     propagators.install([all_vars = move(all_vars), n_values = _n_values, vars = _vars](
-                            const State & state, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
+                            const State & state, auto & inference) -> PropagatorState {
         set<Integer> all_possible_values;
         for (const auto & var : vars) {
             for (auto v : state.each_value_immutable(var))
                 all_possible_values.insert(v);
         }
 
-        inference.infer(logger, n_values < Integer(all_possible_values.size()) + 1_i, JustifyUsingRUP{},
+        inference.infer(n_values < Integer(all_possible_values.size()) + 1_i, JustifyUsingRUP{},
             generic_reason(state, all_vars));
 
         set<Integer> all_definite_values;
@@ -59,7 +59,7 @@ auto NValue::install(Propagators & propagators, State & initial_state, ProofMode
                 all_definite_values.insert(*val);
         }
 
-        inference.infer(logger, n_values >= max(1_i, Integer(all_definite_values.size())), JustifyUsingRUP{}, generic_reason(state, all_vars));
+        inference.infer(n_values >= max(1_i, Integer(all_definite_values.size())), JustifyUsingRUP{}, generic_reason(state, all_vars));
 
         return PropagatorState::Enable;
     },

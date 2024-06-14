@@ -3,6 +3,7 @@
 
 #include <gcs/innards/literal.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
+#include <gcs/innards/proofs/proof_only_variables-fwd.hh>
 #include <gcs/innards/reason.hh>
 
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
@@ -10,11 +11,25 @@
 #endif
 
 #include <functional>
+#include <memory>
+#include <optional>
+#include <utility>
 #include <variant>
 #include <vector>
 
 namespace gcs::innards
 {
+    using RUPDependency = std::variant<
+        ProofLine,
+        IntegerVariableID,
+        ProofOnlySimpleIntegerVariableID>;
+
+    using RUPDependencies = std::vector<RUPDependency>;
+
+    auto add_dependency(RUPDependencies &, const std::optional<RUPDependency> &) -> void;
+
+    auto add_dependency(RUPDependencies &, const std::pair<std::optional<ProofLine>, std::optional<ProofLine>> &) -> void;
+
     /**
      * \brief Write an explicit justification to the proof. Any ProofLevel::Temporary
      * constraints will be wiped after the conclusion is derived. The reason used for
@@ -23,7 +38,7 @@ namespace gcs::innards
      * \ingroup Innards
      * \sa JustifyExplicitly
      */
-    using ExplicitJustificationFunction = std::function<auto(const Reason & reason)->void>;
+    using ExplicitJustificationFunction = std::function<auto(const Reason & reason, ProofLogger &)->void>;
 
     /**
      * \brief Justification for something that is actually a guess, not an
@@ -46,9 +61,26 @@ namespace gcs::innards
     struct JustifyExplicitly
     {
         ExplicitJustificationFunction add_proof_steps;
+        std::shared_ptr<const RUPDependencies> rup_dependencies;
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
         std::source_location where;
 #endif
+
+        explicit JustifyExplicitly(const ExplicitJustificationFunction & a,
+            const std::shared_ptr<const RUPDependencies> & d
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+            ,
+            const std::source_location & w = std::source_location::current()
+#endif
+                ) :
+            add_proof_steps(a),
+            rup_dependencies(d)
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+            ,
+            where(w)
+#endif
+        {
+        }
 
         explicit JustifyExplicitly(const ExplicitJustificationFunction & a
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
@@ -74,20 +106,37 @@ namespace gcs::innards
      */
     struct JustifyUsingRUP
     {
+        std::shared_ptr<const RUPDependencies> rup_dependencies;
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
         std::source_location where;
 #endif
 
+        explicit JustifyUsingRUP(
+            const std::shared_ptr<const RUPDependencies> & d
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
-        explicit JustifyUsingRUP(const std::source_location & w = std::source_location::current()) :
-            where(w)
-        {
-        }
-#else
-        explicit JustifyUsingRUP()
-        {
-        }
+            ,
+            const std::source_location & w = std::source_location::current()
 #endif
+                ) :
+            rup_dependencies(d)
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+            ,
+            where(w)
+#endif
+        {
+        }
+
+        explicit JustifyUsingRUP(
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+            const std::source_location & w = std::source_location::current()
+#endif
+                )
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+            :
+            where(w)
+#endif
+        {
+        }
     };
 
     /**

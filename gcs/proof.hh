@@ -10,6 +10,13 @@
 
 namespace gcs
 {
+    enum class ProofLoggingStyle
+    {
+        Guesses,
+        Reasons,
+        Lazy
+    };
+
     /**
      * \brief Options for a Problem telling it how to produce a proof.
      *
@@ -19,13 +26,14 @@ namespace gcs
     struct ProofOptions final
     {
         explicit ProofOptions(std::string, std::string);
-        explicit ProofOptions(std::string, std::string, bool, bool);
+        explicit ProofOptions(std::string, std::string, bool, bool, ProofLoggingStyle);
         ProofOptions(const ProofOptions &) = default;
 
-        std::string opb_file;                  ///< Filename for the OPB model
-        std::string proof_file;                ///< Filename for the proof file
-        bool use_friendly_names = true;        ///< Use verbose names, rather than just x1, x2, etc.
-        bool always_use_full_encoding = false; ///< Always write the full variable encoding to the OPB file
+        std::string opb_file;                                       ///< Filename for the OPB model
+        std::string proof_file;                                     ///< Filename for the proof file
+        bool use_friendly_names = true;                             ///< Use verbose names, rather than just x1, x2, etc.
+        bool always_use_full_encoding = false;                      ///< Always write the full variable encoding to the OPB file
+        ProofLoggingStyle proof_style = ProofLoggingStyle::Reasons; ///< Write proofs using reasons rather than guesses
     };
 
     class Proof

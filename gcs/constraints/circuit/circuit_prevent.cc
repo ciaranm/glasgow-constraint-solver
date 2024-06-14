@@ -35,7 +35,7 @@ using std::vector;
 namespace
 {
     auto check_small_cycles(const vector<IntegerVariableID> & succ, const PosVarDataMap & pos_var_data, const State & state,
-        InferenceTracker & inference, ProofLogger * const logger) -> void
+        auto & inference, ProofLogger * const logger) -> void
     {
         auto n = succ.size();
         auto checked = vector<bool>(n, false);
@@ -56,7 +56,7 @@ namespace
                             if (cmp_less(cycle_length, n)) {
                                 if (logger)
                                     output_cycle_to_proof(succ, j0, cycle_length, pos_var_data, state, *logger);
-                                inference.infer_false(logger, JustifyUsingRUP{}, generic_reason(state, succ));
+                                inference.infer_false(JustifyUsingRUP{}, generic_reason(state, succ));
                             }
 
                             else
@@ -73,10 +73,10 @@ namespace
         const PosVarDataMap & pos_var_data,
         const ConstraintStateHandle & unassigned_handle,
         const State & state,
-        InferenceTracker & inference,
+        auto & inference,
         ProofLogger * const logger) -> void
     {
-        propagate_non_gac_alldifferent(unassigned_handle, state, inference, logger);
+        propagate_non_gac_alldifferent(unassigned_handle, state, inference);
         check_small_cycles(succ, pos_var_data, state, inference, logger);
         prevent_small_cycles(succ, pos_var_data, unassigned_handle, state, inference, logger);
     }
@@ -101,9 +101,9 @@ auto CircuitPrevent::install(innards::Propagators & propagators, innards::State 
 
     Triggers triggers;
     triggers.on_instantiated = {_succ.begin(), _succ.end()};
-    propagators.install(
+    propagators.install_eager_only(
         [succ = _succ, pvd = pos_var_data,
-            unassigned_handle = unassigned_handle](const State & state, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
+            unassigned_handle = unassigned_handle](const State & state, ProofLogger * const logger, auto & inference) -> PropagatorState {
             propagate_circuit_using_prevent(succ, pvd, unassigned_handle, state, inference, logger);
             return PropagatorState::Enable;
         },

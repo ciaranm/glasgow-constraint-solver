@@ -2,7 +2,6 @@
 #define GLASGOW_CONSTRAINT_SOLVER_VC_ALL_DIFFERENT_HH
 
 #include <gcs/constraint.hh>
-#include <gcs/innards/inference_tracker-fwd.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/variable_id.hh>
 #include <vector>
@@ -13,7 +12,7 @@ namespace gcs
     {
         auto propagate_non_gac_alldifferent(
             const ConstraintStateHandle & unassigned_handle, const State & state,
-            InferenceTracker & inference, ProofLogger * const logger) -> void;
+            auto & inference) -> void;
 
         auto define_clique_not_equals_encoding(ProofModel & model,
             const std::vector<IntegerVariableID> & vars) -> void;

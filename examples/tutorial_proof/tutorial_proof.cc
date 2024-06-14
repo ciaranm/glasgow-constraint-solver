@@ -82,9 +82,10 @@ auto main(int argc, char * argv[]) -> int
                 return true;
             },
         },
-        options_vars.contains("prove") ? make_optional<ProofOptions>(
-                                             "tutorial_proof.opb", "tutorial_proof.pbp", true, options_vars.count("full-proof-encoding"))
-                                       : nullopt);
+        options_vars.contains("prove")
+            ? make_optional<ProofOptions>("tutorial_proof.opb", "tutorial_proof.pbp", true, options_vars.count("full-proof-encoding"),
+                  ProofLoggingStyle::Reasons)
+            : nullopt);
 
     print("{}", stats);
 

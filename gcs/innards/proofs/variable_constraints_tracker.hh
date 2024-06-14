@@ -15,6 +15,12 @@
 #include <string>
 #include <variant>
 
+#if __has_cpp_attribute(__cpp_lib_generator)
+#include <generator>
+#else
+#include <__generator.hpp>
+#endif
+
 namespace gcs::innards
 {
     /**
@@ -163,12 +169,18 @@ namespace gcs::innards
         /**
          * Track the lower and upper bounds for a given variable.
          */
-        auto track_bounds(const SimpleOrProofOnlyIntegerVariableID & id, Integer, Integer) -> void;
+        auto track_bounds(const SimpleOrProofOnlyIntegerVariableID & id, Integer, ProofLine, Integer, ProofLine) -> void;
 
         /**
          * Create a proof flag with a new identifier.
          */
         [[nodiscard]] auto create_proof_flag(const std::string &) -> ProofFlag;
+
+        /**
+         * Return each proof line that involves the definition of a particular IntegerVariableID,
+         * for use as RUP hints.
+         */
+        [[nodiscard]] auto each_proof_line_defining(const SimpleOrProofOnlyIntegerVariableID &) -> std::generator<ProofLine>;
     };
 }
 

@@ -8,14 +8,18 @@
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
 
+#include <util/enumerate.hh>
+
 #include <sstream>
 
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::make_shared;
 using std::nullopt;
 using std::optional;
 using std::pair;
+using std::shared_ptr;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
@@ -66,19 +70,19 @@ namespace
         return 1_i;
     }
 
-    auto justify_cond(const State & state, const auto & coeff_vars, ProofLogger & logger,
-        const ProofLine & proof_line) -> void
+    auto justify_cond(const auto & coeff_vars, const vector<pair<Integer, Integer>> & bounds,
+        ProofLogger & logger, const ProofLine & proof_line) -> void
     {
         vector<pair<Integer, variant<ProofLine, string>>> terms_to_sum;
         terms_to_sum.emplace_back(1_i, proof_line);
 
-        for (const auto & cv : coeff_vars.terms) {
+        for (const auto & [idx, cv] : enumerate(coeff_vars.terms)) {
             // the following line of logic is definitely correct until you inevitably
             // discover otherwise
             bool upper = (get_coeff(cv) < 0_i);
 
             auto literal_defining_proof_line = logger.variable_constraints_tracker().need_pol_item_defining_literal(
-                upper ? get_var(cv) < state.upper_bound(get_var(cv) + 1_i) : get_var(cv) >= state.lower_bound(get_var(cv)));
+                upper ? get_var(cv) < bounds.at(idx).second + 1_i : get_var(cv) >= bounds.at(idx).first);
 
             terms_to_sum.emplace_back(abs(get_coeff(cv)), literal_defining_proof_line);
         }
@@ -105,20 +109,32 @@ namespace
 auto LinearInequalityIff::install(Propagators & propagators, State & state, ProofModel * const optional_model) && -> void
 {
     optional<ProofLine> proof_line;
+    shared_ptr<RUPDependencies> rup_dependencies;
     if (optional_model) {
+        rup_dependencies = make_shared<RUPDependencies>();
+
         WeightedPseudoBooleanSum terms;
         for (auto & [c, v] : _coeff_vars.terms)
             terms += c * v;
+
+        for (auto & [_, v] : _coeff_vars.terms)
+            rup_dependencies->push_back(v);
+
         overloaded{
             [&](const TrueLiteral &) {
                 proof_line = optional_model->add_constraint(terms <= _value, nullopt);
+                add_dependency(*rup_dependencies, proof_line);
             },
             [&](const FalseLiteral &) {
                 proof_line = optional_model->add_constraint(terms >= _value + 1_i, nullopt);
+                add_dependency(*rup_dependencies, proof_line);
             },
             [&](const IntegerVariableCondition & cond) {
                 proof_line = optional_model->add_constraint(terms <= _value, HalfReifyOnConjunctionOf{cond});
-                optional_model->add_constraint(terms >= _value + 1_i, HalfReifyOnConjunctionOf{! cond});
+                auto second_proof_line = optional_model->add_constraint(terms >= _value + 1_i, HalfReifyOnConjunctionOf{! cond});
+                add_dependency(*rup_dependencies, proof_line);
+                add_dependency(*rup_dependencies, second_proof_line);
+                add_dependency(*rup_dependencies, cond.var);
             }}
             .visit(_cond);
     }
@@ -128,8 +144,8 @@ auto LinearInequalityIff::install(Propagators & propagators, State & state, Proo
     // empty sum? we know what the condition must be.
     if (visit([](const auto & s) { return s.terms.empty(); }, sanitised_cv)) {
         propagators.install_initialiser([modifier = modifier, value = _value, cond = _cond](
-                                            const State &, InferenceTracker & inference, ProofLogger * const logger) -> void {
-            inference.infer(logger, 0_i <= value + modifier ? cond : ! cond, JustifyUsingRUP{}, Reason{});
+                                            const State &, ProofLogger * const, auto & inference) -> void {
+            inference.infer(0_i <= value + modifier ? cond : ! cond, JustifyUsingRUP{}, Reason{});
         });
     }
 
@@ -150,9 +166,10 @@ auto LinearInequalityIff::install(Propagators & propagators, State & state, Proo
         // definitely true, it's a less-than-or-equal
         visit(
             [&, modifier = modifier](const auto & lin) {
-                propagators.install([modifier = modifier, lin = lin, value = _value, cond = _cond, proof_line = proof_line](
-                                        const State & state, InferenceTracker & inference, ProofLogger * const logger) {
-                    return propagate_linear(lin, value + modifier, state, inference, logger, false, proof_line, cond);
+                propagators.install([modifier = modifier, lin = lin, value = _value, cond = _cond, proof_line = proof_line,
+                                        rup_dependencies = rup_dependencies](
+                                        const State & state, auto & inference) {
+                    return propagate_linear(lin, value + modifier, state, inference, false, proof_line, cond, rup_dependencies);
                 },
                     triggers, "linear inequality");
             },
@@ -167,9 +184,10 @@ auto LinearInequalityIff::install(Propagators & propagators, State & state, Proo
         auto [sanitised_neg_cv, neg_modifier] = tidy_up_linear(neg_coeff_vars);
         visit(
             [&, neg_modifier = neg_modifier](const auto & lin) {
-                propagators.install([neg_modifier = neg_modifier, lin = lin, value = -_value - 1_i, cond = _cond, proof_line = proof_line](
-                                        const State & state, InferenceTracker & inference, ProofLogger * const logger) {
-                    return propagate_linear(lin, value + neg_modifier, state, inference, logger, false, *proof_line + 1, ! cond);
+                propagators.install([neg_modifier = neg_modifier, lin = lin, value = -_value - 1_i, cond = _cond, proof_line = proof_line,
+                                        rup_dependencies = rup_dependencies](
+                                        const State & state, auto & inference) {
+                    return propagate_linear(lin, value + neg_modifier, state, inference, false, *proof_line + 1, ! cond, rup_dependencies);
                 },
                     triggers, "linear inequality");
             },
@@ -195,15 +213,15 @@ auto LinearInequalityIff::install(Propagators & propagators, State & state, Proo
         visit([&, modifier = modifier, neg_modifier = neg_modifier](const auto & sanitised_cv, const auto & sanitised_neg_cv) -> void {
             propagators.install([cond = _cond, sanitised_cv = sanitised_cv, sanitised_neg_cv = sanitised_neg_cv,
                                     value = _value, modifier = modifier, neg_modifier = neg_modifier, proof_line = proof_line,
-                                    vars = vars](
-                                    const State & state, InferenceTracker & inference, ProofLogger * const logger) {
+                                    vars = vars, rup_dependencies = rup_dependencies](
+                                    const State & state, auto & inference) {
                 switch (state.test_literal(cond)) {
                 case LiteralIs::DefinitelyTrue: {
-                    return propagate_linear(sanitised_cv, value + modifier, state, inference, logger, false, proof_line, cond);
+                    return propagate_linear(sanitised_cv, value + modifier, state, inference, false, proof_line, cond, rup_dependencies);
                 } break;
                 case LiteralIs::DefinitelyFalse: {
-                    return propagate_linear(sanitised_neg_cv, -value + neg_modifier - 1_i, state, inference, logger, false,
-                        *proof_line + 1, ! cond);
+                    return propagate_linear(sanitised_neg_cv, -value + neg_modifier - 1_i, state, inference, false,
+                        *proof_line + 1, ! cond, rup_dependencies);
                 } break;
                 case LiteralIs::Undecided: {
                     // still don't know. see whether the condition is forced either way.
@@ -221,13 +239,27 @@ auto LinearInequalityIff::install(Propagators & propagators, State & state, Proo
                     }
 
                     if (min_possible > value + modifier) {
-                        auto just = [&](const Reason &) { return justify_cond(state, sanitised_cv, *logger, *proof_line); };
-                        inference.infer(logger, ! cond, JustifyExplicitly{just}, generic_reason(state, vars));
+                        vector<pair<Integer, Integer>> remembered_bounds;
+                        for (const auto & cv : sanitised_cv.terms)
+                            remembered_bounds.push_back(state.bounds(get_var(cv)));
+
+                        auto just = [&sanitised_cv, proof_line, remembered_bounds = move(remembered_bounds)](
+                                        const Reason &, ProofLogger & logger) -> void {
+                            justify_cond(sanitised_cv, remembered_bounds, logger, *proof_line);
+                        };
+                        inference.infer(! cond, JustifyExplicitly{just}, generic_reason(state, vars));
                         return PropagatorState::Enable;
                     }
                     else if (max_possible <= value + modifier) {
-                        auto just = [&](const Reason &) { return justify_cond(state, sanitised_neg_cv, *logger, *proof_line + 1); };
-                        inference.infer(logger, cond, JustifyExplicitly{just}, generic_reason(state, vars));
+                        vector<pair<Integer, Integer>> remembered_bounds;
+                        for (const auto & cv : sanitised_cv.terms)
+                            remembered_bounds.push_back(state.bounds(get_var(cv)));
+
+                        auto just = [&sanitised_neg_cv, remembered_bounds = move(remembered_bounds), proof_line](
+                                        const Reason &, ProofLogger & logger) -> void {
+                            justify_cond(sanitised_neg_cv, remembered_bounds, logger, *proof_line + 1);
+                        };
+                        inference.infer(cond, JustifyExplicitly{just}, generic_reason(state, vars));
                         return PropagatorState::Enable;
                     }
                     else

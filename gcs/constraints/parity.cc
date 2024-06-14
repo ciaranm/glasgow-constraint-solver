@@ -89,8 +89,7 @@ auto ParityOdd::install(Propagators & propagators, State &, ProofModel * const o
             .visit(l);
     }
 
-    propagators.install([lits = _lits](
-                            const State & state, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
+    propagators.install([lits = _lits](const State & state, auto & inference) -> PropagatorState {
         long how_many_0 = 0, how_many_1 = 0, how_many_unknown = 0;
         optional<Literal> an_unknown;
         Literals reason;
@@ -119,15 +118,15 @@ auto ParityOdd::install(Propagators & propagators, State &, ProofModel * const o
             if (how_many_1 % 2 == 1)
                 return PropagatorState::DisableUntilBacktrack;
             else
-                inference.infer_false(logger, JustifyUsingRUP{}, Reason{[=]() { return reason; }});
+                inference.infer_false(JustifyUsingRUP{}, Reason{[=]() { return reason; }});
         }
         else {
             if (how_many_1 % 2 == 1) {
-                inference.infer(logger, ! *an_unknown, JustifyUsingRUP{}, Reason{[=]() { return reason; }});
+                inference.infer(! *an_unknown, JustifyUsingRUP{}, Reason{[=]() { return reason; }});
                 return PropagatorState::DisableUntilBacktrack;
             }
             else {
-                inference.infer(logger, *an_unknown, JustifyUsingRUP{}, Reason{[=]() { return reason; }});
+                inference.infer(*an_unknown, JustifyUsingRUP{}, Reason{[=]() { return reason; }});
                 return PropagatorState::DisableUntilBacktrack;
             }
         }

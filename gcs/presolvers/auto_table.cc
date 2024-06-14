@@ -14,8 +14,10 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::in_place_type;
 using std::make_unique;
 using std::move;
+using std::nullopt;
 using std::optional;
 using std::pair;
 using std::to_string;
@@ -30,12 +32,16 @@ AutoTable::AutoTable(const vector<IntegerVariableID> & v) :
 namespace
 {
     auto solve_subproblem(unsigned depth, SimpleTuples & tuples, const vector<IntegerVariableID> & vars,
-        Propagators & propagators, State & state, ProofLogger * const logger, SimpleIntegerVariableID selector_var_id) -> void
+        Propagators & propagators, State & state, SomeKindOfInferenceTracker & inference_tracker,
+        ProofLogger * const logger, SimpleIntegerVariableID selector_var_id,
+        const optional<pair<Literal, HowChanged>> & guess) -> void
     {
-        if (logger)
+        if (logger) {
             logger->enter_proof_level(depth + 1);
+            logger->emit_proof_comment("autotable depth " + to_string(depth + 1));
+        }
 
-        if (propagators.propagate(state, logger)) {
+        if (propagators.propagate(state, logger, inference_tracker, guess, nullptr)) {
             auto brancher = branch_with(variable_order::dom_then_deg(vars), value_order::smallest_first())(state.current(), propagators);
             auto branch_iter = brancher.begin();
             if (branch_iter == brancher.end()) {
@@ -71,8 +77,9 @@ namespace
                 for (; branch_iter != brancher.end(); ++branch_iter) {
                     auto timestamp = state.new_epoch();
                     auto branch = *branch_iter;
-                    state.guess(logger, branch);
-                    solve_subproblem(depth + 1, tuples, vars, propagators, state, logger, selector_var_id);
+                    auto guess_change = state.guess(branch);
+                    solve_subproblem(depth + 1, tuples, vars, propagators, state, inference_tracker, logger, selector_var_id,
+                        pair{branch, guess_change});
                     state.backtrack(timestamp);
                 }
             }
@@ -91,12 +98,18 @@ auto AutoTable::run(Problem &, Propagators & propagators, State & initial_state,
     SimpleTuples tuples;
 
     auto timestamp = initial_state.new_epoch(true);
-    initial_state.guess(logger, TrueLiteral{});
+    initial_state.guess(TrueLiteral{});
 
     auto selector_var_id = initial_state.what_variable_id_will_be_created_next();
-    if (logger)
+    if (logger) {
         logger->emit_proof_comment("starting autotabulation");
-    solve_subproblem(0, tuples, _vars, propagators, initial_state, logger, selector_var_id);
+        SomeKindOfInferenceTracker inference_tracker{in_place_type<LogUsingReasonsInferenceTracker>, initial_state, *logger};
+        solve_subproblem(0, tuples, _vars, propagators, initial_state, inference_tracker, logger, selector_var_id, nullopt);
+    }
+    else {
+        SomeKindOfInferenceTracker inference_tracker{in_place_type<SimpleInferenceTracker>, initial_state};
+        solve_subproblem(0, tuples, _vars, propagators, initial_state, inference_tracker, logger, selector_var_id, nullopt);
+    }
 
     if (logger)
         logger->emit_proof_comment("creating autotable with " + to_string(tuples.size()) + " entries");
@@ -113,8 +126,8 @@ auto AutoTable::run(Problem &, Propagators & propagators, State & initial_state,
 
     Triggers triggers;
     triggers.on_change = {_vars.begin(), _vars.end()};
-    propagators.install([data = move(data)](const State & state, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
-        return propagate_extensional(data, state, inference, logger);
+    propagators.install([data = move(data)](const State & state, auto & inference) -> PropagatorState {
+        return propagate_extensional(data, state, inference);
     },
         triggers, "autotable");
 

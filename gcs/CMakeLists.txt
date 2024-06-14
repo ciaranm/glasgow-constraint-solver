@@ -41,7 +41,9 @@ add_library(glasgow_constraint_solver
         constraints/smart_table.cc
         constraints/table.cc
         innards/extensional_utils.cc
+        innards/inference_tracker.cc
         innards/integer_variable_state.cc
+        innards/justification.cc
         innards/literal.cc
         innards/proofs/bits_encoding.cc
         innards/proofs/emit_inequality_to.cc
