@@ -34,9 +34,9 @@ endif (COMPILER_SUPPORTS_NO_STRINGOP_OVERREAD)
 
 
 unset(COMPILER_SUPPORTS_UNQUALIFIED_STD_CAST_CALL CACHE)
-CHECK_CXX_COMPILER_FLAG(-Wunqualified-std-cast-call COMPILER_SUPPORTS_UNQUALIFIED_STD_CAST_CALL)
+CHECK_CXX_COMPILER_FLAG(-Wno-unqualified-std-cast-call COMPILER_SUPPORTS_UNQUALIFIED_STD_CAST_CALL)
 if (COMPILER_SUPPORTS_UNQUALIFIED_STD_CAST_CALL)
-    add_compile_options(-Wunqualified-std-cast-call)
+    add_compile_options(-Wno-unqualified-std-cast-call)
 endif (COMPILER_SUPPORTS_UNQUALIFIED_STD_CAST_CALL)
 
 add_compile_options(-g)

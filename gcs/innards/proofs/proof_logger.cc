@@ -532,7 +532,7 @@ auto ProofLogger::emit_assert_proof_line(const SumLessEqual<Weighted<PseudoBoole
     );
 }
 
-auto ProofLogger::emit_rup_proof_line_under_reason(const State & state, const Reason & reason, const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
+auto ProofLogger::emit_rup_proof_line_under_reason(const State &, const Reason & reason, const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
     ProofLevel level
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
     ,

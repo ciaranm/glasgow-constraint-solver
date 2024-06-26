@@ -484,25 +484,25 @@ auto VariableConstraintsTracker::reify(const WeightedPseudoBooleanLessEqual & in
                         rhs += w;
                     },
                     [&](const FalseLiteral &) {},
-                    [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
+                    [&]<typename T_>(const VariableConditionFrom<T_> &) {
                         reif_const += max(0_i, w);
                     }}
                     .visit(simplify_literal(lit));
             },
-            [&, w = w](const ProofFlag & flag) {
+            [&, w = w](const ProofFlag &) {
                 reif_const += max(0_i, w);
             },
             [&, w = w](const IntegerVariableID & var) {
                 overloaded{
                     [&](const SimpleIntegerVariableID & var) {
-                        for_each_bit(var, [&](Integer bit_value, const string & bit_name) {
+                        for_each_bit(var, [&](Integer bit_value, const string &) {
                             reif_const += max(0_i, w * bit_value);
                         });
                     },
                     [&](const ViewOfIntegerVariableID & view) {
                         if (! view.negate_first) {
                             for_each_bit(view.actual_variable,
-                                [&](Integer bit_value, const string & bit_name) {
+                                [&](Integer bit_value, const string &) {
                                     reif_const += max(0_i, w * bit_value);
                                 });
                             rhs += w * view.then_add;
@@ -510,7 +510,7 @@ auto VariableConstraintsTracker::reify(const WeightedPseudoBooleanLessEqual & in
                         }
                         else {
                             for_each_bit(view.actual_variable,
-                                [&](Integer bit_value, const string & bit_name) {
+                                [&](Integer bit_value, const string &) {
                                     reif_const += max(0_i, -w * bit_value);
                                 });
                             rhs += w * view.then_add;
@@ -527,7 +527,7 @@ auto VariableConstraintsTracker::reify(const WeightedPseudoBooleanLessEqual & in
                     reif_const += max(0_i, w * bit_value);
                 });
             },
-            [&, w = w](const ProofBitVariable & bit) {
+            [&, w = w](const ProofBitVariable &) {
                 reif_const += max(0_i, w);
             },
         }
