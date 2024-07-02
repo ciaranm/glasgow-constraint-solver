@@ -127,14 +127,15 @@ ExternalProject_Add(
         GIT_REPOSITORY https://github.com/todoubaba/generator
         GIT_TAG a849a206f35c2447ab5e605edc5fcf44f673c628 # no release
         INSTALL_COMMAND ""
+        BUILD_COMMAND ""
 )
 
 if (GCS_ENABLE_MINIZINC)
     set(JSON_BuildTests OFF CACHE INTERNAL "")
     FetchContent_Declare(
-        json
-        GIT_REPOSITORY https://github.com/nlohmann/json.git
-        GIT_TAG 9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03 # v3.11.3
+            json
+            GIT_REPOSITORY https://github.com/nlohmann/json.git
+            GIT_TAG 9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03 # v3.11.3
     )
     FetchContent_MakeAvailable(json)
 endif (GCS_ENABLE_MINIZINC)
