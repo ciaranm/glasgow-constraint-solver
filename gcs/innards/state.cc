@@ -430,7 +430,7 @@ auto State::change_state_for_not_equal(
             bool is_bound = (value == svar.values->lower() || value == svar.values->upper());
             if (svar.values->lower() == svar.values->upper())
                 return pair{Inference::Contradiction, HowChanged::Dummy};
-            else if (svar.values.unique()) {
+            else if (svar.values.use_count() == 1) {
                 svar.values->erase(value);
                 if (svar.values->lower() == svar.values->upper()) {
                     assign_to_state_of(var) = IntegerVariableConstantState{svar.values->lower()};
@@ -511,7 +511,7 @@ auto State::change_state_for_less_than(
             if (svar.values->upper() < value)
                 return pair{Inference::NoChange, HowChanged::Dummy};
 
-            if (! svar.values.unique())
+            if (svar.values.use_count() != 1)
                 svar.values = make_shared<IntervalSet<Integer>>(*svar.values);
 
             svar.values->erase_greater_than(value - 1_i);
@@ -584,7 +584,7 @@ auto State::change_state_for_greater_than_or_equal(
             if (svar.values->lower() >= value)
                 return pair{Inference::NoChange, HowChanged::Dummy};
 
-            if (! svar.values.unique())
+            if (svar.values.use_count() != 1)
                 svar.values = make_shared<IntervalSet<Integer>>(*svar.values);
 
             svar.values->erase_less_than(value);

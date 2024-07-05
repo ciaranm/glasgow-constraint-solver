@@ -18,6 +18,13 @@ using std::unique;
 using std::unique_ptr;
 using std::vector;
 
+In::In(IntegerVariableID var, vector<IntegerVariableID> vars, vector<Integer> vals) :
+    _var(var),
+    _var_vals(move(vars)),
+    _val_vals(move(vals))
+{
+}
+
 In::In(IntegerVariableID var, vector<IntegerVariableID> vals) :
     _var(var),
     _var_vals(move(vals))
@@ -32,7 +39,7 @@ In::In(IntegerVariableID var, vector<Integer> vals) :
 
 auto In::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<In>(_var, _val_vals);
+    return make_unique<In>(_var, _var_vals, _val_vals);
 }
 
 auto In::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
