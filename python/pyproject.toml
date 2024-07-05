@@ -1,0 +1,15 @@
+[build-system]
+requires = ["scikit-build-core", "pybind11"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "gcspy"
+version = "0.1.0"
+
+[tool.scikit-build]
+cmake.version = ">=3.18"
+ninja.version = ">=1.11"
+cmake.args = ["-DGCS_ENABLE_PYTHON=ON", "-DGCS_ENABLE_XCSP=OFF", "-DGCS_ENABLE_MINIZINC=OFF", "-DGCS_ENABLE_EXAMPLES=OFF"]
+cmake.source-dir = ".."
+cmake.verbose = true
+logging.level = "INFO"

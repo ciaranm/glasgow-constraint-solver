@@ -60,6 +60,10 @@ add_library(glasgow_constraint_solver
 
 include_directories(${CMAKE_SOURCE_DIR}/generator/src/generator/include)
 
+# This appears to be necessary for the python install to work,
+# Not sure why exactly...
+add_dependencies(glasgow_constraint_solver generator)
+
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 link_libraries(glasgow_constraint_solver)
 target_link_libraries(glasgow_constraint_solver PUBLIC fmt::fmt)

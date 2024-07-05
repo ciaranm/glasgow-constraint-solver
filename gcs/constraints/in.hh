@@ -21,6 +21,7 @@ namespace gcs
         std::vector<Integer> _val_vals;
 
     public:
+        explicit In(IntegerVariableID var, std::vector<IntegerVariableID> vars, std::vector<Integer> vals);
         explicit In(IntegerVariableID var, std::vector<IntegerVariableID> vals);
         explicit In(IntegerVariableID var, std::vector<Integer> vals);
 

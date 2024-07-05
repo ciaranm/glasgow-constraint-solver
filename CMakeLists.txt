@@ -95,6 +95,10 @@ if (GCS_ENABLE_MINIZINC)
     add_subdirectory(minizinc)
 endif (GCS_ENABLE_MINIZINC)
 
+if (GCS_ENABLE_PYTHON)
+    add_subdirectory(python)
+endif (GCS_ENABLE_PYTHON)
+
 Include(FetchContent)
 Set(FETCHCONTENT_QUIET FALSE)
 
@@ -139,3 +143,6 @@ if (GCS_ENABLE_MINIZINC)
     )
     FetchContent_MakeAvailable(json)
 endif (GCS_ENABLE_MINIZINC)
+
+
+
