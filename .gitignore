@@ -13,3 +13,5 @@ XCSP3-CPP-Parser
 generator
 .idea
 venv
+python/venv
+.venv
