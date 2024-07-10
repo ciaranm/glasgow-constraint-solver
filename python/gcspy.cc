@@ -131,17 +131,69 @@ auto Python::post_alldifferent(const vector<std::string> & var_ids) -> void
     p.post(AllDifferent{get_vars(var_ids)});
 }
 
-auto Python::post_compare_less(const string & var_id_1, const string & var_id_2, bool or_equal) -> void
+auto Python::post_circuit(const vector<std::string> & var_ids) -> void
 {
-    p.post(innards::CompareLessThanReif(get_var(var_id_1), get_var(var_id_2),
-        innards::TrueLiteral{}, false, or_equal));
+    p.post(Circuit{get_vars(var_ids)});
 }
 
-auto Python::post_compare_less_if(const string & var_id_1, const string & var_id_2, const string & reif_id,
-    bool or_equal) -> void
+auto Python::post_less_than(const string & var_id_1, const string & var_id_2) -> void
 {
-    p.post(innards::CompareLessThanReif(get_var(var_id_1), get_var(var_id_2),
-        get_var(reif_id) != 0_i, false, or_equal));
+    p.post(LessThan{get_var(var_id_1), get_var(var_id_2)});
+}
+
+auto Python::post_less_than_equal(const string & var_id_1, const string & var_id_2) -> void
+{
+    p.post(LessThanEqual{get_var(var_id_1), get_var(var_id_2)});
+}
+
+auto Python::post_greater_than(const string & var_id_1, const string & var_id_2) -> void
+{
+    p.post(GreaterThan{get_var(var_id_1), get_var(var_id_2)});
+}
+
+auto Python::post_greater_than_equal(const string & var_id_1, const string & var_id_2) -> void
+{
+    p.post(GreaterThanEqual{get_var(var_id_1), get_var(var_id_2)});
+}
+
+auto Python::post_less_than_if(const string & var_id_1, const string & var_id_2, const string & reif) -> void
+{
+    p.post(LessThanIf{get_var(var_id_1), get_var(var_id_2), get_var_as_cond(reif)});
+}
+
+auto Python::post_less_than_equal_if(const string & var_id_1, const string & var_id_2, const string & reif) -> void
+{
+    p.post(innards::CompareLessThanReif{get_var(var_id_1), get_var(var_id_2), get_var_as_cond(reif), false, true});
+}
+
+auto Python::post_greater_than_if(const string & var_id_1, const string & var_id_2, const string & reif) -> void
+{
+    p.post(innards::CompareLessThanReif{get_var(var_id_2), get_var(var_id_1), get_var_as_cond(reif), false, false});
+}
+
+auto Python::post_greater_than_equal_if(const string & var_id_1, const string & var_id_2, const string & reif) -> void
+{
+    p.post(innards::CompareLessThanReif{get_var(var_id_2), get_var(var_id_1), get_var_as_cond(reif), false, true});
+}
+
+auto Python::post_less_than_iff(const string & var_id_1, const string & var_id_2, const string & reif) -> void
+{
+    p.post(LessThanIff(get_var(var_id_1), get_var(var_id_2), get_var_as_cond(reif)));
+}
+
+auto Python::post_less_than_equal_iff(const string & var_id_1, const string & var_id_2, const string & reif) -> void
+{
+    p.post(LessThanEqualIff(get_var(var_id_1), get_var(var_id_2), get_var_as_cond(reif)));
+}
+
+auto Python::post_greater_than_iff(const string & var_id_1, const string & var_id_2, const string & reif) -> void
+{
+    p.post(GreaterThanIff(get_var(var_id_1), get_var(var_id_2), get_var_as_cond(reif)));
+}
+
+auto Python::post_greater_than_equal_iff(const string & var_id_1, const string & var_id_2, const string & reif) -> void
+{
+    p.post(GreaterThanEqualIff(get_var(var_id_1), get_var(var_id_2), get_var_as_cond(reif)));
 }
 
 auto Python::post_count(const vector<string> & var_ids, const string & var_id, const string & count_id)
@@ -164,6 +216,11 @@ auto Python::post_equals(const string & var_id_1, const string & var_id_2) -> vo
 auto Python::post_equals_if(const string & var_id_1, const string & var_id_2, const string & reif_id) -> void
 {
     p.post(EqualsIf(get_var(var_id_1), get_var(var_id_2), get_var(reif_id) != 0_i));
+}
+
+auto Python::post_equals_iff(const string & var_id_1, const string & var_id_2, const string & reif_id) -> void
+{
+    p.post(EqualsIff(get_var(var_id_1), get_var(var_id_2), get_var(reif_id) != 0_i));
 }
 
 auto Python::post_not_equals(const string & var_id_1, const string & var_id_2) -> void
@@ -191,16 +248,40 @@ auto Python::post_linear_equality(const vector<string> & var_ids, const vector<l
     p.post(LinearEquality{(make_linear(var_ids, coeffs)), Integer{value}});
 }
 
-auto Python::post_linear_lessequal(const vector<string> & var_ids, const vector<long long int> & coeffs,
+auto Python::post_linear_equality_iff(const vector<string> & var_ids, const vector<long long int> & coeffs,
+    long long int value, const string & reif) -> void
+{
+    p.post(LinearEqualityIff{(make_linear(var_ids, coeffs)), Integer{value}, get_var(reif) != 0_i});
+}
+
+auto Python::post_linear_less_equal(const vector<string> & var_ids, const vector<long long int> & coeffs,
     long long int value) -> void
 {
     p.post(LinearLessEqual{(make_linear(var_ids, coeffs)), Integer{value}});
 }
 
-auto Python::post_linear_greaterequal(const vector<string> & var_ids, const vector<long long int> & coeffs,
+auto Python::post_linear_less_equal_iff(const vector<string> & var_ids, const vector<long long int> & coeffs,
+    long long int value, const string & reif) -> void
+{
+    p.post(LinearLessEqualIff{(make_linear(var_ids, coeffs)), Integer{value}, get_var(reif) != 0_i});
+}
+
+auto Python::post_linear_greater_equal(const vector<string> & var_ids, const vector<long long int> & coeffs,
     long long int value) -> void
 {
     p.post(LinearGreaterThanEqual{(make_linear(var_ids, coeffs)), Integer{value}});
+}
+
+auto Python::post_linear_greater_equal_iff(const vector<string> & var_ids, const vector<long long int> & coeffs,
+    long long int value, const string & reif) -> void
+{
+    p.post(LinearLessEqualIff{(make_linear(var_ids, coeffs)), Integer{value}, get_var(reif) != 0_i});
+}
+
+auto Python::post_linear_not_equal(const vector<string> & var_ids, const vector<long long int> & coeffs,
+    long long int value) -> void
+{
+    p.post(LinearNotEquals{(make_linear(var_ids, coeffs)), Integer{value}});
 }
 
 auto Python::post_and(const vector<string> & var_ids) -> void
@@ -217,6 +298,11 @@ auto Python::post_and_if(const vector<string> & var_ids, const string & reif_id)
     p.post(And{new_vars, reif_var});
 }
 
+auto Python::post_and_iff(const vector<string> & var_ids, const string & reif_id) -> void
+{
+    p.post(And{get_vars(var_ids), get_var(reif_id)});
+}
+
 auto Python::post_or(const vector<string> & var_ids) -> void
 {
     p.post(Or{get_vars(var_ids)});
@@ -229,6 +315,11 @@ auto Python::post_or_if(const vector<string> & var_ids, const string & reif_id) 
     auto reif_var = -get_var(reif_id) + 1_i;
     new_vars.push_back(reif_var);
     p.post(Or{new_vars});
+}
+
+auto Python::post_or_iff(const vector<string> & var_ids, const string & reif_id) -> void
+{
+    p.post(Or{get_vars(var_ids), get_var(reif_id)});
 }
 
 auto Python::post_implies(const string & var_id_1, const string & var_id_2) -> void
@@ -248,24 +339,11 @@ auto Python::post_implies_if(const string & var_id_1, const string & var_id_2, c
     p.post(Or{{var_2, -var_1 + 1_i, -reif_var + 1_i}});
 }
 
-auto Python::post_binary_xor(const string & var_id_1, const string & var_id_2) -> void
+auto Python::post_implies_iff(const string & var_id_1, const string & var_id_2, const string & reif_id) -> void
 {
-    // Note XOR(a, b) is equivalent to the two constraints OR([a, b]), OR([1-a, 1-b])
-    auto var_1 = get_var(var_id_1);
-    auto var_2 = get_var(var_id_2);
-    p.post(Or{{var_1, var_2}});
-    p.post(Or{{-var_1 + 1_i, -var_2 + 1_i}});
-}
-
-auto Python::post_binary_xor_if(const string & var_id_1, const string & var_id_2, const string & reif_id) -> void
-{
-    // Likewise x -> XOR(a, b) is equivalent to x -> OR([a, b]), x -> OR([1 - a, 1 - b])
-    // i.e. OR([a, b, 1-x]), OR([1-a, 1-b, 1-x])
-    auto var_1 = get_var(var_id_1);
-    auto var_2 = get_var(var_id_2);
-    auto reif_var = get_var(reif_id);
-    p.post(Or{{var_1, var_2, -reif_var + 1_i}});
-    p.post(Or{{-var_1 + 1_i, -var_2 + 1_i, -reif_var + 1_i}});
+    // x <=> (a => b) is equivalent to x => (a => b) and 1-x => (And([a, 1-b])
+    post_implies_if(var_id_1, var_id_2, reif_id);
+    p.post(And{{get_var(var_id_1), -get_var(var_id_2) + 1_i}, -get_var(reif_id) + 1_i});
 }
 
 auto Python::post_min(const vector<string> & var_ids, const string & var_id) -> void
@@ -298,6 +376,31 @@ auto Python::post_table(const vector<string> & var_id, const vector<vector<long 
     p.post(Table(get_vars(var_id), move(table_i)));
 }
 
+auto Python::post_negative_table(const vector<string> & var_id, const vector<vector<long long int>> & table) -> void
+{
+    SimpleTuples table_i;
+    for (const auto & v : table) {
+        vector<Integer> row{};
+        row.reserve(v.size());
+        for (auto vv : v) {
+            row.emplace_back(vv);
+        }
+        table_i.push_back(row);
+    }
+
+    p.post(NegativeTable(get_vars(var_id), move(table_i)));
+}
+
+auto Python::post_inverse(const vector<string> & var_ids_1, const vector<string> & var_ids_2) -> void
+{
+    p.post(Inverse{get_vars(var_ids_1), get_vars(var_ids_2)});
+}
+
+auto Python::post_xor(const vector<std::string> & var_ids) -> void
+{
+    p.post(ParityOdd{get_vars(var_ids)});
+}
+
 /**
  * Python bindings: match the API exactly, using automatic STL conversion provided by Pybind11.
  */
@@ -321,28 +424,53 @@ PYBIND11_MODULE(gcspy, m)
         .def("post_abs", &Python::post_abs)
         .def("post_alldifferent", &Python::post_alldifferent)
         .def("post_arithmetic", &Python::post_arithmetic)
-        .def("post_compare_less", &Python::post_compare_less)
-        .def("post_compare_less_if", &Python::post_compare_less_if)
-        .def("post_count", &Python::post_count)
-        .def("post_element", &Python::post_element)
+        .def("post_circuit", &Python::post_circuit)
+
+        .def("post_less_than", &Python::post_less_than)
+        .def("post_less_than_equal", &Python::post_less_than_equal)
+        .def("post_greater_than", &Python::post_greater_than)
+        .def("post_greater_than_equal", &Python::post_greater_than_equal)
+        .def("post_less_than_if", &Python::post_less_than_if)
+        .def("post_less_than_equal_if", &Python::post_less_than_equal_if)
+        .def("post_greater_than_if", &Python::post_greater_than_if)
+        .def("post_greater_than_equal_if", &Python::post_greater_than_equal_if)
+        .def("post_less_than_iff", &Python::post_less_than_iff)
+        .def("post_less_than_equal_iff", &Python::post_less_than_equal_iff)
+        .def("post_greater_than_iff", &Python::post_greater_than_iff)
+        .def("post_greater_than_equal_iff", &Python::post_greater_than_equal_iff)
         .def("post_equals", &Python::post_equals)
         .def("post_equals_if", &Python::post_equals_if)
+        .def("post_equals_iff", &Python::post_equals_iff)
+
+        .def("post_count", &Python::post_count)
+        .def("post_element", &Python::post_element)
+
         .def("post_not_equals", &Python::post_not_equals)
         .def("post_in", &Python::post_in)
         .def("post_in_vars", &Python::post_in_vars)
         .def("post_linear_equality", &Python::post_linear_equality)
-        .def("post_linear_lessequal", &Python::post_linear_lessequal)
-        .def("post_linear_greaterequal", &Python::post_linear_greaterequal)
+        .def("post_linear_equality_iff", &Python::post_linear_equality_iff)
+        .def("post_linear_less_equal", &Python::post_linear_less_equal)
+        .def("post_linear_greater_equal", &Python::post_linear_greater_equal)
+        .def("post_linear_greater_equal_iff", &Python::post_linear_greater_equal_iff)
+        .def("post_linear_not_equal", &Python::post_linear_not_equal)
+
         .def("post_and", &Python::post_and)
         .def("post_and_if", &Python::post_and_if)
+        .def("post_and_iff", &Python::post_and_iff)
         .def("post_or", &Python::post_or)
         .def("post_or_if", &Python::post_or_if)
+        .def("post_or_iff", &Python::post_or_iff)
+
         .def("post_implies", &Python::post_implies)
         .def("post_implies_if", &Python::post_implies_if)
-        .def("post_binary_xor", &Python::post_binary_xor)
-        .def("post_binary_xor_if", &Python::post_binary_xor_if)
+        .def("post_implies_iff", &Python::post_implies_iff)
+
         .def("post_min", &Python::post_min)
         .def("post_max", &Python::post_max)
         .def("post_nvalue", &Python::post_nvalue)
-        .def("post_table", &Python::post_table);
+        .def("post_table", &Python::post_table)
+        .def("post_negative_table", &Python::post_negative_table)
+        .def("post_inverse", &Python::post_inverse)
+        .def("post_xor", &Python::post_xor);
 }

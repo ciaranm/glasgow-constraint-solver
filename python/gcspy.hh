@@ -41,33 +41,66 @@ public:
      * Methods to post constraints: functional interface so we don't have to export all the constraint classes
      * to python.
      */
+
+    // Arithmetic
     auto post_abs(const string & var_id_1, const string & var_id_2) -> void;
-    auto post_alldifferent(const vector<string> & var_ids) -> void;
     auto post_arithmetic(const string & var_id_1, const string & var_id_2, const string & result_id, const string & op) -> void;
-    auto post_compare_less(const string & var_id_1, const string & var_id_2, bool or_equal) -> void;
-    auto post_compare_less_if(const string & var_id_1, const string & var_id_2, const string & reif_id, bool or_equal) -> void;
-    auto post_count(const vector<string> & var_ids, const string & var_id, const string & count_id) -> void;
-    auto post_element(const string & var_id, const string & index_id, const vector<string> & var_ids) -> void;
+
+    // Comparisons
     auto post_equals(const string & var_id_1, const string & var_id_2) -> void;
-    auto post_equals_if(const string & var_id_1, const string & var_id_2, const string & reif_id) -> void;
+    auto post_less_than(const string & var_id_1, const string & var_id_2) -> void;
+    auto post_less_than_equal(const string & var_id_1, const string & var_id_2) -> void;
+    auto post_greater_than(const string & var_id_1, const string & var_id_2) -> void;
+    auto post_greater_than_equal(const string & var_id_1, const string & var_id_2) -> void;
     auto post_not_equals(const string & var_id_1, const string & var_id_2) -> void;
-    auto post_in(const string & var_id, const vector<long long int> & domain) -> void;
-    auto post_in_vars(const string & var_id, const vector<string> & var_ids) -> void;
+    // Half reified comparisons
+    auto post_less_than_if(const string & var_id_1, const string & var_id_2, const string & reif) -> void;
+    auto post_less_than_equal_if(const string & var_id_1, const string & var_id_2, const string & reif) -> void;
+    auto post_greater_than_if(const string & var_id_1, const string & var_id_2, const string & reif) -> void;
+    auto post_greater_than_equal_if(const string & var_id_1, const string & var_id_2, const string & reif) -> void;
+    auto post_equals_if(const string & var_id_1, const string & var_id_2, const string & reif_id) -> void;
+    // Fully reified comparisons
+    auto post_less_than_iff(const string & var_id_1, const string & var_id_2, const string & reif) -> void;
+    auto post_less_than_equal_iff(const string & var_id_1, const string & var_id_2, const string & reif) -> void;
+    auto post_greater_than_iff(const string & var_id_1, const string & var_id_2, const string & reif) -> void;
+    auto post_greater_than_equal_iff(const string & var_id_1, const string & var_id_2, const string & reif) -> void;
+    auto post_count(const vector<string> & var_ids, const string & var_id, const string & count_id) -> void;
+    auto post_equals_iff(const string & var_id_1, const string & var_id_2, const string & reif_id) -> void;
+
+    // Linear
     auto post_linear_equality(const vector<string> & var_ids, const vector<long long int> & coeffs, long long int value) -> void;
-    auto post_linear_lessequal(const vector<string> & var_ids, const vector<long long int> & coeffs, long long int value) -> void;
-    auto post_linear_greaterequal(const vector<string> & var_ids, const vector<long long int> & coeffs, long long int value) -> void;
+    auto post_linear_equality_iff(const vector<string> & var_ids, const vector<long long int> & coeffs, long long int value, const string & reif) -> void;
+    auto post_linear_less_equal(const vector<string> & var_ids, const vector<long long int> & coeffs, long long int value) -> void;
+    auto post_linear_less_equal_iff(const vector<string> & var_ids, const vector<long long int> & coeffs, long long int value, const string & reif) -> void;
+    auto post_linear_greater_equal(const vector<string> & var_ids, const vector<long long int> & coeffs, long long int value) -> void;
+    auto post_linear_greater_equal_iff(const vector<string> & var_ids, const vector<long long int> & coeffs, long long int value, const string & reif) -> void;
+    auto post_linear_not_equal(const vector<string> & var_ids, const vector<long long int> & coeffs, long long int value) -> void;
+
+    // Logical
     auto post_and(const vector<string> & var_ids) -> void;
     auto post_and_if(const vector<string> & var_ids, const string & reif_id) -> void;
+    auto post_and_iff(const vector<string> & var_ids, const string & reif_id) -> void;
     auto post_or(const vector<string> & var_ids) -> void;
     auto post_or_if(const vector<string> & var_ids, const string & reif_id) -> void;
+    auto post_or_iff(const vector<string> & var_ids, const string & reif_id) -> void;
+
     auto post_implies(const string & var_id_1, const string & var_id_2) -> void;
     auto post_implies_if(const string & var_id_1, const string & var_id_2, const string & reif_id) -> void;
-    auto post_binary_xor(const string & var_id_1, const string & var_id_2) -> void;
-    auto post_binary_xor_if(const string & var_id_1, const string & var_id_2, const string & reif_id) -> void;
+    auto post_implies_iff(const string & var_id_1, const string & var_id_2, const string & reif_id) -> void;
+
+    // Globals
+    auto post_alldifferent(const vector<string> & var_ids) -> void;
+    auto post_circuit(const vector<string> & var_ids) -> void;
     auto post_min(const vector<string> & var_ids, const string & var_id) -> void;
     auto post_max(const vector<string> & var_ids, const string & var_id) -> void;
     auto post_nvalue(const string & var_id, const vector<string> & var_ids) -> void;
     auto post_table(const vector<string> & var_id, const vector<vector<long long int>> & table) -> void;
+    auto post_negative_table(const vector<string> & var_id, const vector<vector<long long int>> & table) -> void;
+    auto post_inverse(const vector<string> & var_ids_1, const vector<string> & var_ids_2) -> void;
+    auto post_element(const string & var_id, const string & index_id, const vector<string> & var_ids) -> void;
+    auto post_xor(const vector<string> & var_ids) -> void;
+    auto post_in(const string & var_id, const vector<long long int> & domain) -> void;
+    auto post_in_vars(const string & var_id, const vector<string> & var_ids) -> void;
 
 private:
     const string proof_filename = "gcs_proof";
@@ -93,6 +126,17 @@ private:
         try {
             auto var = vars.at(var_id);
             return var;
+        }
+        catch (const std::out_of_range & e) {
+            throw pybind11::key_error("Variable ID '" + var_id + "' not known to the Glasgow Constraint Solver.");
+        }
+    }
+
+    IntegerVariableCondition get_var_as_cond(const string & var_id)
+    {
+        try {
+            auto var = vars.at(var_id);
+            return var == 1_i;
         }
         catch (const std::out_of_range & e) {
             throw pybind11::key_error("Variable ID '" + var_id + "' not known to the Glasgow Constraint Solver.");

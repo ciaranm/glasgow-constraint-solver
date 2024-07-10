@@ -11,6 +11,6 @@ cmake.version = ">=3.18"
 ninja.version = ">=1.11"
 cmake.args = ["-DGCS_ENABLE_PYTHON=ON", "-DGCS_ENABLE_XCSP=OFF", "-DGCS_ENABLE_MINIZINC=OFF", "-DGCS_ENABLE_EXAMPLES=OFF"]
 cmake.source-dir = ".."
-build-dir = "../build"
+build-dir = "build"
 cmake.verbose = true
 logging.level = "INFO"

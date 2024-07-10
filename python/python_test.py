@@ -100,14 +100,14 @@ class TestGlasgowConstraintSolver(unittest.TestCase):
 
     def test_compare_less(self):
         w = self.gcs.create_integer_variable([3], "w")
-        self.gcs.post_compare_less(self.x, w, False)
+        self.gcs.post_less_than(self.x, w)
         self.gcs.maximise(self.x)
         self.gcs.solve()
         self.assertEqual(self.gcs.get_solution_value(self.x), 2)
 
     def test_compare_less_equal(self):
         w = self.gcs.create_integer_variable([3], "w")
-        self.gcs.post_compare_less(self.x, w, True)
+        self.gcs.post_less_than_equal(self.x, w)
         self.gcs.maximise(self.x)
         self.gcs.solve()
         self.assertEqual(self.gcs.get_solution_value(self.x), 3)
@@ -115,7 +115,7 @@ class TestGlasgowConstraintSolver(unittest.TestCase):
     def test_compare_less_if(self):
         w = self.gcs.create_integer_variable([3], "w")
         reif = self.gcs.create_integer_variable([0], "r")
-        self.gcs.post_compare_less_if(self.x, w, reif, False)
+        self.gcs.post_less_than_if(self.x, w, reif)
         self.gcs.maximise(self.x)
         self.gcs.solve()
         self.assertEqual(self.gcs.get_solution_value(self.x), 3)
@@ -182,16 +182,16 @@ class TestGlasgowConstraintSolver(unittest.TestCase):
         self.assertEqual(self.gcs.get_solution_value(self.y), 1)
         self.assertEqual(self.gcs.get_solution_value(self.z), 1)
 
-    def test_linear_lessequal(self):
-        self.gcs.post_linear_lessequal([self.x, self.y, self.z], [3, 3, 3], 14)
+    def test_linear_less_equal(self):
+        self.gcs.post_linear_less_equal([self.x, self.y, self.z], [3, 3, 3], 14)
         self.gcs.maximise(self.x)
         self.gcs.solve()
         self.assertEqual(self.gcs.get_solution_value(self.x), 2)
         self.assertEqual(self.gcs.get_solution_value(self.y), 1)
         self.assertEqual(self.gcs.get_solution_value(self.z), 1)
 
-    def test_linear_greaterequal(self):
-        self.gcs.post_linear_greaterequal([self.x, self.y, self.z], [3, 3, 3], 27)
+    def test_linear_greater_equal(self):
+        self.gcs.post_linear_greater_equal([self.x, self.y, self.z], [3, 3, 3], 27)
         self.gcs.maximise(self.x)
         self.gcs.solve()
         self.assertEqual(self.gcs.get_solution_value(self.x), 3)
@@ -252,19 +252,10 @@ class TestGlasgowConstraintSolver(unittest.TestCase):
     def test_xor(self):
         b1 = self.gcs.create_integer_variable([1], "b1")
         b2 = self.gcs.create_integer_variable([0, 1], "b2")
-        self.gcs.post_binary_xor(b1, b2)
+        self.gcs.post_xor([b1, b2])
         self.gcs.maximise(b2)
         self.gcs.solve()
         self.assertEqual(self.gcs.get_solution_value(b2), 0)
-
-    def test_xor_if(self):
-        b1 = self.gcs.create_integer_variable([1], "b1")
-        b2 = self.gcs.create_integer_variable([0, 1], "b2")
-        r = self.gcs.create_integer_variable([0], "r")
-        self.gcs.post_binary_xor_if(b1, b2, r)
-        self.gcs.maximise(b2)
-        self.gcs.solve()
-        self.assertEqual(self.gcs.get_solution_value(b2), 1)
 
     def test_min(self):
         w = self.gcs.create_integer_variable([2], "w")
