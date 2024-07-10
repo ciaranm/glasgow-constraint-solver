@@ -53,19 +53,12 @@ public:
     auto post_greater_than(const string & var_id_1, const string & var_id_2) -> void;
     auto post_greater_than_equal(const string & var_id_1, const string & var_id_2) -> void;
     auto post_not_equals(const string & var_id_1, const string & var_id_2) -> void;
-    // Half reified comparisons
-    auto post_less_than_if(const string & var_id_1, const string & var_id_2, const string & reif) -> void;
-    auto post_less_than_equal_if(const string & var_id_1, const string & var_id_2, const string & reif) -> void;
-    auto post_greater_than_if(const string & var_id_1, const string & var_id_2, const string & reif) -> void;
-    auto post_greater_than_equal_if(const string & var_id_1, const string & var_id_2, const string & reif) -> void;
-    auto post_equals_if(const string & var_id_1, const string & var_id_2, const string & reif_id) -> void;
-    // Fully reified comparisons
-    auto post_less_than_iff(const string & var_id_1, const string & var_id_2, const string & reif) -> void;
-    auto post_less_than_equal_iff(const string & var_id_1, const string & var_id_2, const string & reif) -> void;
-    auto post_greater_than_iff(const string & var_id_1, const string & var_id_2, const string & reif) -> void;
-    auto post_greater_than_equal_iff(const string & var_id_1, const string & var_id_2, const string & reif) -> void;
-    auto post_count(const vector<string> & var_ids, const string & var_id, const string & count_id) -> void;
-    auto post_equals_iff(const string & var_id_1, const string & var_id_2, const string & reif_id) -> void;
+    // Reified comparisons
+    auto post_less_than_reif(const string & var_id_1, const string & var_id_2, const string & reif, bool fully_reify) -> void;
+    auto post_less_than_equal_reif(const string & var_id_1, const string & var_id_2, const string & reif, bool fully_reify) -> void;
+    auto post_greater_than_reif(const string & var_id_1, const string & var_id_2, const string & reif, bool fully_reify) -> void;
+    auto post_greater_than_equal_reif(const string & var_id_1, const string & var_id_2, const string & reif, const bool fully_reify) -> void;
+    auto post_equals_reif(const string & var_id_1, const string & var_id_2, const string & reif_id, bool fully_reify) -> void;
 
     // Linear
     auto post_linear_equality(const vector<string> & var_ids, const vector<long long int> & coeffs, long long int value) -> void;
@@ -78,19 +71,18 @@ public:
 
     // Logical
     auto post_and(const vector<string> & var_ids) -> void;
-    auto post_and_if(const vector<string> & var_ids, const string & reif_id) -> void;
-    auto post_and_iff(const vector<string> & var_ids, const string & reif_id) -> void;
+    auto post_and_reif(const vector<string> & var_ids, const string & reif_id, const bool fully_reify) -> void;
+
     auto post_or(const vector<string> & var_ids) -> void;
-    auto post_or_if(const vector<string> & var_ids, const string & reif_id) -> void;
-    auto post_or_iff(const vector<string> & var_ids, const string & reif_id) -> void;
+    auto post_or_reif(const vector<string> & var_ids, const string & reif_id, const bool fully_reify) -> void;
 
     auto post_implies(const string & var_id_1, const string & var_id_2) -> void;
-    auto post_implies_if(const string & var_id_1, const string & var_id_2, const string & reif_id) -> void;
-    auto post_implies_iff(const string & var_id_1, const string & var_id_2, const string & reif_id) -> void;
+    auto post_implies_reif(const string & var_id_1, const string & var_id_2, const string & reif_id, const bool fully_reify) -> void;
 
     // Globals
     auto post_alldifferent(const vector<string> & var_ids) -> void;
     auto post_circuit(const vector<string> & var_ids) -> void;
+    auto post_count(const vector<string> & var_ids, const string & var_id, const string & count_id) -> void;
     auto post_min(const vector<string> & var_ids, const string & var_id) -> void;
     auto post_max(const vector<string> & var_ids, const string & var_id) -> void;
     auto post_nvalue(const string & var_id, const vector<string> & var_ids) -> void;
@@ -146,9 +138,10 @@ private:
     vector<IntegerVariableID> get_vars(const vector<string> & var_ids)
     {
         vector<IntegerVariableID> selected_vars{};
-        for (const string & id : var_ids) {
+        selected_vars.reserve(var_ids.size());
+        for (const string & id : var_ids)
             selected_vars.push_back(get_var(id));
-        }
+
         return selected_vars;
     }
 

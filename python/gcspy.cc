@@ -156,44 +156,36 @@ auto Python::post_greater_than_equal(const string & var_id_1, const string & var
     p.post(GreaterThanEqual{get_var(var_id_1), get_var(var_id_2)});
 }
 
-auto Python::post_less_than_if(const string & var_id_1, const string & var_id_2, const string & reif) -> void
+auto Python::post_less_than_reif(const string & var_id_1, const string & var_id_2, const string & reif, bool fully_reify) -> void
 {
-    p.post(LessThanIf{get_var(var_id_1), get_var(var_id_2), get_var_as_cond(reif)});
+    if (fully_reify)
+        p.post(LessThanIff{get_var(var_id_1), get_var(var_id_2), get_var_as_cond(reif)});
+    else
+        p.post(LessThanIf{get_var(var_id_1), get_var(var_id_2), get_var_as_cond(reif)});
 }
 
-auto Python::post_less_than_equal_if(const string & var_id_1, const string & var_id_2, const string & reif) -> void
+auto Python::post_less_than_equal_reif(const string & var_id_1, const string & var_id_2, const string & reif, bool fully_reif) -> void
 {
-    p.post(innards::CompareLessThanReif{get_var(var_id_1), get_var(var_id_2), get_var_as_cond(reif), false, true});
+    if (fully_reif)
+        p.post(LessThanEqualIff{get_var(var_id_1), get_var(var_id_2), get_var_as_cond(reif)});
+    else
+        p.post(innards::CompareLessThanReif{get_var(var_id_1), get_var(var_id_2), get_var_as_cond(reif), false, true});
 }
 
-auto Python::post_greater_than_if(const string & var_id_1, const string & var_id_2, const string & reif) -> void
+auto Python::post_greater_than_reif(const string & var_id_1, const string & var_id_2, const string & reif, bool fully_reify) -> void
 {
-    p.post(innards::CompareLessThanReif{get_var(var_id_2), get_var(var_id_1), get_var_as_cond(reif), false, false});
+    if (fully_reify)
+        p.post(GreaterThanIff(get_var(var_id_1), get_var(var_id_2), get_var_as_cond(reif)));
+    else
+        p.post(innards::CompareLessThanReif{get_var(var_id_2), get_var(var_id_1), get_var_as_cond(reif), false, false});
 }
 
-auto Python::post_greater_than_equal_if(const string & var_id_1, const string & var_id_2, const string & reif) -> void
+auto Python::post_greater_than_equal_reif(const string & var_id_1, const string & var_id_2, const string & reif, bool fully_reify) -> void
 {
-    p.post(innards::CompareLessThanReif{get_var(var_id_2), get_var(var_id_1), get_var_as_cond(reif), false, true});
-}
-
-auto Python::post_less_than_iff(const string & var_id_1, const string & var_id_2, const string & reif) -> void
-{
-    p.post(LessThanIff(get_var(var_id_1), get_var(var_id_2), get_var_as_cond(reif)));
-}
-
-auto Python::post_less_than_equal_iff(const string & var_id_1, const string & var_id_2, const string & reif) -> void
-{
-    p.post(LessThanEqualIff(get_var(var_id_1), get_var(var_id_2), get_var_as_cond(reif)));
-}
-
-auto Python::post_greater_than_iff(const string & var_id_1, const string & var_id_2, const string & reif) -> void
-{
-    p.post(GreaterThanIff(get_var(var_id_1), get_var(var_id_2), get_var_as_cond(reif)));
-}
-
-auto Python::post_greater_than_equal_iff(const string & var_id_1, const string & var_id_2, const string & reif) -> void
-{
-    p.post(GreaterThanEqualIff(get_var(var_id_1), get_var(var_id_2), get_var_as_cond(reif)));
+    if (fully_reify)
+        p.post(GreaterThanEqualIff(get_var(var_id_1), get_var(var_id_2), get_var_as_cond(reif)));
+    else
+        p.post(innards::CompareLessThanReif{get_var(var_id_2), get_var(var_id_1), get_var_as_cond(reif), false, true});
 }
 
 auto Python::post_count(const vector<string> & var_ids, const string & var_id, const string & count_id)
@@ -213,14 +205,12 @@ auto Python::post_equals(const string & var_id_1, const string & var_id_2) -> vo
     p.post(Equals(get_var(var_id_1), get_var(var_id_2)));
 }
 
-auto Python::post_equals_if(const string & var_id_1, const string & var_id_2, const string & reif_id) -> void
+auto Python::post_equals_reif(const string & var_id_1, const string & var_id_2, const string & reif_id, bool fully_reif) -> void
 {
-    p.post(EqualsIf(get_var(var_id_1), get_var(var_id_2), get_var(reif_id) != 0_i));
-}
-
-auto Python::post_equals_iff(const string & var_id_1, const string & var_id_2, const string & reif_id) -> void
-{
-    p.post(EqualsIff(get_var(var_id_1), get_var(var_id_2), get_var(reif_id) != 0_i));
+    if (fully_reif)
+        p.post(EqualsIff(get_var(var_id_1), get_var(var_id_2), get_var(reif_id) != 0_i));
+    else
+        p.post(EqualsIf(get_var(var_id_1), get_var(var_id_2), get_var(reif_id) != 0_i));
 }
 
 auto Python::post_not_equals(const string & var_id_1, const string & var_id_2) -> void
@@ -289,18 +279,17 @@ auto Python::post_and(const vector<string> & var_ids) -> void
     p.post(And{get_vars(var_ids)});
 }
 
-auto Python::post_and_if(const vector<string> & var_ids, const string & reif_id) -> void
+auto Python::post_and_reif(const vector<string> & var_ids, const string & reif_id, bool fully_reify) -> void
 {
-    // Note: x => AND([vars]) is equivalent to x <=> AND([vars, x])
-    auto new_vars = get_vars(var_ids);
-    auto reif_var = get_var(reif_id);
-    new_vars.push_back(reif_var);
-    p.post(And{new_vars, reif_var});
-}
-
-auto Python::post_and_iff(const vector<string> & var_ids, const string & reif_id) -> void
-{
-    p.post(And{get_vars(var_ids), get_var(reif_id)});
+    if (fully_reify)
+        p.post(And{get_vars(var_ids), get_var(reif_id)});
+    else {
+        // Note: x => AND([vars]) is equivalent to x <=> AND([vars, x])
+        auto new_vars = get_vars(var_ids);
+        auto reif_var = get_var(reif_id);
+        new_vars.push_back(reif_var);
+        p.post(And{new_vars, reif_var});
+    }
 }
 
 auto Python::post_or(const vector<string> & var_ids) -> void
@@ -308,18 +297,17 @@ auto Python::post_or(const vector<string> & var_ids) -> void
     p.post(Or{get_vars(var_ids)});
 }
 
-auto Python::post_or_if(const vector<string> & var_ids, const string & reif_id) -> void
+auto Python::post_or_reif(const vector<string> & var_ids, const string & reif_id, bool fully_reify) -> void
 {
-    // Note: x => OR([vars]) is equivalent to OR([vars, 1 - x])
-    auto new_vars = get_vars(var_ids);
-    auto reif_var = -get_var(reif_id) + 1_i;
-    new_vars.push_back(reif_var);
-    p.post(Or{new_vars});
-}
-
-auto Python::post_or_iff(const vector<string> & var_ids, const string & reif_id) -> void
-{
-    p.post(Or{get_vars(var_ids), get_var(reif_id)});
+    if (fully_reify)
+        p.post(Or{get_vars(var_ids), get_var(reif_id)});
+    else {
+        // Note: x => OR([vars]) is equivalent to OR([vars, 1 - x])
+        auto new_vars = get_vars(var_ids);
+        auto reif_var = -get_var(reif_id) + 1_i;
+        new_vars.push_back(reif_var);
+        p.post(Or{new_vars});
+    }
 }
 
 auto Python::post_implies(const string & var_id_1, const string & var_id_2) -> void
@@ -330,20 +318,15 @@ auto Python::post_implies(const string & var_id_1, const string & var_id_2) -> v
     p.post(Or{{var_2, -var_1 + 1_i}});
 }
 
-auto Python::post_implies_if(const string & var_id_1, const string & var_id_2, const string & reif_id) -> void
+auto Python::post_implies_reif(const string & var_id_1, const string & var_id_2, const string & reif_id, bool fully_reify) -> void
 {
     // Note x => (a => b) is equivalent to OR([b, 1-a, 1-x])
     auto var_1 = get_var(var_id_1);
     auto var_2 = get_var(var_id_2);
     auto reif_var = get_var(reif_id);
     p.post(Or{{var_2, -var_1 + 1_i, -reif_var + 1_i}});
-}
-
-auto Python::post_implies_iff(const string & var_id_1, const string & var_id_2, const string & reif_id) -> void
-{
-    // x <=> (a => b) is equivalent to x => (a => b) and 1-x => (And([a, 1-b])
-    post_implies_if(var_id_1, var_id_2, reif_id);
-    p.post(And{{get_var(var_id_1), -get_var(var_id_2) + 1_i}, -get_var(reif_id) + 1_i});
+    if (fully_reify)
+        p.post(And{{get_var(var_id_1), -get_var(var_id_2) + 1_i}, -get_var(reif_id) + 1_i});
 }
 
 auto Python::post_min(const vector<string> & var_ids, const string & var_id) -> void
@@ -430,20 +413,14 @@ PYBIND11_MODULE(gcspy, m)
         .def("post_less_than_equal", &Python::post_less_than_equal)
         .def("post_greater_than", &Python::post_greater_than)
         .def("post_greater_than_equal", &Python::post_greater_than_equal)
-        .def("post_less_than_if", &Python::post_less_than_if)
-        .def("post_less_than_equal_if", &Python::post_less_than_equal_if)
-        .def("post_greater_than_if", &Python::post_greater_than_if)
-        .def("post_greater_than_equal_if", &Python::post_greater_than_equal_if)
-        .def("post_less_than_iff", &Python::post_less_than_iff)
-        .def("post_less_than_equal_iff", &Python::post_less_than_equal_iff)
-        .def("post_greater_than_iff", &Python::post_greater_than_iff)
-        .def("post_greater_than_equal_iff", &Python::post_greater_than_equal_iff)
-        .def("post_equals", &Python::post_equals)
-        .def("post_equals_if", &Python::post_equals_if)
-        .def("post_equals_iff", &Python::post_equals_iff)
 
-        .def("post_count", &Python::post_count)
-        .def("post_element", &Python::post_element)
+        .def("post_less_than_reif", &Python::post_less_than_reif)
+        .def("post_less_than_equal_reif", &Python::post_less_than_equal_reif)
+        .def("post_greater_than_reif", &Python::post_greater_than_reif)
+        .def("post_greater_than_equal_reif", &Python::post_greater_than_equal_reif)
+
+        .def("post_equals", &Python::post_equals)
+        .def("post_equals_reif", &Python::post_equals_reif)
 
         .def("post_not_equals", &Python::post_not_equals)
         .def("post_in", &Python::post_in)
@@ -456,16 +433,15 @@ PYBIND11_MODULE(gcspy, m)
         .def("post_linear_not_equal", &Python::post_linear_not_equal)
 
         .def("post_and", &Python::post_and)
-        .def("post_and_if", &Python::post_and_if)
-        .def("post_and_iff", &Python::post_and_iff)
+        .def("post_and_reif", &Python::post_and_reif)
         .def("post_or", &Python::post_or)
-        .def("post_or_if", &Python::post_or_if)
-        .def("post_or_iff", &Python::post_or_iff)
+        .def("post_or_reif", &Python::post_or_reif)
 
         .def("post_implies", &Python::post_implies)
-        .def("post_implies_if", &Python::post_implies_if)
-        .def("post_implies_iff", &Python::post_implies_iff)
+        .def("post_implies_reif", &Python::post_implies_reif)
 
+        .def("post_count", &Python::post_count)
+        .def("post_element", &Python::post_element)
         .def("post_min", &Python::post_min)
         .def("post_max", &Python::post_max)
         .def("post_nvalue", &Python::post_nvalue)
