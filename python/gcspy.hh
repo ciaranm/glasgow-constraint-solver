@@ -16,7 +16,7 @@ public:
      * gcs::Problem methods, simplified for pybind11.
      * Using long long int instead of gcs::Integer and std::string instead of gcs::VariableID.
      */
-    auto create_integer_variable(const vector<long long int> & domain, const string & name) -> string;
+    auto create_integer_variable(const long long lower, const long long upper, const string & name) -> string;
     auto create_integer_constant(const long long int & value) -> string;
     auto minimise(const string &) -> void;
     auto maximise(const string &) -> void;
@@ -31,8 +31,10 @@ public:
      * Main solve method: no solution callbacks provided for simplicity - just enforce default
      * behaviour of looking for all solutions, then allow querying of solution values.
      */
-    auto solve(bool all_solutions = true, std::optional<unsigned long long> timeout = std::nullopt) -> std::unordered_map<string, unsigned long long int>; // Convert Stats struct to python dict via map
-    auto get_solution_value(const string &) -> std::optional<long long int>;
+    auto solve(bool all_solutions = true,
+        std::optional<unsigned long long> timeout = std::nullopt,
+        std::optional<unsigned long long> solution_limit = std::nullopt) -> std::unordered_map<string, unsigned long long int>; // Convert Stats struct to python dict via map
+    auto get_solution_value(const string &, const unsigned long long solution_number) -> std::optional<long long int>;
     auto get_proof_filename() -> string;
 
     /**
@@ -98,7 +100,7 @@ private:
     // Python will use string ids to keep track of variables
     std::unordered_map<string, IntegerVariableID> vars{};
     // raw_value in gcs::Integer is a long long int
-    std::unordered_map<IntegerVariableID, long long int> solution_values{};
+    std::vector<std::unordered_map<IntegerVariableID, long long int>> solution_values{};
     unsigned long long id_count{};
 
     /**
