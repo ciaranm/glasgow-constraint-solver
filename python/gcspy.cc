@@ -1,18 +1,43 @@
-#include <python/gcspy.hh>
-
+#include <chrono>
+#include <condition_variable>
 #include <gcs/constraints/in.hh>
 #include <iostream>
+#include <mutex>
 #include <optional>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <python/gcspy.hh>
+#include <thread>
 
 namespace py = pybind11;
 using namespace gcs;
 
+using std::atomic;
+using std::cerr;
+using std::condition_variable;
 using std::cout;
+using std::cv_status;
 using std::endl;
+using std::exception;
+using std::mutex;
+using std::nullopt;
+using std::optional;
 using std::string;
+using std::thread;
 using std::to_string;
+using std::unique_lock;
+using std::chrono::milliseconds;
+using std::chrono::seconds;
+using std::chrono::system_clock;
+
+static atomic<bool> abort_flag{false}, was_terminated{false};
+
+auto sig_int_or_term_handler(int) -> void
+{
+    cout << "Handle sig" << endl;
+    abort_flag.store(true);
+    was_terminated.store(true);
+}
 
 auto Python::create_integer_variable(const vector<long long int> & domain, const string & name) -> string
 {
@@ -49,29 +74,96 @@ auto Python::add_constant(const string & var_id, long long int constant) -> stri
     return map_new_id(var + Integer{constant});
 }
 
-auto Python::solve(bool all_solutions) -> std::unordered_map<string, unsigned long long int>
+auto Python::solve(bool all_solutions, optional<unsigned long long> timeout) -> std::unordered_map<string, unsigned long long int>
 {
-    auto stats = solve_with(p,
-        SolveCallbacks{
-            .solution = [&](const CurrentState & s) -> bool {
-                for (auto const & var : vars) {
-                    solution_values[var.second] = s(var.second).raw_value;
-                }
-                return all_solutions; // Keep searching for solutions
-            },
-        });
-    std::unordered_map<string, unsigned long long int> stats_map{};
-    stats_map["recursions"] = stats.recursions;
-    stats_map["failures"] = stats.failures;
-    stats_map["propagations"] = stats.propagations;
-    stats_map["effectful_propagations"] = stats.effectful_propagations;
-    stats_map["contradicting_propagations"] = stats.contradicting_propagations;
-    stats_map["solutions"] = stats.solutions;
-    stats_map["max_depth"] = stats.max_depth;
-    stats_map["n_propagators"] = stats.n_propagators;
-    stats_map["solve_time"] = stats.solve_time.count();
+    signal(SIGINT, &sig_int_or_term_handler);
+    signal(SIGTERM, &sig_int_or_term_handler);
 
-    return stats_map;
+    thread timeout_thread;
+    mutex timeout_mutex;
+    condition_variable timeout_cv;
+    bool actually_timed_out = false;
+    bool completed = false;
+
+    if (timeout) {
+        milliseconds limit{timeout.value() * 1000};
+        timeout_thread = thread([limit = limit, &timeout_mutex, &timeout_cv, &actually_timed_out] {
+            auto abort_time = system_clock::now() + limit;
+            {
+                /* Sleep until either we've reached the time limit,
+                 * or we've finished all the work. */
+                unique_lock<mutex> guard(timeout_mutex);
+                while (! abort_flag.load()) {
+                    if (cv_status::timeout == timeout_cv.wait_until(guard, abort_time)) {
+                        /* We've woken up, and it's due to a timeout. */
+                        actually_timed_out = true;
+                        break;
+                    }
+                }
+            }
+            abort_flag.store(true);
+        });
+    }
+
+    try {
+        auto stats = solve_with(
+            p,
+            SolveCallbacks{
+                .solution = [&](const CurrentState & s) -> bool {
+                    for (auto const & var : vars) {
+                        solution_values[var.second] = s(var.second).raw_value;
+                    }
+                    return all_solutions; // Keep searching for solutions
+                },
+                .completed = [&] { completed = true; }},
+            nullopt, &abort_flag); // No proofs yet.
+
+        if (timeout_thread.joinable()) {
+            {
+                unique_lock<mutex> guard(timeout_mutex);
+                abort_flag.store(true);
+                timeout_cv.notify_all();
+            }
+            timeout_thread.join();
+        }
+
+        std::unordered_map<string, unsigned long long int> stats_map{};
+        stats_map["recursions"] = stats.recursions;
+        stats_map["failures"] = stats.failures;
+        stats_map["propagations"] = stats.propagations;
+        stats_map["effectful_propagations"] = stats.effectful_propagations;
+        stats_map["contradicting_propagations"] = stats.contradicting_propagations;
+        stats_map["solutions"] = stats.solutions;
+        stats_map["max_depth"] = stats.max_depth;
+        stats_map["n_propagators"] = stats.n_propagators;
+        stats_map["solve_time"] = stats.solve_time.count() / 1'000'000.0;
+        stats_map["completed"] = completed;
+
+        return stats_map;
+    }
+    catch (const exception & e) {
+        fmt::println(cerr, "gcs: error: {}", e.what());
+
+        if (timeout_thread.joinable()) {
+            {
+                unique_lock<mutex> guard(timeout_mutex);
+                abort_flag.store(true);
+                timeout_cv.notify_all();
+            }
+            timeout_thread.join();
+        }
+        return std::unordered_map<string, unsigned long long int>{};
+    }
+
+    if (timeout_thread.joinable()) {
+        {
+            unique_lock<mutex> guard(timeout_mutex);
+            abort_flag.store(true);
+            timeout_cv.notify_all();
+        }
+        timeout_thread.join();
+    }
+    return std::unordered_map<string, unsigned long long int>{};
 }
 
 auto Python::get_solution_value(const string & var_id) -> std::optional<long long int>
@@ -96,7 +188,8 @@ auto Python::post_abs(const string & var_id_1, const string & var_id_2) -> void
 }
 
 auto Python::post_arithmetic(const string & var_id_1, const string & var_id_2,
-    const string & result_id, const string & op) -> void
+    const string & result_id, const string & op)
+    -> void
 {
     auto var1 = get_var(var_id_1);
     auto var2 = get_var(var_id_2);
@@ -195,7 +288,8 @@ auto Python::post_count(const vector<string> & var_ids, const string & var_id, c
 }
 
 auto Python::post_element(const string & var_id, const string & index_id,
-    const vector<string> & var_ids) -> void
+    const vector<string> & var_ids)
+    -> void
 {
     p.post(Element(get_var(var_id), get_var(index_id), get_vars(var_ids)));
 }
@@ -233,43 +327,50 @@ auto Python::post_in_vars(const string & var_id, const vector<string> & var_ids)
 }
 
 auto Python::post_linear_equality(const vector<string> & var_ids, const vector<long long int> & coeffs,
-    long long int value) -> void
+    long long int value)
+    -> void
 {
     p.post(LinearEquality{(make_linear(var_ids, coeffs)), Integer{value}});
 }
 
 auto Python::post_linear_equality_iff(const vector<string> & var_ids, const vector<long long int> & coeffs,
-    long long int value, const string & reif) -> void
+    long long int value, const string & reif)
+    -> void
 {
     p.post(LinearEqualityIff{(make_linear(var_ids, coeffs)), Integer{value}, get_var(reif) != 0_i});
 }
 
 auto Python::post_linear_less_equal(const vector<string> & var_ids, const vector<long long int> & coeffs,
-    long long int value) -> void
+    long long int value)
+    -> void
 {
     p.post(LinearLessEqual{(make_linear(var_ids, coeffs)), Integer{value}});
 }
 
 auto Python::post_linear_less_equal_iff(const vector<string> & var_ids, const vector<long long int> & coeffs,
-    long long int value, const string & reif) -> void
+    long long int value, const string & reif)
+    -> void
 {
     p.post(LinearLessEqualIff{(make_linear(var_ids, coeffs)), Integer{value}, get_var(reif) != 0_i});
 }
 
 auto Python::post_linear_greater_equal(const vector<string> & var_ids, const vector<long long int> & coeffs,
-    long long int value) -> void
+    long long int value)
+    -> void
 {
     p.post(LinearGreaterThanEqual{(make_linear(var_ids, coeffs)), Integer{value}});
 }
 
 auto Python::post_linear_greater_equal_iff(const vector<string> & var_ids, const vector<long long int> & coeffs,
-    long long int value, const string & reif) -> void
+    long long int value, const string & reif)
+    -> void
 {
     p.post(LinearLessEqualIff{(make_linear(var_ids, coeffs)), Integer{value}, get_var(reif) != 0_i});
 }
 
 auto Python::post_linear_not_equal(const vector<string> & var_ids, const vector<long long int> & coeffs,
-    long long int value) -> void
+    long long int value)
+    -> void
 {
     p.post(LinearNotEquals{(make_linear(var_ids, coeffs)), Integer{value}});
 }
@@ -398,7 +499,7 @@ PYBIND11_MODULE(gcspy, m)
         .def("minimise", &Python::minimise)
         .def("negate", &Python::negate)
         .def("add_constant", &Python::add_constant)
-        .def("solve", &Python::solve, py::arg("all_solutions") = true)
+        .def("solve", &Python::solve, py::arg("all_solutions") = true, py::arg("timeout") = nullopt)
 
         .def("get_solution_value", &Python::get_solution_value)
         .def("get_proof_filename", &Python::get_proof_filename)

@@ -1,5 +1,3 @@
-
-
 #ifndef GCS_API_HH
 #define GCS_API_HH
 #include <gcs/gcs.hh>
@@ -33,7 +31,7 @@ public:
      * Main solve method: no solution callbacks provided for simplicity - just enforce default
      * behaviour of looking for all solutions, then allow querying of solution values.
      */
-    auto solve(bool all_solutions = true) -> std::unordered_map<string, unsigned long long int>; // Convert Stats struct to python dict via map
+    auto solve(bool all_solutions = true, std::optional<unsigned long long> timeout = std::nullopt) -> std::unordered_map<string, unsigned long long int>; // Convert Stats struct to python dict via map
     auto get_solution_value(const string &) -> std::optional<long long int>;
     auto get_proof_filename() -> string;
 
