@@ -34,7 +34,7 @@ You will need a C++20 compiler, such as GCC 10.3, as well as CMake and Git. You 
 the Boost C++ libraries yourself; other dependencies will be pulled in automatically by CMake.
 
 ```shell
-apt install build-essentials git cmake libboost-all-dev
+apt install build-essential git cmake libboost-all-dev
 ```
 
 Dependencies (MacOS X using Brew)
