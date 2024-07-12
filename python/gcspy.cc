@@ -1,5 +1,3 @@
-#include <chrono>
-#include <condition_variable>
 #include <gcs/constraints/in.hh>
 #include <iostream>
 #include <mutex>
@@ -9,8 +7,6 @@
 #include <pybind11/stl.h>
 #include <python/gcspy.hh>
 #include <thread>
-
-#define WRITE_API_CALLS
 
 namespace py = pybind11;
 using namespace gcs;
@@ -96,8 +92,13 @@ auto Python::add_constant(const string & var_id, long long int constant) -> stri
     return map_new_id(var + Integer{constant});
 }
 
-auto Python::solve(bool all_solutions, optional<unsigned long long> timeout, optional<unsigned long long> solution_limit,
-    optional<function<void(std::unordered_map<string, long long int>)>> callback)
+auto Python::solve(bool all_solutions,
+    optional<unsigned long long> timeout,
+    optional<unsigned long long> solution_limit,
+    const optional<function<void(std::unordered_map<string, long long int>)>> & callback,
+    bool prove,
+    const optional<string> & proof_name,
+    const optional<string> & proof_location)
     -> std::unordered_map<string, unsigned long long int>
 {
 #ifdef WRITE_API_CALLS
@@ -131,8 +132,12 @@ auto Python::solve(bool all_solutions, optional<unsigned long long> timeout, opt
             abort_flag.store(true);
         });
     }
-    else {
-        cout << "No timeout." << endl;
+
+    if (prove) {
+        if (! proof_name)
+            throw pybind11::value_error("Glasgow Constraint Solver: prove is true but no proof_name provided");
+        if (! proof_location)
+            throw pybind11::value_error("Glasgow Constraint Solver: prove is true but no proof_location provided");
     }
 
     try {
@@ -157,7 +162,8 @@ auto Python::solve(bool all_solutions, optional<unsigned long long> timeout, opt
                     return all_solutions; // Keep searching for solutions if all solutions
                 },
                 .completed = [&] { completed = true; }},
-            nullopt, &abort_flag); // No proofs yet.
+            prove ? make_optional<ProofOptions>(*proof_location + "/" + *proof_name + ".opb", *proof_location + "/" + *proof_name + ".pbp") : nullopt,
+            &abort_flag);
 
         if (timeout_thread.joinable()) {
             {
@@ -195,16 +201,6 @@ auto Python::solve(bool all_solutions, optional<unsigned long long> timeout, opt
         }
         return std::unordered_map<string, unsigned long long int>{};
     }
-
-    if (timeout_thread.joinable()) {
-        {
-            unique_lock<mutex> guard(timeout_mutex);
-            abort_flag.store(true);
-            timeout_cv.notify_all();
-        }
-        timeout_thread.join();
-    }
-    return std::unordered_map<string, unsigned long long int>{};
 }
 
 auto Python::get_solution_value(const string & var_id, const unsigned long long solution_number = 0) -> std::optional<long long int>
@@ -675,7 +671,13 @@ PYBIND11_MODULE(gcspy, m)
         .def("negate", &Python::negate)
         .def("add_constant", &Python::add_constant)
         .def("solve", &Python::solve,
-            py::arg("all_solutions") = true, py::arg("timeout") = nullopt, py::arg("solution_limit") = nullopt, py::arg("callback") = nullopt)
+            py::arg("all_solutions") = true,
+            py::arg("timeout") = nullopt,
+            py::arg("solution_limit") = nullopt,
+            py::arg("callback") = nullopt,
+            py::arg("prove") = false,
+            py::arg("proof_name") = nullopt,
+            py::arg("proof_location") = nullopt)
         .def("get_solution_value", &Python::get_solution_value, py::arg("var_id"), py::arg("solution_number") = 0)
         .def("get_proof_filename", &Python::get_proof_filename)
 

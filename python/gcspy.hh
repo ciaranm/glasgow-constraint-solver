@@ -34,7 +34,10 @@ public:
     auto solve(bool all_solutions = true,
         std::optional<unsigned long long> timeout = std::nullopt,
         std::optional<unsigned long long> solution_limit = std::nullopt,
-        std::optional<std::function<void(std::unordered_map<string, long long int>)>> callback = std::nullopt)
+        const std::optional<std::function<void(std::unordered_map<string, long long int>)>> & callback = std::nullopt,
+        bool prove = false,
+        const std::optional<string> & proof_name = std::nullopt,
+        const std::optional<string> & proof_location = std::nullopt)
         -> std::unordered_map<string, unsigned long long int>; // Convert Stats struct to python dict via map
 
     auto get_solution_value(const string &, const unsigned long long solution_number) -> std::optional<long long int>;
