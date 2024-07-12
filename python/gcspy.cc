@@ -4,10 +4,13 @@
 #include <iostream>
 #include <mutex>
 #include <optional>
+#include <pybind11/functional.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <python/gcspy.hh>
 #include <thread>
+
+#define WRITE_API_CALLS
 
 namespace py = pybind11;
 using namespace gcs;
@@ -19,6 +22,7 @@ using std::cout;
 using std::cv_status;
 using std::endl;
 using std::exception;
+using std::function;
 using std::mutex;
 using std::nullopt;
 using std::optional;
@@ -31,8 +35,6 @@ using std::chrono::seconds;
 using std::chrono::system_clock;
 
 static atomic<bool> abort_flag{false}, was_terminated{false};
-
-#define WRITE_API_CALLS
 
 auto sig_int_or_term_handler(int) -> void
 {
@@ -94,7 +96,8 @@ auto Python::add_constant(const string & var_id, long long int constant) -> stri
     return map_new_id(var + Integer{constant});
 }
 
-auto Python::solve(bool all_solutions, optional<unsigned long long> timeout, optional<unsigned long long> solution_limit)
+auto Python::solve(bool all_solutions, optional<unsigned long long> timeout, optional<unsigned long long> solution_limit,
+    optional<function<void(std::unordered_map<string, long long int>)>> callback)
     -> std::unordered_map<string, unsigned long long int>
 {
 #ifdef WRITE_API_CALLS
@@ -128,6 +131,9 @@ auto Python::solve(bool all_solutions, optional<unsigned long long> timeout, opt
             abort_flag.store(true);
         });
     }
+    else {
+        cout << "No timeout." << endl;
+    }
 
     try {
         auto stats = solve_with(
@@ -135,13 +141,18 @@ auto Python::solve(bool all_solutions, optional<unsigned long long> timeout, opt
             SolveCallbacks{
                 .solution = [&](const CurrentState & s) -> bool {
                     solution_values.emplace_back();
+                    id_solution_values.emplace_back();
                     for (auto const & var : vars) {
                         solution_values.back()[var.second] = s(var.second).raw_value;
+                        id_solution_values.back()[var.first] = s(var.second).raw_value;
                     }
-
+                    if (callback) {
+                        (*callback)(id_solution_values.back());
+                    }
                     if (solution_limit) {
-                        if (--*solution_limit == 0)
+                        if (--*solution_limit == 0) {
                             return false;
+                        }
                     }
                     return all_solutions; // Keep searching for solutions if all solutions
                 },
@@ -663,8 +674,8 @@ PYBIND11_MODULE(gcspy, m)
         .def("minimise", &Python::minimise)
         .def("negate", &Python::negate)
         .def("add_constant", &Python::add_constant)
-        .def("solve", &Python::solve, py::arg("all_solutions") = true, py::arg("timeout") = nullopt, py::arg("solution_limit") = nullopt)
-
+        .def("solve", &Python::solve,
+            py::arg("all_solutions") = true, py::arg("timeout") = nullopt, py::arg("solution_limit") = nullopt, py::arg("callback") = nullopt)
         .def("get_solution_value", &Python::get_solution_value, py::arg("var_id"), py::arg("solution_number") = 0)
         .def("get_proof_filename", &Python::get_proof_filename)
 

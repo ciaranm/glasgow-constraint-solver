@@ -33,7 +33,10 @@ public:
      */
     auto solve(bool all_solutions = true,
         std::optional<unsigned long long> timeout = std::nullopt,
-        std::optional<unsigned long long> solution_limit = std::nullopt) -> std::unordered_map<string, unsigned long long int>; // Convert Stats struct to python dict via map
+        std::optional<unsigned long long> solution_limit = std::nullopt,
+        std::optional<std::function<void(std::unordered_map<string, long long int>)>> callback = std::nullopt)
+        -> std::unordered_map<string, unsigned long long int>; // Convert Stats struct to python dict via map
+
     auto get_solution_value(const string &, const unsigned long long solution_number) -> std::optional<long long int>;
     auto get_proof_filename() -> string;
 
@@ -99,8 +102,10 @@ private:
     Problem p{};
     // Python will use string ids to keep track of variables
     std::unordered_map<string, IntegerVariableID> vars{};
+    std::unordered_map<IntegerVariableID, string> id_for_var{};
     // raw_value in gcs::Integer is a long long int
     std::vector<std::unordered_map<IntegerVariableID, long long int>> solution_values{};
+    std::vector<std::unordered_map<std::string, long long int>> id_solution_values{};
     unsigned long long id_count{};
 
     /**
@@ -110,6 +115,7 @@ private:
     {
         auto str_id = std::to_string(id_count++);
         vars.insert({str_id, var_id});
+        id_for_var.insert({var_id, str_id});
         return str_id;
     }
 
