@@ -1,3 +1,5 @@
+#include <chrono>
+#include <condition_variable>
 #include <gcs/constraints/in.hh>
 #include <iostream>
 #include <mutex>
@@ -6,6 +8,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <python/gcspy.hh>
+#include <signal.h>
 #include <thread>
 
 namespace py = pybind11;
