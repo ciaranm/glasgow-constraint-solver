@@ -33,20 +33,18 @@ using std::chrono::milliseconds;
 using std::chrono::seconds;
 using std::chrono::system_clock;
 
-static atomic<bool> abort_flag{false}, was_terminated{false};
-
-auto sig_int_or_term_handler(int) -> void
+#ifdef WRITE_API_CALLS
+auto Python::get_api_calls_str() -> string
 {
-    abort_flag.store(true);
-    was_terminated.store(true);
+    return api_calls.str();
 }
-
+#endif
 auto Python::create_integer_variable(const long long lower, const long long upper, const string & name) -> string
 {
     auto var_id = p.create_integer_variable(Integer{lower}, Integer{upper}, name);
     auto str_id = map_new_id(var_id);
 #ifdef WRITE_API_CALLS
-    cout << "auto v" << str_id << " = p.create_integer_variable(" << lower << "_i, " << upper << "_i);" << endl;
+    api_calls << "auto v" << str_id << " = p.create_integer_variable(" << lower << "_i, " << upper << "_i);" << endl;
 #endif
     return str_id;
 }
@@ -56,7 +54,7 @@ auto Python::create_integer_constant(const long long int & value) -> string
     auto constant_id = ConstantIntegerVariableID{Integer(value)};
     auto str_id = map_new_id(constant_id);
 #ifdef WRITE_API_CALLS
-    cout << "auto v" << str_id << " = ConstantIntegerVariableID{Integer(" << value << ")};" << endl;
+    api_calls << "auto v" << str_id << " = ConstantIntegerVariableID{Integer(" << value << ")};" << endl;
 #endif
     return str_id;
 }
@@ -64,7 +62,7 @@ auto Python::create_integer_constant(const long long int & value) -> string
 auto Python::minimise(const string & var_id) -> void
 {
 #ifdef WRITE_API_CALLS
-    cout << "minimise" << endl;
+    api_calls << "p.minimise(v" << var_id << ");" << endl;
 #endif
     p.minimise(get_var(var_id));
 }
@@ -72,27 +70,31 @@ auto Python::minimise(const string & var_id) -> void
 auto Python::maximise(const string & var_id) -> void
 {
 #ifdef WRITE_API_CALLS
-    cout << "maximise" << endl;
+    api_calls << "p.minimise(v" << var_id << ");" << endl;
 #endif
     p.maximise(get_var(var_id));
 }
 
 auto Python::negate(const string & var_id) -> string
 {
-#ifdef WRITE_API_CALLS
-    cout << "negate" << endl;
-#endif
     auto var = get_var(var_id);
-    return map_new_id(-var);
+    auto minus_var = map_new_id(-var);
+#ifdef WRITE_API_CALLS
+    api_calls << "auto v" << minus_var << " = -v" << var_id << ";" << endl;
+#endif
+
+    return minus_var;
 }
 
 auto Python::add_constant(const string & var_id, long long int constant) -> string
 {
-#ifdef WRITE_API_CALLS
-    cout << "add_constant" << endl;
-#endif
     auto var = get_var(var_id);
-    return map_new_id(var + Integer{constant});
+    auto shift_var = map_new_id(var + Integer{constant});
+#ifdef WRITE_API_CALLS
+    api_calls << "auto v" << shift_var << " = v" << var_id << " + " << constant << "_i;" << endl;
+#endif
+
+    return shift_var;
 }
 
 auto Python::solve(bool all_solutions,
@@ -105,10 +107,11 @@ auto Python::solve(bool all_solutions,
     -> std::unordered_map<string, unsigned long long int>
 {
 #ifdef WRITE_API_CALLS
-    cout << "solve" << endl;
+    api_calls << "solve" << endl;
 #endif
-    signal(SIGINT, &sig_int_or_term_handler);
-    signal(SIGTERM, &sig_int_or_term_handler);
+
+    abort_flag.store(false);
+    was_terminated.store(false);
 
     thread timeout_thread;
     mutex timeout_mutex;
@@ -117,6 +120,7 @@ auto Python::solve(bool all_solutions,
     bool completed = false;
 
     if (timeout) {
+
         milliseconds limit{timeout.value() * 1000};
         timeout_thread = thread([limit = limit, &timeout_mutex, &timeout_cv, &actually_timed_out] {
             auto abort_time = system_clock::now() + limit;
@@ -124,6 +128,7 @@ auto Python::solve(bool all_solutions,
                 /* Sleep until either we've reached the time limit,
                  * or we've finished all the work. */
                 unique_lock<mutex> guard(timeout_mutex);
+
                 while (! abort_flag.load()) {
                     if (cv_status::timeout == timeout_cv.wait_until(guard, abort_time)) {
                         /* We've woken up, and it's due to a timeout. */
@@ -132,6 +137,7 @@ auto Python::solve(bool all_solutions,
                     }
                 }
             }
+
             abort_flag.store(true);
         });
     }
@@ -209,7 +215,7 @@ auto Python::solve(bool all_solutions,
 auto Python::get_solution_value(const string & var_id, const unsigned long long solution_number = 0) -> std::optional<long long int>
 {
 #ifdef WRITE_API_CALLS
-    cout << "get_solution_value" << endl;
+    api_calls << "get_solution_value" << endl;
 #endif
     try {
         auto sol_val = solution_values[solution_number].at(get_var(var_id));
@@ -223,7 +229,7 @@ auto Python::get_solution_value(const string & var_id, const unsigned long long 
 auto Python::get_proof_filename() -> string
 {
 #ifdef WRITE_API_CALLS
-    cout << "get_proof_filename" << endl;
+    api_calls << "get_proof_filename" << endl;
 #endif
     return proof_filename;
 }
@@ -231,7 +237,7 @@ auto Python::get_proof_filename() -> string
 auto Python::post_abs(const string & var_id_1, const string & var_id_2) -> void
 {
 #ifdef WRITE_API_CALLS
-    cout << "post_abs" << endl;
+    api_calls << " p.post(Abs(v" << var_id_1 << " , v" << var_id_2 << ");" << endl;
 #endif
     p.post(Abs(get_var(var_id_1), get_var(var_id_2)));
 }
@@ -240,14 +246,16 @@ auto Python::post_arithmetic(const string & var_id_1, const string & var_id_2,
     const string & result_id, const string & op)
     -> void
 {
-#ifdef WRITE_API_CALLS
-    cout << "post_arithmetic" << endl;
-#endif
+
     auto var1 = get_var(var_id_1);
     auto var2 = get_var(var_id_2);
     auto result = get_var(result_id);
     if (op == "sum") {
+#ifdef WRITE_API_CALLS
+        api_calls << " p.post(Plus(v" << var_id_1 << " , v" << var_id_2 << ");" << endl;
+#endif
         try {
+
             p.post(Plus(var1, var2, result));
         }
         catch (const std::runtime_error & e) {
@@ -255,15 +263,27 @@ auto Python::post_arithmetic(const string & var_id_1, const string & var_id_2,
         }
     }
     else if (op == "mul") {
+#ifdef WRITE_API_CALLS
+        api_calls << " p.post(Times(v" << var_id_1 << " , v" << var_id_2 << ");" << endl;
+#endif
         p.post(Times(var1, var2, result));
     }
     else if (op == "div") {
+#ifdef WRITE_API_CALLS
+        api_calls << " p.post(Div(v" << var_id_1 << " , v" << var_id_2 << ");" << endl;
+#endif
         p.post(Div(var1, var2, result));
     }
     else if (op == "mod") {
+#ifdef WRITE_API_CALLS
+        api_calls << " p.post(Mod(v" << var_id_1 << " , v" << var_id_2 << ");" << endl;
+#endif
         p.post(Mod(var1, var2, result));
     }
     else if (op == "pow") {
+#ifdef WRITE_API_CALLS
+        api_calls << " p.post(Pow(v" << var_id_1 << " , v" << var_id_2 << ");" << endl;
+#endif
         p.post(Power(var1, var2, result));
     }
     else {
@@ -274,10 +294,10 @@ auto Python::post_arithmetic(const string & var_id_1, const string & var_id_2,
 auto Python::post_alldifferent(const vector<std::string> & var_ids) -> void
 {
 #ifdef WRITE_API_CALLS
-    cout << "p.post(AllDifferent{{";
+    api_calls << "p.post(AllDifferent{{";
     for (size_t i = 0; i < var_ids.size() - 1; ++i)
-        cout << "v" << var_ids[i] << ", ";
-    cout << "v" << var_ids.back() << "}gi});" << endl;
+        api_calls << "v" << var_ids[i] << ", ";
+    api_calls << "v" << var_ids.back() << "}});" << endl;
 #endif
     p.post(AllDifferent{get_vars(var_ids)});
 }
@@ -285,7 +305,10 @@ auto Python::post_alldifferent(const vector<std::string> & var_ids) -> void
 auto Python::post_circuit(const vector<std::string> & var_ids) -> void
 {
 #ifdef WRITE_API_CALLS
-    cout << "post_circuit" << endl;
+    api_calls << "p.post(Circuit{{";
+    for (size_t i = 0; i < var_ids.size() - 1; ++i)
+        api_calls << "v" << var_ids[i] << ", ";
+    api_calls << "v" << var_ids.back() << "}});" << endl;
 #endif
     p.post(Circuit{get_vars(var_ids)});
 }
@@ -293,7 +316,8 @@ auto Python::post_circuit(const vector<std::string> & var_ids) -> void
 auto Python::post_less_than(const string & var_id_1, const string & var_id_2) -> void
 {
 #ifdef WRITE_API_CALLS
-    cout << "post_less_than" << endl;
+    api_calls << "p.post(LessThan{v" << var_id_1 << ", "
+              << "v" << var_id_2 << "});" << endl;
 #endif
     p.post(LessThan{get_var(var_id_1), get_var(var_id_2)});
 }
@@ -301,7 +325,8 @@ auto Python::post_less_than(const string & var_id_1, const string & var_id_2) ->
 auto Python::post_less_than_equal(const string & var_id_1, const string & var_id_2) -> void
 {
 #ifdef WRITE_API_CALLS
-    cout << "post_less_than_equal" << endl;
+    api_calls << "p.post(LessThanEqual{v" << var_id_1 << ", "
+              << "v" << var_id_2 << "});" << endl;
 #endif
     p.post(LessThanEqual{get_var(var_id_1), get_var(var_id_2)});
 }
@@ -309,7 +334,8 @@ auto Python::post_less_than_equal(const string & var_id_1, const string & var_id
 auto Python::post_greater_than(const string & var_id_1, const string & var_id_2) -> void
 {
 #ifdef WRITE_API_CALLS
-    cout << "post_greater_than" << endl;
+    api_calls << "p.post(GreaterThan{v" << var_id_1 << ", "
+              << "v" << var_id_2 << "});" << endl;
 #endif
     p.post(GreaterThan{get_var(var_id_1), get_var(var_id_2)});
 }
@@ -317,7 +343,8 @@ auto Python::post_greater_than(const string & var_id_1, const string & var_id_2)
 auto Python::post_greater_than_equal(const string & var_id_1, const string & var_id_2) -> void
 {
 #ifdef WRITE_API_CALLS
-    cout << "post_greater_than_equal" << endl;
+    api_calls << "p.post(GreaterThanEqual{v" << var_id_1 << ", "
+              << "v" << var_id_2 << "});" << endl;
 #endif
     p.post(GreaterThanEqual{get_var(var_id_1), get_var(var_id_2)});
 }
@@ -326,17 +353,17 @@ auto Python::post_less_than_reif(const string & var_id_1, const string & var_id_
 {
     if (fully_reify) {
 #ifdef WRITE_API_CALLS
-        cout << "p.post(LessThanIff{v" << var_id_1 << ", "
-             << "v" << var_id_2 << ", v" << reif << " != 0_i"
-             << "});" << endl;
+        api_calls << "p.post(LessThanIff{v" << var_id_1 << ", "
+                  << "v" << var_id_2 << ", v" << reif << " != 0_i"
+                  << "});" << endl;
 #endif
         p.post(LessThanIff{get_var(var_id_1), get_var(var_id_2), get_var_as_cond(reif)});
     }
     else {
 #ifdef WRITE_API_CALLS
-        cout << "p.post(LessThanIf{v" << var_id_1 << ", "
-             << "v" << var_id_2 << ", v" << reif << " != 0_i"
-             << "});" << endl;
+        api_calls << "p.post(LessThanIf{v" << var_id_1 << ", "
+                  << "v" << var_id_2 << ", v" << reif << " != 0_i"
+                  << "});" << endl;
 #endif
         p.post(LessThanIf{get_var(var_id_1), get_var(var_id_2), get_var_as_cond(reif)});
     }
@@ -344,35 +371,62 @@ auto Python::post_less_than_reif(const string & var_id_1, const string & var_id_
 
 auto Python::post_less_than_equal_reif(const string & var_id_1, const string & var_id_2, const string & reif, bool fully_reif) -> void
 {
+    if (fully_reif) {
 #ifdef WRITE_API_CALLS
-    cout << "post_less_than_equal_reif" << endl;
+        api_calls << "p.post(LessThanEqualIff{v" << var_id_1 << ", "
+                  << "v" << var_id_2 << ", v" << reif << " != 0_i"
+                  << "});" << endl;
 #endif
-    if (fully_reif)
         p.post(LessThanEqualIff{get_var(var_id_1), get_var(var_id_2), get_var_as_cond(reif)});
-    else
+    }
+    else {
+#ifdef WRITE_API_CALLS
+        api_calls << "p.post(innards::CompareLessThanReif{v" << var_id_1 << ", "
+                  << "v" << var_id_2 << ", v" << reif << " != 0_i"
+                  << ", false, true});" << endl;
+#endif
         p.post(innards::CompareLessThanReif{get_var(var_id_1), get_var(var_id_2), get_var_as_cond(reif), false, true});
+    }
 }
 
 auto Python::post_greater_than_reif(const string & var_id_1, const string & var_id_2, const string & reif, bool fully_reify) -> void
 {
+    if (fully_reify) {
 #ifdef WRITE_API_CALLS
-    cout << "post_greater_than_reif" << endl;
+        api_calls << "p.post(GreaterThanIff{v" << var_id_1 << ", "
+                  << "v" << var_id_2 << ", v" << reif << " != 0_i"
+                  << "});" << endl;
 #endif
-    if (fully_reify)
         p.post(GreaterThanIff(get_var(var_id_1), get_var(var_id_2), get_var_as_cond(reif)));
-    else
+    }
+    else {
+#ifdef WRITE_API_CALLS
+        api_calls << "p.post(innards::CompareLessThanReif{v" << var_id_2 << ", "
+                  << "v" << var_id_1 << ", v" << reif << " != 0_i"
+                  << ", false, false});" << endl;
+#endif
         p.post(innards::CompareLessThanReif{get_var(var_id_2), get_var(var_id_1), get_var_as_cond(reif), false, false});
+    }
 }
 
 auto Python::post_greater_than_equal_reif(const string & var_id_1, const string & var_id_2, const string & reif, bool fully_reify) -> void
 {
+    if (fully_reify) {
 #ifdef WRITE_API_CALLS
-    cout << "post_greater_than_equal_reif" << endl;
+        api_calls << "p.post(GreaterThanEqualIff{v" << var_id_1 << ", "
+                  << "v" << var_id_2 << ", v" << reif << " != 0_i"
+                  << "});" << endl;
 #endif
-    if (fully_reify)
         p.post(GreaterThanEqualIff(get_var(var_id_1), get_var(var_id_2), get_var_as_cond(reif)));
-    else
+    }
+    else {
+#ifdef WRITE_API_CALLS
+        api_calls << "p.post(innards::CompareLessThanReif{v" << var_id_1 << ", "
+                  << "v" << var_id_2 << ", v" << reif << " != 0_i"
+                  << ", false, true});" << endl;
+#endif
         p.post(innards::CompareLessThanReif{get_var(var_id_2), get_var(var_id_1), get_var_as_cond(reif), false, true});
+    }
 }
 
 auto Python::post_count(const vector<string> & var_ids, const string & var_id, const string & count_id)
@@ -391,26 +445,35 @@ auto Python::post_element(const string & var_id, const string & index_id,
 auto Python::post_equals(const string & var_id_1, const string & var_id_2) -> void
 {
 #ifdef WRITE_API_CALLS
-    cout << "p.post(Equals(v" << var_id_1 << ", v" << var_id_2 << ");" << endl;
+    api_calls << "p.post(Equals(v" << var_id_1 << ", v" << var_id_2 << ");" << endl;
 #endif
     p.post(Equals(get_var(var_id_1), get_var(var_id_2)));
 }
 
 auto Python::post_equals_reif(const string & var_id_1, const string & var_id_2, const string & reif_id, bool fully_reif) -> void
 {
+    if (fully_reif) {
 #ifdef WRITE_API_CALLS
-    cout << "post_equals_reif" << endl;
+        api_calls << "p.post(EqualsIff{v" << var_id_1 << ", "
+                  << "v" << var_id_2 << ", v" << reif_id << " != 0_i"
+                  << "});" << endl;
 #endif
-    if (fully_reif)
         p.post(EqualsIff(get_var(var_id_1), get_var(var_id_2), get_var(reif_id) != 0_i));
-    else
+    }
+    else {
+#ifdef WRITE_API_CALLS
+        api_calls << "p.post(EqualsIf{v" << var_id_1 << ", "
+                  << "v" << var_id_2 << ", v" << reif_id << " != 0_i"
+                  << "});" << endl;
+#endif
         p.post(EqualsIf(get_var(var_id_1), get_var(var_id_2), get_var(reif_id) != 0_i));
+    }
 }
 
 auto Python::post_not_equals(const string & var_id_1, const string & var_id_2) -> void
 {
 #ifdef WRITE_API_CALLS
-    cout << "post_not_equals" << endl;
+    api_calls << "post_not_equals" << endl;
 #endif
     p.post(NotEquals(get_var(var_id_1), get_var(var_id_2)));
 }
@@ -418,7 +481,7 @@ auto Python::post_not_equals(const string & var_id_1, const string & var_id_2) -
 auto Python::post_in(const string & var_id, const vector<long long int> & domain) -> void
 {
 #ifdef WRITE_API_CALLS
-    cout << "post_in" << endl;
+    api_calls << "post_in" << endl;
 #endif
     vector<Integer> domain_i{};
     for (auto d : domain) {
@@ -430,7 +493,7 @@ auto Python::post_in(const string & var_id, const vector<long long int> & domain
 auto Python::post_in_vars(const string & var_id, const vector<string> & var_ids) -> void
 {
 #ifdef WRITE_API_CALLS
-    cout << "post_in_vars" << endl;
+    api_calls << "post_in_vars" << endl;
 #endif
     p.post(In(get_var(var_id), get_vars(var_ids)));
 }
@@ -440,12 +503,12 @@ auto Python::post_linear_equality(const vector<string> & var_ids, const vector<l
     -> void
 {
 #ifdef WRITE_API_CALLS
-    cout << "p.post(LinearEquality{WeightedSum{}";
+    api_calls << "p.post(LinearEquality{WeightedSum{}";
     for (size_t i = 0; i < var_ids.size(); ++i)
-        cout << " + " << coeffs[i] << "_i * "
-             << "v" << var_ids[i];
-    cout << ", " << value << "_i"
-         << "});" << endl;
+        api_calls << " + " << coeffs[i] << "_i * "
+                  << "v" << var_ids[i];
+    api_calls << ", " << value << "_i"
+              << "});" << endl;
 #endif
     p.post(LinearEquality{(make_linear(var_ids, coeffs)), Integer{value}});
 }
@@ -455,7 +518,7 @@ auto Python::post_linear_equality_iff(const vector<string> & var_ids, const vect
     -> void
 {
 #ifdef WRITE_API_CALLS
-    cout << "post_linear_equality_iff" << endl;
+    api_calls << "post_linear_equality_iff" << endl;
 #endif
     p.post(LinearEqualityIff{(make_linear(var_ids, coeffs)), Integer{value}, get_var(reif) != 0_i});
 }
@@ -465,7 +528,7 @@ auto Python::post_linear_less_equal(const vector<string> & var_ids, const vector
     -> void
 {
 #ifdef WRITE_API_CALLS
-    cout << "post_linear_less_equal" << endl;
+    api_calls << "post_linear_less_equal" << endl;
 #endif
     p.post(LinearLessEqual{(make_linear(var_ids, coeffs)), Integer{value}});
 }
@@ -475,7 +538,7 @@ auto Python::post_linear_less_equal_iff(const vector<string> & var_ids, const ve
     -> void
 {
 #ifdef WRITE_API_CALLS
-    cout << "post_linear_less_equal_iff" << endl;
+    api_calls << "post_linear_less_equal_iff" << endl;
 #endif
     p.post(LinearLessEqualIff{(make_linear(var_ids, coeffs)), Integer{value}, get_var(reif) != 0_i});
 }
@@ -485,7 +548,7 @@ auto Python::post_linear_greater_equal(const vector<string> & var_ids, const vec
     -> void
 {
 #ifdef WRITE_API_CALLS
-    cout << "post_linear_greater_equal" << endl;
+    api_calls << "post_linear_greater_equal" << endl;
 #endif
     p.post(LinearGreaterThanEqual{(make_linear(var_ids, coeffs)), Integer{value}});
 }
@@ -495,7 +558,7 @@ auto Python::post_linear_greater_equal_iff(const vector<string> & var_ids, const
     -> void
 {
 #ifdef WRITE_API_CALLS
-    cout << "post_linear_greater_equal_iff" << endl;
+    api_calls << "post_linear_greater_equal_iff" << endl;
 #endif
     p.post(LinearLessEqualIff{(make_linear(var_ids, coeffs)), Integer{value}, get_var(reif) != 0_i});
 }
@@ -505,7 +568,7 @@ auto Python::post_linear_not_equal(const vector<string> & var_ids, const vector<
     -> void
 {
 #ifdef WRITE_API_CALLS
-    cout << "post_linear_not_equal" << endl;
+    api_calls << "post_linear_not_equal" << endl;
 #endif
     p.post(LinearNotEquals{(make_linear(var_ids, coeffs)), Integer{value}});
 }
@@ -513,7 +576,7 @@ auto Python::post_linear_not_equal(const vector<string> & var_ids, const vector<
 auto Python::post_and(const vector<string> & var_ids) -> void
 {
 #ifdef WRITE_API_CALLS
-    cout << "post_and" << endl;
+    api_calls << "post_and" << endl;
 #endif
     p.post(And{get_vars(var_ids)});
 }
@@ -521,7 +584,7 @@ auto Python::post_and(const vector<string> & var_ids) -> void
 auto Python::post_and_reif(const vector<string> & var_ids, const string & reif_id, bool fully_reify) -> void
 {
 #ifdef WRITE_API_CALLS
-    cout << "post_and_reif" << endl;
+    api_calls << "post_and_reif" << endl;
 #endif
     if (fully_reify)
         p.post(And{get_vars(var_ids), get_var(reif_id)});
@@ -537,7 +600,10 @@ auto Python::post_and_reif(const vector<string> & var_ids, const string & reif_i
 auto Python::post_or(const vector<string> & var_ids) -> void
 {
 #ifdef WRITE_API_CALLS
-    cout << "post_or" << endl;
+    api_calls << "p.post(Or{{";
+    for (size_t i = 0; i < var_ids.size() - 1; ++i)
+        api_calls << "v" << var_ids[i] << ", ";
+    api_calls << "v" << var_ids.back() << "}});" << endl;
 #endif
     p.post(Or{get_vars(var_ids)});
 }
@@ -545,7 +611,7 @@ auto Python::post_or(const vector<string> & var_ids) -> void
 auto Python::post_or_reif(const vector<string> & var_ids, const string & reif_id, bool fully_reify) -> void
 {
 #ifdef WRITE_API_CALLS
-    cout << "post_or_reif" << endl;
+    api_calls << "post_or_reif" << endl;
 #endif
     if (fully_reify)
         p.post(Or{get_vars(var_ids), get_var(reif_id)});
@@ -561,7 +627,7 @@ auto Python::post_or_reif(const vector<string> & var_ids, const string & reif_id
 auto Python::post_implies(const string & var_id_1, const string & var_id_2) -> void
 {
 #ifdef WRITE_API_CALLS
-    cout << "post_implies" << endl;
+    api_calls << "post_implies" << endl;
 #endif
     // Note: x => y is equivalent to OR([y, 1-x])
     auto var_1 = get_var(var_id_1);
@@ -572,7 +638,7 @@ auto Python::post_implies(const string & var_id_1, const string & var_id_2) -> v
 auto Python::post_implies_reif(const string & var_id_1, const string & var_id_2, const string & reif_id, bool fully_reify) -> void
 {
 #ifdef WRITE_API_CALLS
-    cout << "post_implies_reif" << endl;
+    api_calls << "post_implies_reif" << endl;
 #endif
     // Note x => (a => b) is equivalent to OR([b, 1-a, 1-x])
     auto var_1 = get_var(var_id_1);
@@ -586,7 +652,10 @@ auto Python::post_implies_reif(const string & var_id_1, const string & var_id_2,
 auto Python::post_min(const vector<string> & var_ids, const string & var_id) -> void
 {
 #ifdef WRITE_API_CALLS
-    cout << "post_min" << endl;
+    api_calls << "p.post(ArrayMin{{";
+    for (size_t i = 0; i < var_ids.size() - 1; ++i)
+        api_calls << "v" << var_ids[i] << ", ";
+    api_calls << "v" << var_ids.back() << "}, v" << var_id << "});" << endl;
 #endif
     p.post(ArrayMin(get_vars(var_ids), get_var(var_id)));
 }
@@ -594,7 +663,7 @@ auto Python::post_min(const vector<string> & var_ids, const string & var_id) -> 
 auto Python::post_max(const vector<string> & var_ids, const string & var_id) -> void
 {
 #ifdef WRITE_API_CALLS
-    cout << "post_max" << endl;
+    api_calls << "post_max" << endl;
 #endif
     p.post(ArrayMax(get_vars(var_ids), get_var(var_id)));
 }
@@ -602,7 +671,7 @@ auto Python::post_max(const vector<string> & var_ids, const string & var_id) -> 
 auto Python::post_nvalue(const string & var_id, const vector<string> & var_ids) -> void
 {
 #ifdef WRITE_API_CALLS
-    cout << "post_nvalue" << endl;
+    api_calls << "post_nvalue" << endl;
 #endif
     p.post(NValue(get_var(var_id), get_vars(var_ids)));
 }
@@ -610,7 +679,7 @@ auto Python::post_nvalue(const string & var_id, const vector<string> & var_ids) 
 auto Python::post_table(const vector<string> & var_id, const vector<vector<long long int>> & table) -> void
 {
 #ifdef WRITE_API_CALLS
-    cout << "post_table" << endl;
+    api_calls << "post_table" << endl;
 #endif
     SimpleTuples table_i;
     for (const auto & v : table) {
@@ -628,7 +697,7 @@ auto Python::post_table(const vector<string> & var_id, const vector<vector<long 
 auto Python::post_negative_table(const vector<string> & var_id, const vector<vector<long long int>> & table) -> void
 {
 #ifdef WRITE_API_CALLS
-    cout << "post_negative_table" << endl;
+    api_calls << "post_negative_table" << endl;
 #endif
     SimpleTuples table_i;
     for (const auto & v : table) {
@@ -646,7 +715,7 @@ auto Python::post_negative_table(const vector<string> & var_id, const vector<vec
 auto Python::post_inverse(const vector<string> & var_ids_1, const vector<string> & var_ids_2) -> void
 {
 #ifdef WRITE_API_CALLS
-    cout << "post_inverse" << endl;
+    api_calls << "post_inverse" << endl;
 #endif
     p.post(Inverse{get_vars(var_ids_1), get_vars(var_ids_2)});
 }
@@ -654,7 +723,7 @@ auto Python::post_inverse(const vector<string> & var_ids_1, const vector<string>
 auto Python::post_xor(const vector<std::string> & var_ids) -> void
 {
 #ifdef WRITE_API_CALLS
-    cout << "post_xor" << endl;
+    api_calls << "post_xor" << endl;
 #endif
     p.post(ParityOdd{get_vars(var_ids)});
 }
@@ -667,6 +736,9 @@ PYBIND11_MODULE(gcspy, m)
     m.doc() = "Python bindings for the Glasgow Constraint Solver";
     py::class_<Python>(m, "GCS")
         .def(py::init<>())
+#ifdef WRITE_API_CALLS
+        .def("get_api_calls_str", &Python::get_api_calls_str)
+#endif
         .def("create_integer_variable", &Python::create_integer_variable)
         .def("create_integer_constant", &Python::create_integer_constant)
         .def("maximise", &Python::maximise)

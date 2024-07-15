@@ -9,9 +9,25 @@ using namespace gcs;
 using std::string;
 using std::vector;
 
+#define WRITE_API_CALLS
+
+static std::atomic<bool> abort_flag{false}, was_terminated{false};
+
+auto sig_int_or_term_handler(int) -> void
+{
+    abort_flag.store(true);
+    was_terminated.store(true);
+}
+
 class Python
 {
 public:
+#ifdef WRITE_API_CALLS
+    /**
+     * Work in progress: get the exact calls to the GCS API so we can debug this model.
+     */
+    auto get_api_calls_str() -> string;
+#endif
     /**
      * gcs::Problem methods, simplified for pybind11.
      * Using long long int instead of gcs::Integer and std::string instead of gcs::VariableID.
@@ -99,6 +115,11 @@ public:
     auto post_xor(const vector<string> & var_ids) -> void;
     auto post_in(const string & var_id, const vector<long long int> & domain) -> void;
     auto post_in_vars(const string & var_id, const vector<string> & var_ids) -> void;
+    Python()
+    {
+        signal(SIGINT, &sig_int_or_term_handler);
+        signal(SIGTERM, &sig_int_or_term_handler);
+    }
 
 private:
     const string proof_filename = "gcs_proof";
@@ -111,6 +132,9 @@ private:
     std::vector<std::unordered_map<std::string, long long int>> id_solution_values{};
     unsigned long long id_count{};
 
+#ifdef WRITE_API_CALLS
+    std::stringstream api_calls;
+#endif
     /**
      * Private helper methods to deal with the var map.
      */
@@ -137,7 +161,7 @@ private:
     {
         try {
             auto var = vars.at(var_id);
-            return var == 1_i;
+            return var != 0_i;
         }
         catch (const std::out_of_range & e) {
             throw pybind11::key_error("Variable ID '" + var_id + "' not known to the Glasgow Constraint Solver.");
