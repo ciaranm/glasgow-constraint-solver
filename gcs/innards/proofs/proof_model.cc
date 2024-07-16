@@ -174,7 +174,7 @@ auto ProofModel::create_proof_only_integer_variable(Integer lower, Integer upper
 
 auto ProofModel::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariableID id, Integer lower, Integer upper, const string & name) -> void
 {
-    emit_model_comment(format("variable {} {} .. {} direct encoding", name, lower.raw_value, upper.raw_value));
+    emit_model_comment(fmt::format("variable {} {} .. {} direct encoding", name, lower.raw_value, upper.raw_value));
 
     if (0_i == lower && 1_i == upper) {
         auto eqvar = variable_constraints_tracker().rewrite_variable_name(name + "t");

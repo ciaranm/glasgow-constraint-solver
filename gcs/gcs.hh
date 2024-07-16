@@ -27,6 +27,7 @@
 #include <gcs/constraints/linear.hh>
 #include <gcs/constraints/logical.hh>
 #include <gcs/constraints/min_max.hh>
+#include <gcs/constraints/mult_bc.hh>
 #include <gcs/constraints/n_value.hh>
 #include <gcs/constraints/not_equals.hh>
 #include <gcs/constraints/parity.hh>
