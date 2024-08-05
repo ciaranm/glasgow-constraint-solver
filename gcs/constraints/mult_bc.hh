@@ -19,9 +19,10 @@ namespace gcs
     {
     private:
         SimpleIntegerVariableID _v1, _v2, _v3;
+        bool _use_gac_justifications;
 
     public:
-        MultBC(SimpleIntegerVariableID v1, SimpleIntegerVariableID v2, SimpleIntegerVariableID v3);
+        MultBC(SimpleIntegerVariableID v1, SimpleIntegerVariableID v2, SimpleIntegerVariableID v3, bool use_gac_justifications = false);
 
         virtual auto describe_for_proof() -> std::string override;
         virtual auto install(innards::Propagators & propagators, innards::State &, innards::ProofModel *) && -> void override;

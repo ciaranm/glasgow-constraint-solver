@@ -56,6 +56,7 @@ add_library(glasgow_constraint_solver
         innards/state.cc
         innards/variable_id_utils.cc
         presolvers/auto_table.cc
+        presolvers/proof_auto_table.cc
 )
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})

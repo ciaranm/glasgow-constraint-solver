@@ -6,6 +6,7 @@
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/proofs/variable_constraints_tracker.hh>
 #include <gcs/innards/propagators.hh>
+#include <gcs/presolvers/auto_table.hh>
 #include <utility>
 
 using namespace gcs;
@@ -935,6 +936,11 @@ namespace
 
         run_resolution(logger, to_resolve);
     }
+
+    auto or_use_rup_if(const Justification & just, bool use_rup) -> Justification
+    {
+        return use_rup ? Justification{JustifyUsingRUP{}} : just;
+    }
 }
 // End of Proof-Logging related code for BC Multiplication.
 
@@ -967,7 +973,8 @@ auto filter_quotient(SimpleIntegerVariableID x_var, SimpleIntegerVariableID y_va
     const map<SimpleIntegerVariableID, ProofOnlySimpleIntegerVariableID> & mag_var,
     const pair<ProofLine, ProofLine> z_eq_product_lines,
     ProofLogger * const logger,
-    const bool x_is_first)
+    const bool x_is_first,
+    const bool use_rup)
     -> Inference
 {
     // This is based on the case breakdown in JaCoP
@@ -996,7 +1003,7 @@ auto filter_quotient(SimpleIntegerVariableID x_var, SimpleIntegerVariableID y_va
         };
 
         inf = state.infer(logger, x_var < largest_possible_quotient + 1_i,
-            JustifyExplicitly{upper_justf}, generic_reason(state, {y_var, z_var}));
+            or_use_rup_if(JustifyExplicitly{upper_justf}, use_rup), generic_reason(state, {y_var, z_var}));
 
         auto lower_justf = [&](const Reason & reason) {
             prove_quotient_bounds(reason, *logger, state, x_var, y_var, z_var,
@@ -1007,18 +1014,18 @@ auto filter_quotient(SimpleIntegerVariableID x_var, SimpleIntegerVariableID y_va
         };
 
         increase_inference_to(inf,
-            state.infer(logger, x_var >= smallest_possible_quotient, JustifyExplicitly{lower_justf}, generic_reason(state, {y_var, z_var})));
+            state.infer(logger, x_var >= smallest_possible_quotient, or_use_rup_if(JustifyExplicitly{lower_justf}, use_rup), generic_reason(state, {y_var, z_var})));
         return inf;
     }
     else if (y_min == 0_i && y_max != 0_i && (z_min > 0_i || z_max < 0_i)) {
         // y is either 0 or strictly positive and z has either all positive or all negative values
         return filter_quotient(x_var, y_var, z_var, z_min, z_max, 1_i, y_max, all_vars,
-            state, bit_products_handle, channelling_constraints, mag_var, z_eq_product_lines, logger, x_is_first);
+            state, bit_products_handle, channelling_constraints, mag_var, z_eq_product_lines, logger, x_is_first, use_rup);
     }
     else if (y_min != 0_i && y_max == 0_i && (z_min > 0_i || z_max < 0_i)) {
         // y is either 0 or strictly negative z has either all positive or all negative values
         return filter_quotient(x_var, y_var, z_var, z_min, z_max, y_min, -1_i, all_vars, state,
-            bit_products_handle, channelling_constraints, mag_var, z_eq_product_lines, logger, x_is_first);
+            bit_products_handle, channelling_constraints, mag_var, z_eq_product_lines, logger, x_is_first, use_rup);
     }
     else if ((y_min > 0_i || y_max < 0_i) && y_min <= y_max) {
         auto x1y1 = (double)z_min.raw_value / (double)y_min.raw_value;
@@ -1053,14 +1060,14 @@ auto filter_quotient(SimpleIntegerVariableID x_var, SimpleIntegerVariableID y_va
         };
 
         if (smallest_possible_quotient > largest_possible_quotient) {
-            return state.infer(logger, FalseLiteral{}, JustifyExplicitly{both_justf}, generic_reason(state, {y_var, z_var}));
+            return state.infer(logger, FalseLiteral{}, or_use_rup_if(JustifyExplicitly{both_justf}, use_rup), generic_reason(state, {y_var, z_var}));
         }
         auto inf = state.infer(logger, x_var < largest_possible_quotient + 1_i,
-            JustifyExplicitly{upper_justf}, generic_reason(state, {y_var, z_var}));
+            or_use_rup_if(JustifyExplicitly{upper_justf}, use_rup), generic_reason(state, {y_var, z_var}));
 
         increase_inference_to(inf,
             state.infer(logger, x_var >= smallest_possible_quotient,
-                JustifyExplicitly{lower_justf}, generic_reason(state, {y_var, z_var})));
+                or_use_rup_if(JustifyExplicitly{lower_justf}, use_rup), generic_reason(state, {y_var, z_var})));
         return inf;
     }
     else {
@@ -1069,15 +1076,15 @@ auto filter_quotient(SimpleIntegerVariableID x_var, SimpleIntegerVariableID y_va
     }
 }
 
-MultBC::MultBC(const SimpleIntegerVariableID v1, const SimpleIntegerVariableID v2, const SimpleIntegerVariableID v3) :
+MultBC::MultBC(const SimpleIntegerVariableID v1, const SimpleIntegerVariableID v2, const SimpleIntegerVariableID v3, bool use_gac_justifications) :
     _v1(v1),
-    _v2(v2), _v3(v3)
+    _v2(v2), _v3(v3), _use_gac_justifications(use_gac_justifications)
 {
 }
 
 auto MultBC::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<MultBC>(_v1, _v2, _v3);
+    return make_unique<MultBC>(_v1, _v2, _v3, _use_gac_justifications);
 }
 
 auto MultBC::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
@@ -1193,7 +1200,8 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
 
     propagators.install([v1 = _v1, v2 = _v2, v3 = _v3, bit_products_h = bit_products_handle,
                             channelling_constraints = channelling_constraints,
-                            mag_var = mag_var, v3_eq_product_lines = v3_eq_product_lines](State & state,
+                            mag_var = mag_var, v3_eq_product_lines = v3_eq_product_lines,
+                            use_rup = _use_gac_justifications](State & state,
                             ProofLogger * const logger) -> pair<Inference, PropagatorState> {
         vector<IntegerVariableID> all_vars = {v1, v2, v3};
 
@@ -1214,7 +1222,7 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
             };
 
             increase_inference_to(inf,
-                state.infer(logger, v3 < largest_product + 1_i, JustifyExplicitly{upper_justf}, generic_reason(state, {v1, v2})));
+                state.infer(logger, v3 < largest_product + 1_i, or_use_rup_if(JustifyExplicitly{upper_justf}, use_rup), generic_reason(state, {v1, v2})));
 
             if (Inference::Contradiction == inf)
                 return pair{inf, PropagatorState::Enable};
@@ -1229,7 +1237,7 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
             }};
 
             increase_inference_to(inf,
-                state.infer(logger, v3 >= smallest_product, lower_justf, generic_reason(state, {v1, v2})));
+                state.infer(logger, v3 >= smallest_product, or_use_rup_if(JustifyExplicitly{lower_justf}, use_rup), generic_reason(state, {v1, v2})));
 
             if (Inference::Contradiction == inf)
                 return pair{inf, PropagatorState::Enable};
@@ -1237,7 +1245,7 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
             auto bounds3 = state.bounds(v3);
             increase_inference_to(inf,
                 filter_quotient(v1, v2, v3, bounds3.first, bounds3.second, bounds2.first, bounds2.second, all_vars, state,
-                    bit_products_h, channelling_constraints, mag_var, v3_eq_product_lines, logger, true));
+                    bit_products_h, channelling_constraints, mag_var, v3_eq_product_lines, logger, true, use_rup));
 
             if (Inference::Contradiction == inf)
                 return pair{inf, PropagatorState::Enable};
@@ -1245,7 +1253,7 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
             bounds1 = state.bounds(v1);
             increase_inference_to(inf,
                 filter_quotient(v2, v1, v3, bounds3.first, bounds3.second, bounds1.first, bounds1.second, all_vars, state,
-                    bit_products_h, channelling_constraints, mag_var, v3_eq_product_lines, logger, false));
+                    bit_products_h, channelling_constraints, mag_var, v3_eq_product_lines, logger, false, use_rup));
 
             if (Inference::Contradiction == inf)
                 return pair{inf, PropagatorState::Enable};

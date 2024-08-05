@@ -1083,8 +1083,13 @@ auto State::operator()(const IntegerVariableID & i) const -> Integer
 
 auto State::new_epoch(bool subsearch) -> Timestamp
 {
-    if (! _imp->changed.empty())
-        throw UnimplementedException{};
+    if (! _imp->how_changed.empty()) {
+        _imp->how_changed.clear();
+    }
+    if (! _imp->changed.empty()) {
+        _imp->changed.clear(); // This might be dodgy - trying to hack in generate and test
+        // throw UnimplementedException{};
+    }
 
     _imp->integer_variable_states.push_back(_imp->integer_variable_states.back());
     _imp->constraint_states.push_back(_imp->constraint_states.back());

@@ -33,7 +33,7 @@ namespace gcs::test_innards
         fmt::println(std::cerr, "$ {}", cmd);
         return EXIT_SUCCESS == system(cmd.c_str());
     }
-
+    
     [[nodiscard]] inline auto can_run_veripb() -> bool
     {
         return run_veripb("--help", ">/dev/null");
