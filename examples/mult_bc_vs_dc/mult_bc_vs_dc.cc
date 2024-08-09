@@ -390,6 +390,6 @@ auto run_single() -> int
 
 auto main(int argc, char * argv[]) -> int
 {
-    return run_fractions_tests(argc, argv);
+    return run_mult_tests(argc, argv);
     // return run_single();
 }
