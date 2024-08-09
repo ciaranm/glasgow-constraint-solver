@@ -7,7 +7,7 @@ from matplotlib.ticker import AutoMinorLocator
 # Read the CSV file
 data = pd.read_csv(sys.argv[1], index_col=False)
 
-print(data['bcproofsolve'])
+data = data.loc[data['noproofsolve'] > 100]
 # Plot noproofsolve against bcproofsolve
 plt.figure(figsize=(10, 5))
 
@@ -28,7 +28,7 @@ plt.scatter(data['noproofsolve'], data['bcverify'] / 1000000, color='b', s=10, l
 plt.yscale('log')
 plt.title('Verification for BC vs GAC proof logging')
 plt.xlabel('Time without proof logging (µs)')
-plt.ylabel('Time with proof logging (s)')
+plt.ylabel('Verification Time (s)')
 plt.legend()
 plt.gca().xaxis.set_minor_locator(AutoMinorLocator(5))
 plt.grid(True, which='major')
