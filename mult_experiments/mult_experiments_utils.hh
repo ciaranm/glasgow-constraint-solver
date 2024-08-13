@@ -4,6 +4,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <csignal>
 #include <gcs/gcs.hh>
 #include <mutex>
 #include <optional>
