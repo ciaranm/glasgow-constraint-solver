@@ -67,8 +67,8 @@ auto run_mult_test(pair<int, int> v1_range, pair<int, int> v2_range, pair<int, i
         cout << stats.solve_time.count() << ",";
 
         auto vpb_command = "timeout 1000s veripb " + proof_prefix + "_bc.opb " + proof_prefix + "_bc.pbp >/dev/null";
-        auto result_bc = system(vpb_command.c_str());
         auto start_time_bc = std::chrono::steady_clock::now();
+        auto result_bc = system(vpb_command.c_str());
         auto verify_time_bc = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start_time_bc).count();
         cout << verify_time_bc << ",";
         return result_bc == EXIT_SUCCESS;
@@ -81,7 +81,6 @@ auto run_mult_test(pair<int, int> v1_range, pair<int, int> v2_range, pair<int, i
         cout << stats.solve_time.count() << ",";
 
         auto vpb_command = "timeout 1000s veripb " + proof_prefix + "_dc.opb " + proof_prefix + "_dc.pbp >/dev/null";
-        auto result_bc = system(vpb_command.c_str());
 
         auto start_time_dc = std::chrono::steady_clock::now();
         auto result_dc = system(vpb_command.c_str());
