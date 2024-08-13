@@ -156,8 +156,8 @@ auto run_mult_tests(int argc, char * argv[]) -> int
              << r3.first << "," << r3.second << endl;
 
         run_mult_test(r1, r2, r3, NO_PROOFS);
-        if (! run_mult_test(r1, r2, r3, DC_PROOFS))
-            run_mult_test(r1, r2, r3, BC_PROOFS);
+        if (! run_mult_test(r1, r2, r3, BC_PROOFS))
+            return EXIT_FAILURE;
         if (! run_mult_test(r1, r2, r3, DC_PROOFS))
             return EXIT_FAILURE;
 

@@ -2,12 +2,12 @@ import sys
 
 import matplotlib.pyplot as plt
 import pandas as pd
-from matplotlib.ticker import AutoMinorLocator
 
 # Read the CSV file
 data = pd.read_csv(sys.argv[1], index_col=False)
 
-data = data.loc[data['noproofsolve'] > 100]
+print(data)
+# data = data.loc[data['noproofsolve'] > 100]
 # Plot noproofsolve against bcproofsolve
 plt.figure(figsize=(10, 5))
 
@@ -19,7 +19,7 @@ plt.title('Overhead of BC vs GAC proof logging')
 plt.xlabel('Time without proof logging (µs)')
 plt.ylabel('Time with proof logging (s)')
 plt.legend()
-plt.gca().xaxis.set_minor_locator(AutoMinorLocator(5))
+# plt.gca().xaxis.set_minor_locator(AutoMinorLocator(5))
 plt.grid(True, which='major')
 plt.subplot(1, 2, 2)
 
@@ -30,7 +30,7 @@ plt.title('Verification for BC vs GAC proof logging')
 plt.xlabel('Time without proof logging (µs)')
 plt.ylabel('Verification Time (s)')
 plt.legend()
-plt.gca().xaxis.set_minor_locator(AutoMinorLocator(5))
+# plt.gca().xaxis.set_minor_locator(AutoMinorLocator(5))
 plt.grid(True, which='major')
 # Show the plots
 plt.tight_layout()
