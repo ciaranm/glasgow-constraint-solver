@@ -69,6 +69,9 @@ if (GCS_ENABLE_EXAMPLES)
     add_subdirectory(test)
 endif (GCS_ENABLE_EXAMPLES)
 
+
+add_subdirectory(mult_experiments)
+
 if (GCS_ENABLE_DOXYGEN)
     find_package(Doxygen)
 
@@ -123,3 +126,4 @@ if (GCS_ENABLE_MINIZINC)
     )
     FetchContent_MakeAvailable(json)
 endif (GCS_ENABLE_MINIZINC)
+

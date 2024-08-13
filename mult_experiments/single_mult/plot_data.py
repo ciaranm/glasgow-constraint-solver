@@ -7,7 +7,7 @@ import pandas as pd
 data = pd.read_csv(sys.argv[1], index_col=False)
 
 print(data)
-# data = data.loc[data['noproofsolve'] > 100]
+data = data.loc[data['noproofsolve'] < 70]
 # Plot noproofsolve against bcproofsolve
 plt.figure(figsize=(10, 5))
 
