@@ -449,13 +449,15 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessEqual<Weighted<Pseud
     );
 }
 
-auto ProofLogger::emit_under_reason(const ProofRule & rule, const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
+auto ProofLogger::emit_under_reason(
+    const ProofRule & rule, const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
     ProofLevel level, const Reason & reason
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
     ,
     const std::source_location & where
 #endif
-    ) -> ProofLine
+    ,
+    const optional<ProofLine> & append_line) -> ProofLine
 {
     optional<Literals> reason_literals;
     if (reason)
@@ -493,6 +495,8 @@ auto ProofLogger::emit_under_reason(const ProofRule & rule, const SumLessEqual<W
         emit_inequality_to(variable_constraints_tracker(), ineq, nullopt, rule_line);
     }
 
+    if (append_line)
+        rule_line << ";" << to_string(*append_line);
     return emit_proof_line(
         rule_line.str(), level
 #ifdef GCS_TRACK_ALL_PROPAGATIONS

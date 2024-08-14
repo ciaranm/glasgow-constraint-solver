@@ -152,7 +152,7 @@ namespace
     };
 
     auto result_of_deriving(ProofLogger & logger, ProofRule rule, const WeightedPseudoBooleanLessEqual & ineq,
-        const HalfReifyOnConjunctionOf & reif, const ProofLevel & proof_level, const Reason & reason)
+        const HalfReifyOnConjunctionOf & reif, const ProofLevel & proof_level, const Reason & reason, const optional<ProofLine> & append_line = nullopt)
     {
         // Have to flip it again to store in the form lhs >= rhs
         WeightedPseudoBooleanSum ge_lhs{};
@@ -161,7 +161,7 @@ namespace
         }
         auto res = DerivedPBConstraint{
             ge_lhs, -ineq.rhs, reif, reason,
-            logger.emit_under_reason(rule, logger.reified(ineq, reif), proof_level, reason)};
+            logger.emit_under_reason(rule, logger.reified(ineq, reif), proof_level, reason, append_line)};
         return res;
     }
 
@@ -543,7 +543,7 @@ namespace
             logger.emit_proof_line(inner_sum.str(), ProofLevel::Temporary);
             auto implied_sum = logger.emit_under_reason(IMPLIES,
                 logger.reified(bitsum + lb_2.rhs * ProofBitVariable{mag_x, i, false} >= lb_2.rhs, reif),
-                ProofLevel::Temporary, reason);
+                ProofLevel::Temporary, reason, -1);
             outer_sum.add_multiplied_by(implied_sum, 1 << i);
         }
 
@@ -554,7 +554,7 @@ namespace
 
         return result_of_deriving(logger, IMPLIES,
             mag_z_sum >= lb_1.rhs * lb_2.rhs, reif,
-            ProofLevel::Temporary, reason);
+            ProofLevel::Temporary, reason, -1);
     }
 
     auto prove_positive_product_upper_bound(ProofLogger & logger, DerivedPBConstraint ub_1, DerivedPBConstraint ub_2,
@@ -631,13 +631,13 @@ namespace
 
             auto fusion_premise_1 = result_of_deriving(logger, IMPLIES,
                 desired_constraint, HalfReifyOnConjunctionOf{ProofBitVariable{mag_x, i, false}},
-                ProofLevel::Temporary, reason);
+                ProofLevel::Temporary, reason, -1);
 
             rhs = Integer{(1 << bit_products[i].size()) - 1};
 
             auto fusion_premise_2 = result_of_deriving(logger, IMPLIES,
                 desired_constraint, HalfReifyOnConjunctionOf{ProofBitVariable{mag_x, i, true}},
-                ProofLevel::Temporary, reason);
+                ProofLevel::Temporary, reason, -2);
 
             // We now know a slightly cleaner way to do this, but this still works fine
             auto fusion_resolvent = derive_by_fusion_resolution(
@@ -657,7 +657,7 @@ namespace
 
         return result_of_deriving(logger, IMPLIES,
             mag_z_sum >= -ub_1.rhs * ub_2.rhs, reif,
-            ProofLevel::Temporary, reason);
+            ProofLevel::Temporary, reason, -1);
     }
 
     auto prove_product_bounds(const Reason & reason, ProofLogger & logger,

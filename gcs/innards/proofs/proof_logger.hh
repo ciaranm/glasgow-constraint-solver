@@ -164,7 +164,8 @@ namespace gcs::innards
             ,
             const std::source_location & w = std::source_location::current()
 #endif
-                ) -> ProofLine;
+                ,
+            const std::optional<ProofLine> & append_line = std::nullopt) -> ProofLine;
 
         /**
          * Emit a RUP proof step for the specified expression, not subject to

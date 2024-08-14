@@ -67,7 +67,7 @@ auto main(int, char *[]) -> int
 
     random_device rand_dev;
     mt19937 rand(rand_dev());
-    for (int x = 0; x < 50; ++x)
+    for (int x = 0; x < 1000; ++x)
         generate_random_data(rand, data, random_bounds(-10, 10, 5, 15), random_bounds(-10, 10, 5, 15), random_bounds(-10, 10, 5, 15));
 
     for (auto & [r1, r2, r3] : data) {
