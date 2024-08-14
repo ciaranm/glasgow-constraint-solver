@@ -496,7 +496,7 @@ auto ProofLogger::emit_under_reason(
     }
 
     if (append_line)
-        rule_line << ";" << to_string(*append_line);
+        rule_line << " " << to_string(*append_line);
     return emit_proof_line(
         rule_line.str(), level
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
