@@ -495,8 +495,13 @@ auto ProofLogger::emit_under_reason(
         emit_inequality_to(variable_constraints_tracker(), ineq, nullopt, rule_line);
     }
 
-    if (append_line)
-        rule_line << " " << to_string(*append_line);
+    if (append_line) {
+        if (*append_line == -1)
+            rule_line << " " << to_string(_imp->proof_line + *append_line);
+        else
+            rule_line << " " << to_string(*append_line);
+    }
+
     return emit_proof_line(
         rule_line.str(), level
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
