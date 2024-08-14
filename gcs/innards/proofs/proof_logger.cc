@@ -496,10 +496,7 @@ auto ProofLogger::emit_under_reason(
     }
 
     if (append_line) {
-        if (*append_line == -1)
-            rule_line << " " << to_string(_imp->proof_line + *append_line);
-        else
-            rule_line << " " << to_string(*append_line);
+        rule_line << " " << to_string(*append_line);
     }
 
     return emit_proof_line(

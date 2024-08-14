@@ -637,7 +637,7 @@ namespace
 
             auto fusion_premise_2 = result_of_deriving(logger, IMPLIES,
                 desired_constraint, HalfReifyOnConjunctionOf{ProofBitVariable{mag_x, i, true}},
-                ProofLevel::Temporary, reason, -2);
+                ProofLevel::Temporary, reason);
 
             // We now know a slightly cleaner way to do this, but this still works fine
             auto fusion_resolvent = derive_by_fusion_resolution(
