@@ -279,7 +279,7 @@ auto main(int argc, char * argv[]) -> int
             }
             else if (var_type == "int") {
                 if (! vardata.contains("domain")) {
-                    auto var = problem.create_integer_variable(Integer::min_value(), Integer::max_value(), name);
+                    auto var = problem.create_integer_variable(Integer::min_value() / 2_i, Integer::max_value() / 2_i, name);
                     data.integer_variables.emplace(name, pair{var, false});
                     if ((! vardata.contains("defined")) || (! vardata["defined"].get<bool>()))
                         data.branch_variables.push_back(var);
