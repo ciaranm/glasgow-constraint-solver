@@ -7,6 +7,7 @@
 #include <gcs/innards/proofs/simplify_literal.hh>
 #include <gcs/innards/proofs/variable_constraints_tracker.hh>
 
+#include <algorithm>
 #include <deque>
 #include <fstream>
 #include <iterator>
@@ -28,9 +29,11 @@ using std::ofstream;
 using std::optional;
 using std::ostreambuf_iterator;
 using std::pair;
+using std::sort;
 using std::string;
 using std::stringstream;
 using std::to_string;
+using std::unique;
 using std::unordered_map;
 using std::variant;
 using std::vector;
