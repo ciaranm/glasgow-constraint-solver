@@ -300,12 +300,18 @@ auto Propagators::propagate(const optional<Literal> & lit, State & state, ProofL
         _imp->idle_end = orig_idle_end;
     });
 
+    InferenceTracker tracker{state};
+
     bool contradiction = false;
     while (! contradiction) {
+        if (0 == _imp->enqueued_end) {
+            for (const auto & [v, inf] : tracker.each_inference())
+                requeue(v, inf);
+            tracker.reset();
+        }
+
         if (0 == _imp->enqueued_end)
             break;
-
-        InferenceTracker tracker{state};
 
         int propagator_id = _imp->queue[--_imp->enqueued_end];
         try {
@@ -328,9 +334,6 @@ auto Propagators::propagate(const optional<Literal> & lit, State & state, ProofL
 
         if (contradiction || (optional_abort_flag && optional_abort_flag->load()))
             break;
-
-        for (const auto & [v, inf] : tracker.each_inference())
-            requeue(v, inf);
     }
 
     return ! contradiction;

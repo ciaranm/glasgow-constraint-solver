@@ -17,6 +17,8 @@
 #include <__generator.hpp>
 #endif
 
+#include <range/v3/all.hpp>
+
 namespace gcs::innards
 {
     class TrackedPropagationFailed
@@ -140,9 +142,14 @@ namespace gcs::innards
         auto each_inference() const -> std::generator<std::pair<SimpleIntegerVariableID, Inference>>
         {
             return [](const auto & inferences) -> std::generator<std::pair<SimpleIntegerVariableID, Inference>> {
-                for (const auto & [var, inf] : inferences)
+                for (const auto & [var, inf] : inferences | ranges::views::reverse)
                     co_yield std::pair{var, inf};
             }(inferences);
+        }
+
+        auto reset() -> void
+        {
+            inferences.clear();
         }
     };
 }
