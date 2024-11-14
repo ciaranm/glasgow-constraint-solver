@@ -28,12 +28,14 @@ namespace gcs::innards
     class InferenceTracker
     {
     private:
-        State & state;
-        std::deque<std::pair<SimpleIntegerVariableID, Inference>> inferences;
+        State & _state;
+        std::deque<std::pair<SimpleIntegerVariableID, Inference>> _inferences;
+        bool _did_anything_since_last_call;
 
     public:
         explicit InferenceTracker(State & s) :
-            state(s)
+            _state(s),
+            _did_anything_since_last_call(false)
         {
         }
 
@@ -51,7 +53,7 @@ namespace gcs::innards
             case Inference::BoundsChanged:
             case Inference::Instantiated:
                 if (logger)
-                    logger->infer(state, false, lit, just, reason);
+                    logger->infer(_state, false, lit, just, reason);
 
                 overloaded{
                     [&](const TrueLiteral &) {},
@@ -60,63 +62,66 @@ namespace gcs::innards
                         overloaded{
                             [&](const ConstantIntegerVariableID &) {},
                             [&](const SimpleIntegerVariableID & var) {
-                                inferences.emplace_back(var, inf);
+                                _inferences.emplace_back(var, inf);
                             },
                             [&](const ViewOfIntegerVariableID & var) {
-                                inferences.emplace_back(var.actual_variable, inf);
+                                _inferences.emplace_back(var.actual_variable, inf);
                             }}
                             .visit(cond.var);
                     }}
                     .visit(lit);
+
+                _did_anything_since_last_call = true;
                 break;
 
             [[unlikely]] case Inference::Contradiction:
                 if (logger)
-                    logger->infer(state, true, lit, just, reason);
+                    logger->infer(_state, true, lit, just, reason);
+                _did_anything_since_last_call = true;
                 throw TrackedPropagationFailed{};
             }
         }
 
         auto infer(ProofLogger * const logger, const Literal & lit, const Justification & why, const Reason & reason) -> void
         {
-            track(logger, state.infer(lit), lit, why, reason);
+            track(logger, _state.infer(lit), lit, why, reason);
         }
 
         [[noreturn]] auto contradiction(ProofLogger * const logger, const Justification & why, const Reason & reason) -> void
         {
             if (logger)
-                logger->infer(state, true, FalseLiteral{}, why, reason);
+                logger->infer(_state, true, FalseLiteral{}, why, reason);
             throw TrackedPropagationFailed{};
         }
 
         template <IntegerVariableIDLike VarType_>
         auto infer(ProofLogger * const logger, const VariableConditionFrom<VarType_> & lit, const Justification & why, const Reason & reason) -> void
         {
-            track(logger, state.infer(lit), lit, why, reason);
+            track(logger, _state.infer(lit), lit, why, reason);
         }
 
         template <IntegerVariableIDLike VarType_>
         auto infer_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & why, const Reason & reason) -> void
         {
-            track(logger, state.infer_equal(var, value), var == value, why, reason);
+            track(logger, _state.infer_equal(var, value), var == value, why, reason);
         }
 
         template <IntegerVariableIDLike VarType_>
         auto infer_not_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & why, const Reason & reason) -> void
         {
-            track(logger, state.infer_not_equal(var, value), var != value, why, reason);
+            track(logger, _state.infer_not_equal(var, value), var != value, why, reason);
         }
 
         template <IntegerVariableIDLike VarType_>
         auto infer_less_than(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & why, const Reason & reason) -> void
         {
-            track(logger, state.infer_less_than(var, value), var < value, why, reason);
+            track(logger, _state.infer_less_than(var, value), var < value, why, reason);
         }
 
         template <IntegerVariableIDLike VarType_>
         auto infer_greater_than_or_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & why, const Reason & reason) -> void
         {
-            track(logger, state.infer_greater_than_or_equal(var, value), var >= value, why, reason);
+            track(logger, _state.infer_greater_than_or_equal(var, value), var >= value, why, reason);
         }
 
         auto infer_all(ProofLogger * const logger, const std::vector<Literal> & lits, const Justification & why, const Reason & reason) -> void
@@ -144,12 +149,18 @@ namespace gcs::innards
             return [](const auto & inferences) -> std::generator<std::pair<SimpleIntegerVariableID, Inference>> {
                 for (const auto & [var, inf] : inferences | ranges::views::reverse)
                     co_yield std::pair{var, inf};
-            }(inferences);
+            }(_inferences);
         }
 
         auto reset() -> void
         {
-            inferences.clear();
+            _inferences.clear();
+            _did_anything_since_last_call = false;
+        }
+
+        auto did_anything_since_last_call() -> bool
+        {
+            return std::exchange(_did_anything_since_last_call, false);
         }
     };
 }

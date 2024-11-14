@@ -317,6 +317,8 @@ auto Propagators::propagate(const optional<Literal> & lit, State & state, ProofL
         try {
             ++_imp->total_propagations;
             auto propagator_state = _imp->propagation_functions[propagator_id](state, tracker, logger);
+            if (tracker.did_anything_since_last_call())
+                ++_imp->effectful_propagations;
             switch (propagator_state) {
             case PropagatorState::Enable:
                 break;
@@ -330,6 +332,7 @@ auto Propagators::propagate(const optional<Literal> & lit, State & state, ProofL
         }
         catch (const TrackedPropagationFailed &) {
             contradiction = true;
+            ++_imp->contradicting_propagations;
         }
 
         if (contradiction || (optional_abort_flag && optional_abort_flag->load()))
