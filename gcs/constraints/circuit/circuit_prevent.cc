@@ -56,7 +56,7 @@ namespace
                             if (cmp_less(cycle_length, n)) {
                                 if (logger)
                                     output_cycle_to_proof(succ, j0, cycle_length, pos_var_data, state, *logger);
-                                inference.infer_false(logger, JustifyUsingRUP{}, generic_reason(state, succ));
+                                inference.contradiction(logger, JustifyUsingRUP{}, generic_reason(state, succ));
                             }
 
                             else

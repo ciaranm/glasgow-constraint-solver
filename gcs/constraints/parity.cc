@@ -119,7 +119,7 @@ auto ParityOdd::install(Propagators & propagators, State &, ProofModel * const o
             if (how_many_1 % 2 == 1)
                 return PropagatorState::DisableUntilBacktrack;
             else
-                inference.infer_false(logger, JustifyUsingRUP{}, Reason{[=]() { return reason; }});
+                inference.contradiction(logger, JustifyUsingRUP{}, Reason{[=]() { return reason; }});
         }
         else {
             if (how_many_1 % 2 == 1) {

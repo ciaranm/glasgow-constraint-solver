@@ -22,7 +22,7 @@ using std::chrono::steady_clock;
 namespace
 {
     auto solve_with_state(unsigned long long depth, Stats & stats, Problem & problem,
-        Propagators & propagators, State & state,
+        Propagators & propagators, State & state, const optional<Literal> & this_branch_guess,
         SolveCallbacks & callbacks,
         ProofLogger * const logger,
         bool & this_subtree_contains_solution,
@@ -37,12 +37,11 @@ namespace
 
         bool objective_failure = false;
         if (problem.optional_minimise_variable() && objective_value) {
-            if (state.infer(logger, *problem.optional_minimise_variable() < *objective_value, NoJustificationNeeded{},
-                    Reason{}) == Inference::Contradiction)
+            if (state.infer(*problem.optional_minimise_variable() < *objective_value) == Inference::Contradiction)
                 objective_failure = true;
         }
 
-        if ((! objective_failure) && propagators.propagate(state, logger, optional_abort_flag)) {
+        if ((! objective_failure) && propagators.propagate(this_branch_guess, state, logger, optional_abort_flag)) {
             if (optional_abort_flag && optional_abort_flag->load())
                 return false;
 
@@ -77,9 +76,9 @@ namespace
 
                     auto result = true;
                     auto timestamp = state.new_epoch();
-                    state.guess(logger, guess);
+                    state.guess(guess);
                     bool child_contains_solution = false;
-                    if (! solve_with_state(depth + 1, stats, problem, propagators, state,
+                    if (! solve_with_state(depth + 1, stats, problem, propagators, state, guess,
                             callbacks, logger, child_contains_solution, objective_value, optional_abort_flag))
                         result = false;
 
@@ -138,9 +137,7 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
     auto initialisation_success = propagators.initialise(state, optional_proof ? optional_proof->logger() : nullptr);
 
     auto presolve_success = (! initialisation_success) ? false : problem.for_each_presolver([&](Presolver & presolver) -> bool {
-        auto result = presolver.run(problem, propagators, state, optional_proof ? optional_proof->logger() : nullptr);
-        propagators.requeue_all_propagators();
-        return result;
+        return presolver.run(problem, propagators, state, optional_proof ? optional_proof->logger() : nullptr);
     });
 
     Integer objective_lower_bound_for_proof = 0_i;
@@ -150,7 +147,7 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
     if (initialisation_success && presolve_success) {
         bool child_contains_solution = false;
         optional<Integer> objective_value = nullopt;
-        if (solve_with_state(0, stats, problem, propagators, state, callbacks, optional_proof ? optional_proof->logger() : nullptr,
+        if (solve_with_state(0, stats, problem, propagators, state, nullopt, callbacks, optional_proof ? optional_proof->logger() : nullptr,
                 child_contains_solution, objective_value, optional_abort_flag)) {
             if (optional_proof) {
                 if (problem.optional_minimise_variable()) {

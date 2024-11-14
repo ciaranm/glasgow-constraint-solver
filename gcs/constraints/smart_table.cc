@@ -472,7 +472,7 @@ namespace
         }
 
         if (! some_tuple_still_feasible)
-            inference.infer_false(logger, JustifyUsingRUP{}, reason);
+            inference.contradiction(logger, JustifyUsingRUP{}, reason);
     }
 
     auto build_tree(const IntegerVariableID & root, int current_level, vector<vector<SmartEntry>> & entry_tree,

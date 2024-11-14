@@ -114,7 +114,7 @@ auto gcs::innards::circuit::prevent_small_cycles(
                     if (j == j0) {
                         if (logger)
                             output_cycle_to_proof(succ, j0, length, pos_var_data, state, *logger);
-                        inference.infer_false(logger, JustifyUsingRUP{}, generic_reason(state, succ));
+                        inference.contradiction(logger, JustifyUsingRUP{}, generic_reason(state, succ));
                     }
                 } while (state.has_single_value(succ[j]));
                 end[j0] = j;

@@ -35,28 +35,23 @@ namespace
     {
         vector<pair<int, int> > ids_and_masks;
     };
-
-    using WrappedPropagationFunction = std::function<auto(State &, ProofLogger * const)->pair<Inference, PropagatorState>>;
 }
 
 struct Propagators::Imp
 {
-    vector<WrappedPropagationFunction> propagation_functions;
+    vector<PropagationFunction> propagation_functions;
     vector<InitialisationFunction> initialisation_functions;
 
     // Every propagation function's index appears exactly once in queue, and lookup[id] always tells
     // us where that position is. The items from index 0 to enqueued_end - 1 are ready to be
     // propagated, and the items between enqueued_end and idle_end - 1 do not need to be propagated.
-    // Anything from idle_end onwards is disabled until backtrack. If anything funky happens, such
-    // as new propagators being added, setting first to true will re-initialise the queue the next
-    // time propagation occurs.
+    // Anything from idle_end onwards is disabled until backtrack.
     vector<int> queue, lookup;
-    int enqueued_end, idle_end;
+    int enqueued_end = 0, idle_end = 0;
 
     unsigned long long total_propagations = 0, effectful_propagations = 0, contradicting_propagations = 0;
     vector<TriggerIDs> iv_triggers;
     vector<long> degrees;
-    bool first = true;
 };
 
 Propagators::Propagators() :
@@ -76,7 +71,7 @@ auto Propagators::model_contradiction(const State &, ProofModel * const optional
         optional_model->add_constraint({});
 
     install([explain_yourself = explain_yourself](const State &, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
-        inference.infer_false(logger, JustifyUsingRUP{}, Reason{[=]() { return Literals{}; }});
+        inference.contradiction(logger, JustifyUsingRUP{}, Reason{[=]() { return Literals{}; }});
     },
         Triggers{}, "model contradiction");
 }
@@ -114,16 +109,7 @@ auto Propagators::trim_upper_bound(const State & state, ProofModel * const optio
 auto Propagators::install(PropagationFunction && f, const Triggers & triggers, const string &) -> void
 {
     int id = _imp->propagation_functions.size();
-    _imp->propagation_functions.emplace_back([f = move(f)](State & state, ProofLogger * const logger) -> pair<Inference, PropagatorState> {
-        try {
-            InferenceTracker tracker{state};
-            auto result = f(state, tracker, logger);
-            return pair{tracker.inference_so_far(), result};
-        }
-        catch (const TrackedPropagationFailed &) {
-            return pair{Inference::Contradiction, PropagatorState::Enable};
-        }
-    });
+    _imp->propagation_functions.emplace_back(move(f));
 
     for (const auto & v : triggers.on_change) {
         trigger_on_change(v, id);
@@ -253,18 +239,28 @@ auto Propagators::initialise(State & state, ProofLogger * const logger) const ->
     return true;
 }
 
-auto Propagators::requeue_all_propagators() -> void
+auto Propagators::propagate(const optional<Literal> & lit, State & state, ProofLogger * const logger, atomic<bool> * optional_abort_flag) const -> bool
 {
-    _imp->first = true;
-}
+    auto requeue = [&](const SimpleIntegerVariableID & v, const Inference inf) {
+        if (v.index < _imp->iv_triggers.size()) {
+            auto & triggers = _imp->iv_triggers[v.index];
 
-auto Propagators::propagate(State & state, ProofLogger * const logger, atomic<bool> * optional_abort_flag) const -> bool
-{
-    if (_imp->first) {
+            for (auto & [p, mask] : triggers.ids_and_masks)
+                if (mask & (1 << static_cast<int>(inf))) {
+                    if (_imp->lookup[p] >= _imp->enqueued_end && _imp->lookup[p] < _imp->idle_end) {
+                        auto being_swapped_item = _imp->queue[_imp->enqueued_end];
+                        swap(_imp->queue[_imp->lookup[p]], _imp->queue[_imp->enqueued_end]);
+                        swap(_imp->lookup[p], _imp->lookup[being_swapped_item]);
+                        ++_imp->enqueued_end;
+                    }
+                }
+        }
+    };
+
+    if (! lit) {
         // filthy hack: to make trim_lower_bound etc work, on the first pass, we need to
         // guarantee that we're running propagators in numerical order, except our queue
         // runs backwards so we need to put them in backwards.
-        _imp->first = false;
         _imp->queue.resize(_imp->propagation_functions.size());
         _imp->lookup.resize(_imp->propagation_functions.size());
         unsigned p = 0;
@@ -277,50 +273,44 @@ auto Propagators::propagate(State & state, ProofLogger * const logger, atomic<bo
         _imp->enqueued_end = _imp->propagation_functions.size();
         _imp->idle_end = _imp->propagation_functions.size();
     }
-    else
+    else {
         _imp->enqueued_end = 0;
+        overloaded{
+            [&](const TrueLiteral &) {},
+            [&](const FalseLiteral &) {},
+            [&](const IntegerVariableCondition & cond) {
+                overloaded{
+                    [&](const SimpleIntegerVariableID & var) {
+                        // trigger all propagators on this var, even if we might not actually
+                        // have instantiated it. bit ugly but easier than tracking.
+                        requeue(var, Inference::Instantiated);
+                    },
+                    [&](const ConstantIntegerVariableID &) {
+                    },
+                    [&](const ViewOfIntegerVariableID & var) {
+                        requeue(var.actual_variable, Inference::Instantiated);
+                    }}
+                    .visit(cond.var);
+            }}
+            .visit(*lit);
+    }
 
     auto orig_idle_end = _imp->idle_end;
+    state.on_backtrack([&, orig_idle_end = orig_idle_end]() {
+        _imp->idle_end = orig_idle_end;
+    });
 
     bool contradiction = false;
     while (! contradiction) {
-        if (0 == _imp->enqueued_end) {
-            state.extract_changed_variables([&](SimpleIntegerVariableID v, HowChanged h) {
-                if (v.index < _imp->iv_triggers.size()) {
-                    auto & triggers = _imp->iv_triggers[v.index];
-
-                    for (auto & [p, mask] : triggers.ids_and_masks)
-                        if (mask & (1 << static_cast<int>(h))) {
-                            if (_imp->lookup[p] >= _imp->enqueued_end && _imp->lookup[p] < _imp->idle_end) {
-                                auto being_swapped_item = _imp->queue[_imp->enqueued_end];
-                                swap(_imp->queue[_imp->lookup[p]], _imp->queue[_imp->enqueued_end]);
-                                swap(_imp->lookup[p], _imp->lookup[being_swapped_item]);
-                                ++_imp->enqueued_end;
-                            }
-                        }
-                }
-            });
-        }
-
         if (0 == _imp->enqueued_end)
             break;
 
-        int propagator_id = _imp->queue[--_imp->enqueued_end];
-        auto [inference, propagator_state] = _imp->propagation_functions[propagator_id](state, logger);
-        ++_imp->total_propagations;
-        switch (inference) {
-        case Inference::NoChange:
-            break;
-        case Inference::Change:
-            ++_imp->effectful_propagations;
-            break;
-        case Inference::Contradiction:
-            ++_imp->contradicting_propagations;
-            contradiction = true;
-            break;
-        }
+        InferenceTracker tracker{state};
 
-        if (! contradiction) {
+        int propagator_id = _imp->queue[--_imp->enqueued_end];
+        try {
+            ++_imp->total_propagations;
+            auto propagator_state = _imp->propagation_functions[propagator_id](state, tracker, logger);
             switch (propagator_state) {
             case PropagatorState::Enable:
                 break;
@@ -332,15 +322,16 @@ auto Propagators::propagate(State & state, ProofLogger * const logger, atomic<bo
                 break;
             }
         }
+        catch (const TrackedPropagationFailed &) {
+            contradiction = true;
+        }
 
-        if (optional_abort_flag && optional_abort_flag->load())
-            return false;
+        if (contradiction || (optional_abort_flag && optional_abort_flag->load()))
+            break;
+
+        for (const auto & [v, inf] : tracker.each_inference())
+            requeue(v, inf);
     }
-
-
-    state.on_backtrack([&, orig_idle_end = orig_idle_end]() {
-        _imp->idle_end = orig_idle_end;
-    });
 
     return ! contradiction;
 }
@@ -360,9 +351,9 @@ auto Propagators::trigger_on_change(IntegerVariableID var, int t) -> void
             if (_imp->iv_triggers.size() <= v.index)
                 _imp->iv_triggers.resize(v.index + 1);
             _imp->iv_triggers[v.index].ids_and_masks.emplace_back(t,
-                    (1 << static_cast<int>(HowChanged::InteriorValuesChanged)) |
-                    (1 << static_cast<int>(HowChanged::BoundsChanged)) |
-                    (1 << static_cast<int>(HowChanged::Instantiated)));
+                (1 << static_cast<int>(Inference::InteriorValuesChanged)) |
+                    (1 << static_cast<int>(Inference::BoundsChanged)) |
+                    (1 << static_cast<int>(Inference::Instantiated)));
         },
         [&](const ViewOfIntegerVariableID & v) {
             trigger_on_change(v.actual_variable, t);
@@ -379,8 +370,8 @@ auto Propagators::trigger_on_bounds(IntegerVariableID var, int t) -> void
             if (_imp->iv_triggers.size() <= v.index)
                 _imp->iv_triggers.resize(v.index + 1);
             _imp->iv_triggers[v.index].ids_and_masks.emplace_back(t,
-                    (1 << static_cast<int>(HowChanged::BoundsChanged)) |
-                    (1 << static_cast<int>(HowChanged::Instantiated)));
+                (1 << static_cast<int>(Inference::BoundsChanged)) |
+                    (1 << static_cast<int>(Inference::Instantiated)));
         },
         [&](const ViewOfIntegerVariableID & v) {
             trigger_on_bounds(v.actual_variable, t);
@@ -397,7 +388,7 @@ auto Propagators::trigger_on_instantiated(IntegerVariableID var, int t) -> void
             if (_imp->iv_triggers.size() <= v.index)
                 _imp->iv_triggers.resize(v.index + 1);
             _imp->iv_triggers[v.index].ids_and_masks.emplace_back(t,
-                    (1 << static_cast<int>(HowChanged::Instantiated)));
+                (1 << static_cast<int>(Inference::Instantiated)));
         },
         [&](const ViewOfIntegerVariableID & v) {
             trigger_on_instantiated(v.actual_variable, t);

@@ -322,17 +322,17 @@ auto EqualsIff::install(Propagators & propagators, State & initial_state, ProofM
                         auto value2 = state.optional_single_value(v2);
                         if (value1 && value2) {
                             if (*value1 == *value2) {
-                                inference.infer_false(logger, JustifyUsingRUP{}, [=]() { return Literals{v1 == *value1, v2 == *value2}; });
+                                inference.contradiction(logger, JustifyUsingRUP{}, [=]() { return Literals{v1 == *value1, v2 == *value2, ! cond}; });
                             }
                             else
                                 return PropagatorState::DisableUntilBacktrack;
                         }
                         else if (value1) {
-                            inference.infer_not_equal(logger, v2, *value1, NoJustificationNeeded{}, Reason{});
+                            inference.infer_not_equal(logger, v2, *value1, NoJustificationNeeded{}, [=]() { return Literals{v1 == *value1, ! cond}; });
                             return PropagatorState::DisableUntilBacktrack;
                         }
                         else if (value2) {
-                            inference.infer_not_equal(logger, v1, *value2, NoJustificationNeeded{}, Reason{});
+                            inference.infer_not_equal(logger, v1, *value2, NoJustificationNeeded{}, [=]() { return Literals{v2 == *value2, ! cond}; });
                             return PropagatorState::DisableUntilBacktrack;
                         }
                         else

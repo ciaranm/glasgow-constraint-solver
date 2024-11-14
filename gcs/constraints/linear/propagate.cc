@@ -374,7 +374,7 @@ auto gcs::innards::propagate_linear_not_equals(const auto & coeff_vars, Integer 
         // every variable is set, do a sanity check
         if (accum == value) {
             // we've set every variable and have equality
-            inference.infer_false(logger, JustifyUsingRUP{}, generic_reason(state, all_vars_for_reason));
+            inference.contradiction(logger, JustifyUsingRUP{}, generic_reason(state, all_vars_for_reason));
         }
         else
             return PropagatorState::DisableUntilBacktrack;

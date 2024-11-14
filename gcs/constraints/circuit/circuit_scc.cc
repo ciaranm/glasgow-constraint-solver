@@ -1035,7 +1035,7 @@ namespace
                 logger->emit_proof_comment("More than one SCC");
                 prove_reachable_set_too_small(state, inference, *logger, reason, succ, node, proof_data);
             }
-            inference.infer_false(logger, JustifyUsingRUP{}, reason);
+            inference.contradiction(logger, JustifyUsingRUP{}, reason);
         }
         else
             return back_edges;
@@ -1063,7 +1063,7 @@ namespace
                         logger->emit_proof_comment("No back edges");
                         prove_reachable_set_too_small(state, inference, *logger, reason, succ, next_node, proof_data);
                     }
-                    inference.infer_false(logger, JustifyUsingRUP{}, reason);
+                    inference.contradiction(logger, JustifyUsingRUP{}, reason);
                 }
                 else if (options.fix_req && back_edges.size() == 1) {
                     auto from_node = back_edges[0].first;
@@ -1089,7 +1089,7 @@ namespace
                 logger->emit_proof_comment("Disconnected graph");
                 prove_reachable_set_too_small(state, inference, *logger, reason, succ, data.root, proof_data);
             }
-            inference.infer_false(logger, JustifyUsingRUP{}, reason);
+            inference.contradiction(logger, JustifyUsingRUP{}, reason);
         }
 
         if (options.prune_root && data.start_prev_subtree > 1) {

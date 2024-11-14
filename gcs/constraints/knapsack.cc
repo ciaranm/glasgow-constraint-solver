@@ -428,7 +428,7 @@ namespace
                 logger->emit_rup_proof_line_under_reason(state, generic_reason(state, reason_variables), WeightedPseudoBooleanSum{} >= 1_i, ProofLevel::Temporary);
             }
 
-            inference.infer_false(logger, JustifyUsingRUP{}, generic_reason(state, reason_variables));
+            inference.contradiction(logger, JustifyUsingRUP{}, generic_reason(state, reason_variables));
         }
         else {
             vector<Literal> inferences;

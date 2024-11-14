@@ -3,6 +3,7 @@
 
 #include <gcs/constraint.hh>
 #include <gcs/innards/inference_tracker-fwd.hh>
+#include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/variable_id.hh>
 #include <vector>

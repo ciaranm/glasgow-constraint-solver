@@ -149,19 +149,16 @@ namespace gcs::innards
         ///@{
 
         /**
-         * Propagate every constraint, until either a fixed point or a contradiction is reached.
+         * Propagate every constraint, until either a fixed point or a contradiction is reached. If no guess
+         * is supplied, requeue every constraint before we start.
          */
-        [[nodiscard]] auto propagate(State &, ProofLogger * const, std::atomic<bool> * optional_abort_flag = nullptr) const -> bool;
+        [[nodiscard]] auto propagate(const std::optional<Literal> & guess,
+            State &, ProofLogger * const, std::atomic<bool> * optional_abort_flag = nullptr) const -> bool;
 
         /**
          * Call every initialiser, or until a contradiction is reached.
          */
         [[nodiscard]] auto initialise(State &, ProofLogger * const) const -> bool;
-
-        /**
-         * Reset to do a root propagation.
-         */
-        auto requeue_all_propagators() -> void;
 
         ///@}
 
