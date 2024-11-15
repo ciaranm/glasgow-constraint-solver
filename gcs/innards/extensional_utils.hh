@@ -35,7 +35,7 @@ namespace gcs::innards
      *
      * \sa Table
      */
-    auto propagate_extensional(const ExtensionalData &, const State &, InferenceTracker &,
+    auto propagate_extensional(const ExtensionalData &, const State &, auto & inference_tracker,
         innards::ProofLogger * const) -> PropagatorState;
 }
 

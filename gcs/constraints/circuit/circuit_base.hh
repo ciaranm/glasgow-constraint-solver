@@ -63,7 +63,7 @@ namespace gcs::innards::circuit
         const std::optional<Integer> & prevent_value = std::nullopt) -> void;
 
     auto prevent_small_cycles(const std::vector<IntegerVariableID> & succ, const PosVarDataMap & pos_var_data,
-        const ConstraintStateHandle & unassigned_handle, const State & state, InferenceTracker &, ProofLogger * const logger) -> void;
+        const ConstraintStateHandle & unassigned_handle, const State & state, auto & inference_tracker, ProofLogger * const logger) -> void;
 
     /**
      * \brief Circuit constraint: requires the variables, representing graph nodes, take values

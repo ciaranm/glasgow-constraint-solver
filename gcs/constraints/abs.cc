@@ -51,7 +51,7 @@ auto Abs::install(Propagators & propagators, State & initial_state,
     // _v2 = abs(_v1)
     Triggers triggers{.on_change = {_v1, _v2}};
     propagators.install([v1 = _v1, v2 = _v2, selector = selector](
-                            const State & state, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
+                            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
         // we're not dealing with bounds. remove from v1 any value whose absolute value
         // isn't in v2's domain.
         for (const auto & val : state.each_value_mutable(v1))

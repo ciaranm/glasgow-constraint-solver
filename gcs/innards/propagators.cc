@@ -70,7 +70,7 @@ auto Propagators::model_contradiction(const State &, ProofModel * const optional
     if (optional_model)
         optional_model->add_constraint({});
 
-    install([explain_yourself = explain_yourself](const State &, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
+    install([explain_yourself = explain_yourself](const State &, auto & inference, ProofLogger * const logger) -> PropagatorState {
         inference.contradiction(logger, JustifyUsingRUP{}, Reason{[=]() { return Literals{}; }});
     },
         Triggers{}, "model contradiction");
@@ -82,7 +82,7 @@ auto Propagators::trim_lower_bound(const State & state, ProofModel * const optio
         if (state.upper_bound(var) >= val) {
             if (optional_model)
                 optional_model->add_constraint({var >= val});
-            install_initialiser([var, val](const State &, InferenceTracker & inference, ProofLogger * const logger) {
+            install_initialiser([var, val](const State &, auto & inference, ProofLogger * const logger) {
                 inference.infer(logger, var >= val, JustifyUsingRUP{}, Reason{});
             });
         }
@@ -97,7 +97,7 @@ auto Propagators::trim_upper_bound(const State & state, ProofModel * const optio
         if (state.lower_bound(var) <= val) {
             if (optional_model)
                 optional_model->add_constraint({var < val + 1_i});
-            install_initialiser([var, val](const State &, InferenceTracker & inference, ProofLogger * const logger) {
+            install_initialiser([var, val](const State &, auto & inference, ProofLogger * const logger) {
                 inference.infer(logger, var < val + 1_i, JustifyUsingRUP{}, Reason{});
             });
         }
@@ -216,7 +216,7 @@ auto Propagators::define_and_install_table(State & state, ProofModel * const opt
         triggers.on_change.push_back(selector);
 
         install([table = ExtensionalData{selector, move(vars), move(permitted)}](
-                    const State & state, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
+                    const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             return propagate_extensional(table, state, inference, logger);
         },
             triggers, "extenstional");
@@ -227,7 +227,7 @@ auto Propagators::define_and_install_table(State & state, ProofModel * const opt
 auto Propagators::initialise(State & state, ProofLogger * const logger) const -> bool
 {
     for (auto & f : _imp->initialisation_functions) {
-        InferenceTracker inf(state);
+        EagerProofLoggingInferenceTracker inf(state);
         try {
             f(state, inf, logger);
         }
@@ -300,7 +300,7 @@ auto Propagators::propagate(const optional<Literal> & lit, State & state, ProofL
         _imp->idle_end = orig_idle_end;
     });
 
-    InferenceTracker tracker{state};
+    EagerProofLoggingInferenceTracker tracker{state};
 
     bool contradiction = false;
     while (! contradiction) {

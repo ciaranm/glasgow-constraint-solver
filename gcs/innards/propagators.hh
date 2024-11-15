@@ -16,9 +16,69 @@
 
 namespace gcs::innards
 {
-    using PropagationFunction = std::function<auto(const State &, InferenceTracker &, ProofLogger * const)->PropagatorState>;
+    class PropagationFunctionImplBase
+    {
+    public:
+        virtual ~PropagationFunctionImplBase() = default;
 
-    using InitialisationFunction = std::function<auto(State &, InferenceTracker &, ProofLogger * const)->void>;
+        PropagationFunctionImplBase() = default;
+        PropagationFunctionImplBase(const PropagationFunctionImplBase &) = delete;
+        PropagationFunctionImplBase(PropagationFunctionImplBase &&) = default;
+
+        auto operator=(const PropagationFunctionImplBase &) -> PropagationFunctionImplBase & = delete;
+        auto operator=(PropagationFunctionImplBase &&) -> PropagationFunctionImplBase & = default;
+
+        [[nodiscard]] virtual auto operator()(const State & state, SimpleInferenceTracker & tracker, ProofLogger * const logger) -> PropagatorState = 0;
+        [[nodiscard]] virtual auto operator()(const State & state, EagerProofLoggingInferenceTracker & tracker, ProofLogger * const logger) -> PropagatorState = 0;
+    };
+
+    template <typename Func_>
+    class PropagationFunctionImpl : public PropagationFunctionImplBase
+    {
+    private:
+        Func_ _f;
+
+    public:
+        PropagationFunctionImpl(Func_ && f) :
+            _f(std::move(f))
+        {
+        }
+
+        [[nodiscard]] virtual auto operator()(const State & state, SimpleInferenceTracker & tracker, ProofLogger * const logger) -> PropagatorState override
+        {
+            return _f(state, tracker, logger);
+        }
+
+        [[nodiscard]] virtual auto operator()(const State & state, EagerProofLoggingInferenceTracker & tracker, ProofLogger * const logger) -> PropagatorState override
+        {
+            return _f(state, tracker, logger);
+        }
+    };
+
+    class PropagationFunction
+    {
+    private:
+        std::unique_ptr<PropagationFunctionImplBase> _impl;
+
+    public:
+        template <typename Func_>
+        PropagationFunction(Func_ && f) :
+            _impl(new PropagationFunctionImpl<Func_>(std::move(f)))
+        {
+        }
+
+        [[nodiscard]] auto operator()(const State & state, SimpleInferenceTracker & tracker, ProofLogger * const logger) -> PropagatorState
+        {
+            return _impl->operator()(state, tracker, logger);
+        }
+
+        [[nodiscard]] auto operator()(const State & state, EagerProofLoggingInferenceTracker & tracker, ProofLogger * const logger) -> PropagatorState
+        {
+            return _impl->operator()(state, tracker, logger);
+        }
+    };
+
+    using InitialisationFunction = std::function<auto(State &, EagerProofLoggingInferenceTracker &, ProofLogger * const)->void>;
 
     /**
      * \brief Tell Propagators when a Constraint's propagators should be triggered.

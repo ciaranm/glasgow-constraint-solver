@@ -14,7 +14,7 @@ namespace gcs
     {
         auto propagate_non_gac_alldifferent(
             const ConstraintStateHandle & unassigned_handle, const State & state,
-            InferenceTracker & inference, ProofLogger * const logger) -> void;
+            auto & inference_tracker, ProofLogger * const logger) -> void;
 
         auto define_clique_not_equals_encoding(ProofModel & model,
             const std::vector<IntegerVariableID> & vars) -> void;

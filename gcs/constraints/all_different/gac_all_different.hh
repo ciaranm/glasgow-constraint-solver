@@ -18,7 +18,7 @@ namespace gcs
             const std::vector<Integer> & vals,
             const std::map<Integer, ProofLine> & am1_value_constraint_numbers,
             const State & state,
-            InferenceTracker & inference,
+            auto & inference_tracker,
             ProofLogger * const logger) -> void;
     }
 

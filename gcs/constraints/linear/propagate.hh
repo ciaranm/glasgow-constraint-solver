@@ -15,7 +15,7 @@ namespace gcs::innards
      *
      * \ingroup Innards
      */
-    auto propagate_linear(const auto & terms, Integer, const State &, InferenceTracker &,
+    auto propagate_linear(const auto & terms, Integer, const State &, auto & inference_tracker,
         ProofLogger * const logger, bool equality,
         const std::optional<ProofLine> & proof_line,
         const std::optional<Literal> & add_to_reason) -> PropagatorState;
@@ -25,7 +25,7 @@ namespace gcs::innards
      *
      * \ingroup Innards
      */
-    auto propagate_linear_not_equals(const auto & terms, Integer, const State &, InferenceTracker &,
+    auto propagate_linear_not_equals(const auto & terms, Integer, const State &, auto & inference_tracker,
         ProofLogger * const logger,
         const std::vector<IntegerVariableID> & all_vars_for_reason) -> PropagatorState;
 }

@@ -56,7 +56,7 @@ namespace
     }
 }
 
-auto gcs::innards::propagate_extensional(const ExtensionalData & table, const State & state, InferenceTracker & inference,
+auto gcs::innards::propagate_extensional(const ExtensionalData & table, const State & state, auto & inference,
     ProofLogger * const logger) -> PropagatorState
 {
     // check whether selectable tuples are still feasible
@@ -96,3 +96,6 @@ auto gcs::innards::propagate_extensional(const ExtensionalData & table, const St
 
     return PropagatorState::Enable;
 }
+
+template auto gcs::innards::propagate_extensional(const ExtensionalData & table, const State & state, SimpleInferenceTracker & inference, ProofLogger * const logger) -> PropagatorState;
+template auto gcs::innards::propagate_extensional(const ExtensionalData & table, const State & state, EagerProofLoggingInferenceTracker & inference, ProofLogger * const logger) -> PropagatorState;

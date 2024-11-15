@@ -90,7 +90,7 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
 
     propagators.install(
         [vars = _vars, value_of_interest = _value_of_interest, how_many = _how_many, flags = flags, all_vars = move(all_vars)](
-            const State & state, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
+            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // check support for how many by seeing how many array values
             // intersect with a potential value of interest
             int how_many_definitely_do_not = 0;

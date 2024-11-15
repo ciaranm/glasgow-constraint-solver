@@ -83,7 +83,7 @@ namespace
         const State & state,
         ProofLogger * const logger,
         const vector<IntegerVariableID> & reason_variables,
-        InferenceTracker & inference,
+        auto & inference,
         const vector<Integer> & committed,
         const vector<pair<Integer, Integer>> & bounds,
         const vector<vector<Integer>> & coeffs,
@@ -524,7 +524,7 @@ namespace
     auto knapsack(
         const State & state,
         ProofLogger * const logger,
-        InferenceTracker & inference,
+        auto & inference,
         const vector<vector<Integer>> & coeffs,
         const vector<IntegerVariableID> & vars,
         const vector<IntegerVariableID> & totals,
@@ -622,7 +622,7 @@ auto Knapsack::install(Propagators & propagators, State & initial_state, ProofMo
 
     propagators.install(
         [coeffs = move(_coeffs), vars = move(_vars), totals = move(_totals), eqns_lines = move(eqns_lines)](
-            const State & state, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
+            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             return knapsack(state, logger, inference, coeffs, vars, totals, eqns_lines);
         },
         triggers, "knapsack");

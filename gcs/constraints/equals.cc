@@ -29,7 +29,7 @@ using std::vector;
 namespace
 {
     auto enforce_equality(ProofLogger * const logger, const auto & v1, const auto & v2, const State & state,
-        InferenceTracker & inference, const optional<Literal> & cond) -> PropagatorState
+        auto & inference, const optional<Literal> & cond) -> PropagatorState
     {
         auto val1 = state.optional_single_value(v1);
         if (val1) {
@@ -114,13 +114,13 @@ auto Equals::install(Propagators & propagators, State & initial_state, ProofMode
     }
     else if (v1_is_constant) {
         propagators.install_initialiser([v1_is_constant = v1_is_constant, v1 = _v1, v2 = _v2](
-                                            const State &, InferenceTracker & inference, ProofLogger * const logger) -> void {
+                                            const State &, auto & inference, ProofLogger * const logger) -> void {
             inference.infer_equal(logger, v2, *v1_is_constant, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v1 == *v1_is_constant}}; }});
         });
     }
     else if (v2_is_constant) {
         propagators.install_initialiser([v2_is_constant = v2_is_constant, v1 = _v1, v2 = _v2](
-                                            const State &, InferenceTracker & inference, ProofLogger * const logger) -> void {
+                                            const State &, auto & inference, ProofLogger * const logger) -> void {
             inference.infer_equal(logger, v1, *v2_is_constant, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v2 == *v2_is_constant}}; }});
         });
     }
@@ -129,7 +129,7 @@ auto Equals::install(Propagators & propagators, State & initial_state, ProofMode
         triggers.on_change = {_v1, _v2};
 
         visit([&](auto & _v1, auto & _v2) {
-            propagators.install([v1 = _v1, v2 = _v2](const State & state, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
+            propagators.install([v1 = _v1, v2 = _v2](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                 return enforce_equality(logger, v1, v2, state, inference, nullopt);
             },
                 triggers, "equals");
@@ -180,7 +180,7 @@ auto EqualsIf::install(Propagators & propagators, State & initial_state, ProofMo
             }
 
             visit([&](auto & _v1, auto & _v2) {
-                propagators.install([v1 = _v1, v2 = _v2, cond = cond](const State & state, InferenceTracker & inference,
+                propagators.install([v1 = _v1, v2 = _v2, cond = cond](const State & state, auto & inference,
                                         ProofLogger * const logger) -> PropagatorState {
                     switch (state.test_literal(cond)) {
                     case LiteralIs::DefinitelyTrue: {
@@ -279,7 +279,7 @@ auto EqualsIff::install(Propagators & propagators, State & initial_state, ProofM
         if (optional_model)
             optional_model->add_constraint({{! _cond}});
         propagators.install_initialiser([cond = _cond, v1 = _v1, v2 = _v2](
-                                            const State & state, InferenceTracker & inference, ProofLogger * const logger) {
+                                            const State & state, auto & inference, ProofLogger * const logger) {
             auto v1_bounds = state.bounds(v1);
             auto v2_bounds = state.bounds(v2);
             inference.infer(logger, ! cond, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v1 >= v1_bounds.first, v1 < v1_bounds.second + 1_i, v2 >= v2_bounds.first, v2 < v2_bounds.second + 1_i}}; }});
@@ -309,7 +309,7 @@ auto EqualsIff::install(Propagators & propagators, State & initial_state, ProofM
 
             visit([&](auto & _v1, auto & _v2) {
                 propagators.install([v1 = _v1, v2 = _v2, cond = cond](
-                                        const State & state, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
+                                        const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                     switch (state.test_literal(cond)) {
                     case LiteralIs::DefinitelyTrue: {
                         // condition is true, force equality
