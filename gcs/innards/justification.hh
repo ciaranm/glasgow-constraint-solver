@@ -26,17 +26,6 @@ namespace gcs::innards
     using ExplicitJustificationFunction = std::function<auto(const Reason & reason)->void>;
 
     /**
-     * \brief Justification for something that is actually a guess, not an
-     * inferred decision.
-     *
-     * \ingroup Innards
-     * \sa Justification
-     */
-    struct Guess
-    {
-    };
-
-    /**
      * \brief Specify that an inference requires an explicit justification in
      * the proof log.
      *
@@ -129,7 +118,7 @@ namespace gcs::innards
      *
      * \ingroup Innards
      */
-    using Justification = std::variant<Guess, JustifyUsingRUP, JustifyExplicitly, AssertRatherThanJustifying, NoJustificationNeeded>;
+    using Justification = std::variant<JustifyUsingRUP, JustifyExplicitly, AssertRatherThanJustifying, NoJustificationNeeded>;
 }
 
 #endif

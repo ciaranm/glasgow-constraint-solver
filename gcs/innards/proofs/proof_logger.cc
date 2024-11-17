@@ -298,17 +298,6 @@ auto ProofLogger::infer(const State & state, bool is_contradicting, const Litera
                 reason);
             forget_proof_level(t);
         },
-        [&](const Guess &) {
-            need_lit();
-            if (! is_literally_true(lit)) {
-                // we need this because it'll show up in the trail later
-                _imp->proof << "* guessing " << debug_string(lit) << ", decision stack is [";
-                state.for_each_guess([&](const Literal & lit) {
-                    _imp->proof << " " << debug_string(lit);
-                });
-                _imp->proof << " ]\n";
-            }
-        },
         [&](const NoJustificationNeeded &) {
         }}
         .visit(why);
