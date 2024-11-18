@@ -96,7 +96,7 @@ auto Element::install(Propagators & propagators, State & initial_state, ProofMod
             if (! supported) {
                 auto justf = [&](const Reason & reason) {
                     state.for_each_value_immutable(idx, [&](Integer i) {
-                        logger->emit_rup_proof_line_under_reason(state, reason,
+                        logger->emit_rup_proof_line_under_reason(reason,
                             WeightedPseudoBooleanSum{} + 1_i * (var != val) + 1_i * (idx != i) >= 1_i, ProofLevel::Temporary);
                     });
                 };
@@ -180,10 +180,10 @@ auto ElementConstantArray::install(Propagators & propagators, State & initial_st
                     });
 
                     state.for_each_value_immutable(idx, [&](Integer i) {
-                        logger->emit_rup_proof_line_under_reason(state, reason, conditions + 1_i * (idx == i) >= 1_i, ProofLevel::Temporary);
+                        logger->emit_rup_proof_line_under_reason(reason, conditions + 1_i * (idx == i) >= 1_i, ProofLevel::Temporary);
                     });
 
-                    logger->emit_rup_proof_line_under_reason(state, reason, conditions >= 1_i, ProofLevel::Temporary);
+                    logger->emit_rup_proof_line_under_reason(reason, conditions >= 1_i, ProofLevel::Temporary);
                 }};
 
             inference.infer_greater_than_or_equal(logger, var, *smallest_seen, just, generic_reason(state, all_vars));
@@ -340,14 +340,14 @@ auto Element2DConstantArray::install(Propagators & propagators, State & initial_
                             WeightedPseudoBooleanSum expr = conditions;
                             expr += 1_i * (idx1 != i1);
                             expr += 1_i * (idx2 != i2);
-                            logger->emit_rup_proof_line_under_reason(state, reason, expr >= 1_i, ProofLevel::Temporary);
+                            logger->emit_rup_proof_line_under_reason(reason, expr >= 1_i, ProofLevel::Temporary);
                         });
                         WeightedPseudoBooleanSum expr = conditions;
                         expr += 1_i * (idx1 != i1);
-                        logger->emit_rup_proof_line_under_reason(state, reason, expr >= 1_i, ProofLevel::Temporary);
+                        logger->emit_rup_proof_line_under_reason(reason, expr >= 1_i, ProofLevel::Temporary);
                     });
 
-                    logger->emit_rup_proof_line_under_reason(state, reason, conditions >= 1_i, ProofLevel::Temporary);
+                    logger->emit_rup_proof_line_under_reason(reason, conditions >= 1_i, ProofLevel::Temporary);
                 }};
 
             auto reason = generic_reason(state, all_vars);

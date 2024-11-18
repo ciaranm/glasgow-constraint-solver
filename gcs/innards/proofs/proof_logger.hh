@@ -8,7 +8,6 @@
 #include <gcs/innards/proofs/reification.hh>
 #include <gcs/innards/proofs/variable_constraints_tracker-fwd.hh>
 #include <gcs/innards/reason.hh>
-#include <gcs/innards/state-fwd.hh>
 #include <gcs/proof.hh>
 
 #include <map>
@@ -57,13 +56,14 @@ namespace gcs::innards
         /**
          * Log that a solution has been found.
          */
-        auto solution(const State &, const std::vector<IntegerVariableID> & all_variables,
-            const std::optional<IntegerVariableID> & objective_to_minimise) -> void;
+        auto solution(
+            const std::vector<std::pair<IntegerVariableID, Integer>> & all_variables_with_values,
+            const std::optional<std::pair<IntegerVariableID, Integer>> & objective_to_minimise) -> void;
 
         /**
          * Log that we are backtracking.
          */
-        auto backtrack(const State &) -> void;
+        auto backtrack(const std::vector<Literal> & guesses) -> void;
 
         /**
          * Log that we have reached an unsatisfiable conclusion at the end of the proof.
@@ -93,8 +93,7 @@ namespace gcs::innards
         /**
          * Log, if necessary, that we have inferred a particular literal.
          */
-        auto infer(const State & state, bool is_contradicting, const Literal & lit, const Justification & why,
-            const Reason & reason) -> void;
+        auto infer(const Literal & lit, const Justification & why, const Reason & reason) -> void;
 
         /**
          * What is our current proof level?
@@ -158,7 +157,7 @@ namespace gcs::innards
          * Emit a RUP proof step for the specified expression, subject to a
          * given reason.
          */
-        auto emit_rup_proof_line_under_reason(const State &, const Reason &, const SumLessEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level
+        auto emit_rup_proof_line_under_reason(const Reason &, const SumLessEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
             ,
             const std::source_location & w = std::source_location::current()

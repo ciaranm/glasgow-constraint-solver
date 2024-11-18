@@ -75,7 +75,7 @@ namespace
                 terms += 1_i * lit;
             for (const auto & flag : proof_flags)
                 terms += 1_i * flag;
-            logger->emit_rup_proof_line_under_reason(state, reason, terms >= 1_i, ProofLevel::Current);
+            logger->emit_rup_proof_line_under_reason(reason, terms >= 1_i, ProofLevel::Current);
         }
     }
 

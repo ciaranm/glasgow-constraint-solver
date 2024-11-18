@@ -110,9 +110,9 @@ namespace
     }
 
     auto log_filtering_inference(ProofLogger * const logger, const ProofFlag & tuple_selector, const Literal & lit,
-        const State & state, auto &, const Reason & reason)
+        const State &, auto &, const Reason & reason)
     {
-        logger->emit_rup_proof_line_under_reason(state, reason,
+        logger->emit_rup_proof_line_under_reason(reason,
             WeightedPseudoBooleanSum{} + 1_i * (! tuple_selector) + 1_i * lit >= 1_i, ProofLevel::Current);
     }
 
@@ -462,7 +462,7 @@ namespace
             for (const auto & value : unsupported[var]) {
                 auto justf = [&](const Reason & reason) -> void {
                     for (unsigned int tuple_idx = 0; tuple_idx < tuples.size(); ++tuple_idx) {
-                        logger->emit_rup_proof_line_under_reason(state, reason,
+                        logger->emit_rup_proof_line_under_reason(reason,
                             WeightedPseudoBooleanSum{} + 1_i * (var != value) + 1_i * (! pb_selectors[tuple_idx]) >= 1_i,
                             ProofLevel::Current);
                     }

@@ -57,7 +57,7 @@ namespace gcs::innards
         [[noreturn]] auto contradiction(ProofLogger * const logger, const Justification & why, const Reason & reason) -> void
         {
             if (logger)
-                logger->infer(_state, true, FalseLiteral{}, why, reason);
+                logger->infer(FalseLiteral{}, why, reason);
             throw TrackedPropagationFailed{};
         }
 
@@ -186,7 +186,7 @@ namespace gcs::innards
             case Inference::BoundsChanged:
             case Inference::Instantiated:
                 if (logger)
-                    logger->infer(_state, false, lit, just, reason);
+                    logger->infer(lit, just, reason);
 
                 overloaded{
                     [&](const TrueLiteral &) {},
@@ -209,7 +209,7 @@ namespace gcs::innards
 
             [[unlikely]] case Inference::Contradiction:
                 if (logger)
-                    logger->infer(_state, true, lit, just, reason);
+                    logger->infer(lit, just, reason);
                 _did_anything_since_last_call = true;
                 throw TrackedPropagationFailed{};
             }

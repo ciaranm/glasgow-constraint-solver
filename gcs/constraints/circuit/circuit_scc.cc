@@ -447,7 +447,7 @@ namespace
         return line;
     }
 
-    auto prove_mid_is_at_least(const State & state, auto &, ProofLogger & logger, const Reason & reason,
+    auto prove_mid_is_at_least(auto &, ProofLogger & logger, const Reason & reason,
         const long & root, const OrderingAssumption & ordering, const long & val, const Literal & assumption,
         ShiftedPosDataMaps & flag_data_for_root,
         const PosVarDataMap & pos_var_data, PosAllDiffData & pos_alldiff_data,
@@ -467,12 +467,12 @@ namespace
                 logger.emit_proof_line(p_line.str(), ProofLevel::Temporary);
             }
 
-            logger.emit_rup_proof_line_under_reason(state, reason,
+            logger.emit_rup_proof_line_under_reason(reason,
                 WeightedPseudoBooleanSum{} + 1_i * ! ordering.assumption_flag + 1_i * ! assumption + 1_i * flag_data_for_root.shifted_pos_geq[mid][val].flag >= 1_i,
                 ProofLevel::Current);
         }
         else {
-            logger.emit_rup_proof_line_under_reason(state, reason,
+            logger.emit_rup_proof_line_under_reason(reason,
                 WeightedPseudoBooleanSum{} + 1_i * (pos_var_data.at(mid).var >= Integer{val}) >= 1_i,
                 ProofLevel::Current);
         }
@@ -543,7 +543,7 @@ namespace
                     shifted_pos_eq[next_node][count].comment_name + " = " + to_string(count));
 
                 // RUP shifted_pos[node][count-1] /\ succ[node] = next_node => shifted_pos[next_node][i]
-                successor_implies_line = logger.emit_rup_proof_line_under_reason(state, reason,
+                successor_implies_line = logger.emit_rup_proof_line_under_reason(reason,
                     WeightedPseudoBooleanSum{} + 1_i * shifted_pos_eq[next_node][count].flag + 1_i * (succ[node] != Integer{next_node}) +
                             1_i * (! shifted_pos_eq[node][count - 1].flag) >=
                         1_i,
@@ -580,7 +580,7 @@ namespace
         return successor_implies_line;
     }
 
-    auto prove_not_same_val(const State & state, auto &, ProofLogger & logger, const Reason & reason,
+    auto prove_not_same_val(auto &, ProofLogger & logger, const Reason & reason,
         const long & root, const long & middle, const long & next_node, const long & count,
         map<long, ShiftedPosDataMaps> & flag_data, const PosVarDataMap & pos_var_data, PosAllDiffData & pos_alldiff_data,
         const vector<IntegerVariableID> & succ)
@@ -626,7 +626,7 @@ namespace
             temp_p_line.clear();
 
             logger.emit_proof_comment("Step 5");
-            logger.emit_rup_proof_line_under_reason(state, reason,
+            logger.emit_rup_proof_line_under_reason(reason,
                 WeightedPseudoBooleanSum{} +
                         1_i * ! flag_data[root].greater_than[middle].flag +
                         1_i * ! flag_data[next_node].greater_than[middle].flag +
@@ -635,7 +635,7 @@ namespace
                     1_i,
                 ProofLevel::Temporary);
 
-            logger.emit_rup_proof_line_under_reason(state, reason,
+            logger.emit_rup_proof_line_under_reason(reason,
                 WeightedPseudoBooleanSum{} +
                         1_i * ! flag_data[next_node].greater_than[middle].flag +
                         1_i * ! shifted_pos_eq[middle][count].flag +
@@ -656,7 +656,7 @@ namespace
             logger.emit_proof_line(temp_p_line.str(), ProofLevel::Temporary);
             temp_p_line.clear();
 
-            logger.emit_rup_proof_line_under_reason(state, reason,
+            logger.emit_rup_proof_line_under_reason(reason,
                 WeightedPseudoBooleanSum{} +
                         1_i * ! flag_data[root].greater_than[next_node].flag +
                         1_i * flag_data[next_node].greater_than[middle].flag +
@@ -666,21 +666,21 @@ namespace
                 ProofLevel::Temporary);
 
             logger.emit_proof_comment("Step 8");
-            logger.emit_rup_proof_line_under_reason(state, reason,
+            logger.emit_rup_proof_line_under_reason(reason,
                 WeightedPseudoBooleanSum{} + 1_i * ! flag_data[next_node].greater_than[middle].flag +
                         1_i * ! shifted_pos_eq[middle][count].flag +
                         1_i * (! shifted_pos_eq[next_node][count].flag) >=
                     1_i,
                 ProofLevel::Temporary);
 
-            succesor_implies_not_mid_line = logger.emit_rup_proof_line_under_reason(state, reason,
+            succesor_implies_not_mid_line = logger.emit_rup_proof_line_under_reason(reason,
                 WeightedPseudoBooleanSum{} + 1_i * ! shifted_pos_eq[middle][count].flag +
                         1_i * (! shifted_pos_eq[next_node][count].flag) >=
                     1_i,
                 ProofLevel::Current);
         }
         else {
-            succesor_implies_not_mid_line = logger.emit_rup_proof_line_under_reason(state, reason,
+            succesor_implies_not_mid_line = logger.emit_rup_proof_line_under_reason(reason,
                 WeightedPseudoBooleanSum{} +
                         1_i * ! (pos_var_data.at(middle).var == Integer{count}) +
                         1_i * ! (pos_var_data.at(next_node).var == Integer{count}) >=
@@ -720,12 +720,12 @@ namespace
                 ProofLevel::Temporary));
 
             logger.emit_proof_line(p_line.str(), ProofLevel::Temporary);
-            exclusion_line = logger.emit_rup_proof_line_under_reason(state, reason,
+            exclusion_line = logger.emit_rup_proof_line_under_reason(reason,
                 WeightedPseudoBooleanSum{} + 1_i * ! assumption + 1_i * ! ordering.assumption_flag + 1_i * ! shifted_pos_eq[last][count].flag >= 1_i,
                 ProofLevel::Current);
         }
         else {
-            exclusion_line = logger.emit_rup_proof_line_under_reason(state, reason,
+            exclusion_line = logger.emit_rup_proof_line_under_reason(reason,
                 WeightedPseudoBooleanSum{} + 1_i * ! assumption + 1_i * ! ordering.assumption_flag + 1_i * ! (pos_var_data.at(last).var == Integer{count}) >= 1_i,
                 ProofLevel::Current);
         }
@@ -761,7 +761,7 @@ namespace
                 throw UnexpectedException{"SCC Proof Error: First component of ordering assumption must be root of reachability argument."};
             }
             // Mid is not the root, so it must be at least 1
-            prove_mid_is_at_least(state, inference, logger, reason, root, ordering.value(), 1, assumption, flag_data_for_root, pos_var_data,
+            prove_mid_is_at_least(inference, logger, reason, root, ordering.value(), 1, assumption, flag_data_for_root, pos_var_data,
                 pos_alldiff_data, succ);
         }
 
@@ -840,7 +840,7 @@ namespace
                     else if (ordering && ! seen_middle && next_node != ordering.value().middle) {
                         // If we see any other node, prove that we can't have middle == count for this
                         // node and pos combination
-                        add_for_node_implies_not_mid.add_and_saturate(prove_not_same_val(state, inference, logger, reason,
+                        add_for_node_implies_not_mid.add_and_saturate(prove_not_same_val(inference, logger, reason,
                             root, ordering.value().middle, next_node, count,
                             flag_data, pos_var_data, pos_alldiff_data, succ));
                         if (next_node != root)
@@ -857,7 +857,7 @@ namespace
                 }
 
                 add_for_node_implies_at_least_1.add_and_saturate(
-                    logger.emit_rup_proof_line_under_reason(state, reason,
+                    logger.emit_rup_proof_line_under_reason(reason,
                         possible_next_nodes_sum + 1_i * ! assumption >= 1_i, ProofLevel::Temporary));
 
                 add_for_at_least_1.add_and_saturate(
@@ -888,7 +888,7 @@ namespace
                 add_for_not_mid.add_and_saturate(last_al1_line);
                 logger.emit_proof_comment("Not mid");
                 logger.emit_proof_line(add_for_not_mid.str(), ProofLevel::Current);
-                prove_mid_is_at_least(state, inference, logger, reason, root, ordering.value(), count + 1, assumption, flag_data_for_root,
+                prove_mid_is_at_least(inference, logger, reason, root, ordering.value(), count + 1, assumption, flag_data_for_root,
                     pos_var_data, pos_alldiff_data, succ);
             }
 
@@ -981,7 +981,7 @@ namespace
         final_contradiction_p_line << get<2>(subroot_then_node_then_root) << " + s ";
         logger.emit_proof_line(final_contradiction_p_line.str(), ProofLevel::Current);
 
-        logger.emit_rup_proof_line_under_reason(state, reason,
+        logger.emit_rup_proof_line_under_reason(reason,
             WeightedPseudoBooleanSum{} + 1_i * (succ[node] != Integer{next_node}) >= 1_i, ProofLevel::Current);
     }
 

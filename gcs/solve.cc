@@ -15,6 +15,8 @@ using std::atomic;
 using std::max;
 using std::nullopt;
 using std::optional;
+using std::pair;
+using std::vector;
 using std::chrono::duration_cast;
 using std::chrono::microseconds;
 using std::chrono::steady_clock;
@@ -52,8 +54,12 @@ namespace
             auto branch_iter = branch_generator.begin();
 
             if (branch_iter == branch_generator.end()) {
-                if (logger)
-                    logger->solution(state, problem.all_normal_variables(), problem.optional_minimise_variable());
+                if (logger) {
+                    vector<pair<IntegerVariableID, Integer>> vars_and_values;
+                    for (const auto & v : problem.all_normal_variables())
+                        vars_and_values.emplace_back(v, state(v));
+                    logger->solution(vars_and_values, problem.optional_minimise_variable() ? make_optional(pair{*problem.optional_minimise_variable(), state(*problem.optional_minimise_variable())}) : nullopt);
+                }
 
                 if (problem.optional_minimise_variable())
                     objective_value = state(*problem.optional_minimise_variable());
@@ -101,7 +107,11 @@ namespace
 
         if (logger) {
             logger->enter_proof_level(depth);
-            logger->backtrack(state);
+            vector<Literal> guesses;
+            state.for_each_guess([&](const Literal & lit) {
+                guesses.push_back(lit);
+            });
+            logger->backtrack(guesses);
             logger->forget_proof_level(depth + 1);
         }
 

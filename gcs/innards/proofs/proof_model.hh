@@ -7,7 +7,6 @@
 #include <gcs/innards/proofs/pseudo_boolean.hh>
 #include <gcs/innards/proofs/reification.hh>
 #include <gcs/innards/proofs/variable_constraints_tracker-fwd.hh>
-#include <gcs/innards/state-fwd.hh>
 #include <gcs/proof.hh>
 
 #include <memory>

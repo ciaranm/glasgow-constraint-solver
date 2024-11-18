@@ -62,9 +62,9 @@ auto Abs::install(Propagators & propagators, State & initial_state,
         for (const auto & val : state.each_value_mutable(v2)) {
             if (! state.in_domain(v1, val) && ! state.in_domain(v1, -val) && state.in_domain(v2, val)) {
                 auto just = [&](const Reason & reason) {
-                    logger->emit_rup_proof_line_under_reason(state, reason,
+                    logger->emit_rup_proof_line_under_reason(reason,
                         WeightedPseudoBooleanSum{} + 1_i * (*selector) + 1_i * (v2 != val) >= 1_i, ProofLevel::Temporary);
-                    logger->emit_rup_proof_line_under_reason(state, reason,
+                    logger->emit_rup_proof_line_under_reason(reason,
                         WeightedPseudoBooleanSum{} + 1_i * (! *selector) + 1_i * (v2 != val) >= 1_i, ProofLevel::Temporary);
                 };
                 inference.infer_not_equal(logger, v2, val, JustifyExplicitly{just}, Reason{[=]() { return Literals{{v1 != val, v1 != -val}}; }});

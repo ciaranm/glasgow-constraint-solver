@@ -154,7 +154,7 @@ namespace
                         else if (all_true) {
                             auto justf = [&](const Reason & reason) {
                                 for (auto & l : lits)
-                                    logger->emit_rup_proof_line_under_reason(state, reason,
+                                    logger->emit_rup_proof_line_under_reason(reason,
                                         WeightedPseudoBooleanSum{} + 1_i * l >= 1_i, ProofLevel::Temporary);
                             };
                             inference.infer(logger, full_reif, JustifyExplicitly{justf}, Reason{[=]() { return lits; }});
