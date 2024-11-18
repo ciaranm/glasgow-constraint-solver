@@ -241,12 +241,12 @@ namespace gcs::innards
         auto add_extra_proof_condition(const Literal & lit) -> void;
 
         /**
-         * Call the callback for each active guess in turn. Includes any extra proof
+         * Return the current set of guesses. Includes any extra proof
          * conditions added using add_extra_proof_condition().
          *
          * \sa State::guess()
          */
-        auto for_each_guess(const std::function<auto(Literal)->void> &) const -> void;
+        auto guesses() const -> std::generator<Literal>;
 
         /**
          * Create a new epoch, that can be backtracked to. Only legal if we are in a fully

@@ -1119,12 +1119,14 @@ auto State::backtrack(Timestamp t) -> void
     }
 }
 
-auto State::for_each_guess(const function<auto(Literal)->void> & f) const -> void
+auto State::guesses() const -> generator<Literal>
 {
-    for (auto & g : _imp->extra_proof_conditions)
-        f(g);
-    for (auto & g : _imp->guesses)
-        f(g);
+    return [] (const auto & extra_proof_conditions, const auto & guesses) -> generator<Literal> {
+        for (auto & g : extra_proof_conditions)
+            co_yield g;
+        for (auto & g : guesses)
+            co_yield g;
+    }(_imp->extra_proof_conditions, _imp->guesses);
 }
 
 auto State::test_literal(const Literal & lit) const -> LiteralIs
