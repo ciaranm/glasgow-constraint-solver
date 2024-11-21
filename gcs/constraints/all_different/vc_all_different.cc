@@ -143,8 +143,8 @@ auto VCAllDifferent::describe_for_proof() -> std::string
     return "all different";
 }
 
-template auto propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle, const State & state,
+template auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle, const State & state,
     SimpleInferenceTracker & inference_tracker, ProofLogger * const logger) -> void;
 
-template auto propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle, const State & state,
+template auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle, const State & state,
     EagerProofLoggingInferenceTracker & inference_tracker, ProofLogger * const logger) -> void;
