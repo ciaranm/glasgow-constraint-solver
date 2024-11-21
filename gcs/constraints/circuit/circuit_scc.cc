@@ -478,7 +478,7 @@ namespace
         }
     }
 
-    auto prove_pos_and_node_implies_next_node(const State & state, auto &, ProofLogger & logger, const Reason & reason,
+    auto prove_pos_and_node_implies_next_node(auto &, ProofLogger & logger, const Reason & reason,
         const long & root, const long & node, const long & next_node, const long & count,
         ShiftedPosDataMaps & flag_data_for_root, const PosVarDataMap & pos_var_data, PosAllDiffData & pos_alldiff_data,
         const vector<IntegerVariableID> & succ)
@@ -691,7 +691,7 @@ namespace
         return succesor_implies_not_mid_line;
     }
 
-    auto prove_exclude_last_based_on_ordering(const State & state, auto &, ProofLogger & logger, const Reason & reason,
+    auto prove_exclude_last_based_on_ordering(auto &, ProofLogger & logger, const Reason & reason,
         const OrderingAssumption & ordering, const long & root, const long & count, const Literal & assumption,
         map<long, ShiftedPosDataMaps> & flag_data, const PosVarDataMap & pos_var_data, PosAllDiffData & pos_alldiff_data,
         const vector<IntegerVariableID> & succ) -> ProofLine
@@ -830,7 +830,7 @@ namespace
                     all_values_seen[next_node].insert(count);
 
                     add_for_node_implies_at_least_1.add_and_saturate(
-                        prove_pos_and_node_implies_next_node(state, inference, logger, reason, root, node, next_node, count,
+                        prove_pos_and_node_implies_next_node(inference, logger, reason, root, node, next_node, count,
                             flag_data_for_root, pos_var_data, pos_alldiff_data, succ));
 
                     if (ordering && next_node == ordering.value().last && ! seen_middle) {
@@ -877,7 +877,7 @@ namespace
             if (exclude_based_on_ordering) {
                 PLine new_last_al1_line;
                 new_last_al1_line.add_and_saturate(
-                    prove_exclude_last_based_on_ordering(state, inference, logger, reason, ordering.value(), root, count,
+                    prove_exclude_last_based_on_ordering(inference, logger, reason, ordering.value(), root, count,
                         assumption, flag_data, pos_var_data, pos_alldiff_data, succ));
                 new_last_al1_line.add_and_saturate(last_al1_line);
                 last_al1_line = logger.emit_proof_line(new_last_al1_line.str(), ProofLevel::Current);
