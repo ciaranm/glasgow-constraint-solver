@@ -49,7 +49,7 @@ auto main(int, char *[]) -> int
             cout << "\n\n";
             return true;
         }},
-        make_optional<ProofOptions>("circuit_prune_root_test.opb", "circuit_prune_root_test.pbp"));
+        make_optional<ProofOptions>("circuit_prune_root_test"));
 
     cout << stats;
 

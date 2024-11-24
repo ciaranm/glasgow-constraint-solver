@@ -66,7 +66,7 @@ namespace
             [&](const SimpleIntegerVariableID & var) -> string {
                 return overloaded{
                     [&](const ProofLine & line) { return to_string(line); },
-                    [&](const string & s) { return s; }}
+                    [&](const XLiteral & s) { return logger->variable_constraints_tracker().pb_file_string_for(s); }}
                     .visit(logger->variable_constraints_tracker().need_pol_item_defining_literal(upper ? var < state.upper_bound(var) + 1_i : var >= state.lower_bound(var)));
             },
             [&](const ConstantIntegerVariableID &) -> string {

@@ -95,7 +95,7 @@ auto main(int argc, char * argv[]) -> int
                 return options_vars.contains("all");
             },
             .branch = branch_with(variable_order::dom(queens), value_order::smallest_in())},
-        options_vars.contains("prove") ? make_optional<ProofOptions>("n_queens.opb", "n_queens.pbp") : nullopt);
+        options_vars.contains("prove") ? make_optional<ProofOptions>("n_queens") : nullopt);
 
     cout << stats;
 

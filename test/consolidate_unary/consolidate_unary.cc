@@ -85,7 +85,7 @@ auto main(int argc, char * argv[]) -> int
                 return true;
             },
         },
-        options_vars.contains("prove") ? make_optional<ProofOptions>("consolidate_unary.opb", "consolidate_unary.pbp") : nullopt);
+        options_vars.contains("prove") ? make_optional<ProofOptions>("consolidate_unary") : nullopt);
 
     cout << stats;
 

@@ -58,7 +58,7 @@ auto main(int, char *[]) -> int
             cout << "\n\n";
             return true;
         }},
-        make_optional<ProofOptions>("circuit_prune_skip_test.opb", "circuit_prune_skip_test.pbp"));
+        make_optional<ProofOptions>("circuit_prune_skip_test"));
 
     cout << stats;
 

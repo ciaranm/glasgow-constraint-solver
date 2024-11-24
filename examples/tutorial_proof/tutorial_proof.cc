@@ -83,7 +83,7 @@ auto main(int argc, char * argv[]) -> int
             },
         },
         options_vars.contains("prove") ? make_optional<ProofOptions>(
-                                             "tutorial_proof.opb", "tutorial_proof.pbp", true, options_vars.count("full-proof-encoding"))
+                                             ProofFileNames{"tutorial_proof"}, true, options_vars.count("full-proof-encoding"))
                                        : nullopt);
 
     print("{}", stats);

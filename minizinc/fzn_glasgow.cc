@@ -735,7 +735,7 @@ auto main(int argc, char * argv[]) -> int
         optional<ProofOptions> proof_options;
         if (options_vars.contains("prove")) {
             string basename = options_vars["prove"].as<string>();
-            proof_options.emplace(basename + ".opb", basename + ".pbp");
+            proof_options.emplace(basename);
         }
 
         bool completed = false;

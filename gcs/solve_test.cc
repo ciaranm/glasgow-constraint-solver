@@ -26,7 +26,7 @@ TEST_CASE("Solve unsat")
             found_solution = true;
             return false;
         },
-        ProofOptions{"solve_test.opb", "solve_test.pbp"});
+        ProofOptions{"solve_test"});
 
     CHECK(! found_solution);
     CHECK(system("veripb solve_test.opb solve_test.pbp") == EXIT_SUCCESS);
@@ -45,7 +45,7 @@ TEST_CASE("Solve unsat by model optimisation")
             found_solution = true;
             return false;
         },
-        ProofOptions{"solve_test.opb", "solve_test.pbp"});
+        ProofOptions{"solve_test"});
 
     CHECK(! found_solution);
     CHECK(system("veripb solve_test.opb solve_test.pbp") == EXIT_SUCCESS);
@@ -64,7 +64,7 @@ TEST_CASE("Solve unsat optimisation presolving")
             found_solution = true;
             return false;
         },
-        ProofOptions{"solve_test.opb", "solve_test.pbp"});
+        ProofOptions{"solve_test"});
 
     CHECK(! found_solution);
     CHECK(system("veripb solve_test.opb solve_test.pbp") == EXIT_SUCCESS);

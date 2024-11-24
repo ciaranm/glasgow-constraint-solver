@@ -138,7 +138,7 @@ auto main(int argc, char * argv[]) -> int
                 return true;
             },
             .branch = branch_with(variable_order::dom_then_deg(vertices), value_order::smallest_first())},
-        options_vars.contains("prove") ? make_optional<ProofOptions>("colour.opb", "colour.pbp") : nullopt);
+        options_vars.contains("prove") ? make_optional<ProofOptions>("colour") : nullopt);
 
     print("{}", stats);
 

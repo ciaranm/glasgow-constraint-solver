@@ -42,7 +42,7 @@ auto main(int, char *[]) -> int
                 return true;
             },
         },
-        make_optional<ProofOptions>("circuit_disconnected_test.opb", "circuit_disconnected_test.pbp"));
+        make_optional<ProofOptions>("circuit_disconnected_test"));
 
     cout << stats;
 

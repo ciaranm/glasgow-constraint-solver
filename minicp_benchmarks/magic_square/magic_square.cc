@@ -134,7 +134,7 @@ auto main(int argc, char * argv[]) -> int
                 return ++n_solutions < 10000;
             },
             .branch = branch_with(variable_order::dom(grid_flat), value_order::smallest_in())},
-        options_vars.contains("prove") ? make_optional<ProofOptions>("magic_square.opb", "magic_square.pbp") : nullopt);
+        options_vars.contains("prove") ? make_optional<ProofOptions>("magic_square") : nullopt);
 
     cout << stats;
 

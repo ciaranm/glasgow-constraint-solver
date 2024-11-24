@@ -34,7 +34,7 @@ struct Problem::Imp
 {
     State initial_state{};
     deque<unique_ptr<Constraint>> constraints{};
-    deque<tuple<SimpleIntegerVariableID, Integer, Integer, optional<string>>> opb_variables{};
+    deque<tuple<SimpleIntegerVariableID, Integer, Integer, optional<string>>> integer_variables{};
     deque<unique_ptr<Presolver>> presolvers{};
     vector<IntegerVariableID> problem_variables{};
     optional<IntegerVariableID> optional_minimise_variable{};
@@ -54,7 +54,7 @@ auto Problem::create_integer_variable(Integer lower, Integer upper,
         throw UnexpectedException{"variable has lower bound > upper bound"};
 
     auto result = _imp->initial_state.allocate_integer_variable_with_state(lower, upper);
-    _imp->opb_variables.emplace_back(result, lower, upper, name);
+    _imp->integer_variables.emplace_back(result, lower, upper, name);
     _imp->problem_variables.push_back(result);
     return result;
 }
@@ -67,7 +67,7 @@ auto Problem::create_integer_variable(const vector<Integer> & domain, const opti
     auto [min, max] = minmax_element(domain.begin(), domain.end());
 
     auto result = _imp->initial_state.allocate_integer_variable_with_state(*min, *max);
-    _imp->opb_variables.emplace_back(result, *min, *max, name);
+    _imp->integer_variables.emplace_back(result, *min, *max, name);
     _imp->problem_variables.push_back(result);
 
     post(In{result, domain});
@@ -93,7 +93,7 @@ auto Problem::create_state_for_new_search(
 {
     auto result = _imp->initial_state.clone();
     if (model) {
-        for (auto & [id, lower, upper, optional_name] : _imp->opb_variables)
+        for (auto & [id, lower, upper, optional_name] : _imp->integer_variables)
             model->set_up_integer_variable(id, lower, upper, optional_name, nullopt);
     }
     return result;

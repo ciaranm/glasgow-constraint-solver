@@ -103,7 +103,7 @@ Stats run_circuit_problem(int n, const vector<vector<long>> & distances, SCCOpti
                 return true;
             },
         },
-        make_optional<ProofOptions>("circuit_random.opb", "circuit_random.veripb"));
+        make_optional<ProofOptions>("circuit_random"));
     return stats;
 }
 
