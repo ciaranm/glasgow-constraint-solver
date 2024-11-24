@@ -127,7 +127,7 @@ auto main(int argc, char * argv[]) -> int
                 return true;
             },
             .branch = branch_with(variable_order::dom(succ), value_order::smallest_in())},
-        options_vars.contains("prove") ? make_optional<ProofOptions>("tsp.opb", "tsp.pbp") : nullopt);
+        options_vars.contains("prove") ? make_optional<ProofOptions>("tsp") : nullopt);
 
     cout << stats;
 

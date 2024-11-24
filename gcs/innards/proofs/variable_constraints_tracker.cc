@@ -6,15 +6,21 @@
 #include <gcs/innards/proofs/variable_constraints_tracker.hh>
 #include <gcs/innards/variable_id_utils.hh>
 
+#include <fstream>
 #include <map>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::fstream;
+using std::ios;
 using std::map;
+using std::nullopt;
 using std::optional;
 using std::pair;
 using std::string;
@@ -30,25 +36,42 @@ struct VariableConstraintsTracker::Imp
     ProofLogger * logger = nullptr;
 
     map<SimpleOrProofOnlyIntegerVariableID, ProofLine> variable_at_least_one_constraints;
-    map<VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID>, string> direct_integer_variables;
-    map<SimpleOrProofOnlyIntegerVariableID, pair<Integer, vector<pair<Integer, string>>>> integer_variable_bits;
-    map<SimpleOrProofOnlyIntegerVariableID, pair<Integer, Integer>> bounds_for_gevars;
-    map<SimpleOrProofOnlyIntegerVariableID, map<Integer, pair<variant<ProofLine, string>, variant<ProofLine, string>>>> gevars_that_exist;
-    map<pair<unsigned long long, bool>, string> flags;
+    map<VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID>, XLiteral> variable_conditions_to_x;
+    map<SimpleOrProofOnlyIntegerVariableID, pair<Integer, vector<pair<Integer, XLiteral>>>> integer_variable_bits_to_size_and_proof_vars;
+    map<SimpleOrProofOnlyIntegerVariableID, pair<Integer, Integer>> integer_variable_definition_bounds;
+    map<SimpleOrProofOnlyIntegerVariableID, map<Integer, pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>>>> gevars_that_exist;
+    map<ProofFlag, XLiteral> flags;
 
-    unordered_map<string, string> xification;
+    map<SimpleOrProofOnlyIntegerVariableID, string> id_names;
+    map<XLiteral, string> xlits_to_verbose_names;
+    map<ProofFlag, string> flag_names;
+    string unknown_name = "?";
 
-    bool use_friendly_names = true;
     unsigned model_variables = 0;
+    long long next_xliteral_nr = 0;
+
+    fstream variables_map_file;
+    bool first_varmap_entry = true;
+    bool verbose_names;
 };
 
 VariableConstraintsTracker::VariableConstraintsTracker(const ProofOptions & proof_options) :
     _imp(new Imp{})
 {
-    _imp->use_friendly_names = proof_options.use_friendly_names;
+    _imp->verbose_names = proof_options.verbose_names;
+
+    _imp->variables_map_file.open(proof_options.proof_file_names.variables_map_file, ios::out);
+    if (! _imp->variables_map_file)
+        throw ProofError{"Error writing proof variables mapping file to '" + proof_options.proof_file_names.variables_map_file + "'"};
+    _imp->variables_map_file << "{\n";
 }
 
-VariableConstraintsTracker::~VariableConstraintsTracker() = default;
+VariableConstraintsTracker::~VariableConstraintsTracker()
+{
+    if (_imp->variables_map_file) {
+        _imp->variables_map_file << "\n}\n";
+    }
+}
 
 auto VariableConstraintsTracker::switch_from_model_to_proof(ProofLogger * const logger) -> void
 {
@@ -61,10 +84,10 @@ auto VariableConstraintsTracker::start_writing_model(ProofModel * const model) -
     _imp->model = model;
 }
 
-auto VariableConstraintsTracker::track_condition_name(
-    const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> & cond, const std::string & name) -> void
+auto VariableConstraintsTracker::associate_condition_with_xliteral(
+    const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> & cond, const XLiteral & x) -> void
 {
-    _imp->direct_integer_variables.emplace(cond, name);
+    _imp->variable_conditions_to_x.emplace(cond, x);
 }
 
 auto VariableConstraintsTracker::track_variable_takes_at_least_one_value(const SimpleOrProofOnlyIntegerVariableID & id, ProofLine line) -> void
@@ -82,7 +105,7 @@ auto VariableConstraintsTracker::need_constraint_saying_variable_takes_at_least_
             auto result = _imp->variable_at_least_one_constraints.find(var);
             if (result == _imp->variable_at_least_one_constraints.end()) {
                 WeightedPseudoBooleanSum al1s;
-                auto [lower, upper] = _imp->bounds_for_gevars.at(var);
+                auto [lower, upper] = _imp->integer_variable_definition_bounds.at(var);
                 for (Integer v = lower; v <= upper; ++v)
                     al1s += 1_i * (var == v);
 
@@ -97,13 +120,13 @@ auto VariableConstraintsTracker::need_constraint_saying_variable_takes_at_least_
         .visit(var);
 }
 
-auto VariableConstraintsTracker::need_pol_item_defining_literal(const IntegerVariableCondition & cond) -> variant<ProofLine, string>
+auto VariableConstraintsTracker::need_pol_item_defining_literal(const IntegerVariableCondition & cond) -> variant<ProofLine, XLiteral>
 {
     return overloaded{
-        [&](const ConstantIntegerVariableID &) -> variant<ProofLine, string> {
+        [&](const ConstantIntegerVariableID &) -> variant<ProofLine, XLiteral> {
             throw UnimplementedException{};
         },
-        [&](const SimpleIntegerVariableID & var) -> variant<ProofLine, string> {
+        [&](const SimpleIntegerVariableID & var) -> variant<ProofLine, XLiteral> {
             switch (cond.op) {
                 using enum VariableConditionOperator;
             case GreaterEqual:
@@ -119,7 +142,7 @@ auto VariableConstraintsTracker::need_pol_item_defining_literal(const IntegerVar
             }
             throw NonExhaustiveSwitch{};
         },
-        [&](const ViewOfIntegerVariableID &) -> variant<ProofLine, string> {
+        [&](const ViewOfIntegerVariableID &) -> variant<ProofLine, XLiteral> {
             throw UnimplementedException{};
         }}
         .visit(cond.var);
@@ -128,21 +151,11 @@ auto VariableConstraintsTracker::need_pol_item_defining_literal(const IntegerVar
 auto VariableConstraintsTracker::create_literals_for_introduced_variable_value(
     SimpleIntegerVariableID id, Integer val, const optional<string> & optional_name) -> void
 {
-    string name = "i" + to_string(id.index);
     if (optional_name)
-        name.append("_" + *optional_name);
-
-    auto x = rewrite_variable_name(name + "e" + to_string(val.raw_value));
-    _imp->direct_integer_variables.emplace(id == val, x);
-    _imp->direct_integer_variables.emplace(id != val, "~" + x);
-}
-
-auto VariableConstraintsTracker::rewrite_variable_name(string && s) -> string
-{
-    if (_imp->use_friendly_names)
-        return s;
-    else
-        return _imp->xification.try_emplace(s, "x" + to_string(_imp->xification.size() + 1)).first->second;
+        track_variable_name(id, *optional_name);
+    auto x = allocate_xliteral_meaning(id, EqualsOrGreaterEqual::Equals, val);
+    _imp->variable_conditions_to_x.emplace(id == val, x);
+    _imp->variable_conditions_to_x.emplace(id != val, ! x);
 }
 
 auto VariableConstraintsTracker::need_proof_name(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> & cond) -> void
@@ -179,50 +192,28 @@ auto VariableConstraintsTracker::need_all_proof_names_in(const SumOf<Weighted<Ps
             .visit(v);
 }
 
-auto VariableConstraintsTracker::proof_name(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> & cond) const -> const string &
-{
-    auto it = _imp->direct_integer_variables.find(cond);
-    if (it == _imp->direct_integer_variables.end())
-        throw ProofError("No variable exists for condition on " + visit([&](const auto & v) { return debug_string(v); }, cond.var));
-    return it->second;
-}
-
-auto VariableConstraintsTracker::track_flag(const ProofFlag & flag, const string & name) -> void
-{
-    _imp->flags.emplace(pair{flag.index, true}, name);
-    _imp->flags.emplace(pair{flag.index, false}, "~" + name);
-}
-
-auto VariableConstraintsTracker::proof_name(const ProofFlag & flag) const -> const string &
-{
-    auto it = _imp->flags.find(pair{flag.index, flag.positive});
-    if (it == _imp->flags.end())
-        throw ProofError("Missing flag");
-    return it->second;
-}
-
 auto VariableConstraintsTracker::negative_bit_coefficient(const SimpleOrProofOnlyIntegerVariableID & id) -> Integer
 {
-    auto it = _imp->integer_variable_bits.find(id);
-    if (it == _imp->integer_variable_bits.end())
+    auto it = _imp->integer_variable_bits_to_size_and_proof_vars.find(id);
+    if (it == _imp->integer_variable_bits_to_size_and_proof_vars.end())
         throw ProofError("missing bits");
     return it->second.first;
 }
 
 auto VariableConstraintsTracker::for_each_bit(const SimpleOrProofOnlyIntegerVariableID & id,
-    const std::function<auto(Integer, const std::string &)->void> & f) -> void
+    const std::function<auto(Integer, const XLiteral &)->void> & f) -> void
 {
-    auto it = _imp->integer_variable_bits.find(id);
-    if (it == _imp->integer_variable_bits.end())
+    auto it = _imp->integer_variable_bits_to_size_and_proof_vars.find(id);
+    if (it == _imp->integer_variable_bits_to_size_and_proof_vars.end())
         throw ProofError("missing bits");
     for (auto & [c, n] : it->second.second)
         f(c, n);
 }
 
 auto VariableConstraintsTracker::track_bits(const SimpleOrProofOnlyIntegerVariableID & id, Integer negative_coeff,
-    const std::vector<std::pair<Integer, std::string>> & bit_vars) -> void
+    const std::vector<std::pair<Integer, XLiteral>> & bit_vars) -> void
 {
-    _imp->integer_variable_bits.emplace(id, pair{negative_coeff, bit_vars});
+    _imp->integer_variable_bits_to_size_and_proof_vars.emplace(id, pair{negative_coeff, bit_vars});
 }
 
 auto VariableConstraintsTracker::allocate_flag_index() -> unsigned long long
@@ -231,33 +222,23 @@ auto VariableConstraintsTracker::allocate_flag_index() -> unsigned long long
 }
 
 auto VariableConstraintsTracker::track_gevar(SimpleIntegerVariableID id, Integer val,
-    const std::pair<std::variant<ProofLine, std::string>, std::variant<ProofLine, std::string>> & names) -> void
+    const std::pair<std::variant<ProofLine, XLiteral>, std::variant<ProofLine, XLiteral>> & names) -> void
 {
     _imp->gevars_that_exist[id].emplace(val, names);
 }
 
 auto VariableConstraintsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> void
 {
-    if (_imp->direct_integer_variables.contains(id == v))
+    if (_imp->variable_conditions_to_x.contains(id == v))
         return;
 
-    string name = overloaded{
-        [&](const SimpleIntegerVariableID & id) { return "i" + to_string(id.index); },
-        [&](const ProofOnlySimpleIntegerVariableID & id) { return "p" + to_string(id.index); }}
-                      .visit(id);
+    auto eqvar = allocate_xliteral_meaning(id, EqualsOrGreaterEqual::Equals, v);
+    _imp->variable_conditions_to_x.emplace(id == v, eqvar);
+    _imp->variable_conditions_to_x.emplace(id != v, ! eqvar);
 
-    auto eqvar = rewrite_variable_name(name + "e" + to_string(v.raw_value));
-    _imp->direct_integer_variables.emplace(id == v, eqvar);
-    _imp->direct_integer_variables.emplace(id != v, "~" + eqvar);
-
-    auto bounds = _imp->bounds_for_gevars.find(id);
-    if (bounds != _imp->bounds_for_gevars.end() && bounds->second.first == v) {
+    auto bounds = _imp->integer_variable_definition_bounds.find(id);
+    if (bounds != _imp->integer_variable_definition_bounds.end() && bounds->second.first == v) {
         // it's a lower bound
-        if (_imp->logger)
-            _imp->logger->emit_proof_comment("need lower bound for " + eqvar);
-        else
-            _imp->model->emit_model_comment("need lower bound for " + eqvar);
-
         if (_imp->logger) {
             visit([&](const auto & id) {
                 _imp->logger->emit_red_proof_lines_reifying(WeightedPseudoBooleanSum{} + 1_i * ! (id >= (v + 1_i)) >= 1_i,
@@ -274,13 +255,8 @@ auto VariableConstraintsTracker::need_direct_encoding_for(SimpleOrProofOnlyInteg
             ++_imp->model_variables;
         }
     }
-    else if (bounds != _imp->bounds_for_gevars.end() && bounds->second.second == v) {
+    else if (bounds != _imp->integer_variable_definition_bounds.end() && bounds->second.second == v) {
         // it's an upper bound
-        if (_imp->logger)
-            _imp->logger->emit_proof_comment("need upper bound for " + eqvar);
-        else
-            _imp->model->emit_model_comment("need upper bound for " + eqvar);
-
         if (_imp->logger) {
             visit([&](const auto & id) {
                 _imp->logger->emit_red_proof_lines_reifying(WeightedPseudoBooleanSum{} + 1_i * (id >= v) >= 1_i, id == v, ProofLevel::Top);
@@ -298,11 +274,6 @@ auto VariableConstraintsTracker::need_direct_encoding_for(SimpleOrProofOnlyInteg
     }
     else {
         // neither a lower nor an upper bound
-        if (_imp->logger)
-            _imp->logger->emit_proof_comment("need " + eqvar);
-        else
-            _imp->model->emit_model_comment("need " + eqvar);
-
         if (_imp->logger)
             visit([&](const auto & id) {
                 _imp->logger->emit_red_proof_lines_reifying(
@@ -323,22 +294,12 @@ auto VariableConstraintsTracker::need_direct_encoding_for(SimpleOrProofOnlyInteg
 
 auto VariableConstraintsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> void
 {
-    if (_imp->direct_integer_variables.contains(id >= v))
+    if (_imp->variable_conditions_to_x.contains(id >= v))
         return;
 
-    string name = overloaded{
-        [&](const SimpleIntegerVariableID & id) { return "i" + to_string(id.index); },
-        [&](const ProofOnlySimpleIntegerVariableID & id) { return "p" + to_string(id.index); }}
-                      .visit(id);
-
-    auto gevar = rewrite_variable_name(name + "g" + to_string(v.raw_value));
-    _imp->direct_integer_variables.emplace(id >= v, gevar);
-    _imp->direct_integer_variables.emplace(id < v, "~" + gevar);
-
-    if (_imp->logger)
-        _imp->logger->emit_proof_comment("need " + gevar);
-    else
-        _imp->model->emit_model_comment("need " + gevar);
+    auto gevar = allocate_xliteral_meaning(id, EqualsOrGreaterEqual::GreaterEqual, v);
+    _imp->variable_conditions_to_x.emplace(id >= v, gevar);
+    _imp->variable_conditions_to_x.emplace(id < v, ! gevar);
 
     // gevar -> bits
     if (_imp->logger) {
@@ -358,10 +319,10 @@ auto VariableConstraintsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID i
     }
 
     // is it a bound?
-    auto bounds = _imp->bounds_for_gevars.find(id);
+    auto bounds = _imp->integer_variable_definition_bounds.find(id);
 
     // lower?
-    if (bounds != _imp->bounds_for_gevars.end() && bounds->second.first >= v) {
+    if (bounds != _imp->integer_variable_definition_bounds.end() && bounds->second.first >= v) {
         if (_imp->logger)
             visit([&](auto id) { _imp->logger->emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * (id >= v) >= 1_i, ProofLevel::Top); }, id);
         else
@@ -369,7 +330,7 @@ auto VariableConstraintsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID i
     }
 
     // upper?
-    if (bounds != _imp->bounds_for_gevars.end() && bounds->second.second < v) {
+    if (bounds != _imp->integer_variable_definition_bounds.end() && bounds->second.second < v) {
         if (_imp->logger)
             visit([&](auto id) { _imp->logger->emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * ! (id >= v) >= 1_i, ProofLevel::Top); }, id);
         else
@@ -399,13 +360,241 @@ auto VariableConstraintsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID i
 
 auto VariableConstraintsTracker::track_bounds(const SimpleOrProofOnlyIntegerVariableID & id, Integer lower, Integer upper) -> void
 {
-    _imp->bounds_for_gevars.emplace(id, pair{lower, upper});
+    _imp->integer_variable_definition_bounds.emplace(id, pair{lower, upper});
 }
 
-auto VariableConstraintsTracker::create_proof_flag(const string &) -> ProofFlag
+auto VariableConstraintsTracker::create_proof_flag(const optional<string> & name) -> ProofFlag
 {
     ProofFlag result{allocate_flag_index(), true};
-    string name = rewrite_variable_name("f" + to_string(result.index)); // + "_" + n);
-    track_flag(result, name);
+    track_variable_name(result, name);
+    auto flagvar = allocate_xliteral_meaning(result);
+    _imp->flags.emplace(result, flagvar);
+    _imp->flags.emplace(! result, ! flagvar);
     return result;
+}
+
+auto VariableConstraintsTracker::pb_file_string_for(const XLiteral & lit) const -> string
+{
+    if (_imp->verbose_names) {
+        auto it = _imp->xlits_to_verbose_names.find(lit);
+        if (it == _imp->xlits_to_verbose_names.end())
+            throw ProofError("missing verbose name for xliteral " + to_string(lit.id) + " " + to_string(lit.negated));
+        return it->second;
+    }
+    else {
+        if (lit.negated)
+            return "~x" + to_string(lit.id);
+        else
+            return "x" + to_string(lit.id);
+    }
+}
+
+auto VariableConstraintsTracker::pb_file_string_for(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> & cond) const -> string
+{
+    return pb_file_string_for(xliteral_for(cond));
+}
+
+auto VariableConstraintsTracker::xliteral_for(const ProofFlag & flag) const -> const XLiteral
+{
+    auto f = _imp->flags.find(flag);
+    if (f == _imp->flags.end())
+        throw ProofError{"can't find literals for flag"};
+    return f->second;
+}
+
+auto VariableConstraintsTracker::xliteral_for(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> & cond) const -> const XLiteral
+{
+    auto f = _imp->variable_conditions_to_x.find(cond);
+    if (f == _imp->variable_conditions_to_x.end())
+        throw ProofError{"can't find literals for cond"};
+    return f->second;
+}
+
+auto VariableConstraintsTracker::pb_file_string_for(const ProofFlag & flag) const -> string
+{
+    return pb_file_string_for(xliteral_for(flag));
+}
+
+namespace
+{
+    auto write_vardata(fstream & stream, bool & first, const string & name, const nlohmann::json & json) -> void
+    {
+        if (! first)
+            stream << ",\n";
+        else
+            first = false;
+
+        nlohmann::json name_json = name;
+        stream << name_json << ": " << json;
+    }
+}
+
+auto VariableConstraintsTracker::allocate_xliteral_meaning(SimpleOrProofOnlyIntegerVariableID id,
+    const EqualsOrGreaterEqual & op, Integer value) -> XLiteral
+{
+    auto result = XLiteral{++_imp->next_xliteral_nr, false};
+
+    if (_imp->verbose_names) {
+        overloaded{
+            [&](const SimpleIntegerVariableID & id) -> void {
+                string name = "i" + to_string(id.index) + "_" + name_of(id) + (op == EqualsOrGreaterEqual::Equals ? "_e" : "_g") + to_string(value.raw_value);
+                _imp->xlits_to_verbose_names.emplace(result, name);
+                _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
+            },
+            [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
+                string name = "p" + to_string(id.index) + "_" + name_of(id) + (op == EqualsOrGreaterEqual::Equals ? "_e" : "_g") + to_string(value.raw_value);
+                _imp->xlits_to_verbose_names.emplace(result, name);
+                _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
+            }}
+            .visit(id);
+    }
+
+    nlohmann::json data;
+    data["type"] = "condition";
+    overloaded{
+        [&](const SimpleIntegerVariableID & id) -> void {
+            data["cpvartype"] = "intvar";
+            data["cpvarid"] = id.index;
+        },
+        [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
+            data["cpvartype"] = "proofintvar";
+            data["cpvarid"] = id.index;
+        }}
+        .visit(id);
+
+    data["name"] = name_of(id);
+    data["operator"] = (op == EqualsOrGreaterEqual::Equals ? "=" : ">=");
+    data["value"] = value.raw_value;
+
+    write_vardata(_imp->variables_map_file, _imp->first_varmap_entry, pb_file_string_for(result), data);
+
+    return result;
+}
+
+auto VariableConstraintsTracker::allocate_xliteral_meaning(ProofFlag flag) -> XLiteral
+{
+    auto result = XLiteral{++_imp->next_xliteral_nr, false};
+
+    if (_imp->verbose_names) {
+        string name = "f" + to_string(flag.index) + "_" + name_of(flag);
+        _imp->xlits_to_verbose_names.emplace(result, name);
+        _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
+    }
+
+    nlohmann::json data;
+    data["type"] = "proofflag";
+    _imp->variables_map_file << pb_file_string_for(result) << ' ';
+    data["name"] = name_of(flag);
+
+    write_vardata(_imp->variables_map_file, _imp->first_varmap_entry, pb_file_string_for(result), data);
+
+    return result;
+}
+
+auto VariableConstraintsTracker::allocate_xliteral_meaning_negative_bit_of(SimpleOrProofOnlyIntegerVariableID id) -> XLiteral
+{
+    auto result = XLiteral{++_imp->next_xliteral_nr, false};
+
+    if (_imp->verbose_names) {
+        overloaded{
+            [&](const SimpleIntegerVariableID & id) -> void {
+                string name = "i" + to_string(id.index) + "_" + name_of(id) + "_n";
+                _imp->xlits_to_verbose_names.emplace(result, name);
+                _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
+            },
+            [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
+                string name = "p" + to_string(id.index) + "_" + name_of(id) + "_n";
+                _imp->xlits_to_verbose_names.emplace(result, name);
+                _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
+            }}
+            .visit(id);
+    }
+
+    nlohmann::json data;
+    data["type"] = "intvarnegbit";
+    overloaded{
+        [&](const SimpleIntegerVariableID & id) -> void {
+            data["cpvartype"] = "intvar";
+            data["cpvarid"] = id.index;
+        },
+        [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
+            data["cpvartype"] = "proofintvar";
+            data["cpvarid"] = id.index;
+        }}
+        .visit(id);
+    data["name"] = name_of(id);
+
+    write_vardata(_imp->variables_map_file, _imp->first_varmap_entry, pb_file_string_for(result), data);
+
+    return result;
+}
+
+auto VariableConstraintsTracker::allocate_xliteral_meaning_bit_of(SimpleOrProofOnlyIntegerVariableID id, Integer power) -> XLiteral
+{
+    auto result = XLiteral{++_imp->next_xliteral_nr, false};
+
+    if (_imp->verbose_names) {
+        overloaded{
+            [&](const SimpleIntegerVariableID & id) -> void {
+                string name = "i" + to_string(id.index) + "_" + name_of(id) + "_b" + to_string(power.raw_value);
+                _imp->xlits_to_verbose_names.emplace(result, name);
+                _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
+            },
+            [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
+                string name = "p" + to_string(id.index) + "_" + name_of(id) + "_b" + to_string(power.raw_value);
+                _imp->xlits_to_verbose_names.emplace(result, name);
+                _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
+            }}
+            .visit(id);
+    }
+
+    nlohmann::json data;
+    data["type"] = "intvarbit";
+    overloaded{
+        [&](const SimpleIntegerVariableID & id) -> void {
+            data["cpvartype"] = "intvar";
+            data["cpvarid"] = id.index;
+        },
+        [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
+            data["cpvartype"] = "proofintvar";
+            data["cpvarid"] = id.index;
+        }}
+        .visit(id);
+
+    data["name"] = name_of(id);
+    data["power"] = power.raw_value;
+
+    write_vardata(_imp->variables_map_file, _imp->first_varmap_entry, pb_file_string_for(result), data);
+
+    return result;
+}
+
+auto VariableConstraintsTracker::track_variable_name(SimpleOrProofOnlyIntegerVariableID id, const optional<string> & name) -> void
+{
+    if (name)
+        _imp->id_names.emplace(id, *name);
+}
+
+auto VariableConstraintsTracker::track_variable_name(ProofFlag id, const optional<string> & name) -> void
+{
+    if (name)
+        _imp->flag_names.emplace(id, *name);
+}
+
+auto VariableConstraintsTracker::name_of(SimpleOrProofOnlyIntegerVariableID id) -> const string &
+{
+    auto it = _imp->id_names.find(id);
+    if (_imp->id_names.end() == it)
+        return _imp->unknown_name;
+    else
+        return it->second;
+}
+
+auto VariableConstraintsTracker::name_of(ProofFlag id) -> const string &
+{
+    auto it = _imp->flag_names.find(id);
+    if (_imp->flag_names.end() == it)
+        return _imp->unknown_name;
+    else
+        return it->second;
 }

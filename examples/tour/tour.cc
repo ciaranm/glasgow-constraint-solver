@@ -147,7 +147,7 @@ auto main(int argc, char * argv[]) -> int
                 cout << "\n\n";
                 return true;
             }},
-        options_vars.contains("prove") ? make_optional<ProofOptions>("tour.opb", "tour.pbp") : nullopt);
+        options_vars.contains("prove") ? make_optional<ProofOptions>("tour") : nullopt);
 
     cout << stats;
     return EXIT_SUCCESS;

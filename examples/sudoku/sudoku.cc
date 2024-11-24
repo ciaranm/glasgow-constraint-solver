@@ -238,7 +238,7 @@ auto main(int argc, char * argv[]) -> int
                 println("");
                 return true;
             }},
-        options_vars.contains("prove") ? make_optional<ProofOptions>("sudoku.opb", "sudoku.pbp") : nullopt);
+        options_vars.contains("prove") ? make_optional<ProofOptions>("sudoku") : nullopt);
 
     print("{}", stats);
 

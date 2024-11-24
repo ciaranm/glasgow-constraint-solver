@@ -8,17 +8,22 @@ using namespace gcs::innards;
 
 using std::string;
 
-ProofOptions::ProofOptions(string o, string p) :
-    opb_file(move(o)),
-    proof_file(move(p))
+ProofFileNames::ProofFileNames(const std::string & s) :
+    opb_file(s + ".opb"),
+    proof_file(s + ".pbp"),
+    variables_map_file(s + ".varmap")
 {
 }
 
-ProofOptions::ProofOptions(string o, string p, bool u, bool e) :
-    opb_file(move(o)),
-    proof_file(move(p)),
-    use_friendly_names(u),
-    always_use_full_encoding(e)
+ProofOptions::ProofOptions(const std::string & f) :
+    proof_file_names(f)
+{
+}
+
+ProofOptions::ProofOptions(const ProofFileNames & f, bool v, bool a) :
+    proof_file_names(f),
+    verbose_names(v),
+    always_use_full_encoding(a)
 {
 }
 

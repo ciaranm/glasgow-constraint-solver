@@ -111,7 +111,7 @@ auto main(int argc, char * argv[]) -> int
                 return true;
             },
         },
-        options_vars.contains("prove") ? make_optional<ProofOptions>("rostering.opb", "rostering.pbp") : nullopt);
+        options_vars.contains("prove") ? make_optional<ProofOptions>("rostering") : nullopt);
 
     cout << stats;
 

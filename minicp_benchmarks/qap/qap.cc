@@ -159,7 +159,7 @@ auto main(int argc, char * argv[]) -> int
                 return true;
             },
             .branch = branch_with(variable_order::dom(xs), value_order::smallest_in())},
-        options_vars.contains("prove") ? make_optional<ProofOptions>("qap.opb", "qap.pbp") : nullopt);
+        options_vars.contains("prove") ? make_optional<ProofOptions>("qap") : nullopt);
 
     cout << stats << endl;
 

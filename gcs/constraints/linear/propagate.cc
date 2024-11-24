@@ -127,7 +127,7 @@ namespace
     {
         logger.emit_proof_comment("justifying integer linear inequality " + debug_string(IntegerVariableID{change_var}) + " " + to_what);
 
-        vector<pair<Integer, variant<ProofLine, string>>> terms_to_sum;
+        vector<pair<Integer, variant<ProofLine, XLiteral>>> terms_to_sum;
         if (proof_line)
             terms_to_sum.emplace_back(1_i, second_constraint_for_equality ? *proof_line + 1 : *proof_line);
         else
@@ -154,13 +154,20 @@ namespace
         step << "p";
         bool first = true;
         for (auto & c_and_l : terms_to_sum) {
-            visit([&](const auto & l) {
-                if (c_and_l.first == 1_i)
-                    step << " " << l;
-                else
-                    step << " " << l << " " << c_and_l.first << " *";
-            },
-                c_and_l.second);
+            overloaded{
+                [&](const XLiteral & l) {
+                    if (c_and_l.first == 1_i)
+                        step << " " << logger.variable_constraints_tracker().pb_file_string_for(l);
+                    else
+                        step << " " << logger.variable_constraints_tracker().pb_file_string_for(l) << " " << c_and_l.first << " *";
+                },
+                [&](const ProofLine & l) {
+                    if (c_and_l.first == 1_i)
+                        step << " " << l;
+                    else
+                        step << " " << l << " " << c_and_l.first << " *";
+                }}
+                .visit(c_and_l.second);
             if (! first)
                 step << " +";
             first = false;

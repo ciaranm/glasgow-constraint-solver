@@ -11,6 +11,24 @@
 namespace gcs
 {
     /**
+     * \brief Filenames for a ProofOptions.
+     *
+     * \sa ProofOptions
+     * \ingroup Core
+     */
+    struct ProofFileNames final
+    {
+        /**
+         * Construct a ProofFileNames, using the specifed prefix with ".opb", etc appended.
+         */
+        explicit ProofFileNames(const std::string &);
+
+        std::string opb_file;           ///< Filename for the OPB model
+        std::string proof_file;         ///< Filename for the proof file
+        std::string variables_map_file; ///< Filename for variables mapping file
+    };
+
+    /**
      * \brief Options for a Problem telling it how to produce a proof.
      *
      * \sa Problem
@@ -18,13 +36,12 @@ namespace gcs
      */
     struct ProofOptions final
     {
-        explicit ProofOptions(std::string, std::string);
-        explicit ProofOptions(std::string, std::string, bool, bool);
+        explicit ProofOptions(const std::string &);
+        explicit ProofOptions(const ProofFileNames &, bool, bool);
         ProofOptions(const ProofOptions &) = default;
 
-        std::string opb_file;                  ///< Filename for the OPB model
-        std::string proof_file;                ///< Filename for the proof file
-        bool use_friendly_names = true;        ///< Use verbose names, rather than just x1, x2, etc.
+        ProofFileNames proof_file_names;       ///< Filenames for OPB, proof, and mapping files
+        bool verbose_names = true;             ///< Use verbose names in proofs?
         bool always_use_full_encoding = false; ///< Always write the full variable encoding to the OPB file
     };
 

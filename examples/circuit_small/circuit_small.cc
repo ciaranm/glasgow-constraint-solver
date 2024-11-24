@@ -109,7 +109,7 @@ auto main(int argc, char * argv[]) -> int
             cout << "\n\n";
             return true;
         }},
-        options_vars.contains("prove") ? make_optional<ProofOptions>("circuit_small.opb", "circuit_small.pbp") : nullopt);
+        options_vars.contains("prove") ? make_optional<ProofOptions>("circuit_small") : nullopt);
 
     cout << stats;
 

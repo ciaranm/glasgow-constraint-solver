@@ -64,11 +64,11 @@ namespace
                     [](const TrueLiteral &) -> string { return "1"; },
                     [](const FalseLiteral &) -> string { return "0"; },
                     [&]<typename T_>(const VariableConditionFrom<T_> & var) -> string {
-                        return variable_constraints_tracker.proof_name(var);
+                        return variable_constraints_tracker.pb_file_string_for(var);
                     }}
                     .visit(simplify_literal(lit));
             },
-            [&](const ProofFlag & flag) { return variable_constraints_tracker.proof_name(flag); }}
+            [&](const ProofFlag & flag) { return variable_constraints_tracker.pb_file_string_for(flag); }}
             .visit(lit);
     }
 }
@@ -93,7 +93,7 @@ struct ProofLogger::Imp
 ProofLogger::ProofLogger(const ProofOptions & proof_options, VariableConstraintsTracker & t) :
     _imp(new Imp{t})
 {
-    _imp->proof_file = proof_options.proof_file;
+    _imp->proof_file = proof_options.proof_file_names.proof_file;
     _imp->proof_lines_by_level.resize(2);
 }
 
@@ -122,10 +122,10 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
             [&](const ConstantIntegerVariableID &) {
             },
             [&](const SimpleIntegerVariableID & var) {
-                _imp->proof << " " << variable_constraints_tracker().proof_name(var == val);
+                _imp->proof << " " << variable_constraints_tracker().pb_file_string_for(var == val);
             },
             [&](const ViewOfIntegerVariableID & var) {
-                _imp->proof << " " << variable_constraints_tracker().proof_name(deview(var == val));
+                _imp->proof << " " << variable_constraints_tracker().pb_file_string_for(deview(var == val));
             }}
             .visit(var);
 

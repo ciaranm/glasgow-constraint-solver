@@ -70,7 +70,7 @@ auto main(int, char *[]) -> int
             cout << "\n\n";
             return true;
         }},
-        make_optional<ProofOptions>("circuit_no_backedges_test.opb", "circuit_no_backedges_test.pbp"));
+        make_optional<ProofOptions>("circuit_no_backedges_test"));
 
     cout << stats;
 

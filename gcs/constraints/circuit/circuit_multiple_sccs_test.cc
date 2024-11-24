@@ -52,7 +52,7 @@ auto main(int, char *[]) -> int
             cout << "\n\n";
             return true;
         }},
-        make_optional<ProofOptions>("circuit_multiple_sccs_test.opb", "circuit_multiple_sccs_test.pbp"));
+        make_optional<ProofOptions>("circuit_multiple_sccs_test"));
 
     cout << stats;
 

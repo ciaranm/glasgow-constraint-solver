@@ -31,28 +31,28 @@ auto gcs::innards::emit_inequality_to(
                     },
                     [&](const FalseLiteral &) {},
                     [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
-                        stream << -w << " " << variable_constraints_tracker.proof_name(cond) << " ";
+                        stream << -w << " " << variable_constraints_tracker.pb_file_string_for(cond) << " ";
                         reif_const += max(0_i, w);
                     }}
                     .visit(simplify_literal(lit));
             },
             [&, w = w](const ProofFlag & flag) {
-                stream << -w << " " << variable_constraints_tracker.proof_name(flag) << " ";
+                stream << -w << " " << variable_constraints_tracker.pb_file_string_for(flag) << " ";
                 reif_const += max(0_i, w);
             },
             [&, w = w](const IntegerVariableID & var) {
                 overloaded{
                     [&](const SimpleIntegerVariableID & var) {
-                        variable_constraints_tracker.for_each_bit(var, [&](Integer bit_value, const string & bit_name) {
-                            stream << -w * bit_value << " " << bit_name << " ";
+                        variable_constraints_tracker.for_each_bit(var, [&](Integer bit_value, const XLiteral & bit_lit) {
+                            stream << -w * bit_value << " " << variable_constraints_tracker.pb_file_string_for(bit_lit) << " ";
                             reif_const += max(0_i, w * bit_value);
                         });
                     },
                     [&](const ViewOfIntegerVariableID & view) {
                         if (! view.negate_first) {
                             variable_constraints_tracker.for_each_bit(view.actual_variable,
-                                [&](Integer bit_value, const string & bit_name) {
-                                    stream << -w * bit_value << " " << bit_name << " ";
+                                [&](Integer bit_value, const XLiteral & bit_lit) {
+                                    stream << -w * bit_value << " " << variable_constraints_tracker.pb_file_string_for(bit_lit) << " ";
                                     reif_const += max(0_i, w * bit_value);
                                 });
                             rhs += w * view.then_add;
@@ -60,8 +60,8 @@ auto gcs::innards::emit_inequality_to(
                         }
                         else {
                             variable_constraints_tracker.for_each_bit(view.actual_variable,
-                                [&](Integer bit_value, const string & bit_name) {
-                                    stream << w * bit_value << " " << bit_name << " ";
+                                [&](Integer bit_value, const XLiteral & bit_lit) {
+                                    stream << w * bit_value << " " << variable_constraints_tracker.pb_file_string_for(bit_lit) << " ";
                                     reif_const += max(0_i, -w * bit_value);
                                 });
                             rhs += w * view.then_add;
@@ -74,8 +74,8 @@ auto gcs::innards::emit_inequality_to(
                     .visit(var);
             },
             [&, w = w](const ProofOnlySimpleIntegerVariableID & var) {
-                variable_constraints_tracker.for_each_bit(var, [&](Integer bit_value, const string & bit_name) {
-                    stream << -w * bit_value << " " << bit_name << " ";
+                variable_constraints_tracker.for_each_bit(var, [&](Integer bit_value, const XLiteral & bit_lit) {
+                    stream << -w * bit_value << " " << variable_constraints_tracker.pb_file_string_for(bit_lit) << " ";
                     reif_const += max(0_i, w * bit_value);
                 });
             }}
@@ -87,7 +87,7 @@ auto gcs::innards::emit_inequality_to(
         for (auto & r : *half_reif)
             overloaded{
                 [&](const ProofFlag & f) {
-                    stream << reif_const << " " << variable_constraints_tracker.proof_name(! f) << " ";
+                    stream << reif_const << " " << variable_constraints_tracker.pb_file_string_for(! f) << " ";
                 },
                 [&](const ProofLiteral & lit) {
                     overloaded{
@@ -97,7 +97,7 @@ auto gcs::innards::emit_inequality_to(
                             throw UnimplementedException{};
                         },
                         [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
-                            stream << reif_const << " " << variable_constraints_tracker.proof_name(! cond) << " ";
+                            stream << reif_const << " " << variable_constraints_tracker.pb_file_string_for(! cond) << " ";
                         }}
                         .visit(simplify_literal(lit));
                 }}

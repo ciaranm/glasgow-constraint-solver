@@ -44,8 +44,7 @@ auto main(int, char *[]) -> int
                     return false;
                 },
             },
-            make_optional<ProofOptions>("break_table_with_constants.opb",
-                "break_table_with_constants.pbp"));
+            make_optional<ProofOptions>("break_table_with_constants"));
 
         if (system("veripb break_table_with_constants.opb break_table_with_constants.pbp") != 0) {
             return EXIT_FAILURE;

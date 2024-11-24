@@ -69,7 +69,7 @@ namespace
     auto justify_cond(const State & state, const auto & coeff_vars, ProofLogger & logger,
         const ProofLine & proof_line) -> void
     {
-        vector<pair<Integer, variant<ProofLine, string>>> terms_to_sum;
+        vector<pair<Integer, variant<ProofLine, XLiteral>>> terms_to_sum;
         terms_to_sum.emplace_back(1_i, proof_line);
 
         for (const auto & cv : coeff_vars.terms) {
@@ -87,13 +87,20 @@ namespace
         step << "p";
         bool first = true;
         for (auto & c_and_l : terms_to_sum) {
-            visit([&](const auto & l) {
-                if (c_and_l.first == 1_i)
-                    step << " " << l;
-                else
-                    step << " " << l << " " << c_and_l.first << " *";
-            },
-                c_and_l.second);
+            overloaded{
+                [&](const XLiteral & l) {
+                    if (c_and_l.first == 1_i)
+                        step << " " << logger.variable_constraints_tracker().pb_file_string_for(l);
+                    else
+                        step << " " << logger.variable_constraints_tracker().pb_file_string_for(l) << " " << c_and_l.first << " *";
+                },
+                [&](const ProofLine & l) {
+                    if (c_and_l.first == 1_i)
+                        step << " " << l;
+                    else
+                        step << " " << l << " " << c_and_l.first << " *";
+                }}
+                .visit(c_and_l.second);
             if (! first)
                 step << " +";
             first = false;

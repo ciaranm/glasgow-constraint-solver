@@ -49,7 +49,7 @@ struct ProofModel::Imp
     ProofLine proof_line = 0;
 
     optional<IntegerVariableID> optional_minimise_variable;
-    map<unsigned long long, string> proof_only_integer_variables;
+    unsigned long long proof_only_integer_variable_nr = 0;
 
     string opb_file;
     stringstream opb;
@@ -65,7 +65,7 @@ struct ProofModel::Imp
 ProofModel::ProofModel(const ProofOptions & proof_options, VariableConstraintsTracker & t) :
     _imp(new Imp{t})
 {
-    _imp->opb_file = proof_options.opb_file;
+    _imp->opb_file = proof_options.proof_file_names.opb_file;
     _imp->always_use_full_encoding = proof_options.always_use_full_encoding;
 }
 
@@ -155,12 +155,10 @@ auto ProofModel::variable_constraints_tracker() -> VariableConstraintsTracker &
     return _imp->tracker;
 }
 
-auto ProofModel::create_proof_only_integer_variable(Integer lower, Integer upper, const std::string & s,
+auto ProofModel::create_proof_only_integer_variable(Integer lower, Integer upper, const optional<string> & name,
     const IntegerVariableProofRepresentation rep) -> ProofOnlySimpleIntegerVariableID
 {
-    ProofOnlySimpleIntegerVariableID id{_imp->proof_only_integer_variables.size()};
-    _imp->proof_only_integer_variables.emplace(id.index, s);
-    string name = "p" + to_string(id.index) + "_" + s;
+    ProofOnlySimpleIntegerVariableID id{_imp->proof_only_integer_variable_nr++};
     switch (rep) {
     case IntegerVariableProofRepresentation::DirectOnly:
         set_up_direct_only_variable_encoding(id, lower, upper, name);
@@ -173,22 +171,23 @@ auto ProofModel::create_proof_only_integer_variable(Integer lower, Integer upper
     return id;
 }
 
-auto ProofModel::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariableID id, Integer lower, Integer upper, const string & name) -> void
+auto ProofModel::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariableID id, Integer lower, Integer upper, const optional<string> & name) -> void
 {
-    emit_model_comment(fmt::format("variable {} {} .. {} direct encoding", name, lower.raw_value, upper.raw_value));
+    emit_model_comment(fmt::format("variable {} {} .. {} direct encoding", name.value_or("?"), lower.raw_value, upper.raw_value));
 
     if (0_i == lower && 1_i == upper) {
-        auto eqvar = variable_constraints_tracker().rewrite_variable_name(name + "t");
-        _imp->opb << "1 " << eqvar << " >= 0 ;\n";
+        variable_constraints_tracker().track_variable_name(id, name);
+        auto eqvar = variable_constraints_tracker().allocate_xliteral_meaning(id, EqualsOrGreaterEqual::Equals, 1_i);
+        _imp->opb << "1 " << variable_constraints_tracker().pb_file_string_for(eqvar) << " >= 0 ;\n";
         ++_imp->model_variables;
         ++_imp->number_of_constraints;
 
         overloaded{
             [&](const SimpleIntegerVariableID & id) {
-                variable_constraints_tracker().track_condition_name(id == 1_i, eqvar);
-                variable_constraints_tracker().track_condition_name(id != 1_i, "~" + eqvar);
-                variable_constraints_tracker().track_condition_name(id == 0_i, "~" + eqvar);
-                variable_constraints_tracker().track_condition_name(id != 0_i, eqvar);
+                variable_constraints_tracker().associate_condition_with_xliteral(id == 1_i, eqvar);
+                variable_constraints_tracker().associate_condition_with_xliteral(id != 1_i, ! eqvar);
+                variable_constraints_tracker().associate_condition_with_xliteral(id == 0_i, ! eqvar);
+                variable_constraints_tracker().associate_condition_with_xliteral(id != 0_i, eqvar);
             },
             [](const ProofOnlySimpleIntegerVariableID &) {
                 // currently there's no API for asking for literals for these
@@ -199,9 +198,9 @@ auto ProofModel::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVa
 
         overloaded{
             [&](const SimpleIntegerVariableID & id) {
-                variable_constraints_tracker().track_condition_name(id >= 1_i, eqvar);
-                variable_constraints_tracker().track_condition_name(id < 1_i, "~" + eqvar);
-                pair<variant<ProofLine, string>, variant<ProofLine, string>> names{eqvar, "~" + eqvar};
+                variable_constraints_tracker().associate_condition_with_xliteral(id >= 1_i, eqvar);
+                variable_constraints_tracker().associate_condition_with_xliteral(id < 1_i, ! eqvar);
+                pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>> names{eqvar, ! eqvar};
                 variable_constraints_tracker().track_gevar(id, 1_i, names);
             },
             [](const ProofOnlySimpleIntegerVariableID &) {
@@ -211,13 +210,14 @@ auto ProofModel::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVa
     }
     else {
         for (auto v = lower; v <= upper; ++v) {
-            auto eqvar = variable_constraints_tracker().rewrite_variable_name(name + "e" + to_string(v.raw_value));
-            _imp->opb << "1 " << eqvar << " ";
+            variable_constraints_tracker().track_variable_name(id, name);
+            auto eqvar = variable_constraints_tracker().allocate_xliteral_meaning(id, EqualsOrGreaterEqual::Equals, v);
+            _imp->opb << "1 " << variable_constraints_tracker().pb_file_string_for(eqvar) << " ";
             ++_imp->model_variables;
 
             visit([&](const auto & id) {
-                variable_constraints_tracker().track_condition_name(id == v, eqvar);
-                variable_constraints_tracker().track_condition_name(id != v, "~" + eqvar);
+                variable_constraints_tracker().associate_condition_with_xliteral(id == v, eqvar);
+                variable_constraints_tracker().associate_condition_with_xliteral(id != v, ! eqvar);
             },
                 id);
         }
@@ -225,8 +225,7 @@ auto ProofModel::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVa
         variable_constraints_tracker().track_variable_takes_at_least_one_value(id, ++_imp->number_of_constraints);
 
         for (auto v = lower; v <= upper; ++v) {
-            auto eqvar = variable_constraints_tracker().rewrite_variable_name(name + "e" + to_string(v.raw_value));
-            _imp->opb << "-1 " << eqvar << " ";
+            _imp->opb << "-1 " << variable_constraints_tracker().pb_file_string_for(id == v) << " ";
         }
         _imp->opb << ">= -1 ;\n";
         ++_imp->number_of_constraints;
@@ -236,50 +235,47 @@ auto ProofModel::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVa
 auto ProofModel::set_up_integer_variable(SimpleIntegerVariableID id, Integer lower, Integer upper,
     const optional<string> & optional_name, const optional<IntegerVariableProofRepresentation> & rep) -> void
 {
-    string name = "i" + to_string(id.index);
-    if (optional_name)
-        name.append("_" + *optional_name);
     if (! rep) {
         if (lower == 0_i && upper == 1_i)
-            set_up_direct_only_variable_encoding(id, lower, upper, name);
+            set_up_direct_only_variable_encoding(id, lower, upper, optional_name);
         else
-            set_up_bits_variable_encoding(id, lower, upper, name);
+            set_up_bits_variable_encoding(id, lower, upper, optional_name);
     }
     else {
         switch (*rep) {
         case IntegerVariableProofRepresentation::Bits:
-            set_up_bits_variable_encoding(id, lower, upper, name);
+            set_up_bits_variable_encoding(id, lower, upper, optional_name);
             break;
         case IntegerVariableProofRepresentation::DirectOnly:
-            set_up_direct_only_variable_encoding(id, lower, upper, name);
+            set_up_direct_only_variable_encoding(id, lower, upper, optional_name);
             break;
         }
     }
 }
 
-auto ProofModel::set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableID id, Integer lower, Integer upper, const string & name) -> void
+auto ProofModel::set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableID id, Integer lower, Integer upper, const optional<string> & name) -> void
 {
-    _imp->opb << "* variable " << name << " " << lower.raw_value << " .. " << upper.raw_value << " bits encoding\n";
     auto [highest_bit_shift, highest_bit_coeff, negative_bit_coeff] = get_bits_encoding_coeffs(lower, upper);
-    vector<pair<Integer, string>> bits;
+    vector<pair<Integer, XLiteral>> bits;
 
+    variable_constraints_tracker().track_variable_name(id, name);
     if (0_i != negative_bit_coeff)
-        bits.emplace_back(negative_bit_coeff, variable_constraints_tracker().rewrite_variable_name(name + "n" + to_string(highest_bit_shift + 1)));
+        bits.emplace_back(negative_bit_coeff, variable_constraints_tracker().allocate_xliteral_meaning_negative_bit_of(id));
     for (int b = 0; b <= highest_bit_shift; ++b)
-        bits.emplace_back(Integer{1ll << b}, variable_constraints_tracker().rewrite_variable_name(name + "b" + to_string(b)));
+        bits.emplace_back(Integer{1ll << b}, variable_constraints_tracker().allocate_xliteral_meaning_bit_of(id, Integer{b}));
 
     variable_constraints_tracker().track_bits(id, negative_bit_coeff, bits);
     _imp->model_variables += bits.size();
 
     // lower bound
     for (auto & [coeff, var] : bits)
-        _imp->opb << coeff << " " << var << " ";
+        _imp->opb << coeff << " " << variable_constraints_tracker().pb_file_string_for(var) << " ";
     _imp->opb << ">= " << lower << " ;\n";
     ++_imp->number_of_constraints;
 
     // upper bound
     for (auto & [coeff, var] : bits)
-        _imp->opb << -coeff << " " << var << " ";
+        _imp->opb << -coeff << " " << variable_constraints_tracker().pb_file_string_for(var) << " ";
     _imp->opb << ">= " << -upper << " ;\n";
     ++_imp->number_of_constraints;
 
@@ -296,7 +292,7 @@ auto ProofModel::set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableI
             .visit(id);
 }
 
-auto ProofModel::create_proof_flag(const string & name) -> ProofFlag
+auto ProofModel::create_proof_flag(const optional<string> & name) -> ProofFlag
 {
     return variable_constraints_tracker().create_proof_flag(name);
 }
@@ -310,8 +306,8 @@ auto ProofModel::finalise() -> void
         full_opb << "min: ";
         overloaded{
             [&](const SimpleIntegerVariableID & v) {
-                variable_constraints_tracker().for_each_bit(v, [&](Integer bit_value, const string & bit_name) {
-                    full_opb << bit_value << " " << bit_name << " ";
+                variable_constraints_tracker().for_each_bit(v, [&](Integer bit_value, const XLiteral & bit_name) {
+                    full_opb << bit_value << " " << variable_constraints_tracker().pb_file_string_for(bit_name) << " ";
                 });
             },
             [&](const ConstantIntegerVariableID &) {
@@ -319,8 +315,8 @@ auto ProofModel::finalise() -> void
             },
             [&](const ViewOfIntegerVariableID & v) {
                 // the "then add" bit is irrelevant for the objective function
-                variable_constraints_tracker().for_each_bit(v.actual_variable, [&](Integer bit_value, const string & bit_name) {
-                    full_opb << (v.negate_first ? -bit_value : bit_value) << " " << bit_name << " ";
+                variable_constraints_tracker().for_each_bit(v.actual_variable, [&](Integer bit_value, const XLiteral & bit_name) {
+                    full_opb << (v.negate_first ? -bit_value : bit_value) << " " << variable_constraints_tracker().pb_file_string_for(bit_name) << " ";
                 });
             }}
             .visit(*_imp->optional_minimise_variable);
