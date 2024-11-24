@@ -65,8 +65,8 @@ auto main(int argc, char * argv[]) -> int
     Problem p;
 
     // https://www.minizinc.org/doc-2.5.5/en/modelling.html#an-arithmetic-optimisation-example
-    auto banana = p.create_integer_variable(0_i, 100_i);
-    auto chocolate = p.create_integer_variable(0_i, 100_i);
+    auto banana = p.create_integer_variable(0_i, 100_i, "banana");
+    auto chocolate = p.create_integer_variable(0_i, 100_i, "chocolate");
     p.post(WeightedSum{} + 250_i * banana + 200_i * chocolate <= 4000_i);
     p.post(WeightedSum{} + 2_i * banana <= 6_i);
     p.post(WeightedSum{} + 75_i * banana + 150_i * chocolate <= 2000_i);
@@ -87,7 +87,7 @@ auto main(int argc, char * argv[]) -> int
                 variable_order::dom_then_deg(vector<IntegerVariableID>{banana, chocolate}),
                 value_order::largest_first())},
         options_vars.contains("prove")
-            ? make_optional<ProofOptions>("cake.opb", "cake.pbp", true, options_vars.count("full-proof-encoding"))
+            ? make_optional<ProofOptions>(ProofFileNames{"cake"}, true, options_vars.count("full-proof-encoding"))
             : nullopt);
 
     print("{}", stats);

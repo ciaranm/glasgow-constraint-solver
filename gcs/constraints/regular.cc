@@ -63,7 +63,7 @@ namespace
     };
 
     auto log_additional_inference(ProofLogger * const logger, const vector<Literal> & literals, const vector<ProofFlag> & proof_flags,
-        const State & state, const Reason & reason, string comment = "") -> void
+        const State &, const Reason & reason, string comment = "") -> void
     {
         if (logger) {
             // Trying to cut down on repeated code

@@ -78,7 +78,7 @@ auto main(int argc, char * argv[]) -> int
                 return true;
             },
         },
-        options_vars.contains("prove") ? make_optional<ProofOptions>("regex.opb", "regex.pbp") : nullopt);
+        options_vars.contains("prove") ? make_optional<ProofOptions>("regex") : nullopt);
 
     cout << stats;
 

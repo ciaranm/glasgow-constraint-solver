@@ -113,7 +113,7 @@ auto main(int argc, char * argv[]) -> int
                 return true;
             },
             .branch = branch_with(variable_order::dom(series), value_order::smallest_in())},
-        options_vars.contains("prove") ? make_optional<ProofOptions>("magic_series.opb", "magic_series.pbp") : nullopt);
+        options_vars.contains("prove") ? make_optional<ProofOptions>("magic_series") : nullopt);
 
     cout << stats;
 

@@ -736,7 +736,7 @@ auto main(int argc, char * argv[]) -> int
                 else
                     return false;
             }},
-        options_vars.contains("prove") ? make_optional<ProofOptions>("xcsp.opb", "xcsp.pbp") : nullopt,
+        options_vars.contains("prove") ? make_optional<ProofOptions>("xcsp") : nullopt,
         &abort_flag);
 
     if (timeout_thread.joinable()) {

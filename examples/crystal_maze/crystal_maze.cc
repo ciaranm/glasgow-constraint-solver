@@ -106,7 +106,7 @@ auto main(int argc, char * argv[]) -> int
                 return true;
             },
             .branch = branch_with(variable_order::dom_then_deg(xs), value_order::smallest_first())},
-        options_vars.contains("prove") ? make_optional<ProofOptions>("crystal_maze.opb", "crystal_maze.pbp") : nullopt);
+        options_vars.contains("prove") ? make_optional<ProofOptions>("crystal_maze") : nullopt);
 
     print("{}", stats);
 

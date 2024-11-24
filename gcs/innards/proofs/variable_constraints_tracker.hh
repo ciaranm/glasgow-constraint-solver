@@ -19,6 +19,31 @@
 namespace gcs::innards
 {
     /**
+     * Represents the lowest level of a raw PB literal that appears in an OPB file
+     * or proof log.
+     *
+     * \ingroup Innards
+     */
+    struct XLiteral
+    {
+        long long id;
+        bool negated;
+
+        [[nodiscard]] auto operator<=>(const XLiteral &) const noexcept = default;
+    };
+
+    [[nodiscard]] inline auto operator!(const XLiteral & lit) -> XLiteral
+    {
+        return XLiteral{lit.id, ! lit.negated};
+    }
+
+    enum class EqualsOrGreaterEqual
+    {
+        Equals,
+        GreaterEqual
+    };
+
+    /**
      * Provides access to information about flags and variables being used in a proof.
      *
      * This is for information that is shared between a ProofModel and a ProofLogger,
@@ -93,7 +118,7 @@ namespace gcs::innards
          * representation. Will emit the reification, if it does not already exist. If this
          * is a zero-one variable, returns an actual literal.
          */
-        [[nodiscard]] auto need_pol_item_defining_literal(const IntegerVariableCondition &) -> std::variant<ProofLine, std::string>;
+        [[nodiscard]] auto need_pol_item_defining_literal(const IntegerVariableCondition &) -> std::variant<ProofLine, XLiteral>;
 
         /**
          * Set things up internally as if the specified variable was a real
@@ -113,21 +138,37 @@ namespace gcs::innards
         auto need_all_proof_names_in(const SumOf<Weighted<PseudoBooleanTerm>> & sum) -> void;
 
         /**
-         * Return a string form of a variable condition, for writing to a model or log.
+         * Return the string used in PB files for a given XLiteral.
          */
-        [[nodiscard]] auto proof_name(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> &) const -> const std::string &;
+        [[nodiscard]] auto pb_file_string_for(const XLiteral &) const -> std::string;
 
         /**
-         * Return a string form of a proof flag, for writing to a model or log.
+         * Return the raw proof literal representing a variable condition, for writing to a model or log.
          */
-        [[nodiscard]] auto proof_name(const ProofFlag &) const -> const std::string &;
+        [[nodiscard]] auto xliteral_for(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> &) const -> const XLiteral;
+
+        /**
+         * Return a string form of a raw proof literal, for writing to a model or log.
+         */
+        [[nodiscard]] auto pb_file_string_for(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> &) const -> std::string;
+
+        /**
+         * Return the raw proof literal representing a proof flag, for writing to a model or log.
+         */
+        [[nodiscard]] auto xliteral_for(const ProofFlag &) const -> const XLiteral;
+
+        /**
+         * Return a string form of a proof flag, for writing to a model or log. Same as calling
+         * raw_literal_as_string(raw_proof_literal(flag)).
+         */
+        [[nodiscard]] auto pb_file_string_for(const ProofFlag &) const -> std::string;
 
         /**
          * Call the supplied function for each bit making up the given variable, specifying
-         * its string name and coefficient.
+         * its raw PB literal and coefficient.
          */
         auto for_each_bit(const SimpleOrProofOnlyIntegerVariableID &,
-            const std::function<auto(Integer, const std::string &)->void> &) -> void;
+            const std::function<auto(Integer, const XLiteral &)->void> &) -> void;
 
         /**
          * If there is a negative bit for this variable, return its coefficient, otherwise
@@ -136,28 +177,22 @@ namespace gcs::innards
         [[nodiscard]] auto negative_bit_coefficient(const SimpleOrProofOnlyIntegerVariableID &) -> Integer;
 
         /**
-         * Given a desired variable name, turn it into something suitable for use
-         * in a model or log.
-         */
-        [[nodiscard]] auto rewrite_variable_name(std::string &&) -> std::string;
-
-        /**
          * Track that the associated literal exists, and has a string name.
          */
-        auto track_condition_name(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> &, const std::string &) -> void;
+        auto associate_condition_with_xliteral(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> &, const XLiteral &) -> void;
 
         /**
          * Track that a given variable's bits exist.
          */
         auto track_bits(const SimpleOrProofOnlyIntegerVariableID & id, Integer negative_coeff,
-            const std::vector<std::pair<Integer, std::string>> & bit_vars) -> void;
+            const std::vector<std::pair<Integer, XLiteral>> & bit_vars) -> void;
 
         /**
          * Track that a given greater-or-equal variable exists, and has a string name
          * and associated defining constraints.
          */
         auto track_gevar(SimpleIntegerVariableID, Integer,
-            const std::pair<std::variant<ProofLine, std::string>, std::variant<ProofLine, std::string>> &) -> void;
+            const std::pair<std::variant<ProofLine, XLiteral>, std::variant<ProofLine, XLiteral>> &) -> void;
 
         /**
          * Track that an at-least-one constraint exists for a given variable.
@@ -183,6 +218,46 @@ namespace gcs::innards
          * Reify a PB constraint on a conjunction of ProofFlags or ProofLiterals
          */
         [[nodiscard]] auto reify(const WeightedPseudoBooleanLessEqual &, const HalfReifyOnConjunctionOf &) -> WeightedPseudoBooleanLessEqual;
+
+        /*
+         * Allocate an XLiteral with the given semantic meaning.
+         */
+        [[nodiscard]] auto allocate_xliteral_meaning(SimpleOrProofOnlyIntegerVariableID id, const EqualsOrGreaterEqual & op, Integer value) -> XLiteral;
+
+        /**
+         * Allocate an XLiteral with the given semantic meaning.
+         */
+        [[nodiscard]] auto allocate_xliteral_meaning(ProofFlag flag) -> XLiteral;
+
+        /**
+         * Allocate an XLiteral with the given semantic meaning.
+         */
+        [[nodiscard]] auto allocate_xliteral_meaning_negative_bit_of(SimpleOrProofOnlyIntegerVariableID flag) -> XLiteral;
+
+        /**
+         * Allocate an XLiteral with the given semantic meaning.
+         */
+        [[nodiscard]] auto allocate_xliteral_meaning_bit_of(SimpleOrProofOnlyIntegerVariableID flag, Integer power) -> XLiteral;
+
+        /**
+         * Track a human-readable name for a variable.
+         */
+        auto track_variable_name(SimpleOrProofOnlyIntegerVariableID id, const std::optional<std::string> &) -> void;
+
+        /**
+         * Track a human-readable name for a variable.
+         */
+        auto track_variable_name(ProofFlag id, const std::optional<std::string> &) -> void;
+
+        /**
+         * Get the human-readable name for a variable, or "?" if there isn't one.
+         */
+        [[nodiscard]] auto name_of(SimpleOrProofOnlyIntegerVariableID id) -> const std::string &;
+
+        /**
+         * Get the human-readable name for a variable, or "?" if there isn't one.
+         */
+        [[nodiscard]] auto name_of(ProofFlag id) -> const std::string &;
     };
 }
 

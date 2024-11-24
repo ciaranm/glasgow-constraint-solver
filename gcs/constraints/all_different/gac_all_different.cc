@@ -637,3 +637,19 @@ auto GACAllDifferent::describe_for_proof() -> std::string
 {
     return "all different";
 }
+
+template auto gcs::innards::propagate_gac_all_different(
+    const std::vector<IntegerVariableID> & vars,
+    const std::vector<Integer> & vals,
+    const std::map<Integer, ProofLine> * const am1_value_constraint_numbers,
+    const State & state,
+    SimpleInferenceTracker & inference_tracker,
+    ProofLogger * const logger) -> void;
+
+template auto gcs::innards::propagate_gac_all_different(
+    const std::vector<IntegerVariableID> & vars,
+    const std::vector<Integer> & vals,
+    const std::map<Integer, ProofLine> * const am1_value_constraint_numbers,
+    const State & state,
+    EagerProofLoggingInferenceTracker & inference_tracker,
+    ProofLogger * const logger) -> void;

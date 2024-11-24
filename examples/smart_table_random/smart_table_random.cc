@@ -253,7 +253,7 @@ auto test_smart_table(const int & n, mt19937 & rng, bool make_string_rep)
 
                 return true;
             }},
-        ProofOptions{"random_table.opb", "random_table.pbp"});
+        ProofOptions{"random_table"});
 
     if (0 != system("veripb random_table.opb random_table.pbp")) {
         cout << stats;

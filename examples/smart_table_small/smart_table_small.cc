@@ -73,7 +73,7 @@ auto main(int argc, char * argv[]) -> int
                 cout << "A = " << s(A) << " B = " << s(B) << " C = " << s(C) << endl;
                 return true;
             }},
-        ProofOptions{"smart_table_small.opb", "smart_table_small.pbp"});
+        ProofOptions{"smart_table_small"});
 
     cout << stats;
 

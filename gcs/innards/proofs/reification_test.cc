@@ -10,7 +10,7 @@ using namespace gcs::innards;
 
 auto main() -> int
 {
-    ProofOptions proof_options{"reification_test.opb", "reification_test.pbp"};
+    ProofOptions proof_options{"reification_test"};
 
     VariableConstraintsTracker tracker(proof_options);
     ProofModel model(proof_options, tracker);
