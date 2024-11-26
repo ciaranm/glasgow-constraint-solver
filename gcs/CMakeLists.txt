@@ -45,6 +45,7 @@ add_library(glasgow_constraint_solver
         innards/literal.cc
         innards/proofs/bits_encoding.cc
         innards/proofs/emit_inequality_to.cc
+        innards/proofs/lp_justification.cc
         innards/proofs/proof_error.cc
         innards/proofs/proof_logger.cc
         innards/proofs/proof_model.cc

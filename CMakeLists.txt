@@ -58,6 +58,8 @@ option(GCS_ENABLE_XCSP "Support for the XCSP modelling language" ON)
 option(GCS_ENABLE_MINIZINC "Support for the MiniZinc modelling language" ON)
 option(GCS_ENABLE_EXAMPLES "Build examples" ON)
 option(GCS_DEBUG_MODE "Disable compiler optimisation for debugging" OFF)
+option(GCS_ENABLE_SOPLEX "(Experimental) Required for WIP LP justifications." ON)
+option(GCS_ENABLE_HIGHS "(Experimental) Required for WIP LP justifications." ON)
 
 include_directories(.)
 add_subdirectory(gcs)
@@ -98,6 +100,7 @@ endif (GCS_ENABLE_MINIZINC)
 if (GCS_ENABLE_PYTHON)
     add_subdirectory(python)
 endif (GCS_ENABLE_PYTHON)
+
 
 Include(FetchContent)
 Set(FETCHCONTENT_QUIET FALSE)
@@ -144,5 +147,26 @@ if (GCS_ENABLE_MINIZINC)
     FetchContent_MakeAvailable(json)
 endif (GCS_ENABLE_MINIZINC)
 
+if (GCS_ENABLE_SOPLEX)
+    FetchContent_Declare(
+            soplex
+            GIT_REPOSITORY https://github.com/scipopt/soplex.git
+            GIT_TAG release-712
+    )
+    block()
+        set(CMAKE_CXX_STANDARD 17)
+        set(CMAKE_CXX_STANDARD_REQUIRED ON)
+        set(CMAKE_CXX_EXTENSIONS ON)
+        FetchContent_MakeAvailable(soplex)
+    endblock()
+endif (GCS_ENABLE_SOPLEX)
 
+if (GCS_ENABLE_HIGHS)
+    FetchContent_Declare(
+            HiGHS
+            GIT_REPOSITORY https://github.com/ERGO-Code/HiGHS.git
+            GIT_TAG v1.8.1
+    )
+    FetchContent_MakeAvailable(HiGHS)
+endif (GCS_ENABLE_HIGHS)
 
