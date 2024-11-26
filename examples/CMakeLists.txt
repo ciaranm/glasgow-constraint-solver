@@ -24,3 +24,8 @@ add_subdirectory(smart_table_small)
 add_subdirectory(sudoku)
 add_subdirectory(tour)
 add_subdirectory(tutorial_proof)
+
+# Temporary for messing around
+add_subdirectory(soplex_test)
+
+add_subdirectory(highs_test)

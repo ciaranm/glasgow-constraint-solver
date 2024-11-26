@@ -32,11 +32,11 @@ if (COMPILER_SUPPORTS_NO_STRINGOP_OVERREAD)
     add_compile_options(-Wno-stringop-overread) # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=104336
 endif (COMPILER_SUPPORTS_NO_STRINGOP_OVERREAD)
 
-unset(COMPILER_SUPPORTS_UNQUALIFIED_STD_CAST_CALL CACHE)
-CHECK_CXX_COMPILER_FLAG(-Wno-unqualified-std-cast-call COMPILER_SUPPORTS_UNQUALIFIED_STD_CAST_CALL)
-if (COMPILER_SUPPORTS_UNQUALIFIED_STD_CAST_CALL)
+unset(COMPILER_SUPPORTS_NO_ANNOYING_WARNINGS_ABOUT_MOVE CACHE)
+CHECK_CXX_COMPILER_FLAG(-Wno-unqualified-std-cast-call COMPILER_SUPPORTS_NO_ANNOYING_WARNINGS_ABOUT_MOVE)
+if (COMPILER_SUPPORTS_NO_ANNOYING_WARNINGS_ABOUT_MOVE)
     add_compile_options(-Wno-unqualified-std-cast-call)
-endif (COMPILER_SUPPORTS_UNQUALIFIED_STD_CAST_CALL)
+endif (COMPILER_SUPPORTS_NO_ANNOYING_WARNINGS_ABOUT_MOVE)
 
 add_compile_options(-g)
 add_compile_options(-g3)
@@ -58,6 +58,8 @@ option(GCS_ENABLE_XCSP "Support for the XCSP modelling language" ON)
 option(GCS_ENABLE_MINIZINC "Support for the MiniZinc modelling language" ON)
 option(GCS_ENABLE_EXAMPLES "Build examples" ON)
 option(GCS_DEBUG_MODE "Disable compiler optimisation for debugging" OFF)
+option(GCS_ENABLE_SOPLEX "(Experimental) Required for WIP LP justifications." ON)
+option(GCS_ENABLE_HIGHS "(Experimental) Required for WIP LP justifications." ON)
 
 include_directories(.)
 add_subdirectory(gcs)
@@ -99,6 +101,7 @@ if (GCS_ENABLE_PYTHON)
     add_subdirectory(python)
 endif (GCS_ENABLE_PYTHON)
 
+
 Include(FetchContent)
 Set(FETCHCONTENT_QUIET FALSE)
 
@@ -108,6 +111,7 @@ FetchContent_Declare(
         GIT_TAG 6e79e682b726f524310d55dec8ddac4e9c52fb5f # v3.4.0
 )
 FetchContent_MakeAvailable(Catch2)
+SET(CATCH_CONFIG_ENABLE_ALL_STRINGMAKERS ON)
 
 FetchContent_Declare(
         fmt
@@ -120,7 +124,6 @@ FetchContent_Declare(
         range-v3
         GIT_REPOSITORY https://github.com/ericniebler/range-v3.git
         GIT_TAG a81477931a8aa2ad025c6bda0609f38e09e4d7ec # v0.12.0
-        GIT_SUBMODULES "" # Disable submodule installation
 )
 FetchContent_MakeAvailable(range-v3)
 
@@ -134,10 +137,36 @@ ExternalProject_Add(
         BUILD_COMMAND ""
 )
 
-set(JSON_BuildTests OFF CACHE INTERNAL "")
-FetchContent_Declare(
-        json
-        GIT_REPOSITORY https://github.com/nlohmann/json.git
-        GIT_TAG 9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03 # v3.11.3
-)
-FetchContent_MakeAvailable(json)
+if (GCS_ENABLE_MINIZINC)
+    set(JSON_BuildTests OFF CACHE INTERNAL "")
+    FetchContent_Declare(
+            json
+            GIT_REPOSITORY https://github.com/nlohmann/json.git
+            GIT_TAG 9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03 # v3.11.3
+    )
+    FetchContent_MakeAvailable(json)
+endif (GCS_ENABLE_MINIZINC)
+
+if (GCS_ENABLE_SOPLEX)
+    FetchContent_Declare(
+            soplex
+            GIT_REPOSITORY https://github.com/scipopt/soplex.git
+            GIT_TAG release-712
+    )
+    block()
+        set(CMAKE_CXX_STANDARD 17)
+        set(CMAKE_CXX_STANDARD_REQUIRED ON)
+        set(CMAKE_CXX_EXTENSIONS ON)
+        FetchContent_MakeAvailable(soplex)
+    endblock()
+endif (GCS_ENABLE_SOPLEX)
+
+if (GCS_ENABLE_HIGHS)
+    FetchContent_Declare(
+            HiGHS
+            GIT_REPOSITORY https://github.com/ERGO-Code/HiGHS.git
+            GIT_TAG v1.8.1
+    )
+    FetchContent_MakeAvailable(HiGHS)
+endif (GCS_ENABLE_HIGHS)
+
