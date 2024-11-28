@@ -415,27 +415,21 @@ auto VariableConstraintsTracker::create_proof_flag(const string & n) -> ProofFla
 auto VariableConstraintsTracker::reify(const WeightedPseudoBooleanLessEqual & ineq, const HalfReifyOnConjunctionOf & half_reif) -> WeightedPseudoBooleanLessEqual
 {
 
-    auto contains_false_literal = false;
-    for (const auto & l : half_reif) {
-        // ugh..
-        contains_false_literal |= overloaded{
-            [&](const ProofFlag &) { return false; },
-            [&](const ProofLiteral & pl) {
-                return overloaded{
-                    [&](Literal lit) {
-                        return overloaded{
-                            [&](const TrueLiteral &) { return false; },
-                            [&](const FalseLiteral &) { return true; },
-                            [&](const IntegerVariableCondition &) { return false; }}
-                            .visit(lit);
-                    },
-                    [&](const ProofVariableCondition &) { return false; },
-                }
-                    .visit(pl);
-            },
-            [&](const ProofBitVariable &) { return false; }}
-                                      .visit(l);
-    }
+    //    auto contains_false_literal = false;
+    //    for (const auto & l : half_reif) {
+    //
+    //        contains_false_literal |= overloaded{
+    //            [&](const ProofFlag &) { return false; },
+    //            [&](const ProofLiteral & pl) {
+    //                return overloaded{
+    //                    [&](Literal lit) {
+    //                        return is_literally_false(lit);
+    //                    },
+    //                    [&](const ProofVariableCondition &) { return false; },
+    //                }
+    //                    .visit(pl);
+    //            }}.visit(l);
+    //    }
 
     // build up the inequality, adjusting as we go for constant terms,
     // and converting from <= to >=.
@@ -496,9 +490,6 @@ auto VariableConstraintsTracker::reify(const WeightedPseudoBooleanLessEqual & in
                     reif_const += max(0_i, w * bit_value);
                 });
             },
-            [&, w = w](const ProofBitVariable &) {
-                reif_const += max(0_i, w);
-            },
         }
             .visit(v);
     }
@@ -513,17 +504,14 @@ auto VariableConstraintsTracker::reify(const WeightedPseudoBooleanLessEqual & in
             },
             [&](const ProofLiteral & lit) {
                 new_lhs += -Integer{reif_const} * ! lit;
-            },
-            [&](const ProofBitVariable & bit) {
-                new_lhs += -Integer{reif_const} * ! bit;
             }}
             .visit(r);
 
-    if (contains_false_literal) {
-        // This might be a bad idea...
-        return new_lhs >= -rhs + reif_const;
-    }
-    else {
-        return new_lhs <= -rhs;
-    }
+    //    if (contains_false_literal) {
+    //        // This might be a bad idea...
+    //        return new_lhs >= -rhs + reif_const;
+    //    }
+    //    else {
+    return new_lhs <= -rhs;
+    //    }
 }
