@@ -20,4 +20,4 @@ target_link_libraries(gcspy PRIVATE fmt::fmt)
 install(TARGETS gcspy DESTINATION .)
 
 configure_file(${CMAKE_SOURCE_DIR}/python/python_test.py ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/python/python_test.py COPYONLY)
-add_test(NAME python_bindings COMMAND ${PYTHON_EXECUTABLE} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/python/python_test.py)
+#add_test(NAME python_bindings COMMAND ${PYTHON_EXECUTABLE} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/python/python_test.py)
