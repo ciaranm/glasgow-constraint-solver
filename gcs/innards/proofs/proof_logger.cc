@@ -432,7 +432,7 @@ auto ProofLogger::emit_under_reason(
     variable_constraints_tracker().need_all_proof_names_in(ineq.lhs);
 
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
-    _imp->proof << "* emit " << proof_rule_str[rule] << " proof line from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
+    _imp->proof << "* emit " << proof_rule_str(rule) << " proof line from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
 #endif
 
     stringstream rule_line;
