@@ -383,7 +383,7 @@ auto gcs::innards::propagate_gac_all_different(
     const vector<Integer> & vals,
     const map<Integer, ProofLine> & constraint_numbers,
     const State & state,
-    InferenceTracker & tracker,
+    auto & tracker,
     ProofLogger * const logger) -> void
 {
     // find a matching to check feasibility
@@ -606,7 +606,7 @@ auto GACAllDifferent::install(Propagators & propagators, State & initial_state, 
     propagators.install(
         [vars = move(sanitised_vars),
             vals = move(compressed_vals),
-            save_constraint_numbers = move(constraint_numbers)](const State & state, InferenceTracker & inference,
+            save_constraint_numbers = move(constraint_numbers)](const State & state, auto & inference,
             ProofLogger * const logger) -> PropagatorState {
             propagate_gac_all_different(vars, vals, save_constraint_numbers, state, inference, logger);
             return PropagatorState::Enable;

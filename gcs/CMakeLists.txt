@@ -67,7 +67,7 @@ add_dependencies(glasgow_constraint_solver generator)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 link_libraries(glasgow_constraint_solver)
-target_link_libraries(glasgow_constraint_solver PUBLIC fmt::fmt)
+target_link_libraries(glasgow_constraint_solver PUBLIC fmt::fmt range-v3)
 
 add_executable(solve_test solve_test.cc)
 target_link_libraries(solve_test PRIVATE Catch2::Catch2WithMain)
@@ -120,6 +120,9 @@ add_test(NAME circuit_prune_root COMMAND ${CMAKE_SOURCE_DIR}/run_test_and_verify
 
 add_executable(circuit_prune_skip_test constraints/circuit/circuit_prune_skip_test.cc)
 add_test(NAME circuit_prune_skip COMMAND ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:circuit_prune_skip_test>)
+
+add_executable(reification_test innards/proofs/reification_test.cc)
+add_test(NAME reification_test COMMAND ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:reification_test>)
 
 add_executable(interval_set_test innards/interval_set_test.cc)
 target_link_libraries(interval_set_test PRIVATE Catch2::Catch2WithMain range-v3)

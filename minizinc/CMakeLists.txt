@@ -73,6 +73,9 @@ set_tests_properties(minizinc-nurses PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-setinreif COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ setinreif true true)
 set_tests_properties(minizinc-setinreif PROPERTIES SKIP_RETURN_CODE 66)
 
+add_test(NAME minizinc-sets COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ sets true true)
+set_tests_properties(minizinc-sets PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-small COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ small true true)
 set_tests_properties(minizinc-small PROPERTIES SKIP_RETURN_CODE 66)
 

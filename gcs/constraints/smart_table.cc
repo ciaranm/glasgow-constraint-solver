@@ -110,14 +110,14 @@ namespace
     }
 
     auto log_filtering_inference(ProofLogger * const logger, const ProofFlag & tuple_selector, const Literal & lit,
-        const State & state, InferenceTracker &, const Reason & reason)
+        const State &, auto &, const Reason & reason)
     {
-        logger->emit_rup_proof_line_under_reason(state, reason,
+        logger->emit_rup_proof_line_under_reason(reason,
             WeightedPseudoBooleanSum{} + 1_i * (! tuple_selector) + 1_i * lit >= 1_i, ProofLevel::Current);
     }
 
     auto filter_edge(const SmartEntry & edge, VariableDomainMap & supported_by_tree, const ProofFlag & tuple_selector,
-        const State & state, InferenceTracker & inference, const Reason & reason, ProofLogger * const logger) -> void
+        const State & state, auto & inference, const Reason & reason, ProofLogger * const logger) -> void
     {
         // Currently filter both domains - might be overkill
         // If the tree was in a better form, think this can be optimised to do less redundant filtering.
@@ -304,7 +304,7 @@ namespace
     }
 
     [[nodiscard]] auto filter_and_check_valid(const TreeEdges & tree, VariableDomainMap & supported_by_tree,
-        const ProofFlag & tuple_selector, const State & state, InferenceTracker & inference,
+        const ProofFlag & tuple_selector, const State & state, auto & inference,
         const Reason & reason, ProofLogger * const logger) -> bool
     {
         for (int l = tree.size() - 1; l >= 0; --l) {
@@ -348,7 +348,7 @@ namespace
 
     auto filter_again_and_remove_supported(const TreeEdges & tree, VariableDomainMap & supported_by_tree,
         VariableDomainMap & unsupported, const ProofFlag & tuple_selector, const State & state,
-        InferenceTracker & inference, const Reason & reason, ProofLogger * const logger) -> void
+        auto & inference, const Reason & reason, ProofLogger * const logger) -> void
     {
         for (int l = tree.size() - 1; l >= 0; --l) {
             for (const auto & edge : tree[l]) {
@@ -404,7 +404,7 @@ namespace
     }
 
     auto propagate_using_smart_str(const vector<IntegerVariableID> & selectors, const vector<IntegerVariableID> & vars,
-        const SmartTuples & tuples, const vector<Forest> & forests, const State & state, InferenceTracker & inference, const Reason & reason,
+        const SmartTuples & tuples, const vector<Forest> & forests, const State & state, auto & inference, const Reason & reason,
         vector<ProofFlag> pb_selectors, ProofLogger * const logger) -> void
     {
         VariableDomainMap unsupported{};
@@ -462,7 +462,7 @@ namespace
             for (const auto & value : unsupported[var]) {
                 auto justf = [&](const Reason & reason) -> void {
                     for (unsigned int tuple_idx = 0; tuple_idx < tuples.size(); ++tuple_idx) {
-                        logger->emit_rup_proof_line_under_reason(state, reason,
+                        logger->emit_rup_proof_line_under_reason(reason,
                             WeightedPseudoBooleanSum{} + 1_i * (var != value) + 1_i * (! pb_selectors[tuple_idx]) >= 1_i,
                             ProofLevel::Current);
                     }
@@ -472,7 +472,7 @@ namespace
         }
 
         if (! some_tuple_still_feasible)
-            inference.infer_false(logger, JustifyUsingRUP{}, reason);
+            inference.contradiction(logger, JustifyUsingRUP{}, reason);
     }
 
     auto build_tree(const IntegerVariableID & root, int current_level, vector<vector<SmartEntry>> & entry_tree,
@@ -880,7 +880,7 @@ auto SmartTable::install(Propagators & propagators, State & initial_state, Proof
 
     propagators.install(
         [selectors, vars = _vars, tuples = move(_tuples), forests = move(forests), pb_selectors = move(pb_selectors)](
-            const State & state, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
+            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             auto reason = generic_reason(state, vars);
             propagate_using_smart_str(selectors, vars, tuples, forests, state, inference, reason, pb_selectors, logger);
             return PropagatorState::Enable;

@@ -13,7 +13,7 @@ if ! which minizinc ; then
     exit 66
 fi
 
-minizinc --solver $minizincdir/glasgow-for-tests.msc -a $minizincdir/tests/$testname.mzn | tee $testname.glasgow.out || exit 1
+minizinc --solver $minizincdir/glasgow-for-tests.msc --fzn $testname.fzn -a $minizincdir/tests/$testname.mzn | tee $testname.glasgow.out || exit 1
 minizinc -a $minizincdir/tests/$testname.mzn | tee $testname.default.out || exit 2
 
 if [[ "$enumeration" == "true" ]] ; then
@@ -38,7 +38,12 @@ fi
 
 if [[ $doproofs == "true" ]] && veripb --help >/dev/null ; then
     minizinc --solver $minizincdir/glasgow-for-tests.msc -a $minizincdir/tests/$testname.mzn --prove $testname | tee $testname.glasgow.out || exit 7
-    veripb $testname.opb $testname.pbp || exit 8
+    if ! veripb $testname.opb $testname.pbp ; then
+        echo "Rerunning last 100 lines of proof verification in trace mode..."
+        echo '$ ' veripb --trace `readlink -f $testname.opb` `readlink -f $testname.pbp`
+        veripb --trace $testname.opb $testname.pbp 2>&1 | tail -n100
+        exit 8
+    fi
 fi
 
 exit 0

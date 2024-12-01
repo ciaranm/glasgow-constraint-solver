@@ -3,8 +3,21 @@
 
 #include <gcs/innards/inference_tracker-fwd.hh>
 #include <gcs/innards/justification.hh>
-#include <gcs/innards/proofs/proof_logger-fwd.hh>
+#include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/state.hh>
+
+#include <algorithm>
+#include <deque>
+#include <type_traits>
+#include <utility>
+
+#if __has_cpp_attribute(__cpp_lib_generator)
+#include <generator>
+#else
+#include <__generator.hpp>
+#endif
+
+#include <range/v3/all.hpp>
 
 namespace gcs::innards
 {
@@ -12,84 +25,194 @@ namespace gcs::innards
     {
     };
 
-    class InferenceTracker
+    template <typename Actual_>
+    class InferenceTrackerBase
     {
-    private:
-        State & state;
-        Inference inference;
+    protected:
+        State & _state;
+        std::deque<std::pair<SimpleIntegerVariableID, Inference>> _inferences;
+        bool _did_anything_since_last_call;
+
+        auto track(ProofLogger * const logger, const Inference inf, const Literal & lit, const Justification & just, const Reason & reason) -> void
+        {
+            return static_cast<Actual_ *>(this)->track_impl(logger, inf, lit, just, reason);
+        }
 
     public:
-        explicit InferenceTracker(State & s) :
-            state(s),
-            inference(Inference::NoChange)
+        explicit InferenceTrackerBase(State & s) :
+            _state(s),
+            _did_anything_since_last_call(false)
         {
         }
 
-        InferenceTracker(const InferenceTracker &) = delete;
+        InferenceTrackerBase(const InferenceTrackerBase &) = delete;
 
-        auto operator=(const InferenceTracker &) -> InferenceTracker & = delete;
-
-        [[nodiscard]] auto inference_so_far() const -> Inference
-        {
-            return inference;
-        }
-
-        auto track(const Inference inf) -> void
-        {
-            switch (inf) {
-            case Inference::NoChange: break;
-            case Inference::Change:
-                inference = inf;
-                break;
-            [[unlikely]] case Inference::Contradiction:
-                throw TrackedPropagationFailed{};
-            }
-        }
+        auto operator=(const InferenceTrackerBase &) -> InferenceTrackerBase & = delete;
 
         auto infer(ProofLogger * const logger, const Literal & lit, const Justification & why, const Reason & reason) -> void
         {
-            track(state.infer(logger, lit, why, reason));
+            track(logger, _state.infer(lit), lit, why, reason);
         }
 
-        [[noreturn]] auto infer_false(ProofLogger * const logger, const Justification & why, const Reason & reason) -> void
+        [[noreturn]] auto contradiction(ProofLogger * const logger, const Justification & why, const Reason & reason) -> void
         {
-            state.infer_false(logger, why, reason);
+            if (logger)
+                logger->infer(FalseLiteral{}, why, reason);
             throw TrackedPropagationFailed{};
         }
 
         template <IntegerVariableIDLike VarType_>
         auto infer(ProofLogger * const logger, const VariableConditionFrom<VarType_> & lit, const Justification & why, const Reason & reason) -> void
         {
-            track(state.infer(logger, lit, why, reason));
+            track(logger, _state.infer(lit), lit, why, reason);
         }
 
         template <IntegerVariableIDLike VarType_>
         auto infer_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & why, const Reason & reason) -> void
         {
-            track(state.infer_equal(logger, var, value, why, reason));
+            track(logger, _state.infer_equal(var, value), var == value, why, reason);
         }
 
         template <IntegerVariableIDLike VarType_>
         auto infer_not_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & why, const Reason & reason) -> void
         {
-            track(state.infer_not_equal(logger, var, value, why, reason));
+            track(logger, _state.infer_not_equal(var, value), var != value, why, reason);
         }
 
         template <IntegerVariableIDLike VarType_>
         auto infer_less_than(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & why, const Reason & reason) -> void
         {
-            track(state.infer_less_than(logger, var, value, why, reason));
+            track(logger, _state.infer_less_than(var, value), var < value, why, reason);
         }
 
         template <IntegerVariableIDLike VarType_>
         auto infer_greater_than_or_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & why, const Reason & reason) -> void
         {
-            track(state.infer_greater_than_or_equal(logger, var, value, why, reason));
+            track(logger, _state.infer_greater_than_or_equal(var, value), var >= value, why, reason);
         }
 
-        auto infer_all(ProofLogger * const logger, const std::vector<Literal> & lit, const Justification & why, const Reason & reason) -> void
+        auto infer_all(ProofLogger * const logger, const std::vector<Literal> & lits, const Justification & why, const Reason & reason) -> void
         {
-            track(state.infer_all(logger, lit, why, reason));
+            bool first = true;
+
+            // only do explicit justifications once
+            Justification just_not_first{NoJustificationNeeded{}};
+            visit([&](const auto & j) -> void {
+                if constexpr (std::is_same_v<std::decay_t<decltype(j)>, JustifyExplicitly>)
+                    just_not_first = JustifyUsingRUP{};
+                else
+                    just_not_first = why;
+            },
+                why);
+
+            for (const auto & lit : lits) {
+                infer(logger, lit, first ? why : just_not_first, reason);
+                first = false;
+            }
+        }
+
+        auto each_inference() const -> std::generator<std::pair<SimpleIntegerVariableID, Inference>>
+        {
+            return [](const auto & inferences) -> std::generator<std::pair<SimpleIntegerVariableID, Inference>> {
+                for (const auto & [var, inf] : inferences | ranges::views::reverse)
+                    co_yield std::pair{var, inf};
+            }(_inferences);
+        }
+
+        auto reset() -> void
+        {
+            _inferences.clear();
+            _did_anything_since_last_call = false;
+        }
+
+        auto did_anything_since_last_call() -> bool
+        {
+            return std::exchange(_did_anything_since_last_call, false);
+        }
+    };
+
+    class SimpleInferenceTracker : public InferenceTrackerBase<SimpleInferenceTracker>
+    {
+    public:
+        using InferenceTrackerBase::InferenceTrackerBase;
+
+        auto track_impl(ProofLogger * const, const Inference inf, const Literal & lit, const Justification &, const Reason &) -> void
+        {
+            switch (inf) {
+            case Inference::NoChange:
+                break;
+
+            case Inference::InteriorValuesChanged:
+            case Inference::BoundsChanged:
+            case Inference::Instantiated:
+                overloaded{
+                    [&](const TrueLiteral &) {},
+                    [&](const FalseLiteral &) {},
+                    [&](const IntegerVariableCondition & cond) {
+                        overloaded{
+                            [&](const ConstantIntegerVariableID &) {},
+                            [&](const SimpleIntegerVariableID & var) {
+                                _inferences.emplace_back(var, inf);
+                            },
+                            [&](const ViewOfIntegerVariableID & var) {
+                                _inferences.emplace_back(var.actual_variable, inf);
+                            }}
+                            .visit(cond.var);
+                    }}
+                    .visit(lit);
+
+                _did_anything_since_last_call = true;
+                break;
+
+            [[unlikely]] case Inference::Contradiction:
+                _did_anything_since_last_call = true;
+                throw TrackedPropagationFailed{};
+            }
+        }
+    };
+
+    class EagerProofLoggingInferenceTracker : public InferenceTrackerBase<EagerProofLoggingInferenceTracker>
+    {
+    public:
+        using InferenceTrackerBase::InferenceTrackerBase;
+
+        auto track_impl(ProofLogger * const logger, const Inference inf, const Literal & lit, const Justification & just, const Reason & reason) -> void
+        {
+            switch (inf) {
+            case Inference::NoChange:
+                break;
+
+            case Inference::InteriorValuesChanged:
+            case Inference::BoundsChanged:
+            case Inference::Instantiated:
+                if (logger)
+                    logger->infer(lit, just, reason);
+
+                overloaded{
+                    [&](const TrueLiteral &) {},
+                    [&](const FalseLiteral &) {},
+                    [&](const IntegerVariableCondition & cond) {
+                        overloaded{
+                            [&](const ConstantIntegerVariableID &) {},
+                            [&](const SimpleIntegerVariableID & var) {
+                                _inferences.emplace_back(var, inf);
+                            },
+                            [&](const ViewOfIntegerVariableID & var) {
+                                _inferences.emplace_back(var.actual_variable, inf);
+                            }}
+                            .visit(cond.var);
+                    }}
+                    .visit(lit);
+
+                _did_anything_since_last_call = true;
+                break;
+
+            [[unlikely]] case Inference::Contradiction:
+                if (logger)
+                    logger->infer(lit, just, reason);
+                _did_anything_since_last_call = true;
+                throw TrackedPropagationFailed{};
+            }
         }
     };
 }

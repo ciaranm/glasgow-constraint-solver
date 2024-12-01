@@ -3,7 +3,8 @@
 
 namespace gcs::innards
 {
-    class InferenceTracker;
+    class SimpleInferenceTracker;
+    class EagerProofLoggingInferenceTracker;
 }
 
 #endif

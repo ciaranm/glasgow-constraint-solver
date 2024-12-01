@@ -90,7 +90,7 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
 
     propagators.install(
         [vars = _vars, value_of_interest = _value_of_interest, how_many = _how_many, flags = flags, all_vars = move(all_vars)](
-            const State & state, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
+            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // check support for how many by seeing how many array values
             // intersect with a potential value of interest
             int how_many_definitely_do_not = 0;
@@ -122,7 +122,7 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
                     });
 
                     if (! seen_any)
-                        logger->emit_rup_proof_line_under_reason(state, reason,
+                        logger->emit_rup_proof_line_under_reason(reason,
                             WeightedPseudoBooleanSum{} + 1_i * (! get<0>(flags[idx])) >= 1_i, ProofLevel::Temporary);
                 }
             };
@@ -161,7 +161,7 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
                                 // need to help the checker see that the equality flag must be zero
                                 logger->emit_rup_proof_line(
                                     WeightedPseudoBooleanSum{} + 1_i * (value_of_interest != voi) + 1_i * (var != voi) + 1_i * (get<0>(flags[idx])) >= 1_i, ProofLevel::Temporary);
-                                logger->emit_rup_proof_line_under_reason(state, reason,
+                                logger->emit_rup_proof_line_under_reason(reason,
                                     WeightedPseudoBooleanSum{} + 1_i * (value_of_interest != voi) + 1_i * (! get<0>(flags[idx])) >= 1_i, ProofLevel::Temporary);
                             }
                         }
@@ -186,7 +186,7 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
                 auto just = JustifyExplicitly{
                     [&](const Reason & reason) -> void {
                         state.for_each_value_while_immutable(value_of_interest, [&](Integer voi) -> bool {
-                            logger->emit_rup_proof_line_under_reason(state, reason,
+                            logger->emit_rup_proof_line_under_reason(reason,
                                 WeightedPseudoBooleanSum{} + 1_i * (value_of_interest != voi) + 1_i * (how_many >= *lowest_how_many_must) >= 1_i,
                                 ProofLevel::Temporary);
                             return true;
@@ -201,16 +201,16 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
                         state.for_each_value_while_immutable(value_of_interest, [&](Integer voi) -> bool {
                             for (const auto & [idx, var] : enumerate(vars)) {
                                 if (! state.in_domain(var, voi)) {
-                                    logger->emit_rup_proof_line_under_reason(state, reason,
+                                    logger->emit_rup_proof_line_under_reason(reason,
                                         WeightedPseudoBooleanSum{} + 1_i * (value_of_interest != voi) + 1_i * (! get<0>(flags[idx])) >= 1_i,
                                         ProofLevel::Temporary);
-                                    logger->emit_rup_proof_line_under_reason(state, reason,
+                                    logger->emit_rup_proof_line_under_reason(reason,
                                         WeightedPseudoBooleanSum{} + 1_i * (value_of_interest != voi) + 1_i * (var != voi) >= 1_i,
                                         ProofLevel::Temporary);
                                 }
                             }
 
-                            logger->emit_rup_proof_line_under_reason(state, reason,
+                            logger->emit_rup_proof_line_under_reason(reason,
                                 WeightedPseudoBooleanSum{} + 1_i * (value_of_interest != voi) + 1_i * (how_many < *highest_how_many_might + 1_i) >= 1_i,
                                 ProofLevel::Temporary);
                             return true;

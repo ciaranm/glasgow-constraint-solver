@@ -6,9 +6,9 @@ from gcspy import GCS
 class TestGlasgowConstraintSolver(unittest.TestCase):
     def setUp(self):
         self.gcs = GCS()
-        self.x = self.gcs.create_integer_variable(range(1, 4), "x")
-        self.y = self.gcs.create_integer_variable(range(1, 4), "y")
-        self.z = self.gcs.create_integer_variable(range(1, 4), "z")
+        self.x = self.gcs.create_integer_variable(1, 4, "x")
+        self.y = self.gcs.create_integer_variable(1, 4, "y")
+        self.z = self.gcs.create_integer_variable(1, 4, "z")
 
     def test_unknown_id(self):
         with self.assertRaises(KeyError):

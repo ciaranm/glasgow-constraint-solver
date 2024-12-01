@@ -5,6 +5,7 @@
 #include <gcs/innards/proofs/proof_model-fwd.hh>
 #include <gcs/innards/proofs/proof_only_variables.hh>
 #include <gcs/innards/proofs/pseudo_boolean.hh>
+#include <gcs/innards/proofs/reification.hh>
 #include <gcs/innards/proofs/variable_constraints_tracker-fwd.hh>
 #include <gcs/proof.hh>
 #include <gcs/variable_condition.hh>
@@ -169,6 +170,11 @@ namespace gcs::innards
          * Create a proof flag with a new identifier.
          */
         [[nodiscard]] auto create_proof_flag(const std::string &) -> ProofFlag;
+
+        /**
+         * Reify a PB constraint on a conjunction of ProofFlags or ProofLiterals
+         */
+        [[nodiscard]] auto reify(const WeightedPseudoBooleanLessEqual &, const HalfReifyOnConjunctionOf &) -> WeightedPseudoBooleanLessEqual;
     };
 }
 

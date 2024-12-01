@@ -17,6 +17,12 @@
 namespace gcs::innards
 {
     using Subproof = std::function<auto(ProofLogger &)->void>;
+    enum class ProofRule
+    {
+        RUP,
+        ASSERT,
+        IMPLIES,
+    };
 
     class ProofLogger
     {
@@ -57,13 +63,14 @@ namespace gcs::innards
         /**
          * Log that a solution has been found.
          */
-        auto solution(const State &, const std::vector<IntegerVariableID> & all_variables,
-            const std::optional<IntegerVariableID> & objective_to_minimise) -> void;
+        auto solution(
+            const std::vector<std::pair<IntegerVariableID, Integer>> & all_variables_with_values,
+            const std::optional<std::pair<IntegerVariableID, Integer>> & objective_to_minimise) -> void;
 
         /**
          * Log that we are backtracking.
          */
-        auto backtrack(const State &) -> void;
+        auto backtrack(const std::vector<Literal> & guesses) -> void;
 
         /**
          * Log that we have reached an unsatisfiable conclusion at the end of the proof.
@@ -93,8 +100,7 @@ namespace gcs::innards
         /**
          * Log, if necessary, that we have inferred a particular literal.
          */
-        auto infer(const State & state, bool is_contradicting, const Literal & lit, const Justification & why,
-            const Reason & reason) -> void;
+        auto infer(const Literal & lit, const Justification & why, const Reason & reason) -> void;
 
         /**
          * What is our current proof level?
@@ -118,6 +124,28 @@ namespace gcs::innards
         auto forget_proof_level(int depth) -> void;
 
         /**
+         * Emit the specified text as a comment.
+         */
+        auto emit_proof_comment(const std::string &) -> void;
+
+        /**
+         * Given a reason, return the vector of literals in the conjunction.
+         */
+        auto reason_to_lits(const Reason & reason) -> std::vector<ProofLiteralOrFlag>;
+
+        /**
+         * Given a PB constraint C and a conjunction of literals L, return the native
+         * PB constraint encoding L => C
+         */
+        auto reified(const WeightedPseudoBooleanLessEqual &, const HalfReifyOnConjunctionOf &) -> WeightedPseudoBooleanLessEqual;
+
+        /**
+         * Given a PB constraint C and a reason R, return the native
+         * PB constraint encoding R => C
+         */
+        auto reified(const WeightedPseudoBooleanLessEqual &, const Reason &) -> WeightedPseudoBooleanLessEqual;
+
+        /**
          * Emit the specified text as a proof line.
          */
         auto emit_proof_line(const std::string &, ProofLevel level
@@ -128,15 +156,42 @@ namespace gcs::innards
                 ) -> ProofLine;
 
         /**
-         * Emit the specified text as a comment.
+         * Emit a proof step, with a specified rule.
          */
-        auto emit_proof_comment(const std::string &) -> void;
+        auto emit(const ProofRule & rule, const SumLessEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+            ,
+            const std::source_location & w = std::source_location::current()
+#endif
+                ) -> ProofLine;
+
+        /**
+         * Emit a proof step, with a specified rule.
+         */
+        auto emit_under_reason(const ProofRule & rule, const SumLessEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level, const Reason &
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+            ,
+            const std::source_location & w = std::source_location::current()
+#endif
+                ,
+            const std::optional<ProofLine> & append_line = std::nullopt) -> ProofLine;
 
         /**
          * Emit a RUP proof step for the specified expression, not subject to
          * any reasons.
          */
         auto emit_rup_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+            ,
+            const std::source_location & w = std::source_location::current()
+#endif
+                ) -> ProofLine;
+
+        /**
+         * Emit a syntactic implication proof step for the specified expression, not subject to
+         * any reasons.
+         */
+        auto emit_ia_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
             ,
             const std::source_location & w = std::source_location::current()
@@ -158,7 +213,18 @@ namespace gcs::innards
          * Emit a RUP proof step for the specified expression, subject to a
          * given reason.
          */
-        auto emit_rup_proof_line_under_reason(const State &, const Reason &, const SumLessEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level
+        auto emit_rup_proof_line_under_reason(const Reason &, const SumLessEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+            ,
+            const std::source_location & w = std::source_location::current()
+#endif
+                ) -> ProofLine;
+
+        /**
+         * Emit a RUP proof step for the specified expression, subject to a
+         * given reason.
+         */
+        auto emit_ia_proof_line_under_reason(const Reason &, const SumLessEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
             ,
             const std::source_location & w = std::source_location::current()

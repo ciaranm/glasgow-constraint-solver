@@ -42,7 +42,7 @@ auto NValue::install(Propagators & propagators, State & initial_state, ProofMode
     all_vars.push_back(_n_values);
 
     propagators.install([all_vars = move(all_vars), n_values = _n_values, vars = _vars](
-                            const State & state, InferenceTracker & inference, ProofLogger * const logger) -> PropagatorState {
+                            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
         set<Integer> all_possible_values;
         for (const auto & var : vars) {
             for (auto v : state.each_value_immutable(var))
