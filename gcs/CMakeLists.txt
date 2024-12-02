@@ -67,7 +67,7 @@ add_dependencies(glasgow_constraint_solver generator)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 link_libraries(glasgow_constraint_solver)
-target_link_libraries(glasgow_constraint_solver PUBLIC fmt::fmt range-v3)
+target_link_libraries(glasgow_constraint_solver PUBLIC fmt::fmt range-v3 highs)
 
 add_executable(solve_test solve_test.cc)
 target_link_libraries(solve_test PRIVATE Catch2::Catch2WithMain)
@@ -89,6 +89,9 @@ add_executable(n_value_test constraints/n_value_test.cc)
 add_executable(not_equals_test constraints/not_equals_test.cc)
 add_executable(parity_test constraints/parity_test.cc)
 add_executable(smart_table_test constraints/smart_table_test.cc)
+
+# Temporary for debugging only.
+add_executable(lp_justification_test innards/proofs/lp_justification.cc)
 
 add_test(NAME abs_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:abs_test>)
 add_test(NAME all_different_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:all_different_test>)
