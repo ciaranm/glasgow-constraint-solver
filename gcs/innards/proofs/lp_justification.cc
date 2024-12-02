@@ -4,6 +4,7 @@
 #include <vector>
 
 using std::map;
+using std::pair;
 using std::vector;
 
 auto gcs::innards::compute_lp_justification(
@@ -13,10 +14,16 @@ auto gcs::innards::compute_lp_justification(
     const vector<IntegerVariableID> & dom_vars,
     const vector<IntegerVariableID> & bound_vars,
     map<ProofLine, WeightedPseudoBooleanLessEqual> pb_constraints,
-    const bool use_reason) -> ExplicitJustificationFunction
+    bool compute_reason) -> pair<ExplicitJustificationFunction, Reason>
 {
-    ExplicitJustificationFunction just = [&logger](const Reason & reason) {
-        
+    ExplicitJustificationFunction just = [&](const Reason & reason) {
+        logger.emit_under_reason(ProofRule::ASSERT, inference, ProofLevel::Current, reason);
     };
-    return just;
+
+    vector<IntegerVariableID> all_vars{};
+    all_vars.insert(all_vars.end(), dom_vars.begin(), dom_vars.end());
+    all_vars.insert(all_vars.end(), bound_vars.begin(), bound_vars.end());
+
+    auto reason = generic_reason(state, all_vars);
+    return make_pair(just, reason);
 }

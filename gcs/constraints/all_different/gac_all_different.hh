@@ -19,7 +19,9 @@ namespace gcs
             const std::map<Integer, ProofLine> & am1_value_constraint_numbers,
             const State & state,
             auto & inference_tracker,
-            ProofLogger * const logger) -> void;
+            ProofLogger * const logger,
+            const bool use_lp_justification = false,
+            const std::optional<std::map<ProofLine, WeightedPseudoBooleanLessEqual>> pb_constraints = std::nullopt) -> void;
     }
 
     /**
@@ -32,9 +34,10 @@ namespace gcs
     {
     private:
         const std::vector<IntegerVariableID> _vars;
+        const bool _use_lp_justification;
 
     public:
-        explicit GACAllDifferent(std::vector<IntegerVariableID> vars);
+        explicit GACAllDifferent(std::vector<IntegerVariableID> vars, const bool use_lp_justification = false);
 
         virtual auto describe_for_proof() -> std::string override;
         virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;

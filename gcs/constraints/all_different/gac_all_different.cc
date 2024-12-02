@@ -1,6 +1,7 @@
 #include <gcs/constraints/all_different/gac_all_different.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/proofs/lp_justification.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/proofs/variable_constraints_tracker.hh>
@@ -13,6 +14,7 @@
 
 #include <algorithm>
 #include <functional>
+
 #include <list>
 #include <map>
 #include <optional>
@@ -42,8 +44,8 @@ using std::variant;
 using std::vector;
 using std::visit;
 
-GACAllDifferent::GACAllDifferent(vector<IntegerVariableID> v) :
-    _vars(move(v))
+GACAllDifferent::GACAllDifferent(vector<IntegerVariableID> v, bool l) :
+    _vars(move(v)), _use_lp_justification(l)
 {
 }
 
@@ -384,7 +386,9 @@ auto gcs::innards::propagate_gac_all_different(
     const map<Integer, ProofLine> & constraint_numbers,
     const State & state,
     auto & tracker,
-    ProofLogger * const logger) -> void
+    ProofLogger * const logger,
+    const bool use_lp_justification,
+    const optional<map<ProofLine, WeightedPseudoBooleanLessEqual>> pb_constraints) -> void
 {
     // find a matching to check feasibility
     vector<pair<Left, Right>> edges;
@@ -561,15 +565,35 @@ auto gcs::innards::propagate_gac_all_different(
         if (! representatives_for_scc[scc])
             continue;
 
-        auto [just, reason] = prove_deletion_using_sccs(vars, vals, constraint_numbers, state, *logger,
-            edges_out_from_variable, edges_out_from_value, *representatives_for_scc[scc], components);
-        tracker.infer_all(logger, deletions_by_scc[scc], just, reason);
+        if (! use_lp_justification) {
+            auto [just, reason] = prove_deletion_using_sccs(vars, vals, constraint_numbers, state, *logger,
+                edges_out_from_variable, edges_out_from_value, *representatives_for_scc[scc], components);
+            tracker.infer_all(logger, deletions_by_scc[scc], just, reason);
+        }
+    }
+
+    if (use_lp_justification) {
+        WeightedPseudoBooleanSum inference{};
+        auto num_terms = 0_i;
+        for (int scc = 0; scc < number_of_components; ++scc) {
+            if (! representatives_for_scc[scc])
+                continue;
+
+            for (const auto & lit : deletions_by_scc[scc]) {
+                inference += 1_i * lit;
+                num_terms++;
+            }
+        }
+
+        auto [just, reason] = compute_lp_justification(state, *logger, inference >= num_terms, vars, {}, *pb_constraints);
     }
 }
 
 auto GACAllDifferent::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
     map<Integer, ProofLine> constraint_numbers;
+    map<ProofLine, WeightedPseudoBooleanLessEqual> pb_constraints;
+
     if (optional_model) {
         auto max_upper = initial_state.upper_bound(*max_element(_vars.begin(), _vars.end(), [&](const IntegerVariableID & v, const IntegerVariableID & w) {
             return initial_state.upper_bound(v) < initial_state.upper_bound(w);
@@ -584,8 +608,12 @@ auto GACAllDifferent::install(Propagators & propagators, State & initial_state, 
             for (const auto & var : _vars)
                 if (initial_state.in_domain(var, val))
                     am1 += 1_i * (var == val);
-            if (am1.terms.size() >= 2)
-                constraint_numbers.emplace(val, nullopt_to_zero(optional_model->add_constraint(move(am1) <= 1_i)));
+            if (am1.terms.size() >= 2) {
+                auto proof_line = nullopt_to_zero(optional_model->add_constraint(move(am1) <= 1_i));
+                constraint_numbers.emplace(val, proof_line);
+                if (_use_lp_justification)
+                    pb_constraints.emplace(proof_line, am1 <= 1_i);
+            }
         }
     }
 
@@ -603,12 +631,20 @@ auto GACAllDifferent::install(Propagators & propagators, State & initial_state, 
             if (compressed_vals.end() == find(compressed_vals.begin(), compressed_vals.end(), val))
                 compressed_vals.push_back(val);
 
+    optional<map<ProofLine, WeightedPseudoBooleanLessEqual>> optional_pb_constraints;
+    if (_use_lp_justification)
+        optional_pb_constraints = make_optional(pb_constraints);
+    else
+        optional_pb_constraints = nullopt;
+
     propagators.install(
         [vars = move(sanitised_vars),
             vals = move(compressed_vals),
-            save_constraint_numbers = move(constraint_numbers)](const State & state, auto & inference,
+            save_constraint_numbers = move(constraint_numbers),
+            use_lp_justification = _use_lp_justification,
+            optional_pb_constraints = optional_pb_constraints](const State & state, auto & inference,
             ProofLogger * const logger) -> PropagatorState {
-            propagate_gac_all_different(vars, vals, save_constraint_numbers, state, inference, logger);
+            propagate_gac_all_different(vars, vals, save_constraint_numbers, state, inference, logger, use_lp_justification, optional_pb_constraints);
             return PropagatorState::Enable;
         },
         triggers, "alldiff");
