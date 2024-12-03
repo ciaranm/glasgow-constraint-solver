@@ -620,10 +620,11 @@ auto GACAllDifferent::install(Propagators & propagators, State & initial_state, 
                 if (initial_state.in_domain(var, val))
                     am1 += 1_i * (var == val);
             if (am1.terms.size() >= 2) {
-                auto proof_line = nullopt_to_zero(optional_model->add_constraint(move(am1) <= 1_i));
+
+                auto proof_line = nullopt_to_zero(optional_model->add_constraint(am1 <= 1_i));
                 constraint_numbers.emplace(val, proof_line);
                 if (_use_lp_justification)
-                    pb_constraints.emplace(proof_line, am1 <= 1_i);
+                    pb_constraints.emplace(proof_line, move(am1) <= 1_i);
             }
         }
     }
