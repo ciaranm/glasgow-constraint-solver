@@ -154,16 +154,6 @@ namespace
                         new_sums.at(x) = sums.at(x) + val * coeffs.at(x).at(var_idx);
 
                     if constexpr (! doing_proof_) {
-                        // because everything is non-negative, we can eliminate states where the
-                        // partial sum is already too large.
-                        bool bounds_violation = false;
-                        for (const auto & [x, _] : enumerate(totals)) {
-                            if (committed.at(x) + new_sums.at(x) > bounds.at(x).second) {
-                                bounds_violation = true;
-                                break;
-                            }
-                        }
-
                         auto node_data = growing_layer_nodes.emplace(new_sums, FullNodeData{{}, {}, {}, {}}).first;
                         node_data->second->predecessors.emplace_back(sums, val);
 
