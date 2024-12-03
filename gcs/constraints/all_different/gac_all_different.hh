@@ -37,7 +37,7 @@ namespace gcs
         const bool _use_lp_justification;
 
     public:
-        explicit GACAllDifferent(std::vector<IntegerVariableID> vars, const bool use_lp_justification = false);
+        explicit GACAllDifferent(std::vector<IntegerVariableID> vars, bool use_lp_justification = false);
 
         virtual auto describe_for_proof() -> std::string override;
         virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;

@@ -51,7 +51,7 @@ GACAllDifferent::GACAllDifferent(vector<IntegerVariableID> v, bool l) :
 
 auto GACAllDifferent::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<GACAllDifferent>(_vars);
+    return make_unique<GACAllDifferent>(_vars, _use_lp_justification);
 }
 
 namespace
@@ -407,8 +407,14 @@ auto gcs::innards::propagate_gac_all_different(
     if (cmp_not_equal(count(left_covered.begin(), left_covered.end(), 1), vars.size())) {
         // nope. we've got a maximum cardinality matching that leaves at least
         // one thing on the left uncovered.
-        auto [just, reason] = prove_matching_is_too_small(vars, vals, constraint_numbers, state, *logger, edges, left_covered, matching);
-        return tracker.infer(logger, FalseLiteral{}, just, reason);
+        if (use_lp_justification) {
+            auto [just, reason] = compute_lp_justification(state, *logger, WeightedPseudoBooleanSum{} <= -1_i, vars, {}, *pb_constraints);
+            return tracker.infer(logger, FalseLiteral{}, JustifyExplicitly{just}, reason);
+        }
+        else {
+            auto [just, reason] = prove_matching_is_too_small(vars, vals, constraint_numbers, state, *logger, edges, left_covered, matching);
+            return tracker.infer(logger, FalseLiteral{}, just, reason);
+        }
     }
 
     // we have a matching that uses every variable. however, some edges may
@@ -573,6 +579,7 @@ auto gcs::innards::propagate_gac_all_different(
     }
 
     if (use_lp_justification) {
+        Literals all_deletions;
         WeightedPseudoBooleanSum inference{};
         auto num_terms = 0_i;
         for (int scc = 0; scc < number_of_components; ++scc) {
@@ -581,11 +588,15 @@ auto gcs::innards::propagate_gac_all_different(
 
             for (const auto & lit : deletions_by_scc[scc]) {
                 inference += 1_i * lit;
+                all_deletions.emplace_back(lit);
                 num_terms++;
             }
         }
 
-        auto [just, reason] = compute_lp_justification(state, *logger, inference >= num_terms, vars, {}, *pb_constraints);
+        if (num_terms > 0_i) {
+            auto [just, reason] = compute_lp_justification(state, *logger, inference >= num_terms, vars, {}, *pb_constraints);
+            tracker.infer_all(logger, all_deletions, JustifyExplicitly{just}, reason);
+        }
     }
 }
 

@@ -165,19 +165,42 @@ namespace
         else
             throw UnexpectedException{"trying to prove an AM1 over zero values?"};
     }
+
+    auto actual_vars(const vector<IntegerVariableID> & vars) -> vector<SimpleIntegerVariableID>
+    {
+        vector<SimpleIntegerVariableID> actual_vars;
+        actual_vars.reserve(vars.size());
+        for (const auto & v : vars) {
+            overloaded{
+                [&](const SimpleIntegerVariableID & s) {
+                    actual_vars.emplace_back(s);
+                },
+                [&](const ViewOfIntegerVariableID & v) {
+                    actual_vars.emplace_back(v.actual_variable);
+                },
+                [&](const ConstantIntegerVariableID &) {
+                    // ignore
+                }}
+                .visit(v);
+        }
+        return actual_vars;
+    }
 }
 auto gcs::innards::compute_lp_justification(
     const State & state,
     ProofLogger & logger,
     const WeightedPseudoBooleanLessEqual & inference,
-    const vector<SimpleIntegerVariableID> & dom_vars,
-    const vector<SimpleIntegerVariableID> & bound_vars,
+    const vector<IntegerVariableID> & dom_vars_iv,
+    const vector<IntegerVariableID> & bound_vars_iv,
     const map<ProofLine, WeightedPseudoBooleanLessEqual> & pb_constraints,
     bool compute_reason) -> pair<ExplicitJustificationFunction, Reason>
 {
+    const vector<SimpleIntegerVariableID> dom_vars = actual_vars(dom_vars_iv);
+    const vector<SimpleIntegerVariableID> bound_vars = actual_vars(bound_vars_iv);
+
     map<PseudoBooleanTerm, int> col_number{};
     map<long, function<string(const Reason &)>> p_line_output_for_row{};
-    auto col_count = 0;
+    int col_count = 0;
 
     // Create a HiGHS (LP Solver) instance
     Highs highs;
@@ -189,17 +212,18 @@ auto gcs::innards::compute_lp_justification(
     vector<int> start;
     vector<int> index;
     vector<double> value;
-    auto non_zero_count = 0;
-    auto row_count = 0;
+    int non_zero_count = 0;
+    int row_count = 0;
     vector<double> rhs;
-
+    int test = 0;
     // Use 0-1 direct vars for dom_vars
     for (const auto & var : dom_vars) {
 
         WeightedPseudoBooleanSum dom_sum{};
         vector<int> dom_index;
 
-        state.for_each_value_immutable(var, [&](Integer val) {
+        state.for_each_value(var, [&](Integer val) {
+            test = test + 1;
             // Lit axioms: var != val >= 0
             // i.e. var==var <= 1
             start.emplace_back(non_zero_count);
@@ -225,7 +249,9 @@ auto gcs::innards::compute_lp_justification(
             };
 
             dom_index.emplace_back(col_count);
+
             col_number[var == val] = col_count++;
+
             dom_sum += 1_i * (var == val);
         });
 
@@ -246,7 +272,8 @@ auto gcs::innards::compute_lp_justification(
         rhs.emplace_back(-1);
         non_zero_count += int(dom_index.size());
         p_line_output_for_row[row_count++] = [&](const Reason & reason) {
-            return to_string(logger.emit_rup_proof_line_under_reason(reason, dom_sum >= 1_i, ProofLevel::Temporary)));
+            return to_string(logger.emit_rup_proof_line_under_reason(
+                reason, dom_sum >= 1_i, ProofLevel::Temporary));
         };
     }
 
@@ -314,8 +341,12 @@ auto gcs::innards::compute_lp_justification(
         }
     }
     // Use the transpose for the dual problem
+
     model.lp_.a_matrix_.format_ = MatrixFormat::kColwise;
-    model.lp_.num_row_ = col_count + 1;
+    if (inferring_contradiction)
+        model.lp_.num_row_ = col_count + 1;
+    else
+        model.lp_.num_row_ = col_count;
     model.lp_.num_col_ = row_count;
     model.lp_.sense_ = ObjSense::kMinimize;
     model.lp_.offset_ = 0;
@@ -338,9 +369,10 @@ auto gcs::innards::compute_lp_justification(
     else {
         // Solving {min b^Ty : A^Ty = c},
         model.lp_.col_cost_ = rhs;
-        vector<double> row_bounds{};
-        for (const auto & term : inference.lhs.terms) {
-            row_bounds.emplace_back(term.coefficient.raw_value);
+        vector<double> row_bounds(col_count, 0);
+        auto norm_inference = variable_normalise(inference);
+        for (const auto & term : norm_inference.lhs.terms) {
+            row_bounds[col_number[term.variable]] = term.coefficient.raw_value;
         }
         model.lp_.row_upper_ = row_bounds;
         model.lp_.row_lower_ = row_bounds;
@@ -369,6 +401,7 @@ auto gcs::innards::compute_lp_justification(
     // A question is whether to do all of the above in the justification function or not
     // Probably important for lazy justifications but doesn't make a difference for now I don't think.
     ExplicitJustificationFunction just = [&](const Reason & reason) {
+        logger.emit_proof_comment("Computed LP justification:");
         // Turn the solution into a pol step
         stringstream p_line;
         p_line << "p ";
