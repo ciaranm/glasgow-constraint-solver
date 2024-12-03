@@ -262,7 +262,7 @@ auto Element2DConstantArray::install(Propagators & propagators, State & initial_
         idxsel = initial_state.allocate_integer_variable_with_state(0_i, Integer(_vals->size() * _vals->begin()->size()));
     }
 
-    propagators.install_initialiser([idx1 = _idx1, idx2 = _idx2, idxsel = *idxsel, var = _var, vals = _vals](
+    propagators.install_initialiser([idx1 = _idx1, idx2 = _idx2, idxsel = *idxsel, vals = _vals](
                                         const State & state, auto &, ProofLogger * const logger) -> void {
         // turn 2d index into 1d index in proof
         if (logger) {
