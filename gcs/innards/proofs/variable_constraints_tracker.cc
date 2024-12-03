@@ -6,6 +6,7 @@
 #include <gcs/innards/proofs/variable_constraints_tracker.hh>
 #include <gcs/innards/variable_id_utils.hh>
 
+#include <list>
 #include <map>
 #include <unordered_map>
 #include <utility>
@@ -14,6 +15,8 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::function;
+using std::list;
 using std::map;
 using std::max;
 using std::min;
@@ -40,6 +43,8 @@ struct VariableConstraintsTracker::Imp
 
     unordered_map<string, string> xification;
 
+    list<function<auto(ProofLogger * const)->void>> delayed_proof_steps;
+
     bool use_friendly_names = true;
     unsigned model_variables = 0;
 };
@@ -52,10 +57,25 @@ VariableConstraintsTracker::VariableConstraintsTracker(const ProofOptions & proo
 
 VariableConstraintsTracker::~VariableConstraintsTracker() = default;
 
+auto VariableConstraintsTracker::emit_proof_line_now_or_at_start(const function<auto(ProofLogger * const)->void> & func) -> void
+{
+    if (_imp->logger)
+        func(_imp->logger);
+    else
+        _imp->delayed_proof_steps.push_back(func);
+}
+
 auto VariableConstraintsTracker::switch_from_model_to_proof(ProofLogger * const logger) -> void
 {
     _imp->model = nullptr;
     _imp->logger = logger;
+}
+
+auto VariableConstraintsTracker::emit_delayed_proof_steps() -> void
+{
+    for (const auto & step : _imp->delayed_proof_steps)
+        step(_imp->logger);
+    _imp->delayed_proof_steps.clear();
 }
 
 auto VariableConstraintsTracker::start_writing_model(ProofModel * const model) -> void
@@ -383,20 +403,16 @@ auto VariableConstraintsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID i
     auto higher_gevar = next(this_gevar);
 
     // implied by the next highest gevar, if there is one?
-    if (higher_gevar != other_gevars.end()) {
-        if (_imp->logger)
-            visit([&](auto id) { _imp->logger->emit_rup_proof_line(WeightedPseudoBooleanSum{} + (1_i * (id >= v)) + (1_i * ! (id >= higher_gevar->first)) >= 1_i, ProofLevel::Top); }, id);
-        else
-            visit([&](auto id) { _imp->model->add_constraint(WeightedPseudoBooleanSum{} + (1_i * (id >= v)) + (1_i * ! (id >= higher_gevar->first)) >= 1_i); }, id);
-    }
+    if (higher_gevar != other_gevars.end())
+        visit([&](auto id) { emit_proof_line_now_or_at_start([c = WeightedPseudoBooleanSum{} + (1_i * (id >= v)) + (1_i * ! (id >= higher_gevar->first)) >= 1_i](ProofLogger * const logger) {
+                                 logger->emit_rup_proof_line(c, ProofLevel::Top);
+                             }); }, id);
 
     // implies the next lowest gevar, if there is one?
-    if (this_gevar != other_gevars.begin()) {
-        if (_imp->logger)
-            visit([&](auto id) { _imp->logger->emit_rup_proof_line(WeightedPseudoBooleanSum{} + (1_i * (id >= prev(this_gevar)->first)) + (1_i * ! (id >= v)) >= 1_i, ProofLevel::Top); }, id);
-        else
-            visit([&](auto id) { _imp->model->add_constraint(WeightedPseudoBooleanSum{} + (1_i * (id >= prev(this_gevar)->first)) + (1_i * ! (id >= v)) >= 1_i); }, id);
-    }
+    if (this_gevar != other_gevars.begin())
+        visit([&](auto id) { emit_proof_line_now_or_at_start([c = WeightedPseudoBooleanSum{} + (1_i * (id >= prev(this_gevar)->first)) + (1_i * ! (id >= v)) >= 1_i](ProofLogger * const logger) {
+                                 logger->emit_rup_proof_line(c, ProofLevel::Top);
+                             }); }, id);
 }
 
 auto VariableConstraintsTracker::track_bounds(const SimpleOrProofOnlyIntegerVariableID & id, Integer lower, Integer upper) -> void

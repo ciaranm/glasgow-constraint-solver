@@ -35,6 +35,8 @@ namespace gcs::innards
 
         [[nodiscard]] auto allocate_flag_index() -> unsigned long long;
 
+        auto emit_proof_line_now_or_at_start(const std::function<auto(ProofLogger * const)->void> &) -> void;
+
     public:
         /**
          * \name Constructors, destructors, and the like.
@@ -63,6 +65,12 @@ namespace gcs::innards
          * to direct output to the proof.
          */
         auto switch_from_model_to_proof(ProofLogger * const) -> void;
+
+        /**
+         * Must be called after the proof header has been written, to write out any delayed
+         * proof steps that were generated during model creation.
+         */
+        auto emit_delayed_proof_steps() -> void;
 
         /**
          * Say that we will need the greater-than-or-equal literal for a given variable.

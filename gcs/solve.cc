@@ -138,6 +138,7 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
         optional_proof->model()->finalise();
         optional_proof->model()->variable_constraints_tracker().switch_from_model_to_proof(optional_proof->logger());
         optional_proof->logger()->start_proof(*optional_proof->model());
+        optional_proof->model()->variable_constraints_tracker().emit_delayed_proof_steps();
     }
 
     if (callbacks.after_proof_started)
