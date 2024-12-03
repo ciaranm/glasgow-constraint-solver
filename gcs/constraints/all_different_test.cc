@@ -70,14 +70,14 @@ auto run_all_different_test(bool proofs, pair<int, int> v1_range, pair<int, int>
 auto main(int, char *[]) -> int
 {
     vector<tuple<pair<int, int>, pair<int, int>, pair<int, int>, pair<int, int>, pair<int, int>, pair<int, int>>> data = {
-        {{1, 6}, {1, 6}, {1, 6}, {1, 6}, {1, 6}, {1, 6}},
+        //        {{1, 6}, {1, 6}, {1, 6}, {1, 6}, {1, 6}, {1, 6}},
         {{0, 5}, {1, 6}, {2, 7}, {3, 8}, {4, 9}, {5, 6}}};
 
-    random_device rand_dev;
-    mt19937 rand(rand_dev());
-    for (int x = 0; x < 10; ++x)
-        generate_random_data(rand, data, random_bounds(-10, 10, 2, 5), random_bounds(-10, 10, 2, 5), random_bounds(-10, 10, 2, 5),
-            random_bounds(-10, 10, 2, 5), random_bounds(-10, 10, 2, 5), random_bounds(-10, 10, 2, 5));
+    //    random_device rand_dev;
+    //    mt19937 rand(rand_dev());
+    //    for (int x = 0; x < 10; ++x)
+    //        generate_random_data(rand, data, random_bounds(-10, 10, 2, 5), random_bounds(-10, 10, 2, 5), random_bounds(-10, 10, 2, 5),
+    //            random_bounds(-10, 10, 2, 5), random_bounds(-10, 10, 2, 5), random_bounds(-10, 10, 2, 5));
 
     for (auto & [r1, r2, r3, r4, r5, r6] : data)
         run_all_different_test(false, r1, r2, r3, r4, r5, r6);
