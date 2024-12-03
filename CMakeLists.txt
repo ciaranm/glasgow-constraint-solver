@@ -108,7 +108,6 @@ FetchContent_Declare(
         GIT_TAG 6e79e682b726f524310d55dec8ddac4e9c52fb5f # v3.4.0
 )
 FetchContent_MakeAvailable(Catch2)
-SET(CATCH_CONFIG_ENABLE_ALL_STRINGMAKERS ON)
 
 FetchContent_Declare(
         fmt
