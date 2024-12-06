@@ -272,74 +272,26 @@ auto VariableConstraintsTracker::need_direct_encoding_for(SimpleOrProofOnlyInteg
     _imp->direct_integer_variables.emplace(id == v, eqvar);
     _imp->direct_integer_variables.emplace(id != v, "~" + eqvar);
 
-    auto bounds = _imp->bounds_for_gevars.find(id);
-    if (bounds != _imp->bounds_for_gevars.end() && bounds->second.first == v) {
-        // it's a lower bound
-        if (_imp->logger)
-            _imp->logger->emit_proof_comment("need lower bound for " + eqvar);
-        else
-            _imp->model->emit_model_comment("need lower bound for " + eqvar);
+    // neither a lower nor an upper bound
+    if (_imp->logger)
+        _imp->logger->emit_proof_comment("need " + eqvar);
+    else
+        _imp->model->emit_model_comment("need " + eqvar);
 
-        if (_imp->logger) {
-            visit([&](const auto & id) {
-                _imp->logger->emit_red_proof_lines_reifying(WeightedPseudoBooleanSum{} + 1_i * ! (id >= (v + 1_i)) >= 1_i,
-                    id == v, ProofLevel::Top);
-            },
-                id);
-        }
-        else {
-            visit([&](const auto & id) {
-                _imp->model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * ! (id >= (v + 1_i)) >= 1_i, {{id == v}});
-                _imp->model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * (id >= (v + 1_i)) >= 1_i, {{id != v}});
-            },
-                id);
-            ++_imp->model_variables;
-        }
-    }
-    else if (bounds != _imp->bounds_for_gevars.end() && bounds->second.second == v) {
-        // it's an upper bound
-        if (_imp->logger)
-            _imp->logger->emit_proof_comment("need upper bound for " + eqvar);
-        else
-            _imp->model->emit_model_comment("need upper bound for " + eqvar);
-
-        if (_imp->logger) {
-            visit([&](const auto & id) {
-                _imp->logger->emit_red_proof_lines_reifying(WeightedPseudoBooleanSum{} + 1_i * (id >= v) >= 1_i, id == v, ProofLevel::Top);
-            },
-                id);
-        }
-        else {
-            visit([&](const auto & id) {
-                _imp->model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * (id >= v) >= 1_i, {{id == v}});
-                _imp->model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * ! (id >= v) >= 1_i, {{id != v}});
-            },
-                id);
-            ++_imp->model_variables;
-        }
-    }
+    if (_imp->logger)
+        visit([&](const auto & id) {
+            _imp->logger->emit_red_proof_lines_reifying(
+                WeightedPseudoBooleanSum{} + (1_i * (id >= v)) + (1_i * ! (id >= (v + 1_i))) >= 2_i,
+                id == v, ProofLevel::Top);
+        },
+            id);
     else {
-        // neither a lower nor an upper bound
-        if (_imp->logger)
-            _imp->logger->emit_proof_comment("need " + eqvar);
-        else
-            _imp->model->emit_model_comment("need " + eqvar);
-
-        if (_imp->logger)
-            visit([&](const auto & id) {
-                _imp->logger->emit_red_proof_lines_reifying(
-                    WeightedPseudoBooleanSum{} + (1_i * (id >= v)) + (1_i * ! (id >= (v + 1_i))) >= 2_i,
-                    id == v, ProofLevel::Top);
-            },
-                id);
-        else {
-            visit([&](const auto & id) {
-                _imp->model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * (id >= v) + 1_i * ! (id >= v + 1_i) >= 2_i, {{id == v}});
-                _imp->model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * ! (id >= v) + 1_i * (id >= v + 1_i) >= 1_i, {{id != v}});
-            },
-                id);
-            ++_imp->model_variables;
-        }
+        visit([&](const auto & id) {
+            _imp->model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * (id >= v) + 1_i * ! (id >= v + 1_i) >= 2_i, {{id == v}});
+            _imp->model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * ! (id >= v) + 1_i * (id >= v + 1_i) >= 1_i, {{id != v}});
+        },
+            id);
+        ++_imp->model_variables;
     }
 }
 
@@ -379,23 +331,21 @@ auto VariableConstraintsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID i
         ++_imp->model_variables;
     }
 
-    // is it a bound?
+    // is it always true or always false?
     auto bounds = _imp->bounds_for_gevars.find(id);
 
     // lower?
     if (bounds != _imp->bounds_for_gevars.end() && bounds->second.first >= v) {
-        if (_imp->logger)
-            visit([&](auto id) { _imp->logger->emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * (id >= v) >= 1_i, ProofLevel::Top); }, id);
-        else
-            visit([&](auto id) { _imp->model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * (id >= v) >= 1_i); }, id);
+        visit([&](auto id) { emit_proof_line_now_or_at_start([c = WeightedPseudoBooleanSum{} + (1_i * (id >= v)) >= 1_i](ProofLogger * const logger) {
+                                 logger->emit_rup_proof_line(c, ProofLevel::Top);
+                             }); }, id);
     }
 
     // upper?
     if (bounds != _imp->bounds_for_gevars.end() && bounds->second.second < v) {
-        if (_imp->logger)
-            visit([&](auto id) { _imp->logger->emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * ! (id >= v) >= 1_i, ProofLevel::Top); }, id);
-        else
-            visit([&](auto id) { _imp->model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * ! (id >= v) >= 1_i); }, id);
+        visit([&](auto id) { emit_proof_line_now_or_at_start([c = WeightedPseudoBooleanSum{} + (1_i * ! (id >= v)) >= 1_i](ProofLogger * const logger) {
+                                 logger->emit_rup_proof_line(c, ProofLevel::Top);
+                             }); }, id);
     }
 
     auto & other_gevars = _imp->gevars_that_exist.at(id);
