@@ -16,7 +16,7 @@ namespace gcs
         auto propagate_gac_all_different(
             const std::vector<IntegerVariableID> & vars,
             const std::vector<Integer> & vals,
-            const std::map<Integer, ProofLine> & am1_value_constraint_numbers,
+            const std::map<Integer, ProofLine> * const am1_value_constraint_numbers,
             const State & state,
             auto & inference_tracker,
             ProofLogger * const logger) -> void;

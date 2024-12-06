@@ -145,7 +145,7 @@ auto Inverse::install(Propagators & propagators, State & initial_state, ProofMod
                         [&]() { return Literals{x.at((y_i_value - x_start).raw_value) != Integer(i) + y_start}; });
         }
 
-        propagate_gac_all_different(x, x_values, *x_value_am1s, state, inf, logger);
+        propagate_gac_all_different(x, x_values, x_value_am1s.get(), state, inf, logger);
 
         return PropagatorState::Enable;
     },

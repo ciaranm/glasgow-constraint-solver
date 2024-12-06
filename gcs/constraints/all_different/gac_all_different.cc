@@ -1,3 +1,4 @@
+#include <gcs/constraints/all_different/encoding.hh>
 #include <gcs/constraints/all_different/gac_all_different.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
@@ -30,11 +31,13 @@ using std::count;
 using std::decay_t;
 using std::function;
 using std::is_same_v;
+using std::make_shared;
 using std::map;
 using std::min;
 using std::nullopt;
 using std::optional;
 using std::pair;
+using std::shared_ptr;
 using std::sort;
 using std::stringstream;
 using std::unique_ptr;
@@ -172,7 +175,7 @@ namespace
     auto prove_matching_is_too_small(
         const vector<IntegerVariableID> & vars,
         const vector<Integer> & vals,
-        const map<Integer, ProofLine> & constraint_numbers,
+        const map<Integer, ProofLine> * const constraint_numbers,
         const State & state,
         ProofLogger & logger,
         const vector<pair<Left, Right>> & edges,
@@ -229,7 +232,7 @@ namespace
                 hall_variable_ids.push_back(vars[v.offset]);
 
         return pair{JustifyExplicitly{
-                        [&vars, &vals, &logger, &constraint_numbers, hall_variables = move(hall_variables), hall_values = move(hall_values)](
+                        [&vars, &vals, &logger, constraint_numbers, hall_variables = move(hall_variables), hall_values = move(hall_values)](
                             const Reason &) -> void {
                             // we are going to need the at least one value variables
                             vector<ProofLine> at_least_one_constraints;
@@ -252,7 +255,7 @@ namespace
                             // and each value in the component can only be used once
                             for (Right v{0}; v.offset != vals.size(); ++v.offset)
                                 if (hall_values[v.offset])
-                                    proof_step << " " << constraint_numbers.at(vals[v.offset]) << " +";
+                                    proof_step << " " << constraint_numbers->at(vals[v.offset]) << " +";
 
                             logger.emit_proof_line(proof_step.str(), ProofLevel::Current);
                         }},
@@ -275,7 +278,7 @@ namespace
     auto prove_deletion_using_sccs(
         const vector<IntegerVariableID> & vars,
         const vector<Integer> & vals,
-        const map<Integer, ProofLine> & constraint_numbers,
+        const map<Integer, ProofLine> * const constraint_numbers,
         const State & state,
         ProofLogger & logger,
         const vector<vector<Right>> & edges_out_from_variable,
@@ -344,7 +347,7 @@ namespace
         else {
             // a hall set is at work
             return pair{JustifyExplicitly{
-                            [&vars, &vals, &logger, &constraint_numbers, hall_left = move(hall_left), hall_right = move(hall_right)](const Reason &) {
+                            [&vars, &vals, &logger, constraint_numbers, hall_left = move(hall_left), hall_right = move(hall_right)](const Reason &) {
                                 // we are going to need the at least one value variables
                                 vector<ProofLine> at_least_one_constraints;
                                 for (Left v{0}; v.offset != vars.size(); ++v.offset)
@@ -363,25 +366,19 @@ namespace
 
                                 for (Right v{0}; v.offset != vals.size(); ++v.offset)
                                     if (hall_right[v.offset])
-                                        proof_step << " " << constraint_numbers.at(vals[v.offset]) << " +";
+                                        proof_step << " " << constraint_numbers->at(vals[v.offset]) << " +";
 
                                 logger.emit_proof_line(proof_step.str(), ProofLevel::Current);
                             }},
                 generic_reason(state, hall_variable_ids)};
         }
     }
-
-    template <typename T_>
-    auto nullopt_to_zero(std::optional<T_> && t) -> T_
-    {
-        return t == nullopt ? 0 : *t;
-    }
 }
 
 auto gcs::innards::propagate_gac_all_different(
     const vector<IntegerVariableID> & vars,
     const vector<Integer> & vals,
-    const map<Integer, ProofLine> & constraint_numbers,
+    const map<Integer, ProofLine> * const constraint_numbers,
     const State & state,
     auto & tracker,
     ProofLogger * const logger) -> void
@@ -569,30 +566,52 @@ auto gcs::innards::propagate_gac_all_different(
 
 auto GACAllDifferent::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
-    map<Integer, ProofLine> constraint_numbers;
-    if (optional_model) {
-        auto max_upper = initial_state.upper_bound(*max_element(_vars.begin(), _vars.end(), [&](const IntegerVariableID & v, const IntegerVariableID & w) {
-            return initial_state.upper_bound(v) < initial_state.upper_bound(w);
-        }));
-        auto min_lower = initial_state.lower_bound(*min_element(_vars.begin(), _vars.end(), [&](const IntegerVariableID & v, const IntegerVariableID & w) {
-            return initial_state.lower_bound(v) < initial_state.lower_bound(w);
-        }));
-        // for each value in at least two domains...
-        for (Integer val = min_lower; val <= max_upper; ++val) {
-            // at most one variable can take it
-            WeightedPseudoBooleanSum am1;
-            for (const auto & var : _vars)
-                if (initial_state.in_domain(var, val))
-                    am1 += 1_i * (var == val);
-            if (am1.terms.size() >= 2)
-                constraint_numbers.emplace(val, nullopt_to_zero(optional_model->add_constraint(move(am1) <= 1_i)));
-        }
-    }
+    shared_ptr<map<Integer, ProofLine>> constraint_numbers;
 
     auto sanitised_vars = move(_vars);
     sort(sanitised_vars.begin(), sanitised_vars.end());
     if (sanitised_vars.end() != adjacent_find(sanitised_vars.begin(), sanitised_vars.end()))
         throw UnexpectedException{"not sure what to do about duplicate variables in an alldifferent"};
+
+    if (optional_model) {
+        constraint_numbers = make_shared<map<Integer, ProofLine>>();
+        define_clique_not_equals_encoding(*optional_model, sanitised_vars);
+        propagators.install_initialiser([vars = sanitised_vars, constraint_numbers = constraint_numbers](
+                                            const State & state, auto &, ProofLogger * const proof) -> void {
+            auto max_upper = state.upper_bound(*max_element(vars.begin(), vars.end(), [&](const IntegerVariableID & v, const IntegerVariableID & w) {
+                return state.upper_bound(v) < state.upper_bound(w);
+            }));
+            auto min_lower = state.lower_bound(*min_element(vars.begin(), vars.end(), [&](const IntegerVariableID & v, const IntegerVariableID & w) {
+                return state.lower_bound(v) < state.lower_bound(w);
+            }));
+
+            // for each value in at least two domains...
+            for (Integer val = min_lower; val <= max_upper; ++val) {
+                // at most one variable can take it
+                stringstream step;
+                step << "p";
+                bool first = true;
+                int layer = 0;
+                for (unsigned i = 1; i < vars.size(); ++i) {
+                    if (++layer >= 2)
+                        step << " " << layer << " *";
+
+                    for (unsigned j = 0; j < i; ++j) {
+                        auto ne = proof->emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * ! (vars[i] == val) + 1_i * ! (vars[j] == val) >= 1_i, ProofLevel::Temporary);
+                        step << " " << ne;
+                        if (! first)
+                            step << " +";
+                        first = false;
+                    }
+
+                    step << " " << (layer + 1) << " d";
+                }
+
+                if (layer != 0)
+                    constraint_numbers->emplace(val, proof->emit_proof_line(step.str(), ProofLevel::Top));
+            }
+        });
+    }
 
     Triggers triggers;
     triggers.on_change = {sanitised_vars.begin(), sanitised_vars.end()};
@@ -606,9 +625,9 @@ auto GACAllDifferent::install(Propagators & propagators, State & initial_state, 
     propagators.install(
         [vars = move(sanitised_vars),
             vals = move(compressed_vals),
-            save_constraint_numbers = move(constraint_numbers)](const State & state, auto & inference,
+            constraint_numbers = move(constraint_numbers)](const State & state, auto & inference,
             ProofLogger * const logger) -> PropagatorState {
-            propagate_gac_all_different(vars, vals, save_constraint_numbers, state, inference, logger);
+            propagate_gac_all_different(vars, vals, constraint_numbers.get(), state, inference, logger);
             return PropagatorState::Enable;
         },
         triggers, "alldiff");
