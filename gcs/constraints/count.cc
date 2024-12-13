@@ -51,37 +51,34 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
             auto var_minus_val_lt_0 = optional_model->create_proof_flag("countl");
             flags.emplace_back(flag, var_minus_val_gt_0, var_minus_val_lt_0);
 
-            // var_minus_val_gt_0 -> var - val >= 1
-            optional_model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * var + -1_i * _value_of_interest >= 1_i, HalfReifyOnConjunctionOf{{var_minus_val_gt_0}});
+            // var_minus_val_gt_0 -> var - val > 0
+            optional_model->add_constraint("Count", "var bigger",
+                    WeightedPseudoBooleanSum{} + 1_i * var + -1_i * _value_of_interest >= 1_i, HalfReifyOnConjunctionOf{{var_minus_val_gt_0}});
 
-            // ! var_minus_val_gt_0 -> var - val < 1
-            optional_model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * var + -1_i * _value_of_interest <= 0_i, HalfReifyOnConjunctionOf{{! var_minus_val_gt_0}});
+            // ! var_minus_val_gt_0 -> var - val <= 0
+            optional_model->add_constraint("Count", "var not bigger",
+                    WeightedPseudoBooleanSum{} + 1_i * var + -1_i * _value_of_interest <= 0_i, HalfReifyOnConjunctionOf{{! var_minus_val_gt_0}});
 
             // var_minus_val_lt_0 -> var - val <= -1
-            optional_model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * var + -1_i * _value_of_interest <= -1_i, HalfReifyOnConjunctionOf{{var_minus_val_lt_0}});
+            optional_model->add_constraint("Count", "var smaller", WeightedPseudoBooleanSum{} + 1_i * var + -1_i * _value_of_interest <= -1_i, HalfReifyOnConjunctionOf{{var_minus_val_lt_0}});
 
             // ! var_minus_val_lt_0 -> var - val > -1
-            optional_model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * var + -1_i * _value_of_interest >= 0_i, HalfReifyOnConjunctionOf{{! var_minus_val_lt_0}});
+            optional_model->add_constraint("Count", "var not smaller", WeightedPseudoBooleanSum{} + 1_i * var + -1_i * _value_of_interest >= 0_i, HalfReifyOnConjunctionOf{{! var_minus_val_lt_0}});
 
             // flag => ! countg /\ ! countl
-            optional_model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * ! var_minus_val_gt_0 + 1_i * ! var_minus_val_lt_0 >= 2_i, HalfReifyOnConjunctionOf{{flag}});
+            optional_model->add_constraint("Count", "var equal", WeightedPseudoBooleanSum{} + 1_i * ! var_minus_val_gt_0 + 1_i * ! var_minus_val_lt_0 >= 2_i, HalfReifyOnConjunctionOf{{flag}});
 
             // ! flag => countg \/ countl
-            optional_model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * var_minus_val_gt_0 + 1_i * var_minus_val_lt_0 >= 1_i, HalfReifyOnConjunctionOf{{! flag}});
+            optional_model->add_constraint("Count", "var not equal", WeightedPseudoBooleanSum{} + 1_i * var_minus_val_gt_0 + 1_i * var_minus_val_lt_0 >= 1_i, HalfReifyOnConjunctionOf{{! flag}});
         }
 
         // sum flag == how_many
-        WeightedPseudoBooleanSum forward, reverse;
-        for (auto & [flag, _1, _2] : flags) {
-            forward += 1_i * flag;
-            reverse += -1_i * flag;
-        }
-        forward += -1_i * _how_many;
-        reverse += 1_i * _how_many;
-        Integer forward_g = 0_i, reverse_g = 0_i;
+        WeightedPseudoBooleanSum how_many_sum;
+        for (auto & [flag, _1, _2] : flags)
+            how_many_sum += 1_i * flag;
+        how_many_sum += -1_i * _how_many;
 
-        optional_model->add_constraint(forward >= forward_g);
-        optional_model->add_constraint(reverse >= reverse_g);
+        optional_model->add_constraint("Count", "sum of flags", how_many_sum == 0_i);
     }
 
     vector<IntegerVariableID> all_vars = _vars;
