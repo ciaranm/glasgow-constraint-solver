@@ -502,7 +502,6 @@ auto VariableConstraintsTracker::allocate_xliteral_meaning(ProofFlag flag) -> XL
 
     nlohmann::json data;
     data["type"] = "proofflag";
-    _imp->variables_map_file << pb_file_string_for(result) << ' ';
     data["name"] = name_of(flag);
 
     write_vardata(_imp->variables_map_file, _imp->first_varmap_entry, pb_file_string_for(result), data);
