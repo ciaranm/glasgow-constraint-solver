@@ -232,7 +232,7 @@ namespace gcs::innards
         /**
          * Allocate an XLiteral with the given semantic meaning.
          */
-        [[nodiscard]] auto allocate_xliteral_meaning_negative_bit_of(SimpleOrProofOnlyIntegerVariableID flag) -> XLiteral;
+        [[nodiscard]] auto allocate_xliteral_meaning_negative_bit_of(SimpleOrProofOnlyIntegerVariableID flag, Integer power) -> XLiteral;
 
         /**
          * Allocate an XLiteral with the given semantic meaning.

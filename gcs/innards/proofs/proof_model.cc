@@ -273,7 +273,7 @@ auto ProofModel::set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableI
 
     variable_constraints_tracker().track_variable_name(id, name);
     if (0_i != negative_bit_coeff)
-        bits.emplace_back(negative_bit_coeff, variable_constraints_tracker().allocate_xliteral_meaning_negative_bit_of(id));
+        bits.emplace_back(negative_bit_coeff, variable_constraints_tracker().allocate_xliteral_meaning_negative_bit_of(id, negative_bit_coeff));
     for (int b = 0; b <= highest_bit_shift; ++b)
         bits.emplace_back(Integer{1ll << b}, variable_constraints_tracker().allocate_xliteral_meaning_bit_of(id, Integer{b}));
 

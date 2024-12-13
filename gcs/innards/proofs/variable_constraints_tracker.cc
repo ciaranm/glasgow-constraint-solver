@@ -509,7 +509,7 @@ auto VariableConstraintsTracker::allocate_xliteral_meaning(ProofFlag flag) -> XL
     return result;
 }
 
-auto VariableConstraintsTracker::allocate_xliteral_meaning_negative_bit_of(SimpleOrProofOnlyIntegerVariableID id) -> XLiteral
+auto VariableConstraintsTracker::allocate_xliteral_meaning_negative_bit_of(SimpleOrProofOnlyIntegerVariableID id, Integer power) -> XLiteral
 {
     auto result = XLiteral{++_imp->next_xliteral_nr, false};
 
@@ -541,6 +541,7 @@ auto VariableConstraintsTracker::allocate_xliteral_meaning_negative_bit_of(Simpl
         }}
         .visit(id);
     data["name"] = name_of(id);
+    data["power"] = power.raw_value;
 
     write_vardata(_imp->variables_map_file, _imp->first_varmap_entry, pb_file_string_for(result), data);
 
