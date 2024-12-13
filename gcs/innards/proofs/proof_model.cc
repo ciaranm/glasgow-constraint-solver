@@ -71,12 +71,7 @@ ProofModel::ProofModel(const ProofOptions & proof_options, VariableConstraintsTr
 
 ProofModel::~ProofModel() = default;
 
-auto ProofModel::posting(const string & s) -> void
-{
-    emit_model_comment("constraint " + s);
-}
-
-auto ProofModel::add_constraint(const Literals & lits) -> std::optional<ProofLine>
+auto ProofModel::add_constraint(const StringLiteral & constraint_name, const StringLiteral & rule, const Literals & lits) -> std::optional<ProofLine>
 {
     WeightedPseudoBooleanSum sum;
 
@@ -98,10 +93,16 @@ auto ProofModel::add_constraint(const Literals & lits) -> std::optional<ProofLin
     // remove duplicates
     sum.terms.erase(unique(sum.terms.begin(), sum.terms.end()), sum.terms.end());
 
-    return add_constraint(move(sum) >= 1_i, nullopt);
+    return add_constraint(constraint_name, rule, move(sum) >= 1_i, nullopt);
 }
 
-auto ProofModel::add_constraint(const WeightedPseudoBooleanLessEqual & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> optional<ProofLine>
+auto ProofModel::add_constraint(const Literals & lits) -> std::optional<ProofLine>
+{
+    return add_constraint("?", "?", lits);
+}
+
+auto ProofModel::add_constraint(const StringLiteral & constraint_name, const StringLiteral & rule,
+    const WeightedPseudoBooleanLessEqual & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> optional<ProofLine>
 {
     variable_constraints_tracker().need_all_proof_names_in(ineq.lhs);
     if (half_reif)
@@ -117,12 +118,19 @@ auto ProofModel::add_constraint(const WeightedPseudoBooleanLessEqual & ineq, con
                 }}
                 .visit(r);
 
+    _imp->opb << "* constraint " << constraint_name.value << ' ' << rule.value << '\n';
     emit_inequality_to(variable_constraints_tracker(), ineq, half_reif, _imp->opb);
     _imp->opb << '\n';
     return ++_imp->number_of_constraints;
 }
 
-auto ProofModel::add_constraint(const WeightedPseudoBooleanEquality & eq, const optional<HalfReifyOnConjunctionOf> & half_reif)
+auto ProofModel::add_constraint(const WeightedPseudoBooleanLessEqual & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> optional<ProofLine>
+{
+    return add_constraint("?", "?", ineq, half_reif);
+}
+
+auto ProofModel::add_constraint(const StringLiteral & constraint_name, const StringLiteral & rule,
+    const WeightedPseudoBooleanEquality & eq, const optional<HalfReifyOnConjunctionOf> & half_reif)
     -> pair<optional<ProofLine>, optional<ProofLine>>
 {
     variable_constraints_tracker().need_all_proof_names_in(eq.lhs);
@@ -139,6 +147,7 @@ auto ProofModel::add_constraint(const WeightedPseudoBooleanEquality & eq, const 
                 }}
                 .visit(r);
 
+    _imp->opb << "* constraint " << constraint_name.value << ' ' << rule.value << '\n';
     emit_inequality_to(variable_constraints_tracker(), eq.lhs <= eq.rhs, half_reif, _imp->opb);
     _imp->opb << '\n';
     auto first = ++_imp->number_of_constraints;
@@ -148,6 +157,12 @@ auto ProofModel::add_constraint(const WeightedPseudoBooleanEquality & eq, const 
     auto second = ++_imp->number_of_constraints;
 
     return pair{first, second};
+}
+
+auto ProofModel::add_constraint(const WeightedPseudoBooleanEquality & eq, const optional<HalfReifyOnConjunctionOf> & half_reif)
+    -> pair<optional<ProofLine>, optional<ProofLine>>
+{
+    return add_constraint("?", "?", eq, half_reif);
 }
 
 auto ProofModel::variable_constraints_tracker() -> VariableConstraintsTracker &
@@ -173,8 +188,6 @@ auto ProofModel::create_proof_only_integer_variable(Integer lower, Integer upper
 
 auto ProofModel::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariableID id, Integer lower, Integer upper, const optional<string> & name) -> void
 {
-    emit_model_comment(fmt::format("variable {} {} .. {} direct encoding", name.value_or("?"), lower.raw_value, upper.raw_value));
-
     if (0_i == lower && 1_i == upper) {
         variable_constraints_tracker().track_variable_name(id, name);
         auto eqvar = variable_constraints_tracker().allocate_xliteral_meaning(id, EqualsOrGreaterEqual::Equals, 1_i);
@@ -330,11 +343,6 @@ auto ProofModel::finalise() -> void
     if (! full_opb)
         throw ProofError{"Error writing opb file to '" + _imp->opb_file + "'"};
     full_opb.close();
-}
-
-auto ProofModel::emit_model_comment(const string & s) -> void
-{
-    _imp->opb << "* " << s << '\n';
 }
 
 auto ProofModel::number_of_constraints() const -> ProofLine

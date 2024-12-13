@@ -34,21 +34,21 @@ auto CompareLessThanReif::install(Propagators & propagators, State & initial_sta
     ProofModel * const optional_model) && -> void
 {
     if (optional_model) {
-        auto do_less = [&](IntegerVariableID v1, IntegerVariableID v2, optional<HalfReifyOnConjunctionOf> cond, bool or_equal) {
-            optional_model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * v1 + -1_i * v2 <= (or_equal ? 0_i : -1_i), cond);
+        auto do_less = [&](IntegerVariableID v1, IntegerVariableID v2, optional<HalfReifyOnConjunctionOf> cond, bool or_equal, const StringLiteral & rule) {
+            optional_model->add_constraint("CompareLessThanReif", rule, WeightedPseudoBooleanSum{} + 1_i * v1 + -1_i * v2 <= (or_equal ? 0_i : -1_i), cond);
         };
 
         overloaded{
             [&](const TrueLiteral &) {
-                do_less(_v1, _v2, nullopt, _or_equal);
+                do_less(_v1, _v2, nullopt, _or_equal, "condition true");
             },
             [&](const FalseLiteral &) {
-                do_less(_v2, _v1, nullopt, ! _or_equal);
+                do_less(_v2, _v1, nullopt, ! _or_equal, "condition false");
             },
             [&](const IntegerVariableCondition & cond) {
-                do_less(_v1, _v2, HalfReifyOnConjunctionOf{{cond}}, _or_equal);
+                do_less(_v1, _v2, HalfReifyOnConjunctionOf{{cond}}, _or_equal, "if condition");
                 if (_full_reif)
-                    do_less(_v2, _v1, HalfReifyOnConjunctionOf{{! cond}}, ! _or_equal);
+                    do_less(_v2, _v1, HalfReifyOnConjunctionOf{{! cond}}, ! _or_equal, "if not condition");
             }}
             .visit(_cond);
     }
@@ -182,9 +182,4 @@ auto CompareLessThanReif::install(Propagators & propagators, State & initial_sta
             triggers, "compare less than reif");
     },
         _v1, _v2, _cond);
-}
-
-auto CompareLessThanReif::describe_for_proof() -> std::string
-{
-    return "compare less than reif";
 }

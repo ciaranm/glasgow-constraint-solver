@@ -223,8 +223,3 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
         },
         triggers, "count");
 }
-
-auto Count::describe_for_proof() -> std::string
-{
-    return "count";
-}

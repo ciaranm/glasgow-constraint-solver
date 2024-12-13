@@ -141,11 +141,6 @@ auto Equals::install(Propagators & propagators, State & initial_state, ProofMode
         optional_model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * _v1 + -1_i * _v2 == 0_i, nullopt);
 }
 
-auto Equals::describe_for_proof() -> string
-{
-    return "equals";
-}
-
 EqualsIf::EqualsIf(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond) :
     _v1(v1),
     _v2(v2),
@@ -252,11 +247,6 @@ auto EqualsIf::install(Propagators & propagators, State & initial_state, ProofMo
             }
         }}
         .visit(_cond);
-}
-
-auto EqualsIf::describe_for_proof() -> string
-{
-    return "equals if";
 }
 
 EqualsIff::EqualsIff(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond) :
@@ -422,9 +412,4 @@ auto EqualsIff::install(Propagators & propagators, State & initial_state, ProofM
             }
         }}
         .visit(_cond);
-}
-
-auto EqualsIff::describe_for_proof() -> string
-{
-    return "equals iff";
 }

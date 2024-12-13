@@ -380,11 +380,6 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
     }
 }
 
-auto LinearEqualityIff::describe_for_proof() -> std::string
-{
-    return "linear equality";
-}
-
 LinearEquality::LinearEquality(WeightedSum coeff_vars, Integer value, bool gac) :
     LinearEqualityIff(coeff_vars, value, TrueLiteral{}, gac)
 {

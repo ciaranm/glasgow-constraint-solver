@@ -124,8 +124,6 @@ auto Problem::create_propagators(State & state, ProofModel * const optional_proo
     Propagators result;
     for (auto & c : _imp->constraints) {
         auto cc = c->clone();
-        if (optional_proof_model)
-            optional_proof_model->posting(cc->describe_for_proof());
         move(*cc).install(result, state, optional_proof_model);
     }
 

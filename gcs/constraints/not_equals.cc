@@ -117,8 +117,3 @@ auto NotEquals::install(Propagators & propagators, State & initial_state, ProofM
             HalfReifyOnConjunctionOf{{! selector}});
     }
 }
-
-auto NotEquals::describe_for_proof() -> string
-{
-    return "not equals";
-}

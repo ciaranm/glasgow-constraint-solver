@@ -129,11 +129,6 @@ auto VCAllDifferent::install(innards::Propagators & propagators, innards::State 
         triggers, "vcalldiff");
 }
 
-auto VCAllDifferent::describe_for_proof() -> std::string
-{
-    return "all different";
-}
-
 template auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle, const State & state,
     SimpleInferenceTracker & inference_tracker, ProofLogger * const logger) -> void;
 

@@ -249,8 +249,3 @@ auto LinearInequalityIff::install(Propagators & propagators, State & state, Proo
     } break;
     }
 }
-
-auto LinearInequalityIff::describe_for_proof() -> std::string
-{
-    return "linear inequality";
-}

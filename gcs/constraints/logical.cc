@@ -209,11 +209,6 @@ auto And::clone() const -> unique_ptr<Constraint>
     return make_unique<And>(_lits, _full_reif);
 }
 
-auto And::describe_for_proof() -> string
-{
-    return "and";
-}
-
 auto And::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
     install_and_or_or(propagators, initial_state, optional_model, _lits, _full_reif, "and");
@@ -238,11 +233,6 @@ Or::Or(Literals l, const Literal & full_reif) :
 auto Or::clone() const -> unique_ptr<Constraint>
 {
     return make_unique<Or>(_lits, _full_reif);
-}
-
-auto Or::describe_for_proof() -> string
-{
-    return "or";
 }
 
 auto Or::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void

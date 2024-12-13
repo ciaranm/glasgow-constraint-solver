@@ -225,11 +225,6 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state, Proof
     return pos_var_data;
 }
 
-auto CircuitBase::describe_for_proof() -> std::string
-{
-    return "circuit (all different + no sub-cycles)";
-}
-
 template auto gcs::innards::circuit::prevent_small_cycles(const std::vector<IntegerVariableID> & succ, const PosVarDataMap & pos_var_data,
     const ConstraintStateHandle & unassigned_handle, const State & state, SimpleInferenceTracker & inference_tracker, ProofLogger * const logger) -> void;
 

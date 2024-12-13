@@ -11,11 +11,23 @@
 
 #include <memory>
 #include <optional>
+#include <type_traits>
 #include <variant>
 #include <vector>
 
 namespace gcs::innards
 {
+    struct StringLiteral
+    {
+        template <typename T_, std::size_t n_, std::enable_if_t<std::is_same_v<T_, const char>>...>
+        consteval StringLiteral(T_ (&s)[n_]) :
+            value(s)
+        {
+        }
+
+        char const * value;
+    };
+
     class ProofModel
     {
     private:
@@ -47,31 +59,50 @@ namespace gcs::innards
         ///@{
 
         /**
-         * Emit a comment say we're about to define a constraint.
-         */
-        auto posting(const std::string &) -> void;
-
-        /**
-         * Emit a comment.
-         */
-        auto emit_model_comment(const std::string &) -> void;
-
-        /**
          * Add a pseudo-Boolean constraint to a Proof model.
          */
-        auto add_constraint(const WeightedPseudoBooleanLessEqual & ineq,
+        auto add_constraint(
+            const WeightedPseudoBooleanLessEqual & ineq,
             const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> std::optional<ProofLine>;
 
         /**
          * Add a pair of pseudo-Boolean constraints representing an equality to a Proof model.
          */
-        auto add_constraint(const WeightedPseudoBooleanEquality & eq,
+        auto add_constraint(
+            const WeightedPseudoBooleanEquality & eq,
             const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> std::pair<std::optional<ProofLine>, std::optional<ProofLine>>;
 
         /**
          * Add a CNF definition to a Proof model.
          */
-        auto add_constraint(const Literals & lits) -> std::optional<ProofLine>;
+        auto add_constraint(
+            const Literals & lits) -> std::optional<ProofLine>;
+
+        /**
+         * Add a pseudo-Boolean constraint to a Proof model.
+         */
+        auto add_constraint(
+            const StringLiteral & constraint_name,
+            const StringLiteral & rule,
+            const WeightedPseudoBooleanLessEqual & ineq,
+            const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> std::optional<ProofLine>;
+
+        /**
+         * Add a pair of pseudo-Boolean constraints representing an equality to a Proof model.
+         */
+        auto add_constraint(
+            const StringLiteral & constraint_name,
+            const StringLiteral & rule,
+            const WeightedPseudoBooleanEquality & eq,
+            const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> std::pair<std::optional<ProofLine>, std::optional<ProofLine>>;
+
+        /**
+         * Add a CNF definition to a Proof model.
+         */
+        auto add_constraint(
+            const StringLiteral & constraint_name,
+            const StringLiteral & rule,
+            const Literals & lits) -> std::optional<ProofLine>;
 
         ///@}
 

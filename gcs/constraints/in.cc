@@ -70,8 +70,3 @@ auto In::install(Propagators & propagators, State & initial_state, ProofModel * 
         throw UnimplementedException{};
     }
 }
-
-auto In::describe_for_proof() -> string
-{
-    return "in";
-}

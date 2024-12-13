@@ -133,11 +133,6 @@ auto ArrayMinMax::install(Propagators & propagators, State & initial_state, Proo
     }
 }
 
-auto ArrayMinMax::describe_for_proof() -> string
-{
-    return "array min max";
-}
-
 Min::Min(const IntegerVariableID v1, const IntegerVariableID v2, const IntegerVariableID result) :
     ArrayMinMax({v1, v2}, result, true)
 {

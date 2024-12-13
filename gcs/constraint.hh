@@ -33,12 +33,6 @@ namespace gcs
         virtual ~Constraint() = 0;
 
         /**
-         * For proof logging, give a short textual description of the constraint
-         * that will be turned into a comment in the OPB file.
-         */
-        virtual auto describe_for_proof() -> std::string = 0;
-
-        /**
          * Called internally to install the constraint. A Constraint is expected
          * to define zero or more propagators, and to provide a description of
          * its meaning for proof logging. This is a destructive operation which

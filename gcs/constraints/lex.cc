@@ -49,8 +49,3 @@ auto LexSmartTable::install(Propagators & propagators, State & initial_state, Pr
     auto smt_table = SmartTable{all_vars, tuples};
     move(smt_table).install(propagators, initial_state, optional_model);
 }
-
-auto LexSmartTable::describe_for_proof() -> std::string
-{
-    return "at most one (as a smart table)";
-}

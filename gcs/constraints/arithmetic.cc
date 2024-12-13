@@ -56,12 +56,6 @@ auto GACArithmetic<op_>::install(Propagators & propagators, State & initial_stat
     propagators.define_and_install_table(initial_state, optional_model, vector{_v1, _v2, _result}, move(permitted), "arithmetic");
 }
 
-template <ArithmeticOperator op_>
-auto GACArithmetic<op_>::describe_for_proof() -> std::string
-{
-    return "arithmetic";
-}
-
 namespace gcs::innards
 {
     template class GACArithmetic<ArithmeticOperator::Plus>;

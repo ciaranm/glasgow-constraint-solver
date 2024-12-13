@@ -888,8 +888,3 @@ auto SmartTable::install(Propagators & propagators, State & initial_state, Proof
         triggers,
         "smart table");
 }
-
-auto SmartTable::describe_for_proof() -> string
-{
-    return "smart table";
-}

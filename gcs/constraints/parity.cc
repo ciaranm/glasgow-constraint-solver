@@ -46,11 +46,6 @@ auto ParityOdd::clone() const -> unique_ptr<Constraint>
     return make_unique<ParityOdd>(_lits);
 }
 
-auto ParityOdd::describe_for_proof() -> string
-{
-    return "parity odd";
-}
-
 auto ParityOdd::install(Propagators & propagators, State &, ProofModel * const optional_model) && -> void
 {
     if (optional_model) {

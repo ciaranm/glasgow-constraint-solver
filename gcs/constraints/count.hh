@@ -23,7 +23,6 @@ namespace gcs
     public:
         explicit Count(std::vector<IntegerVariableID>, const IntegerVariableID & value_of_interest, const IntegerVariableID & how_many);
 
-        virtual auto describe_for_proof() -> std::string override;
         virtual auto install(innards::Propagators &, innards::State &,
             innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;

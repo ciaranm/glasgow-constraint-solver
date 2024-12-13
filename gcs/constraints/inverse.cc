@@ -151,8 +151,3 @@ auto Inverse::install(Propagators & propagators, State & initial_state, ProofMod
     },
         triggers, "inverse");
 }
-
-auto Inverse::describe_for_proof() -> std::string
-{
-    return "inverse";
-}

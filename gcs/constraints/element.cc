@@ -58,7 +58,7 @@ auto Element::install(Propagators & propagators, State & initial_state, ProofMod
         for (const auto & [val_idx, val] : enumerate(_vals))
             if (initial_state.in_domain(_idx, Integer(val_idx))) {
                 // idx == val_idx -> var == vals[val_idx]
-                optional_model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * _var + -1_i * val == 0_i,
+                optional_model->add_constraint("Element", "equality", WeightedPseudoBooleanSum{} + 1_i * _var + -1_i * val == 0_i,
                     HalfReifyOnConjunctionOf{_idx == Integer(val_idx)});
             }
     }
@@ -115,11 +115,6 @@ auto Element::install(Propagators & propagators, State & initial_state, ProofMod
         return PropagatorState::Enable;
     },
         triggers, "element index");
-}
-
-auto Element::describe_for_proof() -> std::string
-{
-    return "element";
 }
 
 ElementConstantArray::ElementConstantArray(IntegerVariableID var, IntegerVariableID idx, vector<Integer> * vals) :
@@ -202,11 +197,6 @@ auto ElementConstantArray::install(Propagators & propagators, State & initial_st
             triggers, "element const array var bounds");
     },
         _idx);
-}
-
-auto ElementConstantArray::describe_for_proof() -> std::string
-{
-    return "element const array";
 }
 
 Element2DConstantArray::Element2DConstantArray(IntegerVariableID var, IntegerVariableID idx1,
@@ -390,9 +380,4 @@ auto Element2DConstantArray::install(Propagators & propagators, State & initial_
             triggers, "element 2d const array var bounds");
     },
         _idx1, _idx2);
-}
-
-auto Element2DConstantArray::describe_for_proof() -> std::string
-{
-    return "element 2d const array";
 }

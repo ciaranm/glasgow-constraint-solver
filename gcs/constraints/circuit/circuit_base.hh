@@ -82,7 +82,6 @@ namespace gcs::innards::circuit
     public:
         explicit CircuitBase(std::vector<IntegerVariableID> var, bool gac_all_different = false);
         [[nodiscard]] auto clone() const -> std::unique_ptr<Constraint> override = 0;
-        auto describe_for_proof() -> std::string override;
     };
 }
 

@@ -67,11 +67,6 @@ auto Table::install(Propagators & propagators, State & initial_state, ProofModel
     propagators.define_and_install_table(initial_state, optional_model, vector<IntegerVariableID>{_vars}, move(_tuples), "table");
 }
 
-auto Table::describe_for_proof() -> string
-{
-    return "table";
-}
-
 NegativeTable::NegativeTable(vector<IntegerVariableID> v, ExtensionalTuples t) :
     _vars(move(v)),
     _tuples(move(t))
@@ -184,9 +179,4 @@ auto NegativeTable::install(Propagators & propagators, State &, ProofModel * con
             triggers, "negative table");
     },
         _tuples);
-}
-
-auto NegativeTable::describe_for_proof() -> string
-{
-    return "negative table";
 }

@@ -82,8 +82,3 @@ auto Abs::install(Propagators & propagators, State & initial_state,
         optional_model->add_constraint(WeightedPseudoBooleanSum{} + -1_i * _v1 <= 0_i, HalfReifyOnConjunctionOf{*selector});
     }
 }
-
-auto Abs::describe_for_proof() -> std::string
-{
-    return "abs";
-}

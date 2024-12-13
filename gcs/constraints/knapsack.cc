@@ -617,8 +617,3 @@ auto Knapsack::install(Propagators & propagators, State & initial_state, ProofMo
         },
         triggers, "knapsack");
 }
-
-auto Knapsack::describe_for_proof() -> string
-{
-    return "knapsack";
-}

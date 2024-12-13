@@ -369,8 +369,3 @@ auto Regular::install(Propagators & propagators, State & initial_state, ProofMod
     },
         triggers, "regular");
 }
-
-auto Regular::describe_for_proof() -> string
-{
-    return "regular";
-}

@@ -633,11 +633,6 @@ auto GACAllDifferent::install(Propagators & propagators, State & initial_state, 
         triggers, "alldiff");
 }
 
-auto GACAllDifferent::describe_for_proof() -> std::string
-{
-    return "all different";
-}
-
 template auto gcs::innards::propagate_gac_all_different(
     const std::vector<IntegerVariableID> & vars,
     const std::vector<Integer> & vals,

@@ -101,8 +101,3 @@ auto NValue::install(Propagators & propagators, State & initial_state, ProofMode
         optional_model->add_constraint(reverse >= 0_i);
     }
 }
-
-auto NValue::describe_for_proof() -> std::string
-{
-    return "nvalue";
-}

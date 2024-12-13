@@ -49,8 +49,3 @@ auto AtMostOneSmartTable::install(Propagators & propagators, State & initial_sta
     SmartTable smt_table{all_vars, tuples};
     move(smt_table).install(propagators, initial_state, optional_model);
 }
-
-auto AtMostOneSmartTable::describe_for_proof() -> std::string
-{
-    return "at most one (as a smart table)";
-}

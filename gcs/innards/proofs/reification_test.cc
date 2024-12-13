@@ -29,7 +29,6 @@ auto main() -> int
             -2_i * model.create_proof_only_integer_variable(1_i, 10_i, "x", IntegerVariableProofRepresentation::Bits) >=
         4_i;
 
-    model.emit_model_comment("Reification test constraint:");
     model.add_constraint(tracker.reify(constr, HalfReifyOnConjunctionOf{reif}));
 
     model.finalise();
