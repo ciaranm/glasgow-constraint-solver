@@ -50,7 +50,7 @@ struct VariableConstraintsTracker::Imp
     map<SimpleOrProofOnlyIntegerVariableID, string> id_names;
     map<XLiteral, string> xlits_to_verbose_names;
     map<ProofFlag, string> flag_names;
-    string unknown_name = "?";
+    string unknown_name = "unnamed";
 
     list<function<auto(ProofLogger * const)->void>> delayed_proof_steps;
 
