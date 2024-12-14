@@ -171,6 +171,18 @@ namespace gcs::innards
             const std::function<auto(Integer, const XLiteral &)->void> &) -> void;
 
         /**
+         * Get the name and coefficient for the bit position in the representation of the given var.
+         */
+        auto get_bit(const SimpleOrProofOnlyIntegerVariableID & var, unsigned long position) -> std::pair<Integer, XLiteral>;
+
+        /**
+         * Get the name and coefficient for the bit position in the representation of the given var.
+         */
+        auto get_bit(const ProofBitVariable & bit) -> std::pair<Integer, XLiteral>;
+
+        auto num_bits(const SimpleOrProofOnlyIntegerVariableID & var) -> unsigned long long;
+
+        /**
          * If there is a negative bit for this variable, return its coefficient, otherwise
          * return zero.
          */

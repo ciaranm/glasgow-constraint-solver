@@ -35,6 +35,7 @@ add_library(glasgow_constraint_solver
         constraints/linear/utils.cc
         constraints/logical.cc
         constraints/min_max.cc
+        constraints/mult_bc.cc
         constraints/n_value.cc
         constraints/not_equals.cc
         constraints/parity.cc
@@ -57,6 +58,7 @@ add_library(glasgow_constraint_solver
         innards/state.cc
         innards/variable_id_utils.cc
         presolvers/auto_table.cc
+        presolvers/proof_auto_table.cc
 )
 
 include_directories(${CMAKE_SOURCE_DIR}/generator/src/generator/include)
@@ -86,6 +88,7 @@ add_executable(knapsack_test constraints/knapsack_test.cc)
 add_executable(linear_test constraints/linear/linear_test.cc)
 add_executable(logical_test constraints/logical_test.cc)
 add_executable(min_max_test constraints/min_max_test.cc)
+add_executable(mult_bc_test constraints/mult_bc_test.cc)
 add_executable(n_value_test constraints/n_value_test.cc)
 add_executable(not_equals_test constraints/not_equals_test.cc)
 add_executable(parity_test constraints/parity_test.cc)
@@ -103,6 +106,7 @@ add_test(NAME knapsack_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash
 add_test(NAME linear_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:linear_test>)
 add_test(NAME logical_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:logical_test>)
 add_test(NAME min_max_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:min_max_test>)
+add_test(NAME mult_bc_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:mult_bc_test>)
 add_test(NAME n_value_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:n_value_test>)
 add_test(NAME smart_table_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:smart_table_test>)
 add_test(NAME parity_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:parity_test>)

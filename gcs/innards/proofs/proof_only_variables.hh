@@ -34,11 +34,36 @@ namespace gcs::innards
 
     using SimpleOrProofOnlyIntegerVariableID = std::variant<SimpleIntegerVariableID, ProofOnlySimpleIntegerVariableID>;
 
+    struct ProofBitVariable
+    {
+        SimpleOrProofOnlyIntegerVariableID for_var;
+        unsigned long long position;
+        bool positive;
+
+#if (_LIBCPP_VERSION)
+        // again need workaround for clang/libcpp on MacOS
+        [[nodiscard]] inline auto operator<(const ProofBitVariable & other) const -> bool
+        {
+            return std::tuple{for_var, position, positive} < std::tuple{other.for_var, other.position, other.positive};
+        }
+#endif
+
+        [[nodiscard]] auto operator<=>(const ProofBitVariable &) const = default;
+    };
+
+    /**
+     * \brief Negate a ProofBitVariable.
+     *
+     * \ingroup Innards
+     * \sa ProofFlag
+     */
+    [[nodiscard]] auto operator!(const ProofBitVariable &) -> ProofBitVariable;
+
     using ProofVariableCondition = VariableConditionFrom<ProofOnlySimpleIntegerVariableID>;
 
     using ProofLiteral = std::variant<Literal, ProofVariableCondition>;
 
-    using ProofLiteralOrFlag = std::variant<ProofLiteral, ProofFlag>;
+    using ProofLiteralOrFlag = std::variant<ProofLiteral, ProofFlag, ProofBitVariable>;
 
     /**
      * \brief A Boolean flag that is used inside proofs like a variable, but
@@ -49,7 +74,7 @@ namespace gcs::innards
     struct ProofFlag
     {
         unsigned long long index;
-        bool positive;
+        bool positive = true;
 
         [[nodiscard]] auto operator<=>(const ProofFlag &) const = default;
     };

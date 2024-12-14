@@ -31,7 +31,7 @@ namespace gcs::innards
     protected:
         State & _state;
         std::deque<std::pair<SimpleIntegerVariableID, Inference>> _inferences;
-        bool _did_anything_since_last_call;
+        bool _did_anything_since_last_call_by_propagation_queue, _did_anything_since_last_call_inside_propagator;
 
         auto track(ProofLogger * const logger, const Inference inf, const Literal & lit, const Justification & just, const Reason & reason) -> void
         {
@@ -41,7 +41,8 @@ namespace gcs::innards
     public:
         explicit InferenceTrackerBase(State & s) :
             _state(s),
-            _did_anything_since_last_call(false)
+            _did_anything_since_last_call_by_propagation_queue(false),
+            _did_anything_since_last_call_inside_propagator(false)
         {
         }
 
@@ -93,22 +94,23 @@ namespace gcs::innards
 
         auto infer_all(ProofLogger * const logger, const std::vector<Literal> & lits, const Justification & why, const Reason & reason) -> void
         {
-            bool first = true;
-
-            // only do explicit justifications once
-            Justification just_not_first{NoJustificationNeeded{}};
-            visit([&](const auto & j) -> void {
+            // only do explicit justifications once, but note that infer might not
+            // actually call the justification if nothing is inferred
+            auto just = visit([&](const auto & j) -> Justification {
                 if constexpr (std::is_same_v<std::decay_t<decltype(j)>, JustifyExplicitly>)
-                    just_not_first = JustifyUsingRUP{};
+                    return JustifyExplicitly{[done = false, &j](const Reason & reason) mutable -> void {
+                        if (! done) {
+                            j.add_proof_steps(reason);
+                            done = true;
+                        }
+                    }};
                 else
-                    just_not_first = why;
+                    return j;
             },
                 why);
 
-            for (const auto & lit : lits) {
-                infer(logger, lit, first ? why : just_not_first, reason);
-                first = false;
-            }
+            for (const auto & lit : lits)
+                infer(logger, lit, just, reason);
         }
 
         auto each_inference() const -> std::generator<std::pair<SimpleIntegerVariableID, Inference>>
@@ -122,12 +124,18 @@ namespace gcs::innards
         auto reset() -> void
         {
             _inferences.clear();
-            _did_anything_since_last_call = false;
+            _did_anything_since_last_call_inside_propagator = false;
+            _did_anything_since_last_call_by_propagation_queue = false;
         }
 
-        auto did_anything_since_last_call() -> bool
+        auto did_anything_since_last_call_by_propagation_queue() -> bool
         {
-            return std::exchange(_did_anything_since_last_call, false);
+            return std::exchange(_did_anything_since_last_call_by_propagation_queue, false);
+        }
+
+        auto did_anything_since_last_call_inside_propagator() -> bool
+        {
+            return std::exchange(_did_anything_since_last_call_inside_propagator, false);
         }
     };
 
@@ -161,11 +169,13 @@ namespace gcs::innards
                     }}
                     .visit(lit);
 
-                _did_anything_since_last_call = true;
+                _did_anything_since_last_call_by_propagation_queue = true;
+                _did_anything_since_last_call_inside_propagator = true;
                 break;
 
             [[unlikely]] case Inference::Contradiction:
-                _did_anything_since_last_call = true;
+                _did_anything_since_last_call_by_propagation_queue = true;
+                _did_anything_since_last_call_inside_propagator = true;
                 throw TrackedPropagationFailed{};
             }
         }
@@ -204,13 +214,15 @@ namespace gcs::innards
                     }}
                     .visit(lit);
 
-                _did_anything_since_last_call = true;
+                _did_anything_since_last_call_by_propagation_queue = true;
+                _did_anything_since_last_call_inside_propagator = true;
                 break;
 
             [[unlikely]] case Inference::Contradiction:
                 if (logger)
                     logger->infer(lit, just, reason);
-                _did_anything_since_last_call = true;
+                _did_anything_since_last_call_by_propagation_queue = true;
+                _did_anything_since_last_call_inside_propagator = true;
                 throw TrackedPropagationFailed{};
             }
         }

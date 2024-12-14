@@ -13,7 +13,7 @@ namespace gcs::innards
      *
      * \ingroup Innards
      */
-    using PseudoBooleanTerm = std::variant<ProofLiteral, ProofFlag, IntegerVariableID, ProofOnlySimpleIntegerVariableID>;
+    using PseudoBooleanTerm = std::variant<ProofLiteral, ProofFlag, IntegerVariableID, ProofOnlySimpleIntegerVariableID, ProofBitVariable>;
 
     using WeightedPseudoBooleanSum = SumOf<Weighted<PseudoBooleanTerm>>;
 
