@@ -1,0 +1,126 @@
+#include <gcs/exception.hh>
+#include <gcs/innards/extensional_utils.hh>
+#include <gcs/innards/proofs/proof_logger.hh>
+#include <gcs/innards/proofs/variable_constraints_tracker.hh>
+#include <gcs/innards/propagators.hh>
+#include <gcs/presolvers/proof_auto_table.hh>
+#include <gcs/search_heuristics.hh>
+
+#include <util/enumerate.hh>
+
+#include <optional>
+#include <string>
+
+using namespace gcs;
+using namespace gcs::innards;
+
+using std::make_unique;
+using std::move;
+using std::nullopt;
+using std::optional;
+using std::pair;
+using std::to_string;
+using std::unique_ptr;
+using std::vector;
+
+ProofAutoTable::ProofAutoTable(const vector<IntegerVariableID> & v) :
+    _vars(v)
+{
+}
+
+namespace
+{
+    auto solve_subproblem(unsigned depth, SimpleTuples & tuples, const vector<IntegerVariableID> & vars,
+        Propagators & propagators, State & state, ProofLogger * const logger, SimpleIntegerVariableID selector_var_id) -> void
+    {
+        if (logger)
+            logger->enter_proof_level(depth + 1);
+
+        // Use a generate and test approach to avoid using proof logging code from propagators
+        auto branch_var = variable_order::dom_then_deg(vars)(state.current(), propagators);
+        if (! branch_var) { // Full assignment, now check
+            if (propagators.propagate(nullopt, state, logger, nullptr)) {
+                // No contradiction -> solution
+                vector<Integer> tuple;
+                for (auto & var : vars)
+                    tuple.push_back(state(var));
+
+                if (logger) {
+                    logger->emit_proof_comment("new table entry found");
+
+                    Integer sel_value(tuples.size());
+                    logger->variable_constraints_tracker().create_literals_for_introduced_variable_value(selector_var_id, sel_value, "ProofAutoTable");
+
+                    WeightedPseudoBooleanSum forward_implication, reverse_implication;
+                    forward_implication += Integer(vars.size()) * (selector_var_id != sel_value);
+                    reverse_implication += 1_i * (selector_var_id == sel_value);
+
+                    for (const auto & [idx, v] : enumerate(vars)) {
+                        forward_implication += 1_i * (v == state(v));
+                        reverse_implication += 1_i * (v != state(v));
+                    }
+
+                    logger->emit_red_proof_line(forward_implication >= Integer(vars.size()),
+                        {{selector_var_id == sel_value, FalseLiteral{}}}, ProofLevel::Top);
+                    logger->emit_red_proof_line(reverse_implication >= 1_i,
+                        {{selector_var_id == sel_value, TrueLiteral{}}}, ProofLevel::Top);
+                    state.add_extra_proof_condition(selector_var_id != sel_value);
+                }
+
+                tuples.emplace_back(move(tuple));
+            }
+        }
+        else {
+            // Not a full assignment -> guess again, but *no propagation*
+            state.for_each_value(*branch_var, [&](Integer val) {
+                auto timestamp = state.new_epoch();
+                state.guess(*branch_var == val);
+                solve_subproblem(depth + 1, tuples, vars, propagators, state, logger, selector_var_id);
+                state.backtrack(timestamp);
+            });
+        }
+
+        // Backtrack
+        if (logger) {
+            logger->enter_proof_level(depth);
+            vector<Literal> guesses;
+            for (const auto & lit : state.guesses())
+                guesses.push_back(lit);
+            logger->backtrack(guesses);
+            logger->forget_proof_level(depth + 1);
+        }
+    }
+}
+
+auto ProofAutoTable::run(Problem &, Propagators & propagators, State & initial_state, ProofLogger * const logger) -> bool
+{
+    SimpleTuples tuples;
+
+    auto timestamp = initial_state.new_epoch(true);
+    initial_state.guess(TrueLiteral{});
+
+    auto selector_var_id = initial_state.what_variable_id_will_be_created_next();
+    if (logger)
+        logger->emit_proof_comment("starting autotabulation");
+    solve_subproblem(0, tuples, _vars, propagators, initial_state, logger, selector_var_id);
+
+    if (logger)
+        logger->emit_proof_comment("creating ProofAutoTable with " + to_string(tuples.size()) + " entries");
+
+    initial_state.backtrack(timestamp);
+
+    auto selector = initial_state.allocate_integer_variable_with_state(0_i, Integer(tuples.size() - 1));
+    if (selector != selector_var_id)
+        throw UnexpectedException{"something went horribly wrong with variable IDs when autotabulating"};
+
+    ExtensionalData data{selector, _vars, move(tuples)};
+    if (logger)
+        logger->emit_proof_comment("finished autotabulation");
+
+    return true;
+}
+
+auto ProofAutoTable::clone() const -> unique_ptr<Presolver>
+{
+    return make_unique<ProofAutoTable>(_vars);
+}

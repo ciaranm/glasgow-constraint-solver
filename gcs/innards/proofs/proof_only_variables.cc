@@ -7,6 +7,11 @@ using std::visit;
 using namespace gcs;
 using namespace gcs::innards;
 
+auto gcs::innards::operator!(const ProofBitVariable & f) -> ProofBitVariable
+{
+    return ProofBitVariable{f.for_var, f.position, ! f.positive};
+}
+
 auto gcs::innards::operator!(const ProofFlag & f) -> ProofFlag
 {
     return ProofFlag{f.index, ! f.positive};

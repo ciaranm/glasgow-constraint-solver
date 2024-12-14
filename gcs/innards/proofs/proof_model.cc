@@ -115,7 +115,8 @@ auto ProofModel::add_constraint(const StringLiteral & constraint_name, const Str
                         [&](const FalseLiteral &) {},
                         [&]<typename T_>(const VariableConditionFrom<T_> & cond) { variable_constraints_tracker().need_proof_name(cond); }}
                         .visit(simplify_literal(lit));
-                }}
+                },
+                [&](ProofBitVariable) {}}
                 .visit(r);
 
     _imp->opb << "* constraint " << constraint_name.value << ' ' << rule.value << '\n';
@@ -144,7 +145,8 @@ auto ProofModel::add_constraint(const StringLiteral & constraint_name, const Str
                         [&](const FalseLiteral &) {},
                         [&]<typename T_>(const VariableConditionFrom<T_> & cond) { variable_constraints_tracker().need_proof_name(cond); }}
                         .visit(simplify_literal(lit));
-                }}
+                },
+                [&](const ProofBitVariable &) {}}
                 .visit(r);
 
     _imp->opb << "* constraint " << constraint_name.value << ' ' << rule.value << '\n';
