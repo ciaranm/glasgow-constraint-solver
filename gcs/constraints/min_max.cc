@@ -119,7 +119,7 @@ auto ArrayMinMax::install(Propagators & propagators, State & initial_state, Proo
     if (optional_model) {
         // result <= each var
         for (const auto & v : _vars) {
-            optional_model->add_constraint(WeightedPseudoBooleanSum{} + (_min ? -1_i : 1_i) * v + (_min ? 1_i : -1_i) * _result <= 0_i, nullopt);
+            optional_model->add_constraint("ArrayMinMax", "result compared to value", WeightedPseudoBooleanSum{} + (_min ? -1_i : 1_i) * v + (_min ? 1_i : -1_i) * _result <= 0_i, nullopt);
         }
 
         // result == i -> i in vars
@@ -128,7 +128,7 @@ auto ArrayMinMax::install(Propagators & propagators, State & initial_state, Proo
             for (auto & v : _vars)
                 if (initial_state.in_domain(v, val))
                     lits.emplace_back(v == val);
-            optional_model->add_constraint(move(lits));
+            optional_model->add_constraint("ArrayMinMax", "result is in vars", move(lits));
         }
     }
 }

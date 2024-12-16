@@ -136,7 +136,7 @@ auto NegativeTable::install(Propagators & propagators, State &, ProofModel * con
                 Literals lits;
                 for (const auto & [idx, v] : enumerate(_vars))
                     add_literal(lits, v, t[idx]);
-                optional_model->add_constraint(move(lits));
+                optional_model->add_constraint("NegativeTable", "forbidden", move(lits));
             }
         }
     },

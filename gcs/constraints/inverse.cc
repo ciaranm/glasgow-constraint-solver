@@ -68,11 +68,11 @@ auto Inverse::install(Propagators & propagators, State & initial_state, ProofMod
         for (const auto & [i, x_i] : enumerate(_x))
             for (const auto & [j, y_j] : enumerate(_y)) {
                 // x[i] = j -> y[j] = i
-                optional_model->add_constraint(WeightedPseudoBooleanSum{} +
+                optional_model->add_constraint("Inverse", "x_i = j -> y[j] = i", WeightedPseudoBooleanSum{} +
                         1_i * (x_i != Integer(j) + _y_start) + 1_i * (y_j == Integer(i) + _x_start) >=
                     1_i);
                 // y[j] = i -> x[i] = j
-                optional_model->add_constraint(WeightedPseudoBooleanSum{} +
+                optional_model->add_constraint("Inverse", "y_j = i -> x[i] = j", WeightedPseudoBooleanSum{} +
                         1_i * (y_j != Integer(i) + _x_start) + 1_i * (x_i == Integer(j) + _y_start) >=
                     1_i);
             }

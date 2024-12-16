@@ -47,7 +47,7 @@ namespace
 
             if (optional_model) {
                 for (auto & l : _lits)
-                    optional_model->add_constraint(Literals{l});
+                    optional_model->add_constraint("Logical", "cnf", Literals{l});
             }
         }
         else {
@@ -83,7 +83,7 @@ namespace
                 });
 
                 if (optional_model) {
-                    optional_model->add_constraint(Literals{! _full_reif});
+                    optional_model->add_constraint("Logical", "saw reif false", Literals{! _full_reif});
                 }
             }
             else {
@@ -174,14 +174,14 @@ namespace
                         WeightedPseudoBooleanSum forward;
                         for (auto & l : _lits)
                             forward += 1_i * PseudoBooleanTerm{l};
-                        optional_model->add_constraint(forward >= Integer(_lits.size()), HalfReifyOnConjunctionOf{_full_reif});
+                        optional_model->add_constraint("Logical", "if condition", forward >= Integer(_lits.size()), HalfReifyOnConjunctionOf{_full_reif});
                     }
 
                     Literals reverse;
                     for (auto & l : _lits)
                         reverse.push_back(! l);
                     reverse.push_back(_full_reif);
-                    optional_model->add_constraint(move(reverse));
+                    optional_model->add_constraint("Logical", "if not condition", move(reverse));
                 }
             }
         }

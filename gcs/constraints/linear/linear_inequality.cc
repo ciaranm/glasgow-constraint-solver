@@ -118,14 +118,14 @@ auto LinearInequalityIff::install(Propagators & propagators, State & state, Proo
             terms += c * v;
         overloaded{
             [&](const TrueLiteral &) {
-                proof_line = optional_model->add_constraint(terms <= _value, nullopt);
+                proof_line = optional_model->add_constraint("LinearInequalityIff", "unconditional less than", terms <= _value, nullopt);
             },
             [&](const FalseLiteral &) {
-                proof_line = optional_model->add_constraint(terms >= _value + 1_i, nullopt);
+                proof_line = optional_model->add_constraint("LinearInequalityIff", "unconditional greater than", terms >= _value + 1_i, nullopt);
             },
             [&](const IntegerVariableCondition & cond) {
-                proof_line = optional_model->add_constraint(terms <= _value, HalfReifyOnConjunctionOf{cond});
-                optional_model->add_constraint(terms >= _value + 1_i, HalfReifyOnConjunctionOf{! cond});
+                proof_line = optional_model->add_constraint("LinearInequalityIff", "less than option", terms <= _value, HalfReifyOnConjunctionOf{cond});
+                optional_model->add_constraint("LinearInequalityIff", "greater than option", terms >= _value + 1_i, HalfReifyOnConjunctionOf{! cond});
             }}
             .visit(_cond);
     }

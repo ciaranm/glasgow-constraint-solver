@@ -111,9 +111,9 @@ auto NotEquals::install(Propagators & propagators, State & initial_state, ProofM
 
     if (optional_model) {
         auto selector = optional_model->create_proof_flag("notequals");
-        optional_model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * _v1 + -1_i * _v2 <= -1_i,
+        optional_model->add_constraint("NotEquals", "less than option", WeightedPseudoBooleanSum{} + 1_i * _v1 + -1_i * _v2 <= -1_i,
             HalfReifyOnConjunctionOf{{selector}});
-        optional_model->add_constraint(WeightedPseudoBooleanSum{} + -1_i * _v1 + 1_i * _v2 <= -1_i,
+        optional_model->add_constraint("NotEquals", "greater than option", WeightedPseudoBooleanSum{} + -1_i * _v1 + 1_i * _v2 <= -1_i,
             HalfReifyOnConjunctionOf{{! selector}});
     }
 }

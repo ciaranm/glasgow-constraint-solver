@@ -142,7 +142,7 @@ auto ElementConstantArray::install(Propagators & propagators, State & initial_st
     if (optional_model) {
         for (const auto & [idx, v] : enumerate(*_vals))
             if (initial_state.in_domain(_idx, Integer(idx)))
-                optional_model->add_constraint({_idx != Integer(idx), _var == v});
+                optional_model->add_constraint("ElementConstantArray", "equality", {_idx != Integer(idx), _var == v});
     }
 
     Triggers triggers{
@@ -235,7 +235,7 @@ auto Element2DConstantArray::install(Propagators & propagators, State & initial_
             if (initial_state.in_domain(_idx1, Integer(idx1)))
                 for (const auto & [idx2, v] : enumerate(vv))
                     if (initial_state.in_domain(_idx2, Integer(idx2)))
-                        optional_model->add_constraint({_idx1 != Integer(idx1), _idx2 != Integer(idx2), _var == v});
+                        optional_model->add_constraint("Element2DConstantArray", "equality", {_idx1 != Integer(idx1), _idx2 != Integer(idx2), _var == v});
     }
 
     Triggers triggers{

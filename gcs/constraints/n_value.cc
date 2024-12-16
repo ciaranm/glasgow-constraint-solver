@@ -79,13 +79,13 @@ auto NValue::install(Propagators & propagators, State & initial_state, ProofMode
             for (auto & var : vars)
                 forward += 1_i * (var == v);
             forward += 1_i * ! flag;
-            optional_model->add_constraint(forward >= 1_i);
+            optional_model->add_constraint("NValue", "forward sum", forward >= 1_i);
 
             WeightedPseudoBooleanSum reverse;
             for (auto & var : vars)
                 reverse += 1_i * (var != v);
             reverse += Integer(vars.size()) * flag;
-            optional_model->add_constraint(reverse >= Integer(vars.size()));
+            optional_model->add_constraint("NValue", "reverse sum", reverse >= Integer(vars.size()));
 
             flags.push_back(flag);
         }
@@ -97,7 +97,7 @@ auto NValue::install(Propagators & propagators, State & initial_state, ProofMode
         }
         forward += -1_i * _n_values;
         reverse += 1_i * _n_values;
-        optional_model->add_constraint(forward >= 0_i);
-        optional_model->add_constraint(reverse >= 0_i);
+        optional_model->add_constraint("NValue", "forward total", forward >= 0_i);
+        optional_model->add_constraint("NValue", "reverse total", reverse >= 0_i);
     }
 }
