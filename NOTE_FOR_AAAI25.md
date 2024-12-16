@@ -1,6 +1,6 @@
 # Supplementary Material for "Certifying Bounds Propagation for Integer Multiplication Constraints"
 
-The implementation of the propagator and proof logging procedure discussed in the paper Ais in 
+The implementation of the propagator and proof logging procedure discussed in the paper is in 
 `gcs/constraints/mult_bc.cc`
 
 The implementation of the experiments and fractions examples is in
