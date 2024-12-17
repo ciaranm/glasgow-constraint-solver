@@ -1,12 +1,12 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROOFS_PROOF_VARIABLE_CONSTRAINTS_TRACKER_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROOFS_PROOF_VARIABLE_CONSTRAINTS_TRACKER_HH
 
+#include <gcs/innards/proofs/names_and_ids_tracker-fwd.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/proofs/proof_model-fwd.hh>
 #include <gcs/innards/proofs/proof_only_variables.hh>
 #include <gcs/innards/proofs/pseudo_boolean.hh>
 #include <gcs/innards/proofs/reification.hh>
-#include <gcs/innards/proofs/variable_constraints_tracker-fwd.hh>
 #include <gcs/proof.hh>
 #include <gcs/variable_condition.hh>
 #include <gcs/variable_id.hh>
@@ -52,7 +52,7 @@ namespace gcs::innards
      *
      * \ingroup Innards
      */
-    class VariableConstraintsTracker
+    class NamesAndIDsTracker
     {
     private:
         struct Imp;
@@ -68,14 +68,14 @@ namespace gcs::innards
          */
         ///@{
 
-        explicit VariableConstraintsTracker(const ProofOptions &);
-        ~VariableConstraintsTracker();
+        explicit NamesAndIDsTracker(const ProofOptions &);
+        ~NamesAndIDsTracker();
 
-        auto operator=(const VariableConstraintsTracker &) -> VariableConstraintsTracker & = delete;
-        VariableConstraintsTracker(const VariableConstraintsTracker &) = delete;
+        auto operator=(const NamesAndIDsTracker &) -> NamesAndIDsTracker & = delete;
+        NamesAndIDsTracker(const NamesAndIDsTracker &) = delete;
 
-        VariableConstraintsTracker(VariableConstraintsTracker &&) noexcept;
-        auto operator=(VariableConstraintsTracker &&) noexcept -> VariableConstraintsTracker &;
+        NamesAndIDsTracker(NamesAndIDsTracker &&) noexcept;
+        auto operator=(NamesAndIDsTracker &&) noexcept -> NamesAndIDsTracker &;
 
         ///@}
 

@@ -1,11 +1,11 @@
 #include <gcs/innards/interval_set.hh>
 #include <gcs/innards/proofs/bits_encoding.hh>
 #include <gcs/innards/proofs/emit_inequality_to.hh>
+#include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_error.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/proofs/proof_only_variables.hh>
 #include <gcs/innards/proofs/simplify_literal.hh>
-#include <gcs/innards/proofs/variable_constraints_tracker.hh>
 
 #include <algorithm>
 #include <deque>
@@ -42,7 +42,7 @@ using fmt::format;
 
 struct ProofModel::Imp
 {
-    VariableConstraintsTracker & tracker;
+    NamesAndIDsTracker & tracker;
 
     unsigned long long model_variables = 0;
     ProofLine number_of_constraints = 0;
@@ -56,13 +56,13 @@ struct ProofModel::Imp
 
     bool always_use_full_encoding = false;
 
-    explicit Imp(VariableConstraintsTracker & t) :
+    explicit Imp(NamesAndIDsTracker & t) :
         tracker(t)
     {
     }
 };
 
-ProofModel::ProofModel(const ProofOptions & proof_options, VariableConstraintsTracker & t) :
+ProofModel::ProofModel(const ProofOptions & proof_options, NamesAndIDsTracker & t) :
     _imp(new Imp{t})
 {
     _imp->opb_file = proof_options.proof_file_names.opb_file;
@@ -104,7 +104,7 @@ auto ProofModel::add_constraint(const Literals & lits) -> std::optional<ProofLin
 auto ProofModel::add_constraint(const StringLiteral & constraint_name, const StringLiteral & rule,
     const WeightedPseudoBooleanLessEqual & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> optional<ProofLine>
 {
-    variable_constraints_tracker().need_all_proof_names_in(ineq.lhs);
+    names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
     if (half_reif)
         for (auto & r : *half_reif)
             overloaded{
@@ -113,13 +113,13 @@ auto ProofModel::add_constraint(const StringLiteral & constraint_name, const Str
                     overloaded{
                         [&](const TrueLiteral &) {},
                         [&](const FalseLiteral &) {},
-                        [&]<typename T_>(const VariableConditionFrom<T_> & cond) { variable_constraints_tracker().need_proof_name(cond); }}
+                        [&]<typename T_>(const VariableConditionFrom<T_> & cond) { names_and_ids_tracker().need_proof_name(cond); }}
                         .visit(simplify_literal(lit));
                 }}
                 .visit(r);
 
     _imp->opb << "* constraint " << constraint_name.value << ' ' << rule.value << '\n';
-    emit_inequality_to(variable_constraints_tracker(), ineq, half_reif, _imp->opb);
+    emit_inequality_to(names_and_ids_tracker(), ineq, half_reif, _imp->opb);
     _imp->opb << '\n';
     return ++_imp->number_of_constraints;
 }
@@ -133,7 +133,7 @@ auto ProofModel::add_constraint(const StringLiteral & constraint_name, const Str
     const WeightedPseudoBooleanEquality & eq, const optional<HalfReifyOnConjunctionOf> & half_reif)
     -> pair<optional<ProofLine>, optional<ProofLine>>
 {
-    variable_constraints_tracker().need_all_proof_names_in(eq.lhs);
+    names_and_ids_tracker().need_all_proof_names_in(eq.lhs);
     if (half_reif)
         for (auto & r : *half_reif)
             overloaded{
@@ -142,17 +142,17 @@ auto ProofModel::add_constraint(const StringLiteral & constraint_name, const Str
                     overloaded{
                         [&](const TrueLiteral &) {},
                         [&](const FalseLiteral &) {},
-                        [&]<typename T_>(const VariableConditionFrom<T_> & cond) { variable_constraints_tracker().need_proof_name(cond); }}
+                        [&]<typename T_>(const VariableConditionFrom<T_> & cond) { names_and_ids_tracker().need_proof_name(cond); }}
                         .visit(simplify_literal(lit));
                 }}
                 .visit(r);
 
     _imp->opb << "* constraint " << constraint_name.value << ' ' << rule.value << '\n';
-    emit_inequality_to(variable_constraints_tracker(), eq.lhs <= eq.rhs, half_reif, _imp->opb);
+    emit_inequality_to(names_and_ids_tracker(), eq.lhs <= eq.rhs, half_reif, _imp->opb);
     _imp->opb << '\n';
     auto first = ++_imp->number_of_constraints;
 
-    emit_inequality_to(variable_constraints_tracker(), eq.lhs >= eq.rhs, half_reif, _imp->opb);
+    emit_inequality_to(names_and_ids_tracker(), eq.lhs >= eq.rhs, half_reif, _imp->opb);
     _imp->opb << '\n';
     auto second = ++_imp->number_of_constraints;
 
@@ -165,7 +165,7 @@ auto ProofModel::add_constraint(const WeightedPseudoBooleanEquality & eq, const 
     return add_constraint("?", "?", eq, half_reif);
 }
 
-auto ProofModel::variable_constraints_tracker() -> VariableConstraintsTracker &
+auto ProofModel::names_and_ids_tracker() -> NamesAndIDsTracker &
 {
     return _imp->tracker;
 }
@@ -189,32 +189,32 @@ auto ProofModel::create_proof_only_integer_variable(Integer lower, Integer upper
 auto ProofModel::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariableID id, Integer lower, Integer upper, const optional<string> & name) -> void
 {
     if (0_i == lower && 1_i == upper) {
-        variable_constraints_tracker().track_variable_name(id, name);
-        auto eqvar = variable_constraints_tracker().allocate_xliteral_meaning(id, EqualsOrGreaterEqual::Equals, 1_i);
-        _imp->opb << "1 " << variable_constraints_tracker().pb_file_string_for(eqvar) << " >= 0 ;\n";
+        names_and_ids_tracker().track_variable_name(id, name);
+        auto eqvar = names_and_ids_tracker().allocate_xliteral_meaning(id, EqualsOrGreaterEqual::Equals, 1_i);
+        _imp->opb << "1 " << names_and_ids_tracker().pb_file_string_for(eqvar) << " >= 0 ;\n";
         ++_imp->model_variables;
         ++_imp->number_of_constraints;
 
         overloaded{
             [&](const SimpleIntegerVariableID & id) {
-                variable_constraints_tracker().associate_condition_with_xliteral(id == 1_i, eqvar);
-                variable_constraints_tracker().associate_condition_with_xliteral(id != 1_i, ! eqvar);
-                variable_constraints_tracker().associate_condition_with_xliteral(id == 0_i, ! eqvar);
-                variable_constraints_tracker().associate_condition_with_xliteral(id != 0_i, eqvar);
+                names_and_ids_tracker().associate_condition_with_xliteral(id == 1_i, eqvar);
+                names_and_ids_tracker().associate_condition_with_xliteral(id != 1_i, ! eqvar);
+                names_and_ids_tracker().associate_condition_with_xliteral(id == 0_i, ! eqvar);
+                names_and_ids_tracker().associate_condition_with_xliteral(id != 0_i, eqvar);
             },
             [](const ProofOnlySimpleIntegerVariableID &) {
                 // currently there's no API for asking for literals for these
             }}
             .visit(id);
 
-        variable_constraints_tracker().track_bits(id, 0_i, {{1_i, eqvar}});
+        names_and_ids_tracker().track_bits(id, 0_i, {{1_i, eqvar}});
 
         overloaded{
             [&](const SimpleIntegerVariableID & id) {
-                variable_constraints_tracker().associate_condition_with_xliteral(id >= 1_i, eqvar);
-                variable_constraints_tracker().associate_condition_with_xliteral(id < 1_i, ! eqvar);
+                names_and_ids_tracker().associate_condition_with_xliteral(id >= 1_i, eqvar);
+                names_and_ids_tracker().associate_condition_with_xliteral(id < 1_i, ! eqvar);
                 pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>> names{eqvar, ! eqvar};
-                variable_constraints_tracker().track_gevar(id, 1_i, names);
+                names_and_ids_tracker().track_gevar(id, 1_i, names);
             },
             [](const ProofOnlySimpleIntegerVariableID &) {
                 // currently there's no API for asking for literals for these
@@ -223,22 +223,22 @@ auto ProofModel::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVa
     }
     else {
         for (auto v = lower; v <= upper; ++v) {
-            variable_constraints_tracker().track_variable_name(id, name);
-            auto eqvar = variable_constraints_tracker().allocate_xliteral_meaning(id, EqualsOrGreaterEqual::Equals, v);
-            _imp->opb << "1 " << variable_constraints_tracker().pb_file_string_for(eqvar) << " ";
+            names_and_ids_tracker().track_variable_name(id, name);
+            auto eqvar = names_and_ids_tracker().allocate_xliteral_meaning(id, EqualsOrGreaterEqual::Equals, v);
+            _imp->opb << "1 " << names_and_ids_tracker().pb_file_string_for(eqvar) << " ";
             ++_imp->model_variables;
 
             visit([&](const auto & id) {
-                variable_constraints_tracker().associate_condition_with_xliteral(id == v, eqvar);
-                variable_constraints_tracker().associate_condition_with_xliteral(id != v, ! eqvar);
+                names_and_ids_tracker().associate_condition_with_xliteral(id == v, eqvar);
+                names_and_ids_tracker().associate_condition_with_xliteral(id != v, ! eqvar);
             },
                 id);
         }
         _imp->opb << ">= 1 ;\n";
-        variable_constraints_tracker().track_variable_takes_at_least_one_value(id, ++_imp->number_of_constraints);
+        names_and_ids_tracker().track_variable_takes_at_least_one_value(id, ++_imp->number_of_constraints);
 
         for (auto v = lower; v <= upper; ++v) {
-            _imp->opb << "-1 " << variable_constraints_tracker().pb_file_string_for(id == v) << " ";
+            _imp->opb << "-1 " << names_and_ids_tracker().pb_file_string_for(id == v) << " ";
         }
         _imp->opb << ">= -1 ;\n";
         ++_imp->number_of_constraints;
@@ -271,34 +271,34 @@ auto ProofModel::set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableI
     auto [highest_bit_shift, highest_bit_coeff, negative_bit_coeff] = get_bits_encoding_coeffs(lower, upper);
     vector<pair<Integer, XLiteral>> bits;
 
-    variable_constraints_tracker().track_variable_name(id, name);
+    names_and_ids_tracker().track_variable_name(id, name);
     if (0_i != negative_bit_coeff)
-        bits.emplace_back(negative_bit_coeff, variable_constraints_tracker().allocate_xliteral_meaning_negative_bit_of(id, negative_bit_coeff));
+        bits.emplace_back(negative_bit_coeff, names_and_ids_tracker().allocate_xliteral_meaning_negative_bit_of(id, negative_bit_coeff));
     for (int b = 0; b <= highest_bit_shift; ++b)
-        bits.emplace_back(Integer{1ll << b}, variable_constraints_tracker().allocate_xliteral_meaning_bit_of(id, Integer{b}));
+        bits.emplace_back(Integer{1ll << b}, names_and_ids_tracker().allocate_xliteral_meaning_bit_of(id, Integer{b}));
 
-    variable_constraints_tracker().track_bits(id, negative_bit_coeff, bits);
+    names_and_ids_tracker().track_bits(id, negative_bit_coeff, bits);
     _imp->model_variables += bits.size();
 
     // lower bound
     for (auto & [coeff, var] : bits)
-        _imp->opb << coeff << " " << variable_constraints_tracker().pb_file_string_for(var) << " ";
+        _imp->opb << coeff << " " << names_and_ids_tracker().pb_file_string_for(var) << " ";
     _imp->opb << ">= " << lower << " ;\n";
     ++_imp->number_of_constraints;
 
     // upper bound
     for (auto & [coeff, var] : bits)
-        _imp->opb << -coeff << " " << variable_constraints_tracker().pb_file_string_for(var) << " ";
+        _imp->opb << -coeff << " " << names_and_ids_tracker().pb_file_string_for(var) << " ";
     _imp->opb << ">= " << -upper << " ;\n";
     ++_imp->number_of_constraints;
 
-    variable_constraints_tracker().track_bounds(id, lower, upper);
+    names_and_ids_tracker().track_bounds(id, lower, upper);
 
     if (_imp->always_use_full_encoding)
         overloaded{
             [&](const SimpleIntegerVariableID & id) {
                 for (; lower <= upper; ++lower)
-                    variable_constraints_tracker().need_direct_encoding_for(id, lower);
+                    names_and_ids_tracker().need_direct_encoding_for(id, lower);
             },
             [&](const ProofOnlySimpleIntegerVariableID &) {
             }}
@@ -307,7 +307,7 @@ auto ProofModel::set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableI
 
 auto ProofModel::create_proof_flag(const string & name) -> ProofFlag
 {
-    return variable_constraints_tracker().create_proof_flag(name);
+    return names_and_ids_tracker().create_proof_flag(name);
 }
 
 auto ProofModel::finalise() -> void
@@ -319,8 +319,8 @@ auto ProofModel::finalise() -> void
         full_opb << "min: ";
         overloaded{
             [&](const SimpleIntegerVariableID & v) {
-                variable_constraints_tracker().for_each_bit(v, [&](Integer bit_value, const XLiteral & bit_name) {
-                    full_opb << bit_value << " " << variable_constraints_tracker().pb_file_string_for(bit_name) << " ";
+                names_and_ids_tracker().for_each_bit(v, [&](Integer bit_value, const XLiteral & bit_name) {
+                    full_opb << bit_value << " " << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
                 });
             },
             [&](const ConstantIntegerVariableID &) {
@@ -328,8 +328,8 @@ auto ProofModel::finalise() -> void
             },
             [&](const ViewOfIntegerVariableID & v) {
                 // the "then add" bit is irrelevant for the objective function
-                variable_constraints_tracker().for_each_bit(v.actual_variable, [&](Integer bit_value, const XLiteral & bit_name) {
-                    full_opb << (v.negate_first ? -bit_value : bit_value) << " " << variable_constraints_tracker().pb_file_string_for(bit_name) << " ";
+                names_and_ids_tracker().for_each_bit(v.actual_variable, [&](Integer bit_value, const XLiteral & bit_name) {
+                    full_opb << (v.negate_first ? -bit_value : bit_value) << " " << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
                 });
             }}
             .visit(*_imp->optional_minimise_variable);

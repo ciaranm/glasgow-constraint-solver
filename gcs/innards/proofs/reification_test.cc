@@ -1,6 +1,6 @@
+#include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
-#include <gcs/innards/proofs/variable_constraints_tracker.hh>
 #include <vector>
 
 using std::vector;
@@ -12,7 +12,7 @@ auto main() -> int
 {
     ProofOptions proof_options{"reification_test"};
 
-    VariableConstraintsTracker tracker(proof_options);
+    NamesAndIDsTracker tracker(proof_options);
     ProofModel model(proof_options, tracker);
 
     vector<PseudoBooleanTerm> terms = {

@@ -3,7 +3,7 @@
 
 namespace gcs::innards
 {
-    class VariableConstraintsTracker;
+    class NamesAndIDsTracker;
 }
 
 #endif

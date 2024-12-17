@@ -1,10 +1,10 @@
 #include <gcs/innards/interval_set.hh>
 #include <gcs/innards/proofs/emit_inequality_to.hh>
+#include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_error.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/proofs/simplify_literal.hh>
-#include <gcs/innards/proofs/variable_constraints_tracker.hh>
 #include <gcs/innards/state.hh>
 
 #include <deque>
@@ -70,7 +70,7 @@ namespace
         throw NonExhaustiveSwitch{};
     }
 
-    [[nodiscard]] auto witness_literal(VariableConstraintsTracker & variable_constraints_tracker, const ProofLiteralOrFlag & lit) -> string
+    [[nodiscard]] auto witness_literal(NamesAndIDsTracker & names_and_ids_tracker, const ProofLiteralOrFlag & lit) -> string
     {
         return overloaded{
             [&](const ProofLiteral & lit) {
@@ -78,18 +78,18 @@ namespace
                     [](const TrueLiteral &) -> string { return "1"; },
                     [](const FalseLiteral &) -> string { return "0"; },
                     [&]<typename T_>(const VariableConditionFrom<T_> & var) -> string {
-                        return variable_constraints_tracker.pb_file_string_for(var);
+                        return names_and_ids_tracker.pb_file_string_for(var);
                     }}
                     .visit(simplify_literal(lit));
             },
-            [&](const ProofFlag & flag) { return variable_constraints_tracker.pb_file_string_for(flag); }}
+            [&](const ProofFlag & flag) { return names_and_ids_tracker.pb_file_string_for(flag); }}
             .visit(lit);
     }
 }
 
 struct ProofLogger::Imp
 {
-    VariableConstraintsTracker & tracker;
+    NamesAndIDsTracker & tracker;
 
     ProofLine proof_line = 0;
     int active_proof_level = 0;
@@ -98,13 +98,13 @@ struct ProofLogger::Imp
     string proof_file;
     fstream proof;
 
-    Imp(VariableConstraintsTracker & t) :
+    Imp(NamesAndIDsTracker & t) :
         tracker(t)
     {
     }
 };
 
-ProofLogger::ProofLogger(const ProofOptions & proof_options, VariableConstraintsTracker & t) :
+ProofLogger::ProofLogger(const ProofOptions & proof_options, NamesAndIDsTracker & t) :
     _imp(new Imp{t})
 {
     _imp->proof_file = proof_options.proof_file_names.proof_file;
@@ -122,10 +122,10 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
         overloaded{
             [&](const ConstantIntegerVariableID &) {},
             [&](const SimpleIntegerVariableID & var) {
-                variable_constraints_tracker().need_proof_name(var == val);
+                names_and_ids_tracker().need_proof_name(var == val);
             },
             [&](const ViewOfIntegerVariableID & var) {
-                variable_constraints_tracker().need_proof_name(deview(var == val));
+                names_and_ids_tracker().need_proof_name(deview(var == val));
             }}
             .visit(var);
 
@@ -136,10 +136,10 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
             [&](const ConstantIntegerVariableID &) {
             },
             [&](const SimpleIntegerVariableID & var) {
-                _imp->proof << " " << variable_constraints_tracker().pb_file_string_for(var == val);
+                _imp->proof << " " << names_and_ids_tracker().pb_file_string_for(var == val);
             },
             [&](const ViewOfIntegerVariableID & var) {
-                _imp->proof << " " << variable_constraints_tracker().pb_file_string_for(deview(var == val));
+                _imp->proof << " " << names_and_ids_tracker().pb_file_string_for(deview(var == val));
             }}
             .visit(var);
 
@@ -218,7 +218,7 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
         overloaded{
             [&](const TrueLiteral &) {},
             [&](const FalseLiteral &) {},
-            [&]<typename T_>(const VariableConditionFrom<T_> & cond) { variable_constraints_tracker().need_proof_name(cond); }}
+            [&]<typename T_>(const VariableConditionFrom<T_> & cond) { names_and_ids_tracker().need_proof_name(cond); }}
             .visit(simplify_literal(lit));
     };
 
@@ -241,7 +241,7 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
                         [&](const FalseLiteral &) {
                         },
                         [&](const VariableConditionFrom<SimpleIntegerVariableID> & cond) {
-                            variable_constraints_tracker().need_proof_name(cond);
+                            names_and_ids_tracker().need_proof_name(cond);
                         },
                         [&](const ProofVariableCondition &) {
                         }}
@@ -254,7 +254,7 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
                         terms += 1_i * ! r;
                 terms += 1_i * lit;
                 _imp->proof << "u ";
-                emit_inequality_to(variable_constraints_tracker(), move(terms) >= 1_i, nullopt, _imp->proof);
+                emit_inequality_to(names_and_ids_tracker(), move(terms) >= 1_i, nullopt, _imp->proof);
                 _imp->proof << '\n';
                 record_proof_line(++_imp->proof_line, ProofLevel::Current);
             }
@@ -277,7 +277,7 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
                         [&](const FalseLiteral &) {
                         },
                         [&](const VariableConditionFrom<SimpleIntegerVariableID> & cond) {
-                            variable_constraints_tracker().need_proof_name(cond);
+                            names_and_ids_tracker().need_proof_name(cond);
                         },
                         [&](const ProofVariableCondition &) {
                         }}
@@ -290,7 +290,7 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
                         terms += 1_i * ! r;
                 terms += 1_i * lit;
                 _imp->proof << "a ";
-                emit_inequality_to(variable_constraints_tracker(), move(terms) >= 1_i, nullopt, _imp->proof);
+                emit_inequality_to(names_and_ids_tracker(), move(terms) >= 1_i, nullopt, _imp->proof);
                 _imp->proof << '\n';
                 record_proof_line(++_imp->proof_line, ProofLevel::Current);
             }
@@ -330,7 +330,7 @@ auto ProofLogger::reason_to_lits(const Reason & reason) -> vector<ProofLiteralOr
                 [&](const FalseLiteral &) {
                 },
                 [&](const VariableConditionFrom<SimpleIntegerVariableID> & cond) {
-                    variable_constraints_tracker().need_proof_name(cond);
+                    names_and_ids_tracker().need_proof_name(cond);
                 },
                 [&](const ProofVariableCondition &) {
                 }}
@@ -345,7 +345,7 @@ auto ProofLogger::reason_to_lits(const Reason & reason) -> vector<ProofLiteralOr
 
 auto ProofLogger::reified(const WeightedPseudoBooleanLessEqual & ineq, const HalfReifyOnConjunctionOf & half_reif) -> WeightedPseudoBooleanLessEqual
 {
-    return variable_constraints_tracker().reify(ineq, half_reif);
+    return names_and_ids_tracker().reify(ineq, half_reif);
 }
 
 auto ProofLogger::reified(const WeightedPseudoBooleanLessEqual & ineq, const Reason & reason) -> WeightedPseudoBooleanLessEqual
@@ -353,7 +353,7 @@ auto ProofLogger::reified(const WeightedPseudoBooleanLessEqual & ineq, const Rea
 
     auto reason_proof_literals = reason_to_lits(reason);
 
-    return variable_constraints_tracker().reify(ineq, HalfReifyOnConjunctionOf{reason_proof_literals});
+    return names_and_ids_tracker().reify(ineq, HalfReifyOnConjunctionOf{reason_proof_literals});
 }
 
 auto ProofLogger::emit_proof_line(const string & s, ProofLevel level
@@ -384,7 +384,7 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessEqual<Weighted<Pseud
 #endif
     ) -> ProofLine
 {
-    variable_constraints_tracker().need_all_proof_names_in(ineq.lhs);
+    names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
     _imp->proof << "* emit " << proof_rule_str(rule) << " proof line from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
 #endif
@@ -393,7 +393,7 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessEqual<Weighted<Pseud
 
     rule_line << proof_rule_str(rule) << " ";
 
-    emit_inequality_to(variable_constraints_tracker(), ineq, nullopt, rule_line);
+    emit_inequality_to(names_and_ids_tracker(), ineq, nullopt, rule_line);
 
     return emit_proof_line(
         rule_line.str(), level
@@ -425,13 +425,13 @@ auto ProofLogger::emit_under_reason(
                 [&](const FalseLiteral &) {
                 },
                 [&](const VariableConditionFrom<SimpleIntegerVariableID> & cond) {
-                    variable_constraints_tracker().need_proof_name(cond);
+                    names_and_ids_tracker().need_proof_name(cond);
                 },
                 [&](const ProofVariableCondition &) {
                 }}
                 .visit(simplify_literal(r));
 
-    variable_constraints_tracker().need_all_proof_names_in(ineq.lhs);
+    names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
 
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
     _imp->proof << "* emit " << proof_rule_str(rule) << " proof line from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
@@ -444,10 +444,10 @@ auto ProofLogger::emit_under_reason(
         vector<ProofLiteralOrFlag> reason_proof_literals{};
         for (auto & r : *reason_literals)
             reason_proof_literals.emplace_back(r);
-        emit_inequality_to(variable_constraints_tracker(), ineq, HalfReifyOnConjunctionOf{reason_proof_literals}, rule_line);
+        emit_inequality_to(names_and_ids_tracker(), ineq, HalfReifyOnConjunctionOf{reason_proof_literals}, rule_line);
     }
     else {
-        emit_inequality_to(variable_constraints_tracker(), ineq, nullopt, rule_line);
+        emit_inequality_to(names_and_ids_tracker(), ineq, nullopt, rule_line);
     }
 
     if (append_line) {
@@ -518,16 +518,16 @@ auto ProofLogger::emit_red_proof_line(const SumLessEqual<Weighted<PseudoBooleanT
 #endif
     ) -> ProofLine
 {
-    variable_constraints_tracker().need_all_proof_names_in(ineq.lhs);
+    names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
 
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
     _imp->proof << "* emit red line from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
 #endif
     _imp->proof << "red ";
-    emit_inequality_to(variable_constraints_tracker(), ineq, nullopt, _imp->proof);
+    emit_inequality_to(names_and_ids_tracker(), ineq, nullopt, _imp->proof);
 
     for (auto & [f, t] : witness)
-        _imp->proof << " " << witness_literal(variable_constraints_tracker(), f) << " -> " << witness_literal(variable_constraints_tracker(), t);
+        _imp->proof << " " << witness_literal(names_and_ids_tracker(), f) << " -> " << witness_literal(names_and_ids_tracker(), t);
     _imp->proof << " ;\n";
 
     return record_proof_line(++_imp->proof_line, level);
@@ -592,7 +592,7 @@ auto ProofLogger::record_proof_line(ProofLine line, ProofLevel level) -> ProofLi
     return line;
 }
 
-auto ProofLogger::variable_constraints_tracker() -> VariableConstraintsTracker &
+auto ProofLogger::names_and_ids_tracker() -> NamesAndIDsTracker &
 {
     return _imp->tracker;
 }
@@ -623,10 +623,10 @@ auto ProofLogger::emit_red_proof_lines_forward_reifying(const SumLessEqual<Weigh
     _imp->proof << "* emit red lines forward reifying from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
 #endif
 
-    variable_constraints_tracker().need_all_proof_names_in(ineq.lhs);
+    names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
     _imp->proof << "red ";
-    emit_inequality_to(variable_constraints_tracker(), ineq, {{reif}}, _imp->proof);
-    _imp->proof << " " << witness_literal(variable_constraints_tracker(), reif) << " -> 0";
+    emit_inequality_to(names_and_ids_tracker(), ineq, {{reif}}, _imp->proof);
+    _imp->proof << " " << witness_literal(names_and_ids_tracker(), reif) << " -> 0";
     _imp->proof << " ;";
     if (subproofs)
         emit_subproofs(subproofs.value());
@@ -648,11 +648,11 @@ auto ProofLogger::emit_red_proof_lines_reverse_reifying(const SumLessEqual<Weigh
     _imp->proof << "* emit red lines reverse reifying from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
 #endif
 
-    variable_constraints_tracker().need_all_proof_names_in(ineq.lhs);
+    names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
     auto negated_ineq = ineq.lhs >= ineq.rhs + 1_i;
     _imp->proof << "red ";
-    emit_inequality_to(variable_constraints_tracker(), negated_ineq, {{! reif}}, _imp->proof);
-    _imp->proof << " " << witness_literal(variable_constraints_tracker(), reif) << " -> 1";
+    emit_inequality_to(names_and_ids_tracker(), negated_ineq, {{! reif}}, _imp->proof);
+    _imp->proof << " " << witness_literal(names_and_ids_tracker(), reif) << " -> 1";
     _imp->proof << " ;";
     if (subproofs)
         emit_subproofs(subproofs.value());
@@ -688,5 +688,5 @@ auto ProofLogger::create_proof_flag_reifying(const SumLessEqual<Weighted<PseudoB
 
 auto ProofLogger::create_proof_flag(const string & name) -> ProofFlag
 {
-    return variable_constraints_tracker().create_proof_flag(name);
+    return names_and_ids_tracker().create_proof_flag(name);
 }

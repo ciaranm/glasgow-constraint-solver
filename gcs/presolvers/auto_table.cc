@@ -1,7 +1,7 @@
 #include <gcs/exception.hh>
 #include <gcs/innards/extensional_utils.hh>
+#include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
-#include <gcs/innards/proofs/variable_constraints_tracker.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/presolvers/auto_table.hh>
 #include <gcs/search_heuristics.hh>
@@ -49,7 +49,7 @@ namespace
                     logger->emit_proof_comment("new table entry found");
 
                     Integer sel_value(tuples.size());
-                    logger->variable_constraints_tracker().create_literals_for_introduced_variable_value(selector_var_id, sel_value, "autotable");
+                    logger->names_and_ids_tracker().create_literals_for_introduced_variable_value(selector_var_id, sel_value, "autotable");
 
                     WeightedPseudoBooleanSum forward_implication, reverse_implication;
                     forward_implication += Integer(vars.size()) * (selector_var_id != sel_value);

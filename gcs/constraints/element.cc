@@ -3,9 +3,9 @@
 #include <gcs/constraints/equals.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
-#include <gcs/innards/proofs/variable_constraints_tracker.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/integer.hh>
@@ -257,7 +257,7 @@ auto Element2DConstantArray::install(Propagators & propagators, State & initial_
         // turn 2d index into 1d index in proof
         if (logger) {
             for (auto i = 0_i, i_end = Integer(vals->size() * vals->begin()->size()); i != i_end; ++i)
-                logger->variable_constraints_tracker().create_literals_for_introduced_variable_value(idxsel, i, "element2didx");
+                logger->names_and_ids_tracker().create_literals_for_introduced_variable_value(idxsel, i, "element2didx");
 
             for (const auto & i1 : state.each_value_immutable(idx1)) {
                 for (const auto & i2 : state.each_value_immutable(idx2)) {

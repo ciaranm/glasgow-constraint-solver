@@ -1,9 +1,9 @@
+#include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_error.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/proofs/proof_only_variables.hh>
 #include <gcs/innards/proofs/simplify_literal.hh>
-#include <gcs/innards/proofs/variable_constraints_tracker.hh>
 #include <gcs/innards/variable_id_utils.hh>
 
 #include <fstream>
@@ -35,7 +35,7 @@ using std::variant;
 using std::vector;
 using std::visit;
 
-struct VariableConstraintsTracker::Imp
+struct NamesAndIDsTracker::Imp
 {
     ProofModel * model = nullptr;
     ProofLogger * logger = nullptr;
@@ -63,7 +63,7 @@ struct VariableConstraintsTracker::Imp
     bool verbose_names;
 };
 
-VariableConstraintsTracker::VariableConstraintsTracker(const ProofOptions & proof_options) :
+NamesAndIDsTracker::NamesAndIDsTracker(const ProofOptions & proof_options) :
     _imp(new Imp{})
 {
     _imp->verbose_names = proof_options.verbose_names;
@@ -77,14 +77,14 @@ VariableConstraintsTracker::VariableConstraintsTracker(const ProofOptions & proo
     }
 }
 
-VariableConstraintsTracker::~VariableConstraintsTracker()
+NamesAndIDsTracker::~NamesAndIDsTracker()
 {
     if (_imp->variables_map_file && *_imp->variables_map_file) {
         *_imp->variables_map_file << "\n}\n";
     }
 }
 
-auto VariableConstraintsTracker::emit_proof_line_now_or_at_start(const function<auto(ProofLogger * const)->void> & func) -> void
+auto NamesAndIDsTracker::emit_proof_line_now_or_at_start(const function<auto(ProofLogger * const)->void> & func) -> void
 {
     if (_imp->logger)
         func(_imp->logger);
@@ -92,36 +92,36 @@ auto VariableConstraintsTracker::emit_proof_line_now_or_at_start(const function<
         _imp->delayed_proof_steps.push_back(func);
 }
 
-auto VariableConstraintsTracker::switch_from_model_to_proof(ProofLogger * const logger) -> void
+auto NamesAndIDsTracker::switch_from_model_to_proof(ProofLogger * const logger) -> void
 {
     _imp->model = nullptr;
     _imp->logger = logger;
 }
 
-auto VariableConstraintsTracker::emit_delayed_proof_steps() -> void
+auto NamesAndIDsTracker::emit_delayed_proof_steps() -> void
 {
     for (const auto & step : _imp->delayed_proof_steps)
         step(_imp->logger);
     _imp->delayed_proof_steps.clear();
 }
 
-auto VariableConstraintsTracker::start_writing_model(ProofModel * const model) -> void
+auto NamesAndIDsTracker::start_writing_model(ProofModel * const model) -> void
 {
     _imp->model = model;
 }
 
-auto VariableConstraintsTracker::associate_condition_with_xliteral(
+auto NamesAndIDsTracker::associate_condition_with_xliteral(
     const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> & cond, const XLiteral & x) -> void
 {
     _imp->variable_conditions_to_x.emplace(cond, x);
 }
 
-auto VariableConstraintsTracker::track_variable_takes_at_least_one_value(const SimpleOrProofOnlyIntegerVariableID & id, ProofLine line) -> void
+auto NamesAndIDsTracker::track_variable_takes_at_least_one_value(const SimpleOrProofOnlyIntegerVariableID & id, ProofLine line) -> void
 {
     _imp->variable_at_least_one_constraints.emplace(id, line);
 }
 
-auto VariableConstraintsTracker::need_constraint_saying_variable_takes_at_least_one_value(IntegerVariableID var) -> ProofLine
+auto NamesAndIDsTracker::need_constraint_saying_variable_takes_at_least_one_value(IntegerVariableID var) -> ProofLine
 {
     return overloaded{
         [&](const ConstantIntegerVariableID &) -> ProofLine {
@@ -146,7 +146,7 @@ auto VariableConstraintsTracker::need_constraint_saying_variable_takes_at_least_
         .visit(var);
 }
 
-auto VariableConstraintsTracker::need_pol_item_defining_literal(const IntegerVariableCondition & cond) -> variant<ProofLine, XLiteral>
+auto NamesAndIDsTracker::need_pol_item_defining_literal(const IntegerVariableCondition & cond) -> variant<ProofLine, XLiteral>
 {
     return overloaded{
         [&](const ConstantIntegerVariableID &) -> variant<ProofLine, XLiteral> {
@@ -174,7 +174,7 @@ auto VariableConstraintsTracker::need_pol_item_defining_literal(const IntegerVar
         .visit(cond.var);
 }
 
-auto VariableConstraintsTracker::create_literals_for_introduced_variable_value(
+auto NamesAndIDsTracker::create_literals_for_introduced_variable_value(
     SimpleIntegerVariableID id, Integer val, const optional<string> & optional_name) -> void
 {
     if (optional_name)
@@ -184,7 +184,7 @@ auto VariableConstraintsTracker::create_literals_for_introduced_variable_value(
     _imp->variable_conditions_to_x.emplace(id != val, ! x);
 }
 
-auto VariableConstraintsTracker::need_proof_name(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> & cond) -> void
+auto NamesAndIDsTracker::need_proof_name(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> & cond) -> void
 {
     switch (cond.op) {
     case VariableConditionOperator::Equal:
@@ -198,7 +198,7 @@ auto VariableConstraintsTracker::need_proof_name(const VariableConditionFrom<Sim
     }
 }
 
-auto VariableConstraintsTracker::need_all_proof_names_in(const SumOf<Weighted<PseudoBooleanTerm>> & sum) -> void
+auto NamesAndIDsTracker::need_all_proof_names_in(const SumOf<Weighted<PseudoBooleanTerm>> & sum) -> void
 {
     // make sure we have any definitions for things that show up
     for (auto & [_, v] : sum.terms)
@@ -218,7 +218,7 @@ auto VariableConstraintsTracker::need_all_proof_names_in(const SumOf<Weighted<Ps
             .visit(v);
 }
 
-auto VariableConstraintsTracker::negative_bit_coefficient(const SimpleOrProofOnlyIntegerVariableID & id) -> Integer
+auto NamesAndIDsTracker::negative_bit_coefficient(const SimpleOrProofOnlyIntegerVariableID & id) -> Integer
 {
     auto it = _imp->integer_variable_bits_to_size_and_proof_vars.find(id);
     if (it == _imp->integer_variable_bits_to_size_and_proof_vars.end())
@@ -226,7 +226,7 @@ auto VariableConstraintsTracker::negative_bit_coefficient(const SimpleOrProofOnl
     return it->second.first;
 }
 
-auto VariableConstraintsTracker::for_each_bit(const SimpleOrProofOnlyIntegerVariableID & id,
+auto NamesAndIDsTracker::for_each_bit(const SimpleOrProofOnlyIntegerVariableID & id,
     const std::function<auto(Integer, const XLiteral &)->void> & f) -> void
 {
     auto it = _imp->integer_variable_bits_to_size_and_proof_vars.find(id);
@@ -236,24 +236,24 @@ auto VariableConstraintsTracker::for_each_bit(const SimpleOrProofOnlyIntegerVari
         f(c, n);
 }
 
-auto VariableConstraintsTracker::track_bits(const SimpleOrProofOnlyIntegerVariableID & id, Integer negative_coeff,
+auto NamesAndIDsTracker::track_bits(const SimpleOrProofOnlyIntegerVariableID & id, Integer negative_coeff,
     const std::vector<std::pair<Integer, XLiteral>> & bit_vars) -> void
 {
     _imp->integer_variable_bits_to_size_and_proof_vars.emplace(id, pair{negative_coeff, bit_vars});
 }
 
-auto VariableConstraintsTracker::allocate_flag_index() -> unsigned long long
+auto NamesAndIDsTracker::allocate_flag_index() -> unsigned long long
 {
     return _imp->flags.size() / 2;
 }
 
-auto VariableConstraintsTracker::track_gevar(SimpleIntegerVariableID id, Integer val,
+auto NamesAndIDsTracker::track_gevar(SimpleIntegerVariableID id, Integer val,
     const std::pair<std::variant<ProofLine, XLiteral>, std::variant<ProofLine, XLiteral>> & names) -> void
 {
     _imp->gevars_that_exist[id].emplace(val, names);
 }
 
-auto VariableConstraintsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> void
+auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> void
 {
     if (_imp->variable_conditions_to_x.contains(id == v))
         return;
@@ -318,7 +318,7 @@ auto VariableConstraintsTracker::need_direct_encoding_for(SimpleOrProofOnlyInteg
     }
 }
 
-auto VariableConstraintsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> void
+auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> void
 {
     if (_imp->variable_conditions_to_x.contains(id >= v))
         return;
@@ -380,12 +380,12 @@ auto VariableConstraintsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID i
                              }); }, id);
 }
 
-auto VariableConstraintsTracker::track_bounds(const SimpleOrProofOnlyIntegerVariableID & id, Integer lower, Integer upper) -> void
+auto NamesAndIDsTracker::track_bounds(const SimpleOrProofOnlyIntegerVariableID & id, Integer lower, Integer upper) -> void
 {
     _imp->integer_variable_definition_bounds.emplace(id, pair{lower, upper});
 }
 
-auto VariableConstraintsTracker::create_proof_flag(const string & name) -> ProofFlag
+auto NamesAndIDsTracker::create_proof_flag(const string & name) -> ProofFlag
 {
     ProofFlag result{allocate_flag_index(), true};
     track_variable_name(result, name);
@@ -395,7 +395,7 @@ auto VariableConstraintsTracker::create_proof_flag(const string & name) -> Proof
     return result;
 }
 
-auto VariableConstraintsTracker::pb_file_string_for(const XLiteral & lit) const -> string
+auto NamesAndIDsTracker::pb_file_string_for(const XLiteral & lit) const -> string
 {
     if (_imp->verbose_names) {
         auto it = _imp->xlits_to_verbose_names.find(lit);
@@ -411,12 +411,12 @@ auto VariableConstraintsTracker::pb_file_string_for(const XLiteral & lit) const 
     }
 }
 
-auto VariableConstraintsTracker::pb_file_string_for(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> & cond) const -> string
+auto NamesAndIDsTracker::pb_file_string_for(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> & cond) const -> string
 {
     return pb_file_string_for(xliteral_for(cond));
 }
 
-auto VariableConstraintsTracker::xliteral_for(const ProofFlag & flag) const -> const XLiteral
+auto NamesAndIDsTracker::xliteral_for(const ProofFlag & flag) const -> const XLiteral
 {
     auto f = _imp->flags.find(flag);
     if (f == _imp->flags.end())
@@ -424,7 +424,7 @@ auto VariableConstraintsTracker::xliteral_for(const ProofFlag & flag) const -> c
     return f->second;
 }
 
-auto VariableConstraintsTracker::xliteral_for(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> & cond) const -> const XLiteral
+auto NamesAndIDsTracker::xliteral_for(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> & cond) const -> const XLiteral
 {
     auto f = _imp->variable_conditions_to_x.find(cond);
     if (f == _imp->variable_conditions_to_x.end())
@@ -432,7 +432,7 @@ auto VariableConstraintsTracker::xliteral_for(const VariableConditionFrom<Simple
     return f->second;
 }
 
-auto VariableConstraintsTracker::pb_file_string_for(const ProofFlag & flag) const -> string
+auto NamesAndIDsTracker::pb_file_string_for(const ProofFlag & flag) const -> string
 {
     return pb_file_string_for(xliteral_for(flag));
 }
@@ -451,7 +451,7 @@ namespace
     }
 }
 
-auto VariableConstraintsTracker::allocate_xliteral_meaning(SimpleOrProofOnlyIntegerVariableID id,
+auto NamesAndIDsTracker::allocate_xliteral_meaning(SimpleOrProofOnlyIntegerVariableID id,
     const EqualsOrGreaterEqual & op, Integer value) -> XLiteral
 {
     auto result = XLiteral{++_imp->next_xliteral_nr, false};
@@ -495,7 +495,7 @@ auto VariableConstraintsTracker::allocate_xliteral_meaning(SimpleOrProofOnlyInte
     return result;
 }
 
-auto VariableConstraintsTracker::allocate_xliteral_meaning(ProofFlag flag) -> XLiteral
+auto NamesAndIDsTracker::allocate_xliteral_meaning(ProofFlag flag) -> XLiteral
 {
     auto result = XLiteral{++_imp->next_xliteral_nr, false};
 
@@ -516,7 +516,7 @@ auto VariableConstraintsTracker::allocate_xliteral_meaning(ProofFlag flag) -> XL
     return result;
 }
 
-auto VariableConstraintsTracker::allocate_xliteral_meaning_negative_bit_of(SimpleOrProofOnlyIntegerVariableID id, Integer power) -> XLiteral
+auto NamesAndIDsTracker::allocate_xliteral_meaning_negative_bit_of(SimpleOrProofOnlyIntegerVariableID id, Integer power) -> XLiteral
 {
     auto result = XLiteral{++_imp->next_xliteral_nr, false};
 
@@ -557,7 +557,7 @@ auto VariableConstraintsTracker::allocate_xliteral_meaning_negative_bit_of(Simpl
     return result;
 }
 
-auto VariableConstraintsTracker::allocate_xliteral_meaning_bit_of(SimpleOrProofOnlyIntegerVariableID id, Integer power) -> XLiteral
+auto NamesAndIDsTracker::allocate_xliteral_meaning_bit_of(SimpleOrProofOnlyIntegerVariableID id, Integer power) -> XLiteral
 {
     auto result = XLiteral{++_imp->next_xliteral_nr, false};
 
@@ -599,19 +599,19 @@ auto VariableConstraintsTracker::allocate_xliteral_meaning_bit_of(SimpleOrProofO
     return result;
 }
 
-auto VariableConstraintsTracker::track_variable_name(SimpleOrProofOnlyIntegerVariableID id, const optional<string> & name) -> void
+auto NamesAndIDsTracker::track_variable_name(SimpleOrProofOnlyIntegerVariableID id, const optional<string> & name) -> void
 {
     if (name)
         _imp->id_names.emplace(id, *name);
 }
 
-auto VariableConstraintsTracker::track_variable_name(ProofFlag id, const optional<string> & name) -> void
+auto NamesAndIDsTracker::track_variable_name(ProofFlag id, const optional<string> & name) -> void
 {
     if (name)
         _imp->flag_names.emplace(id, *name);
 }
 
-auto VariableConstraintsTracker::name_of(SimpleOrProofOnlyIntegerVariableID id) -> const string &
+auto NamesAndIDsTracker::name_of(SimpleOrProofOnlyIntegerVariableID id) -> const string &
 {
     auto it = _imp->id_names.find(id);
     if (_imp->id_names.end() == it)
@@ -620,7 +620,7 @@ auto VariableConstraintsTracker::name_of(SimpleOrProofOnlyIntegerVariableID id) 
         return it->second;
 }
 
-auto VariableConstraintsTracker::name_of(ProofFlag id) -> const string &
+auto NamesAndIDsTracker::name_of(ProofFlag id) -> const string &
 {
     auto it = _imp->flag_names.find(id);
     if (_imp->flag_names.end() == it)
@@ -629,7 +629,7 @@ auto VariableConstraintsTracker::name_of(ProofFlag id) -> const string &
         return it->second;
 }
 
-auto VariableConstraintsTracker::reify(const WeightedPseudoBooleanLessEqual & ineq, const HalfReifyOnConjunctionOf & half_reif) -> WeightedPseudoBooleanLessEqual
+auto NamesAndIDsTracker::reify(const WeightedPseudoBooleanLessEqual & ineq, const HalfReifyOnConjunctionOf & half_reif) -> WeightedPseudoBooleanLessEqual
 {
     //    auto contains_false_literal = false;
     //    for (const auto & l : half_reif) {

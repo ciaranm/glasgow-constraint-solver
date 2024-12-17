@@ -2,11 +2,11 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROOFS_PROOF_MODEL_HH
 
 #include <gcs/expression.hh>
+#include <gcs/innards/proofs/names_and_ids_tracker-fwd.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/proofs/proof_model-fwd.hh>
 #include <gcs/innards/proofs/pseudo_boolean.hh>
 #include <gcs/innards/proofs/reification.hh>
-#include <gcs/innards/proofs/variable_constraints_tracker-fwd.hh>
 #include <gcs/proof.hh>
 
 #include <memory>
@@ -43,7 +43,7 @@ namespace gcs::innards
          * \name Constructors, destructors, and the like.
          */
         ///@{
-        explicit ProofModel(const ProofOptions &, VariableConstraintsTracker &);
+        explicit ProofModel(const ProofOptions &, NamesAndIDsTracker &);
         ~ProofModel();
 
         auto operator=(const ProofModel &) -> ProofModel & = delete;
@@ -148,7 +148,7 @@ namespace gcs::innards
         /**
          * Provide access to information about variables.
          */
-        [[nodiscard]] auto variable_constraints_tracker() -> VariableConstraintsTracker &;
+        [[nodiscard]] auto names_and_ids_tracker() -> NamesAndIDsTracker &;
     };
 }
 

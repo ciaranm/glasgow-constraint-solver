@@ -2,9 +2,9 @@
 #include <gcs/constraints/linear/propagate.hh>
 #include <gcs/constraints/linear/utils.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
-#include <gcs/innards/proofs/variable_constraints_tracker.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
 
@@ -77,7 +77,7 @@ namespace
             // discover otherwise
             bool upper = (get_coeff(cv) < 0_i);
 
-            auto literal_defining_proof_line = logger.variable_constraints_tracker().need_pol_item_defining_literal(
+            auto literal_defining_proof_line = logger.names_and_ids_tracker().need_pol_item_defining_literal(
                 upper ? get_var(cv) < state.upper_bound(get_var(cv) + 1_i) : get_var(cv) >= state.lower_bound(get_var(cv)));
 
             terms_to_sum.emplace_back(abs(get_coeff(cv)), literal_defining_proof_line);
@@ -90,9 +90,9 @@ namespace
             overloaded{
                 [&](const XLiteral & l) {
                     if (c_and_l.first == 1_i)
-                        step << " " << logger.variable_constraints_tracker().pb_file_string_for(l);
+                        step << " " << logger.names_and_ids_tracker().pb_file_string_for(l);
                     else
-                        step << " " << logger.variable_constraints_tracker().pb_file_string_for(l) << " " << c_and_l.first << " *";
+                        step << " " << logger.names_and_ids_tracker().pb_file_string_for(l) << " " << c_and_l.first << " *";
                 },
                 [&](const ProofLine & l) {
                     if (c_and_l.first == 1_i)

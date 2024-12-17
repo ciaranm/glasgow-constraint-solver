@@ -1,6 +1,6 @@
+#include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
-#include <gcs/innards/proofs/variable_constraints_tracker.hh>
 #include <gcs/proof.hh>
 
 using namespace gcs;
@@ -29,7 +29,7 @@ ProofOptions::ProofOptions(const ProofFileNames & f, bool v, bool a) :
 
 struct Proof::Imp
 {
-    VariableConstraintsTracker tracker;
+    NamesAndIDsTracker tracker;
     ProofLogger logger;
     ProofModel model;
 

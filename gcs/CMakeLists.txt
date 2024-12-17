@@ -46,12 +46,12 @@ add_library(glasgow_constraint_solver
         innards/literal.cc
         innards/proofs/bits_encoding.cc
         innards/proofs/emit_inequality_to.cc
+        innards/proofs/names_and_ids_tracker.cc
         innards/proofs/proof_error.cc
         innards/proofs/proof_logger.cc
         innards/proofs/proof_model.cc
         innards/proofs/proof_only_variables.cc
         innards/proofs/simplify_literal.cc
-        innards/proofs/variable_constraints_tracker.cc
         innards/propagators.cc
         innards/reason.cc
         innards/state.cc

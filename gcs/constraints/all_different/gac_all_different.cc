@@ -2,9 +2,9 @@
 #include <gcs/constraints/all_different/gac_all_different.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
-#include <gcs/innards/proofs/variable_constraints_tracker.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/innards/variable_id_utils.hh>
@@ -238,7 +238,7 @@ namespace
                             vector<ProofLine> at_least_one_constraints;
                             for (Left v{0}; v.offset != vars.size(); ++v.offset)
                                 if (hall_variables[v.offset])
-                                    at_least_one_constraints.push_back(logger.variable_constraints_tracker().need_constraint_saying_variable_takes_at_least_one_value(vars[v.offset]));
+                                    at_least_one_constraints.push_back(logger.names_and_ids_tracker().need_constraint_saying_variable_takes_at_least_one_value(vars[v.offset]));
 
                             // each variable in the violator has to take at least one value that is
                             // left in its domain...
@@ -352,7 +352,7 @@ namespace
                                 vector<ProofLine> at_least_one_constraints;
                                 for (Left v{0}; v.offset != vars.size(); ++v.offset)
                                     if (hall_left[v.offset])
-                                        at_least_one_constraints.push_back(logger.variable_constraints_tracker().need_constraint_saying_variable_takes_at_least_one_value(vars[v.offset]));
+                                        at_least_one_constraints.push_back(logger.names_and_ids_tracker().need_constraint_saying_variable_takes_at_least_one_value(vars[v.offset]));
 
                                 stringstream proof_step;
                                 proof_step << "p";

@@ -1,9 +1,9 @@
 #include <gcs/constraints/knapsack.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
-#include <gcs/innards/proofs/variable_constraints_tracker.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
 
@@ -66,8 +66,8 @@ namespace
             [&](const SimpleIntegerVariableID & var) -> string {
                 return overloaded{
                     [&](const ProofLine & line) { return to_string(line); },
-                    [&](const XLiteral & s) { return logger->variable_constraints_tracker().pb_file_string_for(s); }}
-                    .visit(logger->variable_constraints_tracker().need_pol_item_defining_literal(upper ? var < state.upper_bound(var) + 1_i : var >= state.lower_bound(var)));
+                    [&](const XLiteral & s) { return logger->names_and_ids_tracker().pb_file_string_for(s); }}
+                    .visit(logger->names_and_ids_tracker().need_pol_item_defining_literal(upper ? var < state.upper_bound(var) + 1_i : var >= state.lower_bound(var)));
             },
             [&](const ConstantIntegerVariableID &) -> string {
                 throw UnimplementedException{};

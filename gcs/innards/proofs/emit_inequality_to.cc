@@ -1,6 +1,6 @@
 #include <gcs/innards/proofs/emit_inequality_to.hh>
+#include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/simplify_literal.hh>
-#include <gcs/innards/proofs/variable_constraints_tracker.hh>
 
 using std::max;
 using std::optional;
@@ -11,7 +11,7 @@ using namespace gcs;
 using namespace gcs::innards;
 
 auto gcs::innards::emit_inequality_to(
-    VariableConstraintsTracker & variable_constraints_tracker,
+    NamesAndIDsTracker & names_and_ids_tracker,
     const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
     const optional<HalfReifyOnConjunctionOf> & half_reif, ostream & stream) -> void
 {
@@ -31,37 +31,37 @@ auto gcs::innards::emit_inequality_to(
                     },
                     [&](const FalseLiteral &) {},
                     [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
-                        stream << -w << " " << variable_constraints_tracker.pb_file_string_for(cond) << " ";
+                        stream << -w << " " << names_and_ids_tracker.pb_file_string_for(cond) << " ";
                         reif_const += max(0_i, w);
                     }}
                     .visit(simplify_literal(lit));
             },
             [&, w = w](const ProofFlag & flag) {
-                stream << -w << " " << variable_constraints_tracker.pb_file_string_for(flag) << " ";
+                stream << -w << " " << names_and_ids_tracker.pb_file_string_for(flag) << " ";
                 reif_const += max(0_i, w);
             },
             [&, w = w](const IntegerVariableID & var) {
                 overloaded{
                     [&](const SimpleIntegerVariableID & var) {
-                        variable_constraints_tracker.for_each_bit(var, [&](Integer bit_value, const XLiteral & bit_lit) {
-                            stream << -w * bit_value << " " << variable_constraints_tracker.pb_file_string_for(bit_lit) << " ";
+                        names_and_ids_tracker.for_each_bit(var, [&](Integer bit_value, const XLiteral & bit_lit) {
+                            stream << -w * bit_value << " " << names_and_ids_tracker.pb_file_string_for(bit_lit) << " ";
                             reif_const += max(0_i, w * bit_value);
                         });
                     },
                     [&](const ViewOfIntegerVariableID & view) {
                         if (! view.negate_first) {
-                            variable_constraints_tracker.for_each_bit(view.actual_variable,
+                            names_and_ids_tracker.for_each_bit(view.actual_variable,
                                 [&](Integer bit_value, const XLiteral & bit_lit) {
-                                    stream << -w * bit_value << " " << variable_constraints_tracker.pb_file_string_for(bit_lit) << " ";
+                                    stream << -w * bit_value << " " << names_and_ids_tracker.pb_file_string_for(bit_lit) << " ";
                                     reif_const += max(0_i, w * bit_value);
                                 });
                             rhs += w * view.then_add;
                             reif_const += max(0_i, -w * view.then_add);
                         }
                         else {
-                            variable_constraints_tracker.for_each_bit(view.actual_variable,
+                            names_and_ids_tracker.for_each_bit(view.actual_variable,
                                 [&](Integer bit_value, const XLiteral & bit_lit) {
-                                    stream << w * bit_value << " " << variable_constraints_tracker.pb_file_string_for(bit_lit) << " ";
+                                    stream << w * bit_value << " " << names_and_ids_tracker.pb_file_string_for(bit_lit) << " ";
                                     reif_const += max(0_i, -w * bit_value);
                                 });
                             rhs += w * view.then_add;
@@ -74,8 +74,8 @@ auto gcs::innards::emit_inequality_to(
                     .visit(var);
             },
             [&, w = w](const ProofOnlySimpleIntegerVariableID & var) {
-                variable_constraints_tracker.for_each_bit(var, [&](Integer bit_value, const XLiteral & bit_lit) {
-                    stream << -w * bit_value << " " << variable_constraints_tracker.pb_file_string_for(bit_lit) << " ";
+                names_and_ids_tracker.for_each_bit(var, [&](Integer bit_value, const XLiteral & bit_lit) {
+                    stream << -w * bit_value << " " << names_and_ids_tracker.pb_file_string_for(bit_lit) << " ";
                     reif_const += max(0_i, w * bit_value);
                 });
             }}
@@ -87,7 +87,7 @@ auto gcs::innards::emit_inequality_to(
         for (auto & r : *half_reif)
             overloaded{
                 [&](const ProofFlag & f) {
-                    stream << reif_const << " " << variable_constraints_tracker.pb_file_string_for(! f) << " ";
+                    stream << reif_const << " " << names_and_ids_tracker.pb_file_string_for(! f) << " ";
                 },
                 [&](const ProofLiteral & lit) {
                     overloaded{
@@ -97,7 +97,7 @@ auto gcs::innards::emit_inequality_to(
                             throw UnimplementedException{};
                         },
                         [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
-                            stream << reif_const << " " << variable_constraints_tracker.pb_file_string_for(! cond) << " ";
+                            stream << reif_const << " " << names_and_ids_tracker.pb_file_string_for(! cond) << " ";
                         }}
                         .visit(simplify_literal(lit));
                 }}

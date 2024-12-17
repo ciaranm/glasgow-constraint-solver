@@ -2,7 +2,7 @@
 #include <gcs/constraints/circuit/circuit_base.hh>
 #include <gcs/constraints/circuit/circuit_scc.hh>
 #include <gcs/innards/inference_tracker.hh>
-#include <gcs/innards/proofs/variable_constraints_tracker.hh>
+#include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/propagators.hh>
 
 #include <list>
@@ -346,7 +346,7 @@ namespace
                 // Redundance subproof:
                 auto subproofs = make_optional(map<string, Subproof>{});
                 auto subproof = [&](ProofLogger & logger) {
-                    logger.emit_proof_line("     p -2 " + logger.variable_constraints_tracker().pb_file_string_for(greater_than_flag) + " w", ProofLevel::Top);
+                    logger.emit_proof_line("     p -2 " + logger.names_and_ids_tracker().pb_file_string_for(greater_than_flag) + " w", ProofLevel::Top);
                     for (long k = 0; cmp_less(k, succ.size()); k++) {
                         PLine p_line;
                         // Prove p[i] = k is not possible

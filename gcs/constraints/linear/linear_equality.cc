@@ -4,9 +4,9 @@
 #include <gcs/exception.hh>
 #include <gcs/innards/extensional_utils.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
-#include <gcs/innards/proofs/variable_constraints_tracker.hh>
 #include <gcs/innards/propagators.hh>
 
 #include <util/enumerate.hh>
@@ -103,7 +103,7 @@ namespace
                     permitted.push_back(current);
                     if (logger) {
                         Integer sel_value(permitted.size() - 1);
-                        logger->variable_constraints_tracker().create_literals_for_introduced_variable_value(future_var_id, sel_value, "lineq");
+                        logger->names_and_ids_tracker().create_literals_for_introduced_variable_value(future_var_id, sel_value, "lineq");
                         trail += 1_i * (future_var_id == sel_value);
 
                         WeightedPseudoBooleanSum forward_implication, reverse_implication;
