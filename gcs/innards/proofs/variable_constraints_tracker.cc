@@ -58,7 +58,7 @@ struct VariableConstraintsTracker::Imp
     unsigned model_variables = 0;
     long long next_xliteral_nr = 0;
 
-    fstream variables_map_file;
+    optional<fstream> variables_map_file;
     bool first_varmap_entry = true;
     bool verbose_names;
 };
@@ -68,16 +68,19 @@ VariableConstraintsTracker::VariableConstraintsTracker(const ProofOptions & proo
 {
     _imp->verbose_names = proof_options.verbose_names;
 
-    _imp->variables_map_file.open(proof_options.proof_file_names.variables_map_file, ios::out);
-    if (! _imp->variables_map_file)
-        throw ProofError{"Error writing proof variables mapping file to '" + proof_options.proof_file_names.variables_map_file + "'"};
-    _imp->variables_map_file << "{\n";
+    if (proof_options.proof_file_names.variables_map_file) {
+        _imp->variables_map_file.emplace();
+        _imp->variables_map_file->open(*proof_options.proof_file_names.variables_map_file, ios::out);
+        if (! *_imp->variables_map_file)
+            throw ProofError{"Error writing proof variables mapping file to '" + *proof_options.proof_file_names.variables_map_file + "'"};
+        *_imp->variables_map_file << "{\n";
+    }
 }
 
 VariableConstraintsTracker::~VariableConstraintsTracker()
 {
-    if (_imp->variables_map_file) {
-        _imp->variables_map_file << "\n}\n";
+    if (_imp->variables_map_file && *_imp->variables_map_file) {
+        *_imp->variables_map_file << "\n}\n";
     }
 }
 
@@ -468,24 +471,26 @@ auto VariableConstraintsTracker::allocate_xliteral_meaning(SimpleOrProofOnlyInte
             .visit(id);
     }
 
-    nlohmann::json data;
-    data["type"] = "condition";
-    overloaded{
-        [&](const SimpleIntegerVariableID & id) -> void {
-            data["cpvartype"] = "intvar";
-            data["cpvarid"] = id.index;
-        },
-        [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
-            data["cpvartype"] = "proofintvar";
-            data["cpvarid"] = id.index;
-        }}
-        .visit(id);
+    if (_imp->variables_map_file) {
+        nlohmann::json data;
+        data["type"] = "condition";
+        overloaded{
+            [&](const SimpleIntegerVariableID & id) -> void {
+                data["cpvartype"] = "intvar";
+                data["cpvarid"] = id.index;
+            },
+            [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
+                data["cpvartype"] = "proofintvar";
+                data["cpvarid"] = id.index;
+            }}
+            .visit(id);
 
-    data["name"] = name_of(id);
-    data["operator"] = (op == EqualsOrGreaterEqual::Equals ? "=" : ">=");
-    data["value"] = value.raw_value;
+        data["name"] = name_of(id);
+        data["operator"] = (op == EqualsOrGreaterEqual::Equals ? "=" : ">=");
+        data["value"] = value.raw_value;
 
-    write_vardata(_imp->variables_map_file, _imp->first_varmap_entry, pb_file_string_for(result), data);
+        write_vardata(*_imp->variables_map_file, _imp->first_varmap_entry, pb_file_string_for(result), data);
+    }
 
     return result;
 }
@@ -500,11 +505,13 @@ auto VariableConstraintsTracker::allocate_xliteral_meaning(ProofFlag flag) -> XL
         _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
     }
 
-    nlohmann::json data;
-    data["type"] = "proofflag";
-    data["name"] = name_of(flag);
+    if (_imp->variables_map_file) {
+        nlohmann::json data;
+        data["type"] = "proofflag";
+        data["name"] = name_of(flag);
 
-    write_vardata(_imp->variables_map_file, _imp->first_varmap_entry, pb_file_string_for(result), data);
+        write_vardata(*_imp->variables_map_file, _imp->first_varmap_entry, pb_file_string_for(result), data);
+    }
 
     return result;
 }
@@ -528,22 +535,24 @@ auto VariableConstraintsTracker::allocate_xliteral_meaning_negative_bit_of(Simpl
             .visit(id);
     }
 
-    nlohmann::json data;
-    data["type"] = "intvarnegbit";
-    overloaded{
-        [&](const SimpleIntegerVariableID & id) -> void {
-            data["cpvartype"] = "intvar";
-            data["cpvarid"] = id.index;
-        },
-        [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
-            data["cpvartype"] = "proofintvar";
-            data["cpvarid"] = id.index;
-        }}
-        .visit(id);
-    data["name"] = name_of(id);
-    data["power"] = power.raw_value;
+    if (_imp->variables_map_file) {
+        nlohmann::json data;
+        data["type"] = "intvarnegbit";
+        overloaded{
+            [&](const SimpleIntegerVariableID & id) -> void {
+                data["cpvartype"] = "intvar";
+                data["cpvarid"] = id.index;
+            },
+            [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
+                data["cpvartype"] = "proofintvar";
+                data["cpvarid"] = id.index;
+            }}
+            .visit(id);
+        data["name"] = name_of(id);
+        data["power"] = power.raw_value;
 
-    write_vardata(_imp->variables_map_file, _imp->first_varmap_entry, pb_file_string_for(result), data);
+        write_vardata(*_imp->variables_map_file, _imp->first_varmap_entry, pb_file_string_for(result), data);
+    }
 
     return result;
 }
@@ -567,23 +576,25 @@ auto VariableConstraintsTracker::allocate_xliteral_meaning_bit_of(SimpleOrProofO
             .visit(id);
     }
 
-    nlohmann::json data;
-    data["type"] = "intvarbit";
-    overloaded{
-        [&](const SimpleIntegerVariableID & id) -> void {
-            data["cpvartype"] = "intvar";
-            data["cpvarid"] = id.index;
-        },
-        [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
-            data["cpvartype"] = "proofintvar";
-            data["cpvarid"] = id.index;
-        }}
-        .visit(id);
+    if (_imp->variables_map_file) {
+        nlohmann::json data;
+        data["type"] = "intvarbit";
+        overloaded{
+            [&](const SimpleIntegerVariableID & id) -> void {
+                data["cpvartype"] = "intvar";
+                data["cpvarid"] = id.index;
+            },
+            [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
+                data["cpvartype"] = "proofintvar";
+                data["cpvarid"] = id.index;
+            }}
+            .visit(id);
 
-    data["name"] = name_of(id);
-    data["power"] = power.raw_value;
+        data["name"] = name_of(id);
+        data["power"] = power.raw_value;
 
-    write_vardata(_imp->variables_map_file, _imp->first_varmap_entry, pb_file_string_for(result), data);
+        write_vardata(*_imp->variables_map_file, _imp->first_varmap_entry, pb_file_string_for(result), data);
+    }
 
     return result;
 }

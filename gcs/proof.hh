@@ -23,9 +23,9 @@ namespace gcs
          */
         explicit ProofFileNames(const std::string &);
 
-        std::string opb_file;           ///< Filename for the OPB model
-        std::string proof_file;         ///< Filename for the proof file
-        std::string variables_map_file; ///< Filename for variables mapping file
+        std::string opb_file;                          ///< Filename for the OPB model
+        std::string proof_file;                        ///< Filename for the proof file
+        std::optional<std::string> variables_map_file; ///< Filename for variables mapping file
     };
 
     /**
