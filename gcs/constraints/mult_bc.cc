@@ -742,17 +742,17 @@ namespace
         for (auto & var : {x, y}) {
             auto reif_eq_0 = HalfReifyOnConjunctionOf{var == 0_i};
 
-            lower_bounds_for_fusion.emplace_back(
+            lower_bounds_for_fusion.push_back(DerivedPBConstraint{
                 z_sum, smallest_product, reif_eq_0, reason,
                 logger.emit_under_reason(RUPProofRule{},
                     logger.reified(final_lower_bound, reif_eq_0),
-                    ProofLevel::Temporary, reason));
+                    ProofLevel::Temporary, reason)});
 
-            upper_bounds_for_fusion.emplace_back(
+            upper_bounds_for_fusion.push_back(DerivedPBConstraint{
                 neg_z_sum, -largest_product, HalfReifyOnConjunctionOf{var == 0_i}, reason,
                 logger.emit_under_reason(RUPProofRule{},
                     logger.reified(final_upper_bound, reif_eq_0),
-                    ProofLevel::Temporary, reason));
+                    ProofLevel::Temporary, reason)});
         }
 
         auto final_lower_constraint = DerivedPBConstraint{z_sum, smallest_product, {}, reason, 0};
