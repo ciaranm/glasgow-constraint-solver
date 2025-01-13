@@ -214,7 +214,8 @@ auto NamesAndIDsTracker::need_all_proof_names_in(const SumOf<Weighted<PseudoBool
             },
             [&](const ProofFlag &) {},
             [&](const IntegerVariableID &) {},
-            [&](const ProofOnlySimpleIntegerVariableID &) {}}
+            [&](const ProofOnlySimpleIntegerVariableID &) {},
+            [&](const ProofBitVariable &) {}}
             .visit(v);
 }
 
@@ -227,7 +228,7 @@ auto NamesAndIDsTracker::negative_bit_coefficient(const SimpleOrProofOnlyInteger
 }
 
 auto NamesAndIDsTracker::for_each_bit(const SimpleOrProofOnlyIntegerVariableID & id,
-    const std::function<auto(Integer, const XLiteral &)->void> & f) -> void
+    const function<auto(Integer, const XLiteral &)->void> & f) -> void
 {
     auto it = _imp->integer_variable_bits_to_size_and_proof_vars.find(id);
     if (it == _imp->integer_variable_bits_to_size_and_proof_vars.end())
@@ -236,8 +237,40 @@ auto NamesAndIDsTracker::for_each_bit(const SimpleOrProofOnlyIntegerVariableID &
         f(c, n);
 }
 
+auto NamesAndIDsTracker::get_bit(const gcs::innards::SimpleOrProofOnlyIntegerVariableID & var, Integer position) -> pair<Integer, XLiteral>
+{
+    auto it = _imp->integer_variable_bits_to_size_and_proof_vars.find(var);
+    if (it == _imp->integer_variable_bits_to_size_and_proof_vars.end())
+        throw ProofError("missing bits");
+
+    return it->second.second.at(position.raw_value);
+}
+
+auto NamesAndIDsTracker::get_bit(const ProofBitVariable & bit) -> pair<Integer, XLiteral>
+{
+    auto it = _imp->integer_variable_bits_to_size_and_proof_vars.find(bit.for_var);
+    if (it == _imp->integer_variable_bits_to_size_and_proof_vars.end())
+        throw ProofError("missing bits");
+
+    auto bit_data = it->second.second.at(bit.position.raw_value);
+
+    if (! bit.positive)
+        bit_data.second.negated = ! bit_data.second.negated;
+
+    return bit_data;
+}
+
+auto NamesAndIDsTracker::num_bits(const gcs::innards::SimpleOrProofOnlyIntegerVariableID & var) -> Integer
+{
+    auto it = _imp->integer_variable_bits_to_size_and_proof_vars.find(var);
+    if (it == _imp->integer_variable_bits_to_size_and_proof_vars.end())
+        throw ProofError("missing bits");
+
+    return Integer(it->second.second.size());
+}
+
 auto NamesAndIDsTracker::track_bits(const SimpleOrProofOnlyIntegerVariableID & id, Integer negative_coeff,
-    const std::vector<std::pair<Integer, XLiteral>> & bit_vars) -> void
+    const vector<pair<Integer, XLiteral>> & bit_vars) -> void
 {
     _imp->integer_variable_bits_to_size_and_proof_vars.emplace(id, pair{negative_coeff, bit_vars});
 }
@@ -248,7 +281,7 @@ auto NamesAndIDsTracker::allocate_flag_index() -> unsigned long long
 }
 
 auto NamesAndIDsTracker::track_gevar(SimpleIntegerVariableID id, Integer val,
-    const std::pair<std::variant<ProofLine, XLiteral>, std::variant<ProofLine, XLiteral>> & names) -> void
+    const pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>> & names) -> void
 {
     _imp->gevars_that_exist[id].emplace(val, names);
 }
@@ -706,6 +739,9 @@ auto NamesAndIDsTracker::reify(const WeightedPseudoBooleanLessEqual & ineq, cons
                     reif_const += max(0_i, w * bit_value);
                 });
             },
+            [&, w = w](const ProofBitVariable &) {
+                reif_const += max(0_i, w);
+            },
         }
             .visit(v);
     }
@@ -720,6 +756,9 @@ auto NamesAndIDsTracker::reify(const WeightedPseudoBooleanLessEqual & ineq, cons
             },
             [&](const ProofLiteral & lit) {
                 new_lhs += -Integer{reif_const} * ! lit;
+            },
+            [&](const ProofBitVariable & bit) {
+                new_lhs += -Integer{reif_const} * ! bit;
             }}
             .visit(r);
 
