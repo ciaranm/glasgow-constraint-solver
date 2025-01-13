@@ -18,12 +18,20 @@ namespace gcs::innards
 {
     using Subproof = std::function<auto(ProofLogger &)->void>;
 
-    enum class ProofRule
+    struct RUPProofRule
     {
-        RUP,
-        ASSERT,
-        IMPLIES,
     };
+
+    struct AssertProofRule
+    {
+    };
+
+    struct ImpliesProofRule
+    {
+        std::optional<ProofLine> line;
+    };
+
+    using ProofRule = std::variant<RUPProofRule, AssertProofRule, ImpliesProofRule>;
 
     class ProofLogger
     {
@@ -177,17 +185,6 @@ namespace gcs::innards
                 ) -> ProofLine;
 
         /**
-         * Emit a proof step, with a specified rule.
-         */
-        auto emit_under_reason_appending(const ProofRule & rule, const SumLessEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level, const Reason &,
-            const std::optional<ProofLine> & append_line
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-            ,
-            const std::source_location & w = std::source_location::current()
-#endif
-                ) -> ProofLine;
-
-        /**
          * Emit a RUP proof step for the specified expression, not subject to
          * any reasons.
          */
@@ -199,54 +196,10 @@ namespace gcs::innards
                 ) -> ProofLine;
 
         /**
-         * Emit a syntactic implication proof step for the specified expression, not subject to
-         * any reasons.
-         */
-        auto emit_ia_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-            ,
-            const std::source_location & w = std::source_location::current()
-#endif
-                ) -> ProofLine;
-
-        /**
-         * Emit an assert proof step for the specified expression, not subject to
-         * any reasons.
-         */
-        auto emit_assert_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-            ,
-            const std::source_location & w = std::source_location::current()
-#endif
-                ) -> ProofLine;
-
-        /**
          * Emit a RUP proof step for the specified expression, subject to a
          * given reason.
          */
         auto emit_rup_proof_line_under_reason(const Reason &, const SumLessEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-            ,
-            const std::source_location & w = std::source_location::current()
-#endif
-                ) -> ProofLine;
-
-        /**
-         * Emit a RUP proof step for the specified expression, subject to a
-         * given reason.
-         */
-        auto emit_ia_proof_line_under_reason(const Reason &, const SumLessEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-            ,
-            const std::source_location & w = std::source_location::current()
-#endif
-                ) -> ProofLine;
-
-        /**
-         * Emit a RUP proof step for the specified expression, subject to a
-         * given reason.
-         */
-        auto emit_ia_proof_line_under_reason(const State &, const Reason &, const SumLessEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
             ,
             const std::source_location & w = std::source_location::current()

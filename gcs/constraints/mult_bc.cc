@@ -148,7 +148,7 @@ namespace
     };
 
     auto result_of_deriving(ProofLogger & logger, ProofRule rule, const WeightedPseudoBooleanLessEqual & ineq,
-        const HalfReifyOnConjunctionOf & reif, const ProofLevel & proof_level, const Reason & reason, const optional<ProofLine> & append_line = nullopt) -> DerivedPBConstraint
+        const HalfReifyOnConjunctionOf & reif, const ProofLevel & proof_level, const Reason & reason) -> DerivedPBConstraint
     {
         // Have to flip it again to store in the form lhs >= rhs
         WeightedPseudoBooleanSum ge_lhs{};
@@ -157,7 +157,7 @@ namespace
         }
         auto res = DerivedPBConstraint{
             ge_lhs, -ineq.rhs, reif, reason,
-            logger.emit_under_reason_appending(rule, logger.reified(ineq, reif), proof_level, reason, append_line)};
+            logger.emit_under_reason(rule, logger.reified(ineq, reif), proof_level, reason)};
         return res;
     }
 
@@ -268,7 +268,7 @@ namespace
             channel_rhs = 1_i;
         }
 
-        return result_of_deriving(logger, ProofRule::RUP,
+        return result_of_deriving(logger, RUPProofRule{},
             channel_sum >= channel_rhs,
             reif, ProofLevel::Temporary, reason);
     }
@@ -283,7 +283,7 @@ namespace
     {
         auto channel_reif = HalfReifyOnConjunctionOf{constr.half_reif};
         if (! channelling_constraints.contains(z))
-            return result_of_deriving(logger, ProofRule::IMPLIES, constr.sum >= constr.rhs, channel_reif, ProofLevel::Temporary, reason);
+            return result_of_deriving(logger, ImpliesProofRule{}, constr.sum >= constr.rhs, channel_reif, ProofLevel::Temporary, reason);
 
         auto is_lower_bound = constr.sum.terms[0].coefficient == 1_i;
 
@@ -355,7 +355,7 @@ namespace
 
         add_lines(logger, channel_line, rup_sign);
         auto channel_sum = WeightedPseudoBooleanSum{} + constr.sum.terms[0].coefficient * (z_negative ? -1_i : 1_i) * z;
-        return result_of_deriving(logger, ProofRule::RUP, channel_sum >= constr.rhs, channel_reif, ProofLevel::Temporary, reason);
+        return result_of_deriving(logger, RUPProofRule{}, channel_sum >= constr.rhs, channel_reif, ProofLevel::Temporary, reason);
     }
 
     auto run_resolution(ProofLogger & logger, vector<pair<HalfReifyOnConjunctionOf, ProofLine>> premise_line)
@@ -457,7 +457,7 @@ namespace
             // First weaken the premises to match our desired constraint
             auto negation_line = -2;
             for (const auto & p : premises) {
-                weakened_premises.emplace_back(result_of_deriving(logger, ProofRule::RUP, // implies?
+                weakened_premises.emplace_back(result_of_deriving(logger, RUPProofRule{}, // implies?
                     want_to_derive, p.half_reif, ProofLevel::Temporary, Reason{}));
                 negation_line--;
             }
@@ -515,7 +515,7 @@ namespace
         if (! lb_2.half_reif.empty())
             reif.insert(reif.end(), lb_2.half_reif.begin(), lb_2.half_reif.end());
 
-        if (lb_1.rhs <= 0_i || lb_2.rhs <= 0_i) return result_of_deriving(logger, ProofRule::IMPLIES,
+        if (lb_1.rhs <= 0_i || lb_2.rhs <= 0_i) return result_of_deriving(logger, ImpliesProofRule{},
             mag_z_sum >= 0_i, reif,
             ProofLevel::Temporary, reason);
 
@@ -531,9 +531,9 @@ namespace
             }
             inner_sum.add(lb_2.line, false);
             logger.emit_proof_line(inner_sum.str(), ProofLevel::Temporary);
-            auto implied_sum = logger.emit_under_reason_appending(ProofRule::IMPLIES,
+            auto implied_sum = logger.emit_under_reason(ImpliesProofRule{make_optional<ProofLine>(-1)},
                 logger.reified(bitsum + lb_2.rhs * ProofBitVariable{mag_x, Integer(i), false} >= lb_2.rhs, reif),
-                ProofLevel::Temporary, reason, make_optional<ProofLine>(-1));
+                ProofLevel::Temporary, reason);
             outer_sum.add_multiplied_by(implied_sum, 1 << i);
         }
 
@@ -542,9 +542,9 @@ namespace
         auto bitproducts_bound = logger.emit_proof_line(outer_sum.str(), ProofLevel::Temporary);
         add_lines(logger, bitproducts_bound, z_eq_product_lines.first);
 
-        return result_of_deriving(logger, ProofRule::IMPLIES,
+        return result_of_deriving(logger, ImpliesProofRule{make_optional<ProofLine>(-1)},
             mag_z_sum >= lb_1.rhs * lb_2.rhs, reif,
-            ProofLevel::Temporary, reason, -1);
+            ProofLevel::Temporary, reason);
     }
 
     auto prove_positive_product_upper_bound(ProofLogger & logger, DerivedPBConstraint ub_1, DerivedPBConstraint ub_2,
@@ -569,7 +569,7 @@ namespace
             reif.insert(reif.end(), ub_2.half_reif.begin(), ub_2.half_reif.end());
 
         if (ub_1.rhs > 0_i || ub_2.rhs > 0_i)
-            return result_of_deriving(logger, ProofRule::IMPLIES,
+            return result_of_deriving(logger, ImpliesProofRule{},
                 mag_z_sum >= 0_i, reif,
                 ProofLevel::Temporary, reason);
 
@@ -617,13 +617,13 @@ namespace
             auto desired_constraint =
                 logger.reified(logger.reified(desired_sum >= rhs, reif), reason);
 
-            auto fusion_premise_1 = result_of_deriving(logger, ProofRule::IMPLIES,
+            auto fusion_premise_1 = result_of_deriving(logger, ImpliesProofRule{make_optional<ProofLine>(-1)},
                 desired_constraint, HalfReifyOnConjunctionOf{ProofBitVariable{mag_x, Integer(i), false}},
-                ProofLevel::Temporary, reason, -1);
+                ProofLevel::Temporary, reason);
 
             rhs = Integer{(1 << bit_products[i].size()) - 1};
 
-            auto fusion_premise_2 = result_of_deriving(logger, ProofRule::IMPLIES,
+            auto fusion_premise_2 = result_of_deriving(logger, ImpliesProofRule{},
                 desired_constraint, HalfReifyOnConjunctionOf{ProofBitVariable{mag_x, Integer(i), true}},
                 ProofLevel::Temporary, reason);
 
@@ -643,9 +643,9 @@ namespace
 
         add_lines(logger, bitproducts_bound, z_eq_product_lines.second);
 
-        return result_of_deriving(logger, ProofRule::IMPLIES,
+        return result_of_deriving(logger, ImpliesProofRule{make_optional<ProofLine>(-1)},
             mag_z_sum >= -ub_1.rhs * ub_2.rhs, reif,
-            ProofLevel::Temporary, reason, -1);
+            ProofLevel::Temporary, reason);
     }
 
     auto prove_product_bounds(const Reason & reason, ProofLogger & logger,
@@ -666,9 +666,9 @@ namespace
             auto var_sum = WeightedPseudoBooleanSum{} + 1_i * var;
             auto neg_var_sum = WeightedPseudoBooleanSum{} + -1_i * var;
 
-            auto rup_lower = result_of_deriving(logger, ProofRule::RUP, var_sum >= lower, {}, ProofLevel::Temporary, reason);
+            auto rup_lower = result_of_deriving(logger, RUPProofRule{}, var_sum >= lower, {}, ProofLevel::Temporary, reason);
 
-            auto rup_upper = result_of_deriving(logger, ProofRule::RUP, neg_var_sum >= -upper, {}, ProofLevel::Temporary, reason);
+            auto rup_upper = result_of_deriving(logger, RUPProofRule{}, neg_var_sum >= -upper, {}, ProofLevel::Temporary, reason);
 
             rup_bounds.insert({var, DerivedBounds{rup_lower, rup_upper}});
         }
@@ -744,13 +744,13 @@ namespace
 
             lower_bounds_for_fusion.emplace_back(
                 z_sum, smallest_product, reif_eq_0, reason,
-                logger.emit_under_reason(ProofRule::RUP,
+                logger.emit_under_reason(RUPProofRule{},
                     logger.reified(final_lower_bound, reif_eq_0),
                     ProofLevel::Temporary, reason));
 
             upper_bounds_for_fusion.emplace_back(
                 neg_z_sum, -largest_product, HalfReifyOnConjunctionOf{var == 0_i}, reason,
-                logger.emit_under_reason(ProofRule::RUP,
+                logger.emit_under_reason(RUPProofRule{},
                     logger.reified(final_upper_bound, reif_eq_0),
                     ProofLevel::Temporary, reason));
         }
@@ -781,11 +781,11 @@ namespace
         auto min_x = Integer{x_has_neg ? -(1_i << (x_bits - 1_i)) : 0_i};
         auto max_x = Integer{x_has_neg ? (1_i << (x_bits - 1_i)) : 1_i << (x_bits)} - 1_i;
 
-        const auto rup_x_upper = result_of_deriving(logger, ProofRule::RUP,
+        const auto rup_x_upper = result_of_deriving(logger, RUPProofRule{},
             WeightedPseudoBooleanSum{} + -1_i * x >= -(! assume_upper ? max_x : smallest_quotient - 1_i),
             assume_upper ? HalfReifyOnConjunctionOf{x < smallest_quotient} : HalfReifyOnConjunctionOf{x >= largest_quotient + 1_i}, ProofLevel::Temporary, reason);
 
-        const auto rup_x_lower = result_of_deriving(logger, ProofRule::RUP,
+        const auto rup_x_lower = result_of_deriving(logger, RUPProofRule{},
             WeightedPseudoBooleanSum{} + 1_i * x >= (assume_upper ? min_x : largest_quotient + 1_i),
             ! assume_upper ? HalfReifyOnConjunctionOf{x >= largest_quotient + 1_i} : HalfReifyOnConjunctionOf{x < smallest_quotient}, ProofLevel::Temporary, reason);
 
@@ -796,9 +796,9 @@ namespace
         auto var_sum = WeightedPseudoBooleanSum{} + 1_i * y;
         auto neg_var_sum = WeightedPseudoBooleanSum{} + -1_i * y;
 
-        auto rup_y_lower = result_of_deriving(logger, ProofRule::RUP, var_sum >= y_lower, {}, ProofLevel::Temporary, reason);
+        auto rup_y_lower = result_of_deriving(logger, RUPProofRule{}, var_sum >= y_lower, {}, ProofLevel::Temporary, reason);
 
-        auto rup_y_upper = result_of_deriving(logger, ProofRule::RUP, neg_var_sum >= -y_upper, {}, ProofLevel::Temporary, reason);
+        auto rup_y_upper = result_of_deriving(logger, RUPProofRule{}, neg_var_sum >= -y_upper, {}, ProofLevel::Temporary, reason);
 
         rup_bounds.insert({y, DerivedBounds{rup_y_lower, rup_y_upper}});
 
@@ -840,8 +840,8 @@ namespace
         auto z_sum = WeightedPseudoBooleanSum{} + 1_i * z;
         auto neg_z_sum = WeightedPseudoBooleanSum{} + -1_i * z;
 
-        auto rup_z_lower = result_of_deriving(logger, ProofRule::RUP, z_sum >= z_lower, {}, ProofLevel::Temporary, reason);
-        auto rup_z_upper = result_of_deriving(logger, ProofRule::RUP, neg_z_sum >= -z_upper, {}, ProofLevel::Temporary, reason);
+        auto rup_z_lower = result_of_deriving(logger, RUPProofRule{}, z_sum >= z_lower, {}, ProofLevel::Temporary, reason);
+        auto rup_z_upper = result_of_deriving(logger, RUPProofRule{}, neg_z_sum >= -z_upper, {}, ProofLevel::Temporary, reason);
 
         // Derive upper and lower bounds on z, conditioned on sign bits for x and y
         for (const auto & x_bound : conditional_bounds.at(x)) {
@@ -885,13 +885,13 @@ namespace
                 //  Check whether we derived a lower or an upper bound after channelling
                 if (conditional_product_bound.sum.terms[0].coefficient == 1_i && conditional_product_bound.rhs > z_upper) {
                     add_lines(logger, conditional_product_bound.line, rup_z_upper.line);
-                    auto resolvent = result_of_deriving(logger, ProofRule::RUP, WeightedPseudoBooleanSum{} >= 1_i, conditional_product_bound.half_reif, ProofLevel::Temporary, reason);
+                    auto resolvent = result_of_deriving(logger, RUPProofRule{}, WeightedPseudoBooleanSum{} >= 1_i, conditional_product_bound.half_reif, ProofLevel::Temporary, reason);
                     to_resolve.emplace_back(resolvent.half_reif, resolvent.line);
                 }
 
                 else if (conditional_product_bound.sum.terms[0].coefficient == -1_i && -conditional_product_bound.rhs < z_lower) {
                     add_lines(logger, conditional_product_bound.line, rup_z_lower.line);
-                    auto resolvent = result_of_deriving(logger, ProofRule::RUP, WeightedPseudoBooleanSum{} >= 1_i, conditional_product_bound.half_reif, ProofLevel::Temporary, reason);
+                    auto resolvent = result_of_deriving(logger, RUPProofRule{}, WeightedPseudoBooleanSum{} >= 1_i, conditional_product_bound.half_reif, ProofLevel::Temporary, reason);
                     to_resolve.emplace_back(resolvent.half_reif, resolvent.line);
                 }
                 else if (abs(conditional_product_bound.sum.terms[0].coefficient) != 1_i)
@@ -902,9 +902,9 @@ namespace
         for (auto & var : {x, y}) {
             auto lower_reif = HalfReifyOnConjunctionOf{var == 0_i, rup_x_lower.half_reif[0]};
 
-            to_resolve.emplace_back(lower_reif, logger.emit_under_reason(ProofRule::RUP, logger.reified(WeightedPseudoBooleanSum{} >= 1_i, lower_reif), ProofLevel::Temporary, reason));
+            to_resolve.emplace_back(lower_reif, logger.emit_under_reason(RUPProofRule{}, logger.reified(WeightedPseudoBooleanSum{} >= 1_i, lower_reif), ProofLevel::Temporary, reason));
             auto upper_reif = HalfReifyOnConjunctionOf{var == 0_i, rup_x_upper.half_reif[0]};
-            to_resolve.emplace_back(upper_reif, logger.emit_under_reason(ProofRule::RUP, logger.reified(WeightedPseudoBooleanSum{} >= 1_i, upper_reif), ProofLevel::Temporary, reason));
+            to_resolve.emplace_back(upper_reif, logger.emit_under_reason(RUPProofRule{}, logger.reified(WeightedPseudoBooleanSum{} >= 1_i, upper_reif), ProofLevel::Temporary, reason));
         }
 
         run_resolution(logger, to_resolve);

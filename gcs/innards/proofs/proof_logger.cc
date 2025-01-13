@@ -35,20 +35,6 @@ using namespace gcs::innards;
 
 namespace
 {
-    [[nodiscard]] auto proof_rule_str(const ProofRule & rule) -> string
-    {
-        switch (rule) {
-        case ProofRule::RUP:
-            return "u";
-        case ProofRule::IMPLIES:
-            return "ia";
-        case ProofRule::ASSERT:
-            return "a";
-        }
-
-        throw NonExhaustiveSwitch{};
-    }
-
     [[nodiscard]] auto deview(const VariableConditionFrom<ViewOfIntegerVariableID> & cond) -> VariableConditionFrom<SimpleIntegerVariableID>
     {
         switch (cond.op) {
@@ -391,14 +377,26 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessEqual<Weighted<Pseud
 {
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
-    _imp->proof << "* emit " << proof_rule_str(rule) << " proof line from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
+    _imp->proof << "* emit proof line from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
 #endif
 
     stringstream rule_line;
 
-    rule_line << proof_rule_str(rule) << " ";
+    rule_line << overloaded{
+                     [&](const RUPProofRule &) -> string { return "rup"; },
+                     [&](const ImpliesProofRule &) -> string { return "ia"; },
+                     [&](const AssertProofRule &) -> string { return "a"; }}
+                     .visit(rule)
+              << " ";
 
     emit_inequality_to(names_and_ids_tracker(), ineq, nullopt, rule_line);
+
+    rule_line << overloaded{
+                     [&](const RUPProofRule &) -> string { return ""; },
+                     [&](const ImpliesProofRule & rule) -> string { if (rule.line) { return " " + to_string(*rule.line); } else { return ""; } },
+                     [&](const AssertProofRule &) -> string { return ""; }}
+                     .visit(rule)
+              << " ";
 
     return emit_proof_line(
         rule_line.str(), level
@@ -412,24 +410,6 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessEqual<Weighted<Pseud
 auto ProofLogger::emit_under_reason(
     const ProofRule & rule, const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
     ProofLevel level, const Reason & reason
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-    ,
-    const std::source_location & where
-#endif
-    ) -> ProofLine
-{
-    return emit_under_reason_appending(rule, ineq, level, reason, nullopt
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-        ,
-        where
-#endif
-    );
-}
-
-auto ProofLogger::emit_under_reason_appending(
-    const ProofRule & rule, const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
-    ProofLevel level, const Reason & reason,
-    const optional<ProofLine> & append_line
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
     ,
     const std::source_location & where
@@ -456,11 +436,17 @@ auto ProofLogger::emit_under_reason_appending(
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
 
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
-    _imp->proof << "* emit " << proof_rule_str(rule) << " proof line from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
+    _imp->proof << "* emit proof line from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
 #endif
 
     stringstream rule_line;
-    rule_line << proof_rule_str(rule) << " ";
+
+    rule_line << overloaded{
+                     [&](const RUPProofRule &) -> string { return "rup"; },
+                     [&](const ImpliesProofRule &) -> string { return "ia"; },
+                     [&](const AssertProofRule &) -> string { return "a"; }}
+                     .visit(rule)
+              << " ";
 
     if (reason_literals) {
         vector<ProofLiteralOrFlag> reason_proof_literals{};
@@ -472,9 +458,12 @@ auto ProofLogger::emit_under_reason_appending(
         emit_inequality_to(names_and_ids_tracker(), ineq, nullopt, rule_line);
     }
 
-    if (append_line) {
-        rule_line << " " << to_string(*append_line);
-    }
+    rule_line << overloaded{
+                     [&](const RUPProofRule &) -> string { return ""; },
+                     [&](const ImpliesProofRule & rule) -> string { if (rule.line) { return " " + to_string(*rule.line); } else { return ""; } },
+                     [&](const AssertProofRule &) -> string { return ""; }}
+                     .visit(rule)
+              << " ";
 
     return emit_proof_line(
         rule_line.str(), level
@@ -492,22 +481,7 @@ auto ProofLogger::emit_rup_proof_line(const SumLessEqual<Weighted<PseudoBooleanT
 #endif
     ) -> ProofLine
 {
-    return emit(ProofRule::RUP, ineq, level
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-        ,
-        where
-#endif
-    );
-}
-
-auto ProofLogger::emit_assert_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-    ,
-    const std::source_location & where
-#endif
-    ) -> ProofLine
-{
-    return emit(ProofRule::ASSERT, ineq, level
+    return emit(RUPProofRule{}, ineq, level
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
         ,
         where
@@ -523,7 +497,7 @@ auto ProofLogger::emit_rup_proof_line_under_reason(const Reason & reason, const 
 #endif
     ) -> ProofLine
 {
-    return emit_under_reason(ProofRule::RUP, ineq, level, reason
+    return emit_under_reason(RUPProofRule{}, ineq, level, reason
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
         ,
         where
