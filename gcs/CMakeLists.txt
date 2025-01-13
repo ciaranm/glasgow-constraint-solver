@@ -45,6 +45,7 @@ add_library(glasgow_constraint_solver
         innards/extensional_utils.cc
         innards/integer_variable_state.cc
         innards/literal.cc
+        innards/power.cc
         innards/proofs/bits_encoding.cc
         innards/proofs/emit_inequality_to.cc
         innards/proofs/names_and_ids_tracker.cc

@@ -133,11 +133,6 @@ namespace gcs
         return Integer{-a.raw_value};
     }
 
-    [[nodiscard]] constexpr inline auto operator<<(Integer a, Integer b) -> Integer
-    {
-        return Integer{a.raw_value << b.raw_value};
-    }
-
     ///@}
 
     /**

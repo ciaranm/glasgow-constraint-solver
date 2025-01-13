@@ -1,5 +1,6 @@
 #include <gcs/constraints/mult_bc.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/power.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
@@ -132,7 +133,7 @@ namespace
                        << " ";
         }
 
-        auto add_multiplied_by(ProofLine line_number, long mult)
+        auto add_multiplied_by(ProofLine line_number, Integer mult)
         {
             count++;
             p_line << line_number;
@@ -526,18 +527,18 @@ namespace
             WeightedPseudoBooleanSum bitsum{};
             PLine inner_sum{};
             for (size_t j = 0; j < bit_products[i].size(); j++) {
-                inner_sum.add_multiplied_by(bit_products[i][j].reverse_reif, 1 << j);
-                bitsum += Integer{1 << (j)} * bit_products[i][j].flag;
+                inner_sum.add_multiplied_by(bit_products[i][j].reverse_reif, power2(Integer(j)));
+                bitsum += power2(Integer(j)) * bit_products[i][j].flag;
             }
             inner_sum.add(lb_2.line, false);
             logger.emit_proof_line(inner_sum.str(), ProofLevel::Temporary);
             auto implied_sum = logger.emit_under_reason(ImpliesProofRule{make_optional<ProofLine>(-1)},
                 logger.reified(bitsum + lb_2.rhs * ProofBitVariable{mag_x, Integer(i), false} >= lb_2.rhs, reif),
                 ProofLevel::Temporary, reason);
-            outer_sum.add_multiplied_by(implied_sum, 1 << i);
+            outer_sum.add_multiplied_by(implied_sum, power2(Integer(i)));
         }
 
-        outer_sum.add_multiplied_by(lb_1.line, lb_2.rhs.raw_value);
+        outer_sum.add_multiplied_by(lb_1.line, lb_2.rhs);
 
         auto bitproducts_bound = logger.emit_proof_line(outer_sum.str(), ProofLevel::Temporary);
         add_lines(logger, bitproducts_bound, z_eq_product_lines.first);
@@ -593,7 +594,7 @@ namespace
                             1_i,
                         ProofLevel::Top);
                 }
-                inner_sum_1.add_multiplied_by(*bit_products[i][j].partial_product_1, 1 << j);
+                inner_sum_1.add_multiplied_by(*bit_products[i][j].partial_product_1, power2(Integer(j)));
 
                 if (bit_products[i][j].partial_product_2 == nullopt) {
                     bit_products[i][j].partial_product_2 = logger.emit_rup_proof_line(
@@ -603,15 +604,15 @@ namespace
                             1_i,
                         ProofLevel::Top);
                 }
-                inner_sum_2.add_multiplied_by(*bit_products[i][j].partial_product_2, 1 << j);
+                inner_sum_2.add_multiplied_by(*bit_products[i][j].partial_product_2, power2(Integer(j)));
 
-                bitsum += Integer{1 << (j)} * ! bit_products[i][j].flag;
+                bitsum += power2(Integer(j)) * ! bit_products[i][j].flag;
             }
             inner_sum_1.add(ub_2.line, false);
             logger.emit_proof_line(inner_sum_1.str(), ProofLevel::Temporary);
             logger.emit_proof_line(inner_sum_2.str(), ProofLevel::Temporary);
 
-            auto rhs = Integer{(1 << bit_products[i].size()) - 1} + ub_2.rhs;
+            auto rhs = power2(Integer(bit_products[i].size())) - 1_i + ub_2.rhs;
 
             auto desired_sum = bitsum + -(ub_2.rhs) * ProofBitVariable{mag_x, Integer(i), true};
             auto desired_constraint =
@@ -633,11 +634,11 @@ namespace
                 DerivedPBConstraint{desired_sum, rhs, reif, reason, 0},
                 {fusion_premise_1, fusion_premise_2});
 
-            outer_sum.add_multiplied_by(fusion_resolvent.line, 1 << i);
+            outer_sum.add_multiplied_by(fusion_resolvent.line, power2(Integer(i)));
         }
 
         logger.emit_proof_line(outer_sum.str(), ProofLevel::Temporary);
-        outer_sum.add_multiplied_by(ub_1.line, -ub_2.rhs.raw_value);
+        outer_sum.add_multiplied_by(ub_1.line, -ub_2.rhs);
 
         auto bitproducts_bound = logger.emit_proof_line(outer_sum.str(), ProofLevel::Temporary);
 
@@ -778,8 +779,8 @@ namespace
 
         auto x_bits = logger.names_and_ids_tracker().num_bits(x);
         auto x_has_neg = channelling_constraints.contains(x);
-        auto min_x = Integer{x_has_neg ? -(1_i << (x_bits - 1_i)) : 0_i};
-        auto max_x = Integer{x_has_neg ? (1_i << (x_bits - 1_i)) : 1_i << (x_bits)} - 1_i;
+        auto min_x = Integer{x_has_neg ? -(power2(x_bits - 1_i)) : 0_i};
+        auto max_x = Integer{x_has_neg ? (power2(x_bits - 1_i)) : power2(x_bits)} - 1_i;
 
         const auto rup_x_upper = result_of_deriving(logger, RUPProofRule{},
             WeightedPseudoBooleanSum{} + -1_i * x >= -(! assume_upper ? max_x : smallest_quotient - 1_i),
@@ -1076,16 +1077,16 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
 
                 // Skip the neg bit
                 for (Integer pos = 0_i; pos < num_bits - 1_i; pos++)
-                    bit_sum_without_neg += (1_i << pos) * ProofBitVariable{v, pos + 1_i, true};
+                    bit_sum_without_neg += power2(pos) * ProofBitVariable{v, pos + 1_i, true};
 
                 auto pos_ge = optional_model->add_constraint(
                     bit_sum_without_neg + (-1_i * v_magnitude) >= 0_i, HalfReifyOnConjunctionOf{! sign_bit});
                 auto pos_le = optional_model->add_constraint(
                     bit_sum_without_neg + (-1_i * v_magnitude) <= 0_i, HalfReifyOnConjunctionOf{! sign_bit});
                 auto neg_ge = optional_model->add_constraint(
-                    bit_sum_without_neg + (1_i * v_magnitude) >= (1_i << (num_bits - 1_i)), HalfReifyOnConjunctionOf{sign_bit});
+                    bit_sum_without_neg + (1_i * v_magnitude) >= power2(num_bits - 1_i), HalfReifyOnConjunctionOf{sign_bit});
                 auto neg_le = optional_model->add_constraint(
-                    bit_sum_without_neg + (1_i * v_magnitude) <= (1_i << (num_bits - 1_i)), HalfReifyOnConjunctionOf{sign_bit});
+                    bit_sum_without_neg + (1_i * v_magnitude) <= power2(num_bits - 1_i), HalfReifyOnConjunctionOf{sign_bit});
 
                 channelling_constraints.insert({v, ChannellingData{*pos_ge, *pos_le, *neg_ge, *neg_le}});
 
@@ -1119,7 +1120,7 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
                     HalfReifyOnConjunctionOf{! flag});
 
                 bit_products[i.raw_value].emplace_back(BitProductData{flag, *forwards, *backwards, nullopt, nullopt});
-                bit_product_sum += (1_i << (i + j)) * flag;
+                bit_product_sum += power2(i + j) * flag;
             }
         }
 

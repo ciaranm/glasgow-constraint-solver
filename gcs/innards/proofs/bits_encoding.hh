@@ -15,7 +15,7 @@ namespace gcs::innards
      *
      * \ingroup Innards
      */
-    [[nodiscard]] auto get_bits_encoding_coeffs(Integer lower, Integer upper) -> std::tuple<int, Integer, Integer>;
+    [[nodiscard]] auto get_bits_encoding_coeffs(Integer lower, Integer upper) -> std::tuple<Integer, Integer, Integer>;
 }
 
 #endif

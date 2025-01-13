@@ -1,4 +1,5 @@
 #include <gcs/innards/interval_set.hh>
+#include <gcs/innards/power.hh>
 #include <gcs/innards/proofs/bits_encoding.hh>
 #include <gcs/innards/proofs/emit_inequality_to.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -276,8 +277,8 @@ auto ProofModel::set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableI
     names_and_ids_tracker().track_variable_name(id, name);
     if (0_i != negative_bit_coeff)
         bits.emplace_back(negative_bit_coeff, names_and_ids_tracker().allocate_xliteral_meaning_negative_bit_of(id, negative_bit_coeff));
-    for (int b = 0; b <= highest_bit_shift; ++b)
-        bits.emplace_back(Integer{1ll << b}, names_and_ids_tracker().allocate_xliteral_meaning_bit_of(id, Integer{b}));
+    for (Integer b = 0_i; b <= highest_bit_shift; ++b)
+        bits.emplace_back(power2(b), names_and_ids_tracker().allocate_xliteral_meaning_bit_of(id, Integer{b}));
 
     names_and_ids_tracker().track_bits(id, negative_bit_coeff, bits);
     _imp->model_variables += bits.size();
