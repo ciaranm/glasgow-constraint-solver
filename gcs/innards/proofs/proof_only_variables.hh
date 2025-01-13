@@ -40,14 +40,6 @@ namespace gcs::innards
         Integer position;
         bool positive;
 
-#if (_LIBCPP_VERSION)
-        // again need workaround for clang/libcpp on MacOS
-        [[nodiscard]] inline auto operator<(const ProofBitVariable & other) const -> bool
-        {
-            return std::tuple{for_var, position, positive} < std::tuple{other.for_var, other.position, other.positive};
-        }
-#endif
-
         [[nodiscard]] auto operator<=>(const ProofBitVariable &) const = default;
     };
 

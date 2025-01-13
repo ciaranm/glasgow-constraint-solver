@@ -39,14 +39,6 @@ namespace gcs
         VariableConditionOperator op;
         Integer value;
 
-#if (_LIBCPP_VERSION)
-        // workaround for clang/libcpp on MacOS
-        [[nodiscard]] inline constexpr auto operator<(const VariableConditionFrom<VariableType_> & other) const -> bool
-        {
-            return std::tuple{var, op, value} < std::tuple{other.var, other.op, other.value};
-        }
-#endif
-
         /**
          * \brief Comparison, no defined meaning but allows for sorting etc.
          */
