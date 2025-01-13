@@ -1,0 +1,5 @@
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+include_directories(${CMAKE_SOURCE_DIR}/generator/src/generator/include)
+add_subdirectory(single_mult)
+add_subdirectory(skeleton_puzzle)
+add_subdirectory(n_fractions)

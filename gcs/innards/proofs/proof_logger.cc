@@ -17,6 +17,7 @@ using std::deque;
 using std::flush;
 using std::fstream;
 using std::ios;
+using std::make_optional;
 using std::map;
 using std::max;
 using std::nullopt;
@@ -82,7 +83,12 @@ namespace
                     }}
                     .visit(simplify_literal(lit));
             },
-            [&](const ProofFlag & flag) { return names_and_ids_tracker.pb_file_string_for(flag); }}
+            [&](const ProofFlag & flag) {
+                return names_and_ids_tracker.pb_file_string_for(flag);
+            },
+            [&](const ProofBitVariable & bit) {
+                return names_and_ids_tracker.pb_file_string_for(names_and_ids_tracker.get_bit(bit).second);
+            }}
             .visit(lit);
     }
 }
@@ -343,6 +349,46 @@ auto ProofLogger::reason_to_lits(const Reason & reason) -> vector<ProofLiteralOr
     return reason_proof_literals;
 }
 
+#if 0
+auto ProofLogger::weaken_lits(const ProofLine & l, std::vector<ProofLiteralOrFlag> lits, ProofLevel level) -> ProofLine
+{
+    stringstream proof_line;
+    proof_line << "p " << l << " ";
+    for (const auto & lit : lits) {
+
+        overloaded{
+            [&](const ProofFlag & f) {
+                auto pos_f = f.positive ? f : ! f;
+                proof_line << variable_constraints_tracker().proof_name(pos_f) << " w ";
+            },
+            [&](const ProofLiteral & lit) {
+                overloaded{
+                    [&](const TrueLiteral &) {
+                    },
+                    [&](const FalseLiteral &) {
+
+                    },
+                    [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
+                        auto string_name = variable_constraints_tracker().proof_name(cond);
+                        // Bad?
+                        if (string_name.starts_with("~")) {
+                            string_name.erase(0, 1);
+                        }
+                        proof_line << string_name << " w ";
+                    }}
+                    .visit(simplify_literal(lit));
+            },
+            [&](const ProofBitVariable & b) {
+                auto pos_b = b.positive ? b : ! b;
+                proof_line << variable_constraints_tracker().get_bit(pos_b).second << " w ";
+            }}
+            .visit(lit);
+    }
+
+    return emit_proof_line(proof_line.str(), level);
+}
+#endif
+
 auto ProofLogger::reified(const WeightedPseudoBooleanLessEqual & ineq, const HalfReifyOnConjunctionOf & half_reif) -> WeightedPseudoBooleanLessEqual
 {
     return names_and_ids_tracker().reify(ineq, half_reif);
@@ -411,8 +457,25 @@ auto ProofLogger::emit_under_reason(
     ,
     const std::source_location & where
 #endif
+    ) -> ProofLine
+{
+    return emit_under_reason_appending(rule, ineq, level, reason, nullopt
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+        ,
+        where
+#endif
+    );
+}
+
+auto ProofLogger::emit_under_reason_appending(
+    const ProofRule & rule, const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
+    ProofLevel level, const Reason & reason,
+    const optional<ProofLine> & append_line
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
     ,
-    const optional<ProofLine> & append_line) -> ProofLine
+    const std::source_location & where
+#endif
+    ) -> ProofLine
 {
     optional<Literals> reason_literals;
     if (reason)
@@ -509,30 +572,6 @@ auto ProofLogger::emit_rup_proof_line_under_reason(const Reason & reason, const 
     );
 }
 
-auto ProofLogger::emit_red_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
-    const std::vector<std::pair<ProofLiteralOrFlag, ProofLiteralOrFlag>> & witness,
-    ProofLevel level
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-    ,
-    const std::source_location & where
-#endif
-    ) -> ProofLine
-{
-    names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
-
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-    _imp->proof << "* emit red line from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
-#endif
-    _imp->proof << "red ";
-    emit_inequality_to(names_and_ids_tracker(), ineq, nullopt, _imp->proof);
-
-    for (auto & [f, t] : witness)
-        _imp->proof << " " << witness_literal(names_and_ids_tracker(), f) << " -> " << witness_literal(names_and_ids_tracker(), t);
-    _imp->proof << " ;\n";
-
-    return record_proof_line(++_imp->proof_line, level);
-}
-
 auto ProofLogger::proof_level() -> int
 {
     return _imp->active_proof_level;
@@ -609,6 +648,35 @@ auto ProofLogger::emit_subproofs(const map<string, Subproof> & subproofs)
         _imp->proof << "     end -1\n";
     }
     _imp->proof << "end\n";
+}
+
+auto ProofLogger::emit_red_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
+    const std::vector<std::pair<ProofLiteralOrFlag, ProofLiteralOrFlag>> & witness,
+    ProofLevel level, const std::optional<std::map<std::string, Subproof>> & subproofs
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+    ,
+    const std::source_location & where
+#endif
+    ) -> ProofLine
+{
+    names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
+
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+    _imp->proof << "* emit red line from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
+#endif
+    _imp->proof << "red ";
+    emit_inequality_to(names_and_ids_tracker(), ineq, nullopt, _imp->proof);
+
+    for (auto & [f, t] : witness)
+        _imp->proof << " " << witness_literal(names_and_ids_tracker(), f) << " -> " << witness_literal(names_and_ids_tracker(), t);
+    _imp->proof << " ;";
+
+    if (subproofs)
+        emit_subproofs(subproofs.value());
+    else
+        _imp->proof << "\n";
+
+    return record_proof_line(++_imp->proof_line, level);
 }
 
 auto ProofLogger::emit_red_proof_lines_forward_reifying(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLiteralOrFlag reif,

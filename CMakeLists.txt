@@ -38,6 +38,12 @@ if (COMPILER_SUPPORTS_NO_ANNOYING_WARNINGS_ABOUT_MOVE)
     add_compile_options(-Wno-unqualified-std-cast-call)
 endif (COMPILER_SUPPORTS_NO_ANNOYING_WARNINGS_ABOUT_MOVE)
 
+unset(COMPILER_SUPPORTS_UNQUALIFIED_STD_CAST_CALL CACHE)
+CHECK_CXX_COMPILER_FLAG(-Wno-unqualified-std-cast-call COMPILER_SUPPORTS_UNQUALIFIED_STD_CAST_CALL)
+if (COMPILER_SUPPORTS_UNQUALIFIED_STD_CAST_CALL)
+    add_compile_options(-Wno-unqualified-std-cast-call)
+endif (COMPILER_SUPPORTS_UNQUALIFIED_STD_CAST_CALL)
+
 add_compile_options(-g)
 add_compile_options(-g3)
 add_compile_options(-gdwarf-3)
@@ -49,7 +55,7 @@ if (NOT GCS_DEBUG_MODE)
     add_compile_options(-O3)
 endif (NOT GCS_DEBUG_MODE)
 
-# add_compile_options(-DGCS_TRACK_ALL_PROPAGATIONS=1)
+add_compile_options(-DGCS_TRACK_ALL_PROPAGATIONS=1)
 
 enable_testing()
 
@@ -67,6 +73,9 @@ if (GCS_ENABLE_EXAMPLES)
     add_subdirectory(minicp_benchmarks)
     add_subdirectory(test)
 endif (GCS_ENABLE_EXAMPLES)
+
+
+add_subdirectory(mult_experiments)
 
 if (GCS_ENABLE_DOXYGEN)
     find_package(Doxygen)

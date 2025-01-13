@@ -317,7 +317,7 @@ auto Propagators::propagate(const optional<Literal> & lit, State & state, ProofL
         try {
             ++_imp->total_propagations;
             auto propagator_state = _imp->propagation_functions[propagator_id](state, tracker, logger);
-            if (tracker.did_anything_since_last_call())
+            if (tracker.did_anything_since_last_call_by_propagation_queue())
                 ++_imp->effectful_propagations;
             switch (propagator_state) {
             case PropagatorState::Enable:

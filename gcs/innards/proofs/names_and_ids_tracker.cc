@@ -214,7 +214,8 @@ auto NamesAndIDsTracker::need_all_proof_names_in(const SumOf<Weighted<PseudoBool
             },
             [&](const ProofFlag &) {},
             [&](const IntegerVariableID &) {},
-            [&](const ProofOnlySimpleIntegerVariableID &) {}}
+            [&](const ProofOnlySimpleIntegerVariableID &) {},
+            [&](const ProofBitVariable &) {}}
             .visit(v);
 }
 
@@ -234,6 +235,38 @@ auto NamesAndIDsTracker::for_each_bit(const SimpleOrProofOnlyIntegerVariableID &
         throw ProofError("missing bits");
     for (auto & [c, n] : it->second.second)
         f(c, n);
+}
+
+auto NamesAndIDsTracker::get_bit(const gcs::innards::SimpleOrProofOnlyIntegerVariableID & var, unsigned long position) -> std::pair<Integer, XLiteral>
+{
+    auto it = _imp->integer_variable_bits_to_size_and_proof_vars.find(var);
+    if (it == _imp->integer_variable_bits_to_size_and_proof_vars.end())
+        throw ProofError("missing bits");
+
+    return it->second.second.at(position);
+}
+
+auto NamesAndIDsTracker::get_bit(const ProofBitVariable & bit) -> std::pair<Integer, XLiteral>
+{
+    auto it = _imp->integer_variable_bits_to_size_and_proof_vars.find(bit.for_var);
+    if (it == _imp->integer_variable_bits_to_size_and_proof_vars.end())
+        throw ProofError("missing bits");
+
+    auto bit_data = it->second.second.at(bit.position);
+
+    if (! bit.positive)
+        bit_data.second.negated = ! bit_data.second.negated;
+
+    return bit_data;
+}
+
+auto NamesAndIDsTracker::num_bits(const gcs::innards::SimpleOrProofOnlyIntegerVariableID & var) -> unsigned long long
+{
+    auto it = _imp->integer_variable_bits_to_size_and_proof_vars.find(var);
+    if (it == _imp->integer_variable_bits_to_size_and_proof_vars.end())
+        throw ProofError("missing bits");
+
+    return it->second.second.size();
 }
 
 auto NamesAndIDsTracker::track_bits(const SimpleOrProofOnlyIntegerVariableID & id, Integer negative_coeff,
@@ -706,6 +739,9 @@ auto NamesAndIDsTracker::reify(const WeightedPseudoBooleanLessEqual & ineq, cons
                     reif_const += max(0_i, w * bit_value);
                 });
             },
+            [&, w = w](const ProofBitVariable &) {
+                reif_const += max(0_i, w);
+            },
         }
             .visit(v);
     }
@@ -720,6 +756,9 @@ auto NamesAndIDsTracker::reify(const WeightedPseudoBooleanLessEqual & ineq, cons
             },
             [&](const ProofLiteral & lit) {
                 new_lhs += -Integer{reif_const} * ! lit;
+            },
+            [&](const ProofBitVariable & bit) {
+                new_lhs += -Integer{reif_const} * ! bit;
             }}
             .visit(r);
 
