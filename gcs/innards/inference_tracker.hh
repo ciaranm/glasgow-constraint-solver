@@ -93,22 +93,23 @@ namespace gcs::innards
 
         auto infer_all(ProofLogger * const logger, const std::vector<Literal> & lits, const Justification & why, const Reason & reason) -> void
         {
-            bool first = true;
-
-            // only do explicit justifications once
-            Justification just_not_first{NoJustificationNeeded{}};
-            visit([&](const auto & j) -> void {
+            // only do explicit justifications once, but note that infer might not
+            // actually call the justification if nothing is inferred
+            auto just = visit([&](const auto & j) -> Justification {
                 if constexpr (std::is_same_v<std::decay_t<decltype(j)>, JustifyExplicitly>)
-                    just_not_first = JustifyUsingRUP{};
+                    return JustifyExplicitly{[done = false, &j](const Reason & reason) mutable -> void {
+                        if (! done) {
+                            j.add_proof_steps(reason);
+                            done = true;
+                        }
+                    }};
                 else
-                    just_not_first = why;
+                    return j;
             },
                 why);
 
-            for (const auto & lit : lits) {
-                infer(logger, lit, first ? why : just_not_first, reason);
-                first = false;
-            }
+            for (const auto & lit : lits)
+                infer(logger, lit, just, reason);
         }
 
         auto each_inference() const -> std::generator<std::pair<SimpleIntegerVariableID, Inference>>
