@@ -2,13 +2,15 @@
 #include <gcs/innards/proofs/lp_justification.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/state.hh>
+#include <iostream>
 #include <map>
 #include <optional>
+#include <sstream>
 #include <vector>
 
 // Temporary for DEBUGGING ONLY
+#include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_model.hh>
-#include <gcs/innards/proofs/variable_constraints_tracker.hh>
 
 using std::cout;
 using std::endl;
@@ -121,6 +123,9 @@ namespace
                 },
                 [&](const ProofOnlySimpleIntegerVariableID & poiv) {
                     normalised_lhs += term.coefficient * poiv;
+                },
+                [&](const ProofBitVariable & pbv) {
+                    normalised_lhs += term.coefficient * pbv;
                 }}
                 .visit(term.variable);
         }
@@ -232,8 +237,8 @@ auto gcs::innards::compute_lp_justification(
                 rhs.emplace_back(1);
                 non_zero_count++;
                 p_line_output_for_row[row_count++] = [&](const Reason &) {
-                    logger.variable_constraints_tracker().need_proof_name(var != val);
-                    return logger.variable_constraints_tracker().proof_name(var != val);
+                    logger.names_and_ids_tracker().need_proof_name(var != val);
+                    return logger.names_and_ids_tracker().pb_file_string_for(var != val);
                 };
 
                 // Lit axioms: var == val >= 0
@@ -244,8 +249,8 @@ auto gcs::innards::compute_lp_justification(
                 rhs.emplace_back(-1);
                 non_zero_count++;
                 p_line_output_for_row[row_count++] = [&, var = var, val = val](const Reason &) {
-                    logger.variable_constraints_tracker().need_proof_name(var == val);
-                    return logger.variable_constraints_tracker().proof_name(var == val);
+                    logger.names_and_ids_tracker().need_proof_name(var == val);
+                    return logger.names_and_ids_tracker().pb_file_string_for(var == val);
                 };
 
                 dom_index.emplace_back(col_count);
@@ -435,9 +440,9 @@ namespace
     // For sanity checking / debugging only
     auto test_variable_normalisation() -> void
     {
-        ProofOptions proof_options{"normalisation_test.opb", "normalisation_test.pbp"};
+        ProofOptions proof_options{"normalisation_test"};
 
-        VariableConstraintsTracker tracker(proof_options);
+        NamesAndIDsTracker tracker(proof_options);
         ProofModel model(proof_options, tracker);
 
         tracker.start_writing_model(&model);
@@ -461,10 +466,8 @@ namespace
                 2_i * y >=
             4_i;
 
-        model.emit_model_comment("test constraint:");
-        model.add_constraint(constr);
-        model.emit_model_comment("normalised constraint:");
-        model.add_constraint(variable_normalise(constr, State{}));
+        model.add_constraint("test constraint:", "", constr);
+        model.add_constraint("normalised constraint:", "", variable_normalise(constr, State{}));
         model.finalise();
 
         ProofLogger logger(proof_options, tracker);
