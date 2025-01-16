@@ -171,7 +171,7 @@ auto Python::solve(bool all_solutions,
                     return all_solutions; // Keep searching for solutions if all solutions
                 },
                 .completed = [&] { completed = true; }},
-            prove ? make_optional<ProofOptions>(*proof_location + "/" + *proof_name + ".opb", *proof_location + "/" + *proof_name + ".pbp") : nullopt,
+            prove ? make_optional<ProofOptions>(*proof_location + "/" + *proof_name) : nullopt,
             &abort_flag);
 
         if (timeout_thread.joinable()) {
