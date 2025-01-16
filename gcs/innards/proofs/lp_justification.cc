@@ -236,7 +236,7 @@ auto gcs::innards::compute_lp_justification(
                 value.emplace_back(1);
                 rhs.emplace_back(1);
                 non_zero_count++;
-                p_line_output_for_row[row_count++] = [&](const Reason &) {
+                p_line_output_for_row[row_count++] = [&, var = var, val = val](const Reason &) {
                     logger.names_and_ids_tracker().need_proof_name(var != val);
                     return logger.names_and_ids_tracker().pb_file_string_for(var != val);
                 };
@@ -266,7 +266,7 @@ auto gcs::innards::compute_lp_justification(
             value.insert(value.end(), dom_index.size(), 1);
             rhs.emplace_back(1);
             non_zero_count += int(dom_index.size());
-            p_line_output_for_row[row_count++] = [&](const Reason & reason) {
+            p_line_output_for_row[row_count++] = [&, dom_sum = dom_sum](const Reason & reason) {
                 return to_string(recover_am1_constraint(reason, logger, dom_sum));
             };
 
@@ -276,7 +276,7 @@ auto gcs::innards::compute_lp_justification(
             value.insert(value.end(), dom_index.size(), -1);
             rhs.emplace_back(-1);
             non_zero_count += int(dom_index.size());
-            p_line_output_for_row[row_count++] = [&](const Reason & reason) {
+            p_line_output_for_row[row_count++] = [&, dom_sum = dom_sum](const Reason & reason) {
                 return to_string(logger.emit_rup_proof_line_under_reason(
                     reason, dom_sum >= 1_i, ProofLevel::Temporary));
             };
@@ -398,7 +398,7 @@ auto gcs::innards::compute_lp_justification(
         const HighsModelStatus & model_status = highs.getModelStatus();
         const HighsInfo & info = highs.getInfo();
         const bool has_values = info.primal_solution_status;
-        if (return_status != HighsStatus::kOk || model_status != HighsModelStatus::kOptimal || ! has_values) {
+        if ((return_status != HighsStatus::kOk && model_status != HighsModelStatus::kOptimal)) {
             throw UnexpectedException{"Failed to correctly solve model for LP justification"};
         }
 
@@ -415,15 +415,16 @@ auto gcs::innards::compute_lp_justification(
         for (int col = 0; col < lp.num_col_; col++) {
             auto coeff = solution.col_value[col];
             if (coeff != 0) {
-                p_line << p_line_output_for_row[col](reason) << " " << to_string(coeff) << " * ";
-            }
-            if (! first) {
-                p_line << "+ ";
-            }
-            else {
-                first = false;
+                p_line << p_line_output_for_row[col](reason) << " " << to_string(static_cast<long>(coeff)) << " * ";
+                if (! first) {
+                    p_line << "+ ";
+                }
+                else {
+                    first = false;
+                }
             }
         }
+        logger.emit_proof_comment("Computed LP justification:");
         logger.emit_proof_line(p_line.str(), ProofLevel::Current);
     };
 

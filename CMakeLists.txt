@@ -57,7 +57,7 @@ option(GCS_ENABLE_DOXYGEN "Add a doxygen target to generate the documentation" O
 option(GCS_ENABLE_XCSP "Support for the XCSP modelling language" ON)
 option(GCS_ENABLE_MINIZINC "Support for the MiniZinc modelling language" ON)
 option(GCS_ENABLE_EXAMPLES "Build examples" ON)
-option(GCS_DEBUG_MODE "Disable compiler optimisation for debugging" OFF)
+option(GCS_DEBUG_MODE "Disable compiler optimisation for debugging" ON)
 option(GCS_ENABLE_SOPLEX "(Experimental) Required for WIP LP justifications." ON)
 option(GCS_ENABLE_HIGHS "(Experimental) Required for WIP LP justifications." ON)
 

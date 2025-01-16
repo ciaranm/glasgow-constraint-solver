@@ -35,7 +35,7 @@ auto main(int argc, char * argv[]) -> int
     po::options_description display_options{"Program options"};
     display_options.add_options()            //
         ("help", "Display help information") //
-        ("prove", "Create a proof") //
+        ("prove", "Create a proof")          //
         ("trace", "Trace progress");
 
     po::options_description all_options{"All options"};
@@ -138,13 +138,13 @@ auto main(int argc, char * argv[]) -> int
         grid.emplace_back(p.create_integer_variable_vector(n, 1_i, Integer{n}, "grid"));
 
     for (int r = 0; r < n; ++r)
-        p.post(AllDifferent{grid[r]});
+        p.post(AllDifferent{grid[r], true});
 
     for (int c = 0; c < n; ++c) {
         vector<IntegerVariableID> column;
         for (int r = 0; r < n; ++r)
             column.push_back(grid[r][c]);
-        p.post(AllDifferent{column});
+        p.post(AllDifferent{column, true});
     }
 
     for (int r = 0; r < size; ++r)
@@ -153,7 +153,7 @@ auto main(int argc, char * argv[]) -> int
             for (int rr = 0; rr < size; ++rr)
                 for (int cc = 0; cc < size; ++cc)
                     box.push_back(grid[r * size + rr][c * size + cc]);
-            p.post(AllDifferent{box});
+            p.post(AllDifferent{box, true});
         }
 
     for (int r = 0; r < n; ++r)
