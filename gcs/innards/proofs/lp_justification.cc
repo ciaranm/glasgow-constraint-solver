@@ -148,8 +148,8 @@ namespace
             auto k = ++terms.begin();
             auto l = terms.begin();
             proofline << "p "
-                      << logger.emit_rup_proof_line_under_reason(
-                             reason, WeightedPseudoBooleanSum{} + 1_i * (*l).variable + 1_i * (*k).variable <= 1_i,
+                      << logger.emit_rup_proof_line(
+                             WeightedPseudoBooleanSum{} + 1_i * (*l).variable + 1_i * (*k).variable <= 1_i,
                              ProofLevel::Temporary);
             k++;
             auto k_count = 2;
@@ -157,8 +157,8 @@ namespace
                 proofline << " " << k_count << " * ";
                 l = terms.begin();
                 while (l != k) {
-                    proofline << logger.emit_rup_proof_line_under_reason(
-                                     reason, WeightedPseudoBooleanSum{} + 1_i * (*l).variable + 1_i * (*k).variable <= 1_i,
+                    proofline << logger.emit_rup_proof_line(
+                                     WeightedPseudoBooleanSum{} + 1_i * (*l).variable + 1_i * (*k).variable <= 1_i,
                                      ProofLevel::Temporary)
                               << " + ";
                     l++;
@@ -167,7 +167,8 @@ namespace
                 k++;
                 k_count++;
             }
-            return logger.emit_proof_line(proofline.str(), ProofLevel::Temporary);
+            auto line = logger.emit_proof_line(proofline.str(), ProofLevel::Temporary);
+            return line;
         }
         else {
             return logger.emit_rup_proof_line_under_reason(
@@ -313,7 +314,7 @@ auto gcs::innards::compute_lp_justification(
     for (const auto & [line, constraint] : pb_constraints) {
         auto normalised_constraint = variable_normalise(constraint, state, true);
         start.emplace_back(non_zero_count);
-        for (const auto & term : constraint.lhs.terms) {
+        for (const auto & term : normalised_constraint.lhs.terms) {
             int col;
             if (col_number.find(term.variable) != col_number.end()) {
                 col = col_number[term.variable];
@@ -326,7 +327,7 @@ auto gcs::innards::compute_lp_justification(
             value.emplace_back(term.coefficient.raw_value);
             non_zero_count++;
         }
-        rhs.emplace_back(constraint.rhs.raw_value);
+        rhs.emplace_back(normalised_constraint.rhs.raw_value);
         p_line_output_for_row[row_count++] = [&](const Reason &) { return to_string(line); };
     }
 
@@ -347,9 +348,7 @@ auto gcs::innards::compute_lp_justification(
         col_count++;
     }
 
-    ExplicitJustificationFunction just = [&, start = start, index = index, value = value, col_number = col_number, col_count = col_count, row_count = row_count,
-                                             rhs = rhs, p_line_output_for_row = p_line_output_for_row,
-                                             dom_vars = dom_vars, bound_vars = bound_vars, inference = inference](const Reason & reason) {
+    ExplicitJustificationFunction just = [=, &logger](const Reason & reason) {
         // Create a HiGHS (LP Solver) instance
         Highs highs;
         highs.setOptionValue("output_flag", false);
@@ -384,7 +383,7 @@ auto gcs::innards::compute_lp_justification(
             // Solving {min b^Ty : A^Ty = c},
             model.lp_.col_cost_ = rhs;
             vector<double> row_bounds(col_count, 0);
-            auto norm_inference = variable_normalise(inference, state, false);
+            auto norm_inference = variable_normalise(inference, State{}, false);
             for (const auto & term : norm_inference.lhs.terms) {
                 row_bounds[col_number.at(term.variable)] = term.coefficient.raw_value;
             }
@@ -434,8 +433,11 @@ auto gcs::innards::compute_lp_justification(
             }
         }
         logger.emit_proof_comment("Computed LP justification:");
-        if (! first)
-            logger.emit_proof_line(p_line.str(), ProofLevel::Current);
+        if (! first) {
+
+            auto line = logger.emit_proof_line(p_line.str(), ProofLevel::Current);
+            cout << line;
+        }
         else
             logger.emit_proof_comment("No lines to add?");
     };
