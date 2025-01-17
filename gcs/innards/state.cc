@@ -1121,7 +1121,7 @@ auto State::backtrack(Timestamp t) -> void
 
 auto State::guesses() const -> generator<Literal>
 {
-    return [] (const auto & extra_proof_conditions, const auto & guesses) -> generator<Literal> {
+    return [](const auto & extra_proof_conditions, const auto & guesses) -> generator<Literal> {
         for (auto & g : extra_proof_conditions)
             co_yield g;
         for (auto & g : guesses)

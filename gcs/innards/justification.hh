@@ -21,25 +21,25 @@ namespace gcs::innards
      * the outside inference is provided for convenience.
      *
      * \ingroup Innards
-     * \sa JustifyExplicitly
+     * \sa JustifyExplicitlyThenRUP
      */
     using ExplicitJustificationFunction = std::function<auto(const Reason & reason)->void>;
 
     /**
      * \brief Specify that an inference requires an explicit justification in
-     * the proof log.
+     * the proof log, followed by a RUP step.
      *
      * \ingroup Innards
      * \sa Justification
      */
-    struct JustifyExplicitly
+    struct JustifyExplicitlyThenRUP
     {
         ExplicitJustificationFunction add_proof_steps;
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
         std::source_location where;
 #endif
 
-        explicit JustifyExplicitly(const ExplicitJustificationFunction & a
+        explicit JustifyExplicitlyThenRUP(const ExplicitJustificationFunction & a
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
             ,
             const std::source_location & w = std::source_location::current()
@@ -54,6 +54,34 @@ namespace gcs::innards
         }
     };
 
+    /**
+     * \brief Specify that an inference requires an explicit justification in
+     * the proof log, with no RUP step afterwards required.
+     *
+     * \ingroup Innards
+     * \sa Justification
+     */
+    struct JustifyExplicitlyOnly
+    {
+        ExplicitJustificationFunction add_proof_steps;
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+        std::source_location where;
+#endif
+
+        explicit JustifyExplicitlyOnly(const ExplicitJustificationFunction & a
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+            ,
+            const std::source_location & w = std::source_location::current()
+#endif
+                ) :
+            add_proof_steps(a)
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+            ,
+            where(w)
+#endif
+        {
+        }
+    };
     /**
      * \brief Specify that an inference can be justified using reverse unit
      * propagation.
@@ -118,7 +146,7 @@ namespace gcs::innards
      *
      * \ingroup Innards
      */
-    using Justification = std::variant<JustifyUsingRUP, JustifyExplicitly, AssertRatherThanJustifying, NoJustificationNeeded>;
+    using Justification = std::variant<JustifyUsingRUP, JustifyExplicitlyThenRUP, JustifyExplicitlyOnly, AssertRatherThanJustifying, NoJustificationNeeded>;
 }
 
 #endif

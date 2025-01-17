@@ -32,6 +32,8 @@ using namespace std::literals::string_literals;
 
 auto main(int argc, char * argv[]) -> int
 {
+    auto USE_LP_JUST = true;
+
     po::options_description display_options{"Program options"};
     display_options.add_options()            //
         ("help", "Display help information") //
@@ -138,13 +140,13 @@ auto main(int argc, char * argv[]) -> int
         grid.emplace_back(p.create_integer_variable_vector(n, 1_i, Integer{n}, "grid" + to_string(r) + "_"));
 
     for (int r = 0; r < n; ++r)
-        p.post(AllDifferent{grid[r], true});
+        p.post(AllDifferent{grid[r], USE_LP_JUST});
 
     for (int c = 0; c < n; ++c) {
         vector<IntegerVariableID> column;
         for (int r = 0; r < n; ++r)
             column.push_back(grid[r][c]);
-        p.post(AllDifferent{column, true});
+        p.post(AllDifferent{column, USE_LP_JUST});
     }
 
     for (int r = 0; r < size; ++r)
@@ -153,7 +155,7 @@ auto main(int argc, char * argv[]) -> int
             for (int rr = 0; rr < size; ++rr)
                 for (int cc = 0; cc < size; ++cc)
                     box.push_back(grid[r * size + rr][c * size + cc]);
-            p.post(AllDifferent{box, true});
+            p.post(AllDifferent{box, USE_LP_JUST});
         }
 
     for (int r = 0; r < n; ++r)

@@ -467,7 +467,7 @@ namespace
                             ProofLevel::Current);
                     }
                 };
-                inference.infer_not_equal(logger, var, value, JustifyExplicitly{justf}, reason);
+                inference.infer_not_equal(logger, var, value, JustifyExplicitlyThenRUP{justf}, reason);
             }
         }
 

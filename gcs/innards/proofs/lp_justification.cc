@@ -177,8 +177,7 @@ namespace
             return line;
         }
         else {
-            return logger.emit_rup_proof_line_under_reason(
-                reason, sum <= 1_i,
+            return logger.emit_rup_proof_line(sum <= 1_i,
                 ProofLevel::Temporary);
         }
     }
@@ -281,9 +280,9 @@ auto gcs::innards::compute_lp_justification(
         value.insert(value.end(), dom_index.size(), -1);
         rhs.emplace_back(-1);
         non_zero_count += int(dom_index.size());
-        p_line_output_for_row[row_count++] = [&, dom_sum = dom_sum](const Reason & reason) {
+        p_line_output_for_row[row_count++] = [&, dom_sum = dom_sum, var = var](const Reason & reason) {
             return to_string(logger.emit_rup_proof_line_under_reason(
-                reason, dom_sum >= 1_i, ProofLevel::Temporary));
+                generic_reason(state, {var}), dom_sum >= 1_i, ProofLevel::Temporary));
         };
     }
 
@@ -443,9 +442,8 @@ auto gcs::innards::compute_lp_justification(
         }
         logger.emit_proof_comment("Computed LP justification:");
         if (! first) {
-            auto x = normalised_pb_constraints;
             auto line = logger.emit_proof_line(p_line.str(), ProofLevel::Current);
-            cout << line;
+            cout << "";
         }
         else
             logger.emit_proof_comment("No lines to add?");
@@ -455,7 +453,7 @@ auto gcs::innards::compute_lp_justification(
     all_vars.insert(all_vars.end(), dom_vars.begin(), dom_vars.end());
     all_vars.insert(all_vars.end(), bound_vars.begin(), bound_vars.end());
 
-    auto reason = generic_reason(state, all_vars);
+    auto reason = []() { return Literals{}; };
     return make_pair(just, reason);
 }
 
@@ -502,7 +500,7 @@ namespace
     }
 }
 
-auto main() -> int
-{
-    test_variable_normalisation();
-}
+// auto main() -> int
+//{
+//     test_variable_normalisation();
+// }

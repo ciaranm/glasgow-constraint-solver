@@ -157,7 +157,7 @@ namespace
                                     logger->emit_rup_proof_line_under_reason(reason,
                                         WeightedPseudoBooleanSum{} + 1_i * l >= 1_i, ProofLevel::Temporary);
                             };
-                            inference.infer(logger, full_reif, JustifyExplicitly{justf}, Reason{[=]() { return lits; }});
+                            inference.infer(logger, full_reif, JustifyExplicitlyThenRUP{justf}, Reason{[=]() { return lits; }});
                             return PropagatorState::DisableUntilBacktrack;
                         }
                         else

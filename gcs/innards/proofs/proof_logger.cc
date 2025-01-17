@@ -286,7 +286,7 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
                 record_proof_line(++_imp->proof_line, ProofLevel::Current);
             }
         },
-        [&](const JustifyExplicitly & x) {
+        [&](const JustifyExplicitlyThenRUP & x) {
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
             _imp->proof << "* explicit on lit " << debug_string(lit) << " with reason from " << x.where.file_name() << ":"
                         << x.where.line() << " in " << x.where.function_name() << '\n';
@@ -294,12 +294,24 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
             need_lit();
             auto t = temporary_proof_level();
             x.add_proof_steps(reason);
-            infer(lit, JustifyUsingRUP{
+            infer(lit,
+                JustifyUsingRUP{
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
-                           x.where
+                    x.where
 #endif
-                       },
+                },
                 reason);
+            forget_proof_level(t);
+        },
+        [&](const JustifyExplicitlyOnly & x) {
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+            _imp->proof << "* explicit on lit " << debug_string(lit) << " with reason from " << x.where.file_name() << ":"
+                        << x.where.line() << " in " << x.where.function_name() << '\n';
+#endif
+            need_lit();
+            auto t = temporary_proof_level();
+            x.add_proof_steps(reason);
+            infer(lit, NoJustificationNeeded{}, reason);
             forget_proof_level(t);
         },
         [&](const NoJustificationNeeded &) {

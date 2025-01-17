@@ -52,7 +52,7 @@ endif (NOT GCS_DEBUG_MODE)
 if (GCS_DEBUG_MODE)
     add_compile_options(-O0)
 endif (GCS_DEBUG_MODE)
-add_compile_options(-DGCS_TRACK_ALL_PROPAGATIONS=1)
+#add_compile_options(-DGCS_TRACK_ALL_PROPAGATIONS=1)
 
 enable_testing()
 

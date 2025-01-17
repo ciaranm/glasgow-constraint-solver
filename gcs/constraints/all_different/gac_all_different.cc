@@ -182,7 +182,7 @@ namespace
         ProofLogger & logger,
         const vector<pair<Left, Right>> & edges,
         const vector<uint8_t> & left_covered,
-        const vector<optional<Right>> & matching) -> pair<JustifyExplicitly, Reason>
+        const vector<optional<Right>> & matching) -> pair<JustifyExplicitlyThenRUP, Reason>
     {
         vector<optional<Left>> inverse_matching(vals.size(), nullopt);
         for (const auto & [l, r] : enumerate(matching))
@@ -233,7 +233,7 @@ namespace
             if (hall_variables[v.offset])
                 hall_variable_ids.push_back(vars[v.offset]);
 
-        return pair{JustifyExplicitly{
+        return pair{JustifyExplicitlyThenRUP{
                         [&vars, &vals, &logger, constraint_numbers, hall_variables = move(hall_variables), hall_values = move(hall_values)](
                             const Reason &) -> void {
                             // we are going to need the at least one value variables
@@ -348,7 +348,7 @@ namespace
         }
         else {
             // a hall set is at work
-            return pair{JustifyExplicitly{
+            return pair{JustifyExplicitlyThenRUP{
                             [&vars, &vals, &logger, constraint_numbers, hall_left = move(hall_left), hall_right = move(hall_right)](const Reason &) {
                                 // we are going to need the at least one value variables
                                 vector<ProofLine> at_least_one_constraints;
@@ -406,7 +406,7 @@ auto gcs::innards::propagate_gac_all_different(
         // one thing on the left uncovered.
         if (use_lp_justification) {
             auto [just, reason] = compute_lp_justification(state, *logger, WeightedPseudoBooleanSum{} >= 1_i, vars, {}, *pb_constraints, false);
-            return tracker.infer(logger, FalseLiteral{}, JustifyExplicitly{just}, reason);
+            return tracker.infer(logger, FalseLiteral{}, JustifyExplicitlyOnly{just}, reason);
         }
         else {
             auto [just, reason] = prove_matching_is_too_small(vars, vals, constraint_numbers, state, *logger, edges, left_covered, matching);
@@ -585,7 +585,7 @@ auto gcs::innards::propagate_gac_all_different(
     if (use_lp_justification) {
         auto [just, reason] = compute_lp_justification(state, *logger,
             deletions_sum >= Integer(static_cast<long long>(all_deletions.size())), vars, {}, *pb_constraints, false);
-        tracker.infer_all(logger, all_deletions, JustifyExplicitly{just}, reason);
+        tracker.infer_all(logger, all_deletions, JustifyExplicitlyOnly{just}, reason);
     }
 }
 
@@ -664,7 +664,7 @@ auto GACAllDifferent::install(Propagators & propagators, State & initial_state, 
             vals = move(compressed_vals),
             constraint_numbers = move(constraint_numbers),
             pb_constraints = move(pb_constraints),
-            use_lp_justification = _use_lp_justification](const State & state, auto & inference,
+            use_lp_justification = _use_lp_justification && optional_model](const State & state, auto & inference,
             ProofLogger * const logger) -> PropagatorState {
             propagate_gac_all_different(vars, vals, constraint_numbers.get(), state, inference, logger, pb_constraints.get(), use_lp_justification);
             return PropagatorState::Enable;

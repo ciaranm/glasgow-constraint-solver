@@ -100,7 +100,7 @@ auto Element::install(Propagators & propagators, State & initial_state, ProofMod
                             WeightedPseudoBooleanSum{} + 1_i * (var != val) + 1_i * (idx != i) >= 1_i, ProofLevel::Temporary);
                     });
                 };
-                inference.infer_not_equal(logger, var, val, JustifyExplicitly{justf}, generic_reason(state, all_vars));
+                inference.infer_not_equal(logger, var, val, JustifyExplicitlyThenRUP{justf}, generic_reason(state, all_vars));
             }
         }
 
@@ -167,7 +167,7 @@ auto ElementConstantArray::install(Propagators & propagators, State & initial_st
                     largest_seen = max(*largest_seen, this_val);
             }
 
-            auto just = JustifyExplicitly{
+            auto just = JustifyExplicitlyThenRUP{
                 [&](const Reason & reason) {
                     WeightedPseudoBooleanSum conditions;
                     state.for_each_value_immutable(idx, [&](Integer i) {
@@ -316,7 +316,7 @@ auto Element2DConstantArray::install(Propagators & propagators, State & initial_
                 }
             }
 
-            auto just = JustifyExplicitly{
+            auto just = JustifyExplicitlyThenRUP{
                 [&](const Reason & reason) {
                     WeightedPseudoBooleanSum conditions;
                     state.for_each_value_immutable(idx1, [&](Integer i1) {
