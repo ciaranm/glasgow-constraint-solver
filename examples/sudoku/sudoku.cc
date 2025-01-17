@@ -17,14 +17,14 @@
 
 using namespace gcs;
 
+using fmt::print;
+using fmt::println;
 using std::cerr;
 using std::cout;
 using std::make_optional;
 using std::nullopt;
+using std::to_string;
 using std::vector;
-
-using fmt::print;
-using fmt::println;
 
 namespace po = boost::program_options;
 
@@ -135,7 +135,7 @@ auto main(int argc, char * argv[]) -> int
     vector<vector<IntegerVariableID>> grid;
 
     for (int r = 0; r < n; ++r)
-        grid.emplace_back(p.create_integer_variable_vector(n, 1_i, Integer{n}, "grid"));
+        grid.emplace_back(p.create_integer_variable_vector(n, 1_i, Integer{n}, "grid" + to_string(r) + "_"));
 
     for (int r = 0; r < n; ++r)
         p.post(AllDifferent{grid[r], true});

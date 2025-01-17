@@ -70,24 +70,30 @@ namespace
                                         switch (cond.op) {
                                         case VariableConditionOperator::NotEqual:
                                             if (! (state).in_domain(cond.var, cond.value)) {
+                                                // Not in domain? Then replace NotEqual with 1
                                                 normalised_rhs -= term.coefficient;
                                             }
                                             else if ((state).has_single_value(cond.var) && *state.optional_single_value(cond.var) == cond.value) {
-                                                normalised_rhs += term.coefficient;
+                                                // Actually equal? Then replace with 0!
+                                                //  normalised_rhs += term.coefficient;
                                             }
                                             else {
+                                                // Otherwise, convert NotEqual to Equal using \bar x = (1 - x)
                                                 normalised_lhs += -term.coefficient * (cond.var == cond.value);
                                                 normalised_rhs += -term.coefficient;
                                             }
                                             break;
                                         case VariableConditionOperator::Equal:
                                             if (! (state).in_domain(cond.var, cond.value)) {
-                                                normalised_rhs += term.coefficient;
+                                                // Not in domain? Replace with 0
+                                                // normalised_rhs += term.coefficient;
                                             }
                                             else if ((state).has_single_value(cond.var) && *state.optional_single_value(cond.var) == cond.value) {
+                                                // Actually equal, replace with 1
                                                 normalised_rhs -= term.coefficient;
                                             }
                                             else {
+                                                // Keep as it is
                                                 normalised_lhs += term.coefficient * cond;
                                             }
                                             break;
@@ -240,11 +246,11 @@ auto gcs::innards::compute_lp_justification(
             };
 
             // Lit axioms: var == val >= 0
-            // i.e. -var==var <= -1
+            // i.e. -var==var <= 0
             start.emplace_back(non_zero_count);
             index.emplace_back(col_count);
             value.emplace_back(-1);
-            rhs.emplace_back(-1);
+            rhs.emplace_back(0);
             non_zero_count++;
             p_line_output_for_row[row_count++] = [&, var = var, val = val](const Reason &) {
                 logger.names_and_ids_tracker().need_proof_name(var == val);
@@ -311,8 +317,11 @@ auto gcs::innards::compute_lp_justification(
     }
 
     // LP rows from PB constraints
+    vector<WeightedPseudoBooleanLessEqual> normalised_pb_constraints{};
+
     for (const auto & [line, constraint] : pb_constraints) {
         auto normalised_constraint = variable_normalise(constraint, state, true);
+        normalised_pb_constraints.emplace_back(normalised_constraint);
         start.emplace_back(non_zero_count);
         for (const auto & term : normalised_constraint.lhs.terms) {
             int col;
@@ -434,7 +443,7 @@ auto gcs::innards::compute_lp_justification(
         }
         logger.emit_proof_comment("Computed LP justification:");
         if (! first) {
-
+            auto x = normalised_pb_constraints;
             auto line = logger.emit_proof_line(p_line.str(), ProofLevel::Current);
             cout << line;
         }
