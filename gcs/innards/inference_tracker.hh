@@ -104,6 +104,13 @@ namespace gcs::innards
                             done = true;
                         }
                     }};
+                else if constexpr (std::is_same_v<std::decay_t<decltype(j)>, JustifyExplicitlyOnly>)
+                    return JustifyExplicitlyOnly{[done = false, &j](const Reason & reason) mutable -> void {
+                        if (! done) {
+                            j.add_proof_steps(reason);
+                            done = true;
+                        }
+                    }};
                 else
                     return j;
             },

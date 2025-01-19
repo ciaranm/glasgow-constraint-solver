@@ -23,16 +23,15 @@ using std::cerr;
 using std::cout;
 using std::make_optional;
 using std::nullopt;
+using std::optional;
 using std::to_string;
 using std::vector;
-
 namespace po = boost::program_options;
 
 using namespace std::literals::string_literals;
 
 auto main(int argc, char * argv[]) -> int
 {
-    auto USE_LP_JUST = true;
 
     po::options_description display_options{"Program options"};
     display_options.add_options()            //
@@ -43,6 +42,7 @@ auto main(int argc, char * argv[]) -> int
     po::options_description all_options{"All options"};
     all_options.add_options()                 //
         ("xv", "Solve the xv puzzle instead") //
+        ("lp", "Use LP justifications")       //
         ("all", "Find all solutions");
 
     all_options.add(display_options);
@@ -84,6 +84,10 @@ auto main(int argc, char * argv[]) -> int
 
     vector<vector<int>> predef;
     vector<vector<NXV>> horizontal_xvs, vertical_xvs;
+    optional<LPJustificationOptions> USE_LP_JUST = nullopt;
+    if (options_vars.contains("lp")) {
+        USE_LP_JUST = make_optional(LPJustificationOptions{});
+    }
 
     if (options_vars.contains("xv")) {
         // https://www.youtube.com/watch?v=9ATC_uBF8ow

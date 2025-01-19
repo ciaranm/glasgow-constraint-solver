@@ -3,6 +3,7 @@
 
 #include <gcs/constraint.hh>
 #include <gcs/innards/inference_tracker-fwd.hh>
+#include <gcs/innards/proofs/lp_justification.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/variable_id.hh>
 
@@ -21,7 +22,7 @@ namespace gcs
             auto & inference_tracker,
             ProofLogger * const logger,
             const std::map<ProofLine, WeightedPseudoBooleanLessEqual> * const pb_constraints = nullptr,
-            const bool use_lp_justification = false) -> void;
+            const std::optional<LPJustificationOptions> lp_justification_options = std::nullopt) -> void;
     }
 
     /**
@@ -34,10 +35,10 @@ namespace gcs
     {
     private:
         const std::vector<IntegerVariableID> _vars;
-        const bool _use_lp_justification;
+        const std::optional<LPJustificationOptions> _lp_justification_options;
 
     public:
-        explicit GACAllDifferent(std::vector<IntegerVariableID> vars, bool use_lp_justification = false);
+        explicit GACAllDifferent(std::vector<IntegerVariableID> vars, std::optional<LPJustificationOptions> lp_justification_options = std::nullopt);
 
         virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;

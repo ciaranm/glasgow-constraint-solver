@@ -6,6 +6,13 @@
 #include <map>
 #include <vector>
 
+namespace gcs
+{
+    struct LPJustificationOptions
+    {
+        bool justify_everything_at_once = false;
+    };
+}
 namespace gcs::innards
 {
     [[nodiscard]] auto compute_lp_justification(
@@ -14,7 +21,6 @@ namespace gcs::innards
         const WeightedPseudoBooleanLessEqual & inference,
         const std::vector<IntegerVariableID> & dom_vars,
         const std::vector<IntegerVariableID> & bound_vars,
-        const std::map<ProofLine, WeightedPseudoBooleanLessEqual> & pb_constraints,
-        bool compute_reason = false) -> std::pair<ExplicitJustificationFunction, Reason>;
+        const std::map<ProofLine, WeightedPseudoBooleanLessEqual> & pb_constraints) -> std::pair<ExplicitJustificationFunction, Reason>;
 }
 #endif // GLASGOW_CONSTRAINT_SOLVER_LP_JUSTIFICATION_HH

@@ -75,7 +75,6 @@ namespace
                                             }
                                             else if ((state).has_single_value(cond.var) && *state.optional_single_value(cond.var) == cond.value) {
                                                 // Actually equal? Then replace with 0!
-                                                //  normalised_rhs += term.coefficient;
                                             }
                                             else {
                                                 // Otherwise, convert NotEqual to Equal using \bar x = (1 - x)
@@ -86,7 +85,6 @@ namespace
                                         case VariableConditionOperator::Equal:
                                             if (! (state).in_domain(cond.var, cond.value)) {
                                                 // Not in domain? Replace with 0
-                                                // normalised_rhs += term.coefficient;
                                             }
                                             else if ((state).has_single_value(cond.var) && *state.optional_single_value(cond.var) == cond.value) {
                                                 // Actually equal, replace with 1
@@ -149,7 +147,7 @@ namespace
     {
         stringstream proofline;
         auto terms = sum.terms;
-        logger.emit_proof_comment("Prove AM1:");
+        // logger.emit_proof_comment("Prove AM1:");
         if (terms.size() > 1) {
             auto k = ++terms.begin();
             auto l = terms.begin();
@@ -202,14 +200,14 @@ namespace
         return actual_vars;
     }
 }
+
 auto gcs::innards::compute_lp_justification(
     const State & state,
     ProofLogger & logger,
     const WeightedPseudoBooleanLessEqual & inference,
     const vector<IntegerVariableID> & dom_vars_iv,
     const vector<IntegerVariableID> & bound_vars_iv,
-    const map<ProofLine, WeightedPseudoBooleanLessEqual> & pb_constraints,
-    bool compute_reason) -> pair<ExplicitJustificationFunction, Reason>
+    const map<ProofLine, WeightedPseudoBooleanLessEqual> & pb_constraints) -> pair<ExplicitJustificationFunction, Reason>
 {
     const vector<SimpleIntegerVariableID> dom_vars = actual_vars(dom_vars_iv);
     const vector<SimpleIntegerVariableID> bound_vars = actual_vars(bound_vars_iv);
@@ -280,9 +278,10 @@ auto gcs::innards::compute_lp_justification(
         value.insert(value.end(), dom_index.size(), -1);
         rhs.emplace_back(-1);
         non_zero_count += int(dom_index.size());
-        p_line_output_for_row[row_count++] = [&, dom_sum = dom_sum, var = var](const Reason & reason) {
+        auto gen_reason = generic_reason(state, {var});
+        p_line_output_for_row[row_count++] = [&, dom_sum = dom_sum, var = var, gen_reason = gen_reason](const Reason & reason) {
             return to_string(logger.emit_rup_proof_line_under_reason(
-                generic_reason(state, {var}), dom_sum >= 1_i, ProofLevel::Temporary));
+                gen_reason, dom_sum >= 1_i, ProofLevel::Temporary));
         };
     }
 
@@ -425,28 +424,29 @@ auto gcs::innards::compute_lp_justification(
         // Turn the solution into a pol step
         stringstream p_line;
         p_line << "p ";
-        bool first = true;
+        long count = 0;
         for (int col = 0; col < lp.num_col_; col++) {
             auto coeff = solution.col_value[col];
             if (coeff != 0) {
                 p_line << p_line_output_for_row.at(col)(reason) << " ";
                 if (coeff > 1)
                     p_line << to_string(static_cast<long>(coeff)) << " * ";
-                if (! first) {
+                if (count >= 1) {
                     p_line << "+ ";
                 }
-                else {
-                    first = false;
-                }
+                count++;
             }
         }
-        logger.emit_proof_comment("Computed LP justification:");
-        if (! first) {
+        //        logger.emit_proof_comment("Computed LP justification:");
+        if (count >= 2) {
             auto line = logger.emit_proof_line(p_line.str(), ProofLevel::Current);
-            cout << "";
+            //            auto & s = state;
+            //            vector<Integer> values;
+            //            state.for_each_value(SimpleIntegerVariableID{49}, [&values](Integer v) {
+            //                values.emplace_back(v);
+            //            });
+            //            cout << "";
         }
-        else
-            logger.emit_proof_comment("No lines to add?");
     };
 
     vector<IntegerVariableID> all_vars{};
