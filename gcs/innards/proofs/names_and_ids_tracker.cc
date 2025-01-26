@@ -6,6 +6,7 @@
 #include <gcs/innards/proofs/simplify_literal.hh>
 #include <gcs/innards/variable_id_utils.hh>
 
+#include <algorithm>
 #include <fstream>
 #include <list>
 #include <map>
@@ -18,6 +19,7 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::any_of;
 using std::fstream;
 using std::function;
 using std::ios;
@@ -664,109 +666,101 @@ auto NamesAndIDsTracker::name_of(ProofFlag id) -> const string &
 
 auto NamesAndIDsTracker::reify(const WeightedPseudoBooleanLessEqual & ineq, const HalfReifyOnConjunctionOf & half_reif) -> WeightedPseudoBooleanLessEqual
 {
-    //    auto contains_false_literal = false;
-    //    for (const auto & l : half_reif) {
-    //
-    //        contains_false_literal |= overloaded{
-    //            [&](const ProofFlag &) { return false; },
-    //            [&](const ProofLiteral & pl) {
-    //                return overloaded{
-    //                    [&](Literal lit) {
-    //                        return is_literally_false(lit);
-    //                    },
-    //                    [&](const ProofVariableCondition &) { return false; },
-    //                }
-    //                    .visit(pl);
-    //            }}.visit(l);
-    //    }
+    // so what happens if there's a false literal in the left hand term? conceptually,
+    // this means the constraint will always hold, but it's probably useful to have
+    // something that syntactically contains all the right variables. so, we can just
+    // make the degree of falsity be very low so the constraint always holds.
+    bool contains_false_literal = any_of(half_reif.begin(), half_reif.end(),
+        [&](const auto & flag) {
+            return overloaded{
+                [&](const ProofFlag &) { return false; },
+                [&](const ProofLiteral & pl) {
+                    return overloaded{
+                        [&](Literal lit) { return is_literally_false(lit); },
+                        [&](const ProofVariableCondition &) { return false; },
+                    }
+                        .visit(pl);
+                },
+                [&](const ProofBitVariable &) { return false; }}
+                .visit(flag);
+        });
 
-    // build up the inequality, adjusting as we go for constant terms,
-    // and converting from <= to >=.
-    Integer rhs = -ineq.rhs;
-    Integer reif_const = 0_i;
+    // work out how big the reification constant needs to be, by adding together
+    // positive terms in the inequality and negating
+    Integer max_contribution_from_positive_terms = 0_i;
 
     for (auto & [w, v] : ineq.lhs.terms) {
-        if (0_i == w)
-            continue;
-
         overloaded{
-            [&, w = w](const ProofLiteral & lit) {
-                overloaded{
-                    [&](const TrueLiteral &) {
-                        rhs += w;
-                    },
-                    [&](const FalseLiteral &) {},
-                    [&]<typename T_>(const VariableConditionFrom<T_> &) {
-                        reif_const += max(0_i, w);
-                    }}
-                    .visit(simplify_literal(lit));
+            [&, w = w](const ProofLiteral &) {
+                max_contribution_from_positive_terms += max(0_i, w);
             },
             [&, w = w](const ProofFlag &) {
-                reif_const += max(0_i, w);
+                max_contribution_from_positive_terms += max(0_i, w);
             },
             [&, w = w](const IntegerVariableID & var) {
                 overloaded{
                     [&](const SimpleIntegerVariableID & var) {
                         for_each_bit(var, [&](Integer bit_value, const XLiteral &) {
-                            reif_const += max(0_i, w * bit_value);
+                            max_contribution_from_positive_terms += max(0_i, w * bit_value);
                         });
                     },
                     [&](const ViewOfIntegerVariableID & view) {
                         if (! view.negate_first) {
                             for_each_bit(view.actual_variable,
                                 [&](Integer bit_value, const XLiteral &) {
-                                    reif_const += max(0_i, w * bit_value);
+                                    max_contribution_from_positive_terms += max(0_i, w * bit_value);
                                 });
-                            rhs += w * view.then_add;
-                            reif_const += max(0_i, -w * view.then_add);
+                            max_contribution_from_positive_terms += max(0_i, w * view.then_add);
                         }
                         else {
                             for_each_bit(view.actual_variable,
                                 [&](Integer bit_value, const XLiteral &) {
-                                    reif_const += max(0_i, -w * bit_value);
+                                    max_contribution_from_positive_terms += max(0_i, -w * bit_value);
                                 });
-                            rhs += w * view.then_add;
-                            reif_const += max(0_i, -w * view.then_add);
+                            max_contribution_from_positive_terms += max(0_i, -w * view.then_add);
                         }
                     },
                     [&](const ConstantIntegerVariableID & cvar) {
-                        rhs += w * cvar.const_value;
+                        max_contribution_from_positive_terms += max(0_i, w * cvar.const_value);
                     }}
                     .visit(var);
             },
             [&, w = w](const ProofOnlySimpleIntegerVariableID & var) {
                 for_each_bit(var, [&](Integer bit_value, const XLiteral &) {
-                    reif_const += max(0_i, w * bit_value);
+                    max_contribution_from_positive_terms += max(0_i, w * bit_value);
                 });
             },
             [&, w = w](const ProofBitVariable &) {
-                reif_const += max(0_i, w);
+                max_contribution_from_positive_terms += max(0_i, w);
             },
         }
             .visit(v);
     }
 
-    reif_const += rhs;
-    reif_const = max(reif_const, 1_i);
+    // Usually it would be fine to say 0_i rather than -1_i here, because if a constraint
+    // is trivially true, it doesn't really matter whether the implication is there or
+    // not. However, for syntactic wrangling reasons, we probably want the implication
+    // to always be there.
+    auto clamped_reif_const = min(-max_contribution_from_positive_terms + ineq.rhs, -1_i);
+
     WeightedPseudoBooleanSum new_lhs = ineq.lhs;
     for (auto & r : half_reif)
         overloaded{
             [&](const ProofFlag & f) {
-                new_lhs += -Integer{reif_const} * ! f;
+                new_lhs += clamped_reif_const * ! f;
             },
             [&](const ProofLiteral & lit) {
-                new_lhs += -Integer{reif_const} * ! lit;
+                new_lhs += clamped_reif_const * ! lit;
             },
             [&](const ProofBitVariable & bit) {
-                new_lhs += -Integer{reif_const} * ! bit;
+                new_lhs += clamped_reif_const * ! bit;
             }}
             .visit(r);
 
-    //    if (contains_false_literal) {
-    //        // This might be a bad idea...
-    //        return new_lhs >= -rhs + reif_const;
-    //    }
-    //    else {
-    return new_lhs <= -rhs;
-    //    }
+    // if we have a false literal on the left hand side, adjusting the degree of falsity
+    // up by the sum of positive terms is enough that it will be trivially true.
+    if (contains_false_literal)
+        return new_lhs <= ineq.rhs + max_contribution_from_positive_terms;
+    else
+        return new_lhs <= ineq.rhs;
 }
