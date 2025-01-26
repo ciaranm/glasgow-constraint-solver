@@ -2,6 +2,9 @@
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/simplify_literal.hh>
 
+#include <algorithm>
+
+using std::any_of;
 using std::max;
 using std::optional;
 using std::ostream;
