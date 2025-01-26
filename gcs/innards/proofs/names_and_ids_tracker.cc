@@ -202,7 +202,6 @@ auto NamesAndIDsTracker::need_proof_name(const VariableConditionFrom<SimpleOrPro
 
 auto NamesAndIDsTracker::need_all_proof_names_in(const SumOf<Weighted<PseudoBooleanTerm>> & sum) -> void
 {
-    // make sure we have any definitions for things that show up
     for (auto & [_, v] : sum.terms)
         overloaded{
             [&](const ProofLiteral & lit) {
@@ -219,6 +218,36 @@ auto NamesAndIDsTracker::need_all_proof_names_in(const SumOf<Weighted<PseudoBool
             [&](const ProofOnlySimpleIntegerVariableID &) {},
             [&](const ProofBitVariable &) {}}
             .visit(v);
+}
+
+auto NamesAndIDsTracker::need_all_proof_names_in(const Literals & lits) -> void
+{
+    for (auto & lit : lits)
+        overloaded{
+            [&](const TrueLiteral &) {},
+            [&](const FalseLiteral &) {},
+            [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
+                need_proof_name(cond);
+            }}
+            .visit(simplify_literal(lit));
+}
+
+auto NamesAndIDsTracker::need_all_proof_names_in(const HalfReifyOnConjunctionOf & h) -> void
+{
+    for (auto & term : h)
+        overloaded{
+            [&](const ProofLiteral & lit) {
+                overloaded{
+                    [&](const TrueLiteral &) {},
+                    [&](const FalseLiteral &) {},
+                    [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
+                        need_proof_name(cond);
+                    }}
+                    .visit(simplify_literal(lit));
+            },
+            [&](const ProofFlag &) {},
+            [&](const ProofBitVariable &) {}}
+            .visit(term);
 }
 
 auto NamesAndIDsTracker::negative_bit_coefficient(const SimpleOrProofOnlyIntegerVariableID & id) -> Integer

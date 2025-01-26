@@ -314,18 +314,7 @@ auto ProofLogger::reason_to_lits(const Reason & reason) -> vector<ProofLiteralOr
         reason_literals = reason();
 
     if (reason_literals)
-        for (auto & r : *reason_literals)
-            overloaded{
-                [&](const TrueLiteral &) {
-                },
-                [&](const FalseLiteral &) {
-                },
-                [&](const VariableConditionFrom<SimpleIntegerVariableID> & cond) {
-                    names_and_ids_tracker().need_proof_name(cond);
-                },
-                [&](const ProofVariableCondition &) {
-                }}
-                .visit(simplify_literal(r));
+        names_and_ids_tracker().need_all_proof_names_in(*reason_literals);
 
     vector<ProofLiteralOrFlag> reason_proof_literals{};
     for (auto & r : *reason_literals)
@@ -419,18 +408,7 @@ auto ProofLogger::emit_under_reason(
     if (reason)
         reason_literals = reason();
     if (reason_literals)
-        for (auto & r : *reason_literals)
-            overloaded{
-                [&](const TrueLiteral &) {
-                },
-                [&](const FalseLiteral &) {
-                },
-                [&](const VariableConditionFrom<SimpleIntegerVariableID> & cond) {
-                    names_and_ids_tracker().need_proof_name(cond);
-                },
-                [&](const ProofVariableCondition &) {
-                }}
-                .visit(simplify_literal(r));
+        names_and_ids_tracker().need_all_proof_names_in(*reason_literals);
 
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
 
