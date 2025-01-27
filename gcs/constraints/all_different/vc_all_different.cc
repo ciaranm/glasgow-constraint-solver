@@ -104,8 +104,10 @@ auto VCAllDifferent::install(innards::Propagators & propagators, innards::State 
 
     auto sanitised_vars = move(_vars);
     sort(sanitised_vars.begin(), sanitised_vars.end());
-    if (sanitised_vars.end() != adjacent_find(sanitised_vars.begin(), sanitised_vars.end()))
-        throw UnexpectedException{"not sure what to do about duplicate variables in an alldifferent"};
+    if (sanitised_vars.end() != adjacent_find(sanitised_vars.begin(), sanitised_vars.end())) {
+        propagators.model_contradiction(initial_state, model, "AllDifferent with duplicate variables");
+        return;
+    }
 
     Triggers triggers;
     triggers.on_change = {sanitised_vars.begin(), sanitised_vars.end()};

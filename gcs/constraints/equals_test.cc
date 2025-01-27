@@ -28,6 +28,7 @@ using std::string;
 using std::to_string;
 using std::tuple;
 using std::uniform_int_distribution;
+using std::variant;
 using std::vector;
 
 using fmt::print;
@@ -37,9 +38,9 @@ using namespace gcs;
 using namespace gcs::test_innards;
 
 template <typename Constraint_>
-auto run_equals_test(const string & which, bool proofs, pair<int, int> v1_range, pair<int, int> v2_range, const function<auto(int, int, int)->bool> & is_satisfying) -> void
+auto run_equals_test(const string & which, bool proofs, variant<int, pair<int, int>> v1_range, variant<int, pair<int, int>> v2_range, const function<auto(int, int, int)->bool> & is_satisfying) -> void
 {
-    print(cerr, "equals {} {} {} {}", which, v1_range, v2_range, proofs ? " with proofs:" : ":");
+    visit([&](auto v1, auto v2) { print(cerr, "equals {} {} {} {}", which, v1, v2, proofs ? " with proofs:" : ":"); }, v1_range, v2_range);
     cerr << flush;
 
     pair<int, int> v3_range{0, 1};
@@ -48,8 +49,8 @@ auto run_equals_test(const string & which, bool proofs, pair<int, int> v1_range,
     println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;
-    auto v1 = p.create_integer_variable(Integer(v1_range.first), Integer(v1_range.second));
-    auto v2 = p.create_integer_variable(Integer(v2_range.first), Integer(v2_range.second));
+    auto v1 = visit([&](auto b) { return create_integer_variable_or_constant(p, b); }, v1_range);
+    auto v2 = visit([&](auto b) { return create_integer_variable_or_constant(p, b); }, v2_range);
     auto v3 = p.create_integer_variable(0_i, 1_i);
     if constexpr (is_same_v<Constraint_, Equals>) {
         p.post(Constraint_{v1, v2});
@@ -125,22 +126,26 @@ auto run_no_overlap_equals_test(bool proofs) -> void
 
 auto main(int, char *[]) -> int
 {
-    vector<pair<pair<int, int>, pair<int, int>>> data = {
-        {{2, 5}, {1, 6}},
-        {{1, 6}, {2, 5}},
-        {{1, 3}, {1, 3}},
-        {{1, 5}, {6, 8}},
-        {{1, 1}, {2, 4}},
-        {{-2, -2}, {-2, -1}},
-        {{1, 3}, {5, 8}},
-        {{4, 13}, {3, 16}},
-        {{-2, 4}, {-8, 7}},
-        {{-7, 3}, {-10, 5}}};
+    vector<pair<variant<int, pair<int, int>>, variant<int, pair<int, int>>>> data = {
+        {pair{2, 5}, pair{1, 6}},
+        {pair{1, 6}, pair{2, 5}},
+        {pair{1, 3}, pair{1, 3}},
+        {pair{1, 5}, pair{6, 8}},
+        {pair{1, 1}, pair{2, 4}},
+        {pair{-2, -2}, pair{-2, -1}},
+        {pair{1, 3}, pair{5, 8}},
+        {pair{4, 13}, pair{3, 16}},
+        {pair{-2, 4}, pair{-8, 7}},
+        {pair{-7, 3}, pair{-10, 5}}};
 
     random_device rand_dev;
     mt19937 rand(rand_dev());
     for (int x = 0; x < 10; ++x)
         generate_random_data(rand, data, random_bounds(-10, 10, 5, 15), random_bounds(-10, 10, 5, 15));
+    for (int x = 0; x < 10; ++x)
+        generate_random_data(rand, data, random_constant(-10, 10), random_bounds(-10, 10, 5, 15));
+    for (int x = 0; x < 10; ++x)
+        generate_random_data(rand, data, random_bounds(-10, 10, 5, 15), random_constant(-10, 10));
 
     run_no_overlap_equals_test(false);
     for (auto & [r1, r2] : data) {
