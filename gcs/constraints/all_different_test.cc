@@ -59,7 +59,7 @@ auto run_all_different_test(bool proofs, pair<int, int> v1_range, pair<int, int>
     auto v4 = p.create_integer_variable(Integer(v4_range.first), Integer(v4_range.second));
     auto v5 = p.create_integer_variable(Integer(v5_range.first), Integer(v5_range.second));
     auto v6 = p.create_integer_variable(Integer(v6_range.first), Integer(v6_range.second));
-    p.post(AllDifferent{vector<IntegerVariableID>{v1, v2, v3, v4, v5, v6}, true});
+    p.post(AllDifferent{vector<IntegerVariableID>{v1, v2, v3, v4, v5, v6}});
 
     auto proof_name = proofs ? make_optional("all_different_test") : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{v1, v2, v3, v4, v5, v6});

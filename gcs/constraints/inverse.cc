@@ -12,6 +12,7 @@
 #include <util/enumerate.hh>
 
 #include <algorithm>
+#include <map>
 #include <optional>
 #include <set>
 #include <sstream>
@@ -25,6 +26,7 @@ using std::make_shared;
 using std::map;
 using std::max;
 using std::min;
+using std::nullopt;
 using std::optional;
 using std::pair;
 using std::shared_ptr;
@@ -33,18 +35,19 @@ using std::unique_ptr;
 using std::vector;
 using std::visit;
 
-Inverse::Inverse(vector<IntegerVariableID> x, vector<IntegerVariableID> y, Integer x_start, Integer y_start) :
+Inverse::Inverse(vector<IntegerVariableID> x, vector<IntegerVariableID> y, Integer x_start, Integer y_start,
+    optional<LPJustificationOptions> use_lp_justification) :
     _x(move(x)),
     _y(move(y)),
     _x_start(x_start),
-    _y_start(y_start)
-
+    _y_start(y_start),
+    _use_lp_justification(use_lp_justification)
 {
 }
 
 auto Inverse::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<Inverse>(_x, _y, _x_start, _y_start);
+    return make_unique<Inverse>(_x, _y, _x_start, _y_start, _use_lp_justification);
 }
 
 auto Inverse::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
@@ -64,17 +67,30 @@ auto Inverse::install(Propagators & propagators, State & initial_state, ProofMod
         propagators.trim_upper_bound(initial_state, optional_model, v, Integer(_y.size()) + _y_start - 1_i, "Inverse");
     }
 
+    shared_ptr<map<ProofLine, WeightedPseudoBooleanLessEqual>> pb_constraints;
+    vector<IntegerVariableID> vars;
+
     if (optional_model) {
+        if (_use_lp_justification) {
+            pb_constraints = make_shared<map<ProofLine, WeightedPseudoBooleanLessEqual>>();
+            vars.reserve(_x.size() + _y.size());
+            vars.insert(vars.end(), _x.begin(), _x.end());
+            vars.insert(vars.end(), _y.begin(), _y.end());
+        }
+
         for (const auto & [i, x_i] : enumerate(_x))
             for (const auto & [j, y_j] : enumerate(_y)) {
+                WeightedPseudoBooleanLessEqual con1 = (WeightedPseudoBooleanSum{} + 1_i * (x_i != Integer(j) + _y_start) + 1_i * (y_j == Integer(i) + _x_start)) >= 1_i;
+                auto con2 = (WeightedPseudoBooleanSum{} + 1_i * (y_j != Integer(i) + _x_start) + 1_i * (x_i == Integer(j) + _y_start)) >= 1_i;
                 // x[i] = j -> y[j] = i
-                optional_model->add_constraint("Inverse", "x_i = j -> y[j] = i", WeightedPseudoBooleanSum{} +
-                        1_i * (x_i != Integer(j) + _y_start) + 1_i * (y_j == Integer(i) + _x_start) >=
-                    1_i);
+                auto line1 = optional_model->add_constraint("Inverse", "x_i = j -> y[j] = i", con1);
                 // y[j] = i -> x[i] = j
-                optional_model->add_constraint("Inverse", "y_j = i -> x[i] = j", WeightedPseudoBooleanSum{} +
-                        1_i * (y_j != Integer(i) + _x_start) + 1_i * (x_i == Integer(j) + _y_start) >=
-                    1_i);
+                auto line2 = optional_model->add_constraint("Inverse", "y_j = i -> x[i] = j", con2);
+
+                if (_use_lp_justification) {
+                    pb_constraints->emplace(*line1, con1);
+                    pb_constraints->emplace(*line2, con2);
+                }
             }
     }
 
@@ -126,26 +142,43 @@ auto Inverse::install(Propagators & propagators, State & initial_state, ProofMod
     for (const auto & [i, _] : enumerate(_x))
         x_values.push_back(Integer(i) + _x_start);
 
-    propagators.install([x = _x, y = _y, x_start = _x_start, y_start = _y_start,
-                            x_values = move(x_values), x_value_am1s = x_value_am1s](
+    propagators.install([x = _x, y = _y, x_start = _x_start, y_start = _y_start, vars = vars,
+                            x_values = move(x_values), x_value_am1s = x_value_am1s,
+                            p = move(pb_constraints), lp_justification_options = optional_model ? _use_lp_justification : nullopt](
                             const State & state, auto & inf, ProofLogger * const logger) -> PropagatorState {
+        const map<ProofLine, WeightedPseudoBooleanLessEqual> * const pb_constraints = p.get();
         for (const auto & [i, x_i] : enumerate(x)) {
             for (auto x_i_value : state.each_value_mutable(x_i))
-                if (! state.in_domain(y.at((x_i_value - y_start).raw_value), Integer(i) + x_start))
-                    inf.infer(logger, x_i != x_i_value,
-                        JustifyUsingRUP{},
-                        [&]() { return Literals{y.at((x_i_value - y_start).raw_value) != Integer(i) + x_start}; });
+                if (! state.in_domain(y.at((x_i_value - y_start).raw_value), Integer(i) + x_start)) {
+                    if (! lp_justification_options)
+                        inf.infer(logger, x_i != x_i_value,
+                            JustifyUsingRUP{},
+                            [&]() { return Literals{y.at((x_i_value - y_start).raw_value) != Integer(i) + x_start}; });
+                    else {
+                        auto [just, reason] = compute_lp_justification(state, *logger,
+                            WeightedPseudoBooleanSum{} + 1_i * (x_i != x_i_value) >= 1_i, vars, {}, *pb_constraints);
+                        inf.infer(logger, x_i != x_i_value, JustifyExplicitlyOnly{just}, reason);
+                    }
+                }
         }
 
         for (const auto & [i, y_i] : enumerate(y)) {
             for (auto y_i_value : state.each_value_mutable(y_i))
-                if (! state.in_domain(x.at((y_i_value - x_start).raw_value), Integer(i) + y_start))
-                    inf.infer(logger, y_i != y_i_value,
-                        JustifyUsingRUP{},
-                        [&]() { return Literals{x.at((y_i_value - x_start).raw_value) != Integer(i) + y_start}; });
+                if (! state.in_domain(x.at((y_i_value - x_start).raw_value), Integer(i) + y_start)) {
+
+                    if (! lp_justification_options)
+                        inf.infer(logger, y_i != y_i_value,
+                            JustifyUsingRUP{},
+                            [&]() { return Literals{x.at((y_i_value - x_start).raw_value) != Integer(i) + y_start}; });
+                    else {
+                        auto [just, reason] = compute_lp_justification(state, *logger,
+                            WeightedPseudoBooleanSum{} + 1_i * (y_i != y_i_value) >= 1_i, vars, {}, *pb_constraints);
+                        inf.infer(logger, y_i != y_i_value, JustifyExplicitlyOnly{just}, reason);
+                    }
+                }
         }
 
-        propagate_gac_all_different(x, x_values, x_value_am1s.get(), state, inf, logger);
+        propagate_gac_all_different(x, x_values, x_value_am1s.get(), state, inf, logger, p.get(), lp_justification_options);
 
         return PropagatorState::Enable;
     },

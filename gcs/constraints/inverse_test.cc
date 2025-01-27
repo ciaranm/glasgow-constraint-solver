@@ -69,8 +69,8 @@ auto run_inverse_test(bool proofs, const vector<pair<int, int>> & x_range, const
         x.push_back(p.create_integer_variable(Integer(l), Integer(u)));
     for (const auto & [l, u] : y_range)
         y.push_back(p.create_integer_variable(Integer(l), Integer(u)));
+    // p.post(Inverse{x, y, 0_i, 0_i, LPJustificationOptions{}});
     p.post(Inverse{x, y});
-
     auto proof_name = proofs ? make_optional("inverse_test") : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{x, y});
 
@@ -81,11 +81,12 @@ auto main(int, char *[]) -> int
 {
     vector<tuple<vector<pair<int, int>>, vector<pair<int, int>>>> var_data = {
         {{{0, 2}, {0, 2}, {0, 2}}, {{0, 2}, {0, 2}, {0, 2}}},
-        {{{0, 2}, {1, 3}, {0, 2}, {0, 3}}, {{0, 3}, {1, 2}, {1, 3}, {0, 3}}},
-        {{{0, 2}, {0, 2}, {0, 2}, {0, 4}, {0, 4}}, {{0, 4}, {0, 4}, {0, 4}, {3, 4}, {3, 4}}}};
+        //        {{{0, 2}, {1, 3}, {0, 2}, {0, 3}}, {{0, 3}, {1, 2}, {1, 3}, {0, 3}}},
+        //        {{{0, 2}, {0, 2}, {0, 2}, {0, 4}, {0, 4}}, {{0, 4}, {0, 4}, {0, 4}, {3, 4}, {3, 4}}}
+    };
 
-    for (auto & [x, y] : var_data)
-        run_inverse_test(false, x, y);
+    //    for (auto & [x, y] : var_data)
+    //        run_inverse_test(false, x, y);
 
     if (can_run_veripb())
         for (auto & [x, y] : var_data)

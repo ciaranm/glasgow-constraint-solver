@@ -60,7 +60,6 @@ auto NValue::install(Propagators & propagators, State & initial_state, ProofMode
         }
 
         inference.infer(logger, n_values >= max(1_i, Integer(all_definite_values.size())), JustifyUsingRUP{}, generic_reason(state, all_vars));
-
         return PropagatorState::Enable;
     },
         triggers, "nvalue");
