@@ -626,7 +626,7 @@ auto main(int argc, char * argv[]) -> int
                     }
                 }
 
-                problem.post(Regular{vars, symbols, num_states, transitions, final_states_raw});
+                problem.post(Regular{vars, symbols, long(num_states), transitions, final_states_raw});
             }
             else
                 throw FlatZincInterfaceError{fmt::format("Unknown flatzinc constraint {} in {}", id, fznname)};
@@ -649,7 +649,7 @@ auto main(int argc, char * argv[]) -> int
             branch_with(variable_order::dom_then_deg(data.all_variables), value_order::smallest_first()));
 
         if (fzn["solve"].contains("ann")) {
-            function<auto(const nlohmann::json &)->optional<BranchCallback>> parse_search;
+            function<optional<BranchCallback>(const nlohmann::json &)> parse_search;
             parse_search = [&data, &parse_search](const nlohmann::json & ann) -> optional<BranchCallback> {
                 if (ann["id"] == "bool_search" || ann["id"] == "int_search") {
                     auto args = ann["args"];

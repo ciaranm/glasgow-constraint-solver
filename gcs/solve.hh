@@ -49,7 +49,7 @@ namespace gcs
      * \ingroup SolveCallbacks
      * \sa SearchHeuristics
      */
-    using BranchCallback = std::function<auto(const CurrentState &, const innards::Propagators &)->std::generator<IntegerVariableCondition>>;
+    using BranchCallback = std::function<std::generator<IntegerVariableCondition>(const CurrentState &, const innards::Propagators &)>;
 
     /**
      * \brief Called by gcs::solve_with() after the proof has been started.

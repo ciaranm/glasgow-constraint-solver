@@ -19,6 +19,7 @@
 #include <functional>
 #include <iostream>
 #include <optional>
+#include <random>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -296,7 +297,7 @@ namespace gcs::test_innards
     {
         std::vector<IntegerVariableID> all_vars_as_vector;
         [&]<std::size_t... i_>(std::index_sequence<i_...>) {
-            (add_to_all_vars(all_vars_as_vector, get<i_>(all_vars).first), ...);
+            (add_to_all_vars(all_vars_as_vector, std::get<i_>(all_vars).first), ...);
         }(std::index_sequence_for<AllArgs_...>());
         solve_for_tests_with_callbacks(
             p, proof_name,
@@ -309,7 +310,7 @@ namespace gcs::test_innards
             },
             [&](const CurrentState & s) -> bool {
                 [&]<std::size_t... i_>(std::index_sequence<i_...>) {
-                    (check_support(expected, s, all_vars_as_vector, get<i_>(all_vars).first, get<i_>(all_vars).second, [&](const auto & x) { return get<i_>(x); }), ...);
+                    (check_support(expected, s, all_vars_as_vector, std::get<i_>(all_vars).first, std::get<i_>(all_vars).second, [&](const auto & x) { return std::get<i_>(x); }), ...);
                 }(std::index_sequence_for<AllArgs_...>());
                 return true;
             });

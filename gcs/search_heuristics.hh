@@ -24,9 +24,8 @@ namespace gcs
      *
      * \ingroup SearchHeuristics
      */
-    using BranchVariableSelector = std::function<auto(
-        const CurrentState &, const innards::Propagators &)
-                                                     ->std::optional<IntegerVariableID>>;
+    using BranchVariableSelector = std::function<std::optional<IntegerVariableID>(
+        const CurrentState &, const innards::Propagators &)>;
 
     /**
      * Given a branch variable, how do we branch on it? Usually this will be used via the gcs::branch_with()
@@ -38,9 +37,8 @@ namespace gcs
      *
      * \ingroup SearchHeuristics
      */
-    using BranchValueGenerator = std::function<auto(
-        const CurrentState &, const innards::Propagators &, const IntegerVariableID &)
-                                                   ->std::generator<IntegerVariableCondition>>;
+    using BranchValueGenerator = std::function<std::generator<IntegerVariableCondition>(
+        const CurrentState &, const innards::Propagators &, const IntegerVariableID &)>;
 
     /**
      * Combine a BranchVariableSelector from gcs::variable_order:: with a BranchValueGenerator

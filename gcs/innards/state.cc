@@ -1197,14 +1197,14 @@ auto innards::State::add_constraint_state(const ConstraintState c) -> Constraint
 {
     // Copying because I'm not sure if making it a reference is a bad idea... (want it to persist)
     _imp->constraint_states.back().push_back(c);
-    return ConstraintStateHandle{_imp->constraint_states.back().size() - 1};
+    return ConstraintStateHandle(_imp->constraint_states.back().size() - 1);
 }
 
 auto innards::State::add_persistent_constraint_state(const ConstraintState c) -> ConstraintStateHandle
 {
     // Does not restore on backtracking
     _imp->persistent_constraint_states.push_back(c);
-    return ConstraintStateHandle{_imp->persistent_constraint_states.size() - 1};
+    return ConstraintStateHandle(_imp->persistent_constraint_states.size() - 1);
 }
 
 auto innards::State::get_constraint_state(const ConstraintStateHandle h) const -> ConstraintState &
