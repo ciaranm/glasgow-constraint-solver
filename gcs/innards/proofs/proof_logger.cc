@@ -245,7 +245,7 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
                         terms += 1_i * ! r;
                 terms += 1_i * lit;
                 _imp->proof << "u ";
-                emit_inequality_to(names_and_ids_tracker(), move(terms) >= 1_i, nullopt, _imp->proof);
+                emit_inequality_to(names_and_ids_tracker(), move(terms) >= 1_i, _imp->proof);
                 _imp->proof << '\n';
                 record_proof_line(++_imp->proof_line, ProofLevel::Current);
             }
@@ -281,7 +281,7 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
                         terms += 1_i * ! r;
                 terms += 1_i * lit;
                 _imp->proof << "a ";
-                emit_inequality_to(names_and_ids_tracker(), move(terms) >= 1_i, nullopt, _imp->proof);
+                emit_inequality_to(names_and_ids_tracker(), move(terms) >= 1_i, _imp->proof);
                 _imp->proof << '\n';
                 record_proof_line(++_imp->proof_line, ProofLevel::Current);
             }
@@ -314,18 +314,7 @@ auto ProofLogger::reason_to_lits(const Reason & reason) -> vector<ProofLiteralOr
         reason_literals = reason();
 
     if (reason_literals)
-        for (auto & r : *reason_literals)
-            overloaded{
-                [&](const TrueLiteral &) {
-                },
-                [&](const FalseLiteral &) {
-                },
-                [&](const VariableConditionFrom<SimpleIntegerVariableID> & cond) {
-                    names_and_ids_tracker().need_proof_name(cond);
-                },
-                [&](const ProofVariableCondition &) {
-                }}
-                .visit(simplify_literal(r));
+        names_and_ids_tracker().need_all_proof_names_in(*reason_literals);
 
     vector<ProofLiteralOrFlag> reason_proof_literals{};
     for (auto & r : *reason_literals)
@@ -334,14 +323,13 @@ auto ProofLogger::reason_to_lits(const Reason & reason) -> vector<ProofLiteralOr
     return reason_proof_literals;
 }
 
-auto ProofLogger::reified(const WeightedPseudoBooleanLessEqual & ineq, const HalfReifyOnConjunctionOf & half_reif) -> WeightedPseudoBooleanLessEqual
+auto ProofLogger::reify(const WeightedPseudoBooleanLessEqual & ineq, const HalfReifyOnConjunctionOf & half_reif) -> WeightedPseudoBooleanLessEqual
 {
     return names_and_ids_tracker().reify(ineq, half_reif);
 }
 
-auto ProofLogger::reified(const WeightedPseudoBooleanLessEqual & ineq, const Reason & reason) -> WeightedPseudoBooleanLessEqual
+auto ProofLogger::reify(const WeightedPseudoBooleanLessEqual & ineq, const Reason & reason) -> WeightedPseudoBooleanLessEqual
 {
-
     auto reason_proof_literals = reason_to_lits(reason);
 
     return names_and_ids_tracker().reify(ineq, HalfReifyOnConjunctionOf{reason_proof_literals});
@@ -389,7 +377,7 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessEqual<Weighted<Pseud
                      .visit(rule)
               << " ";
 
-    emit_inequality_to(names_and_ids_tracker(), ineq, nullopt, rule_line);
+    emit_inequality_to(names_and_ids_tracker(), ineq, rule_line);
 
     rule_line << overloaded{
                      [&](const RUPProofRule &) -> string { return ""; },
@@ -420,18 +408,7 @@ auto ProofLogger::emit_under_reason(
     if (reason)
         reason_literals = reason();
     if (reason_literals)
-        for (auto & r : *reason_literals)
-            overloaded{
-                [&](const TrueLiteral &) {
-                },
-                [&](const FalseLiteral &) {
-                },
-                [&](const VariableConditionFrom<SimpleIntegerVariableID> & cond) {
-                    names_and_ids_tracker().need_proof_name(cond);
-                },
-                [&](const ProofVariableCondition &) {
-                }}
-                .visit(simplify_literal(r));
+        names_and_ids_tracker().need_all_proof_names_in(*reason_literals);
 
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
 
@@ -452,10 +429,10 @@ auto ProofLogger::emit_under_reason(
         vector<ProofLiteralOrFlag> reason_proof_literals{};
         for (auto & r : *reason_literals)
             reason_proof_literals.emplace_back(r);
-        emit_inequality_to(names_and_ids_tracker(), ineq, HalfReifyOnConjunctionOf{reason_proof_literals}, rule_line);
+        emit_inequality_to(names_and_ids_tracker(), reify(ineq, reason_proof_literals), rule_line);
     }
     else {
-        emit_inequality_to(names_and_ids_tracker(), ineq, nullopt, rule_line);
+        emit_inequality_to(names_and_ids_tracker(), ineq, rule_line);
     }
 
     rule_line << overloaded{
@@ -598,7 +575,7 @@ auto ProofLogger::emit_red_proof_line(const SumLessEqual<Weighted<PseudoBooleanT
     _imp->proof << "* emit red line from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
 #endif
     _imp->proof << "red ";
-    emit_inequality_to(names_and_ids_tracker(), ineq, nullopt, _imp->proof);
+    emit_inequality_to(names_and_ids_tracker(), ineq, _imp->proof);
 
     for (auto & [f, t] : witness)
         _imp->proof << " " << witness_literal(names_and_ids_tracker(), f) << " -> " << witness_literal(names_and_ids_tracker(), t);
@@ -626,7 +603,7 @@ auto ProofLogger::emit_red_proof_lines_forward_reifying(const SumLessEqual<Weigh
 
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
     _imp->proof << "red ";
-    emit_inequality_to(names_and_ids_tracker(), ineq, {{reif}}, _imp->proof);
+    emit_inequality_to(names_and_ids_tracker(), reify(ineq, {{reif}}), _imp->proof);
     _imp->proof << " " << witness_literal(names_and_ids_tracker(), reif) << " -> 0";
     _imp->proof << " ;";
     if (subproofs)
@@ -652,7 +629,7 @@ auto ProofLogger::emit_red_proof_lines_reverse_reifying(const SumLessEqual<Weigh
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
     auto negated_ineq = ineq.lhs >= ineq.rhs + 1_i;
     _imp->proof << "red ";
-    emit_inequality_to(names_and_ids_tracker(), negated_ineq, {{! reif}}, _imp->proof);
+    emit_inequality_to(names_and_ids_tracker(), reify(negated_ineq, {{! reif}}), _imp->proof);
     _imp->proof << " " << witness_literal(names_and_ids_tracker(), reif) << " -> 1";
     _imp->proof << " ;";
     if (subproofs)

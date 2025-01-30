@@ -138,6 +138,16 @@ namespace gcs::innards
         auto need_all_proof_names_in(const SumOf<Weighted<PseudoBooleanTerm>> & sum) -> void;
 
         /**
+         * Ensure that need_proof_name() has been called for everything in a given Literals.
+         */
+        auto need_all_proof_names_in(const Literals &) -> void;
+
+        /**
+         * Ensure that need_proof_name() has been called for everything in a given HalfReifyOnConjunctionOf.
+         */
+        auto need_all_proof_names_in(const HalfReifyOnConjunctionOf &) -> void;
+
+        /**
          * Return the string used in PB files for a given XLiteral.
          */
         [[nodiscard]] auto pb_file_string_for(const XLiteral &) const -> std::string;

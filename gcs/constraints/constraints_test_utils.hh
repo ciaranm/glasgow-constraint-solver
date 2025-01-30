@@ -52,10 +52,32 @@ namespace gcs::test_innards
 
     template <typename ResultsSet_, typename IsSatisfying_, typename... Accumulated_, typename... RestOfArgs_>
     auto generate_expected(ResultsSet_ & expected, IsSatisfying_ is_satisfying, const std::tuple<Accumulated_...> & acc,
+        std::pair<int, int> range_arg, RestOfArgs_... rest_of_args) -> void;
+
+    template <typename ResultsSet_, typename IsSatisfying_, typename... Accumulated_, typename... RestOfArgs_>
+    auto generate_expected(ResultsSet_ & expected, IsSatisfying_ is_satisfying, const std::tuple<Accumulated_...> & acc,
+        std::variant<int, std::pair<int, int>> range_or_const_arg, RestOfArgs_... rest_of_args) -> void;
+
+    template <typename ResultsSet_, typename IsSatisfying_, typename... Accumulated_, typename... RestOfArgs_>
+    auto generate_expected(ResultsSet_ & expected, IsSatisfying_ is_satisfying, const std::tuple<Accumulated_...> & acc,
         std::pair<int, int> range_arg, RestOfArgs_... rest_of_args) -> void
     {
         for (int n = range_arg.first; n <= range_arg.second; ++n)
             generate_expected(expected, is_satisfying, std::tuple_cat(acc, std::tuple{n}), rest_of_args...);
+    }
+
+    template <typename ResultsSet_, typename IsSatisfying_, typename... Accumulated_, typename... RestOfArgs_>
+    auto generate_expected(ResultsSet_ & expected, IsSatisfying_ is_satisfying, const std::tuple<Accumulated_...> & acc,
+        int const_arg, RestOfArgs_... rest_of_args) -> void
+    {
+        generate_expected(expected, is_satisfying, std::tuple_cat(acc, std::tuple{const_arg}), rest_of_args...);
+    }
+
+    template <typename ResultsSet_, typename IsSatisfying_, typename... Accumulated_, typename... RestOfArgs_>
+    auto generate_expected(ResultsSet_ & expected, IsSatisfying_ is_satisfying, const std::tuple<Accumulated_...> & acc,
+        std::variant<int, std::pair<int, int>> range_or_const_arg, RestOfArgs_... rest_of_args) -> void
+    {
+        std::visit([&](auto arg) { generate_expected(expected, is_satisfying, acc, arg, rest_of_args...); }, range_or_const_arg);
     }
 
     template <typename ResultsSet_, typename IsSatisfying_, typename... Accumulated_, typename... RestOfArgs_>
@@ -308,9 +330,19 @@ namespace gcs::test_innards
         int lower_min, lower_max, add_min, add_max;
     };
 
+    struct RandomConstant
+    {
+        int lower_min, lower_max;
+    };
+
     auto random_bounds(int lower_min, int lower_max, int add_min, int add_max) -> RandomBounds
     {
         return RandomBounds{lower_min, lower_max, add_min, add_max};
+    }
+
+    auto random_constant(int lower_min, int lower_max) -> RandomConstant
+    {
+        return RandomConstant{lower_min, lower_max};
     }
 
     template <typename Random_, typename Item_>
@@ -343,6 +375,13 @@ namespace gcs::test_innards
         return std::pair{generate_random_data_item(rand, values.first), generate_random_data_item(rand, values.second)};
     }
 
+    template <typename Random_>
+    auto generate_random_data_item(Random_ & rand, const RandomConstant & constant)
+    {
+        std::uniform_int_distribution<int> dist{constant.lower_min, constant.lower_max};
+        return dist(rand);
+    }
+
     template <typename Random_, typename Item_>
     auto generate_random_data_item(Random_ & rand, std::vector<Item_> vec)
     {
@@ -357,6 +396,16 @@ namespace gcs::test_innards
     auto generate_random_data(Random_ & rand, ResultsSet_ & data, Args_... args) -> void
     {
         data.emplace_back(generate_random_data_item(rand, std::forward<Args_>(args))...);
+    }
+
+    auto create_integer_variable_or_constant(Problem & problem, std::pair<int, int> bounds) -> IntegerVariableID
+    {
+        return problem.create_integer_variable(Integer(bounds.first), Integer(bounds.second));
+    }
+
+    auto create_integer_variable_or_constant(Problem &, int value) -> IntegerVariableID
+    {
+        return ConstantIntegerVariableID{Integer(value)};
     }
 }
 
