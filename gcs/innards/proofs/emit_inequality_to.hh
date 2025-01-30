@@ -20,7 +20,7 @@ namespace gcs::innards
      */
     auto emit_inequality_to(NamesAndIDsTracker &,
         const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
-        const std::optional<HalfReifyOnConjunctionOf> & half_reif, std::ostream & stream) -> void;
+        std::ostream & stream) -> void;
 }
 
 #endif

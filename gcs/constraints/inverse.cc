@@ -106,21 +106,21 @@ auto Inverse::install(Propagators & propagators, State & initial_state, ProofMod
                 // make an am1 for x[i] = v
                 auto temporary_proof_level = logger->temporary_proof_level();
                 stringstream am1;
-                for (unsigned i1 = 0; i1 < x.size(); ++i1) {
+                for (unsigned i1 = 1; i1 < x.size(); ++i1) {
                     vector<ProofLine> lines;
-                    for (unsigned i2 = i1 + 1; i2 < x.size(); ++i2)
+                    for (unsigned i2 = 0; i2 < i1; ++i2)
                         lines.push_back(logger->emit_rup_proof_line(
                             WeightedPseudoBooleanSum{} + 1_i * (x[i1] != v) + 1_i * (x[i2] != v) >= 1_i,
                             ProofLevel::Temporary));
 
-                    if (i1 == 0)
+                    if (i1 == 1)
                         am1 << "p";
                     else
                         am1 << " " << (i1 + 1) << " *";
 
                     for (const auto & [n, line] : enumerate(lines)) {
                         am1 << " " << line;
-                        if (n != 0 || i1 != 0)
+                        if (n != 0 || i1 != 1)
                             am1 << " +";
                     }
 

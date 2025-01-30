@@ -158,7 +158,7 @@ namespace
         }
         auto res = DerivedPBConstraint{
             ge_lhs, -ineq.rhs, reif, reason,
-            logger.emit_under_reason(rule, logger.reified(ineq, reif), proof_level, reason)};
+            logger.emit_under_reason(rule, logger.reify(ineq, reif), proof_level, reason)};
         return res;
     }
 
@@ -330,7 +330,7 @@ namespace
                 "Can't channel back to z."};
 
         auto rup_sign = logger.emit_rup_proof_line(
-            logger.reified(WeightedPseudoBooleanSum{} +
+            logger.reify(WeightedPseudoBooleanSum{} +
                         1_i * (z_negative ? ProofBitVariable{z, 0_i, true} : ProofBitVariable{z, 0_i, false}) >=
                     1_i,
                 channel_reif),
@@ -445,7 +445,7 @@ namespace
     auto derive_by_fusion_resolution(ProofLogger & logger, DerivedPBConstraint constr, vector<DerivedPBConstraint> premises)
         -> DerivedPBConstraint
     {
-        auto want_to_derive = logger.reified(logger.reified(constr.sum >= constr.rhs, constr.half_reif), *constr.reason);
+        auto want_to_derive = logger.reify(logger.reify(constr.sum >= constr.rhs, constr.half_reif), *constr.reason);
 
         if (premises.empty())
             throw UnexpectedException{"Empty premise set for fusion resolution."};
@@ -533,7 +533,7 @@ namespace
             inner_sum.add(lb_2.line, false);
             logger.emit_proof_line(inner_sum.str(), ProofLevel::Temporary);
             auto implied_sum = logger.emit_under_reason(ImpliesProofRule{make_optional<ProofLine>(-1)},
-                logger.reified(bitsum + lb_2.rhs * ProofBitVariable{mag_x, Integer(i), false} >= lb_2.rhs, reif),
+                logger.reify(bitsum + lb_2.rhs * ProofBitVariable{mag_x, Integer(i), false} >= lb_2.rhs, reif),
                 ProofLevel::Temporary, reason);
             outer_sum.add_multiplied_by(implied_sum, power2(Integer(i)));
         }
@@ -616,7 +616,7 @@ namespace
 
             auto desired_sum = bitsum + -(ub_2.rhs) * ProofBitVariable{mag_x, Integer(i), true};
             auto desired_constraint =
-                logger.reified(logger.reified(desired_sum >= rhs, reif), reason);
+                logger.reify(logger.reify(desired_sum >= rhs, reif), reason);
 
             auto fusion_premise_1 = result_of_deriving(logger, ImpliesProofRule{make_optional<ProofLine>(-1)},
                 desired_constraint, HalfReifyOnConjunctionOf{ProofBitVariable{mag_x, Integer(i), false}},
@@ -746,13 +746,13 @@ namespace
             lower_bounds_for_fusion.push_back(DerivedPBConstraint{
                 z_sum, smallest_product, reif_eq_0, reason,
                 logger.emit_under_reason(RUPProofRule{},
-                    logger.reified(final_lower_bound, reif_eq_0),
+                    logger.reify(final_lower_bound, reif_eq_0),
                     ProofLevel::Temporary, reason)});
 
             upper_bounds_for_fusion.push_back(DerivedPBConstraint{
                 neg_z_sum, -largest_product, HalfReifyOnConjunctionOf{var == 0_i}, reason,
                 logger.emit_under_reason(RUPProofRule{},
-                    logger.reified(final_upper_bound, reif_eq_0),
+                    logger.reify(final_upper_bound, reif_eq_0),
                     ProofLevel::Temporary, reason)});
         }
 
@@ -903,9 +903,9 @@ namespace
         for (auto & var : {x, y}) {
             auto lower_reif = HalfReifyOnConjunctionOf{var == 0_i, rup_x_lower.half_reif[0]};
 
-            to_resolve.emplace_back(lower_reif, logger.emit_under_reason(RUPProofRule{}, logger.reified(WeightedPseudoBooleanSum{} >= 1_i, lower_reif), ProofLevel::Temporary, reason));
+            to_resolve.emplace_back(lower_reif, logger.emit_under_reason(RUPProofRule{}, logger.reify(WeightedPseudoBooleanSum{} >= 1_i, lower_reif), ProofLevel::Temporary, reason));
             auto upper_reif = HalfReifyOnConjunctionOf{var == 0_i, rup_x_upper.half_reif[0]};
-            to_resolve.emplace_back(upper_reif, logger.emit_under_reason(RUPProofRule{}, logger.reified(WeightedPseudoBooleanSum{} >= 1_i, upper_reif), ProofLevel::Temporary, reason));
+            to_resolve.emplace_back(upper_reif, logger.emit_under_reason(RUPProofRule{}, logger.reify(WeightedPseudoBooleanSum{} >= 1_i, upper_reif), ProofLevel::Temporary, reason));
         }
 
         run_resolution(logger, to_resolve);

@@ -107,21 +107,10 @@ auto ProofModel::add_constraint(const StringLiteral & constraint_name, const Str
 {
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
     if (half_reif)
-        for (auto & r : *half_reif)
-            overloaded{
-                [&](const ProofFlag &) {},
-                [&](const ProofLiteral & lit) {
-                    overloaded{
-                        [&](const TrueLiteral &) {},
-                        [&](const FalseLiteral &) {},
-                        [&]<typename T_>(const VariableConditionFrom<T_> & cond) { names_and_ids_tracker().need_proof_name(cond); }}
-                        .visit(simplify_literal(lit));
-                },
-                [&](ProofBitVariable) {}}
-                .visit(r);
+        names_and_ids_tracker().need_all_proof_names_in(*half_reif);
 
     _imp->opb << "* constraint " << constraint_name.value << ' ' << rule.value << '\n';
-    emit_inequality_to(names_and_ids_tracker(), ineq, half_reif, _imp->opb);
+    emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(ineq, *half_reif) : ineq, _imp->opb);
     _imp->opb << '\n';
     return ++_imp->number_of_constraints;
 }
@@ -137,25 +126,14 @@ auto ProofModel::add_constraint(const StringLiteral & constraint_name, const Str
 {
     names_and_ids_tracker().need_all_proof_names_in(eq.lhs);
     if (half_reif)
-        for (auto & r : *half_reif)
-            overloaded{
-                [&](const ProofFlag &) {},
-                [&](const ProofLiteral & lit) {
-                    overloaded{
-                        [&](const TrueLiteral &) {},
-                        [&](const FalseLiteral &) {},
-                        [&]<typename T_>(const VariableConditionFrom<T_> & cond) { names_and_ids_tracker().need_proof_name(cond); }}
-                        .visit(simplify_literal(lit));
-                },
-                [&](const ProofBitVariable &) {}}
-                .visit(r);
+        names_and_ids_tracker().need_all_proof_names_in(*half_reif);
 
     _imp->opb << "* constraint " << constraint_name.value << ' ' << rule.value << '\n';
-    emit_inequality_to(names_and_ids_tracker(), eq.lhs <= eq.rhs, half_reif, _imp->opb);
+    emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(eq.lhs <= eq.rhs, *half_reif) : eq.lhs <= eq.rhs, _imp->opb);
     _imp->opb << '\n';
     auto first = ++_imp->number_of_constraints;
 
-    emit_inequality_to(names_and_ids_tracker(), eq.lhs >= eq.rhs, half_reif, _imp->opb);
+    emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(eq.lhs >= eq.rhs, *half_reif) : eq.lhs >= eq.rhs, _imp->opb);
     _imp->opb << '\n';
     auto second = ++_imp->number_of_constraints;
 

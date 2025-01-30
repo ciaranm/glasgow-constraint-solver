@@ -603,8 +603,10 @@ auto GACAllDifferent::install(Propagators & propagators, State & initial_state, 
     shared_ptr<map<ProofLine, WeightedPseudoBooleanLessEqual>> pb_constraints;
     auto sanitised_vars = move(_vars);
     sort(sanitised_vars.begin(), sanitised_vars.end());
-    if (sanitised_vars.end() != adjacent_find(sanitised_vars.begin(), sanitised_vars.end()))
-        throw UnexpectedException{"not sure what to do about duplicate variables in an alldifferent"};
+    if (sanitised_vars.end() != adjacent_find(sanitised_vars.begin(), sanitised_vars.end())) {
+        propagators.model_contradiction(initial_state, optional_model, "AllDifferent with duplicate variables");
+        return;
+    }
 
     if (optional_model) {
         constraint_numbers = make_shared<map<Integer, ProofLine>>();
