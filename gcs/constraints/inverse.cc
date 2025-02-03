@@ -73,9 +73,9 @@ auto Inverse::install(Propagators & propagators, State & initial_state, ProofMod
     if (optional_model) {
         if (_use_lp_justification) {
             pb_constraints = make_shared<map<ProofLine, WeightedPseudoBooleanLessEqual>>();
-            vars.reserve(_x.size() + _y.size());
-            vars.insert(vars.end(), _x.begin(), _x.end());
-            vars.insert(vars.end(), _y.begin(), _y.end());
+            _use_lp_justification->dom_vars.reserve(_x.size() + _y.size());
+            _use_lp_justification->dom_vars.insert(_use_lp_justification->dom_vars.end(), _x.begin(), _x.end());
+            _use_lp_justification->dom_vars.insert(_use_lp_justification->dom_vars.end(), _y.begin(), _y.end());
         }
 
         for (const auto & [i, x_i] : enumerate(_x))
@@ -99,7 +99,7 @@ auto Inverse::install(Propagators & propagators, State & initial_state, ProofMod
     triggers.on_change.insert(triggers.on_change.end(), _y.begin(), _y.end());
 
     shared_ptr<map<Integer, ProofLine>> x_value_am1s;
-    if (optional_model) {
+    if (optional_model && ! _use_lp_justification) {
         auto build_am1s = [](const vector<IntegerVariableID> & x, Integer x_start, const State &,
                               auto &, ProofLogger * const logger, const auto & map) {
             for (Integer v = x_start; v < x_start + Integer(x.size()); ++v) {
@@ -156,7 +156,7 @@ auto Inverse::install(Propagators & propagators, State & initial_state, ProofMod
                             [&]() { return Literals{y.at((x_i_value - y_start).raw_value) != Integer(i) + x_start}; });
                     else {
                         auto [just, reason] = compute_lp_justification(state, *logger,
-                            WeightedPseudoBooleanSum{} + 1_i * (x_i != x_i_value) >= 1_i, vars, {}, *pb_constraints);
+                            WeightedPseudoBooleanSum{} + 1_i * (x_i != x_i_value) >= 1_i, *lp_justification_options, *pb_constraints);
                         inf.infer(logger, x_i != x_i_value, JustifyExplicitlyOnly{just}, reason);
                     }
                 }
@@ -172,7 +172,7 @@ auto Inverse::install(Propagators & propagators, State & initial_state, ProofMod
                             [&]() { return Literals{x.at((y_i_value - x_start).raw_value) != Integer(i) + y_start}; });
                     else {
                         auto [just, reason] = compute_lp_justification(state, *logger,
-                            WeightedPseudoBooleanSum{} + 1_i * (y_i != y_i_value) >= 1_i, vars, {}, *pb_constraints);
+                            WeightedPseudoBooleanSum{} + 1_i * (y_i != y_i_value) >= 1_i, *lp_justification_options, *pb_constraints);
                         inf.infer(logger, y_i != y_i_value, JustifyExplicitlyOnly{just}, reason);
                     }
                 }

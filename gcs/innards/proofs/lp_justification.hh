@@ -11,6 +11,8 @@ namespace gcs
     struct LPJustificationOptions
     {
         bool justify_everything_at_once = false;
+        std::vector<IntegerVariableID> dom_vars = {};
+        std::vector<IntegerVariableID> bound_vars = {};
     };
 }
 namespace gcs::innards
@@ -19,8 +21,7 @@ namespace gcs::innards
         const State & state,
         ProofLogger & logger,
         const WeightedPseudoBooleanLessEqual & inference,
-        const std::vector<IntegerVariableID> & dom_vars,
-        const std::vector<IntegerVariableID> & bound_vars,
+        const LPJustificationOptions & lp_justification_options,
         const std::map<ProofLine, WeightedPseudoBooleanLessEqual> & pb_constraints) -> std::pair<ExplicitJustificationFunction, Reason>;
 }
 #endif // GLASGOW_CONSTRAINT_SOLVER_LP_JUSTIFICATION_HH

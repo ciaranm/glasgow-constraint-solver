@@ -10,6 +10,7 @@
 
 #include <boost/program_options.hpp>
 
+#include <gcs/constraints/table.hh>
 #include <iostream>
 #include <vector>
 
@@ -124,11 +125,18 @@ int main(int argc, char * argv[])
         idle_expr += Integer(actorPay[a]) * actorWait[a];
     }
 
-    p.post(Inverse{scene, slot});
+    p.post(Inverse{scene, slot, 0_i, 0_i, LPJustificationOptions{}});
 
     IntegerVariableID idleCost = p.create_integer_variable(0_i, Integer(100), "idleCost");
     idle_expr += -1_i * idleCost;
     p.post(idle_expr == 0_i);
+    //    vector<vector<Integer>> table{};
+    //    table.emplace_back(vector<Integer>{7_i, 3_i, 4_i});
+    //    p.post(Table{{scene[0], scene[1], scene[2]}, table});
+    //    //    p.post(LessThan{idleCost, 6_c});
+    //    p.post(GreaterThan{scene[0], 6_c});
+    //    p.post(GreaterThan{scene[1], 2_c});
+    //    p.post(GreaterThan{scene[2], 3_c});
     p.minimise(idleCost);
 
     auto stats = solve_with(p,

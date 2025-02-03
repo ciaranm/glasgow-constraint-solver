@@ -21,7 +21,7 @@ namespace gcs
     private:
         const std::vector<IntegerVariableID> _x, _y;
         const Integer _x_start, _y_start;
-        const std::optional<LPJustificationOptions> _use_lp_justification;
+        std::optional<LPJustificationOptions> _use_lp_justification;
 
     public:
         explicit Inverse(std::vector<IntegerVariableID> x, std::vector<IntegerVariableID> y,

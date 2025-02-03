@@ -205,12 +205,11 @@ auto gcs::innards::compute_lp_justification(
     const State & state,
     ProofLogger & logger,
     const WeightedPseudoBooleanLessEqual & inference,
-    const vector<IntegerVariableID> & dom_vars_iv,
-    const vector<IntegerVariableID> & bound_vars_iv,
+    const LPJustificationOptions & options,
     const map<ProofLine, WeightedPseudoBooleanLessEqual> & pb_constraints) -> pair<ExplicitJustificationFunction, Reason>
 {
-    const vector<SimpleIntegerVariableID> dom_vars = actual_vars(dom_vars_iv);
-    const vector<SimpleIntegerVariableID> bound_vars = actual_vars(bound_vars_iv);
+    const vector<SimpleIntegerVariableID> dom_vars = actual_vars(options.dom_vars);
+    const vector<SimpleIntegerVariableID> bound_vars = actual_vars(options.dom_vars);
     map<PseudoBooleanTerm, int> col_number{};
     map<long, function<string(const Reason &)>> p_line_output_for_row{};
     int col_count = 0;
@@ -439,6 +438,7 @@ auto gcs::innards::compute_lp_justification(
         }
         //        logger.emit_proof_comment("Computed LP justification:");
         if (count >= 2) {
+            logger.emit_proof_comment("Computed LP justification:");
             auto line = logger.emit_proof_line(p_line.str(), ProofLevel::Current);
             //            auto & s = state;
             //            vector<Integer> values;

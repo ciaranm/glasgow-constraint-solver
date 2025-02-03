@@ -405,7 +405,7 @@ auto gcs::innards::propagate_gac_all_different(
         // nope. we've got a maximum cardinality matching that leaves at least
         // one thing on the left uncovered.
         if (lp_justification_options) {
-            auto [just, reason] = compute_lp_justification(state, *logger, WeightedPseudoBooleanSum{} >= 1_i, vars, {}, *pb_constraints);
+            auto [just, reason] = compute_lp_justification(state, *logger, WeightedPseudoBooleanSum{} >= 1_i, *lp_justification_options, *pb_constraints);
             return tracker.infer(logger, FalseLiteral{}, JustifyExplicitlyOnly{just}, reason);
         }
         else {
@@ -585,14 +585,14 @@ auto gcs::innards::propagate_gac_all_different(
             for (const auto & del : deletions_by_scc[scc])
                 deletions_sum += 1_i * del;
             auto [just, reason] = compute_lp_justification(state, *logger,
-                deletions_sum >= Integer(static_cast<long long>(deletions_by_scc[scc].size())), vars, {}, *pb_constraints);
+                deletions_sum >= Integer(static_cast<long long>(deletions_by_scc[scc].size())), *lp_justification_options, *pb_constraints);
             tracker.infer_all(logger, deletions_by_scc[scc], JustifyExplicitlyOnly{just}, reason);
         }
     }
 
     if (lp_justification_options && (*lp_justification_options).justify_everything_at_once) {
         auto [just, reason] = compute_lp_justification(state, *logger,
-            deletions_sum >= Integer(static_cast<long long>(all_deletions.size())), vars, {}, *pb_constraints);
+            deletions_sum >= Integer(static_cast<long long>(all_deletions.size())), *lp_justification_options, *pb_constraints);
         tracker.infer_all(logger, all_deletions, JustifyExplicitlyOnly{just}, reason);
     }
 }
@@ -601,6 +601,9 @@ auto GACAllDifferent::install(Propagators & propagators, State & initial_state, 
 {
     shared_ptr<map<Integer, ProofLine>> constraint_numbers;
     shared_ptr<map<ProofLine, WeightedPseudoBooleanLessEqual>> pb_constraints;
+    if (_lp_justification_options) {
+        _lp_justification_options->dom_vars = vector<IntegerVariableID>(_vars);
+    }
     auto sanitised_vars = move(_vars);
     sort(sanitised_vars.begin(), sanitised_vars.end());
     if (sanitised_vars.end() != adjacent_find(sanitised_vars.begin(), sanitised_vars.end())) {

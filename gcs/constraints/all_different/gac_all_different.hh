@@ -35,7 +35,7 @@ namespace gcs
     {
     private:
         const std::vector<IntegerVariableID> _vars;
-        const std::optional<LPJustificationOptions> _lp_justification_options;
+        std::optional<LPJustificationOptions> _lp_justification_options;
 
     public:
         explicit GACAllDifferent(std::vector<IntegerVariableID> vars, std::optional<LPJustificationOptions> lp_justification_options = std::nullopt);
