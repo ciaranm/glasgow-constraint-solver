@@ -75,7 +75,7 @@ cmake --build build --target docs
 ```
 
 By default, XCSP support will be enabled, which requires libxml2 (``libxml2-dev`` on Ubuntu,
-``libxml2'' with Brew) and which will use Git to fetch an external dependency for parsing XCSP. To
+``libxml2`` with Brew) and which will use Git to fetch an external dependency for parsing XCSP. To
 turn this off, do:
 
 ```shell
@@ -194,8 +194,10 @@ going and try to find a better solution.
 
 Finally, it is often a good idea to tell the solver which variables it should use for making
 decisions. In this case, the banana and chocolate variables are our decision variables, so we could
-instead use the ``solve_with`` function to specify a search strategy. The ``branch`` and
-``guess`` parameters here can also be callbacks, but there are some common options available.
+instead use the ``solve_with`` function to specify a search strategy. The ``branch``
+parameter here can also be a callbacks, but there are some common options available using the
+``branch_with`` function, and the functions in the ``gcs::variable_order::`` and
+``gcs::value_order::`` namespaces.
 
 ```cpp
 solve_with(p,
@@ -205,8 +207,9 @@ solve_with(p,
                  << s(chocolate) << ", profit = " << s(profit) << endl;
             return true;
         },
-        .branch = branch_on_dom_then_deg(problem, vector<IntegerVariableID>{banana, chocolate}),
-        .guess = guess_smallest_value_first()
+        .branch = branch_with(
+            variable_order::dom_then_deg(vector<IntegerVariableID>{banana, chocolate}),
+            value_order::largest_first())
     });
 ```
 
@@ -241,10 +244,11 @@ solve_with(p,
                  << s(chocolate) << ", profit = " << s(profit) << endl;
             return true;
         },
-        .branch = branch_on_dom_then_deg(problem, vector<IntegerVariableID>{banana, chocolate}),
-        .guess = guess_smallest_value_first()
+        .branch = branch_with(
+            variable_order::dom_then_deg(vector<IntegerVariableID>{banana, chocolate}),
+            value_order::largest_first())
     },
-    make_optional<ProofOptions>("cake.opb", "cake.pbp"));
+    make_optional<ProofOptions>("cake"));
 ```
 
 This will produce a ``cake.opb`` file containing a low-level description of the model, as well as a
@@ -291,7 +295,7 @@ Variables
 
 There are two extremes on how to deal with variables, and various things in the middle. In a typical
 SAT solver, variables are just integer indices, and the actual state of variables is held elsewhere
-in the trail. Meanwhile, in a conventional OO style constraint solver, a variable is a class that
+in the trail. Meanwhile, in a conventional OO-style constraint solver, a variable is a class that
 holds a set of values. I'm becoming increasingly unfond of the OO style, for at least four reasons:
 
 - It puts state in awkward places. Is the variable you create when you define your model the same as
@@ -377,10 +381,13 @@ For proof logging, every constraint must also be able to describe itself in low 
 this is done via members of the ``Propagators`` class such as ``define`` and ``define_cnf``.
 This should only be done if ``Propagators::want_nonpropagating()`` is true.
 
-Any inference that is carried out, via ``State::infer``, must also be justified for proof logging.
-This can be done by passing a ``NoJustificationNeeded`` or ``JustifyUsingRUP`` instance, for simple
-constraints, but complex reasoning will require a ``JustifyExplicitly`` instance which includes a
-callback to create the relevant proof steps.
+Any inference that is carried out goes via an inference tracker, which is a templated argument that
+might be a ``SimpleInferenceTracker`` or an ``EagerProofLoggingInferenceTracker``. As well as
+specifying the inference, you must also provide a justification for proof logging, and a reason. The
+former can be done by passing a ``NoJustificationNeeded`` or ``JustifyUsingRUP`` instance, for
+simple constraints, but complex reasoning will require a ``JustifyExplicitly`` instance which
+includes a callback to create the relevant proof steps. The latter can be done using
+``generic_reason``, if you do not have something better.
 
 If the compiler macro ``GCS_TRACK_ALL_PROPAGATIONS`` is defined, the proof log will include explicit
 origin statements for every ``JustifyUsingRUP`` propagation, which may be helpful in debugging bad
