@@ -196,6 +196,53 @@ auto gcs::value_order::smallest_first() -> BranchValueGenerator
     };
 }
 
+auto gcs::value_order::split_smallest_first() -> BranchValueGenerator
+{
+    return [](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {
+        return [](const CurrentState & s, IntegerVariableID var) -> generator<IntegerVariableCondition> {
+            auto values = s.copy_of_values(var);
+            auto mid = values.size() / 2_i;
+            auto v = *(values.each() | std::ranges::views::drop((mid - 1_i).raw_value)).begin();
+            co_yield var < v + 1_i;
+            co_yield var >= v + 1_i;
+        }(s, var);
+    };
+}
+
+auto gcs::value_order::split_largest_first() -> BranchValueGenerator
+{
+    return [](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {
+        return [](const CurrentState & s, IntegerVariableID var) -> generator<IntegerVariableCondition> {
+            auto values = s.copy_of_values(var);
+            auto mid = values.size() / 2_i;
+            auto v = *(values.each() | std::ranges::views::drop((mid - 1_i).raw_value)).begin();
+            co_yield var >= v + 1_i;
+            co_yield var < v + 1_i;
+        }(s, var);
+    };
+}
+
+auto gcs::value_order::split_random() -> BranchValueGenerator
+{
+    return [](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {
+        return [](const CurrentState & s, IntegerVariableID var) -> generator<IntegerVariableCondition> {
+            auto values = s.copy_of_values(var);
+            auto mid = values.size() / 2_i;
+            random_device rand_dev;
+            mt19937 r(rand_dev());
+            auto v = *(values.each() | std::ranges::views::drop((mid - 1_i).raw_value)).begin();
+            if (uniform_int_distribution(0, 1)(r) == 0) {
+                co_yield var >= v + 1_i;
+                co_yield var < v + 1_i;
+            }
+            else {
+                co_yield var >= v + 1_i;
+                co_yield var < v + 1_i;
+            }
+        }(s, var);
+    };
+}
+
 auto gcs::value_order::largest_in() -> BranchValueGenerator
 {
     return [](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {

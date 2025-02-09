@@ -230,6 +230,27 @@ namespace gcs
         [[nodiscard]] auto largest_first() -> BranchValueGenerator;
 
         /**
+         * Split domains in half, taking lower half first.
+         *
+         * \ingroup SearchHeuristics
+         */
+        [[nodiscard]] auto split_smallest_first() -> BranchValueGenerator;
+
+        /**
+         * Split domains in half, taking upper half first.
+         *
+         * \ingroup SearchHeuristics
+         */
+        [[nodiscard]] auto split_largest_first() -> BranchValueGenerator;
+
+        /**
+         * Split domains in half, taking a random half first.
+         *
+         * \ingroup SearchHeuristics
+         */
+        [[nodiscard]] auto split_random() -> BranchValueGenerator;
+
+        /**
          * Iterate over values in a random order.
          *
          * \ingroup SearchHeuristics

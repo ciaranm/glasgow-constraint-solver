@@ -687,6 +687,10 @@ auto main(int argc, char * argv[]) -> int
                         val = value_order::largest_out();
                     else if (val_heuristic == "outdomain_min")
                         val = value_order::smallest_out();
+                    else if (val_heuristic == "indomain_split")
+                        val = value_order::split_smallest_first();
+                    else if (val_heuristic == "indomain_split_random")
+                        val = value_order::split_random();
                     else {
                         println(cerr, "Warning: treating unknown int_search value heuristic {} as indomain instead", val_heuristic);
                         val = value_order::smallest_first();
