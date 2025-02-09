@@ -15,8 +15,6 @@
 #include <fmt/ostream.h>
 #include <fmt/ranges.h>
 
-#include <range/v3/all.hpp>
-
 using namespace gcs;
 
 using std::cerr;
@@ -30,10 +28,10 @@ using std::pair;
 using std::string;
 using std::vector;
 
+using std::ranges::views::transform;
+
 using fmt::print;
 using fmt::println;
-
-using ranges::views::transform;
 
 namespace po = boost::program_options;
 

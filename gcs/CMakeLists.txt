@@ -69,7 +69,7 @@ add_dependencies(glasgow_constraint_solver generator)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 link_libraries(glasgow_constraint_solver)
-target_link_libraries(glasgow_constraint_solver PUBLIC fmt::fmt range-v3)
+target_link_libraries(glasgow_constraint_solver PUBLIC fmt::fmt)
 target_link_libraries(glasgow_constraint_solver PRIVATE nlohmann_json::nlohmann_json)
 
 add_executable(solve_test solve_test.cc)
@@ -130,7 +130,7 @@ add_executable(reification_test innards/proofs/reification_test.cc)
 add_test(NAME reification_test COMMAND ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:reification_test>)
 
 add_executable(interval_set_test innards/interval_set_test.cc)
-target_link_libraries(interval_set_test PRIVATE Catch2::Catch2WithMain range-v3)
+target_link_libraries(interval_set_test PRIVATE Catch2::Catch2WithMain)
 add_test(NAME interval_set_test COMMAND $<TARGET_FILE:interval_set_test>)
 
 add_executable(state_test innards/state_test.cc)

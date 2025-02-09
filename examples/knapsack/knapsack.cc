@@ -15,8 +15,6 @@
 #include <fmt/ostream.h>
 #include <fmt/ranges.h>
 
-#include <range/v3/all.hpp>
-
 using namespace gcs;
 
 using std::cerr;
@@ -28,8 +26,6 @@ using std::vector;
 
 using fmt::print;
 using fmt::println;
-
-using ranges::views::transform;
 
 namespace po = boost::program_options;
 
@@ -85,7 +81,7 @@ auto main(int argc, char * argv[]) -> int
     auto stats = solve_with(p,
         SolveCallbacks{
             .solution = [&](const CurrentState & s) -> bool {
-                println("solution: {} profit {} weight {}", items | transform(cref(s)), s(profit), s(weight));
+                println("solution: {} profit {} weight {}", items | std::ranges::views::transform(cref(s)), s(profit), s(weight));
                 return true;
             },
             .branch = branch_with(variable_order::dom_then_deg(items), value_order::smallest_first())},
