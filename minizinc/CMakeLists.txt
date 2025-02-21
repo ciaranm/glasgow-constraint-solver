@@ -40,6 +40,9 @@ set_tests_properties(minizinc-boolxor PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-cake COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ cake false true)
 set_tests_properties(minizinc-cake PROPERTIES SKIP_RETURN_CODE 66)
 
+add_test(NAME minizinc-count COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ counttest true true)
+set_tests_properties(minizinc-count PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-crystalmaze COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ crystalmaze true true)
 set_tests_properties(minizinc-crystalmaze PROPERTIES SKIP_RETURN_CODE 66)
 
