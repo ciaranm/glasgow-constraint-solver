@@ -14,6 +14,7 @@ add_library(glasgow_constraint_solver
         constraints/all_different/encoding.cc
         constraints/all_different/gac_all_different.cc
         constraints/all_different/vc_all_different.cc
+        constraints/among.cc
         constraints/arithmetic.cc
         constraints/at_most_one.cc
         constraints/circuit/circuit_base.cc
@@ -79,6 +80,7 @@ add_test(NAME solve_test COMMAND $<TARGET_FILE:solve_test>)
 
 add_executable(abs_test constraints/abs_test.cc)
 add_executable(all_different_test constraints/all_different_test.cc)
+add_executable(among_test constraints/among_test.cc)
 add_executable(arithmetic_test constraints/arithmetic_test.cc)
 add_executable(comparison_test constraints/comparison_test.cc)
 add_executable(count_test constraints/count_test.cc)
@@ -97,6 +99,7 @@ add_executable(smart_table_test constraints/smart_table_test.cc)
 
 add_test(NAME abs_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:abs_test>)
 add_test(NAME all_different_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:all_different_test>)
+add_test(NAME among_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:among_test>)
 add_test(NAME arithmetic_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:arithmetic_test>)
 add_test(NAME comparison_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:comparison_test>)
 add_test(NAME count_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:count_test>)

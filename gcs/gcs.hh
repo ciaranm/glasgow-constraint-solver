@@ -17,6 +17,7 @@
 
 #include <gcs/constraints/abs.hh>
 #include <gcs/constraints/all_different.hh>
+#include <gcs/constraints/among.hh>
 #include <gcs/constraints/arithmetic.hh>
 #include <gcs/constraints/circuit.hh>
 #include <gcs/constraints/comparison.hh>

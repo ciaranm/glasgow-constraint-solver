@@ -109,13 +109,23 @@ namespace
                 throw FlatZincInterfaceError{fmt::format("Can't find constant array named {}", name)};
             return &iter->second;
         }
-        else {
+        else if (a.is_array()) {
             vector<Integer> result;
             for (const auto & val : a)
                 result.push_back(Integer{static_cast<long long>(val)});
             data.unnamed_constant_arrays.push_back(move(result));
             return &data.unnamed_constant_arrays.back();
         }
+        else if (a.is_object()) {
+            vector<Integer> result;
+            for (const auto & val_range : a["set"])
+                for (auto val = val_range[0].template get<long long>(); val <= val_range[1].template get<long long>(); ++val)
+                    result.push_back(Integer(val));
+            data.unnamed_constant_arrays.push_back(move(result));
+            return &data.unnamed_constant_arrays.back();
+        }
+        else
+            throw FlatZincInterfaceError{fmt::format("Unknown constant array type")};
     }
 
     auto arg_as_set_of_integer(ExtractedData &, const auto & args, int idx) -> IntervalSet<Integer>
@@ -571,6 +581,12 @@ auto main(int argc, char * argv[]) -> int
             else if (id == "glasgow_alldifferent") {
                 const auto & vars = arg_as_array_of_var(data, args, 0);
                 problem.post(AllDifferent{vars});
+            }
+            else if (id == "glasgow_among") {
+                const auto & varcount = arg_as_var(data, args, 0);
+                const auto & vars = arg_as_array_of_var(data, args, 1);
+                const auto & varmatch = arg_as_array_of_integer(data, args, 2);
+                problem.post(Among{vars, *varmatch, varcount});
             }
             else if (id == "glasgow_circuit") {
                 const auto & vars = arg_as_array_of_var(data, args, 0);
