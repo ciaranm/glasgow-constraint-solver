@@ -5,6 +5,7 @@
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
+#include <gcs/innards/proofs/recover_am1.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/integer.hh>
@@ -13,6 +14,7 @@
 
 #include <algorithm>
 #include <optional>
+#include <ranges>
 #include <set>
 #include <sstream>
 #include <utility>
@@ -84,30 +86,12 @@ auto Inverse::install(Propagators & propagators, State & initial_state, ProofMod
                               auto &, ProofLogger * const logger, const auto & map) {
             for (Integer v = x_start; v < x_start + Integer(x.size()); ++v) {
                 // make an am1 for x[i] = v
-                auto temporary_proof_level = logger->temporary_proof_level();
-                stringstream am1;
-                for (unsigned i1 = 1; i1 < x.size(); ++i1) {
-                    vector<ProofLine> lines;
-                    for (unsigned i2 = 0; i2 < i1; ++i2)
-                        lines.push_back(logger->emit_rup_proof_line(
-                            WeightedPseudoBooleanSum{} + 1_i * (x[i1] != v) + 1_i * (x[i2] != v) >= 1_i,
-                            ProofLevel::Temporary));
-
-                    if (i1 == 1)
-                        am1 << "p";
-                    else
-                        am1 << " " << (i1 + 1) << " *";
-
-                    for (const auto & [n, line] : enumerate(lines)) {
-                        am1 << " " << line;
-                        if (n != 0 || i1 != 1)
-                            am1 << " +";
-                    }
-
-                    am1 << " " << (i1 + 2) << " d";
-                }
-                map->emplace(v, logger->emit_proof_line(am1.str(), ProofLevel::Top));
-                logger->forget_proof_level(temporary_proof_level);
+                vector<IntegerVariableCondition> xieqvs;
+                for (const auto & var : x)
+                    xieqvs.push_back(var != v);
+                map->emplace(v, recover_am1<IntegerVariableCondition>(*logger, ProofLevel::Top, xieqvs, [&](const IntegerVariableCondition & c1, const IntegerVariableCondition & c2) -> ProofLine {
+                    return logger->emit(RUPProofRule{}, WeightedPseudoBooleanSum{} + 1_i * c1 + 1_i * c2 >= 1_i, ProofLevel::Temporary);
+                }));
             }
         };
 
