@@ -170,8 +170,24 @@ auto NamesAndIDsTracker::need_pol_item_defining_literal(const IntegerVariableCon
             }
             throw NonExhaustiveSwitch{};
         },
-        [&](const ViewOfIntegerVariableID &) -> variant<ProofLine, XLiteral> {
-            throw UnimplementedException{};
+        [&](const ViewOfIntegerVariableID & var) -> variant<ProofLine, XLiteral> {
+            switch (cond.op) {
+                using enum VariableConditionOperator;
+            case GreaterEqual:
+                if (var.negate_first)
+                    return need_pol_item_defining_literal(var.actual_variable < -(cond.value - var.then_add) + 1_i);
+                else
+                    return need_pol_item_defining_literal(var.actual_variable >= cond.value - var.then_add);
+            case Less:
+                if (var.negate_first)
+                    return need_pol_item_defining_literal(var.actual_variable >= -(cond.value - var.then_add) + 1_i);
+                else
+                    return need_pol_item_defining_literal(var.actual_variable < cond.value - var.then_add);
+            case Equal:
+                throw UnimplementedException{};
+            case NotEqual:
+                throw UnimplementedException{};
+            }
         }}
         .visit(cond.var);
 }
