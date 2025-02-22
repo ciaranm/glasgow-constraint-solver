@@ -979,13 +979,15 @@ auto State::copy_of_values(const VarType_ & var) const -> IntervalSet<Integer>
             get<IntegerVariableRangeState>(get_state.state).upper);
         return result;
     }
-    else {
+    else if (! get<1>(get_state.var_negate_then_add)) {
         IntervalSet<Integer> result;
         for_each_value_immutable(var, [&](Integer i) {
             result.insert_at_end(i);
         });
         return result;
     }
+    else
+        throw UnimplementedException{};
 }
 
 template <IntegerVariableIDLike VarType_>
