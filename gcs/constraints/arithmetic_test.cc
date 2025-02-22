@@ -43,15 +43,15 @@ namespace
     struct NameOf;
 
     template <>
-    struct NameOf<Plus>
+    struct NameOf<PlusGAC>
     {
-        static const constexpr auto name = "plus";
+        static const constexpr auto name = "plusgac";
     };
 
     template <>
-    struct NameOf<Minus>
+    struct NameOf<MinusGAC>
     {
-        static const constexpr auto name = "minus";
+        static const constexpr auto name = "minusgac";
     };
 
     template <>
@@ -111,8 +111,8 @@ auto main(int, char *[]) -> int
         generate_random_data(rand, data, random_bounds(-10, 10, 5, 15), random_bounds(-10, 10, 5, 15), random_bounds(-10, 10, 5, 15));
 
     for (auto & [r1, r2, r3] : data) {
-        run_arithmetic_test<Plus>(false, r1, r2, r3, [](int a, int b, int c) { return a + b == c; });
-        run_arithmetic_test<Minus>(false, r1, r2, r3, [](int a, int b, int c) { return a - b == c; });
+        run_arithmetic_test<PlusGAC>(false, r1, r2, r3, [](int a, int b, int c) { return a + b == c; });
+        run_arithmetic_test<MinusGAC>(false, r1, r2, r3, [](int a, int b, int c) { return a - b == c; });
         run_arithmetic_test<Times>(false, r1, r2, r3, [](int a, int b, int c) { return a * b == c; });
         run_arithmetic_test<Div>(false, r1, r2, r3, [](int a, int b, int c) { return 0 != b && a / b == c; });
         run_arithmetic_test<Mod>(false, r1, r2, r3, [](int a, int b, int c) { return 0 != b && a % b == c; });
@@ -120,8 +120,8 @@ auto main(int, char *[]) -> int
 
     if (can_run_veripb())
         for (auto & [r1, r2, r3] : data) {
-            run_arithmetic_test<Plus>(true, r1, r2, r3, [](int a, int b, int c) { return a + b == c; });
-            run_arithmetic_test<Minus>(true, r1, r2, r3, [](int a, int b, int c) { return a - b == c; });
+            run_arithmetic_test<PlusGAC>(true, r1, r2, r3, [](int a, int b, int c) { return a + b == c; });
+            run_arithmetic_test<MinusGAC>(true, r1, r2, r3, [](int a, int b, int c) { return a - b == c; });
             run_arithmetic_test<Times>(true, r1, r2, r3, [](int a, int b, int c) { return a * b == c; });
             run_arithmetic_test<Div>(true, r1, r2, r3, [](int a, int b, int c) { return 0 != b && a / b == c; });
             run_arithmetic_test<Mod>(true, r1, r2, r3, [](int a, int b, int c) { return 0 != b && a % b == c; });

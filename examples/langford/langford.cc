@@ -86,7 +86,7 @@ auto main(int argc, char * argv[]) -> int
         p.post(Element{i_var, position[i + k], solution});
 
         // position[i + k] = position[i] + i + 2
-        p.post(Plus{position[i + k], constant_variable(Integer{i + 2}), position[i]});
+        p.post(PlusGAC{position[i + k], constant_variable(Integer{i + 2}), position[i]});
     }
 
     auto stats = solve(
