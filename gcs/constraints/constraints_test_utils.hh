@@ -58,6 +58,10 @@ namespace gcs::test_innards
 
     template <typename ResultsSet_, typename IsSatisfying_, typename... Accumulated_, typename... RestOfArgs_>
     auto generate_expected(ResultsSet_ & expected, IsSatisfying_ is_satisfying, const std::tuple<Accumulated_...> & acc,
+        std::vector<int> vec_arg, RestOfArgs_... rest_of_args) -> void;
+
+    template <typename ResultsSet_, typename IsSatisfying_, typename... Accumulated_, typename... RestOfArgs_>
+    auto generate_expected(ResultsSet_ & expected, IsSatisfying_ is_satisfying, const std::tuple<Accumulated_...> & acc,
         std::variant<int, std::pair<int, int>> range_or_const_arg, RestOfArgs_... rest_of_args) -> void;
 
     template <typename ResultsSet_, typename IsSatisfying_, typename... Accumulated_, typename... RestOfArgs_>
@@ -69,6 +73,14 @@ namespace gcs::test_innards
         std::pair<int, int> range_arg, RestOfArgs_... rest_of_args) -> void
     {
         for (int n = range_arg.first; n <= range_arg.second; ++n)
+            generate_expected(expected, is_satisfying, std::tuple_cat(acc, std::tuple{n}), rest_of_args...);
+    }
+
+    template <typename ResultsSet_, typename IsSatisfying_, typename... Accumulated_, typename... RestOfArgs_>
+    auto generate_expected(ResultsSet_ & expected, IsSatisfying_ is_satisfying, const std::tuple<Accumulated_...> & acc,
+        std::vector<int> vec_arg, RestOfArgs_... rest_of_args) -> void
+    {
+        for (int n : vec_arg)
             generate_expected(expected, is_satisfying, std::tuple_cat(acc, std::tuple{n}), rest_of_args...);
     }
 
@@ -455,6 +467,14 @@ namespace gcs::test_innards
     auto create_integer_variable_or_constant(Problem & problem, std::pair<int, int> bounds) -> IntegerVariableID
     {
         return problem.create_integer_variable(Integer(bounds.first), Integer(bounds.second));
+    }
+
+    auto create_integer_variable_or_constant(Problem & problem, std::vector<int> values) -> IntegerVariableID
+    {
+        std::vector<Integer> vs;
+        for (auto v : values)
+            vs.push_back(Integer(v));
+        return problem.create_integer_variable(vs);
     }
 
     auto create_integer_variable_or_constant(Problem &, int value) -> IntegerVariableID
