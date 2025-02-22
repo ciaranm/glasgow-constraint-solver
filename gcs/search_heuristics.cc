@@ -163,6 +163,25 @@ auto gcs::value_order::random() -> BranchValueGenerator
     };
 }
 
+auto gcs::value_order::random_out() -> BranchValueGenerator
+{
+    return [](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {
+        return [](const CurrentState & s, IntegerVariableID var) -> generator<IntegerVariableCondition> {
+            vector<Integer> values;
+            for (auto v : s.each_value(var))
+                values.push_back(v);
+
+            random_device rand_dev;
+            mt19937 r(rand_dev());
+            uniform_int_distribution<size_t> dist(0, values.size() - 1);
+            auto val = values.at(dist(r));
+
+            co_yield var != val;
+            co_yield var == val;
+        }(s, var);
+    };
+}
+
 auto gcs::value_order::smallest_in() -> BranchValueGenerator
 {
     return [](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {

@@ -258,6 +258,14 @@ namespace gcs
         [[nodiscard]] auto random() -> BranchValueGenerator;
 
         /**
+         * Reject a random value, then accept it. This is a silly heuristic for solving
+         * problems, but an interesting one for testing.
+         *
+         * \ingroup SearchHeuristics
+         */
+        [[nodiscard]] auto random_out() -> BranchValueGenerator;
+
+        /**
          * Accept then reject the median value in the domain.
          *
          * \ingroup SearchHeuristics

@@ -170,7 +170,7 @@ namespace gcs::test_innards
     auto solve_for_tests_with_callbacks(Problem & p, const std::optional<std::string> & proof_name, const SolutionCallback_ & f, const TraceCallback_ & t) -> void
     {
         solve_with(p,
-            SolveCallbacks{.solution = f, .trace = t, .branch = branch_with(variable_order::random(p), value_order::split_random())},
+            SolveCallbacks{.solution = f, .trace = t, .branch = branch_with(variable_order::random(p), value_order::random_out())},
             proof_name ? std::make_optional<ProofOptions>(ProofFileNames{*proof_name}, true, false) : std::nullopt);
     }
 
