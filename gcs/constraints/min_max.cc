@@ -6,12 +6,15 @@
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
 
+#include <algorithm>
+
 using namespace gcs;
 using namespace gcs::innards;
 
 using std::nullopt;
 using std::optional;
 using std::pair;
+using std::ranges::any_of;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -75,41 +78,34 @@ auto ArrayMinMax::install(Propagators & propagators, State & initial_state, Proo
             }
         }
 
-        // largest value in result uniquely supported?
-        optional<IntegerVariableID> support_of_largest_1, support_of_largest_2;
-        auto largest_result = min ? state.upper_bound(result) : state.lower_bound(result);
+        // is there more than one variable that can support the values in result?
+        optional<IntegerVariableID> support_1, support_2;
         for (auto & var : vars) {
-            if (state.in_domain(var, largest_result)) {
-                if (! support_of_largest_1)
-                    support_of_largest_1 = var;
+            if (any_of(state.each_value_immutable(result), [&] (const Integer & val) { return state.in_domain(var, val); })) {
+                if (! support_1)
+                    support_1 = var;
                 else {
-                    support_of_largest_2 = var;
+                    support_2 = var;
                     break;
                 }
             }
         }
 
-        if (! support_of_largest_1)
+        if (! support_1)
             throw UnexpectedException{"missing support, bug in MinMaxArray propagator"};
-        else if (! support_of_largest_2) {
-            Literals reason;
-            reason.emplace_back(result == largest_result);
+        else if (! support_2) {
+            Literals reason = generic_reason(state, vector{result})();
 
             for (auto & var : vars) {
-                if (var == *support_of_largest_1)
+                if (var == *support_1)
                     continue;
-                if (! min)
-                    reason.emplace_back(var < largest_result);
-                else
-                    reason.emplace_back(var >= largest_result + 1_i);
+                for (const auto & val : state.each_value_immutable(result))
+                    reason.emplace_back(var != val);
             }
 
-            if (min) {
-                inference.infer_less_than(logger, *support_of_largest_1, largest_result + 1_i, JustifyUsingRUP{}, Reason{[=]() { return reason; }});
-            }
-            else {
-                inference.infer_greater_than_or_equal(logger, *support_of_largest_1, largest_result, JustifyUsingRUP{}, Reason{[=]() { return reason; }});
-            }
+            for (const auto & val : state.each_value_mutable(*support_1))
+                if (! state.in_domain(result, val))
+                    inference.infer(logger, *support_1 != val, JustifyUsingRUP{}, Reason{[=]() { return reason; }});
         }
 
         return PropagatorState::Enable;
