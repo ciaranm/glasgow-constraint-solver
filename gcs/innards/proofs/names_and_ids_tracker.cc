@@ -188,6 +188,7 @@ auto NamesAndIDsTracker::need_pol_item_defining_literal(const IntegerVariableCon
             case NotEqual:
                 throw UnimplementedException{};
             }
+            throw NonExhaustiveSwitch{};
         }}
         .visit(cond.var);
 }
