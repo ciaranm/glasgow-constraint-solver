@@ -2,7 +2,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_INVERSE_HH
 
 #include <gcs/constraint.hh>
-#include <gcs/innards/proofs/lp_justification.hh>
+#include <gcs/innards/proofs/lp_justifier.hh>
 #include <gcs/variable_id.hh>
 
 #include <vector>
@@ -21,11 +21,11 @@ namespace gcs
     private:
         const std::vector<IntegerVariableID> _x, _y;
         const Integer _x_start, _y_start;
-        std::optional<LPJustificationOptions> _use_lp_justification;
+        const std::optional<LPJustificationOptions> & _lp_justification_options;
 
     public:
         explicit Inverse(std::vector<IntegerVariableID> x, std::vector<IntegerVariableID> y,
-            Integer x_start = 0_i, Integer y_start = 0_i, std::optional<LPJustificationOptions> _use_lp_justification = std::nullopt);
+            Integer x_start = 0_i, Integer y_start = 0_i, const std::optional<LPJustificationOptions> & _lp_justification_options = std::nullopt);
 
         virtual auto install(innards::Propagators &, innards::State &,
             innards::ProofModel * const) && -> void override;

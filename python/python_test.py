@@ -293,5 +293,8 @@ class TestGlasgowConstraintSolver(unittest.TestCase):
         self.assertEqual(self.gcs.get_solution_value(self.y), 1)
         self.assertEqual(self.gcs.get_solution_value(self.z), 1)
 
+    def test_empty_clause(self):
+        self.gcs.post_or([])
+
 
 unittest.main()

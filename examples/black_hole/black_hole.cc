@@ -34,6 +34,9 @@ auto main(int argc, char * argv[]) -> int
     //    all_options.add_options()(
     //        "n", po::value<int>()->default_value(3), "Integer value n.") //
     //        ;
+    all_options.add_options() //
+        ("lp", "Use LP justifications");
+
     all_options.add(display_options);
     po::variables_map options_vars;
 
@@ -507,7 +510,7 @@ auto main(int argc, char * argv[]) -> int
         p.post(Table{{card_at_pos[i], card_at_pos[i + 1]}, neighbors});
     }
 
-    p.post(Inverse{card_at_pos, pos_of_card, 1_i, 1_i, LPJustificationOptions{}});
+    p.post(Inverse{card_at_pos, pos_of_card, 1_i, 1_i, options_vars.contains("lp") ? make_optional(LPJustificationOptions{}) : nullopt});
 
     // A card must be played before the one under it
     for (int i = 0; i < 17; i++) {

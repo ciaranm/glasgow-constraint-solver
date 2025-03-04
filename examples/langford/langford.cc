@@ -42,6 +42,7 @@ auto main(int argc, char * argv[]) -> int
     po::options_description all_options{"All options"};
     all_options.add_options()                                                        //
         ("size", po::value<int>()->default_value(7), "Size of the problem to solve") //
+        ("lp", "Use LP justifications.")                                             //
         ("all", "Find all solutions");
 
     all_options.add(display_options);
@@ -82,7 +83,7 @@ auto main(int argc, char * argv[]) -> int
         solution.emplace_back(p.create_integer_variable(1_i, Integer{k}));
     }
 
-    p.post(AllDifferent{position});
+    p.post(AllDifferent{position, options_vars.contains("lp") ? make_optional(LPJustificationOptions{}) : nullopt});
 
     for (int i = 0; i < k; ++i) {
         auto i_var = p.create_integer_variable(Integer{i + 1}, Integer{i + 1});

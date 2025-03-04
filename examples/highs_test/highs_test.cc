@@ -191,12 +191,12 @@ int main()
         std::cout << std::endl;
     }
 
-    //
+    HighsModel newModel = model; // copy ?
 
     HighsStatus return_status;
     //
     // Pass the model to HiGHS
-    return_status = highs.passModel(model);
+    return_status = highs.passModel(newModel);
     assert(return_status == HighsStatus::kOk);
     // If a user passes a model with entries in
     // model.lp_.a_matrix_.value_ less than (the option)

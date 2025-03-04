@@ -165,11 +165,14 @@ if (GCS_ENABLE_SOPLEX)
 endif (GCS_ENABLE_SOPLEX)
 
 if (GCS_ENABLE_HIGHS)
-    FetchContent_Declare(
-            HiGHS
-            GIT_REPOSITORY https://github.com/ERGO-Code/HiGHS.git
-            GIT_TAG v1.8.1
-    )
-    FetchContent_MakeAvailable(HiGHS)
+    block()
+        set(CMAKE_BUILD_TYPE Debug)
+        FetchContent_Declare(
+                HiGHS
+                GIT_REPOSITORY https://github.com/ERGO-Code/HiGHS.git
+                GIT_TAG v1.8.1
+        )
+        FetchContent_MakeAvailable(HiGHS)
+    endblock()
 endif (GCS_ENABLE_HIGHS)
 

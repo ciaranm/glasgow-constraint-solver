@@ -309,10 +309,7 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
                         << x.where.line() << " in " << x.where.function_name() << '\n';
 #endif
             need_lit();
-            auto t = temporary_proof_level();
             x.add_proof_steps(reason);
-            infer(lit, NoJustificationNeeded{}, reason);
-            forget_proof_level(t);
         },
         [&](const NoJustificationNeeded &) {
         }}

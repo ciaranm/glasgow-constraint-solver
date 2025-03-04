@@ -63,7 +63,7 @@ auto run_all_different_test(bool proofs, variant<int, pair<int, int>> v1_range, 
     auto v4 = visit([&](auto b) { return create_integer_variable_or_constant(p, b); }, v4_range);
     auto v5 = visit([&](auto b) { return create_integer_variable_or_constant(p, b); }, v5_range);
     auto v6 = visit([&](auto b) { return create_integer_variable_or_constant(p, b); }, v6_range);
-    p.post(AllDifferent{vector<IntegerVariableID>{v1, v2, v3, v4, v5, v6}});
+    p.post(AllDifferent{vector<IntegerVariableID>{v1, v2, v3, v4, v5, v6}, LPJustificationOptions{}});
 
     auto proof_name = proofs ? make_optional("all_different_test") : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{v1, v2, v3, v4, v5, v6});

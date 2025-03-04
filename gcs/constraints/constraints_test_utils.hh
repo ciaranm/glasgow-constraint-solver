@@ -15,7 +15,6 @@
 #include <fmt/ostream.h>
 #include <fmt/ranges.h>
 
-#include <cstdlib>
 #include <functional>
 #include <iostream>
 #include <optional>
