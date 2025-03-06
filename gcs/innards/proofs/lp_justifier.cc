@@ -1,3 +1,4 @@
+#include <gcs/innards/proofs/inference_tracker.hh>
 #include <gcs/innards/proofs/lp_justifier.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/state.hh>
@@ -22,6 +23,7 @@ using std::optional;
 using std::pair;
 using std::stringstream;
 using std::to_string;
+using std::tuple;
 using std::vector;
 
 using namespace gcs;
@@ -165,6 +167,84 @@ struct LPJustifier::Imp
     explicit Imp(const LPJustificationOptions &)
     {
         // Maybe set some options here ?
+    }
+
+    auto pass_and_solve_model(const WeightedPseudoBooleanLessEqual & inference,
+        HighsModel & restricted_model, vector<double> rhs_updated, vector<long> new_row_num,
+        optional<HighsBasis> & optional_last_basis, optional<HighsBasis> & optional_current_basis) -> const HighsSolution
+    {
+        HighsStatus return_status;
+        bool inferring_contradiction = inference.lhs.terms.empty() && inference.rhs <= -1_i;
+
+        return_status = this->highs.passModel(restricted_model);
+        if (return_status != HighsStatus::kOk) {
+            throw UnexpectedException{"Failed to create model for LP justification"};
+        }
+
+        // First modify the model depending on whether we're inferring contradiction
+        if (inferring_contradiction) {
+            // std::cout << "Inferring contradiction" << std::endl;
+            //  Solving {min 0 : A^Ty = 0, b^Ty <= -1}
+            auto new_idx = vector<HighsInt>{};
+            auto new_val = vector<double>{};
+            auto num_nz = 0;
+            for (unsigned int col = 0; col < rhs_updated.size(); col++) {
+                if (rhs_updated[col] != 0) {
+                    new_idx.emplace_back(col);
+                    new_val.emplace_back(rhs_updated[col]);
+                    num_nz++;
+                }
+            }
+
+            // A^Ty = 0
+            auto zero_col = vector<double>(this->highs.getNumCol(), 0);
+            auto zero_row = vector<double>(this->highs.getNumRow(), 0);
+            this->highs.changeColsCost(0, this->highs.getNumCol() - 1, zero_col.data());
+            this->highs.changeRowsBounds(0, this->highs.getNumRow() - 1, zero_row.data(), zero_row.data());
+
+            // Add an extra constraint for the rhs so that b^Ty <= -1
+            this->highs.addRow(-this->highs.getInfinity(), -1, num_nz, new_idx.data(), new_val.data());
+        }
+        else {
+            //            std::cout << "Not inferring contradiction" << std::endl;
+            // Solving {min b^Ty : A^Ty = c} (where c is the coefficients of the inference)
+            auto norm_inference = variable_normalise(inference);
+            vector<double> row_bounds(this->highs.getNumRow(), 0);
+            for (const auto & term : norm_inference.lhs.terms) {
+                row_bounds[new_row_num[this->var_number.at(term.variable)]] = (double)term.coefficient.raw_value;
+            }
+            this->highs.changeRowsBounds(0, this->highs.getNumRow() - 1, row_bounds.data(), row_bounds.data());
+        }
+
+        if (return_status != HighsStatus::kOk) {
+            throw UnexpectedException{"Failed to create model for LP justification "};
+        }
+        const HighsLp & lp = this->highs.getLp();
+
+        if (optional_last_basis) {
+            // Use the basis
+            this->highs.setBasis(*optional_current_basis);
+        }
+
+        // Now solve the model
+        return_status = this->highs.run();
+
+        // Save the basis for next time
+        optional_current_basis = this->highs.getBasis();
+
+        // Check it worked
+        const HighsModelStatus & model_status = this->highs.getModelStatus();
+        const HighsInfo & info = this->highs.getInfo();
+        const bool has_values = info.primal_solution_status;
+        if ((return_status != HighsStatus::kOk && model_status != HighsModelStatus::kOptimal)) {
+            throw UnexpectedException{"Failed to correctly solve model for LP justification"};
+        }
+
+        const HighsSolution & solution = this->highs.getSolution();
+
+        optional_last_basis = this->highs.getBasis(); // Store the basis for hot start next time
+
+        return solution;
     }
 };
 
@@ -354,9 +434,11 @@ void LPJustifier::add_pb_constraint(const WeightedPseudoBooleanLessEqual & pb_co
     _imp->derive_constraint[_imp->model.lp_.num_col_ - 1] = move(how_to_derive);
 }
 
-auto LPJustifier::compute_justification(const State & state, ProofLogger & logger, const WeightedPseudoBooleanLessEqual & inference) -> ExplicitJustificationFunction
+auto LPJustifier::compute_justification(const State & state, ProofLogger & logger, const WeightedPseudoBooleanLessEqual & inference,
+    const bool compute_bounds) -> ExplicitJustificationFunction
 {
     // Restrict the constraint matrix based on the current state
+    // Need to do this outside the justification, because we rely on the current state
     auto restricted_model = _imp->model;
     auto rhs_updated = _imp->constraints_rhs;
 
@@ -406,85 +488,24 @@ auto LPJustifier::compute_justification(const State & state, ProofLogger & logge
     restricted_model.lp_.col_lower_ = vector<double>(_imp->model.lp_.num_col_, 0.0);
     restricted_model.lp_.col_upper_ = vector<double>(_imp->model.lp_.num_col_, _imp->highs.getInfinity());
 
-    return [&state = state, &logger, inference = inference, &imp = _imp, &optional_last_basis, &optional_current_basis,
-               restricted_model = restricted_model, rhs_updated = rhs_updated,
-               new_row_num = new_row_num, old_row_num = old_row_num](const Reason & reason) {
-        HighsStatus return_status;
-        bool inferring_contradiction = inference.lhs.terms.empty() && inference.rhs <= -1_i;
+    HighsSolution solution_already;
+    // Compute solution already, even if the justification isn't called
+    if (compute_bounds)
+        solution_already = _imp->pass_and_solve_model(inference, restricted_model, rhs_updated, new_row_num, optional_last_basis, optional_current_basis);
 
-        return_status = imp->highs.passModel(restricted_model);
-        if (return_status != HighsStatus::kOk) {
-            throw UnexpectedException{"Failed to create model for LP justification"};
-        }
-
-        // First modify the model depending on whether we're inferring contradiction
-        if (inferring_contradiction) {
-            // std::cout << "Inferring contradiction" << std::endl;
-            //  Solving {min 0 : A^Ty = 0, b^Ty <= -1}
-            auto new_idx = vector<HighsInt>{};
-            auto new_val = vector<double>{};
-            auto num_nz = 0;
-            for (unsigned int col = 0; col < rhs_updated.size(); col++) {
-                if (rhs_updated[col] != 0) {
-                    new_idx.emplace_back(col);
-                    new_val.emplace_back(rhs_updated[col]);
-                    num_nz++;
-                }
-            }
-
-            // A^Ty = 0
-            auto zero_col = vector<double>(imp->highs.getNumCol(), 0);
-            auto zero_row = vector<double>(imp->highs.getNumRow(), 0);
-            imp->highs.changeColsCost(0, imp->highs.getNumCol() - 1, zero_col.data());
-            imp->highs.changeRowsBounds(0, imp->highs.getNumRow() - 1, zero_row.data(), zero_row.data());
-
-            // Add an extra constraint for the rhs so that b^Ty <= -1
-            imp->highs.addRow(-imp->highs.getInfinity(), -1, num_nz, new_idx.data(), new_val.data());
-        }
-        else {
-            //            std::cout << "Not inferring contradiction" << std::endl;
-            // Solving {min b^Ty : A^Ty = c} (where c is the coefficients of the inference)
-            auto norm_inference = variable_normalise(inference);
-            vector<double> row_bounds(imp->highs.getNumRow(), 0);
-            for (const auto & term : norm_inference.lhs.terms) {
-                row_bounds[new_row_num[imp->var_number.at(term.variable)]] = (double)term.coefficient.raw_value;
-            }
-            imp->highs.changeRowsBounds(0, imp->highs.getNumRow() - 1, row_bounds.data(), row_bounds.data());
-        }
-
-        if (return_status != HighsStatus::kOk) {
-            throw UnexpectedException{"Failed to create model for LP justification "};
-        }
-        const HighsLp & lp = imp->highs.getLp();
-
-        if (optional_last_basis) {
-            // Use the basis
-            imp->highs.setBasis(*optional_current_basis);
-        }
-
-        // Now solve the model
-        return_status = imp->highs.run();
-
-        // Save the basis for next time
-        optional_current_basis = imp->highs.getBasis();
-
-        // Check it worked
-        const HighsModelStatus & model_status = imp->highs.getModelStatus();
-        const HighsInfo & info = imp->highs.getInfo();
-        const bool has_values = info.primal_solution_status;
-        if ((return_status != HighsStatus::kOk && model_status != HighsModelStatus::kOptimal)) {
-            throw UnexpectedException{"Failed to correctly solve model for LP justification"};
-        }
-
-        const HighsSolution & solution = imp->highs.getSolution();
-
-        optional_last_basis = imp->highs.getBasis(); // Store the basis for hot start next time
+    return [&state = state, &logger, inference, &imp = _imp, &optional_last_basis, &optional_current_basis,
+               &restricted_model, rhs_updated, new_row_num, compute_bounds, solution_already = move(solution_already)](const Reason &) {
+        HighsSolution solution;
+        if (! compute_bounds)
+            solution = imp->pass_and_solve_model(inference, restricted_model, rhs_updated, new_row_num, optional_last_basis, optional_current_basis);
+        else
+            solution = solution_already;
 
         // Turn the solution into a pol step
         stringstream p_line;
         p_line << "p ";
         long count = 0;
-        for (int col = 0; col < lp.num_col_; col++) {
+        for (int col = 0; col < imp->highs.getLp().num_col_; col++) {
             auto coeff = solution.col_value[col];
             if (coeff != 0) {
                 ProofLine line;
@@ -524,4 +545,22 @@ auto LPJustifier::compute_justification(const State & state, ProofLogger & logge
             std::cout << "";
         }
     };
+}
+
+auto LPJustifier::compute_bounds_and_justifications(const State & state, ProofLogger & logger, const PseudoBooleanTerm bounds_var)
+    -> tuple<Integer, ExplicitJustificationFunction, Integer, ExplicitJustificationFunction>
+{
+
+    // Compute lower bound
+    auto lower_just = compute_justification(state, logger, WeightedPseudoBooleanSum{} + 1_i * bounds_var >= 0_i, true);
+    auto highs_obj = _imp->highs.getInfo().objective_function_value;
+    auto lower_bound = Integer(ceil(highs_obj));
+
+    // Compute upper bound
+    auto upper_just = compute_justification(state, logger, WeightedPseudoBooleanSum{} + -1_i * bounds_var >= 0_i, true);
+    highs_obj = _imp->highs.getInfo().objective_function_value;
+    auto upper_bound = Integer(floor(-highs_obj));
+
+    return {
+        lower_bound, lower_just, upper_bound, upper_just};
 }

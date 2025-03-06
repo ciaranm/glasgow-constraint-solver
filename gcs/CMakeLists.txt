@@ -23,6 +23,7 @@ add_library(glasgow_constraint_solver
         constraints/count.cc
         constraints/element.cc
         constraints/equals.cc
+        constraints/global_cardinality.cc
         constraints/in.cc
         constraints/inverse.cc
         constraints/knapsack.cc

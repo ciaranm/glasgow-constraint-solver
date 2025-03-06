@@ -43,7 +43,9 @@ namespace gcs::innards
 
         void add_pb_constraint(const WeightedPseudoBooleanLessEqual & pb_constraint, gcs::lp_innards::DerivationFunction how_to_derive);
 
-        auto compute_justification(const State & state, ProofLogger & logger, const WeightedPseudoBooleanLessEqual & inference) -> ExplicitJustificationFunction;
+        auto compute_justification(const State & state, ProofLogger & logger, const WeightedPseudoBooleanLessEqual & inference, const bool compute_bounds = false) -> ExplicitJustificationFunction;
+
+        auto compute_bounds_and_justifications(const State & state, ProofLogger & logger, const PseudoBooleanTerm bounds_var) -> std::tuple<Integer, ExplicitJustificationFunction, Integer, ExplicitJustificationFunction>
     };
 }
 
