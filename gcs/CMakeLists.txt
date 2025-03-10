@@ -14,6 +14,7 @@ add_library(glasgow_constraint_solver
         constraints/all_different/encoding.cc
         constraints/all_different/gac_all_different.cc
         constraints/all_different/vc_all_different.cc
+        constraints/among.cc
         constraints/arithmetic.cc
         constraints/at_most_one.cc
         constraints/circuit/circuit_base.cc
@@ -36,10 +37,12 @@ add_library(glasgow_constraint_solver
         constraints/linear/utils.cc
         constraints/logical.cc
         constraints/min_max.cc
+        constraints/minus.cc
         constraints/mult_bc.cc
         constraints/n_value.cc
         constraints/not_equals.cc
         constraints/parity.cc
+        constraints/plus.cc
         constraints/regular.cc
         constraints/smart_table.cc
         constraints/table.cc
@@ -55,6 +58,7 @@ add_library(glasgow_constraint_solver
         innards/proofs/proof_logger.cc
         innards/proofs/proof_model.cc
         innards/proofs/proof_only_variables.cc
+        innards/proofs/recover_am1.cc
         innards/proofs/simplify_literal.cc
         innards/propagators.cc
         innards/reason.cc
@@ -71,7 +75,7 @@ add_dependencies(glasgow_constraint_solver generator)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 link_libraries(glasgow_constraint_solver)
-target_link_libraries(glasgow_constraint_solver PUBLIC fmt::fmt range-v3)
+target_link_libraries(glasgow_constraint_solver PUBLIC fmt::fmt)
 target_link_libraries(glasgow_constraint_solver PRIVATE nlohmann_json::nlohmann_json)
 target_link_libraries(glasgow_constraint_solver PRIVATE highs)
 
@@ -81,6 +85,7 @@ add_test(NAME solve_test COMMAND $<TARGET_FILE:solve_test>)
 
 add_executable(abs_test constraints/abs_test.cc)
 add_executable(all_different_test constraints/all_different_test.cc)
+add_executable(among_test constraints/among_test.cc)
 add_executable(arithmetic_test constraints/arithmetic_test.cc)
 add_executable(comparison_test constraints/comparison_test.cc)
 add_executable(count_test constraints/count_test.cc)
@@ -96,10 +101,12 @@ add_executable(mult_bc_test constraints/mult_bc_test.cc)
 add_executable(n_value_test constraints/n_value_test.cc)
 add_executable(not_equals_test constraints/not_equals_test.cc)
 add_executable(parity_test constraints/parity_test.cc)
+add_executable(plus_minus_test constraints/plus_minus_test.cc)
 add_executable(smart_table_test constraints/smart_table_test.cc)
 
 add_test(NAME abs_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:abs_test>)
 add_test(NAME all_different_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:all_different_test>)
+add_test(NAME among_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:among_test>)
 add_test(NAME arithmetic_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:arithmetic_test>)
 add_test(NAME comparison_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:comparison_test>)
 add_test(NAME count_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:count_test>)
@@ -114,6 +121,7 @@ add_test(NAME mult_bc_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash 
 add_test(NAME n_value_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:n_value_test>)
 add_test(NAME smart_table_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:smart_table_test>)
 add_test(NAME parity_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:parity_test>)
+add_test(NAME plus_minus_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:plus_minus_test>)
 
 add_executable(circuit_disconnected_test constraints/circuit/circuit_disconnected_test.cc)
 add_test(NAME circuit_disconnected COMMAND ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:circuit_disconnected_test>)
@@ -134,7 +142,7 @@ add_executable(reification_test innards/proofs/reification_test.cc)
 add_test(NAME reification_test COMMAND ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:reification_test>)
 
 add_executable(interval_set_test innards/interval_set_test.cc)
-target_link_libraries(interval_set_test PRIVATE Catch2::Catch2WithMain range-v3)
+target_link_libraries(interval_set_test PRIVATE Catch2::Catch2WithMain)
 add_test(NAME interval_set_test COMMAND $<TARGET_FILE:interval_set_test>)
 
 add_executable(state_test innards/state_test.cc)

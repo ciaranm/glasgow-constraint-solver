@@ -17,6 +17,7 @@
 
 #include <gcs/constraints/abs.hh>
 #include <gcs/constraints/all_different.hh>
+#include <gcs/constraints/among.hh>
 #include <gcs/constraints/arithmetic.hh>
 #include <gcs/constraints/circuit.hh>
 #include <gcs/constraints/comparison.hh>
@@ -29,10 +30,12 @@
 #include <gcs/constraints/linear.hh>
 #include <gcs/constraints/logical.hh>
 #include <gcs/constraints/min_max.hh>
+#include <gcs/constraints/minus.hh>
 #include <gcs/constraints/mult_bc.hh>
 #include <gcs/constraints/n_value.hh>
 #include <gcs/constraints/not_equals.hh>
 #include <gcs/constraints/parity.hh>
+#include <gcs/constraints/plus.hh>
 #include <gcs/constraints/regular.hh>
 #include <gcs/constraints/smart_table.hh>
 #include <gcs/constraints/table.hh>

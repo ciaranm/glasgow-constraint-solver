@@ -24,9 +24,8 @@ namespace gcs
      *
      * \ingroup SearchHeuristics
      */
-    using BranchVariableSelector = std::function<auto(
-        const CurrentState &, const innards::Propagators &)
-                                                     ->std::optional<IntegerVariableID>>;
+    using BranchVariableSelector = std::function<std::optional<IntegerVariableID>(
+        const CurrentState &, const innards::Propagators &)>;
 
     /**
      * Given a branch variable, how do we branch on it? Usually this will be used via the gcs::branch_with()
@@ -38,9 +37,8 @@ namespace gcs
      *
      * \ingroup SearchHeuristics
      */
-    using BranchValueGenerator = std::function<auto(
-        const CurrentState &, const innards::Propagators &, const IntegerVariableID &)
-                                                   ->std::generator<IntegerVariableCondition>>;
+    using BranchValueGenerator = std::function<std::generator<IntegerVariableCondition>(
+        const CurrentState &, const innards::Propagators &, const IntegerVariableID &)>;
 
     /**
      * Combine a BranchVariableSelector from gcs::variable_order:: with a BranchValueGenerator
@@ -232,11 +230,40 @@ namespace gcs
         [[nodiscard]] auto largest_first() -> BranchValueGenerator;
 
         /**
+         * Split domains in half, taking lower half first.
+         *
+         * \ingroup SearchHeuristics
+         */
+        [[nodiscard]] auto split_smallest_first() -> BranchValueGenerator;
+
+        /**
+         * Split domains in half, taking upper half first.
+         *
+         * \ingroup SearchHeuristics
+         */
+        [[nodiscard]] auto split_largest_first() -> BranchValueGenerator;
+
+        /**
+         * Split domains in half, taking a random half first.
+         *
+         * \ingroup SearchHeuristics
+         */
+        [[nodiscard]] auto split_random() -> BranchValueGenerator;
+
+        /**
          * Iterate over values in a random order.
          *
          * \ingroup SearchHeuristics
          */
         [[nodiscard]] auto random() -> BranchValueGenerator;
+
+        /**
+         * Reject a random value, then accept it. This is a silly heuristic for solving
+         * problems, but an interesting one for testing.
+         *
+         * \ingroup SearchHeuristics
+         */
+        [[nodiscard]] auto random_out() -> BranchValueGenerator;
 
         /**
          * Accept then reject the median value in the domain.

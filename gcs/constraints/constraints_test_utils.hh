@@ -10,6 +10,7 @@
 #include <gcs/innards/variable_id_utils.hh>
 
 #include <util/enumerate.hh>
+#include <util/overloaded.hh>
 
 #include <fmt/core.h>
 #include <fmt/ostream.h>
@@ -18,6 +19,7 @@
 #include <functional>
 #include <iostream>
 #include <optional>
+#include <random>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -55,13 +57,29 @@ namespace gcs::test_innards
 
     template <typename ResultsSet_, typename IsSatisfying_, typename... Accumulated_, typename... RestOfArgs_>
     auto generate_expected(ResultsSet_ & expected, IsSatisfying_ is_satisfying, const std::tuple<Accumulated_...> & acc,
+        std::vector<int> vec_arg, RestOfArgs_... rest_of_args) -> void;
+
+    template <typename ResultsSet_, typename IsSatisfying_, typename... Accumulated_, typename... RestOfArgs_>
+    auto generate_expected(ResultsSet_ & expected, IsSatisfying_ is_satisfying, const std::tuple<Accumulated_...> & acc,
         std::variant<int, std::pair<int, int>> range_or_const_arg, RestOfArgs_... rest_of_args) -> void;
+
+    template <typename ResultsSet_, typename IsSatisfying_, typename... Accumulated_, typename... RestOfArgs_>
+    auto generate_expected(ResultsSet_ & expected, IsSatisfying_ is_satisfying, const std::tuple<Accumulated_...> & acc,
+        const std::vector<std::variant<int, std::pair<int, int>>> & range_arg_vec, RestOfArgs_... rest_of_args) -> void;
 
     template <typename ResultsSet_, typename IsSatisfying_, typename... Accumulated_, typename... RestOfArgs_>
     auto generate_expected(ResultsSet_ & expected, IsSatisfying_ is_satisfying, const std::tuple<Accumulated_...> & acc,
         std::pair<int, int> range_arg, RestOfArgs_... rest_of_args) -> void
     {
         for (int n = range_arg.first; n <= range_arg.second; ++n)
+            generate_expected(expected, is_satisfying, std::tuple_cat(acc, std::tuple{n}), rest_of_args...);
+    }
+
+    template <typename ResultsSet_, typename IsSatisfying_, typename... Accumulated_, typename... RestOfArgs_>
+    auto generate_expected(ResultsSet_ & expected, IsSatisfying_ is_satisfying, const std::tuple<Accumulated_...> & acc,
+        std::vector<int> vec_arg, RestOfArgs_... rest_of_args) -> void
+    {
+        for (int n : vec_arg)
             generate_expected(expected, is_satisfying, std::tuple_cat(acc, std::tuple{n}), rest_of_args...);
     }
 
@@ -93,6 +111,35 @@ namespace gcs::test_innards
                     build(pos + 1, sol);
                     sol.pop_back();
                 }
+            }
+        };
+        std::vector<int> sol;
+        build(0, sol);
+    }
+
+    template <typename ResultsSet_, typename IsSatisfying_, typename... Accumulated_, typename... RestOfArgs_>
+    auto generate_expected(ResultsSet_ & expected, IsSatisfying_ is_satisfying, const std::tuple<Accumulated_...> & acc,
+        const std::vector<std::variant<int, std::pair<int, int>>> & range_arg_vec, RestOfArgs_... rest_of_args) -> void
+    {
+        std::function<auto(std::size_t, std::vector<int>)->void> build = [&](std::size_t pos, std::vector<int> sol) -> void {
+            if (pos == range_arg_vec.size()) {
+                generate_expected(expected, is_satisfying, std::tuple_cat(acc, std::tuple{sol}), rest_of_args...);
+            }
+            else {
+                overloaded{
+                        [&] (int n) {
+                            sol.push_back(n);
+                            build(pos + 1, sol);
+                            sol.pop_back();
+                        },
+                        [&] (std::pair<int, int> p) {
+                            for (int n = p.first; n <= p.second; ++n) {
+                                sol.push_back(n);
+                                build(pos + 1, sol);
+                                sol.pop_back();
+                            }
+                        }
+                }.visit(range_arg_vec.at(pos));
             }
         };
         std::vector<int> sol;
@@ -134,7 +181,7 @@ namespace gcs::test_innards
     auto solve_for_tests_with_callbacks(Problem & p, const std::optional<std::string> & proof_name, const SolutionCallback_ & f, const TraceCallback_ & t) -> void
     {
         solve_with(p,
-            SolveCallbacks{.solution = f, .trace = t, .branch = branch_with(variable_order::random(p), value_order::random())},
+            SolveCallbacks{.solution = f, .trace = t, .branch = branch_with(variable_order::random(p), value_order::random_out())},
             proof_name ? std::make_optional<ProofOptions>(ProofFileNames{*proof_name}, true, false) : std::nullopt);
     }
 
@@ -295,7 +342,7 @@ namespace gcs::test_innards
     {
         std::vector<IntegerVariableID> all_vars_as_vector;
         [&]<std::size_t... i_>(std::index_sequence<i_...>) {
-            (add_to_all_vars(all_vars_as_vector, get<i_>(all_vars).first), ...);
+            (add_to_all_vars(all_vars_as_vector, std::get<i_>(all_vars).first), ...);
         }(std::index_sequence_for<AllArgs_...>());
         solve_for_tests_with_callbacks(
             p, proof_name,
@@ -308,7 +355,7 @@ namespace gcs::test_innards
             },
             [&](const CurrentState & s) -> bool {
                 [&]<std::size_t... i_>(std::index_sequence<i_...>) {
-                    (check_support(expected, s, all_vars_as_vector, get<i_>(all_vars).first, get<i_>(all_vars).second, [&](const auto & x) { return get<i_>(x); }), ...);
+                    (check_support(expected, s, all_vars_as_vector, std::get<i_>(all_vars).first, std::get<i_>(all_vars).second, [&](const auto & x) { return std::get<i_>(x); }), ...);
                 }(std::index_sequence_for<AllArgs_...>());
                 return true;
             });
@@ -329,6 +376,11 @@ namespace gcs::test_innards
         int lower_min, lower_max, add_min, add_max;
     };
 
+    struct RandomBoundsOrConstant
+    {
+        int lower_min, lower_max, add_min, add_max;
+    };
+
     struct RandomConstant
     {
         int lower_min, lower_max;
@@ -337,6 +389,11 @@ namespace gcs::test_innards
     auto random_bounds(int lower_min, int lower_max, int add_min, int add_max) -> RandomBounds
     {
         return RandomBounds{lower_min, lower_max, add_min, add_max};
+    }
+
+    auto random_bounds_or_constant(int lower_min, int lower_max, int add_min, int add_max) -> RandomBoundsOrConstant
+    {
+        return RandomBoundsOrConstant{lower_min, lower_max, add_min, add_max};
     }
 
     auto random_constant(int lower_min, int lower_max) -> RandomConstant
@@ -366,6 +423,15 @@ namespace gcs::test_innards
         auto lower = lower_dist(rand);
         auto upper = lower + add_dist(rand);
         return std::pair{lower, upper};
+    }
+
+    template <typename Random_>
+    auto generate_random_data_item(Random_ & rand, const RandomBoundsOrConstant & bounds)
+    {
+        std::uniform_int_distribution<int> lower_dist{bounds.lower_min, bounds.lower_max}, add_dist{bounds.add_min, bounds.add_max};
+        auto lower = lower_dist(rand);
+        auto upper = lower + add_dist(rand);
+        return std::variant<int, std::pair<int, int>>{std::pair{lower, upper}};
     }
 
     template <typename Random_, typename Item1_, typename Item2_>
@@ -400,6 +466,14 @@ namespace gcs::test_innards
     auto create_integer_variable_or_constant(Problem & problem, std::pair<int, int> bounds) -> IntegerVariableID
     {
         return problem.create_integer_variable(Integer(bounds.first), Integer(bounds.second));
+    }
+
+    auto create_integer_variable_or_constant(Problem & problem, std::vector<int> values) -> IntegerVariableID
+    {
+        std::vector<Integer> vs;
+        for (auto v : values)
+            vs.push_back(Integer(v));
+        return problem.create_integer_variable(vs);
     }
 
     auto create_integer_variable_or_constant(Problem &, int value) -> IntegerVariableID

@@ -13,6 +13,9 @@ include_directories(${CMAKE_SOURCE_DIR}/generator/src/generator/include)
 add_test(NAME minizinc-abs COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ abs true true)
 set_tests_properties(minizinc-abs PROPERTIES SKIP_RETURN_CODE 66)
 
+add_test(NAME minizinc-among COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ amongtest true true)
+set_tests_properties(minizinc-among PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-arraybooland COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ arraybooland true true)
 set_tests_properties(minizinc-arraybooland PROPERTIES SKIP_RETURN_CODE 66)
 
@@ -36,6 +39,9 @@ set_tests_properties(minizinc-boolxor PROPERTIES SKIP_RETURN_CODE 66)
 
 add_test(NAME minizinc-cake COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ cake false true)
 set_tests_properties(minizinc-cake PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-count COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ counttest true true)
+set_tests_properties(minizinc-count PROPERTIES SKIP_RETURN_CODE 66)
 
 add_test(NAME minizinc-crystalmaze COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ crystalmaze true true)
 set_tests_properties(minizinc-crystalmaze PROPERTIES SKIP_RETURN_CODE 66)

@@ -14,8 +14,6 @@
 #include <fmt/ostream.h>
 #include <fmt/ranges.h>
 
-#include <range/v3/all.hpp>
-
 using namespace gcs;
 
 using std::cerr;
@@ -27,8 +25,6 @@ using std::vector;
 
 using fmt::print;
 using fmt::println;
-
-using ranges::views::transform;
 
 namespace po = boost::program_options;
 
@@ -91,13 +87,13 @@ auto main(int argc, char * argv[]) -> int
         p.post(Element{i_var, position[i + k], solution});
 
         // position[i + k] = position[i] + i + 2
-        p.post(Plus{position[i + k], constant_variable(Integer{i + 2}), position[i]});
+        p.post(PlusGAC{position[i + k], constant_variable(Integer{i + 2}), position[i]});
     }
 
     auto stats = solve(
         p, [&](const CurrentState & s) -> bool {
-            println("solution: {}", solution | transform(cref(s)));
-            println("position: {}", position | transform(cref(s)));
+            println("solution: {}", solution | std::ranges::views::transform(cref(s)));
+            println("position: {}", position | std::ranges::views::transform(cref(s)));
             println("");
 
             return true;

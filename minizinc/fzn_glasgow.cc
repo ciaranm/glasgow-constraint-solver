@@ -109,13 +109,23 @@ namespace
                 throw FlatZincInterfaceError{fmt::format("Can't find constant array named {}", name)};
             return &iter->second;
         }
-        else {
+        else if (a.is_array()) {
             vector<Integer> result;
             for (const auto & val : a)
                 result.push_back(Integer{static_cast<long long>(val)});
             data.unnamed_constant_arrays.push_back(move(result));
             return &data.unnamed_constant_arrays.back();
         }
+        else if (a.is_object()) {
+            vector<Integer> result;
+            for (const auto & val_range : a["set"])
+                for (auto val = val_range[0].template get<long long>(); val <= val_range[1].template get<long long>(); ++val)
+                    result.push_back(Integer(val));
+            data.unnamed_constant_arrays.push_back(move(result));
+            return &data.unnamed_constant_arrays.back();
+        }
+        else
+            throw FlatZincInterfaceError{fmt::format("Unknown constant array type")};
     }
 
     auto arg_as_set_of_integer(ExtractedData &, const auto & args, int idx) -> IntervalSet<Integer>
@@ -572,6 +582,12 @@ auto main(int argc, char * argv[]) -> int
                 const auto & vars = arg_as_array_of_var(data, args, 0);
                 problem.post(AllDifferent{vars});
             }
+            else if (id == "glasgow_among") {
+                const auto & varcount = arg_as_var(data, args, 0);
+                const auto & vars = arg_as_array_of_var(data, args, 1);
+                const auto & varmatch = arg_as_array_of_integer(data, args, 2);
+                problem.post(Among{vars, *varmatch, varcount});
+            }
             else if (id == "glasgow_circuit") {
                 const auto & vars = arg_as_array_of_var(data, args, 0);
                 vector<IntegerVariableID> vars_shifted;
@@ -626,7 +642,7 @@ auto main(int argc, char * argv[]) -> int
                     }
                 }
 
-                problem.post(Regular{vars, symbols, num_states, transitions, final_states_raw});
+                problem.post(Regular{vars, symbols, long(num_states), transitions, final_states_raw});
             }
             else if (id == "glasgow_global_cardinality") {
                 const auto & vars = arg_as_array_of_var(data, args, 0);
@@ -655,7 +671,7 @@ auto main(int argc, char * argv[]) -> int
             branch_with(variable_order::dom_then_deg(data.all_variables), value_order::smallest_first()));
 
         if (fzn["solve"].contains("ann")) {
-            function<auto(const nlohmann::json &)->optional<BranchCallback>> parse_search;
+            function<optional<BranchCallback>(const nlohmann::json &)> parse_search;
             parse_search = [&data, &parse_search](const nlohmann::json & ann) -> optional<BranchCallback> {
                 if (ann["id"] == "bool_search" || ann["id"] == "int_search") {
                     auto args = ann["args"];
@@ -693,6 +709,10 @@ auto main(int argc, char * argv[]) -> int
                         val = value_order::largest_out();
                     else if (val_heuristic == "outdomain_min")
                         val = value_order::smallest_out();
+                    else if (val_heuristic == "indomain_split")
+                        val = value_order::split_smallest_first();
+                    else if (val_heuristic == "indomain_split_random")
+                        val = value_order::split_random();
                     else {
                         println(cerr, "Warning: treating unknown int_search value heuristic {} as indomain instead", val_heuristic);
                         val = value_order::smallest_first();

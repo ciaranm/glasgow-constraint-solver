@@ -49,14 +49,14 @@ namespace gcs
      *
      * \ingroup Constraints
      */
-    using Plus = innards::GACArithmetic<innards::ArithmeticOperator::Plus>;
+    using PlusGAC = innards::GACArithmetic<innards::ArithmeticOperator::Plus>;
 
     /**
      * \brief Constrain that `v1 - v2 = result`.
      *
      * \ingroup Constraints
      */
-    using Minus = innards::GACArithmetic<innards::ArithmeticOperator::Minus>;
+    using MinusGAC = innards::GACArithmetic<innards::ArithmeticOperator::Minus>;
 
     /**
      * \brief Constrain that `v1 * v2 = result`.

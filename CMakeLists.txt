@@ -32,11 +32,11 @@ if (COMPILER_SUPPORTS_NO_STRINGOP_OVERREAD)
     add_compile_options(-Wno-stringop-overread) # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=104336
 endif (COMPILER_SUPPORTS_NO_STRINGOP_OVERREAD)
 
-unset(COMPILER_SUPPORTS_NO_ANNOYING_WARNINGS_ABOUT_MOVE CACHE)
-CHECK_CXX_COMPILER_FLAG(-Wno-unqualified-std-cast-call COMPILER_SUPPORTS_NO_ANNOYING_WARNINGS_ABOUT_MOVE)
-if (COMPILER_SUPPORTS_NO_ANNOYING_WARNINGS_ABOUT_MOVE)
+unset(COMPILER_SUPPORTS_UNQUALIFIED_STD_CAST_CALL CACHE)
+CHECK_CXX_COMPILER_FLAG(-Wno-unqualified-std-cast-call COMPILER_SUPPORTS_UNQUALIFIED_STD_CAST_CALL)
+if (COMPILER_SUPPORTS_UNQUALIFIED_STD_CAST_CALL)
     add_compile_options(-Wno-unqualified-std-cast-call)
-endif (COMPILER_SUPPORTS_NO_ANNOYING_WARNINGS_ABOUT_MOVE)
+endif (COMPILER_SUPPORTS_UNQUALIFIED_STD_CAST_CALL)
 
 add_compile_options(-g)
 add_compile_options(-g3)
@@ -122,13 +122,6 @@ FetchContent_Declare(
         GIT_TAG e69e5f977d458f2650bb346dadf2ad30c5320281 # v10.2.1
 )
 FetchContent_MakeAvailable(fmt)
-
-FetchContent_Declare(
-        range-v3
-        GIT_REPOSITORY https://github.com/ericniebler/range-v3.git
-        GIT_TAG a81477931a8aa2ad025c6bda0609f38e09e4d7ec # v0.12.0
-)
-FetchContent_MakeAvailable(range-v3)
 
 include(ExternalProject)
 ExternalProject_Add(

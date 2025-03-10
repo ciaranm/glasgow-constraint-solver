@@ -81,7 +81,13 @@ auto Element::install(Propagators & propagators, State & initial_state, ProofMod
                 }
 
             if (! supported)
-                inference.infer_not_equal(logger, idx, ival, JustifyUsingRUP{}, generic_reason(state, all_vars));
+                inference.infer_not_equal(logger, idx, ival, JustifyExplicitly{[&](const Reason & reason) {
+                    // idx can't take the value ival because there's no intersection between vval and array[ival]
+                    for (auto vval : state.each_value_immutable(vals[ival.raw_value]))
+                        logger->emit_rup_proof_line_under_reason(reason,
+                            WeightedPseudoBooleanSum{} + 1_i * (vals[ival.raw_value] != vval) + 1_i * (idx != ival) >= 1_i, ProofLevel::Temporary);
+                }},
+                    generic_reason(state, all_vars));
         }
 
         // update var to only contain supported values

@@ -53,11 +53,11 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
 
             // var_minus_val_gt_0 -> var - val > 0
             optional_model->add_constraint("Count", "var bigger",
-                WeightedPseudoBooleanSum{} + 1_i * var + -1_i * _value_of_interest >= 1_i, HalfReifyOnConjunctionOf{{var_minus_val_gt_0}});
+                    WeightedPseudoBooleanSum{} + 1_i * var + -1_i * _value_of_interest >= 1_i, HalfReifyOnConjunctionOf{{var_minus_val_gt_0}});
 
             // ! var_minus_val_gt_0 -> var - val <= 0
             optional_model->add_constraint("Count", "var not bigger",
-                WeightedPseudoBooleanSum{} + 1_i * var + -1_i * _value_of_interest <= 0_i, HalfReifyOnConjunctionOf{{! var_minus_val_gt_0}});
+                    WeightedPseudoBooleanSum{} + 1_i * var + -1_i * _value_of_interest <= 0_i, HalfReifyOnConjunctionOf{{! var_minus_val_gt_0}});
 
             // var_minus_val_lt_0 -> var - val <= -1
             optional_model->add_constraint("Count", "var smaller", WeightedPseudoBooleanSum{} + 1_i * var + -1_i * _value_of_interest <= -1_i, HalfReifyOnConjunctionOf{{var_minus_val_lt_0}});
@@ -118,12 +118,19 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
                         return ! seen_any;
                     });
 
-                    if (! seen_any)
+                    if (! seen_any) {
+                        state.for_each_value(value_of_interest, [&](const Integer & val) {
+                            logger->emit_rup_proof_line_under_reason(reason,
+                                WeightedPseudoBooleanSum{} + 1_i * (value_of_interest != val) + 1_i * (! get<0>(flags[idx])) >= 1_i, ProofLevel::Temporary);
+                        });
                         logger->emit_rup_proof_line_under_reason(reason,
                             WeightedPseudoBooleanSum{} + 1_i * (! get<0>(flags[idx])) >= 1_i, ProofLevel::Temporary);
+                    }
                 }
             };
-            inference.infer(logger, how_many < how_many_is_less_than, JustifyExplicitlyThenRUP{justf}, generic_reason(state, all_vars));
+            inference.infer(logger, how_many < how_many_is_less_than,
+                JustifyExplicitlyThenRUP{justf},
+                generic_reason(state, all_vars));
 
             // must have at least this many occurrences of the value of interest
             int how_many_must = 0;
