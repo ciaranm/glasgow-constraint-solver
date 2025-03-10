@@ -628,6 +628,12 @@ auto main(int argc, char * argv[]) -> int
 
                 problem.post(Regular{vars, symbols, num_states, transitions, final_states_raw});
             }
+            else if (id == "glasgow_global_cardinality") {
+                const auto & vars = arg_as_array_of_var(data, args, 0);
+                const auto & cover = arg_as_array_of_integer(data, args, 1);
+                const auto & counts = arg_as_array_of_var(data, args, 2);
+                problem.post(GlobalCardinality{vars, cover, counts});
+            }
             else
                 throw FlatZincInterfaceError{fmt::format("Unknown flatzinc constraint {} in {}", id, fznname)};
         }

@@ -45,7 +45,7 @@ namespace gcs::innards
 
         auto compute_justification(const State & state, ProofLogger & logger, const WeightedPseudoBooleanLessEqual & inference, const bool compute_bounds = false) -> ExplicitJustificationFunction;
 
-        auto compute_bounds_and_justifications(const State & state, ProofLogger & logger, const PseudoBooleanTerm bounds_var) -> std::tuple<Integer, ExplicitJustificationFunction, Integer, ExplicitJustificationFunction>
+        auto compute_bound_and_justifications(const State & state, ProofLogger & logger, const WeightedPseudoBooleanSum to_bound) -> std::pair<Integer, ExplicitJustificationFunction>;
     };
 }
 
