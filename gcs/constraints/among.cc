@@ -1,5 +1,6 @@
 #include <gcs/constraints/among.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/proofs/lp_justifier.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
@@ -8,6 +9,7 @@
 #include <gcs/innards/state.hh>
 
 #include <algorithm>
+
 #include <map>
 #include <optional>
 #include <sstream>
@@ -45,19 +47,20 @@ namespace
     }
 }
 
-Among::Among(vector<IntegerVariableID> vars, const vector<Integer> & values_of_interest, const IntegerVariableID & how_many) :
+Among::Among(vector<IntegerVariableID> vars, const vector<Integer> & values_of_interest, const IntegerVariableID & how_many, const optional<LPJustificationOptions> u) :
     _vars(move(vars)),
     _values_of_interest(uniqueify(values_of_interest)),
-    _how_many(how_many)
+    _how_many(how_many),
+    _lp_justification_options(move(u))
 {
 }
 
 auto Among::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<Among>(_vars, _values_of_interest, _how_many);
+    return make_unique<Among>(_vars, _values_of_interest, _how_many, _lp_justification_options);
 }
 
-auto Among::install(Propagators & propagators, State &, ProofModel * const optional_model) && -> void
+auto Among::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
     // we only care about the bounds for how_many, but we care about any deletions for the
     // rest of the variables
@@ -66,7 +69,13 @@ auto Among::install(Propagators & propagators, State &, ProofModel * const optio
     triggers.on_bounds.emplace_back(_how_many);
 
     pair<optional<ProofLine>, optional<ProofLine>> sum_line;
+    shared_ptr<LPJustifier> lp_justifier;
     if (optional_model) {
+        if (_lp_justification_options) {
+            lp_justifier = make_shared<LPJustifier>(*_lp_justification_options);
+            lp_justifier->initialise_with_vars(initial_state, _vars, {_how_many});
+        }
+
         // very easy PB encoding: sum up over the condition that each variable equals one of the
         // value of interest options, and make that equal the how many variable.
         WeightedPseudoBooleanSum sum;
@@ -74,30 +83,37 @@ auto Among::install(Propagators & propagators, State &, ProofModel * const optio
             for (auto & val : _values_of_interest)
                 sum += 1_i * (var == val);
         sum_line = optional_model->add_constraint("Among", "how many", sum == 1_i * _how_many);
+        if (lp_justifier) {
+            lp_justifier->add_pb_constraint((sum + -1_i * _how_many) <= 0_i, *sum_line.first);
+            lp_justifier->add_pb_constraint((sum + 1_i * _how_many) >= 0_i, *sum_line.second);
+        }
     }
 
     // for proof logging, we're going to need at-most-one constraints over the
     // values of interest for each variable. compute these once and remember
     // them.
     auto am1_lines = make_shared<map<IntegerVariableID, ProofLine>>();
-    propagators.install_initialiser([vars = _vars, values_of_interest = _values_of_interest, am1_lines = am1_lines](
-                                        const State &, auto &, ProofLogger * const logger) -> void {
-        if (logger && values_of_interest.size() > 1) {
-            for (auto & var : vars) {
-                vector<IntegerVariableCondition> var_eq_vois;
-                for (const auto & voi : values_of_interest)
-                    var_eq_vois.push_back(var != voi);
-                am1_lines->emplace(var, recover_am1<IntegerVariableCondition>(*logger, ProofLevel::Top, var_eq_vois, [&](const IntegerVariableCondition & a, const IntegerVariableCondition & b) {
-                    logger->emit_proof_comment("among am1 recover follows");
-                    return logger->emit(RUPProofRule{}, WeightedPseudoBooleanSum{} + 1_i * a + 1_i * b >= 1_i, ProofLevel::Temporary);
-                }));
+    if (! _lp_justification_options) {
+        propagators.install_initialiser([vars = _vars, values_of_interest = _values_of_interest, am1_lines = am1_lines](
+                                            const State &, auto &, ProofLogger * const logger) -> void {
+            if (logger && values_of_interest.size() > 1) {
+                for (auto & var : vars) {
+                    vector<IntegerVariableCondition> var_eq_vois;
+                    for (const auto & voi : values_of_interest)
+                        var_eq_vois.push_back(var != voi);
+                    am1_lines->emplace(var, recover_am1<IntegerVariableCondition>(*logger, ProofLevel::Top, var_eq_vois, [&](const IntegerVariableCondition & a, const IntegerVariableCondition & b) {
+                        logger->emit_proof_comment("among am1 recover follows");
+                        return logger->emit(RUPProofRule{}, WeightedPseudoBooleanSum{} + 1_i * a + 1_i * b >= 1_i, ProofLevel::Temporary);
+                    }));
+                }
             }
-        }
-    });
+        });
+    }
 
     propagators.install(
-        [vars = _vars, values_of_interest = _values_of_interest, how_many = _how_many, sum_line = sum_line, am1_lines = am1_lines](
+        [vars = _vars, values_of_interest = _values_of_interest, how_many = _how_many, sum_line = sum_line, am1_lines = am1_lines, lp_justifier_ptr = move(lp_justifier)](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            LPJustifier * lp_justifier = lp_justifier_ptr.get();
             // partition variables to be 1) those that must not match, 2) those that must match, and 3) those
             // where they might match but don't have to.
             vector<IntegerVariableID> partitioned_vars = vars;
@@ -122,32 +138,46 @@ auto Among::install(Propagators & propagators, State &, ProofModel * const optio
             // we now know how many variables definitely match, and how
             // many can't match, so we can derive bounds on the how many
             // variable.
-            auto vars_reason = generic_reason(state, vars);
-            inference.infer(logger, how_many >= must_match_count, JustifyUsingRUP{}, vars_reason);
+            Reason vars_reason;
             auto less_than_this_many = Integer(vars.size()) - must_not_match_count + 1_i;
-            inference.infer(logger, how_many < less_than_this_many, JustifyExplicitly{[&](const Reason &) -> void {
-                // for any variable that isn't ruled out, show that it can contribute at
-                // most one to the count.
-                if (sum_line.second && ! empty(can_be_either_or_must_vars) && values_of_interest.size() > 1) {
-                    stringstream line;
-                    line << "pol " << *sum_line.second;
-                    for (const auto & var : can_be_either_or_must_vars)
-                        line << " " << am1_lines->at(var) << " +";
-                    logger->emit_proof_line(line.str(), ProofLevel::Temporary);
-                }
-            }},
-                vars_reason);
+            if (lp_justifier) {
+                auto justf1 = lp_justifier->compute_justification(state, *logger, WeightedPseudoBooleanSum{} + 1_i * how_many >= must_match_count);
+                inference.infer(logger, how_many >= must_match_count, JustifyExplicitlyOnly{justf1}, {});
+
+                auto justf2 = lp_justifier->compute_justification(state, *logger, WeightedPseudoBooleanSum{} + 1_i * how_many <= less_than_this_many - 1_i);
+                inference.infer(logger, how_many < less_than_this_many, JustifyExplicitlyOnly{justf2}, {});
+            }
+            else {
+                vars_reason = generic_reason(state, vars);
+                inference.infer(logger, how_many >= must_match_count, JustifyUsingRUP{}, vars_reason);
+                inference.infer(logger, how_many < less_than_this_many, JustifyExplicitlyThenRUP{[&](const Reason &) -> void {
+                    // for any variable that isn't ruled out, show that it can contribute at
+                    // most one to the count.
+                    if (sum_line.second && ! empty(can_be_either_or_must_vars) && values_of_interest.size() > 1) {
+                        stringstream line;
+                        line << "pol " << *sum_line.second;
+                        for (const auto & var : can_be_either_or_must_vars)
+                            line << " " << am1_lines->at(var) << " +";
+                        logger->emit_proof_line(line.str(), ProofLevel::Temporary);
+                    }
+                }},
+                    vars_reason);
+            }
 
             // potentially now we know that any undecided variables must actually be either
             // matching or not matching.
             auto [at_least_how_many, at_most_how_many] = state.bounds(how_many);
 
-            auto vars_and_bounds_reason = [&vars_reason, how_many, at_least_how_many, at_most_how_many]() {
-                auto result = vars_reason();
-                result.push_back(how_many >= at_least_how_many);
-                result.push_back(how_many < at_most_how_many + 1_i);
-                return result;
-            };
+            Reason vars_and_bounds_reason;
+
+            if (! lp_justifier) {
+                vars_and_bounds_reason = [&vars_reason, how_many, at_least_how_many, at_most_how_many]() {
+                    auto result = vars_reason();
+                    result.push_back(how_many >= at_least_how_many);
+                    result.push_back(how_many < at_most_how_many + 1_i);
+                    return result;
+                };
+            }
 
             // if we have enough definitely matching values, nothing else can match
             if (must_match_count == at_most_how_many) {
@@ -170,18 +200,24 @@ auto Among::install(Propagators & propagators, State &, ProofModel * const optio
                         for (const auto & val : values_of_interest)
                             inferences.push_back(var != val);
 
-                        inference.infer_all(logger, inferences, JustifyExplicitly{[&](const Reason &) -> void {
-                            // for any variable that is forced, show that it can contribute at
-                            // most one to the count
-                            if (sum_line.second && ! empty(must_match_vars) && values_of_interest.size() > 1) {
-                                stringstream line;
-                                line << "pol " << *sum_line.second;
-                                for (const auto & var : must_match_vars)
-                                    line << " " << am1_lines->at(var) << " +";
-                                logger->emit_proof_line(line.str(), ProofLevel::Temporary);
-                            }
-                        }},
-                            vars_and_bounds_reason);
+                        if (lp_justifier) {
+                            auto justf = lp_justifier->compute_justification(state, *logger, inferences);
+                            inference.infer_all(logger, inferences, JustifyExplicitlyOnly{justf}, {});
+                        }
+                        else {
+                            inference.infer_all(logger, inferences, JustifyExplicitlyThenRUP{[&](const Reason &) -> void {
+                                // for any variable that is forced, show that it can contribute at
+                                // most one to the count
+                                if (sum_line.second && ! empty(must_match_vars) && values_of_interest.size() > 1) {
+                                    stringstream line;
+                                    line << "pol " << *sum_line.second;
+                                    for (const auto & var : must_match_vars)
+                                        line << " " << am1_lines->at(var) << " +";
+                                    logger->emit_proof_line(line.str(), ProofLevel::Temporary);
+                                }
+                            }},
+                                vars_and_bounds_reason);
+                        }
                     }
                 }
 
@@ -213,22 +249,28 @@ auto Among::install(Propagators & propagators, State &, ProofModel * const optio
                         if (might_match)
                             for (const auto & val : state.each_value_mutable(var))
                                 if (values_of_interest.end() == find(values_of_interest.begin(), values_of_interest.end(), val)) {
-                                    inference.infer(logger, var != val, JustifyExplicitly{[&](const Reason &) {
-                                        // need to point out that if var == val then var != voi for each voi
-                                        for (const auto & voi : values_of_interest)
-                                            logger->emit(RUPProofRule{}, WeightedPseudoBooleanSum{} + 1_i * (var != val) + 1_i * (var != voi) >= 1_i, ProofLevel::Temporary);
+                                    if (lp_justifier) {
+                                        auto justf = lp_justifier->compute_justification(state, *logger, WeightedPseudoBooleanSum{} + 1_i * (var != val) >= 1_i);
+                                        inference.infer(logger, var != val, JustifyExplicitlyOnly{justf}, {});
+                                    }
+                                    else {
+                                        inference.infer(logger, var != val, JustifyExplicitlyThenRUP{[&](const Reason &) {
+                                            // need to point out that if var == val then var != voi for each voi
+                                            for (const auto & voi : values_of_interest)
+                                                logger->emit(RUPProofRule{}, WeightedPseudoBooleanSum{} + 1_i * (var != val) + 1_i * (var != voi) >= 1_i, ProofLevel::Temporary);
 
-                                        // now each other variable that may or may not match is contributing at most one to the sum
-                                        if (sum_line.second && values_of_interest.size() > 1) {
-                                            stringstream line;
-                                            line << "pol " << *sum_line.second;
-                                            for (const auto & other_var : can_be_either_vars)
-                                                if (var != other_var)
-                                                    line << " " << am1_lines->at(other_var) << " +";
-                                            logger->emit_proof_line(line.str(), ProofLevel::Temporary);
-                                        }
-                                    }},
-                                        vars_and_bounds_reason);
+                                            // now each other variable that may or may not match is contributing at most one to the sum
+                                            if (sum_line.second && values_of_interest.size() > 1) {
+                                                stringstream line;
+                                                line << "pol " << *sum_line.second;
+                                                for (const auto & other_var : can_be_either_vars)
+                                                    if (var != other_var)
+                                                        line << " " << am1_lines->at(other_var) << " +";
+                                                logger->emit_proof_line(line.str(), ProofLevel::Temporary);
+                                            }
+                                        }},
+                                            vars_and_bounds_reason);
+                                    }
                                 }
                     }
 

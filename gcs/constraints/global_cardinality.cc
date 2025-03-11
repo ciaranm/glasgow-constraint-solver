@@ -117,7 +117,7 @@ auto GlobalCardinalityBC::install(Propagators & propagators, State & initial_sta
                 });
 
                 if (contr) {
-                    return PropagatorState::Enable;
+                    return PropagatorState::DisableUntilBacktrack;
                 }
             }
 
@@ -131,14 +131,14 @@ auto GlobalCardinalityBC::install(Propagators & propagators, State & initial_sta
                 lower = -lower;
                 inference.infer(logger, count >= lower, JustifyExplicitlyOnly{lower_just}, {});
                 if (lower > prev_upper)
-                    return PropagatorState::Enable;
+                    return PropagatorState::DisableUntilBacktrack;
 
                 auto [upper, upper_just] = lp_justifier->compute_bound_and_justifications(state, *logger,
                     WeightedPseudoBooleanSum{} + 1_i * count);
 
                 inference.infer(logger, count < upper + 1_i, JustifyExplicitlyOnly{upper_just}, {});
                 if (lower > upper)
-                    return PropagatorState::Enable;
+                    return PropagatorState::DisableUntilBacktrack;
             }
             return PropagatorState::Enable;
         },

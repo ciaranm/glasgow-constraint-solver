@@ -2,6 +2,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_AMONG_HH
 
 #include <gcs/constraint.hh>
+#include <gcs/innards/proofs/lp_justifier.hh>
 #include <gcs/variable_id.hh>
 
 #include <vector>
@@ -20,9 +21,11 @@ namespace gcs
         const std::vector<IntegerVariableID> _vars;
         const std::vector<Integer> _values_of_interest;
         IntegerVariableID _how_many;
+        const std::optional<LPJustificationOptions> _lp_justification_options;
 
     public:
-        explicit Among(std::vector<IntegerVariableID>, const std::vector<Integer> & values_of_interest, const IntegerVariableID & how_many);
+        explicit Among(std::vector<IntegerVariableID>, const std::vector<Integer> & values_of_interest,
+            const IntegerVariableID & how_many, const std::optional<LPJustificationOptions> l = std::nullopt);
 
         virtual auto install(innards::Propagators &, innards::State &,
             innards::ProofModel * const) && -> void override;

@@ -65,6 +65,8 @@ add_library(glasgow_constraint_solver
         innards/state.cc
         innards/variable_id_utils.cc
         presolvers/auto_table.cc
+        # DELETE THIS
+        constraints/baby_tu.cc
 )
 
 include_directories(${CMAKE_SOURCE_DIR}/generator/src/generator/include)

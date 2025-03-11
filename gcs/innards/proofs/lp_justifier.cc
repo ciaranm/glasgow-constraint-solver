@@ -299,11 +299,10 @@ struct LPJustifier::Imp
         this->highs.setBasis();
         if (optional_last_basis) {
             // Use the basis
-            this->highs.setBasis(*optional_current_basis);
+            // this->highs.setBasis(*optional_current_basis);
         }
 
         // Now solve the model
-
         return_status = this->highs.run();
 
         // Save the basis for next time
@@ -435,9 +434,9 @@ void LPJustifier::initialise_with_vars(State & state, vector<IntegerVariableID> 
         _imp->upper_bound_constraint_num[var] = row_count;
         non_zero_count++;
         _imp->derive_constraint[row_count++] = [var = var](ProofLogger & logger, const State & later_state) {
-            if (later_state.has_single_value(var)) {
-                return ProofLine{-1}; // ... think this is okay
-            }
+            //            if (later_state.has_single_value(var)) {
+            //                return ProofLine{-1}; // ... think this is okay
+            //            }
             auto later_upper = later_state.upper_bound(var);
             auto reason = [=]() { return Literals{var < later_upper + 1_i}; };
             return logger.emit_rup_proof_line_under_reason(reason,
@@ -634,7 +633,7 @@ auto LPJustifier::compute_justification(const State & state, ProofLogger & logge
             }
         }
 
-        if (count >= 2) {
+        if (count >= 1) { // TODO: change this back to 2
             // If there's only one constraint, no need to write a p line
             logger.emit_proof_comment("Computed LP justification 2:");
             auto line = logger.emit_proof_line(p_line.str(), ProofLevel::Current);
@@ -643,6 +642,14 @@ auto LPJustifier::compute_justification(const State & state, ProofLogger & logge
     };
 }
 
+auto LPJustifier::compute_justification(const State & state, ProofLogger & logger, const Literals & inference,
+    const bool compute_bounds) -> ExplicitJustificationFunction
+{
+    auto inf_sum = WeightedPseudoBooleanSum{};
+    for (const auto & lit : inference)
+        inf_sum += 1_i * lit;
+    return compute_justification(state, logger, inf_sum >= 1_i, compute_bounds);
+}
 auto LPJustifier::compute_bound_and_justifications(const State & state, ProofLogger & logger, const WeightedPseudoBooleanSum to_bound)
     -> pair<Integer, ExplicitJustificationFunction>
 {

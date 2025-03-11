@@ -51,6 +51,9 @@ endif (NOT GCS_DEBUG_MODE)
 
 if (GCS_DEBUG_MODE)
     add_compile_options(-O0)
+    #    set(ENV{ASAN_OPTIONS} "detect_leaks=1")
+    #    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -g")
+
 endif (GCS_DEBUG_MODE)
 add_compile_options(-DGCS_TRACK_ALL_PROPAGATIONS=1)
 
@@ -160,6 +163,7 @@ endif (GCS_ENABLE_SOPLEX)
 if (GCS_ENABLE_HIGHS)
     block()
         set(CMAKE_BUILD_TYPE Debug)
+        set(DEBUG_MEMORY "Thread")
         FetchContent_Declare(
                 HiGHS
                 GIT_REPOSITORY https://github.com/ERGO-Code/HiGHS.git

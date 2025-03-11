@@ -81,7 +81,7 @@ auto Element::install(Propagators & propagators, State & initial_state, ProofMod
                 }
 
             if (! supported)
-                inference.infer_not_equal(logger, idx, ival, JustifyExplicitly{[&](const Reason & reason) {
+                inference.infer_not_equal(logger, idx, ival, JustifyExplicitlyThenRUP{[&](const Reason & reason) {
                     // idx can't take the value ival because there's no intersection between vval and array[ival]
                     for (auto vval : state.each_value_immutable(vals[ival.raw_value]))
                         logger->emit_rup_proof_line_under_reason(reason,
