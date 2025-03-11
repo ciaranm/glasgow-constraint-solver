@@ -146,20 +146,6 @@ if (GCS_ENABLE_MINIZINC)
     FetchContent_MakeAvailable(json)
 endif (GCS_ENABLE_MINIZINC)
 
-if (GCS_ENABLE_SOPLEX)
-    FetchContent_Declare(
-            soplex
-            GIT_REPOSITORY https://github.com/scipopt/soplex.git
-            GIT_TAG release-712
-    )
-    block()
-        set(CMAKE_CXX_STANDARD 17)
-        set(CMAKE_CXX_STANDARD_REQUIRED ON)
-        set(CMAKE_CXX_EXTENSIONS ON)
-        FetchContent_MakeAvailable(soplex)
-    endblock()
-endif (GCS_ENABLE_SOPLEX)
-
 if (GCS_ENABLE_HIGHS)
     block()
         set(CMAKE_BUILD_TYPE Debug)

@@ -29,6 +29,4 @@ add_subdirectory(talent)
 add_subdirectory(tutorial_proof)
 
 # Temporary for messing around
-add_subdirectory(soplex_test)
-
 add_subdirectory(highs_test)
