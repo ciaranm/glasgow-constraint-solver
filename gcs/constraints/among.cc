@@ -85,7 +85,7 @@ auto Among::install(Propagators & propagators, State & initial_state, ProofModel
         sum_line = optional_model->add_constraint("Among", "how many", sum == 1_i * _how_many);
         if (lp_justifier) {
             lp_justifier->add_pb_constraint((sum + -1_i * _how_many) <= 0_i, *sum_line.first);
-            lp_justifier->add_pb_constraint((sum + 1_i * _how_many) >= 0_i, *sum_line.second);
+            lp_justifier->add_pb_constraint((sum + -1_i * _how_many) >= 0_i, *sum_line.second);
         }
     }
 

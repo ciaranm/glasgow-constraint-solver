@@ -32,77 +32,6 @@ using namespace gcs::lp_innards;
 
 namespace
 {
-    // Dirty GPT code
-#include "Highs.h" // Include the HiGHS header
-#include <iostream>
-
-    void printHighsLP(const HighsLp & lp)
-    {
-        // Print start_ initializer
-        std::cout << "model.lp_.a_matrix_.start_ = {";
-        for (size_t i = 0; i < lp.a_matrix_.start_.size(); i++) {
-            std::cout << lp.a_matrix_.start_[i];
-            if (i < lp.a_matrix_.start_.size() - 1) std::cout << ", ";
-        }
-        std::cout << "};\n";
-
-        // Print index_ initializer
-        std::cout << "model.lp_.a_matrix_.index_ = {";
-        for (size_t i = 0; i < lp.a_matrix_.index_.size(); i++) {
-            std::cout << lp.a_matrix_.index_[i];
-            if (i < lp.a_matrix_.index_.size() - 1) std::cout << ", ";
-        }
-        std::cout << "};\n";
-
-        // Print value_ initializer
-        std::cout << "model.lp_.a_matrix_.value_ = {";
-        for (size_t i = 0; i < lp.a_matrix_.value_.size(); i++) {
-            std::cout << lp.a_matrix_.value_[i];
-            if (i < lp.a_matrix_.value_.size() - 1) std::cout << ", ";
-        }
-        std::cout << "};\n";
-
-        // Print row_lower_ initializer
-        std::cout << "model.lp_.row_lower_ = {";
-        for (size_t i = 0; i < lp.row_lower_.size(); i++) {
-            std::cout << lp.row_lower_[i];
-            if (i < lp.row_lower_.size() - 1) std::cout << ", ";
-        }
-        std::cout << "};\n";
-
-        // Print row_upper_ initializer
-        std::cout << "model.lp_.row_upper_ = {";
-        for (size_t i = 0; i < lp.row_upper_.size(); i++) {
-            std::cout << lp.row_upper_[i];
-            if (i < lp.row_upper_.size() - 1) std::cout << ", ";
-        }
-        std::cout << "};\n";
-
-        // Print col_cost_ initializer
-        std::cout << "model.lp_.col_cost_ = {";
-        for (size_t i = 0; i < lp.col_cost_.size(); i++) {
-            std::cout << lp.col_cost_[i];
-            if (i < lp.col_cost_.size() - 1) std::cout << ", ";
-        }
-        std::cout << "};\n";
-
-        // Print col_lower_ initializer
-        std::cout << "model.lp_.col_lower_ = {";
-        for (size_t i = 0; i < lp.col_lower_.size(); i++) {
-            std::cout << lp.col_lower_[i];
-            if (i < lp.col_lower_.size() - 1) std::cout << ", ";
-        }
-        std::cout << "};\n";
-
-        // Print col_upper_ initializer
-        std::cout << "model.lp_.col_upper_ = {";
-        for (size_t i = 0; i < lp.col_upper_.size(); i++) {
-            std::cout << lp.col_upper_[i];
-            if (i < lp.col_upper_.size() - 1) std::cout << ", ";
-        }
-        std::cout << "};\n";
-    }
-
     // For debugging purposes only
     auto get_matrix_string(HighsSparseMatrix matr) -> string
     {
@@ -148,7 +77,7 @@ namespace
                 sub_logger.emit_rup_proof_line(WeightedPseudoBooleanSum{} + -1_i * term.variable >= 0_i, ProofLevel::Temporary);
             logger.emit_rup_proof_line(WeightedPseudoBooleanSum{} >= 1_i, ProofLevel::Temporary);
         };
-        return logger.emit_red_proof_line(sum <= 1_i, {}, ProofLevel::Temporary, subproofs);
+        return logger.emit_red_proof_line(sum <= 1_i, {}, ProofLevel::Top, subproofs);
     }
 
     template <typename Var_>
@@ -245,8 +174,7 @@ struct LPJustifier::Imp
     }
 
     auto pass_and_solve_model(const WeightedPseudoBooleanLessEqual & inference,
-        HighsModel & restricted_model, vector<double> rhs_updated, vector<long> new_row_num, vector<long> old_row_num,
-        optional<HighsBasis> & optional_last_basis, optional<HighsBasis> & optional_current_basis) -> const HighsSolution
+        HighsModel & restricted_model, vector<double> rhs_updated, vector<long> new_row_num, vector<long> old_row_num) -> const HighsSolution
     {
         HighsStatus return_status;
         bool inferring_contradiction = inference.lhs.terms.empty() && inference.rhs <= -1_i;
@@ -297,24 +225,9 @@ struct LPJustifier::Imp
         const HighsLp & lp = this->highs.getLp();
 
         this->highs.setBasis();
-        if (optional_last_basis) {
-            // Use the basis
-            // this->highs.setBasis(*optional_current_basis);
-        }
 
         // Now solve the model
         return_status = this->highs.run();
-
-        // Save the basis for next time
-        if (optional_last_basis) {
-            auto new_basis = this->highs.getBasis();
-            for (unsigned int row = 0; row < new_basis.row_status.size(); ++row) {
-                optional_last_basis->row_status[old_row_num[row]] = new_basis.row_status[row];
-            }
-        }
-        else {
-            optional_last_basis = highs.getBasis();
-        }
 
         // Check it worked
         const HighsModelStatus & model_status = this->highs.getModelStatus();
@@ -395,11 +308,7 @@ void LPJustifier::initialise_with_vars(State & state, vector<IntegerVariableID> 
 
         non_zero_count += int(dom_index.size());
 
-        _imp->derive_constraint[row_count++] = [var = var](ProofLogger & logger, const State & later_state) {
-            WeightedPseudoBooleanSum dom_sum;
-            later_state.for_each_value(var, [&](Integer val) {
-                dom_sum += 1_i * (var == val);
-            });
+        _imp->derive_constraint[row_count++] = [var, dom_sum](ProofLogger & logger, const State &) {
             return recover_am1_constraint(logger, dom_sum);
         };
 
@@ -410,15 +319,8 @@ void LPJustifier::initialise_with_vars(State & state, vector<IntegerVariableID> 
         rhs.emplace_back(-1);
         non_zero_count += int(dom_index.size());
 
-        _imp->derive_constraint[row_count++] = [var = var](ProofLogger & logger, const State & later_state) {
-            if (later_state.has_single_value(var)) {
-                return ProofLine{-1};
-            }
-            WeightedPseudoBooleanSum dom_sum;
-            later_state.for_each_value(var, [&](Integer val) {
-                dom_sum += 1_i * (var == val);
-            });
-            return logger.emit_rup_proof_line_under_reason(generic_reason(later_state, {var}), dom_sum >= 1_i, ProofLevel::Temporary);
+        _imp->derive_constraint[row_count++] = [var = var, dom_sum](ProofLogger & logger, const State & later_state) {
+            return logger.emit_rup_proof_line_under_reason({}, dom_sum >= 1_i, ProofLevel::Top);
         };
     }
 
@@ -481,8 +383,8 @@ void LPJustifier::initialise_with_vars(State & state, vector<IntegerVariableID> 
     _imp->model.lp_.a_matrix_.value_ = value;
     _imp->model.lp_.setMatrixDimensions();
 
-    optional<HighsBasis> optional_last_basis = nullopt;
-    _imp->last_basis_handle = state.add_constraint_state(optional_last_basis);
+    //    optional<HighsBasis> optional_last_basis = nullopt;
+    //    _imp->last_basis_handle = state.add_constraint_state(optional_last_basis);
 }
 
 auto LPJustifier::_add_pb_constraint_to_lp(const gcs::innards::WeightedPseudoBooleanLessEqual & pb_constraint) -> void
@@ -524,14 +426,10 @@ void LPJustifier::add_pb_constraint(const WeightedPseudoBooleanLessEqual & pb_co
 auto LPJustifier::compute_justification(const State & state, ProofLogger & logger, const WeightedPseudoBooleanLessEqual & inference,
     const bool compute_bounds) -> ExplicitJustificationFunction
 {
-    // std::cout << "Computing justification." << std::endl;
     //  Restrict the constraint matrix based on the current state
     //  Need to do this outside the justification, because we rely on the current state
     auto restricted_model = _imp->model;
     auto rhs_updated = _imp->constraints_rhs;
-
-    auto & optional_last_basis = any_cast<optional<HighsBasis> &>(state.get_constraint_state(_imp->last_basis_handle));
-    optional<HighsBasis> optional_current_basis = optional_last_basis ? make_optional(HighsBasis{}) : nullopt;
 
     vector<HighsInt> mask;
     vector<long> new_row_num(restricted_model.lp_.num_row_, 0);
@@ -563,16 +461,6 @@ auto LPJustifier::compute_justification(const State & state, ProofLogger & logge
     create(to_delete, mask.data(), restricted_model.lp_.num_row_);
     restricted_model.lp_.deleteRows(to_delete);
 
-    if (optional_current_basis) {
-        // Set the current basis based on the last basis, excluding deleted rows
-        optional_current_basis->col_status = optional_last_basis->col_status;
-        optional_current_basis->row_status = optional_last_basis->row_status;
-        for (unsigned int row = 0; row < optional_current_basis->row_status.size(); ++row) {
-            if (mask[row] == 1)
-                optional_current_basis->row_status[row] = HighsBasisStatus::kNonbasic;
-        }
-    }
-
     restricted_model.lp_.col_cost_ = rhs_updated;
     restricted_model.lp_.col_lower_ = vector<double>(_imp->model.lp_.num_col_, 0.0);
 
@@ -583,15 +471,19 @@ auto LPJustifier::compute_justification(const State & state, ProofLogger & logge
 
     HighsSolution solution_already;
     // Compute solution already, even if the justification isn't called
-    if (compute_bounds)
-        solution_already = _imp->pass_and_solve_model(inference, restricted_model, rhs_updated, new_row_num, old_row_num, optional_last_basis, optional_current_basis);
+    WeightedPseudoBooleanLessEqual final_inference = inference;
+    if (compute_bounds) {
+        solution_already = _imp->pass_and_solve_model(inference, restricted_model, rhs_updated, new_row_num, old_row_num);
+        // Update inference with the computed objective value
+        final_inference = inference.lhs <= Integer{static_cast<long long>(_imp->highs.getInfo().objective_function_value)};
+    }
 
-    return [&state = state, &logger, inference, &imp = _imp, &optional_last_basis, &optional_current_basis,
+    return [&state = state, &logger, inference = final_inference, &imp = _imp,
                restricted_model = move(restricted_model), rhs_updated, new_row_num, old_row_num, compute_bounds, solution_already = move(solution_already)](const Reason &) {
         HighsSolution solution;
         HighsModel restr_model = move(restricted_model);
         if (! compute_bounds)
-            solution = imp->pass_and_solve_model(inference, restr_model, rhs_updated, new_row_num, old_row_num, optional_last_basis, optional_current_basis);
+            solution = imp->pass_and_solve_model(inference, restr_model, rhs_updated, new_row_num, old_row_num);
         else
             solution = solution_already;
 
@@ -633,7 +525,31 @@ auto LPJustifier::compute_justification(const State & state, ProofLogger & logge
             }
         }
 
-        if (count >= 1) { // TODO: change this back to 2
+        bool bounding_var = false;
+        if (inference.lhs.terms.size() == 1) {
+            // Bounding a single variable
+            overloaded{
+                // So need to add this in order to swap the actual variable for the literal e.g. xvge3
+                [&](IntegerVariableID v) {
+                    bounding_var = true;
+                    if (inference.lhs.terms[0].coefficient == -1_i) {
+                        p_line << logger.emit_rup_proof_line_under_reason([&]() { return Literals{v < -inference.rhs}; }, WeightedPseudoBooleanSum{} + 1_i * v <= -inference.rhs - 1_i, ProofLevel::Temporary);
+                        if (count >= 1) {
+                            p_line << " + s";
+                        }
+                    }
+                    else if (inference.lhs.terms[0].coefficient == 1_i) {
+                        p_line << logger.emit_rup_proof_line_under_reason([&]() { return Literals{v >= inference.rhs + 1_i}; }, WeightedPseudoBooleanSum{} + -1_i * v <= -inference.rhs - 1_i, ProofLevel::Temporary);
+                        if (count >= 1) {
+                            p_line << " + s";
+                        }
+                    }
+                },
+                [](ProofLiteral) {}, [](ProofFlag) {}, [](ProofOnlySimpleIntegerVariableID) {}, [](ProofBitVariable) {}}
+                .visit(inference.lhs.terms[0].variable);
+        }
+
+        if (count >= 2 || bounding_var) {
             // If there's only one constraint, no need to write a p line
             logger.emit_proof_comment("Computed LP justification 2:");
             auto line = logger.emit_proof_line(p_line.str(), ProofLevel::Current);
@@ -650,6 +566,7 @@ auto LPJustifier::compute_justification(const State & state, ProofLogger & logge
         inf_sum += 1_i * lit;
     return compute_justification(state, logger, inf_sum >= 1_i, compute_bounds);
 }
+
 auto LPJustifier::compute_bound_and_justifications(const State & state, ProofLogger & logger, const WeightedPseudoBooleanSum to_bound)
     -> pair<Integer, ExplicitJustificationFunction>
 {
