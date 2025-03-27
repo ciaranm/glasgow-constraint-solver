@@ -43,7 +43,6 @@ using namespace std::literals::string_literals;
 
 auto main(int argc, char * argv[]) -> int
 {
-
     po::options_description display_options{"Program options"};
     display_options.add_options()            //
         ("help", "Display help information") //

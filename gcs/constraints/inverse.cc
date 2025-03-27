@@ -137,10 +137,11 @@ auto Inverse::install(Propagators & propagators, State & initial_state, ProofMod
         for (const auto & [i, x_i] : enumerate(x)) {
             for (auto x_i_value : state.each_value_mutable(x_i))
                 if (! state.in_domain(y.at((x_i_value - y_start).raw_value), Integer(i) + x_start)) {
-                    if (! lp_justifier)
+                    if (! lp_justifier) {
                         inf.infer(logger, x_i != x_i_value,
                             JustifyUsingRUP{},
                             [&]() { return Literals{y.at((x_i_value - y_start).raw_value) != Integer(i) + x_start}; });
+                    }
                     else {
                         auto just = lp_justifier->compute_justification(state, *logger,
                             WeightedPseudoBooleanSum{} + 1_i * (x_i != x_i_value) >= 1_i);

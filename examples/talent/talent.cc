@@ -19,6 +19,7 @@ using std::cerr;
 using std::cout;
 using std::make_optional;
 using std::nullopt;
+using std::optional;
 using std::vector;
 
 using fmt::print;
@@ -122,11 +123,13 @@ int main(int argc, char * argv[])
         p.post(wait_expr == 0_i);
         idle_expr += Integer(actorPay[a]) * actorWait[a];
     }
+    optional<LPJustificationOptions> USE_LP_JUST = nullopt;
 
     if (options_vars.contains("lp"))
-        p.post(Inverse{scene, slot, 0_i, 0_i, LPJustificationOptions{}});
-    else
-        p.post(Inverse{scene, slot, 0_i, 0_i});
+        USE_LP_JUST = make_optional(LPJustificationOptions{});
+
+    p.post(Inverse{scene, slot, 0_i, 0_i, USE_LP_JUST});
+
     IntegerVariableID idleCost = p.create_integer_variable(0_i, Integer(100), "idleCost");
     idle_expr += -1_i * idleCost;
     p.post(idle_expr == 0_i);

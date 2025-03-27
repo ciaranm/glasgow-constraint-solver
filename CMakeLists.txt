@@ -55,7 +55,7 @@ if (GCS_DEBUG_MODE)
     #    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -g")
 
 endif (GCS_DEBUG_MODE)
-add_compile_options(-DGCS_TRACK_ALL_PROPAGATIONS=1)
+#add_compile_options(-DGCS_TRACK_ALL_PROPAGATIONS=1)
 
 enable_testing()
 
@@ -148,8 +148,8 @@ endif (GCS_ENABLE_MINIZINC)
 
 if (GCS_ENABLE_HIGHS)
     block()
-        set(CMAKE_BUILD_TYPE Debug)
-        set(DEBUG_MEMORY "Thread")
+        #        set(CMAKE_BUILD_TYPE Debug)
+        #        set(DEBUG_MEMORY "Thread")
         FetchContent_Declare(
                 HiGHS
                 GIT_REPOSITORY https://github.com/ERGO-Code/HiGHS.git

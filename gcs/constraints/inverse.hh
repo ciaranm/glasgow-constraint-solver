@@ -25,7 +25,7 @@ namespace gcs
 
     public:
         explicit Inverse(std::vector<IntegerVariableID> x, std::vector<IntegerVariableID> y,
-            Integer x_start = 0_i, Integer y_start = 0_i, const std::optional<LPJustificationOptions> & _lp_justification_options = std::nullopt);
+            Integer x_start = 0_i, Integer y_start = 0_i, const std::optional<LPJustificationOptions> & _l = std::nullopt);
 
         virtual auto install(innards::Propagators &, innards::State &,
             innards::ProofModel * const) && -> void override;

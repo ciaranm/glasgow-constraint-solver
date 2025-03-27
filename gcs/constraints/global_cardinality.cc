@@ -85,7 +85,7 @@ auto GlobalCardinalityBC::install(Propagators & propagators, State & initial_sta
                     continue;
 
                 state.for_each_value_while(var, [&](Integer val) {
-                    auto [lower, lower_just] = lp_justifier->compute_bound_and_justifications(state, *logger,
+                    auto [lower, lower_just] = lp_justifier->compute_bound_and_justification(state, *logger,
                         WeightedPseudoBooleanSum{} + -1_i * (var == val));
                     lower = -lower;
 
@@ -102,7 +102,7 @@ auto GlobalCardinalityBC::install(Propagators & propagators, State & initial_sta
                         inference.infer(logger, var == val, JustifyExplicitlyOnly{lower_just}, {});
                     }
 
-                    auto [upper, upper_just] = lp_justifier->compute_bound_and_justifications(state, *logger,
+                    auto [upper, upper_just] = lp_justifier->compute_bound_and_justification(state, *logger,
                         WeightedPseudoBooleanSum{} + 1_i * (var == val));
 
                     if (upper < 1_i) {
@@ -126,14 +126,14 @@ auto GlobalCardinalityBC::install(Propagators & propagators, State & initial_sta
                 if (state.has_single_value(count))
                     continue;
                 auto [prev_lower, prev_upper] = state.bounds(count);
-                auto [lower, lower_just] = lp_justifier->compute_bound_and_justifications(state, *logger,
+                auto [lower, lower_just] = lp_justifier->compute_bound_and_justification(state, *logger,
                     WeightedPseudoBooleanSum{} + -1_i * count);
                 lower = -lower;
                 inference.infer(logger, count >= lower, JustifyExplicitlyOnly{lower_just}, {});
                 if (lower > prev_upper)
                     return PropagatorState::DisableUntilBacktrack;
 
-                auto [upper, upper_just] = lp_justifier->compute_bound_and_justifications(state, *logger,
+                auto [upper, upper_just] = lp_justifier->compute_bound_and_justification(state, *logger,
                     WeightedPseudoBooleanSum{} + 1_i * count);
 
                 inference.infer(logger, count < upper + 1_i, JustifyExplicitlyOnly{upper_just}, {});

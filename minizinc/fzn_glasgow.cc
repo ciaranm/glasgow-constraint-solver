@@ -44,6 +44,7 @@ using std::flush;
 using std::function;
 using std::ifstream;
 using std::list;
+using std::make_optional;
 using std::mutex;
 using std::nullopt;
 using std::optional;
@@ -194,7 +195,8 @@ auto main(int argc, char * argv[]) -> int
         ("n-solutions,n", po::value<unsigned long long>(), "Stop after this many solutions")       //
         ("statistics,s", "Print statistics")                                                       //
         ("timeout,t", po::value<unsigned long long>(), "Timeout in ms")                            //
-        ("prove", po::value<string>(), "Write proofs to this file (.opb and .pbp)");               //
+        ("prove", po::value<string>(), "Write proofs to this file (.opb and .pbp)")                //
+        ("lp", "Use LP justifications wherever implemented");
     po::options_description all_options{"All options"};
     all_options.add_options() //
         ("file", po::value<string>(), "FlatZinc file used as input");
@@ -580,13 +582,14 @@ auto main(int argc, char * argv[]) -> int
             }
             else if (id == "glasgow_alldifferent") {
                 const auto & vars = arg_as_array_of_var(data, args, 0);
-                problem.post(AllDifferent{vars});
+                problem.post(AllDifferent{vars, options_vars.contains("lp") ? make_optional(LPJustificationOptions{}) : nullopt});
             }
             else if (id == "glasgow_among") {
                 const auto & varcount = arg_as_var(data, args, 0);
                 const auto & vars = arg_as_array_of_var(data, args, 1);
                 const auto & varmatch = arg_as_array_of_integer(data, args, 2);
-                problem.post(Among{vars, *varmatch, varcount});
+                problem.post(Among{
+                    vars, *varmatch, varcount, options_vars.contains("lp") ? make_optional(LPJustificationOptions{}) : nullopt});
             }
             else if (id == "glasgow_circuit") {
                 const auto & vars = arg_as_array_of_var(data, args, 0);
@@ -604,7 +607,8 @@ auto main(int argc, char * argv[]) -> int
             else if (id == "glasgow_inverse") {
                 const auto & vars1 = arg_as_array_of_var(data, args, 0);
                 const auto & vars2 = arg_as_array_of_var(data, args, 1);
-                problem.post(Inverse{vars1, vars2, 1_i, 1_i});
+                problem.post(Inverse{
+                    vars1, vars2, 1_i, 1_i, options_vars.contains("lp") ? make_optional(LPJustificationOptions{}) : nullopt});
             }
             else if (id == "glasgow_regular") {
                 const auto & vars = arg_as_array_of_var(data, args, 0);
