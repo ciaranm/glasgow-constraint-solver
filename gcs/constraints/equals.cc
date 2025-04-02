@@ -66,7 +66,7 @@ namespace
     }
 
     auto no_overlap_justification(const State & state, ProofLogger * const logger,
-        IntegerVariableID v1, IntegerVariableID v2, Literal cond) -> pair<JustifyExplicitly, Reason>
+        IntegerVariableID v1, IntegerVariableID v2, Literal cond) -> pair<JustifyExplicitlyThenRUP, Reason>
     {
         auto v1_bounds = state.bounds(v1);
         Literals reason{{v1 >= v1_bounds.first, v1 < v1_bounds.second + 1_i}};
@@ -86,7 +86,7 @@ namespace
                     logger->emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * (v2 != val) + 1_i * (v1 == val) + 1_i * ! cond >= 1_i, ProofLevel::Temporary);
         };
 
-        return pair{JustifyExplicitly{justify}, Reason{[=]() { return reason; }}};
+        return pair{JustifyExplicitlyThenRUP{justify}, Reason{[=]() { return reason; }}};
     }
 }
 

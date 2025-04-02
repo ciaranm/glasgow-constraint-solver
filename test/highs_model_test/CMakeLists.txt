@@ -1,0 +1,3 @@
+add_executable(highs_model_test highs_model_test.cc)
+target_link_libraries(highs_model_test PUBLIC glasgow_constraint_solver)
+target_link_libraries(highs_model_test PRIVATE highs)

@@ -24,6 +24,7 @@
 #include <gcs/constraints/count.hh>
 #include <gcs/constraints/element.hh>
 #include <gcs/constraints/equals.hh>
+#include <gcs/constraints/global_cardinality.hh>
 #include <gcs/constraints/inverse.hh>
 #include <gcs/constraints/knapsack.hh>
 #include <gcs/constraints/linear.hh>

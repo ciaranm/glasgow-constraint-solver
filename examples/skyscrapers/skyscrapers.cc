@@ -52,6 +52,7 @@ auto main(int argc, char * argv[]) -> int
     all_options.add_options()                                                         //
         ("instance", po::value<int>()->default_value(7), "Problem instance to solve") //
         ("autotable", "Use autotabulation")                                           //
+        ("lp", "Use LP justifications")                                               //
         ("all", "Find all solutions");
 
     all_options.add(display_options);
@@ -81,6 +82,11 @@ auto main(int argc, char * argv[]) -> int
         println("");
         display_options.print(cout);
         return EXIT_SUCCESS;
+    }
+
+    optional<LPJustificationOptions> USE_LP_JUST = nullopt;
+    if (options_vars.contains("lp")) {
+        USE_LP_JUST = make_optional(LPJustificationOptions{});
     }
 
     int instance = options_vars["instance"].as<int>();
@@ -188,13 +194,13 @@ auto main(int argc, char * argv[]) -> int
     }
 
     for (int r = 0; r < size; ++r)
-        p.post(AllDifferent{grid[r]});
+        p.post(AllDifferent{grid[r], USE_LP_JUST});
 
     for (int c = 0; c < size; ++c) {
         vector<IntegerVariableID> column;
         for (int r = 0; r < size; ++r)
             column.push_back(grid[r][c]);
-        p.post(AllDifferent{column});
+        p.post(AllDifferent{column, USE_LP_JUST});
     }
 
     for (int r = 0; r < size; ++r)

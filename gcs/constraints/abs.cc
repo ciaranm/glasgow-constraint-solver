@@ -66,7 +66,7 @@ auto Abs::install(Propagators & propagators, State & initial_state,
                     logger->emit_rup_proof_line_under_reason(reason,
                         WeightedPseudoBooleanSum{} + 1_i * (v1 >= 0_i) + 1_i * (v1 != -val) + 1_i * (v2 != val) >= 1_i, ProofLevel::Temporary);
                 };
-                inference.infer_not_equal(logger, v2, val, JustifyExplicitly{just}, Reason{[=]() { return Literals{{v1 != val, v1 != -val}}; }});
+                inference.infer_not_equal(logger, v2, val, JustifyExplicitlyThenRUP{just}, Reason{[=]() { return Literals{{v1 != val, v1 != -val}}; }});
             }
         }
 

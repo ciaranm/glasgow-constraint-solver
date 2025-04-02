@@ -49,7 +49,13 @@ if (NOT GCS_DEBUG_MODE)
     add_compile_options(-O3)
 endif (NOT GCS_DEBUG_MODE)
 
-# add_compile_options(-DGCS_TRACK_ALL_PROPAGATIONS=1)
+if (GCS_DEBUG_MODE)
+    add_compile_options(-O0)
+    #    set(ENV{ASAN_OPTIONS} "detect_leaks=1")
+    #    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -g")
+
+endif (GCS_DEBUG_MODE)
+#add_compile_options(-DGCS_TRACK_ALL_PROPAGATIONS=1)
 
 enable_testing()
 
@@ -57,7 +63,9 @@ option(GCS_ENABLE_DOXYGEN "Add a doxygen target to generate the documentation" O
 option(GCS_ENABLE_XCSP "Support for the XCSP modelling language" ON)
 option(GCS_ENABLE_MINIZINC "Support for the MiniZinc modelling language" ON)
 option(GCS_ENABLE_EXAMPLES "Build examples" ON)
-option(GCS_DEBUG_MODE "Disable compiler optimisation for debugging" OFF)
+option(GCS_DEBUG_MODE "Disable compiler optimisation for debugging" ON)
+option(GCS_ENABLE_SOPLEX "(Experimental) Required for WIP LP justifications." ON)
+option(GCS_ENABLE_HIGHS "(Experimental) Required for WIP LP justifications." ON)
 
 include_directories(.)
 add_subdirectory(gcs)
@@ -99,6 +107,7 @@ if (GCS_ENABLE_PYTHON)
     add_subdirectory(python)
 endif (GCS_ENABLE_PYTHON)
 
+
 Include(FetchContent)
 Set(FETCHCONTENT_QUIET FALSE)
 
@@ -108,6 +117,7 @@ FetchContent_Declare(
         GIT_TAG 6e79e682b726f524310d55dec8ddac4e9c52fb5f # v3.4.0
 )
 FetchContent_MakeAvailable(Catch2)
+SET(CATCH_CONFIG_ENABLE_ALL_STRINGMAKERS ON)
 
 FetchContent_Declare(
         fmt
@@ -126,10 +136,26 @@ ExternalProject_Add(
         BUILD_COMMAND ""
 )
 
-set(JSON_BuildTests OFF CACHE INTERNAL "")
-FetchContent_Declare(
-        json
-        GIT_REPOSITORY https://github.com/nlohmann/json.git
-        GIT_TAG 9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03 # v3.11.3
-)
-FetchContent_MakeAvailable(json)
+if (GCS_ENABLE_MINIZINC)
+    set(JSON_BuildTests OFF CACHE INTERNAL "")
+    FetchContent_Declare(
+            json
+            GIT_REPOSITORY https://github.com/nlohmann/json.git
+            GIT_TAG 9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03 # v3.11.3
+    )
+    FetchContent_MakeAvailable(json)
+endif (GCS_ENABLE_MINIZINC)
+
+if (GCS_ENABLE_HIGHS)
+    block()
+        #        set(CMAKE_BUILD_TYPE Debug)
+        #        set(DEBUG_MEMORY "Thread")
+        FetchContent_Declare(
+                HiGHS
+                GIT_REPOSITORY https://github.com/ERGO-Code/HiGHS.git
+                GIT_TAG v1.8.1
+        )
+        FetchContent_MakeAvailable(HiGHS)
+    endblock()
+endif (GCS_ENABLE_HIGHS)
+

@@ -21,6 +21,7 @@ using std::cout;
 using std::ifstream;
 using std::make_optional;
 using std::nullopt;
+using std::optional;
 using std::vector;
 
 using fmt::print;
@@ -38,6 +39,7 @@ auto main(int argc, char * argv[]) -> int
     po::options_description all_options{"All options"};
     all_options.add_options()                                                         //
         ("size", po::value<int>()->default_value(88), "Size of the problem to solve") //
+        ("lp", "Use LP justifications")                                               //
         ("all", "Find all solutions");
 
     all_options.add(display_options);
@@ -72,6 +74,11 @@ auto main(int argc, char * argv[]) -> int
     Problem p;
     int size = options_vars["size"].as<int>();
 
+    optional<LPJustificationOptions> USE_LP_JUST = nullopt;
+    if (options_vars.contains("lp")) {
+        USE_LP_JUST = make_optional(LPJustificationOptions{});
+    }
+
     vector<vector<IntegerVariableID>> g1, g2;
     vector<IntegerVariableID> g12;
     for (int x = 0; x < size; ++x) {
@@ -96,8 +103,8 @@ auto main(int argc, char * argv[]) -> int
             box1.emplace_back(g1[x][y]);
             box2.emplace_back(g2[x][y]);
         }
-        p.post(AllDifferent{box1});
-        p.post(AllDifferent{box2});
+        p.post(AllDifferent{box1, USE_LP_JUST});
+        p.post(AllDifferent{box2, USE_LP_JUST});
     }
 
     for (int y = 0; y < size; ++y) {
@@ -110,7 +117,7 @@ auto main(int argc, char * argv[]) -> int
         p.post(AllDifferent{box2});
     }
 
-    p.post(AllDifferent{g12});
+    p.post(AllDifferent{g12, USE_LP_JUST});
 
     // Normal form: first row of each square and first column of first square is 0 1 2 3 ...
     for (int x = 0; x < size; ++x) {

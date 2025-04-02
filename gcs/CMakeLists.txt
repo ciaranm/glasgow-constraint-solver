@@ -24,6 +24,7 @@ add_library(glasgow_constraint_solver
         constraints/count.cc
         constraints/element.cc
         constraints/equals.cc
+        constraints/global_cardinality.cc
         constraints/in.cc
         constraints/inverse.cc
         constraints/knapsack.cc
@@ -51,6 +52,7 @@ add_library(glasgow_constraint_solver
         innards/power.cc
         innards/proofs/bits_encoding.cc
         innards/proofs/emit_inequality_to.cc
+        innards/proofs/lp_justifier.cc
         innards/proofs/names_and_ids_tracker.cc
         innards/proofs/proof_error.cc
         innards/proofs/proof_logger.cc
@@ -63,6 +65,8 @@ add_library(glasgow_constraint_solver
         innards/state.cc
         innards/variable_id_utils.cc
         presolvers/auto_table.cc
+        # DELETE THIS
+        constraints/baby_tu.cc
 )
 
 include_directories(${CMAKE_SOURCE_DIR}/generator/src/generator/include)
@@ -75,6 +79,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 link_libraries(glasgow_constraint_solver)
 target_link_libraries(glasgow_constraint_solver PUBLIC fmt::fmt)
 target_link_libraries(glasgow_constraint_solver PRIVATE nlohmann_json::nlohmann_json)
+target_link_libraries(glasgow_constraint_solver PRIVATE highs)
 
 add_executable(solve_test solve_test.cc)
 target_link_libraries(solve_test PRIVATE Catch2::Catch2WithMain)
@@ -88,6 +93,7 @@ add_executable(comparison_test constraints/comparison_test.cc)
 add_executable(count_test constraints/count_test.cc)
 add_executable(element_test constraints/element_test.cc)
 add_executable(equals_test constraints/equals_test.cc)
+add_executable(global_cardinality_test constraints/global_cardinality_test.cc)
 add_executable(inverse_test constraints/inverse_test.cc)
 add_executable(knapsack_test constraints/knapsack_test.cc)
 add_executable(linear_test constraints/linear/linear_test.cc)
@@ -153,3 +159,5 @@ add_executable(bits_encoding_test innards/proofs/bits_encoding_test.cc)
 target_link_libraries(bits_encoding_test PRIVATE Catch2::Catch2WithMain)
 target_compile_definitions(bits_encoding_test PRIVATE CATCH_CONFIG_ENABLE_ALL_STRINGMAKERS=1)
 add_test(NAME bits_encoding_test COMMAND $<TARGET_FILE:bits_encoding_test>)
+
+

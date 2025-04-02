@@ -62,8 +62,8 @@ auto gcs::innards::propagate_plus(IntegerVariableID a, IntegerVariableID b, Inte
         LE
     };
 
-    auto justify = [&](Conclude c) -> JustifyExplicitly {
-        return JustifyExplicitly{
+    auto justify = [&](Conclude c) -> JustifyExplicitlyThenRUP {
+        return JustifyExplicitlyThenRUP{
             [c, sum_line, logger](const Reason & reason) {
                 if (! (c == Conclude::LE ? sum_line.first : sum_line.second))
                     return;

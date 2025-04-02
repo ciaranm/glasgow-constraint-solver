@@ -81,7 +81,7 @@ auto Element::install(Propagators & propagators, State & initial_state, ProofMod
                 }
 
             if (! supported)
-                inference.infer_not_equal(logger, idx, ival, JustifyExplicitly{[&](const Reason & reason) {
+                inference.infer_not_equal(logger, idx, ival, JustifyExplicitlyThenRUP{[&](const Reason & reason) {
                     // idx can't take the value ival because there's no intersection between vval and array[ival]
                     for (auto vval : state.each_value_immutable(vals[ival.raw_value]))
                         logger->emit_rup_proof_line_under_reason(reason,
@@ -106,7 +106,7 @@ auto Element::install(Propagators & propagators, State & initial_state, ProofMod
                             WeightedPseudoBooleanSum{} + 1_i * (var != val) + 1_i * (idx != i) >= 1_i, ProofLevel::Temporary);
                     });
                 };
-                inference.infer_not_equal(logger, var, val, JustifyExplicitly{justf}, generic_reason(state, all_vars));
+                inference.infer_not_equal(logger, var, val, JustifyExplicitlyThenRUP{justf}, generic_reason(state, all_vars));
             }
         }
 
@@ -173,7 +173,7 @@ auto ElementConstantArray::install(Propagators & propagators, State & initial_st
                     largest_seen = max(*largest_seen, this_val);
             }
 
-            auto just = JustifyExplicitly{
+            auto just = JustifyExplicitlyThenRUP{
                 [&](const Reason & reason) {
                     WeightedPseudoBooleanSum conditions;
                     state.for_each_value_immutable(idx, [&](Integer i) {
@@ -322,7 +322,7 @@ auto Element2DConstantArray::install(Propagators & propagators, State & initial_
                 }
             }
 
-            auto just = JustifyExplicitly{
+            auto just = JustifyExplicitlyThenRUP{
                 [&](const Reason & reason) {
                     WeightedPseudoBooleanSum conditions;
                     state.for_each_value_immutable(idx1, [&](Integer i1) {

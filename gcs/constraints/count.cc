@@ -129,7 +129,7 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
                 }
             };
             inference.infer(logger, how_many < how_many_is_less_than,
-                JustifyExplicitly{justf},
+                JustifyExplicitlyThenRUP{justf},
                 generic_reason(state, all_vars));
 
             // must have at least this many occurrences of the value of interest
@@ -170,7 +170,7 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
                             }
                         }
                     };
-                    inference.infer(logger, value_of_interest != voi, JustifyExplicitly{justf}, generic_reason(state, all_vars));
+                    inference.infer(logger, value_of_interest != voi, JustifyExplicitlyThenRUP{justf}, generic_reason(state, all_vars));
                 }
                 else if (how_many_must > state.upper_bound(how_many)) {
                     // unlike above, we don't need to help, because the equality flag will propagate
@@ -187,7 +187,7 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
 
             // what are the supports on possible values we've seen?
             if (lowest_how_many_must) {
-                auto just = JustifyExplicitly{
+                auto just = JustifyExplicitlyThenRUP{
                     [&](const Reason & reason) -> void {
                         state.for_each_value_while_immutable(value_of_interest, [&](Integer voi) -> bool {
                             logger->emit_rup_proof_line_under_reason(reason,
@@ -200,7 +200,7 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
             }
 
             if (highest_how_many_might) {
-                auto just = JustifyExplicitly{
+                auto just = JustifyExplicitlyThenRUP{
                     [&](const Reason & reason) -> void {
                         state.for_each_value_while_immutable(value_of_interest, [&](Integer voi) -> bool {
                             for (const auto & [idx, var] : enumerate(vars)) {

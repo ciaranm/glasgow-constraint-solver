@@ -3,7 +3,8 @@
 
 #include <gcs/constraint.hh>
 #include <gcs/innards/inference_tracker-fwd.hh>
-#include <gcs/innards/proofs/proof_logger.hh>
+#include <gcs/innards/proofs/lp_justifier.hh>
+#include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/variable_id.hh>
 
 #include <map>
@@ -19,7 +20,8 @@ namespace gcs
             const std::map<Integer, ProofLine> * const am1_value_constraint_numbers,
             const State & state,
             auto & inference_tracker,
-            ProofLogger * const logger) -> void;
+            ProofLogger * const logger,
+            LPJustifier * const lp_justifier = nullptr) -> void;
     }
 
     /**
@@ -32,9 +34,10 @@ namespace gcs
     {
     private:
         const std::vector<IntegerVariableID> _vars;
+        const std::optional<LPJustificationOptions> & _lp_justification_options;
 
     public:
-        explicit GACAllDifferent(std::vector<IntegerVariableID> vars);
+        explicit GACAllDifferent(std::vector<IntegerVariableID> vars, const std::optional<LPJustificationOptions> & l = std::nullopt);
 
         virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;

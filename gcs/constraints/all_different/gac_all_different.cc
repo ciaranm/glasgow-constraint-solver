@@ -2,13 +2,13 @@
 #include <gcs/constraints/all_different/gac_all_different.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/proofs/lp_justifier.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/innards/variable_id_utils.hh>
-
 #include <util/enumerate.hh>
 #include <util/overloaded.hh>
 
@@ -22,6 +22,9 @@
 #include <utility>
 #include <variant>
 
+// TODO: delete
+#include <iostream>
+
 using namespace gcs;
 using namespace gcs::innards;
 
@@ -31,6 +34,7 @@ using std::count;
 using std::decay_t;
 using std::function;
 using std::is_same_v;
+using std::make_optional;
 using std::make_shared;
 using std::map;
 using std::min;
@@ -45,14 +49,15 @@ using std::variant;
 using std::vector;
 using std::visit;
 
-GACAllDifferent::GACAllDifferent(vector<IntegerVariableID> v) :
-    _vars(move(v))
+GACAllDifferent::GACAllDifferent(vector<IntegerVariableID> v, const optional<LPJustificationOptions> & u) :
+    _vars(move(v)),
+    _lp_justification_options(u)
 {
 }
 
 auto GACAllDifferent::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<GACAllDifferent>(_vars);
+    return make_unique<GACAllDifferent>(_vars, _lp_justification_options);
 }
 
 namespace
@@ -180,7 +185,7 @@ namespace
         ProofLogger & logger,
         const vector<pair<Left, Right>> & edges,
         const vector<uint8_t> & left_covered,
-        const vector<optional<Right>> & matching) -> pair<JustifyExplicitly, Reason>
+        const vector<optional<Right>> & matching) -> pair<JustifyExplicitlyThenRUP, Reason>
     {
         vector<optional<Left>> inverse_matching(vals.size(), nullopt);
         for (const auto & [l, r] : enumerate(matching))
@@ -231,7 +236,7 @@ namespace
             if (hall_variables[v.offset])
                 hall_variable_ids.push_back(vars[v.offset]);
 
-        return pair{JustifyExplicitly{
+        return pair{JustifyExplicitlyThenRUP{
                         [&vars, &vals, &logger, constraint_numbers, hall_variables = move(hall_variables), hall_values = move(hall_values)](
                             const Reason &) -> void {
                             // we are going to need the at least one value variables
@@ -346,7 +351,7 @@ namespace
         }
         else {
             // a hall set is at work
-            return pair{JustifyExplicitly{
+            return pair{JustifyExplicitlyThenRUP{
                             [&vars, &vals, &logger, constraint_numbers, hall_left = move(hall_left), hall_right = move(hall_right)](const Reason &) {
                                 // we are going to need the at least one value variables
                                 vector<ProofLine> at_least_one_constraints;
@@ -381,7 +386,8 @@ auto gcs::innards::propagate_gac_all_different(
     const map<Integer, ProofLine> * const constraint_numbers,
     const State & state,
     auto & tracker,
-    ProofLogger * const logger) -> void
+    ProofLogger * const logger,
+    LPJustifier * const lp_justifier) -> void
 {
     // find a matching to check feasibility
     vector<pair<Left, Right>> edges;
@@ -400,8 +406,14 @@ auto gcs::innards::propagate_gac_all_different(
     if (cmp_not_equal(count(left_covered.begin(), left_covered.end(), 1), vars.size())) {
         // nope. we've got a maximum cardinality matching that leaves at least
         // one thing on the left uncovered.
-        auto [just, reason] = prove_matching_is_too_small(vars, vals, constraint_numbers, state, *logger, edges, left_covered, matching);
-        return tracker.infer(logger, FalseLiteral{}, just, reason);
+        if (lp_justifier) {
+            auto just = lp_justifier->compute_justification(state, *logger, WeightedPseudoBooleanSum{} >= 1_i);
+            return tracker.infer(logger, FalseLiteral{}, JustifyExplicitlyOnly{just}, {});
+        }
+        else {
+            auto [just, reason] = prove_matching_is_too_small(vars, vals, constraint_numbers, state, *logger, edges, left_covered, matching);
+            return tracker.infer(logger, FalseLiteral{}, just, reason);
+        }
     }
 
     // we have a matching that uses every variable. however, some edges may
@@ -554,19 +566,33 @@ auto gcs::innards::propagate_gac_all_different(
         representatives_for_scc[scc] = delete_value;
     }
 
+    vector<Literal> all_deletions = {};
+    WeightedPseudoBooleanSum deletions_sum = {};
+
     for (int scc = 0; scc < number_of_components; ++scc) {
         if (! representatives_for_scc[scc])
             continue;
 
-        auto [just, reason] = prove_deletion_using_sccs(vars, vals, constraint_numbers, state, *logger,
-            edges_out_from_variable, edges_out_from_value, *representatives_for_scc[scc], components);
-        tracker.infer_all(logger, deletions_by_scc[scc], just, reason);
+        if (lp_justifier) {
+            deletions_sum = WeightedPseudoBooleanSum{};
+            for (const auto & del : deletions_by_scc[scc])
+                deletions_sum += 1_i * del;
+
+            auto just = lp_justifier->compute_justification(state, *logger, deletions_sum >= Integer(deletions_by_scc[scc].size()));
+            tracker.infer_all(logger, deletions_by_scc[scc], JustifyExplicitlyOnly{just}, {});
+        }
+        else {
+            auto [just, reason] = prove_deletion_using_sccs(vars, vals, constraint_numbers, state, *logger,
+                edges_out_from_variable, edges_out_from_value, *representatives_for_scc[scc], components);
+            tracker.infer_all(logger, deletions_by_scc[scc], just, reason);
+        }
     }
 }
 
 auto GACAllDifferent::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
     shared_ptr<map<Integer, ProofLine>> constraint_numbers;
+    shared_ptr<LPJustifier> lp_justifier;
 
     auto sanitised_vars = move(_vars);
     sort(sanitised_vars.begin(), sanitised_vars.end());
@@ -576,9 +602,17 @@ auto GACAllDifferent::install(Propagators & propagators, State & initial_state, 
     }
 
     if (optional_model) {
-        constraint_numbers = make_shared<map<Integer, ProofLine>>();
+
+        if (_lp_justification_options) {
+            lp_justifier = make_shared<LPJustifier>(*_lp_justification_options);
+            lp_justifier->initialise_with_vars(initial_state, sanitised_vars, {});
+        }
+        else
+            constraint_numbers = make_shared<map<Integer, ProofLine>>();
+
         define_clique_not_equals_encoding(*optional_model, sanitised_vars);
-        propagators.install_initialiser([vars = sanitised_vars, constraint_numbers = constraint_numbers](
+
+        propagators.install_initialiser([vars = sanitised_vars, constraint_numbers = constraint_numbers, lp_justification_options = _lp_justification_options, lp_justifier = lp_justifier](
                                             const State & state, auto &, ProofLogger * const proof) -> void {
             auto max_upper = state.upper_bound(*max_element(vars.begin(), vars.end(), [&](const IntegerVariableID & v, const IntegerVariableID & w) {
                 return state.upper_bound(v) < state.upper_bound(w);
@@ -590,11 +624,15 @@ auto GACAllDifferent::install(Propagators & propagators, State & initial_state, 
             // for each value in at least two domains...
             for (Integer val = min_lower; val <= max_upper; ++val) {
                 // at most one variable can take it
+                auto am1_sum = WeightedPseudoBooleanSum{} + 1_i * ! (vars[0] == val);
+
                 stringstream step;
                 step << "p";
                 bool first = true;
                 int layer = 0;
                 for (unsigned i = 1; i < vars.size(); ++i) {
+                    am1_sum += 1_i * ! (vars[i] == val);
+
                     if (++layer >= 2)
                         step << " " << layer << " *";
 
@@ -609,8 +647,17 @@ auto GACAllDifferent::install(Propagators & propagators, State & initial_state, 
                     step << " " << (layer + 1) << " d";
                 }
 
-                if (layer != 0)
-                    constraint_numbers->emplace(val, proof->emit_proof_line(step.str(), ProofLevel::Top));
+                if (layer != 0) {
+                    if (lp_justification_options) {
+                        lp_justifier->add_pb_constraint(am1_sum >= Integer(vars.size()) - 1_i, [step_str = step.str()](ProofLogger & logger, const State &) {
+                            return logger.emit_proof_line(step_str, ProofLevel::Top);
+                        });
+                    }
+                    else {
+                        auto line = proof->emit_proof_line(step.str(), ProofLevel::Top);
+                        constraint_numbers->emplace(val, line);
+                    }
+                }
             }
         });
     }
@@ -627,9 +674,10 @@ auto GACAllDifferent::install(Propagators & propagators, State & initial_state, 
     propagators.install(
         [vars = move(sanitised_vars),
             vals = move(compressed_vals),
-            constraint_numbers = move(constraint_numbers)](const State & state, auto & inference,
+            constraint_numbers = move(constraint_numbers),
+            lp_justifier = move(lp_justifier)](const State & state, auto & inference,
             ProofLogger * const logger) -> PropagatorState {
-            propagate_gac_all_different(vars, vals, constraint_numbers.get(), state, inference, logger);
+            propagate_gac_all_different(vars, vals, constraint_numbers.get(), state, inference, logger, lp_justifier.get());
             return PropagatorState::Enable;
         },
         triggers, "alldiff");
@@ -641,7 +689,8 @@ template auto gcs::innards::propagate_gac_all_different(
     const std::map<Integer, ProofLine> * const am1_value_constraint_numbers,
     const State & state,
     SimpleInferenceTracker & inference_tracker,
-    ProofLogger * const logger) -> void;
+    ProofLogger * const logger,
+    LPJustifier * const lp_justifier = nullptr) -> void;
 
 template auto gcs::innards::propagate_gac_all_different(
     const std::vector<IntegerVariableID> & vars,
@@ -649,4 +698,5 @@ template auto gcs::innards::propagate_gac_all_different(
     const std::map<Integer, ProofLine> * const am1_value_constraint_numbers,
     const State & state,
     EagerProofLoggingInferenceTracker & inference_tracker,
-    ProofLogger * const logger) -> void;
+    ProofLogger * const logger,
+    LPJustifier * const lp_justifier = nullptr) -> void;

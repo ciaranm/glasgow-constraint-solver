@@ -17,30 +17,32 @@
 
 using namespace gcs;
 
+using fmt::print;
+using fmt::println;
 using std::cerr;
 using std::cout;
 using std::make_optional;
 using std::nullopt;
+using std::optional;
+using std::to_string;
 using std::vector;
-
-using fmt::print;
-using fmt::println;
-
 namespace po = boost::program_options;
 
 using namespace std::literals::string_literals;
 
 auto main(int argc, char * argv[]) -> int
 {
+
     po::options_description display_options{"Program options"};
     display_options.add_options()            //
         ("help", "Display help information") //
-        ("prove", "Create a proof") //
+        ("prove", "Create a proof")          //
         ("trace", "Trace progress");
 
     po::options_description all_options{"All options"};
     all_options.add_options()                 //
         ("xv", "Solve the xv puzzle instead") //
+        ("lp", "Use LP justifications")       //
         ("all", "Find all solutions");
 
     all_options.add(display_options);
@@ -82,6 +84,10 @@ auto main(int argc, char * argv[]) -> int
 
     vector<vector<int>> predef;
     vector<vector<NXV>> horizontal_xvs, vertical_xvs;
+    optional<LPJustificationOptions> USE_LP_JUST = nullopt;
+    if (options_vars.contains("lp")) {
+        USE_LP_JUST = make_optional(LPJustificationOptions{});
+    }
 
     if (options_vars.contains("xv")) {
         // https://www.youtube.com/watch?v=9ATC_uBF8ow
@@ -135,16 +141,16 @@ auto main(int argc, char * argv[]) -> int
     vector<vector<IntegerVariableID>> grid;
 
     for (int r = 0; r < n; ++r)
-        grid.emplace_back(p.create_integer_variable_vector(n, 1_i, Integer{n}, "grid"));
+        grid.emplace_back(p.create_integer_variable_vector(n, 1_i, Integer{n}, "grid" + to_string(r) + "_"));
 
     for (int r = 0; r < n; ++r)
-        p.post(AllDifferent{grid[r]});
+        p.post(AllDifferent{grid[r], USE_LP_JUST});
 
     for (int c = 0; c < n; ++c) {
         vector<IntegerVariableID> column;
         for (int r = 0; r < n; ++r)
             column.push_back(grid[r][c]);
-        p.post(AllDifferent{column});
+        p.post(AllDifferent{column, USE_LP_JUST});
     }
 
     for (int r = 0; r < size; ++r)
@@ -153,7 +159,7 @@ auto main(int argc, char * argv[]) -> int
             for (int rr = 0; rr < size; ++rr)
                 for (int cc = 0; cc < size; ++cc)
                     box.push_back(grid[r * size + rr][c * size + cc]);
-            p.post(AllDifferent{box});
+            p.post(AllDifferent{box, USE_LP_JUST});
         }
 
     for (int r = 0; r < n; ++r)

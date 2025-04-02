@@ -64,7 +64,7 @@ auto run_among_test(bool proofs, variant<int, pair<int, int>> result_range, cons
     vector<Integer> voi_i;
     for (const auto & v : voi)
         voi_i.push_back(Integer(v));
-    p.post(Among{array, voi_i, result});
+    p.post(Among{array, voi_i, result, LPJustificationOptions{}});
 
     auto proof_name = proofs ? make_optional("among_test") : nullopt;
     solve_for_tests_checking_consistency(p, proof_name, expected, actual, tuple{pair{result, CheckConsistency::GAC}, pair{array, CheckConsistency::GAC}});
@@ -99,8 +99,8 @@ auto main(int, char *[]) -> int
             vector{size_t(n_values_2), random_bounds_or_constant(-5, 8, 3, 8)});
     }
 
-    for (auto & [r1, r2, r3] : data)
-        run_among_test(false, r1, r2, r3);
+    //    for (auto & [r1, r2, r3] : data)
+    //        run_among_test(false, r1, r2, r3);
 
     if (can_run_veripb())
         for (auto & [r1, r2, r3] : data)

@@ -1,6 +1,6 @@
 {
     "id": "com.github.ciaranm.glasgow-constraint-solver",
-    "name": "Glasgow",
+    "name": "GlasgowDebug",
     "description": "The Glasgow Constraint Solver",
     "version": "0.0.0",
     "mznlib": "mznlib",
