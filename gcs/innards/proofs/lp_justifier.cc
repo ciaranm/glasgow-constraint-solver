@@ -304,28 +304,29 @@ auto LPJustifier::compute_justification(const State & state, ProofLogger & logge
 
     auto restr_row_count = 0;
     for (auto var_iter = _imp->dom_vars.begin(); var_iter != _imp->dom_vars.end(); ++var_iter) {
-        if (state.has_single_value(*var_iter)) {
-            // If there's only a single value actually do delete this.
-            auto val = *state.optional_single_value(*var_iter);
-            auto single_var_number = _imp->var_number[*var_iter == val];
-
-            // But modify the rhs since this literal became 1
-            // Since we ensured the matrix was Rowwise we can just iterate through the nonZeros
-            auto nz_from = _imp->model.lp_.a_matrix_.start_[single_var_number];
-            auto nz_to = _imp->model.lp_.a_matrix_.start_[single_var_number] - 1;
-            for (auto nz = nz_from; nz <= nz_to; ++nz) {
-                auto constr = _imp->model.lp_.a_matrix_.index_[nz];
-                rhs_updated[constr] -= _imp->model.lp_.a_matrix_.value_[nz];
-            }
-        }
-        else {
-            // Otherwise, preserve all the vals still in the domain
-            state.for_each_value(*var_iter, [&](Integer val) {
-                auto dont_delete = _imp->var_number[*var_iter == val];
-                mask[dont_delete] = 0;
-                new_row_num[dont_delete] = restr_row_count++;
-            });
-        }
+        // Commenting this part out because it was breaking something and I'm not sure it makes a big difference time-wise
+        //        if (state.has_single_value(*var_iter)) {
+        //            // If there's only a single value actually do delete this.
+        //            auto val = *state.optional_single_value(*var_iter);
+        //            auto single_var_number = _imp->var_number[*var_iter == val];
+        //
+        //            // But modify the rhs since this literal became 1
+        //            // Since we ensured the matrix was Rowwise we can just iterate through the nonZeros
+        //            auto nz_from = _imp->model.lp_.a_matrix_.start_[single_var_number];
+        //            auto nz_to = _imp->model.lp_.a_matrix_.start_[single_var_number] - 1;
+        //            for (auto nz = nz_from; nz <= nz_to; ++nz) {
+        //                auto constr = _imp->model.lp_.a_matrix_.index_[nz];
+        //                rhs_updated[constr] -= _imp->model.lp_.a_matrix_.value_[nz];
+        //            }
+        //        }
+        //        else {
+        // Otherwise, preserve all the vals still in the domain
+        state.for_each_value(*var_iter, [&](Integer val) {
+            auto dont_delete = _imp->var_number[*var_iter == val];
+            mask[dont_delete] = 0;
+            new_row_num[dont_delete] = restr_row_count++;
+        });
+        //        }
     }
 
     for (const auto & var : _imp->bound_vars) {
@@ -392,9 +393,9 @@ auto LPJustifier::compute_justification(const State & state, ProofLogger & logge
 
                     if (line == -1)
                         continue;
-                    //                    if (col > imp->cache_after)
-                    // TODO: Don't cache the bounds
-                    imp->known_proof_line_for_constraint.emplace(col, line);
+                    // Don't cache the bound var constraints
+                    if (imp->bound_vars.empty() || col < imp->upper_bound_constraint_num.at(imp->bound_vars[0]) || col > imp->upper_bound_constraint_num.at(imp->bound_vars.back()) + 1)
+                        imp->known_proof_line_for_constraint.emplace(col, line);
 
                     p_line << line << " ";
                 }
@@ -435,8 +436,12 @@ auto LPJustifier::compute_justification(const State & state, ProofLogger & logge
 
         if (count >= 2 || bounding_var) {
             // If there's only one constraint, no need to write a p line
+            if (inference.lhs.terms.empty())
+                logger.emit_proof_comment("Inferring contradiction.");
+
             logger.emit_proof_comment("Computed LP justification 2:");
-            logger.emit_proof_line(p_line.str(), ProofLevel::Current);
+            auto line = logger.emit_proof_line(p_line.str(), ProofLevel::Current);
+            std::cout << "";
         }
     };
 }

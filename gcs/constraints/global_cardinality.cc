@@ -12,6 +12,7 @@ using namespace gcs::innards;
 
 using std::make_shared;
 using std::make_unique;
+using std::map;
 using std::shared_ptr;
 using std::string;
 using std::to_string;
@@ -59,6 +60,8 @@ auto GlobalCardinalityBC::install(Propagators & propagators, State & initial_sta
         }
     }
 
+    vector<IntegerVariableID> all_vars = _vars;
+    all_vars.insert(all_vars.end(), _counts.begin(), _counts.end());
     Triggers triggers{};
     triggers.on_change.insert(triggers.on_change.end(), _vars.begin(), _vars.end());
     triggers.on_change.insert(triggers.on_change.end(), _counts.begin(), _counts.end());
@@ -74,15 +77,30 @@ auto GlobalCardinalityBC::install(Propagators & propagators, State & initial_sta
         [vars = move(_vars),
             vals = move(compressed_vals),
             counts = move(_counts),
+            all_vars = move(all_vars),
             lp_justifier_ptr = move(lp_justifier)](const State & state, auto & inference,
             ProofLogger * const logger) -> PropagatorState {
             LPJustifier * lp_justifier = lp_justifier_ptr.get();
+
+            auto actual_counts = map<Integer, long>();
+
+            // Out of interest, add an actual check
+            //            for (const auto & var : vars) {
+            //                if (state.has_single_value(var)) {
+            //                    actual_counts[*state.optional_single_value(var)] += 1;
+            //                }
+            //            }
+            //
+            //            for (unsigned int i = 0; i < vals.size(); i++) {
+            //                auto [lower, upper] = state.bounds(counts[i]);
+            //                if (actual_counts)
+            //            }
             // Probably very bad: attempt to get domain-consistency using the lp justifier
             // Ideally replace this with a flow propagator
             for (const auto & var : vars) {
                 auto contr = false;
-                if (state.has_single_value(var))
-                    continue;
+                //                if (state.has_single_value(var))
+                //                    continue;
 
                 state.for_each_value_while(var, [&](Integer val) {
                     auto [lower, lower_just] = lp_justifier->compute_bound_and_justification(state, *logger,
@@ -98,17 +116,29 @@ auto GlobalCardinalityBC::install(Propagators & propagators, State & initial_sta
                         return false;
                     }
                     else if (lower > 0_i) {
-
                         inference.infer(logger, var == val, JustifyExplicitlyOnly{lower_just}, {});
+                        if (state.has_single_value(var) && *state.optional_single_value(var) != val) {
+                            contr = true;
+                            return false;
+                        }
                     }
 
                     auto [upper, upper_just] = lp_justifier->compute_bound_and_justification(state, *logger,
                         WeightedPseudoBooleanSum{} + 1_i * (var == val));
 
-                    if (upper < 1_i) {
+                    if (upper < 0_i) {
+                        logger->emit_proof_comment("Inferred Contradiction!");
+                        auto just = lp_justifier->compute_justification(state, *logger, WeightedPseudoBooleanSum{} >= 1_i);
+                        inference.infer(logger, FalseLiteral{}, JustifyExplicitlyOnly{just}, {});
+                        contr = true;
+                        return false;
+                    }
+                    else if (upper < 1_i) {
                         inference.infer(logger, var != val, JustifyExplicitlyOnly{upper_just}, {});
-                        if (state.has_single_value(var)) {
-                            // Inferred contradiction
+                        if (state.has_single_value(var) && *state.optional_single_value(var) != val) {
+                            logger->emit_proof_comment("Inferred Contradiction!");
+                            auto just = lp_justifier->compute_justification(state, *logger, WeightedPseudoBooleanSum{} >= 1_i);
+                            inference.infer(logger, FalseLiteral{}, JustifyExplicitlyOnly{just}, {});
                             contr = true;
                             return false;
                         }
@@ -117,6 +147,8 @@ auto GlobalCardinalityBC::install(Propagators & propagators, State & initial_sta
                 });
 
                 if (contr) {
+                    logger->emit_proof_comment("Inferred Contradiction!");
+                    inference.contradiction(logger, JustifyUsingRUP{}, generic_reason(state, all_vars));
                     return PropagatorState::DisableUntilBacktrack;
                 }
             }
@@ -130,15 +162,21 @@ auto GlobalCardinalityBC::install(Propagators & propagators, State & initial_sta
                     WeightedPseudoBooleanSum{} + -1_i * count);
                 lower = -lower;
                 inference.infer(logger, count >= lower, JustifyExplicitlyOnly{lower_just}, {});
-                if (lower > prev_upper)
+                if (lower > prev_upper) {
+                    logger->emit_proof_comment("Inferred Contradiction!");
+                    inference.contradiction(logger, NoJustificationNeeded{}, {});
                     return PropagatorState::DisableUntilBacktrack;
+                }
 
                 auto [upper, upper_just] = lp_justifier->compute_bound_and_justification(state, *logger,
                     WeightedPseudoBooleanSum{} + 1_i * count);
 
                 inference.infer(logger, count < upper + 1_i, JustifyExplicitlyOnly{upper_just}, {});
-                if (lower > upper)
+                if (lower > upper) {
+                    logger->emit_proof_comment("Inferred Contradiction!");
+                    inference.contradiction(logger, NoJustificationNeeded{}, {});
                     return PropagatorState::DisableUntilBacktrack;
+                }
             }
             return PropagatorState::Enable;
         },

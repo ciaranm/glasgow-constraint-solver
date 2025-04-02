@@ -72,11 +72,13 @@ auto run_gcc_test(GCCTestInstance data, bool proof)
         proof ? make_optional(ProofOptions{"gcc_test"}) : nullopt);
 
     if (proof) {
-        system("veripb --trace --useColor gcc_test.opb gcc_test.pbp");
+        system("veripb --progressBar gcc_test.opb gcc_test.pbp");
     }
 }
 auto main(int, char *[]) -> int
 {
+    auto MAX_NUM_VARS = 20;
+
     auto test0 = GCCTestInstance{};
     test0.num_vars = 3;
     test0.num_vals = 3;
@@ -90,5 +92,14 @@ auto main(int, char *[]) -> int
     test1.count_ranges = {pair{0, 6}, pair{0, 6}, pair{0, 6}, pair{0, 6}};
 
     run_gcc_test(test0, true);
+    run_gcc_test(test1, true);
+
+    for (int num_vars = 3; num_vars < MAX_NUM_VARS; num_vars++) {
+        for (int num_vals = 2; num_vals < num_vars; num_vals++) {
+
+            auto test = GCCTestInstance{num_vars, num_vals, vector<pair<int, int>>(num_vars, pair{0, num_vals - 1}), vector<pair<int, int>>(num_vals, pair{0, num_vars})};
+            run_gcc_test(test, true);
+        }
+    }
     return EXIT_SUCCESS;
 }
