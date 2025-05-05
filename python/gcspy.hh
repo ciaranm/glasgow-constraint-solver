@@ -56,7 +56,7 @@ public:
         const std::optional<string> & proof_location = std::nullopt)
         -> std::unordered_map<string, unsigned long long int>; // Convert Stats struct to python dict via map
 
-    auto get_solution_value(const string &, const unsigned long long solution_number) -> std::optional<long long int>;
+    auto get_solution_value(const string &, const long long solution_number) -> std::optional<long long int>;
     auto get_proof_filename() -> string;
 
     /**
@@ -174,7 +174,6 @@ private:
         selected_vars.reserve(var_ids.size());
         for (const string & id : var_ids)
             selected_vars.push_back(get_var(id));
-
         return selected_vars;
     }
 

@@ -70,7 +70,7 @@ auto Python::minimise(const string & var_id) -> void
 auto Python::maximise(const string & var_id) -> void
 {
 #ifdef WRITE_API_CALLS
-    api_calls << "p.minimise(v" << var_id << ");" << endl;
+    api_calls << "p.maximise(v" << var_id << ");" << endl;
 #endif
     p.maximise(get_var(var_id));
 }
@@ -171,7 +171,7 @@ auto Python::solve(bool all_solutions,
                     return all_solutions; // Keep searching for solutions if all solutions
                 },
                 .completed = [&] { completed = true; }},
-            prove ? make_optional<ProofOptions>(*proof_location + "/" + *proof_name + ".opb", *proof_location + "/" + *proof_name + ".pbp") : nullopt,
+            prove ? make_optional<ProofOptions>(*proof_location + "/" + *proof_name) : nullopt,
             &abort_flag);
 
         if (timeout_thread.joinable()) {
@@ -212,13 +212,19 @@ auto Python::solve(bool all_solutions,
     }
 }
 
-auto Python::get_solution_value(const string & var_id, const unsigned long long solution_number = 0) -> std::optional<long long int>
+auto Python::get_solution_value(const string & var_id, const long long solution_number = -1) -> std::optional<long long int>
 {
 #ifdef WRITE_API_CALLS
     api_calls << "get_solution_value" << endl;
 #endif
+    auto var = get_var(var_id);
+    if (solution_values.empty()) return std::nullopt;
     try {
-        auto sol_val = solution_values[solution_number].at(get_var(var_id));
+        auto actual_solution_number = solution_number;
+        if (solution_number < 0) {
+            actual_solution_number = solution_values.size() + solution_number;
+        }
+        auto sol_val = solution_values[actual_solution_number].at(var);
         return sol_val;
     }
     catch (const std::out_of_range & e) {
@@ -601,10 +607,14 @@ auto Python::post_or(const vector<string> & var_ids) -> void
 {
 #ifdef WRITE_API_CALLS
     api_calls << "p.post(Or{{";
-    for (size_t i = 0; i < var_ids.size() - 1; ++i)
-        api_calls << "v" << var_ids[i] << ", ";
-    api_calls << "v" << var_ids.back() << "}});" << endl;
+    if (! var_ids.empty()) {
+        for (size_t i = 0; i < var_ids.size() - 1; ++i)
+            api_calls << "v" << var_ids[i] << ", ";
+        api_calls << "v" << var_ids.back();
+    }
+    api_calls << "}});" << endl;
 #endif
+
     p.post(Or{get_vars(var_ids)});
 }
 
@@ -753,7 +763,7 @@ PYBIND11_MODULE(gcspy, m)
             py::arg("prove") = false,
             py::arg("proof_name") = nullopt,
             py::arg("proof_location") = nullopt)
-        .def("get_solution_value", &Python::get_solution_value, py::arg("var_id"), py::arg("solution_number") = 0)
+        .def("get_solution_value", &Python::get_solution_value, py::arg("var_id"), py::arg("solution_number") = -1)
         .def("get_proof_filename", &Python::get_proof_filename)
 
         // Constraints

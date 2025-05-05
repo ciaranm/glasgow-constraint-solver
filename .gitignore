@@ -16,3 +16,4 @@ generator
 venv
 python/venv
 .venv
+.vscode
