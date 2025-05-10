@@ -13,11 +13,41 @@ using std::stringstream;
 using std::vector;
 
 auto gcs::innards::justify_all_different_hall_set_or_violator(
-        ProofLogger & logger,
-        const vector<IntegerVariableID> & hall_variables,
-        const vector<Integer> & hall_values,
-        const map<Integer, ProofLine> * const constraint_numbers) -> void
+    ProofLogger & logger,
+    const vector<IntegerVariableID> & all_variables,
+    const vector<IntegerVariableID> & hall_variables,
+    const vector<Integer> & hall_values,
+    map<Integer, ProofLine> & value_am1_constraint_numbers) -> void
 {
+    // we are going to need the am1s over values, if they don't exist yet
+    for (const auto & val : hall_values) {
+        if (value_am1_constraint_numbers.contains(val))
+            continue;
+
+        // at most one variable can take this value
+        stringstream step;
+        step << "p";
+        bool first = true;
+        int layer = 0;
+        for (unsigned i = 1; i < all_variables.size(); ++i) {
+            if (++layer >= 2)
+                step << " " << layer << " *";
+
+            for (unsigned j = 0; j < i; ++j) {
+                auto ne = logger.emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * ! (all_variables[i] == val) + 1_i * ! (all_variables[j] == val) >= 1_i, ProofLevel::Temporary);
+                step << " " << ne;
+                if (! first)
+                    step << " +";
+                first = false;
+            }
+
+            step << " " << (layer + 1) << " d";
+        }
+
+        if (layer != 0)
+            value_am1_constraint_numbers.emplace(val, logger.emit_proof_line(step.str(), ProofLevel::Top));
+    }
+
     // we are going to need the at least one value variables
     vector<ProofLine> at_least_one_constraints;
     for (const auto & var : hall_variables)
@@ -37,7 +67,7 @@ auto gcs::innards::justify_all_different_hall_set_or_violator(
 
     // and each value in the component can only be used once
     for (const auto & val : hall_values)
-        proof_step << " " << constraint_numbers->at(val) << " +";
+        proof_step << " " << value_am1_constraint_numbers.at(val) << " +";
 
     logger.emit_proof_line(proof_step.str(), ProofLevel::Current);
 }

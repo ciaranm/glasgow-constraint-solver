@@ -176,7 +176,7 @@ namespace
     auto prove_matching_is_too_small(
         const vector<IntegerVariableID> & vars,
         const vector<Integer> & vals,
-        const map<Integer, ProofLine> * const constraint_numbers,
+        map<Integer, ProofLine> & value_am1_constraint_numbers,
         const State & state,
         ProofLogger & logger,
         const vector<pair<Left, Right>> & edges,
@@ -238,8 +238,8 @@ namespace
                 hall_value_nrs.push_back(vals[v.offset]);
 
         return pair{JustifyExplicitly{
-                        [vars, vals, &logger, constraint_numbers, hall_variable_ids, hall_value_nrs](const Reason &) -> void {
-                            justify_all_different_hall_set_or_violator(logger, hall_variable_ids, hall_value_nrs, constraint_numbers);
+                        [vars, &logger, &value_am1_constraint_numbers, hall_variable_ids, hall_value_nrs](const Reason &) -> void {
+                            justify_all_different_hall_set_or_violator(logger, vars, hall_variable_ids, hall_value_nrs, value_am1_constraint_numbers);
                         }},
             generic_reason(state, hall_variable_ids)};
     }
@@ -260,7 +260,7 @@ namespace
     auto prove_deletion_using_sccs(
         const vector<IntegerVariableID> & vars,
         const vector<Integer> & vals,
-        const map<Integer, ProofLine> * const constraint_numbers,
+        map<Integer, ProofLine> & value_am1_constraint_numbers,
         const State & state,
         ProofLogger & logger,
         const vector<vector<Right>> & edges_out_from_variable,
@@ -334,11 +334,11 @@ namespace
                     hall_value_nrs.push_back(vals[v.offset]);
 
             return pair{JustifyExplicitly{
-                [vars, vals, &logger, constraint_numbers, hall_variable_ids, hall_value_nrs](
-                        const Reason &) -> void {
-                    justify_all_different_hall_set_or_violator(logger, hall_variable_ids, hall_value_nrs, constraint_numbers);
-                }},
-                   generic_reason(state, hall_variable_ids)};
+                            [vars, &logger, &value_am1_constraint_numbers, hall_variable_ids, hall_value_nrs](
+                                const Reason &) -> void {
+                                justify_all_different_hall_set_or_violator(logger, vars, hall_variable_ids, hall_value_nrs, value_am1_constraint_numbers);
+                            }},
+                generic_reason(state, hall_variable_ids)};
         }
     }
 }
@@ -346,7 +346,7 @@ namespace
 auto gcs::innards::propagate_gac_all_different(
     const vector<IntegerVariableID> & vars,
     const vector<Integer> & vals,
-    const map<Integer, ProofLine> * const constraint_numbers,
+    map<Integer, ProofLine> & value_am1_constraint_numbers,
     const State & state,
     auto & tracker,
     ProofLogger * const logger) -> void
@@ -368,7 +368,7 @@ auto gcs::innards::propagate_gac_all_different(
     if (cmp_not_equal(count(left_covered.begin(), left_covered.end(), 1), vars.size())) {
         // nope. we've got a maximum cardinality matching that leaves at least
         // one thing on the left uncovered.
-        auto [just, reason] = prove_matching_is_too_small(vars, vals, constraint_numbers, state, *logger, edges, left_covered, matching);
+        auto [just, reason] = prove_matching_is_too_small(vars, vals, value_am1_constraint_numbers, state, *logger, edges, left_covered, matching);
         return tracker.infer(logger, FalseLiteral{}, just, reason);
     }
 
@@ -526,7 +526,7 @@ auto gcs::innards::propagate_gac_all_different(
         if (! representatives_for_scc[scc])
             continue;
 
-        auto [just, reason] = prove_deletion_using_sccs(vars, vals, constraint_numbers, state, *logger,
+        auto [just, reason] = prove_deletion_using_sccs(vars, vals, value_am1_constraint_numbers, state, *logger,
             edges_out_from_variable, edges_out_from_value, *representatives_for_scc[scc], components);
         tracker.infer_all(logger, deletions_by_scc[scc], just, reason);
     }
@@ -534,7 +534,7 @@ auto gcs::innards::propagate_gac_all_different(
 
 auto GACAllDifferent::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
-    shared_ptr<map<Integer, ProofLine>> constraint_numbers;
+    shared_ptr<map<Integer, ProofLine>> value_am1_constraint_numbers;
 
     auto sanitised_vars = move(_vars);
     sort(sanitised_vars.begin(), sanitised_vars.end());
@@ -544,43 +544,8 @@ auto GACAllDifferent::install(Propagators & propagators, State & initial_state, 
     }
 
     if (optional_model) {
-        constraint_numbers = make_shared<map<Integer, ProofLine>>();
+        value_am1_constraint_numbers = make_shared<map<Integer, ProofLine>>();
         define_clique_not_equals_encoding(*optional_model, sanitised_vars);
-        propagators.install_initialiser([vars = sanitised_vars, constraint_numbers = constraint_numbers](
-                                            const State & state, auto &, ProofLogger * const proof) -> void {
-            auto max_upper = state.upper_bound(*max_element(vars.begin(), vars.end(), [&](const IntegerVariableID & v, const IntegerVariableID & w) {
-                return state.upper_bound(v) < state.upper_bound(w);
-            }));
-            auto min_lower = state.lower_bound(*min_element(vars.begin(), vars.end(), [&](const IntegerVariableID & v, const IntegerVariableID & w) {
-                return state.lower_bound(v) < state.lower_bound(w);
-            }));
-
-            // for each value in at least two domains...
-            for (Integer val = min_lower; val <= max_upper; ++val) {
-                // at most one variable can take it
-                stringstream step;
-                step << "p";
-                bool first = true;
-                int layer = 0;
-                for (unsigned i = 1; i < vars.size(); ++i) {
-                    if (++layer >= 2)
-                        step << " " << layer << " *";
-
-                    for (unsigned j = 0; j < i; ++j) {
-                        auto ne = proof->emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * ! (vars[i] == val) + 1_i * ! (vars[j] == val) >= 1_i, ProofLevel::Temporary);
-                        step << " " << ne;
-                        if (! first)
-                            step << " +";
-                        first = false;
-                    }
-
-                    step << " " << (layer + 1) << " d";
-                }
-
-                if (layer != 0)
-                    constraint_numbers->emplace(val, proof->emit_proof_line(step.str(), ProofLevel::Top));
-            }
-        });
     }
 
     Triggers triggers;
@@ -595,9 +560,9 @@ auto GACAllDifferent::install(Propagators & propagators, State & initial_state, 
     propagators.install(
         [vars = move(sanitised_vars),
             vals = move(compressed_vals),
-            constraint_numbers = move(constraint_numbers)](const State & state, auto & inference,
+            value_am1_constraint_numbers = move(value_am1_constraint_numbers)](const State & state, auto & inference,
             ProofLogger * const logger) -> PropagatorState {
-            propagate_gac_all_different(vars, vals, constraint_numbers.get(), state, inference, logger);
+            propagate_gac_all_different(vars, vals, *value_am1_constraint_numbers.get(), state, inference, logger);
             return PropagatorState::Enable;
         },
         triggers, "alldiff");
@@ -606,7 +571,7 @@ auto GACAllDifferent::install(Propagators & propagators, State & initial_state, 
 template auto gcs::innards::propagate_gac_all_different(
     const std::vector<IntegerVariableID> & vars,
     const std::vector<Integer> & vals,
-    const std::map<Integer, ProofLine> * const am1_value_constraint_numbers,
+    std::map<Integer, ProofLine> & value_am1_constraint_numbers,
     const State & state,
     SimpleInferenceTracker & inference_tracker,
     ProofLogger * const logger) -> void;
@@ -614,7 +579,7 @@ template auto gcs::innards::propagate_gac_all_different(
 template auto gcs::innards::propagate_gac_all_different(
     const std::vector<IntegerVariableID> & vars,
     const std::vector<Integer> & vals,
-    const std::map<Integer, ProofLine> * const am1_value_constraint_numbers,
+    std::map<Integer, ProofLine> & value_am1_constraint_numbers,
     const State & state,
     EagerProofLoggingInferenceTracker & inference_tracker,
     ProofLogger * const logger) -> void;
