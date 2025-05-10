@@ -1,5 +1,6 @@
 #include <gcs/constraints/all_different/encoding.hh>
 #include <gcs/constraints/all_different/gac_all_different.hh>
+#include <gcs/constraints/all_different/justify.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -231,33 +232,14 @@ namespace
             if (hall_variables[v.offset])
                 hall_variable_ids.push_back(vars[v.offset]);
 
+        vector<Integer> hall_value_nrs;
+        for (Right v{0}; v.offset != vals.size(); ++v.offset)
+            if (hall_values[v.offset])
+                hall_value_nrs.push_back(vals[v.offset]);
+
         return pair{JustifyExplicitly{
-                        [&vars, &vals, &logger, constraint_numbers, hall_variables = move(hall_variables), hall_values = move(hall_values)](
-                            const Reason &) -> void {
-                            // we are going to need the at least one value variables
-                            vector<ProofLine> at_least_one_constraints;
-                            for (Left v{0}; v.offset != vars.size(); ++v.offset)
-                                if (hall_variables[v.offset])
-                                    at_least_one_constraints.push_back(logger.names_and_ids_tracker().need_constraint_saying_variable_takes_at_least_one_value(vars[v.offset]));
-
-                            // each variable in the violator has to take at least one value that is
-                            // left in its domain...
-                            stringstream proof_step;
-                            proof_step << "p";
-                            bool first = true;
-                            for (auto & c : at_least_one_constraints) {
-                                proof_step << " " << c;
-                                if (! first)
-                                    proof_step << " +";
-                                first = false;
-                            }
-
-                            // and each value in the component can only be used once
-                            for (Right v{0}; v.offset != vals.size(); ++v.offset)
-                                if (hall_values[v.offset])
-                                    proof_step << " " << constraint_numbers->at(vals[v.offset]) << " +";
-
-                            logger.emit_proof_line(proof_step.str(), ProofLevel::Current);
+                        [vars, vals, &logger, constraint_numbers, hall_variable_ids, hall_value_nrs](const Reason &) -> void {
+                            justify_all_different_hall_set_or_violator(logger, hall_variable_ids, hall_value_nrs, constraint_numbers);
                         }},
             generic_reason(state, hall_variable_ids)};
     }
@@ -346,31 +328,17 @@ namespace
         }
         else {
             // a hall set is at work
+            vector<Integer> hall_value_nrs;
+            for (Right v{0}; v.offset != vals.size(); ++v.offset)
+                if (hall_right[v.offset])
+                    hall_value_nrs.push_back(vals[v.offset]);
+
             return pair{JustifyExplicitly{
-                            [&vars, &vals, &logger, constraint_numbers, hall_left = move(hall_left), hall_right = move(hall_right)](const Reason &) {
-                                // we are going to need the at least one value variables
-                                vector<ProofLine> at_least_one_constraints;
-                                for (Left v{0}; v.offset != vars.size(); ++v.offset)
-                                    if (hall_left[v.offset])
-                                        at_least_one_constraints.push_back(logger.names_and_ids_tracker().need_constraint_saying_variable_takes_at_least_one_value(vars[v.offset]));
-
-                                stringstream proof_step;
-                                proof_step << "p";
-                                bool first = true;
-                                for (auto & c : at_least_one_constraints) {
-                                    proof_step << " " << c;
-                                    if (! first)
-                                        proof_step << " +";
-                                    first = false;
-                                }
-
-                                for (Right v{0}; v.offset != vals.size(); ++v.offset)
-                                    if (hall_right[v.offset])
-                                        proof_step << " " << constraint_numbers->at(vals[v.offset]) << " +";
-
-                                logger.emit_proof_line(proof_step.str(), ProofLevel::Current);
-                            }},
-                generic_reason(state, hall_variable_ids)};
+                [vars, vals, &logger, constraint_numbers, hall_variable_ids, hall_value_nrs](
+                        const Reason &) -> void {
+                    justify_all_different_hall_set_or_violator(logger, hall_variable_ids, hall_value_nrs, constraint_numbers);
+                }},
+                   generic_reason(state, hall_variable_ids)};
         }
     }
 }

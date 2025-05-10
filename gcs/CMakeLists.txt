@@ -14,6 +14,7 @@ add_library(glasgow_constraint_solver
         constraints/abs/justify.cc
         constraints/all_different/encoding.cc
         constraints/all_different/gac_all_different.cc
+        constraints/all_different/justify.cc
         constraints/all_different/vc_all_different.cc
         constraints/among.cc
         constraints/arithmetic.cc
