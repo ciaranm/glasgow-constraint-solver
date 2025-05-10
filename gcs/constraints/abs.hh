@@ -2,6 +2,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_ABS_HH
 
 #include <gcs/constraint.hh>
+#include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/variable_id.hh>
 
 namespace gcs

@@ -1,4 +1,5 @@
 #include <gcs/constraints/abs.hh>
+#include <gcs/constraints/abs/justify.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
@@ -48,8 +49,7 @@ auto Abs::install(Propagators & propagators, State & initial_state,
     Triggers triggers{.on_change = {_v1, _v2}};
     propagators.install([v1 = _v1, v2 = _v2](
                             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-        // we're not dealing with bounds. remove from v1 any value whose absolute value
-        // isn't in v2's domain.
+        // remove from v1 any value whose absolute value isn't in v2's domain.
         for (const auto & val : state.each_value_mutable(v1))
             if (! state.in_domain(v2, abs(val))) {
                 inference.infer_not_equal(logger, v1, val, JustifyUsingRUP{}, Reason{[=]() { return Literals{v2 != abs(val)}; }});
@@ -58,13 +58,8 @@ auto Abs::install(Propagators & propagators, State & initial_state,
         // now remove from v2 any value whose +/-value isn't in v1's domain.
         for (const auto & val : state.each_value_mutable(v2)) {
             if (! state.in_domain(v1, val) && ! state.in_domain(v1, -val) && state.in_domain(v2, val)) {
-                auto just = [&](const Reason & reason) {
-                    // (v2 == val /\ v1 >= 0) -> v1 == val
-                    logger->emit_rup_proof_line_under_reason(reason,
-                        WeightedPseudoBooleanSum{} + 1_i * (v1 < 0_i) + 1_i * (v1 == val) + 1_i * (v2 != val) >= 1_i, ProofLevel::Temporary);
-                    // (v2 == val /\ v1 < 0) -> v1 == -val
-                    logger->emit_rup_proof_line_under_reason(reason,
-                        WeightedPseudoBooleanSum{} + 1_i * (v1 >= 0_i) + 1_i * (v1 != -val) + 1_i * (v2 != val) >= 1_i, ProofLevel::Temporary);
+                auto just = [v1, v2, val, logger](const Reason & reason) {
+                    justify_abs_hole(*logger, reason, v1, v2, val);
                 };
                 inference.infer_not_equal(logger, v2, val, JustifyExplicitly{just}, Reason{[=]() { return Literals{{v1 != val, v1 != -val}}; }});
             }
