@@ -36,36 +36,6 @@ auto LinearInequalityIff::clone() const -> unique_ptr<Constraint>
 
 namespace
 {
-    auto get_var(const PositiveOrNegative<SimpleIntegerVariableID> & cv) -> SimpleIntegerVariableID
-    {
-        return cv.variable;
-    }
-
-    auto get_var(const Weighted<SimpleIntegerVariableID> & cv) -> SimpleIntegerVariableID
-    {
-        return cv.variable;
-    }
-
-    auto get_var(const SimpleIntegerVariableID & cv) -> SimpleIntegerVariableID
-    {
-        return cv;
-    }
-
-    auto get_coeff(const PositiveOrNegative<SimpleIntegerVariableID> & cv) -> Integer
-    {
-        return cv.positive ? 1_i : -1_i;
-    }
-
-    auto get_coeff(const Weighted<SimpleIntegerVariableID> & cv) -> Integer
-    {
-        return cv.coefficient;
-    }
-
-    auto get_coeff(const SimpleIntegerVariableID &) -> Integer
-    {
-        return 1_i;
-    }
-
     auto justify_cond(const State & state, const auto & coeff_vars, ProofLogger & logger,
         const ProofLine & proof_line) -> void
     {

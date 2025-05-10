@@ -1,3 +1,4 @@
+#include <gcs/constraints/linear/justify.hh>
 #include <gcs/constraints/linear/propagate.hh>
 #include <gcs/constraints/linear/utils.hh>
 #include <gcs/innards/inference_tracker.hh>
@@ -36,36 +37,6 @@ namespace
         return ! b;
     }
 
-    auto get_var(const PositiveOrNegative<SimpleIntegerVariableID> & cv) -> SimpleIntegerVariableID
-    {
-        return cv.variable;
-    }
-
-    auto get_var(const Weighted<SimpleIntegerVariableID> & cv) -> SimpleIntegerVariableID
-    {
-        return cv.variable;
-    }
-
-    auto get_var(const SimpleIntegerVariableID & cv) -> SimpleIntegerVariableID
-    {
-        return cv;
-    }
-
-    auto get_coeff(const PositiveOrNegative<SimpleIntegerVariableID> & cv) -> Integer
-    {
-        return cv.positive ? 1_i : -1_i;
-    }
-
-    auto get_coeff(const Weighted<SimpleIntegerVariableID> & cv) -> Integer
-    {
-        return cv.coefficient;
-    }
-
-    auto get_coeff(const SimpleIntegerVariableID &) -> Integer
-    {
-        return 1_i;
-    }
-
     auto get_coeff_or_bool(const PositiveOrNegative<SimpleIntegerVariableID> & cv) -> bool
     {
         return cv.positive;
@@ -81,17 +52,20 @@ namespace
         return true;
     }
 
-    auto bounds_reason(const State & state, const auto & coeff_vars, const SimpleIntegerVariableID & var, bool invert,
+    auto bounds_reason(
+        const auto & coeff_vars,
+        const vector<pair<Integer, Integer>> & bounds,
+        const SimpleIntegerVariableID & var, bool invert,
         const optional<Literal> & add_to_reason) -> Reason
     {
         Literals reason;
-        for (const auto & cv : coeff_vars.terms) {
+        for (const auto & [idx, cv] : enumerate(coeff_vars.terms)) {
             if (get_var(cv) != var) {
                 if ((get_coeff(cv) < 0_i) != invert) {
-                    reason.emplace_back(get_var(cv) < state.upper_bound(get_var(cv)) + 1_i);
+                    reason.emplace_back(get_var(cv) < bounds[idx].second + 1_i);
                 }
                 else {
-                    reason.emplace_back(get_var(cv) >= state.lower_bound(get_var(cv)));
+                    reason.emplace_back(get_var(cv) >= bounds[idx].first);
                 }
             }
         }
@@ -122,62 +96,7 @@ namespace
         return Reason{[=]() { return reason; }};
     }
 
-    auto justify_bounds(const State & state, const auto & coeff_vars, const SimpleIntegerVariableID & change_var, ProofLogger & logger,
-        bool second_constraint_for_equality, const string & to_what, const optional<ProofLine> & proof_line) -> void
-    {
-        logger.emit_proof_comment("justifying integer linear inequality " + debug_string(IntegerVariableID{change_var}) + " " + to_what);
-
-        vector<pair<Integer, variant<ProofLine, XLiteral>>> terms_to_sum;
-        if (proof_line)
-            terms_to_sum.emplace_back(1_i, second_constraint_for_equality ? *proof_line + 1 : *proof_line);
-        else
-            throw UnexpectedException{"no proof line?"};
-
-        Integer change_var_coeff = 0_i;
-        for (const auto & cv : coeff_vars.terms) {
-            if (get_var(cv) == change_var) {
-                change_var_coeff = get_coeff(cv);
-                continue;
-            }
-
-            // the following line of logic is definitely correct until you inevitably
-            // discover otherwise
-            bool upper = (get_coeff(cv) < 0_i) != second_constraint_for_equality;
-
-            auto literal_defining_proof_line = logger.names_and_ids_tracker().need_pol_item_defining_literal(
-                upper ? get_var(cv) < state.upper_bound(get_var(cv) + 1_i) : get_var(cv) >= state.lower_bound(get_var(cv)));
-
-            terms_to_sum.emplace_back(abs(get_coeff(cv)), literal_defining_proof_line);
-        }
-
-        stringstream step;
-        step << "p";
-        bool first = true;
-        for (auto & c_and_l : terms_to_sum) {
-            overloaded{
-                [&](const XLiteral & l) {
-                    if (c_and_l.first == 1_i)
-                        step << " " << logger.names_and_ids_tracker().pb_file_string_for(l);
-                    else
-                        step << " " << logger.names_and_ids_tracker().pb_file_string_for(l) << " " << c_and_l.first << " *";
-                },
-                [&](const ProofLine & l) {
-                    if (c_and_l.first == 1_i)
-                        step << " " << l;
-                    else
-                        step << " " << l << " " << c_and_l.first << " *";
-                }}
-                .visit(c_and_l.second);
-            if (! first)
-                step << " +";
-            first = false;
-        }
-        if (change_var_coeff != 1_i)
-            step << " " << abs(change_var_coeff) << " d";
-        logger.emit_proof_line(step.str(), ProofLevel::Temporary);
-    }
-
-    auto infer(const State & state, auto & inference, ProofLogger * const logger,
+    auto infer(auto & inference, ProofLogger * const logger,
         const vector<pair<Integer, Integer>> & bounds, const auto & coeff_vars,
         int p, const SimpleIntegerVariableID & var, Integer remainder, const bool coeff, bool second_constraint_for_equality,
         const optional<ProofLine> & proof_line, const optional<Literal> & add_to_reason) -> void
@@ -185,26 +104,24 @@ namespace
         if (coeff) {
             if (bounds[p].second >= (1_i + remainder)) {
                 auto justf = [&](const Reason &) {
-                    justify_bounds(state, coeff_vars, var, *logger, second_constraint_for_equality,
-                        "< " + to_string((1_i + remainder).raw_value), proof_line);
+                    justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
                 };
                 inference.infer_less_than(logger, var, 1_i + remainder, JustifyExplicitly{justf},
-                    bounds_reason(state, coeff_vars, var, second_constraint_for_equality, add_to_reason));
+                    bounds_reason(coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason));
             }
         }
         else {
             if (bounds[p].first < -remainder) {
                 auto justf = [&](const Reason &) {
-                    justify_bounds(state, coeff_vars, var, *logger, second_constraint_for_equality,
-                        ">= " + to_string((-remainder).raw_value), proof_line);
+                    justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
                 };
                 inference.infer_greater_than_or_equal(logger, var, -remainder, JustifyExplicitly{justf},
-                    bounds_reason(state, coeff_vars, var, second_constraint_for_equality, add_to_reason));
+                    bounds_reason(coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason));
             }
         }
     }
 
-    auto infer(const State & state, auto & inference, ProofLogger * const logger,
+    auto infer(auto & inference, ProofLogger * const logger,
         const vector<pair<Integer, Integer>> & bounds, const auto & coeff_vars,
         int p, const SimpleIntegerVariableID & var, Integer remainder, const Integer coeff, bool second_constraint_for_equality,
         const optional<ProofLine> & proof_line, const optional<Literal> & add_to_reason) -> void
@@ -213,43 +130,39 @@ namespace
         if (coeff > 0_i && remainder >= 0_i) {
             if (bounds[p].second >= (1_i + remainder / coeff)) {
                 auto justf = [&](const Reason &) {
-                    justify_bounds(state, coeff_vars, var, *logger, second_constraint_for_equality,
-                        "< " + to_string((1_i + remainder / coeff).raw_value), proof_line);
+                    justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
                 };
                 inference.infer_less_than(logger, var, 1_i + remainder / coeff, JustifyExplicitly{justf},
-                    bounds_reason(state, coeff_vars, var, second_constraint_for_equality, add_to_reason));
+                    bounds_reason(coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason));
             }
         }
         else if (coeff > 0_i && remainder < 0_i) {
             auto div_with_rounding = -((-remainder + coeff - 1_i) / coeff);
             if (bounds[p].second >= 1_i + div_with_rounding) {
                 auto justf = [&](const Reason &) {
-                    justify_bounds(state, coeff_vars, var, *logger, second_constraint_for_equality,
-                        "< " + to_string((1_i + div_with_rounding).raw_value), proof_line);
+                    justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
                 };
                 inference.infer_less_than(logger, var, 1_i + div_with_rounding, JustifyExplicitly{justf},
-                    bounds_reason(state, coeff_vars, var, second_constraint_for_equality, add_to_reason));
+                    bounds_reason(coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason));
             }
         }
         else if (coeff < 0_i && remainder >= 0_i) {
             if (bounds[p].first < remainder / coeff) {
                 auto justf = [&](const Reason &) {
-                    justify_bounds(state, coeff_vars, var, *logger, second_constraint_for_equality,
-                        ">= " + to_string((remainder / coeff).raw_value), proof_line);
+                    justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
                 };
                 inference.infer_greater_than_or_equal(logger, var, remainder / coeff, JustifyExplicitly{justf},
-                    bounds_reason(state, coeff_vars, var, second_constraint_for_equality, add_to_reason));
+                    bounds_reason(coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason));
             }
         }
         else if (coeff < 0_i && remainder < 0_i) {
             auto div_with_rounding = (-remainder + -coeff - 1_i) / -coeff;
             if (bounds[p].first < div_with_rounding) {
                 auto justf = [&](const Reason &) {
-                    justify_bounds(state, coeff_vars, var, *logger, second_constraint_for_equality,
-                        ">= " + to_string((div_with_rounding).raw_value), proof_line);
+                    justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
                 };
                 inference.infer_greater_than_or_equal(logger, var, div_with_rounding, JustifyExplicitly{justf},
-                    bounds_reason(state, coeff_vars, var, second_constraint_for_equality, add_to_reason));
+                    bounds_reason(coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason));
             }
         }
         else
@@ -290,7 +203,7 @@ auto gcs::innards::propagate_linear(const auto & coeff_vars, Integer value, cons
             lower_without_me = lower_sum - ((get_coeff(cv) >= 0_i) ? (get_coeff(cv) * bounds[p].first) : (get_coeff(cv) * bounds[p].second));
         Integer remainder = value - lower_without_me;
 
-        infer(state, inference, logger, bounds, coeff_vars, p, get_var(cv), remainder, get_coeff_or_bool(cv),
+        infer(inference, logger, bounds, coeff_vars, p, get_var(cv), remainder, get_coeff_or_bool(cv),
             false, proof_line, add_to_reason);
         bounds[p] = state.bounds(get_var(cv)); // might be tighter than expected if we had holes
 
@@ -327,7 +240,7 @@ auto gcs::innards::propagate_linear(const auto & coeff_vars, Integer value, cons
 
             Integer inv_remainder = -value - inv_lower_without_me;
 
-            infer(state, inference, logger, bounds, coeff_vars, p, get_var(cv), inv_remainder, negate(get_coeff_or_bool(cv)),
+            infer(inference, logger, bounds, coeff_vars, p, get_var(cv), inv_remainder, negate(get_coeff_or_bool(cv)),
                 true, proof_line, add_to_reason);
             bounds[p] = state.bounds(get_var(cv)); // might be tighter than expected if we had holes
 

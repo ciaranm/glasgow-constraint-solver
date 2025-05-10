@@ -1,3 +1,6 @@
+#ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_LINEAR_PROPAGATE_HH
+#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_LINEAR_PROPAGATE_HH
+
 #include <gcs/constraints/linear/utils.hh>
 #include <gcs/expression.hh>
 #include <gcs/innards/inference_tracker-fwd.hh>
@@ -29,3 +32,5 @@ namespace gcs::innards
         ProofLogger * const logger,
         const std::vector<IntegerVariableID> & all_vars_for_reason) -> PropagatorState;
 }
+
+#endif

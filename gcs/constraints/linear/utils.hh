@@ -54,6 +54,36 @@ namespace gcs::innards
      * \ingroup Innards
      */
     [[nodiscard]] auto tidy_up_linear(const WeightedSum &) -> std::pair<TidiedUpLinear, Integer>;
+
+    [[nodiscard]] inline auto get_var(const PositiveOrNegative<SimpleIntegerVariableID> & cv) -> SimpleIntegerVariableID
+    {
+        return cv.variable;
+    }
+
+    [[nodiscard]] inline auto get_var(const Weighted<SimpleIntegerVariableID> & cv) -> SimpleIntegerVariableID
+    {
+        return cv.variable;
+    }
+
+    [[nodiscard]] inline auto get_var(const SimpleIntegerVariableID & cv) -> SimpleIntegerVariableID
+    {
+        return cv;
+    }
+
+    [[nodiscard]] inline auto get_coeff(const PositiveOrNegative<SimpleIntegerVariableID> & cv) -> Integer
+    {
+        return cv.positive ? 1_i : -1_i;
+    }
+
+    [[nodiscard]] inline auto get_coeff(const Weighted<SimpleIntegerVariableID> & cv) -> Integer
+    {
+        return cv.coefficient;
+    }
+
+    [[nodiscard]] inline auto get_coeff(const SimpleIntegerVariableID &) -> Integer
+    {
+        return 1_i;
+    }
 }
 
 #endif
