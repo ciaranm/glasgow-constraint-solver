@@ -143,8 +143,11 @@ auto ArrayMinMax::install(Propagators & propagators, State &, ProofModel * const
                     inference.infer(logger, *support_1 != val, JustifyExplicitly{[&](const Reason & reason) {
                         // first, show that the selector can't be true for anything other than the supporting variable
                         for (const auto & [idx, var] : enumerate(vars)) {
-                            if (var != *support_1)
+                            if (var != *support_1) {
+                                for (const auto & val : state.each_value_immutable(result))
+                                    logger->emit_rup_proof_line_under_reason(reason, WeightedPseudoBooleanSum{} + (1_i * ! selectors.at(idx)) + (1_i * (result != val)) >= 1_i, ProofLevel::Temporary);
                                 logger->emit_rup_proof_line_under_reason(reason, WeightedPseudoBooleanSum{} + (1_i * ! selectors.at(idx)) >= 1_i, ProofLevel::Temporary);
+                            }
                         }
                         // now fish out the supporting variable, and show that it has to have its selector true
                         for (const auto & [idx, var] : enumerate(vars)) {
