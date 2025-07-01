@@ -6,7 +6,10 @@
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
 
+#include <util/enumerate.hh>
+
 #include <algorithm>
+#include <string>
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -14,10 +17,11 @@ using namespace gcs::innards;
 using std::nullopt;
 using std::optional;
 using std::pair;
-using std::ranges::any_of;
 using std::string;
+using std::to_string;
 using std::unique_ptr;
 using std::vector;
+using std::ranges::any_of;
 
 ArrayMinMax::ArrayMinMax(vector<IntegerVariableID> vars, const IntegerVariableID result, bool min) :
     _vars(move(vars)),
@@ -31,7 +35,7 @@ auto ArrayMinMax::clone() const -> unique_ptr<Constraint>
     return make_unique<ArrayMinMax>(_vars, _result, _min);
 }
 
-auto ArrayMinMax::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
+auto ArrayMinMax::install(Propagators & propagators, State &, ProofModel * const optional_model) && -> void
 {
     if (_vars.empty())
         throw UnexpectedException{"not sure how min and max are defined over an empty array"};
@@ -40,7 +44,29 @@ auto ArrayMinMax::install(Propagators & propagators, State & initial_state, Proo
     for (const auto & v : _vars)
         triggers.on_change.emplace_back(v);
 
-    propagators.install([vars = _vars, result = _result, min = _min](
+    vector<ProofFlag> selectors;
+    if (optional_model) {
+        // (for min) each var >= result, i.e. var - result >= 0
+        for (const auto & v : _vars) {
+            optional_model->add_constraint("ArrayMinMax", "result compared to value", WeightedPseudoBooleanSum{} + (_min ? 1_i : -1_i) * v + (_min ? -1_i : 1_i) * _result >= 0_i, nullopt);
+        }
+
+        WeightedPseudoBooleanSum al1_selector;
+
+        // (for min) f_i <-> var[i] <= result, i.e. var - result <= 0
+        for (const auto & [id, var] : enumerate(_vars)) {
+            auto selector = optional_model->create_proof_flag("arrayminmax" + to_string(id));
+            selectors.push_back(selector);
+            optional_model->add_constraint("ArrayMinMax", "result is this value", WeightedPseudoBooleanSum{} + (_min ? 1_i : -1_i) * var + (_min ? -1_i : 1_i) * _result <= 0_i, {{selector}});
+            optional_model->add_constraint("ArrayMinMax", "result is this value", WeightedPseudoBooleanSum{} + (_min ? 1_i : -1_i) * var + (_min ? -1_i : 1_i) * _result >= 1_i, {{! selector}});
+            al1_selector += 1_i * selector;
+        }
+
+        // sum f_i >= 1
+        optional_model->add_constraint("ArrayMinMax", "result is one of the values", al1_selector >= 1_i);
+    }
+
+    propagators.install([vars = _vars, result = _result, min = _min, selectors = selectors](
                             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
         // result <= upper bound of each vars
         for (auto & var : vars) {
@@ -74,7 +100,14 @@ auto ArrayMinMax::install(Propagators & propagators, State & initial_state, Proo
                 Literals reason;
                 for (auto & var : vars)
                     reason.emplace_back(var != value);
-                inference.infer_not_equal(logger, result, value, JustifyUsingRUP{}, Reason{[=]() { return reason; }});
+
+                inference.infer_not_equal(logger, result, value, JustifyExplicitly{[logger, result, value, &selectors](const Reason & reason) {
+                    // show that none of the selectors work, if we're taking the result to be that value and also
+                    // that the value is missing from all of the vars
+                    for (const auto & sel : selectors)
+                        logger->emit_rup_proof_line_under_reason(reason, WeightedPseudoBooleanSum{} + (1_i * ! sel) + (1_i * (result != value)) >= 1_i, ProofLevel::Temporary);
+                }},
+                    Reason{[=]() { return reason; }});
             }
         }
 
@@ -94,6 +127,8 @@ auto ArrayMinMax::install(Propagators & propagators, State & initial_state, Proo
         if (! support_1)
             throw UnexpectedException{"missing support, bug in MinMaxArray propagator"};
         else if (! support_2) {
+            // no, there's only a single var left that has any intersection with result. so, that
+            // variable has to lose any values not present in result.
             Literals reason = generic_reason(state, vector{result})();
 
             for (auto & var : vars) {
@@ -105,28 +140,24 @@ auto ArrayMinMax::install(Propagators & propagators, State & initial_state, Proo
 
             for (const auto & val : state.each_value_mutable(*support_1))
                 if (! state.in_domain(result, val))
-                    inference.infer(logger, *support_1 != val, JustifyUsingRUP{}, Reason{[=]() { return reason; }});
+                    inference.infer(logger, *support_1 != val, JustifyExplicitly{[&](const Reason & reason) {
+                        // first, show that the selector can't be true for anything other than the supporting variable
+                        for (const auto & [idx, var] : enumerate(vars)) {
+                            if (var != *support_1)
+                                logger->emit_rup_proof_line_under_reason(reason, WeightedPseudoBooleanSum{} + (1_i * ! selectors.at(idx)) >= 1_i, ProofLevel::Temporary);
+                        }
+                        // now fish out the supporting variable, and show that it has to have its selector true
+                        for (const auto & [idx, var] : enumerate(vars)) {
+                            if (var == *support_1)
+                                logger->emit_rup_proof_line_under_reason(reason, WeightedPseudoBooleanSum{} + (1_i * (*support_1 == val)) + (1_i * selectors.at(idx)) >= 1_i, ProofLevel::Temporary);
+                        }
+                    }},
+                        Reason{[=]() { return reason; }});
         }
 
         return PropagatorState::Enable;
     },
         triggers, "array min max");
-
-    if (optional_model) {
-        // result <= each var
-        for (const auto & v : _vars) {
-            optional_model->add_constraint("ArrayMinMax", "result compared to value", WeightedPseudoBooleanSum{} + (_min ? -1_i : 1_i) * v + (_min ? 1_i : -1_i) * _result <= 0_i, nullopt);
-        }
-
-        // result == i -> i in vars
-        for (auto val : initial_state.each_value_immutable(_result)) {
-            Literals lits{{_result != val}};
-            for (auto & v : _vars)
-                if (initial_state.in_domain(v, val))
-                    lits.emplace_back(v == val);
-            optional_model->add_constraint("ArrayMinMax", "result is in vars", move(lits));
-        }
-    }
 }
 
 Min::Min(const IntegerVariableID v1, const IntegerVariableID v2, const IntegerVariableID result) :
