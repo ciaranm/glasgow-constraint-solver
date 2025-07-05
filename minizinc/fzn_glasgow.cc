@@ -96,6 +96,7 @@ namespace
         unordered_map<string, vector<Integer>> constant_arrays;
         unordered_map<string, pair<vector<IntegerVariableID>, bool>> variable_arrays;
         list<vector<Integer>> unnamed_constant_arrays;
+        list<vector<IntegerVariableID>> arrays_to_keep;
         vector<IntegerVariableID> branch_variables, all_variables;
     };
 
@@ -349,7 +350,7 @@ auto main(int argc, char * argv[]) -> int
                 auto array = arg_as_array_of_integer(data, args, 1);
                 const auto & var = arg_as_var(data, args, 2);
 
-                problem.post(ElementConstantArray{var, idx - 1_i, array});
+                problem.post(ElementConstantArray{var, {idx, 1_i}, array});
             }
             else if (id == "array_int_maximum" || id == "array_int_minimum") {
                 const auto & var = arg_as_var(data, args, 0);
@@ -361,10 +362,10 @@ auto main(int argc, char * argv[]) -> int
             }
             else if (id == "array_var_int_element" || id == "array_var_bool_element") {
                 const auto & idx = arg_as_var(data, args, 0);
-                auto array = arg_as_array_of_var(data, args, 1);
+                auto array = data.arrays_to_keep.insert(data.arrays_to_keep.end(), arg_as_array_of_var(data, args, 1));
                 const auto & var = arg_as_var(data, args, 2);
 
-                problem.post(Element{var, idx - 1_i, array});
+                problem.post(Element{var, {idx, 1_i}, &*array});
             }
             else if (id == "int_abs") {
                 const auto & var1 = arg_as_var(data, args, 0);

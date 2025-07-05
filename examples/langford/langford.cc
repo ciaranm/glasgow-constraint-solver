@@ -82,8 +82,8 @@ auto main(int argc, char * argv[]) -> int
 
     for (int i = 0; i < k; ++i) {
         auto i_var = p.create_integer_variable(Integer{i + 1}, Integer{i + 1});
-        p.post(Element{i_var, position[i], solution});
-        p.post(Element{i_var, position[i + k], solution});
+        p.post(Element{i_var, position[i], &solution});
+        p.post(Element{i_var, position[i + k], &solution});
 
         // position[i + k] = position[i] + i + 2
         p.post(PlusGAC{position[i + k], constant_variable(Integer{i + 2}), position[i]});

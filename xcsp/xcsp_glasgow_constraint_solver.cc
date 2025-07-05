@@ -536,7 +536,7 @@ struct ParserCallbacks : XCSP3CoreCallbacks
         auto m = mapping.find(index->id);
         need_variable(problem, m->second, index->id);
 
-        problem.post(Element{constant_variable(Integer{value}), *get<0>(m->second), vars});
+        problem.post(Element{constant_variable(Integer{value}), *get<0>(m->second), &vars});
     }
 
     virtual auto buildConstraintElement(string, vector<int> & vals,
@@ -557,7 +557,7 @@ struct ParserCallbacks : XCSP3CoreCallbacks
         auto n = mapping.find(value->id);
         need_variable(problem, n->second, value->id);
 
-        problem.post(Element{*get<0>(n->second), *get<0>(m->second), vars});
+        problem.post(Element{*get<0>(n->second), *get<0>(m->second), &vars});
     }
 
     virtual auto buildObjectiveMinimize(ExpressionObjective type, vector<XVariable *> & x_vars, vector<int> & coeffs) -> void override

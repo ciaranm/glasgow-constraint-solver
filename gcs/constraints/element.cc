@@ -13,6 +13,7 @@
 #include <util/enumerate.hh>
 
 #include <algorithm>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <set>
@@ -22,368 +23,493 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::array;
+using std::function;
 using std::make_shared;
 using std::max;
 using std::min;
 using std::optional;
 using std::pair;
+using std::set;
 using std::shared_ptr;
 using std::unique_ptr;
 using std::vector;
 using std::visit;
 
-Element::Element(IntegerVariableID var, IntegerVariableID idx, vector<IntegerVariableID> vals) :
-    _var(var),
-    _idx(idx),
-    _vals(move(vals))
+namespace
 {
-}
+    template <typename T_>
+    auto check_array_dimensions(const vector<vector<T_>> & v, size_t expected) -> void;
 
-auto Element::clone() const -> unique_ptr<Constraint>
-{
-    return make_unique<Element>(_var, _idx, _vals);
-}
-
-auto Element::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
-{
-    if (_vals.empty()) {
-        propagators.model_contradiction(initial_state, optional_model, "Element constraint with no values");
-        return;
+    template <typename T_>
+    auto check_array_dimensions(const vector<T_> & v, size_t expected) -> void
+    {
+        if (v.size() != expected)
+            throw UnexpectedException{"didn't get a regularly sized array for element constraint"};
     }
 
-    propagators.trim_lower_bound(initial_state, optional_model, _idx, 0_i, "Element");
-    propagators.trim_upper_bound(initial_state, optional_model, _idx, Integer(_vals.size()) - 1_i, "Element");
+    template <typename T_>
+    auto check_array_dimensions(const vector<vector<T_>> & v, size_t expected) -> void
+    {
+        if (v.size() != expected)
+            throw UnexpectedException{"didn't get a regularly sized array for element constraint"};
+
+        for (const auto & vv : v) {
+            check_array_dimensions(vv, v.at(0).size());
+        }
+    }
+}
+
+template <typename EntryType_, unsigned dimensions_>
+NDimensionalElement<EntryType_, dimensions_>::NDimensionalElement(IntegerVariableID var, IndexVariables i, IndexStarts s, Array * a, bool b) :
+    _result_var(var),
+    _index_vars(move(i)),
+    _index_starts(move(s)),
+    _array(a),
+    _bounds_only(b)
+{
+    check_array_dimensions(*_array, _array->size());
+}
+
+namespace
+{
+    template <unsigned dims_remaining_, typename T_>
+    auto get_dimension_size(unsigned desired_dim, const T_ & vec) -> size_t
+    {
+        if (0 == desired_dim)
+            return vec.size();
+        else {
+            if constexpr (dims_remaining_ < 2)
+                throw UnexpectedException{"NDimensionalElement dimension fetching code is broken"};
+            else
+                return get_dimension_size<dims_remaining_ - 1>(desired_dim - 1, vec.at(0));
+        }
+    }
+
+    auto as_integer_variable(const IntegerVariableID & var) -> IntegerVariableID
+    {
+        return var;
+    }
+
+    auto as_integer_variable(const Integer & i) -> IntegerVariableID
+    {
+        return ConstantIntegerVariableID{i};
+    }
+
+    template <unsigned dims_remaining_, typename T_>
+    auto get_array_var(const vector<size_t> & indices, const T_ & vec, size_t current_index = 0) -> IntegerVariableID
+    {
+        if constexpr (1 == dims_remaining_) {
+            return as_integer_variable(vec.at(indices.at(current_index)));
+        }
+        else if constexpr (0 == dims_remaining_) {
+            throw UnexpectedException{"NDimensionalElement element fetching code is broken"};
+        }
+        else {
+            return get_array_var<dims_remaining_ - 1>(indices, vec.at(indices.at(current_index)), current_index + 1);
+        }
+    }
+
+    template <typename T_>
+    auto any_array_variable_is_nonconstant(const State & initial_state, const vector<vector<T_>> & vec) -> bool;
+
+    template <typename T_>
+    auto any_array_variable_is_nonconstant(const State & initial_state, const vector<T_> & vec) -> bool
+    {
+        return any_of(vec.begin(), vec.end(), [&](const auto & v) { return ! initial_state.has_single_value(as_integer_variable(v)); });
+    }
+
+    template <typename T_>
+    auto any_array_variable_is_nonconstant(const State & initial_state, const vector<vector<T_>> & vec) -> bool
+    {
+        for (const auto & v : vec)
+            if (any_array_variable_is_nonconstant(initial_state, v))
+                return true;
+        return false;
+    }
+}
+
+template <typename EntryType_, unsigned dimensions_>
+auto NDimensionalElement<EntryType_, dimensions_>::install(innards::Propagators & propagators, innards::State & initial_state, innards::ProofModel * const optional_model) && -> void
+{
+    for (const auto & [i, var] : enumerate(_index_vars)) {
+        auto s = Integer(get_dimension_size<dimensions_>(i, *_array));
+        if (0_i == s) {
+            propagators.model_contradiction(initial_state, optional_model, "NDimensionalElement constraint with no values");
+            return;
+        }
+
+        propagators.trim_lower_bound(initial_state, optional_model, var, _index_starts.at(i), "NDimensionalElement");
+        propagators.trim_upper_bound(initial_state, optional_model, var, _index_starts.at(i) + s - 1_i, "NDimensionalElement");
+    }
 
     if (optional_model) {
-        for (const auto & [val_idx, val] : enumerate(_vals))
-            if (initial_state.in_domain(_idx, Integer(val_idx))) {
-                // idx == val_idx -> var == vals[val_idx]
-                optional_model->add_constraint("Element", "equality", WeightedPseudoBooleanSum{} + 1_i * _var + -1_i * val == 0_i,
-                    HalfReifyOnConjunctionOf{_idx == Integer(val_idx)});
-            }
-    }
+        HalfReifyOnConjunctionOf reif;
+        vector<size_t> elem;
 
-    Triggers triggers{.on_change = {_idx, _var}};
-    triggers.on_change.insert(triggers.on_change.end(), _vals.begin(), _vals.end());
-    vector<IntegerVariableID> all_vars = _vals;
-    all_vars.push_back(_var);
-    all_vars.push_back(_idx);
-
-    propagators.install([all_vars = move(all_vars), idx = _idx, var = _var, vals = _vals](
-                            const State & state, auto & inference, ProofLogger * const logger) mutable -> PropagatorState {
-        // update idx to only contain possible indices
-        for (auto ival : state.each_value_mutable(idx)) {
-            bool supported = false;
-            for (auto vval : state.each_value_immutable(vals[ival.raw_value]))
-                if (state.in_domain(var, vval)) {
-                    supported = true;
-                    break;
+        function<auto(unsigned)->void> build_implication_constraints = [&](unsigned d) {
+            auto s = get_dimension_size<dimensions_>(d, *_array);
+            for (size_t x = 0; x != s; ++x) {
+                reif.push_back(_index_vars.at(d) == Integer(x) + _index_starts.at(d));
+                elem.push_back(x);
+                if (elem.size() == dimensions_) {
+                    // this still works out fine if the variable is actually a constant
+                    auto array_var = get_array_var<dimensions_>(elem, *_array);
+                    optional_model->add_constraint("NDimensionalElement", "equality",
+                        WeightedPseudoBooleanSum{} + (1_i * _result_var) + (-1_i * array_var) == 0_i, reif);
                 }
-
-            if (! supported)
-                inference.infer_not_equal(logger, idx, ival, JustifyExplicitly{[&](const Reason & reason) {
-                    // idx can't take the value ival because there's no intersection between vval and array[ival]
-                    for (auto vval : state.each_value_immutable(vals[ival.raw_value]))
-                        logger->emit_rup_proof_line_under_reason(reason,
-                            WeightedPseudoBooleanSum{} + 1_i * (vals[ival.raw_value] != vval) + 1_i * (idx != ival) >= 1_i, ProofLevel::Temporary);
-                }},
-                    generic_reason(state, all_vars));
-        }
-
-        // update var to only contain supported values
-        for (auto val : state.each_value_mutable(var)) {
-            bool supported = false;
-            for (auto v : state.each_value_immutable(idx))
-                if (state.in_domain(vals[v.raw_value], val)) {
-                    supported = true;
-                    break;
+                else {
+                    build_implication_constraints(d + 1);
                 }
-
-            if (! supported) {
-                auto justf = [&](const Reason & reason) {
-                    state.for_each_value_immutable(idx, [&](Integer i) {
-                        logger->emit_rup_proof_line_under_reason(reason,
-                            WeightedPseudoBooleanSum{} + 1_i * (var != val) + 1_i * (idx != i) >= 1_i, ProofLevel::Temporary);
-                    });
-                };
-                inference.infer_not_equal(logger, var, val, JustifyExplicitly{justf}, generic_reason(state, all_vars));
+                elem.pop_back();
+                reif.pop_back();
             }
-        }
-
-        // if idx has only one value, force that val
-        auto idx_is = state.optional_single_value(idx);
-        if (idx_is) {
-            for (auto val : state.each_value_mutable(vals[idx_is->raw_value]))
-                if (! state.in_domain(var, val))
-                    inference.infer_not_equal(logger, vals[idx_is->raw_value], val, JustifyUsingRUP{}, generic_reason(state, all_vars));
-        }
-
-        return PropagatorState::Enable;
-    },
-        triggers, "element index");
-}
-
-ElementConstantArray::ElementConstantArray(IntegerVariableID var, IntegerVariableID idx, vector<Integer> * vals) :
-    _var(var),
-    _idx(idx),
-    _vals(vals)
-{
-}
-
-auto ElementConstantArray::clone() const -> unique_ptr<Constraint>
-{
-    return make_unique<ElementConstantArray>(_var, _idx, _vals);
-}
-
-auto ElementConstantArray::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
-{
-    if (_vals->empty()) {
-        propagators.model_contradiction(initial_state, optional_model, "ElementConstantArray constraint with no values");
-        return;
+        };
+        build_implication_constraints(0);
     }
 
-    propagators.trim_lower_bound(initial_state, optional_model, _idx, 0_i, "ElementConstantArray");
-    propagators.trim_upper_bound(initial_state, optional_model, _idx, Integer(_vals->size()) - 1_i, "ElementConstantArray");
+    auto array_has_nonconstants = any_array_variable_is_nonconstant(initial_state, *_array);
 
-    if (optional_model) {
-        for (const auto & [idx, v] : enumerate(*_vals))
-            if (initial_state.in_domain(_idx, Integer(idx)))
-                optional_model->add_constraint("ElementConstantArray", "equality", {_idx != Integer(idx), _var == v});
+    vector<IntegerVariableID> all_array_vars;
+    {
+        vector<size_t> elem;
+        function<auto(unsigned)->void> collect_array_variables = [&](unsigned d) {
+            auto s = get_dimension_size<dimensions_>(d, *_array);
+            for (size_t x = 0; x != s; ++x) {
+                elem.push_back(x);
+                if (elem.size() == dimensions_) {
+                    auto array_var = get_array_var<dimensions_>(elem, *_array);
+                    all_array_vars.emplace_back(array_var);
+                }
+                else {
+                    collect_array_variables(d + 1);
+                }
+                elem.pop_back();
+            }
+        };
+        if (array_has_nonconstants)
+            collect_array_variables(0);
     }
 
-    Triggers triggers{
-        .on_change = {_idx},
-        .on_bounds = {_var}};
+    for (unsigned fixed_dim = 0; fixed_dim != _index_vars.size(); ++fixed_dim) {
+        Triggers index_triggers;
+        if (array_has_nonconstants) {
+            if (_bounds_only)
+                index_triggers.on_bounds.insert(index_triggers.on_change.end(), all_array_vars.begin(), all_array_vars.end());
+            else
+                index_triggers.on_change.insert(index_triggers.on_change.end(), all_array_vars.begin(), all_array_vars.end());
+        }
 
-    vector<IntegerVariableID> all_vars{_idx, _var};
-    visit([&](auto & _idx) {
-        propagators.install([all_vars = all_vars, idx = _idx, var = _var, vals = _vals](
+        if (_bounds_only)
+            index_triggers.on_bounds.emplace_back(_result_var);
+        else
+            index_triggers.on_change.emplace_back(_result_var);
+
+        for (const auto & [idx, var] : enumerate(_index_vars))
+            if (idx != fixed_dim)
+                index_triggers.on_change.emplace_back(var);
+
+        propagators.install([array = _array, index_vars = _index_vars, index_starts = _index_starts, result_var = _result_var, fixed_dim = fixed_dim,
+                                array_has_nonconstants = array_has_nonconstants, bounds_only = _bounds_only](
                                 const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-            optional<Integer> smallest_seen, largest_seen;
-            for (const auto & i : state.each_value_immutable(idx)) {
-                auto this_val = vals->at(i.raw_value);
-                if (! smallest_seen)
-                    smallest_seen = this_val;
-                else
-                    smallest_seen = min(*smallest_seen, this_val);
+            // for each index variable, update it to only contain values where
+            // there's at least one supporting option
+            for (const auto & test_val : state.each_value_mutable(index_vars.at(fixed_dim))) {
+                auto looking_for = state.copy_of_values(result_var);
+                auto looking_for_bounds = state.bounds(result_var);
 
-                if (! largest_seen)
-                    largest_seen = this_val;
-                else
-                    largest_seen = max(*largest_seen, this_val);
-            }
+                vector<size_t> elem;
+                vector<IntegerVariableID> explored_vars;
+                explored_vars.push_back(result_var);
+                function<auto(unsigned)->bool> look_for_support = [&](unsigned d) -> bool {
+                    // we're iterating over every dimension recursively, except for the one where
+                    // we're checking support for the fixed test_val.
+                    auto do_it_with = [&](Integer x) {
+                        elem.push_back(x.raw_value - index_starts.at(d).raw_value);
+                        if (elem.size() == dimensions_) {
+                            auto array_var = get_array_var<dimensions_>(elem, *array);
+                            if (array_has_nonconstants)
+                                explored_vars.push_back(array_var);
 
-            auto just = JustifyExplicitly{
-                [&](const Reason & reason) {
-                    WeightedPseudoBooleanSum conditions;
-                    state.for_each_value_immutable(idx, [&](Integer i) {
-                        conditions += 1_i * (var == (*vals)[i.raw_value]);
-                    });
+                            if (bounds_only) {
+                                if (state.lower_bound(array_var) >= looking_for_bounds.first && state.upper_bound(array_var) <= looking_for_bounds.second)
+                                    return true;
+                            }
+                            else {
+                                if (looking_for.contains_any_of(state.copy_of_values(array_var)))
+                                    return true;
+                            }
+                        }
+                        else {
+                            if (look_for_support(d + 1))
+                                return true;
+                        }
+                        elem.pop_back();
+                        return false;
+                    };
 
-                    state.for_each_value_immutable(idx, [&](Integer i) {
-                        logger->emit_rup_proof_line_under_reason(reason, conditions + 1_i * (idx == i) >= 1_i, ProofLevel::Temporary);
-                    });
+                    if (d == fixed_dim)
+                        return do_it_with(test_val);
+                    else {
+                        explored_vars.push_back(index_vars.at(d));
+                        for (const auto & x : state.each_value_immutable(index_vars.at(d)))
+                            if (do_it_with(x))
+                                return true;
 
-                    logger->emit_rup_proof_line_under_reason(reason, conditions >= 1_i, ProofLevel::Temporary);
-                }};
+                        return false;
+                    }
+                };
 
-            inference.infer_greater_than_or_equal(logger, var, *smallest_seen, just, generic_reason(state, all_vars));
-            inference.infer_less_than(logger, var, *largest_seen + 1_i, just, generic_reason(state, all_vars));
+                if (! look_for_support(0)) {
+                    inference.infer_not_equal(logger, index_vars.at(fixed_dim), test_val, JustifyExplicitly{[&](const Reason & reason) {
+                        // show there's no overlap between array_var and result, for any way the other
+                        // index vars are assigned
+                        vector<size_t> elem;
+                        WeightedPseudoBooleanSum sum_so_far;
+                        function<auto(unsigned)->void> show_no_support = [&](unsigned d) -> void {
+                            // again, we're iterating over every dimension recursively, except for the one where
+                            // we're checking support for the fixed test_val.
+                            auto do_it_with = [&](Integer x) {
+                                elem.push_back(x.raw_value - index_starts.at(d).raw_value);
 
-            auto bounds = state.bounds(var);
+                                if (elem.size() == dimensions_) {
+                                    auto array_var = get_array_var<dimensions_>(elem, *array);
+                                    if (bounds_only && array_has_nonconstants) {
+                                        throw UnimplementedException{};
+                                    }
+                                    else {
+                                        for (const auto & v : state.each_value_immutable(array_var))
+                                            logger->emit_rup_proof_line_under_reason(reason,
+                                                sum_so_far + 1_i * (index_vars.at(fixed_dim) != test_val) + 1_i * (array_var != v) >= 1_i, ProofLevel::Temporary);
+                                    }
+                                }
+                                else
+                                    show_no_support(d + 1);
 
-            for (auto i : state.each_value_mutable(idx)) {
-                auto this_val = vals->at(i.raw_value);
-                if (this_val < bounds.first || this_val > bounds.second)
-                    inference.infer(logger, idx != i, JustifyUsingRUP{}, generic_reason(state, all_vars));
+                                elem.pop_back();
+                            };
+
+                            if (d == fixed_dim)
+                                return do_it_with(test_val);
+                            else {
+                                for (const auto & x : state.each_value_immutable(index_vars.at(d))) {
+                                    auto save_sum_so_far = sum_so_far;
+                                    sum_so_far += 1_i * (index_vars.at(d) != x);
+                                    do_it_with(x);
+                                    logger->emit_rup_proof_line_under_reason(reason,
+                                        sum_so_far + 1_i * (index_vars.at(fixed_dim) != test_val) >= 1_i,
+                                        ProofLevel::Temporary);
+                                    sum_so_far = save_sum_so_far;
+                                }
+                            }
+                        };
+
+                        show_no_support(0);
+                    }},
+                        generic_reason(state, explored_vars));
+                }
             }
 
             return PropagatorState::Enable;
         },
-            triggers, "element const array var bounds");
-    },
-        _idx);
-}
-
-Element2DConstantArray::Element2DConstantArray(IntegerVariableID var, IntegerVariableID idx1,
-    IntegerVariableID idx2, vector<vector<Integer>> * vals) :
-    _var(var),
-    _idx1(idx1),
-    _idx2(idx2),
-    _vals(vals)
-{
-    if (! _vals->empty())
-        for (const auto & v : *_vals)
-            if (v.size() != _vals->begin()->size())
-                throw UnexpectedException{"didn't get a rectangular 2d array, not sure what to do"};
-}
-
-auto Element2DConstantArray::clone() const -> unique_ptr<Constraint>
-{
-    return make_unique<Element2DConstantArray>(_var, _idx1, _idx2, _vals);
-}
-
-auto Element2DConstantArray::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
-{
-    if (_vals->empty() || _vals->begin()->empty()) {
-        propagators.model_contradiction(initial_state, optional_model, "Element2DConstantArray constraint with no values");
-        return;
+            index_triggers, "NDimensionalElement index");
     }
 
-    propagators.trim_lower_bound(initial_state, optional_model, _idx1, 0_i, "Element2DConstantArray");
-    propagators.trim_upper_bound(initial_state, optional_model, _idx1, Integer(_vals->size()) - 1_i, "Element2DConstantArray");
+    if (_bounds_only) {
+        Triggers result_triggers;
+        if (array_has_nonconstants)
+            result_triggers.on_bounds.insert(result_triggers.on_change.end(), all_array_vars.begin(), all_array_vars.end());
+        result_triggers.on_change.insert(result_triggers.on_change.end(), _index_vars.begin(), _index_vars.end());
+        result_triggers.on_bounds.emplace_back(_result_var);
 
-    propagators.trim_lower_bound(initial_state, optional_model, _idx2, 0_i, "Element2DConstantArray");
-    propagators.trim_upper_bound(initial_state, optional_model, _idx2, Integer(_vals->begin()->size()) - 1_i, "Element2DConstantArray");
+        propagators.install([array = _array, index_vars = _index_vars, index_starts = _index_starts, result_var = _result_var, array_has_nonconstants = array_has_nonconstants](
+                                const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            // bounds only, so the result variable has to be in the range
+            // (rather than the union) of possible values
+            vector<size_t> elem;
+            optional<Integer> lowest_found, highest_found;
+            auto current_bounds = state.bounds(result_var);
+            vector<IntegerVariableID> considered_vars;
+            function<auto(unsigned)->void> collect_supported_bounds = [&](unsigned d) {
+                for (const auto & x : state.each_value_immutable(index_vars.at(d))) {
+                    if (lowest_found && *lowest_found <= current_bounds.first && highest_found && *highest_found >= current_bounds.second)
+                        return;
 
-    if (optional_model) {
-        for (const auto & [idx1, vv] : enumerate(*_vals))
-            if (initial_state.in_domain(_idx1, Integer(idx1)))
-                for (const auto & [idx2, v] : enumerate(vv))
-                    if (initial_state.in_domain(_idx2, Integer(idx2)))
-                        optional_model->add_constraint("Element2DConstantArray", "equality", {_idx1 != Integer(idx1), _idx2 != Integer(idx2), _var == v});
-    }
-
-    Triggers triggers{
-        .on_change = {_idx1, _idx2},
-        .on_bounds = {_var}};
-
-    vector<IntegerVariableID> all_vars;
-    all_vars.push_back(_idx1);
-    all_vars.push_back(_idx2);
-    all_vars.push_back(_var);
-
-    optional<SimpleIntegerVariableID> idxsel;
-    if (optional_model) {
-        idxsel = initial_state.allocate_integer_variable_with_state(0_i, Integer(_vals->size() * _vals->begin()->size()));
-    }
-
-    propagators.install_initialiser([idx1 = _idx1, idx2 = _idx2, idxsel = *idxsel, vals = _vals](
-                                        const State & state, auto &, ProofLogger * const logger) -> void {
-        // turn 2d index into 1d index in proof
-        if (logger) {
-            for (auto i = 0_i, i_end = Integer(vals->size() * vals->begin()->size()); i != i_end; ++i)
-                logger->names_and_ids_tracker().create_literals_for_introduced_variable_value(idxsel, i, "element2didx");
-
-            for (const auto & i1 : state.each_value_immutable(idx1)) {
-                for (const auto & i2 : state.each_value_immutable(idx2)) {
-                    Integer idx = i1 * Integer(vals->size()) + i2;
-                    logger->emit_red_proof_line(WeightedPseudoBooleanSum{} +
-                                2_i * ! (idxsel == idx) + 1_i * (idx1 == i1) + 1_i * (idx2 == i2) >=
-                            2_i,
-                        {{idxsel == idx, FalseLiteral{}}}, ProofLevel::Top);
-                    logger->emit_red_proof_line(WeightedPseudoBooleanSum{} +
-                                1_i * (idxsel == idx) + 1_i * (idx1 != i1) + 1_i * (idx2 != i2) >=
-                            1_i,
-                        {{idxsel == idx, TrueLiteral{}}}, ProofLevel::Top);
+                    elem.push_back(x.raw_value - index_starts.at(d).raw_value);
+                    if (elem.size() == dimensions_) {
+                        auto array_var = get_array_var<dimensions_>(elem, *array);
+                        if (array_has_nonconstants)
+                            considered_vars.push_back(array_var);
+                        auto array_var_bounds = state.bounds(array_var);
+                        if (current_bounds.second >= array_var_bounds.first && current_bounds.first <= array_var_bounds.second) {
+                            lowest_found = lowest_found ? min(*lowest_found, array_var_bounds.first) : array_var_bounds.first;
+                            highest_found = highest_found ? max(*highest_found, array_var_bounds.second) : array_var_bounds.second;
+                        }
+                    }
+                    else {
+                        collect_supported_bounds(d + 1);
+                    }
+                    elem.pop_back();
                 }
-            }
+            };
+            collect_supported_bounds(0);
 
-            WeightedPseudoBooleanSum trail;
-            for (Integer v = 0_i, v_end = Integer(vals->size() * vals->begin()->size()); v != v_end; ++v)
-                trail += 1_i * (idxsel == v);
-
-            for (const auto & i1 : state.each_value_immutable(idx1)) {
-                for (const auto & i2 : state.each_value_immutable(idx2)) {
-                    WeightedPseudoBooleanSum expr = trail;
-                    expr += 1_i * (idx1 != i1);
-                    expr += 1_i * (idx2 != i2);
-                    logger->emit_rup_proof_line(expr >= 1_i, ProofLevel::Temporary);
-                };
-                WeightedPseudoBooleanSum expr = trail;
-                expr += 1_i * (idx1 != i1);
-                logger->emit_rup_proof_line(expr >= 1_i, ProofLevel::Temporary);
+            auto infer_bound = [&](Integer relevant_bound, bool ge) {
+                auto lit_to_infer = ge ? (result_var >= relevant_bound) : (result_var < relevant_bound + 1_i);
+                Literals reason;
+                auto idx_reason = generic_reason(state, index_vars)();
+                reason.insert(reason.end(), idx_reason.begin(), idx_reason.end());
+                for (const auto & var : considered_vars)
+                    reason.push_back(ge ? (var >= relevant_bound) : (var < relevant_bound + 1_i));
+                reason.push_back(result_var >= current_bounds.first);
+                reason.push_back(result_var < current_bounds.second + 1_i);
+                inference.infer(logger, lit_to_infer, JustifyExplicitly{[&](const Reason & reason) {
+                    // show that it doesn't work for any feasible choice of indices
+                    WeightedPseudoBooleanSum sum_so_far;
+                    function<auto(unsigned)->void> rule_out = [&](unsigned d) {
+                        for (const auto & v : state.each_value_immutable(index_vars.at(d))) {
+                            if (d + 1 == dimensions_)
+                                logger->emit_rup_proof_line_under_reason(reason,
+                                    sum_so_far + 1_i * lit_to_infer + 1_i * (index_vars.at(d) != v) >= 1_i,
+                                    ProofLevel::Temporary);
+                            else {
+                                auto save_sum_so_far = sum_so_far;
+                                sum_so_far += 1_i * (index_vars.at(d) != v);
+                                rule_out(d + 1);
+                                sum_so_far = save_sum_so_far;
+                            }
+                        }
+                        if (! sum_so_far.terms.empty()) {
+                            logger->emit_rup_proof_line_under_reason(reason,
+                                sum_so_far + 1_i * lit_to_infer >= 1_i,
+                                ProofLevel::Temporary);
+                        }
+                    };
+                    rule_out(0);
+                }},
+                    Reason{[=]() { return reason; }});
             };
 
-            WeightedPseudoBooleanSum expr;
-            for (Integer v = 0_i, v_end = Integer(vals->size() * vals->begin()->size()); v != v_end; ++v)
-                expr += 1_i * (idxsel == v);
-            logger->emit_rup_proof_line(expr >= 1_i, ProofLevel::Top);
-        }
-    });
+            if (lowest_found && *lowest_found > current_bounds.first)
+                infer_bound(*lowest_found, true);
 
-    visit([&](auto & _idx1, auto & _idx2) {
-        propagators.install([all_vars = move(all_vars), idx1 = _idx1, idx2 = _idx2, var = _var, vals = _vals](
+            if (highest_found && *highest_found < current_bounds.second)
+                infer_bound(*highest_found, false);
+
+            return PropagatorState::Enable;
+        },
+            result_triggers, "NDimensionalElement");
+    }
+    else {
+        Triggers result_triggers;
+        if (array_has_nonconstants)
+            result_triggers.on_change.insert(result_triggers.on_change.end(), all_array_vars.begin(), all_array_vars.end());
+        result_triggers.on_change.insert(result_triggers.on_change.end(), _index_vars.begin(), _index_vars.end());
+
+        propagators.install([array = _array, index_vars = _index_vars, index_starts = _index_starts, result_var = _result_var, array_has_nonconstants = array_has_nonconstants](
                                 const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-            // find smallest and largest possible values, for bounds on the var
-            optional<Integer> smallest_seen, largest_seen;
-            for (const auto & i1 : state.each_value_immutable(idx1)) {
-                for (const auto & i2 : state.each_value_immutable(idx2)) {
-                    auto this_val = vals->at(i1.raw_value).at(i2.raw_value);
-                    if (! smallest_seen)
-                        smallest_seen = this_val;
-                    else
-                        smallest_seen = min(*smallest_seen, this_val);
+            // the result variable has to be in the union of possible values
+            vector<size_t> elem;
+            IntervalSet<Integer> still_to_find_support_for = state.copy_of_values(result_var);
+            vector<IntegerVariableID> considered_vars;
+            function<auto(unsigned)->void> collect_supported_values = [&](unsigned d) {
+                for (const auto & x : state.each_value_immutable(index_vars.at(d))) {
+                    if (still_to_find_support_for.empty())
+                        return;
 
-                    if (! largest_seen)
-                        largest_seen = this_val;
-                    else
-                        largest_seen = max(*largest_seen, this_val);
-                }
-            }
-
-            auto just = JustifyExplicitly{
-                [&](const Reason & reason) {
-                    WeightedPseudoBooleanSum conditions;
-                    state.for_each_value_immutable(idx1, [&](Integer i1) {
-                        state.for_each_value_immutable(idx2, [&](Integer i2) {
-                            conditions += 1_i * (var == (*vals)[i1.raw_value][i2.raw_value]);
-                        });
-                    });
-
-                    state.for_each_value_immutable(idx1, [&](Integer i1) {
-                        state.for_each_value_immutable(idx2, [&](Integer i2) {
-                            WeightedPseudoBooleanSum expr = conditions;
-                            expr += 1_i * (idx1 != i1);
-                            expr += 1_i * (idx2 != i2);
-                            logger->emit_rup_proof_line_under_reason(reason, expr >= 1_i, ProofLevel::Temporary);
-                        });
-                        WeightedPseudoBooleanSum expr = conditions;
-                        expr += 1_i * (idx1 != i1);
-                        logger->emit_rup_proof_line_under_reason(reason, expr >= 1_i, ProofLevel::Temporary);
-                    });
-
-                    logger->emit_rup_proof_line_under_reason(reason, conditions >= 1_i, ProofLevel::Temporary);
-                }};
-
-            auto reason = generic_reason(state, all_vars);
-            inference.infer_greater_than_or_equal(logger, var, *smallest_seen, just, reason);
-            inference.infer_less_than(logger, var, *largest_seen + 1_i, just, reason);
-
-            auto bounds = state.bounds(var);
-
-            // check each idx1 has a suitable element
-            for (auto i1 : state.each_value_mutable(idx1)) {
-                bool suitable_idx2_found = false;
-                for (auto i2 : state.each_value_immutable(idx2)) {
-                    auto this_val = vals->at(i1.raw_value).at(i2.raw_value);
-                    if (this_val >= bounds.first && this_val <= bounds.second) {
-                        suitable_idx2_found = true;
-                        break;
+                    elem.push_back(x.raw_value - index_starts.at(d).raw_value);
+                    if (elem.size() == dimensions_) {
+                        auto array_var = get_array_var<dimensions_>(elem, *array);
+                        if (array_has_nonconstants)
+                            considered_vars.push_back(array_var);
+                        for (const auto & v : state.each_value_immutable(array_var))
+                            still_to_find_support_for.erase(v);
                     }
-                }
-
-                if (! suitable_idx2_found)
-                    inference.infer(logger, idx1 != i1, JustifyUsingRUP{}, generic_reason(state, all_vars));
-            }
-
-            // check each idx2 has a suitable element
-            for (auto i2 : state.each_value_mutable(idx2)) {
-                bool suitable_idx1_found = false;
-                for (auto i1 : state.each_value_immutable(idx1)) {
-                    auto this_val = vals->at(i1.raw_value).at(i2.raw_value);
-                    if (this_val >= bounds.first && this_val <= bounds.second) {
-                        suitable_idx1_found = true;
-                        break;
+                    else {
+                        collect_supported_values(d + 1);
                     }
+                    elem.pop_back();
                 }
-                if (! suitable_idx1_found)
-                    inference.infer(logger, idx2 != i2, JustifyUsingRUP{}, generic_reason(state, all_vars));
+            };
+            collect_supported_values(0);
+
+            for (auto value : still_to_find_support_for.each()) {
+                Literals reason = generic_reason(state, index_vars)();
+                for (const auto & var : considered_vars)
+                    reason.push_back(var != value);
+                inference.infer_not_equal(logger, result_var, value, JustifyExplicitly{[&](const Reason & reason) {
+                    // show that it doesn't work for any feasible choice of indices
+                    WeightedPseudoBooleanSum sum_so_far;
+                    function<auto(unsigned)->void> rule_out = [&](unsigned d) {
+                        for (const auto & v : state.each_value_immutable(index_vars.at(d))) {
+                            if (d + 1 == dimensions_)
+                                logger->emit_rup_proof_line_under_reason(reason,
+                                    sum_so_far + 1_i * (result_var != value) + 1_i * (index_vars.at(d) != v) >= 1_i,
+                                    ProofLevel::Temporary);
+                            else {
+                                auto save_sum_so_far = sum_so_far;
+                                sum_so_far += 1_i * (index_vars.at(d) != v);
+                                rule_out(d + 1);
+                                sum_so_far = save_sum_so_far;
+                            }
+                        }
+                        if (! sum_so_far.terms.empty()) {
+                            logger->emit_rup_proof_line_under_reason(reason,
+                                sum_so_far + 1_i * (result_var != value) >= 1_i,
+                                ProofLevel::Temporary);
+                        }
+                    };
+                    rule_out(0);
+                }},
+                    Reason{[=]() { return reason; }});
             }
 
             return PropagatorState::Enable;
         },
-            triggers, "element 2d const array var bounds");
-    },
-        _idx1, _idx2);
+            result_triggers, "NDimensionalElement");
+    }
+
+    if (array_has_nonconstants) {
+        Triggers equality_triggers;
+        equality_triggers.on_change.insert(equality_triggers.on_change.end(), _index_vars.begin(), _index_vars.end());
+        equality_triggers.on_change.emplace_back(_result_var);
+        propagators.install([array = _array, index_vars = _index_vars, index_starts = _index_starts, result_var = _result_var](
+                                const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            // if there's only a single possible array variable left, it can only take values
+            // that are present in the result variable
+            bool index_is_fully_defined = true;
+            vector<size_t> elem;
+            Literals index_reason;
+            for (const auto & [p, i] : enumerate(index_vars)) {
+                auto v = state.optional_single_value(i);
+                if (! v) {
+                    index_is_fully_defined = false;
+                    break;
+                }
+                elem.push_back(v->raw_value - index_starts.at(p).raw_value);
+                index_reason.push_back(i == *v);
+            }
+
+            if (index_is_fully_defined) {
+                auto array_var = get_array_var<dimensions_>(elem, *array);
+                enforce_equality(logger, result_var, array_var, state, inference, index_reason);
+            }
+
+            return PropagatorState::Enable;
+        },
+            equality_triggers, "NDimensionalElement");
+    }
 }
+
+template <typename EntryType_, unsigned dimensions_>
+auto NDimensionalElement<EntryType_, dimensions_>::clone() const -> unique_ptr<Constraint>
+{
+    return unique_ptr<Constraint>(new NDimensionalElement{_result_var, _index_vars, _index_starts, _array, _bounds_only});
+}
+
+template class NDimensionalElement<IntegerVariableID, 1>;
+template class NDimensionalElement<IntegerVariableID, 2>;
+template class NDimensionalElement<IntegerVariableID, 3>;
+template class NDimensionalElement<Integer, 1>;
+template class NDimensionalElement<Integer, 2>;
+template class NDimensionalElement<Integer, 3>;

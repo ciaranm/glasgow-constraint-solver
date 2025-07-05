@@ -138,6 +138,20 @@ namespace gcs::innards
             return false;
         }
 
+        [[nodiscard]] auto contains_any_of(const IntervalSet & other) const -> bool
+        {
+            for (const auto & [l1, u1] : other.intervals) {
+                for (auto & [l2, u2] : intervals) {
+                    if (l2 <= u1 && l1 <= u2)
+                        return true;
+                    if (u2 > u1)
+                        break;
+                }
+            }
+
+            return false;
+        }
+
         [[nodiscard]] auto has_holes() const -> bool
         {
             return intervals.size() > 1;

@@ -187,3 +187,18 @@ TEST_CASE("Erase on bounds")
     CHECK(set.size() == 2);
     CHECK(intervals_of(set) == vector<pair<int, int>>{{3, 4}});
 }
+
+TEST_CASE("Contains any of")
+{
+    IntervalSet<int> set1(5, 10), set2(3, 6), set3(8, 11), set4(6, 8);
+    for (const auto & s1 : vector{set1, set2, set3, set4})
+        for (const auto & s2 : vector{set1, set2, set3, set4}) {
+            bool any = false;
+            for (const auto & v : s1.each())
+                for (const auto & w : s2.each())
+                    if (v == w)
+                        any = true;
+
+            CHECK(s1.contains_any_of(s2) == any);
+        }
+}

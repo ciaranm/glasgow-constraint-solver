@@ -54,6 +54,10 @@ namespace gcs::test_innards
 
     template <typename ResultsSet_, typename IsSatisfying_, typename... Accumulated_, typename... RestOfArgs_>
     auto generate_expected(ResultsSet_ & expected, IsSatisfying_ is_satisfying, const std::tuple<Accumulated_...> & acc,
+        const std::vector<std::vector<std::pair<int, int>>> & range_arg_vec, RestOfArgs_... rest_of_args) -> void;
+
+    template <typename ResultsSet_, typename IsSatisfying_, typename... Accumulated_, typename... RestOfArgs_>
+    auto generate_expected(ResultsSet_ & expected, IsSatisfying_ is_satisfying, const std::tuple<Accumulated_...> & acc,
         std::pair<int, int> range_arg, RestOfArgs_... rest_of_args) -> void;
 
     template <typename ResultsSet_, typename IsSatisfying_, typename... Accumulated_, typename... RestOfArgs_>
@@ -116,6 +120,34 @@ namespace gcs::test_innards
         };
         std::vector<int> sol;
         build(0, sol);
+    }
+
+    template <typename ResultsSet_, typename IsSatisfying_, typename... Accumulated_, typename... RestOfArgs_>
+    auto generate_expected(ResultsSet_ & expected, IsSatisfying_ is_satisfying, const std::tuple<Accumulated_...> & acc,
+        const std::vector<std::vector<std::pair<int, int>>> & range_arg_vec, RestOfArgs_... rest_of_args) -> void
+    {
+        std::function<auto(std::size_t, std::size_t, std::vector<std::vector<int>>)->void> build = [&](std::size_t pos1, std::size_t pos2, std::vector<std::vector<int>> sol) -> void {
+            if (pos1 == range_arg_vec.size()) {
+                sol.pop_back();
+                generate_expected(expected, is_satisfying, std::tuple_cat(acc, std::tuple{sol}), rest_of_args...);
+                sol.emplace_back();
+            }
+            else if (pos2 == range_arg_vec.at(pos1).size()) {
+                sol.emplace_back();
+                build(pos1 + 1, 0, sol);
+                sol.pop_back();
+            }
+            else {
+                for (int n = range_arg_vec.at(pos1).at(pos2).first; n <= range_arg_vec.at(pos1).at(pos2).second; ++n) {
+                    sol.at(pos1).push_back(n);
+                    build(pos1, pos2 + 1, sol);
+                    sol.at(pos1).pop_back();
+                }
+            }
+        };
+        std::vector<std::vector<int>> sol;
+        sol.emplace_back();
+        build(0, 0, sol);
     }
 
     template <typename ResultsSet_, typename IsSatisfying_, typename... Accumulated_, typename... RestOfArgs_>

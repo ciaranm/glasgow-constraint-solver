@@ -26,45 +26,45 @@ using std::stringstream;
 using std::unique_ptr;
 using std::vector;
 
-namespace
+auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1, const auto & v2, const State & state,
+    auto & inference, const Literals & reason) -> PropagatorState
 {
-    auto enforce_equality(ProofLogger * const logger, const auto & v1, const auto & v2, const State & state,
-        auto & inference, const optional<Literal> & cond) -> PropagatorState
-    {
-        auto val1 = state.optional_single_value(v1);
-        if (val1) {
-            inference.infer_equal(logger, v2, *val1, JustifyUsingRUP{}, Reason{[=]() { return Literals{v1 == *val1, cond ? *cond : TrueLiteral{}}; }});
-            return PropagatorState::DisableUntilBacktrack;
-        }
-
-        auto val2 = state.optional_single_value(v2);
-        if (val2) {
-            inference.infer_equal(logger, v1, *val2, JustifyUsingRUP{}, Reason{[=]() { return Literals{v2 == *val2, cond ? *cond : TrueLiteral{}}; }});
-            return PropagatorState::DisableUntilBacktrack;
-        }
-
-        if (state.domain_has_holes(v1) || state.domain_has_holes(v2)) {
-            for (auto val : state.each_value_mutable(v1))
-                if (! state.in_domain(v2, val))
-                    inference.infer_not_equal(logger, v1, val, JustifyUsingRUP{}, Reason{[=]() { return Literals{v2 != val, cond ? *cond : TrueLiteral{}}; }});
-
-            for (auto val : state.each_value_mutable(v2))
-                if (! state.in_domain(v1, val))
-                    inference.infer_not_equal(logger, v2, val, JustifyUsingRUP{}, Reason{[=]() { return Literals{v1 != val, cond ? *cond : TrueLiteral{}}; }});
-        }
-        else {
-            auto bounds1 = state.bounds(v1), bounds2 = state.bounds(v2);
-            if (bounds1 != bounds2) {
-                inference.infer_greater_than_or_equal(logger, v2, bounds1.first, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v1 >= bounds1.first, cond ? *cond : TrueLiteral{}}}; }});
-                inference.infer_greater_than_or_equal(logger, v1, bounds2.first, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v2 >= bounds2.first, cond ? *cond : TrueLiteral{}}}; }});
-                inference.infer_less_than(logger, v2, bounds1.second + 1_i, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v1 < bounds1.second + 1_i, cond ? *cond : TrueLiteral{}}}; }});
-                inference.infer_less_than(logger, v1, bounds2.second + 1_i, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v2 < bounds2.second + 1_i, cond ? *cond : TrueLiteral{}}}; }});
-            }
-        }
-
-        return PropagatorState::Enable;
+    auto val1 = state.optional_single_value(v1);
+    if (val1) {
+        inference.infer_equal(logger, v2, *val1, JustifyUsingRUP{}, Reason{[=, reason = reason]() mutable { reason.emplace_back(v1 == *val1); return reason; }});
+        return PropagatorState::DisableUntilBacktrack;
     }
 
+    auto val2 = state.optional_single_value(v2);
+    if (val2) {
+        inference.infer_equal(logger, v1, *val2, JustifyUsingRUP{}, Reason{[=, reason = reason]() mutable { reason.emplace_back(v2 == *val2); return reason; }});
+        return PropagatorState::DisableUntilBacktrack;
+    }
+
+    if (state.domain_has_holes(v1) || state.domain_has_holes(v2)) {
+        for (auto val : state.each_value_mutable(v1))
+            if (! state.in_domain(v2, val))
+                inference.infer_not_equal(logger, v1, val, JustifyUsingRUP{}, Reason{[=, reason = reason]() mutable { reason.emplace_back(v2 != val); return reason; }});
+
+        for (auto val : state.each_value_mutable(v2))
+            if (! state.in_domain(v1, val))
+                inference.infer_not_equal(logger, v2, val, JustifyUsingRUP{}, Reason{[=, reason = reason]() mutable { reason.emplace_back(v1 != val); return reason; }});
+    }
+    else {
+        auto bounds1 = state.bounds(v1), bounds2 = state.bounds(v2);
+        if (bounds1 != bounds2) {
+            inference.infer_greater_than_or_equal(logger, v2, bounds1.first, JustifyUsingRUP{}, Reason{[=, reason = reason]() mutable { reason.emplace_back(v1 >= bounds1.first); return reason; }});
+            inference.infer_greater_than_or_equal(logger, v1, bounds2.first, JustifyUsingRUP{}, Reason{[=, reason = reason]() mutable { reason.emplace_back(v2 >= bounds2.first); return reason; }});
+            inference.infer_less_than(logger, v2, bounds1.second + 1_i, JustifyUsingRUP{}, Reason{[=, reason = reason]() mutable { reason.emplace_back(v1 < bounds1.second + 1_i); return reason; }});
+            inference.infer_less_than(logger, v1, bounds2.second + 1_i, JustifyUsingRUP{}, Reason{[=, reason = reason]() mutable { reason.emplace_back(v2 < bounds2.second + 1_i); return reason; }});
+        }
+    }
+
+    return PropagatorState::Enable;
+}
+
+namespace
+{
     auto no_overlap_justification(const State & state, ProofLogger * const logger,
         IntegerVariableID v1, IntegerVariableID v2, Literal cond) -> pair<JustifyExplicitly, Reason>
     {
@@ -130,7 +130,7 @@ auto Equals::install(Propagators & propagators, State & initial_state, ProofMode
 
         visit([&](auto & _v1, auto & _v2) {
             propagators.install([v1 = _v1, v2 = _v2](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-                return enforce_equality(logger, v1, v2, state, inference, nullopt);
+                return enforce_equality(logger, v1, v2, state, inference, Literals{});
             },
                 triggers, "equals");
         },
@@ -180,7 +180,7 @@ auto EqualsIf::install(Propagators & propagators, State & initial_state, ProofMo
                     switch (state.test_literal(cond)) {
                     case LiteralIs::DefinitelyTrue: {
                         // condition is true, force equality
-                        return enforce_equality(logger, v1, v2, state, inference, cond);
+                        return enforce_equality(logger, v1, v2, state, inference, {cond});
                     } break;
 
                     case LiteralIs::DefinitelyFalse: {
@@ -303,7 +303,7 @@ auto EqualsIff::install(Propagators & propagators, State & initial_state, ProofM
                     switch (state.test_literal(cond)) {
                     case LiteralIs::DefinitelyTrue: {
                         // condition is true, force equality
-                        return enforce_equality(logger, v1, v2, state, inference, cond);
+                        return enforce_equality(logger, v1, v2, state, inference, {cond});
                     } break;
 
                     case LiteralIs::DefinitelyFalse: {
@@ -413,3 +413,8 @@ auto EqualsIff::install(Propagators & propagators, State & initial_state, ProofM
         }}
         .visit(_cond);
 }
+
+template auto gcs::innards::enforce_equality(ProofLogger * const logger, const IntegerVariableID & v1, const IntegerVariableID & v2, const State & state,
+    SimpleInferenceTracker & inference, const Literals & reason) -> PropagatorState;
+template auto gcs::innards::enforce_equality(ProofLogger * const logger, const IntegerVariableID & v1, const IntegerVariableID & v2, const State & state,
+    EagerProofLoggingInferenceTracker & inference, const Literals & reason) -> PropagatorState;
