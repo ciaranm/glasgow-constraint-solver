@@ -507,9 +507,12 @@ auto NDimensionalElement<EntryType_, dimensions_>::clone() const -> unique_ptr<C
     return unique_ptr<Constraint>(new NDimensionalElement{_result_var, _index_vars, _index_starts, _array, _bounds_only});
 }
 
-template class NDimensionalElement<IntegerVariableID, 1>;
-template class NDimensionalElement<IntegerVariableID, 2>;
-template class NDimensionalElement<IntegerVariableID, 3>;
-template class NDimensionalElement<Integer, 1>;
-template class NDimensionalElement<Integer, 2>;
-template class NDimensionalElement<Integer, 3>;
+namespace gcs
+{
+    template class NDimensionalElement<IntegerVariableID, 1>;
+    template class NDimensionalElement<IntegerVariableID, 2>;
+    template class NDimensionalElement<IntegerVariableID, 3>;
+    template class NDimensionalElement<Integer, 1>;
+    template class NDimensionalElement<Integer, 2>;
+    template class NDimensionalElement<Integer, 3>;
+}
