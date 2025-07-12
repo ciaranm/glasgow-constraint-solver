@@ -110,7 +110,7 @@ auto Inverse::install(Propagators & propagators, State & initial_state, ProofMod
                             x_values = move(x_values), x_value_am1s = x_value_am1s](
                             const State & state, auto & inf, ProofLogger * const logger) -> PropagatorState {
         for (const auto & [i, x_i] : enumerate(x)) {
-            for (auto x_i_value : state.each_value_mutable(x_i))
+            for (auto x_i_value : state.each_value(x_i))
                 if (! state.in_domain(y.at((x_i_value - y_start).raw_value), Integer(i) + x_start))
                     inf.infer(logger, x_i != x_i_value,
                         JustifyUsingRUP{},
@@ -118,7 +118,7 @@ auto Inverse::install(Propagators & propagators, State & initial_state, ProofMod
         }
 
         for (const auto & [i, y_i] : enumerate(y)) {
-            for (auto y_i_value : state.each_value_mutable(y_i))
+            for (auto y_i_value : state.each_value(y_i))
                 if (! state.in_domain(x.at((y_i_value - x_start).raw_value), Integer(i) + y_start))
                     inf.infer(logger, y_i != y_i_value,
                         JustifyUsingRUP{},

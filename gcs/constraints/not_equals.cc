@@ -101,7 +101,7 @@ auto NotEquals::install(Propagators & propagators, State & initial_state, ProofM
             propagators.install_initialiser([v1 = _v1, v2 = _v2](
                                                 const State & state, auto &, ProofLogger * const logger) -> void {
                 logger->emit_proof_comment("converting not equals to value encoding");
-                for (auto val1 : state.each_value_immutable(v1))
+                for (auto val1 : state.each_value(v1))
                     if (state.in_domain(v2, val1)) {
                         logger->emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * (v1 != val1) + 1_i * (v2 != val1) >= 1_i, ProofLevel::Top);
                     }

@@ -102,7 +102,7 @@ auto gcs::innards::circuit::prevent_small_cycles(
     auto chain_lengths = vector<long>{};
 
     for (auto var : unassigned) {
-        for (const auto & val : state.each_value_immutable(var)) {
+        for (const auto & val : state.each_value(var)) {
             auto j0 = val.raw_value;
             auto length = 0;
             if (state.has_single_value(succ[j0]) && (end[j0] < 0)) {

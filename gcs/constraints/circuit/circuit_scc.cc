@@ -820,7 +820,7 @@ namespace
                 PLine add_for_node_implies_at_least_1;
                 PLine add_for_node_implies_not_mid;
 
-                for (auto val : state.each_value_immutable(succ[node])) {
+                for (auto val : state.each_value(succ[node])) {
                     if (skip_based_on_assumption(succ[node], val, assumption))
                         continue;
 
@@ -996,7 +996,7 @@ namespace
 
         vector<pair<long, long>> back_edges{};
 
-        for (const auto & w : state.each_value_mutable(succ[node])) {
+        for (const auto & w : state.each_value(succ[node])) {
             auto next_node = w.raw_value;
 
             if (data.visit_number[next_node] == -1) {
@@ -1053,7 +1053,7 @@ namespace
     {
         auto data = SCCPropagatorData(succ.size());
 
-        for (const auto & v : state.each_value_mutable(succ[data.root])) {
+        for (const auto & v : state.each_value(succ[data.root])) {
             auto next_node = v.raw_value;
             if (data.visit_number[next_node] == -1) {
                 auto back_edges = explore(state, inference, logger, reason, next_node, succ, data, proof_data, options);
@@ -1093,7 +1093,7 @@ namespace
         }
 
         if (options.prune_root && data.start_prev_subtree > 1) {
-            for (const auto & v : state.each_value_mutable(succ[data.root])) {
+            for (const auto & v : state.each_value(succ[data.root])) {
                 if (data.visit_number[v.raw_value] < data.start_prev_subtree) {
                     if (logger) {
                         logger->emit_proof_comment("Prune impossible edges from root node");

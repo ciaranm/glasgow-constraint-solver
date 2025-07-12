@@ -42,7 +42,7 @@ auto NValue::install(Propagators & propagators, State & initial_state, ProofMode
                             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
         set<Integer> all_possible_values;
         for (const auto & var : vars) {
-            for (auto v : state.each_value_immutable(var))
+            for (auto v : state.each_value(var))
                 all_possible_values.insert(v);
         }
 
@@ -64,7 +64,7 @@ auto NValue::install(Propagators & propagators, State & initial_state, ProofMode
     if (optional_model) {
         map<Integer, list<IntegerVariableID>> all_possible_values;
         for (const auto & var : _vars) {
-            for (auto v : initial_state.each_value_immutable(var))
+            for (auto v : initial_state.each_value(var))
                 all_possible_values.emplace(v, list<IntegerVariableID>{}).first->second.push_back(var);
         }
 

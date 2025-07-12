@@ -61,7 +61,7 @@ auto gcs::innards::propagate_extensional(const ExtensionalData & table, const St
 {
     // check whether selectable tuples are still feasible
     visit([&](const auto & tuples) {
-        for (auto tuple_idx : state.each_value_mutable(table.selector)) {
+        for (auto tuple_idx : state.each_value(table.selector)) {
             bool is_feasible = true;
             for (unsigned idx = 0; idx < table.vars.size(); ++idx)
                 if (! feasible(state, table.vars[idx], get_tuple_value(tuples, tuple_idx.raw_value, idx))) {
@@ -78,9 +78,9 @@ auto gcs::innards::propagate_extensional(const ExtensionalData & table, const St
     // check for supports in selectable tuples
     visit([&](const auto & tuples) {
         for (unsigned idx = 0; idx < table.vars.size(); ++idx) {
-            for (auto val : state.each_value_mutable(table.vars[idx])) {
+            for (auto val : state.each_value(table.vars[idx])) {
                 bool supported = false;
-                for (auto tuple_idx : state.each_value_immutable(table.selector)) {
+                for (auto tuple_idx : state.each_value(table.selector)) {
                     if (match(get_tuple_value(tuples, tuple_idx.raw_value, idx), val)) {
                         supported = true;
                         break;

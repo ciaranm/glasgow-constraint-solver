@@ -94,7 +94,7 @@ namespace
             }
             else {
                 const auto & var = get_var(coeff_vars.terms[current.size()]);
-                for (auto val : state.each_value_mutable(var)) {
+                for (auto val : state.each_value(var)) {
                     current.push_back(val);
                     search(logger);
                     current.pop_back();

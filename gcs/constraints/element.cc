@@ -214,7 +214,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install(innards::Propagators 
                                 const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // for each index variable, update it to only contain values where
             // there's at least one supporting option
-            for (const auto & test_val : state.each_value_mutable(index_vars.at(fixed_dim))) {
+            for (const auto & test_val : state.each_value(index_vars.at(fixed_dim))) {
                 auto looking_for = state.copy_of_values(result_var);
                 auto looking_for_bounds = state.bounds(result_var);
 
@@ -252,7 +252,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install(innards::Propagators 
                         return do_it_with(test_val);
                     else {
                         explored_vars.push_back(index_vars.at(d));
-                        for (const auto & x : state.each_value_immutable(index_vars.at(d)))
+                        for (const auto & x : state.each_value(index_vars.at(d)))
                             if (do_it_with(x))
                                 return true;
 
@@ -278,7 +278,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install(innards::Propagators 
                                         throw UnimplementedException{};
                                     }
                                     else {
-                                        for (const auto & v : state.each_value_immutable(array_var))
+                                        for (const auto & v : state.each_value(array_var))
                                             logger->emit_rup_proof_line_under_reason(reason,
                                                 sum_so_far + 1_i * (index_vars.at(fixed_dim) != test_val) + 1_i * (array_var != v) >= 1_i, ProofLevel::Temporary);
                                     }
@@ -292,7 +292,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install(innards::Propagators 
                             if (d == fixed_dim)
                                 return do_it_with(test_val);
                             else {
-                                for (const auto & x : state.each_value_immutable(index_vars.at(d))) {
+                                for (const auto & x : state.each_value(index_vars.at(d))) {
                                     auto save_sum_so_far = sum_so_far;
                                     sum_so_far += 1_i * (index_vars.at(d) != x);
                                     do_it_with(x);
@@ -331,7 +331,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install(innards::Propagators 
             auto current_bounds = state.bounds(result_var);
             vector<IntegerVariableID> considered_vars;
             function<auto(unsigned)->void> collect_supported_bounds = [&](unsigned d) {
-                for (const auto & x : state.each_value_immutable(index_vars.at(d))) {
+                for (const auto & x : state.each_value(index_vars.at(d))) {
                     if (lowest_found && *lowest_found <= current_bounds.first && highest_found && *highest_found >= current_bounds.second)
                         return;
 
@@ -365,7 +365,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install(innards::Propagators 
                     // show that it doesn't work for any feasible choice of indices
                     WeightedPseudoBooleanSum sum_so_far;
                     function<auto(unsigned)->void> rule_out = [&](unsigned d) {
-                        for (const auto & v : state.each_value_immutable(index_vars.at(d))) {
+                        for (const auto & v : state.each_value(index_vars.at(d))) {
                             if (d + 1 == dimensions_)
                                 logger->emit_rup_proof_line_under_reason(reason,
                                     sum_so_far + 1_i * lit_to_infer + 1_i * (index_vars.at(d) != v) >= 1_i,
@@ -411,7 +411,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install(innards::Propagators 
             IntervalSet<Integer> still_to_find_support_for = state.copy_of_values(result_var);
             vector<IntegerVariableID> considered_vars;
             function<auto(unsigned)->void> collect_supported_values = [&](unsigned d) {
-                for (const auto & x : state.each_value_immutable(index_vars.at(d))) {
+                for (const auto & x : state.each_value(index_vars.at(d))) {
                     if (still_to_find_support_for.empty())
                         return;
 
@@ -420,7 +420,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install(innards::Propagators 
                         auto array_var = get_array_var<dimensions_>(elem, *array);
                         if (array_has_nonconstants)
                             considered_vars.push_back(array_var);
-                        for (const auto & v : state.each_value_immutable(array_var))
+                        for (const auto & v : state.each_value(array_var))
                             still_to_find_support_for.erase(v);
                     }
                     else {
@@ -439,7 +439,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install(innards::Propagators 
                     // show that it doesn't work for any feasible choice of indices
                     WeightedPseudoBooleanSum sum_so_far;
                     function<auto(unsigned)->void> rule_out = [&](unsigned d) {
-                        for (const auto & v : state.each_value_immutable(index_vars.at(d))) {
+                        for (const auto & v : state.each_value(index_vars.at(d))) {
                             if (d + 1 == dimensions_)
                                 logger->emit_rup_proof_line_under_reason(reason,
                                     sum_so_far + 1_i * (result_var != value) + 1_i * (index_vars.at(d) != v) >= 1_i,

@@ -87,7 +87,7 @@ auto ArrayMinMax::install(Propagators & propagators, State &, ProofModel * const
         }
 
         // result in union(vars)
-        for (auto value : state.each_value_mutable(result)) {
+        for (auto value : state.each_value(result)) {
             bool found_support = false;
             for (auto & var : vars) {
                 if (state.in_domain(var, value)) {
@@ -114,7 +114,7 @@ auto ArrayMinMax::install(Propagators & propagators, State &, ProofModel * const
         // is there more than one variable that can support the values in result?
         optional<IntegerVariableID> support_1, support_2;
         for (auto & var : vars) {
-            if (any_of(state.each_value_immutable(result), [&] (const Integer & val) { return state.in_domain(var, val); })) {
+            if (any_of(state.each_value(result), [&] (const Integer & val) { return state.in_domain(var, val); })) {
                 if (! support_1)
                     support_1 = var;
                 else {
@@ -135,17 +135,17 @@ auto ArrayMinMax::install(Propagators & propagators, State &, ProofModel * const
             for (auto & var : vars) {
                 if (var == *support_1)
                     continue;
-                for (const auto & val : state.each_value_immutable(result))
+                for (const auto & val : state.each_value(result))
                     reason.emplace_back(var != val);
             }
 
-            for (const auto & val : state.each_value_mutable(*support_1))
+            for (const auto & val : state.each_value(*support_1))
                 if (! state.in_domain(result, val))
                     inference.infer(logger, *support_1 != val, JustifyExplicitly{[&](const ExpandedReason & reason) {
                         // first, show that the selector can't be true for anything other than the supporting variable
                         for (const auto & [idx, var] : enumerate(vars)) {
                             if (var != *support_1) {
-                                for (const auto & val : state.each_value_immutable(result))
+                                for (const auto & val : state.each_value(result))
                                     logger->emit_rup_proof_line_under_reason(reason, WeightedPseudoBooleanSum{} + (1_i * ! selectors.at(idx)) + (1_i * (result != val)) >= 1_i, ProofLevel::Temporary);
                                 logger->emit_rup_proof_line_under_reason(reason, WeightedPseudoBooleanSum{} + (1_i * ! selectors.at(idx)) >= 1_i, ProofLevel::Temporary);
                             }

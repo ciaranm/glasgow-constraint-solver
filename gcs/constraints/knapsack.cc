@@ -146,7 +146,7 @@ namespace
                 vector<ProofFlag> feasible_node_flags;
 
                 // for each value in this variable's value...
-                for (auto val : state.each_value_mutable(vars_including_assigned.at(var_idx))) {
+                for (auto val : state.each_value(vars_including_assigned.at(var_idx))) {
                     // for each equation, calculate the partial sums of all the
                     // variables up to and including this one.
                     vector<Integer> new_sums(totals.size(), 0_i);
@@ -336,7 +336,7 @@ namespace
             }
 
             // we might have some values that never allowed a state to be created
-            for (auto val : state.each_value_mutable(vars_including_assigned.at(var_idx))) {
+            for (auto val : state.each_value(vars_including_assigned.at(var_idx))) {
                 if (! supported_values.contains(val)) {
                     if constexpr (doing_proof_) {
                         logger->emit_proof_comment("unsupported value on forward pass");
@@ -434,7 +434,7 @@ namespace
                 auto highest = highest_iter->first.at(x);
                 inferences.emplace_back(totals.at(x) < committed.at(x) + highest + 1_i);
 
-                for (auto v : state.each_value_immutable(totals.at(x))) {
+                for (auto v : state.each_value(totals.at(x))) {
                     if (v >= committed.at(x) + lowest && v < committed.at(x) + highest + 1_i)
                         if (completed_layers.back().end() == find_if(completed_layers.back().begin(), completed_layers.back().end(), [&](const pair<vector<Integer>, optional<FullNodeData>> & a) {
                                 return a.first.at(x) + committed.at(x) == v;
@@ -503,7 +503,7 @@ namespace
                 }
 
                 auto var = vars_including_assigned.at(undetermined_var_indices.at(var_number));
-                for (auto val : state.each_value_mutable(var)) {
+                for (auto val : state.each_value(var)) {
                     if (! supported.contains(val))
                         inference.infer(logger, var != val, JustifyUsingRUP{}, reason);
                 }

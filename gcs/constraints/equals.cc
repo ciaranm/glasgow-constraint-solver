@@ -52,11 +52,11 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
     }
 
     if (state.domain_has_holes(v1) || state.domain_has_holes(v2)) {
-        for (auto val : state.each_value_mutable(v1))
+        for (auto val : state.each_value(v1))
             if (! state.in_domain(v2, val))
                 inference.infer_not_equal(logger, v1, val, JustifyUsingRUP{}, add_to_reason(reason, v2 != val));
 
-        for (auto val : state.each_value_mutable(v2))
+        for (auto val : state.each_value(v2))
             if (! state.in_domain(v1, val))
                 inference.infer_not_equal(logger, v2, val, JustifyUsingRUP{}, add_to_reason(reason, v1 != val));
     }
@@ -228,7 +228,7 @@ auto EqualsIf::install(Propagators & propagators, State & initial_state, ProofMo
                         else {
                             // not equals is forced if there's no overlap between domains
                             bool overlap = false;
-                            for (auto val : state.each_value_immutable(v1))
+                            for (auto val : state.each_value(v1))
                                 if (state.in_domain(v2, val)) {
                                     overlap = true;
                                     break;
@@ -368,7 +368,7 @@ auto EqualsIff::install(Propagators & propagators, State & initial_state, ProofM
                         else {
                             // not equals is forced if there's no overlap between domains
                             bool overlap = false;
-                            for (auto val : state.each_value_immutable(v1))
+                            for (auto val : state.each_value(v1))
                                 if (state.in_domain(v2, val)) {
                                     overlap = true;
                                     break;

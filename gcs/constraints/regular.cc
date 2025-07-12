@@ -92,7 +92,7 @@ namespace
         // Forward phase: accumulate
         graph.nodes[0].insert(0);
         for (unsigned long i = 0; i < num_vars; ++i) {
-            for (auto val : state.each_value_immutable(vars[i])) {
+            for (auto val : state.each_value(vars[i])) {
                 for (const auto & q : graph.nodes[i]) {
                     if (transitions[q][val] != -1) {
                         graph.states_supporting[i][val].insert(q);
@@ -107,7 +107,7 @@ namespace
                     // Want to eliminate this node i.e. prove !state[i+1][next_q]
                     for (const auto & q : graph.nodes[i]) {
                         // So first eliminate each previous state/variable combo
-                        for (auto val : state.each_value_mutable(vars[i]))
+                        for (auto val : state.each_value(vars[i]))
                             log_additional_inference(logger, {vars[i] != val},
                                 {! state_at_pos_flags[i][q], ! state_at_pos_flags[i + 1][next_q]}, state, reason);
 
@@ -137,7 +137,7 @@ namespace
                 state_is_support[q] = false;
             }
 
-            for (auto val : state.each_value_mutable(vars[i])) {
+            for (auto val : state.each_value(vars[i])) {
                 set<long> states = graph.states_supporting[i][val];
                 for (const auto & q : states) {
 
@@ -201,7 +201,7 @@ namespace
                 // Again, want to eliminate this node i.e. prove !state[i][k]
                 for (const auto & q : graph.nodes[i - 1]) {
                     // So first eliminate each previous state/variable combo
-                    for (auto val : state.each_value_mutable(vars[i])) {
+                    for (auto val : state.each_value(vars[i])) {
                         log_additional_inference(logger, {vars[i] != val}, {! state_at_pos_flags[i - 1][q], ! state_at_pos_flags[i][k]},
                             state, reason);
                     }
@@ -275,7 +275,7 @@ namespace
         }
 
         for (size_t i = 0; i < graph.states_supporting.size(); i++) {
-            for (auto val : state.each_value_mutable(vars[i])) {
+            for (auto val : state.each_value(vars[i])) {
                 // Clean up domains
                 if (graph.states_supporting[i][val].empty())
                     inference.infer_not_equal(logger, vars[i], val, JustifyUsingRUP{}, reason);

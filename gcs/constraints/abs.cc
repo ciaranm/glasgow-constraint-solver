@@ -50,13 +50,13 @@ auto Abs::install(Propagators & propagators, State & initial_state,
     propagators.install([v1 = _v1, v2 = _v2](
                             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
         // remove from v1 any value whose absolute value isn't in v2's domain.
-        for (const auto & val : state.each_value_mutable(v1))
+        for (const auto & val : state.each_value(v1))
             if (! state.in_domain(v2, abs(val))) {
                 inference.infer_not_equal(logger, v1, val, JustifyUsingRUP{}, ExpandedReason{{v2 != abs(val)}});
             }
 
         // now remove from v2 any value whose +/-value isn't in v1's domain.
-        for (const auto & val : state.each_value_mutable(v2)) {
+        for (const auto & val : state.each_value(v2)) {
             if (! state.in_domain(v1, val) && ! state.in_domain(v1, -val) && state.in_domain(v2, val)) {
                 auto just = [v1, v2, val, logger](const ExpandedReason & reason) {
                     justify_abs_hole(*logger, reason, v1, v2, val);

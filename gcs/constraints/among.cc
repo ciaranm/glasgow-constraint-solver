@@ -105,7 +105,7 @@ auto Among::install(Propagators & propagators, State &, ProofModel * const optio
                 return none_of(values_of_interest, [&](const auto & val) -> bool { return state.in_domain(var, val); });
             });
             auto can_be_either_start = partition(not_impossible_start, partitioned_vars.end(), [&](const auto & var) -> bool {
-                return none_of(state.each_value_immutable(var), [&](const auto & val) -> bool {
+                return none_of(state.each_value(var), [&](const auto & val) -> bool {
                     return values_of_interest.end() == find(values_of_interest.begin(), values_of_interest.end(), val);
                 });
             });
@@ -158,7 +158,7 @@ auto Among::install(Propagators & propagators, State &, ProofModel * const optio
                 // anything that might match actually mustn't match
                 for (const auto & var : vars) {
                     bool all_match = true;
-                    for (const auto & val : state.each_value_immutable(var))
+                    for (const auto & val : state.each_value(var))
                         if (values_of_interest.end() == find(values_of_interest.begin(), values_of_interest.end(), val))
                             all_match = false;
 
@@ -208,7 +208,7 @@ auto Among::install(Propagators & propagators, State &, ProofModel * const optio
                         }
 
                         if (might_match)
-                            for (const auto & val : state.each_value_mutable(var))
+                            for (const auto & val : state.each_value(var))
                                 if (values_of_interest.end() == find(values_of_interest.begin(), values_of_interest.end(), val)) {
                                     inference.infer(logger, var != val, JustifyExplicitly{[&](const ExpandedReason &) {
                                         // need to point out that if var == val then var != voi for each voi
