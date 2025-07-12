@@ -63,7 +63,7 @@ namespace
     };
 
     auto log_additional_inference(ProofLogger * const logger, const vector<Literal> & literals, const vector<ProofFlag> & proof_flags,
-        const State &, const Reason & reason, string comment = "") -> void
+        const State &, const ExpandedReason & reason, string comment = "") -> void
     {
         if (logger) {
             // Trying to cut down on repeated code
@@ -82,7 +82,7 @@ namespace
     auto initialise_graph(RegularGraph & graph, const vector<IntegerVariableID> & vars,
         const long num_states, vector<unordered_map<Integer, long>> & transitions,
         const vector<long> & final_states, const vector<vector<ProofFlag>> & state_at_pos_flags,
-        const State & state, const Reason & reason, ProofLogger * const logger)
+        const State & state, const ExpandedReason & reason, ProofLogger * const logger)
     {
         auto num_vars = vars.size();
 
@@ -170,7 +170,7 @@ namespace
     }
 
     auto decrement_outdeg(RegularGraph & graph, const long i, const long k, const vector<IntegerVariableID> & vars,
-        const vector<vector<ProofFlag>> & state_at_pos_flags, const State & state, const Reason & reason, ProofLogger * const logger) -> void
+        const vector<vector<ProofFlag>> & state_at_pos_flags, const State & state, const ExpandedReason & reason, ProofLogger * const logger) -> void
     {
         graph.out_deg[i][k]--;
         if (graph.out_deg[i][k] == 0 && i > 0) {
@@ -193,7 +193,7 @@ namespace
 
     auto decrement_indeg(RegularGraph & graph, const long i, const long k,
         const vector<IntegerVariableID> & vars, const vector<vector<ProofFlag>> & state_at_pos_flags,
-        const State & state, const Reason & reason, ProofLogger * const logger) -> void
+        const State & state, const ExpandedReason & reason, ProofLogger * const logger) -> void
     {
         graph.in_deg[i][k]--;
         if (graph.in_deg[i][k] == 0 && cmp_less(i, graph.in_deg.size() - 1)) {
@@ -238,7 +238,7 @@ namespace
         ProofLogger * const logger) -> void
     {
         auto & graph = any_cast<RegularGraph &>(state.get_constraint_state(graph_handle));
-        auto reason = generic_reason(state, vars);
+        auto reason = inference.expand(AllVariablesExactValues{});
 
         if (! graph.initialised)
             initialise_graph(graph, vars, num_states, transitions, final_states, state_at_pos_flags, state, reason, logger);
@@ -367,5 +367,5 @@ auto Regular::install(Propagators & propagators, State & initial_state, ProofMod
         propagate_regular(v, n, t, f, flags, g, state, inference, logger);
         return PropagatorState::Enable;
     },
-        triggers, "regular");
+        {_vars}, triggers, "regular");
 }

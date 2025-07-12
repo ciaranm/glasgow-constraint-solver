@@ -17,13 +17,14 @@ namespace gcs::innards
 {
     /**
      * \brief Write an explicit justification to the proof. Any ProofLevel::Temporary
-     * constraints will be wiped after the conclusion is derived. The reason used for
-     * the outside inference is provided for convenience.
+     * constraints will be wiped after the conclusion is derived. Note that the
+     * ExpandedReason might be empty, if the InferenceTracker being used does not care
+     * about reasons.
      *
      * \ingroup Innards
      * \sa JustifyExplicitly
      */
-    using ExplicitJustificationFunction = std::function<auto(const Reason & reason)->void>;
+    using ExplicitJustificationFunction = std::function<auto(const ExpandedReason & reason)->void>;
 
     /**
      * \brief Specify that an inference requires an explicit justification in

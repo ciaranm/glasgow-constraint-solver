@@ -20,12 +20,16 @@ using namespace gcs::innards;
 
 using std::atomic;
 using std::bit_ceil;
+using std::make_unique;
 using std::move;
 using std::nullopt;
 using std::optional;
 using std::pair;
+using std::shared_ptr;
 using std::string;
 using std::swap;
+using std::unique_ptr;
+using std::variant;
 using std::vector;
 using std::visit;
 
@@ -41,6 +45,7 @@ struct Propagators::Imp
 {
     vector<PropagationFunction> propagation_functions;
     vector<InitialisationFunction> initialisation_functions;
+    vector<unique_ptr<vector<IntegerVariableID>>> propagation_function_all_variables;
 
     // Every propagation function's index appears exactly once in queue, and lookup[id] always tells
     // us where that position is. The items from index 0 to enqueued_end - 1 are ready to be
@@ -71,9 +76,9 @@ auto Propagators::model_contradiction(const State &, ProofModel * const optional
         optional_model->add_constraint({});
 
     install([explain_yourself = explain_yourself](const State &, auto & inference, ProofLogger * const logger) -> PropagatorState {
-        inference.contradiction(logger, JustifyUsingRUP{}, Reason{[=]() { return Literals{}; }});
+        inference.contradiction(logger, JustifyUsingRUP{}, ExpandedReason{});
     },
-        Triggers{}, "model contradiction");
+        {}, Triggers{}, "model contradiction");
 }
 
 auto Propagators::trim_lower_bound(const State & state, ProofModel * const optional_model, IntegerVariableID var, Integer val, const string & x) -> void
@@ -83,7 +88,7 @@ auto Propagators::trim_lower_bound(const State & state, ProofModel * const optio
             if (optional_model)
                 optional_model->add_constraint({var >= val});
             install_initialiser([var, val](const State &, auto & inference, ProofLogger * const logger) {
-                inference.infer(logger, var >= val, JustifyUsingRUP{}, Reason{});
+                inference.infer(logger, var >= val, JustifyUsingRUP{}, NoReason{});
             });
         }
         else
@@ -98,7 +103,7 @@ auto Propagators::trim_upper_bound(const State & state, ProofModel * const optio
             if (optional_model)
                 optional_model->add_constraint({var < val + 1_i});
             install_initialiser([var, val](const State &, auto & inference, ProofLogger * const logger) {
-                inference.infer(logger, var < val + 1_i, JustifyUsingRUP{}, Reason{});
+                inference.infer(logger, var < val + 1_i, JustifyUsingRUP{}, NoReason{});
             });
         }
         else
@@ -106,7 +111,7 @@ auto Propagators::trim_upper_bound(const State & state, ProofModel * const optio
     }
 }
 
-auto Propagators::install(PropagationFunction && f, const Triggers & triggers, const string &) -> void
+auto Propagators::install(PropagationFunction && f, const vector<variant<IntegerVariableID, vector<IntegerVariableID>, Literal>> & all_variables, const Triggers & triggers, const string &) -> void
 {
     int id = _imp->propagation_functions.size();
     _imp->propagation_functions.emplace_back(move(f));
@@ -125,6 +130,28 @@ auto Propagators::install(PropagationFunction && f, const Triggers & triggers, c
         trigger_on_instantiated(v, id);
         increase_degree(v);
     }
+
+    auto vars = make_unique<vector<IntegerVariableID>>();
+    for (const auto & v : all_variables)
+        overloaded{
+            [&](const IntegerVariableID & v) {
+                vars->push_back(v);
+            },
+            [&](const vector<IntegerVariableID> & v) {
+                vars->insert(vars->end(), v.begin(), v.end());
+            },
+            [&](const Literal & l) {
+                overloaded{
+                    [&](const TrueLiteral &) {},
+                    [&](const FalseLiteral &) {},
+                    [&](const IntegerVariableCondition & cond) {
+                        vars->push_back(cond.var);
+                    }}
+                    .visit(l);
+            }}
+            .visit(v);
+
+    _imp->propagation_function_all_variables.emplace_back(move(vars));
 }
 
 auto Propagators::install_initialiser(InitialisationFunction && f) -> void
@@ -165,7 +192,7 @@ namespace
     }
 
     template <typename T_>
-    auto depointinate(const std::shared_ptr<const T_> & t) -> const T_ &
+    auto depointinate(const shared_ptr<const T_> & t) -> const T_ &
     {
         return *t;
     }
@@ -219,7 +246,7 @@ auto Propagators::define_and_install_table(State & state, ProofModel * const opt
                     const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             return propagate_extensional(table, state, inference, logger);
         },
-            triggers, "extenstional");
+            {vars}, triggers, "extenstional");
     },
         move(permitted));
 }
@@ -316,6 +343,7 @@ auto Propagators::propagate(const optional<Literal> & lit, State & state, ProofL
         int propagator_id = _imp->queue[--_imp->enqueued_end];
         try {
             ++_imp->total_propagations;
+            tracker.set_current_propagator_variables(_imp->propagation_function_all_variables[propagator_id].get());
             auto propagator_state = _imp->propagation_functions[propagator_id](state, tracker, logger);
             if (tracker.did_anything_since_last_call_by_propagation_queue())
                 ++_imp->effectful_propagations;

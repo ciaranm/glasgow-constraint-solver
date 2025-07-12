@@ -52,22 +52,22 @@ auto Abs::install(Propagators & propagators, State & initial_state,
         // remove from v1 any value whose absolute value isn't in v2's domain.
         for (const auto & val : state.each_value_mutable(v1))
             if (! state.in_domain(v2, abs(val))) {
-                inference.infer_not_equal(logger, v1, val, JustifyUsingRUP{}, Reason{[=]() { return Literals{v2 != abs(val)}; }});
+                inference.infer_not_equal(logger, v1, val, JustifyUsingRUP{}, ExpandedReason{{v2 != abs(val)}});
             }
 
         // now remove from v2 any value whose +/-value isn't in v1's domain.
         for (const auto & val : state.each_value_mutable(v2)) {
             if (! state.in_domain(v1, val) && ! state.in_domain(v1, -val) && state.in_domain(v2, val)) {
-                auto just = [v1, v2, val, logger](const Reason & reason) {
+                auto just = [v1, v2, val, logger](const ExpandedReason & reason) {
                     justify_abs_hole(*logger, reason, v1, v2, val);
                 };
-                inference.infer_not_equal(logger, v2, val, JustifyExplicitly{just}, Reason{[=]() { return Literals{{v1 != val, v1 != -val}}; }});
+                inference.infer_not_equal(logger, v2, val, JustifyExplicitly{just}, ExpandedReason{{v1 != val, v1 != -val}});
             }
         }
 
         return PropagatorState::Enable;
     },
-        triggers, "abs");
+        {_v1, _v2}, triggers, "abs");
 
     if (optional_model) {
         optional_model->add_constraint("Abs", "non-negative", WeightedPseudoBooleanSum{} + 1_i * _v2 + -1_i * _v1 == 0_i, HalfReifyOnConjunctionOf{_v1 >= 0_i});

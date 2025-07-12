@@ -114,7 +114,7 @@ auto Inverse::install(Propagators & propagators, State & initial_state, ProofMod
                 if (! state.in_domain(y.at((x_i_value - y_start).raw_value), Integer(i) + x_start))
                     inf.infer(logger, x_i != x_i_value,
                         JustifyUsingRUP{},
-                        [&]() { return Literals{y.at((x_i_value - y_start).raw_value) != Integer(i) + x_start}; });
+                        ExpandedReason{{y.at((x_i_value - y_start).raw_value) != Integer(i) + x_start}});
         }
 
         for (const auto & [i, y_i] : enumerate(y)) {
@@ -122,12 +122,12 @@ auto Inverse::install(Propagators & propagators, State & initial_state, ProofMod
                 if (! state.in_domain(x.at((y_i_value - x_start).raw_value), Integer(i) + y_start))
                     inf.infer(logger, y_i != y_i_value,
                         JustifyUsingRUP{},
-                        [&]() { return Literals{x.at((y_i_value - x_start).raw_value) != Integer(i) + y_start}; });
+                        ExpandedReason{{x.at((y_i_value - x_start).raw_value) != Integer(i) + y_start}});
         }
 
         propagate_gac_all_different(x, x_values, *x_value_am1s.get(), state, inf, logger);
 
         return PropagatorState::Enable;
     },
-        triggers, "inverse");
+        {_x, _y}, triggers, "inverse");
 }
