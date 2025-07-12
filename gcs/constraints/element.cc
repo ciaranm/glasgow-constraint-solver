@@ -261,7 +261,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install(innards::Propagators 
                 };
 
                 if (! look_for_support(0)) {
-                    inference.infer_not_equal(logger, index_vars.at(fixed_dim), test_val, JustifyExplicitly{[&](const Reason & reason) {
+                    inference.infer_not_equal(logger, index_vars.at(fixed_dim), test_val, JustifyExplicitly{[&](const ExpandedReason & reason) {
                         // show there's no overlap between array_var and result, for any way the other
                         // index vars are assigned
                         vector<size_t> elem;
@@ -306,13 +306,13 @@ auto NDimensionalElement<EntryType_, dimensions_>::install(innards::Propagators 
 
                         show_no_support(0);
                     }},
-                        generic_reason(state, explored_vars));
+                        transform_into_reason_outline<ExactValuesLost>(explored_vars));
                 }
             }
 
             return PropagatorState::Enable;
         },
-            index_triggers, "NDimensionalElement index");
+            {all_array_vars, _index_vars, _result_var}, index_triggers, "NDimensionalElement index");
     }
 
     if (_bounds_only) {
@@ -356,14 +356,12 @@ auto NDimensionalElement<EntryType_, dimensions_>::install(innards::Propagators 
 
             auto infer_bound = [&](Integer relevant_bound, bool ge) {
                 auto lit_to_infer = ge ? (result_var >= relevant_bound) : (result_var < relevant_bound + 1_i);
-                Literals reason;
-                auto idx_reason = generic_reason(state, index_vars)();
-                reason.insert(reason.end(), idx_reason.begin(), idx_reason.end());
+                auto reason = transform_into_reason_outline<ExactValuesLost>(index_vars);
                 for (const auto & var : considered_vars)
                     reason.push_back(ge ? (var >= relevant_bound) : (var < relevant_bound + 1_i));
                 reason.push_back(result_var >= current_bounds.first);
                 reason.push_back(result_var < current_bounds.second + 1_i);
-                inference.infer(logger, lit_to_infer, JustifyExplicitly{[&](const Reason & reason) {
+                inference.infer(logger, lit_to_infer, JustifyExplicitly{[&](const ExpandedReason & reason) {
                     // show that it doesn't work for any feasible choice of indices
                     WeightedPseudoBooleanSum sum_so_far;
                     function<auto(unsigned)->void> rule_out = [&](unsigned d) {
@@ -387,7 +385,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install(innards::Propagators 
                     };
                     rule_out(0);
                 }},
-                    Reason{[=]() { return reason; }});
+                    reason);
             };
 
             if (lowest_found && *lowest_found > current_bounds.first)
@@ -398,7 +396,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install(innards::Propagators 
 
             return PropagatorState::Enable;
         },
-            result_triggers, "NDimensionalElement");
+            {all_array_vars, _index_vars, _result_var}, result_triggers, "NDimensionalElement");
     }
     else {
         Triggers result_triggers;
@@ -434,10 +432,10 @@ auto NDimensionalElement<EntryType_, dimensions_>::install(innards::Propagators 
             collect_supported_values(0);
 
             for (auto value : still_to_find_support_for.each()) {
-                Literals reason = generic_reason(state, index_vars)();
+                auto reason = transform_into_reason_outline<ExactValuesLost>(index_vars);
                 for (const auto & var : considered_vars)
                     reason.push_back(var != value);
-                inference.infer_not_equal(logger, result_var, value, JustifyExplicitly{[&](const Reason & reason) {
+                inference.infer_not_equal(logger, result_var, value, JustifyExplicitly{[&](const ExpandedReason & reason) {
                     // show that it doesn't work for any feasible choice of indices
                     WeightedPseudoBooleanSum sum_so_far;
                     function<auto(unsigned)->void> rule_out = [&](unsigned d) {
@@ -461,12 +459,12 @@ auto NDimensionalElement<EntryType_, dimensions_>::install(innards::Propagators 
                     };
                     rule_out(0);
                 }},
-                    Reason{[=]() { return reason; }});
+                    reason);
             }
 
             return PropagatorState::Enable;
         },
-            result_triggers, "NDimensionalElement");
+            {all_array_vars, _index_vars, _result_var}, result_triggers, "NDimensionalElement");
     }
 
     if (array_has_nonconstants) {
@@ -479,7 +477,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install(innards::Propagators 
             // that are present in the result variable
             bool index_is_fully_defined = true;
             vector<size_t> elem;
-            Literals index_reason;
+            DetailedReasonOutline index_reason;
             for (const auto & [p, i] : enumerate(index_vars)) {
                 auto v = state.optional_single_value(i);
                 if (! v) {
@@ -497,7 +495,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install(innards::Propagators 
 
             return PropagatorState::Enable;
         },
-            equality_triggers, "NDimensionalElement");
+            {all_array_vars, _index_vars, _result_var}, equality_triggers, "NDimensionalElement");
     }
 }
 

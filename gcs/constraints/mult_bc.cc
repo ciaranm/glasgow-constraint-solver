@@ -65,7 +65,7 @@ namespace
         WeightedPseudoBooleanSum sum = WeightedPseudoBooleanSum{};
         Integer rhs = 0_i;
         HalfReifyOnConjunctionOf half_reif = HalfReifyOnConjunctionOf{};
-        optional<Reason> reason = nullopt;
+        optional<ExpandedReason> reason = nullopt;
         ProofLine line = 0;
     };
 
@@ -149,7 +149,7 @@ namespace
     };
 
     auto result_of_deriving(ProofLogger & logger, ProofRule rule, const WeightedPseudoBooleanLessEqual & ineq,
-        const HalfReifyOnConjunctionOf & reif, const ProofLevel & proof_level, const Reason & reason) -> DerivedPBConstraint
+        const HalfReifyOnConjunctionOf & reif, const ProofLevel & proof_level, const ExpandedReason & reason) -> DerivedPBConstraint
     {
         // Have to flip it again to store in the form lhs >= rhs
         WeightedPseudoBooleanSum ge_lhs{};
@@ -203,7 +203,7 @@ namespace
         const DerivedPBConstraint & constr,
         const map<SimpleIntegerVariableID, ChannellingData> & channelling_constraints,
         const map<SimpleIntegerVariableID, ProofOnlySimpleIntegerVariableID> & mag_var,
-        const Reason & reason,
+        const ExpandedReason & reason,
         const optional<HalfReifyOnConjunctionOf> & assumption = nullopt) -> DerivedPBConstraint
     {
         if (constr.sum.terms.size() != 1 || abs(constr.sum.terms[0].coefficient) != 1_i)
@@ -279,7 +279,7 @@ namespace
         DerivedPBConstraint & constr,
         const SimpleIntegerVariableID & z,
         const map<SimpleIntegerVariableID, ChannellingData> & channelling_constraints,
-        const Reason & reason)
+        const ExpandedReason & reason)
         -> DerivedPBConstraint
     {
         auto channel_reif = HalfReifyOnConjunctionOf{constr.half_reif};
@@ -459,7 +459,7 @@ namespace
             auto negation_line = -2;
             for (const auto & p : premises) {
                 weakened_premises.emplace_back(result_of_deriving(logger, RUPProofRule{}, // implies?
-                    want_to_derive, p.half_reif, ProofLevel::Temporary, Reason{}));
+                    want_to_derive, p.half_reif, ProofLevel::Temporary, ExpandedReason{}));
                 negation_line--;
             }
 
@@ -499,7 +499,7 @@ namespace
         const map<SimpleIntegerVariableID, ProofOnlySimpleIntegerVariableID> & mag_var,
         const pair<ProofLine, ProofLine> z_eq_product_lines,
         vector<vector<BitProductData>> & bit_products,
-        const Reason & reason)
+        const ExpandedReason & reason)
         -> DerivedPBConstraint
     {
         // logger.emit_proof_comment("Prove Conditional Product Lower Bound:");
@@ -553,7 +553,7 @@ namespace
         const map<SimpleIntegerVariableID, ProofOnlySimpleIntegerVariableID> & mag_var,
         const pair<ProofLine, ProofLine> z_eq_product_lines,
         vector<vector<BitProductData>> & bit_products,
-        const Reason & reason)
+        const ExpandedReason & reason)
         -> DerivedPBConstraint
     {
         auto mag_z_sum = WeightedPseudoBooleanSum{};
@@ -649,7 +649,7 @@ namespace
             ProofLevel::Temporary, reason);
     }
 
-    auto prove_product_bounds(const Reason & reason, ProofLogger & logger,
+    auto prove_product_bounds(const ExpandedReason & reason, ProofLogger & logger,
         vector<vector<BitProductData>> & bit_products,
         const SimpleIntegerVariableID x, const SimpleIntegerVariableID y, const SimpleIntegerVariableID z,
         const map<IntegerVariableID, pair<Integer, Integer>> & var_bounds,
@@ -763,7 +763,7 @@ namespace
     }
 
     auto prove_quotient_bounds(
-        const Reason & reason,
+        const ExpandedReason & reason,
         ProofLogger & logger,
         vector<vector<BitProductData>> & bit_products,
         const SimpleIntegerVariableID x, const SimpleIntegerVariableID y, const SimpleIntegerVariableID z,
@@ -947,7 +947,7 @@ namespace
         }
         else if (y_min == 0_i && y_max == 0_i) {
             // y == 0 and 0 not in bounds of z => no possible values for x
-            inference.contradiction(logger, JustifyUsingRUP{}, [y_var, z_var]() { return Literals{y_var == 0_i, z_var != 0_i}; });
+            inference.contradiction(logger, JustifyUsingRUP{}, ExpandedReason{{y_var == 0_i, z_var != 0_i}});
         }
         else if (y_min < 0_i && y_max > 0_i && (z_min > 0_i || z_max < 0_i)) {
             // y contains -1, 0, 1 and z has either all positive or all negative values
@@ -955,7 +955,7 @@ namespace
             auto smallest_possible_quotient = -largest_possible_quotient;
 
             auto var_bounds = map<IntegerVariableID, pair<Integer, Integer>>{{x_var, state.bounds(x_var)}, {y_var, state.bounds(y_var)}, {z_var, state.bounds(z_var)}};
-            auto lower_justf = [&](const Reason & reason) {
+            auto lower_justf = [&](const ExpandedReason & reason) {
                 prove_quotient_bounds(reason, *logger, bit_products, x_var, y_var, z_var, var_bounds,
                     smallest_possible_quotient, largest_possible_quotient,
                     channelling_constraints, mag_var, z_eq_product_lines, x_is_first, false);
@@ -965,10 +965,10 @@ namespace
 
             inference.infer(logger, x_var < largest_possible_quotient + 1_i,
                 JustifyExplicitly{lower_justf},
-                [lits = Literals{z_var >= var_bounds.at(z_var).first, z_var < var_bounds.at(z_var).second + 1_i, y_var >= var_bounds.at(y_var).first, y_var < var_bounds.at(y_var).second + 1_i}]() { return lits; });
+                ExpandedReason{{z_var >= var_bounds.at(z_var).first, z_var < var_bounds.at(z_var).second + 1_i, y_var >= var_bounds.at(y_var).first, y_var < var_bounds.at(y_var).second + 1_i}});
 
             var_bounds.at(x_var).first = min(var_bounds.at(x_var).first, largest_possible_quotient);
-            auto upper_justf = [&](const Reason & reason) {
+            auto upper_justf = [&](const ExpandedReason & reason) {
                 prove_quotient_bounds(reason, *logger, bit_products, x_var, y_var, z_var, var_bounds,
                     smallest_possible_quotient, largest_possible_quotient,
                     channelling_constraints, mag_var, z_eq_product_lines, x_is_first, true);
@@ -978,7 +978,7 @@ namespace
 
             inference.infer(logger, x_var >= smallest_possible_quotient,
                 JustifyExplicitly{upper_justf},
-                [lits = Literals{z_var >= var_bounds.at(z_var).first, z_var < var_bounds.at(z_var).second + 1_i, y_var >= var_bounds.at(y_var).first, y_var < var_bounds.at(y_var).second + 1_i}]() { return lits; });
+                ExpandedReason{{z_var >= var_bounds.at(z_var).first, z_var < var_bounds.at(z_var).second + 1_i, y_var >= var_bounds.at(y_var).first, y_var < var_bounds.at(y_var).second + 1_i}});
         }
         else if (y_min == 0_i && y_max != 0_i && (z_min > 0_i || z_max < 0_i)) {
             // y is either 0 or strictly positive and z has either all positive or all negative values
@@ -995,7 +995,7 @@ namespace
             auto largest_possible_quotient = max({div_floor(z_min, y_min), div_floor(z_min, y_max), div_floor(z_max, y_min), div_floor(z_max, y_max)});
 
             auto var_bounds = map<IntegerVariableID, pair<Integer, Integer>>{{x_var, state.bounds(x_var)}, {y_var, state.bounds(y_var)}, {z_var, state.bounds(z_var)}};
-            auto upper_justf = [&](const Reason & reason) {
+            auto upper_justf = [&](const ExpandedReason & reason) {
                 prove_quotient_bounds(reason, *logger, bit_products, x_var, y_var, z_var, var_bounds,
                     smallest_possible_quotient, largest_possible_quotient,
                     channelling_constraints, mag_var, z_eq_product_lines, x_is_first, false);
@@ -1003,7 +1003,7 @@ namespace
                     WeightedPseudoBooleanSum{} + 1_i * (x_var < largest_possible_quotient + 1_i) >= 1_i, ProofLevel::Current);
             };
 
-            auto lower_justf = [&](const Reason & reason) {
+            auto lower_justf = [&](const ExpandedReason & reason) {
                 prove_quotient_bounds(reason, *logger, bit_products, x_var, y_var, z_var, var_bounds,
                     smallest_possible_quotient, largest_possible_quotient,
                     channelling_constraints, mag_var, z_eq_product_lines, x_is_first, true);
@@ -1011,25 +1011,25 @@ namespace
                     WeightedPseudoBooleanSum{} + 1_i * (x_var >= smallest_possible_quotient) >= 1_i, ProofLevel::Current);
             };
 
-            auto both_justf = [&](const Reason & reason) {
+            auto both_justf = [&](const ExpandedReason & reason) {
                 upper_justf(reason);
                 lower_justf(reason);
             };
 
             if (smallest_possible_quotient > largest_possible_quotient) {
                 inference.infer(logger, FalseLiteral{}, JustifyExplicitly{both_justf},
-                    [lits = Literals{z_var >= var_bounds.at(z_var).first, z_var < var_bounds.at(z_var).second + 1_i,
-                         y_var >= var_bounds.at(y_var).first, y_var < var_bounds.at(y_var).second + 1_i}]() { return lits; });
+                    ExpandedReason{{z_var >= var_bounds.at(z_var).first, z_var < var_bounds.at(z_var).second + 1_i,
+                        y_var >= var_bounds.at(y_var).first, y_var < var_bounds.at(y_var).second + 1_i}});
             }
             else {
                 inference.infer(logger, x_var < largest_possible_quotient + 1_i,
                     JustifyExplicitly{upper_justf},
-                    [lits = Literals{z_var >= var_bounds.at(z_var).first, z_var < var_bounds.at(z_var).second + 1_i,
-                         y_var >= var_bounds.at(y_var).first, y_var < var_bounds.at(y_var).second + 1_i}]() { return lits; });
+                    ExpandedReason{{z_var >= var_bounds.at(z_var).first, z_var < var_bounds.at(z_var).second + 1_i,
+                        y_var >= var_bounds.at(y_var).first, y_var < var_bounds.at(y_var).second + 1_i}});
                 inference.infer(logger, x_var >= smallest_possible_quotient,
                     JustifyExplicitly{lower_justf},
-                    [lits = Literals{z_var >= var_bounds.at(z_var).first, z_var < var_bounds.at(z_var).second + 1_i,
-                         y_var >= var_bounds.at(y_var).first, y_var < var_bounds.at(y_var).second + 1_i}]() { return lits; });
+                    ExpandedReason{{z_var >= var_bounds.at(z_var).first, z_var < var_bounds.at(z_var).second + 1_i,
+                        y_var >= var_bounds.at(y_var).first, y_var < var_bounds.at(y_var).second + 1_i}});
             }
         }
         else {
@@ -1167,7 +1167,7 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
             auto [smallest_product, largest_product] = get_product_bounds(bounds1.first, bounds1.second, bounds2.first, bounds2.second);
             auto & bit_products = any_cast<vector<vector<BitProductData>> &>(state.get_constraint_state(bit_products_h));
 
-            auto justf = [&](const Reason & reason) {
+            auto justf = [&](const ExpandedReason & reason) {
                 prove_product_bounds(reason, *logger, bit_products, v1, v2, v3, var_bounds,
                     smallest_product, largest_product, channelling_constraints, mag_var, v3_eq_product_lines);
                 logger->emit_rup_proof_line_under_reason(reason,
@@ -1178,8 +1178,8 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
 
             inference.infer_all(logger, {v3 < largest_product + 1_i, v3 >= smallest_product},
                 JustifyExplicitly{justf},
-                [lits = Literals{v1 >= var_bounds.at(v1).first, v1 < var_bounds.at(v1).second + 1_i,
-                     v2 >= var_bounds.at(v2).first, v2 < var_bounds.at(v2).second + 1_i}]() { return lits; });
+                ExpandedReason{{v1 >= var_bounds.at(v1).first, v1 < var_bounds.at(v1).second + 1_i,
+                    v2 >= var_bounds.at(v2).first, v2 < var_bounds.at(v2).second + 1_i}});
 
             auto bounds3 = state.bounds(v3);
             filter_quotient(v1, v2, v3, bounds3.first, bounds3.second, bounds2.first, bounds2.second, all_vars, state, inference,
@@ -1192,5 +1192,5 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
 
         return PropagatorState::Enable;
     },
-        triggers, "mult");
+        {_v1, _v2, _v3}, triggers, "mult");
 }

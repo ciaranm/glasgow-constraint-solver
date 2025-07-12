@@ -70,7 +70,7 @@ auto gcs::innards::propagate_extensional(const ExtensionalData & table, const St
                 }
 
             if (! is_feasible)
-                inference.infer(logger, table.selector != Integer(tuple_idx), NoJustificationNeeded{}, Reason{});
+                inference.infer(logger, table.selector != Integer(tuple_idx), NoJustificationNeeded{}, NoReason{});
         }
     },
         table.tuples);
@@ -88,7 +88,7 @@ auto gcs::innards::propagate_extensional(const ExtensionalData & table, const St
                 }
 
                 if (! supported)
-                    inference.infer(logger, table.vars[idx] != val, JustifyUsingRUP{}, generic_reason(state, table.vars));
+                    inference.infer(logger, table.vars[idx] != val, JustifyUsingRUP{}, AllVariablesExactValues{});
             }
         }
     },

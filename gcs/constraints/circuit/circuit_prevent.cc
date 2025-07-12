@@ -56,7 +56,7 @@ namespace
                             if (cmp_less(cycle_length, n)) {
                                 if (logger)
                                     output_cycle_to_proof(succ, j0, cycle_length, pos_var_data, state, *logger);
-                                inference.contradiction(logger, JustifyUsingRUP{}, generic_reason(state, succ));
+                                inference.contradiction(logger, JustifyUsingRUP{}, AllVariablesExactValues{});
                             }
 
                             else
@@ -107,6 +107,5 @@ auto CircuitPrevent::install(innards::Propagators & propagators, innards::State 
             propagate_circuit_using_prevent(succ, pvd, unassigned_handle, state, inference, logger);
             return PropagatorState::Enable;
         },
-        triggers,
-        "circuit");
+        {_succ}, triggers, "circuit");
 }

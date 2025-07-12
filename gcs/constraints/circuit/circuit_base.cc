@@ -114,7 +114,7 @@ auto gcs::innards::circuit::prevent_small_cycles(
                     if (j == j0) {
                         if (logger)
                             output_cycle_to_proof(succ, j0, length, pos_var_data, state, *logger);
-                        inference.contradiction(logger, JustifyUsingRUP{}, generic_reason(state, succ));
+                        inference.contradiction(logger, JustifyUsingRUP{}, AllVariablesExactValues{});
                     }
                 } while (state.has_single_value(succ[j]));
                 end[j0] = j;
@@ -130,13 +130,13 @@ auto gcs::innards::circuit::prevent_small_cycles(
         auto length = chain_lengths.back();
         chain_lengths.pop_back();
         if (cmp_less(length, succ.size() - 1)) {
-            auto justf = [&](const Reason &) {
+            auto justf = [&](const ExpandedReason &) {
                 output_cycle_to_proof(succ, i, length, pos_var_data, state, *logger, Integer{end[i]}, Integer{i});
             };
-            inference.infer(logger, succ[end[i]] != Integer{i}, JustifyExplicitly{justf}, generic_reason(state, succ));
+            inference.infer(logger, succ[end[i]] != Integer{i}, JustifyExplicitly{justf}, AllVariablesExactValues{});
         }
         else {
-            inference.infer(logger, succ[end[i]] == Integer{i}, JustifyUsingRUP{}, generic_reason(state, succ));
+            inference.infer(logger, succ[end[i]] == Integer{i}, JustifyUsingRUP{}, AllVariablesExactValues{});
         }
     }
 }
@@ -213,13 +213,13 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state, Proof
 
     // Infer succ[i] != i at top of search, but no other propagation defined here: use CircuitPrevent or CircuitSCC
     if (_succ.size() > 1) {
-        propagators.install([succ = _succ](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+        propagators.install([succ = _succ](const State &, auto & inference, ProofLogger * const logger) -> PropagatorState {
             for (auto [idx, s] : enumerate(succ)) {
-                inference.infer_not_equal(logger, s, Integer(static_cast<long long>(idx)), JustifyUsingRUP{}, generic_reason(state, succ));
+                inference.infer_not_equal(logger, s, Integer(static_cast<long long>(idx)), JustifyUsingRUP{}, AllVariablesExactValues{});
             }
             return PropagatorState::DisableUntilBacktrack;
         },
-            Triggers{}, "circuit init");
+            {_succ}, Triggers{}, "circuit init");
     }
 
     return pos_var_data;

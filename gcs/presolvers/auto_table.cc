@@ -121,7 +121,7 @@ auto AutoTable::run(Problem &, Propagators & propagators, State & initial_state,
     propagators.install([data = move(data)](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
         return propagate_extensional(data, state, inference, logger);
     },
-        triggers, "autotable");
+        {_vars}, triggers, "autotable");
 
     return true;
 }
