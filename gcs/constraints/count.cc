@@ -88,7 +88,8 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
             // intersect with a potential value of interest
             int how_many_definitely_do_not = 0;
             auto viable_places = 0_i;
-            for (auto & var : vars) {
+            vector<pair<size_t, IntegerVariableID>> not_seen_any_vars;
+            for (const auto & [idx, var] : enumerate(vars)) {
                 bool seen_any = false;
                 for (const auto & voi : state.each_value(value_of_interest)) {
                     if (state.in_domain(var, voi)) {
@@ -97,31 +98,25 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
                     }
                 }
 
-                if (! seen_any)
+                if (! seen_any) {
                     ++how_many_definitely_do_not;
+                    not_seen_any_vars.emplace_back(idx, var);
+                }
                 else
                     ++viable_places;
             }
 
             // can't have more that this many occurrences of the value of interest
             auto how_many_is_less_than = Integer(vars.size() - how_many_definitely_do_not) + 1_i;
-            auto justf = [&](const ExpandedReason & reason) -> void {
-                for (const auto & [idx, var] : enumerate(vars)) {
-                    bool seen_any = false;
-                    state.for_each_value_while_immutable(var, [&](const Integer & val) -> bool {
-                        if (state.in_domain(value_of_interest, val))
-                            seen_any = true;
-                        return ! seen_any;
-                    });
-
-                    if (! seen_any) {
-                        state.for_each_value(value_of_interest, [&](const Integer & val) {
-                            logger->emit_rup_proof_line_under_reason(reason,
-                                WeightedPseudoBooleanSum{} + 1_i * (value_of_interest != val) + 1_i * (! get<0>(flags[idx])) >= 1_i, ProofLevel::Temporary);
-                        });
+            auto justf = [logger, &vars, not_seen_any_vars = move(not_seen_any_vars), value_of_interest, &flags,
+                             values_of_interest_values = state.copy_of_values(value_of_interest)](const ExpandedReason & reason) -> void {
+                for (const auto & [idx, var] : not_seen_any_vars) {
+                    for (const auto & val : values_of_interest_values.each()) {
                         logger->emit_rup_proof_line_under_reason(reason,
-                            WeightedPseudoBooleanSum{} + 1_i * (! get<0>(flags[idx])) >= 1_i, ProofLevel::Temporary);
+                            WeightedPseudoBooleanSum{} + 1_i * (value_of_interest != val) + 1_i * (! get<0>(flags[idx])) >= 1_i, ProofLevel::Temporary);
                     }
+                    logger->emit_rup_proof_line_under_reason(reason,
+                        WeightedPseudoBooleanSum{} + 1_i * (! get<0>(flags[idx])) >= 1_i, ProofLevel::Temporary);
                 }
             };
             inference.infer(logger, how_many < how_many_is_less_than,
@@ -143,27 +138,30 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
             optional<Integer> lowest_how_many_must, highest_how_many_might;
             for (const auto & voi : state.each_value(value_of_interest)) {
                 Integer how_many_must = 0_i, how_many_might = 0_i;
-                for (const auto & var : vars) {
+                vector<pair<size_t, IntegerVariableID>> non_matching_vars;
+                for (const auto & [idx, var] : enumerate(vars)) {
                     if (auto sv = state.optional_single_value(var)) {
                         if (*sv == voi) {
                             ++how_many_must;
                             ++how_many_might;
                         }
+                        else
+                            non_matching_vars.emplace_back(idx, var);
                     }
                     else if (state.in_domain(var, voi))
                         ++how_many_might;
+                    else
+                        non_matching_vars.emplace_back(idx, var);
                 }
 
                 if (how_many_might < state.lower_bound(how_many)) {
-                    auto justf = [&](const ExpandedReason & reason) -> void {
-                        for (const auto & [idx, var] : enumerate(vars)) {
-                            if (! state.in_domain(var, voi)) {
-                                // need to help the checker see that the equality flag must be zero
-                                logger->emit_rup_proof_line(
-                                    WeightedPseudoBooleanSum{} + 1_i * (value_of_interest != voi) + 1_i * (var != voi) + 1_i * (get<0>(flags[idx])) >= 1_i, ProofLevel::Temporary);
-                                logger->emit_rup_proof_line_under_reason(reason,
-                                    WeightedPseudoBooleanSum{} + 1_i * (value_of_interest != voi) + 1_i * (! get<0>(flags[idx])) >= 1_i, ProofLevel::Temporary);
-                            }
+                    auto justf = [non_matching_vars = move(non_matching_vars), logger, value_of_interest, voi, &flags](const ExpandedReason & reason) -> void {
+                        for (const auto & [idx, var] : non_matching_vars) {
+                            // need to help the checker see that the equality flag must be zero
+                            logger->emit_rup_proof_line(
+                                WeightedPseudoBooleanSum{} + 1_i * (value_of_interest != voi) + 1_i * (var != voi) + 1_i * (get<0>(flags[idx])) >= 1_i, ProofLevel::Temporary);
+                            logger->emit_rup_proof_line_under_reason(reason,
+                                WeightedPseudoBooleanSum{} + 1_i * (value_of_interest != voi) + 1_i * (! get<0>(flags[idx])) >= 1_i, ProofLevel::Temporary);
                         }
                     };
                     inference.infer(logger, value_of_interest != voi, JustifyExplicitly{justf}, AllVariablesExactValues{});
@@ -184,13 +182,13 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
             // what are the supports on possible values we've seen?
             if (lowest_how_many_must) {
                 auto just = JustifyExplicitly{
-                    [&](const ExpandedReason & reason) -> void {
-                        state.for_each_value_while_immutable(value_of_interest, [&](Integer voi) -> bool {
+                    [value_of_interest_values = state.copy_of_values(value_of_interest), logger, value_of_interest, how_many, lowest_how_many_must = *lowest_how_many_must](
+                        const ExpandedReason & reason) -> void {
+                        for (const auto & voi : value_of_interest_values.each()) {
                             logger->emit_rup_proof_line_under_reason(reason,
-                                WeightedPseudoBooleanSum{} + 1_i * (value_of_interest != voi) + 1_i * (how_many >= *lowest_how_many_must) >= 1_i,
+                                WeightedPseudoBooleanSum{} + 1_i * (value_of_interest != voi) + 1_i * (how_many >= lowest_how_many_must) >= 1_i,
                                 ProofLevel::Temporary);
-                            return true;
-                        });
+                        }
                     }};
                 inference.infer(logger, how_many >= *lowest_how_many_must, just, AllVariablesExactValues{});
             }

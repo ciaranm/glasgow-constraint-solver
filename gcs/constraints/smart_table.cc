@@ -460,7 +460,7 @@ namespace
 
         for (const auto & var : vars) {
             for (const auto & value : unsupported[var]) {
-                auto justf = [&](const ExpandedReason & reason) -> void {
+                auto justf = [&tuples, &pb_selectors, logger, var, value](const ExpandedReason & reason) -> void {
                     for (unsigned int tuple_idx = 0; tuple_idx < tuples.size(); ++tuple_idx) {
                         logger->emit_rup_proof_line_under_reason(reason,
                             WeightedPseudoBooleanSum{} + 1_i * (var != value) + 1_i * (! pb_selectors[tuple_idx]) >= 1_i,

@@ -154,7 +154,7 @@ namespace
                             return PropagatorState::DisableUntilBacktrack;
                         }
                         else if (all_true) {
-                            auto justf = [&](const ExpandedReason & reason) {
+                            auto justf = [logger, &lits](const ExpandedReason & reason) {
                                 for (auto & l : lits)
                                     logger->emit_rup_proof_line_under_reason(reason,
                                         WeightedPseudoBooleanSum{} + 1_i * l >= 1_i, ProofLevel::Temporary);

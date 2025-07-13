@@ -955,7 +955,8 @@ namespace
             auto smallest_possible_quotient = -largest_possible_quotient;
 
             auto var_bounds = map<IntegerVariableID, pair<Integer, Integer>>{{x_var, state.bounds(x_var)}, {y_var, state.bounds(y_var)}, {z_var, state.bounds(z_var)}};
-            auto lower_justf = [&](const ExpandedReason & reason) {
+            auto lower_justf = [logger, &bit_products, x_var, y_var, z_var, var_bounds, smallest_possible_quotient,
+                                   largest_possible_quotient, &channelling_constraints, mag_var, z_eq_product_lines, x_is_first](const ExpandedReason & reason) {
                 prove_quotient_bounds(reason, *logger, bit_products, x_var, y_var, z_var, var_bounds,
                     smallest_possible_quotient, largest_possible_quotient,
                     channelling_constraints, mag_var, z_eq_product_lines, x_is_first, false);
@@ -968,7 +969,8 @@ namespace
                 ExpandedReason{{z_var >= var_bounds.at(z_var).first, z_var < var_bounds.at(z_var).second + 1_i, y_var >= var_bounds.at(y_var).first, y_var < var_bounds.at(y_var).second + 1_i}});
 
             var_bounds.at(x_var).first = min(var_bounds.at(x_var).first, largest_possible_quotient);
-            auto upper_justf = [&](const ExpandedReason & reason) {
+            auto upper_justf = [logger, &bit_products, x_var, y_var, z_var, var_bounds, smallest_possible_quotient, largest_possible_quotient,
+                                   &channelling_constraints, mag_var, z_eq_product_lines, x_is_first](const ExpandedReason & reason) {
                 prove_quotient_bounds(reason, *logger, bit_products, x_var, y_var, z_var, var_bounds,
                     smallest_possible_quotient, largest_possible_quotient,
                     channelling_constraints, mag_var, z_eq_product_lines, x_is_first, true);
@@ -1011,12 +1013,12 @@ namespace
                     WeightedPseudoBooleanSum{} + 1_i * (x_var >= smallest_possible_quotient) >= 1_i, ProofLevel::Current);
             };
 
-            auto both_justf = [&](const ExpandedReason & reason) {
-                upper_justf(reason);
-                lower_justf(reason);
-            };
-
             if (smallest_possible_quotient > largest_possible_quotient) {
+                auto both_justf = [upper_justf, lower_justf](const ExpandedReason & reason) {
+                    upper_justf(reason);
+                    lower_justf(reason);
+                };
+
                 inference.infer(logger, FalseLiteral{}, JustifyExplicitly{both_justf},
                     ExpandedReason{{z_var >= var_bounds.at(z_var).first, z_var < var_bounds.at(z_var).second + 1_i,
                         y_var >= var_bounds.at(y_var).first, y_var < var_bounds.at(y_var).second + 1_i}});
@@ -1167,7 +1169,7 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
             auto [smallest_product, largest_product] = get_product_bounds(bounds1.first, bounds1.second, bounds2.first, bounds2.second);
             auto & bit_products = any_cast<vector<vector<BitProductData>> &>(state.get_constraint_state(bit_products_h));
 
-            auto justf = [&](const ExpandedReason & reason) {
+            auto justf = [logger, &bit_products, v1, v2, v3, var_bounds, smallest_product, largest_product, &channelling_constraints, mag_var, &v3_eq_product_lines](const ExpandedReason & reason) {
                 prove_product_bounds(reason, *logger, bit_products, v1, v2, v3, var_bounds,
                     smallest_product, largest_product, channelling_constraints, mag_var, v3_eq_product_lines);
                 logger->emit_rup_proof_line_under_reason(reason,

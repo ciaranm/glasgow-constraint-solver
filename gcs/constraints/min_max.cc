@@ -140,23 +140,24 @@ auto ArrayMinMax::install(Propagators & propagators, State &, ProofModel * const
             }
 
             for (const auto & val : state.each_value(*support_1))
-                if (! state.in_domain(result, val))
-                    inference.infer(logger, *support_1 != val, JustifyExplicitly{[&](const ExpandedReason & reason) {
+                if (! state.in_domain(result, val)) {
+                    auto justf = JustifyExplicitly{[logger, &vars, support_1 = *support_1, result, val, result_values = state.copy_of_values(result), &selectors](const ExpandedReason & reason) {
                         // first, show that the selector can't be true for anything other than the supporting variable
                         for (const auto & [idx, var] : enumerate(vars)) {
-                            if (var != *support_1) {
-                                for (const auto & val : state.each_value(result))
+                            if (var != support_1) {
+                                for (const auto & val : result_values.each())
                                     logger->emit_rup_proof_line_under_reason(reason, WeightedPseudoBooleanSum{} + (1_i * ! selectors.at(idx)) + (1_i * (result != val)) >= 1_i, ProofLevel::Temporary);
                                 logger->emit_rup_proof_line_under_reason(reason, WeightedPseudoBooleanSum{} + (1_i * ! selectors.at(idx)) >= 1_i, ProofLevel::Temporary);
                             }
                         }
                         // now fish out the supporting variable, and show that it has to have its selector true
                         for (const auto & [idx, var] : enumerate(vars)) {
-                            if (var == *support_1)
-                                logger->emit_rup_proof_line_under_reason(reason, WeightedPseudoBooleanSum{} + (1_i * (*support_1 == val)) + (1_i * selectors.at(idx)) >= 1_i, ProofLevel::Temporary);
+                            if (var == support_1)
+                                logger->emit_rup_proof_line_under_reason(reason, WeightedPseudoBooleanSum{} + (1_i * (support_1 == val)) + (1_i * selectors.at(idx)) >= 1_i, ProofLevel::Temporary);
                         }
-                    }},
-                        reason);
+                    }};
+                    inference.infer(logger, *support_1 != val, justf, reason);
+                }
         }
 
         return PropagatorState::Enable;
