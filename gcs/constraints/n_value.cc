@@ -38,19 +38,15 @@ auto NValue::install(Propagators & propagators, State & initial_state, ProofMode
     triggers.on_bounds.emplace_back(_n_values);
     triggers.on_change.insert(triggers.on_change.end(), _vars.begin(), _vars.end());
 
-    vector<IntegerVariableID> all_vars = _vars;
-    all_vars.push_back(_n_values);
-
-    propagators.install([all_vars = move(all_vars), n_values = _n_values, vars = _vars](
+    propagators.install([n_values = _n_values, vars = _vars](
                             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
         set<Integer> all_possible_values;
         for (const auto & var : vars) {
-            for (auto v : state.each_value_immutable(var))
+            for (auto v : state.each_value(var))
                 all_possible_values.insert(v);
         }
 
-        inference.infer(logger, n_values < Integer(all_possible_values.size()) + 1_i, JustifyUsingRUP{},
-            generic_reason(state, all_vars));
+        inference.infer(logger, n_values < Integer(all_possible_values.size()) + 1_i, JustifyUsingRUP{}, AllVariablesExactValues{});
 
         set<Integer> all_definite_values;
         for (const auto & var : vars) {
@@ -59,16 +55,16 @@ auto NValue::install(Propagators & propagators, State & initial_state, ProofMode
                 all_definite_values.insert(*val);
         }
 
-        inference.infer(logger, n_values >= max(1_i, Integer(all_definite_values.size())), JustifyUsingRUP{}, generic_reason(state, all_vars));
+        inference.infer(logger, n_values >= max(1_i, Integer(all_definite_values.size())), JustifyUsingRUP{}, AllVariablesExactValues{});
 
         return PropagatorState::Enable;
     },
-        triggers, "nvalue");
+        {_n_values, _vars}, triggers, "nvalue");
 
     if (optional_model) {
         map<Integer, list<IntegerVariableID>> all_possible_values;
         for (const auto & var : _vars) {
-            for (auto v : initial_state.each_value_immutable(var))
+            for (auto v : initial_state.each_value(var))
                 all_possible_values.emplace(v, list<IntegerVariableID>{}).first->second.push_back(var);
         }
 

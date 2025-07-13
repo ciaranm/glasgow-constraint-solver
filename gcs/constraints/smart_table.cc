@@ -110,14 +110,14 @@ namespace
     }
 
     auto log_filtering_inference(ProofLogger * const logger, const ProofFlag & tuple_selector, const Literal & lit,
-        const State &, auto &, const Reason & reason)
+        const State &, auto &, const ExpandedReason & reason)
     {
         logger->emit_rup_proof_line_under_reason(reason,
             WeightedPseudoBooleanSum{} + 1_i * (! tuple_selector) + 1_i * lit >= 1_i, ProofLevel::Current);
     }
 
     auto filter_edge(const SmartEntry & edge, VariableDomainMap & supported_by_tree, const ProofFlag & tuple_selector,
-        const State & state, auto & inference, const Reason & reason, ProofLogger * const logger) -> void
+        const State & state, auto & inference, const ExpandedReason & reason, ProofLogger * const logger) -> void
     {
         // Currently filter both domains - might be overkill
         // If the tree was in a better form, think this can be optimised to do less redundant filtering.
@@ -305,7 +305,7 @@ namespace
 
     [[nodiscard]] auto filter_and_check_valid(const TreeEdges & tree, VariableDomainMap & supported_by_tree,
         const ProofFlag & tuple_selector, const State & state, auto & inference,
-        const Reason & reason, ProofLogger * const logger) -> bool
+        const ExpandedReason & reason, ProofLogger * const logger) -> bool
     {
         for (int l = tree.size() - 1; l >= 0; --l) {
             for (const auto & edge : tree[l]) {
@@ -348,7 +348,7 @@ namespace
 
     auto filter_again_and_remove_supported(const TreeEdges & tree, VariableDomainMap & supported_by_tree,
         VariableDomainMap & unsupported, const ProofFlag & tuple_selector, const State & state,
-        auto & inference, const Reason & reason, ProofLogger * const logger) -> void
+        auto & inference, const ExpandedReason & reason, ProofLogger * const logger) -> void
     {
         for (int l = tree.size() - 1; l >= 0; --l) {
             for (const auto & edge : tree[l]) {
@@ -404,13 +404,13 @@ namespace
     }
 
     auto propagate_using_smart_str(const vector<IntegerVariableID> & selectors, const vector<IntegerVariableID> & vars,
-        const SmartTuples & tuples, const vector<Forest> & forests, const State & state, auto & inference, const Reason & reason,
+        const SmartTuples & tuples, const vector<Forest> & forests, const State & state, auto & inference, const ExpandedReason & reason,
         vector<ProofFlag> pb_selectors, ProofLogger * const logger) -> void
     {
         VariableDomainMap unsupported{};
         // Initialise unsupported values to everything in each variable's current domain.
         for (const auto & var : vars) {
-            for (auto value : state.each_value_immutable(var)) {
+            for (auto value : state.each_value(var)) {
                 unsupported[var].emplace_back(value);
             }
         }
@@ -428,13 +428,13 @@ namespace
                 VariableDomainMap supported_by_tree{};
 
                 for (const auto & var : vars)
-                    for (auto value : state.each_value_immutable(var))
+                    for (auto value : state.each_value(var))
                         supported_by_tree[var].emplace_back(value);
 
                 // First pass of filtering supported_by_tree and check of validity
                 if (! filter_and_check_valid(tree, supported_by_tree, pb_selectors[tuple_idx], state, inference, reason, logger)) {
                     // Not feasible
-                    inference.infer_equal(logger, selectors[tuple_idx], 0_i, NoJustificationNeeded{}, Reason{});
+                    inference.infer_equal(logger, selectors[tuple_idx], 0_i, NoJustificationNeeded{}, NoReason{});
                     break;
                 }
 
@@ -460,9 +460,9 @@ namespace
 
         for (const auto & var : vars) {
             for (const auto & value : unsupported[var]) {
-                auto justf = [&](const Reason & reason) -> void {
+                auto justf = [&tuples, &pb_selectors, var, value](ProofLogger & logger, const ExpandedReason & reason) -> void {
                     for (unsigned int tuple_idx = 0; tuple_idx < tuples.size(); ++tuple_idx) {
-                        logger->emit_rup_proof_line_under_reason(reason,
+                        logger.emit_rup_proof_line_under_reason(reason,
                             WeightedPseudoBooleanSum{} + 1_i * (var != value) + 1_i * (! pb_selectors[tuple_idx]) >= 1_i,
                             ProofLevel::Current);
                     }
@@ -719,7 +719,7 @@ auto consolidate_unary_entries(State & state, vector<SmartEntry> tuple) -> vecto
         const auto & entries = var_and_entries.second;
         vector<Integer> allowed_vals{};
 
-        for (auto v : state.each_value_mutable(var)) {
+        for (auto v : state.each_value(var)) {
             bool val_allowed = true;
             for (auto & entry : entries) {
                 overloaded{
@@ -839,7 +839,7 @@ auto SmartTable::install(Propagators & propagators, State & initial_state, Proof
                         }
                         WeightedPseudoBooleanSum set_value_sum{};
                         WeightedPseudoBooleanSum neg_set_value_sum{};
-                        for (auto val : initial_state.each_value_immutable(var)) {
+                        for (auto val : initial_state.each_value(var)) {
                             if (! count(unary_set_entry.values.begin(), unary_set_entry.values.end(), val))
                                 set_value_sum += 1_i * (var != val);
                         }
@@ -881,10 +881,11 @@ auto SmartTable::install(Propagators & propagators, State & initial_state, Proof
     propagators.install(
         [selectors, vars = _vars, tuples = move(_tuples), forests = move(forests), pb_selectors = move(pb_selectors)](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-            auto reason = generic_reason(state, vars);
+            auto reason = inference.expand(AllVariablesExactValues{});
             propagate_using_smart_str(selectors, vars, tuples, forests, state, inference, reason, pb_selectors, logger);
             return PropagatorState::Enable;
         },
+        {_vars},
         triggers,
         "smart table");
 }

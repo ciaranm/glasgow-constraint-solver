@@ -94,7 +94,7 @@ namespace
             }
             else {
                 const auto & var = get_var(coeff_vars.terms[current.size()]);
-                for (auto val : state.each_value_mutable(var)) {
+                for (auto val : state.each_value(var)) {
                     current.push_back(val);
                     search(logger);
                     current.pop_back();
@@ -159,31 +159,22 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
 
     auto [sanitised_cv, modifier] = tidy_up_linear(_coeff_vars);
 
-    vector<IntegerVariableID> all_vars;
-    visit([&](const auto & sanitised_cv) {
-        for (const auto & cv : sanitised_cv.terms)
-            all_vars.push_back(get_var(cv));
-    },
-        sanitised_cv);
-    overloaded{
-        [&](const TrueLiteral &) {},
-        [&](const FalseLiteral &) {},
-        [&](const IntegerVariableCondition & cond) { all_vars.push_back(cond.var); }}
-        .visit(_cond);
-
     switch (state.test_literal(_cond)) {
     case LiteralIs::DefinitelyTrue: {
         // condition is definitely true, an empty sum matches iff the modifiers sum to the value
         if (visit([](const auto & s) { return s.terms.empty(); }, sanitised_cv) && modifier != _value) {
             propagators.install_initialiser([cond = _cond](const State &, auto & inference, ProofLogger * const logger) {
-                inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{}, Reason{[=]() { return Literals{{cond}}; }});
+                inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{}, ExpandedReason{{cond}});
             });
         }
 
         // easy case: we're doing bounds consistency, and the condition is fixed
         Triggers triggers;
-        for (auto & [_, v] : _coeff_vars.terms)
+        vector<IntegerVariableID> vars;
+        for (auto & [_, v] : _coeff_vars.terms) {
             triggers.on_bounds.push_back(v);
+            vars.push_back(v);
+        }
 
         visit(
             [&, modifier = modifier](const auto & lin) {
@@ -191,7 +182,7 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
                                         const State & state, auto & inference, ProofLogger * const logger) {
                     return propagate_linear(lin, value + modifier, state, inference, logger, true, proof_line, cond);
                 },
-                    triggers, "linear equality");
+                    {vars, _cond}, triggers, "linear equality");
             },
             sanitised_cv);
 
@@ -213,7 +204,7 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
                                         const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                     return propagate_extensional(data.get()->value(), state, inference, logger);
                 },
-                    triggers, "lin_eq_gac");
+                    {vars}, triggers, "lin_eq_gac");
             },
                 sanitised_cv);
         }
@@ -223,22 +214,25 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
         // condition is definitely false, an empty sum matches iff the modifiers sum to something other than the value
         if (visit([](const auto & s) { return s.terms.empty(); }, sanitised_cv) && modifier == _value) {
             propagators.install_initialiser([cond = _cond](const State &, auto & inference, ProofLogger * const logger) {
-                inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{}, Reason{[=]() { return Literals{{cond}}; }});
+                inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{}, ExpandedReason{{cond}});
             });
         }
 
         // strictly speaking, we care when we're down to only one variable left unassigned, and then there's one
         // value it potentially mustn't have
         Triggers triggers;
-        for (auto & [_, v] : _coeff_vars.terms)
+        vector<IntegerVariableID> vars;
+        for (auto & [_, v] : _coeff_vars.terms) {
             triggers.on_change.push_back(v);
+            vars.push_back(v);
+        }
 
         return visit([&, modifier = modifier](const auto & sanitised_cv) {
-            propagators.install([sanitised_cv = sanitised_cv, value = _value + modifier, all_vars = move(all_vars)](
+            propagators.install([sanitised_cv = sanitised_cv, value = _value + modifier](
                                     const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-                return propagate_linear_not_equals(sanitised_cv, value, state, inference, logger, all_vars);
+                return propagate_linear_not_equals(sanitised_cv, value, state, inference, logger);
             },
-                triggers, "linear nonequality");
+                {vars}, triggers, "linear nonequality");
         },
             sanitised_cv);
     } break;
@@ -249,12 +243,12 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
         if (visit([](const auto & s) { return s.terms.empty(); }, sanitised_cv)) {
             if (modifier == _value) {
                 propagators.install_initialiser([cond = _cond](const State &, auto & inference, ProofLogger * const logger) {
-                    inference.infer(logger, cond, NoJustificationNeeded{}, Reason{});
+                    inference.infer(logger, cond, NoJustificationNeeded{}, NoReason{});
                 });
             }
             else {
                 propagators.install_initialiser([cond = _cond](const State &, auto & inference, ProofLogger * const logger) {
-                    inference.infer(logger, ! cond, NoJustificationNeeded{}, Reason{});
+                    inference.infer(logger, ! cond, NoJustificationNeeded{}, NoReason{});
                 });
             }
         }
@@ -262,8 +256,12 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
         // we care when the condition changes, or once we're down to a single unassigned variable
         // because that might force the condition one way or another.
         Triggers triggers;
-        for (auto & [_, v] : _coeff_vars.terms)
+        vector<IntegerVariableID> vars;
+        for (auto & [_, v] : _coeff_vars.terms) {
             triggers.on_change.push_back(v);
+            vars.push_back(v);
+        }
+
         overloaded{
             [&](const TrueLiteral &) {},
             [&](const FalseLiteral &) {},
@@ -271,7 +269,7 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
             .visit(_cond);
 
         visit([&, modifier = modifier](const auto & sanitised_cv) {
-            propagators.install([sanitised_cv = sanitised_cv, value = _value + modifier, cond = _cond, proof_line = proof_line, all_vars = move(all_vars)](
+            propagators.install([sanitised_cv = sanitised_cv, value = _value + modifier, cond = _cond, proof_line = proof_line](
                                     const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                 switch (state.test_literal(cond)) {
                 case LiteralIs::DefinitelyTrue: {
@@ -281,7 +279,7 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
 
                 case LiteralIs::DefinitelyFalse: {
                     // we now know the condition definitely doesn't hold, so it's a linear not-equals
-                    return propagate_linear_not_equals(sanitised_cv, value, state, inference, logger, all_vars);
+                    return propagate_linear_not_equals(sanitised_cv, value, state, inference, logger);
                 } break;
 
                 case LiteralIs::Undecided: {
@@ -306,11 +304,11 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
                     if (single_unset == sanitised_cv.terms.end()) {
                         // every variable is assigned, so we know what the condition must be
                         if (accum == value) {
-                            inference.infer(logger, cond, JustifyUsingRUP{}, generic_reason(state, all_vars));
+                            inference.infer(logger, cond, JustifyUsingRUP{}, AllVariablesExactValues{});
                             return PropagatorState::DisableUntilBacktrack;
                         }
                         else {
-                            inference.infer(logger, ! cond, JustifyUsingRUP{}, generic_reason(state, all_vars));
+                            inference.infer(logger, ! cond, JustifyUsingRUP{}, AllVariablesExactValues{});
                             return PropagatorState::DisableUntilBacktrack;
                         }
                     }
@@ -323,7 +321,7 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
                             if (! state.in_domain(get_var(*single_unset), would_make_equal)) {
                                 // no way for the remaining variable to take that value, so the condition
                                 // has to be false
-                                inference.infer(logger, ! cond, JustifyUsingRUP{}, generic_reason(state, all_vars));
+                                inference.infer(logger, ! cond, JustifyUsingRUP{}, AllVariablesExactValues{});
                                 return PropagatorState::DisableUntilBacktrack;
                             }
                             else {
@@ -334,7 +332,7 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
                         else {
                             // the value that would make the equality work isn't an integer, so the condition
                             // has to be false
-                            inference.infer(logger, ! cond, JustifyUsingRUP{}, generic_reason(state, all_vars));
+                            inference.infer(logger, ! cond, JustifyUsingRUP{}, AllVariablesExactValues{});
                             return PropagatorState::DisableUntilBacktrack;
                         }
                     }
@@ -343,7 +341,7 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
 
                 throw NonExhaustiveSwitch{};
             },
-                triggers, "linear");
+                {vars, _cond}, triggers, "linear");
         },
             sanitised_cv);
     } break;

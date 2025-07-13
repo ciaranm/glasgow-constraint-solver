@@ -42,7 +42,7 @@ namespace
             propagators.install_initialiser([full_reif = _full_reif, lits = _lits](
                                                 const State &, auto & inference, ProofLogger * const logger) {
                 for (auto & l : lits)
-                    inference.infer(logger, l, JustifyUsingRUP{}, Reason{[=]() { return Literals{{full_reif}}; }});
+                    inference.infer(logger, l, JustifyUsingRUP{}, ExpandedReason{{full_reif}});
             });
 
             if (optional_model) {
@@ -52,6 +52,7 @@ namespace
         }
         else {
             Triggers triggers;
+            vector<IntegerVariableID> vars;
             bool saw_false = false;
             for (auto & l : _lits)
                 overloaded{
@@ -66,6 +67,7 @@ namespace
                             triggers.on_bounds.push_back(cond.var);
                             break;
                         }
+                        vars.push_back(cond.var);
                     },
                     [&](const TrueLiteral &) {
                     },
@@ -79,7 +81,7 @@ namespace
                 // then we don't do anything else
                 propagators.install_initialiser([full_reif = _full_reif](
                                                     const State &, auto & inference, ProofLogger * const logger) -> void {
-                    inference.infer(logger, ! full_reif, JustifyUsingRUP{}, Reason{});
+                    inference.infer(logger, ! full_reif, JustifyUsingRUP{}, NoReason{});
                 });
 
                 if (optional_model) {
@@ -92,7 +94,7 @@ namespace
                     switch (state.test_literal(full_reif)) {
                     case LiteralIs::DefinitelyTrue: {
                         for (auto & l : lits)
-                            inference.infer(logger, l, JustifyUsingRUP{}, Reason{[=]() { return Literals{{full_reif}}; }});
+                            inference.infer(logger, l, JustifyUsingRUP{}, ExpandedReason{{full_reif}});
                         return PropagatorState::DisableUntilBacktrack;
                     }
 
@@ -115,20 +117,20 @@ namespace
                             return PropagatorState::DisableUntilBacktrack;
                         else if (! undecided1) {
                             // literals are all true, but reif is false
-                            Literals why;
+                            ExpandedReason why;
                             for (auto & lit : lits)
                                 why.push_back(lit);
                             why.push_back(! full_reif);
-                            inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{}, Reason{[=]() { return why; }});
+                            inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{}, why);
                             return PropagatorState::Enable;
                         }
                         else {
-                            Literals why;
+                            ExpandedReason why;
                             for (auto & l : lits)
                                 if (l != *undecided1)
                                     why.push_back(l);
                             why.push_back(! full_reif);
-                            inference.infer(logger, ! *undecided1, JustifyUsingRUP{}, Reason{[=]() { return why; }});
+                            inference.infer(logger, ! *undecided1, JustifyUsingRUP{}, why);
                             return PropagatorState::DisableUntilBacktrack;
                         }
                     }
@@ -148,16 +150,16 @@ namespace
                             }
 
                         if (any_false) {
-                            inference.infer(logger, ! full_reif, JustifyUsingRUP{}, Reason{[=]() { return Literals{{! *any_false}}; }});
+                            inference.infer(logger, ! full_reif, JustifyUsingRUP{}, ExpandedReason{{! *any_false}});
                             return PropagatorState::DisableUntilBacktrack;
                         }
                         else if (all_true) {
-                            auto justf = [&](const Reason & reason) {
+                            auto justf = [&lits](ProofLogger & logger, const ExpandedReason & reason) {
                                 for (auto & l : lits)
-                                    logger->emit_rup_proof_line_under_reason(reason,
+                                    logger.emit_rup_proof_line_under_reason(reason,
                                         WeightedPseudoBooleanSum{} + 1_i * l >= 1_i, ProofLevel::Temporary);
                             };
-                            inference.infer(logger, full_reif, JustifyExplicitly{justf}, Reason{[=]() { return lits; }});
+                            inference.infer(logger, full_reif, JustifyExplicitly{justf}, ExpandedReason{lits});
                             return PropagatorState::DisableUntilBacktrack;
                         }
                         else
@@ -167,7 +169,7 @@ namespace
 
                     throw NonExhaustiveSwitch{};
                 },
-                    triggers, name);
+                    {vars}, triggers, name);
 
                 if (optional_model) {
                     if (LiteralIs::DefinitelyFalse != reif_state) {

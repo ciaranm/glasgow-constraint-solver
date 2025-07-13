@@ -39,5 +39,5 @@ auto Minus::install(Propagators & propagators, State &, ProofModel * const optio
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             return propagate_plus(a, -b, result, state, inference, logger, sum_line);
         },
-        triggers, "plus");
+        {_a, _b, _result}, triggers, "plus");
 }
