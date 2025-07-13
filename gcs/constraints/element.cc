@@ -261,7 +261,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install(innards::Propagators 
                 };
 
                 if (! look_for_support(0)) {
-                    inference.infer_not_equal(logger, index_vars.at(fixed_dim), test_val, JustifyExplicitly{[&](const ExpandedReason & reason) {
+                    inference.infer_not_equal(logger, index_vars.at(fixed_dim), test_val, JustifyExplicitly{[&](ProofLogger & logger, const ExpandedReason & reason) {
                         // show there's no overlap between array_var and result, for any way the other
                         // index vars are assigned
                         vector<size_t> elem;
@@ -279,7 +279,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install(innards::Propagators 
                                     }
                                     else {
                                         for (const auto & v : state.each_value(array_var))
-                                            logger->emit_rup_proof_line_under_reason(reason,
+                                            logger.emit_rup_proof_line_under_reason(reason,
                                                 sum_so_far + 1_i * (index_vars.at(fixed_dim) != test_val) + 1_i * (array_var != v) >= 1_i, ProofLevel::Temporary);
                                     }
                                 }
@@ -296,7 +296,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install(innards::Propagators 
                                     auto save_sum_so_far = sum_so_far;
                                     sum_so_far += 1_i * (index_vars.at(d) != x);
                                     do_it_with(x);
-                                    logger->emit_rup_proof_line_under_reason(reason,
+                                    logger.emit_rup_proof_line_under_reason(reason,
                                         sum_so_far + 1_i * (index_vars.at(fixed_dim) != test_val) >= 1_i,
                                         ProofLevel::Temporary);
                                     sum_so_far = save_sum_so_far;
@@ -361,13 +361,13 @@ auto NDimensionalElement<EntryType_, dimensions_>::install(innards::Propagators 
                     reason.push_back(ge ? (var >= relevant_bound) : (var < relevant_bound + 1_i));
                 reason.push_back(result_var >= current_bounds.first);
                 reason.push_back(result_var < current_bounds.second + 1_i);
-                inference.infer(logger, lit_to_infer, JustifyExplicitly{[&](const ExpandedReason & reason) {
+                inference.infer(logger, lit_to_infer, JustifyExplicitly{[&](ProofLogger & logger, const ExpandedReason & reason) {
                     // show that it doesn't work for any feasible choice of indices
                     WeightedPseudoBooleanSum sum_so_far;
                     function<auto(unsigned)->void> rule_out = [&](unsigned d) {
                         for (const auto & v : state.each_value(index_vars.at(d))) {
                             if (d + 1 == dimensions_)
-                                logger->emit_rup_proof_line_under_reason(reason,
+                                logger.emit_rup_proof_line_under_reason(reason,
                                     sum_so_far + 1_i * lit_to_infer + 1_i * (index_vars.at(d) != v) >= 1_i,
                                     ProofLevel::Temporary);
                             else {
@@ -378,7 +378,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install(innards::Propagators 
                             }
                         }
                         if (! sum_so_far.terms.empty()) {
-                            logger->emit_rup_proof_line_under_reason(reason,
+                            logger.emit_rup_proof_line_under_reason(reason,
                                 sum_so_far + 1_i * lit_to_infer >= 1_i,
                                 ProofLevel::Temporary);
                         }
@@ -435,13 +435,13 @@ auto NDimensionalElement<EntryType_, dimensions_>::install(innards::Propagators 
                 auto reason = transform_into_reason_outline<ExactValuesLost>(index_vars);
                 for (const auto & var : considered_vars)
                     reason.push_back(var != value);
-                inference.infer_not_equal(logger, result_var, value, JustifyExplicitly{[&](const ExpandedReason & reason) {
+                inference.infer_not_equal(logger, result_var, value, JustifyExplicitly{[&](ProofLogger & logger, const ExpandedReason & reason) {
                     // show that it doesn't work for any feasible choice of indices
                     WeightedPseudoBooleanSum sum_so_far;
                     function<auto(unsigned)->void> rule_out = [&](unsigned d) {
                         for (const auto & v : state.each_value(index_vars.at(d))) {
                             if (d + 1 == dimensions_)
-                                logger->emit_rup_proof_line_under_reason(reason,
+                                logger.emit_rup_proof_line_under_reason(reason,
                                     sum_so_far + 1_i * (result_var != value) + 1_i * (index_vars.at(d) != v) >= 1_i,
                                     ProofLevel::Temporary);
                             else {
@@ -452,7 +452,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install(innards::Propagators 
                             }
                         }
                         if (! sum_so_far.terms.empty()) {
-                            logger->emit_rup_proof_line_under_reason(reason,
+                            logger.emit_rup_proof_line_under_reason(reason,
                                 sum_so_far + 1_i * (result_var != value) >= 1_i,
                                 ProofLevel::Temporary);
                         }

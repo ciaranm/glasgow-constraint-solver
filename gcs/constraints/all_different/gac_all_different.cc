@@ -179,7 +179,6 @@ namespace
         const vector<Integer> & vals,
         map<Integer, ProofLine> & value_am1_constraint_numbers,
         const State &,
-        ProofLogger & logger,
         const vector<pair<Left, Right>> & edges,
         const vector<uint8_t> & left_covered,
         const vector<optional<Right>> & matching) -> pair<JustifyExplicitly, DetailedReasonOutline>
@@ -239,7 +238,7 @@ namespace
                 hall_value_nrs.push_back(vals[v.offset]);
 
         return pair{JustifyExplicitly{
-                        [vars, &logger, &value_am1_constraint_numbers, hall_variable_ids, hall_value_nrs](const ExpandedReason &) -> void {
+                        [vars, &value_am1_constraint_numbers, hall_variable_ids, hall_value_nrs](ProofLogger & logger, const ExpandedReason &) -> void {
                             justify_all_different_hall_set_or_violator(logger, vars, hall_variable_ids, hall_value_nrs, value_am1_constraint_numbers);
                         }},
             transform_into_reason_outline<ExactValuesLost>(hall_variable_ids)};
@@ -263,7 +262,6 @@ namespace
         const vector<Integer> & vals,
         map<Integer, ProofLine> & value_am1_constraint_numbers,
         const State &,
-        ProofLogger & logger,
         const vector<vector<Right>> & edges_out_from_variable,
         const vector<vector<Left>> & edges_out_from_value,
         const Right delete_value,
@@ -335,8 +333,8 @@ namespace
                     hall_value_nrs.push_back(vals[v.offset]);
 
             return pair{JustifyExplicitly{
-                            [vars, &logger, &value_am1_constraint_numbers, hall_variable_ids, hall_value_nrs](
-                                const ExpandedReason &) -> void {
+                            [vars, &value_am1_constraint_numbers, hall_variable_ids, hall_value_nrs](
+                                ProofLogger & logger, const ExpandedReason &) -> void {
                                 justify_all_different_hall_set_or_violator(logger, vars, hall_variable_ids, hall_value_nrs, value_am1_constraint_numbers);
                             }},
                 transform_into_reason_outline<ExactValuesLost>(hall_variable_ids)};
@@ -369,7 +367,7 @@ auto gcs::innards::propagate_gac_all_different(
     if (cmp_not_equal(count(left_covered.begin(), left_covered.end(), 1), vars.size())) {
         // nope. we've got a maximum cardinality matching that leaves at least
         // one thing on the left uncovered.
-        auto [just, reason] = prove_matching_is_too_small(vars, vals, value_am1_constraint_numbers, state, *logger, edges, left_covered, matching);
+        auto [just, reason] = prove_matching_is_too_small(vars, vals, value_am1_constraint_numbers, state, edges, left_covered, matching);
         return tracker.infer(logger, FalseLiteral{}, just, reason);
     }
 
@@ -527,7 +525,7 @@ auto gcs::innards::propagate_gac_all_different(
         if (! representatives_for_scc[scc])
             continue;
 
-        auto [just, reason] = prove_deletion_using_sccs(vars, vals, value_am1_constraint_numbers, state, *logger,
+        auto [just, reason] = prove_deletion_using_sccs(vars, vals, value_am1_constraint_numbers, state,
             edges_out_from_variable, edges_out_from_value, *representatives_for_scc[scc], components);
         tracker.infer_all(logger, deletions_by_scc[scc], just, reason);
     }

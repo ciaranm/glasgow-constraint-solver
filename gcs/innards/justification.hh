@@ -24,7 +24,7 @@ namespace gcs::innards
      * \ingroup Innards
      * \sa JustifyExplicitly
      */
-    using ExplicitJustificationFunction = std::function<auto(const ExpandedReason & reason)->void>;
+    using ExplicitJustificationFunction = std::function<auto(ProofLogger & logger, const ExpandedReason & reason)->void>;
 
     /**
      * \brief Specify that an inference requires an explicit justification in

@@ -64,7 +64,7 @@ auto gcs::innards::propagate_plus(IntegerVariableID a, IntegerVariableID b, Inte
 
     auto justify = [&](Conclude c, const IntegerVariableCondition & lit1, const IntegerVariableCondition & lit2) -> JustifyExplicitly {
         return JustifyExplicitly{
-            [c, sum_line, logger, lit1, lit2](const ExpandedReason &) {
+            [c, sum_line, lit1, lit2](ProofLogger & logger, const ExpandedReason &) {
                 if (! (c == Conclude::LE ? sum_line.first : sum_line.second))
                     return;
 
@@ -72,18 +72,18 @@ auto gcs::innards::propagate_plus(IntegerVariableID a, IntegerVariableID b, Inte
                 pol << "pol " << (c == Conclude::LE ? sum_line.first.value() : sum_line.second.value()) << " ";
 
                 overloaded{
-                    [&](const XLiteral & x) { pol << logger->names_and_ids_tracker().pb_file_string_for(x) << " +"; },
+                    [&](const XLiteral & x) { pol << logger.names_and_ids_tracker().pb_file_string_for(x) << " +"; },
                     [&](const ProofLine & x) { pol << x << " +"; }}
-                    .visit(logger->names_and_ids_tracker().need_pol_item_defining_literal(lit1));
+                    .visit(logger.names_and_ids_tracker().need_pol_item_defining_literal(lit1));
 
                 pol << " ";
 
                 overloaded{
-                    [&](const XLiteral & x) { pol << logger->names_and_ids_tracker().pb_file_string_for(x) << " +"; },
+                    [&](const XLiteral & x) { pol << logger.names_and_ids_tracker().pb_file_string_for(x) << " +"; },
                     [&](const ProofLine & x) { pol << x << " +"; }}
-                    .visit(logger->names_and_ids_tracker().need_pol_item_defining_literal(lit2));
+                    .visit(logger.names_and_ids_tracker().need_pol_item_defining_literal(lit2));
 
-                logger->emit_proof_line(pol.str(), ProofLevel::Temporary);
+                logger.emit_proof_line(pol.str(), ProofLevel::Temporary);
             }};
     };
 

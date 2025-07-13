@@ -75,8 +75,7 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
 
 namespace
 {
-    auto no_overlap_justification(const State & state, ProofLogger * const logger,
-        IntegerVariableID v1, IntegerVariableID v2, Literal cond) -> pair<JustifyExplicitly, ExpandedReason>
+    auto no_overlap_justification(const State & state, IntegerVariableID v1, IntegerVariableID v2, Literal cond) -> pair<JustifyExplicitly, ExpandedReason>
     {
         auto v1_bounds = state.bounds(v1);
         ExpandedReason reason{v1 >= v1_bounds.first, v1 < v1_bounds.second + 1_i};
@@ -87,13 +86,13 @@ namespace
             else
                 reason.emplace_back(v1 != val);
 
-        auto justify = [&state = state, logger = logger, v1 = v1, v2 = v2, v1_bounds = v1_bounds, cond = cond](
-                           const ExpandedReason &) {
+        auto justify = [&state = state, v1 = v1, v2 = v2, v1_bounds = v1_bounds, cond = cond](
+                           ProofLogger & logger, const ExpandedReason &) {
             for (Integer val = v1_bounds.first; val <= v1_bounds.second; ++val)
                 if (state.in_domain(v1, val))
-                    logger->emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * (v1 != val) + 1_i * (v2 == val) + 1_i * ! cond >= 1_i, ProofLevel::Temporary);
+                    logger.emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * (v1 != val) + 1_i * (v2 == val) + 1_i * ! cond >= 1_i, ProofLevel::Temporary);
                 else
-                    logger->emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * (v2 != val) + 1_i * (v1 == val) + 1_i * ! cond >= 1_i, ProofLevel::Temporary);
+                    logger.emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * (v2 != val) + 1_i * (v1 == val) + 1_i * ! cond >= 1_i, ProofLevel::Temporary);
         };
 
         return pair{JustifyExplicitly{justify}, reason};
@@ -235,7 +234,7 @@ auto EqualsIf::install(Propagators & propagators, State & initial_state, ProofMo
                                 }
 
                             if (! overlap) {
-                                auto [just, reason] = no_overlap_justification(state, logger, v1, v2, cond);
+                                auto [just, reason] = no_overlap_justification(state, v1, v2, cond);
                                 inference.infer(logger, ! cond, just, reason);
                                 return PropagatorState::DisableUntilBacktrack;
                             }
@@ -375,7 +374,7 @@ auto EqualsIff::install(Propagators & propagators, State & initial_state, ProofM
                                 }
 
                             if (! overlap) {
-                                auto [just, reason] = no_overlap_justification(state, logger, v1, v2, cond);
+                                auto [just, reason] = no_overlap_justification(state, v1, v2, cond);
                                 inference.infer(logger, ! cond, just, reason);
                                 return PropagatorState::DisableUntilBacktrack;
                             }

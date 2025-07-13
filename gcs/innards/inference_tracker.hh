@@ -113,9 +113,9 @@ namespace gcs::innards
             // actually call the justification if nothing is inferred
             auto just = visit([&](const auto & j) -> Justification {
                 if constexpr (std::is_same_v<std::decay_t<decltype(j)>, JustifyExplicitly>)
-                    return JustifyExplicitly{[done = false, &j](const ExpandedReason & reason) mutable -> void {
+                    return JustifyExplicitly{[done = false, &j](ProofLogger & logger, const ExpandedReason & reason) mutable -> void {
                         if (! done) {
-                            j.add_proof_steps(reason);
+                            j.add_proof_steps(logger, reason);
                             done = true;
                         }
                     }};

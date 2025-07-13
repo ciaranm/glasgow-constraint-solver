@@ -58,8 +58,8 @@ auto Abs::install(Propagators & propagators, State & initial_state,
         // now remove from v2 any value whose +/-value isn't in v1's domain.
         for (const auto & val : state.each_value(v2)) {
             if (! state.in_domain(v1, val) && ! state.in_domain(v1, -val) && state.in_domain(v2, val)) {
-                auto just = [v1, v2, val, logger](const ExpandedReason & reason) {
-                    justify_abs_hole(*logger, reason, v1, v2, val);
+                auto just = [v1, v2, val](ProofLogger & logger, const ExpandedReason & reason) {
+                    justify_abs_hole(logger, reason, v1, v2, val);
                 };
                 inference.infer_not_equal(logger, v2, val, JustifyExplicitly{just}, ExpandedReason{{v1 != val, v1 != -val}});
             }

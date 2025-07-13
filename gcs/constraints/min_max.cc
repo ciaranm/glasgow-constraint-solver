@@ -101,11 +101,11 @@ auto ArrayMinMax::install(Propagators & propagators, State &, ProofModel * const
                 for (auto & var : vars)
                     reason.emplace_back(var != value);
 
-                inference.infer_not_equal(logger, result, value, JustifyExplicitly{[logger, result, value, &selectors](const ExpandedReason & reason) {
+                inference.infer_not_equal(logger, result, value, JustifyExplicitly{[result, value, &selectors](ProofLogger & logger, const ExpandedReason & reason) {
                     // show that none of the selectors work, if we're taking the result to be that value and also
                     // that the value is missing from all of the vars
                     for (const auto & sel : selectors)
-                        logger->emit_rup_proof_line_under_reason(reason, WeightedPseudoBooleanSum{} + (1_i * ! sel) + (1_i * (result != value)) >= 1_i, ProofLevel::Temporary);
+                        logger.emit_rup_proof_line_under_reason(reason, WeightedPseudoBooleanSum{} + (1_i * ! sel) + (1_i * (result != value)) >= 1_i, ProofLevel::Temporary);
                 }},
                     reason);
             }
@@ -141,19 +141,20 @@ auto ArrayMinMax::install(Propagators & propagators, State &, ProofModel * const
 
             for (const auto & val : state.each_value(*support_1))
                 if (! state.in_domain(result, val)) {
-                    auto justf = JustifyExplicitly{[logger, &vars, support_1 = *support_1, result, val, result_values = state.copy_of_values(result), &selectors](const ExpandedReason & reason) {
+                    auto justf = JustifyExplicitly{[&vars, support_1 = *support_1, result, val, result_values = state.copy_of_values(result), &selectors](
+                                                       ProofLogger & logger, const ExpandedReason & reason) {
                         // first, show that the selector can't be true for anything other than the supporting variable
                         for (const auto & [idx, var] : enumerate(vars)) {
                             if (var != support_1) {
                                 for (const auto & val : result_values.each())
-                                    logger->emit_rup_proof_line_under_reason(reason, WeightedPseudoBooleanSum{} + (1_i * ! selectors.at(idx)) + (1_i * (result != val)) >= 1_i, ProofLevel::Temporary);
-                                logger->emit_rup_proof_line_under_reason(reason, WeightedPseudoBooleanSum{} + (1_i * ! selectors.at(idx)) >= 1_i, ProofLevel::Temporary);
+                                    logger.emit_rup_proof_line_under_reason(reason, WeightedPseudoBooleanSum{} + (1_i * ! selectors.at(idx)) + (1_i * (result != val)) >= 1_i, ProofLevel::Temporary);
+                                logger.emit_rup_proof_line_under_reason(reason, WeightedPseudoBooleanSum{} + (1_i * ! selectors.at(idx)) >= 1_i, ProofLevel::Temporary);
                             }
                         }
                         // now fish out the supporting variable, and show that it has to have its selector true
                         for (const auto & [idx, var] : enumerate(vars)) {
                             if (var == support_1)
-                                logger->emit_rup_proof_line_under_reason(reason, WeightedPseudoBooleanSum{} + (1_i * (support_1 == val)) + (1_i * selectors.at(idx)) >= 1_i, ProofLevel::Temporary);
+                                logger.emit_rup_proof_line_under_reason(reason, WeightedPseudoBooleanSum{} + (1_i * (support_1 == val)) + (1_i * selectors.at(idx)) >= 1_i, ProofLevel::Temporary);
                         }
                     }};
                     inference.infer(logger, *support_1 != val, justf, reason);

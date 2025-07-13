@@ -259,7 +259,7 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
 #endif
             need_lit();
             auto t = temporary_proof_level();
-            x.add_proof_steps(reason);
+            x.add_proof_steps(*this, reason);
             infer(lit, JustifyUsingRUP{
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
                            x.where

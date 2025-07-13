@@ -194,12 +194,12 @@ auto LinearInequalityIff::install(Propagators & propagators, State & state, Proo
                     }
 
                     if (min_possible > value + modifier) {
-                        auto just = [&](const ExpandedReason &) { return justify_cond(state, sanitised_cv, *logger, *proof_line); };
+                        auto just = [&](ProofLogger & logger, const ExpandedReason &) { return justify_cond(state, sanitised_cv, logger, *proof_line); };
                         inference.infer(logger, ! cond, JustifyExplicitly{just}, AllVariablesExactValues{});
                         return PropagatorState::Enable;
                     }
                     else if (max_possible <= value + modifier) {
-                        auto just = [&](const ExpandedReason &) { return justify_cond(state, sanitised_neg_cv, *logger, *proof_line + 1); };
+                        auto just = [&](ProofLogger & logger, const ExpandedReason &) { return justify_cond(state, sanitised_neg_cv, logger, *proof_line + 1); };
                         inference.infer(logger, cond, JustifyExplicitly{just}, AllVariablesExactValues{});
                         return PropagatorState::Enable;
                     }
