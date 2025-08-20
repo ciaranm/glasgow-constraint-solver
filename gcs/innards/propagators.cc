@@ -177,8 +177,8 @@ namespace
     }
 }
 
-auto Propagators::define_and_install_table(State & state, ProofModel * const optional_model, const vector<IntegerVariableID> & vars,
-    ExtensionalTuples permitted, const string & x) -> void
+auto Propagators::define_and_install_table(State & state, ProofModel * const optional_model, const vector<IntegerVariableID> && vars,
+    ExtensionalTuples && permitted, const string & x) -> void
 {
     visit([&](auto && permitted) {
         if (depointinate(permitted).empty()) {
