@@ -7,7 +7,6 @@
 #include <numeric>
 #include <random>
 #include <sstream>
-#include <tuple>
 #include <vector>
 
 #include <boost/program_options.hpp>
@@ -16,6 +15,8 @@ using namespace gcs;
 
 namespace po = boost::program_options;
 
+using fmt::println;
+using std::cerr;
 using std::cout;
 using std::endl;
 using std::iota;
@@ -89,7 +90,15 @@ auto constraint_type_str(SmartEntryConstraint c) -> string
     return string_names[static_cast<int>(c)];
 }
 
-auto test_smart_table(const int & n, mt19937 & rng, bool make_string_rep)
+auto now()
+{
+    return std::chrono::system_clock::now();
+}
+void print_time_between(std::chrono::system_clock::time_point start, std::chrono::system_clock::time_point end)
+{
+    cout << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() << ", ";
+}
+auto test_smart_table(const int & n, mt19937 & rng, bool make_string_rep, bool noproof)
 {
     stringstream string_rep;
     Problem p;
@@ -242,6 +251,24 @@ auto test_smart_table(const int & n, mt19937 & rng, bool make_string_rep)
 
     p.post(SmartTable{x, tuples});
 
+    if (noproof) {
+        auto start = now();
+        solve_with(p,
+            SolveCallbacks{
+                .solution = [&](const CurrentState &) -> bool {
+                    //                cout << "x = [ ";
+                    //                for (const auto & var : x) {
+                    //                    cout << s(var) << " ";
+                    //                }
+                    //                cout << "]" << endl;
+
+                    return true;
+                }},
+            nullopt);
+        auto end = now();
+        print_time_between(start, end);
+    }
+    auto start = now();
     auto stats = solve_with(p,
         SolveCallbacks{
             .solution = [&](const CurrentState &) -> bool {
@@ -255,32 +282,80 @@ auto test_smart_table(const int & n, mt19937 & rng, bool make_string_rep)
             }},
         ProofOptions{"random_table"});
 
-    if (0 != system("$HOME/.cargo/bin/veripb random_table.opb random_table.pbp")) {
+    auto end = now();
+    print_time_between(start, end);
+    start = now();
+    if (0 != system("$HOME/.cargo/bin/veripb random_table.opb random_table.pbp >> /dev/null")) {
+
         cout << stats;
         cout << "Num solutions: " << stats.solutions << endl;
         if (make_string_rep) cout << string_rep.str() << endl;
         return false;
     }
-
+    end = now();
+    print_time_between(start, end);
+    cout << endl;
     return true;
 }
 auto main(int argc, char * argv[]) -> int
 {
+    po::options_description display_options{"Program options"};
+    display_options.add_options() //
+        ("help", "Display help information");
+
+    po::options_description all_options{"All options"};
+    all_options.add_options()                                                          //
+        ("n", po::value<int>()->default_value(6), "Max number for random values")      //
+        ("r", po::value<int>()->default_value(20), "Number of repetitions for each n") //
+        ("seed", po::value<int>()->default_value(-1), "Random seed.")                  //
+        ("noproof", "Also run without proof logging")                                  //
+        ("str", "Print string representation.");
+
+    all_options.add(display_options);
+
+    po::variables_map options_vars;
+
+    try {
+        po::store(po::command_line_parser(argc, argv)
+                      .options(all_options)
+                      .run(),
+            options_vars);
+        po::notify(options_vars);
+    }
+    catch (const po::error & e) {
+        println(cerr, "Error: {}", e.what());
+        println(cerr, "Try {} --help", argv[0]);
+        return EXIT_FAILURE;
+    }
+
+    if (options_vars.contains("help")) {
+        println("Usage: {} [options] [instance]", argv[0]);
+        println("");
+        display_options.print(cout);
+        return EXIT_SUCCESS;
+    }
+
     random_device rand_dev;
-    auto seed = rand_dev();
-    bool use_string_rep = false;
-    if (argc >= 2)
-        seed = stoll(argv[1]);
-    if (argc >= 3)
-        use_string_rep = true;
+    auto max_n = options_vars["n"].as<int>();
+    auto max_r = options_vars["r"].as<int>();
+    auto seed = options_vars["seed"].as<int>();
+    auto use_str = options_vars.contains("str");
 
-    std::mt19937 rng(seed);
+    // std::mt19937 rng(rand_dev());
     cout << "Seed for random smart tables: " << seed << endl;
-    //    mt19937 rng(0); // Switch to this to have it the same every time.
+    mt19937 rng(0); // Switch to this to have it the same every time.
+    cout << "n, r,";
+    auto noproof = options_vars.contains("noproof");
+    if (noproof) {
+        cout << "no_proof_time, ";
+    }
+    cout << "proof_time, ";
+    cout << "verify_time, " << endl;
 
-    for (int n = 3; n < 6; n++) {
-        for (int r = 0; r < 20 / n; r++) {
-            if (! test_smart_table(n, rng, use_string_rep)) {
+    for (int n = 3; n < max_n; n++) {
+        for (int r = 0; r < max_r / n; r++) {
+            cout << n << ", " << r << ", ";
+            if (! test_smart_table(n, rng, true, options_vars.contains("noproof"))) {
                 return EXIT_FAILURE;
             }
         }
