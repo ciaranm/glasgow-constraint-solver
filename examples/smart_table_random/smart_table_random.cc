@@ -262,7 +262,7 @@ auto test_smart_table(const int & n, mt19937 & rng, bool make_string_rep, bool n
                    //                }
                    //                cout << "]" << endl;
 
-                   return true;
+                   return false;
                }},
            nullopt);
         auto end = now();
@@ -278,7 +278,7 @@ auto test_smart_table(const int & n, mt19937 & rng, bool make_string_rep, bool n
                 //                }
                 //                cout << "]" << endl;
 
-                return true;
+                return false;
             }},
         ProofOptions{"random_table"});
 
@@ -355,6 +355,9 @@ auto main(int argc, char * argv[]) -> int
     cout << "proof_time, ";
     cout << "verify_time, " << endl;
 
+    // cout << 10 << ", ";
+    // test_smart_table(10, rng,  false, noproof);
+    // return EXIT_SUCCESS;
     for ( int n = 3; n < max_n; n++) {
         for ( int r = 0; r < max_r/n ; r++) {
             cout << n << ", " << r << ", ";
