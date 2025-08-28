@@ -24,3 +24,11 @@ auto gcs::innards::generic_reason(const State & state, const std::vector<Integer
 
     return [=]() { return reason; };
 }
+
+auto innards::singleton_reason(const IntegerVariableCondition & lit) -> Reason
+{
+    Literals reason;
+    reason.push_back(lit);
+    return [=]() {return reason;};
+}
+
