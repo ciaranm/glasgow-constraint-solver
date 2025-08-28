@@ -108,7 +108,7 @@ namespace gcs
      * \sa gcs::constant_variable()
      * \ingroup Core
      */
-    [[nodiscard]] constexpr inline auto operator"" _c(unsigned long long v) -> ConstantIntegerVariableID
+    [[nodiscard]] constexpr inline auto operator""_c(unsigned long long v) -> ConstantIntegerVariableID
     {
         return ConstantIntegerVariableID{Integer(v)};
     }
