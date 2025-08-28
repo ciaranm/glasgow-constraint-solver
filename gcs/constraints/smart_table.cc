@@ -140,10 +140,10 @@ namespace
                     if (logger) {
                         if (new_dom_2.size() < dom_2.size())
                             log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) >= (dom_1[0] + 1_i),
-                                state, inference, reason);
+                                state, inference, singleton_reason(binary_entry.var_1 >= dom_1[0]));
                         if (new_dom_1.size() < dom_1.size())
                             log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) < dom_2[dom_2.size() - 1],
-                                state, inference, reason);
+                                state, inference, singleton_reason(binary_entry.var_2 < dom_2[dom_2.size() - 1] - 1_i));
                     }
                     break;
                 case SmartEntryConstraint::LessThanEqual:
@@ -153,9 +153,9 @@ namespace
                         [&](Integer val) { return val <= dom_2[dom_2.size() - 1]; });
                     if (logger) {
                         if (new_dom_2.size() < dom_2.size())
-                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) >= (dom_1[0]), state, inference, reason);
+                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) >= (dom_1[0]), state, inference, singleton_reason(binary_entry.var_1 >= dom_1[0]));
                         if (new_dom_1.size() < dom_1.size())
-                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) < (dom_2[dom_2.size() - 1] + 1_i), state, inference, reason);
+                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) < (dom_2[dom_2.size() - 1] + 1_i), state, inference, singleton_reason(binary_entry.var_2 < dom_2[dom_2.size() - 1] - 1_i));
                     }
                     break;
                 case SmartEntryConstraint::Equal:
@@ -170,8 +170,9 @@ namespace
                             vector<Integer> discarded_dom1;
                             set_difference(dom_1.begin(), dom_1.end(), dom_2.begin(), dom_2.end(),
                                 back_inserter(discarded_dom1));
+
                             for (const auto & val : discarded_dom1) {
-                                log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) != val, state, inference, reason);
+                                log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) != val, state, inference, singleton_reason(binary_entry.var_2 != val));
                             }
                         }
 
@@ -180,7 +181,7 @@ namespace
                             set_difference(dom_2.begin(), dom_2.end(), dom_1.begin(), dom_1.end(),
                                 back_inserter(discarded_dom2));
                             for (const auto & val : discarded_dom2) {
-                                log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) != val, state, inference, reason);
+                                log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) != val, state, inference, singleton_reason(binary_entry.var_1 != val));
                             }
                         }
                     }
@@ -192,7 +193,7 @@ namespace
                             dom_1.begin(), dom_1.end(),
                             back_inserter(new_dom_2));
                         if (logger && new_dom_2.size() < dom_2.size()) {
-                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) != (dom_1[0]), state, inference, reason);
+                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) != (dom_1[0]), state, inference, singleton_reason(binary_entry.var_1 == dom_1[0]));
                         }
                     }
                     else if (dom_2.size() == 1) {
@@ -201,7 +202,7 @@ namespace
                             dom_2.begin(), dom_2.end(),
                             back_inserter(new_dom_1));
                         if (logger && new_dom_1.size() < dom_1.size()) {
-                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) != (dom_2[0]), state, inference, reason);
+                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) != (dom_2[0]), state, inference, singleton_reason(binary_entry.var_2 == dom_2[0]));
                         }
                     }
                     else {
@@ -216,9 +217,9 @@ namespace
                         [&](Integer val) { return val < dom_1[dom_1.size() - 1]; });
                     if (logger) {
                         if (new_dom_1.size() < dom_1.size())
-                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) >= (dom_2[0] + 1_i), state, inference, reason);
+                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) >= (dom_2[0] + 1_i), state, inference, singleton_reason(binary_entry.var_2 >= dom_2[0]));
                         if (new_dom_2.size() < dom_2.size())
-                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) < dom_1[dom_1.size() - 1], state, inference, reason);
+                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) < dom_1[dom_1.size() - 1], state, inference, singleton_reason(binary_entry.var_1 < dom_1[dom_1.size() - 1] - 1_i));
                     }
                     break;
                 case SmartEntryConstraint::GreaterThanEqual:
@@ -228,9 +229,9 @@ namespace
                         [&](Integer val) { return val <= dom_1[dom_1.size() - 1]; });
                     if (logger) {
                         if (new_dom_1.size() < dom_1.size())
-                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) >= (dom_2[0]), state, inference, reason);
+                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) >= (dom_2[0]), state, inference, singleton_reason(binary_entry.var_2 >= dom_2[0]));
                         if (new_dom_2.size() < dom_2.size())
-                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) < (dom_1[dom_1.size() - 1] + 1_i), state, inference, reason);
+                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) < (dom_1[dom_1.size() - 1] + 1_i), state, inference, singleton_reason(binary_entry.var_1 < dom_1[dom_1.size() - 1] - 1_i));
                     }
                     break;
                 default:
@@ -458,19 +459,35 @@ namespace
             }
         }
 
-        for (const auto & var : vars) {
-            for (const auto & value : unsupported[var]) {
-                auto justf = [&](const Reason & reason) -> void {
-                    for (unsigned int tuple_idx = 0; tuple_idx < tuples.size(); ++tuple_idx) {
-                        logger->emit_rup_proof_line_under_reason(reason,
-                            WeightedPseudoBooleanSum{} + 1_i * (var != value) + 1_i * (! pb_selectors[tuple_idx]) >= 1_i,
-                            ProofLevel::Current);
-                    }
-                };
-                inference.infer_not_equal(logger, var, value, JustifyExplicitly{justf}, reason);
+        auto unsupported_sum = WeightedPseudoBooleanSum{};
+
+
+        if (logger) {
+            auto reason_sum = WeightedPseudoBooleanSum{};
+            for (const auto & lit : reason()) {
+                reason_sum += 1_i * lit;
+            }
+            auto [reason_short, _, _2] = logger->create_proof_flag_reifying(reason_sum >= Integer(reason_sum.terms.size()), "", ProofLevel::Current);
+
+            for (const auto & var : vars) {
+                for (const auto & value : unsupported[var]) {
+                    auto justf = [&](const Reason & reason) -> void {
+                        for (unsigned int tuple_idx = 0; tuple_idx < tuples.size(); ++tuple_idx) {
+                                logger->emit_rup_proof_line(
+                                    WeightedPseudoBooleanSum{} + 1_i * (var != value) + 1_i * (!reason_short) + 1_i * (! pb_selectors[tuple_idx]) >= 1_i,
+                                    ProofLevel::Current);
+                        }
+                    };
+                    inference.infer_not_equal(logger, var, value, JustifyExplicitly{justf}, reason);
+                }
+            }
+        } else {
+            for (const auto & var : vars) {
+                for (const auto & value : unsupported[var]) {
+                    inference.infer_not_equal(logger, var, value, NoJustificationNeeded{}, Reason{});
+                }
             }
         }
-
         if (! some_tuple_still_feasible)
             inference.contradiction(logger, JustifyUsingRUP{}, reason);
     }

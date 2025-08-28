@@ -13,6 +13,8 @@ namespace gcs::innards
     using Reason = std::function<auto()->Literals>;
 
     [[nodiscard]] auto generic_reason(const State & state, const std::vector<IntegerVariableID> & vars) -> Reason;
+
+    [[nodiscard]] auto singleton_reason( const IntegerVariableCondition & lit) -> Reason;
 }
 
 #endif
