@@ -278,7 +278,7 @@ auto test_smart_table(const int & n, mt19937 & rng, bool make_string_rep, bool n
                 //                }
                 //                cout << "]" << endl;
 
-                return true;
+                return false;
             }},
         ProofOptions{"random_table"});
 
