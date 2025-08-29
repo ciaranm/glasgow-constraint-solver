@@ -143,7 +143,7 @@ namespace
                                 state, inference, singleton_reason(binary_entry.var_1 >= dom_1[0]));
                         if (new_dom_1.size() < dom_1.size())
                             log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) < dom_2[dom_2.size() - 1],
-                                state, inference, singleton_reason(binary_entry.var_2 < dom_2[dom_2.size() - 1] - 1_i));
+                                state, inference, singleton_reason(binary_entry.var_2 < dom_2[dom_2.size() - 1] + 1_i));
                     }
                     break;
                 case SmartEntryConstraint::LessThanEqual:
@@ -155,7 +155,7 @@ namespace
                         if (new_dom_2.size() < dom_2.size())
                             log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) >= (dom_1[0]), state, inference, singleton_reason(binary_entry.var_1 >= dom_1[0]));
                         if (new_dom_1.size() < dom_1.size())
-                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) < (dom_2[dom_2.size() - 1] + 1_i), state, inference, singleton_reason(binary_entry.var_2 < dom_2[dom_2.size() - 1] - 1_i));
+                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) < (dom_2[dom_2.size() - 1] + 1_i), state, inference, singleton_reason(binary_entry.var_2 < dom_2[dom_2.size() - 1] + 1_i));
                     }
                     break;
                 case SmartEntryConstraint::Equal:
@@ -219,7 +219,7 @@ namespace
                         if (new_dom_1.size() < dom_1.size())
                             log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) >= (dom_2[0] + 1_i), state, inference, singleton_reason(binary_entry.var_2 >= dom_2[0]));
                         if (new_dom_2.size() < dom_2.size())
-                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) < dom_1[dom_1.size() - 1], state, inference, singleton_reason(binary_entry.var_1 < dom_1[dom_1.size() - 1] - 1_i));
+                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) < dom_1[dom_1.size() - 1], state, inference, singleton_reason(binary_entry.var_1 < dom_1[dom_1.size() - 1] + 1_i));
                     }
                     break;
                 case SmartEntryConstraint::GreaterThanEqual:
@@ -231,7 +231,7 @@ namespace
                         if (new_dom_1.size() < dom_1.size())
                             log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) >= (dom_2[0]), state, inference, singleton_reason(binary_entry.var_2 >= dom_2[0]));
                         if (new_dom_2.size() < dom_2.size())
-                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) < (dom_1[dom_1.size() - 1] + 1_i), state, inference, singleton_reason(binary_entry.var_1 < dom_1[dom_1.size() - 1] - 1_i));
+                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) < (dom_1[dom_1.size() - 1] + 1_i), state, inference, singleton_reason(binary_entry.var_1 < dom_1[dom_1.size() - 1] + 1_i));
                     }
                     break;
                 default:
