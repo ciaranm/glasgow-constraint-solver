@@ -37,8 +37,8 @@ auto GACArithmetic<op_>::install(Propagators & propagators, State & initial_stat
 
     vector<vector<Integer>> permitted;
 
-    for (const auto & v1 : initial_state.each_value_immutable(_v1))
-        for (const auto & v2 : initial_state.each_value_immutable(_v2))
+    for (const auto & v1 : initial_state.each_value(_v1))
+        for (const auto & v2 : initial_state.each_value(_v2))
             if ((v2_zero_is_ok || v2 != 0_i) && initial_state.in_domain(_v2, v2)) {
                 Integer r = 0_i;
                 switch (op_) {

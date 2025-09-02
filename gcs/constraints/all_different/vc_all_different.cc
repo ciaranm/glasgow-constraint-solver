@@ -65,15 +65,14 @@ auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & 
         for (auto other : to_propagate) {
             if (other.second == val) {
                 // we're already in a contradicting state
-                inference.infer_not_equal(logger, var, val, JustifyUsingRUP{},
-                    Reason{[var = other.first, val = val]() { return Literals{{var == val}}; }});
+                inference.infer_not_equal(logger, var, val, JustifyUsingRUP{}, ExpandedReason{{other.first == val}});
             }
         }
 
         while (i != unassigned.end()) {
             auto other = *i;
             if (other != var) {
-                inference.infer_not_equal(logger, other, val, JustifyUsingRUP{}, Reason{[var = var, val = val]() { return Literals{{var == val}}; }});
+                inference.infer_not_equal(logger, other, val, JustifyUsingRUP{}, ExpandedReason{{var == val}});
                 if (auto other_val = state.optional_single_value(other)) {
                     to_propagate.emplace_back(other, *other_val);
                     unassigned.erase(i++);
@@ -128,7 +127,7 @@ auto VCAllDifferent::install(innards::Propagators & propagators, innards::State 
             propagate_non_gac_alldifferent(unassigned_handle, state, tracker, logger);
             return PropagatorState::Enable;
         },
-        triggers, "vcalldiff");
+        {sanitised_vars}, triggers, "vcalldiff");
 }
 
 template auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle, const State & state,

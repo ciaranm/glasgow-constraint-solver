@@ -49,13 +49,13 @@ auto NotEquals::install(Propagators & propagators, State & initial_state, ProofM
     else if (v1_is_constant) {
         propagators.install_initialiser([v1_is_constant = v1_is_constant, v1 = _v1, v2 = _v2](
                                             const State &, auto & inference, ProofLogger * const logger) -> void {
-            inference.infer_not_equal(logger, v2, *v1_is_constant, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v1 == *v1_is_constant}}; }});
+            inference.infer_not_equal(logger, v2, *v1_is_constant, JustifyUsingRUP{}, ExpandedReason{{v1 == *v1_is_constant}});
         });
     }
     else if (v2_is_constant) {
         propagators.install_initialiser([v2_is_constant = v2_is_constant, v1 = _v1, v2 = _v2](
                                             const State &, auto & inference, ProofLogger * const logger) -> void {
-            inference.infer_not_equal(logger, v1, *v2_is_constant, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v2 == *v2_is_constant}}; }});
+            inference.infer_not_equal(logger, v1, *v2_is_constant, JustifyUsingRUP{}, ExpandedReason{{v2 == *v2_is_constant}});
         });
     }
     else {
@@ -71,29 +71,29 @@ auto NotEquals::install(Propagators & propagators, State & initial_state, ProofM
                 auto value1 = state.optional_single_value(v1);
                 if (value1) {
                     if (convert_to_values_ne) {
-                        inference.infer_not_equal(logger, v2, *value1, NoJustificationNeeded{}, Reason{});
+                        inference.infer_not_equal(logger, v2, *value1, NoJustificationNeeded{}, NoReason{});
                         return PropagatorState::DisableUntilBacktrack;
                     }
                     else {
                         inference.infer_not_equal(logger, v2, *value1,
-                            JustifyUsingRUP{}, Reason{[=]() { return Literals{{v1 == *value1}}; }});
+                            JustifyUsingRUP{}, ExpandedReason{{v1 == *value1}});
                         return PropagatorState::DisableUntilBacktrack;
                     }
                 }
                 auto value2 = state.optional_single_value(v2);
                 if (value2) {
                     if (convert_to_values_ne) {
-                        inference.infer_not_equal(logger, v1, *value2, NoJustificationNeeded{}, Reason{});
+                        inference.infer_not_equal(logger, v1, *value2, NoJustificationNeeded{}, NoReason{});
                         return PropagatorState::DisableUntilBacktrack;
                     }
                     else {
-                        inference.infer_not_equal(logger, v1, *value2, JustifyUsingRUP{}, Reason{[=]() { return Literals{{v2 == *value2}}; }});
+                        inference.infer_not_equal(logger, v1, *value2, JustifyUsingRUP{}, ExpandedReason{{v2 == *value2}});
                         return PropagatorState::DisableUntilBacktrack;
                     }
                 }
                 return PropagatorState::Enable;
             },
-                triggers, "not equals");
+                {_v1, _v2}, triggers, "not equals");
         },
             _v1, _v2);
 
@@ -101,7 +101,7 @@ auto NotEquals::install(Propagators & propagators, State & initial_state, ProofM
             propagators.install_initialiser([v1 = _v1, v2 = _v2](
                                                 const State & state, auto &, ProofLogger * const logger) -> void {
                 logger->emit_proof_comment("converting not equals to value encoding");
-                for (auto val1 : state.each_value_immutable(v1))
+                for (auto val1 : state.each_value(v1))
                     if (state.in_domain(v2, val1)) {
                         logger->emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * (v1 != val1) + 1_i * (v2 != val1) >= 1_i, ProofLevel::Top);
                     }

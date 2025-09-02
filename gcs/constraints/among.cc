@@ -105,7 +105,7 @@ auto Among::install(Propagators & propagators, State &, ProofModel * const optio
                 return none_of(values_of_interest, [&](const auto & val) -> bool { return state.in_domain(var, val); });
             });
             auto can_be_either_start = partition(not_impossible_start, partitioned_vars.end(), [&](const auto & var) -> bool {
-                return none_of(state.each_value_immutable(var), [&](const auto & val) -> bool {
+                return none_of(state.each_value(var), [&](const auto & val) -> bool {
                     return values_of_interest.end() == find(values_of_interest.begin(), values_of_interest.end(), val);
                 });
             });
@@ -122,32 +122,31 @@ auto Among::install(Propagators & propagators, State &, ProofModel * const optio
             // we now know how many variables definitely match, and how
             // many can't match, so we can derive bounds on the how many
             // variable.
-            auto vars_reason = generic_reason(state, vars);
+            auto vars_reason = transform_into_reason_outline<ExactValuesLost>(vars);
             inference.infer(logger, how_many >= must_match_count, JustifyUsingRUP{}, vars_reason);
             auto less_than_this_many = Integer(vars.size()) - must_not_match_count + 1_i;
-            inference.infer(logger, how_many < less_than_this_many, JustifyExplicitly{[&](const Reason &) -> void {
-                // for any variable that isn't ruled out, show that it can contribute at
-                // most one to the count.
-                if (sum_line.second && ! empty(can_be_either_or_must_vars) && values_of_interest.size() > 1) {
-                    stringstream line;
-                    line << "pol " << *sum_line.second;
-                    for (const auto & var : can_be_either_or_must_vars)
-                        line << " " << am1_lines->at(var) << " +";
-                    logger->emit_proof_line(line.str(), ProofLevel::Temporary);
-                }
-            }},
-                vars_reason);
+            auto justf = JustifyExplicitly{
+                [&values_of_interest, sum_line, am1_lines,
+                    can_be_either_or_must_vars = vector<IntegerVariableID>{can_be_either_or_must_vars.begin(), can_be_either_or_must_vars.end()}](ProofLogger & logger, const ExpandedReason &) -> void {
+                    // for any variable that isn't ruled out, show that it can contribute at
+                    // most one to the count.
+                    if (sum_line.second && ! empty(can_be_either_or_must_vars) && values_of_interest.size() > 1) {
+                        stringstream line;
+                        line << "pol " << *sum_line.second;
+                        for (const auto & var : can_be_either_or_must_vars)
+                            line << " " << am1_lines->at(var) << " +";
+                        logger.emit_proof_line(line.str(), ProofLevel::Temporary);
+                    }
+                }};
+            inference.infer(logger, how_many < less_than_this_many, justf, vars_reason);
 
             // potentially now we know that any undecided variables must actually be either
             // matching or not matching.
             auto [at_least_how_many, at_most_how_many] = state.bounds(how_many);
 
-            auto vars_and_bounds_reason = [&vars_reason, how_many, at_least_how_many, at_most_how_many]() {
-                auto result = vars_reason();
-                result.push_back(how_many >= at_least_how_many);
-                result.push_back(how_many < at_most_how_many + 1_i);
-                return result;
-            };
+            auto vars_and_bounds_reason = vars_reason;
+            vars_and_bounds_reason.emplace_back(how_many >= at_least_how_many);
+            vars_and_bounds_reason.emplace_back(how_many < at_most_how_many + 1_i);
 
             // if we have enough definitely matching values, nothing else can match
             if (must_match_count == at_most_how_many) {
@@ -161,7 +160,7 @@ auto Among::install(Propagators & propagators, State &, ProofModel * const optio
                 // anything that might match actually mustn't match
                 for (const auto & var : vars) {
                     bool all_match = true;
-                    for (const auto & val : state.each_value_immutable(var))
+                    for (const auto & val : state.each_value(var))
                         if (values_of_interest.end() == find(values_of_interest.begin(), values_of_interest.end(), val))
                             all_match = false;
 
@@ -170,18 +169,20 @@ auto Among::install(Propagators & propagators, State &, ProofModel * const optio
                         for (const auto & val : values_of_interest)
                             inferences.push_back(var != val);
 
-                        inference.infer_all(logger, inferences, JustifyExplicitly{[&](const Reason &) -> void {
-                            // for any variable that is forced, show that it can contribute at
-                            // most one to the count
-                            if (sum_line.second && ! empty(must_match_vars) && values_of_interest.size() > 1) {
-                                stringstream line;
-                                line << "pol " << *sum_line.second;
-                                for (const auto & var : must_match_vars)
-                                    line << " " << am1_lines->at(var) << " +";
-                                logger->emit_proof_line(line.str(), ProofLevel::Temporary);
-                            }
-                        }},
-                            vars_and_bounds_reason);
+                        auto justf = JustifyExplicitly{
+                            [&values_of_interest, sum_line, am1_lines,
+                                must_match_vars = vector<IntegerVariableID>{must_match_vars.begin(), must_match_vars.end()}](ProofLogger & logger, const ExpandedReason &) -> void {
+                                // for any variable that is forced, show that it can contribute at
+                                // most one to the count
+                                if (sum_line.second && ! empty(must_match_vars) && values_of_interest.size() > 1) {
+                                    stringstream line;
+                                    line << "pol " << *sum_line.second;
+                                    for (const auto & var : must_match_vars)
+                                        line << " " << am1_lines->at(var) << " +";
+                                    logger.emit_proof_line(line.str(), ProofLevel::Temporary);
+                                }
+                            }};
+                        inference.infer_all(logger, inferences, justf, vars_and_bounds_reason);
                     }
                 }
 
@@ -211,24 +212,26 @@ auto Among::install(Propagators & propagators, State &, ProofModel * const optio
                         }
 
                         if (might_match)
-                            for (const auto & val : state.each_value_mutable(var))
+                            for (const auto & val : state.each_value(var))
                                 if (values_of_interest.end() == find(values_of_interest.begin(), values_of_interest.end(), val)) {
-                                    inference.infer(logger, var != val, JustifyExplicitly{[&](const Reason &) {
-                                        // need to point out that if var == val then var != voi for each voi
-                                        for (const auto & voi : values_of_interest)
-                                            logger->emit(RUPProofRule{}, WeightedPseudoBooleanSum{} + 1_i * (var != val) + 1_i * (var != voi) >= 1_i, ProofLevel::Temporary);
+                                    auto justf = JustifyExplicitly{
+                                        [&values_of_interest, am1_lines, var, val, sum_line,
+                                            can_be_either_vars = vector<IntegerVariableID>{can_be_either_vars.begin(), can_be_either_vars.end()}](ProofLogger & logger, const ExpandedReason &) -> void {
+                                            // need to point out that if var == val then var != voi for each voi
+                                            for (const auto & voi : values_of_interest)
+                                                logger.emit(RUPProofRule{}, WeightedPseudoBooleanSum{} + 1_i * (var != val) + 1_i * (var != voi) >= 1_i, ProofLevel::Temporary);
 
-                                        // now each other variable that may or may not match is contributing at most one to the sum
-                                        if (sum_line.second && values_of_interest.size() > 1) {
-                                            stringstream line;
-                                            line << "pol " << *sum_line.second;
-                                            for (const auto & other_var : can_be_either_vars)
-                                                if (var != other_var)
-                                                    line << " " << am1_lines->at(other_var) << " +";
-                                            logger->emit_proof_line(line.str(), ProofLevel::Temporary);
-                                        }
-                                    }},
-                                        vars_and_bounds_reason);
+                                            // now each other variable that may or may not match is contributing at most one to the sum
+                                            if (sum_line.second && values_of_interest.size() > 1) {
+                                                stringstream line;
+                                                line << "pol " << *sum_line.second;
+                                                for (const auto & other_var : can_be_either_vars)
+                                                    if (var != other_var)
+                                                        line << " " << am1_lines->at(other_var) << " +";
+                                                logger.emit_proof_line(line.str(), ProofLevel::Temporary);
+                                            }
+                                        }};
+                                    inference.infer(logger, var != val, justf, vars_and_bounds_reason);
                                 }
                     }
 
@@ -241,5 +244,5 @@ auto Among::install(Propagators & propagators, State &, ProofModel * const optio
 
             return PropagatorState::Enable;
         },
-        triggers, "among");
+        {_vars, _how_many}, triggers, "among");
 }

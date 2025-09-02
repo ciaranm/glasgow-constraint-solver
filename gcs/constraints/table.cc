@@ -169,14 +169,14 @@ auto NegativeTable::install(Propagators & propagators, State &, ProofModel * con
 
                 if (! falsified) {
                     if (! l1)
-                        inference.contradiction(logger, JustifyUsingRUP{}, generic_reason(state, vars));
+                        inference.contradiction(logger, JustifyUsingRUP{}, AllVariablesExactValues{});
                     else if (! l2)
-                        inference.infer(logger, *l1, JustifyUsingRUP{}, generic_reason(state, vars));
+                        inference.infer(logger, *l1, JustifyUsingRUP{}, AllVariablesExactValues{});
                 }
             }
             return PropagatorState::Enable;
         },
-            triggers, "negative table");
+            {_vars}, triggers, "negative table");
     },
         _tuples);
 }

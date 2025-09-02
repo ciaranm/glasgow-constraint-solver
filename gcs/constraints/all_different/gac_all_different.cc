@@ -18,6 +18,7 @@
 #include <list>
 #include <map>
 #include <optional>
+#include <ranges>
 #include <sstream>
 #include <type_traits>
 #include <utility>
@@ -177,11 +178,10 @@ namespace
         const vector<IntegerVariableID> & vars,
         const vector<Integer> & vals,
         map<Integer, ProofLine> & value_am1_constraint_numbers,
-        const State & state,
-        ProofLogger & logger,
+        const State &,
         const vector<pair<Left, Right>> & edges,
         const vector<uint8_t> & left_covered,
-        const vector<optional<Right>> & matching) -> pair<JustifyExplicitly, Reason>
+        const vector<optional<Right>> & matching) -> pair<JustifyExplicitly, DetailedReasonOutline>
     {
         vector<optional<Left>> inverse_matching(vals.size(), nullopt);
         for (const auto & [l, r] : enumerate(matching))
@@ -238,10 +238,10 @@ namespace
                 hall_value_nrs.push_back(vals[v.offset]);
 
         return pair{JustifyExplicitly{
-                        [vars, &logger, &value_am1_constraint_numbers, hall_variable_ids, hall_value_nrs](const Reason &) -> void {
+                        [vars, &value_am1_constraint_numbers, hall_variable_ids, hall_value_nrs](ProofLogger & logger, const ExpandedReason &) -> void {
                             justify_all_different_hall_set_or_violator(logger, vars, hall_variable_ids, hall_value_nrs, value_am1_constraint_numbers);
                         }},
-            generic_reason(state, hall_variable_ids)};
+            transform_into_reason_outline<ExactValuesLost>(hall_variable_ids)};
     }
 
     using Vertex = variant<Left, Right>;
@@ -261,12 +261,11 @@ namespace
         const vector<IntegerVariableID> & vars,
         const vector<Integer> & vals,
         map<Integer, ProofLine> & value_am1_constraint_numbers,
-        const State & state,
-        ProofLogger & logger,
+        const State &,
         const vector<vector<Right>> & edges_out_from_variable,
         const vector<vector<Left>> & edges_out_from_value,
         const Right delete_value,
-        const vector<int> & components) -> pair<Justification, Reason>
+        const vector<int> & components) -> pair<Justification, DetailedReasonOutline>
     {
         // we know a hall set exists, but we have to find it. starting
         // from but not including the end of the edge we're deleting,
@@ -324,7 +323,7 @@ namespace
             if (edges_out_from_value[delete_value.offset].empty())
                 throw UnexpectedException{"missing edge out from value in trivial scc"};
             else
-                return pair{JustifyUsingRUP{}, Reason{[=]() { return Literals{{vars[edges_out_from_value[delete_value.offset].begin()->offset] == vals[delete_value.offset]}}; }}};
+                return pair{JustifyUsingRUP{}, DetailedReasonOutline{{vars[edges_out_from_value[delete_value.offset].begin()->offset] == vals[delete_value.offset]}}};
         }
         else {
             // a hall set is at work
@@ -334,11 +333,11 @@ namespace
                     hall_value_nrs.push_back(vals[v.offset]);
 
             return pair{JustifyExplicitly{
-                            [vars, &logger, &value_am1_constraint_numbers, hall_variable_ids, hall_value_nrs](
-                                const Reason &) -> void {
+                            [vars, &value_am1_constraint_numbers, hall_variable_ids, hall_value_nrs](
+                                ProofLogger & logger, const ExpandedReason &) -> void {
                                 justify_all_different_hall_set_or_violator(logger, vars, hall_variable_ids, hall_value_nrs, value_am1_constraint_numbers);
                             }},
-                generic_reason(state, hall_variable_ids)};
+                transform_into_reason_outline<ExactValuesLost>(hall_variable_ids)};
         }
     }
 }
@@ -368,7 +367,7 @@ auto gcs::innards::propagate_gac_all_different(
     if (cmp_not_equal(count(left_covered.begin(), left_covered.end(), 1), vars.size())) {
         // nope. we've got a maximum cardinality matching that leaves at least
         // one thing on the left uncovered.
-        auto [just, reason] = prove_matching_is_too_small(vars, vals, value_am1_constraint_numbers, state, *logger, edges, left_covered, matching);
+        auto [just, reason] = prove_matching_is_too_small(vars, vals, value_am1_constraint_numbers, state, edges, left_covered, matching);
         return tracker.infer(logger, FalseLiteral{}, just, reason);
     }
 
@@ -526,7 +525,7 @@ auto gcs::innards::propagate_gac_all_different(
         if (! representatives_for_scc[scc])
             continue;
 
-        auto [just, reason] = prove_deletion_using_sccs(vars, vals, value_am1_constraint_numbers, state, *logger,
+        auto [just, reason] = prove_deletion_using_sccs(vars, vals, value_am1_constraint_numbers, state,
             edges_out_from_variable, edges_out_from_value, *representatives_for_scc[scc], components);
         tracker.infer_all(logger, deletions_by_scc[scc], just, reason);
     }
@@ -553,7 +552,7 @@ auto GACAllDifferent::install(Propagators & propagators, State & initial_state, 
     vector<Integer> compressed_vals;
 
     for (auto & var : sanitised_vars)
-        for (const auto & val : initial_state.each_value_immutable(var))
+        for (const auto & val : initial_state.each_value(var))
             if (compressed_vals.end() == find(compressed_vals.begin(), compressed_vals.end(), val))
                 compressed_vals.push_back(val);
 
@@ -565,7 +564,7 @@ auto GACAllDifferent::install(Propagators & propagators, State & initial_state, 
             propagate_gac_all_different(vars, vals, *value_am1_constraint_numbers.get(), state, inference, logger);
             return PropagatorState::Enable;
         },
-        triggers, "alldiff");
+        {sanitised_vars}, triggers, "alldiff");
 }
 
 template auto gcs::innards::propagate_gac_all_different(
