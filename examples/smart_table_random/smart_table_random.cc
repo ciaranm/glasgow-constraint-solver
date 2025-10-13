@@ -338,12 +338,13 @@ auto main(int argc, char * argv[]) -> int
     random_device rand_dev;
     auto max_n = options_vars["n"].as<int>();
     auto max_r = options_vars["r"].as<int>();
-    auto seed = options_vars["seed"].as<int>();
+    // auto seed = options_vars["seed"].as<int>();
     auto use_str = options_vars.contains("str");
 
+    auto seed = rand_dev();
     // std::mt19937 rng(rand_dev());
     cout << "Seed for random smart tables: " << seed << endl;
-    mt19937 rng(0); // Switch to this to have it the same every time.
+    mt19937 rng(seed); // Switch to this to have it the same every time.
     cout << "n, r,";
     auto noproof = options_vars.contains("noproof");
     if (noproof) {
@@ -352,14 +353,22 @@ auto main(int argc, char * argv[]) -> int
     cout << "proof_time, ";
     cout << "verify_time, " << endl;
 
-    for (int n = 3; n < max_n; n++) {
-        for (int r = 0; r < max_r / n; r++) {
-            cout << n << ", " << r << ", ";
-            if (! test_smart_table(n, rng, true, options_vars.contains("noproof"))) {
-                return EXIT_FAILURE;
-            }
+    for (int r = 0; r < 40; ++r) {
+        if (! test_smart_table(24, rng, true, options_vars.contains("noproof"))) {
+            return EXIT_FAILURE;
         }
     }
+    // cout << 10 << ", ";
+    // test_smart_table(10, rng,  false, noproof);
+    // return EXIT_SUCCESS;
+    // for ( int n = 3; n < max_n; n++) {
+    //     for ( int r = 0; r < max_r/n ; r++) {
+    //         cout << n << ", " << r << ", ";
+    //         if (! test_smart_table(n, rng, true, options_vars.contains("noproof"))) {
+    //             return EXIT_FAILURE;
+    //         }
+    //     }
+    // }
 
     return EXIT_SUCCESS;
 }
