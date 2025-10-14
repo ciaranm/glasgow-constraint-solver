@@ -99,6 +99,9 @@ if (GCS_ENABLE_PYTHON)
     add_subdirectory(python)
 endif (GCS_ENABLE_PYTHON)
 
+
+add_subdirectory(mmcilree_thesis)
+
 Include(FetchContent)
 Set(FETCHCONTENT_QUIET FALSE)
 
