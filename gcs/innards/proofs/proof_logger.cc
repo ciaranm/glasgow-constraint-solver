@@ -35,6 +35,8 @@ using namespace gcs::innards;
 
 namespace
 {
+    const auto INDENT_WIDTH = 5;
+
     [[nodiscard]] auto deview(const VariableConditionFrom<ViewOfIntegerVariableID> & cond) -> VariableConditionFrom<SimpleIntegerVariableID>
     {
         switch (cond.op) {
@@ -88,6 +90,7 @@ struct ProofLogger::Imp
 
     string proof_file;
     fstream proof;
+    int current_indent = 0;
 
     Imp(NamesAndIDsTracker & t) :
         tracker(t)
@@ -107,6 +110,7 @@ ProofLogger::~ProofLogger() = default;
 auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_variables_and_values,
     const optional<pair<IntegerVariableID, Integer>> & optional_minimise_variable_and_value) -> void
 {
+    write_indent();
     _imp->proof << "% solution\n";
 
     for (const auto & [var, val] : all_variables_and_values)
@@ -244,6 +248,7 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
                     for (auto & r : *reason_literals)
                         terms += 1_i * ! r;
                 terms += 1_i * lit;
+                write_indent();
                 _imp->proof << "rup ";
                 emit_inequality_to(names_and_ids_tracker(), move(terms) >= 1_i, _imp->proof);
                 _imp->proof << ";\n";
@@ -280,6 +285,7 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
                     for (auto & r : *reason_literals)
                         terms += 1_i * ! r;
                 terms += 1_i * lit;
+                write_indent();
                 _imp->proof << "a ";
                 emit_inequality_to(names_and_ids_tracker(), move(terms) >= 1_i, _imp->proof);
                 _imp->proof << ";\n";
@@ -345,6 +351,7 @@ auto ProofLogger::emit_proof_line(const string & s, ProofLevel level
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
     _imp->proof << "% emit proof line from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
 #endif
+    write_indent();
     _imp->proof << s << ";\n";
     auto result = record_proof_line(++_imp->proof_line, level);
     return result;
@@ -503,8 +510,10 @@ auto ProofLogger::forget_proof_level(int depth) -> void
 {
     auto & lines = _imp->proof_lines_by_level.at(depth);
     for (const auto & [l, u] : lines.each_interval()) {
-        if (l == u)
+        write_indent();
+        if (l == u) {
             _imp->proof << "del id " << l << ";\n";
+        }
         else
             _imp->proof << "del range " << l << " " << u + 1 << ";\n";
     }
@@ -521,7 +530,9 @@ auto ProofLogger::start_proof(const ProofModel & model) -> void
     _imp->proof_line += model.number_of_constraints();
 
     if (! _imp->proof)
-        throw ProofError{"Error writing proof file to "" + _imp->proof_file + """};
+        throw ProofError{"Error writing proof file to "
+                         " + _imp->proof_file + "
+                         ""};
 }
 
 auto ProofLogger::record_proof_line(ProofLine line, ProofLevel level) -> ProofLine
@@ -550,13 +561,19 @@ auto ProofLogger::emit_subproofs(const map<string, Subproof> & subproofs)
 {
     _imp->proof << " : subproof\n";
     ++_imp->proof_line;
+    _imp->current_indent += INDENT_WIDTH;
     for (const auto & [proofgoal, proof] : subproofs) {
         ++_imp->proof_line;
-        _imp->proof
-            << "     proofgoal " << proofgoal << "\n";
+        write_indent();
+        _imp->proof << "proofgoal " << proofgoal << "\n";
+        _imp->current_indent += INDENT_WIDTH;
         proof(*this);
-        _imp->proof << "     qed;\n";
+        _imp->current_indent -= INDENT_WIDTH;
+        write_indent();
+        _imp->proof << "qed;\n";
     }
+    _imp->current_indent -= INDENT_WIDTH;
+    write_indent();
     _imp->proof << "qed;\n";
 }
 
@@ -574,6 +591,7 @@ auto ProofLogger::emit_red_proof_line(const SumLessEqual<Weighted<PseudoBooleanT
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
     _imp->proof << "% emit red line from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << "\n";
 #endif
+    write_indent();
     _imp->proof << "red ";
     emit_inequality_to(names_and_ids_tracker(), ineq, _imp->proof);
 
@@ -602,6 +620,7 @@ auto ProofLogger::emit_red_proof_lines_forward_reifying(const SumLessEqual<Weigh
 #endif
 
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
+    write_indent();
     _imp->proof << "red ";
     emit_inequality_to(names_and_ids_tracker(), reify(ineq, {{reif}}), _imp->proof);
     _imp->proof << " : " << witness_literal(names_and_ids_tracker(), reif) << " -> 0";
@@ -627,6 +646,7 @@ auto ProofLogger::emit_red_proof_lines_reverse_reifying(const SumLessEqual<Weigh
 
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
     auto negated_ineq = ineq.lhs >= ineq.rhs + 1_i;
+    write_indent();
     _imp->proof << "red ";
     emit_inequality_to(names_and_ids_tracker(), reify(negated_ineq, {{! reif}}), _imp->proof);
     _imp->proof << " : " << witness_literal(names_and_ids_tracker(), reif) << " -> 1";
@@ -665,4 +685,11 @@ auto ProofLogger::create_proof_flag_reifying(const SumLessEqual<Weighted<PseudoB
 auto ProofLogger::create_proof_flag(const string & name) -> ProofFlag
 {
     return names_and_ids_tracker().create_proof_flag(name);
+}
+
+auto ProofLogger::write_indent() -> void
+{
+    for (auto _ = _imp->current_indent; _--;) {
+        _imp->proof << ' ';
+    }
 }
