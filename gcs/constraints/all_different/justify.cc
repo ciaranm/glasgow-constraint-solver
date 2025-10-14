@@ -26,7 +26,7 @@ auto gcs::innards::justify_all_different_hall_set_or_violator(
 
         // at most one variable can take this value
         stringstream step;
-        step << "p";
+        step << "pol";
         bool first = true;
         int layer = 0;
         for (unsigned i = 1; i < all_variables.size(); ++i) {
@@ -56,7 +56,7 @@ auto gcs::innards::justify_all_different_hall_set_or_violator(
     // each variable in the violator has to take at least one value that is
     // left in its domain...
     stringstream proof_step;
-    proof_step << "p";
+    proof_step << "pol";
     bool first = true;
     for (auto & c : at_least_one_constraints) {
         proof_step << " " << c;

@@ -93,7 +93,7 @@ auto test_regular(const int & n, mt19937 & rng)
         ProofOptions{"random_regular"});
 
     //        cout << "Num solutions: " << stats.solutions << endl;
-    if (0 != system("veripb random_regular.opb random_regular.pbp")) {
+    if (0 != system("$HOME/.cargo/bin/veripb random_regular.opb random_regular.pbp")) {
         cout << string_rep.str() << endl;
         return false;
     }

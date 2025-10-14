@@ -228,7 +228,7 @@ namespace
                         for (const auto & [x, _] : enumerate(totals)) {
                             // current choices and branch -> partial sum >= value
                             if (completed_node_data)
-                                logger->emit_proof_line("p " +
+                                logger->emit_proof_line("pol " +
                                         to_string(ge_datas.at(x)->second.reverse_reif_line) + " " +
                                         to_string(completed_node_data->ges.at(x).forward_reif_line) + " +",
                                     ProofLevel::Temporary);
@@ -241,7 +241,7 @@ namespace
 
                             // current choices and branch -> partial sum <= value
                             if (completed_node_data)
-                                logger->emit_proof_line("p " +
+                                logger->emit_proof_line("pol " +
                                         to_string(le_datas.at(x)->second.reverse_reif_line) + " " +
                                         to_string(completed_node_data->les.at(x).forward_reif_line) + " +",
                                     ProofLevel::Temporary);
@@ -264,7 +264,7 @@ namespace
                         for (const auto & [x, _] : enumerate(totals)) {
                             if (committed.at(x) + new_sums.at(x) > bounds.at(x).second) {
                                 auto weight_var_str = prepare_and_get_bound_p_term(state, logger, totals.at(x), true);
-                                logger->emit_proof_line("p " + to_string(ge_datas.at(x)->second.forward_reif_line) + " " +
+                                logger->emit_proof_line("pol " + to_string(ge_datas.at(x)->second.forward_reif_line) + " " +
                                         to_string(opb_lines->at(x).first) + " + " + weight_var_str + " +",
                                     ProofLevel::Temporary);
                                 logger->emit_rup_proof_line_under_reason(generic_reason(state, reason_variables),
@@ -362,7 +362,7 @@ namespace
                 if (committed.at(x) + final_states_iter->first.at(x) < bounds.at(x).first) {
                     if constexpr (doing_proof_) {
                         auto weight_var_str = prepare_and_get_bound_p_term(state, logger, totals.at(x), false);
-                        logger->emit_proof_line("p " + to_string(final_states_iter->second->les.at(x).forward_reif_line) +
+                        logger->emit_proof_line("pol " + to_string(final_states_iter->second->les.at(x).forward_reif_line) +
                                 " " + to_string(opb_lines->at(x).second) + " + " + weight_var_str + " +",
                             ProofLevel::Temporary);
                         logger->emit_rup_proof_line_under_reason(generic_reason(state, reason_variables),
@@ -389,10 +389,10 @@ namespace
                 auto val = committed.at(x) + final_states_iter->first.at(x);
                 if (! state.in_domain(totals.at(x), val)) {
                     if constexpr (doing_proof_) {
-                        logger->emit_proof_line("p " + to_string(final_states_iter->second->les.at(x).forward_reif_line) +
+                        logger->emit_proof_line("pol " + to_string(final_states_iter->second->les.at(x).forward_reif_line) +
                                 " " + to_string(opb_lines->at(x).second) + " +",
                             ProofLevel::Temporary);
-                        logger->emit_proof_line("p " + to_string(final_states_iter->second->ges.at(x).forward_reif_line) +
+                        logger->emit_proof_line("pol " + to_string(final_states_iter->second->ges.at(x).forward_reif_line) +
                                 " " + to_string(opb_lines->at(x).first) + " +",
                             ProofLevel::Temporary);
                         logger->emit_rup_proof_line_under_reason(generic_reason(state, reason_variables),
@@ -449,14 +449,14 @@ namespace
                             continue;
 
                         auto no_support_ge = WeightedPseudoBooleanSum{} + 1_i * ! data->ges.at(x).reif_flag;
-                        logger->emit_proof_line("p " + to_string(opb_lines->at(x).first) + " " + to_string(data->ges.at(x).forward_reif_line) + " +",
+                        logger->emit_proof_line("pol " + to_string(opb_lines->at(x).first) + " " + to_string(data->ges.at(x).forward_reif_line) + " +",
                             ProofLevel::Temporary);
                         logger->emit_rup_proof_line_under_reason(generic_reason(state, reason_variables),
                             no_support_ge + 1_i * (totals.at(x) >= committed.at(x) + lowest) >= 1_i,
                             ProofLevel::Temporary);
 
                         auto no_support_le = WeightedPseudoBooleanSum{} + 1_i * ! data->les.at(x).reif_flag;
-                        logger->emit_proof_line("p " + to_string(opb_lines->at(x).second) + " " + to_string(data->les.at(x).forward_reif_line) + " +",
+                        logger->emit_proof_line("pol " + to_string(opb_lines->at(x).second) + " " + to_string(data->les.at(x).forward_reif_line) + " +",
                             ProofLevel::Temporary);
                         logger->emit_rup_proof_line_under_reason(generic_reason(state, reason_variables),
                             no_support_le + 1_i * (totals.at(x) < 1_i + committed.at(x) + highest) >= 1_i,

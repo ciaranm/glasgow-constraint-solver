@@ -29,7 +29,7 @@ TEST_CASE("Solve unsat")
         ProofOptions{"solve_test"});
 
     CHECK(! found_solution);
-    CHECK(system("veripb solve_test.opb solve_test.pbp") == EXIT_SUCCESS);
+    CHECK(system("$HOME/.cargo/bin/veripb solve_test.opb solve_test.pbp") == EXIT_SUCCESS);
 }
 
 TEST_CASE("Solve unsat by model optimisation")
@@ -48,7 +48,7 @@ TEST_CASE("Solve unsat by model optimisation")
         ProofOptions{"solve_test"});
 
     CHECK(! found_solution);
-    CHECK(system("veripb solve_test.opb solve_test.pbp") == EXIT_SUCCESS);
+    CHECK(system("$HOME/.cargo/bin/veripb solve_test.opb solve_test.pbp") == EXIT_SUCCESS);
 }
 
 TEST_CASE("Solve unsat optimisation presolving")
@@ -67,5 +67,5 @@ TEST_CASE("Solve unsat optimisation presolving")
         ProofOptions{"solve_test"});
 
     CHECK(! found_solution);
-    CHECK(system("veripb solve_test.opb solve_test.pbp") == EXIT_SUCCESS);
+    CHECK(system("$HOME/.cargo/bin/veripb solve_test.opb solve_test.pbp") == EXIT_SUCCESS);
 }

@@ -81,5 +81,5 @@ auto gcs::innards::emit_inequality_to(
             .visit(v);
     }
 
-    stream << ">= " << rhs << " ;";
+    stream << ">= " << rhs;
 }

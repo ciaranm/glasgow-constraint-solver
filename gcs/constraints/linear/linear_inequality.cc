@@ -54,7 +54,7 @@ namespace
         }
 
         stringstream step;
-        step << "p";
+        step << "pol";
         bool first = true;
         for (auto & c_and_l : terms_to_sum) {
             overloaded{

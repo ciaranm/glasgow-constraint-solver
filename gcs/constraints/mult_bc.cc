@@ -87,7 +87,7 @@ namespace
             first_added(true),
             count(0)
         {
-            p_line << "p ";
+            p_line << "pol ";
         }
 
         auto add(ProofLine line_number, bool and_saturate)
@@ -114,7 +114,7 @@ namespace
         auto clear()
         {
             p_line.str("");
-            p_line << "p ";
+            p_line << "pol ";
             first_added = true;
             count = 0;
         }
@@ -164,7 +164,7 @@ namespace
 
     auto add_lines(ProofLogger & logger, ProofLine line1, ProofLine line2, bool saturate = true) -> ProofLine
     {
-        return logger.emit_proof_line("p " + to_string(line1) + " " + to_string(line2) + " +" + (saturate ? " s " : ""),
+        return logger.emit_proof_line("pol " + to_string(line1) + " " + to_string(line2) + " +" + (saturate ? " s " : ""),
             ProofLevel::Temporary);
     }
 
@@ -476,7 +476,7 @@ namespace
             }
 
             run_resolution(logger, premise_line);
-            logger.emit_proof_line("u >= 1 ;", ProofLevel::Temporary);
+            logger.emit_proof_line("rup >= 1", ProofLevel::Temporary);
         };
 
         subproofs.emplace("#1", subproof);
@@ -1109,7 +1109,7 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
         for (Integer i = 0_i; i < v1_num_bits; i++) {
             bit_products.emplace_back();
             for (Integer j = 0_i; j < v2_num_bits; j++) {
-                auto flag = optional_model->create_proof_flag("xy[" + to_string(i.raw_value) + "," + to_string(j.raw_value) + "]");
+                auto flag = optional_model->create_proof_flag("xy[" + to_string(i.raw_value) + "][" + to_string(j.raw_value) + "]");
 
                 auto forwards = optional_model->add_constraint(
                     WeightedPseudoBooleanSum{} + 1_i * ProofBitVariable{v1_mag, i, true} + 1_i * ProofBitVariable{v2_mag, j, true} >= 2_i,
@@ -1130,7 +1130,7 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
                 v3_eq_product_lines = make_pair(*s.first, *s.second);
             },
             v3_mag);
-        auto xyss = optional_model->create_proof_flag("xy[s,s]");
+        auto xyss = optional_model->create_proof_flag("xy[s][s]");
         optional_model->add_constraint(
             WeightedPseudoBooleanSum{} + 1_i * ! xyss >= 1_i, HalfReifyOnConjunctionOf{! v1_sign, ! v2_sign});
 

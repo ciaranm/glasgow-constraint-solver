@@ -31,7 +31,7 @@ namespace gcs::test_innards
     template <typename... Args_>
     [[nodiscard]] auto run_veripb(Args_... args) -> bool
     {
-        auto cmd = fmt::format("veripb {}", fmt::join(std::vector<std::string>{args...}, " "));
+        auto cmd = fmt::format("$HOME/.cargo/bin/veripb {}", fmt::join(std::vector<std::string>{args...}, " "));
         fmt::println(std::cerr, "$ {}", cmd);
         return EXIT_SUCCESS == system(cmd.c_str());
     }

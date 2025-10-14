@@ -538,14 +538,18 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning(SimpleOrProofOnlyIntegerVaria
     auto result = XLiteral{++_imp->next_xliteral_nr, false};
 
     if (_imp->verbose_names) {
+        string value_name;
+        if (value.raw_value < 0) value_name = "minus" + to_string(std::abs(value.raw_value));
+        else value_name = to_string(value.raw_value);
+
         overloaded{
             [&](const SimpleIntegerVariableID & id) -> void {
-                string name = "i" + to_string(id.index) + "_" + name_of(id) + (op == EqualsOrGreaterEqual::Equals ? "_e" : "_g") + to_string(value.raw_value);
+                string name = "i" + to_string(id.index) + "_" + name_of(id) + (op == EqualsOrGreaterEqual::Equals ? "_e" : "_g") + value_name;
                 _imp->xlits_to_verbose_names.emplace(result, name);
                 _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
             },
             [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
-                string name = "p" + to_string(id.index) + "_" + name_of(id) + (op == EqualsOrGreaterEqual::Equals ? "_e" : "_g") + to_string(value.raw_value);
+                string name = "pol" + to_string(id.index) + "_" + name_of(id) + (op == EqualsOrGreaterEqual::Equals ? "_e" : "_g") + value_name;
                 _imp->xlits_to_verbose_names.emplace(result, name);
                 _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
             }}
@@ -609,7 +613,7 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning_negative_bit_of(SimpleOrProof
                 _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
             },
             [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
-                string name = "p" + to_string(id.index) + "_" + name_of(id) + "_n";
+                string name = "pol" + to_string(id.index) + "_" + name_of(id) + "_n";
                 _imp->xlits_to_verbose_names.emplace(result, name);
                 _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
             }}
@@ -650,7 +654,7 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning_bit_of(SimpleOrProofOnlyInteg
                 _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
             },
             [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
-                string name = "p" + to_string(id.index) + "_" + name_of(id) + "_b" + to_string(power.raw_value);
+                string name = "pol" + to_string(id.index) + "_" + name_of(id) + "_b" + to_string(power.raw_value);
                 _imp->xlits_to_verbose_names.emplace(result, name);
                 _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
             }}

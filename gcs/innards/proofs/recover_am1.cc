@@ -29,7 +29,7 @@ template <typename Literal_>
             lines.push_back(pair_ne(atoms[i1], atoms[i2]));
 
         if (i1 == 1)
-            am1 << "p";
+            am1 << "pol";
         else
             am1 << " " << (i1 + 1) << " *";
 

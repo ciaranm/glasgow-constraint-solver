@@ -105,7 +105,7 @@ namespace
             first_added(true),
             count(0)
         {
-            p_line << "p ";
+            p_line << "pol ";
         }
 
         auto add_and_saturate(ProofLine line_number)
@@ -128,7 +128,7 @@ namespace
         auto clear()
         {
             p_line.str("");
-            p_line << "p ";
+            p_line << "pol ";
             first_added = true;
             count = 0;
         }
@@ -215,7 +215,7 @@ namespace
         if (values.size() > 1) {
             auto k = ++values.begin();
             auto l = values.begin();
-            proofline << "p " << prove_not_both(logger, node, (*l), (*k), flag_data, pos_var_data, using_shifted_pos);
+            proofline << "pol " << prove_not_both(logger, node, (*l), (*k), flag_data, pos_var_data, using_shifted_pos);
             vector<ProofLine> neq_lines{};
             k++;
             auto k_count = 2;
@@ -330,7 +330,7 @@ namespace
             return root_gt_data.at(i);
         }
         else {
-            auto flag_name = "d[" + to_string(root) + "," + to_string(i) + "]";
+            auto flag_name = "d[" + to_string(root) + "][" + to_string(i) + "]";
             greater_than_flag = logger.create_proof_flag(flag_name);
 
             auto forwards_reif_line = logger.emit_red_proof_lines_forward_reifying(
@@ -346,7 +346,7 @@ namespace
                 // Redundance subproof:
                 auto subproofs = make_optional(map<string, Subproof>{});
                 auto subproof = [&](ProofLogger & logger) {
-                    logger.emit_proof_line("     p -2 " + logger.names_and_ids_tracker().pb_file_string_for(greater_than_flag) + " w", ProofLevel::Top);
+                    logger.emit_proof_line("     pol -2 " + logger.names_and_ids_tracker().pb_file_string_for(greater_than_flag) + " w", ProofLevel::Top);
                     for (long k = 0; cmp_less(k, succ.size()); k++) {
                         PLine p_line;
                         // Prove p[i] = k is not possible
@@ -411,17 +411,17 @@ namespace
         // q[r,i]gej <=> pos[i] - pos[r] + nd[r,i] >= j
         maybe_create_and_emplace_flag_data(flag_data_for_root.shifted_pos_geq, i, j,
             WeightedPseudoBooleanSum{} + 1_i * pos_var_data.at(i).var + -1_i * pos_var_data.at(root).var + Integer{n} * greater_than_flag >= Integer{j},
-            "q[" + to_string(root) + "," + to_string(i) + "]", "ge" + to_string(j));
+            "q[" + to_string(root) + "][" + to_string(i) + "]", "ge" + to_string(j));
 
         // q[r,i]gej+1 <=> pos[i] - pos[r] + nd[r,i] >= j+1
         maybe_create_and_emplace_flag_data(flag_data_for_root.shifted_pos_geq, i, j + 1,
             WeightedPseudoBooleanSum{} + 1_i * pos_var_data.at(i).var + -1_i * pos_var_data.at(root).var + Integer{n} * greater_than_flag >= Integer{j + 1},
-            "q[" + to_string(root) + "," + to_string(i) + "]", "ge" + to_string(j + 1));
+            "q[" + to_string(root) + "][" + to_string(i) + "]", "ge" + to_string(j + 1));
 
         // q[r,i]eqj <=> q[r,i]gej /\ ~q[r,i]gej+1
         maybe_create_and_emplace_flag_data(flag_data_for_root.shifted_pos_eq, i, j,
             WeightedPseudoBooleanSum{} + 1_i * flag_data_for_root.shifted_pos_geq[i][j].flag + 1_i * ! flag_data_for_root.shifted_pos_geq[i][j + 1].flag >= 2_i,
-            "q[" + to_string(root) + "," + to_string(i) + "]", "eq" + to_string(j));
+            "q[" + to_string(root) + "][" + to_string(i) + "]", "eq" + to_string(j));
     }
 
     auto prove_root_is_0(ProofLogger & logger,
@@ -497,7 +497,7 @@ namespace
             // Need to document that this always works
             if (next_node != root) {
                 stringstream p_line;
-                p_line << "p ";
+                p_line << "pol ";
                 // aaaa so many edge cases
                 if (next_node != 0) {
                     p_line << pos_var_data.at(node).plus_one_lines.at(next_node).leq_line << " "
@@ -524,7 +524,7 @@ namespace
                 logger.emit_proof_line(p_line.str(), ProofLevel::Temporary);
 
                 p_line.str("");
-                p_line << "p ";
+                p_line << "pol ";
 
                 p_line << pos_var_data.at(node).plus_one_lines.at(next_node).geq_line << " "
                        << root_greater_than.at(node).backwards_reif_line << " + "
@@ -551,12 +551,12 @@ namespace
             }
             else {
                 stringstream p_line;
-                p_line << "p ";
+                p_line << "pol ";
                 p_line << shifted_pos_geq[node][count - 1].forwards_reif_line << " ";
                 p_line << pos_var_data.at(node).plus_one_lines.at(next_node).geq_line << " + s";
                 logger.emit_proof_line(p_line.str(), ProofLevel::Temporary);
                 p_line.str("");
-                p_line << "p ";
+                p_line << "pol ";
                 p_line << shifted_pos_geq[node][count].backwards_reif_line << " ";
                 p_line << pos_var_data.at(node).plus_one_lines.at(next_node).leq_line << " + s";
                 logger.emit_proof_line(p_line.str(), ProofLevel::Temporary);
@@ -953,9 +953,9 @@ namespace
         prove_reachable_set_too_small(state, inference, logger, reason, succ, skipped_subroot, proof_data, succ[node] == Integer{next_node}, ordering2);
 
         stringstream final_contradiction_p_line;
-        final_contradiction_p_line << "p ";
+        final_contradiction_p_line << "pol ";
         stringstream temp_p_line;
-        temp_p_line << "p ";
+        temp_p_line << "pol ";
         temp_p_line << pos_var_data.at(node).plus_one_lines.at(next_node).geq_line << " ";
         temp_p_line << root_gt_next.forwards_reif_line << " + ";
         logger.emit_proof_line(temp_p_line.str(), ProofLevel::Temporary);
@@ -966,7 +966,7 @@ namespace
                                           ProofLevel::Current)
                                    << " ";
         temp_p_line.str("");
-        temp_p_line << "p ";
+        temp_p_line << "pol ";
         temp_p_line << pos_var_data.at(node).plus_one_lines.at(next_node).leq_line << " ";
         temp_p_line << next_gt_subroot.forwards_reif_line << " + ";
         temp_p_line << subroot_gt_node.forwards_reif_line << " + ";
