@@ -305,5 +305,6 @@ class TestGlasgowConstraintSolver(unittest.TestCase):
         self.gcs.solve(True, timeout=1.5)
         end = time.time()
         assert(abs(end - start - 1.5) < 1)
+
 if __name__ == "__main__":
     unittest.main()
