@@ -1,5 +1,5 @@
 import unittest
-
+import time
 from gcspy import GCS
 
 
@@ -301,7 +301,9 @@ class TestGlasgowConstraintSolver(unittest.TestCase):
 
     def test_timeout(self):
         [self.gcs.create_integer_variable(1, 1000, "") for i in range(1000)]
-
+        start = time.time()
         self.gcs.solve(True, timeout=1.5)
+        end = time.time()
+        assert(abs(end - start - 1.5) < 1)
 if __name__ == "__main__":
     unittest.main()
