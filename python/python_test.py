@@ -55,7 +55,7 @@ class TestGlasgowConstraintSolver(unittest.TestCase):
         self.assertEqual(stats["solutions"], 0)
 
     def test_empty_clause(self):
-        self.gcs.solver.post_or([])
+        self.gcs.post_or([])
         stats = self.gcs.solve(True)
         self.assertEqual(stats["solutions"], 0)
 
@@ -299,6 +299,9 @@ class TestGlasgowConstraintSolver(unittest.TestCase):
         self.assertEqual(self.gcs.get_solution_value(self.y), 1)
         self.assertEqual(self.gcs.get_solution_value(self.z), 1)
 
+    def test_timeout(self):
+        [self.gcs.create_integer_variable(1, 1000, "") for i in range(1000)]
 
+        self.gcs.solve(True, timeout=1.5)
 if __name__ == "__main__":
     unittest.main()

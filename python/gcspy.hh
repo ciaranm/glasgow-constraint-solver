@@ -48,7 +48,7 @@ public:
      * behaviour of looking for all solutions, then allow querying of solution values.
      */
     auto solve(bool all_solutions = true,
-        std::optional<unsigned long long> timeout = std::nullopt,
+        std::optional<float> timeout = std::nullopt,
         std::optional<unsigned long long> solution_limit = std::nullopt,
         const std::optional<std::function<void(std::unordered_map<string, long long int>)>> & callback = std::nullopt,
         bool prove = false,
@@ -130,6 +130,9 @@ private:
     // raw_value in gcs::Integer is a long long int
     std::vector<std::unordered_map<IntegerVariableID, long long int>> solution_values{};
     std::vector<std::unordered_map<std::string, long long int>> id_solution_values{};
+
+    // Persistent variable vectors e.g. for Element
+    std::vector<std::vector<IntegerVariableID>> var_vectors{};
     unsigned long long id_count{};
 
 #ifdef WRITE_API_CALLS
@@ -175,6 +178,17 @@ private:
         for (const string & id : var_ids)
             selected_vars.push_back(get_var(id));
         return selected_vars;
+    }
+
+    vector<IntegerVariableID> & get_vars_ref(const vector<string> & var_ids)
+    {
+        vector<IntegerVariableID> selected_vars{};
+        selected_vars.reserve(var_ids.size());
+        for (const string & id : var_ids)
+            selected_vars.push_back(get_var(id));
+
+        var_vectors.push_back(selected_vars);
+        return var_vectors.back();
     }
 
     WeightedSum make_linear(const vector<string> & var_ids, const vector<long long int> & coeffs)
