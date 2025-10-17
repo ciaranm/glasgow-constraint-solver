@@ -29,7 +29,9 @@ using std::string;
 using std::thread;
 using std::to_string;
 using std::unique_lock;
-using std::chrono::milliseconds;
+using std::chrono::duration;
+using std::chrono::nanoseconds;
+using std::chrono::round;
 using std::chrono::seconds;
 using std::chrono::system_clock;
 
@@ -97,8 +99,9 @@ auto Python::add_constant(const string & var_id, long long int constant) -> stri
     return shift_var;
 }
 
-auto Python::solve(bool all_solutions,
-    optional<unsigned long long> timeout,
+auto Python::solve(
+    bool all_solutions,
+    optional<float> timeout,
     optional<unsigned long long> solution_limit,
     const optional<function<void(std::unordered_map<string, long long int>)>> & callback,
     bool prove,
@@ -121,7 +124,7 @@ auto Python::solve(bool all_solutions,
 
     if (timeout) {
 
-        milliseconds limit{timeout.value() * 1000};
+        nanoseconds limit = round<nanoseconds>(duration<float>{*timeout});
         timeout_thread = thread([limit = limit, &timeout_mutex, &timeout_cv, &actually_timed_out] {
             auto abort_time = system_clock::now() + limit;
             {
@@ -445,7 +448,8 @@ auto Python::post_element(const string & var_id, const string & index_id,
     const vector<string> & var_ids)
     -> void
 {
-    p.post(Element(get_var(var_id), get_var(index_id), get_vars(var_ids)));
+    auto & array = get_vars_ref(var_ids);
+    p.post(Element(get_var(var_id), get_var(index_id), &array));
 }
 
 auto Python::post_equals(const string & var_id_1, const string & var_id_2) -> void

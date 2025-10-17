@@ -170,7 +170,7 @@ namespace gcs
      *
      * \ingroup IntegerWrapper
      */
-    [[nodiscard]] constexpr inline auto operator"" _i(unsigned long long v) -> Integer
+    [[nodiscard]] constexpr inline auto operator""_i(unsigned long long v) -> Integer
     {
         return Integer(v);
     }
