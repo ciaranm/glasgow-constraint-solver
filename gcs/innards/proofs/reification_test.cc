@@ -39,6 +39,6 @@ auto main() -> int
 
     // Check that after saturation, a reification by a false literal is trivially true.
     logger.emit_proof_line("pol -1 s", ProofLevel::Current);
-    logger.emit_proof_line("e >= 0 ; -1", ProofLevel::Current);
+    logger.emit_proof_line("e >= -35 : -1", ProofLevel::Current);
     logger.conclude_none();
 }
