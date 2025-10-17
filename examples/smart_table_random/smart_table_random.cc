@@ -7,14 +7,10 @@
 #include <numeric>
 #include <random>
 #include <sstream>
-#include <tuple>
 #include <vector>
 
-#include <boost/program_options.hpp>
 
 using namespace gcs;
-
-namespace po = boost::program_options;
 
 using std::cout;
 using std::endl;

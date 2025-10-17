@@ -1,4 +1,3 @@
-
 #include <gcs/constraints/comparison.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
@@ -8,7 +7,6 @@
 #include <numeric>
 #include <random>
 #include <sstream>
-#include <tuple>
 #include <vector>
 
 using namespace gcs;

@@ -12,18 +12,6 @@ although there are areas where I haven't quite found the right combination of se
 necessarily trying to get automatic formatting to match how I used to format code manually, just so
 long as it looks consistent and readable.
 
-I've found that Boost Program Options and its use of parentheses for lists upsets it. The best
-workaround I've found is to add in comments, such as in the following. Without the trailing
-comments, the parentheses will all end up on one line, which is awful.
-```C++
-    po::options_description display_options{"Program options"};
-    display_options.add_options()            //
-        ("help", "Display help information") //
-        ("prove", "Create a proof")          //
-        ("extra-constraints", "Use extra constraints described in the MiniCP paper");
-
-```
-
 In one place I've turned off formatting through a comment. I doubt an automatic formatting tool can
 be clever enough to line up the following code to look like an addition:
 ```C++
