@@ -60,7 +60,6 @@ using std::chrono::system_clock;
 using fmt::print;
 using fmt::println;
 
-
 class FlatZincInterfaceError : public exception
 {
 private:
@@ -190,18 +189,16 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options()
-            ("help", "Display help information")
-            ("all-solutions,a", "Print all solutions, or solve an optimisation problem to optimality")
-            ("n-solutions,n", "Stop after this many solutions", cxxopts::value<unsigned long long>())
-            ("statistics,s", "Print statistics")
-            ("timeout,t", "Timeout in ms", cxxopts::value<unsigned long long>())
-            ("prove", "Write proofs to this file (.opb and .pbp)", cxxopts::value<string>());
-
-        options.add_options()
+        options.add_options()("help", "Display help information")                                      //
+            ("all-solutions,a", "Print all solutions, or solve an optimisation problem to optimality") //
+            ("n-solutions,n", "Stop after this many solutions", cxxopts::value<unsigned long long>())  //
+            ("statistics,s", "Print statistics")                                                       //
+            ("timeout,t", "Timeout in ms", cxxopts::value<unsigned long long>())                       //
+            ("prove", "Write proofs to this file (.opb and .pbp)", cxxopts::value<string>())           //
             ("file", "FlatZinc file used as input", cxxopts::value<string>());
 
         options.parse_positional({"file"});
+        options_vars = options.parse(argc, argv);
     }
     catch (const cxxopts::exceptions::exception & e) {
         println(cerr, "Error: {}", e.what());
