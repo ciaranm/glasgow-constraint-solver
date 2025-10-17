@@ -1,6 +1,5 @@
 #include <gcs/constraints/circuit.hh>
 #include <gcs/constraints/element.hh>
-#include <gcs/constraints/linear.hh>
 #include <gcs/problem.hh>
 #include <gcs/search_heuristics.hh>
 
@@ -9,7 +8,7 @@
 #include <optional>
 #include <vector>
 
-#include <boost/program_options.hpp>
+#include <cxxopts.hpp>
 
 using namespace gcs;
 
@@ -21,31 +20,22 @@ using std::nullopt;
 using std::string;
 using std::vector;
 
-namespace po = boost::program_options;
-
 auto main(int argc, char * argv[]) -> int
 {
-    po::options_description display_options{"Program options"};
-    display_options.add_options()            //
-        ("help", "Display help information") //
-        ("prove", "Create a proof");
-
-    po::options_description all_options{"All options"};
-    all_options.add_options() //
-        ("propagator", po::value<string>()->default_value("prevent"), "Specify which circuit propagation algorithm to use (prevent/scc)");
-
-    all_options.add(display_options);
-
-    po::variables_map options_vars;
+    cxxopts::Options options("TSP Example");
+    cxxopts::ParseResult options_vars;
 
     try {
-        po::store(po::command_line_parser(argc, argv)
-                      .options(all_options)
-                      .run(),
-            options_vars);
-        po::notify(options_vars);
+        options.add_options()
+        ("help", "Display help information")
+        ("prove", "Create a proof");
+
+        options.add_options()
+            ("propagator", "Specify which circuit propagation algorithm to use (prevent/scc)", cxxopts::value<string>()->default_value("prevent"));
+
+        options_vars = options.parse(argc, argv);
     }
-    catch (const po::error & e) {
+    catch (const cxxopts::exceptions::exception & e) {
         cerr << "Error: " << e.what() << endl;
         cerr << "Try " << argv[0] << " --help" << endl;
         return EXIT_FAILURE;
@@ -54,7 +44,7 @@ auto main(int argc, char * argv[]) -> int
     if (options_vars.contains("help")) {
         cout << "Usage: " << argv[0] << " [options]" << endl;
         cout << endl;
-        cout << display_options << endl;
+        cout << options.help() << endl;
         return EXIT_SUCCESS;
     }
 

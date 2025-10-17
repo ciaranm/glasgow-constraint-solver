@@ -1,9 +1,8 @@
 add_executable(crystal_maze crystal_maze.cc)
 target_link_libraries(crystal_maze PUBLIC glasgow_constraint_solver)
 
-find_package(Boost 1.74 COMPONENTS program_options REQUIRED)
-include_directories(${Boost_INCLUDE_DIR})
-target_link_libraries(crystal_maze LINK_PUBLIC ${Boost_LIBRARIES})
+
+target_link_libraries(crystal_maze LINK_PUBLIC cxxopts)
 
 add_test(NAME crystal_maze COMMAND ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:crystal_maze>)
 add_test(NAME crystal_maze-abs COMMAND ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:crystal_maze> --abs)

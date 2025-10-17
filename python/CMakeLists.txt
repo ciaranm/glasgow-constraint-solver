@@ -12,9 +12,6 @@ FetchContent_MakeAvailable(pybind11)
 pybind11_add_module(gcspy gcspy.cc)
 target_link_libraries(gcspy PUBLIC glasgow_constraint_solver)
 
-find_package(Boost 1.74 COMPONENTS program_options REQUIRED)
-include_directories(${Boost_INCLUDE_DIR})
-target_link_libraries(gcspy LINK_PUBLIC ${Boost_LIBRARIES})
 target_link_libraries(gcspy PRIVATE fmt::fmt)
 
 install(TARGETS gcspy DESTINATION .)
