@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-#include <boost/program_options.hpp>
+#include <cxxopts.hpp>
 
 #include <fmt/core.h>
 #include <fmt/ostream.h>
@@ -26,30 +26,21 @@ using fmt::println;
 
 using namespace std::literals::string_literals;
 
-namespace po = boost::program_options;
 
 auto main(int argc, char * argv[]) -> int
 {
-    po::options_description display_options{"Program options"};
-    display_options.add_options()                                 //
-        ("help", "Display help information")                      //
-        ("prove", "Create a proof")                               //
-        ("full-proof-encoding", "Use the longer proof encoding"); //
-
-    po::options_description all_options{"All options"};
-
-    all_options.add(display_options);
-
-    po::variables_map options_vars;
+    cxxopts::Options options("Program options");
+    cxxopts::ParseResult options_vars;
 
     try {
-        po::store(po::command_line_parser(argc, argv)
-                      .options(all_options)
-                      .run(),
-            options_vars);
-        po::notify(options_vars);
+        options.add_options()
+            ("help", "Display help information")
+            ("prove", "Create a proof")
+            ("full-proof-encoding", "Use the longer proof encoding");
+
+        options_vars = options.parse(argc, argv);
     }
-    catch (const po::error & e) {
+    catch (const cxxopts::exceptions::exception & e) {
         println(cerr, "Error: {}", e.what());
         println(cerr, "Try {} --help", argv[0]);
         return EXIT_FAILURE;
@@ -58,7 +49,7 @@ auto main(int argc, char * argv[]) -> int
     if (options_vars.contains("help")) {
         println("Usage: {} [options]", argv[0]);
         println("");
-        display_options.print(cout);
+        cout << options.help() << std::endl;
         return EXIT_SUCCESS;
     }
 

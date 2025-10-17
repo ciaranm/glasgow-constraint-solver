@@ -6,10 +6,9 @@
 #include <optional>
 #include <vector>
 
-#include <boost/program_options.hpp>
+#include <cxxopts.hpp>
 
 using namespace gcs;
-namespace po = boost::program_options;
 
 using std::cerr;
 using std::cout;
@@ -24,28 +23,25 @@ auto main(int argc, char * argv[]) -> int
     // This example is Example 1 from the paper
     // "A Regular Language Membership Constraint for Finite Sequences of Variables"
     // G. Pesant 2004
-    po::options_description display_options{"Program options"};
-    display_options.add_options()            //
-        ("help", "Display help information") //
-        ("prove", "Create a proof");         //
-
-    po::options_description all_options{"All options"};
-
-    all_options.add(display_options);
-
-    po::variables_map options_vars;
+    cxxopts::Options options("Regex Example");
+    cxxopts::ParseResult options_vars;
 
     try {
-        po::store(po::command_line_parser(argc, argv)
-                      .options(all_options)
-                      .run(),
-            options_vars);
-        po::notify(options_vars);
+        options.add_options("Program Options")
+            ("help", "Display help information")
+            ("prove", "Create a proof");
+
+        options_vars = options.parse(argc, argv);
     }
-    catch (const po::error & e) {
+    catch (const cxxopts::exceptions::exception & e) {
         cerr << "Error: " << e.what() << endl;
         cerr << "Try " << argv[0] << " --help" << endl;
         return EXIT_FAILURE;
+    }
+
+    if (options_vars.contains("help")) {
+        cout << options.help() << std::endl;
+        return EXIT_SUCCESS;
     }
 
     Problem p;

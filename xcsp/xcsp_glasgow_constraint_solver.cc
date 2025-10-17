@@ -17,7 +17,7 @@
 #include <thread>
 #include <vector>
 
-#include <boost/program_options.hpp>
+#include <cxxopts.hpp>
 
 using XCSP3Core::ExpressionObjective;
 using XCSP3Core::OperandType;
@@ -62,8 +62,6 @@ using std::chrono::steady_clock;
 using std::chrono::system_clock;
 
 using namespace std::literals::string_literals;
-
-namespace po = boost::program_options;
 
 namespace
 {
@@ -635,43 +633,32 @@ struct ParserCallbacks : XCSP3CoreCallbacks
 
 auto main(int argc, char * argv[]) -> int
 {
-    po::options_description display_options{"Program options"};
-    display_options.add_options()            //
-        ("help", "Display help information") //
-        ("prove", "Create a proof")          //
-        ("all", "Find all solutions")        //
-        ("timeout", po::value<int>(), "Timeout in seconds");
-
-    po::options_description all_options{"All options"};
-    all_options.add_options() //
-        ("file", po::value<string>(), "Input file in XCSP format");
-
-    po::positional_options_description positional_options;
-    positional_options
-        .add("file", -1);
-
-    all_options.add(display_options);
-
-    po::variables_map options_vars;
+    cxxopts::Options options("XCSP Glasgow Constraint Solver", "Get started by using option --help");
 
     try {
-        po::store(po::command_line_parser(argc, argv)
-                      .options(all_options)
-                      .positional(positional_options)
-                      .run(),
-            options_vars);
-        po::notify(options_vars);
+        options.add_options("Program Options")
+            ("help", "Display help information")
+            ("prove", "Create a proof")
+            ("all", "Find all solutions")
+            ("timeout", "Timeout in seconds", cxxopts::value<int>());
+
+        options.add_options()
+            ("file", "Input file in XCSP format", cxxopts::value<string>());
+
+        options.parse_positional({"file"});
     }
-    catch (const po::error & e) {
+    catch (const cxxopts::exceptions::exception & e) {
         cerr << "Error: " << e.what() << endl;
         cerr << "Try " << argv[0] << " --help" << endl;
         return EXIT_FAILURE;
     }
 
-    if (options_vars.contains("help")) {
+    auto options_vars = options.parse(argc, argv);
+
+    if (options_vars.count("help")) {
         cout << "Usage: " << argv[0] << " [options] xcsp-file.xml" << endl;
         cout << endl;
-        cout << display_options << endl;
+        cout << options.help() << endl;
         return EXIT_SUCCESS;
     }
 

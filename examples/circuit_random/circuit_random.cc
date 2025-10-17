@@ -1,4 +1,5 @@
-#include <boost/program_options.hpp>
+#include <cxxopts.hpp>
+
 #include <gcs/constraints/circuit.hh>
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/in.hh>
@@ -24,7 +25,6 @@ using std::random_device;
 using std::string;
 using std::uniform_real_distribution;
 using std::vector;
-namespace po = boost::program_options;
 
 static const double EDGE_PROBABILITY = 0.7;
 
@@ -109,34 +109,27 @@ Stats run_circuit_problem(int n, const vector<vector<long>> & distances, SCCOpti
 
 auto main(int argc, char * argv[]) -> int
 {
-    po::options_description display_options{"Program options"};
-    display_options.add_options()            //
-        ("help", "Display help information") //
-        ("prove", "Create a proof");         //
-
-    po::options_description all_options{"All options"};
-
-    all_options.add_options()                                                               //
-        ("n", po::value<int>(), "Integer value n.")                                         //
-        ("seed", po::value<unsigned int>(), "Random seed.")                                 //
-        ("prune_root", po::value<bool>()->default_value(true), "SCC inference")             //
-        ("prune_skip", po::value<bool>()->default_value(true), "SCC inference")             //
-        ("fix_req", po::value<bool>()->default_value(true), "SCC inference")                //
-        ("prune_within", po::value<bool>()->default_value(true), "SCC inference")           //
-        ("prove_using_dominance", po::value<bool>()->default_value(false), "SCC inference") //
-        ("enable_comments", po::value<bool>()->default_value(true), "SCC inference");       //
-
-    all_options.add(display_options);
-    po::variables_map options_vars;
+    cxxopts::Options command_options("Program options");
+    cxxopts::ParseResult options_vars;
 
     try {
-        po::store(po::command_line_parser(argc, argv)
-                      .options(all_options)
-                      .run(),
-            options_vars);
-        po::notify(options_vars);
+        command_options.add_options("Program options")
+            ("help", "Display help information")
+            ("prove", "Create a proof");
+
+        command_options.add_options()
+            ("n", "Integer value n.", cxxopts::value<int>())
+            ("seed","Random seed.", cxxopts::value<unsigned int>())
+            ("prune_root", "SCC inference", cxxopts::value<bool>())
+            ("prune_skip", "SCC inference", cxxopts::value<bool>())
+            ("fix_req", "SCC inference", cxxopts::value<bool>())
+            ("prune_within", "SCC inference", cxxopts::value<bool>())
+            ("prove_using_dominance", "SCC inference", cxxopts::value<bool>())
+            ("enable_comments", "SCC inference", cxxopts::value<bool>());
+
+        options_vars = command_options.parse(argc, argv);
     }
-    catch (const po::error & e) {
+    catch (const cxxopts::exceptions::exception & e) {
         cerr << "Error: " << e.what() << endl;
         cerr << "Try " << argv[0] << " --help" << endl;
         return EXIT_FAILURE;
@@ -145,7 +138,7 @@ auto main(int argc, char * argv[]) -> int
     if (options_vars.contains("help")) {
         cout << "Usage: " << argv[0] << " [options] [size]" << endl;
         cout << endl;
-        cout << display_options << endl;
+        cout << command_options.help() << endl;
         return EXIT_SUCCESS;
     }
 

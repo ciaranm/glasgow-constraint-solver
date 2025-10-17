@@ -27,32 +27,17 @@ Getting Started
 
 This section describes how to build the solver, and how to create and solve a simple problem.
 
-Dependencies (Ubuntu)
----------------------
+[//]: # (Dependencies)
 
-You will need a C++20 compiler, such as GCC 10.3, as well as CMake and Git. You will need to install
-the Boost C++ libraries yourself; other dependencies will be pulled in automatically by CMake.
+[//]: # (---------------------)
 
-```shell
-apt install build-essential git cmake libboost-all-dev
-```
-
-Dependencies (MacOS X using Brew)
----------------------------------
-
-You will need a C++ 20 compiler, such as Clang 15, as well as CMake and Git. You will need to
-install the Boost C++ libraries yourself; other dependencies will be pulled in automatically by
-CMake.
-
-```shell
-brew install boost git
-```
+[//]: # ()
+[//]: # (No dependencies at the moment - boost removed.)
 
 Compiling
 ---------
 
-To build, you will need a C++20 compiler, such as GCC 10.3, as well as Boost (use
-``libboost-all-dev`` on Ubuntu).
+To build, you will need a C++20 compiler.
 
 ```shell
 cmake -S . -B build

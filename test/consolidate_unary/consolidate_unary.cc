@@ -4,7 +4,7 @@
 #include <iostream>
 #include <string>
 
-#include <boost/program_options.hpp>
+#include <cxxopts.hpp>
 #include <gcs/constraints/smart_table.hh>
 
 using namespace gcs;
@@ -17,7 +17,6 @@ using std::nullopt;
 using std::string;
 using std::vector;
 
-namespace po = boost::program_options;
 
 auto main(int argc, char * argv[]) -> int
 {
@@ -28,24 +27,23 @@ auto main(int argc, char * argv[]) -> int
      *
      * See issue SmartTableRandom failure #40
      */
-    po::options_description display_options{"Program options"};
-    display_options.add_options()            //
-        ("help", "Display help information") //
-        ("prove", "Create a proof");         //
+    cxxopts::Options options("Consolidate Unary");
+    cxxopts::ParseResult options_vars;
 
-    po::options_description all_options{"All options"};
+    options.add_options("Program Options")
+        ("help", "Display help information")
+        ("prove", "Create a proof");
 
-    all_options.add(display_options);
-    po::variables_map options_vars;
+    options_vars = options.parse(argc, argv);
 
     try {
-        po::store(po::command_line_parser(argc, argv)
-                      .options(all_options)
-                      .run(),
-            options_vars);
-        po::notify(options_vars);
+        options.add_options("Program Options")
+            ("help", "Display help information")
+            ("prove", "Create a proof");
+
+        options_vars = options.parse(argc, argv);
     }
-    catch (const po::error & e) {
+    catch (const cxxopts::exceptions::exception & e) {
         cerr << "Error: " << e.what() << endl;
         cerr << "Try " << argv[0] << " --help" << endl;
         return EXIT_FAILURE;
@@ -54,7 +52,7 @@ auto main(int argc, char * argv[]) -> int
     if (options_vars.contains("help")) {
         cout << "Usage: " << argv[0] << " [options] [size]" << endl;
         cout << endl;
-        cout << display_options << endl;
+        cout << options.help() << endl;
         return EXIT_SUCCESS;
     }
 

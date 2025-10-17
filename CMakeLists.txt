@@ -110,6 +110,13 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(Catch2)
 
 FetchContent_Declare(
+        cxxopts
+        GIT_REPOSITORY https://github.com/jarro2783/cxxopts.git
+        GIT_TAG 44380e5a44706ab7347f400698c703eb2a196202 # v3.3.1
+)
+FetchContent_MakeAvailable(cxxopts)
+
+FetchContent_Declare(
         fmt
         GIT_REPOSITORY https://github.com/fmtlib/fmt.git
         GIT_TAG 40626af88bd7df9a5fb80be7b25ac85b122d6c21 # v11.2.0
