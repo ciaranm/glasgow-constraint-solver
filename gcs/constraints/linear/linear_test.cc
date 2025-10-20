@@ -186,12 +186,10 @@ auto main(int, char *[]) -> int
             pair{vector{-2, -8, 0}, 138},
             pair{vector{10, 4, 7}, -78}});
 
-    // // TODO: Add this test back in once bug involving trivial constraints is fixed in VeriPB
-    // // see https://gitlab.com/MIAOresearch/software/veripb-dev/-/issues/127
-    // data.emplace_back(
-    //     pair{8, 12}, pair{5, 11}, pair{-2, 4},
-    //     vector{
-    //         pair{vector{0, 0, 0}, -159}});
+    data.emplace_back(
+        pair{8, 12}, pair{5, 11}, pair{-2, 4},
+        vector{
+            pair{vector{0, 0, 0}, -159}});
 
     data.emplace_back(
         pair{0, 1}, pair{0, 1}, pair{0, 1},

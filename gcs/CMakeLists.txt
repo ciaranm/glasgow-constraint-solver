@@ -132,9 +132,7 @@ add_executable(circuit_no_backedges_test constraints/circuit/circuit_no_backedge
 add_test(NAME circuit_no_backedges COMMAND ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:circuit_no_backedges_test>)
 
 add_executable(circuit_prune_root_test constraints/circuit/circuit_prune_root_test.cc)
-# TODO: add this test back in once VeriPB bug is fixed
-# see https://gitlab.com/MIAOresearch/software/veripb-dev/-/issues/127
-# add_test(NAME circuit_prune_root COMMAND ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:circuit_prune_root_test>)
+add_test(NAME circuit_prune_root COMMAND ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:circuit_prune_root_test>)
 
 add_executable(circuit_prune_skip_test constraints/circuit/circuit_prune_skip_test.cc)
 add_test(NAME circuit_prune_skip COMMAND ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:circuit_prune_skip_test>)
