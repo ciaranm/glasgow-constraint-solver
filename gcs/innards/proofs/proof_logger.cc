@@ -359,7 +359,7 @@ auto ProofLogger::emit_proof_line(const string & s, ProofLevel level
 
 auto ProofLogger::emit_proof_comment(const string & s) -> void
 {
-    _imp->proof << "% " << s << ";\n";
+    _imp->proof << "% " << s << '\n';
 }
 
 auto ProofLogger::emit(const ProofRule & rule, const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
