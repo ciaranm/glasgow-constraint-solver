@@ -15,7 +15,7 @@ target_link_libraries(xcsp_glasgow_constraint_solver
     PUBLIC
     ${CMAKE_SOURCE_DIR}/XCSP3-CPP-Parser/src/XCSP3-CPP-Parser/lib/libxcsp3parser.a
     glasgow_constraint_solver
-    ${cxxopts_LIBRARIES}
+    cxxopts
     ${LIBXML2_LIBRARIES})
 
 include_directories(${CMAKE_SOURCE_DIR}/XCSP3-CPP-Parser/src/XCSP3-CPP-Parser/include/)

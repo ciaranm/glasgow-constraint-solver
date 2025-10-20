@@ -13,6 +13,7 @@
 #include <iostream>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <string>
 #include <thread>
 #include <vector>
@@ -46,6 +47,7 @@ using std::minmax_element;
 using std::mutex;
 using std::nullopt;
 using std::optional;
+using std::set;
 using std::signal;
 using std::stoll;
 using std::string;
@@ -371,7 +373,7 @@ struct ParserCallbacks : XCSP3CoreCallbacks
         mapping.emplace(id, tuple{nullopt, Integer{*min}, Integer{*max}, vals});
     }
 
-    virtual auto buildConstraintExtension(string, vector<XVariable *> x_vars, vector<vector<int>> & x_tuples, bool is_support, bool) -> void
+    virtual auto buildConstraintExtension(string, vector<XVariable *> x_vars, vector<vector<int>> & x_tuples, bool is_support, bool) -> void override
     {
         vector<IntegerVariableID> vars;
         for (auto & v : x_vars) {
@@ -397,7 +399,7 @@ struct ParserCallbacks : XCSP3CoreCallbacks
             problem.post(NegativeTable{vars, SharedWildcardTuples{most_recent_tuples}});
     }
 
-    virtual auto buildConstraintExtensionAs(string, vector<XVariable *> x_vars, bool is_support, bool) -> void
+    virtual auto buildConstraintExtensionAs(string, vector<XVariable *> x_vars, bool is_support, bool) -> void override
     {
         vector<IntegerVariableID> vars;
         for (auto & v : x_vars) {
@@ -412,7 +414,7 @@ struct ParserCallbacks : XCSP3CoreCallbacks
             problem.post(NegativeTable{vars, SharedWildcardTuples{most_recent_tuples}});
     }
 
-    virtual auto buildConstraintExtension(string, XVariable * x_var, vector<int> & x_tuples, bool is_support, bool) -> void
+    virtual auto buildConstraintExtension(string, XVariable * x_var, vector<int> & x_tuples, bool is_support, bool) -> void override
     {
         vector<IntegerVariableID> vars;
         auto m = mapping.find(x_var->id);
@@ -636,14 +638,9 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::Options options("XCSP Glasgow Constraint Solver", "Get started by using option --help");
 
     try {
-        options.add_options("Program Options")
-            ("help", "Display help information")
-            ("prove", "Create a proof")
-            ("all", "Find all solutions")
-            ("timeout", "Timeout in seconds", cxxopts::value<int>());
+        options.add_options("Program Options")("help", "Display help information")("prove", "Create a proof")("all", "Find all solutions")("timeout", "Timeout in seconds", cxxopts::value<int>());
 
-        options.add_options()
-            ("file", "Input file in XCSP format", cxxopts::value<string>());
+        options.add_options()("file", "Input file in XCSP format", cxxopts::value<string>());
 
         options.parse_positional({"file"});
     }
