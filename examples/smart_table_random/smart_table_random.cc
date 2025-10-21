@@ -298,7 +298,7 @@ auto main(int argc, char * argv[]) -> int
 
                 return true;
             }},
-        prove ? make_optional(ProofOptions{"random_table"}) : nullopt);
+        prove ? make_optional(ProofOptions{"smart_table_random"}) : nullopt);
 
     if (display_table) cout << table_as_string.str() << endl;
 
