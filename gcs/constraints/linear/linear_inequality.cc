@@ -75,6 +75,7 @@ namespace
                 step << " +";
             first = false;
         }
+        step << ';';
         logger.emit_proof_line(step.str(), ProofLevel::Temporary);
     }
 }

@@ -67,6 +67,7 @@ auto gcs::innards::justify_linear_bounds(
     }
     if (change_var_coeff != 1_i)
         step << " " << abs(change_var_coeff) << " d";
+    step << ';';
     logger.emit_proof_line(step.str(), ProofLevel::Temporary);
 }
 

@@ -41,7 +41,7 @@ template <typename Literal_>
 
         am1 << " " << (i1 + 2) << " d";
     }
-
+    am1 << ';';
     auto result = logger.emit_proof_line(am1.str(), level);
     logger.forget_proof_level(temporary_proof_level);
     return result;

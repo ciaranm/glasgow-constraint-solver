@@ -43,6 +43,7 @@ auto gcs::innards::justify_all_different_hall_set_or_violator(
 
             step << " " << (layer + 1) << " d";
         }
+        step << ';';
 
         if (layer != 0)
             value_am1_constraint_numbers.emplace(val, logger.emit_proof_line(step.str(), ProofLevel::Top));
@@ -69,5 +70,6 @@ auto gcs::innards::justify_all_different_hall_set_or_violator(
     for (const auto & val : hall_values)
         proof_step << " " << value_am1_constraint_numbers.at(val) << " +";
 
+    proof_step << ';';
     logger.emit_proof_line(proof_step.str(), ProofLevel::Current);
 }
