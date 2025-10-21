@@ -60,7 +60,7 @@ auto gcs::innards::circuit::output_cycle_to_proof(const vector<IntegerVariableID
 
     stringstream proof_step;
 
-    proof_step << "p ";
+    proof_step << "pol ";
     proof_step << pos_var_data.at(start).plus_one_lines.at(current_val->raw_value).geq_line << " ";
     long cycle_length = 1;
     while (cmp_not_equal(current_val->raw_value, start)) {
@@ -84,6 +84,7 @@ auto gcs::innards::circuit::output_cycle_to_proof(const vector<IntegerVariableID
         logger.emit_proof_comment("Contradicting sub-cycle");
     }
 
+    proof_step << ';';
     logger.emit_proof_line(proof_step.str(), ProofLevel::Current);
 }
 

@@ -70,7 +70,7 @@ auto run_linear_test(bool proofs, const string & mode, pair<int, int> v1_range, 
 
     auto proof_name = proofs ? make_optional("linear_equality_test") : nullopt;
 
-    if ((! is_same_v<Constraint_, LinearEquality>)&&1 == ineqs.size())
+    if ((! is_same_v<Constraint_, LinearEquality>) && 1 == ineqs.size())
         solve_for_tests_checking_consistency(p, proof_name, expected, actual, tuple{pair{v1, CheckConsistency::BC}, pair{v2, CheckConsistency::BC}, pair{v3, CheckConsistency::BC}});
     else
         solve_for_tests(p, proof_name, actual, tuple{v1, v2, v3});
@@ -123,7 +123,7 @@ auto run_linear_reif_test(bool proofs, const string & mode, pair<int, int> v1_ra
 
         auto proof_name = proofs ? make_optional("linear_equality_test") : nullopt;
 
-        if ((! is_same_v<Constraint_, LinearEqualityIff>)&&1 == ineqs.size() && v4_range.first == v4_range.second)
+        if ((! is_same_v<Constraint_, LinearEqualityIff>) && 1 == ineqs.size() && v4_range.first == v4_range.second)
             solve_for_tests_checking_consistency(p, proof_name, expected, actual, tuple{pair{v1, CheckConsistency::BC}, pair{v2, CheckConsistency::BC}, pair{v3, CheckConsistency::BC}, pair{v4, CheckConsistency::None}});
         else
             solve_for_tests(p, proof_name, actual, tuple{v1, v2, v3, v4});

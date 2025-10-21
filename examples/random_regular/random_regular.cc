@@ -2,6 +2,8 @@
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
+#include <cxxopts.hpp>
+
 #include <gcs/constraints/regular.hh>
 #include <iostream>
 #include <numeric>
@@ -11,6 +13,7 @@
 
 using namespace gcs;
 
+using std::cerr;
 using std::cout;
 using std::endl;
 using std::iota;
@@ -34,7 +37,7 @@ auto index_of(const IntegerVariableID & val, const vector<IntegerVariableID> & v
     return (int)pos;
 }
 
-auto test_regular(const int & n, mt19937 & rng)
+auto test_regular(const int & n, mt19937 & rng, bool prove)
 {
     stringstream string_rep;
 
@@ -88,27 +91,53 @@ auto test_regular(const int & n, mt19937 & rng)
             .solution = [&](const CurrentState &) -> bool {
                 return true;
             }},
-        ProofOptions{"random_regular"});
+        prove ? make_optional(ProofOptions{"random_regular"}) : nullopt);
 
     //        cout << "Num solutions: " << stats.solutions << endl;
-    if (0 != system("veripb random_regular.opb random_regular.pbp")) {
-        cout << string_rep.str() << endl;
-        return false;
-    }
 
     return true;
 }
 
-auto main(int, char *[]) -> int
+auto main(int argc, char * argv[]) -> int
 {
-    random_device rand_dev;
-    auto seed = rand_dev();
+    cxxopts::Options options("Random Regular Language Membership Example");
+    cxxopts::ParseResult options_vars;
+
+    try {
+        options.add_options("Program Options")                                                                         //
+            ("help", "Display help information")                                                                       //
+            ("prove", "Create a proof")                                                                                //
+            ("seed", "Seed for random DFA generator (-1 for random seed)", cxxopts::value<int>()->default_value("-1")) //
+            ("n", "Max sequence length", cxxopts::value<int>()->default_value("6"));
+
+        options_vars = options.parse(argc, argv);
+    }
+    catch (const cxxopts::exceptions::exception & e) {
+        cerr << "Error: " << e.what() << endl;
+        cerr << "Try " << argv[0] << " --help" << endl;
+        return EXIT_FAILURE;
+    }
+
+    if (options_vars.contains("help")) {
+        cout << "Usage: " << argv[0] << " [options] [size]" << endl;
+        cout << endl;
+        cout << options.help() << endl;
+        return EXIT_SUCCESS;
+    }
+
+    auto seed = options_vars["seed"].as<int>();
+    auto max_n = options_vars["n"].as<int>();
+
+    if (seed == -1) {
+        random_device rand_dev;
+        seed = rand_dev();
+    }
     std::mt19937 rng(seed);
-    cout << "Seed for random DFAs for Regular: " << seed << endl;
+    // cout << "Seed for random DFAs for Regular: " << seed << endl;
     //    mt19937 rng(0); // Switch to this to have it the same every time.
-    for (int n = 3; n < 6; n++) {
+    for (int n = 3; n < max_n; n++) {
         for (int r = 0; r < 10 / n; r++) {
-            if (! test_regular(n, rng)) {
+            if (! test_regular(n, rng, options_vars.contains("prove"))) {
                 cout << "n == " << n << " r == " << r << endl;
                 return EXIT_FAILURE;
             }

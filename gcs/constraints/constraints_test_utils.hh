@@ -160,19 +160,19 @@ namespace gcs::test_innards
             }
             else {
                 overloaded{
-                        [&] (int n) {
+                    [&](int n) {
+                        sol.push_back(n);
+                        build(pos + 1, sol);
+                        sol.pop_back();
+                    },
+                    [&](std::pair<int, int> p) {
+                        for (int n = p.first; n <= p.second; ++n) {
                             sol.push_back(n);
                             build(pos + 1, sol);
                             sol.pop_back();
-                        },
-                        [&] (std::pair<int, int> p) {
-                            for (int n = p.first; n <= p.second; ++n) {
-                                sol.push_back(n);
-                                build(pos + 1, sol);
-                                sol.pop_back();
-                            }
                         }
-                }.visit(range_arg_vec.at(pos));
+                    }}
+                    .visit(range_arg_vec.at(pos));
             }
         };
         std::vector<int> sol;

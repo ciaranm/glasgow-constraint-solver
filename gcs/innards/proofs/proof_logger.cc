@@ -35,6 +35,8 @@ using namespace gcs::innards;
 
 namespace
 {
+    const auto INDENT_WIDTH = 5;
+
     [[nodiscard]] auto deview(const VariableConditionFrom<ViewOfIntegerVariableID> & cond) -> VariableConditionFrom<SimpleIntegerVariableID>
     {
         switch (cond.op) {
@@ -88,6 +90,7 @@ struct ProofLogger::Imp
 
     string proof_file;
     fstream proof;
+    int current_indent = 0;
 
     Imp(NamesAndIDsTracker & t) :
         tracker(t)
@@ -107,7 +110,8 @@ ProofLogger::~ProofLogger() = default;
 auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_variables_and_values,
     const optional<pair<IntegerVariableID, Integer>> & optional_minimise_variable_and_value) -> void
 {
-    _imp->proof << "* solution\n";
+    write_indent();
+    _imp->proof << "% solution\n";
 
     for (const auto & [var, val] : all_variables_and_values)
         overloaded{
@@ -134,7 +138,7 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
             }}
             .visit(var);
 
-    _imp->proof << '\n';
+    _imp->proof << ";\n";
     record_proof_line(++_imp->proof_line, ProofLevel::Top);
 
     if (optional_minimise_variable_and_value)
@@ -146,7 +150,7 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
 
 auto ProofLogger::backtrack(const vector<Literal> & lits) -> void
 {
-    _imp->proof << "* backtracking\n";
+    _imp->proof << "% backtracking\n";
     WeightedPseudoBooleanSum backtrack;
     for (const auto & lit : lits)
         backtrack += 1_i * ! lit;
@@ -155,7 +159,7 @@ auto ProofLogger::backtrack(const vector<Literal> & lits) -> void
 
 auto ProofLogger::end_proof() -> void
 {
-    _imp->proof << "end pseudo-Boolean proof\n";
+    _imp->proof << "end pseudo-Boolean proof;\n";
 
     // this is mostly for tests: we haven't necessarily destroyed the
     // Problem before running the verifier.
@@ -164,21 +168,21 @@ auto ProofLogger::end_proof() -> void
 
 auto ProofLogger::conclude_unsatisfiable(bool is_optimisation) -> void
 {
-    _imp->proof << "* asserting contradiction\n";
-    _imp->proof << "u >= 1 ;\n";
+    _imp->proof << "% asserting contradiction\n";
+    _imp->proof << "rup >= 1 ;\n";
     record_proof_line(++_imp->proof_line, ProofLevel::Top);
-    _imp->proof << "output NONE\n";
+    _imp->proof << "output NONE;\n";
     if (is_optimisation)
-        _imp->proof << "conclusion BOUNDS INF INF\n";
+        _imp->proof << "conclusion BOUNDS INF INF;\n";
     else
-        _imp->proof << "conclusion UNSAT : " << _imp->proof_line << '\n';
+        _imp->proof << "conclusion UNSAT : " << _imp->proof_line << ";\n";
     end_proof();
 }
 
 auto ProofLogger::conclude_satisfiable() -> void
 {
-    _imp->proof << "output NONE\n";
-    _imp->proof << "conclusion SAT\n";
+    _imp->proof << "output NONE;\n";
+    _imp->proof << "conclusion SAT;\n";
     end_proof();
 }
 
@@ -190,15 +194,15 @@ auto ProofLogger::conclude_optimality(IntegerVariableID var, Integer value) -> v
 auto ProofLogger::conclude_bounds(IntegerVariableID minimise_variable, Integer lower, Integer upper) -> void
 {
     emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * minimise_variable >= lower, ProofLevel::Top);
-    _imp->proof << "output NONE\n";
-    _imp->proof << "conclusion BOUNDS " << lower << " " << upper << '\n';
+    _imp->proof << "output NONE;\n";
+    _imp->proof << "conclusion BOUNDS " << lower << " " << upper << ";\n";
     end_proof();
 }
 
 auto ProofLogger::conclude_none() -> void
 {
-    _imp->proof << "output NONE\n";
-    _imp->proof << "conclusion NONE\n";
+    _imp->proof << "output NONE;\n";
+    _imp->proof << "conclusion NONE;\n";
     end_proof();
 }
 
@@ -216,8 +220,8 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
     overloaded{
         [&]([[maybe_unused]] const JustifyUsingRUP & j) {
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
-            _imp->proof << "* RUP on lit " << debug_string(lit) << " with reason from " << j.where.file_name() << ":"
-                        << j.where.line() << " in " << j.where.function_name() << '\n';
+            _imp->proof << "% RUP on lit " << debug_string(lit) << " with reason from " << j.where.file_name() << ":"
+                        << j.where.line() << " in " << j.where.function_name() << "\n";
 #endif
             need_lit();
             optional<Literals> reason_literals;
@@ -244,15 +248,16 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
                     for (auto & r : *reason_literals)
                         terms += 1_i * ! r;
                 terms += 1_i * lit;
-                _imp->proof << "u ";
+                write_indent();
+                _imp->proof << "rup ";
                 emit_inequality_to(names_and_ids_tracker(), move(terms) >= 1_i, _imp->proof);
-                _imp->proof << '\n';
+                _imp->proof << ";\n";
                 record_proof_line(++_imp->proof_line, ProofLevel::Current);
             }
         },
         [&]([[maybe_unused]] const AssertRatherThanJustifying & j) {
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
-            _imp->proof << "* assert on lit " << debug_string(lit) << " with reason from " << j.where.file_name() << ":"
+            _imp->proof << "% assert on lit " << debug_string(lit) << " with reason from " << j.where.file_name() << ":"
                         << j.where.line() << " in " << j.where.function_name() << '\n';
 #endif
             need_lit();
@@ -280,15 +285,16 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
                     for (auto & r : *reason_literals)
                         terms += 1_i * ! r;
                 terms += 1_i * lit;
+                write_indent();
                 _imp->proof << "a ";
                 emit_inequality_to(names_and_ids_tracker(), move(terms) >= 1_i, _imp->proof);
-                _imp->proof << '\n';
+                _imp->proof << ";\n";
                 record_proof_line(++_imp->proof_line, ProofLevel::Current);
             }
         },
         [&](const JustifyExplicitly & x) {
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
-            _imp->proof << "* explicit on lit " << debug_string(lit) << " with reason from " << x.where.file_name() << ":"
+            _imp->proof << "% explicit on lit " << debug_string(lit) << " with reason from " << x.where.file_name() << ":"
                         << x.where.line() << " in " << x.where.function_name() << '\n';
 #endif
             need_lit();
@@ -343,8 +349,9 @@ auto ProofLogger::emit_proof_line(const string & s, ProofLevel level
     ) -> ProofLine
 {
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
-    _imp->proof << "* emit proof line from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
+    _imp->proof << "% emit proof line from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
 #endif
+    write_indent();
     _imp->proof << s << '\n';
     auto result = record_proof_line(++_imp->proof_line, level);
     return result;
@@ -352,7 +359,7 @@ auto ProofLogger::emit_proof_line(const string & s, ProofLevel level
 
 auto ProofLogger::emit_proof_comment(const string & s) -> void
 {
-    _imp->proof << "* " << s << '\n';
+    _imp->proof << "% " << s << '\n';
 }
 
 auto ProofLogger::emit(const ProofRule & rule, const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
@@ -365,7 +372,7 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessEqual<Weighted<Pseud
 {
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
-    _imp->proof << "* emit proof line from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
+    _imp->proof << "% emit proof line from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
 #endif
 
     stringstream rule_line;
@@ -380,9 +387,9 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessEqual<Weighted<Pseud
     emit_inequality_to(names_and_ids_tracker(), ineq, rule_line);
 
     rule_line << overloaded{
-                     [&](const RUPProofRule &) -> string { return ""; },
-                     [&](const ImpliesProofRule & rule) -> string { if (rule.line) { return " " + to_string(*rule.line); } else { return ""; } },
-                     [&](const AssertProofRule &) -> string { return ""; }}
+                     [&](const RUPProofRule &) -> string { return ";"; },
+                     [&](const ImpliesProofRule & rule) -> string { if (rule.line) { return " : " + to_string(*rule.line) + ";"; } else { return ";"; } },
+                     [&](const AssertProofRule &) -> string { return ";"; }}
                      .visit(rule)
               << " ";
 
@@ -413,7 +420,7 @@ auto ProofLogger::emit_under_reason(
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
 
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
-    _imp->proof << "* emit proof line from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
+    _imp->proof << "% emit proof line from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
 #endif
 
     stringstream rule_line;
@@ -436,9 +443,9 @@ auto ProofLogger::emit_under_reason(
     }
 
     rule_line << overloaded{
-                     [&](const RUPProofRule &) -> string { return ""; },
-                     [&](const ImpliesProofRule & rule) -> string { if (rule.line) { return " " + to_string(*rule.line); } else { return ""; } },
-                     [&](const AssertProofRule &) -> string { return ""; }}
+                     [&](const RUPProofRule &) -> string { return ";"; },
+                     [&](const ImpliesProofRule & rule) -> string { if (rule.line) { return " : " + to_string(*rule.line) + ";" ;} else { return ";"; } },
+                     [&](const AssertProofRule &) -> string { return ";"; }}
                      .visit(rule)
               << " ";
 
@@ -503,10 +510,12 @@ auto ProofLogger::forget_proof_level(int depth) -> void
 {
     auto & lines = _imp->proof_lines_by_level.at(depth);
     for (const auto & [l, u] : lines.each_interval()) {
-        if (l == u)
-            _imp->proof << "del id " << l << '\n';
+        write_indent();
+        if (l == u) {
+            _imp->proof << "del id " << l << ";\n";
+        }
         else
-            _imp->proof << "del range " << l << " " << u + 1 << '\n';
+            _imp->proof << "del range " << l << " " << u + 1 << ";\n";
     }
     lines.clear();
 }
@@ -515,13 +524,15 @@ auto ProofLogger::start_proof(const ProofModel & model) -> void
 {
     _imp->proof.open(_imp->proof_file, ios::out);
 
-    _imp->proof << "pseudo-Boolean proof version 2.0\n";
+    _imp->proof << "pseudo-Boolean proof version 3.0\n";
 
-    _imp->proof << "f " << model.number_of_constraints() << " 0\n";
+    _imp->proof << "f " << model.number_of_constraints() << " ;\n";
     _imp->proof_line += model.number_of_constraints();
 
     if (! _imp->proof)
-        throw ProofError{"Error writing proof file to '" + _imp->proof_file + "'"};
+        throw ProofError{"Error writing proof file to "
+                         " + _imp->proof_file + "
+                         ""};
 }
 
 auto ProofLogger::record_proof_line(ProofLine line, ProofLevel level) -> ProofLine
@@ -548,16 +559,22 @@ auto ProofLogger::names_and_ids_tracker() -> NamesAndIDsTracker &
 
 auto ProofLogger::emit_subproofs(const map<string, Subproof> & subproofs)
 {
-    _imp->proof << " begin\n";
+    _imp->proof << " : subproof\n";
     ++_imp->proof_line;
+    _imp->current_indent += INDENT_WIDTH;
     for (const auto & [proofgoal, proof] : subproofs) {
         ++_imp->proof_line;
-        _imp->proof
-            << "     proofgoal " << proofgoal << "\n";
+        write_indent();
+        _imp->proof << "proofgoal " << proofgoal << "\n";
+        _imp->current_indent += INDENT_WIDTH;
         proof(*this);
-        _imp->proof << "     end -1\n";
+        _imp->current_indent -= INDENT_WIDTH;
+        write_indent();
+        _imp->proof << "qed;\n";
     }
-    _imp->proof << "end\n";
+    _imp->current_indent -= INDENT_WIDTH;
+    write_indent();
+    _imp->proof << "qed;\n";
 }
 
 auto ProofLogger::emit_red_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
@@ -572,19 +589,20 @@ auto ProofLogger::emit_red_proof_line(const SumLessEqual<Weighted<PseudoBooleanT
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
 
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
-    _imp->proof << "* emit red line from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
+    _imp->proof << "% emit red line from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << "\n";
 #endif
+    write_indent();
     _imp->proof << "red ";
     emit_inequality_to(names_and_ids_tracker(), ineq, _imp->proof);
 
+    _imp->proof << " :";
     for (auto & [f, t] : witness)
         _imp->proof << " " << witness_literal(names_and_ids_tracker(), f) << " -> " << witness_literal(names_and_ids_tracker(), t);
-    _imp->proof << " ;";
 
     if (subproofs)
         emit_subproofs(subproofs.value());
     else
-        _imp->proof << "\n";
+        _imp->proof << ";\n";
 
     return record_proof_line(++_imp->proof_line, level);
 }
@@ -598,18 +616,18 @@ auto ProofLogger::emit_red_proof_lines_forward_reifying(const SumLessEqual<Weigh
     ) -> ProofLine
 {
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
-    _imp->proof << "* emit red lines forward reifying from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
+    _imp->proof << "% emit red lines forward reifying from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << "\n";
 #endif
 
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
+    write_indent();
     _imp->proof << "red ";
     emit_inequality_to(names_and_ids_tracker(), reify(ineq, {{reif}}), _imp->proof);
-    _imp->proof << " " << witness_literal(names_and_ids_tracker(), reif) << " -> 0";
-    _imp->proof << " ;";
+    _imp->proof << " : " << witness_literal(names_and_ids_tracker(), reif) << " -> 0";
     if (subproofs)
         emit_subproofs(subproofs.value());
     else
-        _imp->proof << "\n";
+        _imp->proof << ";\n";
 
     return record_proof_line(++_imp->proof_line, level);
 }
@@ -623,19 +641,19 @@ auto ProofLogger::emit_red_proof_lines_reverse_reifying(const SumLessEqual<Weigh
     ) -> ProofLine
 {
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
-    _imp->proof << "* emit red lines reverse reifying from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
+    _imp->proof << "% emit red lines reverse reifying from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
 #endif
 
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
     auto negated_ineq = ineq.lhs >= ineq.rhs + 1_i;
+    write_indent();
     _imp->proof << "red ";
     emit_inequality_to(names_and_ids_tracker(), reify(negated_ineq, {{! reif}}), _imp->proof);
-    _imp->proof << " " << witness_literal(names_and_ids_tracker(), reif) << " -> 1";
-    _imp->proof << " ;";
+    _imp->proof << " : " << witness_literal(names_and_ids_tracker(), reif) << " -> 1";
     if (subproofs)
         emit_subproofs(subproofs.value());
     else
-        _imp->proof << "\n";
+        _imp->proof << ";\n";
     return record_proof_line(++_imp->proof_line, level);
 }
 
@@ -648,7 +666,7 @@ auto ProofLogger::emit_red_proof_lines_reifying(const SumLessEqual<Weighted<Pseu
     ) -> pair<ProofLine, ProofLine>
 {
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
-    _imp->proof << "* emit red lines reifying from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
+    _imp->proof << "% emit red lines reifying from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
 #endif
 
     auto forward_result = emit_red_proof_lines_forward_reifying(ineq, reif, level);
@@ -667,4 +685,11 @@ auto ProofLogger::create_proof_flag_reifying(const SumLessEqual<Weighted<PseudoB
 auto ProofLogger::create_proof_flag(const string & name) -> ProofFlag
 {
     return names_and_ids_tracker().create_proof_flag(name);
+}
+
+auto ProofLogger::write_indent() -> void
+{
+    for (auto _ = _imp->current_indent; _--;) {
+        _imp->proof << ' ';
+    }
 }

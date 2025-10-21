@@ -275,12 +275,12 @@ namespace gcs::innards
         auto track_variable_name(ProofFlag id, const std::optional<std::string> &) -> void;
 
         /**
-         * Get the human-readable name for a variable, or "unnamed" if there isn't one.
+         * Get the human-readable name for a variable, or "" if there isn't one.
          */
         [[nodiscard]] auto name_of(SimpleOrProofOnlyIntegerVariableID id) -> const std::string &;
 
         /**
-         * Get the human-readable name for a variable, or "unnamed" if there isn't one.
+         * Get the human-readable name for a variable, or "" if there isn't one.
          */
         [[nodiscard]] auto name_of(ProofFlag id) -> const std::string &;
     };

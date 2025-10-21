@@ -79,8 +79,8 @@ auto gcs::innards::propagate_plus(IntegerVariableID a, IntegerVariableID b, Inte
                 pol << " ";
 
                 overloaded{
-                    [&](const XLiteral & x) { pol << logger->names_and_ids_tracker().pb_file_string_for(x) << " +"; },
-                    [&](const ProofLine & x) { pol << x << " +"; }}
+                    [&](const XLiteral & x) { pol << logger->names_and_ids_tracker().pb_file_string_for(x) << " +;"; },
+                    [&](const ProofLine & x) { pol << x << " +;"; }}
                     .visit(logger->names_and_ids_tracker().need_pol_item_defining_literal(get<IntegerVariableCondition>(reason().at(1))));
 
                 logger->emit_proof_line(pol.str(), ProofLevel::Temporary);

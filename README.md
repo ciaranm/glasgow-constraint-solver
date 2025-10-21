@@ -208,16 +208,16 @@ Proof Logging
 -------------
 
 The key feature of this solver is the ability to produce proof logs. Currently we are using the
-VeriPB format. You can find out more here:
+VeriPB 3.0 format. You can find out more here:
 
 * VeriPB from https://gitlab.com/MIAOresearch/software/VeriPB
 
-You can install VeriPB using Python's ``pip`` package manager:
-
-```shell
-pip3 install -r requirements.txt
+VeriPB is now written in Rust and can be installed via the default Russt build tool `cargo`. 
+After cloning the repository:
+```bash
+cd ./VeriPB
+cargo install --path .
 ```
-
 To try out proof logging, run your favourite example program with the ``--prove`` command line
 option. Or, for your own problem, pass an additional argument to ``solve()`` or ``solve_with()``:
 

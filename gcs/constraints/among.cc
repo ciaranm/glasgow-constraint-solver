@@ -133,6 +133,7 @@ auto Among::install(Propagators & propagators, State &, ProofModel * const optio
                     line << "pol " << *sum_line.second;
                     for (const auto & var : can_be_either_or_must_vars)
                         line << " " << am1_lines->at(var) << " +";
+                    line << ';';
                     logger->emit_proof_line(line.str(), ProofLevel::Temporary);
                 }
             }},
@@ -178,6 +179,7 @@ auto Among::install(Propagators & propagators, State &, ProofModel * const optio
                                 line << "pol " << *sum_line.second;
                                 for (const auto & var : must_match_vars)
                                     line << " " << am1_lines->at(var) << " +";
+                                line << ';';
                                 logger->emit_proof_line(line.str(), ProofLevel::Temporary);
                             }
                         }},
@@ -225,6 +227,7 @@ auto Among::install(Propagators & propagators, State &, ProofModel * const optio
                                             for (const auto & other_var : can_be_either_vars)
                                                 if (var != other_var)
                                                     line << " " << am1_lines->at(other_var) << " +";
+                                            line << ';';
                                             logger->emit_proof_line(line.str(), ProofLevel::Temporary);
                                         }
                                     }},

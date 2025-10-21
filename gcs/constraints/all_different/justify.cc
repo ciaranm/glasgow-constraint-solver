@@ -26,7 +26,7 @@ auto gcs::innards::justify_all_different_hall_set_or_violator(
 
         // at most one variable can take this value
         stringstream step;
-        step << "p";
+        step << "pol";
         bool first = true;
         int layer = 0;
         for (unsigned i = 1; i < all_variables.size(); ++i) {
@@ -43,6 +43,7 @@ auto gcs::innards::justify_all_different_hall_set_or_violator(
 
             step << " " << (layer + 1) << " d";
         }
+        step << ';';
 
         if (layer != 0)
             value_am1_constraint_numbers.emplace(val, logger.emit_proof_line(step.str(), ProofLevel::Top));
@@ -56,7 +57,7 @@ auto gcs::innards::justify_all_different_hall_set_or_violator(
     // each variable in the violator has to take at least one value that is
     // left in its domain...
     stringstream proof_step;
-    proof_step << "p";
+    proof_step << "pol";
     bool first = true;
     for (auto & c : at_least_one_constraints) {
         proof_step << " " << c;
@@ -69,5 +70,6 @@ auto gcs::innards::justify_all_different_hall_set_or_violator(
     for (const auto & val : hall_values)
         proof_step << " " << value_am1_constraint_numbers.at(val) << " +";
 
+    proof_step << ';';
     logger.emit_proof_line(proof_step.str(), ProofLevel::Current);
 }

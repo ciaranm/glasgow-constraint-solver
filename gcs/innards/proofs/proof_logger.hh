@@ -260,7 +260,13 @@ namespace gcs::innards
          * Provide access to information about variables.
          */
         [[nodiscard]] auto names_and_ids_tracker() -> NamesAndIDsTracker &;
+
+        /**
+         * Write a number of spaces equal to current_indent.
+         */
+        auto write_indent() -> void;
     };
+
 }
 
 #endif
