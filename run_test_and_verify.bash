@@ -8,4 +8,4 @@ export PATH=$HOME/.cargo/bin:$PATH
 
 $prog --prove $@ || exit 1
 veripb ${progname}.{opb,pbp} || exit 1
-rm -f ${progname}.{opb,pbp}
+# rm -f ${progname}.{opb,pbp}
