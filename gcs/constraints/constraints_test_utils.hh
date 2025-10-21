@@ -31,7 +31,7 @@ namespace gcs::test_innards
     template <typename... Args_>
     [[nodiscard]] auto run_veripb(Args_... args) -> bool
     {
-        auto cmd = fmt::format("$HOME/.cargo/bin/veripb {}", fmt::join(std::vector<std::string>{args...}, " "));
+        auto cmd = fmt::format("veripb {}", fmt::join(std::vector<std::string>{args...}, " "));
         fmt::println(std::cerr, "$ {}", cmd);
         return EXIT_SUCCESS == system(cmd.c_str());
     }
@@ -160,19 +160,19 @@ namespace gcs::test_innards
             }
             else {
                 overloaded{
-                        [&] (int n) {
+                    [&](int n) {
+                        sol.push_back(n);
+                        build(pos + 1, sol);
+                        sol.pop_back();
+                    },
+                    [&](std::pair<int, int> p) {
+                        for (int n = p.first; n <= p.second; ++n) {
                             sol.push_back(n);
                             build(pos + 1, sol);
                             sol.pop_back();
-                        },
-                        [&] (std::pair<int, int> p) {
-                            for (int n = p.first; n <= p.second; ++n) {
-                                sol.push_back(n);
-                                build(pos + 1, sol);
-                                sol.pop_back();
-                            }
                         }
-                }.visit(range_arg_vec.at(pos));
+                    }}
+                    .visit(range_arg_vec.at(pos));
             }
         };
         std::vector<int> sol;
