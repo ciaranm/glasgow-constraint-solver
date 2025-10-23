@@ -1,5 +1,3 @@
-
-
 #include <gcs/constraints/comparison.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>

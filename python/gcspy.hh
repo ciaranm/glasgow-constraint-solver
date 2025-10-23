@@ -1,5 +1,6 @@
 #ifndef GCS_API_HH
 #define GCS_API_HH
+#include <deque>
 #include <gcs/gcs.hh>
 #include <pybind11/pybind11.h>
 #include <string>
@@ -132,7 +133,7 @@ private:
     std::vector<std::unordered_map<std::string, long long int>> id_solution_values{};
 
     // Persistent variable vectors e.g. for Element
-    std::vector<std::vector<IntegerVariableID>> var_vectors{};
+    std::deque<std::vector<IntegerVariableID>> var_vectors{};
     unsigned long long id_count{};
 
 #ifdef WRITE_API_CALLS

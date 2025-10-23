@@ -5,9 +5,7 @@
 #include <gcs/solve.hh>
 
 #include <util/enumerate.hh>
-
-#include <boost/program_options.hpp>
-
+#include <cxxopts.hpp>
 #include <cstdlib>
 #include <iostream>
 #include <optional>
@@ -22,37 +20,26 @@ using std::make_optional;
 using std::nullopt;
 using std::vector;
 
-namespace po = boost::program_options;
 
 auto main(int argc, char * argv[]) -> int
 {
-    po::options_description display_options{"Program options"};
-    display_options.add_options()            //
-        ("help", "Display help information") //
-        ("prove", "Create a proof")          //
-        ("extra-constraints", "Use extra constraints described in the MiniCP paper");
-
-    po::options_description all_options{"All options"};
-    all_options.add_options() //
-        ("size", po::value<int>()->default_value(300), "Size of the problem to solve");
-
-    all_options.add(display_options);
-
-    po::positional_options_description positional_options;
-    positional_options
-        .add("size", -1);
-
-    po::variables_map options_vars;
+    cxxopts::Options options("Magic Series Example");
+    cxxopts::ParseResult options_vars;
 
     try {
-        po::store(po::command_line_parser(argc, argv)
-                      .options(all_options)
-                      .positional(positional_options)
-                      .run(),
-            options_vars);
-        po::notify(options_vars);
+        options.add_options("Program Options")
+            ("help", "Display help information")
+            ("prove", "Create a proof")
+            ("extra-constraints", "Use extra constraints described in the MiniCP paper");
+
+        options.add_options()
+            ("size", "Size of the problem to solve", cxxopts::value<int>()->default_value("300"));
+
+        options.parse_positional({"size"});
+
+        options_vars = options.parse(argc, argv);
     }
-    catch (const po::error & e) {
+    catch (const cxxopts::exceptions::exception & e) {
         cerr << "Error: " << e.what() << endl;
         cerr << "Try " << argv[0] << " --help" << endl;
         return EXIT_FAILURE;
@@ -61,7 +48,7 @@ auto main(int argc, char * argv[]) -> int
     if (options_vars.contains("help")) {
         cout << "Usage: " << argv[0] << " [options] [size]" << endl;
         cout << endl;
-        cout << display_options << endl;
+        cout << options.help() << endl;
         return EXIT_SUCCESS;
     }
 

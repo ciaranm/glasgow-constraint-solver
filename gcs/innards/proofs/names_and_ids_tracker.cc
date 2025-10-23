@@ -52,7 +52,7 @@ struct NamesAndIDsTracker::Imp
     map<SimpleOrProofOnlyIntegerVariableID, string> id_names;
     map<XLiteral, string> xlits_to_verbose_names;
     map<ProofFlag, string> flag_names;
-    string unknown_name = "unnamed";
+    string unknown_name = "";
 
     list<function<auto(ProofLogger * const)->void>> delayed_proof_steps;
 
@@ -539,8 +539,10 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning(SimpleOrProofOnlyIntegerVaria
 
     if (_imp->verbose_names) {
         string value_name;
-        if (value.raw_value < 0) value_name = "minus" + to_string(std::abs(value.raw_value));
-        else value_name = to_string(value.raw_value);
+        if (value.raw_value < 0)
+            value_name = "minus" + to_string(std::abs(value.raw_value));
+        else
+            value_name = to_string(value.raw_value);
 
         overloaded{
             [&](const SimpleIntegerVariableID & id) -> void {

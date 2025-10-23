@@ -1,4 +1,4 @@
-#include <boost/program_options.hpp>
+#include <cxxopts.hpp>
 #include <gcs/constraints/circuit.hh>
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/not_equals.hh>
@@ -18,7 +18,6 @@ using std::nullopt;
 using std::string;
 using std::vector;
 
-namespace po = boost::program_options;
 
 auto main(int argc, char * argv[]) -> int
 {
@@ -28,26 +27,20 @@ auto main(int argc, char * argv[]) -> int
     // This is based on the circuit benchmark instances from
     // K. G. Francis and P. J. Stuckey, ‘Explaining circuit propagation’, Constraints, vol. 19, no. 1, pp. 1–29, Jan. 2014,
     // doi: 10.1007/s10601-013-9148-0.
-    po::options_description display_options{"Program options"};
-    display_options.add_options()            //
-        ("help", "Display help information") //
-        ("prove", "Create a proof");         //
-
-    po::options_description all_options{"All options"};
-    all_options.add_options() //
-        ("propagator", po::value<string>()->default_value("scc"), "Specify which circuit propagation algorithm to use (prevent/scc)");
-
-    all_options.add(display_options);
-    po::variables_map options_vars;
+    cxxopts::Options options("Tour Example");
+    cxxopts::ParseResult options_vars;
 
     try {
-        po::store(po::command_line_parser(argc, argv)
-                      .options(all_options)
-                      .run(),
-            options_vars);
-        po::notify(options_vars);
+        options.add_options("Program Options")
+            ("help", "Display help information")
+            ("prove", "Create a proof");
+
+        options.add_options()
+            ("propagator", "Specify which circuit propagation algorithm to use (prevent/scc)", cxxopts::value<string>()->default_value("scc"));
+
+        options_vars = options.parse(argc, argv);
     }
-    catch (const po::error & e) {
+    catch (const cxxopts::exceptions::exception & e) {
         cerr << "Error: " << e.what() << endl;
         cerr << "Try " << argv[0] << " --help" << endl;
         return EXIT_FAILURE;
@@ -56,7 +49,7 @@ auto main(int argc, char * argv[]) -> int
     if (options_vars.contains("help")) {
         cout << "Usage: " << argv[0] << " [options] [size]" << endl;
         cout << endl;
-        cout << display_options << endl;
+        cout << options.help() << endl;
         return EXIT_SUCCESS;
     }
 

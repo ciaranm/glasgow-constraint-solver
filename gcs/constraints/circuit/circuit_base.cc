@@ -84,6 +84,7 @@ auto gcs::innards::circuit::output_cycle_to_proof(const vector<IntegerVariableID
         logger.emit_proof_comment("Contradicting sub-cycle");
     }
 
+    proof_step << ';';
     logger.emit_proof_line(proof_step.str(), ProofLevel::Current);
 }
 

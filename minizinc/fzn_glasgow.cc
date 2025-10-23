@@ -3,9 +3,8 @@
 
 #include <nlohmann/json.hpp>
 
-#include <boost/program_options.hpp>
+#include <cxxopts.hpp>
 
-#include <fmt/chrono.h>
 #include <fmt/core.h>
 #include <fmt/ostream.h>
 #include <fmt/ranges.h>
@@ -60,8 +59,6 @@ using std::chrono::system_clock;
 
 using fmt::print;
 using fmt::println;
-
-namespace po = boost::program_options;
 
 class FlatZincInterfaceError : public exception
 {
@@ -188,35 +185,22 @@ namespace
 
 auto main(int argc, char * argv[]) -> int
 {
-    po::options_description display_options{"Program options"};
-    display_options.add_options()                                                                  //
-        ("help", "Display help information")                                                       //
-        ("all-solutions,a", "Print all solutions, or solve an optimisation problem to optimality") //
-        ("n-solutions,n", po::value<unsigned long long>(), "Stop after this many solutions")       //
-        ("statistics,s", "Print statistics")                                                       //
-        ("timeout,t", po::value<unsigned long long>(), "Timeout in ms")                            //
-        ("prove", po::value<string>(), "Write proofs to this file (.opb and .pbp)");               //
-    po::options_description all_options{"All options"};
-    all_options.add_options() //
-        ("file", po::value<string>(), "FlatZinc file used as input");
-
-    all_options.add(display_options);
-
-    po::positional_options_description positional_options;
-    positional_options
-        .add("file", 1);
-
-    po::variables_map options_vars;
+    cxxopts::Options options("FZN Glasgow");
+    cxxopts::ParseResult options_vars;
 
     try {
-        po::store(po::command_line_parser(argc, argv)
-                      .options(all_options)
-                      .positional(positional_options)
-                      .run(),
-            options_vars);
-        po::notify(options_vars);
+        options.add_options()("help", "Display help information")                                      //
+            ("all-solutions,a", "Print all solutions, or solve an optimisation problem to optimality") //
+            ("n-solutions,n", "Stop after this many solutions", cxxopts::value<unsigned long long>())  //
+            ("statistics,s", "Print statistics")                                                       //
+            ("timeout,t", "Timeout in ms", cxxopts::value<unsigned long long>())                       //
+            ("prove", "Write proofs to this file (.opb and .pbp)", cxxopts::value<string>())           //
+            ("file", "FlatZinc file used as input", cxxopts::value<string>());
+
+        options.parse_positional({"file"});
+        options_vars = options.parse(argc, argv);
     }
-    catch (const po::error & e) {
+    catch (const cxxopts::exceptions::exception & e) {
         println(cerr, "Error: {}", e.what());
         println(cerr, "Try {} --help", argv[0]);
         return EXIT_FAILURE;
@@ -225,7 +209,7 @@ auto main(int argc, char * argv[]) -> int
     if (options_vars.contains("help")) {
         println("Usage: {} [options] flatzinc-file.fzn", argv[0]);
         println("");
-        display_options.print(cout);
+        cout << options.help() << std::endl;
         return EXIT_SUCCESS;
     }
 

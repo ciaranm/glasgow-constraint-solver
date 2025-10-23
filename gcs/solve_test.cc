@@ -1,4 +1,5 @@
 #include <gcs/constraints/comparison.hh>
+#include <gcs/constraints/constraints_test_utils.hh>
 #include <gcs/expression.hh>
 #include <gcs/presolvers/auto_table.hh>
 #include <gcs/problem.hh>
@@ -11,6 +12,7 @@
 
 using namespace gcs;
 using namespace gcs::innards;
+using namespace gcs::test_innards;
 
 using std::vector;
 
@@ -29,7 +31,7 @@ TEST_CASE("Solve unsat")
         ProofOptions{"solve_test"});
 
     CHECK(! found_solution);
-    CHECK(system("$HOME/.cargo/bin/veripb solve_test.opb solve_test.pbp") == EXIT_SUCCESS);
+    CHECK(run_veripb("solve_test.opb", "solve_test.pbp"));
 }
 
 TEST_CASE("Solve unsat by model optimisation")
@@ -48,7 +50,7 @@ TEST_CASE("Solve unsat by model optimisation")
         ProofOptions{"solve_test"});
 
     CHECK(! found_solution);
-    CHECK(system("$HOME/.cargo/bin/veripb solve_test.opb solve_test.pbp") == EXIT_SUCCESS);
+    CHECK(run_veripb("solve_test.opb", "solve_test.pbp"));
 }
 
 TEST_CASE("Solve unsat optimisation presolving")
@@ -67,5 +69,5 @@ TEST_CASE("Solve unsat optimisation presolving")
         ProofOptions{"solve_test"});
 
     CHECK(! found_solution);
-    CHECK(system("$HOME/.cargo/bin/veripb solve_test.opb solve_test.pbp") == EXIT_SUCCESS);
+    CHECK(run_veripb("solve_test.opb", "solve_test.pbp"));
 }

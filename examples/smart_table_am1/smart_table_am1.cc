@@ -4,11 +4,10 @@
 #include <gcs/solve.hh>
 
 #include <cstdlib>
+#include <cxxopts.hpp>
 #include <iostream>
 #include <optional>
 #include <vector>
-
-#include <boost/program_options.hpp>
 
 using namespace gcs;
 
@@ -19,7 +18,6 @@ using std::make_optional;
 using std::nullopt;
 using std::vector;
 
-namespace po = boost::program_options;
 
 auto main(int argc, char * argv[]) -> int
 {
@@ -27,28 +25,21 @@ auto main(int argc, char * argv[]) -> int
     // as given in "The Smart Table Constraint" Mairy, J. B., Deville, Y., & Lecoutre, C. (2015)
     //
     // Constrain that at most one out n variables can take the value n.
-    po::options_description display_options{"Program options"};
-    display_options.add_options()            //
-        ("help", "Display help information") //
-        ("prove", "Create a proof");         //
-
-    po::options_description all_options{"All options"};
-    all_options.add_options()(
-        "n", po::value<int>()->default_value(3), "Integer value n: at most 1 out n variables can take the value n.") //
-        ;
-
-    all_options.add(display_options);
-
-    po::variables_map options_vars;
+    cxxopts::Options options("Smart_table_am1 Example");
+    cxxopts::ParseResult options_vars;
 
     try {
-        po::store(po::command_line_parser(argc, argv)
-                      .options(all_options)
-                      .run(),
-            options_vars);
-        po::notify(options_vars);
+        options.add_options("Program Options")
+            ("help", "Display help information")
+            ("prove", "Create a proof");
+
+        options.add_options()(
+            "n", "Integer value n: at most 1 out n variables can take the value n.", cxxopts::value<int>()->default_value("3")
+            );
+
+        options_vars = options.parse(argc, argv);
     }
-    catch (const po::error & e) {
+    catch (const cxxopts::exceptions::exception & e) {
         cerr << "Error: " << e.what() << endl;
         cerr << "Try " << argv[0] << " --help" << endl;
         return EXIT_FAILURE;
@@ -57,7 +48,7 @@ auto main(int argc, char * argv[]) -> int
     if (options_vars.contains("help")) {
         cout << "Usage: " << argv[0] << " [options] [size]" << endl;
         cout << endl;
-        cout << display_options << endl;
+        cout << options.help() << endl;
         return EXIT_SUCCESS;
     }
 

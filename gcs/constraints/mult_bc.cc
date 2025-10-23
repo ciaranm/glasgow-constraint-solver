@@ -90,6 +90,11 @@ namespace
             p_line << "pol ";
         }
 
+        auto end()
+        {
+            p_line << " ; ";
+        }
+
         auto add(ProofLine line_number, bool and_saturate)
         {
             count++;
@@ -164,7 +169,7 @@ namespace
 
     auto add_lines(ProofLogger & logger, ProofLine line1, ProofLine line2, bool saturate = true) -> ProofLine
     {
-        return logger.emit_proof_line("pol " + to_string(line1) + " " + to_string(line2) + " +" + (saturate ? " s " : ""),
+        return logger.emit_proof_line("pol " + to_string(line1) + " " + to_string(line2) + " +" + (saturate ? " s ;" : ";"),
             ProofLevel::Temporary);
     }
 
@@ -476,7 +481,7 @@ namespace
             }
 
             run_resolution(logger, premise_line);
-            logger.emit_proof_line("rup >= 1", ProofLevel::Temporary);
+            logger.emit_proof_line("rup >= 1;", ProofLevel::Temporary);
         };
 
         subproofs.emplace("#1", subproof);
@@ -531,6 +536,7 @@ namespace
                 bitsum += power2(Integer(j)) * bit_products[i][j].flag;
             }
             inner_sum.add(lb_2.line, false);
+            inner_sum.end();
             logger.emit_proof_line(inner_sum.str(), ProofLevel::Temporary);
             auto implied_sum = logger.emit_under_reason(ImpliesProofRule{make_optional<ProofLine>(-1)},
                 logger.reify(bitsum + lb_2.rhs * ProofBitVariable{mag_x, Integer(i), false} >= lb_2.rhs, reif),
@@ -540,6 +546,7 @@ namespace
 
         outer_sum.add_multiplied_by(lb_1.line, lb_2.rhs);
 
+        outer_sum.end();
         auto bitproducts_bound = logger.emit_proof_line(outer_sum.str(), ProofLevel::Temporary);
         add_lines(logger, bitproducts_bound, z_eq_product_lines.first);
 
@@ -609,6 +616,8 @@ namespace
                 bitsum += power2(Integer(j)) * ! bit_products[i][j].flag;
             }
             inner_sum_1.add(ub_2.line, false);
+            inner_sum_1.end();
+            inner_sum_2.end();
             logger.emit_proof_line(inner_sum_1.str(), ProofLevel::Temporary);
             logger.emit_proof_line(inner_sum_2.str(), ProofLevel::Temporary);
 
@@ -637,9 +646,11 @@ namespace
             outer_sum.add_multiplied_by(fusion_resolvent.line, power2(Integer(i)));
         }
 
-        logger.emit_proof_line(outer_sum.str(), ProofLevel::Temporary);
-        outer_sum.add_multiplied_by(ub_1.line, -ub_2.rhs);
+        // Not sure why this one was here...
+        // logger.emit_proof_line(outer_sum.str(), ProofLevel::Temporary);
 
+        outer_sum.add_multiplied_by(ub_1.line, -ub_2.rhs);
+        outer_sum.end();
         auto bitproducts_bound = logger.emit_proof_line(outer_sum.str(), ProofLevel::Temporary);
 
         add_lines(logger, bitproducts_bound, z_eq_product_lines.second);

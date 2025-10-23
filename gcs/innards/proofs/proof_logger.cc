@@ -352,14 +352,14 @@ auto ProofLogger::emit_proof_line(const string & s, ProofLevel level
     _imp->proof << "% emit proof line from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
 #endif
     write_indent();
-    _imp->proof << s << ";\n";
+    _imp->proof << s << '\n';
     auto result = record_proof_line(++_imp->proof_line, level);
     return result;
 }
 
 auto ProofLogger::emit_proof_comment(const string & s) -> void
 {
-    _imp->proof << "% " << s << ";\n";
+    _imp->proof << "% " << s << '\n';
 }
 
 auto ProofLogger::emit(const ProofRule & rule, const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
@@ -387,9 +387,9 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessEqual<Weighted<Pseud
     emit_inequality_to(names_and_ids_tracker(), ineq, rule_line);
 
     rule_line << overloaded{
-                     [&](const RUPProofRule &) -> string { return ""; },
-                     [&](const ImpliesProofRule & rule) -> string { if (rule.line) { return " : " + to_string(*rule.line); } else { return ""; } },
-                     [&](const AssertProofRule &) -> string { return ""; }}
+                     [&](const RUPProofRule &) -> string { return ";"; },
+                     [&](const ImpliesProofRule & rule) -> string { if (rule.line) { return " : " + to_string(*rule.line) + ";"; } else { return ";"; } },
+                     [&](const AssertProofRule &) -> string { return ";"; }}
                      .visit(rule)
               << " ";
 
@@ -443,9 +443,9 @@ auto ProofLogger::emit_under_reason(
     }
 
     rule_line << overloaded{
-                     [&](const RUPProofRule &) -> string { return ""; },
-                     [&](const ImpliesProofRule & rule) -> string { if (rule.line) { return " : " + to_string(*rule.line); } else { return ""; } },
-                     [&](const AssertProofRule &) -> string { return ""; }}
+                     [&](const RUPProofRule &) -> string { return ";"; },
+                     [&](const ImpliesProofRule & rule) -> string { if (rule.line) { return " : " + to_string(*rule.line) + ";" ;} else { return ";"; } },
+                     [&](const AssertProofRule &) -> string { return ";"; }}
                      .visit(rule)
               << " ";
 

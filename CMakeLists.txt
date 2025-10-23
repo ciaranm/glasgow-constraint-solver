@@ -52,7 +52,6 @@ endif (NOT GCS_DEBUG_MODE)
 # add_compile_options(-DGCS_TRACK_ALL_PROPAGATIONS=1)
 
 enable_testing()
-
 option(GCS_ENABLE_DOXYGEN "Add a doxygen target to generate the documentation" OFF)
 option(GCS_ENABLE_XCSP "Support for the XCSP modelling language" ON)
 option(GCS_ENABLE_MINIZINC "Support for the MiniZinc modelling language" ON)
@@ -111,6 +110,13 @@ FetchContent_Declare(
         GIT_TAG 6e79e682b726f524310d55dec8ddac4e9c52fb5f # v3.4.0
 )
 FetchContent_MakeAvailable(Catch2)
+
+FetchContent_Declare(
+        cxxopts
+        GIT_REPOSITORY https://github.com/jarro2783/cxxopts.git
+        GIT_TAG 44380e5a44706ab7347f400698c703eb2a196202 # v3.3.1
+)
+FetchContent_MakeAvailable(cxxopts)
 
 FetchContent_Declare(
         fmt
