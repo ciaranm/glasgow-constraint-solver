@@ -33,7 +33,7 @@ namespace
 {
     struct TriggerIDs
     {
-        vector<pair<int, int> > ids_and_masks;
+        vector<pair<int, int>> ids_and_masks;
     };
 }
 
@@ -71,7 +71,7 @@ auto Propagators::model_contradiction(const State &, ProofModel * const optional
         optional_model->add_constraint({});
 
     install([explain_yourself = explain_yourself](const State &, auto & inference, ProofLogger * const logger) -> PropagatorState {
-        inference.contradiction(logger, JustifyUsingRUP{}, Reason{[=]() { return Literals{}; }});
+        inference.contradiction(logger, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{}; }});
     },
         Triggers{}, "model contradiction");
 }
@@ -83,7 +83,7 @@ auto Propagators::trim_lower_bound(const State & state, ProofModel * const optio
             if (optional_model)
                 optional_model->add_constraint({var >= val});
             install_initialiser([var, val](const State &, auto & inference, ProofLogger * const logger) {
-                inference.infer(logger, var >= val, JustifyUsingRUP{}, Reason{});
+                inference.infer(logger, var >= val, JustifyUsingRUP{}, ReasonFunction{});
             });
         }
         else
@@ -98,7 +98,7 @@ auto Propagators::trim_upper_bound(const State & state, ProofModel * const optio
             if (optional_model)
                 optional_model->add_constraint({var < val + 1_i});
             install_initialiser([var, val](const State &, auto & inference, ProofLogger * const logger) {
-                inference.infer(logger, var < val + 1_i, JustifyUsingRUP{}, Reason{});
+                inference.infer(logger, var < val + 1_i, JustifyUsingRUP{}, ReasonFunction{});
             });
         }
         else

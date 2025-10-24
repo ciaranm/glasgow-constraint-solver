@@ -7,7 +7,7 @@ namespace gcs::innards
 {
     auto justify_abs_hole(
         ProofLogger & logger,
-        const Reason & reason,
+        const ReasonFunction & reason,
         IntegerVariableID v1,
         IntegerVariableID v2,
         Integer val) -> void;

@@ -456,7 +456,7 @@ namespace
         return line;
     }
 
-    auto prove_mid_is_at_least(auto &, ProofLogger & logger, const Reason & reason,
+    auto prove_mid_is_at_least(auto &, ProofLogger & logger, const ReasonFunction & reason,
         const long & root, const OrderingAssumption & ordering, const long & val, const Literal & assumption,
         ShiftedPosDataMaps & flag_data_for_root,
         const PosVarDataMap & pos_var_data, PosAllDiffData & pos_alldiff_data,
@@ -488,7 +488,7 @@ namespace
         }
     }
 
-    auto prove_pos_and_node_implies_next_node(auto &, ProofLogger & logger, const Reason & reason,
+    auto prove_pos_and_node_implies_next_node(auto &, ProofLogger & logger, const ReasonFunction & reason,
         const long & root, const long & node, const long & next_node, const long & count,
         ShiftedPosDataMaps & flag_data_for_root, const PosVarDataMap & pos_var_data, PosAllDiffData & pos_alldiff_data,
         const vector<IntegerVariableID> & succ)
@@ -590,7 +590,7 @@ namespace
         return successor_implies_line;
     }
 
-    auto prove_not_same_val(auto &, ProofLogger & logger, const Reason & reason,
+    auto prove_not_same_val(auto &, ProofLogger & logger, const ReasonFunction & reason,
         const long & root, const long & middle, const long & next_node, const long & count,
         map<long, ShiftedPosDataMaps> & flag_data, const PosVarDataMap & pos_var_data, PosAllDiffData & pos_alldiff_data,
         const vector<IntegerVariableID> & succ)
@@ -707,7 +707,7 @@ namespace
         return succesor_implies_not_mid_line;
     }
 
-    auto prove_exclude_last_based_on_ordering(auto &, ProofLogger & logger, const Reason & reason,
+    auto prove_exclude_last_based_on_ordering(auto &, ProofLogger & logger, const ReasonFunction & reason,
         const OrderingAssumption & ordering, const long & root, const long & count, const Literal & assumption,
         map<long, ShiftedPosDataMaps> & flag_data, const PosVarDataMap & pos_var_data, PosAllDiffData & pos_alldiff_data,
         const vector<IntegerVariableID> & succ) -> ProofLine
@@ -750,7 +750,7 @@ namespace
         return exclusion_line;
     }
 
-    auto prove_reachable_set_too_small(const State & state, auto & inference, ProofLogger & logger, const Reason & reason,
+    auto prove_reachable_set_too_small(const State & state, auto & inference, ProofLogger & logger, const ReasonFunction & reason,
         const vector<IntegerVariableID> & succ, const long & root, SCCProofData & proof_data,
         const Literal & assumption = TrueLiteral{}, const optional<OrderingAssumption> & ordering = nullopt) -> void
     {
@@ -932,7 +932,7 @@ namespace
         logger.emit_proof_line(contradiction_line.str(), ProofLevel::Current);
     }
 
-    auto prove_skipped_subtree(const State & state, auto & inference, ProofLogger & logger, const Reason & reason,
+    auto prove_skipped_subtree(const State & state, auto & inference, ProofLogger & logger, const ReasonFunction & reason,
         const vector<IntegerVariableID> & succ, const long & node, const long & next_node, const long & root, const long & skipped_subroot,
         SCCProofData & proof_data)
     {
@@ -1008,7 +1008,7 @@ namespace
             WeightedPseudoBooleanSum{} + 1_i * (succ[node] != Integer{next_node}) >= 1_i, ProofLevel::Current);
     }
 
-    auto explore(const State & state, auto & inference, ProofLogger * const logger, const Reason & reason,
+    auto explore(const State & state, auto & inference, ProofLogger * const logger, const ReasonFunction & reason,
         const long & node, const vector<IntegerVariableID> & succ, SCCPropagatorData & data, SCCProofData & proof_data,
         const SCCOptions & options)
         -> vector<pair<long, long>>
@@ -1047,7 +1047,7 @@ namespace
                         }
                     }
 
-                    inference.infer(logger, succ[node] != w, NoJustificationNeeded{}, Reason{});
+                    inference.infer(logger, succ[node] != w, NoJustificationNeeded{}, ReasonFunction{});
                 }
                 data.lowlink[node] = pos_min(data.lowlink[node], data.visit_number[next_node]);
             }
@@ -1068,7 +1068,7 @@ namespace
         const State & state,
         auto & inference,
         ProofLogger * const logger,
-        const Reason & reason,
+        const ReasonFunction & reason,
         const vector<IntegerVariableID> & succ,
         const SCCOptions & options,
         SCCProofData & proof_data)
@@ -1098,7 +1098,7 @@ namespace
                             prove_reachable_set_too_small(state, inference, *logger, reason, succ, from_node, proof_data,
                                 succ[from_node] != Integer{to_node});
                         }
-                        inference.infer(logger, succ[from_node] == Integer{to_node}, NoJustificationNeeded{}, Reason{});
+                        inference.infer(logger, succ[from_node] == Integer{to_node}, NoJustificationNeeded{}, ReasonFunction{});
                     }
                 }
                 data.start_prev_subtree = data.end_prev_subtree + 1;
@@ -1132,7 +1132,7 @@ namespace
         const State & state,
         auto & inference,
         ProofLogger * const logger,
-        const Reason & reason,
+        const ReasonFunction & reason,
         const vector<IntegerVariableID> & succ,
         const SCCOptions & scc_options,
         const ConstraintStateHandle & pos_var_data_handle,

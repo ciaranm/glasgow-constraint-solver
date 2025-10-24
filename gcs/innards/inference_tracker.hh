@@ -31,7 +31,7 @@ namespace gcs::innards
         std::deque<std::pair<SimpleIntegerVariableID, Inference>> _inferences;
         bool _did_anything_since_last_call_by_propagation_queue, _did_anything_since_last_call_inside_propagator;
 
-        auto track(ProofLogger * const logger, const Inference inf, const Literal & lit, const Justification & just, const Reason & reason) -> void
+        auto track(ProofLogger * const logger, const Inference inf, const Literal & lit, const Justification & just, const ReasonFunction & reason) -> void
         {
             return static_cast<Actual_ *>(this)->track_impl(logger, inf, lit, just, reason);
         }
@@ -48,12 +48,12 @@ namespace gcs::innards
 
         auto operator=(const InferenceTrackerBase &) -> InferenceTrackerBase & = delete;
 
-        auto infer(ProofLogger * const logger, const Literal & lit, const Justification & why, const Reason & reason) -> void
+        auto infer(ProofLogger * const logger, const Literal & lit, const Justification & why, const ReasonFunction & reason) -> void
         {
             track(logger, _state.infer(lit), lit, why, reason);
         }
 
-        [[noreturn]] auto contradiction(ProofLogger * const logger, const Justification & why, const Reason & reason) -> void
+        [[noreturn]] auto contradiction(ProofLogger * const logger, const Justification & why, const ReasonFunction & reason) -> void
         {
             if (logger)
                 logger->infer(FalseLiteral{}, why, reason);
@@ -61,42 +61,42 @@ namespace gcs::innards
         }
 
         template <IntegerVariableIDLike VarType_>
-        auto infer(ProofLogger * const logger, const VariableConditionFrom<VarType_> & lit, const Justification & why, const Reason & reason) -> void
+        auto infer(ProofLogger * const logger, const VariableConditionFrom<VarType_> & lit, const Justification & why, const ReasonFunction & reason) -> void
         {
             track(logger, _state.infer(lit), lit, why, reason);
         }
 
         template <IntegerVariableIDLike VarType_>
-        auto infer_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & why, const Reason & reason) -> void
+        auto infer_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & why, const ReasonFunction & reason) -> void
         {
             track(logger, _state.infer_equal(var, value), var == value, why, reason);
         }
 
         template <IntegerVariableIDLike VarType_>
-        auto infer_not_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & why, const Reason & reason) -> void
+        auto infer_not_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & why, const ReasonFunction & reason) -> void
         {
             track(logger, _state.infer_not_equal(var, value), var != value, why, reason);
         }
 
         template <IntegerVariableIDLike VarType_>
-        auto infer_less_than(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & why, const Reason & reason) -> void
+        auto infer_less_than(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & why, const ReasonFunction & reason) -> void
         {
             track(logger, _state.infer_less_than(var, value), var < value, why, reason);
         }
 
         template <IntegerVariableIDLike VarType_>
-        auto infer_greater_than_or_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & why, const Reason & reason) -> void
+        auto infer_greater_than_or_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & why, const ReasonFunction & reason) -> void
         {
             track(logger, _state.infer_greater_than_or_equal(var, value), var >= value, why, reason);
         }
 
-        auto infer_all(ProofLogger * const logger, const std::vector<Literal> & lits, const Justification & why, const Reason & reason) -> void
+        auto infer_all(ProofLogger * const logger, const std::vector<Literal> & lits, const Justification & why, const ReasonFunction & reason) -> void
         {
             // only do explicit justifications once, but note that infer might not
             // actually call the justification if nothing is inferred
             auto just = visit([&](const auto & j) -> Justification {
                 if constexpr (std::is_same_v<std::decay_t<decltype(j)>, JustifyExplicitly>)
-                    return JustifyExplicitly{[done = false, &j](const Reason & reason) mutable -> void {
+                    return JustifyExplicitly{[done = false, &j](const ReasonFunction & reason) mutable -> void {
                         if (! done) {
                             j.add_proof_steps(reason);
                             done = true;
@@ -142,7 +142,7 @@ namespace gcs::innards
     public:
         using InferenceTrackerBase::InferenceTrackerBase;
 
-        auto track_impl(ProofLogger * const, const Inference inf, const Literal & lit, const Justification &, const Reason &) -> void
+        auto track_impl(ProofLogger * const, const Inference inf, const Literal & lit, const Justification &, const ReasonFunction &) -> void
         {
             switch (inf) {
             case Inference::NoChange:
@@ -184,7 +184,7 @@ namespace gcs::innards
     public:
         using InferenceTrackerBase::InferenceTrackerBase;
 
-        auto track_impl(ProofLogger * const logger, const Inference inf, const Literal & lit, const Justification & just, const Reason & reason) -> void
+        auto track_impl(ProofLogger * const logger, const Inference inf, const Literal & lit, const Justification & just, const ReasonFunction & reason) -> void
         {
             switch (inf) {
             case Inference::NoChange:
