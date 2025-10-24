@@ -4,9 +4,10 @@
 #include <gcs/constraint.hh>
 #include <gcs/innards/literal.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
+#include <gcs/innards/proofs/reification.hh>
+#include <gcs/innards/reason.hh>
 #include <gcs/variable_condition.hh>
 #include <gcs/variable_id.hh>
-
 #include <string>
 
 namespace gcs
@@ -14,7 +15,7 @@ namespace gcs
     namespace innards
     {
         auto enforce_equality(ProofLogger * const logger, const auto & v1, const auto & v2, const State & state,
-            auto & inference, const Literals & reason) -> PropagatorState;
+            auto & inference, const Reason & reason) -> PropagatorState;
     }
 
     /**

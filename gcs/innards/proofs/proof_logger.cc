@@ -207,7 +207,7 @@ auto ProofLogger::conclude_none() -> void
 }
 
 auto ProofLogger::infer(const Literal & lit, const Justification & why,
-    const Reason & reason) -> void
+    const ReasonFunction & reason) -> void
 {
     auto need_lit = [&]() {
         overloaded{
@@ -224,33 +224,23 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
                         << j.where.line() << " in " << j.where.function_name() << "\n";
 #endif
             need_lit();
-            optional<Literals> reason_literals;
+            optional<Reason> reason_literals;
             if (reason)
                 reason_literals = reason();
 
             if (reason_literals)
-                for (auto & r : *reason_literals)
-                    overloaded{
-                        [&](const TrueLiteral &) {
-                        },
-                        [&](const FalseLiteral &) {
-                        },
-                        [&](const VariableConditionFrom<SimpleIntegerVariableID> & cond) {
-                            names_and_ids_tracker().need_proof_name(cond);
-                        },
-                        [&](const ProofVariableCondition &) {
-                        }}
-                        .visit(simplify_literal(r));
+                names_and_ids_tracker().need_all_proof_names_in(*reason_literals);
 
             if (! is_literally_true(lit)) {
                 WeightedPseudoBooleanSum terms;
+                HalfReifyOnConjunctionOf reif{};
                 if (reason_literals)
-                    for (auto & r : *reason_literals)
-                        terms += 1_i * ! r;
+                    reif = *reason_literals;
+
                 terms += 1_i * lit;
                 write_indent();
                 _imp->proof << "rup ";
-                emit_inequality_to(names_and_ids_tracker(), move(terms) >= 1_i, _imp->proof);
+                emit_inequality_to(names_and_ids_tracker(), reify(move(terms) >= 1_i, reif), _imp->proof);
                 _imp->proof << ";\n";
                 record_proof_line(++_imp->proof_line, ProofLevel::Current);
             }
@@ -261,33 +251,21 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
                         << j.where.line() << " in " << j.where.function_name() << '\n';
 #endif
             need_lit();
-            optional<Literals> reason_literals;
+            optional<Reason> reason_literals;
             if (reason)
                 reason_literals = reason();
 
-            if (reason_literals)
-                for (auto & r : *reason_literals)
-                    overloaded{
-                        [&](const TrueLiteral &) {
-                        },
-                        [&](const FalseLiteral &) {
-                        },
-                        [&](const VariableConditionFrom<SimpleIntegerVariableID> & cond) {
-                            names_and_ids_tracker().need_proof_name(cond);
-                        },
-                        [&](const ProofVariableCondition &) {
-                        }}
-                        .visit(simplify_literal(r));
-
+            HalfReifyOnConjunctionOf reif{};
+            if (reason_literals) {
+                names_and_ids_tracker().need_all_proof_names_in(*reason_literals);
+                reif = *reason_literals;
+            }
             if (! is_literally_true(lit)) {
                 WeightedPseudoBooleanSum terms;
-                if (reason)
-                    for (auto & r : *reason_literals)
-                        terms += 1_i * ! r;
                 terms += 1_i * lit;
                 write_indent();
                 _imp->proof << "a ";
-                emit_inequality_to(names_and_ids_tracker(), move(terms) >= 1_i, _imp->proof);
+                emit_inequality_to(names_and_ids_tracker(), reify(move(terms) >= 1_i, reif), _imp->proof);
                 _imp->proof << ";\n";
                 record_proof_line(++_imp->proof_line, ProofLevel::Current);
             }
@@ -313,9 +291,9 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
         .visit(why);
 }
 
-auto ProofLogger::reason_to_lits(const Reason & reason) -> vector<ProofLiteralOrFlag>
+auto ProofLogger::reason_to_lits(const ReasonFunction & reason) -> vector<ProofLiteralOrFlag>
 {
-    optional<Literals> reason_literals;
+    optional<Reason> reason_literals;
     if (reason)
         reason_literals = reason();
 
@@ -334,7 +312,7 @@ auto ProofLogger::reify(const WeightedPseudoBooleanLessEqual & ineq, const HalfR
     return names_and_ids_tracker().reify(ineq, half_reif);
 }
 
-auto ProofLogger::reify(const WeightedPseudoBooleanLessEqual & ineq, const Reason & reason) -> WeightedPseudoBooleanLessEqual
+auto ProofLogger::reify(const WeightedPseudoBooleanLessEqual & ineq, const ReasonFunction & reason) -> WeightedPseudoBooleanLessEqual
 {
     auto reason_proof_literals = reason_to_lits(reason);
 
@@ -404,14 +382,14 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessEqual<Weighted<Pseud
 
 auto ProofLogger::emit_under_reason(
     const ProofRule & rule, const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
-    ProofLevel level, const Reason & reason
+    ProofLevel level, const ReasonFunction & reason
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
     ,
     const std::source_location & where
 #endif
     ) -> ProofLine
 {
-    optional<Literals> reason_literals;
+    optional<Reason> reason_literals;
     if (reason)
         reason_literals = reason();
     if (reason_literals)
@@ -473,7 +451,7 @@ auto ProofLogger::emit_rup_proof_line(const SumLessEqual<Weighted<PseudoBooleanT
     );
 }
 
-auto ProofLogger::emit_rup_proof_line_under_reason(const Reason & reason, const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
+auto ProofLogger::emit_rup_proof_line_under_reason(const ReasonFunction & reason, const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
     ProofLevel level
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
     ,

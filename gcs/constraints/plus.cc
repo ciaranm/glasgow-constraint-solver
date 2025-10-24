@@ -64,24 +64,26 @@ auto gcs::innards::propagate_plus(IntegerVariableID a, IntegerVariableID b, Inte
 
     auto justify = [&](Conclude c) -> JustifyExplicitly {
         return JustifyExplicitly{
-            [c, sum_line, logger](const Reason & reason) {
+            [c, sum_line, logger](const ReasonFunction & reason) {
                 if (! (c == Conclude::LE ? sum_line.first : sum_line.second))
                     return;
 
                 stringstream pol;
                 pol << "pol " << (c == Conclude::LE ? sum_line.first.value() : sum_line.second.value()) << " ";
 
+                auto first_reason_lit = get<IntegerVariableCondition>(get<Literal>(get<ProofLiteral>(reason().at(0))));
+                auto second_reason_lit = get<IntegerVariableCondition>(get<Literal>(get<ProofLiteral>(reason().at(1))));
                 overloaded{
                     [&](const XLiteral & x) { pol << logger->names_and_ids_tracker().pb_file_string_for(x) << " +"; },
                     [&](const ProofLine & x) { pol << x << " +"; }}
-                    .visit(logger->names_and_ids_tracker().need_pol_item_defining_literal(get<IntegerVariableCondition>(reason().at(0))));
+                    .visit(logger->names_and_ids_tracker().need_pol_item_defining_literal(first_reason_lit));
 
                 pol << " ";
 
                 overloaded{
                     [&](const XLiteral & x) { pol << logger->names_and_ids_tracker().pb_file_string_for(x) << " +;"; },
                     [&](const ProofLine & x) { pol << x << " +;"; }}
-                    .visit(logger->names_and_ids_tracker().need_pol_item_defining_literal(get<IntegerVariableCondition>(reason().at(1))));
+                    .visit(logger->names_and_ids_tracker().need_pol_item_defining_literal(second_reason_lit));
 
                 logger->emit_proof_line(pol.str(), ProofLevel::Temporary);
             }};
@@ -90,32 +92,32 @@ auto gcs::innards::propagate_plus(IntegerVariableID a, IntegerVariableID b, Inte
     // min(result) = min(a) + min(b);
     inference.infer(logger, result >= a_vals.first + b_vals.first,
         justify(Conclude::LE),
-        [=]() { return Literals{a >= a_vals.first, b >= b_vals.first}; });
+        [=]() { return Reason{a >= a_vals.first, b >= b_vals.first}; });
 
     // max(result) = max(a) + max(b);
     inference.infer(logger, result < 1_i + a_vals.second + b_vals.second,
         justify(Conclude::GE),
-        [=]() { return Literals{a < a_vals.second + 1_i, b < b_vals.second + 1_i}; });
+        [=]() { return Reason{a < a_vals.second + 1_i, b < b_vals.second + 1_i}; });
 
     // min(a) = min(result) - max(b);
     inference.infer(logger, a >= result_vals.first - b_vals.second,
         justify(Conclude::GE),
-        [=]() { return Literals{result >= result_vals.first, b < b_vals.second + 1_i}; });
+        [=]() { return Reason{result >= result_vals.first, b < b_vals.second + 1_i}; });
 
     // max(a) = max(result) - min(b);
     inference.infer(logger, a < 1_i + result_vals.second - b_vals.first,
         justify(Conclude::LE),
-        [=]() { return Literals{result < result_vals.second + 1_i, b >= b_vals.first}; });
+        [=]() { return Reason{result < result_vals.second + 1_i, b >= b_vals.first}; });
 
     // min(b) = min(result) - max(a);
     inference.infer(logger, b >= result_vals.first - a_vals.second,
         justify(Conclude::GE),
-        [=]() { return Literals{result >= result_vals.first, a < a_vals.second + 1_i}; });
+        [=]() { return Reason{result >= result_vals.first, a < a_vals.second + 1_i}; });
 
     // max(b) = max(result) - min(a);
     inference.infer(logger, b < 1_i + result_vals.second - a_vals.first,
         justify(Conclude::LE),
-        [=]() { return Literals{result < result_vals.second + 1_i, a >= a_vals.first}; });
+        [=]() { return Reason{result < result_vals.second + 1_i, a >= a_vals.first}; });
 
     return PropagatorState::Enable;
 }
