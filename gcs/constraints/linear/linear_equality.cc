@@ -176,7 +176,7 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
         // condition is definitely true, an empty sum matches iff the modifiers sum to the value
         if (visit([](const auto & s) { return s.terms.empty(); }, sanitised_cv) && modifier != _value) {
             propagators.install_initialiser([cond = _cond](const State &, auto & inference, ProofLogger * const logger) {
-                inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{}, Reason{[=]() { return Literals{{cond}}; }});
+                inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{cond}}; }});
             });
         }
 
@@ -223,7 +223,7 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
         // condition is definitely false, an empty sum matches iff the modifiers sum to something other than the value
         if (visit([](const auto & s) { return s.terms.empty(); }, sanitised_cv) && modifier == _value) {
             propagators.install_initialiser([cond = _cond](const State &, auto & inference, ProofLogger * const logger) {
-                inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{}, Reason{[=]() { return Literals{{cond}}; }});
+                inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{cond}}; }});
             });
         }
 
@@ -249,12 +249,12 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
         if (visit([](const auto & s) { return s.terms.empty(); }, sanitised_cv)) {
             if (modifier == _value) {
                 propagators.install_initialiser([cond = _cond](const State &, auto & inference, ProofLogger * const logger) {
-                    inference.infer(logger, cond, NoJustificationNeeded{}, Reason{});
+                    inference.infer(logger, cond, NoJustificationNeeded{}, ReasonFunction{});
                 });
             }
             else {
                 propagators.install_initialiser([cond = _cond](const State &, auto & inference, ProofLogger * const logger) {
-                    inference.infer(logger, ! cond, NoJustificationNeeded{}, Reason{});
+                    inference.infer(logger, ! cond, NoJustificationNeeded{}, ReasonFunction{});
                 });
             }
         }

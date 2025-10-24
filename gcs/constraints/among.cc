@@ -125,7 +125,7 @@ auto Among::install(Propagators & propagators, State &, ProofModel * const optio
             auto vars_reason = generic_reason(state, vars);
             inference.infer(logger, how_many >= must_match_count, JustifyUsingRUP{}, vars_reason);
             auto less_than_this_many = Integer(vars.size()) - must_not_match_count + 1_i;
-            inference.infer(logger, how_many < less_than_this_many, JustifyExplicitly{[&](const Reason &) -> void {
+            inference.infer(logger, how_many < less_than_this_many, JustifyExplicitly{[&](const ReasonFunction &) -> void {
                 // for any variable that isn't ruled out, show that it can contribute at
                 // most one to the count.
                 if (sum_line.second && ! empty(can_be_either_or_must_vars) && values_of_interest.size() > 1) {
@@ -171,7 +171,7 @@ auto Among::install(Propagators & propagators, State &, ProofModel * const optio
                         for (const auto & val : values_of_interest)
                             inferences.push_back(var != val);
 
-                        inference.infer_all(logger, inferences, JustifyExplicitly{[&](const Reason &) -> void {
+                        inference.infer_all(logger, inferences, JustifyExplicitly{[&](const ReasonFunction &) -> void {
                             // for any variable that is forced, show that it can contribute at
                             // most one to the count
                             if (sum_line.second && ! empty(must_match_vars) && values_of_interest.size() > 1) {
@@ -215,7 +215,7 @@ auto Among::install(Propagators & propagators, State &, ProofModel * const optio
                         if (might_match)
                             for (const auto & val : state.each_value_mutable(var))
                                 if (values_of_interest.end() == find(values_of_interest.begin(), values_of_interest.end(), val)) {
-                                    inference.infer(logger, var != val, JustifyExplicitly{[&](const Reason &) {
+                                    inference.infer(logger, var != val, JustifyExplicitly{[&](const ReasonFunction &) {
                                         // need to point out that if var == val then var != voi for each voi
                                         for (const auto & voi : values_of_interest)
                                             logger->emit(RUPProofRule{}, WeightedPseudoBooleanSum{} + 1_i * (var != val) + 1_i * (var != voi) >= 1_i, ProofLevel::Temporary);

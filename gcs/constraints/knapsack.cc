@@ -532,7 +532,7 @@ namespace
         }
 
         if (undetermined_vars.empty()) {
-            Literals all_vars_assigned;
+            Reason all_vars_assigned;
             for (auto & v : vars)
                 all_vars_assigned.push_back(v == state(v));
 

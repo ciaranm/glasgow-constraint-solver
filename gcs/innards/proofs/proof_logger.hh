@@ -109,7 +109,7 @@ namespace gcs::innards
         /**
          * Log, if necessary, that we have inferred a particular literal.
          */
-        auto infer(const Literal & lit, const Justification & why, const Reason & reason) -> void;
+        auto infer(const Literal & lit, const Justification & why, const ReasonFunction & reason) -> void;
 
         /**
          * What is our current proof level?
@@ -140,7 +140,7 @@ namespace gcs::innards
         /**
          * Given a reason, return the vector of literals in the conjunction.
          */
-        auto reason_to_lits(const Reason & reason) -> std::vector<ProofLiteralOrFlag>;
+        auto reason_to_lits(const ReasonFunction & reason) -> std::vector<ProofLiteralOrFlag>;
 
         /**
          * Given a PB constraint C and a conjunction of literals L, return the native
@@ -152,7 +152,7 @@ namespace gcs::innards
          * Given a PB constraint C and a reason R, return the native
          * PB constraint encoding R => C
          */
-        auto reify(const WeightedPseudoBooleanLessEqual &, const Reason &) -> WeightedPseudoBooleanLessEqual;
+        auto reify(const WeightedPseudoBooleanLessEqual &, const ReasonFunction &) -> WeightedPseudoBooleanLessEqual;
 
         /**
          * Emit the specified text as a proof line.
@@ -177,7 +177,7 @@ namespace gcs::innards
         /**
          * Emit a proof step, with a specified rule.
          */
-        auto emit_under_reason(const ProofRule & rule, const SumLessEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level, const Reason &
+        auto emit_under_reason(const ProofRule & rule, const SumLessEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level, const ReasonFunction &
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
             ,
             const std::source_location & w = std::source_location::current()
@@ -199,7 +199,7 @@ namespace gcs::innards
          * Emit a RUP proof step for the specified expression, subject to a
          * given reason.
          */
-        auto emit_rup_proof_line_under_reason(const Reason &, const SumLessEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level
+        auto emit_rup_proof_line_under_reason(const ReasonFunction &, const SumLessEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
             ,
             const std::source_location & w = std::source_location::current()

@@ -42,7 +42,7 @@ namespace
             propagators.install_initialiser([full_reif = _full_reif, lits = _lits](
                                                 const State &, auto & inference, ProofLogger * const logger) {
                 for (auto & l : lits)
-                    inference.infer(logger, l, JustifyUsingRUP{}, Reason{[=]() { return Literals{{full_reif}}; }});
+                    inference.infer(logger, l, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{full_reif}}; }});
             });
 
             if (optional_model) {
@@ -79,7 +79,7 @@ namespace
                 // then we don't do anything else
                 propagators.install_initialiser([full_reif = _full_reif](
                                                     const State &, auto & inference, ProofLogger * const logger) -> void {
-                    inference.infer(logger, ! full_reif, JustifyUsingRUP{}, Reason{});
+                    inference.infer(logger, ! full_reif, JustifyUsingRUP{}, ReasonFunction{});
                 });
 
                 if (optional_model) {
@@ -92,7 +92,7 @@ namespace
                     switch (state.test_literal(full_reif)) {
                     case LiteralIs::DefinitelyTrue: {
                         for (auto & l : lits)
-                            inference.infer(logger, l, JustifyUsingRUP{}, Reason{[=]() { return Literals{{full_reif}}; }});
+                            inference.infer(logger, l, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{full_reif}}; }});
                         return PropagatorState::DisableUntilBacktrack;
                     }
 
@@ -115,20 +115,20 @@ namespace
                             return PropagatorState::DisableUntilBacktrack;
                         else if (! undecided1) {
                             // literals are all true, but reif is false
-                            Literals why;
+                            Reason why;
                             for (auto & lit : lits)
                                 why.push_back(lit);
                             why.push_back(! full_reif);
-                            inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{}, Reason{[=]() { return why; }});
+                            inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{}, ReasonFunction{[=]() { return why; }});
                             return PropagatorState::Enable;
                         }
                         else {
-                            Literals why;
+                            Reason why;
                             for (auto & l : lits)
                                 if (l != *undecided1)
                                     why.push_back(l);
                             why.push_back(! full_reif);
-                            inference.infer(logger, ! *undecided1, JustifyUsingRUP{}, Reason{[=]() { return why; }});
+                            inference.infer(logger, ! *undecided1, JustifyUsingRUP{}, ReasonFunction{[=]() { return why; }});
                             return PropagatorState::DisableUntilBacktrack;
                         }
                     }
@@ -148,16 +148,21 @@ namespace
                             }
 
                         if (any_false) {
-                            inference.infer(logger, ! full_reif, JustifyUsingRUP{}, Reason{[=]() { return Literals{{! *any_false}}; }});
+                            inference.infer(logger, ! full_reif, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{! *any_false}}; }});
                             return PropagatorState::DisableUntilBacktrack;
                         }
                         else if (all_true) {
-                            auto justf = [&](const Reason & reason) {
+                            auto justf = [&](const ReasonFunction & reason) {
                                 for (auto & l : lits)
                                     logger->emit_rup_proof_line_under_reason(reason,
                                         WeightedPseudoBooleanSum{} + 1_i * l >= 1_i, ProofLevel::Temporary);
                             };
-                            inference.infer(logger, full_reif, JustifyExplicitly{justf}, Reason{[=]() { return lits; }});
+                            inference.infer(logger, full_reif, JustifyExplicitly{justf}, ReasonFunction{[=]() {
+                                vector<ProofLiteral> reason_lits{};
+                                for (auto & l : lits)
+                                    reason_lits.emplace_back(l);
+                                return Reason(reason_lits.begin(), reason_lits.end());
+                            }});
                             return PropagatorState::DisableUntilBacktrack;
                         }
                         else
@@ -174,7 +179,7 @@ namespace
                         WeightedPseudoBooleanSum forward;
                         for (auto & l : _lits)
                             forward += 1_i * PseudoBooleanTerm{l};
-                        optional_model->add_constraint("Logical", "if condition", forward >= Integer(_lits.size()), HalfReifyOnConjunctionOf{_full_reif});
+                        optional_model->add_constraint("Logical", "if condition", forward >= Integer(_lits.size()), Reason{_full_reif});
                     }
 
                     Literals reverse;

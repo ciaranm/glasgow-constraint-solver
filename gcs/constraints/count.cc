@@ -53,11 +53,11 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
 
             // var_minus_val_gt_0 -> var - val > 0
             optional_model->add_constraint("Count", "var bigger",
-                    WeightedPseudoBooleanSum{} + 1_i * var + -1_i * _value_of_interest >= 1_i, HalfReifyOnConjunctionOf{{var_minus_val_gt_0}});
+                WeightedPseudoBooleanSum{} + 1_i * var + -1_i * _value_of_interest >= 1_i, HalfReifyOnConjunctionOf{{var_minus_val_gt_0}});
 
             // ! var_minus_val_gt_0 -> var - val <= 0
             optional_model->add_constraint("Count", "var not bigger",
-                    WeightedPseudoBooleanSum{} + 1_i * var + -1_i * _value_of_interest <= 0_i, HalfReifyOnConjunctionOf{{! var_minus_val_gt_0}});
+                WeightedPseudoBooleanSum{} + 1_i * var + -1_i * _value_of_interest <= 0_i, HalfReifyOnConjunctionOf{{! var_minus_val_gt_0}});
 
             // var_minus_val_lt_0 -> var - val <= -1
             optional_model->add_constraint("Count", "var smaller", WeightedPseudoBooleanSum{} + 1_i * var + -1_i * _value_of_interest <= -1_i, HalfReifyOnConjunctionOf{{var_minus_val_lt_0}});
@@ -109,7 +109,7 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
 
             // can't have more that this many occurrences of the value of interest
             auto how_many_is_less_than = Integer(vars.size() - how_many_definitely_do_not) + 1_i;
-            auto justf = [&](const Reason & reason) -> void {
+            auto justf = [&](const ReasonFunction & reason) -> void {
                 for (const auto & [idx, var] : enumerate(vars)) {
                     bool seen_any = false;
                     state.for_each_value_while_immutable(var, [&](const Integer & val) -> bool {
@@ -159,7 +159,7 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
                 }
 
                 if (how_many_might < state.lower_bound(how_many)) {
-                    auto justf = [&](const Reason & reason) -> void {
+                    auto justf = [&](const ReasonFunction & reason) -> void {
                         for (const auto & [idx, var] : enumerate(vars)) {
                             if (! state.in_domain(var, voi)) {
                                 // need to help the checker see that the equality flag must be zero
@@ -188,7 +188,7 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
             // what are the supports on possible values we've seen?
             if (lowest_how_many_must) {
                 auto just = JustifyExplicitly{
-                    [&](const Reason & reason) -> void {
+                    [&](const ReasonFunction & reason) -> void {
                         state.for_each_value_while_immutable(value_of_interest, [&](Integer voi) -> bool {
                             logger->emit_rup_proof_line_under_reason(reason,
                                 WeightedPseudoBooleanSum{} + 1_i * (value_of_interest != voi) + 1_i * (how_many >= *lowest_how_many_must) >= 1_i,
@@ -201,7 +201,7 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
 
             if (highest_how_many_might) {
                 auto just = JustifyExplicitly{
-                    [&](const Reason & reason) -> void {
+                    [&](const ReasonFunction & reason) -> void {
                         state.for_each_value_while_immutable(value_of_interest, [&](Integer voi) -> bool {
                             for (const auto & [idx, var] : enumerate(vars)) {
                                 if (! state.in_domain(var, voi)) {

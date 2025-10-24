@@ -70,7 +70,7 @@ auto gcs::innards::propagate_extensional(const ExtensionalData & table, const St
                 }
 
             if (! is_feasible)
-                inference.infer(logger, table.selector != Integer(tuple_idx), NoJustificationNeeded{}, Reason{});
+                inference.infer(logger, table.selector != Integer(tuple_idx), NoJustificationNeeded{}, ReasonFunction{});
         }
     },
         table.tuples);
