@@ -27,6 +27,7 @@ using std::ssize;
 using std::stoll;
 using std::string;
 using std::stringstream;
+using std::to_string;
 using std::uniform_int_distribution;
 using std::vector;
 
@@ -243,8 +244,11 @@ auto main(int argc, char * argv[]) -> int
             ("help", "Display help information")                                                                         //
             ("prove", "Create a proof")                                                                                  //
             ("seed", "Seed for random table generator (-1 for random seed)", cxxopts::value<int>()->default_value("-1")) //
-            ("display", "Display a formatted representation of the table for each instance")                             //
-            ("n", "Number of variables", cxxopts::value<int>()->default_value("6"));
+            ("display-table", "display a formatted representation of the generated table for each instance")             //
+            ("n", "Number of variables", cxxopts::value<int>()->default_value("6"))                                      //
+            ("repeat", "Repeat for this many randomly generated tables.", cxxopts::value<int>()->default_value("1"))     //
+            ("short-reasons", "Use redundance to reify reasons in proofs to save space.")                                //
+            ("stats", "Print stats, including solve time");                                                              //
 
         options_vars = options.parse(argc, argv);
     }
@@ -263,6 +267,8 @@ auto main(int argc, char * argv[]) -> int
 
     auto n = options_vars["n"].as<int>();
     auto seed = options_vars["seed"].as<int>();
+    auto repeat = options_vars["repeat"].as<int>();
+    auto display_table = options_vars.contains("display_table");
 
     if (seed == -1) {
         random_device rand_dev;
@@ -271,36 +277,25 @@ auto main(int argc, char * argv[]) -> int
 
     std::mt19937 rng(seed);
 
-    bool display_table = false;
+    for (auto i = 0; i < repeat; ++i) {
+        auto prove = options_vars.contains("prove");
 
-    if (options_vars.contains("display"))
-        display_table = true;
+        stringstream table_as_string;
+        Problem p;
+        auto vars = p.create_integer_variable_vector(n, -1_i, Integer(n), "vars");
+        auto tuple_length = uniform_int_distribution<>(n / 2, n)(rng);
+        SmartTuples tuples = random_tuples(tuple_length, vars, rng, display_table, table_as_string);
 
-    // cout << "Seed for random smart tables: " << seed << endl;
-    auto prove = options_vars.contains("prove");
+        p.post(SmartTable{vars, tuples});
 
-    stringstream table_as_string;
-    Problem p;
-    auto vars = p.create_integer_variable_vector(n, -1_i, Integer(n), "vars");
-    auto tuple_length = uniform_int_distribution<>(n / 2, n)(rng);
-    SmartTuples tuples = random_tuples(tuple_length, vars, rng, display_table, table_as_string);
+        solve_with(p,
+            SolveCallbacks{
+                .solution = [&](const CurrentState &) -> bool {
+                    return false;
+                }},
+            prove ? make_optional(ProofOptions{"smart_table_random" + (i > 0 ? to_string(i) : "")}) : nullopt);
 
-    p.post(SmartTable{vars, tuples});
-
-    solve_with(p,
-        SolveCallbacks{
-            .solution = [&](const CurrentState &) -> bool {
-                //                cout << "vars = [ ";
-                //                for (const auto & var : vars) {
-                //                    cout << s(var) << " ";
-                //                }
-                //                cout << "]" << endl;
-
-                return false;
-            }},
-        prove ? make_optional(ProofOptions{"smart_table_random"}) : nullopt);
-
-    if (display_table) cout << table_as_string.str() << endl;
-
+        if (display_table) cout << table_as_string.str() << endl;
+    }
     return EXIT_SUCCESS;
 }

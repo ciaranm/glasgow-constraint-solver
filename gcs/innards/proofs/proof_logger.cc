@@ -665,6 +665,11 @@ auto ProofLogger::create_proof_flag(const string & name) -> ProofFlag
     return names_and_ids_tracker().create_proof_flag(name);
 }
 
+auto ProofLogger::delete_range(ProofLine from, ProofLine up_to) -> void
+{
+    _imp->proof << "del range " << from << " " << up_to << "; \n";
+}
+
 auto ProofLogger::write_indent() -> void
 {
     for (auto _ = _imp->current_indent; _--;) {

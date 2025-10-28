@@ -183,7 +183,7 @@ auto run_at_most_1_test(int length, vector<pair<int, int>> & ranges, bool at_lea
             }},
         ProofOptions{"at_most_1_test"});
 
-    return ! at_most_1_violated && run_veripb("solve_test.opb", "solve_test.pbp");
+    return ! at_most_1_violated && run_veripb("at_most_1_test.opb", "at_most_1_test.pbp");
 };
 
 auto main(int, char *[]) -> int

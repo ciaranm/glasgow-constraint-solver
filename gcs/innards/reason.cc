@@ -25,7 +25,7 @@ auto gcs::innards::generic_reason(const State & state, const std::vector<Integer
     return [=]() { return reason; };
 }
 
-auto innards::singleton_reason(const IntegerVariableCondition & lit) -> ReasonFunction
+auto innards::singleton_reason(const ProofLiteralOrFlag & lit) -> ReasonFunction
 {
     Reason reason;
     reason.push_back(lit);
