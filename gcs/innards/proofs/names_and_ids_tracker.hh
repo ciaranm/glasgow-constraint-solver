@@ -267,22 +267,27 @@ namespace gcs::innards
         /**
          * Track a human-readable name for a variable.
          */
-        auto track_variable_name(SimpleOrProofOnlyIntegerVariableID id, const std::optional<std::string> &) -> void;
+        auto track_variable_name(SimpleOrProofOnlyIntegerVariableID id, const std::string &) -> void;
 
         /**
          * Track a human-readable name for a variable.
          */
-        auto track_variable_name(ProofFlag id, const std::optional<std::string> &) -> void;
+        auto track_variable_name(ProofFlag id, const std::string &) -> void;
+
+        /**
+         * Get the human-readable / s-expr name for a variable. Currently throws on views.
+         */
+        [[nodiscard]] auto s_expr_name_of(IntegerVariableID id) const -> std::string;
 
         /**
          * Get the human-readable name for a variable, or "" if there isn't one.
          */
-        [[nodiscard]] auto name_of(SimpleOrProofOnlyIntegerVariableID id) -> const std::string &;
+        [[nodiscard]] auto name_of(SimpleOrProofOnlyIntegerVariableID id) const -> const std::string &;
 
         /**
          * Get the human-readable name for a variable, or "" if there isn't one.
          */
-        [[nodiscard]] auto name_of(ProofFlag id) -> const std::string &;
+        [[nodiscard]] auto name_of(ProofFlag id) const -> const std::string &;
     };
 }
 

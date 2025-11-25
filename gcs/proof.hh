@@ -26,6 +26,7 @@ namespace gcs
         std::string opb_file;                          ///< Filename for the OPB model
         std::string proof_file;                        ///< Filename for the proof file
         std::optional<std::string> variables_map_file; ///< Filename for variables mapping file
+        std::optional<std::string> s_expr_file;        ///< Filename for the s-expression verified definition
     };
 
     /**

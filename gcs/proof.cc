@@ -11,7 +11,8 @@ using std::string;
 ProofFileNames::ProofFileNames(const std::string & s) :
     opb_file(s + ".opb"),
     proof_file(s + ".pbp"),
-    variables_map_file(s + ".varmap")
+    variables_map_file(s + ".varmap"),
+    s_expr_file(s + ".scp")
 {
 }
 

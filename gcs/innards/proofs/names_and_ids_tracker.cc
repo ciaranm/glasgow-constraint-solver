@@ -686,19 +686,17 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning_bit_of(SimpleOrProofOnlyInteg
     return result;
 }
 
-auto NamesAndIDsTracker::track_variable_name(SimpleOrProofOnlyIntegerVariableID id, const optional<string> & name) -> void
+auto NamesAndIDsTracker::track_variable_name(SimpleOrProofOnlyIntegerVariableID id, const string & name) -> void
 {
-    if (name)
-        _imp->id_names.emplace(id, *name);
+    _imp->id_names.emplace(id, name);
 }
 
-auto NamesAndIDsTracker::track_variable_name(ProofFlag id, const optional<string> & name) -> void
+auto NamesAndIDsTracker::track_variable_name(ProofFlag id, const string & name) -> void
 {
-    if (name)
-        _imp->flag_names.emplace(id, *name);
+    _imp->flag_names.emplace(id, name);
 }
 
-auto NamesAndIDsTracker::name_of(SimpleOrProofOnlyIntegerVariableID id) -> const string &
+auto NamesAndIDsTracker::name_of(SimpleOrProofOnlyIntegerVariableID id) const -> const string &
 {
     auto it = _imp->id_names.find(id);
     if (_imp->id_names.end() == it)
@@ -707,13 +705,22 @@ auto NamesAndIDsTracker::name_of(SimpleOrProofOnlyIntegerVariableID id) -> const
         return it->second;
 }
 
-auto NamesAndIDsTracker::name_of(ProofFlag id) -> const string &
+auto NamesAndIDsTracker::name_of(ProofFlag id) const -> const string &
 {
     auto it = _imp->flag_names.find(id);
     if (_imp->flag_names.end() == it)
         return _imp->unknown_name;
     else
         return it->second;
+}
+
+auto NamesAndIDsTracker::s_expr_name_of(IntegerVariableID id) const -> string
+{
+    return overloaded{
+        [&](const ConstantIntegerVariableID & c) -> string { return to_string(c.const_value.raw_value); },
+        [&](const SimpleIntegerVariableID & v) -> string { return name_of(v); },
+        [&](const ViewOfIntegerVariableID &) -> string { throw UnimplementedException{}; }}
+        .visit(id);
 }
 
 auto NamesAndIDsTracker::reify(const WeightedPseudoBooleanLessEqual & ineq, const HalfReifyOnConjunctionOf & half_reif) -> WeightedPseudoBooleanLessEqual

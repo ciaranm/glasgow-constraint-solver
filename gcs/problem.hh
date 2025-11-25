@@ -20,6 +20,12 @@
 #include <utility>
 #include <vector>
 
+#if __has_cpp_attribute(__cpp_lib_generator)
+#include <generator>
+#else
+#include <__generator.hpp>
+#endif
+
 namespace gcs
 {
     /**
@@ -143,6 +149,11 @@ namespace gcs
         [[nodiscard]] auto for_each_presolver(const std::function<auto(Presolver &)->bool> &) const -> bool;
 
         auto all_normal_variables() const -> const std::vector<IntegerVariableID> &;
+
+        [[nodiscard]] auto each_constraint() const -> std::generator<const Constraint &>;
+
+        [[nodiscard]] auto each_variable_with_bounds_and_name() const -> std::generator<
+                                                                          std::tuple<IntegerVariableID, Integer, Integer, std::string>>;
 
         /**
          * What is our objective variable, to minimise?

@@ -151,7 +151,12 @@ auto ProofModel::names_and_ids_tracker() -> NamesAndIDsTracker &
     return _imp->tracker;
 }
 
-auto ProofModel::create_proof_only_integer_variable(Integer lower, Integer upper, const optional<string> & name,
+auto ProofModel::names_and_ids_tracker() const -> const NamesAndIDsTracker &
+{
+    return _imp->tracker;
+}
+
+auto ProofModel::create_proof_only_integer_variable(Integer lower, Integer upper, const string & name,
     const IntegerVariableProofRepresentation rep) -> ProofOnlySimpleIntegerVariableID
 {
     ProofOnlySimpleIntegerVariableID id{_imp->proof_only_integer_variable_nr++};
@@ -167,7 +172,8 @@ auto ProofModel::create_proof_only_integer_variable(Integer lower, Integer upper
     return id;
 }
 
-auto ProofModel::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariableID id, Integer lower, Integer upper, const optional<string> & name) -> void
+auto ProofModel::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariableID id, Integer lower, Integer upper,
+    const string & name) -> void
 {
     if (0_i == lower && 1_i == upper) {
         names_and_ids_tracker().track_variable_name(id, name);
@@ -227,27 +233,28 @@ auto ProofModel::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVa
 }
 
 auto ProofModel::set_up_integer_variable(SimpleIntegerVariableID id, Integer lower, Integer upper,
-    const optional<string> & optional_name, const optional<IntegerVariableProofRepresentation> & rep) -> void
+    const string & name, const optional<IntegerVariableProofRepresentation> & rep) -> void
 {
     if (! rep) {
         if (lower == 0_i && upper == 1_i)
-            set_up_direct_only_variable_encoding(id, lower, upper, optional_name);
+            set_up_direct_only_variable_encoding(id, lower, upper, name);
         else
-            set_up_bits_variable_encoding(id, lower, upper, optional_name);
+            set_up_bits_variable_encoding(id, lower, upper, name);
     }
     else {
         switch (*rep) {
         case IntegerVariableProofRepresentation::Bits:
-            set_up_bits_variable_encoding(id, lower, upper, optional_name);
+            set_up_bits_variable_encoding(id, lower, upper, name);
             break;
         case IntegerVariableProofRepresentation::DirectOnly:
-            set_up_direct_only_variable_encoding(id, lower, upper, optional_name);
+            set_up_direct_only_variable_encoding(id, lower, upper, name);
             break;
         }
     }
 }
 
-auto ProofModel::set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableID id, Integer lower, Integer upper, const optional<string> & name) -> void
+auto ProofModel::set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableID id, Integer lower, Integer upper,
+    const string & name) -> void
 {
     auto [highest_bit_shift, highest_bit_coeff, negative_bit_coeff] = get_bits_encoding_coeffs(lower, upper);
     vector<pair<Integer, XLiteral>> bits;

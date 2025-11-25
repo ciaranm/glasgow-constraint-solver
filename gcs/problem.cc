@@ -19,6 +19,7 @@ using namespace gcs::innards;
 
 using std::deque;
 using std::function;
+using std::generator;
 using std::make_optional;
 using std::move;
 using std::nullopt;
@@ -34,10 +35,11 @@ struct Problem::Imp
 {
     State initial_state{};
     deque<unique_ptr<Constraint>> constraints{};
-    deque<tuple<SimpleIntegerVariableID, Integer, Integer, optional<string>>> integer_variables{};
+    deque<tuple<SimpleIntegerVariableID, Integer, Integer, string>> integer_variables{};
     deque<unique_ptr<Presolver>> presolvers{};
     vector<IntegerVariableID> problem_variables{};
     optional<IntegerVariableID> optional_minimise_variable{};
+    unsigned long long next_unnamed_var_id = 0;
 };
 
 Problem::Problem() :
@@ -54,7 +56,7 @@ auto Problem::create_integer_variable(Integer lower, Integer upper,
         throw UnexpectedException{"variable has lower bound > upper bound"};
 
     auto result = _imp->initial_state.allocate_integer_variable_with_state(lower, upper);
-    _imp->integer_variables.emplace_back(result, lower, upper, name);
+    _imp->integer_variables.emplace_back(result, lower, upper, name ? *name : to_string(++_imp->next_unnamed_var_id));
     _imp->problem_variables.push_back(result);
     return result;
 }
@@ -67,7 +69,7 @@ auto Problem::create_integer_variable(const vector<Integer> & domain, const opti
     auto [min, max] = minmax_element(domain.begin(), domain.end());
 
     auto result = _imp->initial_state.allocate_integer_variable_with_state(*min, *max);
-    _imp->integer_variables.emplace_back(result, *min, *max, name);
+    _imp->integer_variables.emplace_back(result, *min, *max, name ? *name : to_string(++_imp->next_unnamed_var_id));
     _imp->problem_variables.push_back(result);
 
     post(In{result, domain});
@@ -93,8 +95,8 @@ auto Problem::create_state_for_new_search(
 {
     auto result = _imp->initial_state.clone();
     if (model) {
-        for (auto & [id, lower, upper, optional_name] : _imp->integer_variables)
-            model->set_up_integer_variable(id, lower, upper, optional_name, nullopt);
+        for (auto & [id, lower, upper, name] : _imp->integer_variables)
+            model->set_up_integer_variable(id, lower, upper, name, nullopt);
     }
     return result;
 }
@@ -157,4 +159,20 @@ auto Problem::optional_minimise_variable() const -> optional<IntegerVariableID>
 auto Problem::all_normal_variables() const -> const vector<IntegerVariableID> &
 {
     return _imp->problem_variables;
+}
+
+auto Problem::each_variable_with_bounds_and_name() const -> generator<tuple<IntegerVariableID, Integer, Integer, string>>
+{
+    return [](const auto & integer_variables) -> generator<tuple<IntegerVariableID, Integer, Integer, string>> {
+        for (auto & v : integer_variables)
+            co_yield v;
+    }(_imp->integer_variables);
+}
+
+auto Problem::each_constraint() const -> generator<const Constraint &>
+{
+    return [](const auto & constraints) -> generator<const Constraint &> {
+        for (const auto & c : constraints)
+            co_yield *c;
+    }(_imp->constraints);
 }

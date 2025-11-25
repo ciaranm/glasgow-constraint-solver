@@ -34,9 +34,9 @@ namespace gcs::innards
         struct Imp;
         std::unique_ptr<Imp> _imp;
 
-        auto set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::optional<std::string> &) -> void;
+        auto set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::string &) -> void;
 
-        auto set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::optional<std::string> &) -> void;
+        auto set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::string &) -> void;
 
     public:
         /**
@@ -114,7 +114,7 @@ namespace gcs::innards
         /**
          * Create a variable ID that is used only in proof definitions, not state.
          */
-        [[nodiscard]] auto create_proof_only_integer_variable(Integer, Integer, const std::optional<std::string> &,
+        [[nodiscard]] auto create_proof_only_integer_variable(Integer, Integer, const std::string &,
             const IntegerVariableProofRepresentation enc) -> ProofOnlySimpleIntegerVariableID;
 
         [[nodiscard]] auto create_proof_flag(const std::string &) -> ProofFlag;
@@ -123,7 +123,7 @@ namespace gcs::innards
          * Set up proof logging for an integer variable with the specified bounds,
          * that is being tracked inside State.
          */
-        auto set_up_integer_variable(SimpleIntegerVariableID, Integer, Integer, const std::optional<std::string> &,
+        auto set_up_integer_variable(SimpleIntegerVariableID, Integer, Integer, const std::string &,
             const std::optional<IntegerVariableProofRepresentation> &) -> void;
 
         /**
@@ -149,6 +149,11 @@ namespace gcs::innards
          * Provide access to information about variables.
          */
         [[nodiscard]] auto names_and_ids_tracker() -> NamesAndIDsTracker &;
+
+        /**
+         * Provide access to information about variables.
+         */
+        [[nodiscard]] auto names_and_ids_tracker() const -> const NamesAndIDsTracker &;
     };
 }
 
