@@ -699,14 +699,23 @@ auto NamesAndIDsTracker::track_variable_name(ProofFlag id, const string & name) 
     _imp->flag_names.emplace(id, name);
 }
 
-auto NamesAndIDsTracker::name_of(SimpleOrProofOnlyIntegerVariableID id) -> const string &
+auto NamesAndIDsTracker::name_of(SimpleOrProofOnlyIntegerVariableID id) const -> const string &
 {
     return _imp->id_names.at(id);
 }
 
-auto NamesAndIDsTracker::name_of(ProofFlag id) -> const string &
+auto NamesAndIDsTracker::name_of(ProofFlag id) const -> const string &
 {
     return _imp->flag_names.at(id);
+}
+
+auto NamesAndIDsTracker::s_expr_name_of(IntegerVariableID id) const -> string
+{
+    return overloaded{
+        [&](const ConstantIntegerVariableID & c) -> string { return to_string(c.const_value.raw_value); },
+        [&](const SimpleIntegerVariableID & v) -> string { return name_of(v); },
+        [&](const ViewOfIntegerVariableID &) -> string { throw UnimplementedException{}; }}
+        .visit(id);
 }
 
 auto NamesAndIDsTracker::reify(const WPBSumLE & ineq, const HalfReifyOnConjunctionOf & half_reif) -> WPBSumLE

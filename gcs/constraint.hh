@@ -46,6 +46,11 @@ namespace gcs
          * Create a copy of the constraint. To be used internally.
          */
         [[nodiscard]] virtual auto clone() const -> std::unique_ptr<Constraint> = 0;
+
+        /**
+         * Return an s-expr representation of the constraint. To be used internally.
+         */
+        [[nodiscard]] virtual auto s_exprify(const innards::ProofModel * const) const -> std::string;
     };
 }
 

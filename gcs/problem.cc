@@ -21,6 +21,7 @@ using namespace gcs::innards;
 
 using std::deque;
 using std::function;
+using std::generator;
 using std::make_optional;
 using std::move;
 using std::nullopt;
@@ -188,4 +189,20 @@ auto Problem::optional_minimise_variable() const -> optional<IntegerVariableID>
 auto Problem::all_normal_variables() const -> const vector<IntegerVariableID> &
 {
     return _imp->problem_variables;
+}
+
+auto Problem::each_variable_with_bounds_and_name() const -> generator<tuple<IntegerVariableID, Integer, Integer, string>>
+{
+    return [](const auto & integer_variables) -> generator<tuple<IntegerVariableID, Integer, Integer, string>> {
+        for (auto & v : integer_variables)
+            co_yield v;
+    }(_imp->integer_variables);
+}
+
+auto Problem::each_constraint() const -> generator<const Constraint &>
+{
+    return [](const auto & constraints) -> generator<const Constraint &> {
+        for (const auto & c : constraints)
+            co_yield *c;
+    }(_imp->constraints);
 }

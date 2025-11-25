@@ -151,6 +151,11 @@ auto ProofModel::names_and_ids_tracker() -> NamesAndIDsTracker &
     return _imp->tracker;
 }
 
+auto ProofModel::names_and_ids_tracker() const -> const NamesAndIDsTracker &
+{
+    return _imp->tracker;
+}
+
 auto ProofModel::create_proof_only_integer_variable(Integer lower, Integer upper, const string & name,
     const IntegerVariableProofRepresentation rep) -> ProofOnlySimpleIntegerVariableID
 {
@@ -167,7 +172,8 @@ auto ProofModel::create_proof_only_integer_variable(Integer lower, Integer upper
     return id;
 }
 
-auto ProofModel::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariableID id, Integer lower, Integer upper, const string & name) -> void
+auto ProofModel::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariableID id, Integer lower, Integer upper,
+    const string & name) -> void
 {
     if (0_i == lower && 1_i == upper) {
         names_and_ids_tracker().track_variable_name(id, name);
@@ -247,7 +253,8 @@ auto ProofModel::set_up_integer_variable(SimpleIntegerVariableID id, Integer low
     }
 }
 
-auto ProofModel::set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableID id, Integer lower, Integer upper, const string & name) -> void
+auto ProofModel::set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableID id, Integer lower, Integer upper,
+    const string & name) -> void
 {
     auto [highest_bit_shift, highest_bit_coeff, negative_bit_coeff] = get_bits_encoding_coeffs(lower, upper);
     vector<pair<Integer, XLiteral>> bits;

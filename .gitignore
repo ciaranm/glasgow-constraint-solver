@@ -10,6 +10,7 @@ Doxyfile
 *.veripb
 *.pbp
 *.varmap
+*.scp
 XCSP3-CPP-Parser
 generator
 .idea

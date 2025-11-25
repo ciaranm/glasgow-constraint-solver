@@ -149,6 +149,11 @@ namespace gcs::innards
          * Provide access to information about variables.
          */
         [[nodiscard]] auto names_and_ids_tracker() -> NamesAndIDsTracker &;
+
+        /**
+         * Provide access to information about variables.
+         */
+        [[nodiscard]] auto names_and_ids_tracker() const -> const NamesAndIDsTracker &;
     };
 }
 
