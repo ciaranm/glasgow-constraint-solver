@@ -62,8 +62,8 @@ auto Inverse::install(Propagators & propagators, State & initial_state, ProofMod
     }
 
     for (const auto & [idx, v] : enumerate(_y)) {
-        propagators.trim_lower_bound(initial_state, optional_model, v, 0_i + _y_start, "Inverse");
-        propagators.trim_upper_bound(initial_state, optional_model, v, Integer(_y.size()) + _y_start - 1_i, "Inverse");
+        propagators.trim_lower_bound(initial_state, optional_model, v, 0_i + _x_start, "Inverse");
+        propagators.trim_upper_bound(initial_state, optional_model, v, Integer(_x.size()) + _x_start - 1_i, "Inverse");
     }
 
     if (optional_model) {
