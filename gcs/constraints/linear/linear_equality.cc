@@ -125,7 +125,6 @@ namespace
 auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofModel * const optional_model) && -> void
 {
     optional<ProofLine> proof_line;
-    optional<ProofFlag> gtflag, ltflag;
     if (optional_model) {
         WeightedPseudoBooleanSum terms;
         for (auto & [c, v] : _coeff_vars.terms)
@@ -146,13 +145,13 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
                 // condition unknown, the condition implies it is neither greater nor less
                 proof_line = optional_model->add_constraint("LinearEqualityIff", "equals option", terms == _value, HalfReifyOnConjunctionOf{{cond}}).first.value();
 
-                gtflag = optional_model->create_proof_flag("lineqgt");
-                optional_model->add_constraint("LinearEqualityIff", "greater option", terms >= _value + 1_i, HalfReifyOnConjunctionOf{{*gtflag}});
-                ltflag = optional_model->create_proof_flag("lineqlt");
-                optional_model->add_constraint("LinearEqualityIff", "less than option", terms <= _value - 1_i, HalfReifyOnConjunctionOf{{*ltflag}});
+                auto gtflag = optional_model->create_proof_flag("lineqgt");
+                optional_model->add_constraint("LinearEqualityIff", "greater option", terms >= _value + 1_i, HalfReifyOnConjunctionOf{{gtflag}});
+                auto ltflag = optional_model->create_proof_flag("lineqlt");
+                optional_model->add_constraint("LinearEqualityIff", "less than option", terms <= _value - 1_i, HalfReifyOnConjunctionOf{{ltflag}});
 
                 // lt + eq + gt = 1
-                optional_model->add_constraint("LinearEqualityIff", "one of less than, equals, greater than", WeightedPseudoBooleanSum{} + 1_i * *ltflag + 1_i * *gtflag + 1_i * cond == 1_i);
+                optional_model->add_constraint("LinearEqualityIff", "one of less than, equals, greater than", WeightedPseudoBooleanSum{} + 1_i * ltflag + 1_i * gtflag + 1_i * cond == 1_i);
             }}
             .visit(_cond);
     }
