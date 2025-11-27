@@ -111,63 +111,63 @@ namespace gcs
      * \sa SumEquals
      */
     template <typename Var_>
-    struct SumLessEqual
+    struct SumLessThanEqual
     {
         SumOf<Var_> lhs;
         Integer rhs;
     };
 
     /**
-     * Allow a SumLessEqual to be created using `WeightedSum{} + 42_i * var1 + 23_i * var2 <= 1234_i`.
+     * Allow a SumLessThanEqual to be created using `WeightedSum{} + 42_i * var1 + 23_i * var2 <= 1234_i`.
      *
      * \ingroup Expressions
      */
     template <typename Var_>
-    [[nodiscard]] constexpr inline auto operator<=(SumOf<Var_> lhs, Integer rhs) -> SumLessEqual<Var_>
+    [[nodiscard]] constexpr inline auto operator<=(SumOf<Var_> lhs, Integer rhs) -> SumLessThanEqual<Var_>
     {
-        return SumLessEqual<Var_>{std::move(lhs), rhs};
+        return SumLessThanEqual<Var_>{std::move(lhs), rhs};
     }
 
     /**
-     * Allow a SumLessEqual to be created using `WeightedSum{} + 42_i * var1 + 23_i * var2 <= 1234_i * var3`.
+     * Allow a SumLessThanEqual to be created using `WeightedSum{} + 42_i * var1 + 23_i * var2 <= 1234_i * var3`.
      *
      * \ingroup Expressions
      */
     template <typename Var_, typename RHS_>
-    [[nodiscard]] constexpr inline auto operator<=(SumOf<Weighted<Var_>> lhs, Weighted<RHS_> rhs) -> SumLessEqual<Weighted<Var_>>
-    requires std::constructible_from<Var_, RHS_>
+    [[nodiscard]] constexpr inline auto operator<=(SumOf<Weighted<Var_>> lhs, Weighted<RHS_> rhs) -> SumLessThanEqual<Weighted<Var_>>
+        requires std::constructible_from<Var_, RHS_>
     {
-        SumLessEqual<Weighted<Var_>> result{std::move(lhs), 0_i};
+        SumLessThanEqual<Weighted<Var_>> result{std::move(lhs), 0_i};
         result.lhs += -rhs.coefficient * rhs.variable;
         return result;
     }
 
     /**
-     * Allow a SumLessEqual to be created using `WeightedSum{} + 42_i * var1 + 23_i * var2 >= 1234_i`,
+     * Allow a SumLessThanEqual to be created using `WeightedSum{} + 42_i * var1 + 23_i * var2 >= 1234_i`,
      * by rewriting.
      *
      * \ingroup Expressions
      */
     template <typename Var_>
-    [[nodiscard]] constexpr inline auto operator>=(SumOf<Var_> lhs, Integer rhs) -> SumLessEqual<Var_>
+    [[nodiscard]] constexpr inline auto operator>=(SumOf<Var_> lhs, Integer rhs) -> SumLessThanEqual<Var_>
     {
-        SumLessEqual<Var_> result{std::move(lhs), -rhs};
+        SumLessThanEqual<Var_> result{std::move(lhs), -rhs};
         for (auto & [c, _] : result.lhs.terms)
             c = -c;
         return result;
     }
 
     /**
-     * Allow a SumLessEqual to be created using `WeightedSum{} + 42_i * var1 + 23_i * var2 >= 1234_i * var3`,
+     * Allow a SumLessThanEqual to be created using `WeightedSum{} + 42_i * var1 + 23_i * var2 >= 1234_i * var3`,
      * by rewriting.
      *
      * \ingroup Expressions
      */
     template <typename Var_, typename RHS_>
-    [[nodiscard]] constexpr inline auto operator>=(SumOf<Weighted<Var_>> lhs, Weighted<RHS_> rhs) -> SumLessEqual<Weighted<Var_>>
-    requires std::constructible_from<Var_, RHS_>
+    [[nodiscard]] constexpr inline auto operator>=(SumOf<Weighted<Var_>> lhs, Weighted<RHS_> rhs) -> SumLessThanEqual<Weighted<Var_>>
+        requires std::constructible_from<Var_, RHS_>
     {
-        SumLessEqual<Weighted<Var_>> result{std::move(lhs), 0_i};
+        SumLessThanEqual<Weighted<Var_>> result{std::move(lhs), 0_i};
         for (auto & [c, _] : result.lhs.terms)
             c = -c;
         result.lhs += rhs.coefficient * rhs.variable;
@@ -180,7 +180,7 @@ namespace gcs
      * Often created by writing `WeightedSum{} + 42_i * var1 + 23_i * var2 == 1234_i`.
      *
      * \ingroup Expressions
-     * \sa SumLessEqual
+     * \sa SumLessThanEqual
      */
     template <typename Var_>
     struct SumEquals

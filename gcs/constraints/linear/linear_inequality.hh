@@ -16,10 +16,33 @@ namespace gcs
         /**
          * \brief Constrain that the sum of the variables multiplied by their
          * associated coefficients is less than or equal to the specified
+         * value, if the condition holds.
+         *
+         * \ingroup innards
+         * \sa LinearInequalityIff
+         */
+        class LinearInequalityIf : public Constraint
+        {
+        private:
+            WeightedSum _coeff_vars;
+            Integer _value;
+            Literal _cond;
+
+        public:
+            explicit LinearInequalityIf(WeightedSum coeff_vars, Integer value, Literal cond);
+
+            virtual auto install(innards::Propagators &, innards::State &,
+                innards::ProofModel * const) && -> void override;
+            virtual auto clone() const -> std::unique_ptr<Constraint> override;
+        };
+
+        /**
+         * \brief Constrain that the sum of the variables multiplied by their
+         * associated coefficients is less than or equal to the specified
          * value, if and only if the condition holds.
          *
          * \ingroup innards
-         * \sa LinearLessEqual
+         * \sa LinearLessThanEqual
          * \sa LinearGreaterThanEqual
          */
         class LinearInequalityIff : public Constraint

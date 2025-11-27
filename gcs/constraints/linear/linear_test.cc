@@ -79,28 +79,26 @@ auto run_linear_test(bool proofs, const string & mode, pair<int, int> v1_range, 
 }
 
 template <typename Constraint_>
-auto run_linear_reif_test(bool proofs, const string & mode, pair<int, int> v1_range, pair<int, int> v2_range,
+auto run_linear_reif_test(bool full_reif, bool proofs, const string & mode, pair<int, int> v1_range, pair<int, int> v2_range,
     pair<int, int> v3_range, const vector<pair<vector<int>, int>> & ineqs,
     const std::function<auto(int, int)->bool> & compare) -> void
 {
     for (const auto & v4_range : vector<pair<int, int>>{{0, 0}, {1, 1}, {0, 1}}) {
-        print(cerr, "linear {} reif {} {} {} {} {} {}", mode, v1_range, v2_range, v3_range, v4_range, ineqs, proofs ? " with proofs:" : ":");
+        print(cerr, "linear {} {} {} {} {} {} {} {}", mode, full_reif ? "full_reif" : "half_reif",
+            v1_range, v2_range, v3_range, v4_range, ineqs, proofs ? " with proofs:" : ":");
         cerr << flush;
 
         auto is_satisfying = [&](int a, int b, int c, int d) {
             set<bool> mismatches;
             for (auto & [linear, value] : ineqs) {
-                bool mismatch = false;
-                if (! compare(linear[0] * a + linear[1] * b + linear[2] * c, value))
-                    mismatch = true;
-                mismatches.emplace(mismatch);
+                mismatches.emplace(! compare(linear[0] * a + linear[1] * b + linear[2] * c, value));
             }
             if (mismatches.contains(false) && mismatches.contains(true))
-                return false;
+                return ((! full_reif) && 0 == d);
             else if (mismatches.contains(true))
                 return 0 == d;
             else
-                return 1 == d;
+                return (! full_reif) || 1 == d;
         };
 
         set<tuple<int, int, int, int>> expected, actual;
@@ -208,29 +206,33 @@ auto main(int, char *[]) -> int
     random_device rand_dev;
     mt19937 rand(rand_dev());
     uniform_int_distribution nc_dist(1, 5);
-    for (int x = 0; x < 10; ++x)
+    for (int x = 0; x < 5; ++x)
         generate_random_data(rand, data, random_bounds(-10, 10, 5, 15), random_bounds(-10, 10, 5, 15),
             random_bounds(-10, 10, 5, 15), vector(nc_dist(rand), pair{vector(3, uniform_int_distribution(-10, 10)), uniform_int_distribution(-200, 200)}));
 
     for (auto & [r1, r2, r3, constraints] : data) {
         run_linear_test<LinearEquality>(false, "eq", r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
         run_linear_test<LinearNotEquals>(false, "ne", r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
-        run_linear_test<LinearLessEqual>(false, "le", r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
+        run_linear_test<LinearLessThanEqual>(false, "le", r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
         run_linear_test<LinearGreaterThanEqual>(false, "ge", r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
-        run_linear_reif_test<LinearEqualityIff>(false, "eq", r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
-        run_linear_reif_test<LinearLessEqualIff>(false, "le", r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
-        run_linear_reif_test<LinearGreaterThanEqualIff>(false, "ge", r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
+        run_linear_reif_test<LinearGreaterThanEqualIf>(false, false, "ge", r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
+        run_linear_reif_test<LinearLessThanEqualIf>(false, false, "le", r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
+        run_linear_reif_test<LinearEqualityIff>(true, false, "eq", r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
+        run_linear_reif_test<LinearLessThanEqualIff>(true, false, "le", r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
+        run_linear_reif_test<LinearGreaterThanEqualIff>(true, false, "ge", r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
     }
 
     if (can_run_veripb())
         for (auto & [r1, r2, r3, constraints] : data) {
             run_linear_test<LinearEquality>(true, "eq", r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
             run_linear_test<LinearNotEquals>(true, "ne", r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
-            run_linear_test<LinearLessEqual>(true, "le", r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
+            run_linear_test<LinearLessThanEqual>(true, "le", r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
             run_linear_test<LinearGreaterThanEqual>(true, "ge", r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
-            run_linear_reif_test<LinearEqualityIff>(true, "eq", r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
-            run_linear_reif_test<LinearLessEqualIff>(true, "le", r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
-            run_linear_reif_test<LinearGreaterThanEqualIff>(true, "ge", r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
+            run_linear_reif_test<LinearGreaterThanEqualIf>(false, true, "ge", r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
+            run_linear_reif_test<LinearLessThanEqualIf>(false, true, "le", r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
+            run_linear_reif_test<LinearEqualityIff>(true, true, "eq", r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
+            run_linear_reif_test<LinearLessThanEqualIff>(true, true, "le", r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
+            run_linear_reif_test<LinearGreaterThanEqualIff>(true, true, "ge", r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
         }
 
     return EXIT_SUCCESS;

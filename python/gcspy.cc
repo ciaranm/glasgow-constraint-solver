@@ -540,7 +540,7 @@ auto Python::post_linear_less_equal(const vector<string> & var_ids, const vector
 #ifdef WRITE_API_CALLS
     api_calls << "post_linear_less_equal" << endl;
 #endif
-    p.post(LinearLessEqual{(make_linear(var_ids, coeffs)), Integer{value}});
+    p.post(LinearLessThanEqual{(make_linear(var_ids, coeffs)), Integer{value}});
 }
 
 auto Python::post_linear_less_equal_iff(const vector<string> & var_ids, const vector<long long int> & coeffs,
@@ -550,7 +550,7 @@ auto Python::post_linear_less_equal_iff(const vector<string> & var_ids, const ve
 #ifdef WRITE_API_CALLS
     api_calls << "post_linear_less_equal_iff" << endl;
 #endif
-    p.post(LinearLessEqualIff{(make_linear(var_ids, coeffs)), Integer{value}, get_var(reif) != 0_i});
+    p.post(LinearLessThanEqualIff{(make_linear(var_ids, coeffs)), Integer{value}, get_var(reif) != 0_i});
 }
 
 auto Python::post_linear_greater_equal(const vector<string> & var_ids, const vector<long long int> & coeffs,
@@ -570,7 +570,7 @@ auto Python::post_linear_greater_equal_iff(const vector<string> & var_ids, const
 #ifdef WRITE_API_CALLS
     api_calls << "post_linear_greater_equal_iff" << endl;
 #endif
-    p.post(LinearLessEqualIff{(make_linear(var_ids, coeffs)), Integer{value}, get_var(reif) != 0_i});
+    p.post(LinearLessThanEqualIff{(make_linear(var_ids, coeffs)), Integer{value}, get_var(reif) != 0_i});
 }
 
 auto Python::post_linear_not_equal(const vector<string> & var_ids, const vector<long long int> & coeffs,

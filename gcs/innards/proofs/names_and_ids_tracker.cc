@@ -716,7 +716,7 @@ auto NamesAndIDsTracker::name_of(ProofFlag id) -> const string &
         return it->second;
 }
 
-auto NamesAndIDsTracker::reify(const WeightedPseudoBooleanLessEqual & ineq, const HalfReifyOnConjunctionOf & half_reif) -> WeightedPseudoBooleanLessEqual
+auto NamesAndIDsTracker::reify(const WeightedPseudoBooleanLessThanEqual & ineq, const HalfReifyOnConjunctionOf & half_reif) -> WeightedPseudoBooleanLessThanEqual
 {
     // so what happens if there's a false literal in the left hand term? conceptually,
     // this means the constraint will always hold, but it's probably useful to have

@@ -15,7 +15,7 @@ namespace gcs
      * expensive for large variables.
      *
      * \ingroup Constraints
-     * \sa LinearLessEqual
+     * \sa LinearLessThanEqual
      * \sa LinearGreaterThanEqual
      * \sa LinearEquality
      */

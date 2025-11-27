@@ -17,7 +17,7 @@ namespace gcs::innards
 
     using WeightedPseudoBooleanSum = SumOf<Weighted<PseudoBooleanTerm>>;
 
-    using WeightedPseudoBooleanLessEqual = SumLessEqual<Weighted<PseudoBooleanTerm>>;
+    using WeightedPseudoBooleanLessThanEqual = SumLessThanEqual<Weighted<PseudoBooleanTerm>>;
 
     using WeightedPseudoBooleanEquality = SumEquals<Weighted<PseudoBooleanTerm>>;
 }

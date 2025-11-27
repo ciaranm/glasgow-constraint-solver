@@ -307,12 +307,12 @@ auto ProofLogger::reason_to_lits(const ReasonFunction & reason) -> vector<ProofL
     return reason_proof_literals;
 }
 
-auto ProofLogger::reify(const WeightedPseudoBooleanLessEqual & ineq, const HalfReifyOnConjunctionOf & half_reif) -> WeightedPseudoBooleanLessEqual
+auto ProofLogger::reify(const WeightedPseudoBooleanLessThanEqual & ineq, const HalfReifyOnConjunctionOf & half_reif) -> WeightedPseudoBooleanLessThanEqual
 {
     return names_and_ids_tracker().reify(ineq, half_reif);
 }
 
-auto ProofLogger::reify(const WeightedPseudoBooleanLessEqual & ineq, const ReasonFunction & reason) -> WeightedPseudoBooleanLessEqual
+auto ProofLogger::reify(const WeightedPseudoBooleanLessThanEqual & ineq, const ReasonFunction & reason) -> WeightedPseudoBooleanLessThanEqual
 {
     auto reason_proof_literals = reason_to_lits(reason);
 
@@ -340,7 +340,7 @@ auto ProofLogger::emit_proof_comment(const string & s) -> void
     _imp->proof << "% " << s << '\n';
 }
 
-auto ProofLogger::emit(const ProofRule & rule, const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
+auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
     ProofLevel level
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
     ,
@@ -381,7 +381,7 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessEqual<Weighted<Pseud
 }
 
 auto ProofLogger::emit_under_reason(
-    const ProofRule & rule, const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
+    const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
     ProofLevel level, const ReasonFunction & reason
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
     ,
@@ -436,7 +436,7 @@ auto ProofLogger::emit_under_reason(
     );
 }
 
-auto ProofLogger::emit_rup_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level
+auto ProofLogger::emit_rup_proof_line(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
     ,
     const std::source_location & where
@@ -451,7 +451,7 @@ auto ProofLogger::emit_rup_proof_line(const SumLessEqual<Weighted<PseudoBooleanT
     );
 }
 
-auto ProofLogger::emit_rup_proof_line_under_reason(const ReasonFunction & reason, const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
+auto ProofLogger::emit_rup_proof_line_under_reason(const ReasonFunction & reason, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
     ProofLevel level
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
     ,
@@ -555,7 +555,7 @@ auto ProofLogger::emit_subproofs(const map<string, Subproof> & subproofs)
     _imp->proof << "qed;\n";
 }
 
-auto ProofLogger::emit_red_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
+auto ProofLogger::emit_red_proof_line(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
     const std::vector<std::pair<ProofLiteralOrFlag, ProofLiteralOrFlag>> & witness,
     ProofLevel level, const std::optional<std::map<std::string, Subproof>> & subproofs
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
@@ -585,7 +585,7 @@ auto ProofLogger::emit_red_proof_line(const SumLessEqual<Weighted<PseudoBooleanT
     return record_proof_line(++_imp->proof_line, level);
 }
 
-auto ProofLogger::emit_red_proof_lines_forward_reifying(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLiteralOrFlag reif,
+auto ProofLogger::emit_red_proof_lines_forward_reifying(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLiteralOrFlag reif,
     ProofLevel level, const optional<map<string, Subproof>> & subproofs
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
     ,
@@ -610,7 +610,7 @@ auto ProofLogger::emit_red_proof_lines_forward_reifying(const SumLessEqual<Weigh
     return record_proof_line(++_imp->proof_line, level);
 }
 
-auto ProofLogger::emit_red_proof_lines_reverse_reifying(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLiteralOrFlag reif,
+auto ProofLogger::emit_red_proof_lines_reverse_reifying(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLiteralOrFlag reif,
     ProofLevel level, const optional<map<string, Subproof>> & subproofs
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
     ,
@@ -635,7 +635,7 @@ auto ProofLogger::emit_red_proof_lines_reverse_reifying(const SumLessEqual<Weigh
     return record_proof_line(++_imp->proof_line, level);
 }
 
-auto ProofLogger::emit_red_proof_lines_reifying(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLiteralOrFlag reif,
+auto ProofLogger::emit_red_proof_lines_reifying(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLiteralOrFlag reif,
     ProofLevel level
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
     ,
@@ -652,7 +652,7 @@ auto ProofLogger::emit_red_proof_lines_reifying(const SumLessEqual<Weighted<Pseu
     return pair{forward_result, reverse_result};
 }
 
-auto ProofLogger::create_proof_flag_reifying(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
+auto ProofLogger::create_proof_flag_reifying(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
     const string & name, ProofLevel level) -> tuple<ProofFlag, ProofLine, ProofLine>
 {
     auto flag = create_proof_flag(name);

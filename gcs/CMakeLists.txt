@@ -32,9 +32,9 @@ add_library(glasgow_constraint_solver
         constraints/lex.cc
         constraints/linear/justify.cc
         constraints/linear/linear_equality.cc
-        constraints/linear/linear_greater_equal.cc
+        constraints/linear/linear_greater_than_equal.cc
         constraints/linear/linear_inequality.cc
-        constraints/linear/linear_less_equal.cc
+        constraints/linear/linear_less_than_equal.cc
         constraints/linear/propagate.cc
         constraints/linear/utils.cc
         constraints/logical.cc

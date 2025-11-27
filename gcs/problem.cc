@@ -104,9 +104,9 @@ auto Problem::post(const Constraint & c) -> void
     _imp->constraints.push_back(c.clone());
 }
 
-auto Problem::post(SumLessEqual<Weighted<IntegerVariableID>> expr) -> void
+auto Problem::post(SumLessThanEqual<Weighted<IntegerVariableID>> expr) -> void
 {
-    post(LinearLessEqual(move(expr.lhs), expr.rhs));
+    post(LinearLessThanEqual(move(expr.lhs), expr.rhs));
 }
 
 auto Problem::post(SumEquals<Weighted<IntegerVariableID>> expr) -> void

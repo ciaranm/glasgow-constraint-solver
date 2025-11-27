@@ -410,7 +410,7 @@ namespace
         auto greater_than_flag = greater_than_flag_data.flag;
 
         auto maybe_create_and_emplace_flag_data =
-            [&](ProofFlagDataMap & flag_data, const long i, const long j, const WeightedPseudoBooleanLessEqual & definition, const string & name, const string & name_suffix) {
+            [&](ProofFlagDataMap & flag_data, const long i, const long j, const WeightedPseudoBooleanLessThanEqual & definition, const string & name, const string & name_suffix) {
                 if (! flag_data[i].count(j)) {
                     auto [flag, forwards_reif_line, backwards_reif_line] = logger.create_proof_flag_reifying(definition, name + name_suffix, ProofLevel::Top);
                     flag_data[i][j] = ProofFlagData{name, flag, forwards_reif_line, backwards_reif_line, {}};

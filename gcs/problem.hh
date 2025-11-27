@@ -63,9 +63,9 @@ namespace gcs
         auto post(const Constraint &) -> void;
 
         /**
-         * \brief Post this expression as a LinearLessEqual constraint.
+         * \brief Post this expression as a LinearLessThanEqual constraint.
          */
-        auto post(SumLessEqual<Weighted<IntegerVariableID>>) -> void;
+        auto post(SumLessThanEqual<Weighted<IntegerVariableID>>) -> void;
 
         /**
          * \brief Post this expression as a LinearEquality constraint.

@@ -62,7 +62,7 @@ namespace gcs::innards
          * Add a pseudo-Boolean constraint to a Proof model.
          */
         auto add_constraint(
-            const WeightedPseudoBooleanLessEqual & ineq,
+            const WeightedPseudoBooleanLessThanEqual & ineq,
             const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> std::optional<ProofLine>;
 
         /**
@@ -84,7 +84,7 @@ namespace gcs::innards
         auto add_constraint(
             const StringLiteral & constraint_name,
             const StringLiteral & rule,
-            const WeightedPseudoBooleanLessEqual & ineq,
+            const WeightedPseudoBooleanLessThanEqual & ineq,
             const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> std::optional<ProofLine>;
 
         /**

@@ -1,4 +1,4 @@
-#include <gcs/constraints/linear/linear_greater_equal.hh>
+#include <gcs/constraints/linear/linear_greater_than_equal.hh>
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -15,6 +15,11 @@ namespace
 
 LinearGreaterThanEqual::LinearGreaterThanEqual(WeightedSum coeff_vars, Integer value) :
     LinearInequalityIff(move(negate(coeff_vars)), -value, TrueLiteral{})
+{
+}
+
+LinearGreaterThanEqualIf::LinearGreaterThanEqualIf(WeightedSum coeff_vars, Integer value, Literal cond) :
+    LinearInequalityIf(move(negate(coeff_vars)), -value, cond)
 {
 }
 

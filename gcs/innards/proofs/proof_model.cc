@@ -103,7 +103,7 @@ auto ProofModel::add_constraint(const Literals & lits) -> std::optional<ProofLin
 }
 
 auto ProofModel::add_constraint(const StringLiteral & constraint_name, const StringLiteral & rule,
-    const WeightedPseudoBooleanLessEqual & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> optional<ProofLine>
+    const WeightedPseudoBooleanLessThanEqual & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> optional<ProofLine>
 {
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
     if (half_reif)
@@ -115,7 +115,7 @@ auto ProofModel::add_constraint(const StringLiteral & constraint_name, const Str
     return ++_imp->number_of_constraints;
 }
 
-auto ProofModel::add_constraint(const WeightedPseudoBooleanLessEqual & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> optional<ProofLine>
+auto ProofModel::add_constraint(const WeightedPseudoBooleanLessThanEqual & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> optional<ProofLine>
 {
     return add_constraint("?", "?", ineq, half_reif);
 }

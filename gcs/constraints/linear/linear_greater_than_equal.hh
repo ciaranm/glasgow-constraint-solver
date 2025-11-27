@@ -11,7 +11,7 @@ namespace gcs
      *
      * \ingroup innards
      * \sa LinearEquality
-     * \sa LinearLessEqual
+     * \sa LinearLessThanEqual
      */
     class LinearGreaterThanEqual : public innards::LinearInequalityIff
     {
@@ -22,11 +22,25 @@ namespace gcs
     /**
      * \brief Constrain that the sum of the variables multiplied by their
      * associated coefficients is greater than or equal to the specified value,
+     * if a condition holds.
+     *
+     * \ingroup innards
+     * \sa LinearGreaterThanEqual
+     */
+    class LinearGreaterThanEqualIf : public innards::LinearInequalityIf
+    {
+    public:
+        explicit LinearGreaterThanEqualIf(WeightedSum coeff_vars, Integer value, innards::Literal cond);
+    };
+
+    /**
+     * \brief Constrain that the sum of the variables multiplied by their
+     * associated coefficients is greater than or equal to the specified value,
      * if and only if a condition holds.
      *
      * \ingroup innards
      * \sa LinearEquality
-     * \sa LinearLessEqual
+     * \sa LinearLessThanEqual
      */
     class LinearGreaterThanEqualIff : public innards::LinearInequalityIff
     {

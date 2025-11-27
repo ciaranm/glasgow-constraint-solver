@@ -153,7 +153,7 @@ namespace
         }
     };
 
-    auto result_of_deriving(ProofLogger & logger, ProofRule rule, const WeightedPseudoBooleanLessEqual & ineq,
+    auto result_of_deriving(ProofLogger & logger, ProofRule rule, const WeightedPseudoBooleanLessThanEqual & ineq,
         const HalfReifyOnConjunctionOf & reif, const ProofLevel & proof_level, const ReasonFunction & reason) -> DerivedPBConstraint
     {
         // Have to flip it again to store in the form lhs >= rhs

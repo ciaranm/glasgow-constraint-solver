@@ -15,7 +15,7 @@ using namespace gcs::innards;
 
 auto gcs::innards::emit_inequality_to(
     NamesAndIDsTracker & names_and_ids_tracker,
-    const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
+    const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
     ostream & stream) -> void
 {
     // build up the inequality, adjusting as we go for constant terms,
