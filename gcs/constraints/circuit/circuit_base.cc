@@ -173,10 +173,10 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state, Proof
         // WLOG start at node 0, so pos[0] = 0
         pos_var_data.emplace(0,
             PosVarData{"p[0]", model->create_proof_only_integer_variable(0_i, Integer{n - 1}, "pos" + to_string(0), IntegerVariableProofRepresentation::Bits), map<long, PosVarLineData>{}});
-        model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * pos_var_data.at(0).var <= 0_i);
+        model->add_constraint(WPBSum{} + 1_i * pos_var_data.at(0).var <= 0_i);
         // Hence we can only have succ[0] = 0 (self cycle) if there is only one node i.e. n - 1 = 0
         auto [leq_line, geq_line] = model->add_constraint(
-            WeightedPseudoBooleanSum{} == Integer{n - 1},
+            WPBSum{} == Integer{n - 1},
             HalfReifyOnConjunctionOf{{_succ[0] == 0_i}});
 
         pos_var_data.at(0).plus_one_lines.emplace(0, PosVarLineData{leq_line.value(), geq_line.value()});
@@ -192,20 +192,20 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state, Proof
         for (unsigned int idx = 1; idx < _succ.size(); ++idx) {
             // (succ[0] = i) -> pos[i] - pos[0] = 1
             tie(leq_line, geq_line) = model->add_constraint(
-                WeightedPseudoBooleanSum{} + 1_i * pos_var_data.at(idx).var + -1_i * 1_c == 0_i,
+                WPBSum{} + 1_i * pos_var_data.at(idx).var + -1_i * 1_c == 0_i,
                 HalfReifyOnConjunctionOf{{_succ[0] == Integer{idx}}});
             pos_var_data.at(0).plus_one_lines.emplace(idx, PosVarLineData{leq_line.value(), geq_line.value()});
 
             // (succ[i] = 0) -> pos[0] - pos[i] = 1-n
             tie(leq_line, geq_line) = model->add_constraint(
-                WeightedPseudoBooleanSum{} + 1_i * pos_var_data.at(0).var + -1_i * pos_var_data.at(idx).var == Integer{1 - n},
+                WPBSum{} + 1_i * pos_var_data.at(0).var + -1_i * pos_var_data.at(idx).var == Integer{1 - n},
                 HalfReifyOnConjunctionOf{{_succ[idx] == 0_i}});
             pos_var_data.at(idx).plus_one_lines.emplace(0, PosVarLineData{leq_line.value(), geq_line.value()});
 
             // (succ[i] = j) -> pos[j] = pos[i] + 1
             for (unsigned int jdx = 1; jdx < _succ.size(); ++jdx) {
                 tie(leq_line, geq_line) = model->add_constraint(
-                    WeightedPseudoBooleanSum{} + 1_i * pos_var_data.at(jdx).var + -1_i * pos_var_data.at(idx).var == 1_i,
+                    WPBSum{} + 1_i * pos_var_data.at(jdx).var + -1_i * pos_var_data.at(idx).var == 1_i,
                     HalfReifyOnConjunctionOf{{_succ[idx] == Integer{jdx}}});
                 pos_var_data.at(idx).plus_one_lines.emplace(jdx, PosVarLineData{leq_line.value(), geq_line.value()});
             }

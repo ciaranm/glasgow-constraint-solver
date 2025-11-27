@@ -103,7 +103,7 @@ auto NotEquals::install(Propagators & propagators, State & initial_state, ProofM
                 logger->emit_proof_comment("converting not equals to value encoding");
                 for (auto val1 : state.each_value_immutable(v1))
                     if (state.in_domain(v2, val1)) {
-                        logger->emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * (v1 != val1) + 1_i * (v2 != val1) >= 1_i, ProofLevel::Top);
+                        logger->emit_rup_proof_line(WPBSum{} + 1_i * (v1 != val1) + 1_i * (v2 != val1) >= 1_i, ProofLevel::Top);
                     }
             });
         }
@@ -111,9 +111,9 @@ auto NotEquals::install(Propagators & propagators, State & initial_state, ProofM
 
     if (optional_model) {
         auto selector = optional_model->create_proof_flag("notequals");
-        optional_model->add_constraint("NotEquals", "less than option", WeightedPseudoBooleanSum{} + 1_i * _v1 + -1_i * _v2 <= -1_i,
+        optional_model->add_constraint("NotEquals", "less than option", WPBSum{} + 1_i * _v1 + -1_i * _v2 <= -1_i,
             HalfReifyOnConjunctionOf{{selector}});
-        optional_model->add_constraint("NotEquals", "greater than option", WeightedPseudoBooleanSum{} + -1_i * _v1 + 1_i * _v2 <= -1_i,
+        optional_model->add_constraint("NotEquals", "greater than option", WPBSum{} + -1_i * _v1 + 1_i * _v2 <= -1_i,
             HalfReifyOnConjunctionOf{{! selector}});
     }
 }

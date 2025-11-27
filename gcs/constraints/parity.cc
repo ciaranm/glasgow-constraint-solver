@@ -53,15 +53,15 @@ auto ParityOdd::install(Propagators & propagators, State &, ProofModel * const o
         for (const auto & l : _lits) {
             auto new_acc = optional_model->create_proof_flag("xor");
 
-            optional_model->add_constraint("ParityOdd", "xor", WeightedPseudoBooleanSum{} + 1_i * acc + 1_i * l + 1_i * ! new_acc >= 1_i);
-            optional_model->add_constraint("ParityOdd", "xor", WeightedPseudoBooleanSum{} + 1_i * not_acc + 1_i * ! l + 1_i * ! new_acc >= 1_i);
-            optional_model->add_constraint("ParityOdd", "xor", WeightedPseudoBooleanSum{} + 1_i * not_acc + 1_i * l + 1_i * new_acc >= 1_i);
-            optional_model->add_constraint("ParityOdd", "xor", WeightedPseudoBooleanSum{} + 1_i * acc + 1_i * ! l + 1_i * new_acc >= 1_i);
+            optional_model->add_constraint("ParityOdd", "xor", WPBSum{} + 1_i * acc + 1_i * l + 1_i * ! new_acc >= 1_i);
+            optional_model->add_constraint("ParityOdd", "xor", WPBSum{} + 1_i * not_acc + 1_i * ! l + 1_i * ! new_acc >= 1_i);
+            optional_model->add_constraint("ParityOdd", "xor", WPBSum{} + 1_i * not_acc + 1_i * l + 1_i * new_acc >= 1_i);
+            optional_model->add_constraint("ParityOdd", "xor", WPBSum{} + 1_i * acc + 1_i * ! l + 1_i * new_acc >= 1_i);
 
             acc = new_acc;
             not_acc = ! new_acc;
         }
-        optional_model->add_constraint("ParityOdd", "result", WeightedPseudoBooleanSum{} + 1_i * acc >= 1_i);
+        optional_model->add_constraint("ParityOdd", "result", WPBSum{} + 1_i * acc >= 1_i);
     }
 
     Triggers triggers;

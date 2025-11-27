@@ -34,7 +34,7 @@ auto gcs::innards::justify_all_different_hall_set_or_violator(
                 step << " " << layer << " *";
 
             for (unsigned j = 0; j < i; ++j) {
-                auto ne = logger.emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * ! (all_variables[i] == val) + 1_i * ! (all_variables[j] == val) >= 1_i, ProofLevel::Temporary);
+                auto ne = logger.emit_rup_proof_line(WPBSum{} + 1_i * ! (all_variables[i] == val) + 1_i * ! (all_variables[j] == val) >= 1_i, ProofLevel::Temporary);
                 step << " " << ne;
                 if (! first)
                     step << " +";

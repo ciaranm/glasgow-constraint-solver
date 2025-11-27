@@ -53,27 +53,27 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
 
             // var_minus_val_gt_0 -> var - val > 0
             optional_model->add_constraint("Count", "var bigger",
-                WeightedPseudoBooleanSum{} + 1_i * var + -1_i * _value_of_interest >= 1_i, HalfReifyOnConjunctionOf{{var_minus_val_gt_0}});
+                WPBSum{} + 1_i * var + -1_i * _value_of_interest >= 1_i, HalfReifyOnConjunctionOf{{var_minus_val_gt_0}});
 
             // ! var_minus_val_gt_0 -> var - val <= 0
             optional_model->add_constraint("Count", "var not bigger",
-                WeightedPseudoBooleanSum{} + 1_i * var + -1_i * _value_of_interest <= 0_i, HalfReifyOnConjunctionOf{{! var_minus_val_gt_0}});
+                WPBSum{} + 1_i * var + -1_i * _value_of_interest <= 0_i, HalfReifyOnConjunctionOf{{! var_minus_val_gt_0}});
 
             // var_minus_val_lt_0 -> var - val <= -1
-            optional_model->add_constraint("Count", "var smaller", WeightedPseudoBooleanSum{} + 1_i * var + -1_i * _value_of_interest <= -1_i, HalfReifyOnConjunctionOf{{var_minus_val_lt_0}});
+            optional_model->add_constraint("Count", "var smaller", WPBSum{} + 1_i * var + -1_i * _value_of_interest <= -1_i, HalfReifyOnConjunctionOf{{var_minus_val_lt_0}});
 
             // ! var_minus_val_lt_0 -> var - val > -1
-            optional_model->add_constraint("Count", "var not smaller", WeightedPseudoBooleanSum{} + 1_i * var + -1_i * _value_of_interest >= 0_i, HalfReifyOnConjunctionOf{{! var_minus_val_lt_0}});
+            optional_model->add_constraint("Count", "var not smaller", WPBSum{} + 1_i * var + -1_i * _value_of_interest >= 0_i, HalfReifyOnConjunctionOf{{! var_minus_val_lt_0}});
 
             // flag => ! countg /\ ! countl
-            optional_model->add_constraint("Count", "var equal", WeightedPseudoBooleanSum{} + 1_i * ! var_minus_val_gt_0 + 1_i * ! var_minus_val_lt_0 >= 2_i, HalfReifyOnConjunctionOf{{flag}});
+            optional_model->add_constraint("Count", "var equal", WPBSum{} + 1_i * ! var_minus_val_gt_0 + 1_i * ! var_minus_val_lt_0 >= 2_i, HalfReifyOnConjunctionOf{{flag}});
 
             // ! flag => countg \/ countl
-            optional_model->add_constraint("Count", "var not equal", WeightedPseudoBooleanSum{} + 1_i * var_minus_val_gt_0 + 1_i * var_minus_val_lt_0 >= 1_i, HalfReifyOnConjunctionOf{{! flag}});
+            optional_model->add_constraint("Count", "var not equal", WPBSum{} + 1_i * var_minus_val_gt_0 + 1_i * var_minus_val_lt_0 >= 1_i, HalfReifyOnConjunctionOf{{! flag}});
         }
 
         // sum flag == how_many
-        WeightedPseudoBooleanSum how_many_sum;
+        WPBSum how_many_sum;
         for (auto & [flag, _1, _2] : flags)
             how_many_sum += 1_i * flag;
         how_many_sum += -1_i * _how_many;
@@ -121,10 +121,10 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
                     if (! seen_any) {
                         state.for_each_value(value_of_interest, [&](const Integer & val) {
                             logger->emit_rup_proof_line_under_reason(reason,
-                                WeightedPseudoBooleanSum{} + 1_i * (value_of_interest != val) + 1_i * (! get<0>(flags[idx])) >= 1_i, ProofLevel::Temporary);
+                                WPBSum{} + 1_i * (value_of_interest != val) + 1_i * (! get<0>(flags[idx])) >= 1_i, ProofLevel::Temporary);
                         });
                         logger->emit_rup_proof_line_under_reason(reason,
-                            WeightedPseudoBooleanSum{} + 1_i * (! get<0>(flags[idx])) >= 1_i, ProofLevel::Temporary);
+                            WPBSum{} + 1_i * (! get<0>(flags[idx])) >= 1_i, ProofLevel::Temporary);
                     }
                 }
             };
@@ -164,9 +164,9 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
                             if (! state.in_domain(var, voi)) {
                                 // need to help the checker see that the equality flag must be zero
                                 logger->emit_rup_proof_line(
-                                    WeightedPseudoBooleanSum{} + 1_i * (value_of_interest != voi) + 1_i * (var != voi) + 1_i * (get<0>(flags[idx])) >= 1_i, ProofLevel::Temporary);
+                                    WPBSum{} + 1_i * (value_of_interest != voi) + 1_i * (var != voi) + 1_i * (get<0>(flags[idx])) >= 1_i, ProofLevel::Temporary);
                                 logger->emit_rup_proof_line_under_reason(reason,
-                                    WeightedPseudoBooleanSum{} + 1_i * (value_of_interest != voi) + 1_i * (! get<0>(flags[idx])) >= 1_i, ProofLevel::Temporary);
+                                    WPBSum{} + 1_i * (value_of_interest != voi) + 1_i * (! get<0>(flags[idx])) >= 1_i, ProofLevel::Temporary);
                             }
                         }
                     };
@@ -191,7 +191,7 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
                     [&](const ReasonFunction & reason) -> void {
                         state.for_each_value_while_immutable(value_of_interest, [&](Integer voi) -> bool {
                             logger->emit_rup_proof_line_under_reason(reason,
-                                WeightedPseudoBooleanSum{} + 1_i * (value_of_interest != voi) + 1_i * (how_many >= *lowest_how_many_must) >= 1_i,
+                                WPBSum{} + 1_i * (value_of_interest != voi) + 1_i * (how_many >= *lowest_how_many_must) >= 1_i,
                                 ProofLevel::Temporary);
                             return true;
                         });
@@ -206,16 +206,16 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
                             for (const auto & [idx, var] : enumerate(vars)) {
                                 if (! state.in_domain(var, voi)) {
                                     logger->emit_rup_proof_line_under_reason(reason,
-                                        WeightedPseudoBooleanSum{} + 1_i * (value_of_interest != voi) + 1_i * (! get<0>(flags[idx])) >= 1_i,
+                                        WPBSum{} + 1_i * (value_of_interest != voi) + 1_i * (! get<0>(flags[idx])) >= 1_i,
                                         ProofLevel::Temporary);
                                     logger->emit_rup_proof_line_under_reason(reason,
-                                        WeightedPseudoBooleanSum{} + 1_i * (value_of_interest != voi) + 1_i * (var != voi) >= 1_i,
+                                        WPBSum{} + 1_i * (value_of_interest != voi) + 1_i * (var != voi) >= 1_i,
                                         ProofLevel::Temporary);
                                 }
                             }
 
                             logger->emit_rup_proof_line_under_reason(reason,
-                                WeightedPseudoBooleanSum{} + 1_i * (value_of_interest != voi) + 1_i * (how_many < *highest_how_many_might + 1_i) >= 1_i,
+                                WPBSum{} + 1_i * (value_of_interest != voi) + 1_i * (how_many < *highest_how_many_might + 1_i) >= 1_i,
                                 ProofLevel::Temporary);
                             return true;
                         });

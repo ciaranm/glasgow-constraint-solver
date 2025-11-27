@@ -12,11 +12,11 @@ auto gcs::innards::justify_abs_hole(
 {
     // (v2 == val /\ v1 >= 0) -> v1 == val
     logger.emit_rup_proof_line_under_reason(reason,
-        WeightedPseudoBooleanSum{} + 1_i * (v1 < 0_i) + 1_i * (v1 == val) + 1_i * (v2 != val) >= 1_i, ProofLevel::Temporary);
+        WPBSum{} + 1_i * (v1 < 0_i) + 1_i * (v1 == val) + 1_i * (v2 != val) >= 1_i, ProofLevel::Temporary);
 
     // (v2 == val /\ v1 < 0) -> v1 == -val
     logger.emit_rup_proof_line_under_reason(reason,
-        WeightedPseudoBooleanSum{} + 1_i * (v1 >= 0_i) + 1_i * (v1 != -val) + 1_i * (v2 != val) >= 1_i, ProofLevel::Temporary);
+        WPBSum{} + 1_i * (v1 >= 0_i) + 1_i * (v1 != -val) + 1_i * (v2 != val) >= 1_i, ProofLevel::Temporary);
 
     // rest follows by RUP
 }

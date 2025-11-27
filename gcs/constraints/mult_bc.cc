@@ -62,7 +62,7 @@ namespace
 
     struct DerivedPBConstraint
     {
-        WeightedPseudoBooleanSum sum = WeightedPseudoBooleanSum{};
+        WPBSum sum = WPBSum{};
         Integer rhs = 0_i;
         HalfReifyOnConjunctionOf half_reif = HalfReifyOnConjunctionOf{};
         optional<ReasonFunction> reason = nullopt;
@@ -153,11 +153,11 @@ namespace
         }
     };
 
-    auto result_of_deriving(ProofLogger & logger, ProofRule rule, const WeightedPseudoBooleanLessThanEqual & ineq,
+    auto result_of_deriving(ProofLogger & logger, ProofRule rule, const WPBSumLE & ineq,
         const HalfReifyOnConjunctionOf & reif, const ProofLevel & proof_level, const ReasonFunction & reason) -> DerivedPBConstraint
     {
         // Have to flip it again to store in the form lhs >= rhs
-        WeightedPseudoBooleanSum ge_lhs{};
+        WPBSum ge_lhs{};
         for (const auto & t : ineq.lhs.terms) {
             ge_lhs += -t.coefficient * t.variable;
         }
@@ -218,7 +218,7 @@ namespace
         auto is_lower_bound = constr.sum.terms[0].coefficient == 1_i;
 
         ProofLine channel_line;
-        WeightedPseudoBooleanSum channel_sum{};
+        WPBSum channel_sum{};
         Integer channel_rhs = constr.rhs;
         auto reif = HalfReifyOnConjunctionOf{};
 
@@ -335,7 +335,7 @@ namespace
                 "Can't channel back to z."};
 
         auto rup_sign = logger.emit_rup_proof_line(
-            logger.reify(WeightedPseudoBooleanSum{} +
+            logger.reify(WPBSum{} +
                         1_i * (z_negative ? ProofBitVariable{z, 0_i, true} : ProofBitVariable{z, 0_i, false}) >=
                     1_i,
                 channel_reif),
@@ -360,7 +360,7 @@ namespace
         }
 
         add_lines(logger, channel_line, rup_sign);
-        auto channel_sum = WeightedPseudoBooleanSum{} + constr.sum.terms[0].coefficient * (z_negative ? -1_i : 1_i) * z;
+        auto channel_sum = WPBSum{} + constr.sum.terms[0].coefficient * (z_negative ? -1_i : 1_i) * z;
         return result_of_deriving(logger, RUPProofRule{}, channel_sum >= constr.rhs, channel_reif, ProofLevel::Temporary, reason);
     }
 
@@ -508,7 +508,7 @@ namespace
         -> DerivedPBConstraint
     {
         // logger.emit_proof_comment("Prove Conditional Product Lower Bound:");
-        auto mag_z_sum = WeightedPseudoBooleanSum{};
+        auto mag_z_sum = WPBSum{};
         if (mag_var.contains(z))
             mag_z_sum += 1_i * mag_var.at(z);
         else
@@ -529,7 +529,7 @@ namespace
         auto mag_x = require_simple_or_po_iv(lb_1.sum.terms[0].variable);
 
         for (size_t i = 0; i < bit_products.size(); i++) {
-            WeightedPseudoBooleanSum bitsum{};
+            WPBSum bitsum{};
             PLine inner_sum{};
             for (size_t j = 0; j < bit_products[i].size(); j++) {
                 inner_sum.add_multiplied_by(bit_products[i][j].reverse_reif, power2(Integer(j)));
@@ -563,7 +563,7 @@ namespace
         const ReasonFunction & reason)
         -> DerivedPBConstraint
     {
-        auto mag_z_sum = WeightedPseudoBooleanSum{};
+        auto mag_z_sum = WPBSum{};
         if (mag_var.contains(z))
             mag_z_sum += -1_i * mag_var.at(z);
         else
@@ -588,13 +588,13 @@ namespace
         auto mag_y = require_simple_or_po_iv(ub_2.sum.terms[0].variable);
 
         for (size_t i = 0; i < bit_products.size(); i++) {
-            WeightedPseudoBooleanSum bitsum{};
+            WPBSum bitsum{};
             PLine inner_sum_1{};
             PLine inner_sum_2{};
             for (size_t j = 0; j < bit_products[i].size(); j++) {
                 if (bit_products[i][j].partial_product_1 == nullopt) {
                     bit_products[i][j].partial_product_1 = logger.emit_rup_proof_line(
-                        WeightedPseudoBooleanSum{} +
+                        WPBSum{} +
                                 1_i * ! bit_products[i][j].flag +
                                 1_i * ProofBitVariable{mag_x, Integer(i), false} +
                                 1_i * ProofBitVariable{mag_y, Integer(j), true} >=
@@ -605,7 +605,7 @@ namespace
 
                 if (bit_products[i][j].partial_product_2 == nullopt) {
                     bit_products[i][j].partial_product_2 = logger.emit_rup_proof_line(
-                        WeightedPseudoBooleanSum{} +
+                        WPBSum{} +
                                 1_i * ! bit_products[i][j].flag +
                                 1_i * ProofBitVariable{mag_x, Integer(i), true} >=
                             1_i,
@@ -675,8 +675,8 @@ namespace
         for (const auto & var : {x, y}) {
             auto [lower, upper] = var_bounds.at(var);
 
-            auto var_sum = WeightedPseudoBooleanSum{} + 1_i * var;
-            auto neg_var_sum = WeightedPseudoBooleanSum{} + -1_i * var;
+            auto var_sum = WPBSum{} + 1_i * var;
+            auto neg_var_sum = WPBSum{} + -1_i * var;
 
             auto rup_lower = result_of_deriving(logger, RUPProofRule{}, var_sum >= lower, {}, ProofLevel::Temporary, reason);
 
@@ -745,8 +745,8 @@ namespace
             }
         }
 
-        auto z_sum = WeightedPseudoBooleanSum{} + 1_i * z;
-        auto neg_z_sum = WeightedPseudoBooleanSum{} + -1_i * z;
+        auto z_sum = WPBSum{} + 1_i * z;
+        auto neg_z_sum = WPBSum{} + -1_i * z;
 
         auto final_lower_bound = z_sum >= smallest_product;
         auto final_upper_bound = neg_z_sum >= -largest_product;
@@ -794,19 +794,19 @@ namespace
         auto max_x = Integer{x_has_neg ? (power2(x_bits - 1_i)) : power2(x_bits)} - 1_i;
 
         const auto rup_x_upper = result_of_deriving(logger, RUPProofRule{},
-            WeightedPseudoBooleanSum{} + -1_i * x >= -(! assume_upper ? max_x : smallest_quotient - 1_i),
+            WPBSum{} + -1_i * x >= -(! assume_upper ? max_x : smallest_quotient - 1_i),
             assume_upper ? HalfReifyOnConjunctionOf{x < smallest_quotient} : HalfReifyOnConjunctionOf{x >= largest_quotient + 1_i}, ProofLevel::Temporary, reason);
 
         const auto rup_x_lower = result_of_deriving(logger, RUPProofRule{},
-            WeightedPseudoBooleanSum{} + 1_i * x >= (assume_upper ? min_x : largest_quotient + 1_i),
+            WPBSum{} + 1_i * x >= (assume_upper ? min_x : largest_quotient + 1_i),
             ! assume_upper ? HalfReifyOnConjunctionOf{x >= largest_quotient + 1_i} : HalfReifyOnConjunctionOf{x < smallest_quotient}, ProofLevel::Temporary, reason);
 
         rup_bounds.insert({x, DerivedBounds{rup_x_lower, rup_x_upper}});
 
         auto [y_lower, y_upper] = var_bounds.at(y);
 
-        auto var_sum = WeightedPseudoBooleanSum{} + 1_i * y;
-        auto neg_var_sum = WeightedPseudoBooleanSum{} + -1_i * y;
+        auto var_sum = WPBSum{} + 1_i * y;
+        auto neg_var_sum = WPBSum{} + -1_i * y;
 
         auto rup_y_lower = result_of_deriving(logger, RUPProofRule{}, var_sum >= y_lower, {}, ProofLevel::Temporary, reason);
 
@@ -849,8 +849,8 @@ namespace
         // logger.emit_proof_comment("RUP actual Z bounds");
         auto [z_lower, z_upper] = var_bounds.at(z);
 
-        auto z_sum = WeightedPseudoBooleanSum{} + 1_i * z;
-        auto neg_z_sum = WeightedPseudoBooleanSum{} + -1_i * z;
+        auto z_sum = WPBSum{} + 1_i * z;
+        auto neg_z_sum = WPBSum{} + -1_i * z;
 
         auto rup_z_lower = result_of_deriving(logger, RUPProofRule{}, z_sum >= z_lower, {}, ProofLevel::Temporary, reason);
         auto rup_z_upper = result_of_deriving(logger, RUPProofRule{}, neg_z_sum >= -z_upper, {}, ProofLevel::Temporary, reason);
@@ -897,13 +897,13 @@ namespace
                 //  Check whether we derived a lower or an upper bound after channelling
                 if (conditional_product_bound.sum.terms[0].coefficient == 1_i && conditional_product_bound.rhs > z_upper) {
                     add_lines(logger, conditional_product_bound.line, rup_z_upper.line);
-                    auto resolvent = result_of_deriving(logger, RUPProofRule{}, WeightedPseudoBooleanSum{} >= 1_i, conditional_product_bound.half_reif, ProofLevel::Temporary, reason);
+                    auto resolvent = result_of_deriving(logger, RUPProofRule{}, WPBSum{} >= 1_i, conditional_product_bound.half_reif, ProofLevel::Temporary, reason);
                     to_resolve.emplace_back(resolvent.half_reif, resolvent.line);
                 }
 
                 else if (conditional_product_bound.sum.terms[0].coefficient == -1_i && -conditional_product_bound.rhs < z_lower) {
                     add_lines(logger, conditional_product_bound.line, rup_z_lower.line);
-                    auto resolvent = result_of_deriving(logger, RUPProofRule{}, WeightedPseudoBooleanSum{} >= 1_i, conditional_product_bound.half_reif, ProofLevel::Temporary, reason);
+                    auto resolvent = result_of_deriving(logger, RUPProofRule{}, WPBSum{} >= 1_i, conditional_product_bound.half_reif, ProofLevel::Temporary, reason);
                     to_resolve.emplace_back(resolvent.half_reif, resolvent.line);
                 }
                 else if (abs(conditional_product_bound.sum.terms[0].coefficient) != 1_i)
@@ -914,9 +914,9 @@ namespace
         for (auto & var : {x, y}) {
             auto lower_reif = HalfReifyOnConjunctionOf{var == 0_i, rup_x_lower.half_reif[0]};
 
-            to_resolve.emplace_back(lower_reif, logger.emit_under_reason(RUPProofRule{}, logger.reify(WeightedPseudoBooleanSum{} >= 1_i, lower_reif), ProofLevel::Temporary, reason));
+            to_resolve.emplace_back(lower_reif, logger.emit_under_reason(RUPProofRule{}, logger.reify(WPBSum{} >= 1_i, lower_reif), ProofLevel::Temporary, reason));
             auto upper_reif = HalfReifyOnConjunctionOf{var == 0_i, rup_x_upper.half_reif[0]};
-            to_resolve.emplace_back(upper_reif, logger.emit_under_reason(RUPProofRule{}, logger.reify(WeightedPseudoBooleanSum{} >= 1_i, upper_reif), ProofLevel::Temporary, reason));
+            to_resolve.emplace_back(upper_reif, logger.emit_under_reason(RUPProofRule{}, logger.reify(WPBSum{} >= 1_i, upper_reif), ProofLevel::Temporary, reason));
         }
 
         run_resolution(logger, to_resolve);
@@ -971,7 +971,7 @@ namespace
                     smallest_possible_quotient, largest_possible_quotient,
                     channelling_constraints, mag_var, z_eq_product_lines, x_is_first, false);
                 logger->emit_rup_proof_line_under_reason(reason,
-                    WeightedPseudoBooleanSum{} + 1_i * (x_var < largest_possible_quotient + 1_i) >= 1_i, ProofLevel::Current);
+                    WPBSum{} + 1_i * (x_var < largest_possible_quotient + 1_i) >= 1_i, ProofLevel::Current);
             };
 
             inference.infer(logger, x_var < largest_possible_quotient + 1_i,
@@ -984,7 +984,7 @@ namespace
                     smallest_possible_quotient, largest_possible_quotient,
                     channelling_constraints, mag_var, z_eq_product_lines, x_is_first, true);
                 logger->emit_rup_proof_line_under_reason(reason,
-                    WeightedPseudoBooleanSum{} + 1_i * (x_var >= smallest_possible_quotient) >= 1_i, ProofLevel::Current);
+                    WPBSum{} + 1_i * (x_var >= smallest_possible_quotient) >= 1_i, ProofLevel::Current);
             };
 
             inference.infer(logger, x_var >= smallest_possible_quotient,
@@ -1011,7 +1011,7 @@ namespace
                     smallest_possible_quotient, largest_possible_quotient,
                     channelling_constraints, mag_var, z_eq_product_lines, x_is_first, false);
                 logger->emit_rup_proof_line_under_reason(reason,
-                    WeightedPseudoBooleanSum{} + 1_i * (x_var < largest_possible_quotient + 1_i) >= 1_i, ProofLevel::Current);
+                    WPBSum{} + 1_i * (x_var < largest_possible_quotient + 1_i) >= 1_i, ProofLevel::Current);
             };
 
             auto lower_justf = [&](const ReasonFunction & reason) {
@@ -1019,7 +1019,7 @@ namespace
                     smallest_possible_quotient, largest_possible_quotient,
                     channelling_constraints, mag_var, z_eq_product_lines, x_is_first, true);
                 logger->emit_rup_proof_line_under_reason(reason,
-                    WeightedPseudoBooleanSum{} + 1_i * (x_var >= smallest_possible_quotient) >= 1_i, ProofLevel::Current);
+                    WPBSum{} + 1_i * (x_var >= smallest_possible_quotient) >= 1_i, ProofLevel::Current);
             };
 
             auto both_justf = [&](const ReasonFunction & reason) {
@@ -1083,7 +1083,7 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
                 auto v_magnitude = optional_model->create_proof_only_integer_variable(
                     0_i, largest_magnitude, name + "_mag", IntegerVariableProofRepresentation::Bits);
 
-                auto bit_sum_without_neg = WeightedPseudoBooleanSum{};
+                auto bit_sum_without_neg = WPBSum{};
                 Integer num_bits = optional_model->names_and_ids_tracker().num_bits(v);
 
                 // Skip the neg bit
@@ -1116,18 +1116,18 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
         auto v1_num_bits = optional_model->names_and_ids_tracker().num_bits(v1_mag);
         auto v2_num_bits = optional_model->names_and_ids_tracker().num_bits(v2_mag);
 
-        auto bit_product_sum = WeightedPseudoBooleanSum{};
+        auto bit_product_sum = WPBSum{};
         for (Integer i = 0_i; i < v1_num_bits; i++) {
             bit_products.emplace_back();
             for (Integer j = 0_i; j < v2_num_bits; j++) {
                 auto flag = optional_model->create_proof_flag("xy[" + to_string(i.raw_value) + "][" + to_string(j.raw_value) + "]");
 
                 auto forwards = optional_model->add_constraint(
-                    WeightedPseudoBooleanSum{} + 1_i * ProofBitVariable{v1_mag, i, true} + 1_i * ProofBitVariable{v2_mag, j, true} >= 2_i,
+                    WPBSum{} + 1_i * ProofBitVariable{v1_mag, i, true} + 1_i * ProofBitVariable{v2_mag, j, true} >= 2_i,
                     HalfReifyOnConjunctionOf{flag});
 
                 auto backwards = optional_model->add_constraint(
-                    WeightedPseudoBooleanSum{} + -1_i * ProofBitVariable{v1_mag, i, true} + -1_i * ProofBitVariable{v2_mag, j, true} >= -1_i,
+                    WPBSum{} + -1_i * ProofBitVariable{v1_mag, i, true} + -1_i * ProofBitVariable{v2_mag, j, true} >= -1_i,
                     HalfReifyOnConjunctionOf{! flag});
 
                 bit_products[i.raw_value].emplace_back(BitProductData{flag, *forwards, *backwards, nullopt, nullopt});
@@ -1143,24 +1143,24 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
             v3_mag);
         auto xyss = optional_model->create_proof_flag("xy[s][s]");
         optional_model->add_constraint(
-            WeightedPseudoBooleanSum{} + 1_i * ! xyss >= 1_i, HalfReifyOnConjunctionOf{! v1_sign, ! v2_sign});
+            WPBSum{} + 1_i * ! xyss >= 1_i, HalfReifyOnConjunctionOf{! v1_sign, ! v2_sign});
 
         if (mag_var.contains(_v1))
             optional_model->add_constraint(
-                WeightedPseudoBooleanSum{} + 1_i * xyss >= 1_i, HalfReifyOnConjunctionOf{v1_sign, ! v2_sign});
+                WPBSum{} + 1_i * xyss >= 1_i, HalfReifyOnConjunctionOf{v1_sign, ! v2_sign});
         if (mag_var.contains(_v2))
             optional_model->add_constraint(
-                WeightedPseudoBooleanSum{} + 1_i * xyss >= 1_i, HalfReifyOnConjunctionOf{! v1_sign, v2_sign});
+                WPBSum{} + 1_i * xyss >= 1_i, HalfReifyOnConjunctionOf{! v1_sign, v2_sign});
         if (mag_var.contains(_v1) && mag_var.contains(_v2))
             optional_model->add_constraint(
-                WeightedPseudoBooleanSum{} + 1_i * ! xyss >= 1_i, HalfReifyOnConjunctionOf{v1_sign, v2_sign});
+                WPBSum{} + 1_i * ! xyss >= 1_i, HalfReifyOnConjunctionOf{v1_sign, v2_sign});
 
         optional_model->add_constraint(
-            WeightedPseudoBooleanSum{} + 1_i * xyss + 1_i * (_v1 != 0_i) + 1_i * (_v2 != 0_i) >= 3_i,
+            WPBSum{} + 1_i * xyss + 1_i * (_v1 != 0_i) + 1_i * (_v2 != 0_i) >= 3_i,
             HalfReifyOnConjunctionOf{v3_sign});
 
         optional_model->add_constraint(
-            WeightedPseudoBooleanSum{} + 1_i * ! xyss + 1_i * (_v1 == 0_i) + 1_i * (_v2 == 0_i) >= 1_i,
+            WPBSum{} + 1_i * ! xyss + 1_i * (_v1 == 0_i) + 1_i * (_v2 == 0_i) >= 1_i,
             HalfReifyOnConjunctionOf{! v3_sign});
     }
 
@@ -1182,9 +1182,9 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
                 prove_product_bounds(reason, *logger, bit_products, v1, v2, v3, var_bounds,
                     smallest_product, largest_product, channelling_constraints, mag_var, v3_eq_product_lines);
                 logger->emit_rup_proof_line_under_reason(reason,
-                    WeightedPseudoBooleanSum{} + 1_i * (v3 < largest_product + 1_i) >= 1_i, ProofLevel::Current);
+                    WPBSum{} + 1_i * (v3 < largest_product + 1_i) >= 1_i, ProofLevel::Current);
                 logger->emit_rup_proof_line_under_reason(reason,
-                    WeightedPseudoBooleanSum{} + 1_i * (v3 >= smallest_product) >= 1_i, ProofLevel::Current);
+                    WPBSum{} + 1_i * (v3 >= smallest_product) >= 1_i, ProofLevel::Current);
             };
 
             inference.infer_all(logger, {v3 < largest_product + 1_i, v3 >= smallest_product},

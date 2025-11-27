@@ -84,7 +84,7 @@ auto LinearInequalityIff::install(Propagators & propagators, State & state, Proo
 {
     optional<ProofLine> proof_line;
     if (optional_model) {
-        WeightedPseudoBooleanSum terms;
+        WPBSum terms;
         for (auto & [c, v] : _coeff_vars.terms)
             terms += c * v;
         overloaded{
@@ -239,7 +239,7 @@ auto LinearInequalityIf::install(Propagators & propagators, State & state, Proof
 {
     optional<ProofLine> proof_line;
     if (optional_model) {
-        WeightedPseudoBooleanSum terms;
+        WPBSum terms;
         for (auto & [c, v] : _coeff_vars.terms)
             terms += c * v;
         overloaded{

@@ -62,7 +62,7 @@ namespace
 
         auto future_var_id = state.what_variable_id_will_be_created_next();
 
-        WeightedPseudoBooleanSum trail;
+        WPBSum trail;
         function<void(ProofLogger * const)> search = [&](ProofLogger * const logger) {
             if (current.size() == coeff_vars.terms.size()) {
                 Integer actual_value{0_i};
@@ -76,7 +76,7 @@ namespace
                         logger->names_and_ids_tracker().create_literals_for_introduced_variable_value(future_var_id, sel_value, "lineq");
                         trail += 1_i * (future_var_id == sel_value);
 
-                        WeightedPseudoBooleanSum forward_implication, reverse_implication;
+                        WPBSum forward_implication, reverse_implication;
                         forward_implication += Integer(coeff_vars.terms.size()) * (future_var_id != sel_value);
                         reverse_implication += 1_i * (future_var_id == sel_value);
 
@@ -102,7 +102,7 @@ namespace
             }
 
             if (logger) {
-                WeightedPseudoBooleanSum backtrack = trail;
+                WPBSum backtrack = trail;
                 for (const auto & [idx, val] : enumerate(current))
                     backtrack += 1_i * (get_var(coeff_vars.terms[idx]) != val);
 
@@ -126,7 +126,7 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
 {
     optional<ProofLine> proof_line;
     if (optional_model) {
-        WeightedPseudoBooleanSum terms;
+        WPBSum terms;
         for (auto & [c, v] : _coeff_vars.terms)
             terms += c * v;
 
@@ -151,7 +151,7 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
                 optional_model->add_constraint("LinearEqualityIff", "less than option", terms <= _value - 1_i, HalfReifyOnConjunctionOf{{ltflag}});
 
                 // lt + eq + gt = 1
-                optional_model->add_constraint("LinearEqualityIff", "one of less than, equals, greater than", WeightedPseudoBooleanSum{} + 1_i * ltflag + 1_i * gtflag + 1_i * cond == 1_i);
+                optional_model->add_constraint("LinearEqualityIff", "one of less than, equals, greater than", WPBSum{} + 1_i * ltflag + 1_i * gtflag + 1_i * cond == 1_i);
             }}
             .visit(_cond);
     }

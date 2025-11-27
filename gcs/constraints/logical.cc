@@ -155,7 +155,7 @@ namespace
                             auto justf = [&](const ReasonFunction & reason) {
                                 for (auto & l : lits)
                                     logger->emit_rup_proof_line_under_reason(reason,
-                                        WeightedPseudoBooleanSum{} + 1_i * l >= 1_i, ProofLevel::Temporary);
+                                        WPBSum{} + 1_i * l >= 1_i, ProofLevel::Temporary);
                             };
                             inference.infer(logger, full_reif, JustifyExplicitly{justf}, ReasonFunction{[=]() {
                                 vector<ProofLiteral> reason_lits{};
@@ -176,7 +176,7 @@ namespace
 
                 if (optional_model) {
                     if (LiteralIs::DefinitelyFalse != reif_state) {
-                        WeightedPseudoBooleanSum forward;
+                        WPBSum forward;
                         for (auto & l : _lits)
                             forward += 1_i * PseudoBooleanTerm{l};
                         optional_model->add_constraint("Logical", "if condition", forward >= Integer(_lits.size()), Reason{_full_reif});

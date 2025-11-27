@@ -81,9 +81,9 @@ namespace
                            const ReasonFunction &) {
             for (Integer val = v1_bounds.first; val <= v1_bounds.second; ++val)
                 if (state.in_domain(v1, val))
-                    logger->emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * (v1 != val) + 1_i * (v2 == val) + 1_i * ! cond >= 1_i, ProofLevel::Temporary);
+                    logger->emit_rup_proof_line(WPBSum{} + 1_i * (v1 != val) + 1_i * (v2 == val) + 1_i * ! cond >= 1_i, ProofLevel::Temporary);
                 else
-                    logger->emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * (v2 != val) + 1_i * (v1 == val) + 1_i * ! cond >= 1_i, ProofLevel::Temporary);
+                    logger->emit_rup_proof_line(WPBSum{} + 1_i * (v2 != val) + 1_i * (v1 == val) + 1_i * ! cond >= 1_i, ProofLevel::Temporary);
         };
 
         return pair{JustifyExplicitly{justify}, ReasonFunction{[=]() { return reason; }}};
@@ -138,7 +138,7 @@ auto Equals::install(Propagators & propagators, State & initial_state, ProofMode
     }
 
     if (optional_model)
-        optional_model->add_constraint("Equals", "equality", WeightedPseudoBooleanSum{} + 1_i * _v1 + -1_i * _v2 == 0_i, nullopt);
+        optional_model->add_constraint("Equals", "equality", WPBSum{} + 1_i * _v1 + -1_i * _v2 == 0_i, nullopt);
 }
 
 EqualsIf::EqualsIf(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond) :
@@ -242,7 +242,7 @@ auto EqualsIf::install(Propagators & propagators, State & initial_state, ProofMo
                 _v1, _v2);
 
             if (optional_model) {
-                optional_model->add_constraint("EqualsIf", "conditional equality", WeightedPseudoBooleanSum{} + 1_i * _v1 + -1_i * _v2 == 0_i,
+                optional_model->add_constraint("EqualsIf", "conditional equality", WPBSum{} + 1_i * _v1 + -1_i * _v2 == 0_i,
                     Reason{{cond}});
             }
         }}

@@ -23,7 +23,7 @@ auto main() -> int
     auto reif = HalfReifyOnConjunctionOf{FalseLiteral{}, model.create_proof_flag("r")};
 
     auto constr =
-        WeightedPseudoBooleanSum{} +
+        WPBSum{} +
             5_i * TrueLiteral{} +
             3_i * model.create_proof_flag("t") +
             -2_i * model.create_proof_only_integer_variable(1_i, 10_i, "x", IntegerVariableProofRepresentation::Bits) >=

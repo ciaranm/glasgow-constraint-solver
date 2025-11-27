@@ -149,17 +149,17 @@ namespace
         return visit([&](const auto & val) { return is_immediately_infeasible(var, val); }, val);
     }
 
-    auto add_lit_unless_immediately_true(WeightedPseudoBooleanSum & lits, const IntegerVariableID & var, const Integer & val) -> void
+    auto add_lit_unless_immediately_true(WPBSum & lits, const IntegerVariableID & var, const Integer & val) -> void
     {
         if (! is_literally_true(var == val))
             lits += 1_i * (var == val);
     }
 
-    auto add_lit_unless_immediately_true(WeightedPseudoBooleanSum &, const IntegerVariableID &, const Wildcard &) -> void
+    auto add_lit_unless_immediately_true(WPBSum &, const IntegerVariableID &, const Wildcard &) -> void
     {
     }
 
-    auto add_lit_unless_immediately_true(WeightedPseudoBooleanSum & lits, const IntegerVariableID & var, const IntegerOrWildcard & val) -> void
+    auto add_lit_unless_immediately_true(WPBSum & lits, const IntegerVariableID & var, const IntegerOrWildcard & val) -> void
     {
         return visit([&](const auto & val) { add_lit_unless_immediately_true(lits, var, val); }, val);
     }
@@ -195,7 +195,7 @@ auto Propagators::define_and_install_table(State & state, ProofModel * const opt
             for (const auto & [tuple_idx, tuple] : enumerate(depointinate(permitted))) {
                 // selector == tuple_idx -> /\_i vars[i] == tuple[i]
                 bool infeasible = false;
-                WeightedPseudoBooleanSum lits;
+                WPBSum lits;
                 lits += Integer(tuple.size()) * (selector != Integer(tuple_idx));
                 for (const auto & [var_idx, var] : enumerate(vars)) {
                     if (is_immediately_infeasible(var, tuple[var_idx]))

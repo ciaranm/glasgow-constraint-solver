@@ -75,13 +75,13 @@ auto NValue::install(Propagators & propagators, State & initial_state, ProofMode
         list<ProofFlag> flags;
         for (auto [v, vars] : all_possible_values) {
             auto flag = optional_model->create_proof_flag("nvalue");
-            WeightedPseudoBooleanSum forward;
+            WPBSum forward;
             for (auto & var : vars)
                 forward += 1_i * (var == v);
             forward += 1_i * ! flag;
             optional_model->add_constraint("NValue", "forward sum", forward >= 1_i);
 
-            WeightedPseudoBooleanSum reverse;
+            WPBSum reverse;
             for (auto & var : vars)
                 reverse += 1_i * (var != v);
             reverse += Integer(vars.size()) * flag;
@@ -90,7 +90,7 @@ auto NValue::install(Propagators & propagators, State & initial_state, ProofMode
             flags.push_back(flag);
         }
 
-        WeightedPseudoBooleanSum forward, reverse;
+        WPBSum forward, reverse;
         for (auto & flag : flags) {
             forward += 1_i * flag;
             reverse += -1_i * flag;

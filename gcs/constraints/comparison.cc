@@ -35,7 +35,7 @@ auto CompareLessThanReif::install(Propagators & propagators, State & initial_sta
 {
     if (optional_model) {
         auto do_less = [&](IntegerVariableID v1, IntegerVariableID v2, optional<HalfReifyOnConjunctionOf> cond, bool or_equal, const StringLiteral & rule) {
-            optional_model->add_constraint("CompareLessThanReif", rule, WeightedPseudoBooleanSum{} + 1_i * v1 + -1_i * v2 <= (or_equal ? 0_i : -1_i), cond);
+            optional_model->add_constraint("CompareLessThanReif", rule, WPBSum{} + 1_i * v1 + -1_i * v2 <= (or_equal ? 0_i : -1_i), cond);
         };
 
         overloaded{

@@ -143,7 +143,7 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
 
     if (optional_minimise_variable_and_value)
         visit([&](const auto & id) {
-            emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * (id < optional_minimise_variable_and_value->second) >= 1_i, ProofLevel::Top);
+            emit_rup_proof_line(WPBSum{} + 1_i * (id < optional_minimise_variable_and_value->second) >= 1_i, ProofLevel::Top);
         },
             optional_minimise_variable_and_value->first);
 }
@@ -151,7 +151,7 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
 auto ProofLogger::backtrack(const vector<Literal> & lits) -> void
 {
     _imp->proof << "% backtracking\n";
-    WeightedPseudoBooleanSum backtrack;
+    WPBSum backtrack;
     for (const auto & lit : lits)
         backtrack += 1_i * ! lit;
     emit_rup_proof_line(move(backtrack) >= 1_i, ProofLevel::Current);
@@ -193,7 +193,7 @@ auto ProofLogger::conclude_optimality(IntegerVariableID var, Integer value) -> v
 
 auto ProofLogger::conclude_bounds(IntegerVariableID minimise_variable, Integer lower, Integer upper) -> void
 {
-    emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * minimise_variable >= lower, ProofLevel::Top);
+    emit_rup_proof_line(WPBSum{} + 1_i * minimise_variable >= lower, ProofLevel::Top);
     _imp->proof << "output NONE;\n";
     _imp->proof << "conclusion BOUNDS " << lower << " " << upper << ";\n";
     end_proof();
@@ -232,7 +232,7 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
                 names_and_ids_tracker().need_all_proof_names_in(*reason_literals);
 
             if (! is_literally_true(lit)) {
-                WeightedPseudoBooleanSum terms;
+                WPBSum terms;
                 HalfReifyOnConjunctionOf reif{};
                 if (reason_literals)
                     reif = *reason_literals;
@@ -261,7 +261,7 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
                 reif = *reason_literals;
             }
             if (! is_literally_true(lit)) {
-                WeightedPseudoBooleanSum terms;
+                WPBSum terms;
                 terms += 1_i * lit;
                 write_indent();
                 _imp->proof << "a ";
@@ -307,12 +307,12 @@ auto ProofLogger::reason_to_lits(const ReasonFunction & reason) -> vector<ProofL
     return reason_proof_literals;
 }
 
-auto ProofLogger::reify(const WeightedPseudoBooleanLessThanEqual & ineq, const HalfReifyOnConjunctionOf & half_reif) -> WeightedPseudoBooleanLessThanEqual
+auto ProofLogger::reify(const WPBSumLE & ineq, const HalfReifyOnConjunctionOf & half_reif) -> WPBSumLE
 {
     return names_and_ids_tracker().reify(ineq, half_reif);
 }
 
-auto ProofLogger::reify(const WeightedPseudoBooleanLessThanEqual & ineq, const ReasonFunction & reason) -> WeightedPseudoBooleanLessThanEqual
+auto ProofLogger::reify(const WPBSumLE & ineq, const ReasonFunction & reason) -> WPBSumLE
 {
     auto reason_proof_literals = reason_to_lits(reason);
 

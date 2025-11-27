@@ -74,7 +74,7 @@ ProofModel::~ProofModel() = default;
 
 auto ProofModel::add_constraint(const StringLiteral & constraint_name, const StringLiteral & rule, const Literals & lits) -> std::optional<ProofLine>
 {
-    WeightedPseudoBooleanSum sum;
+    WPBSum sum;
 
     for (auto & lit : lits) {
         if (overloaded{
@@ -103,7 +103,7 @@ auto ProofModel::add_constraint(const Literals & lits) -> std::optional<ProofLin
 }
 
 auto ProofModel::add_constraint(const StringLiteral & constraint_name, const StringLiteral & rule,
-    const WeightedPseudoBooleanLessThanEqual & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> optional<ProofLine>
+    const WPBSumLE & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> optional<ProofLine>
 {
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
     if (half_reif)
@@ -115,13 +115,13 @@ auto ProofModel::add_constraint(const StringLiteral & constraint_name, const Str
     return ++_imp->number_of_constraints;
 }
 
-auto ProofModel::add_constraint(const WeightedPseudoBooleanLessThanEqual & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> optional<ProofLine>
+auto ProofModel::add_constraint(const WPBSumLE & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> optional<ProofLine>
 {
     return add_constraint("?", "?", ineq, half_reif);
 }
 
 auto ProofModel::add_constraint(const StringLiteral & constraint_name, const StringLiteral & rule,
-    const WeightedPseudoBooleanEquality & eq, const optional<HalfReifyOnConjunctionOf> & half_reif)
+    const WPBSumEq & eq, const optional<HalfReifyOnConjunctionOf> & half_reif)
     -> pair<optional<ProofLine>, optional<ProofLine>>
 {
     names_and_ids_tracker().need_all_proof_names_in(eq.lhs);
@@ -140,7 +140,7 @@ auto ProofModel::add_constraint(const StringLiteral & constraint_name, const Str
     return pair{first, second};
 }
 
-auto ProofModel::add_constraint(const WeightedPseudoBooleanEquality & eq, const optional<HalfReifyOnConjunctionOf> & half_reif)
+auto ProofModel::add_constraint(const WPBSumEq & eq, const optional<HalfReifyOnConjunctionOf> & half_reif)
     -> pair<optional<ProofLine>, optional<ProofLine>>
 {
     return add_constraint("?", "?", eq, half_reif);

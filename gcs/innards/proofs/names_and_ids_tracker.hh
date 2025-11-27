@@ -242,7 +242,7 @@ namespace gcs::innards
         /**
          * Reify a PB constraint on a conjunction of ProofFlags or ProofLiterals
          */
-        [[nodiscard]] auto reify(const WeightedPseudoBooleanLessThanEqual &, const HalfReifyOnConjunctionOf &) -> WeightedPseudoBooleanLessThanEqual;
+        [[nodiscard]] auto reify(const WPBSumLE &, const HalfReifyOnConjunctionOf &) -> WPBSumLE;
 
         /*
          * Allocate an XLiteral with the given semantic meaning.

@@ -35,7 +35,7 @@ auto Plus::install(Propagators & propagators, State &, ProofModel * const option
 
     pair<optional<ProofLine>, optional<ProofLine>> sum_line;
     if (optional_model) {
-        sum_line = optional_model->add_constraint("Plus", "sum", WeightedPseudoBooleanSum{} + 1_i * _a + 1_i * _b == 1_i * _result);
+        sum_line = optional_model->add_constraint("Plus", "sum", WPBSum{} + 1_i * _a + 1_i * _b == 1_i * _result);
     }
 
     propagators.install(

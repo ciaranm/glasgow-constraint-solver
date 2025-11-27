@@ -113,7 +113,7 @@ namespace
         const State &, auto &, const ReasonFunction & reason)
     {
         logger->emit_rup_proof_line_under_reason(reason,
-            WeightedPseudoBooleanSum{} + 1_i * (! tuple_selector) + 1_i * lit >= 1_i, ProofLevel::Current);
+            WPBSum{} + 1_i * (! tuple_selector) + 1_i * lit >= 1_i, ProofLevel::Current);
     }
 
     auto filter_edge(const SmartEntry & edge, VariableDomainMap & supported_by_tree, const ProofFlag & tuple_selector,
@@ -463,7 +463,7 @@ namespace
                 auto justf = [&](const ReasonFunction & reason) -> void {
                     for (unsigned int tuple_idx = 0; tuple_idx < tuples.size(); ++tuple_idx) {
                         logger->emit_rup_proof_line_under_reason(reason,
-                            WeightedPseudoBooleanSum{} + 1_i * (var != value) + 1_i * (! pb_selectors[tuple_idx]) >= 1_i,
+                            WPBSum{} + 1_i * (var != value) + 1_i * (! pb_selectors[tuple_idx]) >= 1_i,
                             ProofLevel::Current);
                     }
                 };
@@ -560,48 +560,48 @@ namespace
         case SmartEntryConstraint::Equal: {
             // f => var1 == var2
             auto flag = model.create_proof_flag("bin_eq");
-            model.add_constraint(WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 == 0_i,
+            model.add_constraint(WPBSum{} + 1_i * var_1 + -1_i * var_2 == 0_i,
                 HalfReifyOnConjunctionOf{{flag}});
 
             // !f => var1 != var2
             auto flag_lt = model.create_proof_flag("lt");
             auto flag_gt = model.create_proof_flag("gt");
-            model.add_constraint(WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i,
+            model.add_constraint(WPBSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i,
                 HalfReifyOnConjunctionOf{{flag_gt}});
-            model.add_constraint(WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1 >= 0_i,
+            model.add_constraint(WPBSum{} + 1_i * var_2 + -1_i * var_1 >= 0_i,
                 HalfReifyOnConjunctionOf{{! flag_gt}});
-            model.add_constraint(WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i,
+            model.add_constraint(WPBSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i,
                 HalfReifyOnConjunctionOf{{flag_lt}});
-            model.add_constraint(WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 >= 0_i,
+            model.add_constraint(WPBSum{} + 1_i * var_1 + -1_i * var_2 >= 0_i,
                 HalfReifyOnConjunctionOf{{! flag_lt}});
-            model.add_constraint(WeightedPseudoBooleanSum{} + 1_i * flag_lt + 1_i * flag_gt >= 1_i,
+            model.add_constraint(WPBSum{} + 1_i * flag_lt + 1_i * flag_gt >= 1_i,
                 HalfReifyOnConjunctionOf{{! flag}});
             return flag;
         }
 
         case SmartEntryConstraint::GreaterThan: {
             auto flag = model.create_proof_flag("bin_gt");
-            model.add_constraint(WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i,
+            model.add_constraint(WPBSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i,
                 HalfReifyOnConjunctionOf{{flag}});
-            model.add_constraint(WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1 >= 0_i,
+            model.add_constraint(WPBSum{} + 1_i * var_2 + -1_i * var_1 >= 0_i,
                 HalfReifyOnConjunctionOf{{! flag}});
             return flag;
         }
 
         case SmartEntryConstraint::LessThan: {
             auto flag = model.create_proof_flag("bin_lt");
-            model.add_constraint(WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i,
+            model.add_constraint(WPBSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i,
                 HalfReifyOnConjunctionOf{{flag}});
-            model.add_constraint(WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 >= 0_i,
+            model.add_constraint(WPBSum{} + 1_i * var_1 + -1_i * var_2 >= 0_i,
                 HalfReifyOnConjunctionOf{{! flag}});
             return flag;
         }
 
         case SmartEntryConstraint::LessThanEqual: {
             auto flag = model.create_proof_flag("bin_le");
-            model.add_constraint(WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1 >= 0_i,
+            model.add_constraint(WPBSum{} + 1_i * var_2 + -1_i * var_1 >= 0_i,
                 HalfReifyOnConjunctionOf{{flag}});
-            model.add_constraint(WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i,
+            model.add_constraint(WPBSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i,
                 HalfReifyOnConjunctionOf{{! flag}});
             return flag;
         }
@@ -609,7 +609,7 @@ namespace
         case SmartEntryConstraint::NotEqual: {
             // !f => var1 == var2
             auto flag = model.create_proof_flag("bin_eq");
-            model.add_constraint(WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 == 0_i,
+            model.add_constraint(WPBSum{} + 1_i * var_1 + -1_i * var_2 == 0_i,
                 HalfReifyOnConjunctionOf{{! flag}});
 
             // f => var1 != var2
@@ -617,19 +617,19 @@ namespace
             auto flag_gt = model.create_proof_flag("gt");
 
             // Means we need f => fgt or flt
-            model.add_constraint(WeightedPseudoBooleanSum{} + 1_i * flag_lt + 1_i * flag_gt >= 1_i,
+            model.add_constraint(WPBSum{} + 1_i * flag_lt + 1_i * flag_gt >= 1_i,
                 HalfReifyOnConjunctionOf{{flag}});
 
             // And then fgt <==> var1 > var2
-            model.add_constraint(WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i,
+            model.add_constraint(WPBSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i,
                 HalfReifyOnConjunctionOf{{flag_gt}});
-            model.add_constraint(WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1 >= 0_i,
+            model.add_constraint(WPBSum{} + 1_i * var_2 + -1_i * var_1 >= 0_i,
                 HalfReifyOnConjunctionOf{{! flag_gt}});
 
             // flt <==> var1 < var2
-            model.add_constraint(WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i,
+            model.add_constraint(WPBSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i,
                 HalfReifyOnConjunctionOf{{flag_lt}});
-            model.add_constraint(WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 >= 0_i,
+            model.add_constraint(WPBSum{} + 1_i * var_1 + -1_i * var_2 >= 0_i,
                 HalfReifyOnConjunctionOf{{! flag_lt}});
 
             return flag;
@@ -637,9 +637,9 @@ namespace
 
         case SmartEntryConstraint::GreaterThanEqual: {
             auto flag = model.create_proof_flag("bin_ge");
-            model.add_constraint(WeightedPseudoBooleanSum{} + 1_i * var_1 + -1_i * var_2 >= 0_i,
+            model.add_constraint(WPBSum{} + 1_i * var_1 + -1_i * var_2 >= 0_i,
                 HalfReifyOnConjunctionOf{{flag}});
-            model.add_constraint(WeightedPseudoBooleanSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i,
+            model.add_constraint(WPBSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i,
                 HalfReifyOnConjunctionOf{{! flag}});
             return flag;
         }
@@ -799,7 +799,7 @@ auto SmartTable::install(Propagators & propagators, State & initial_state, Proof
         for (unsigned int i = 0; i < _tuples.size(); ++i) {
             pb_selectors.emplace_back(optional_model->create_proof_flag("t" + to_string(i)));
         }
-        WeightedPseudoBooleanSum sum_pb_selectors{};
+        WPBSum sum_pb_selectors{};
 
         for (const auto & s : pb_selectors)
             sum_pb_selectors += 1_i * s;
@@ -810,8 +810,8 @@ auto SmartTable::install(Propagators & propagators, State & initial_state, Proof
         map<BinaryEntryData, ProofFlag> smart_entry_flags;
 
         for (unsigned int tuple_idx = 0; tuple_idx < _tuples.size(); ++tuple_idx) {
-            WeightedPseudoBooleanSum entry_flags_sum{};
-            WeightedPseudoBooleanSum entry_flags_neg_sum{};
+            WPBSum entry_flags_sum{};
+            WPBSum entry_flags_neg_sum{};
             for (const auto & entry : consolidate_unary_entries(initial_state, _tuples[tuple_idx])) {
                 overloaded{
                     [&](BinaryEntry binary_entry) {
@@ -832,13 +832,13 @@ auto SmartTable::install(Propagators & propagators, State & initial_state, Proof
 
                         // InSet {<empty>} is the same as False
                         if (unary_set_entry.values.empty() && unary_set_entry.constraint_type == SmartEntryConstraint::In) {
-                            optional_model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * ! flag >= 1_i);
+                            optional_model->add_constraint(WPBSum{} + 1_i * ! flag >= 1_i);
                             entry_flags_sum += 1_i * flag;
                             entry_flags_neg_sum += -1_i * flag;
                             return;
                         }
-                        WeightedPseudoBooleanSum set_value_sum{};
-                        WeightedPseudoBooleanSum neg_set_value_sum{};
+                        WPBSum set_value_sum{};
+                        WPBSum neg_set_value_sum{};
                         for (auto val : initial_state.each_value_immutable(var)) {
                             if (! count(unary_set_entry.values.begin(), unary_set_entry.values.end(), val))
                                 set_value_sum += 1_i * (var != val);

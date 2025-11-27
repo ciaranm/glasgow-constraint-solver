@@ -15,11 +15,11 @@ namespace gcs::innards
      */
     using PseudoBooleanTerm = std::variant<ProofLiteral, ProofFlag, IntegerVariableID, ProofOnlySimpleIntegerVariableID, ProofBitVariable>;
 
-    using WeightedPseudoBooleanSum = SumOf<Weighted<PseudoBooleanTerm>>;
+    using WPBSum = SumOf<Weighted<PseudoBooleanTerm>>;
 
-    using WeightedPseudoBooleanLessThanEqual = SumLessThanEqual<Weighted<PseudoBooleanTerm>>;
+    using WPBSumLE = SumLessThanEqual<Weighted<PseudoBooleanTerm>>;
 
-    using WeightedPseudoBooleanEquality = SumEquals<Weighted<PseudoBooleanTerm>>;
+    using WPBSumEq = SumEquals<Weighted<PseudoBooleanTerm>>;
 }
 
 #endif

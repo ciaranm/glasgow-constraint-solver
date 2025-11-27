@@ -51,7 +51,7 @@ namespace
                     Integer sel_value(tuples.size());
                     logger->names_and_ids_tracker().create_literals_for_introduced_variable_value(selector_var_id, sel_value, "autotable");
 
-                    WeightedPseudoBooleanSum forward_implication, reverse_implication;
+                    WPBSum forward_implication, reverse_implication;
                     forward_implication += Integer(vars.size()) * (selector_var_id != sel_value);
                     reverse_implication += 1_i * (selector_var_id == sel_value);
 

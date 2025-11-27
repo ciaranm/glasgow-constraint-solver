@@ -69,7 +69,7 @@ auto Among::install(Propagators & propagators, State &, ProofModel * const optio
     if (optional_model) {
         // very easy PB encoding: sum up over the condition that each variable equals one of the
         // value of interest options, and make that equal the how many variable.
-        WeightedPseudoBooleanSum sum;
+        WPBSum sum;
         for (auto & var : _vars)
             for (auto & val : _values_of_interest)
                 sum += 1_i * (var == val);
@@ -89,7 +89,7 @@ auto Among::install(Propagators & propagators, State &, ProofModel * const optio
                     var_eq_vois.push_back(var != voi);
                 am1_lines->emplace(var, recover_am1<IntegerVariableCondition>(*logger, ProofLevel::Top, var_eq_vois, [&](const IntegerVariableCondition & a, const IntegerVariableCondition & b) {
                     logger->emit_proof_comment("among am1 recover follows");
-                    return logger->emit(RUPProofRule{}, WeightedPseudoBooleanSum{} + 1_i * a + 1_i * b >= 1_i, ProofLevel::Temporary);
+                    return logger->emit(RUPProofRule{}, WPBSum{} + 1_i * a + 1_i * b >= 1_i, ProofLevel::Temporary);
                 }));
             }
         }
@@ -218,7 +218,7 @@ auto Among::install(Propagators & propagators, State &, ProofModel * const optio
                                     inference.infer(logger, var != val, JustifyExplicitly{[&](const ReasonFunction &) {
                                         // need to point out that if var == val then var != voi for each voi
                                         for (const auto & voi : values_of_interest)
-                                            logger->emit(RUPProofRule{}, WeightedPseudoBooleanSum{} + 1_i * (var != val) + 1_i * (var != voi) >= 1_i, ProofLevel::Temporary);
+                                            logger->emit(RUPProofRule{}, WPBSum{} + 1_i * (var != val) + 1_i * (var != voi) >= 1_i, ProofLevel::Temporary);
 
                                         // now each other variable that may or may not match is contributing at most one to the sum
                                         if (sum_line.second && values_of_interest.size() > 1) {

@@ -62,14 +62,14 @@ namespace gcs::innards
          * Add a pseudo-Boolean constraint to a Proof model.
          */
         auto add_constraint(
-            const WeightedPseudoBooleanLessThanEqual & ineq,
+            const WPBSumLE & ineq,
             const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> std::optional<ProofLine>;
 
         /**
          * Add a pair of pseudo-Boolean constraints representing an equality to a Proof model.
          */
         auto add_constraint(
-            const WeightedPseudoBooleanEquality & eq,
+            const WPBSumEq & eq,
             const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> std::pair<std::optional<ProofLine>, std::optional<ProofLine>>;
 
         /**
@@ -84,7 +84,7 @@ namespace gcs::innards
         auto add_constraint(
             const StringLiteral & constraint_name,
             const StringLiteral & rule,
-            const WeightedPseudoBooleanLessThanEqual & ineq,
+            const WPBSumLE & ineq,
             const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> std::optional<ProofLine>;
 
         /**
@@ -93,7 +93,7 @@ namespace gcs::innards
         auto add_constraint(
             const StringLiteral & constraint_name,
             const StringLiteral & rule,
-            const WeightedPseudoBooleanEquality & eq,
+            const WPBSumEq & eq,
             const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> std::pair<std::optional<ProofLine>, std::optional<ProofLine>>;
 
         /**

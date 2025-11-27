@@ -184,7 +184,7 @@ namespace
                 shifted_pos_eq[i][l].comment_name + "=" + to_string(l));
 
             neq_line = logger.emit_rup_proof_line(
-                WeightedPseudoBooleanSum{} + 1_i * ! shifted_pos_eq[i][k].flag + 1_i * ! shifted_pos_eq[i][l].flag >= 1_i,
+                WPBSum{} + 1_i * ! shifted_pos_eq[i][k].flag + 1_i * ! shifted_pos_eq[i][l].flag >= 1_i,
                 ProofLevel::Top);
 
             shifted_pos_eq[i][l].neq_lines[k] = neq_line;
@@ -201,7 +201,7 @@ namespace
                 pos_var_data.at(i).comment_name + "=" + to_string(l));
 
             neq_line = logger.emit_rup_proof_line(
-                WeightedPseudoBooleanSum{} + 1_i * (pos_var_data.at(i).var != Integer{k}) + 1_i * (pos_var_data.at(i).var != Integer{l}) >= 1_i,
+                WPBSum{} + 1_i * (pos_var_data.at(i).var != Integer{k}) + 1_i * (pos_var_data.at(i).var != Integer{l}) >= 1_i,
                 ProofLevel::Top);
 
             shifted_pos[i][l].neq_lines[k] = neq_line;
@@ -253,13 +253,13 @@ namespace
                 logger.emit_proof_comment("AM1 " +
                     flag_data.shifted_pos_eq[node][*values.begin()].comment_name);
                 return logger.emit_rup_proof_line(
-                    WeightedPseudoBooleanSum{} + 1_i * ! (flag_data.shifted_pos_eq[node][idx].flag) >= 0_i,
+                    WPBSum{} + 1_i * ! (flag_data.shifted_pos_eq[node][idx].flag) >= 0_i,
                     ProofLevel::Top);
             }
             else {
                 logger.emit_proof_comment("AM1 p[" + to_string(node) + "]");
                 return logger.emit_rup_proof_line(
-                    WeightedPseudoBooleanSum{} + 1_i * ! (pos_var_data.at(node).var == Integer{idx}) >= 0_i,
+                    WPBSum{} + 1_i * ! (pos_var_data.at(node).var == Integer{idx}) >= 0_i,
                     ProofLevel::Top);
             }
         }
@@ -277,7 +277,7 @@ namespace
 
         // First prove the at least 1 lines
         logger.emit_proof_comment("Pos all diff lines:");
-        WeightedPseudoBooleanSum pb_sum;
+        WPBSum pb_sum;
         for (long i = 0; i < n; i++) {
             pb_sum += 1_i * (pos_var_data.at(i).var == 0_i);
         }
@@ -286,14 +286,14 @@ namespace
             logger.emit_rup_proof_line(pb_sum >= 1_i, ProofLevel::Top);
         auto last_al1_line = pos_alldiff_data.at_least_1_lines[0];
         for (long j = 1; j < n; j++) {
-            pb_sum = WeightedPseudoBooleanSum{};
+            pb_sum = WPBSum{};
             PLine p_line;
             for (long i = 0; i < n; i++) {
-                auto next_pos_vars = WeightedPseudoBooleanSum{};
+                auto next_pos_vars = WPBSum{};
                 for (long k = 0; k < n; k++) {
                     next_pos_vars += 1_i * (pos_var_data.at(k).var == Integer{j});
                     logger.emit_rup_proof_line(
-                        WeightedPseudoBooleanSum{} + 1_i * ! (pos_var_data.at(i).var == Integer{j - 1}) +
+                        WPBSum{} + 1_i * ! (pos_var_data.at(i).var == Integer{j - 1}) +
                                 1_i * ! (succ[i] == Integer{k}) + 1_i * (pos_var_data.at(k).var == Integer{j}) >=
                             1_i,
                         ProofLevel::Top);
@@ -342,7 +342,7 @@ namespace
             greater_than_flag = logger.create_proof_flag(flag_name);
 
             auto forwards_reif_line = logger.emit_red_proof_lines_forward_reifying(
-                WeightedPseudoBooleanSum{} + 1_i * pos_var_data.at(root).var + -1_i * pos_var_data.at(i).var >= 1_i,
+                WPBSum{} + 1_i * pos_var_data.at(root).var + -1_i * pos_var_data.at(i).var >= 1_i,
                 greater_than_flag, ProofLevel::Top);
 
             if (pos_alldiff_data.at_least_1_lines.empty()) {
@@ -373,20 +373,20 @@ namespace
                         }
                         p_line.end();
                         logger.emit_proof_line(p_line.str(), ProofLevel::Top);
-                        logger.emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * ! (pos_var_data.at(i).var == Integer{k}) >= 1_i, ProofLevel::Top);
+                        logger.emit_rup_proof_line(WPBSum{} + 1_i * ! (pos_var_data.at(i).var == Integer{k}) >= 1_i, ProofLevel::Top);
                     }
-                    logger.emit_rup_proof_line(WeightedPseudoBooleanSum{} >= 1_i, ProofLevel::Top);
+                    logger.emit_rup_proof_line(WPBSum{} >= 1_i, ProofLevel::Top);
                 };
                 subproofs.value().emplace(to_string(forwards_reif_line), subproof);
 
                 backwards_reif_line = logger.emit_red_proof_lines_reverse_reifying(
-                    WeightedPseudoBooleanSum{} + 1_i * pos_var_data.at(root).var + -1_i * pos_var_data.at(i).var >= 0_i,
+                    WPBSum{} + 1_i * pos_var_data.at(root).var + -1_i * pos_var_data.at(i).var >= 0_i,
                     greater_than_flag, ProofLevel::Top, subproofs);
             }
             else {
                 // If i == root, d[r, i] is just "false"
                 backwards_reif_line = logger.emit_red_proof_lines_reverse_reifying(
-                    WeightedPseudoBooleanSum{} + 1_i * pos_var_data.at(root).var + -1_i * pos_var_data.at(i).var >= 1_i,
+                    WPBSum{} + 1_i * pos_var_data.at(root).var + -1_i * pos_var_data.at(i).var >= 1_i,
                     greater_than_flag, ProofLevel::Top);
             }
 
@@ -410,7 +410,7 @@ namespace
         auto greater_than_flag = greater_than_flag_data.flag;
 
         auto maybe_create_and_emplace_flag_data =
-            [&](ProofFlagDataMap & flag_data, const long i, const long j, const WeightedPseudoBooleanLessThanEqual & definition, const string & name, const string & name_suffix) {
+            [&](ProofFlagDataMap & flag_data, const long i, const long j, const WPBSumLE & definition, const string & name, const string & name_suffix) {
                 if (! flag_data[i].count(j)) {
                     auto [flag, forwards_reif_line, backwards_reif_line] = logger.create_proof_flag_reifying(definition, name + name_suffix, ProofLevel::Top);
                     flag_data[i][j] = ProofFlagData{name, flag, forwards_reif_line, backwards_reif_line, {}};
@@ -419,17 +419,17 @@ namespace
 
         // q[r,i]gej <=> pos[i] - pos[r] + nd[r,i] >= j
         maybe_create_and_emplace_flag_data(flag_data_for_root.shifted_pos_geq, i, j,
-            WeightedPseudoBooleanSum{} + 1_i * pos_var_data.at(i).var + -1_i * pos_var_data.at(root).var + Integer{n} * greater_than_flag >= Integer{j},
+            WPBSum{} + 1_i * pos_var_data.at(i).var + -1_i * pos_var_data.at(root).var + Integer{n} * greater_than_flag >= Integer{j},
             "q[" + to_string(root) + "][" + to_string(i) + "]", "ge" + to_string(j));
 
         // q[r,i]gej+1 <=> pos[i] - pos[r] + nd[r,i] >= j+1
         maybe_create_and_emplace_flag_data(flag_data_for_root.shifted_pos_geq, i, j + 1,
-            WeightedPseudoBooleanSum{} + 1_i * pos_var_data.at(i).var + -1_i * pos_var_data.at(root).var + Integer{n} * greater_than_flag >= Integer{j + 1},
+            WPBSum{} + 1_i * pos_var_data.at(i).var + -1_i * pos_var_data.at(root).var + Integer{n} * greater_than_flag >= Integer{j + 1},
             "q[" + to_string(root) + "][" + to_string(i) + "]", "ge" + to_string(j + 1));
 
         // q[r,i]eqj <=> q[r,i]gej /\ ~q[r,i]gej+1
         maybe_create_and_emplace_flag_data(flag_data_for_root.shifted_pos_eq, i, j,
-            WeightedPseudoBooleanSum{} + 1_i * flag_data_for_root.shifted_pos_geq[i][j].flag + 1_i * ! flag_data_for_root.shifted_pos_geq[i][j + 1].flag >= 2_i,
+            WPBSum{} + 1_i * flag_data_for_root.shifted_pos_geq[i][j].flag + 1_i * ! flag_data_for_root.shifted_pos_geq[i][j + 1].flag >= 2_i,
             "q[" + to_string(root) + "][" + to_string(i) + "]", "eq" + to_string(j));
     }
 
@@ -444,12 +444,12 @@ namespace
         if (root != 0) {
             create_shifted_pos(logger, root, root, 0, flag_data_for_root, pos_var_data, pos_alldiff_data, succ);
             line = logger.emit_rup_proof_line(
-                WeightedPseudoBooleanSum{} + 1_i * flag_data_for_root.shifted_pos_eq[root][0].flag >= 1_i,
+                WPBSum{} + 1_i * flag_data_for_root.shifted_pos_eq[root][0].flag >= 1_i,
                 ProofLevel::Current);
         }
         else {
             line = logger.emit_rup_proof_line(
-                WeightedPseudoBooleanSum{} + 1_i * (pos_var_data.at(root).var == 0_i) >= 1_i,
+                WPBSum{} + 1_i * (pos_var_data.at(root).var == 0_i) >= 1_i,
                 ProofLevel::Current);
         }
 
@@ -478,12 +478,12 @@ namespace
             }
 
             logger.emit_rup_proof_line_under_reason(reason,
-                WeightedPseudoBooleanSum{} + 1_i * ! ordering.assumption_flag + 1_i * ! assumption + 1_i * flag_data_for_root.shifted_pos_geq[mid][val].flag >= 1_i,
+                WPBSum{} + 1_i * ! ordering.assumption_flag + 1_i * ! assumption + 1_i * flag_data_for_root.shifted_pos_geq[mid][val].flag >= 1_i,
                 ProofLevel::Current);
         }
         else {
             logger.emit_rup_proof_line_under_reason(reason,
-                WeightedPseudoBooleanSum{} + 1_i * (pos_var_data.at(mid).var >= Integer{val}) >= 1_i,
+                WPBSum{} + 1_i * (pos_var_data.at(mid).var >= Integer{val}) >= 1_i,
                 ProofLevel::Current);
         }
     }
@@ -517,11 +517,11 @@ namespace
                 }
                 else {
                     p_line << logger.emit_rup_proof_line(
-                                  WeightedPseudoBooleanSum{} + 1_i * ! (succ[node] == Integer{next_node}) + 1_i * ! root_greater_than.at(node).flag >= 1_i,
+                                  WPBSum{} + 1_i * ! (succ[node] == Integer{next_node}) + 1_i * ! root_greater_than.at(node).flag >= 1_i,
                                   ProofLevel::Temporary)
                            << " ";
                     p_line << logger.emit_rup_proof_line(
-                                  WeightedPseudoBooleanSum{} + 1_i * ! (succ[node] == Integer{next_node}) + 1_i * root_greater_than.at(next_node).flag >= 1_i,
+                                  WPBSum{} + 1_i * ! (succ[node] == Integer{next_node}) + 1_i * root_greater_than.at(next_node).flag >= 1_i,
                                   ProofLevel::Temporary)
                            << " + ";
                 }
@@ -554,7 +554,7 @@ namespace
 
                 // RUP shifted_pos[node][count-1] /\ succ[node] = next_node => shifted_pos[next_node][i]
                 successor_implies_line = logger.emit_rup_proof_line_under_reason(reason,
-                    WeightedPseudoBooleanSum{} + 1_i * shifted_pos_eq[next_node][count].flag + 1_i * (succ[node] != Integer{next_node}) +
+                    WPBSum{} + 1_i * shifted_pos_eq[next_node][count].flag + 1_i * (succ[node] != Integer{next_node}) +
                             1_i * (! shifted_pos_eq[node][count - 1].flag) >=
                         1_i,
                     ProofLevel::Current);
@@ -574,14 +574,14 @@ namespace
                 logger.emit_proof_comment("Next implies: succ[" + to_string(node) + "] = " + to_string(next_node) + " and " +
                     shifted_pos_eq[node][count - 1].comment_name + " = " + to_string(count - 1) + " => 0 >= 1");
 
-                successor_implies_line = logger.emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * (! shifted_pos_eq[node][count - 1].flag) + 1_i * (succ[node] != Integer{next_node}) >= 1_i, ProofLevel::Current);
+                successor_implies_line = logger.emit_rup_proof_line(WPBSum{} + 1_i * (! shifted_pos_eq[node][count - 1].flag) + 1_i * (succ[node] != Integer{next_node}) >= 1_i, ProofLevel::Current);
             }
         }
         else {
             // Not using shifted pos, just use the actual pos values
             // succ[node] == next_node /\ pos[node] == count - 1 => pos[next_node] == count
             successor_implies_line = logger.emit_rup_proof_line(
-                WeightedPseudoBooleanSum{} + 1_i * (pos_var_data.at(node).var != Integer{count - 1}) +
+                WPBSum{} + 1_i * (pos_var_data.at(node).var != Integer{count - 1}) +
                         1_i * (succ[node] != Integer{next_node}) + 1_i * (pos_var_data.at(next_node).var == Integer{count}) >=
                     1_i,
                 ProofLevel::Current);
@@ -633,7 +633,7 @@ namespace
 
             temp_p_line.add_and_saturate(leq_and_geq);
             temp_p_line.add_and_saturate(logger.emit_rup_proof_line(
-                WeightedPseudoBooleanSum{} + -1_i * pos_var_data.at(next_node).var + 1_i * pos_var_data.at(middle).var >= Integer{-n + 1}, ProofLevel::Temporary));
+                WPBSum{} + -1_i * pos_var_data.at(next_node).var + 1_i * pos_var_data.at(middle).var >= Integer{-n + 1}, ProofLevel::Temporary));
             logger.emit_proof_comment("Step 4");
             temp_p_line.end();
             logger.emit_proof_line(temp_p_line.str(), ProofLevel::Temporary);
@@ -641,7 +641,7 @@ namespace
 
             logger.emit_proof_comment("Step 5");
             logger.emit_rup_proof_line_under_reason(reason,
-                WeightedPseudoBooleanSum{} +
+                WPBSum{} +
                         1_i * ! flag_data[root].greater_than[middle].flag +
                         1_i * ! flag_data[next_node].greater_than[middle].flag +
                         1_i * ! shifted_pos_eq[middle][count].flag +
@@ -650,7 +650,7 @@ namespace
                 ProofLevel::Temporary);
 
             logger.emit_rup_proof_line_under_reason(reason,
-                WeightedPseudoBooleanSum{} +
+                WPBSum{} +
                         1_i * ! flag_data[next_node].greater_than[middle].flag +
                         1_i * ! shifted_pos_eq[middle][count].flag +
                         1_i * (! shifted_pos_eq[next_node][count].flag) >=
@@ -666,14 +666,14 @@ namespace
 
             temp_p_line.add_and_saturate(geq_and_leq);
             temp_p_line.add_and_saturate(logger.emit_rup_proof_line(
-                WeightedPseudoBooleanSum{} + -1_i * pos_var_data.at(middle).var + 1_i * pos_var_data.at(next_node).var >= Integer{-n + 1}, ProofLevel::Temporary));
+                WPBSum{} + -1_i * pos_var_data.at(middle).var + 1_i * pos_var_data.at(next_node).var >= Integer{-n + 1}, ProofLevel::Temporary));
             logger.emit_proof_comment("Step 7");
             temp_p_line.end();
             logger.emit_proof_line(temp_p_line.str(), ProofLevel::Temporary);
             temp_p_line.clear();
 
             logger.emit_rup_proof_line_under_reason(reason,
-                WeightedPseudoBooleanSum{} +
+                WPBSum{} +
                         1_i * ! flag_data[root].greater_than[next_node].flag +
                         1_i * flag_data[next_node].greater_than[middle].flag +
                         1_i * ! shifted_pos_eq[middle][count].flag +
@@ -683,21 +683,21 @@ namespace
 
             logger.emit_proof_comment("Step 8");
             logger.emit_rup_proof_line_under_reason(reason,
-                WeightedPseudoBooleanSum{} + 1_i * ! flag_data[next_node].greater_than[middle].flag +
+                WPBSum{} + 1_i * ! flag_data[next_node].greater_than[middle].flag +
                         1_i * ! shifted_pos_eq[middle][count].flag +
                         1_i * (! shifted_pos_eq[next_node][count].flag) >=
                     1_i,
                 ProofLevel::Temporary);
 
             succesor_implies_not_mid_line = logger.emit_rup_proof_line_under_reason(reason,
-                WeightedPseudoBooleanSum{} + 1_i * ! shifted_pos_eq[middle][count].flag +
+                WPBSum{} + 1_i * ! shifted_pos_eq[middle][count].flag +
                         1_i * (! shifted_pos_eq[next_node][count].flag) >=
                     1_i,
                 ProofLevel::Current);
         }
         else {
             succesor_implies_not_mid_line = logger.emit_rup_proof_line_under_reason(reason,
-                WeightedPseudoBooleanSum{} +
+                WPBSum{} +
                         1_i * ! (pos_var_data.at(middle).var == Integer{count}) +
                         1_i * ! (pos_var_data.at(next_node).var == Integer{count}) >=
                     1_i,
@@ -732,18 +732,18 @@ namespace
             p_line.add_and_saturate(flag_data[mid].greater_than[last].backwards_reif_line);
 
             p_line.add_and_saturate(logger.emit_rup_proof_line(
-                WeightedPseudoBooleanSum{} + 1_i * flag_data[root].greater_than[last].flag + 1_i * flag_data[last].greater_than[root].flag >= 1_i,
+                WPBSum{} + 1_i * flag_data[root].greater_than[last].flag + 1_i * flag_data[last].greater_than[root].flag >= 1_i,
                 ProofLevel::Temporary));
 
             p_line.end();
             logger.emit_proof_line(p_line.str(), ProofLevel::Temporary);
             exclusion_line = logger.emit_rup_proof_line_under_reason(reason,
-                WeightedPseudoBooleanSum{} + 1_i * ! assumption + 1_i * ! ordering.assumption_flag + 1_i * ! shifted_pos_eq[last][count].flag >= 1_i,
+                WPBSum{} + 1_i * ! assumption + 1_i * ! ordering.assumption_flag + 1_i * ! shifted_pos_eq[last][count].flag >= 1_i,
                 ProofLevel::Current);
         }
         else {
             exclusion_line = logger.emit_rup_proof_line_under_reason(reason,
-                WeightedPseudoBooleanSum{} + 1_i * ! assumption + 1_i * ! ordering.assumption_flag + 1_i * ! (pos_var_data.at(last).var == Integer{count}) >= 1_i,
+                WPBSum{} + 1_i * ! assumption + 1_i * ! ordering.assumption_flag + 1_i * ! (pos_var_data.at(last).var == Integer{count}) >= 1_i,
                 ProofLevel::Current);
         }
 
@@ -833,7 +833,7 @@ namespace
             set<long> new_reached_nodes{};
             bool exclude_based_on_ordering = false;
             for (const auto & node : last_reached_nodes) {
-                WeightedPseudoBooleanSum possible_next_nodes_sum{};
+                WPBSum possible_next_nodes_sum{};
                 PLine add_for_node_implies_at_least_1;
                 PLine add_for_node_implies_not_mid;
 
@@ -948,7 +948,7 @@ namespace
             logger, next_node, skipped_subroot, flag_data[next_node], pos_var_data, pos_all_diff_data, succ);
 
         auto node_then_subroot_then_root = logger.create_proof_flag_reifying(
-            WeightedPseudoBooleanSum{} + 1_i * ! root_gt_next.flag + 1_i * ! subroot_gt_root.flag + 1_i * ! next_gt_subroot.flag >= 2_i,
+            WPBSum{} + 1_i * ! root_gt_next.flag + 1_i * ! subroot_gt_root.flag + 1_i * ! next_gt_subroot.flag >= 2_i,
             "ord1", ProofLevel::Current);
 
         OrderingAssumption ordering1{
@@ -965,7 +965,7 @@ namespace
             logger, node, root, flag_data[node], pos_var_data, pos_all_diff_data, succ);
 
         auto subroot_then_node_then_root = logger.create_proof_flag_reifying(
-            WeightedPseudoBooleanSum{} + 1_i * ! subroot_gt_node.flag + 1_i * ! node_gt_root.flag + 1_i * subroot_gt_root.flag >= 2_i, "ord2", ProofLevel::Current);
+            WPBSum{} + 1_i * ! subroot_gt_node.flag + 1_i * ! node_gt_root.flag + 1_i * subroot_gt_root.flag >= 2_i, "ord2", ProofLevel::Current);
 
         OrderingAssumption ordering2{
             get<0>(subroot_then_node_then_root),
@@ -983,7 +983,7 @@ namespace
         temp_p_line << root_gt_next.forwards_reif_line << " + ;";
         logger.emit_proof_line(temp_p_line.str(), ProofLevel::Temporary);
         final_contradiction_p_line << logger.emit_rup_proof_line(
-                                          WeightedPseudoBooleanSum{} + 1_i * (succ[node] != Integer{next_node}) +
+                                          WPBSum{} + 1_i * (succ[node] != Integer{next_node}) +
                                                   1_i * ! root_gt_next.flag + 1_i * ! node_gt_root.flag >=
                                               1_i,
                                           ProofLevel::Current)
@@ -995,7 +995,7 @@ namespace
         temp_p_line << subroot_gt_node.forwards_reif_line << " + ;";
         logger.emit_proof_line(temp_p_line.str(), ProofLevel::Temporary);
         final_contradiction_p_line << logger.emit_rup_proof_line(
-                                          WeightedPseudoBooleanSum{} + 1_i * (succ[node] != Integer{next_node}) +
+                                          WPBSum{} + 1_i * (succ[node] != Integer{next_node}) +
                                                   1_i * ! next_gt_subroot.flag + 1_i * ! subroot_gt_node.flag >=
                                               1_i,
                                           ProofLevel::Current)
@@ -1005,7 +1005,7 @@ namespace
         logger.emit_proof_line(final_contradiction_p_line.str(), ProofLevel::Current);
 
         logger.emit_rup_proof_line_under_reason(reason,
-            WeightedPseudoBooleanSum{} + 1_i * (succ[node] != Integer{next_node}) >= 1_i, ProofLevel::Current);
+            WPBSum{} + 1_i * (succ[node] != Integer{next_node}) >= 1_i, ProofLevel::Current);
     }
 
     auto explore(const State & state, auto & inference, ProofLogger * const logger, const ReasonFunction & reason,

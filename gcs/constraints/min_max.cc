@@ -48,17 +48,17 @@ auto ArrayMinMax::install(Propagators & propagators, State &, ProofModel * const
     if (optional_model) {
         // (for min) each var >= result, i.e. var - result >= 0
         for (const auto & v : _vars) {
-            optional_model->add_constraint("ArrayMinMax", "result compared to value", WeightedPseudoBooleanSum{} + (_min ? 1_i : -1_i) * v + (_min ? -1_i : 1_i) * _result >= 0_i, nullopt);
+            optional_model->add_constraint("ArrayMinMax", "result compared to value", WPBSum{} + (_min ? 1_i : -1_i) * v + (_min ? -1_i : 1_i) * _result >= 0_i, nullopt);
         }
 
-        WeightedPseudoBooleanSum al1_selector;
+        WPBSum al1_selector;
 
         // (for min) f_i <-> var[i] <= result, i.e. var - result <= 0
         for (const auto & [id, var] : enumerate(_vars)) {
             auto selector = optional_model->create_proof_flag("arrayminmax" + to_string(id));
             selectors.push_back(selector);
-            optional_model->add_constraint("ArrayMinMax", "result is this value", WeightedPseudoBooleanSum{} + (_min ? 1_i : -1_i) * var + (_min ? -1_i : 1_i) * _result <= 0_i, {{selector}});
-            optional_model->add_constraint("ArrayMinMax", "result is this value", WeightedPseudoBooleanSum{} + (_min ? 1_i : -1_i) * var + (_min ? -1_i : 1_i) * _result >= 1_i, {{! selector}});
+            optional_model->add_constraint("ArrayMinMax", "result is this value", WPBSum{} + (_min ? 1_i : -1_i) * var + (_min ? -1_i : 1_i) * _result <= 0_i, {{selector}});
+            optional_model->add_constraint("ArrayMinMax", "result is this value", WPBSum{} + (_min ? 1_i : -1_i) * var + (_min ? -1_i : 1_i) * _result >= 1_i, {{! selector}});
             al1_selector += 1_i * selector;
         }
 
@@ -105,7 +105,7 @@ auto ArrayMinMax::install(Propagators & propagators, State &, ProofModel * const
                     // show that none of the selectors work, if we're taking the result to be that value and also
                     // that the value is missing from all of the vars
                     for (const auto & sel : selectors)
-                        logger->emit_rup_proof_line_under_reason(reason, WeightedPseudoBooleanSum{} + (1_i * ! sel) + (1_i * (result != value)) >= 1_i, ProofLevel::Temporary);
+                        logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + (1_i * ! sel) + (1_i * (result != value)) >= 1_i, ProofLevel::Temporary);
                 }},
                     ReasonFunction{[=]() { return reason; }});
             }
@@ -145,14 +145,14 @@ auto ArrayMinMax::install(Propagators & propagators, State &, ProofModel * const
                         for (const auto & [idx, var] : enumerate(vars)) {
                             if (var != *support_1) {
                                 for (const auto & val : state.each_value_immutable(result))
-                                    logger->emit_rup_proof_line_under_reason(reason, WeightedPseudoBooleanSum{} + (1_i * ! selectors.at(idx)) + (1_i * (result != val)) >= 1_i, ProofLevel::Temporary);
-                                logger->emit_rup_proof_line_under_reason(reason, WeightedPseudoBooleanSum{} + (1_i * ! selectors.at(idx)) >= 1_i, ProofLevel::Temporary);
+                                    logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + (1_i * ! selectors.at(idx)) + (1_i * (result != val)) >= 1_i, ProofLevel::Temporary);
+                                logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + (1_i * ! selectors.at(idx)) >= 1_i, ProofLevel::Temporary);
                             }
                         }
                         // now fish out the supporting variable, and show that it has to have its selector true
                         for (const auto & [idx, var] : enumerate(vars)) {
                             if (var == *support_1)
-                                logger->emit_rup_proof_line_under_reason(reason, WeightedPseudoBooleanSum{} + (1_i * (*support_1 == val)) + (1_i * selectors.at(idx)) >= 1_i, ProofLevel::Temporary);
+                                logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + (1_i * (*support_1 == val)) + (1_i * selectors.at(idx)) >= 1_i, ProofLevel::Temporary);
                         }
                     }},
                         ReasonFunction{[=]() { return reason; }});

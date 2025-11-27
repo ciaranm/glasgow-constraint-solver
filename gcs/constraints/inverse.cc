@@ -70,9 +70,9 @@ auto Inverse::install(Propagators & propagators, State & initial_state, ProofMod
         for (const auto & [i, x_i] : enumerate(_x))
             for (const auto & [j, y_j] : enumerate(_y)) {
                 // x[i] = j -> y[j] = i
-                optional_model->add_constraint("Inverse", "x_i = j -> y[j] = i", WeightedPseudoBooleanSum{} + 1_i * (x_i != Integer(j) + _y_start) + 1_i * (y_j == Integer(i) + _x_start) >= 1_i);
+                optional_model->add_constraint("Inverse", "x_i = j -> y[j] = i", WPBSum{} + 1_i * (x_i != Integer(j) + _y_start) + 1_i * (y_j == Integer(i) + _x_start) >= 1_i);
                 // y[j] = i -> x[i] = j
-                optional_model->add_constraint("Inverse", "y_j = i -> x[i] = j", WeightedPseudoBooleanSum{} + 1_i * (y_j != Integer(i) + _x_start) + 1_i * (x_i == Integer(j) + _y_start) >= 1_i);
+                optional_model->add_constraint("Inverse", "y_j = i -> x[i] = j", WPBSum{} + 1_i * (y_j != Integer(i) + _x_start) + 1_i * (x_i == Integer(j) + _y_start) >= 1_i);
             }
     }
 
@@ -90,7 +90,7 @@ auto Inverse::install(Propagators & propagators, State & initial_state, ProofMod
                 for (const auto & var : x)
                     xieqvs.push_back(var != v);
                 map->emplace(v, recover_am1<IntegerVariableCondition>(*logger, ProofLevel::Top, xieqvs, [&](const IntegerVariableCondition & c1, const IntegerVariableCondition & c2) -> ProofLine {
-                    return logger->emit(RUPProofRule{}, WeightedPseudoBooleanSum{} + 1_i * c1 + 1_i * c2 >= 1_i, ProofLevel::Temporary);
+                    return logger->emit(RUPProofRule{}, WPBSum{} + 1_i * c1 + 1_i * c2 >= 1_i, ProofLevel::Temporary);
                 }));
             }
         };

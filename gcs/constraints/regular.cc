@@ -70,7 +70,7 @@ namespace
             if (! comment.empty())
                 logger->emit_proof_comment(comment);
 
-            WeightedPseudoBooleanSum terms;
+            WPBSum terms;
             for (const auto & lit : literals)
                 terms += 1_i * lit;
             for (const auto & flag : proof_flags)
@@ -321,7 +321,7 @@ auto Regular::install(Propagators & propagators, State & initial_state, ProofMod
         // NB: Might be easier to have a 1D array of ProofOnlyIntegerVariables, but making literals of these is
         // awkward currently. (TODO ?)
         for (unsigned int idx = 0; idx <= _vars.size(); ++idx) {
-            WeightedPseudoBooleanSum exactly_1_true{};
+            WPBSum exactly_1_true{};
             state_at_pos_flags.emplace_back();
             for (unsigned int q = 0; q < _num_states; ++q) {
                 state_at_pos_flags[idx].emplace_back(optional_model->create_proof_flag("state" + to_string(idx) + "is" + to_string(q)));
@@ -331,9 +331,9 @@ auto Regular::install(Propagators & propagators, State & initial_state, ProofMod
         }
 
         // State at pos 0 is 0
-        optional_model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * state_at_pos_flags[0][0] >= 1_i);
+        optional_model->add_constraint(WPBSum{} + 1_i * state_at_pos_flags[0][0] >= 1_i);
         // State at pos n is one of the final states
-        WeightedPseudoBooleanSum pos_n_states;
+        WPBSum pos_n_states;
         for (const auto & f : _final_states) {
             pos_n_states += 1_i * state_at_pos_flags[_vars.size()][f];
         }
@@ -345,12 +345,12 @@ auto Regular::install(Propagators & propagators, State & initial_state, ProofMod
                     if (_transitions[q][val] == -1) {
                         // No transition for q, v, so constrain ~(state_i = q /\ X_i = val)
                         optional_model->add_constraint(
-                            WeightedPseudoBooleanSum{} + 1_i * (_vars[idx] != val) + (1_i * ! state_at_pos_flags[idx][q]) >= 1_i);
+                            WPBSum{} + 1_i * (_vars[idx] != val) + (1_i * ! state_at_pos_flags[idx][q]) >= 1_i);
                     }
                     else {
                         auto new_q = _transitions[q][val];
                         optional_model->add_constraint(
-                            WeightedPseudoBooleanSum{} + 1_i * ! state_at_pos_flags[idx][q] + 1_i * (_vars[idx] != val) + 1_i * state_at_pos_flags[idx + 1][new_q] >= 1_i);
+                            WPBSum{} + 1_i * ! state_at_pos_flags[idx][q] + 1_i * (_vars[idx] != val) + 1_i * state_at_pos_flags[idx + 1][new_q] >= 1_i);
                     }
                 }
             }

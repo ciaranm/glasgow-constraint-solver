@@ -146,13 +146,13 @@ namespace gcs::innards
          * Given a PB constraint C and a conjunction of literals L, return the native
          * PB constraint encoding L => C
          */
-        auto reify(const WeightedPseudoBooleanLessThanEqual &, const HalfReifyOnConjunctionOf &) -> WeightedPseudoBooleanLessThanEqual;
+        auto reify(const WPBSumLE &, const HalfReifyOnConjunctionOf &) -> WPBSumLE;
 
         /**
          * Given a PB constraint C and a reason R, return the native
          * PB constraint encoding R => C
          */
-        auto reify(const WeightedPseudoBooleanLessThanEqual &, const ReasonFunction &) -> WeightedPseudoBooleanLessThanEqual;
+        auto reify(const WPBSumLE &, const ReasonFunction &) -> WPBSumLE;
 
         /**
          * Emit the specified text as a proof line.

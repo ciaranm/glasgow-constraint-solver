@@ -156,7 +156,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install(innards::Propagators 
                     // this still works out fine if the variable is actually a constant
                     auto array_var = get_array_var<dimensions_>(elem, *_array);
                     optional_model->add_constraint("NDimensionalElement", "equality",
-                        WeightedPseudoBooleanSum{} + (1_i * _result_var) + (-1_i * array_var) == 0_i, reif);
+                        WPBSum{} + (1_i * _result_var) + (-1_i * array_var) == 0_i, reif);
                 }
                 else {
                     build_implication_constraints(d + 1);
@@ -265,7 +265,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install(innards::Propagators 
                         // show there's no overlap between array_var and result, for any way the other
                         // index vars are assigned
                         vector<size_t> elem;
-                        WeightedPseudoBooleanSum sum_so_far;
+                        WPBSum sum_so_far;
                         function<auto(unsigned)->void> show_no_support = [&](unsigned d) -> void {
                             // again, we're iterating over every dimension recursively, except for the one where
                             // we're checking support for the fixed test_val.
@@ -365,7 +365,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install(innards::Propagators 
                 reason.push_back(result_var < current_bounds.second + 1_i);
                 inference.infer(logger, lit_to_infer, JustifyExplicitly{[&](const ReasonFunction & reason) {
                     // show that it doesn't work for any feasible choice of indices
-                    WeightedPseudoBooleanSum sum_so_far;
+                    WPBSum sum_so_far;
                     function<auto(unsigned)->void> rule_out = [&](unsigned d) {
                         for (const auto & v : state.each_value_immutable(index_vars.at(d))) {
                             if (d + 1 == dimensions_)
@@ -439,7 +439,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install(innards::Propagators 
                     reason.push_back(var != value);
                 inference.infer_not_equal(logger, result_var, value, JustifyExplicitly{[&](const ReasonFunction & reason) {
                     // show that it doesn't work for any feasible choice of indices
-                    WeightedPseudoBooleanSum sum_so_far;
+                    WPBSum sum_so_far;
                     function<auto(unsigned)->void> rule_out = [&](unsigned d) {
                         for (const auto & v : state.each_value_immutable(index_vars.at(d))) {
                             if (d + 1 == dimensions_)

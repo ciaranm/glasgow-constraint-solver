@@ -132,7 +132,7 @@ auto NamesAndIDsTracker::need_constraint_saying_variable_takes_at_least_one_valu
         [&](const SimpleIntegerVariableID & var) -> ProofLine {
             auto result = _imp->variable_at_least_one_constraints.find(var);
             if (result == _imp->variable_at_least_one_constraints.end()) {
-                WeightedPseudoBooleanSum al1s;
+                WPBSum al1s;
                 auto [lower, upper] = _imp->integer_variable_definition_bounds.at(var);
                 for (Integer v = lower; v <= upper; ++v)
                     al1s += 1_i * (var == v);
@@ -348,15 +348,15 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
         // it's a lower bound
         if (_imp->logger) {
             visit([&](const auto & id) {
-                _imp->logger->emit_red_proof_lines_reifying(WeightedPseudoBooleanSum{} + 1_i * ! (id >= (v + 1_i)) >= 1_i,
+                _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + 1_i * ! (id >= (v + 1_i)) >= 1_i,
                     id == v, ProofLevel::Top);
             },
                 id);
         }
         else {
             visit([&](const auto & id) {
-                _imp->model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * ! (id >= (v + 1_i)) >= 1_i, {{id == v}});
-                _imp->model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * (id >= (v + 1_i)) >= 1_i, {{id != v}});
+                _imp->model->add_constraint(WPBSum{} + 1_i * ! (id >= (v + 1_i)) >= 1_i, {{id == v}});
+                _imp->model->add_constraint(WPBSum{} + 1_i * (id >= (v + 1_i)) >= 1_i, {{id != v}});
             },
                 id);
             ++_imp->model_variables;
@@ -366,14 +366,14 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
         // it's an upper bound
         if (_imp->logger) {
             visit([&](const auto & id) {
-                _imp->logger->emit_red_proof_lines_reifying(WeightedPseudoBooleanSum{} + 1_i * (id >= v) >= 1_i, id == v, ProofLevel::Top);
+                _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + 1_i * (id >= v) >= 1_i, id == v, ProofLevel::Top);
             },
                 id);
         }
         else {
             visit([&](const auto & id) {
-                _imp->model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * (id >= v) >= 1_i, {{id == v}});
-                _imp->model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * ! (id >= v) >= 1_i, {{id != v}});
+                _imp->model->add_constraint(WPBSum{} + 1_i * (id >= v) >= 1_i, {{id == v}});
+                _imp->model->add_constraint(WPBSum{} + 1_i * ! (id >= v) >= 1_i, {{id != v}});
             },
                 id);
             ++_imp->model_variables;
@@ -384,14 +384,14 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
         if (_imp->logger)
             visit([&](const auto & id) {
                 _imp->logger->emit_red_proof_lines_reifying(
-                    WeightedPseudoBooleanSum{} + (1_i * (id >= v)) + (1_i * ! (id >= (v + 1_i))) >= 2_i,
+                    WPBSum{} + (1_i * (id >= v)) + (1_i * ! (id >= (v + 1_i))) >= 2_i,
                     id == v, ProofLevel::Top);
             },
                 id);
         else {
             visit([&](const auto & id) {
-                _imp->model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * (id >= v) + 1_i * ! (id >= v + 1_i) >= 2_i, {{id == v}});
-                _imp->model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * ! (id >= v) + 1_i * (id >= v + 1_i) >= 1_i, {{id != v}});
+                _imp->model->add_constraint(WPBSum{} + 1_i * (id >= v) + 1_i * ! (id >= v + 1_i) >= 2_i, {{id == v}});
+                _imp->model->add_constraint(WPBSum{} + 1_i * ! (id >= v) + 1_i * (id >= v + 1_i) >= 1_i, {{id != v}});
             },
                 id);
             ++_imp->model_variables;
@@ -411,15 +411,15 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
     // gevar -> bits
     if (_imp->logger) {
         _imp->gevars_that_exist[id].emplace(v, visit([&](const auto & id) {
-            return _imp->logger->emit_red_proof_lines_reifying(WeightedPseudoBooleanSum{} + (1_i * id) >= v, id >= v, ProofLevel::Top);
+            return _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + (1_i * id) >= v, id >= v, ProofLevel::Top);
         },
                                                    id));
     }
     else {
         _imp->gevars_that_exist[id].emplace(v, visit([&](const auto & id) {
             return pair{
-                _imp->model->add_constraint(WeightedPseudoBooleanSum{} + (1_i * id) >= v, {{id >= v}}).value(),
-                _imp->model->add_constraint(WeightedPseudoBooleanSum{} + (-1_i * id) >= -v + 1_i, {{id < v}}).value()};
+                _imp->model->add_constraint(WPBSum{} + (1_i * id) >= v, {{id >= v}}).value(),
+                _imp->model->add_constraint(WPBSum{} + (-1_i * id) >= -v + 1_i, {{id < v}}).value()};
         },
                                                    id));
         ++_imp->model_variables;
@@ -431,17 +431,17 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
     // lower?
     if (bounds != _imp->integer_variable_definition_bounds.end() && bounds->second.first >= v) {
         if (_imp->logger)
-            visit([&](auto id) { _imp->logger->emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * (id >= v) >= 1_i, ProofLevel::Top); }, id);
+            visit([&](auto id) { _imp->logger->emit_rup_proof_line(WPBSum{} + 1_i * (id >= v) >= 1_i, ProofLevel::Top); }, id);
         else
-            visit([&](auto id) { _imp->model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * (id >= v) >= 1_i); }, id);
+            visit([&](auto id) { _imp->model->add_constraint(WPBSum{} + 1_i * (id >= v) >= 1_i); }, id);
     }
 
     // upper?
     if (bounds != _imp->integer_variable_definition_bounds.end() && bounds->second.second < v) {
         if (_imp->logger)
-            visit([&](auto id) { _imp->logger->emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * ! (id >= v) >= 1_i, ProofLevel::Top); }, id);
+            visit([&](auto id) { _imp->logger->emit_rup_proof_line(WPBSum{} + 1_i * ! (id >= v) >= 1_i, ProofLevel::Top); }, id);
         else
-            visit([&](auto id) { _imp->model->add_constraint(WeightedPseudoBooleanSum{} + 1_i * ! (id >= v) >= 1_i); }, id);
+            visit([&](auto id) { _imp->model->add_constraint(WPBSum{} + 1_i * ! (id >= v) >= 1_i); }, id);
     }
 
     auto & other_gevars = _imp->gevars_that_exist.at(id);
@@ -450,13 +450,13 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
 
     // implied by the next highest gevar, if there is one?
     if (higher_gevar != other_gevars.end())
-        visit([&](auto id) { emit_proof_line_now_or_at_start([c = WeightedPseudoBooleanSum{} + (1_i * (id >= v)) + (1_i * ! (id >= higher_gevar->first)) >= 1_i](ProofLogger * const logger) {
+        visit([&](auto id) { emit_proof_line_now_or_at_start([c = WPBSum{} + (1_i * (id >= v)) + (1_i * ! (id >= higher_gevar->first)) >= 1_i](ProofLogger * const logger) {
                                  logger->emit_rup_proof_line(c, ProofLevel::Top);
                              }); }, id);
 
     // implies the next lowest gevar, if there is one?
     if (this_gevar != other_gevars.begin())
-        visit([&](auto id) { emit_proof_line_now_or_at_start([c = WeightedPseudoBooleanSum{} + (1_i * (id >= prev(this_gevar)->first)) + (1_i * ! (id >= v)) >= 1_i](ProofLogger * const logger) {
+        visit([&](auto id) { emit_proof_line_now_or_at_start([c = WPBSum{} + (1_i * (id >= prev(this_gevar)->first)) + (1_i * ! (id >= v)) >= 1_i](ProofLogger * const logger) {
                                  logger->emit_rup_proof_line(c, ProofLevel::Top);
                              }); }, id);
 }
@@ -716,7 +716,7 @@ auto NamesAndIDsTracker::name_of(ProofFlag id) -> const string &
         return it->second;
 }
 
-auto NamesAndIDsTracker::reify(const WeightedPseudoBooleanLessThanEqual & ineq, const HalfReifyOnConjunctionOf & half_reif) -> WeightedPseudoBooleanLessThanEqual
+auto NamesAndIDsTracker::reify(const WPBSumLE & ineq, const HalfReifyOnConjunctionOf & half_reif) -> WPBSumLE
 {
     // so what happens if there's a false literal in the left hand term? conceptually,
     // this means the constraint will always hold, but it's probably useful to have
@@ -795,7 +795,7 @@ auto NamesAndIDsTracker::reify(const WeightedPseudoBooleanLessThanEqual & ineq, 
     // to always be there.
     auto clamped_reif_const = min(-max_contribution_from_positive_terms + ineq.rhs, -1_i);
 
-    WeightedPseudoBooleanSum new_lhs = ineq.lhs;
+    WPBSum new_lhs = ineq.lhs;
     for (auto & r : half_reif)
         overloaded{
             [&](const ProofFlag & f) {
