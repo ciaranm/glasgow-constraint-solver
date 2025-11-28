@@ -12,7 +12,9 @@
 #include <util/overloaded.hh>
 
 #include <deque>
+#include <regex>
 #include <tuple>
+#include <unordered_set>
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -23,21 +25,37 @@ using std::make_optional;
 using std::move;
 using std::nullopt;
 using std::optional;
+using std::regex;
+using std::regex_match;
 using std::size_t;
+using std::smatch;
 using std::string;
 using std::to_string;
 using std::tuple;
 using std::unique_ptr;
+using std::unordered_set;
 using std::vector;
+
+NamingError::NamingError(const string & w) :
+    _wat(w)
+{
+}
+
+auto NamingError::what() const noexcept -> const char *
+{
+    return _wat.c_str();
+}
 
 struct Problem::Imp
 {
     State initial_state{};
     deque<unique_ptr<Constraint>> constraints{};
-    deque<tuple<SimpleIntegerVariableID, Integer, Integer, optional<string>>> integer_variables{};
+    deque<tuple<SimpleIntegerVariableID, Integer, Integer, string>> integer_variables{};
     deque<unique_ptr<Presolver>> presolvers{};
     vector<IntegerVariableID> problem_variables{};
     optional<IntegerVariableID> optional_minimise_variable{};
+    unordered_set<string> names;
+    unsigned long long next_anon_variable = 0;
 };
 
 Problem::Problem() :
@@ -47,6 +65,19 @@ Problem::Problem() :
 
 Problem::~Problem() = default;
 
+auto Problem::check_name(const string & name) -> const string &
+{
+    if (! _imp->names.insert(name).second)
+        throw NamingError{"duplicate variable name '" + name + "'"};
+
+    regex allowed{R"(_*[a-zA-Z][a-zA-Z0-9\[\]_\-]*)"};
+    smatch m;
+    if (! regex_match(name, m, allowed))
+        throw NamingError{"illegal variable name '" + name + "'"};
+
+    return name;
+}
+
 auto Problem::create_integer_variable(Integer lower, Integer upper,
     const optional<string> & name) -> SimpleIntegerVariableID
 {
@@ -54,7 +85,7 @@ auto Problem::create_integer_variable(Integer lower, Integer upper,
         throw UnexpectedException{"variable has lower bound > upper bound"};
 
     auto result = _imp->initial_state.allocate_integer_variable_with_state(lower, upper);
-    _imp->integer_variables.emplace_back(result, lower, upper, name);
+    _imp->integer_variables.emplace_back(result, lower, upper, name ? check_name(*name) : to_string(++_imp->next_anon_variable));
     _imp->problem_variables.push_back(result);
     return result;
 }
@@ -67,7 +98,7 @@ auto Problem::create_integer_variable(const vector<Integer> & domain, const opti
     auto [min, max] = minmax_element(domain.begin(), domain.end());
 
     auto result = _imp->initial_state.allocate_integer_variable_with_state(*min, *max);
-    _imp->integer_variables.emplace_back(result, *min, *max, name);
+    _imp->integer_variables.emplace_back(result, *min, *max, name ? check_name(*name) : to_string(++_imp->next_anon_variable));
     _imp->problem_variables.push_back(result);
 
     post(In{result, domain});
@@ -93,8 +124,8 @@ auto Problem::create_state_for_new_search(
 {
     auto result = _imp->initial_state.clone();
     if (model) {
-        for (auto & [id, lower, upper, optional_name] : _imp->integer_variables)
-            model->set_up_integer_variable(id, lower, upper, optional_name, nullopt);
+        for (auto & [id, lower, upper, name] : _imp->integer_variables)
+            model->set_up_integer_variable(id, lower, upper, name, nullopt);
     }
     return result;
 }

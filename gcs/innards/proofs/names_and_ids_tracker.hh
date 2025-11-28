@@ -125,7 +125,7 @@ namespace gcs::innards
          * variable, so that proof_name() etc will work with it.
          */
         auto create_literals_for_introduced_variable_value(
-            SimpleIntegerVariableID, Integer, const std::optional<std::string> &) -> void;
+            SimpleIntegerVariableID, Integer, const std::string &) -> void;
 
         /**
          * Ensure that a name exists for a given variable condition.
@@ -267,20 +267,20 @@ namespace gcs::innards
         /**
          * Track a human-readable name for a variable.
          */
-        auto track_variable_name(SimpleOrProofOnlyIntegerVariableID id, const std::optional<std::string> &) -> void;
+        auto track_variable_name(SimpleOrProofOnlyIntegerVariableID id, const std::string &) -> void;
 
         /**
          * Track a human-readable name for a variable.
          */
-        auto track_variable_name(ProofFlag id, const std::optional<std::string> &) -> void;
+        auto track_variable_name(ProofFlag id, const std::string &) -> void;
 
         /**
-         * Get the human-readable name for a variable, or "" if there isn't one.
+         * Get the human-readable name for a variable.
          */
         [[nodiscard]] auto name_of(SimpleOrProofOnlyIntegerVariableID id) -> const std::string &;
 
         /**
-         * Get the human-readable name for a variable, or "" if there isn't one.
+         * Get the human-readable name for a variable.
          */
         [[nodiscard]] auto name_of(ProofFlag id) -> const std::string &;
     };

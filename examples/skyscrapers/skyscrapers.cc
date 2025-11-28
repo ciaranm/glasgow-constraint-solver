@@ -33,6 +33,7 @@ using std::to_string;
 using std::vector;
 using std::chrono::microseconds;
 
+using fmt::format;
 using fmt::print;
 using fmt::println;
 
@@ -161,16 +162,16 @@ auto main(int argc, char * argv[]) -> int
             grid[r].push_back(p.create_integer_variable(1_i, Integer{size}, "grid" + to_string(r) + "_" + to_string(c)));
             branch_vars.push_back(grid[r][c]);
             visible_north[r].push_back(north[c] != 0
-                    ? make_optional(p.create_integer_variable(0_i, 1_i, "visible_north" + to_string(c)))
+                    ? make_optional(p.create_integer_variable(0_i, 1_i, format("visible_north[{}][{}]", r, c)))
                     : nullopt);
             visible_south[r].push_back(south[c] != 0
-                    ? make_optional(p.create_integer_variable(0_i, 1_i, "visible_south" + to_string(c)))
+                    ? make_optional(p.create_integer_variable(0_i, 1_i, format("visible_south[{}][{}]", r, c)))
                     : nullopt);
             visible_east[r].push_back(east[r] != 0
-                    ? make_optional(p.create_integer_variable(0_i, 1_i, "visible_east" + to_string(c)))
+                    ? make_optional(p.create_integer_variable(0_i, 1_i, format("visible_east[{}][{}]", r, c)))
                     : nullopt);
             visible_west[r].push_back(west[r] != 0
-                    ? make_optional(p.create_integer_variable(0_i, 1_i, "visible_west" + to_string(c)))
+                    ? make_optional(p.create_integer_variable(0_i, 1_i, format("visible_west[{}][{}]", r, c)))
                     : nullopt);
         }
     }
@@ -190,7 +191,7 @@ auto main(int argc, char * argv[]) -> int
             if (predefs[r][c] != 0)
                 p.post(Equals{grid[r][c], constant_variable(Integer{predefs[r][c]})});
 
-    auto build_visible_constraints = [&](auto & visible_vars, const auto & target, bool downwards, bool forwards) {
+    auto build_visible_constraints = [&](const string & name, auto & visible_vars, const auto & target, bool downwards, bool forwards) {
         visible_vars.resize(size);
         for (int c = 0; c < size; ++c) {
             if (0 == target[c])
@@ -208,13 +209,14 @@ auto main(int argc, char * argv[]) -> int
                     // How many things above us will hide us? We're visible iff it's zero
                     WeightedSum hiding;
                     for (int rr = (forwards ? 0 : size - 1); forwards ? rr < r : rr > r; forwards ? ++rr : --rr) {
-                        hiding += 1_i * p.create_integer_variable(0_i, 1_i, "hiding_flag");
+                        hiding += 1_i * p.create_integer_variable(0_i, 1_i, format("{}_hiding_flag[{}][{}][{}]", name, r, c, rr));
                         p.post(GreaterThanIff{
                             grid[downwards ? r : c][downwards ? c : r],
                             grid[downwards ? rr : c][downwards ? c : rr],
                             hiding.terms.back().variable == 0_i});
                     }
-                    auto how_many_hidden = p.create_integer_variable(0_i, Integer(hiding.terms.size()), "how_many_hidden");
+                    auto how_many_hidden = p.create_integer_variable(0_i, Integer(hiding.terms.size()),
+                        format("{}_how_many_hidden[{}][{}]", name, r, c));
                     hiding += -1_i * how_many_hidden;
                     p.post(move(hiding) == 0_i);
                     p.post(EqualsIff{
@@ -227,10 +229,10 @@ auto main(int argc, char * argv[]) -> int
         }
     };
 
-    build_visible_constraints(visible_north, north, true, true);
-    build_visible_constraints(visible_south, south, true, false);
-    build_visible_constraints(visible_west, west, false, true);
-    build_visible_constraints(visible_east, east, false, false);
+    build_visible_constraints("n", visible_north, north, true, true);
+    build_visible_constraints("s", visible_south, south, true, false);
+    build_visible_constraints("w", visible_west, west, false, true);
+    build_visible_constraints("e", visible_east, east, false, false);
 
     if (options_vars.contains("autotable")) {
         for (int c = 0; c < size; ++c) {

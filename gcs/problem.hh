@@ -27,6 +27,22 @@ namespace gcs
      */
 
     /**
+     * \brief Thrown if a duplicate or invalid variable name is given.
+     *
+     * \ingroup Core
+     */
+    class NamingError : public std::exception
+    {
+    private:
+        std::string _wat;
+
+    public:
+        explicit NamingError(const std::string &);
+
+        virtual auto what() const noexcept -> const char * override;
+    };
+
+    /**
      * \brief The central class which defines a constraint satisfaction problem
      * instance to be solved.
      *
@@ -37,6 +53,8 @@ namespace gcs
     private:
         struct Imp;
         std::unique_ptr<Imp> _imp;
+
+        [[nodiscard]] auto check_name(const std::string &) -> const std::string &;
 
     public:
         /**
