@@ -318,11 +318,11 @@ auto EqualsIff::install(Propagators & propagators, State & initial_state, ProofM
                                 return PropagatorState::DisableUntilBacktrack;
                         }
                         else if (value1) {
-                            inference.infer_not_equal(logger, v2, *value1, NoJustificationNeeded{}, [=]() { return Reason{v1 == *value1, ! cond}; });
+                            inference.infer_not_equal(logger, v2, *value1, JustifyUsingRUP{}, [=]() { return Reason{v1 == *value1, ! cond}; });
                             return PropagatorState::DisableUntilBacktrack;
                         }
                         else if (value2) {
-                            inference.infer_not_equal(logger, v1, *value2, NoJustificationNeeded{}, [=]() { return Reason{v2 == *value2, ! cond}; });
+                            inference.infer_not_equal(logger, v1, *value2, JustifyUsingRUP{}, [=]() { return Reason{v2 == *value2, ! cond}; });
                             return PropagatorState::DisableUntilBacktrack;
                         }
                         else
@@ -334,12 +334,14 @@ auto EqualsIff::install(Propagators & propagators, State & initial_state, ProofM
                         auto value1 = state.optional_single_value(v1);
                         auto value2 = state.optional_single_value(v2);
                         if (value1 && value2) {
-                            inference.infer(logger, *value1 == *value2 ? cond : ! cond, NoJustificationNeeded{}, ReasonFunction{});
+                            inference.infer(logger, *value1 == *value2 ? cond : ! cond, JustifyUsingRUP{},
+                                    [=]() { return Reason{v1 == *value1, v2 == *value2}; });
                             return PropagatorState::DisableUntilBacktrack;
                         }
                         else if (value1) {
                             if (! state.in_domain(v2, *value1)) {
-                                inference.infer(logger, ! cond, NoJustificationNeeded{}, ReasonFunction{});
+                                inference.infer(logger, ! cond, JustifyUsingRUP{},
+                                        [=]() { return Reason{v1 == *value1, v2 != *value1}; });
                                 return PropagatorState::DisableUntilBacktrack;
                             }
                             else
@@ -347,7 +349,8 @@ auto EqualsIff::install(Propagators & propagators, State & initial_state, ProofM
                         }
                         else if (value2) {
                             if (! state.in_domain(v1, *value2)) {
-                                inference.infer(logger, ! cond, NoJustificationNeeded{}, ReasonFunction{});
+                                inference.infer(logger, ! cond, NoJustificationNeeded{},
+                                        [=]() { return Reason{v2 == *value2, v1 != *value2}; });
                                 return PropagatorState::DisableUntilBacktrack;
                             }
                             else
@@ -392,22 +395,20 @@ auto EqualsIff::install(Propagators & propagators, State & initial_state, ProofM
                     optional_model->add_constraint({{_v1 != *v2_is_constant}, {cond}});
                 }
                 else {
-                    if (initial_state.lower_bound(_v1) < lower_common)
-                        optional_model->add_constraint({{_v1 >= lower_common}, {! cond}});
-                    if (initial_state.lower_bound(_v2) < lower_common)
-                        optional_model->add_constraint({{_v2 >= lower_common}, {! cond}});
-                    if (initial_state.upper_bound(_v1) > upper_common)
-                        optional_model->add_constraint({{_v1 < upper_common + 1_i}, {! cond}});
-                    if (initial_state.upper_bound(_v2) > upper_common)
-                        optional_model->add_constraint({{_v2 < upper_common + 1_i}, {! cond}});
+                    // condition unknown, the condition implies it is neither greater nor less
+                    optional_model->add_constraint("EqualsIff", "equals option",
+                            WPBSum{} + (1_i * _v1) + (-1_i * _v2) == 0_i, HalfReifyOnConjunctionOf{{cond}}).first.value();
 
-                    // (cond and _v1 == v) -> _v2 == v
-                    for (auto v = lower_common; v <= upper_common; ++v)
-                        optional_model->add_constraint({{_v1 != v}, {_v2 == v}, {! cond}});
+                    auto gtflag = optional_model->create_proof_flag("gt");
+                    optional_model->add_constraint("EqualsIff", "greater option",
+                            WPBSum{} + (1_i * _v1) + (-1_i * _v2) >= 1_i, HalfReifyOnConjunctionOf{{gtflag}});
+                    auto ltflag = optional_model->create_proof_flag("lt");
+                    optional_model->add_constraint("EqualsIff", "less option",
+                            WPBSum{} + (1_i * _v1) + (-1_i * _v2) <= -1_i, HalfReifyOnConjunctionOf{{ltflag}});
 
-                    // (! cond and _v1 == v) -> _v2 != v
-                    for (auto v = lower_common; v <= upper_common; ++v)
-                        optional_model->add_constraint({{cond}, {_v1 != v}, {_v2 != v}});
+                    // lt + eq + gt >= 1
+                    optional_model->add_constraint("EqualsIff", "one of less than, equals, greater than",
+                            WPBSum{} + 1_i * ltflag + 1_i * gtflag + 1_i * cond >= 1_i);
                 }
             }
         }}
