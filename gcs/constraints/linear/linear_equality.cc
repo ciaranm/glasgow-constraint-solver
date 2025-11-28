@@ -150,8 +150,8 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
                 auto ltflag = optional_model->create_proof_flag("lineqlt");
                 optional_model->add_constraint("LinearEqualityIff", "less than option", terms <= _value - 1_i, HalfReifyOnConjunctionOf{{ltflag}});
 
-                // lt + eq + gt = 1
-                optional_model->add_constraint("LinearEqualityIff", "one of less than, equals, greater than", WPBSum{} + 1_i * ltflag + 1_i * gtflag + 1_i * cond == 1_i);
+                // lt + eq + gt >= 1
+                optional_model->add_constraint("LinearEqualityIff", "one of less than, equals, greater than", WPBSum{} + 1_i * ltflag + 1_i * gtflag + 1_i * cond >= 1_i);
             }}
             .visit(_cond);
     }
