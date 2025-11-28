@@ -590,7 +590,7 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning(ProofFlag flag) -> XLiteral
     auto result = XLiteral{++_imp->next_xliteral_nr, false};
 
     if (_imp->verbose_names) {
-        string name = "f" + to_string(flag.index) + "_" + name_of(flag);
+        string name = format("f[{}][{}]", flag.index, name_of(flag));
         _imp->xlits_to_verbose_names.emplace(result, name);
         _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
     }
