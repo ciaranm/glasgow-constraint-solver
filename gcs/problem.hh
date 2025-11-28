@@ -186,7 +186,7 @@ namespace gcs
             template <std::size_t... nn_>
             ArrayInitialisationMagicForProblem(
                 Problem * p, Integer l, Integer u, const std::optional<std::string> & name, std::index_sequence<nn_...>) :
-                result{{p->create_integer_variable(l, u, name ? std::make_optional(*name + std::to_string(nn_)) : std::nullopt)...}}
+                result{{p->create_integer_variable(l, u, name ? std::make_optional(*name + "[" + std::to_string(nn_) + "]") : std::nullopt)...}}
             {
             }
         };

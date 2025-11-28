@@ -115,7 +115,7 @@ auto Problem::create_integer_variable_vector(
     vector<IntegerVariableID> result;
     result.reserve(how_many);
     for (size_t n = 0; n < how_many; ++n)
-        result.push_back(create_integer_variable(lower, upper, name ? make_optional(*name + to_string(n)) : nullopt));
+        result.push_back(create_integer_variable(lower, upper, name ? make_optional(*name + "[" + to_string(n) + "]") : nullopt));
     return result;
 }
 
