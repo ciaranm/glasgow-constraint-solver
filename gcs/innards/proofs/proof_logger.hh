@@ -87,9 +87,14 @@ namespace gcs::innards
         auto conclude_unsatisfiable(bool is_optimisation) -> void;
 
         /**
-         * Log that we have reached an unsatisfiable conclusion at the end of the proof.
+         * Log that we have found at least one solution, but possibly have not performed a complete search.
          */
         auto conclude_satisfiable() -> void;
+
+        /**
+         * Log that we have found at least one solution, and that we have performed a complete search.
+         */
+        auto conclude_complete_enumeration(Integer number_of_solutions) -> void;
 
         /**
          * Log that we have reached an optimality conclusion at the end of the proof.

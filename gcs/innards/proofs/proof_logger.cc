@@ -188,6 +188,15 @@ auto ProofLogger::conclude_satisfiable() -> void
     end_proof();
 }
 
+auto ProofLogger::conclude_complete_enumeration(Integer number_of_solutions) -> void
+{
+    _imp->proof << "rup >= 1 ;\n";
+    record_proof_line(++_imp->proof_line, ProofLevel::Top);
+    _imp->proof << "output NONE;\n";
+    _imp->proof << "conclusion ENUMERATION_COMPLETE " << number_of_solutions << " : -1 ;\n";
+    end_proof();
+}
+
 auto ProofLogger::conclude_optimality(IntegerVariableID var, Integer value) -> void
 {
     conclude_bounds(var, value, value);
