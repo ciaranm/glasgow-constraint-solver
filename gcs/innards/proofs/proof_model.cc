@@ -52,6 +52,7 @@ struct ProofModel::Imp
     ProofLine proof_line = 0;
 
     optional<IntegerVariableID> optional_minimise_variable;
+    optional<vector<IntegerVariableID>> preserved_variables;
     unsigned long long proof_only_integer_variable_nr = 0;
 
     string opb_file;
@@ -317,7 +318,30 @@ auto ProofModel::finalise() -> void
             }}
             .visit(*_imp->optional_minimise_variable);
 
-        full_opb << " ;\n";
+        full_opb << ";\n";
+    }
+
+    if (_imp->preserved_variables) {
+        full_opb << "preserved: ";
+        for (const auto & var : *_imp->preserved_variables) {
+            overloaded{
+                [&](const SimpleIntegerVariableID & v) {
+                    names_and_ids_tracker().for_each_bit(v, [&](Integer, const XLiteral & bit_name) {
+                        full_opb << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
+                    });
+                },
+                [&](const ConstantIntegerVariableID &) {
+                },
+                [&](const ViewOfIntegerVariableID & v) {
+                    // the "then add" bit is irrelevant for the objective function
+                    names_and_ids_tracker().for_each_bit(v.actual_variable, [&](Integer, const XLiteral & bit_name) {
+                        full_opb << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
+                    });
+                }}
+                .visit(var);
+        }
+
+        full_opb << ";\n";
     }
 
     copy(istreambuf_iterator<char>{_imp->opb}, istreambuf_iterator<char>{}, ostreambuf_iterator<char>{full_opb});
@@ -336,4 +360,9 @@ auto ProofModel::number_of_constraints() const -> ProofLine
 auto ProofModel::minimise(const IntegerVariableID & var) -> void
 {
     _imp->optional_minimise_variable = var;
+}
+
+auto ProofModel::preserve(vector<IntegerVariableID> vars) -> void
+{
+    _imp->preserved_variables = move(vars);
 }
