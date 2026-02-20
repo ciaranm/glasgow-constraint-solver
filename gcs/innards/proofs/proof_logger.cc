@@ -143,6 +143,9 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
 
     if (optional_minimise_variable_and_value)
         visit([&](const auto & id) {
+             _imp->proof << "e ";
+            emit_inequality_to(names_and_ids_tracker(), WeightedPseudoBooleanSum{} + 1_i * id <= optional_minimise_variable_and_value->second - 1_i, _imp->proof);
+            _imp->proof << ":" << _imp->proof_line << ";\n";
             emit_rup_proof_line(WeightedPseudoBooleanSum{} + 1_i * (id < optional_minimise_variable_and_value->second) >= 1_i, ProofLevel::Top);
         },
             optional_minimise_variable_and_value->first);
