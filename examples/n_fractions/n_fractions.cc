@@ -2,6 +2,7 @@
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/constraints_test_utils.hh>
 #include <gcs/constraints/mult_bc.hh>
+#include <gcs/constraints/not_equals.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
@@ -47,8 +48,10 @@ auto main(int argc, char * argv[]) -> int
     try {
         options.add_options("Program Options")("help", "Display help information")("prove", "Create a proof");
 
-        options.add_options() //
-            ("size", "Size of the problem to solve", cxxopts::value<int>()->default_value("2"));
+        options.add_options()                                                                   //
+            ("size", "Size of the problem to solve", cxxopts::value<int>()->default_value("2")) //
+            ("unsat", "Exclude known solution for 2 fractions to make an UNSAT proof.")         //
+            ;
 
         options.parse_positional({"size"});
         options_vars = options.parse(argc, argv);
@@ -114,6 +117,12 @@ auto main(int argc, char * argv[]) -> int
     }
     frac_sum += -1_i * denominators_product;
     p.post(frac_sum == 0_i);
+    if (options_vars.contains("unsat") && n == 2) {
+        p.post(NotEquals(numerators[0], 8_c));
+        p.post(NotEquals(numerators[1], 9_c));
+        p.post(NotEquals(denominators[0], 26_c));
+        p.post(NotEquals(denominators[1], 13_c));
+    }
 
     auto solution_callback = [&](const CurrentState & s) -> bool {
         for (int i = 0; i < n; i++) {

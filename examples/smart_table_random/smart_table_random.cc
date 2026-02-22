@@ -259,8 +259,6 @@ auto main(int argc, char * argv[]) -> int
     }
 
     if (options_vars.contains("help")) {
-        cout << "Usage: " << argv[0] << " [options] [size]" << endl;
-        cout << endl;
         cout << options.help() << endl;
         return EXIT_SUCCESS;
     }
@@ -268,7 +266,7 @@ auto main(int argc, char * argv[]) -> int
     auto n = options_vars["n"].as<int>();
     auto seed = options_vars["seed"].as<int>();
     auto repeat = options_vars["repeat"].as<int>();
-    auto display_table = options_vars.contains("display_table");
+    auto display_table = options_vars.contains("display-table");
 
     if (seed == -1) {
         random_device rand_dev;

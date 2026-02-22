@@ -1,4 +1,5 @@
 #include <gcs/constraints/smart_table.hh>
+#include <iostream>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
@@ -464,7 +465,7 @@ namespace
 
         ReasonFunction reason_to_use;
         ProofLine reason_definition_1, reason_definition_2;
-        if (short_reasons) {
+        if (logger && short_reasons) {
             auto reason_sum = WeightedPseudoBooleanSum{};
             for (const auto & lit : reason()) {
                 reason_sum += 1_i * get<ProofLiteral>(lit);
@@ -480,6 +481,7 @@ namespace
         else {
             reason_to_use = reason;
         }
+
         if (logger) {
 
             for (const auto & var : vars) {
@@ -908,6 +910,7 @@ auto SmartTable::install(Propagators & propagators, State & initial_state, Proof
                 HalfReifyOnConjunctionOf{{! pb_selectors[tuple_idx]}});
         }
     }
+
 
     // Trigger when any var changes? Is this over-kill?
     Triggers triggers;
