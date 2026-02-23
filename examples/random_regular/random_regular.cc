@@ -140,8 +140,10 @@ auto main(int argc, char * argv[]) -> int
             }},
         prove ? make_optional(ProofOptions{proof_prefix}) : nullopt);
 
-    if (print_stats)
+    if (print_stats) {
+        cout << "seed: " << seed << endl;
         cout << stats << endl;
+    }
 
     return EXIT_SUCCESS;
 }
