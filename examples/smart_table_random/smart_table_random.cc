@@ -267,6 +267,9 @@ auto main(int argc, char * argv[]) -> int
     auto seed = options_vars["seed"].as<int>();
     auto repeat = options_vars["repeat"].as<int>();
     auto display_table = options_vars.contains("display-table");
+    auto prove = options_vars.contains("prove");
+    auto short_reasons = options_vars.contains("short-reasons");
+    auto print_stats = options_vars.contains("stats");
 
     if (seed == -1) {
         random_device rand_dev;
@@ -276,7 +279,6 @@ auto main(int argc, char * argv[]) -> int
     std::mt19937 rng(seed);
 
     for (auto i = 0; i < repeat; ++i) {
-        auto prove = options_vars.contains("prove");
 
         stringstream table_as_string;
         Problem p;
@@ -284,9 +286,9 @@ auto main(int argc, char * argv[]) -> int
         auto tuple_length = uniform_int_distribution<>(n / 2, n)(rng);
         SmartTuples tuples = random_tuples(tuple_length, vars, rng, display_table, table_as_string);
 
-        p.post(SmartTable{vars, tuples});
+        p.post(SmartTable{vars, tuples, short_reasons});
 
-        solve_with(p,
+        auto stats = solve_with(p,
             SolveCallbacks{
                 .solution = [&](const CurrentState &) -> bool {
                     return false;
@@ -294,6 +296,7 @@ auto main(int argc, char * argv[]) -> int
             prove ? make_optional(ProofOptions{"smart_table_random" + (i > 0 ? to_string(i) : "")}) : nullopt);
 
         if (display_table) cout << table_as_string.str() << endl;
+        if (print_stats) cout << stats << endl;
     }
     return EXIT_SUCCESS;
 }

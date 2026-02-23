@@ -1,11 +1,11 @@
 #include <gcs/constraints/smart_table.hh>
-#include <iostream>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
 
 #include <algorithm>
+#include <iostream>
 #include <map>
 #include <set>
 #include <sstream>
@@ -472,7 +472,7 @@ namespace
             }
             // We will manually delete this later.
             auto [_reason_short, _line1, _line2] =
-                logger->create_proof_flag_reifying(reason_sum >= Integer(reason_sum.terms.size()), "", ProofLevel::Top);
+                logger->create_proof_flag_reifying(reason_sum >= Integer(reason_sum.terms.size()), "sr", ProofLevel::Top);
             ProofFlag reason_short = _reason_short;
             reason_definition_1 = _line1;
             reason_definition_2 = _line2;
@@ -496,12 +496,12 @@ namespace
                                 ProofLevel::Temporary);
                         }
                     };
-                    inference.infer_not_equal(logger, var, value, JustifyExplicitly{justf}, reason);
+                    inference.infer_not_equal(logger, var, value, JustifyExplicitly{justf}, reason_to_use);
                 }
             }
-            if (short_reasons) {
-                logger->delete_range(reason_definition_1, reason_definition_2 + 1);
-            }
+            // if (short_reasons) {
+            //     logger->delete_range(reason_definition_1, reason_definition_2 + 1);
+            // }
         }
         else {
             for (const auto & var : vars) {
@@ -822,7 +822,7 @@ auto consolidate_unary_entries(State & state, vector<SmartEntry> tuple) -> vecto
 
 auto SmartTable::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<SmartTable>(_vars, _tuples);
+    return make_unique<SmartTable>(_vars, _tuples, _short_reasons);
 }
 
 auto SmartTable::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
@@ -910,7 +910,6 @@ auto SmartTable::install(Propagators & propagators, State & initial_state, Proof
                 HalfReifyOnConjunctionOf{{! pb_selectors[tuple_idx]}});
         }
     }
-
 
     // Trigger when any var changes? Is this over-kill?
     Triggers triggers;
