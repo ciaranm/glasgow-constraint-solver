@@ -91,12 +91,13 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program Options")                                                                         //
-            ("help", "Display help information")                                                                       //
-            ("prove", "Create a proof")                                                                                //
-            ("seed", "Seed for random DFA generator (-1 for random seed)", cxxopts::value<int>()->default_value("-1")) //
-            ("n", "Number of variables in the sequence", cxxopts::value<int>()->default_value("6"))                    //
-            ("stats", "Print stats, including solve time")                                                             //
+        options.add_options("Program Options")                                                                                     //
+            ("help", "Display help information")                                                                                   //
+            ("prove", "Create a proof")                                                                                            //
+            ("seed", "Seed for random DFA generator (-1 for random seed)", cxxopts::value<int>()->default_value("-1"))             //
+            ("n", "Number of variables in the sequence", cxxopts::value<int>()->default_value("6"))                                //
+            ("stats", "Print stats, including solve time")                                                                         //
+            ("proof-prefix", "Alternative path and name for the proof", cxxopts::value<string>()->default_value("random_regular")) //
             ("short-reasons", "Use short reasons method");
 
         options_vars = options.parse(argc, argv);
@@ -119,6 +120,7 @@ auto main(int argc, char * argv[]) -> int
     auto prove = options_vars.contains("prove");
     auto print_stats = options_vars.contains("stats");
     auto short_reasons = options_vars.contains("short-reasons");
+    auto proof_prefix = options_vars["proof-prefix"].as<string>();
 
     if (seed == -1) {
         random_device rand_dev;
@@ -136,7 +138,7 @@ auto main(int argc, char * argv[]) -> int
             .solution = [&](const CurrentState &) -> bool {
                 return false;
             }},
-        prove ? make_optional(ProofOptions{"random_regular"}) : nullopt);
+        prove ? make_optional(ProofOptions{proof_prefix}) : nullopt);
 
     if (print_stats)
         cout << stats << endl;
