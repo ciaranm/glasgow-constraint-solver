@@ -298,7 +298,10 @@ auto main(int argc, char * argv[]) -> int
             prove ? make_optional(ProofOptions{proof_prefix}) : nullopt);
 
         if (display_table) cout << table_as_string.str() << endl;
-        if (print_stats) cout << stats << endl;
+        if (print_stats) {
+            cout << "seed: " << seed << endl;
+            cout << stats << endl;
+        }
     }
     return EXIT_SUCCESS;
 }
