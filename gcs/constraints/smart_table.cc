@@ -482,6 +482,28 @@ namespace
             reason_to_use = reason;
         }
 
+        if (! some_tuple_still_feasible) {
+            if (logger) {
+                auto justf = [&](const ReasonFunction & reason) -> void {
+                    for (unsigned int tuple_idx = 0; tuple_idx < tuples.size(); ++tuple_idx) {
+                        logger->emit_rup_proof_line_under_reason(
+                            reason,
+                            WeightedPseudoBooleanSum{} +
+                                    1_i * (! pb_selectors[tuple_idx]) >=
+                                1_i,
+                            ProofLevel::Temporary);
+                    }
+                };
+                inference.contradiction(logger, JustifyExplicitly{justf}, reason_to_use);
+                // if (short_reasons) {
+                //     logger->delete_range(reason_definition_1, reason_definition_2 + 1);
+                // }
+            }
+            else {
+                inference.contradiction(logger, NoJustificationNeeded{}, reason);
+            }
+            return;
+        }
         if (logger) {
 
             for (const auto & var : vars) {
@@ -510,8 +532,6 @@ namespace
                 }
             }
         }
-        if (! some_tuple_still_feasible)
-            inference.contradiction(logger, JustifyUsingRUP{}, reason);
     }
 
     auto build_tree(const IntegerVariableID & root, int current_level, vector<vector<SmartEntry>> & entry_tree,
