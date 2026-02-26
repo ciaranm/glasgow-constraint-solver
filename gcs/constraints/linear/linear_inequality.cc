@@ -78,15 +78,71 @@ namespace
         step << ';';
         logger.emit_proof_line(step.str(), ProofLevel::Temporary);
     }
+
+    // Helper functions
+    static auto make_wpb_terms(const WeightedSum & ws) -> WPBSum
+    {
+        WPBSum terms;
+        for (auto & [c, v] : ws.terms)
+            terms += c * v;
+        return terms;
+    }
+
+    static auto make_linear_triggers(const WeightedSum & ws, const Literal & cond) -> Triggers
+    {
+        Triggers triggers;
+        for (auto & [_, v] : ws.terms)
+            triggers.on_bounds.push_back(v);
+
+        overloaded{
+            [&](const TrueLiteral &) {},
+            [&](const FalseLiteral &) {},
+            [&](const IntegerVariableCondition & c) { triggers.on_change.push_back(c.var); }}
+            .visit(cond);
+
+        return triggers;
+    }
+
+    template <class Sanitised>
+    static auto collect_vars_from(const Sanitised & s) -> vector<IntegerVariableID>
+    {
+        vector<IntegerVariableID> vars;
+        for (const auto & cv : s.terms)
+            vars.push_back(get_var(cv));
+        return vars;
+    }
+
+    template <class Sanitised>
+    static auto min_max_possible_sum(const State & state, const Sanitised & s) -> pair<Integer, Integer>
+    {
+        Integer min_possible = 0_i, max_possible = 0_i;
+        for (const auto & cv : s.terms) {
+            auto bounds = state.bounds(get_var(cv));
+            if (get_coeff(cv) >= 0_i) {
+                min_possible += get_coeff(cv) * bounds.first;
+                max_possible += get_coeff(cv) * bounds.second;
+            }
+            else {
+                min_possible += get_coeff(cv) * bounds.second;
+                max_possible += get_coeff(cv) * bounds.first;
+            }
+        }
+        return {min_possible, max_possible};
+    }
+
+    static auto negate_and_tidy(WeightedSum ws)
+    {
+        for (auto & t : ws.terms)
+            t.coefficient = -t.coefficient;
+        return tidy_up_linear(ws); // returns (sanitised, modifier)
+    }
 }
 
 auto LinearInequalityIff::install(Propagators & propagators, State & state, ProofModel * const optional_model) && -> void
 {
     optional<ProofLine> proof_line;
     if (optional_model) {
-        WPBSum terms;
-        for (auto & [c, v] : _coeff_vars.terms)
-            terms += c * v;
+        auto terms = make_wpb_terms(_coeff_vars);
         overloaded{
             [&](const TrueLiteral &) {
                 proof_line = optional_model->add_constraint("LinearInequalityIff", "unconditional less than", terms <= _value, nullopt);
@@ -114,9 +170,7 @@ auto LinearInequalityIff::install(Propagators & propagators, State & state, Proo
     }
 
     // we care when bounds change, and when the condition changes.
-    Triggers triggers;
-    for (auto & [_, v] : _coeff_vars.terms)
-        triggers.on_bounds.push_back(v);
+    auto triggers = make_linear_triggers(_coeff_vars, _cond);
 
     overloaded{
         [&](const TrueLiteral &) {},
@@ -141,10 +195,7 @@ auto LinearInequalityIff::install(Propagators & propagators, State & state, Proo
 
     case LiteralIs::DefinitelyFalse: {
         // definitely false, it's a greater-than
-        auto neg_coeff_vars = _coeff_vars;
-        for (auto & v : neg_coeff_vars.terms)
-            v.coefficient = -v.coefficient;
-        auto [sanitised_neg_cv, neg_modifier] = tidy_up_linear(neg_coeff_vars);
+        auto [sanitised_neg_cv, neg_modifier] = negate_and_tidy(_coeff_vars);
         visit(
             [&, neg_modifier = neg_modifier](const auto & lin) {
                 propagators.install([neg_modifier = neg_modifier, lin = lin, value = -_value - 1_i, cond = _cond, proof_line = proof_line](
@@ -160,17 +211,11 @@ auto LinearInequalityIff::install(Propagators & propagators, State & state, Proo
         // condition wasn't known at compile time. keep both the satisfiable and unsatisfiable
         // forms of the inequality around, and then see if the condition is known or can be
         // inferred.
-        auto neg_coeff_vars = _coeff_vars;
-        for (auto & v : neg_coeff_vars.terms)
-            v.coefficient = -v.coefficient;
-        auto [sanitised_neg_cv, neg_modifier] = tidy_up_linear(neg_coeff_vars);
+        auto [sanitised_neg_cv, neg_modifier] = negate_and_tidy(_coeff_vars);
 
-        vector<IntegerVariableID> vars;
-        visit([&](const auto & sanitised_cv) {
-            for (const auto & cv : sanitised_cv.terms)
-                vars.push_back(get_var(cv));
-        },
-            sanitised_cv);
+        auto vars = visit([](const auto & s) {
+            return collect_vars_from(s);
+        }, sanitised_cv);
 
         visit([&, modifier = modifier, neg_modifier = neg_modifier](const auto & sanitised_cv, const auto & sanitised_neg_cv) -> void {
             propagators.install([cond = _cond, sanitised_cv = sanitised_cv, sanitised_neg_cv = sanitised_neg_cv,
@@ -187,18 +232,7 @@ auto LinearInequalityIff::install(Propagators & propagators, State & state, Proo
                 } break;
                 case LiteralIs::Undecided: {
                     // still don't know. see whether the condition is forced either way.
-                    Integer min_possible = 0_i, max_possible = 0_i;
-                    for (const auto & cv : sanitised_cv.terms) {
-                        auto bounds = state.bounds(get_var(cv));
-                        if (get_coeff(cv) >= 0_i) {
-                            min_possible += get_coeff(cv) * bounds.first;
-                            max_possible += get_coeff(cv) * bounds.second;
-                        }
-                        else {
-                            min_possible += get_coeff(cv) * bounds.second;
-                            max_possible += get_coeff(cv) * bounds.first;
-                        }
-                    }
+                    auto [min_possible, max_possible] = min_max_possible_sum(state, sanitised_cv);
 
                     if (min_possible > value + modifier) {
                         auto just = [&](const ReasonFunction &) { return justify_cond(state, sanitised_cv, *logger, *proof_line); };
@@ -239,9 +273,7 @@ auto LinearInequalityIf::install(Propagators & propagators, State & state, Proof
 {
     optional<ProofLine> proof_line;
     if (optional_model) {
-        WPBSum terms;
-        for (auto & [c, v] : _coeff_vars.terms)
-            terms += c * v;
+        auto terms = make_wpb_terms(_coeff_vars);
         overloaded{
             [&](const TrueLiteral &) {
                 proof_line = optional_model->add_constraint("LinearInequalityIf", "unconditional less than", terms <= _value, nullopt);
@@ -269,9 +301,7 @@ auto LinearInequalityIf::install(Propagators & propagators, State & state, Proof
     }
 
     // we care when bounds change, and when the condition changes.
-    Triggers triggers;
-    for (auto & [_, v] : _coeff_vars.terms)
-        triggers.on_bounds.push_back(v);
+    auto triggers = make_linear_triggers(_coeff_vars, _cond);
 
     overloaded{
         [&](const TrueLiteral &) {},
@@ -301,12 +331,9 @@ auto LinearInequalityIf::install(Propagators & propagators, State & state, Proof
     case LiteralIs::Undecided: {
         // condition wasn't known at compile time. see if the condition is known or can be
         // inferred.
-        vector<IntegerVariableID> vars;
-        visit([&](const auto & sanitised_cv) {
-            for (const auto & cv : sanitised_cv.terms)
-                vars.push_back(get_var(cv));
-        },
-            sanitised_cv);
+        auto vars = visit([](const auto & s) { 
+            return collect_vars_from(s); 
+        }, sanitised_cv);
 
         visit([&, modifier = modifier](const auto & sanitised_cv) -> void {
             propagators.install([cond = _cond, sanitised_cv = sanitised_cv,
@@ -322,18 +349,7 @@ auto LinearInequalityIf::install(Propagators & propagators, State & state, Proof
                 } break;
                 case LiteralIs::Undecided: {
                     // still don't know. see whether the condition is forced either way.
-                    Integer min_possible = 0_i, max_possible = 0_i;
-                    for (const auto & cv : sanitised_cv.terms) {
-                        auto bounds = state.bounds(get_var(cv));
-                        if (get_coeff(cv) >= 0_i) {
-                            min_possible += get_coeff(cv) * bounds.first;
-                            max_possible += get_coeff(cv) * bounds.second;
-                        }
-                        else {
-                            min_possible += get_coeff(cv) * bounds.second;
-                            max_possible += get_coeff(cv) * bounds.first;
-                        }
-                    }
+                    auto [min_possible, max_possible] = min_max_possible_sum(state, sanitised_cv);
 
                     if (min_possible > value + modifier) {
                         auto just = [&](const ReasonFunction &) { return justify_cond(state, sanitised_cv, *logger, *proof_line); };
@@ -352,3 +368,4 @@ auto LinearInequalityIf::install(Propagators & propagators, State & state, Proof
     } break;
     }
 }
+
