@@ -240,16 +240,20 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program Options")                                                                                        //
-            ("help", "Display help information")                                                                                      //
-            ("prove", "Create a proof")                                                                                               //
-            ("seed", "Seed for random table generator (-1 for random seed)", cxxopts::value<int>()->default_value("-1"))              //
-            ("display-table", "display a formatted representation of the generated table for each instance")                          //
-            ("n", "Number of variables", cxxopts::value<int>()->default_value("6"))                                                   //
-            ("repeat", "Repeat for this many randomly generated tables.", cxxopts::value<int>()->default_value("1"))                  //
-            ("short-reasons", "Use redundance to reify reasons in proofs to save space.")                                             //
-            ("proof-prefix", "Path and name of the opb and pbp files", cxxopts::value<string>()->default_value("smart_table_random")) //                                                   //
-            ("stats", "Print stats, including solve time");                                                                           //
+        options.add_options("Program Options")                                                               //
+            ("help", "Display help information")                                                             //
+            ("prove", "Create a proof")                                                                      //
+            ("seed", "Seed for random table generator (-1 for random seed)",                                 //
+                cxxopts::value<int>()->default_value("-1"))                                                  //
+            ("display-table", "Display a formatted representation of the generated table for each instance") //
+            ("n", "Number of variables",                                                                     //
+                cxxopts::value<int>()->default_value("6"))                                                   //
+            ("repeat", "Repeat for this many randomly generated tables.",                                    //
+                cxxopts::value<int>()->default_value("1"))                                                   //
+            ("short-reasons", "Use redundance to reify reasons in proofs to save space.")                    //
+            ("proof-prefix", "Path and name of the opb and pbp files",                                       //
+                cxxopts::value<string>()->default_value("smart_table_random"))                               //
+            ("stats", "Print stats, including solve time");                                                  //
 
         options_vars = options.parse(argc, argv);
     }
