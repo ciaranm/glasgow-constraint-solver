@@ -5,6 +5,7 @@
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/propagators.hh>
 
+#include <format>
 #include <list>
 #include <random>
 #include <set>
@@ -18,6 +19,7 @@ using std::cmp_equal;
 using std::cmp_less;
 using std::cmp_less_equal;
 using std::cmp_not_equal;
+using std::format;
 using std::get;
 using std::holds_alternative;
 using std::list;
@@ -281,7 +283,6 @@ namespace
 
             if (using_shifted_pos)
                 ctx.logger.emit_proof_comment("AM1 " + ctx.root_flag_data.shifted_pos_eq[node][*values.begin()].comment_name);
-
             else
                 ctx.logger.emit_proof_comment("AM1 p[" + to_string(node) + "]");
 
@@ -355,8 +356,9 @@ namespace
             for (int j = 0; j < n; j++) {
                 values.insert(j);
             }
-            ShiftedPosDataMaps dummy{};
-            ctx.pos_alldiff_data.at_most_1_lines.emplace(i, prove_at_most_1_pos(ctx, i, values, false));
+            // Need to use ctx.root = 0 here to make sure flag data for root isn't overwritten ?
+            auto temp_ctx = SCCProofContext(ctx, 0);
+            ctx.pos_alldiff_data.at_most_1_lines.emplace(i, prove_at_most_1_pos(temp_ctx, i, values, false));
         }
     }
 
@@ -422,8 +424,8 @@ namespace
             }
             else {
                 // If i == root, d[r, i] is just "false"
-                ctx.logger.emit_proof_comment("d[r][r] == false");
-                backwards_reif_line = ctx.logger.emit_red_proof_lines_forward_reifying(
+                // I think this should maybe be forwards, but it's working anyway???
+                backwards_reif_line = ctx.logger.emit_red_proof_lines_reverse_reifying(
                     WeightedPseudoBooleanSum{} + 1_i * ctx.pos_var_data.at(j).var + -1_i * ctx.pos_var_data.at(i).var >= 1_i,
                     greater_than_flag, ProofLevel::Top);
             }
@@ -445,7 +447,7 @@ namespace
         auto greater_than_flag = greater_than_flag_data.flag;
 
         auto maybe_create_and_emplace_flag_data =
-            [&](ProofFlagDataMap & flag_data, const long i, const long dist, const WeightedPseudoBooleanLessEqual & definition, const string & name, const string & name_suffix) {
+            [&ctx](ProofFlagDataMap & flag_data, const long i, const long dist, const WeightedPseudoBooleanLessEqual & definition, const string & name, const string & name_suffix) {
                 if (! flag_data[i].count(dist)) {
                     auto [flag, forwards_reif_line, backwards_reif_line] = ctx.logger.create_proof_flag_reifying(definition, name + name_suffix, ProofLevel::Top);
                     flag_data[i][dist] = ProofFlagData{name, flag, forwards_reif_line, backwards_reif_line, {}};
@@ -464,7 +466,7 @@ namespace
 
         // q[r,i]eqj <=> q[r,i]gej /\ ~q[r,i]gej+1
         maybe_create_and_emplace_flag_data(ctx.root_flag_data.shifted_pos_eq, i, dist,
-            WeightedPseudoBooleanSum{} + 1_i * ctx.root_flag_data.shifted_pos_eq[i][dist].flag + 1_i * ! ctx.root_flag_data.shifted_pos_geq[i][dist + 1].flag >= 2_i,
+            WeightedPseudoBooleanSum{} + 1_i * ctx.root_flag_data.shifted_pos_geq[i][dist].flag + 1_i * ! ctx.root_flag_data.shifted_pos_geq[i][dist + 1].flag >= 2_i,
             "q[" + to_string(ctx.root) + "][" + to_string(i) + "]", "eq" + to_string(dist));
     }
 
@@ -525,6 +527,7 @@ namespace
         auto n = static_cast<long>(ctx.succ.size());
 
         if (ctx.root != 0) {
+
             create_shifted_pos(ctx, next_node, count);
             auto & root_greater_than = ctx.root_flag_data.greater_than;
             auto & shifted_pos_geq = ctx.root_flag_data.shifted_pos_geq;
