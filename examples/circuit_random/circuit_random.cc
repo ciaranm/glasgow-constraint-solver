@@ -123,6 +123,7 @@ auto main(int argc, char * argv[]) -> int
             ("no-prune-skip", "SCC inference")                                   //
             ("no-fix-req", "SCC inference")                                      //
             ("no-prune-within", "SCC inference")                                 //
+            ("no-prove-am1-contradiction", "SCC optimisation")                   //
             ("prove-using-dominance", "SCC inference")                           //
             ("enable-comments", "SCC inference");
 
@@ -146,7 +147,10 @@ auto main(int argc, char * argv[]) -> int
         ! options_vars.contains("no-prune-skip"),
         ! options_vars.contains("no-fix-req"),
         ! options_vars.contains("no-prune-within"),
-        options_vars.contains("enable_comments")};
+        false,
+        options_vars.contains("enable_comments"),
+        ! options_vars.contains("no-prove-am1-contradiction"),
+    };
 
     auto n = options_vars["n"].as<int>();
     auto seed = options_vars["seed"].as<int>();

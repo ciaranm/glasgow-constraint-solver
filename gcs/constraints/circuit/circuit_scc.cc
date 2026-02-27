@@ -4,6 +4,7 @@
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/propagators.hh>
+#include <util/enumerate.hh>
 
 #include <format>
 #include <list>
@@ -254,7 +255,7 @@ namespace
         return neq_line;
     }
 
-    auto prove_at_most_1_pos(SCCProofContext ctx, const long & node, const set<long> & values, bool using_shifted_pos) -> ProofLine
+    auto prove_at_most_1_pos_using_clique(SCCProofContext ctx, const long & node, const set<long> & values, bool using_shifted_pos) -> ProofLine
     {
         // Prove that at most one (shift)pos[node] == v is true for v in values
         stringstream proofline;
@@ -307,6 +308,74 @@ namespace
         }
         else
             throw UnexpectedException{"trying to prove an AM1 over zero values?"};
+    }
+
+    auto prove_at_most_1_pos_using_contradiction(SCCProofContext ctx, const long & node, const set<long> & values, bool using_shifted_pos) -> ProofLine
+    {
+        auto am1_sum = WeightedPseudoBooleanSum{};
+        if (using_shifted_pos) {
+            for (const auto & val : values) {
+                am1_sum += -1_i * ctx.root_flag_data.shifted_pos_eq[node][val].flag;
+            }
+
+            map<string, Subproof> subproofs{};
+
+            auto subproof = [&](ProofLogger & logger) {
+                auto geq_data = ctx.root_flag_data.shifted_pos_geq;
+                for (auto it = values.begin(); next(it) != values.end(); ++it) {
+                    long val = *it;
+                    auto next_val = *next(it);
+                    auto geq_this_val = geq_data.at(node).at(val);
+                    auto geq_this_val_plus_1 = geq_data.at(node).at(val + 1);
+                    auto geq_next_val = geq_data.at(node).at(next_val);
+                    auto geq_next_val_plus_1 = geq_data.at(node).at(next_val + 1);
+                    logger.emit_proof_line(format("pol {} {} + ;",
+                                               geq_this_val.backwards_reif_line, geq_next_val.forwards_reif_line),
+                        ProofLevel::Temporary);
+                    logger.emit_proof_line(format("pol {} {} + ;",
+                                               geq_this_val_plus_1.backwards_reif_line, geq_next_val.forwards_reif_line),
+                        ProofLevel::Temporary);
+                }
+                for (auto it = values.begin(); it != values.end(); ++it) {
+                    long val = *it;
+                    logger.emit_rup_proof_line(WeightedPseudoBooleanSum{} + -1_i * ctx.root_flag_data.shifted_pos_eq[node][val].flag >= 0_i, ProofLevel::Temporary);
+                }
+                logger.emit_proof_line("rup >= 1;", ProofLevel::Temporary);
+            };
+
+            subproofs.emplace("#1", subproof);
+
+            return ctx.logger.emit_red_proof_line(am1_sum >= -1_i, {}, ProofLevel::Top, subproofs);
+        }
+        else {
+            for (const auto & val : values) {
+                am1_sum += -1_i * (ctx.pos_var_data.at(node).var == Integer(val));
+            }
+
+            map<string, Subproof> subproofs{};
+
+            auto subproof = [&](ProofLogger & logger) {
+                for (auto it = values.begin(); it != values.end(); ++it) {
+                    long val = *it;
+                    logger.emit_rup_proof_line(WeightedPseudoBooleanSum{} + -1_i * (ctx.pos_var_data.at(node).var == Integer(val)) >= 0_i, ProofLevel::Temporary);
+                }
+                logger.emit_proof_line("rup >= 1;", ProofLevel::Temporary);
+            };
+
+            subproofs.emplace("#1", subproof);
+
+            return ctx.logger.emit_red_proof_line(am1_sum >= -1_i, {}, ProofLevel::Top, subproofs);
+        }
+    }
+
+    auto prove_at_most_1_pos(SCCProofContext ctx, const long & node, const set<long> & values, bool using_shifted_pos) -> ProofLine
+    {
+        if (ctx.options.prove_am1_by_constradiction) {
+            return prove_at_most_1_pos_using_contradiction(ctx, node, values, using_shifted_pos);
+        }
+        else {
+            return prove_at_most_1_pos_using_clique(ctx, node, values, using_shifted_pos);
+        }
     }
 
     auto prove_pos_alldiff_lines(SCCProofContext & ctx) -> void
