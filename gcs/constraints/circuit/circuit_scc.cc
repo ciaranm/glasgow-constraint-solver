@@ -1148,18 +1148,34 @@ namespace
     {
         auto data = SCCPropagatorData(succ.size());
 
+        ReasonFunction reason_to_use;
+        if (logger && options.short_reasons) {
+            auto reason_sum = WeightedPseudoBooleanSum{};
+            for (const auto & lit : reason()) {
+                reason_sum += 1_i * get<ProofLiteral>(lit);
+            }
+            // We will manually delete this later.
+            auto [_reason_short, _line1, _line2] =
+                logger->create_proof_flag_reifying(reason_sum >= Integer(reason_sum.terms.size()), "sr", ProofLevel::Current);
+            ProofFlag reason_short = _reason_short;
+            reason_to_use = singleton_reason(reason_short);
+        }
+        else {
+            reason_to_use = reason;
+        }
+
         for (const auto & v : state.each_value_mutable(succ[data.root])) {
             auto next_node = v.raw_value;
             if (data.visit_number[next_node] == -1) {
-                auto back_edges = explore(state, inference, logger, reason, next_node, succ, data, proof_data, options);
+                auto back_edges = explore(state, inference, logger, reason_to_use, next_node, succ, data, proof_data, options);
 
                 if (back_edges.empty()) {
                     if (logger) {
                         logger->emit_proof_comment("No back edges");
-                        auto ctx = SCCProofContext(state, *logger, reason, succ, proof_data, next_node, options);
+                        auto ctx = SCCProofContext(state, *logger, reason_to_use, succ, proof_data, next_node, options);
                         prove_reachable_set_too_small(ctx);
                     }
-                    inference.contradiction(logger, JustifyUsingRUP{}, reason);
+                    inference.contradiction(logger, JustifyUsingRUP{}, reason_to_use);
                 }
                 else if (options.fix_req && back_edges.size() == 1) {
                     auto from_node = back_edges[0].first;
@@ -1168,7 +1184,7 @@ namespace
                         if (logger) {
                             logger->emit_proof_comment("Fix required back edge (" + to_string(from_node) + ", " + to_string(to_node) + "):");
 
-                            auto ctx = SCCProofContext(state, *logger, reason, succ, proof_data, from_node, options);
+                            auto ctx = SCCProofContext(state, *logger, reason_to_use, succ, proof_data, from_node, options);
                             prove_reachable_set_too_small(ctx, succ[from_node] != Integer{to_node});
                         }
                         inference.infer(logger, succ[from_node] == Integer{to_node}, NoJustificationNeeded{}, ReasonFunction{});
@@ -1183,10 +1199,10 @@ namespace
         if (cmp_not_equal(data.count, succ.size())) {
             if (logger) {
                 logger->emit_proof_comment("Disconnected graph");
-                auto ctx = SCCProofContext(state, *logger, reason, succ, proof_data, data.root, options);
+                auto ctx = SCCProofContext(state, *logger, reason_to_use, succ, proof_data, data.root, options);
                 prove_reachable_set_too_small(ctx);
             }
-            inference.contradiction(logger, JustifyUsingRUP{}, reason);
+            inference.contradiction(logger, JustifyUsingRUP{}, reason_to_use);
         }
 
         if (options.prune_root && data.start_prev_subtree > 1) {
@@ -1194,10 +1210,10 @@ namespace
                 if (data.visit_number[v.raw_value] < data.start_prev_subtree) {
                     if (logger) {
                         logger->emit_proof_comment("Prune impossible edges from root node");
-                        auto ctx = SCCProofContext(state, *logger, reason, succ, proof_data, data.root, options);
+                        auto ctx = SCCProofContext(state, *logger, reason_to_use, succ, proof_data, data.root, options);
                         prove_reachable_set_too_small(ctx, succ[data.root] == v);
                     }
-                    inference.infer(logger, succ[data.root] != v, JustifyUsingRUP{}, reason);
+                    inference.infer(logger, succ[data.root] != v, JustifyUsingRUP{}, reason_to_use);
                 }
             }
         }

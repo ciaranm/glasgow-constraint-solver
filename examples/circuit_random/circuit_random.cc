@@ -111,21 +111,22 @@ auto main(int argc, char * argv[]) -> int
             ("help", "Display help information")       //
             ("prove", "Create a proof");
 
-        command_options.add_options()                                            //
-            ("n", "Integer value n.", cxxopts::value<int>()->default_value("3")) //
-            ("seed", "Random seed.", cxxopts::value<int>()->default_value("-1")) //
-            ("stats", "Print statistics")                                        //
-            ("proof-prefix", "Path and name of the opb and pbp files",           //
-                cxxopts::value<string>()->default_value("circuit_random"))       //
-            ("print-distances", "Print the input graph used for the probllem")   //
-            ("print-solutions", "Print each solution found while optimising")    //
-            ("no-prune-root", "SCC inference")                                   //
-            ("no-prune-skip", "SCC inference")                                   //
-            ("no-fix-req", "SCC inference")                                      //
-            ("no-prune-within", "SCC inference")                                 //
-            ("no-prove-am1-contradiction", "SCC optimisation")                   //
-            ("prove-using-dominance", "SCC inference")                           //
-            ("enable-comments", "SCC inference");
+        command_options.add_options()                                                      //
+            ("n", "Integer value n.", cxxopts::value<int>()->default_value("3"))           //
+            ("seed", "Random seed.", cxxopts::value<int>()->default_value("-1"))           //
+            ("stats", "Print statistics")                                                  //
+            ("proof-prefix", "Path and name of the opb and pbp files",                     //
+                cxxopts::value<string>()->default_value("circuit_random"))                 //
+            ("print-distances", "Print the input graph used for the probllem")             //
+            ("print-solutions", "Print each solution found while optimising")              //
+            ("no-prune-root", "SCC inference")                                             //
+            ("no-prune-skip", "SCC inference")                                             //
+            ("no-fix-req", "SCC inference")                                                //
+            ("no-prune-within", "SCC inference")                                           //
+            ("no-prove-am1-contradiction", "SCC optimisation")                             //
+            ("prove-using-dominance", "SCC inference")                                     //
+            ("enable-comments", "SCC inference")                                           //
+            ("short-reasons", "Use redundance to reify reasons in proofs to save space."); //
 
         options_vars = command_options.parse(argc, argv);
     }
@@ -150,6 +151,7 @@ auto main(int argc, char * argv[]) -> int
         false,
         options_vars.contains("enable_comments"),
         ! options_vars.contains("no-prove-am1-contradiction"),
+        options_vars.contains("short-reasons"),
     };
 
     auto n = options_vars["n"].as<int>();
