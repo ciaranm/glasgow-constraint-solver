@@ -89,7 +89,7 @@ auto main(int argc, char * argv[]) -> int
         prove ? std::make_optional(ProofOptions{proof_prefix}) : std::nullopt);
 
     if (print_stats) {
-        cout << "seed :" << seed << endl;
+        cout << "seed: " << seed << endl;
         cout << stats << endl;
     }
     return EXIT_SUCCESS;
