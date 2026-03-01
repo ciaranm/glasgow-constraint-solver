@@ -147,7 +147,7 @@ namespace gcs::innards
      *
      * \ingroup Innards
      */
-    using Justification = std::variant<JustifyUsingRUP, JustifyExplicitlyThenRUP, AssertRatherThanJustifying, NoJustificationNeeded>;
+    using Justification = std::variant<JustifyUsingRUP, JustifyExplicitlyOnly, JustifyExplicitlyThenRUP, AssertRatherThanJustifying, NoJustificationNeeded>;
 }
 
 #endif
