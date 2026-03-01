@@ -6,6 +6,7 @@
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/presolvers/auto_table.hh>
+#include <iostream>
 
 #include <algorithm>
 #include <cmath>
@@ -1169,7 +1170,7 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
             HalfReifyOnConjunctionOf{! v3_sign});
     }
 
-    ConstraintStateHandle bit_products_handle = initial_state.add_constraint_state(bit_products);
+    ConstraintStateHandle bit_products_handle = initial_state.add_persistent_constraint_state(bit_products);
 
     propagators.install([v1 = _v1, v2 = _v2, v3 = _v3, bit_products_h = bit_products_handle,
                             channelling_constraints = channelling_constraints,
@@ -1181,7 +1182,7 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
             auto var_bounds = map<IntegerVariableID, pair<Integer, Integer>>{{v1, state.bounds(v1)}, {v2, state.bounds(v2)}, {v3, state.bounds(v3)}};
             auto bounds1 = state.bounds(v1), bounds2 = state.bounds(v2);
             auto [smallest_product, largest_product] = get_product_bounds(bounds1.first, bounds1.second, bounds2.first, bounds2.second);
-            auto & bit_products = any_cast<vector<vector<BitProductData>> &>(state.get_constraint_state(bit_products_h));
+            auto & bit_products = any_cast<vector<vector<BitProductData>> &>(state.get_persistent_constraint_state(bit_products_h));
 
             auto justf = [&](const ReasonFunction & reason) {
                 prove_product_bounds(reason, *logger, bit_products, v1, v2, v3, var_bounds,
