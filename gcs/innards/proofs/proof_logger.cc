@@ -274,7 +274,16 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
                 record_proof_line(++_imp->proof_line, ProofLevel::Current);
             }
         },
-        [&](const JustifyExplicitly & x) {
+        [&](const JustifyExplicitlyOnly & x) {
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+            _imp->proof << "% explicit on lit " << debug_string(lit) << " with reason from " << x.where.file_name() << ":"
+                        << x.where.line() << " in " << x.where.function_name() << '\n';
+#endif
+            auto t = temporary_proof_level();
+            x.add_proof_steps(reason);
+            forget_proof_level(t);
+        },
+        [&](const JustifyExplicitlyThenRUP & x) {
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
             _imp->proof << "% explicit on lit " << debug_string(lit) << " with reason from " << x.where.file_name() << ":"
                         << x.where.line() << " in " << x.where.function_name() << '\n';

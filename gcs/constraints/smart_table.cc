@@ -494,7 +494,7 @@ namespace
                             ProofLevel::Temporary);
                     }
                 };
-                inference.contradiction(logger, JustifyExplicitly{justf}, reason_to_use);
+                inference.contradiction(logger, JustifyExplicitlyThenRUP{justf}, reason_to_use);
                 // if (short_reasons) {
                 //     logger->delete_range(reason_definition_1, reason_definition_2 + 1);
                 // }
@@ -518,7 +518,7 @@ namespace
                                 ProofLevel::Temporary);
                         }
                     };
-                    inference.infer_not_equal(logger, var, value, JustifyExplicitly{justf}, reason_to_use);
+                    inference.infer_not_equal(logger, var, value, JustifyExplicitlyThenRUP{justf}, reason_to_use);
                 }
             }
             // if (short_reasons) {
