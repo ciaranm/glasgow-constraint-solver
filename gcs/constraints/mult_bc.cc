@@ -481,7 +481,7 @@ namespace
             }
 
             run_resolution(logger, premise_line);
-            logger.emit_proof_line("rup >= 1;", ProofLevel::Temporary);
+            logger.emit_proof_line("rup >= 1 ;", ProofLevel::Temporary);
         };
 
         subproofs.emplace("#1", subproof);
@@ -617,32 +617,27 @@ namespace
             inner_sum_1.add(ub_2.line, false);
             inner_sum_1.end();
             inner_sum_2.end();
+            // Actually derive the sums
             auto line1 = logger.emit_proof_line(inner_sum_1.str(), ProofLevel::Temporary);
-            logger.emit_proof_line(inner_sum_2.str(), ProofLevel::Temporary);
+            auto line2 = logger.emit_proof_line(inner_sum_2.str(), ProofLevel::Temporary);
 
-            auto rhs = power2(Integer(bit_products[i].size())) - 1_i + ub_2.rhs;
-
+            auto rhs = Integer{(1 << bit_products[i].size()) - 1};
             auto desired_sum = bitsum + -(ub_2.rhs) * ProofBitVariable{mag_x, Integer(i), true};
             auto desired_constraint =
                 logger.reify(logger.reify(desired_sum >= rhs, reif), reason);
 
-            auto fusion_premise_1 = result_of_deriving(logger, ImpliesProofRule{make_optional<ProofLine>(-1)},
-                desired_constraint, HalfReifyOnConjunctionOf{ProofBitVariable{mag_x, Integer(i), false}},
-                ProofLevel::Temporary, reason);
+            map<string, Subproof> subproofs{};
+            auto subproof = [&](ProofLogger & logger) {
+                add_lines(logger, line1, -2);
+                add_lines(logger, line2, -3);
+                logger.emit_proof_line("rup >= 1 : -1 -2;", ProofLevel::Temporary);
+            };
 
-            rhs = Integer{(1 << bit_products[i].size()) - 1};
+            subproofs.emplace("#1", subproof);
+            auto resolvent_line = logger.emit_red_proof_line(desired_constraint, {}, ProofLevel::Temporary,
+                subproofs);
 
-            auto fusion_premise_2 = result_of_deriving(logger, ImpliesProofRule{line1},
-                desired_constraint, HalfReifyOnConjunctionOf{ProofBitVariable{mag_x, Integer(i), true}},
-                ProofLevel::Temporary, reason);
-
-            // We now know a slightly cleaner way to do this, but this still works fine
-            auto fusion_resolvent = derive_by_fusion_resolution(
-                logger,
-                DerivedPBConstraint{desired_sum, rhs, reif, reason, 0},
-                {fusion_premise_1, fusion_premise_2});
-
-            outer_sum.add_multiplied_by(fusion_resolvent.line, power2(Integer(i)));
+            outer_sum.add_multiplied_by(resolvent_line, power2(Integer(i)));
         }
 
         // Not sure why this one was here...
