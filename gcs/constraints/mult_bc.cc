@@ -289,7 +289,7 @@ namespace
     {
         auto channel_reif = HalfReifyOnConjunctionOf{constr.half_reif};
         if (! channelling_constraints.contains(z))
-            return result_of_deriving(logger, ImpliesProofRule{}, constr.sum >= constr.rhs, channel_reif, ProofLevel::Temporary, reason);
+            return result_of_deriving(logger, ImpliesProofRule{constr.line}, constr.sum >= constr.rhs, channel_reif, ProofLevel::Temporary, reason);
 
         auto is_lower_bound = constr.sum.terms[0].coefficient == 1_i;
 
@@ -521,9 +521,8 @@ namespace
         if (! lb_2.half_reif.empty())
             reif.insert(reif.end(), lb_2.half_reif.begin(), lb_2.half_reif.end());
 
-        if (lb_1.rhs <= 0_i || lb_2.rhs <= 0_i) return result_of_deriving(logger, ImpliesProofRule{},
-            mag_z_sum >= 0_i, reif,
-            ProofLevel::Temporary, reason);
+        if (lb_1.rhs <= 0_i || lb_2.rhs <= 0_i)
+            return result_of_deriving(logger, ImpliesProofRule{}, mag_z_sum >= 0_i, reif, ProofLevel::Temporary, reason);
 
         PLine outer_sum{};
         auto mag_x = require_simple_or_po_iv(lb_1.sum.terms[0].variable);
@@ -618,7 +617,7 @@ namespace
             inner_sum_1.add(ub_2.line, false);
             inner_sum_1.end();
             inner_sum_2.end();
-            logger.emit_proof_line(inner_sum_1.str(), ProofLevel::Temporary);
+            auto line1 = logger.emit_proof_line(inner_sum_1.str(), ProofLevel::Temporary);
             logger.emit_proof_line(inner_sum_2.str(), ProofLevel::Temporary);
 
             auto rhs = power2(Integer(bit_products[i].size())) - 1_i + ub_2.rhs;
@@ -633,7 +632,7 @@ namespace
 
             rhs = Integer{(1 << bit_products[i].size()) - 1};
 
-            auto fusion_premise_2 = result_of_deriving(logger, ImpliesProofRule{},
+            auto fusion_premise_2 = result_of_deriving(logger, ImpliesProofRule{line1},
                 desired_constraint, HalfReifyOnConjunctionOf{ProofBitVariable{mag_x, Integer(i), true}},
                 ProofLevel::Temporary, reason);
 
