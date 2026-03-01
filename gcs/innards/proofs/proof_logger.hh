@@ -20,6 +20,7 @@ namespace gcs::innards
 
     struct RUPProofRule
     {
+        std::optional<std::vector<ProofLine>> lines;
     };
 
     struct AssertProofRule
@@ -153,6 +154,11 @@ namespace gcs::innards
          * PB constraint encoding R => C
          */
         auto reify(const WeightedPseudoBooleanLessEqual &, const ReasonFunction &) -> WeightedPseudoBooleanLessEqual;
+
+        /**
+         * Get the current proof line ID (i.e. the next one to be used.
+         */
+        auto get_current_proof_line() -> ProofLine;
 
         /**
          * Emit the specified text as a proof line.

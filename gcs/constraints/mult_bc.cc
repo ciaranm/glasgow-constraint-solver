@@ -364,7 +364,7 @@ namespace
         return result_of_deriving(logger, RUPProofRule{}, channel_sum >= constr.rhs, channel_reif, ProofLevel::Temporary, reason);
     }
 
-    auto run_resolution(ProofLogger & logger, vector<pair<HalfReifyOnConjunctionOf, ProofLine>> premise_line)
+    auto run_resolution(ProofLogger & logger, vector<pair<HalfReifyOnConjunctionOf, ProofLine>> premise_line) -> vector<ProofLine>
     {
         auto resolvable = [&](const HalfReifyOnConjunctionOf & c1, const HalfReifyOnConjunctionOf & c2) -> bool {
             auto opposites = 0;
@@ -404,8 +404,8 @@ namespace
         };
 
         if (premise_line.size() == 2) {
-            add_lines(logger, premise_line[0].second, premise_line[1].second);
-            return;
+            auto line = add_lines(logger, premise_line[0].second, premise_line[1].second);
+            return {line};
         }
 
         auto derived_empty = false;
@@ -445,9 +445,15 @@ namespace
             premise_line[min(found_c1, found_c2)] = premise_line.back();
             premise_line.pop_back();
         }
+        vector<ProofLine> finalised_premises;
+
+        for (const auto & p : premise_line) {
+            finalised_premises.emplace_back(p.second);
+        }
+        return finalised_premises;
     }
 
-    auto derive_by_fusion_resolution(ProofLogger & logger, DerivedPBConstraint constr, vector<DerivedPBConstraint> premises)
+    auto derive_by_fusion_resolution(ProofLogger & logger, DerivedPBConstraint constr, vector<DerivedPBConstraint> premises, vector<ProofLine> hints = {})
         -> DerivedPBConstraint
     {
         auto want_to_derive = logger.reify(logger.reify(constr.sum >= constr.rhs, constr.half_reif), *constr.reason);
@@ -461,18 +467,16 @@ namespace
         auto subproof = [&](ProofLogger & logger) {
             auto weakened_premises = vector<DerivedPBConstraint>{};
             // First weaken the premises to match our desired constraint
-            auto negation_line = -2;
+            auto negation_line = logger.get_current_proof_line();
             for (const auto & p : premises) {
-                weakened_premises.emplace_back(result_of_deriving(logger, RUPProofRule{}, // implies?
+                weakened_premises.emplace_back(result_of_deriving(logger, RUPProofRule{make_optional<vector<ProofLine>>({p.line})}, // implies?
                     want_to_derive, p.half_reif, ProofLevel::Temporary, ReasonFunction{}));
-                negation_line--;
             }
 
             //  Then add the negation of our desired constraint to each of the weakened premises
             //  This should give us a collection of clauses
             for (const auto & p : weakened_premises) {
                 premise_line.emplace_back(p.half_reif, add_lines(logger, negation_line, p.line, true));
-                negation_line--;
             }
 
             if (premise_line.size() <= 1) {
@@ -480,8 +484,14 @@ namespace
                     "Too few premises for fusion resolution."};
             }
 
+            auto before_res = logger.get_current_proof_line() - 1;
             run_resolution(logger, premise_line);
-            logger.emit_proof_line("rup >= 1 ;", ProofLevel::Temporary);
+            auto after_res = logger.get_current_proof_line();
+            for (auto & h = before_res; h <= after_res; h++) {
+                hints.emplace_back(h);
+            }
+            hints.emplace_back(negation_line);
+            logger.emit(RUPProofRule{hints}, WeightedPseudoBooleanSum{} >= 1_i, ProofLevel::Temporary);
         };
 
         subproofs.emplace("#1", subproof);
@@ -763,8 +773,9 @@ namespace
 
         auto final_lower_constraint = DerivedPBConstraint{z_sum, smallest_product, {}, reason, 0};
         auto final_upper_constraint = DerivedPBConstraint{neg_z_sum, -largest_product, {}, reason, 0};
-        derive_by_fusion_resolution(logger, final_lower_constraint, lower_bounds_for_fusion);
-        derive_by_fusion_resolution(logger, final_upper_constraint, upper_bounds_for_fusion);
+        auto further_hints = {rup_bounds[x].lower.line, rup_bounds[y].lower.line, rup_bounds[x].upper.line, rup_bounds[y].upper.line};
+        derive_by_fusion_resolution(logger, final_lower_constraint, lower_bounds_for_fusion, further_hints);
+        derive_by_fusion_resolution(logger, final_upper_constraint, upper_bounds_for_fusion, further_hints);
     }
 
     auto prove_quotient_bounds(

@@ -378,7 +378,18 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessEqual<Weighted<Pseud
     emit_inequality_to(names_and_ids_tracker(), ineq, rule_line);
 
     rule_line << overloaded{
-                     [&](const RUPProofRule &) -> string { return ";"; },
+                     [&](const RUPProofRule & rule) -> string { 
+                        if (rule.lines) {
+                            stringstream hints;
+                            hints << ": ";
+                            for (auto & line : *rule.lines) {
+                                hints << to_string(line) << ' ';
+                            }
+                            hints << " ;";
+                            return hints.str(); 
+                        } else {
+                            return ";";
+                        } },
                      [&](const ImpliesProofRule & rule) -> string { if (rule.line) { return " : " + to_string(*rule.line) + ";"; } else { return ";"; } },
                      [&](const AssertProofRule &) -> string { return ";"; }}
                      .visit(rule)
@@ -566,6 +577,11 @@ auto ProofLogger::emit_subproofs(const map<string, Subproof> & subproofs)
     _imp->current_indent -= INDENT_WIDTH;
     write_indent();
     _imp->proof << "qed;\n";
+}
+
+auto ProofLogger::get_current_proof_line() -> ProofLine
+{
+    return _imp->proof_line;
 }
 
 auto ProofLogger::emit_red_proof_line(const SumLessEqual<Weighted<PseudoBooleanTerm>> & ineq,
