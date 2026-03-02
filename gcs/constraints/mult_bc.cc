@@ -168,6 +168,20 @@ namespace
         return res;
     }
 
+    auto get_def_line_for_lit(ProofLogger & logger, const IntegerVariableCondition & cond) -> optional<ProofLine>
+    {
+        auto lower_def = logger.names_and_ids_tracker().need_pol_item_defining_literal(cond);
+        auto proof_line = overloaded{
+            [&](const ProofLine & line) -> optional<ProofLine> {
+                return make_optional(line);
+            },
+            [&](const XLiteral &) -> optional<ProofLine> {
+                return nullopt;
+                // throw UnexpectedException{"Expected literal to have a definition line."};
+            }}.visit(lower_def);
+        return proof_line;
+    }
+
     auto add_lines(ProofLogger & logger, ProofLine line1, ProofLine line2, bool saturate = true) -> ProofLine
     {
         return logger.emit_proof_line("pol " + to_string(line1) + " " + to_string(line2) + " +" + (saturate ? " s ;" : ";"),
@@ -223,6 +237,7 @@ namespace
         Integer channel_rhs = constr.rhs;
         auto reif = HalfReifyOnConjunctionOf{};
 
+        vector<ProofLine> rup_hints = {};
         if (is_negative && ! channelling_constraints.contains(var)) {
             throw UnexpectedException{"Missing channelling constraints."};
         }
@@ -240,7 +255,7 @@ namespace
                 channel_sum += 1_i * mag_var.at(var);
             }
 
-            add_lines(logger, channel_line, constr.line, false);
+            rup_hints.emplace_back(add_lines(logger, channel_line, constr.line, false));
         }
         else if (channelling_constraints.contains(var)) {
             reif = HalfReifyOnConjunctionOf{
@@ -255,7 +270,7 @@ namespace
                 channel_sum += -1_i * mag_var.at(var);
             }
 
-            add_lines(logger, channel_line, constr.line, false);
+            rup_hints.emplace_back(add_lines(logger, channel_line, constr.line, false));
         }
         else {
             channel_sum = constr.sum;
@@ -275,7 +290,21 @@ namespace
             channel_rhs = 1_i;
         }
 
-        return result_of_deriving(logger, RUPProofRule{},
+        // logger.emit_proof_comment("Chanelling RUP");
+        // This might be a horribly bad idea...
+        for (const auto & lit : reason()) {
+            auto cond = get<IntegerVariableCondition>(get<Literal>(get<ProofLiteral>(lit)));
+            auto line = get_def_line_for_lit(logger, cond);
+            if (line) {
+                rup_hints.emplace_back(*line);
+            }
+        }
+        // for (const auto & lit : reif) {
+        //     auto cond = get<IntegerVariableCondition>(get<Literal>(get<ProofLiteral>(lit)));
+        //     rup_hints.emplace_back(get_def_line_for_lit(logger, cond));
+        // }
+
+        return result_of_deriving(logger, RUPProofRule{rup_hints},
             channel_sum >= channel_rhs,
             reif, ProofLevel::Temporary, reason);
     }
@@ -360,9 +389,17 @@ namespace
             }
         }
 
-        add_lines(logger, channel_line, rup_sign);
+        auto result = add_lines(logger, channel_line, rup_sign);
         auto channel_sum = WeightedPseudoBooleanSum{} + constr.sum.terms[0].coefficient * (z_negative ? -1_i : 1_i) * z;
-        return result_of_deriving(logger, RUPProofRule{}, channel_sum >= constr.rhs, channel_reif, ProofLevel::Temporary, reason);
+        vector<ProofLine> rup_hints = {result};
+        for (const auto & lit : reason()) {
+            auto cond = get<IntegerVariableCondition>(get<Literal>(get<ProofLiteral>(lit)));
+            auto line = get_def_line_for_lit(logger, cond);
+            if (line) {
+                rup_hints.emplace_back(*line);
+            }
+        }
+        return result_of_deriving(logger, RUPProofRule{rup_hints}, channel_sum >= constr.rhs, channel_reif, ProofLevel::Temporary, reason);
     }
 
     auto run_resolution(ProofLogger & logger, vector<pair<HalfReifyOnConjunctionOf, ProofLine>> premise_line) -> vector<ProofLine>
@@ -675,7 +712,7 @@ namespace
         const pair<ProofLine, ProofLine> z_eq_product_lines) -> void
     {
         // First RUP the current bounds
-        // logger.emit_proof_comment("Current Bounds:");
+        logger.emit_proof_comment("Current Bounds:");
         auto rup_bounds = map<IntegerVariableID, DerivedBounds>{};
         for (const auto & var : {x, y}) {
             auto [lower, upper] = var_bounds.at(var);
@@ -683,9 +720,12 @@ namespace
             auto var_sum = WeightedPseudoBooleanSum{} + 1_i * var;
             auto neg_var_sum = WeightedPseudoBooleanSum{} + -1_i * var;
 
-            auto rup_lower = result_of_deriving(logger, RUPProofRule{}, var_sum >= lower, {}, ProofLevel::Temporary, reason);
+            auto lower_def_line = get_def_line_for_lit(logger, var >= lower);
+            auto rup_lower = result_of_deriving(logger,
+                ImpliesProofRule{lower_def_line}, var_sum >= lower, {}, ProofLevel::Temporary, reason);
 
-            auto rup_upper = result_of_deriving(logger, RUPProofRule{}, neg_var_sum >= -upper, {}, ProofLevel::Temporary, reason);
+            auto upper_def_line = get_def_line_for_lit(logger, var < upper + 1_i);
+            auto rup_upper = result_of_deriving(logger, ImpliesProofRule{upper_def_line}, neg_var_sum >= -upper, {}, ProofLevel::Temporary, reason);
 
             rup_bounds.insert({var, DerivedBounds{rup_lower, rup_upper}});
         }
@@ -799,13 +839,18 @@ namespace
         auto min_x = Integer{x_has_neg ? -(power2(x_bits - 1_i)) : 0_i};
         auto max_x = Integer{x_has_neg ? (power2(x_bits - 1_i)) : power2(x_bits)} - 1_i;
 
-        const auto rup_x_upper = result_of_deriving(logger, RUPProofRule{},
+        logger.emit_proof_comment("X bounds for quotient");
+        auto upper_x_lit = assume_upper ? x < smallest_quotient : x >= largest_quotient + 1_i;
+        auto upper_x_lit_def_line = get_def_line_for_lit(logger, upper_x_lit);
+        const auto rup_x_upper = result_of_deriving(logger, ImpliesProofRule{upper_x_lit_def_line},
             WeightedPseudoBooleanSum{} + -1_i * x >= -(! assume_upper ? max_x : smallest_quotient - 1_i),
-            assume_upper ? HalfReifyOnConjunctionOf{x < smallest_quotient} : HalfReifyOnConjunctionOf{x >= largest_quotient + 1_i}, ProofLevel::Temporary, reason);
+            HalfReifyOnConjunctionOf{upper_x_lit}, ProofLevel::Temporary, reason);
 
-        const auto rup_x_lower = result_of_deriving(logger, RUPProofRule{},
+        auto lower_x_lit = (! assume_upper) ? x >= largest_quotient + 1_i : x < smallest_quotient;
+        auto lower_x_lit_def_line = get_def_line_for_lit(logger, lower_x_lit);
+        const auto rup_x_lower = result_of_deriving(logger, ImpliesProofRule{lower_x_lit_def_line},
             WeightedPseudoBooleanSum{} + 1_i * x >= (assume_upper ? min_x : largest_quotient + 1_i),
-            ! assume_upper ? HalfReifyOnConjunctionOf{x >= largest_quotient + 1_i} : HalfReifyOnConjunctionOf{x < smallest_quotient}, ProofLevel::Temporary, reason);
+            HalfReifyOnConjunctionOf{lower_x_lit}, ProofLevel::Temporary, reason);
 
         rup_bounds.insert({x, DerivedBounds{rup_x_lower, rup_x_upper}});
 
@@ -814,9 +859,12 @@ namespace
         auto var_sum = WeightedPseudoBooleanSum{} + 1_i * y;
         auto neg_var_sum = WeightedPseudoBooleanSum{} + -1_i * y;
 
-        auto rup_y_lower = result_of_deriving(logger, RUPProofRule{}, var_sum >= y_lower, {}, ProofLevel::Temporary, reason);
+        logger.emit_proof_comment("Y bounds for quotient");
+        auto lower_y_lit_def_line = get_def_line_for_lit(logger, y >= y_lower);
+        auto rup_y_lower = result_of_deriving(logger, ImpliesProofRule{lower_y_lit_def_line}, var_sum >= y_lower, {}, ProofLevel::Temporary, reason);
 
-        auto rup_y_upper = result_of_deriving(logger, RUPProofRule{}, neg_var_sum >= -y_upper, {}, ProofLevel::Temporary, reason);
+        auto upper_y_lit_def_line = get_def_line_for_lit(logger, y < y_upper + 1_i);
+        auto rup_y_upper = result_of_deriving(logger, ImpliesProofRule{upper_y_lit_def_line}, neg_var_sum >= -y_upper, {}, ProofLevel::Temporary, reason);
 
         rup_bounds.insert({y, DerivedBounds{rup_y_lower, rup_y_upper}});
 
