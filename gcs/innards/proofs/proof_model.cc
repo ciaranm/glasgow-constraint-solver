@@ -182,6 +182,9 @@ auto ProofModel::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVa
                 names_and_ids_tracker().associate_condition_with_xliteral(id != 1_i, ! eqvar);
                 names_and_ids_tracker().associate_condition_with_xliteral(id == 0_i, ! eqvar);
                 names_and_ids_tracker().associate_condition_with_xliteral(id != 0_i, eqvar);
+                pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>> names{eqvar, ! eqvar};
+                names_and_ids_tracker().track_eqvar(id, 1_i, names);
+                names_and_ids_tracker().track_eqvar(id, 0_i, names);
             },
             [](const ProofOnlySimpleIntegerVariableID &) {
                 // currently there's no API for asking for literals for these

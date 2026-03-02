@@ -445,7 +445,17 @@ auto ProofLogger::emit_under_reason(
     }
 
     rule_line << overloaded{
-                     [&](const RUPProofRule &) -> string { return ";"; },
+                     [&](const RUPProofRule & rule) -> string { 
+                       if(rule.lines) {
+                            stringstream hints;
+                            hints << ": ";
+                            for (const auto & line : *rule.lines) {
+                                hints << line << " ";
+                            }
+                            hints << " ;";
+                            return hints.str();
+                       } {
+                        return ";"; } },
                      [&](const ImpliesProofRule & rule) -> string { if (rule.line) { return " : " + to_string(*rule.line) + ";" ;} else { return ";"; } },
                      [&](const AssertProofRule &) -> string { return ";"; }}
                      .visit(rule)
