@@ -194,11 +194,14 @@ namespace
                         case VariableConditionOperator::Equal:
                             rup_hints.emplace_back(*get_def_line_for_lit(logger, cond->var >= cond->value));
                             rup_hints.emplace_back(*get_def_line_for_lit(logger, cond->var < cond->value + 1_i));
+                            break;
                         case VariableConditionOperator::NotEqual:
                             rup_hints.emplace_back(*get_def_line_for_lit(logger, cond->var < cond->value));
                             rup_hints.emplace_back(*get_def_line_for_lit(logger, cond->var >= cond->value + 1_i));
+                            break;
                         case VariableConditionOperator::GreaterEqual:
                         case VariableConditionOperator::Less:
+                            break;
                         }
                         rup_hints.emplace_back(
                             *get_def_line_for_lit(logger, *cond));
