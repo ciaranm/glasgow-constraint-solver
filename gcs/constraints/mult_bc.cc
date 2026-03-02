@@ -183,6 +183,32 @@ namespace
         return proof_line;
     }
 
+    auto get_rup_hints_for(ProofLogger & logger, const vector<ProofLiteralOrFlag> & lits) -> vector<ProofLine>
+    {
+        auto rup_hints = vector<ProofLine>{};
+        for (const auto & lit : lits) {
+            if (const auto * p_lit = std::get_if<ProofLiteral>(&lit)) {
+                if (const auto * l_lit = std::get_if<Literal>(p_lit)) {
+                    if (const auto * cond = std::get_if<IntegerVariableCondition>(l_lit)) {
+                        switch (cond->op) {
+                        case VariableConditionOperator::Equal:
+                            rup_hints.emplace_back(*get_def_line_for_lit(logger, cond->var >= cond->value));
+                            rup_hints.emplace_back(*get_def_line_for_lit(logger, cond->var < cond->value + 1_i));
+                        case VariableConditionOperator::NotEqual:
+                            rup_hints.emplace_back(*get_def_line_for_lit(logger, cond->var < cond->value));
+                            rup_hints.emplace_back(*get_def_line_for_lit(logger, cond->var >= cond->value + 1_i));
+                        case VariableConditionOperator::GreaterEqual:
+                        case VariableConditionOperator::Less:
+                        }
+                        rup_hints.emplace_back(
+                            *get_def_line_for_lit(logger, *cond));
+                    }
+                }
+            }
+        }
+        return rup_hints;
+    }
+
     auto add_lines(ProofLogger & logger, ProofLine line1, ProofLine line2, bool saturate = true) -> ProofLine
     {
         return logger.emit_proof_line("pol " + to_string(line1) + " " + to_string(line2) + " +" + (saturate ? " s ;" : ";"),
@@ -539,25 +565,8 @@ namespace
             for (const auto & p : premises) {
                 vector<ProofLine> rup_hints = hints;
                 // A lot of mess to get correct rup hints
-                for (const auto & lit : p.half_reif) {
-                    if (const auto * p_lit = std::get_if<ProofLiteral>(&lit)) {
-                        if (const auto * l_lit = std::get_if<Literal>(p_lit)) {
-                            if (const auto * cond = std::get_if<IntegerVariableCondition>(l_lit)) {
-                                switch (cond->op) {
-                                case VariableConditionOperator::Equal:
-                                    rup_hints.emplace_back(*get_def_line_for_lit(logger, cond->var >= cond->value));
-                                    rup_hints.emplace_back(*get_def_line_for_lit(logger, cond->var < cond->value + 1_i));
-                                case VariableConditionOperator::NotEqual:
-                                    rup_hints.emplace_back(*get_def_line_for_lit(logger, cond->var < cond->value));
-                                    rup_hints.emplace_back(*get_def_line_for_lit(logger, cond->var >= cond->value + 1_i));
-                                }
-                                rup_hints.emplace_back(
-                                    *get_def_line_for_lit(logger, *cond));
-                            }
-                        }
-                    }
-                }
-
+                auto further_hints = get_rup_hints_for(logger, p.half_reif);
+                rup_hints.insert(rup_hints.end(), further_hints.begin(), further_hints.end());
                 rup_hints.emplace_back(p.line);
                 weakened_premises.emplace_back(result_of_deriving(logger, RUPProofRule{rup_hints}, // implies?
                     want_to_derive, p.half_reif, ProofLevel::Temporary, ReasonFunction{}));
@@ -765,7 +774,7 @@ namespace
         const vector<ProofLine> & sign_lines) -> void
     {
         // First obtain the current bounds
-        logger.emit_proof_comment("Current Bounds:");
+        // logger.emit_proof_comment("Current Bounds:");
         auto rup_bounds = map<IntegerVariableID, DerivedBounds>{};
         for (const auto & var : {x, y}) {
             auto [lower, upper] = var_bounds.at(var);
@@ -851,6 +860,7 @@ namespace
         for (auto & var : {x, y}) {
             auto reif_eq_0 = HalfReifyOnConjunctionOf{var == 0_i};
 
+            // These are harder to hint as they probably need the full opb definition of multiplication
             lower_bounds_for_fusion.push_back(DerivedPBConstraint{
                 z_sum, smallest_product, reif_eq_0, reason,
                 logger.emit_under_reason(RUPProofRule{},
@@ -894,7 +904,7 @@ namespace
         auto min_x = Integer{x_has_neg ? -(power2(x_bits - 1_i)) : 0_i};
         auto max_x = Integer{x_has_neg ? (power2(x_bits - 1_i)) : power2(x_bits)} - 1_i;
 
-        logger.emit_proof_comment("X bounds for quotient");
+        // logger.emit_proof_comment("X bounds for quotient");
         auto upper_x_lit = assume_upper ? x < smallest_quotient : x >= largest_quotient + 1_i;
         auto upper_x_lit_def_line = get_def_line_for_lit(logger, upper_x_lit);
         const auto rup_x_upper = result_of_deriving(logger, ImpliesProofRule{upper_x_lit_def_line},
@@ -914,7 +924,7 @@ namespace
         auto var_sum = WeightedPseudoBooleanSum{} + 1_i * y;
         auto neg_var_sum = WeightedPseudoBooleanSum{} + -1_i * y;
 
-        logger.emit_proof_comment("Y bounds for quotient");
+        // logger.emit_proof_comment("Y bounds for quotient");
         auto lower_y_lit_def_line = get_def_line_for_lit(logger, y >= y_lower);
         auto rup_y_lower = result_of_deriving(logger, ImpliesProofRule{lower_y_lit_def_line}, var_sum >= y_lower, {}, ProofLevel::Temporary, reason);
 
@@ -961,8 +971,10 @@ namespace
         auto z_sum = WeightedPseudoBooleanSum{} + 1_i * z;
         auto neg_z_sum = WeightedPseudoBooleanSum{} + -1_i * z;
 
-        auto rup_z_lower = result_of_deriving(logger, RUPProofRule{}, z_sum >= z_lower, {}, ProofLevel::Temporary, reason);
-        auto rup_z_upper = result_of_deriving(logger, RUPProofRule{}, neg_z_sum >= -z_upper, {}, ProofLevel::Temporary, reason);
+        auto lower_z_def_line = get_def_line_for_lit(logger, z >= z_lower);
+        auto rup_z_lower = result_of_deriving(logger, ImpliesProofRule{lower_z_def_line}, z_sum >= z_lower, {}, ProofLevel::Temporary, reason);
+        auto upper_z_def_line = get_def_line_for_lit(logger, z < z_upper + 1_i);
+        auto rup_z_upper = result_of_deriving(logger, ImpliesProofRule{upper_z_def_line}, neg_z_sum >= -z_upper, {}, ProofLevel::Temporary, reason);
 
         // Derive upper and lower bounds on z, conditioned on sign bits for x and y
         for (const auto & x_bound : conditional_bounds.at(x)) {
@@ -1005,14 +1017,18 @@ namespace
 
                 //  Check whether we derived a lower or an upper bound after channelling
                 if (conditional_product_bound.sum.terms[0].coefficient == 1_i && conditional_product_bound.rhs > z_upper) {
-                    add_lines(logger, conditional_product_bound.line, rup_z_upper.line);
-                    auto resolvent = result_of_deriving(logger, RUPProofRule{}, WeightedPseudoBooleanSum{} >= 1_i, conditional_product_bound.half_reif, ProofLevel::Temporary, reason);
+                    auto res_line = add_lines(logger, conditional_product_bound.line, rup_z_upper.line);
+                    auto hints = get_rup_hints_for(logger, conditional_product_bound.half_reif);
+                    hints.emplace_back(res_line);
+                    auto resolvent = result_of_deriving(logger, RUPProofRule{hints}, WeightedPseudoBooleanSum{} >= 1_i, conditional_product_bound.half_reif, ProofLevel::Temporary, reason);
                     to_resolve.emplace_back(resolvent.half_reif, resolvent.line);
                 }
 
                 else if (conditional_product_bound.sum.terms[0].coefficient == -1_i && -conditional_product_bound.rhs < z_lower) {
-                    add_lines(logger, conditional_product_bound.line, rup_z_lower.line);
-                    auto resolvent = result_of_deriving(logger, RUPProofRule{}, WeightedPseudoBooleanSum{} >= 1_i, conditional_product_bound.half_reif, ProofLevel::Temporary, reason);
+                    auto res_line = add_lines(logger, conditional_product_bound.line, rup_z_lower.line);
+                    auto hints = get_rup_hints_for(logger, conditional_product_bound.half_reif);
+                    hints.emplace_back(res_line);
+                    auto resolvent = result_of_deriving(logger, RUPProofRule{hints}, WeightedPseudoBooleanSum{} >= 1_i, conditional_product_bound.half_reif, ProofLevel::Temporary, reason);
                     to_resolve.emplace_back(resolvent.half_reif, resolvent.line);
                 }
                 else if (abs(conditional_product_bound.sum.terms[0].coefficient) != 1_i)
@@ -1022,7 +1038,7 @@ namespace
 
         for (auto & var : {x, y}) {
             auto lower_reif = HalfReifyOnConjunctionOf{var == 0_i, rup_x_lower.half_reif[0]};
-
+            // Again these are harder for hints, unless you want to hint the whole opb definition...
             to_resolve.emplace_back(lower_reif, logger.emit_under_reason(RUPProofRule{}, logger.reify(WeightedPseudoBooleanSum{} >= 1_i, lower_reif), ProofLevel::Temporary, reason));
             auto upper_reif = HalfReifyOnConjunctionOf{var == 0_i, rup_x_upper.half_reif[0]};
             to_resolve.emplace_back(upper_reif, logger.emit_under_reason(RUPProofRule{}, logger.reify(WeightedPseudoBooleanSum{} >= 1_i, upper_reif), ProofLevel::Temporary, reason));
