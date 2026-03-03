@@ -166,7 +166,7 @@ namespace
             case LiteralIs::DefinitelyTrue: {
                 // definitely true, it's a less-than-or-equal
                 visit(
-                    [&, modifier = modifier](const auto & lin) {
+                    [&](const auto & lin) {
                         propagators.install([modifier, lin, value = _value, cond = _cond, proof_line](
                                                 const State & state, auto & inference, ProofLogger * const logger) {
                             return propagate_linear(lin, value + modifier, state, inference, logger, false, proof_line, std::optional<Literal>{cond});
@@ -181,7 +181,7 @@ namespace
                     // it's a greater-than
                     auto [sanitised_neg_cv, neg_modifier] = negate_and_tidy(_coeff_vars);
                     visit(
-                        [&, neg_modifier](const auto & lin) {
+                        [&](const auto & lin) {
                             propagators.install([neg_modifier, lin, value = -_value - 1_i, cond = _cond, proof_line](
                                                     const State & state, auto & inference, ProofLogger * const logger) {
                                 auto pl = proof_line ? std::optional<ProofLine>{*proof_line + 1} : std::nullopt;
@@ -207,7 +207,7 @@ namespace
                 },
                     sanitised_cv);
 
-                visit([&, modifier](const auto & sanitised_cv) -> void {
+                visit([&](const auto & sanitised_cv) -> void {
                     propagators.install([cond = _cond, sanitised_cv, value = _value, modifier, neg = std::move(neg), proof_line, vars](
                                             const State & state, auto & inference, ProofLogger * const logger) {
 
