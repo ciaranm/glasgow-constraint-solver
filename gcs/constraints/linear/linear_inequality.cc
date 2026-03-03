@@ -221,9 +221,10 @@ namespace
                                 return PropagatorState::DisableUntilBacktrack;
 
                             auto const & [sanitised_neg_cv, neg_modifier] = *neg;
+                            const Integer rhs = -value + neg_modifier - 1_i;
                             return visit([&](const auto & lin) {
                                 auto pl = proof_line ? std::optional<ProofLine>{*proof_line + 1} : std::nullopt;
-                                return propagate_linear(lin, -value + neg_modifier - 1_i, 
+                                return propagate_linear(lin, rhs, 
                                     state, inference, logger, false, pl, std::optional<Literal>{!cond});
                                 }, sanitised_neg_cv);
 
