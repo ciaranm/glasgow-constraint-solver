@@ -83,6 +83,10 @@ add_executable(solve_test solve_test.cc)
 target_link_libraries(solve_test PRIVATE Catch2::Catch2WithMain)
 add_test(NAME solve_test COMMAND $<TARGET_FILE:solve_test>)
 
+add_executable(problem_test problem_test.cc)
+target_link_libraries(problem_test PRIVATE Catch2::Catch2WithMain)
+add_test(NAME problem_test COMMAND $<TARGET_FILE:problem_test>)
+
 add_executable(abs_test constraints/abs_test.cc)
 add_executable(all_different_test constraints/all_different_test.cc)
 add_executable(among_test constraints/among_test.cc)
