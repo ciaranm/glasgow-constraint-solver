@@ -67,13 +67,34 @@ Problem::~Problem() = default;
 
 auto Problem::check_name(const string & name) -> const string &
 {
-    if (! _imp->names.insert(name).second)
-        throw NamingError{"duplicate variable name '" + name + "'"};
+    // Basic regex to check valid characters
+    regex allowed{R"(_*[a-zA-Z][a-zA-Z0-9\[\]_\-\{\}]*)"};
 
-    regex allowed{R"(_*[a-zA-Z][a-zA-Z0-9\[\]_\-]*)"};
     smatch m;
     if (! regex_match(name, m, allowed))
-        throw NamingError{"illegal variable name '" + name + "'"};
+        throw NamingError{"Illegal variable name '" + name + "'"};
+
+    // Use a stack to check for balanced brackets
+    deque<char> stack;
+    for (char c : name) {
+        if (c == '[' || c == '{') {
+            stack.push_back(c);
+        }
+        else if (c == ']' || c == '}') {
+            if (stack.empty())
+                throw NamingError{"Unbalanced brackets in variable name '" + name + "'"};
+            char open = stack.back();
+            stack.pop_back();
+            if ((c == ']' && open != '[') || (c == '}' && open != '{'))
+                throw NamingError{"Mismatched brackets in variable name '" + name + "'"};
+        }
+    }
+    if (!stack.empty())
+        throw NamingError{"Unbalanced brackets in variable name '" + name + "'"};
+
+    // The name is valid, but check for duplicates
+    if (! _imp->names.insert(name).second)
+        throw NamingError{"Duplicate variable name '" + name + "'"};
 
     return name;
 }
