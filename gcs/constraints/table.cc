@@ -36,6 +36,7 @@ using std::variant;
 using std::vector;
 using std::visit;
 
+using fmt::print;
 using fmt::println;
 
 Table::Table(vector<IntegerVariableID> v, ExtensionalTuples t) :
@@ -91,11 +92,11 @@ auto Table::install(Propagators & propagators, State & initial_state, ProofModel
     propagators.define_and_install_table(initial_state, optional_model, vector<IntegerVariableID>{_vars}, move(_tuples), "table");
 }
 
-auto Table::s_exprify(const innards::ProofModel * const model) const -> std::string
+auto Table::s_exprify(const string & name, const innards::ProofModel * const model) const -> std::string
 {
     stringstream s;
 
-    println(s, "table");
+    print(s, "{} table", name);
     println(s, "(");
 
     println(s, "    (");

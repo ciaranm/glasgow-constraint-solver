@@ -50,7 +50,7 @@ namespace gcs
         /**
          * Return an s-expr representation of the constraint. To be used internally.
          */
-        [[nodiscard]] virtual auto s_exprify(const innards::ProofModel * const) const -> std::string;
+        [[nodiscard]] virtual auto s_exprify(const std::string & name, const innards::ProofModel * const) const -> std::string;
     };
 }
 

@@ -1,6 +1,7 @@
 #include <gcs/constraints/abs.hh>
 #include <gcs/constraints/abs/justify.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
@@ -8,6 +9,10 @@
 
 #include <algorithm>
 #include <optional>
+#include <sstream>
+
+#include <fmt/core.h>
+#include <fmt/ostream.h>
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -15,8 +20,13 @@ using namespace gcs::innards;
 using std::max;
 using std::optional;
 using std::pair;
+using std::string;
+using std::stringstream;
 using std::unique_ptr;
 using std::vector;
+
+using fmt::print;
+using fmt::println;
 
 Abs::Abs(const IntegerVariableID v1, const IntegerVariableID v2) :
     _v1(v1),
@@ -73,4 +83,15 @@ auto Abs::install(Propagators & propagators, State & initial_state,
         optional_model->add_constraint("Abs", "non-negative", WPBSum{} + 1_i * _v2 + -1_i * _v1 == 0_i, Reason{_v1 >= 0_i});
         optional_model->add_constraint("Abs", "negative", WPBSum{} + 1_i * _v2 + 1_i * _v1 == 0_i, Reason{_v1 < 0_i});
     }
+}
+
+auto Abs::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
+{
+    stringstream s;
+
+    print(s, "{} abs", name);
+    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v1));
+    println(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v2));
+
+    return s.str();
 }
