@@ -115,6 +115,22 @@ namespace gcs::innards
      * \ingroup Innards
      */
     [[nodiscard]] auto debug_string(const Literals &) -> std::string;
+
+
+    /**
+     * \brief Get the S-expression value of a Literal.
+     *
+     * \ingroup Innards
+     */
+    [[nodiscard]] auto s_expr_value_of_literal(const Literal & lit) -> std::string;
+
+
+    /**
+     * \brief Get the S-expression values of Literals.
+     *
+     * \ingroup Innards
+     */
+    [[nodiscard]] auto s_expr_value_of_literal(const Literals & lits) -> std::string;
 }
 
 #endif

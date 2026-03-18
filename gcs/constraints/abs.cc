@@ -91,7 +91,7 @@ auto Abs::s_exprify(const string & name, const innards::ProofModel * const model
 
     print(s, "{} abs", name);
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v1));
-    println(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v2));
+    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v2));
 
     return s.str();
 }

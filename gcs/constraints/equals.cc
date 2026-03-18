@@ -2,6 +2,7 @@
 #include <gcs/constraints/not_equals.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
@@ -11,6 +12,9 @@
 #include <algorithm>
 #include <sstream>
 #include <vector>
+
+#include <fmt/core.h>
+#include <fmt/ostream.h>
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -25,6 +29,8 @@ using std::string;
 using std::stringstream;
 using std::unique_ptr;
 using std::vector;
+
+using fmt::print;
 
 auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1, const auto & v2, const State & state,
     auto & inference, const Reason & reason) -> PropagatorState
@@ -141,6 +147,17 @@ auto Equals::install(Propagators & propagators, State & initial_state, ProofMode
         optional_model->add_constraint("Equals", "equality", WPBSum{} + 1_i * _v1 + -1_i * _v2 == 0_i, nullopt);
 }
 
+auto Equals::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
+{
+    stringstream s;
+
+    print(s, "{} equals", name);
+    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v1));
+    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v2));
+
+    return s.str();
+}
+
 EqualsIf::EqualsIf(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond) :
     _v1(v1),
     _v2(v2),
@@ -247,6 +264,18 @@ auto EqualsIf::install(Propagators & propagators, State & initial_state, ProofMo
             }
         }}
         .visit(_cond);
+}
+
+auto EqualsIf::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
+{
+    stringstream s;
+
+    print(s, "{} equals_if", name);
+    print(s, " {}", gcs::innards::s_expr_value_of_literal(_cond));
+    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v1));
+    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v2));
+
+    return s.str();
 }
 
 EqualsIff::EqualsIff(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond) :
@@ -413,6 +442,18 @@ auto EqualsIff::install(Propagators & propagators, State & initial_state, ProofM
             }
         }}
         .visit(_cond);
+}
+
+auto EqualsIff::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
+{
+    stringstream s;
+
+    print(s, "{} equals_iff", name);
+    print(s, " {}", gcs::innards::s_expr_value_of_literal(_cond));
+    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v1));
+    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v2));
+
+    return s.str();
 }
 
 template auto gcs::innards::enforce_equality(ProofLogger * const logger, const IntegerVariableID & v1, const IntegerVariableID & v2, const State & state,
