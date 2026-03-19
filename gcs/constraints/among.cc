@@ -7,6 +7,8 @@
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
 
+#include <fmt/ostream.h>
+
 #include <algorithm>
 #include <map>
 #include <optional>
@@ -33,6 +35,8 @@ using std::ranges::distance;
 using std::ranges::empty;
 using std::ranges::none_of;
 using std::ranges::subrange;
+
+using fmt::print;
 
 namespace
 {
@@ -245,4 +249,23 @@ auto Among::install(Propagators & propagators, State &, ProofModel * const optio
             return PropagatorState::Enable;
         },
         triggers, "among");
+}
+
+auto Among::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
+{
+    // (name among (X1 ... Xn) (i1 ... im) Y)
+    stringstream s;
+
+    print(s, "{} among (", name);
+
+    for (const auto & var : _vars) {
+        print(s, "{} ", model->names_and_ids_tracker().s_expr_name_of(var));
+    }
+    print(s, "\b) (");
+    for (const auto & val : _values_of_interest) {
+        print(s, "{} ", val.raw_value);
+    }
+    print(s, "\b) {}", model->names_and_ids_tracker().s_expr_name_of(_how_many));
+
+    return s.str();
 }

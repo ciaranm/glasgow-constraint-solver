@@ -56,7 +56,7 @@ auto run_equals_test(const string & which, bool proofs, variant<int, pair<int, i
         p.post(Constraint_{v1, v2});
     }
     else {
-        p.post(Constraint_{v1, v2, v3 == 1_i});
+        p.post(Constraint_{v1, v2, v3 >= 1_i});
     }
 
     auto proof_name = proofs ? make_optional("equals_test") : nullopt;

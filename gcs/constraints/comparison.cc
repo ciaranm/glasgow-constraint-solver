@@ -1,12 +1,18 @@
 #include <gcs/constraints/comparison.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
 
 #include <util/overloaded.hh>
+
+#include <fmt/ostream.h>
+
+#include <sstream>
+#include <string>
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -15,19 +21,24 @@ using std::nullopt;
 using std::optional;
 using std::pair;
 using std::unique_ptr;
+using std::string;
+using std::stringstream;
 
-CompareLessThanReif::CompareLessThanReif(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond, bool full_reif, bool or_equal) :
+using fmt::print;
+
+CompareLessThanReif::CompareLessThanReif(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond, bool full_reif, bool or_equal, bool vars_swapped) :
     _v1(v1),
     _v2(v2),
     _cond(cond),
     _full_reif(full_reif),
-    _or_equal(or_equal)
+    _or_equal(or_equal),
+    _vars_swapped(vars_swapped)
 {
 }
 
 auto CompareLessThanReif::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<CompareLessThanReif>(_v1, _v2, _cond, _full_reif, _or_equal);
+    return make_unique<CompareLessThanReif>(_v1, _v2, _cond, _full_reif, _or_equal, _vars_swapped);
 }
 
 auto CompareLessThanReif::install(Propagators & propagators, State & initial_state,
@@ -182,4 +193,42 @@ auto CompareLessThanReif::install(Propagators & propagators, State & initial_sta
             triggers, "compare less than reif");
     },
         _v1, _v2, _cond);
+}
+
+// CompareLessThanReif is the superclass of all the various less-than and less-than-or-equal constraints,
+// so I'm hoping to be able to get away with just one s_exprify implementation here, and not have to override
+// it in the subclasses. If that turns out not to be the case, I'll add overrides in the relevant subclasses
+// and move this implementation to a helper function or just implement all s_expify() subclass methods.
+auto CompareLessThanReif::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
+{
+    // (name cmp X Y)
+    stringstream s;
+    string cmp;
+    string suffix;
+    if (_vars_swapped) {
+        cmp = _or_equal ? "greater_than_equal" : "greater_than";
+    }
+    else {
+        cmp = _or_equal ? "less_than_equal" : "less_than";
+    }
+    visit(overloaded{
+        [&](const TrueLiteral &) {
+            suffix = "";
+        },
+        [&](const FalseLiteral &) {
+            suffix = "";
+        },
+        [&](const IntegerVariableCondition &) {
+            suffix = _full_reif ? "_iff" : "_if";
+        }
+    }, _cond);
+
+    print(s, "{} {}{} {} {}", 
+        name, 
+        cmp, 
+        suffix,
+        model->names_and_ids_tracker().s_expr_name_of(_v1),
+        model->names_and_ids_tracker().s_expr_name_of(_v2));
+
+    return s.str();
 }

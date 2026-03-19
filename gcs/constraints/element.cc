@@ -12,11 +12,15 @@
 
 #include <util/enumerate.hh>
 
+#include <fmt/ostream.h>
+
 #include <algorithm>
 #include <functional>
 #include <memory>
 #include <optional>
 #include <set>
+#include <sstream>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -32,9 +36,13 @@ using std::optional;
 using std::pair;
 using std::set;
 using std::shared_ptr;
+using std::string;
+using std::stringstream;
 using std::unique_ptr;
 using std::vector;
 using std::visit;
+
+using fmt::print;
 
 namespace
 {
@@ -507,6 +515,65 @@ auto NDimensionalElement<EntryType_, dimensions_>::clone() const -> unique_ptr<C
     return unique_ptr<Constraint>(new NDimensionalElement{_result_var, _index_vars, _index_starts, _array, _bounds_only});
 }
 
+template <typename EntryType_, unsigned dimensions_>
+auto NDimensionalElement<EntryType_, dimensions_>::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
+{
+    // (element ((X0,0 X0,1 X0,2 ... X0,n-1)
+    //            ...
+    //           (Xm-1,0 Xm-1,1 Xm-1,2 ... Xm-1,n-1))
+    //           (Y1,offset1)
+    //           (Y2,offset2)
+    //            Z)
+    stringstream s;
+
+    // Helper lmbda
+    auto print_elem = [&](auto & s, const auto & elem, const auto & index) {
+        if constexpr (std::is_same_v<EntryType_, IntegerVariableID>) {
+            print(s, "{},{} ", model->names_and_ids_tracker().s_expr_name_of(elem), index);
+        } else {
+            print(s, "{},{} ", elem.raw_value, index);
+        }
+    };
+
+    auto print_array = [&](auto & s, const auto & arr, auto self_ref) -> void {
+        using ArrayType = std::decay_t<decltype(arr)>;
+        
+        // Check if we're at the innermost level (vector of EntryType_)
+        if constexpr (std::is_same_v<typename ArrayType::value_type, EntryType_>) {
+            // Base case: print elements
+            print(s, "(");
+            for (size_t i = 0; i < arr.size(); ++i) {
+                print_elem(s, arr[i], i);
+            }
+            print(s, "\b) ");
+        } else {
+            // Recursive case: dig deeper
+            for (const auto & sub_arr : arr) {
+                self_ref(s, sub_arr, self_ref);
+            }
+        }
+    };
+
+    print(s, "{} element (", name);
+
+    // Print array(s) -- works for any number of dimensions
+    print_array(s, *_array, print_array);
+    
+    print(s, "\b)");
+    
+    // print (Y, offset) pairs.  It looks like _index_vars.size() is always 2
+    for (size_t i = 0; i < _index_vars.size(); ++i) {
+        print(s, " ({},{})", 
+            model->names_and_ids_tracker().s_expr_name_of(_index_vars[i]),
+            _index_starts[i].raw_value);
+    }
+    
+    // Print Z
+    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_result_var));
+
+    return s.str();
+}
+
 namespace gcs
 {
     template class NDimensionalElement<IntegerVariableID, 1>;
@@ -516,3 +583,33 @@ namespace gcs
     template class NDimensionalElement<Integer, 2>;
     template class NDimensionalElement<Integer, 3>;
 }
+
+// auto Element::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
+// {
+//     // (element (X0 X1 X2 ... Xn-1) (Y,offset) Z)
+//     stringstream s;
+
+//     print(s, "{} element (", name);
+
+//     // Print the array elements
+//     for (const auto & elem : * _array) {
+//         visit(overloaded{
+//             [&](const IntegerVariableID & v) {
+//                 print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(v));
+//             },
+//             [&](const Integer & i) {
+//                 print(s, " {}", i.raw_value);
+//             }
+//         }, elem);
+//     }
+    
+//     // Print (Y, offset)
+//     print(s, ") ({},{})", 
+//         model->names_and_ids_tracker().s_expr_name_of(_index_vars[0]),
+//         _index_starts[0].raw_value);
+    
+//     // Print Z
+//     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_result_var));
+
+//     return s.str();
+// }

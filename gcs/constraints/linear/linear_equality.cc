@@ -12,6 +12,8 @@
 #include <util/enumerate.hh>
 #include <util/overloaded.hh>
 
+#include <fmt/ostream.h>
+
 #include <functional>
 #include <memory>
 #include <sstream>
@@ -32,6 +34,8 @@ using std::pair;
 using std::stringstream;
 using std::unique_ptr;
 using std::vector;
+
+using fmt::print;
 
 LinearEqualityIff::LinearEqualityIff(WeightedSum coeff_vars, Integer value, Literal cond, bool gac) :
     _coeff_vars(move(coeff_vars)),
@@ -349,12 +353,57 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
     }
 }
 
+auto LinearEqualityIff::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
+{
+    // (name lin_equals_iff Z (c1 X1 c2 X2 ... cn Xn) Y)
+    stringstream s;
+
+    print(s, "{} lin_equals_iff", name);
+    print(s, " {} (", model->names_and_ids_tracker().s_expr_name_of(_cond));
+    for (const auto & [c, v] : _coeff_vars.terms) {
+        print(s, " {} {}", c.raw_value, model->names_and_ids_tracker().s_expr_name_of(v));
+    }
+    print(s, ") {}", _value.raw_value);
+
+    return s.str();
+}
+
 LinearEquality::LinearEquality(WeightedSum coeff_vars, Integer value, bool gac) :
     LinearEqualityIff(coeff_vars, value, TrueLiteral{}, gac)
 {
 }
 
+auto LinearEquality::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
+{
+    // (name lin_equals Z (c1 X1 c2 X2 ... cn Xn) Y)
+    stringstream s;
+
+    print(s, "{} lin_equals (", name);
+
+    for (const auto & [c, v] : _coeff_vars.terms) {
+        print(s, " {} {}", c.raw_value, model->names_and_ids_tracker().s_expr_name_of(v));
+    }
+    print(s, ") {}", _value.raw_value);
+
+    return s.str();
+}
+
 LinearNotEquals::LinearNotEquals(WeightedSum coeff_vars, Integer value, bool gac) :
     LinearEqualityIff(coeff_vars, value, FalseLiteral{}, gac)
 {
+}
+
+auto LinearNotEquals::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
+{
+    // (name lin_not_equals Z (c1 X1 c2 X2 ... cn Xn) Y)
+    stringstream s;
+
+    print(s, "{} lin_not_equals (", name);
+
+    for (const auto & [c, v] : _coeff_vars.terms) {
+        print(s, " {} {}", c.raw_value, model->names_and_ids_tracker().s_expr_name_of(v));
+    }
+    print(s, ") {}", _value.raw_value);
+
+    return s.str();
 }

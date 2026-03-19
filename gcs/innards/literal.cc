@@ -100,31 +100,3 @@ auto gcs::innards::is_literally_false(const Literal & lit) -> bool
     auto result = is_literally_true_or_false(lit);
     return result && ! *result;
 }
-
-auto gcs::innards::s_expr_value_of_literal(const Literal & lit) -> string
-{
-    return overloaded{
-        [](const IntegerVariableCondition & ilit) -> string {
-            // if op is gt, any value is ok
-            // if op is eq, value must be 1 from 0..1
-            // if op is neq, value must be 1 from 0..1
-            // otherwise panic
-            return ilit.value.to_string();
-        },
-        [](const TrueLiteral &) -> string {
-            return "true";
-        },
-        [](const FalseLiteral &) -> string {
-            return "false";
-        }}
-        .visit(lit);
-}
-
-auto gcs::innards::s_expr_value_of_literal(const Literals & lits) -> string
-{
-    string result = "(";
-    for (auto & lit : lits)
-        result += s_expr_value_of_literal(lit) + " ";
-    result += ")";
-    return result;
-}

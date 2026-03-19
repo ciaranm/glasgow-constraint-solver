@@ -279,6 +279,11 @@ namespace gcs::innards
          */
         [[nodiscard]] auto s_expr_name_of(IntegerVariableID id) const -> std::string;
 
+         /**
+         * Get the human-readable / s-expr name for a literal. Currently throws on pretty much everything.
+         */       
+        [[nodiscard]] auto s_expr_name_of(Literal lit) const -> std::string;
+
         /**
          * Get the human-readable name for a variable.
          */

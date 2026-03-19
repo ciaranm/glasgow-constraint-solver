@@ -1,11 +1,14 @@
 #include <gcs/constraints/count.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
 
 #include <util/enumerate.hh>
+
+#include <fmt/ostream.h>
 
 #include <optional>
 #include <sstream>
@@ -23,6 +26,8 @@ using std::stringstream;
 using std::tuple;
 using std::unique_ptr;
 using std::vector;
+
+using fmt::print;
 
 Count::Count(std::vector<IntegerVariableID> vars, const IntegerVariableID & value_of_interest, const IntegerVariableID & how_many) :
     _vars(move(vars)),
@@ -226,4 +231,21 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
             return PropagatorState::Enable;
         },
         triggers, "count");
+}
+
+auto Count::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
+{
+    // (name count (X1 ... Xn) Y Z)
+    stringstream s;
+
+    print(s, "{} count (", name);
+
+    for (const auto & v : _vars) {
+        print(s, "{} ", model->names_and_ids_tracker().s_expr_name_of(v));
+    }
+    print(s, "\b) {} {}", 
+        model->names_and_ids_tracker().s_expr_name_of(_value_of_interest), 
+        model->names_and_ids_tracker().s_expr_name_of(_how_many));
+
+    return s.str();
 }

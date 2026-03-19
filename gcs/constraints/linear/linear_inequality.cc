@@ -8,6 +8,8 @@
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
 
+#include <fmt/ostream.h>
+
 #include <sstream>
 
 using namespace gcs;
@@ -21,6 +23,8 @@ using std::stringstream;
 using std::unique_ptr;
 using std::variant;
 using std::vector;
+
+using fmt::print;
 
 LinearInequalityIff::LinearInequalityIff(WeightedSum coeff_vars, Integer value, Literal cond) :
     _coeff_vars(move(coeff_vars)),
@@ -223,6 +227,24 @@ auto LinearInequalityIff::install(Propagators & propagators, State & state, Proo
     }
 }
 
+
+
+auto LinearInequalityIff::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
+{
+    // (name lin_equals_iff Z (c1 X1 c2 X2 ... cn Xn) Y)
+    stringstream s;
+
+    print(s, "{} lin_not_equals_iff", name);
+    print(s, " {} (", model->names_and_ids_tracker().s_expr_name_of(_cond));
+    for (const auto & [c, v] : _coeff_vars.terms) {
+        print(s, "{} {} ", c.raw_value, model->names_and_ids_tracker().s_expr_name_of(v));
+    }
+    print(s, "\b"); // backspace to remove trailing space
+    print(s, ") {}", _value.raw_value);
+
+    return s.str();
+}
+
 LinearInequalityIf::LinearInequalityIf(WeightedSum coeff_vars, Integer value, Literal cond) :
     _coeff_vars(move(coeff_vars)),
     _value(value),
@@ -351,4 +373,20 @@ auto LinearInequalityIf::install(Propagators & propagators, State & state, Proof
             sanitised_cv);
     } break;
     }
+}
+
+auto LinearInequalityIf::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
+{
+    // (name lin_equals_if Z (c1 X1 c2 X2 ... cn Xn) Y)
+    stringstream s;
+
+    print(s, "{} lin_not_equals_if", name);
+    print(s, " {} (", model->names_and_ids_tracker().s_expr_name_of(_cond));
+    for (const auto & [c, v] : _coeff_vars.terms) {
+        print(s, "{} {} ", c.raw_value, model->names_and_ids_tracker().s_expr_name_of(v));
+    }
+    print(s, "\b"); // backspace to remove trailing space
+    print(s, ") {}", _value.raw_value);
+
+    return s.str();
 }

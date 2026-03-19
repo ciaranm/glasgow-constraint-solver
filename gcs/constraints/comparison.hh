@@ -32,13 +32,15 @@ namespace gcs
             Literal _cond;
             bool _full_reif;
             bool _or_equal;
+            bool _vars_swapped;
 
         public:
-            explicit CompareLessThanReif(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond, bool full_reif, bool or_equal);
+            explicit CompareLessThanReif(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond, bool full_reif, bool or_equal, bool vars_swapped = false);
 
             virtual auto install(innards::Propagators &, innards::State &,
                 innards::ProofModel * const) && -> void override;
             virtual auto clone() const -> std::unique_ptr<Constraint> override;
+            [[nodiscard]] virtual auto s_exprify(const std::string & name, const innards::ProofModel * const) const -> std::string override;
         };
     }
 
@@ -51,7 +53,7 @@ namespace gcs
     {
     public:
         inline explicit LessThan(const IntegerVariableID v1, const IntegerVariableID v2) :
-            CompareLessThanReif(v1, v2, innards::TrueLiteral{}, true, false){};
+            CompareLessThanReif(v1, v2, innards::TrueLiteral{}, true, false, false){};
     };
 
     /**
@@ -63,7 +65,7 @@ namespace gcs
     {
     public:
         inline explicit LessThanIf(const IntegerVariableID v1, const IntegerVariableID v2, IntegerVariableCondition cond) :
-            CompareLessThanReif(v1, v2, cond, false, false){};
+            CompareLessThanReif(v1, v2, cond, false, false, false){};
     };
 
     /**
@@ -75,7 +77,7 @@ namespace gcs
     {
     public:
         inline explicit LessThanEqual(const IntegerVariableID v1, const IntegerVariableID v2) :
-            CompareLessThanReif(v1, v2, innards::TrueLiteral{}, true, true){};
+            CompareLessThanReif(v1, v2, innards::TrueLiteral{}, true, true, false){};
     };
 
     /**
@@ -87,7 +89,7 @@ namespace gcs
     {
     public:
         inline explicit GreaterThan(const IntegerVariableID v1, const IntegerVariableID v2) :
-            CompareLessThanReif(v2, v1, innards::TrueLiteral{}, true, false){};
+            CompareLessThanReif(v2, v1, innards::TrueLiteral{}, true, false, true){};
     };
 
     /**
@@ -99,7 +101,7 @@ namespace gcs
     {
     public:
         inline explicit GreaterThanEqual(const IntegerVariableID v1, const IntegerVariableID v2) :
-            CompareLessThanReif(v2, v1, innards::TrueLiteral{}, true, true){};
+            CompareLessThanReif(v2, v1, innards::TrueLiteral{}, true, true, true){};
     };
 
     /**
@@ -111,7 +113,7 @@ namespace gcs
     {
     public:
         inline explicit LessThanIff(const IntegerVariableID v1, const IntegerVariableID v2, IntegerVariableCondition cond) :
-            CompareLessThanReif(v1, v2, cond, true, false){};
+            CompareLessThanReif(v1, v2, cond, true, false, false){};
     };
 
     /**
@@ -123,7 +125,7 @@ namespace gcs
     {
     public:
         inline explicit LessThanEqualIff(const IntegerVariableID v1, const IntegerVariableID v2, IntegerVariableCondition cond) :
-            CompareLessThanReif(v1, v2, cond, true, true){};
+            CompareLessThanReif(v1, v2, cond, true, true, false){};
     };
 
     /**
@@ -135,7 +137,7 @@ namespace gcs
     {
     public:
         inline explicit GreaterThanIff(const IntegerVariableID v1, const IntegerVariableID v2, IntegerVariableCondition cond) :
-            CompareLessThanReif(v2, v1, cond, true, false){};
+            CompareLessThanReif(v2, v1, cond, true, false, true){};
     };
 
     /**
@@ -147,7 +149,7 @@ namespace gcs
     {
     public:
         inline explicit GreaterThanEqualIff(const IntegerVariableID v1, const IntegerVariableID v2, IntegerVariableCondition cond) :
-            CompareLessThanReif(v2, v1, cond, true, true){};
+            CompareLessThanReif(v2, v1, cond, true, true, true){};
     };
 }
 

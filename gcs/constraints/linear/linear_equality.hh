@@ -21,7 +21,7 @@ namespace gcs
      */
     class LinearEqualityIff : public Constraint
     {
-    private:
+    protected:
         WeightedSum _coeff_vars;
         Integer _value;
         innards::Literal _cond;
@@ -33,18 +33,21 @@ namespace gcs
         virtual auto install(innards::Propagators &, innards::State &,
             innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
+        [[nodiscard]] virtual auto s_exprify(const std::string & name, const innards::ProofModel * const) const -> std::string override;
     };
 
     class LinearEquality : public LinearEqualityIff
     {
     public:
         explicit LinearEquality(WeightedSum coeff_vars, Integer value, bool gac = false);
+        [[nodiscard]] virtual auto s_exprify(const std::string & name, const innards::ProofModel * const) const -> std::string override;
     };
 
     class LinearNotEquals : public LinearEqualityIff
     {
     public:
         explicit LinearNotEquals(WeightedSum coeff_vars, Integer value, bool gac = false);
+        [[nodiscard]] virtual auto s_exprify(const std::string & name, const innards::ProofModel * const) const -> std::string override;
     };
 }
 

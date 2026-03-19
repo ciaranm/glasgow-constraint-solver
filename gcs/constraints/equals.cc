@@ -271,7 +271,7 @@ auto EqualsIf::s_exprify(const string & name, const innards::ProofModel * const 
     stringstream s;
 
     print(s, "{} equals_if", name);
-    print(s, " {}", gcs::innards::s_expr_value_of_literal(_cond));
+    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_cond));
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v1));
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v2));
 
@@ -449,7 +449,7 @@ auto EqualsIff::s_exprify(const string & name, const innards::ProofModel * const
     stringstream s;
 
     print(s, "{} equals_iff", name);
-    print(s, " {}", gcs::innards::s_expr_value_of_literal(_cond));
+    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_cond));
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v1));
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v2));
 
