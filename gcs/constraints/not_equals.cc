@@ -126,6 +126,12 @@ auto NotEquals::install(Propagators & propagators, State & initial_state, ProofM
 auto NotEquals::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
 {
     // (name not_equals X Y)
+    // TODO: ...
+    // and
+    // (name not_equals_if Z X Y)
+    // and
+    // (name not_equals_iff Z X Y)
+
     stringstream s;
     print(s, "{} not_equals {} {}", name, 
         model->names_and_ids_tracker().s_expr_name_of(_v1), 
