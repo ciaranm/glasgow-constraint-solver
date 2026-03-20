@@ -202,15 +202,18 @@ auto CompareLessThanReif::install(Propagators & propagators, State & initial_sta
 auto CompareLessThanReif::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
 {
     // (name cmp X Y)
+    // or
+    // (name cmp Z X Y)
     stringstream s;
     string cmp;
-    string suffix;
     if (_vars_swapped) {
         cmp = _or_equal ? "greater_than_equal" : "greater_than";
     }
     else {
         cmp = _or_equal ? "less_than_equal" : "less_than";
     }
+    string suffix;
+    bool rei = false;
     visit(overloaded{
         [&](const TrueLiteral &) {
             suffix = "";
@@ -220,15 +223,22 @@ auto CompareLessThanReif::s_exprify(const std::string & name, const ProofModel *
         },
         [&](const IntegerVariableCondition &) {
             suffix = _full_reif ? "_iff" : "_if";
+            rei = true;
         }
     }, _cond);
 
-    print(s, "{} {}{} {} {}", 
-        name, 
-        cmp, 
-        suffix,
-        model->names_and_ids_tracker().s_expr_name_of(_v1),
-        model->names_and_ids_tracker().s_expr_name_of(_v2));
+    if (rei) {
+        print(s, "{} {}{} {} {} {}", name, cmp, suffix,
+            model->names_and_ids_tracker().s_expr_name_of(_cond),
+            model->names_and_ids_tracker().s_expr_name_of(_v1),
+            model->names_and_ids_tracker().s_expr_name_of(_v2));
+    }
+    else {
+        print(s, "{} {}{} {} {}", name, cmp, suffix,
+            model->names_and_ids_tracker().s_expr_name_of(_v1),
+            model->names_and_ids_tracker().s_expr_name_of(_v2));
+    }
+    
 
     return s.str();
 }

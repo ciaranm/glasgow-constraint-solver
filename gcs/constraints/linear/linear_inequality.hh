@@ -27,9 +27,10 @@ namespace gcs
             WeightedSum _coeff_vars;
             Integer _value;
             Literal _cond;
+            bool _less_than_equal;
 
         public:
-            explicit LinearInequalityIf(WeightedSum coeff_vars, Integer value, Literal cond);
+            explicit LinearInequalityIf(WeightedSum coeff_vars, Integer value, Literal cond, bool less_than_equal = false);
 
             virtual auto install(innards::Propagators &, innards::State &,
                 innards::ProofModel * const) && -> void override;
@@ -52,9 +53,10 @@ namespace gcs
             WeightedSum _coeff_vars;
             Integer _value;
             Literal _cond;
+            bool _less_than_equal;
 
         public:
-            explicit LinearInequalityIff(WeightedSum coeff_vars, Integer value, Literal cond);
+            explicit LinearInequalityIff(WeightedSum coeff_vars, Integer value, Literal cond, bool less_than_equal = false);
 
             virtual auto install(innards::Propagators &, innards::State &,
                 innards::ProofModel * const) && -> void override;

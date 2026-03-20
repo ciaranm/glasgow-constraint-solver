@@ -26,16 +26,17 @@ using std::vector;
 
 using fmt::print;
 
-LinearInequalityIff::LinearInequalityIff(WeightedSum coeff_vars, Integer value, Literal cond) :
+LinearInequalityIff::LinearInequalityIff(WeightedSum coeff_vars, Integer value, Literal cond, bool less_than_equal) :
     _coeff_vars(move(coeff_vars)),
     _value(value),
-    _cond(cond)
+    _cond(cond),
+    _less_than_equal(less_than_equal)
 {
 }
 
 auto LinearInequalityIff::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<LinearInequalityIff>(WeightedSum{_coeff_vars}, _value, _cond);
+    return make_unique<LinearInequalityIff>(WeightedSum{_coeff_vars}, _value, _cond, _less_than_equal);
 }
 
 namespace
@@ -231,30 +232,40 @@ auto LinearInequalityIff::install(Propagators & propagators, State & state, Proo
 
 auto LinearInequalityIff::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
 {
-    // (name lin_equals_iff Z (c1 X1 c2 X2 ... cn Xn) Y)
+    // (name lin_not_equals_iff Z (c1 X1 c2 X2 ... cn Xn) Y)
+    // also
+    // (name lin_less_than_equal_iff Z (c1 X1 c2 X2 ... cn Xn) Y)
+    // and
+    // (name lin_less_than_equal (c1 X1 c2 X2 ... cn Xn) Y)
     stringstream s;
+    bool rei = false;
+    auto cons = visit(overloaded{
+        [&](const TrueLiteral &) { return "lin_less_than_equal"; },
+        [&](const FalseLiteral &) { return "lin_less_than_not_equal"; },  // ??????
+        [&](const IntegerVariableCondition &) { rei = true; return _less_than_equal ? "lin_less_than_equal_iff" : "lin_less_than_iff"; }
+    }, _cond);
 
-    print(s, "{} lin_not_equals_iff", name);
+    print(s, "{} {}", name, cons);
     print(s, " {} (", model->names_and_ids_tracker().s_expr_name_of(_cond));
     for (const auto & [c, v] : _coeff_vars.terms) {
         print(s, "{} {} ", c.raw_value, model->names_and_ids_tracker().s_expr_name_of(v));
     }
-    print(s, "\b"); // backspace to remove trailing space
-    print(s, ") {}", _value.raw_value);
+    print(s, "\b) {}", _value.raw_value);
 
     return s.str();
 }
 
-LinearInequalityIf::LinearInequalityIf(WeightedSum coeff_vars, Integer value, Literal cond) :
+LinearInequalityIf::LinearInequalityIf(WeightedSum coeff_vars, Integer value, Literal cond, bool less_than_equal) :
     _coeff_vars(move(coeff_vars)),
     _value(value),
-    _cond(cond)
+    _cond(cond),
+    _less_than_equal(less_than_equal)
 {
 }
 
 auto LinearInequalityIf::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<LinearInequalityIf>(WeightedSum{_coeff_vars}, _value, _cond);
+    return make_unique<LinearInequalityIf>(WeightedSum{_coeff_vars}, _value, _cond, _less_than_equal);
 }
 
 auto LinearInequalityIf::install(Propagators & propagators, State & state, ProofModel * const optional_model) && -> void
@@ -377,16 +388,17 @@ auto LinearInequalityIf::install(Propagators & propagators, State & state, Proof
 
 auto LinearInequalityIf::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
 {
-    // (name lin_equals_if Z (c1 X1 c2 X2 ... cn Xn) Y)
+    // (name lin_not_equals_if Z (c1 X1 c2 X2 ... cn Xn) Y)
+    // also
+    // (name lin_less_than_equal_if Z (c1 X1 c2 X2 ... cn Xn) Y)
     stringstream s;
 
-    print(s, "{} lin_not_equals_if", name);
+    print(s, "{} {}", name, _less_than_equal ? "lin_less_than_equal_if" : "lin_less_than_if");
     print(s, " {} (", model->names_and_ids_tracker().s_expr_name_of(_cond));
     for (const auto & [c, v] : _coeff_vars.terms) {
         print(s, "{} {} ", c.raw_value, model->names_and_ids_tracker().s_expr_name_of(v));
     }
-    print(s, "\b"); // backspace to remove trailing space
-    print(s, ") {}", _value.raw_value);
+    print(s, "\b) {}", _value.raw_value);
 
     return s.str();
 }

@@ -9,11 +9,12 @@ LinearLessThanEqual::LinearLessThanEqual(WeightedSum coeff_vars, Integer value) 
 }
 
 LinearLessThanEqualIf::LinearLessThanEqualIf(WeightedSum coeff_vars, Integer value, Literal cond) :
-    LinearInequalityIf(move(coeff_vars), value, cond)
+    LinearInequalityIf(move(coeff_vars), value, cond, true)
 {
 }
 
 LinearLessThanEqualIff::LinearLessThanEqualIff(WeightedSum coeff_vars, Integer value, Literal cond) :
-    LinearInequalityIff(move(coeff_vars), value, cond)
+    LinearInequalityIff(move(coeff_vars), value, cond, true)
 {
 }
+

@@ -1,6 +1,7 @@
 #include <gcs/constraints/not_equals.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
@@ -8,6 +9,8 @@
 #include <util/overloaded.hh>
 
 #include <algorithm>
+
+#include <fmt/ostream.h>
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -21,6 +24,8 @@ using std::pair;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
+
+using fmt::print;
 
 NotEquals::NotEquals(const IntegerVariableID v1, const IntegerVariableID v2) :
     _v1(v1),
@@ -116,4 +121,14 @@ auto NotEquals::install(Propagators & propagators, State & initial_state, ProofM
         optional_model->add_constraint("NotEquals", "greater than option", WPBSum{} + -1_i * _v1 + 1_i * _v2 <= -1_i,
             HalfReifyOnConjunctionOf{{! selector}});
     }
+}
+
+auto NotEquals::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
+{
+    // (name not_equals X Y)
+    stringstream s;
+    print(s, "{} not_equals {} {}", name, 
+        model->names_and_ids_tracker().s_expr_name_of(_v1), 
+        model->names_and_ids_tracker().s_expr_name_of(_v2));
+    return s.str();
 }

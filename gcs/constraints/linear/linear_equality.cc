@@ -356,14 +356,27 @@ auto LinearEqualityIff::install(Propagators & propagators, State & state, ProofM
 auto LinearEqualityIff::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
 {
     // (name lin_equals_iff Z (c1 X1 c2 X2 ... cn Xn) Y)
+    // and
+    // (name lin_equals (c1 X1 c2 X2 ... cn Xn) Y)
+    // and
+    // (name lin_not_equals (c1 X1 c2 X2 ... cn Xn) Y)
     stringstream s;
+    bool rei = false;
+    auto cons = visit(overloaded{
+            [&](const TrueLiteral &) { return "lin_equals"; },
+            [&](const FalseLiteral &) { return "lin_not_equals"; },
+            [&](const IntegerVariableCondition &) { rei = true; return "lin_equals_iff"; }
+        } , _cond);
 
-    print(s, "{} lin_equals_iff", name);
-    print(s, " {} (", model->names_and_ids_tracker().s_expr_name_of(_cond));
-    for (const auto & [c, v] : _coeff_vars.terms) {
-        print(s, " {} {}", c.raw_value, model->names_and_ids_tracker().s_expr_name_of(v));
+    print(s, "{} {}", name, cons);
+    if (rei) {
+        print(s, " {} ", model->names_and_ids_tracker().s_expr_name_of(_cond));
     }
-    print(s, ") {}", _value.raw_value);
+    print(s, " (");
+    for (const auto & [c, v] : _coeff_vars.terms) {
+        print(s, "{} {} ", c.raw_value, model->names_and_ids_tracker().s_expr_name_of(v));
+    }
+    print(s, "\b) {}", _value.raw_value);
 
     return s.str();
 }
@@ -373,37 +386,37 @@ LinearEquality::LinearEquality(WeightedSum coeff_vars, Integer value, bool gac) 
 {
 }
 
-auto LinearEquality::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
-{
-    // (name lin_equals Z (c1 X1 c2 X2 ... cn Xn) Y)
-    stringstream s;
+// auto LinearEquality::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
+// {
+//     // (name lin_equals Z (c1 X1 c2 X2 ... cn Xn) Y)
+//     stringstream s;
 
-    print(s, "{} lin_equals (", name);
+//     print(s, "{} lin_equals (", name);
 
-    for (const auto & [c, v] : _coeff_vars.terms) {
-        print(s, " {} {}", c.raw_value, model->names_and_ids_tracker().s_expr_name_of(v));
-    }
-    print(s, ") {}", _value.raw_value);
+//     for (const auto & [c, v] : _coeff_vars.terms) {
+//         print(s, " {} {}", c.raw_value, model->names_and_ids_tracker().s_expr_name_of(v));
+//     }
+//     print(s, ") {}", _value.raw_value);
 
-    return s.str();
-}
+//     return s.str();
+// }
 
 LinearNotEquals::LinearNotEquals(WeightedSum coeff_vars, Integer value, bool gac) :
     LinearEqualityIff(coeff_vars, value, FalseLiteral{}, gac)
 {
 }
 
-auto LinearNotEquals::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
-{
-    // (name lin_not_equals Z (c1 X1 c2 X2 ... cn Xn) Y)
-    stringstream s;
+// auto LinearNotEquals::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
+// {
+//     // (name lin_not_equals Z (c1 X1 c2 X2 ... cn Xn) Y)
+//     stringstream s;
 
-    print(s, "{} lin_not_equals (", name);
+//     print(s, "{} lin_not_equals (", name);
 
-    for (const auto & [c, v] : _coeff_vars.terms) {
-        print(s, " {} {}", c.raw_value, model->names_and_ids_tracker().s_expr_name_of(v));
-    }
-    print(s, ") {}", _value.raw_value);
+//     for (const auto & [c, v] : _coeff_vars.terms) {
+//         print(s, " {} {}", c.raw_value, model->names_and_ids_tracker().s_expr_name_of(v));
+//     }
+//     print(s, ") {}", _value.raw_value);
 
-    return s.str();
-}
+//     return s.str();
+// }
