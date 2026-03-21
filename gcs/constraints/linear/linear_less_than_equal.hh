@@ -13,7 +13,7 @@ namespace gcs
      * \sa LinearEquality
      * \sa LinearGreaterThanEqual
      */
-    class LinearLessThanEqual : public innards::LinearInequalityIff
+    class LinearLessThanEqual : public ReifiedLinearInequality
     {
     public:
         explicit LinearLessThanEqual(WeightedSum coeff_vars, Integer value);
@@ -27,10 +27,10 @@ namespace gcs
      * \ingroup innards
      * \sa LinearLessThanEqual
      */
-    class LinearLessThanEqualIf : public innards::LinearInequalityIf
+    class LinearLessThanEqualIf : public ReifiedLinearInequality
     {
     public:
-        explicit LinearLessThanEqualIf(WeightedSum coeff_vars, Integer value, innards::Literal cond);
+        explicit LinearLessThanEqualIf(WeightedSum coeff_vars, Integer value, IntegerVariableCondition cond);
     };
 
     /**
@@ -42,10 +42,10 @@ namespace gcs
      * \sa LinearEquality
      * \sa LinearGreaterThanEqual
      */
-    class LinearLessThanEqualIff : public innards::LinearInequalityIff
+    class LinearLessThanEqualIff : public ReifiedLinearInequality
     {
     public:
-        explicit LinearLessThanEqualIff(WeightedSum coeff_vars, Integer value, innards::Literal cond);
+        explicit LinearLessThanEqualIff(WeightedSum coeff_vars, Integer value, IntegerVariableCondition cond);
     };
 }
 

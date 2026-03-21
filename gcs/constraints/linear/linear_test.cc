@@ -56,9 +56,9 @@ auto run_linear_test(bool proofs, const string & mode, pair<int, int> v1_range, 
     println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;
-    auto v1 = p.create_integer_variable(Integer(v1_range.first), Integer(v1_range.second));
-    auto v2 = p.create_integer_variable(Integer(v2_range.first), Integer(v2_range.second));
-    auto v3 = p.create_integer_variable(Integer(v3_range.first), Integer(v3_range.second));
+    auto v1 = p.create_integer_variable(Integer(v1_range.first), Integer(v1_range.second), "v1");
+    auto v2 = p.create_integer_variable(Integer(v2_range.first), Integer(v2_range.second), "v2");
+    auto v3 = p.create_integer_variable(Integer(v3_range.first), Integer(v3_range.second), "v3");
     auto vs = vector{v1, v2, v3};
     for (auto & [linear, value] : ineqs) {
         WeightedSum c;
@@ -72,6 +72,48 @@ auto run_linear_test(bool proofs, const string & mode, pair<int, int> v1_range, 
 
     if ((! is_same_v<Constraint_, LinearEquality>) && 1 == ineqs.size())
         solve_for_tests_checking_consistency(p, proof_name, expected, actual, tuple{pair{v1, CheckConsistency::BC}, pair{v2, CheckConsistency::BC}, pair{v3, CheckConsistency::BC}});
+    else
+        solve_for_tests(p, proof_name, actual, tuple{v1, v2, v3});
+
+    check_results(proof_name, expected, actual);
+}
+
+template <typename Constraint_>
+auto run_linear_test_gac(bool proofs, const string & mode, pair<int, int> v1_range, pair<int, int> v2_range,
+    pair<int, int> v3_range, const vector<pair<vector<int>, int>> & ineqs,
+    const std::function<auto(int, int)->bool> & compare) -> void
+{
+    print(cerr, "linear gac {} {} {} {} {} {}", mode, v1_range, v2_range, v3_range, ineqs, proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    auto is_satisfying = [&](int a, int b, int c) {
+        for (auto & [linear, value] : ineqs)
+            if (! compare(linear[0] * a + linear[1] * b + linear[2] * c, value))
+                return false;
+        return true;
+    };
+
+    set<tuple<int, int, int>> expected, actual;
+    build_expected(expected, is_satisfying, v1_range, v2_range, v3_range);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    auto v1 = p.create_integer_variable(Integer(v1_range.first), Integer(v1_range.second), "v1");
+    auto v2 = p.create_integer_variable(Integer(v2_range.first), Integer(v2_range.second), "v2");
+    auto v3 = p.create_integer_variable(Integer(v3_range.first), Integer(v3_range.second), "v3");
+    auto vs = vector{v1, v2, v3};
+    for (auto & [linear, value] : ineqs) {
+        WeightedSum c;
+        for (const auto & [idx, coeff] : enumerate(linear))
+            if (coeff != 0)
+                c += Integer{coeff} * vs[idx];
+        p.post(Constraint_{c, Integer{value}, true});
+    }
+
+    auto proof_name = proofs ? make_optional("linear_equality_test") : nullopt;
+
+    if (1 == ineqs.size())
+        solve_for_tests_checking_consistency(p, proof_name, expected, actual, tuple{pair{v1, CheckConsistency::GAC}, pair{v2, CheckConsistency::GAC}, pair{v3, CheckConsistency::GAC}});
     else
         solve_for_tests(p, proof_name, actual, tuple{v1, v2, v3});
 
@@ -106,10 +148,10 @@ auto run_linear_reif_test(bool full_reif, bool proofs, const string & mode, pair
         println(cerr, " expecting {} solutions", expected.size());
 
         Problem p;
-        auto v1 = p.create_integer_variable(Integer(v1_range.first), Integer(v1_range.second));
-        auto v2 = p.create_integer_variable(Integer(v2_range.first), Integer(v2_range.second));
-        auto v3 = p.create_integer_variable(Integer(v3_range.first), Integer(v3_range.second));
-        auto v4 = p.create_integer_variable(Integer(v4_range.first), Integer(v4_range.second));
+        auto v1 = p.create_integer_variable(Integer(v1_range.first), Integer(v1_range.second), "v1");
+        auto v2 = p.create_integer_variable(Integer(v2_range.first), Integer(v2_range.second), "v2");
+        auto v3 = p.create_integer_variable(Integer(v3_range.first), Integer(v3_range.second), "v3");
+        auto v4 = p.create_integer_variable(Integer(v4_range.first), Integer(v4_range.second), "c");
         auto vs = vector{v1, v2, v3};
         for (auto & [linear, value] : ineqs) {
             WeightedSum c;
@@ -121,8 +163,10 @@ auto run_linear_reif_test(bool full_reif, bool proofs, const string & mode, pair
 
         auto proof_name = proofs ? make_optional("linear_equality_test") : nullopt;
 
-        if ((! is_same_v<Constraint_, LinearEqualityIff>) && 1 == ineqs.size() && v4_range.first == v4_range.second)
-            solve_for_tests_checking_consistency(p, proof_name, expected, actual, tuple{pair{v1, CheckConsistency::BC}, pair{v2, CheckConsistency::BC}, pair{v3, CheckConsistency::BC}, pair{v4, CheckConsistency::None}});
+        if ((! is_same_v<Constraint_, LinearEqualityIff>) && (! is_same_v<Constraint_, LinearEqualityIf>) && (! is_same_v<Constraint_, LinearNotEqualsIf>)
+                && (! is_same_v<Constraint_, LinearNotEqualsIff>) && 1 == ineqs.size())
+            solve_for_tests_checking_consistency(p, proof_name, expected, actual, tuple{pair{v1, CheckConsistency::BC}, pair{v2, CheckConsistency::BC}, pair{v3, CheckConsistency::BC},
+                    pair{v4, CheckConsistency::GAC}});
         else
             solve_for_tests(p, proof_name, actual, tuple{v1, v2, v3, v4});
 
@@ -203,6 +247,10 @@ auto main(int, char *[]) -> int
         pair{-7, 5}, pair{7, 12}, pair{-3, 12},
         vector{pair{vector{4, -8, 10}, 94}});
 
+    data.emplace_back(
+            pair{8, 14}, pair{0, 8}, pair{4, 19},
+            vector{pair{vector{-7, 6, 7}, 69}});
+
     random_device rand_dev;
     mt19937 rand(rand_dev());
     uniform_int_distribution nc_dist(1, 5);
@@ -215,11 +263,18 @@ auto main(int, char *[]) -> int
         run_linear_test<LinearNotEquals>(false, "ne", r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
         run_linear_test<LinearLessThanEqual>(false, "le", r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
         run_linear_test<LinearGreaterThanEqual>(false, "ge", r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
+
+        run_linear_reif_test<LinearEqualityIf>(false, false, "eq", r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
+        run_linear_reif_test<LinearNotEqualsIf>(false, false, "ne", r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
         run_linear_reif_test<LinearGreaterThanEqualIf>(false, false, "ge", r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
         run_linear_reif_test<LinearLessThanEqualIf>(false, false, "le", r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
+        run_linear_reif_test<LinearNotEqualsIff>(true, false, "ne", r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
         run_linear_reif_test<LinearEqualityIff>(true, false, "eq", r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
         run_linear_reif_test<LinearLessThanEqualIff>(true, false, "le", r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
         run_linear_reif_test<LinearGreaterThanEqualIff>(true, false, "ge", r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
+
+        run_linear_test_gac<LinearEquality>(false, "eq", r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
+        run_linear_test_gac<LinearNotEquals>(false, "ne", r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
     }
 
     if (can_run_veripb())
@@ -228,11 +283,18 @@ auto main(int, char *[]) -> int
             run_linear_test<LinearNotEquals>(true, "ne", r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
             run_linear_test<LinearLessThanEqual>(true, "le", r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
             run_linear_test<LinearGreaterThanEqual>(true, "ge", r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
+
+            run_linear_reif_test<LinearEqualityIf>(false, true, "eq", r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
+            run_linear_reif_test<LinearNotEqualsIf>(false, true, "ne", r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
             run_linear_reif_test<LinearGreaterThanEqualIf>(false, true, "ge", r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
             run_linear_reif_test<LinearLessThanEqualIf>(false, true, "le", r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
+            run_linear_reif_test<LinearNotEqualsIff>(true, true, "ne", r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
             run_linear_reif_test<LinearEqualityIff>(true, true, "eq", r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
             run_linear_reif_test<LinearLessThanEqualIff>(true, true, "le", r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
             run_linear_reif_test<LinearGreaterThanEqualIff>(true, true, "ge", r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
+
+            run_linear_test_gac<LinearEquality>(true, "eq", r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
+            run_linear_test_gac<LinearNotEquals>(true, "ne", r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
         }
 
     return EXIT_SUCCESS;

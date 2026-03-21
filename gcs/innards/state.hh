@@ -6,6 +6,7 @@
 #include <gcs/innards/literal.hh>
 #include <gcs/innards/state-fwd.hh>
 #include <gcs/innards/variable_id_utils.hh>
+#include <gcs/reification.hh>
 
 #include <any>
 #include <concepts>
@@ -66,6 +67,36 @@ namespace gcs::innards
     {
         unsigned long index;
     };
+
+    namespace evaluated_reif
+    {
+        struct MustHold
+        {
+            std::optional<IntegerVariableCondition> cond;
+        };
+
+        struct MustNotHold
+        {
+            std::optional<IntegerVariableCondition> cond;
+        };
+
+        struct Undecided
+        {
+            IntegerVariableCondition cond;
+            bool set_cond_if_must_hold, set_not_cond_if_must_not_hold, set_not_cond_if_must_hold;
+        };
+
+        struct Deactivated
+        {
+            IntegerVariableCondition cond;
+        };
+    }
+
+    using EvaluatedReificationCondition = std::variant<
+        evaluated_reif::MustHold,
+        evaluated_reif::MustNotHold,
+        evaluated_reif::Undecided,
+        evaluated_reif::Deactivated>;
 
     /**
      * \brief Keeps track of the current state, at a point inside search.
@@ -451,6 +482,11 @@ namespace gcs::innards
         {
             return LiteralIs::DefinitelyFalse;
         }
+
+        /**
+         * Test whether a reification condition must hold, must not hold, etc.
+         */
+        [[nodiscard]] auto test_reification_condition(const ReificationCondition &) const -> EvaluatedReificationCondition;
 
         /**
          * Return the single value held by this IntegerVariableID, or throw
