@@ -1,6 +1,10 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_REIFICATION_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_REIFICATION_HH
 
+#include <gcs/variable_condition.hh>
+
+#include <variant>
+
 namespace gcs
 {
     namespace reif
