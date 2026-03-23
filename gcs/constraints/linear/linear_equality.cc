@@ -19,6 +19,7 @@
 #include <sstream>
 #include <type_traits>
 #include <vector>
+#include <variant>
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -35,11 +36,14 @@ using std::stringstream;
 using std::unique_ptr;
 using std::vector;
 
-ReifiedLinearEquality::ReifiedLinearEquality(WeightedSum coeff_vars, Integer value, ReificationCondition cond, bool gac) :
+using fmt::print;
+
+ReifiedLinearEquality::ReifiedLinearEquality(WeightedSum coeff_vars, Integer value, ReificationCondition cond, bool gac, bool flippedCond) :
     _coeff_vars(move(coeff_vars)),
     _value(value),
     _reif_cond(cond),
-    _gac(gac)
+    _gac(gac),
+    _flippedCond(flippedCond)
 {
 }
 
@@ -368,24 +372,30 @@ auto ReifiedLinearEquality::install(Propagators & propagators, State & state, Pr
     }
 }
 
-auto LinearEqualityIff::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
+auto ReifiedLinearEquality::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
 {
-    // (name lin_equals_iff Z (c1 X1 c2 X2 ... cn Xn) Y)
-    // and
     // (name lin_equals (c1 X1 c2 X2 ... cn Xn) Y)
-    // and
+    // (name lin_equals_if Z (c1 X1 c2 X2 ... cn Xn) Y)
+    // (name lin_equals_iff Z (c1 X1 c2 X2 ... cn Xn) Y)
     // (name lin_not_equals (c1 X1 c2 X2 ... cn Xn) Y)
+    // (name lin_not_equals_if Z (c1 X1 c2 X2 ... cn Xn) Y)
+    // (name lin_not_equals_iff Z (c1 X1 c2 X2 ... cn Xn) Y)
+
     stringstream s;
-    bool rei = false;
-    auto cons = visit(overloaded{
-            [&](const TrueLiteral &) { return "lin_equals"; },
-            [&](const FalseLiteral &) { return "lin_not_equals"; },
-            [&](const IntegerVariableCondition &) { rei = true; return "lin_equals_iff"; }
-        } , _cond);
+    bool rei;
+    auto cons = overloaded{
+            [&](const reif::MustHold &)    { rei = false; return "lin_equals"; },
+            [&](const reif::If &)          { rei = true;  return "lin_equals_if"; },
+            [&](const reif::Iff &)         { rei = true;  return _flippedCond ? 
+                                                                 "lin_not_equals_iff" : 
+                                                                 "lin_equals_iff"; },
+            [&](const reif::MustNotHold &) { rei = false; return "lin_not_equals"; },
+            [&](const reif::NotIf &)       { rei = true;  return "lin_not_equals_if"; }
+        }.visit(_reif_cond);
 
     print(s, "{} {}", name, cons);
     if (rei) {
-        print(s, " {} ", model->names_and_ids_tracker().s_expr_name_of(_cond));
+        print(s, " {} ", "Z"); // Z is a placholdr for now.
     }
     print(s, " (");
     for (const auto & [c, v] : _coeff_vars.terms) {
@@ -394,9 +404,12 @@ auto LinearEqualityIff::s_exprify(const std::string & name, const ProofModel * c
     print(s, "\b) {}", _value.raw_value);
 
     return s.str();
+
+}
+
 auto ReifiedLinearEquality::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<ReifiedLinearEquality>(WeightedSum{_coeff_vars}, _value, _reif_cond, _gac);
+    return make_unique<ReifiedLinearEquality>(WeightedSum{_coeff_vars}, _value, _reif_cond, _gac, _flippedCond);
 }
 
 LinearEquality::LinearEquality(WeightedSum coeff_vars, Integer value, bool gac) :
@@ -427,21 +440,6 @@ LinearEqualityIff::LinearEqualityIff(WeightedSum coeff_vars, Integer value, Lite
 {
 }
 
-// auto LinearEquality::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
-// {
-//     // (name lin_equals Z (c1 X1 c2 X2 ... cn Xn) Y)
-//     stringstream s;
-
-//     print(s, "{} lin_equals (", name);
-
-//     for (const auto & [c, v] : _coeff_vars.terms) {
-//         print(s, " {} {}", c.raw_value, model->names_and_ids_tracker().s_expr_name_of(v));
-//     }
-//     print(s, ") {}", _value.raw_value);
-
-//     return s.str();
-// }
-
 LinearNotEquals::LinearNotEquals(WeightedSum coeff_vars, Integer value, bool gac) :
     ReifiedLinearEquality(move(coeff_vars), value, reif::MustNotHold{}, gac)
 {
@@ -453,21 +451,6 @@ LinearNotEqualsIf::LinearNotEqualsIf(WeightedSum coeff_vars, Integer value, Lite
 }
 
 LinearNotEqualsIff::LinearNotEqualsIff(WeightedSum coeff_vars, Integer value, Literal cond, bool gac) :
-    ReifiedLinearEquality(move(coeff_vars), value, literal_to_reif<reif::Iff>(! cond), gac)
+    ReifiedLinearEquality(move(coeff_vars), value, literal_to_reif<reif::Iff>(! cond), gac, true)
 {
 }
-
-// auto LinearNotEquals::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
-// {
-//     // (name lin_not_equals Z (c1 X1 c2 X2 ... cn Xn) Y)
-//     stringstream s;
-
-//     print(s, "{} lin_not_equals (", name);
-
-//     for (const auto & [c, v] : _coeff_vars.terms) {
-//         print(s, " {} {}", c.raw_value, model->names_and_ids_tracker().s_expr_name_of(v));
-//     }
-//     print(s, ") {}", _value.raw_value);
-
-//     return s.str();
-// }

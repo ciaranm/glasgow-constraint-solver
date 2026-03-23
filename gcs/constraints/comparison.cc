@@ -24,17 +24,20 @@ using std::unique_ptr;
 using std::string;
 using std::stringstream;
 
-ReifiedCompareLessThanOrMaybeEqual::ReifiedCompareLessThanOrMaybeEqual(const IntegerVariableID v1, const IntegerVariableID v2, ReificationCondition cond, bool or_equal) :
+using fmt::print;
+
+ReifiedCompareLessThanOrMaybeEqual::ReifiedCompareLessThanOrMaybeEqual(const IntegerVariableID v1, const IntegerVariableID v2, ReificationCondition cond, bool or_equal, bool vars_swapped) :
     _v1(v1),
     _v2(v2),
     _reif_cond(cond),
-    _or_equal(or_equal)
+    _or_equal(or_equal),
+    _vars_swapped(vars_swapped)
 {
 }
 
 auto ReifiedCompareLessThanOrMaybeEqual::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<ReifiedCompareLessThanOrMaybeEqual>(_v1, _v2, _reif_cond, _or_equal);
+    return make_unique<ReifiedCompareLessThanOrMaybeEqual>(_v1, _v2, _reif_cond, _or_equal, _vars_swapped);
 }
 
 auto ReifiedCompareLessThanOrMaybeEqual::install(Propagators & propagators, State & initial_state,
@@ -109,7 +112,7 @@ auto ReifiedCompareLessThanOrMaybeEqual::install(Propagators & propagators, Stat
             [&](const evaluated_reif::MustHold & reif) {
                 Triggers triggers{.on_bounds = {_v1, _v2}};
 
-                propagators.install([v1 = _v1, v2 = _v2, cond = reif.cond ? Literal{*reif.cond} : TrueLiteral{}, full_reif = _full_reif, or_equal = _or_equal](
+                propagators.install([v1 = _v1, v2 = _v2, cond = reif.cond ? Literal{*reif.cond} : TrueLiteral{}, or_equal = _or_equal](
                                         const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                     auto v1_bounds = state.bounds(v1), v2_bounds = state.bounds(v2);
                     inference.infer_less_than(logger, v1, v2_bounds.second + (or_equal ? 1_i : 0_i), JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{cond, v2 < v2_bounds.second + 1_i}}; }});
@@ -121,7 +124,7 @@ auto ReifiedCompareLessThanOrMaybeEqual::install(Propagators & propagators, Stat
             [&](const evaluated_reif::MustNotHold & reif) {
                 Triggers triggers{.on_bounds = {_v1, _v2}};
 
-                propagators.install([v1 = _v1, v2 = _v2, inv_cond = reif.cond ? Literal{! *reif.cond} : TrueLiteral{}, full_reif = _full_reif, or_equal = _or_equal](
+                propagators.install([v1 = _v1, v2 = _v2, inv_cond = reif.cond ? Literal{! *reif.cond} : TrueLiteral{}, or_equal = _or_equal](
                                         const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                     auto v1_bounds = state.bounds(v1), v2_bounds = state.bounds(v2);
                     inference.infer_less_than(logger, v2, v1_bounds.second + (! or_equal ? 1_i : 0_i), JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{inv_cond, v1 < v1_bounds.second + 1_i}}; }});
@@ -134,7 +137,7 @@ auto ReifiedCompareLessThanOrMaybeEqual::install(Propagators & propagators, Stat
                 Triggers triggers{.on_bounds = {_v1, _v2}};
                 triggers.on_change.push_back(reif.cond.var);
 
-                propagators.install([v1 = _v1, v2 = _v2, full_reif = _full_reif, or_equal = _or_equal, reif_cond = _reif_cond, outer_cond = reif.cond](
+                propagators.install([v1 = _v1, v2 = _v2, or_equal = _or_equal, reif_cond = _reif_cond, outer_cond = reif.cond](
                                         const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                     return overloaded{
                         [&](const evaluated_reif::MustHold &) {
@@ -181,46 +184,61 @@ auto ReifiedCompareLessThanOrMaybeEqual::install(Propagators & propagators, Stat
     }
 }
 
-// CompareLessThanReif is the superclass of all the various less-than and less-than-or-equal constraints,
+// ReifiedCompareLessThanOrMaybeEqual is the superclass of all the various less-than and less-than-or-equal constraints,
 // so I'm hoping to be able to get away with just one s_exprify implementation here, and not have to override
 // it in the subclasses. If that turns out not to be the case, I'll add overrides in the relevant subclasses
 // and move this implementation to a helper function or just implement all s_expify() subclass methods.
-auto CompareLessThanReif::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
+auto ReifiedCompareLessThanOrMaybeEqual::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
 {
+    /*
+        private:
+        IntegerVariableID _v1, _v2;
+        ReificationCondition _reif_cond;
+        bool _full_reif;
+        bool _or_equal;
+        bool _vars_swapped;
+    */
+
     // (name cmp X Y)
     // or
     // (name cmp Z X Y)
-    stringstream s;
-    string cmp;
-    if (_vars_swapped) {
-        cmp = _or_equal ? "greater_than_equal" : "greater_than";
-    }
-    else {
-        cmp = _or_equal ? "less_than_equal" : "less_than";
-    }
-    string suffix;
-    bool rei = false;
-    visit(overloaded{
-        [&](const TrueLiteral &) {
-            suffix = "";
-        },
-        [&](const FalseLiteral &) {
-            suffix = "";
-        },
-        [&](const IntegerVariableCondition &) {
-            suffix = _full_reif ? "_iff" : "_if";
-            rei = true;
-        }
-    }, _cond);
+    // where cmp is
+    // {{greater,less}_than{,_equal}}{,_if,_iff}
 
-    if (rei) {
-        print(s, "{} {}{} {} {} {}", name, cmp, suffix,
-            model->names_and_ids_tracker().s_expr_name_of(_cond),
+    // greater_than             reif::MustHold{}, _or_equal = false, _vars_swapped = true
+    // greater_than_if          reif::If{},       _or_equal = false, _vars_swapped = true
+    // greater_than_iff         reif::Iff{},      _or_equal = false, _vars_swapped = true
+    // greater_than_equal       reif::MustHold{}, _or_equal = true,  _vars_swapped = true
+    // greater_than_equal_if    reif::If{},       _or_equal = true,  _vars_swapped = true
+    // greater_than_equal_iff   reif::Iff{},      _or_equal = true,  _vars_swapped = true
+    // less_than                reif::MustHold{}, _or_equal = false, _vars_swapped = false
+    // less_than_if             reif::If{},       _or_equal = false, _vars_swapped = false
+    // less_than_iff            reif::Iff{},      _or_equal = false, _vars_swapped = false
+    // less_than_equal          reif::MustHold{}, _or_equal = true,  _vars_swapped = false
+    // less_than_equal_if       reif::If{},       _or_equal = true,  _vars_swapped = false
+    // less_than_equal_iff      reif::Iff{},      _or_equal = true,  _vars_swapped = false
+
+    stringstream s;
+
+    auto reif = overloaded{
+            [&](const reif::MustHold &) -> string { return ""; },
+            [&](const reif::If &)       -> string { return "_if"; },
+            [&](const reif::Iff &)      -> string { return "_iff"; },
+            [&](const auto &) -> string { throw UnexpectedException{"Unexpected reification type in s_exprify"}; return "";}
+        }.visit(_reif_cond);
+
+    string cmp = fmt::format("{}{}{}", 
+        _vars_swapped ? "greater_than" : "less_than",
+        _or_equal ? "_equal" : "",
+        reif);
+
+    if (reif.empty()) {
+        print(s, "{} {} {} {}", name, cmp,
             model->names_and_ids_tracker().s_expr_name_of(_v1),
             model->names_and_ids_tracker().s_expr_name_of(_v2));
     }
     else {
-        print(s, "{} {}{} {} {}", name, cmp, suffix,
+        print(s, "{} {} {} {} {}", name, cmp, "Z",
             model->names_and_ids_tracker().s_expr_name_of(_v1),
             model->names_and_ids_tracker().s_expr_name_of(_v2));
     }

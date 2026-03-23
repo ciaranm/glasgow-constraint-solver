@@ -24,6 +24,8 @@ using std::unique_ptr;
 using std::variant;
 using std::vector;
 
+using fmt::print;
+
 ReifiedLinearInequality::ReifiedLinearInequality(WeightedSum coeff_vars, Integer value, ReificationCondition cond) :
     _coeff_vars(move(coeff_vars)),
     _value(value),
@@ -240,15 +242,24 @@ auto ReifiedLinearInequality::install(Propagators & propagators, State & state, 
         .visit(state.test_reification_condition(_reif_cond));
 }
 
-auto LinearInequalityIf::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
+auto ReifiedLinearInequality::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
 {
+    // (name lin_not_equals (c1 X1 c2 X2 ... cn Xn) Y)
     // (name lin_not_equals_if Z (c1 X1 c2 X2 ... cn Xn) Y)
-    // also
-    // (name lin_less_than_equal_if Z (c1 X1 c2 X2 ... cn Xn) Y)
+    // (name lin_not_equals_iff Z (c1 X1 c2 X2 ... cn Xn) Y)
     stringstream s;
+    bool rei;
+    auto cons = overloaded{
+        [&](const reif::MustHold &) { rei = false; return "lin_less_than_equal"; },
+        [&](const reif::If &)       { rei = true;  return "lin_less_than_equal_if"; },
+        [&](const reif::Iff &)      { rei = true;  return "lin_less_than_equal_iff"; },
+        [&](const auto &)           { rei = false; throw UnexpectedException{"Unexpected reification type in s_exprify"}; return "";}
+    }.visit(_reif_cond);
 
-    print(s, "{} {}", name, _less_than_equal ? "lin_less_than_equal_if" : "lin_less_than_if");
-    print(s, " {} (", model->names_and_ids_tracker().s_expr_name_of(_cond));
+    print(s, "{} {}", name, cons);
+    if (rei) {
+        print(s, " {} ", "Z"); // This 'Z' is "reification on Z > 0" that I don't know how to handle yet.
+    }
     for (const auto & [c, v] : _coeff_vars.terms) {
         print(s, "{} {} ", c.raw_value, model->names_and_ids_tracker().s_expr_name_of(v));
     }
