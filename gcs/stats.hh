@@ -9,8 +9,6 @@
 #include <tuple>
 #include <vector>
 
-#include <fmt/ostream.h>
-
 namespace gcs
 {
     /**
@@ -45,8 +43,19 @@ namespace gcs
 }
 
 template <>
-struct fmt::formatter<gcs::Stats> : ostream_formatter
+struct std::formatter<gcs::Stats>
 {
+    constexpr auto parse(std::format_parse_context & ctx)
+    {
+        return ctx.begin();
+    }
+
+    auto format(const gcs::Stats & stats, std::format_context & ctx) const
+    {
+        std::stringstream s;
+        s << stats;
+        return std::format_to(ctx.out(), "{}", s.str());
+    }
 };
 
 #endif

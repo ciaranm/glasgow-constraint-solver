@@ -12,15 +12,14 @@
 #include <util/enumerate.hh>
 #include <util/overloaded.hh>
 
-#include <fmt/core.h>
-#include <fmt/ostream.h>
-#include <fmt/ranges.h>
-
 #include <cstdlib>
+#include <format>
 #include <functional>
 #include <iostream>
 #include <optional>
 #include <random>
+#include <ranges>
+#include <sstream>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -31,9 +30,11 @@ namespace gcs::test_innards
     template <typename... Args_>
     [[nodiscard]] auto run_veripb(Args_... args) -> bool
     {
-        auto cmd = fmt::format("veripb {}", fmt::join(std::vector<std::string>{args...}, " "));
-        fmt::println(std::cerr, "$ {}", cmd);
-        return EXIT_SUCCESS == system(cmd.c_str());
+        std::stringstream cmd;
+        cmd << "veripb";
+        ((cmd << " " << args), ...);
+        std::println(std::cerr, "$ {}", cmd.str());
+        return EXIT_SUCCESS == system(cmd.str().c_str());
     }
 
     [[nodiscard]] inline auto can_run_veripb() -> bool
@@ -188,8 +189,8 @@ namespace gcs::test_innards
     template <typename ResultsSet_>
     auto check_results(const std::optional<std::string> & proof_name, const ResultsSet_ & expected, const ResultsSet_ & actual) -> void
     {
-        using fmt::println;
         using std::cerr;
+        using std::println;
 
         if (expected != actual) {
             println(cerr, "test did not produce expected results");
@@ -261,8 +262,8 @@ namespace gcs::test_innards
     auto consistency_not_achieved(const std::string & which, const ResultsSet_ & expected, const CurrentState & s,
         const std::vector<IntegerVariableID> & all_vars, const IntegerVariableID & var, Integer val) -> void
     {
-        using fmt::println;
         using std::cerr;
+        using std::println;
         println(cerr, "{} not achieved in test", which);
         println(cerr, "expected: {}", expected);
         println(cerr, "var {} value {} does not occur anywhere in expected", innards::debug_string(var), val);

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.18)
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
@@ -115,22 +115,21 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(cxxopts)
 
-FetchContent_Declare(
-        fmt
-        GIT_REPOSITORY https://github.com/fmtlib/fmt.git
-        GIT_TAG 40626af88bd7df9a5fb80be7b25ac85b122d6c21 # v11.2.0
+try_compile(GCS_COMPILER_HAS_GENERATOR ${CMAKE_BINARY_DIR}/cmake_compile_tests ${CMAKE_SOURCE_DIR}/cmake_compile_tests/has_generator.cc)
+if (GCS_COMPILER_HAS_GENERATOR)
+    message("Using compiler's own <generator> implementation")
+else (GCS_COMPILER_HAS_GENERATOR)
+    message("Using external <generator> implementation")
+    include(ExternalProject)
+    ExternalProject_Add(
+            generator
+            PREFIX ${CMAKE_SOURCE_DIR}/generator
+            GIT_REPOSITORY https://github.com/todoubaba/generator
+            GIT_TAG a849a206f35c2447ab5e605edc5fcf44f673c628 # no release
+            INSTALL_COMMAND ""
+            BUILD_COMMAND ""
 )
-FetchContent_MakeAvailable(fmt)
-
-include(ExternalProject)
-ExternalProject_Add(
-        generator
-        PREFIX ${CMAKE_SOURCE_DIR}/generator
-        GIT_REPOSITORY https://github.com/todoubaba/generator
-        GIT_TAG a849a206f35c2447ab5e605edc5fcf44f673c628 # no release
-        INSTALL_COMMAND ""
-        BUILD_COMMAND ""
-)
+endif (GCS_COMPILER_HAS_GENERATOR)
 
 set(JSON_BuildTests OFF CACHE INTERNAL "")
 FetchContent_Declare(

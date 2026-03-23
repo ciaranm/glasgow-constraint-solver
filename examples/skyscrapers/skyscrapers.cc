@@ -13,30 +13,27 @@
 #include <functional>
 #include <iostream>
 #include <optional>
+#include <print>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include <cxxopts.hpp>
 
-#include <fmt/core.h>
-
 using namespace gcs;
 
 using std::cerr;
 using std::cout;
+using std::format;
 using std::make_optional;
 using std::nullopt;
 using std::optional;
+using std::print;
+using std::println;
 using std::string;
 using std::to_string;
 using std::vector;
 using std::chrono::microseconds;
-
-using fmt::format;
-using fmt::print;
-using fmt::println;
-
 
 using namespace std::literals::string_literals;
 

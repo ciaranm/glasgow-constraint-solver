@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <functional>
 #include <iostream>
+#include <print>
 #include <random>
 #include <set>
 #include <string>
@@ -22,6 +23,8 @@ using std::make_optional;
 using std::mt19937;
 using std::nullopt;
 using std::pair;
+using std::print;
+using std::println;
 using std::random_device;
 using std::set;
 using std::string;
@@ -30,9 +33,6 @@ using std::tuple;
 using std::uniform_int_distribution;
 using std::variant;
 using std::vector;
-
-using fmt::print;
-using fmt::println;
 
 using namespace gcs;
 using namespace gcs::test_innards;

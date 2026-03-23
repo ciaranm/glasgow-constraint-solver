@@ -2,9 +2,8 @@
 #include <gcs/constraints/mult_bc.hh>
 
 #include <cstdlib>
-#include <fmt/core.h>
-#include <fmt/ostream.h>
 #include <iostream>
+#include <print>
 #include <random>
 #include <set>
 #include <tuple>
@@ -18,6 +17,8 @@ using std::make_optional;
 using std::mt19937;
 using std::nullopt;
 using std::pair;
+using std::print;
+using std::println;
 using std::random_device;
 using std::set;
 using std::string;
@@ -25,9 +26,6 @@ using std::to_string;
 using std::tuple;
 using std::uniform_int_distribution;
 using std::vector;
-
-using fmt::print;
-using fmt::println;
 
 using namespace gcs;
 using namespace gcs::test_innards;

@@ -185,4 +185,14 @@ struct std::hash<gcs::Integer>
     }
 };
 
+template <typename Char_>
+struct std::formatter<gcs::Integer, Char_> : std::formatter<long long, Char_>
+{
+    template <typename FormatContext_>
+    auto format(const gcs::Integer & i, FormatContext_ & ctx) const
+    {
+        return std::formatter<long long, Char_>::format(i.raw_value, ctx);
+    }
+};
+
 #endif

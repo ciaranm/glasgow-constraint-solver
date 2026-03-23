@@ -16,8 +16,6 @@
 #include <sstream>
 #include <unordered_map>
 
-#include <fmt/core.h>
-
 using namespace gcs;
 using namespace gcs::innards;
 
@@ -38,8 +36,6 @@ using std::unique;
 using std::unordered_map;
 using std::variant;
 using std::vector;
-
-using fmt::format;
 
 struct ProofModel::Imp
 {

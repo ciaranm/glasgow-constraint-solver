@@ -13,8 +13,9 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <version>
 
-#if __has_cpp_attribute(__cpp_lib_generator)
+#if defined(__cpp_lib_generator)
 #include <generator>
 #else
 #include <__generator.hpp>

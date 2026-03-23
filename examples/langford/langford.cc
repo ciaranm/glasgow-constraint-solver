@@ -6,13 +6,10 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <print>
 #include <vector>
 
 #include <cxxopts.hpp>
-
-#include <fmt/core.h>
-#include <fmt/ostream.h>
-#include <fmt/ranges.h>
 
 using namespace gcs;
 
@@ -21,11 +18,9 @@ using std::cout;
 using std::cref;
 using std::make_optional;
 using std::nullopt;
+using std::print;
+using std::println;
 using std::vector;
-
-using fmt::print;
-using fmt::println;
-
 
 auto main(int argc, char * argv[]) -> int
 {

@@ -9,14 +9,11 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <print>
 #include <random>
 #include <set>
 #include <string>
 #include <tuple>
-
-#include <fmt/core.h>
-#include <fmt/ostream.h>
-#include <fmt/ranges.h>
 
 using namespace gcs;
 
@@ -29,15 +26,14 @@ using std::make_optional;
 using std::mt19937;
 using std::nullopt;
 using std::pair;
+using std::print;
+using std::println;
 using std::random_device;
 using std::set;
 using std::string;
 using std::tuple;
 using std::uniform_int_distribution;
 using std::vector;
-
-using fmt::print;
-using fmt::println;
 
 auto main(int argc, char * argv[]) -> int
 {

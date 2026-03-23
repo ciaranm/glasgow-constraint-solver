@@ -7,6 +7,7 @@
 #include <functional>
 #include <iostream>
 #include <optional>
+#include <print>
 #include <random>
 #include <set>
 #include <tuple>
@@ -21,6 +22,8 @@ using std::mt19937;
 using std::nullopt;
 using std::optional;
 using std::pair;
+using std::print;
+using std::println;
 using std::random_device;
 using std::set;
 using std::string;
@@ -28,9 +31,6 @@ using std::to_string;
 using std::tuple;
 using std::uniform_int_distribution;
 using std::vector;
-
-using fmt::print;
-using fmt::println;
 
 using namespace gcs;
 using namespace gcs::test_innards;

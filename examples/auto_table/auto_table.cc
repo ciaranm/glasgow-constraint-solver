@@ -7,13 +7,11 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <print>
 #include <string>
 #include <vector>
 
 #include <cxxopts.hpp>
-
-#include <fmt/core.h>
-#include <fmt/ostream.h>
 
 using namespace gcs;
 
@@ -21,11 +19,10 @@ using std::cerr;
 using std::cout;
 using std::make_optional;
 using std::nullopt;
+using std::print;
+using std::println;
 using std::string;
 using std::vector;
-
-using fmt::print;
-using fmt::println;
 
 using namespace std::literals::string_literals;
 

@@ -1,4 +1,7 @@
-include_directories(${CMAKE_SOURCE_DIR}/generator/src/generator/include)
+if (! GCS_COMPILER_HAS_GENERATOR)
+    include_directories(${CMAKE_SOURCE_DIR}/generator/src/generator/include)
+endif
+
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
 include(FetchContent)

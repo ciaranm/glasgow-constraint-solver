@@ -7,6 +7,7 @@
 #include <gcs/innards/variable_id_utils.hh>
 
 #include <algorithm>
+#include <format>
 #include <fstream>
 #include <list>
 #include <map>
@@ -16,12 +17,11 @@
 
 #include <nlohmann/json.hpp>
 
-#include <fmt/core.h>
-
 using namespace gcs;
 using namespace gcs::innards;
 
 using std::any_of;
+using std::format;
 using std::fstream;
 using std::function;
 using std::ios;
@@ -38,8 +38,6 @@ using std::unordered_map;
 using std::variant;
 using std::vector;
 using std::visit;
-
-using fmt::format;
 
 struct NamesAndIDsTracker::Imp
 {

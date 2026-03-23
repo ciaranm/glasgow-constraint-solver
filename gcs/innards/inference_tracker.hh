@@ -10,8 +10,9 @@
 #include <deque>
 #include <type_traits>
 #include <utility>
+#include <version>
 
-#if __has_cpp_attribute(__cpp_lib_generator)
+#if defined(__cpp_lib_generator)
 #include <generator>
 #else
 #include <__generator.hpp>

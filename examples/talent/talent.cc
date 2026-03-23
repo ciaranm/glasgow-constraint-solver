@@ -11,6 +11,7 @@
 #include <cxxopts.hpp>
 
 #include <iostream>
+#include <print>
 #include <vector>
 
 using namespace gcs;
@@ -18,11 +19,9 @@ using std::cerr;
 using std::cout;
 using std::make_optional;
 using std::nullopt;
+using std::print;
+using std::println;
 using std::vector;
-
-using fmt::print;
-using fmt::println;
-
 
 int main(int argc, char * argv[])
 {

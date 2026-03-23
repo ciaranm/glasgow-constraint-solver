@@ -8,16 +8,12 @@
 #include <functional>
 #include <iostream>
 #include <optional>
+#include <print>
 #include <random>
 #include <set>
 #include <tuple>
 #include <utility>
 #include <vector>
-
-#include <fmt/core.h>
-#include <fmt/ostream.h>
-#include <fmt/ranges.h>
-#include <fmt/std.h>
 
 using std::cerr;
 using std::count;
@@ -28,6 +24,8 @@ using std::make_optional;
 using std::mt19937;
 using std::nullopt;
 using std::pair;
+using std::print;
+using std::println;
 using std::random_device;
 using std::set;
 using std::string;
@@ -37,13 +35,10 @@ using std::uniform_int_distribution;
 using std::variant;
 using std::vector;
 
-using fmt::print;
-using fmt::println;
-
 using namespace gcs;
 using namespace gcs::test_innards;
 
-auto run_among_test(bool proofs, variant<int, pair<int, int>> result_range, const vector<int> & voi, const vector<variant<int, pair<int, int>>> & array_range) -> void
+auto run_among_test(bool proofs, variant<int, pair<int, int>> result_range, const vector<int> & voi, const vector<pair<int, int>> & array_range) -> void
 {
     visit([&](auto result) { print(cerr, "among {} {} {} {}", result, voi, array_range, proofs ? " with proofs:" : ":"); }, result_range);
     cerr << flush;
@@ -60,7 +55,7 @@ auto run_among_test(bool proofs, variant<int, pair<int, int>> result_range, cons
     auto result = visit([&](auto r) { return create_integer_variable_or_constant(p, r); }, result_range);
     vector<IntegerVariableID> array;
     for (const auto & a : array_range)
-        array.push_back(visit([&](auto a) { return create_integer_variable_or_constant(p, a); }, a));
+        array.push_back(create_integer_variable_or_constant(p, a));
     vector<Integer> voi_i;
     for (const auto & v : voi)
         voi_i.push_back(Integer(v));
@@ -77,7 +72,7 @@ auto main(int, char *[]) -> int
     vector<tuple<
         variant<int, pair<int, int>>,
         vector<int>,
-        vector<variant<int, pair<int, int>>>>>
+        vector<pair<int, int>>>>
         data = {
             {pair{1, 3}, vector{2, 4, 6, 8}, {pair{1, 10}, pair{1, 10}, pair{1, 10}}},
             {pair{1, 5}, vector{1, 2, 3}, {pair{1, 5}, pair{1, 5}, pair{1, 5}}},
@@ -96,7 +91,7 @@ auto main(int, char *[]) -> int
         generate_random_data(rand, data,
             random_bounds(-7, 7, 5, 10),
             vector{size_t(n_values_1), values_dist},
-            vector{size_t(n_values_2), random_bounds_or_constant(-5, 8, 3, 8)});
+            vector{size_t(n_values_2), random_bounds(-5, 8, 3, 8)});
     }
 
     for (auto & [r1, r2, r3] : data)

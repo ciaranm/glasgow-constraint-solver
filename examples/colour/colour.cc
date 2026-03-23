@@ -7,13 +7,10 @@
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <print>
 #include <vector>
 
 #include <cxxopts.hpp>
-
-#include <fmt/core.h>
-#include <fmt/ostream.h>
-#include <fmt/ranges.h>
 
 using namespace gcs;
 
@@ -25,14 +22,12 @@ using std::ifstream;
 using std::make_optional;
 using std::nullopt;
 using std::pair;
+using std::print;
+using std::println;
 using std::string;
 using std::vector;
 
 using std::ranges::views::transform;
-
-using fmt::print;
-using fmt::println;
-
 
 auto main(int argc, char * argv[]) -> int
 {
