@@ -259,13 +259,13 @@ auto Among::s_exprify(const std::string & name, const ProofModel * const model) 
     print(s, "{} among (", name);
 
     for (const auto & var : _vars) {
-        print(s, "{} ", model->names_and_ids_tracker().s_expr_name_of(var));
+        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
     }
-    print(s, "\b) (");
+    print(s, ") (");
     for (const auto & val : _values_of_interest) {
-        print(s, "{} ", val.raw_value);
+        print(s, " {}", val.raw_value);
     }
-    print(s, "\b) {}", model->names_and_ids_tracker().s_expr_name_of(_how_many));
+    print(s, ") {}", model->names_and_ids_tracker().s_expr_name_of(_how_many));
 
     return s.str();
 }

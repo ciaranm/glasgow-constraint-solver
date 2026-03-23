@@ -1,5 +1,8 @@
 #include <gcs/constraints/in.hh>
 #include <gcs/exception.hh>
+#include <gcs/innards/proofs/names_and_ids_tracker.hh>
+#include <gcs/innards/proofs/proof_logger.hh>
+#include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
 
@@ -14,9 +17,12 @@ using std::move;
 using std::optional;
 using std::sort;
 using std::string;
+using std::stringstream;
 using std::unique;
 using std::unique_ptr;
 using std::vector;
+
+using fmt::print;
 
 In::In(IntegerVariableID var, vector<IntegerVariableID> vars, vector<Integer> vals) :
     _var(var),
@@ -70,3 +76,20 @@ auto In::install(Propagators & propagators, State & initial_state, ProofModel * 
         throw UnimplementedException{};
     }
 }
+
+auto In::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
+{
+    // (name in X (Y1 .. Yn))
+    // I am effectively concatenating the var vals and the val vals here.  This may be wrong.
+    stringstream s;
+
+    print(s, "{} in {} (", name, model->names_and_ids_tracker().s_expr_name_of(_var));
+    for (auto & v : _var_vals)
+        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(v));
+    for (auto & v : _val_vals)
+        print(s, " {}", v.raw_value);
+    print(s, ")");
+
+    return s.str();
+}
+

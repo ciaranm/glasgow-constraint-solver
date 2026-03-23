@@ -529,9 +529,9 @@ auto NDimensionalElement<EntryType_, dimensions_>::s_exprify(const std::string &
     // Helper lmbda
     auto print_elem = [&](auto & s, const auto & elem, const auto & index) {
         if constexpr (std::is_same_v<EntryType_, IntegerVariableID>) {
-            print(s, "{},{} ", model->names_and_ids_tracker().s_expr_name_of(elem), index);
+            print(s, " {},{}", model->names_and_ids_tracker().s_expr_name_of(elem), index);
         } else {
-            print(s, "{},{} ", elem.raw_value, index);
+            print(s, " {},{}", elem.raw_value, index);
         }
     };
 
@@ -545,7 +545,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::s_exprify(const std::string &
             for (size_t i = 0; i < arr.size(); ++i) {
                 print_elem(s, arr[i], i);
             }
-            print(s, "\b) ");
+            print(s, ") ");
         } else {
             // Recursive case: dig deeper
             for (const auto & sub_arr : arr) {
@@ -559,7 +559,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::s_exprify(const std::string &
     // Print array(s) -- works for any number of dimensions
     print_array(s, *_array, print_array);
     
-    print(s, "\b)");
+    print(s, ")");
     
     // print (Y, offset) pairs.  It looks like _index_vars.size() is always 2
     for (size_t i = 0; i < _index_vars.size(); ++i) {

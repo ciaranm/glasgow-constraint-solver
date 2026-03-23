@@ -1,6 +1,7 @@
 #include <gcs/constraints/logical.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
@@ -9,6 +10,10 @@
 #include <util/overloaded.hh>
 
 #include <optional>
+#include <sstream>
+
+#include <fmt/core.h>
+#include <fmt/ostream.h>
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -16,8 +21,11 @@ using namespace gcs::innards;
 using std::optional;
 using std::pair;
 using std::string;
+using std::stringstream;
 using std::unique_ptr;
 using std::vector;
+
+using fmt::print;
 
 namespace
 {
@@ -219,6 +227,20 @@ auto And::install(Propagators & propagators, State & initial_state, ProofModel *
     install_and_or_or(propagators, initial_state, optional_model, _lits, _full_reif, "and");
 }
 
+auto And::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
+{
+    // (name and (l1 l2 ... ln) Z)
+    stringstream s;
+
+    print(s, "{} and (", name);
+    for (const auto & lit : _lits) {
+        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(lit));
+    }
+    print(s, ") {}", model->names_and_ids_tracker().s_expr_name_of(_full_reif));
+
+    return s.str();
+}
+
 Or::Or(const vector<IntegerVariableID> & vars, const IntegerVariableID & full_reif) :
     Or(to_lits(vars), full_reif != 0_i)
 {
@@ -247,4 +269,18 @@ auto Or::install(Propagators & propagators, State & initial_state, ProofModel * 
         l = ! l;
 
     install_and_or_or(propagators, initial_state, optional_model, lits, ! _full_reif, "or");
+}
+
+auto Or::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
+{
+    // (name or (l1 l2 ... ln) Z)
+    stringstream s;
+
+    print(s, "{} or (", name);
+    for (const auto & lit : _lits) {
+        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(lit));
+    }
+    print(s, ") {}", model->names_and_ids_tracker().s_expr_name_of(_full_reif));
+
+    return s.str();
 }

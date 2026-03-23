@@ -395,13 +395,13 @@ auto ReifiedLinearEquality::s_exprify(const std::string & name, const ProofModel
 
     print(s, "{} {}", name, cons);
     if (rei) {
-        print(s, " {} ", "Z"); // Z is a placholdr for now.
+        print(s, " {} ", "Z"); // TODO: Z is a placholdr for now.
     }
     print(s, " (");
     for (const auto & [c, v] : _coeff_vars.terms) {
-        print(s, "{} {} ", c.raw_value, model->names_and_ids_tracker().s_expr_name_of(v));
+        print(s, " {} {}", c.raw_value, model->names_and_ids_tracker().s_expr_name_of(v));
     }
-    print(s, "\b) {}", _value.raw_value);
+    print(s, ") {}", _value.raw_value);
 
     return s.str();
 

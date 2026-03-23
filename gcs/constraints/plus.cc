@@ -6,15 +6,23 @@
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
 
+
+
 #include <sstream>
+
+#include <fmt/core.h>
+#include <fmt/ostream.h>
 
 using namespace gcs;
 using namespace gcs::innards;
 
 using std::optional;
 using std::pair;
+using std::string;
 using std::stringstream;
 using std::unique_ptr;
+
+using fmt::print;
 
 Plus::Plus(IntegerVariableID a, IntegerVariableID b, IntegerVariableID result) :
     _a(a),
@@ -44,6 +52,20 @@ auto Plus::install(Propagators & propagators, State &, ProofModel * const option
             return propagate_plus(a, b, result, state, inference, logger, sum_line);
         },
         triggers, "plus");
+}
+
+auto Plus::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
+{
+    // (name plus X Y Z)
+    stringstream s;
+
+    print(s, "{} plus (", name);
+    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_a));
+    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_b));
+    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_result));
+    print(s, ")");
+
+    return s.str();
 }
 
 auto gcs::innards::propagate_plus(IntegerVariableID a, IntegerVariableID b, IntegerVariableID result,

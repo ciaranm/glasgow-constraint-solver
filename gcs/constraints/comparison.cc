@@ -224,7 +224,7 @@ auto ReifiedCompareLessThanOrMaybeEqual::s_exprify(const std::string & name, con
             [&](const reif::MustHold &) -> string { return ""; },
             [&](const reif::If &)       -> string { return "_if"; },
             [&](const reif::Iff &)      -> string { return "_iff"; },
-            [&](const auto &) -> string { throw UnexpectedException{"Unexpected reification type in s_exprify"}; return "";}
+            [&](const auto &) -> string { throw UnexpectedException{"Unexpected reification type in s_exprify"};}
         }.visit(_reif_cond);
 
     string cmp = fmt::format("{}{}{}", 
@@ -238,7 +238,7 @@ auto ReifiedCompareLessThanOrMaybeEqual::s_exprify(const std::string & name, con
             model->names_and_ids_tracker().s_expr_name_of(_v2));
     }
     else {
-        print(s, "{} {} {} {} {}", name, cmp, "Z",
+        print(s, "{} {} {} {} {}", name, cmp, "Z",  // TODO: Z is "Z" because I don't know how to handle it properly.
             model->names_and_ids_tracker().s_expr_name_of(_v1),
             model->names_and_ids_tracker().s_expr_name_of(_v2));
     }

@@ -118,9 +118,9 @@ auto NValue::s_exprify(const string & name, const innards::ProofModel * const mo
 
     print(s, "{} nvalue (", name);
     for (const auto & var : _vars) {
-        print(s, "{} ", model->names_and_ids_tracker().s_expr_name_of(var));
+        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
     }
-    print(s, "\b) {}", model->names_and_ids_tracker().s_expr_name_of(_n_values));
+    print(s, ") {}", model->names_and_ids_tracker().s_expr_name_of(_n_values));
 
     return s.str();
 }
