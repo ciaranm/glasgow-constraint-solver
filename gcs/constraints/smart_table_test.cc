@@ -124,9 +124,9 @@ auto run_lex_test(int length, vector<pair<int, int>> ranges, bool reverse = fals
                 lex_violated = lex_violated || (reverse ? (! check_lex(y_sols, x_sols, or_equal)) : (! check_lex(x_sols, y_sols, or_equal)));
                 return true;
             }},
-        ProofOptions{"lex_test"});
+        ProofOptions{"smart_table_test"});
 
-    return ! lex_violated && run_veripb("lex_test.opb", "lex_test.pbp");
+    return ! lex_violated && run_veripb("smart_table_test.opb", "smart_table_test.pbp");
 }
 
 auto run_at_most_1_test(int length, vector<pair<int, int>> & ranges, bool at_least, bool in_set) -> bool
@@ -181,9 +181,9 @@ auto run_at_most_1_test(int length, vector<pair<int, int>> & ranges, bool at_lea
                 at_most_1_violated = at_most_1_violated || ! check_at_most_1(x_sols, Integer{length}, at_least, in_set);
                 return true;
             }},
-        ProofOptions{"at_most_1_test"});
+        ProofOptions{"smart_table_test"});
 
-    return ! at_most_1_violated && run_veripb("solve_test.opb", "solve_test.pbp");
+    return ! at_most_1_violated && run_veripb("smart_table_test.opb", "smart_table_test.pbp");
 };
 
 auto main(int, char *[]) -> int

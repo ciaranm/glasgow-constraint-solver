@@ -108,6 +108,9 @@ auto AutoTable::run(Problem &, Propagators & propagators, State & initial_state,
 
     initial_state.backtrack(timestamp);
 
+    if (tuples.empty())
+        return false;
+
     auto selector = initial_state.allocate_integer_variable_with_state(0_i, Integer(tuples.size() - 1));
     if (selector != selector_var_id)
         throw UnexpectedException{"something went horribly wrong with variable IDs when autotabulating"};

@@ -14,6 +14,7 @@
 #include <type_traits>
 
 using std::is_same_v;
+using std::nullopt;
 using std::optional;
 using std::pair;
 using std::string;
@@ -55,12 +56,12 @@ namespace
     auto bounds_reason(
         const auto & coeff_vars,
         const vector<pair<Integer, Integer>> & bounds,
-        const SimpleIntegerVariableID & var, bool invert,
+        const optional<SimpleIntegerVariableID> & var, bool invert,
         const optional<Literal> & add_to_reason) -> ReasonFunction
     {
         Reason reason;
         for (const auto & [idx, cv] : enumerate(coeff_vars.terms)) {
-            if (get_var(cv) != var) {
+            if (var && get_var(cv) != *var) {
                 if ((get_coeff(cv) < 0_i) != invert) {
                     reason.emplace_back(get_var(cv) < bounds[idx].second + 1_i);
                 }
@@ -176,6 +177,15 @@ auto gcs::innards::propagate_linear(const auto & coeff_vars, Integer value, cons
 {
     vector<pair<Integer, Integer>> bounds;
     bounds.reserve(coeff_vars.terms.size());
+
+    // need to check the empty sum case somewhere, because we only get a contradiction
+    // by inferring a specific variable has to take a value that it can't
+    if (coeff_vars.terms.empty()) {
+        if (! (0_i <= value)) {
+            inference.contradiction(logger, JustifyUsingRUP{}, bounds_reason(coeff_vars, bounds, nullopt, false, add_to_reason));
+        }
+        return PropagatorState::DisableUntilBacktrack;
+    }
 
     Integer lower_sum{0};
     for (const auto & cv : coeff_vars.terms) {

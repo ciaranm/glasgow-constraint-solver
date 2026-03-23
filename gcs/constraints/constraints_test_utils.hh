@@ -333,7 +333,7 @@ namespace gcs::test_innards
                             break;
                         }
                     if (! found_support)
-                        consistency_not_achieved("gac", expected, s, all_vars, var, val);
+                        consistency_not_achieved("bc", expected, s, all_vars, var, val);
                 }
             }
             return;

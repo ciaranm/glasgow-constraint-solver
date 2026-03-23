@@ -4,17 +4,17 @@ using namespace gcs;
 using namespace gcs::innards;
 
 LinearLessThanEqual::LinearLessThanEqual(WeightedSum coeff_vars, Integer value) :
-    LinearInequalityIff(move(coeff_vars), value, TrueLiteral{})
+    ReifiedLinearInequality(move(coeff_vars), value, reif::MustHold{})
 {
 }
 
-LinearLessThanEqualIf::LinearLessThanEqualIf(WeightedSum coeff_vars, Integer value, Literal cond) :
-    LinearInequalityIf(move(coeff_vars), value, cond, true)
+LinearLessThanEqualIf::LinearLessThanEqualIf(WeightedSum coeff_vars, Integer value, IntegerVariableCondition cond) :
+    ReifiedLinearInequality(move(coeff_vars), value, reif::If{cond})
 {
 }
 
-LinearLessThanEqualIff::LinearLessThanEqualIff(WeightedSum coeff_vars, Integer value, Literal cond) :
-    LinearInequalityIff(move(coeff_vars), value, cond, true)
+LinearLessThanEqualIff::LinearLessThanEqualIff(WeightedSum coeff_vars, Integer value, IntegerVariableCondition cond) :
+    ReifiedLinearInequality(move(coeff_vars), value, reif::Iff{cond})
 {
 }
 

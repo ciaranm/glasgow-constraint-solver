@@ -3,57 +3,53 @@
 
 #include <gcs/constraint.hh>
 #include <gcs/innards/literal.hh>
+#include <gcs/reification.hh>
 #include <gcs/variable_condition.hh>
 #include <gcs/variable_id.hh>
 
 namespace gcs
 {
-    namespace innards
+    /**
+     * \brief General implementation for LessThan, LessThanIf, LessThanIff, etc.
+     *
+     * \ingroup Constraints
+     * \ingroup Innards
+     * \sa LessThan
+     * \sa LessThanIf
+     * \sa LessThanIff
+     * \sa LessThanEqual
+     * \sa LessThanEqualIff
+     * \sa GreaterThan
+     * \sa GreaterThanIff
+     * \sa GreaterThanEqualIff
+     * \sa GreaterThanEqual
+     */
+    class ReifiedCompareLessThanOrMaybeEqual : public Constraint
     {
-        /**
-         * \brief General implementation for LessThan, LessThanIf, LessThanIff, etc.
-         *
-         * \ingroup Constraints
-         * \ingroup Innards
-         * \sa LessThan
-         * \sa LessThanIf
-         * \sa LessThanIff
-         * \sa LessThanEqual
-         * \sa LessThanEqualIff
-         * \sa GreaterThan
-         * \sa GreaterThanIff
-         * \sa GreaterThanEqualIff
-         * \sa GreaterThanEqual
-         */
-        class CompareLessThanReif : public Constraint
-        {
-        private:
-            IntegerVariableID _v1, _v2;
-            Literal _cond;
-            bool _full_reif;
-            bool _or_equal;
-            bool _vars_swapped;
+    private:
+        IntegerVariableID _v1, _v2;
+        ReificationCondition _reif_cond;
+        bool _full_reif;
+        bool _or_equal;
 
-        public:
-            explicit CompareLessThanReif(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond, bool full_reif, bool or_equal, bool vars_swapped = false);
+    public:
+        explicit ReifiedCompareLessThanOrMaybeEqual(const IntegerVariableID v1, const IntegerVariableID v2, ReificationCondition cond, bool or_equal);
 
-            virtual auto install(innards::Propagators &, innards::State &,
-                innards::ProofModel * const) && -> void override;
-            virtual auto clone() const -> std::unique_ptr<Constraint> override;
-            [[nodiscard]] virtual auto s_exprify(const std::string & name, const innards::ProofModel * const) const -> std::string override;
-        };
-    }
+        virtual auto install(innards::Propagators &, innards::State &,
+            innards::ProofModel * const) && -> void override;
+        virtual auto clone() const -> std::unique_ptr<Constraint> override;
+    };
 
     /**
      * \brief Constrain that `v1 < v2`.
      *
      * \ingroup Constraints
      */
-    class LessThan : public innards::CompareLessThanReif
+    class LessThan : public ReifiedCompareLessThanOrMaybeEqual
     {
     public:
         inline explicit LessThan(const IntegerVariableID v1, const IntegerVariableID v2) :
-            CompareLessThanReif(v1, v2, innards::TrueLiteral{}, true, false, false){};
+            ReifiedCompareLessThanOrMaybeEqual(v1, v2, reif::MustHold{}, false) {};
     };
 
     /**
@@ -61,11 +57,11 @@ namespace gcs
      *
      * \ingroup Constraints
      */
-    class LessThanIf : public innards::CompareLessThanReif
+    class LessThanIf : public ReifiedCompareLessThanOrMaybeEqual
     {
     public:
         inline explicit LessThanIf(const IntegerVariableID v1, const IntegerVariableID v2, IntegerVariableCondition cond) :
-            CompareLessThanReif(v1, v2, cond, false, false, false){};
+            ReifiedCompareLessThanOrMaybeEqual(v1, v2, reif::If{cond}, false) {};
     };
 
     /**
@@ -73,11 +69,11 @@ namespace gcs
      *
      * \ingroup Constraints
      */
-    class LessThanEqual : public innards::CompareLessThanReif
+    class LessThanEqual : public ReifiedCompareLessThanOrMaybeEqual
     {
     public:
         inline explicit LessThanEqual(const IntegerVariableID v1, const IntegerVariableID v2) :
-            CompareLessThanReif(v1, v2, innards::TrueLiteral{}, true, true, false){};
+            ReifiedCompareLessThanOrMaybeEqual(v1, v2, reif::MustHold{}, true) {};
     };
 
     /**
@@ -85,11 +81,23 @@ namespace gcs
      *
      * \ingroup Constraints
      */
-    class GreaterThan : public innards::CompareLessThanReif
+    class GreaterThan : public ReifiedCompareLessThanOrMaybeEqual
     {
     public:
         inline explicit GreaterThan(const IntegerVariableID v1, const IntegerVariableID v2) :
-            CompareLessThanReif(v2, v1, innards::TrueLiteral{}, true, false, true){};
+            ReifiedCompareLessThanOrMaybeEqual(v2, v1, reif::MustHold{}, false) {};
+    };
+
+    /**
+     * \brief Constrain that `v1 > v2` if `cond` holds.
+     *
+     * \ingroup Constraints
+     */
+    class GreaterThanIf : public ReifiedCompareLessThanOrMaybeEqual
+    {
+    public:
+        inline explicit GreaterThanIf(const IntegerVariableID v1, const IntegerVariableID v2, IntegerVariableCondition cond) :
+            ReifiedCompareLessThanOrMaybeEqual(v2, v1, reif::If{cond}, false) {};
     };
 
     /**
@@ -97,11 +105,11 @@ namespace gcs
      *
      * \ingroup Constraints
      */
-    class GreaterThanEqual : public innards::CompareLessThanReif
+    class GreaterThanEqual : public ReifiedCompareLessThanOrMaybeEqual
     {
     public:
         inline explicit GreaterThanEqual(const IntegerVariableID v1, const IntegerVariableID v2) :
-            CompareLessThanReif(v2, v1, innards::TrueLiteral{}, true, true, true){};
+            ReifiedCompareLessThanOrMaybeEqual(v2, v1, reif::MustHold{}, true) {};
     };
 
     /**
@@ -109,11 +117,23 @@ namespace gcs
      *
      * \ingroup Constraints
      */
-    class LessThanIff : public innards::CompareLessThanReif
+    class LessThanIff : public ReifiedCompareLessThanOrMaybeEqual
     {
     public:
         inline explicit LessThanIff(const IntegerVariableID v1, const IntegerVariableID v2, IntegerVariableCondition cond) :
-            CompareLessThanReif(v1, v2, cond, true, false, false){};
+            ReifiedCompareLessThanOrMaybeEqual(v1, v2, reif::Iff{cond}, false) {};
+    };
+
+    /**
+     * \brief Constrain that `v1 <= v2` if `cond` holds.
+     *
+     * \ingroup Constraints
+     */
+    class LessThanEqualIf : public ReifiedCompareLessThanOrMaybeEqual
+    {
+    public:
+        inline explicit LessThanEqualIf(const IntegerVariableID v1, const IntegerVariableID v2, IntegerVariableCondition cond) :
+            ReifiedCompareLessThanOrMaybeEqual(v1, v2, reif::If{cond}, true) {};
     };
 
     /**
@@ -121,11 +141,11 @@ namespace gcs
      *
      * \ingroup Constraints
      */
-    class LessThanEqualIff : public innards::CompareLessThanReif
+    class LessThanEqualIff : public ReifiedCompareLessThanOrMaybeEqual
     {
     public:
         inline explicit LessThanEqualIff(const IntegerVariableID v1, const IntegerVariableID v2, IntegerVariableCondition cond) :
-            CompareLessThanReif(v1, v2, cond, true, true, false){};
+            ReifiedCompareLessThanOrMaybeEqual(v1, v2, reif::Iff{cond}, true) {};
     };
 
     /**
@@ -133,11 +153,23 @@ namespace gcs
      *
      * \ingroup Constraints
      */
-    class GreaterThanIff : public innards::CompareLessThanReif
+    class GreaterThanIff : public ReifiedCompareLessThanOrMaybeEqual
     {
     public:
         inline explicit GreaterThanIff(const IntegerVariableID v1, const IntegerVariableID v2, IntegerVariableCondition cond) :
-            CompareLessThanReif(v2, v1, cond, true, false, true){};
+            ReifiedCompareLessThanOrMaybeEqual(v2, v1, reif::Iff{cond}, false) {};
+    };
+
+    /**
+     * \brief Constrain that `v1 >= v2` if `cond` holds.
+     *
+     * \ingroup Constraints
+     */
+    class GreaterThanEqualIf : public ReifiedCompareLessThanOrMaybeEqual
+    {
+    public:
+        inline explicit GreaterThanEqualIf(const IntegerVariableID v1, const IntegerVariableID v2, IntegerVariableCondition cond) :
+            ReifiedCompareLessThanOrMaybeEqual(v2, v1, reif::If{cond}, true) {};
     };
 
     /**
@@ -145,11 +177,11 @@ namespace gcs
      *
      * \ingroup Constraints
      */
-    class GreaterThanEqualIff : public innards::CompareLessThanReif
+    class GreaterThanEqualIff : public ReifiedCompareLessThanOrMaybeEqual
     {
     public:
         inline explicit GreaterThanEqualIff(const IntegerVariableID v1, const IntegerVariableID v2, IntegerVariableCondition cond) :
-            CompareLessThanReif(v2, v1, cond, true, true, true){};
+            ReifiedCompareLessThanOrMaybeEqual(v2, v1, reif::Iff{cond}, true) {};
     };
 }
 
