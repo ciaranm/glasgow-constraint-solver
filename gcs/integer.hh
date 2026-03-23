@@ -1,6 +1,7 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INTEGER_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INTEGER_HH
 
+#include <format>
 #include <functional>
 #include <limits>
 #include <ostream>
