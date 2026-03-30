@@ -235,3 +235,32 @@ auto NegativeTable::install(Propagators & propagators, State &, ProofModel * con
     },
         _tuples);
 }
+auto NegativeTable::s_exprify(const string & name, const innards::ProofModel * const model) const -> std::string
+{
+    stringstream s;
+
+    print(s, "{} negative_table", name);
+    println(s, "(");
+
+    println(s, "    (");
+    visit([&](const auto & tuples) {
+        for (const auto & t : depointinate(tuples)) {
+            println(s, "        (");
+            for (const auto & v : t) {
+                println(s, "            {}", tuple_entry_as_string(v));
+            }
+            println(s, "        )");
+        }
+    },
+        _tuples);
+    println(s, "    )");
+
+    println(s, "    (");
+    for (const auto & var : _vars)
+        println(s, "        {}", model->names_and_ids_tracker().s_expr_name_of(var));
+    println(s, "    )");
+
+    println(s, ")");
+
+    return s.str();
+}

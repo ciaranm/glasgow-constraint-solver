@@ -1,9 +1,12 @@
 #include <gcs/constraints/regular.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
+
+#include <fmt/ostream.h>
 
 #include <any>
 #include <cstdio>
@@ -38,6 +41,8 @@ using std::unique_ptr;
 using std::unordered_map;
 using std::unordered_set;
 using std::vector;
+
+using fmt::print;
 
 namespace
 {
@@ -368,4 +373,50 @@ auto Regular::install(Propagators & propagators, State & initial_state, ProofMod
         return PropagatorState::Enable;
     },
         triggers, "regular");
+}
+
+auto Regular::s_exprify(const string & name, const ProofModel * const model) const -> string
+{
+    /*
+        // From MiniZinc's global constraint catalogue:
+
+        predicate regular(array [int] of var int: x,  (_vars)
+                        int: Q,                       (_num_states)
+                        set of int: S,                (_symbols)       
+                        array [int,int] of int: d,    (_transitions)
+                        int: q0,                      [initial state = 0?]
+                        set of int: F).               (_final_states)
+        
+        // From the class definition:                
+        const std::vector<IntegerVariableID> _vars;
+        const std::vector<Integer> _symbols;
+        const long _num_states;
+        std::vector<std::unordered_map<Integer, long>> _transitions;
+        const std::vector<long> _final_states;
+    */
+
+    // (name regular (X1 ... Xn) Q (S1 ... Sk) ((D1 N1) (D2 N2) ... (Dn Nn)) (F1 F2 ... Fm))
+
+    stringstream s;
+
+    print(s, "{} regular (", name);
+    for (const auto & var : _vars)
+        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
+    print(s, ") {}\n       (", _num_states);
+    for (const auto & sym : _symbols)
+        print(s, " {}", sym);
+    print(s, ")\n       ((");
+    for (size_t i = 0; i < _transitions.size(); i++) {
+        print(s, "(");
+        for (const auto & tran : _transitions[i]) {
+            print(s, " ({} {})", tran.first, tran.second);
+        }
+        print(s, ")\n        ");
+    }
+    print(s, "))\n       (");
+    for (const auto & f : _final_states)
+        print(s, " {}", f);
+    print(s, ")");
+
+    return s.str();
 }

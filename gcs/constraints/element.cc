@@ -541,11 +541,15 @@ auto NDimensionalElement<EntryType_, dimensions_>::s_exprify(const std::string &
         // Check if we're at the innermost level (vector of EntryType_)
         if constexpr (std::is_same_v<typename ArrayType::value_type, EntryType_>) {
             // Base case: print elements
-            print(s, "(");
+            if (dimensions_ > 1) {
+                print(s, " (");
+            }
             for (size_t i = 0; i < arr.size(); ++i) {
                 print_elem(s, arr[i], i);
             }
-            print(s, ") ");
+            if (dimensions_ > 1) {
+                print(s, ")");
+            }
         } else {
             // Recursive case: dig deeper
             for (const auto & sub_arr : arr) {
@@ -584,32 +588,3 @@ namespace gcs
     template class NDimensionalElement<Integer, 3>;
 }
 
-// auto Element::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
-// {
-//     // (element (X0 X1 X2 ... Xn-1) (Y,offset) Z)
-//     stringstream s;
-
-//     print(s, "{} element (", name);
-
-//     // Print the array elements
-//     for (const auto & elem : * _array) {
-//         visit(overloaded{
-//             [&](const IntegerVariableID & v) {
-//                 print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(v));
-//             },
-//             [&](const Integer & i) {
-//                 print(s, " {}", i.raw_value);
-//             }
-//         }, elem);
-//     }
-    
-//     // Print (Y, offset)
-//     print(s, ") ({},{})", 
-//         model->names_and_ids_tracker().s_expr_name_of(_index_vars[0]),
-//         _index_starts[0].raw_value);
-    
-//     // Print Z
-//     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_result_var));
-
-//     return s.str();
-// }

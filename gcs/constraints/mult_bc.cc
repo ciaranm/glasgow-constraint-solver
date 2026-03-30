@@ -7,6 +7,8 @@
 #include <gcs/innards/propagators.hh>
 #include <gcs/presolvers/auto_table.hh>
 
+#include <fmt/ostream.h>
+
 #include <algorithm>
 #include <cmath>
 #include <utility>
@@ -30,6 +32,8 @@ using std::stringstream;
 using std::to_string;
 using std::unique_ptr;
 using std::vector;
+
+using fmt::print;
 
 namespace
 {
@@ -1204,4 +1208,18 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
         return PropagatorState::Enable;
     },
         triggers, "mult");
+}
+
+auto MultBC::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
+{
+    // (name mult_bc X Y Z)
+    stringstream s;
+
+    print(s, "{} mult_bc (", name);
+    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v1));
+    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v2));
+    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v3));
+    print(s, ")");
+
+    return s.str();
 }

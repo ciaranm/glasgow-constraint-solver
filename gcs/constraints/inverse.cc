@@ -12,11 +12,14 @@
 
 #include <util/enumerate.hh>
 
+#include <fmt/ostream.h>
+
 #include <algorithm>
 #include <optional>
 #include <ranges>
 #include <set>
 #include <sstream>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -30,10 +33,13 @@ using std::min;
 using std::optional;
 using std::pair;
 using std::shared_ptr;
+using std::string;
 using std::stringstream;
 using std::unique_ptr;
 using std::vector;
 using std::visit;
+
+using fmt::print;
 
 Inverse::Inverse(vector<IntegerVariableID> x, vector<IntegerVariableID> y, Integer x_start, Integer y_start) :
     _x(move(x)),
@@ -130,4 +136,22 @@ auto Inverse::install(Propagators & propagators, State & initial_state, ProofMod
         return PropagatorState::Enable;
     },
         triggers, "inverse");
+}
+
+auto Inverse::s_exprify(const std::string & name, const innards::ProofModel * const model) const -> std::string
+{
+    // (name inverse (X1 X2 ... Xn) (Y1 Y2 ... Yn) x_start y_start)
+    stringstream s;
+
+    print(s, "{} inverse\n          (", name);
+    for (const auto & x : _x) {
+        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(x));
+    }
+    print(s, ")\n          (");
+    for (const auto & y : _y) {
+        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(y));
+    }
+    print(s, ")\n          {} {})", _x_start, _y_start);
+
+    return s.str();
 }

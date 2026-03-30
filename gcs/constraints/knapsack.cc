@@ -7,6 +7,8 @@
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
 
+#include <fmt/ostream.h>
+
 #include <util/enumerate.hh>
 
 #include <algorithm>
@@ -32,9 +34,12 @@ using std::pair;
 using std::set;
 using std::size_t;
 using std::string;
+using std::stringstream;
 using std::to_string;
 using std::unique_ptr;
 using std::vector;
+
+using fmt::print;
 
 Knapsack::Knapsack(vector<Integer> weights, vector<Integer> profits,
     vector<IntegerVariableID> vars, IntegerVariableID weight, IntegerVariableID profit) :
@@ -616,4 +621,48 @@ auto Knapsack::install(Propagators & propagators, State & initial_state, ProofMo
             return knapsack(state, logger, inference, coeffs, vars, totals, eqns_lines);
         },
         triggers, "knapsack");
+}
+
+auto Knapsack::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
+{
+    /*
+     * sum(weights[i]*vars[i]) = weight
+     * sum(profits[i]*vars[i]) = profit
+     * 
+     * vector<Integer> weights
+     * vector<Integer> profits,
+     * vector<IntegerVariableID> vars
+     * IntegerVariableID weight
+     * IntegerVariableID profit) :
+     * std::vector<std::vector<Integer>> _coeffs({move(weights), move(profits)}),
+     * std::vector<IntegerVariableID> _vars(move(vars)),
+     * std::vector<IntegerVariableID> _totals({weight, profit})
+     * 
+     * predicate knapsack(array [$$I] of int: w,
+     *                    array [$$I] of int: p,
+     *                    array [$$I] of var int: x,
+     *                    var int: W,
+     *                    var int: P)
+     * 
+     * (name knapsack (w1 ... wn) (p1 ... pn) (x1 ... xn) W P)
+     */
+
+    stringstream s;
+    auto weights = _coeffs.at(0);
+    auto profits = _coeffs.at(1);
+    auto W = model->names_and_ids_tracker().s_expr_name_of(_totals.at(0));
+    auto P = model->names_and_ids_tracker().s_expr_name_of(_totals.at(1));
+
+    print(s, "{} knapsack\n            (", name);
+    for (const auto & w : weights)
+        print(s, " {}", w.raw_value);
+    print(s, ")\n            (");
+    for (const auto & p : profits)
+        print(s, " {}", p.raw_value);
+    print(s, ")\n            (");
+    for (const auto & c : _vars)
+        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(c));
+    print(s, ")\n            {} {}", W, P);
+
+    return s.str();
 }
