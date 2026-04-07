@@ -2,6 +2,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_VARIABLE_CONDITION_HH
 
 #include <gcs/exception.hh>
+#include <gcs/innards/proofs/proof_only_variables-fwd.hh>
 #include <gcs/integer.hh>
 #include <gcs/variable_id.hh>
 
@@ -80,6 +81,18 @@ namespace gcs
 
     template <>
     constexpr auto enable_conditional_variable_operators<ViewOfIntegerVariableID>() -> bool
+    {
+        return true;
+    }
+
+    template <>
+    constexpr auto enable_conditional_variable_operators<innards::ProofOnlySimpleIntegerVariableID>() -> bool
+    {
+        return true;
+    }
+
+    template <>
+    constexpr auto enable_conditional_variable_operators<innards::SimpleOrProofOnlyIntegerVariableID>() -> bool
     {
         return true;
     }

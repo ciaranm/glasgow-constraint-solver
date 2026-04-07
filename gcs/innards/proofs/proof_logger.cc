@@ -12,6 +12,8 @@
 #include <iomanip>
 #include <sstream>
 
+#include <util/overloaded.hh>
+
 using std::cmp_less_equal;
 using std::deque;
 using std::flush;

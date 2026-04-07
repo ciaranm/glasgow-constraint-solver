@@ -11,6 +11,8 @@
 #include <type_traits>
 #include <utility>
 
+#include <util/overloaded.hh>
+
 #if __has_cpp_attribute(__cpp_lib_generator)
 #include <generator>
 #else

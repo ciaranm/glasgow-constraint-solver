@@ -1,5 +1,7 @@
 #include <gcs/innards/proofs/simplify_literal.hh>
 
+#include <util/overloaded.hh>
+
 using std::variant;
 
 using namespace gcs;
