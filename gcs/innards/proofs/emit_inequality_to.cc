@@ -4,6 +4,8 @@
 
 #include <algorithm>
 
+#include <util/overloaded.hh>
+
 using std::any_of;
 using std::max;
 using std::optional;

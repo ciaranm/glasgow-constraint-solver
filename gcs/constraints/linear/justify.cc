@@ -3,6 +3,7 @@
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 
 #include <util/enumerate.hh>
+#include <util/overloaded.hh>
 
 #include <sstream>
 #include <variant>
