@@ -72,12 +72,12 @@ namespace gcs::innards
     {
         struct MustHold
         {
-            std::optional<IntegerVariableCondition> cond;
+            Literal cond;
         };
 
         struct MustNotHold
         {
-            std::optional<IntegerVariableCondition> cond;
+            Literal cond;
         };
 
         struct Undecided
@@ -88,7 +88,6 @@ namespace gcs::innards
 
         struct Deactivated
         {
-            IntegerVariableCondition cond;
         };
     }
 

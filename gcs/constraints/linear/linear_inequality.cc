@@ -140,9 +140,9 @@ auto ReifiedLinearInequality::install(Propagators & propagators, State & state, 
             auto [sanitised_neg_cv, neg_modifier] = tidy_up_linear(neg_coeff_vars);
             visit(
                 [&, neg_modifier = neg_modifier](const auto & lin) {
-                    propagators.install([neg_modifier = neg_modifier, lin = lin, value = -_value - 1_i, inv_cond = reif.cond ? *reif.cond : reif.cond, proof_line = proof_line](
+                    propagators.install([neg_modifier = neg_modifier, lin = lin, value = -_value - 1_i, cond = reif.cond, proof_line = proof_line](
                                             const State & state, auto & inference, ProofLogger * const logger) {
-                        return propagate_linear(lin, value + neg_modifier, state, inference, logger, false, *proof_line + 1, inv_cond);
+                        return propagate_linear(lin, value + neg_modifier, state, inference, logger, false, *proof_line + 1, cond);
                     },
                         triggers, "linear inequality");
                 },
@@ -186,7 +186,7 @@ auto ReifiedLinearInequality::install(Propagators & propagators, State & state, 
                         },
 
                         [&](const evaluated_reif::MustNotHold & reif) {
-                            return propagate_linear(sanitised_neg_cv, -value + neg_modifier - 1_i, state, inference, logger, false, *proof_line + 1, reif.cond ? *reif.cond : reif.cond);
+                            return propagate_linear(sanitised_neg_cv, -value + neg_modifier - 1_i, state, inference, logger, false, *proof_line + 1, reif.cond);
                         },
 
                         [&](const evaluated_reif::Deactivated &) {

@@ -152,7 +152,7 @@ auto ReifiedEquals::install(Propagators & propagators, State & initial_state, Pr
             triggers.on_change = {_v1, _v2};
 
             visit([&](auto & _v1, auto & _v2) {
-                propagators.install([v1 = _v1, v2 = _v2, cond = reif.cond ? Literal{*reif.cond} : TrueLiteral{}](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+                propagators.install([v1 = _v1, v2 = _v2, cond = reif.cond](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                     return enforce_equality(logger, v1, v2, state, inference, Reason{cond});
                 },
                     triggers, "equals");
@@ -164,7 +164,7 @@ auto ReifiedEquals::install(Propagators & propagators, State & initial_state, Pr
             triggers.on_instantiated = {_v1, _v2};
 
             visit([&](auto & _v1, auto & _v2) {
-                propagators.install([v1 = _v1, v2 = _v2, cond = reif.cond ? Literal{*reif.cond} : TrueLiteral{}](
+                propagators.install([v1 = _v1, v2 = _v2, cond = reif.cond](
                                         const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                     auto value1 = state.optional_single_value(v1);
                     if (value1) {
@@ -191,7 +191,7 @@ auto ReifiedEquals::install(Propagators & propagators, State & initial_state, Pr
                 return overloaded{
                     [&](const evaluated_reif::MustHold & reif) {
                         return visit([&](auto & v1, auto & v2) {
-                            return enforce_equality(logger, v1, v2, state, inference, Reason{{reif.cond ? Literal{*reif.cond} : TrueLiteral{}}});
+                            return enforce_equality(logger, v1, v2, state, inference, Reason{{reif.cond}});
                         },
                             v1, v2);
                     },
@@ -199,12 +199,12 @@ auto ReifiedEquals::install(Propagators & propagators, State & initial_state, Pr
                         auto value1 = state.optional_single_value(v1);
                         if (value1) {
                             inference.infer_not_equal(logger, v2, *value1,
-                                JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{reif.cond ? Literal{*reif.cond} : TrueLiteral{}, v1 == *value1}}; }});
+                                JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{reif.cond, v1 == *value1}}; }});
                             return PropagatorState::DisableUntilBacktrack;
                         }
                         auto value2 = state.optional_single_value(v2);
                         if (value2) {
-                            inference.infer_not_equal(logger, v1, *value2, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{reif.cond ? Literal{*reif.cond} : TrueLiteral{}, v2 == *value2}}; }});
+                            inference.infer_not_equal(logger, v1, *value2, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{reif.cond, v2 == *value2}}; }});
                             return PropagatorState::DisableUntilBacktrack;
                         }
                         return PropagatorState::Enable;
