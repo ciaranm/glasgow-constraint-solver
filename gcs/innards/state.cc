@@ -1211,7 +1211,7 @@ auto State::test_reification_condition(const ReificationCondition & cond) const 
         [&](const reif::Iff & cond) -> EvaluatedReificationCondition {
             switch (test_literal(cond.cond)) {
             case LiteralIs::DefinitelyTrue: return evaluated_reif::MustHold{cond.cond};
-            case LiteralIs::DefinitelyFalse: return evaluated_reif::MustNotHold{cond.cond};
+            case LiteralIs::DefinitelyFalse: return evaluated_reif::MustNotHold{! cond.cond};
             case LiteralIs::Undecided: return evaluated_reif::Undecided{cond.cond, true, true, false};
             }
             throw NonExhaustiveSwitch{};

@@ -285,7 +285,7 @@ auto ReifiedLinearEquality::install(Propagators & propagators, State & state, Pr
                                 return propagate_linear(sanitised_cv, value, state, inference, logger, true, proof_line, reif.cond);
                             },
 
-                            [&](const evaluated_reif::MustNotHold &) {
+                            [&](const evaluated_reif::MustNotHold & reif) {
                                 // we now know the condition definitely doesn't hold, so it's a linear not-equals
                                 return propagate_linear_not_equals(sanitised_cv, value, state, inference, logger, all_vars);
                             },

@@ -68,16 +68,16 @@ auto ReifiedCompareLessThanOrMaybeEqual::install(Propagators & propagators, Stat
         overloaded{
             [&](const evaluated_reif::MustHold & reif) {
                 if (! holds)
-                    propagators.install_initialiser([v1 = _v1, v2 = _v2, v1_is_constant = v1_is_constant, v2_is_constant = v2_is_constant, cond = reif.cond ? Literal{! *reif.cond} : FalseLiteral{}](
+                    propagators.install_initialiser([v1 = _v1, v2 = _v2, v1_is_constant = v1_is_constant, v2_is_constant = v2_is_constant, cond = reif.cond ? Literal{*reif.cond} : TrueLiteral{}](
                                                         const State &, auto & inference, ProofLogger * const logger) -> void {
-                        inference.infer(logger, cond, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{v1 == *v1_is_constant, v2 == *v2_is_constant}}; }});
+                        inference.infer(logger, ! cond, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{cond, v1 == *v1_is_constant, v2 == *v2_is_constant}}; }});
                     });
             },
             [&](const evaluated_reif::MustNotHold & reif) {
                 if (holds)
-                    propagators.install_initialiser([v1 = _v1, v2 = _v2, v1_is_constant = v1_is_constant, v2_is_constant = v2_is_constant, inv_cond = reif.cond ? Literal{*reif.cond} : FalseLiteral{}](
+                    propagators.install_initialiser([v1 = _v1, v2 = _v2, v1_is_constant = v1_is_constant, v2_is_constant = v2_is_constant, cond = reif.cond ? Literal{*reif.cond} : TrueLiteral{}](
                                                         const State &, auto & inference, ProofLogger * const logger) -> void {
-                        inference.infer(logger, inv_cond, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{v1 == *v1_is_constant, v2 == *v2_is_constant}}; }});
+                        inference.infer(logger, ! cond, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{cond, v1 == *v1_is_constant, v2 == *v2_is_constant}}; }});
                     });
             },
             [&](const evaluated_reif::Undecided & reif) {
@@ -113,7 +113,7 @@ auto ReifiedCompareLessThanOrMaybeEqual::install(Propagators & propagators, Stat
             [&](const evaluated_reif::MustNotHold & reif) {
                 Triggers triggers{.on_bounds = {_v1, _v2}};
 
-                propagators.install([v1 = _v1, v2 = _v2, inv_cond = reif.cond ? Literal{! *reif.cond} : TrueLiteral{}, full_reif = _full_reif, or_equal = _or_equal](
+                propagators.install([v1 = _v1, v2 = _v2, inv_cond = reif.cond ? Literal{*reif.cond} : TrueLiteral{}, full_reif = _full_reif, or_equal = _or_equal](
                                         const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                     auto v1_bounds = state.bounds(v1), v2_bounds = state.bounds(v2);
                     inference.infer_less_than(logger, v2, v1_bounds.second + (! or_equal ? 1_i : 0_i), JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{inv_cond, v1 < v1_bounds.second + 1_i}}; }});
@@ -135,10 +135,12 @@ auto ReifiedCompareLessThanOrMaybeEqual::install(Propagators & propagators, Stat
                             inference.infer_greater_than_or_equal(logger, v2, v1_bounds.first + (or_equal ? 0_i : 1_i), JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{outer_cond, v1 >= v1_bounds.first}}; }});
                             return v1_bounds.second < (v2_bounds.first + (or_equal ? 1_i : 0_i)) ? PropagatorState::DisableUntilBacktrack : PropagatorState::Enable;
                         },
-                        [&](const evaluated_reif::MustNotHold &) {
+                        [&](const evaluated_reif::MustNotHold & reif) {
                             auto v1_bounds = state.bounds(v1), v2_bounds = state.bounds(v2);
-                            inference.infer_less_than(logger, v2, v1_bounds.second + (! or_equal ? 1_i : 0_i), JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{! outer_cond, v1 < v1_bounds.second + 1_i}}; }});
-                            inference.infer_greater_than_or_equal(logger, v1, v2_bounds.first + (! or_equal ? 0_i : 1_i), JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{! outer_cond, v2 >= v2_bounds.first}}; }});
+                            inference.infer_less_than(logger, v2, v1_bounds.second + (! or_equal ? 1_i : 0_i), JustifyUsingRUP{},
+                                ReasonFunction{[=]() { return Reason{{reif.cond ? Literal{*reif.cond} : TrueLiteral{}, v1 < v1_bounds.second + 1_i}}; }});
+                            inference.infer_greater_than_or_equal(logger, v1, v2_bounds.first + (! or_equal ? 0_i : 1_i), JustifyUsingRUP{},
+                                ReasonFunction{[=]() { return Reason{{reif.cond ? Literal{*reif.cond} : TrueLiteral{}, v2 >= v2_bounds.first}}; }});
                             return v2_bounds.second < (v1_bounds.first + (! or_equal ? 1_i : 0_i)) ? PropagatorState::DisableUntilBacktrack : PropagatorState::Enable;
                         },
                         [&](const evaluated_reif::Undecided & reif) {
