@@ -28,12 +28,14 @@ namespace gcs
     private:
         IntegerVariableID _v1, _v2;
         ReificationCondition _cond;
+        bool _neq;
 
     public:
-        ReifiedEquals(const IntegerVariableID v1, const IntegerVariableID v2, ReificationCondition cond);
+        ReifiedEquals(const IntegerVariableID v1, const IntegerVariableID v2, ReificationCondition cond, bool neq = false);
 
         virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
+        [[nodiscard]] virtual auto s_exprify(const std::string & name, const innards::ProofModel * const) const -> std::string override;
     };
 
     /**

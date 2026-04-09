@@ -95,10 +95,11 @@ namespace
     }
 }
 
-ReifiedEquals::ReifiedEquals(const IntegerVariableID v1, const IntegerVariableID v2, ReificationCondition cond) :
+ReifiedEquals::ReifiedEquals(const IntegerVariableID v1, const IntegerVariableID v2, ReificationCondition cond, bool neq) :
     _v1(v1),
     _v2(v2),
-    _cond(cond)
+    _cond(cond),
+    _neq(neq)
 {
 }
 
@@ -192,7 +193,7 @@ auto ReifiedEquals::install(Propagators & propagators, State & initial_state, Pr
         [&](const evaluated_reif::Undecided & reif) {
             Triggers triggers;
             triggers.on_change = {_v1, _v2, reif.cond.var};
-            propagators.install([v1 = _v1, v2 = _v2, outer_reif = reif, cond = _cond](
+            propagators.install([v1 = _v1, v2 = _v2, cond = _cond](
                                     const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                 return overloaded{
                     [&](const evaluated_reif::MustHold & reif) {
@@ -299,37 +300,35 @@ EqualsIff::EqualsIff(const IntegerVariableID v1, const IntegerVariableID v2, Int
 }
 
 NotEquals::NotEquals(const IntegerVariableID v1, const IntegerVariableID v2) :
-    ReifiedEquals(v1, v2, reif::MustNotHold{})
+    ReifiedEquals(v1, v2, reif::MustNotHold{}, true)
 {
 }
 
 NotEqualsIf::NotEqualsIf(const IntegerVariableID v1, const IntegerVariableID v2, IntegerVariableCondition cond) :
-    ReifiedEquals(v1, v2, reif::NotIf{cond})
+    ReifiedEquals(v1, v2, reif::NotIf{cond}, true)
 {
 }
 
 NotEqualsIff::NotEqualsIff(const IntegerVariableID v1, const IntegerVariableID v2, IntegerVariableCondition cond) :
-    ReifiedEquals(v1, v2, reif::Iff{! cond})
+    ReifiedEquals(v1, v2, reif::Iff{! cond}, true)
 {
 }
 
-auto EqualsIff::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
+auto ReifiedEquals::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
 {
     stringstream s;
 
-    print(s, "{} equals_iff", name);
-    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_cond));
-    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v1));
-    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v2));
+    string constraint_type = overloaded{
+        [](const reif::MustHold &) -> string { return "equals"; },
+        [](const reif::MustNotHold &) -> string { return "not_equals"; },
+        [](const reif::If &) -> string { return "equals_if"; },
+        [](const reif::NotIf &) -> string { return "not_equals_if"; },
+        [neq = _neq](const reif::Iff &) -> string { 
+            return neq ? "not_equals_iff" : "equals_iff";
+        }
+    }.visit(_cond);
 
-    return s.str();
-}
-
-auto EqualsIff::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
-{
-    stringstream s;
-
-    print(s, "{} equals_iff", name);
+    print(s, "{} {}", name, constraint_type);
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_cond));
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v1));
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v2));

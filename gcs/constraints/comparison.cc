@@ -112,7 +112,7 @@ auto ReifiedCompareLessThanOrMaybeEqual::install(Propagators & propagators, Stat
             [&](const evaluated_reif::MustHold & reif) {
                 Triggers triggers{.on_bounds = {_v1, _v2}};
 
-                propagators.install([v1 = _v1, v2 = _v2, cond = reif.cond, full_reif = _full_reif, or_equal = _or_equal](
+                propagators.install([v1 = _v1, v2 = _v2, cond = reif.cond, or_equal = _or_equal](
                                         const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                     auto v1_bounds = state.bounds(v1), v2_bounds = state.bounds(v2);
                     inference.infer_less_than(logger, v1, v2_bounds.second + (or_equal ? 1_i : 0_i), JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{cond, v2 < v2_bounds.second + 1_i}}; }});
@@ -124,7 +124,7 @@ auto ReifiedCompareLessThanOrMaybeEqual::install(Propagators & propagators, Stat
             [&](const evaluated_reif::MustNotHold & reif) {
                 Triggers triggers{.on_bounds = {_v1, _v2}};
 
-                propagators.install([v1 = _v1, v2 = _v2, cond = reif.cond, full_reif = _full_reif, or_equal = _or_equal](
+                propagators.install([v1 = _v1, v2 = _v2, cond = reif.cond, or_equal = _or_equal](
                                         const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                     auto v1_bounds = state.bounds(v1), v2_bounds = state.bounds(v2);
                     inference.infer_less_than(logger, v2, v1_bounds.second + (! or_equal ? 1_i : 0_i), JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{cond, v1 < v1_bounds.second + 1_i}}; }});
@@ -137,7 +137,7 @@ auto ReifiedCompareLessThanOrMaybeEqual::install(Propagators & propagators, Stat
                 Triggers triggers{.on_bounds = {_v1, _v2}};
                 triggers.on_change.push_back(reif.cond.var);
 
-                propagators.install([v1 = _v1, v2 = _v2, full_reif = _full_reif, or_equal = _or_equal, reif_cond = _reif_cond](
+                propagators.install([v1 = _v1, v2 = _v2, or_equal = _or_equal, reif_cond = _reif_cond](
                                         const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                     return overloaded{
                         [&](const evaluated_reif::MustHold & reif) {

@@ -725,29 +725,18 @@ auto NamesAndIDsTracker::s_expr_name_of(Literal lit) const -> string
     return overloaded{
         [&](const TrueLiteral &) -> string { return "1"; },
         [&](const FalseLiteral &) -> string { return "0"; },
-        [&]<typename T_>(const VariableConditionFrom<T_> & cond) -> string {
-            // if (cond.op == VariableConditionOperator::GreaterEqual) // We don't have a > Operator
-                return format("{}", cond.value.raw_value);
-            // string op;
-            // switch (cond.op) {
-            // case VariableConditionOperator::Equal:
-            //     op = "Equal";
-            //     break;
-            // case VariableConditionOperator::NotEqual:
-            //     op = "NotEqual";
-            //     break;
-            // case VariableConditionOperator::GreaterEqual:
-            //     op = "GreaterEqual";
-            //     break;
-            // case VariableConditionOperator::Less:
-            //     op = "Less";
-            //     break;
-            // default:
-            //     throw NonExhaustiveSwitch{};
-            // }
-            // throw UnimplementedException{format("Operator `{}` not implemented", op)};
+        [&](const VariableConditionFrom<SimpleIntegerVariableID> & cond) -> string {
+            return s_expr_name_of(cond.var);  
+        },
+        [&](const VariableConditionFrom<ProofOnlySimpleIntegerVariableID> &) -> string {
+            throw UnimplementedException{};  
         }}
         .visit(simplify_literal(lit));
+}
+
+auto NamesAndIDsTracker::s_expr_name_of(ReificationCondition cond) const -> string
+{
+    return "COND";
 }
 
 auto NamesAndIDsTracker::reify(const WPBSumLE & ineq, const HalfReifyOnConjunctionOf & half_reif) -> WPBSumLE

@@ -29,7 +29,7 @@ namespace gcs
     private:
         IntegerVariableID _v1, _v2;
         ReificationCondition _reif_cond;
-        // bool _full_reif;
+        bool _full_reif;
         bool _or_equal;
         bool _vars_swapped;
 
