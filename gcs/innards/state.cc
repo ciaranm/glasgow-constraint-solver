@@ -208,7 +208,9 @@ auto State::clone() const -> State
 
 auto State::allocate_integer_variable_with_state(Integer lower, Integer upper) -> SimpleIntegerVariableID
 {
-    if (lower == upper)
+    if (lower > upper)
+        throw UnimplementedException{};
+    else if (lower == upper)
         _imp->integer_variable_states.back().push_back(IntegerVariableConstantState{lower});
     else
         _imp->integer_variable_states.back().push_back(IntegerVariableRangeState{lower, upper});
@@ -1183,6 +1185,38 @@ auto State::test_literal(const IntegerVariableCondition & cond) const -> Literal
     }
 
     throw NonExhaustiveSwitch{};
+}
+
+auto State::test_reification_condition(const ReificationCondition & cond) const -> EvaluatedReificationCondition
+{
+    return overloaded{
+        [&](const reif::MustHold &) -> EvaluatedReificationCondition { return evaluated_reif::MustHold{TrueLiteral{}}; },
+        [&](const reif::MustNotHold &) -> EvaluatedReificationCondition { return evaluated_reif::MustNotHold{TrueLiteral{}}; },
+        [&](const reif::If & cond) -> EvaluatedReificationCondition {
+            switch (test_literal(cond.cond)) {
+            case LiteralIs::DefinitelyTrue: return evaluated_reif::MustHold{cond.cond};
+            case LiteralIs::DefinitelyFalse: return evaluated_reif::Deactivated{};
+            case LiteralIs::Undecided: return evaluated_reif::Undecided{cond.cond, false, true, false};
+            }
+            throw NonExhaustiveSwitch{};
+        },
+        [&](const reif::NotIf & cond) -> EvaluatedReificationCondition {
+            switch (test_literal(cond.cond)) {
+            case LiteralIs::DefinitelyTrue: return evaluated_reif::MustNotHold{cond.cond};
+            case LiteralIs::DefinitelyFalse: return evaluated_reif::Deactivated{};
+            case LiteralIs::Undecided: return evaluated_reif::Undecided{cond.cond, false, false, true};
+            }
+            throw NonExhaustiveSwitch{};
+        },
+        [&](const reif::Iff & cond) -> EvaluatedReificationCondition {
+            switch (test_literal(cond.cond)) {
+            case LiteralIs::DefinitelyTrue: return evaluated_reif::MustHold{cond.cond};
+            case LiteralIs::DefinitelyFalse: return evaluated_reif::MustNotHold{! cond.cond};
+            case LiteralIs::Undecided: return evaluated_reif::Undecided{cond.cond, true, true, false};
+            }
+            throw NonExhaustiveSwitch{};
+        }}
+        .visit(cond);
 }
 
 auto State::on_backtrack(std::function<auto()->void> f) -> void

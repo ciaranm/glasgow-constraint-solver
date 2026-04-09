@@ -4,12 +4,14 @@
 #include <gcs/constraint.hh>
 #include <gcs/expression.hh>
 #include <gcs/innards/literal.hh>
+#include <gcs/reification.hh>
 
 namespace gcs
 {
     /**
      * \brief Constrain that the sum of the variables multiplied by their associated
-     * coefficients is equal to the specified value, if and only if a condition holds.
+     * coefficients is equal to the specified value, potentially subject to a reification
+     * condition.
      *
      * If gac is specifed, achieves generalised arc consistency. This is very
      * expensive for large variables.
@@ -19,32 +21,57 @@ namespace gcs
      * \sa LinearGreaterThanEqual
      * \sa LinearEquality
      */
-    class LinearEqualityIff : public Constraint
+    class ReifiedLinearEquality : public Constraint
     {
     private:
         WeightedSum _coeff_vars;
         Integer _value;
-        innards::Literal _cond;
+        ReificationCondition _reif_cond;
         bool _gac;
 
     public:
-        explicit LinearEqualityIff(WeightedSum coeff_vars, Integer value, innards::Literal cond, bool gac = false);
+        explicit ReifiedLinearEquality(WeightedSum coeff_vars, Integer value, ReificationCondition reif_cond, bool gac = false);
 
         virtual auto install(innards::Propagators &, innards::State &,
             innards::ProofModel * const) && -> void override;
+
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
     };
 
-    class LinearEquality : public LinearEqualityIff
+    class LinearEquality : public ReifiedLinearEquality
     {
     public:
         explicit LinearEquality(WeightedSum coeff_vars, Integer value, bool gac = false);
     };
 
-    class LinearNotEquals : public LinearEqualityIff
+    class LinearEqualityIf : public ReifiedLinearEquality
+    {
+    public:
+        explicit LinearEqualityIf(WeightedSum coeff_vars, Integer value, innards::Literal cond, bool gac = false);
+    };
+
+    class LinearEqualityIff : public ReifiedLinearEquality
+    {
+    public:
+        explicit LinearEqualityIff(WeightedSum coeff_vars, Integer value, innards::Literal cond, bool gac = false);
+    };
+
+    class LinearNotEquals : public ReifiedLinearEquality
     {
     public:
         explicit LinearNotEquals(WeightedSum coeff_vars, Integer value, bool gac = false);
+    };
+
+    class LinearNotEqualsIf : public ReifiedLinearEquality
+    {
+    public:
+        explicit LinearNotEqualsIf(WeightedSum coeff_vars, Integer value, innards::Literal cond, bool gac = false);
+    };
+
+    class LinearNotEqualsIff : public ReifiedLinearEquality
+    {
+    public:
+        explicit LinearNotEqualsIff(WeightedSum coeff_vars, Integer value, innards::Literal cond, bool gac = false);
     };
 }
 

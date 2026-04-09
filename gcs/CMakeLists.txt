@@ -42,7 +42,6 @@ add_library(glasgow_constraint_solver
         constraints/minus.cc
         constraints/mult_bc.cc
         constraints/n_value.cc
-        constraints/not_equals.cc
         constraints/parity.cc
         constraints/plus.cc
         constraints/regular.cc
@@ -102,7 +101,6 @@ add_executable(logical_test constraints/logical_test.cc)
 add_executable(min_max_test constraints/min_max_test.cc)
 add_executable(mult_bc_test constraints/mult_bc_test.cc)
 add_executable(n_value_test constraints/n_value_test.cc)
-add_executable(not_equals_test constraints/not_equals_test.cc)
 add_executable(parity_test constraints/parity_test.cc)
 add_executable(plus_minus_test constraints/plus_minus_test.cc)
 add_executable(smart_table_test constraints/smart_table_test.cc)
@@ -117,7 +115,10 @@ add_test(NAME element_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash 
 add_test(NAME equals_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:equals_test>)
 add_test(NAME inverse_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:inverse_test>)
 add_test(NAME knapsack_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:knapsack_test>)
-add_test(NAME linear_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:linear_test>)
+add_test(NAME linear_constraint_eq COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:linear_test> eq)
+add_test(NAME linear_constraint_ne COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:linear_test> le)
+add_test(NAME linear_constraint_le COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:linear_test> ne)
+add_test(NAME linear_constraint_ge COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:linear_test> ge)
 add_test(NAME logical_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:logical_test>)
 add_test(NAME min_max_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:min_max_test>)
 add_test(NAME mult_bc_constraint COMMAND ${CMAKE_SOURCE_DIR}/run_test_only.bash $<TARGET_FILE:mult_bc_test>)

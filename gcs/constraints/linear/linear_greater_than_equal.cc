@@ -14,16 +14,16 @@ namespace
 }
 
 LinearGreaterThanEqual::LinearGreaterThanEqual(WeightedSum coeff_vars, Integer value) :
-    LinearInequalityIff(move(negate(coeff_vars)), -value, TrueLiteral{})
+    ReifiedLinearInequality(move(negate(coeff_vars)), -value, reif::MustHold{})
 {
 }
 
-LinearGreaterThanEqualIf::LinearGreaterThanEqualIf(WeightedSum coeff_vars, Integer value, Literal cond) :
-    LinearInequalityIf(move(negate(coeff_vars)), -value, cond)
+LinearGreaterThanEqualIf::LinearGreaterThanEqualIf(WeightedSum coeff_vars, Integer value, IntegerVariableCondition cond) :
+    ReifiedLinearInequality(move(negate(coeff_vars)), -value, reif::If{cond})
 {
 }
 
-LinearGreaterThanEqualIff::LinearGreaterThanEqualIff(WeightedSum coeff_vars, Integer value, Literal cond) :
-    LinearInequalityIff(move(negate(coeff_vars)), -value, cond)
+LinearGreaterThanEqualIff::LinearGreaterThanEqualIff(WeightedSum coeff_vars, Integer value, IntegerVariableCondition cond) :
+    ReifiedLinearInequality(move(negate(coeff_vars)), -value, reif::Iff{cond})
 {
 }

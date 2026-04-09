@@ -22,16 +22,16 @@ using std::unique_ptr;
 using std::variant;
 using std::vector;
 
-LinearInequalityIff::LinearInequalityIff(WeightedSum coeff_vars, Integer value, Literal cond) :
+ReifiedLinearInequality::ReifiedLinearInequality(WeightedSum coeff_vars, Integer value, ReificationCondition cond) :
     _coeff_vars(move(coeff_vars)),
     _value(value),
-    _cond(cond)
+    _reif_cond(cond)
 {
 }
 
-auto LinearInequalityIff::clone() const -> unique_ptr<Constraint>
+auto ReifiedLinearInequality::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<LinearInequalityIff>(WeightedSum{_coeff_vars}, _value, _cond);
+    return make_unique<ReifiedLinearInequality>(WeightedSum{_coeff_vars}, _value, _reif_cond);
 }
 
 namespace
@@ -80,275 +80,160 @@ namespace
     }
 }
 
-auto LinearInequalityIff::install(Propagators & propagators, State & state, ProofModel * const optional_model) && -> void
+auto ReifiedLinearInequality::install(Propagators & propagators, State & state, ProofModel * const optional_model) && -> void
 {
     optional<ProofLine> proof_line;
     if (optional_model) {
         WPBSum terms;
         for (auto & [c, v] : _coeff_vars.terms)
             terms += c * v;
+
         overloaded{
-            [&](const TrueLiteral &) {
-                proof_line = optional_model->add_constraint("LinearInequalityIff", "unconditional less than", terms <= _value, nullopt);
+            [&](const reif::MustHold &) {
+                proof_line = optional_model->add_constraint("ReifiedLinearInequality", "unconditional less than", terms <= _value, nullopt);
             },
-            [&](const FalseLiteral &) {
-                proof_line = optional_model->add_constraint("LinearInequalityIff", "unconditional greater than", terms >= _value + 1_i, nullopt);
+            [&](const reif::MustNotHold &) {
+                proof_line = optional_model->add_constraint("ReifiedLinearInequality", "unconditional greater than", terms >= _value + 1_i, nullopt);
             },
-            [&](const IntegerVariableCondition & cond) {
-                proof_line = optional_model->add_constraint("LinearInequalityIff", "less than option", terms <= _value, HalfReifyOnConjunctionOf{cond});
-                optional_model->add_constraint("LinearInequalityIff", "greater than option", terms >= _value + 1_i, HalfReifyOnConjunctionOf{! cond});
+            [&](const reif::If & cond) {
+                proof_line = optional_model->add_constraint("ReifiedLinearInequality", "less than option", terms <= _value, HalfReifyOnConjunctionOf{cond.cond});
+            },
+            [&](const reif::NotIf & cond) {
+                proof_line = optional_model->add_constraint("ReifiedLinearInequality", "greater than option", terms <= _value, HalfReifyOnConjunctionOf{cond.cond});
+            },
+            [&](const reif::Iff & cond) {
+                proof_line = optional_model->add_constraint("ReifiedLinearInequality", "less than option", terms <= _value, HalfReifyOnConjunctionOf{cond.cond});
+                optional_model->add_constraint("ReifiedLinearInequality", "greater than option", terms >= _value + 1_i, HalfReifyOnConjunctionOf{! cond.cond});
             }}
-            .visit(_cond);
+            .visit(_reif_cond);
     }
 
     auto [sanitised_cv, modifier] = tidy_up_linear(_coeff_vars);
 
-    // empty sum? we know what the condition must be.
-    if (visit([](const auto & s) { return s.terms.empty(); }, sanitised_cv)) {
-        propagators.install_initialiser([modifier = modifier, value = _value, cond = _cond](
-                                            const State &, auto & inference, ProofLogger * const logger) -> void {
-            inference.infer(logger, 0_i <= value + modifier ? cond : ! cond, JustifyUsingRUP{}, ReasonFunction{});
-        });
-
-        return;
-    }
-
-    // we care when bounds change, and when the condition changes.
-    Triggers triggers;
-    for (auto & [_, v] : _coeff_vars.terms)
-        triggers.on_bounds.push_back(v);
-
     overloaded{
-        [&](const TrueLiteral &) {},
-        [&](const FalseLiteral &) {},
-        [&](const IntegerVariableCondition & cond) { triggers.on_change.push_back(cond.var); }}
-        .visit(_cond);
+        [&](const evaluated_reif::MustHold & reif) {
+            // definitely true, it's a less-than-or-equal, which triggers on bounds changes only
+            Triggers triggers;
+            for (auto & [_, v] : _coeff_vars.terms)
+                triggers.on_bounds.push_back(v);
 
-    // do we know upfront what the condition is?
-    switch (state.test_literal(_cond)) {
-    case LiteralIs::DefinitelyTrue: {
-        // definitely true, it's a less-than-or-equal
-        visit(
-            [&, modifier = modifier](const auto & lin) {
-                propagators.install([modifier = modifier, lin = lin, value = _value, cond = _cond, proof_line = proof_line](
+            visit(
+                [&, modifier = modifier](const auto & lin) {
+                    propagators.install([modifier = modifier, lin = lin, value = _value, cond = reif.cond, proof_line = proof_line](
+                                            const State & state, auto & inference, ProofLogger * const logger) {
+                        return propagate_linear(lin, value + modifier, state, inference, logger, false, proof_line, cond);
+                    },
+                        triggers, "linear inequality");
+                },
+                sanitised_cv);
+        },
+
+        [&](const evaluated_reif::MustNotHold & reif) {
+            // definitely false, it's a greater-than
+            Triggers triggers;
+            for (auto & [_, v] : _coeff_vars.terms)
+                triggers.on_bounds.push_back(v);
+
+            auto neg_coeff_vars = _coeff_vars;
+            for (auto & v : neg_coeff_vars.terms)
+                v.coefficient = -v.coefficient;
+            auto [sanitised_neg_cv, neg_modifier] = tidy_up_linear(neg_coeff_vars);
+            visit(
+                [&, neg_modifier = neg_modifier](const auto & lin) {
+                    propagators.install([neg_modifier = neg_modifier, lin = lin, value = -_value - 1_i, cond = reif.cond, proof_line = proof_line](
+                                            const State & state, auto & inference, ProofLogger * const logger) {
+                        return propagate_linear(lin, value + neg_modifier, state, inference, logger, false, *proof_line + 1, cond);
+                    },
+                        triggers, "linear inequality");
+                },
+                sanitised_neg_cv);
+        },
+
+        [&](const evaluated_reif::Deactivated &) {
+            // doesn't do anything
+        },
+
+        [&](const evaluated_reif::Undecided & reif) {
+            // condition wasn't known at compile time. keep both the satisfiable and unsatisfiable
+            // forms of the inequality around, and then see if the condition is known or can be
+            // inferred.
+
+            Triggers triggers;
+            for (auto & [_, v] : _coeff_vars.terms)
+                triggers.on_bounds.push_back(v);
+            triggers.on_change.push_back(reif.cond.var);
+
+            auto neg_coeff_vars = _coeff_vars;
+            for (auto & v : neg_coeff_vars.terms)
+                v.coefficient = -v.coefficient;
+            auto [sanitised_neg_cv, neg_modifier] = tidy_up_linear(neg_coeff_vars);
+
+            vector<IntegerVariableID> vars;
+            visit([&](const auto & sanitised_cv) {
+                for (const auto & cv : sanitised_cv.terms)
+                    vars.push_back(get_var(cv));
+            },
+                sanitised_cv);
+
+            visit([&, modifier = modifier, neg_modifier = neg_modifier](const auto & sanitised_cv, const auto & sanitised_neg_cv) -> void {
+                propagators.install([cond = _reif_cond, sanitised_cv = sanitised_cv, sanitised_neg_cv = sanitised_neg_cv,
+                                        value = _value, modifier = modifier, neg_modifier = neg_modifier, proof_line = proof_line,
+                                        vars = vars](
                                         const State & state, auto & inference, ProofLogger * const logger) {
-                    return propagate_linear(lin, value + modifier, state, inference, logger, false, proof_line, cond);
+                    return overloaded{
+                        [&](const evaluated_reif::MustHold & reif) {
+                            return propagate_linear(sanitised_cv, value + modifier, state, inference, logger, false, proof_line, reif.cond);
+                        },
+
+                        [&](const evaluated_reif::MustNotHold & reif) {
+                            return propagate_linear(sanitised_neg_cv, -value + neg_modifier - 1_i, state, inference, logger, false, *proof_line + 1, reif.cond);
+                        },
+
+                        [&](const evaluated_reif::Deactivated &) {
+                            return PropagatorState::DisableUntilBacktrack;
+                        },
+
+                        [&](const evaluated_reif::Undecided & reif) {
+                            // still don't know. see whether the condition is forced either way.
+                            Integer min_possible = 0_i, max_possible = 0_i;
+                            for (const auto & cv : sanitised_cv.terms) {
+                                auto bounds = state.bounds(get_var(cv));
+                                if (get_coeff(cv) >= 0_i) {
+                                    min_possible += get_coeff(cv) * bounds.first;
+                                    max_possible += get_coeff(cv) * bounds.second;
+                                }
+                                else {
+                                    min_possible += get_coeff(cv) * bounds.second;
+                                    max_possible += get_coeff(cv) * bounds.first;
+                                }
+                            }
+
+                            if (min_possible > value + modifier) {
+                                // cannot possibly hold
+                                auto just = [&](const ReasonFunction &) { return justify_cond(state, sanitised_cv, *logger, *proof_line); };
+                                if (reif.set_not_cond_if_must_not_hold)
+                                    inference.infer(logger, ! reif.cond, JustifyExplicitly{just}, generic_reason(state, vars));
+                                return PropagatorState::DisableUntilBacktrack;
+                            }
+                            else if (max_possible <= value + modifier) {
+                                // must definitely hold
+                                auto just = [&](const ReasonFunction &) { return justify_cond(state, sanitised_neg_cv, *logger, *proof_line + 1); };
+                                if (reif.set_cond_if_must_hold)
+                                    inference.infer(logger, reif.cond, JustifyExplicitly{just}, generic_reason(state, vars));
+                                else if (reif.set_not_cond_if_must_hold)
+                                    inference.infer(logger, ! reif.cond, JustifyExplicitly{just}, generic_reason(state, vars));
+                                return PropagatorState::DisableUntilBacktrack;
+                            }
+                            else {
+                                // still unknown
+                                return PropagatorState::Enable;
+                            }
+                        }}
+                        .visit(state.test_reification_condition(cond));
                 },
                     triggers, "linear inequality");
             },
-            sanitised_cv);
-    } break;
-
-    case LiteralIs::DefinitelyFalse: {
-        // definitely false, it's a greater-than
-        auto neg_coeff_vars = _coeff_vars;
-        for (auto & v : neg_coeff_vars.terms)
-            v.coefficient = -v.coefficient;
-        auto [sanitised_neg_cv, neg_modifier] = tidy_up_linear(neg_coeff_vars);
-        visit(
-            [&, neg_modifier = neg_modifier](const auto & lin) {
-                propagators.install([neg_modifier = neg_modifier, lin = lin, value = -_value - 1_i, cond = _cond, proof_line = proof_line](
-                                        const State & state, auto & inference, ProofLogger * const logger) {
-                    return propagate_linear(lin, value + neg_modifier, state, inference, logger, false, *proof_line + 1, ! cond);
-                },
-                    triggers, "linear inequality");
-            },
-            sanitised_neg_cv);
-    } break;
-
-    case LiteralIs::Undecided: {
-        // condition wasn't known at compile time. keep both the satisfiable and unsatisfiable
-        // forms of the inequality around, and then see if the condition is known or can be
-        // inferred.
-        auto neg_coeff_vars = _coeff_vars;
-        for (auto & v : neg_coeff_vars.terms)
-            v.coefficient = -v.coefficient;
-        auto [sanitised_neg_cv, neg_modifier] = tidy_up_linear(neg_coeff_vars);
-
-        vector<IntegerVariableID> vars;
-        visit([&](const auto & sanitised_cv) {
-            for (const auto & cv : sanitised_cv.terms)
-                vars.push_back(get_var(cv));
-        },
-            sanitised_cv);
-
-        visit([&, modifier = modifier, neg_modifier = neg_modifier](const auto & sanitised_cv, const auto & sanitised_neg_cv) -> void {
-            propagators.install([cond = _cond, sanitised_cv = sanitised_cv, sanitised_neg_cv = sanitised_neg_cv,
-                                    value = _value, modifier = modifier, neg_modifier = neg_modifier, proof_line = proof_line,
-                                    vars = vars](
-                                    const State & state, auto & inference, ProofLogger * const logger) {
-                switch (state.test_literal(cond)) {
-                case LiteralIs::DefinitelyTrue: {
-                    return propagate_linear(sanitised_cv, value + modifier, state, inference, logger, false, proof_line, cond);
-                } break;
-                case LiteralIs::DefinitelyFalse: {
-                    return propagate_linear(sanitised_neg_cv, -value + neg_modifier - 1_i, state, inference, logger, false,
-                        *proof_line + 1, ! cond);
-                } break;
-                case LiteralIs::Undecided: {
-                    // still don't know. see whether the condition is forced either way.
-                    Integer min_possible = 0_i, max_possible = 0_i;
-                    for (const auto & cv : sanitised_cv.terms) {
-                        auto bounds = state.bounds(get_var(cv));
-                        if (get_coeff(cv) >= 0_i) {
-                            min_possible += get_coeff(cv) * bounds.first;
-                            max_possible += get_coeff(cv) * bounds.second;
-                        }
-                        else {
-                            min_possible += get_coeff(cv) * bounds.second;
-                            max_possible += get_coeff(cv) * bounds.first;
-                        }
-                    }
-
-                    if (min_possible > value + modifier) {
-                        auto just = [&](const ReasonFunction &) { return justify_cond(state, sanitised_cv, *logger, *proof_line); };
-                        inference.infer(logger, ! cond, JustifyExplicitly{just}, generic_reason(state, vars));
-                        return PropagatorState::Enable;
-                    }
-                    else if (max_possible <= value + modifier) {
-                        auto just = [&](const ReasonFunction &) { return justify_cond(state, sanitised_neg_cv, *logger, *proof_line + 1); };
-                        inference.infer(logger, cond, JustifyExplicitly{just}, generic_reason(state, vars));
-                        return PropagatorState::Enable;
-                    }
-                    else
-                        return PropagatorState::Enable;
-                } break;
-                }
-                throw NonExhaustiveSwitch{};
-            },
-                triggers, "linear inequality");
-        },
-            sanitised_cv, sanitised_neg_cv);
-    } break;
-    }
-}
-
-LinearInequalityIf::LinearInequalityIf(WeightedSum coeff_vars, Integer value, Literal cond) :
-    _coeff_vars(move(coeff_vars)),
-    _value(value),
-    _cond(cond)
-{
-}
-
-auto LinearInequalityIf::clone() const -> unique_ptr<Constraint>
-{
-    return make_unique<LinearInequalityIf>(WeightedSum{_coeff_vars}, _value, _cond);
-}
-
-auto LinearInequalityIf::install(Propagators & propagators, State & state, ProofModel * const optional_model) && -> void
-{
-    optional<ProofLine> proof_line;
-    if (optional_model) {
-        WPBSum terms;
-        for (auto & [c, v] : _coeff_vars.terms)
-            terms += c * v;
-        overloaded{
-            [&](const TrueLiteral &) {
-                proof_line = optional_model->add_constraint("LinearInequalityIf", "unconditional less than", terms <= _value, nullopt);
-            },
-            [&](const FalseLiteral &) {
-            },
-            [&](const IntegerVariableCondition & cond) {
-                proof_line = optional_model->add_constraint("LinearInequalityIf", "less than option", terms <= _value, HalfReifyOnConjunctionOf{cond});
-            }}
-            .visit(_cond);
-    }
-
-    auto [sanitised_cv, modifier] = tidy_up_linear(_coeff_vars);
-
-    // empty sum? we might be able to force the condition, and either way we do
-    // nothing else.
-    if (visit([](const auto & s) { return s.terms.empty(); }, sanitised_cv)) {
-        propagators.install_initialiser([modifier = modifier, value = _value, cond = _cond](
-                                            const State &, auto & inference, ProofLogger * const logger) -> void {
-            if (value + modifier < 0_i)
-                inference.infer(logger, ! cond, JustifyUsingRUP{}, ReasonFunction{});
-        });
-
-        return;
-    }
-
-    // we care when bounds change, and when the condition changes.
-    Triggers triggers;
-    for (auto & [_, v] : _coeff_vars.terms)
-        triggers.on_bounds.push_back(v);
-
-    overloaded{
-        [&](const TrueLiteral &) {},
-        [&](const FalseLiteral &) {},
-        [&](const IntegerVariableCondition & cond) { triggers.on_change.push_back(cond.var); }}
-        .visit(_cond);
-
-    // do we know upfront what the condition is?
-    switch (state.test_literal(_cond)) {
-    case LiteralIs::DefinitelyTrue: {
-        // definitely true, it's a less-than-or-equal
-        visit(
-            [&, modifier = modifier](const auto & lin) {
-                propagators.install([modifier = modifier, lin = lin, value = _value, cond = _cond, proof_line = proof_line](
-                                        const State & state, auto & inference, ProofLogger * const logger) {
-                    return propagate_linear(lin, value + modifier, state, inference, logger, false, proof_line, cond);
-                },
-                    triggers, "linear inequality");
-            },
-            sanitised_cv);
-    } break;
-
-    case LiteralIs::DefinitelyFalse: {
-        // definitely false, do nothing
-    } break;
-
-    case LiteralIs::Undecided: {
-        // condition wasn't known at compile time. see if the condition is known or can be
-        // inferred.
-        vector<IntegerVariableID> vars;
-        visit([&](const auto & sanitised_cv) {
-            for (const auto & cv : sanitised_cv.terms)
-                vars.push_back(get_var(cv));
-        },
-            sanitised_cv);
-
-        visit([&, modifier = modifier](const auto & sanitised_cv) -> void {
-            propagators.install([cond = _cond, sanitised_cv = sanitised_cv,
-                                    value = _value, modifier = modifier, proof_line = proof_line,
-                                    vars = vars](
-                                    const State & state, auto & inference, ProofLogger * const logger) {
-                switch (state.test_literal(cond)) {
-                case LiteralIs::DefinitelyTrue: {
-                    return propagate_linear(sanitised_cv, value + modifier, state, inference, logger, false, proof_line, cond);
-                } break;
-                case LiteralIs::DefinitelyFalse: {
-                    return PropagatorState::DisableUntilBacktrack;
-                } break;
-                case LiteralIs::Undecided: {
-                    // still don't know. see whether the condition is forced either way.
-                    Integer min_possible = 0_i, max_possible = 0_i;
-                    for (const auto & cv : sanitised_cv.terms) {
-                        auto bounds = state.bounds(get_var(cv));
-                        if (get_coeff(cv) >= 0_i) {
-                            min_possible += get_coeff(cv) * bounds.first;
-                            max_possible += get_coeff(cv) * bounds.second;
-                        }
-                        else {
-                            min_possible += get_coeff(cv) * bounds.second;
-                            max_possible += get_coeff(cv) * bounds.first;
-                        }
-                    }
-
-                    if (min_possible > value + modifier) {
-                        auto just = [&](const ReasonFunction &) { return justify_cond(state, sanitised_cv, *logger, *proof_line); };
-                        inference.infer(logger, ! cond, JustifyExplicitly{just}, generic_reason(state, vars));
-                        return PropagatorState::Enable;
-                    }
-                    else
-                        return PropagatorState::Enable;
-                } break;
-                }
-                throw NonExhaustiveSwitch{};
-            },
-                triggers, "linear inequality");
-        },
-            sanitised_cv);
-    } break;
-    }
+                sanitised_cv, sanitised_neg_cv);
+        }}
+        .visit(state.test_reification_condition(_reif_cond));
 }

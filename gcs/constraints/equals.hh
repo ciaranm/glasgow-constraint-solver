@@ -2,10 +2,10 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_EQUALS_HH
 
 #include <gcs/constraint.hh>
-#include <gcs/innards/literal.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/proofs/reification.hh>
 #include <gcs/innards/reason.hh>
+#include <gcs/reification.hh>
 #include <gcs/variable_condition.hh>
 #include <gcs/variable_id.hh>
 #include <string>
@@ -19,20 +19,32 @@ namespace gcs
     }
 
     /**
+     * \brief Constrain that two variables are equal dependent upon a reification condition.
+     *
+     * \ingroup Constraints
+     */
+    class ReifiedEquals : public Constraint
+    {
+    private:
+        IntegerVariableID _v1, _v2;
+        ReificationCondition _cond;
+
+    public:
+        ReifiedEquals(const IntegerVariableID v1, const IntegerVariableID v2, ReificationCondition cond);
+
+        virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
+        virtual auto clone() const -> std::unique_ptr<Constraint> override;
+    };
+
+    /**
      * \brief Constrain that two variables are equal.
      *
      * \ingroup Constraints
      */
-    class Equals : public Constraint
+    class Equals : public ReifiedEquals
     {
-    private:
-        IntegerVariableID _v1, _v2;
-
     public:
         Equals(const IntegerVariableID v1, const IntegerVariableID v2);
-
-        virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
-        virtual auto clone() const -> std::unique_ptr<Constraint> override;
     };
 
     /**
@@ -40,17 +52,10 @@ namespace gcs
      *
      * \ingroup Constraints
      */
-    class EqualsIf : public Constraint
+    class EqualsIf : public ReifiedEquals
     {
-    private:
-        IntegerVariableID _v1, _v2;
-        innards::Literal _cond;
-
     public:
-        EqualsIf(const IntegerVariableID v1, const IntegerVariableID v2, innards::Literal cond);
-
-        virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
-        virtual auto clone() const -> std::unique_ptr<Constraint> override;
+        EqualsIf(const IntegerVariableID v1, const IntegerVariableID v2, IntegerVariableCondition cond);
     };
 
     /**
@@ -58,17 +63,43 @@ namespace gcs
      *
      * \ingroup Constraints
      */
-    class EqualsIff : public Constraint
+    class EqualsIff : public ReifiedEquals
     {
-    private:
-        IntegerVariableID _v1, _v2;
-        innards::Literal _cond;
-
     public:
-        EqualsIff(const IntegerVariableID v1, const IntegerVariableID v2, innards::Literal cond);
+        EqualsIff(const IntegerVariableID v1, const IntegerVariableID v2, IntegerVariableCondition cond);
+    };
 
-        virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
-        virtual auto clone() const -> std::unique_ptr<Constraint> override;
+    /**
+     * \brief Constrain that two variables are not equal.
+     *
+     * \ingroup Constraints
+     */
+    class NotEquals : public ReifiedEquals
+    {
+    public:
+        NotEquals(const IntegerVariableID v1, const IntegerVariableID v2);
+    };
+
+    /**
+     * \brief Constrain that two variables are not equal if `cond` holds.
+     *
+     * \ingroup Constraints
+     */
+    class NotEqualsIf : public ReifiedEquals
+    {
+    public:
+        NotEqualsIf(const IntegerVariableID v1, const IntegerVariableID v2, IntegerVariableCondition cond);
+    };
+
+    /**
+     * \brief Constrain that two variables are not equal if and only if `cond` holds.
+     *
+     * \ingroup Constraints
+     */
+    class NotEqualsIff : public ReifiedEquals
+    {
+    public:
+        NotEqualsIff(const IntegerVariableID v1, const IntegerVariableID v2, IntegerVariableCondition cond);
     };
 }
 

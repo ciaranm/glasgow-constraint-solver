@@ -1,6 +1,5 @@
 #include <gcs/constraints/all_different.hh>
 #include <gcs/constraints/constraints_test_utils.hh>
-#include <gcs/constraints/not_equals.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
