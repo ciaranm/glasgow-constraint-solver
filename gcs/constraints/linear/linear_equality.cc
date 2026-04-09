@@ -225,7 +225,7 @@ auto ReifiedLinearEquality::install(Propagators & propagators, State & state, Pr
             [&](const evaluated_reif::MustHold & reif) {
                 // condition is definitely true, an empty sum matches iff the modifiers sum to the value
                 if (visit([](const auto & s) { return s.terms.empty(); }, sanitised_cv) && modifier != _value) {
-                    propagators.install_initialiser([reason_from_cond = reif.cond ? Literal{*reif.cond} : TrueLiteral{}](const State &, auto & inference, ProofLogger * const logger) {
+                    propagators.install_initialiser([reason_from_cond = reif.cond](const State &, auto & inference, ProofLogger * const logger) {
                         inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{reason_from_cond}}; }});
                     });
                 }
@@ -237,7 +237,7 @@ auto ReifiedLinearEquality::install(Propagators & propagators, State & state, Pr
 
                 visit(
                     [&, modifier = modifier](const auto & lin) {
-                        propagators.install([modifier = modifier, lin = lin, value = _value, proof_line = proof_line, reason_from_cond = reif.cond ? Literal{*reif.cond} : TrueLiteral{}](
+                        propagators.install([modifier = modifier, lin = lin, value = _value, proof_line = proof_line, reason_from_cond = reif.cond](
                                                 const State & state, auto & inference, ProofLogger * const logger) {
                             return propagate_linear(lin, value + modifier, state, inference, logger, true, proof_line, reason_from_cond);
                         },
@@ -249,7 +249,7 @@ auto ReifiedLinearEquality::install(Propagators & propagators, State & state, Pr
             [&](const evaluated_reif::MustNotHold & reif) {
                 // condition is definitely false on a full reification, an empty sum matches iff the modifiers sum to something other than the value
                 if (visit([](const auto & s) { return s.terms.empty(); }, sanitised_cv) && modifier == _value) {
-                    propagators.install_initialiser([reason_from_cond = reif.cond ? Literal{*reif.cond} : TrueLiteral{}](const State &, auto & inference, ProofLogger * const logger) {
+                    propagators.install_initialiser([reason_from_cond = reif.cond](const State &, auto & inference, ProofLogger * const logger) {
                         inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{reason_from_cond}}; }});
                     });
                 }
@@ -291,7 +291,7 @@ auto ReifiedLinearEquality::install(Propagators & propagators, State & state, Pr
                                 return propagate_linear(sanitised_cv, value, state, inference, logger, true, proof_line, reif.cond);
                             },
 
-                            [&](const evaluated_reif::MustNotHold &) {
+                            [&](const evaluated_reif::MustNotHold & reif) {
                                 // we now know the condition definitely doesn't hold, so it's a linear not-equals
                                 return propagate_linear_not_equals(sanitised_cv, value, state, inference, logger, all_vars);
                             },

@@ -1,5 +1,4 @@
 #include <gcs/constraints/equals.hh>
-#include <gcs/constraints/not_equals.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -96,280 +95,146 @@ namespace
     }
 }
 
-Equals::Equals(const IntegerVariableID v1, const IntegerVariableID v2) :
-    _v1(v1),
-    _v2(v2)
-{
-}
-
-auto Equals::clone() const -> unique_ptr<Constraint>
-{
-    return make_unique<Equals>(_v1, _v2);
-}
-
-auto Equals::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
-{
-    auto v1_is_constant = initial_state.optional_single_value(_v1);
-    auto v2_is_constant = initial_state.optional_single_value(_v2);
-
-    if (v1_is_constant && v2_is_constant) {
-        if (*v1_is_constant != *v2_is_constant) {
-            propagators.model_contradiction(initial_state, optional_model, "Equals constraint on two variables with different constant values");
-            return;
-        }
-    }
-    else if (v1_is_constant) {
-        propagators.install_initialiser([v1_is_constant = v1_is_constant, v1 = _v1, v2 = _v2](
-                                            const State &, auto & inference, ProofLogger * const logger) -> void {
-            inference.infer_equal(logger, v2, *v1_is_constant, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{v1 == *v1_is_constant}}; }});
-        });
-    }
-    else if (v2_is_constant) {
-        propagators.install_initialiser([v2_is_constant = v2_is_constant, v1 = _v1, v2 = _v2](
-                                            const State &, auto & inference, ProofLogger * const logger) -> void {
-            inference.infer_equal(logger, v1, *v2_is_constant, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{v2 == *v2_is_constant}}; }});
-        });
-    }
-    else {
-        Triggers triggers;
-        triggers.on_change = {_v1, _v2};
-
-        visit([&](auto & _v1, auto & _v2) {
-            propagators.install([v1 = _v1, v2 = _v2](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-                return enforce_equality(logger, v1, v2, state, inference, Reason{});
-            },
-                triggers, "equals");
-        },
-            _v1, _v2);
-    }
-
-    if (optional_model)
-        optional_model->add_constraint("Equals", "equality", WPBSum{} + 1_i * _v1 + -1_i * _v2 == 0_i, nullopt);
-}
-
-auto Equals::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
-{
-    stringstream s;
-
-    print(s, "{} equals", name);
-    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v1));
-    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v2));
-
-    return s.str();
-}
-
-EqualsIf::EqualsIf(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond) :
+ReifiedEquals::ReifiedEquals(const IntegerVariableID v1, const IntegerVariableID v2, ReificationCondition cond) :
     _v1(v1),
     _v2(v2),
     _cond(cond)
 {
 }
 
-auto EqualsIf::clone() const -> unique_ptr<Constraint>
+auto ReifiedEquals::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<EqualsIf>(_v1, _v2, _cond);
+    return make_unique<ReifiedEquals>(_v1, _v2, _cond);
 }
 
-auto EqualsIf::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
+auto ReifiedEquals::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
+    if (optional_model) {
+        overloaded{
+            [&](const reif::MustHold &) {
+                optional_model->add_constraint("ReifiedEquals", "equals option",
+                    WPBSum{} + (1_i * _v1) + (-1_i * _v2) == 0_i);
+            },
+            [&](const reif::MustNotHold &) {
+                auto gtflag = optional_model->create_proof_flag("gt");
+                optional_model->add_constraint("ReifiedEquals", "greater option",
+                    WPBSum{} + (1_i * _v1) + (-1_i * _v2) >= 1_i, HalfReifyOnConjunctionOf{{gtflag}});
+                optional_model->add_constraint("ReifiedEquals", "less option",
+                    WPBSum{} + (1_i * _v1) + (-1_i * _v2) <= -1_i, HalfReifyOnConjunctionOf{{! gtflag}});
+            },
+            [&](const reif::If & reif) {
+                optional_model->add_constraint("ReifiedEquals", "equals option",
+                    WPBSum{} + (1_i * _v1) + (-1_i * _v2) == 0_i, HalfReifyOnConjunctionOf{{reif.cond}});
+            },
+            [&](const reif::NotIf & reif) {
+                auto gtflag = optional_model->create_proof_flag("gt");
+                optional_model->add_constraint("ReifiedEquals", "greater option",
+                    WPBSum{} + (1_i * _v1) + (-1_i * _v2) >= 1_i, HalfReifyOnConjunctionOf{{reif.cond, gtflag}});
+                optional_model->add_constraint("ReifiedEquals", "less option",
+                    WPBSum{} + (1_i * _v1) + (-1_i * _v2) <= -1_i, HalfReifyOnConjunctionOf{{reif.cond, ! gtflag}});
+            },
+            [&](const reif::Iff & reif) {
+                // condition unknown, the condition implies it is neither greater nor less
+                optional_model->add_constraint("ReifiedEquals", "equals option",
+                    WPBSum{} + (1_i * _v1) + (-1_i * _v2) == 0_i, HalfReifyOnConjunctionOf{{reif.cond}});
+
+                auto gtflag = optional_model->create_proof_flag("gt");
+                optional_model->add_constraint("ReifiedEquals", "greater option",
+                    WPBSum{} + (1_i * _v1) + (-1_i * _v2) >= 1_i, HalfReifyOnConjunctionOf{{gtflag}});
+                auto ltflag = optional_model->create_proof_flag("lt");
+                optional_model->add_constraint("ReifiedEquals", "less option",
+                    WPBSum{} + (1_i * _v1) + (-1_i * _v2) <= -1_i, HalfReifyOnConjunctionOf{{ltflag}});
+
+                // lt + eq + gt >= 1
+                optional_model->add_constraint("ReifiedEquals", "one of less than, equals, greater than",
+                    WPBSum{} + 1_i * ltflag + 1_i * gtflag + 1_i * reif.cond >= 1_i);
+            }}
+            .visit(_cond);
+    }
+
     overloaded{
-        [&](const TrueLiteral &) {
-            Equals{_v1, _v2}.install(propagators, initial_state, optional_model);
-        },
-        [&](const FalseLiteral &) {
-        },
-        [&](const IntegerVariableCondition & cond) {
-            Triggers triggers{.on_change = {_v1, _v2}};
-            switch (cond.op) {
-            case VariableConditionOperator::Less:
-            case VariableConditionOperator::GreaterEqual:
-                triggers.on_bounds.push_back(cond.var);
-                break;
-            case VariableConditionOperator::Equal:
-            case VariableConditionOperator::NotEqual:
-                triggers.on_change.push_back(cond.var);
-                break;
-            }
+        [&](const evaluated_reif::MustHold & reif) {
+            Triggers triggers;
+            triggers.on_change = {_v1, _v2};
 
             visit([&](auto & _v1, auto & _v2) {
-                propagators.install([v1 = _v1, v2 = _v2, cond = cond](const State & state, auto & inference,
-                                        ProofLogger * const logger) -> PropagatorState {
-                    switch (state.test_literal(cond)) {
-                    case LiteralIs::DefinitelyTrue: {
-                        // condition is true, force equality
-                        return enforce_equality(logger, v1, v2, state, inference, {cond});
-                    } break;
-
-                    case LiteralIs::DefinitelyFalse: {
-                        return PropagatorState::Enable;
-                    } break;
-
-                    case LiteralIs::Undecided: {
-                        // condition is undecided, are we in a situation where it's now forced?
-                        auto value1 = state.optional_single_value(v1);
-                        auto value2 = state.optional_single_value(v2);
-                        if (value1 && value2) {
-                            if (*value1 != *value2) {
-                                inference.infer(logger, ! cond, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{v1 == *value1, v2 == *value2}}; }});
-                                return PropagatorState::DisableUntilBacktrack;
-                            }
-                            else
-                                return PropagatorState::DisableUntilBacktrack;
-                        }
-                        else if (value1) {
-                            if (! state.in_domain(v2, *value1)) {
-                                inference.infer(logger, ! cond, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{v1 == *value1, v2 != *value1}}; }});
-                                return PropagatorState::DisableUntilBacktrack;
-                            }
-                            else
-                                return PropagatorState::Enable;
-                        }
-                        else if (value2) {
-                            if (! state.in_domain(v1, *value2)) {
-                                inference.infer(logger, ! cond, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{v2 == *value2, v1 != *value2}}; }});
-                                return PropagatorState::DisableUntilBacktrack;
-                            }
-                            else
-                                return PropagatorState::Enable;
-                        }
-                        else {
-                            // not equals is forced if there's no overlap between domains
-                            bool overlap = false;
-                            for (auto val : state.each_value_immutable(v1))
-                                if (state.in_domain(v2, val)) {
-                                    overlap = true;
-                                    break;
-                                }
-
-                            if (! overlap) {
-                                auto [just, reason] = no_overlap_justification(state, logger, v1, v2, cond);
-                                inference.infer(logger, ! cond, just, reason);
-                                return PropagatorState::DisableUntilBacktrack;
-                            }
-                            else
-                                return PropagatorState::Enable;
-                        }
-                    } break;
-                    }
-
-                    throw NonExhaustiveSwitch{};
+                propagators.install([v1 = _v1, v2 = _v2, cond = reif.cond](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+                    return enforce_equality(logger, v1, v2, state, inference, Reason{cond});
                 },
-                    triggers, "equals if");
+                    triggers, "equals");
             },
                 _v1, _v2);
-
-            if (optional_model) {
-                optional_model->add_constraint("EqualsIf", "conditional equality", WPBSum{} + 1_i * _v1 + -1_i * _v2 == 0_i,
-                    Reason{{cond}});
-            }
-        }}
-        .visit(_cond);
-}
-
-auto EqualsIf::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
-{
-    stringstream s;
-
-    print(s, "{} equals_if", name);
-    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_cond));
-    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v1));
-    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v2));
-
-    return s.str();
-}
-
-EqualsIff::EqualsIff(const IntegerVariableID v1, const IntegerVariableID v2, Literal cond) :
-    _v1(v1),
-    _v2(v2),
-    _cond(cond)
-{
-}
-
-auto EqualsIff::clone() const -> unique_ptr<Constraint>
-{
-    return make_unique<EqualsIff>(_v1, _v2, _cond);
-}
-
-auto EqualsIff::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
-{
-    auto lower_common = max(initial_state.lower_bound(_v1), initial_state.lower_bound(_v2));
-    auto upper_common = min(initial_state.upper_bound(_v1), initial_state.upper_bound(_v2));
-    if (lower_common > upper_common) {
-        if (optional_model)
-            optional_model->add_constraint({{! _cond}});
-        propagators.install_initialiser([cond = _cond, v1 = _v1, v2 = _v2](
-                                            const State & state, auto & inference, ProofLogger * const logger) {
-            auto v1_bounds = state.bounds(v1);
-            auto v2_bounds = state.bounds(v2);
-            inference.infer(logger, ! cond, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{v1 >= v1_bounds.first, v1 < v1_bounds.second + 1_i, v2 >= v2_bounds.first, v2 < v2_bounds.second + 1_i}}; }});
-        });
-        return;
-    }
-
-    overloaded{
-        [&](const TrueLiteral &) {
-            Equals{_v1, _v2}.install(propagators, initial_state, optional_model);
         },
-        [&](const FalseLiteral &) {
-            NotEquals{_v1, _v2}.install(propagators, initial_state, optional_model);
-        },
-        [&](const IntegerVariableCondition & cond) {
-            Triggers triggers{.on_change = {_v1, _v2}};
-            switch (cond.op) {
-            case VariableConditionOperator::Less:
-            case VariableConditionOperator::GreaterEqual:
-                triggers.on_bounds.push_back(cond.var);
-                break;
-            case VariableConditionOperator::Equal:
-            case VariableConditionOperator::NotEqual:
-                triggers.on_change.push_back(cond.var);
-                break;
-            }
+        [&](const evaluated_reif::MustNotHold & reif) {
+            Triggers triggers;
+            triggers.on_instantiated = {_v1, _v2};
 
             visit([&](auto & _v1, auto & _v2) {
-                propagators.install([v1 = _v1, v2 = _v2, cond = cond](
+                propagators.install([v1 = _v1, v2 = _v2, cond = reif.cond](
                                         const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-                    switch (state.test_literal(cond)) {
-                    case LiteralIs::DefinitelyTrue: {
-                        // condition is true, force equality
-                        return enforce_equality(logger, v1, v2, state, inference, {cond});
-                    } break;
-
-                    case LiteralIs::DefinitelyFalse: {
-                        // condition is false, force inequality
+                    auto value1 = state.optional_single_value(v1);
+                    if (value1) {
+                        inference.infer_not_equal(logger, v2, *value1,
+                            JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{cond, v1 == *value1}}; }});
+                        return PropagatorState::DisableUntilBacktrack;
+                    }
+                    auto value2 = state.optional_single_value(v2);
+                    if (value2) {
+                        inference.infer_not_equal(logger, v1, *value2, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{cond, v2 == *value2}}; }});
+                        return PropagatorState::DisableUntilBacktrack;
+                    }
+                    return PropagatorState::Enable;
+                },
+                    triggers, "not equals");
+            },
+                _v1, _v2);
+        },
+        [&](const evaluated_reif::Undecided & reif) {
+            Triggers triggers;
+            triggers.on_change = {_v1, _v2, reif.cond.var};
+            propagators.install([v1 = _v1, v2 = _v2, outer_reif = reif, cond = _cond](
+                                    const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+                return overloaded{
+                    [&](const evaluated_reif::MustHold & reif) {
+                        return visit([&](auto & v1, auto & v2) {
+                            return enforce_equality(logger, v1, v2, state, inference, Reason{{reif.cond}});
+                        },
+                            v1, v2);
+                    },
+                    [&](const evaluated_reif::MustNotHold & reif) {
                         auto value1 = state.optional_single_value(v1);
+                        if (value1) {
+                            inference.infer_not_equal(logger, v2, *value1,
+                                JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{reif.cond, v1 == *value1}}; }});
+                            return PropagatorState::DisableUntilBacktrack;
+                        }
                         auto value2 = state.optional_single_value(v2);
-                        if (value1 && value2) {
-                            if (*value1 == *value2) {
-                                inference.contradiction(logger, JustifyUsingRUP{}, [=]() { return Reason{v1 == *value1, v2 == *value2, ! cond}; });
-                            }
-                            else
-                                return PropagatorState::DisableUntilBacktrack;
-                        }
-                        else if (value1) {
-                            inference.infer_not_equal(logger, v2, *value1, JustifyUsingRUP{}, [=]() { return Reason{v1 == *value1, ! cond}; });
+                        if (value2) {
+                            inference.infer_not_equal(logger, v1, *value2, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{reif.cond, v2 == *value2}}; }});
                             return PropagatorState::DisableUntilBacktrack;
                         }
-                        else if (value2) {
-                            inference.infer_not_equal(logger, v1, *value2, JustifyUsingRUP{}, [=]() { return Reason{v2 == *value2, ! cond}; });
-                            return PropagatorState::DisableUntilBacktrack;
-                        }
-                        else
-                            return PropagatorState::Enable;
-                    } break;
-
-                    case LiteralIs::Undecided: {
+                        return PropagatorState::Enable;
+                    },
+                    [&](const evaluated_reif::Undecided & reif) {
                         // condition is undecided, are we in a situation where it's now forced?
                         auto value1 = state.optional_single_value(v1);
                         auto value2 = state.optional_single_value(v2);
                         if (value1 && value2) {
-                            inference.infer(logger, *value1 == *value2 ? cond : ! cond, JustifyUsingRUP{},
+                            if (reif.set_cond_if_must_hold && *value1 == *value2)
+                                inference.infer(logger, reif.cond, JustifyUsingRUP{},
+                                    [=]() { return Reason{v1 == *value1, v2 == *value2}; });
+                            else if (reif.set_not_cond_if_must_hold && *value1 == *value2)
+                                inference.infer(logger, ! reif.cond, JustifyUsingRUP{},
+                                    [=]() { return Reason{v1 == *value1, v2 == *value2}; });
+                            else if (reif.set_not_cond_if_must_not_hold && *value1 != *value2)
+                                inference.infer(logger, ! reif.cond, JustifyUsingRUP{},
                                     [=]() { return Reason{v1 == *value1, v2 == *value2}; });
                             return PropagatorState::DisableUntilBacktrack;
                         }
                         else if (value1) {
                             if (! state.in_domain(v2, *value1)) {
-                                inference.infer(logger, ! cond, JustifyUsingRUP{},
+                                if (reif.set_not_cond_if_must_not_hold)
+                                    inference.infer(logger, ! reif.cond, JustifyUsingRUP{},
                                         [=]() { return Reason{v1 == *value1, v2 != *value1}; });
                                 return PropagatorState::DisableUntilBacktrack;
                             }
@@ -378,7 +243,8 @@ auto EqualsIff::install(Propagators & propagators, State & initial_state, ProofM
                         }
                         else if (value2) {
                             if (! state.in_domain(v1, *value2)) {
-                                inference.infer(logger, ! cond, NoJustificationNeeded{},
+                                if (reif.set_not_cond_if_must_not_hold)
+                                    inference.infer(logger, ! reif.cond, JustifyUsingRUP{},
                                         [=]() { return Reason{v2 == *value2, v1 != *value2}; });
                                 return PropagatorState::DisableUntilBacktrack;
                             }
@@ -395,53 +261,68 @@ auto EqualsIff::install(Propagators & propagators, State & initial_state, ProofM
                                 }
 
                             if (! overlap) {
-                                auto [just, reason] = no_overlap_justification(state, logger, v1, v2, cond);
-                                inference.infer(logger, ! cond, just, reason);
+                                auto [just, reason] = no_overlap_justification(state, logger, v1, v2, reif.cond);
+                                if (reif.set_not_cond_if_must_not_hold)
+                                    inference.infer(logger, ! reif.cond, just, reason);
                                 return PropagatorState::DisableUntilBacktrack;
                             }
                             else
                                 return PropagatorState::Enable;
                         }
-                    } break;
-                    }
-
-                    throw NonExhaustiveSwitch{};
-                },
-                    triggers, "equals iff");
+                    },
+                    [&](const evaluated_reif::Deactivated &) {
+                        return PropagatorState::DisableUntilBacktrack;
+                    }}
+                    .visit(state.test_reification_condition(cond));
             },
-                _v1, _v2);
+                triggers, "not equals");
+        },
+        [&](const evaluated_reif::Deactivated &) {
+        },
+    }
+        .visit(initial_state.test_reification_condition(_cond));
+}
 
-            if (optional_model) {
-                auto v1_is_constant = initial_state.optional_single_value(_v1);
-                auto v2_is_constant = initial_state.optional_single_value(_v2);
+Equals::Equals(const IntegerVariableID v1, const IntegerVariableID v2) :
+    ReifiedEquals(v1, v2, reif::MustHold{})
+{
+}
 
-                if (v1_is_constant) {
-                    optional_model->add_constraint({{_v2 == *v1_is_constant}, {! cond}});
-                    optional_model->add_constraint({{_v2 != *v1_is_constant}, {cond}});
-                }
-                else if (v2_is_constant) {
-                    optional_model->add_constraint({{_v1 == *v2_is_constant}, {! cond}});
-                    optional_model->add_constraint({{_v1 != *v2_is_constant}, {cond}});
-                }
-                else {
-                    // condition unknown, the condition implies it is neither greater nor less
-                    optional_model->add_constraint("EqualsIff", "equals option",
-                            WPBSum{} + (1_i * _v1) + (-1_i * _v2) == 0_i, HalfReifyOnConjunctionOf{{cond}}).first.value();
+EqualsIf::EqualsIf(const IntegerVariableID v1, const IntegerVariableID v2, IntegerVariableCondition cond) :
+    ReifiedEquals(v1, v2, reif::If{cond})
+{
+}
 
-                    auto gtflag = optional_model->create_proof_flag("gt");
-                    optional_model->add_constraint("EqualsIff", "greater option",
-                            WPBSum{} + (1_i * _v1) + (-1_i * _v2) >= 1_i, HalfReifyOnConjunctionOf{{gtflag}});
-                    auto ltflag = optional_model->create_proof_flag("lt");
-                    optional_model->add_constraint("EqualsIff", "less option",
-                            WPBSum{} + (1_i * _v1) + (-1_i * _v2) <= -1_i, HalfReifyOnConjunctionOf{{ltflag}});
+EqualsIff::EqualsIff(const IntegerVariableID v1, const IntegerVariableID v2, IntegerVariableCondition cond) :
+    ReifiedEquals(v1, v2, reif::Iff{cond})
+{
+}
 
-                    // lt + eq + gt >= 1
-                    optional_model->add_constraint("EqualsIff", "one of less than, equals, greater than",
-                            WPBSum{} + 1_i * ltflag + 1_i * gtflag + 1_i * cond >= 1_i);
-                }
-            }
-        }}
-        .visit(_cond);
+NotEquals::NotEquals(const IntegerVariableID v1, const IntegerVariableID v2) :
+    ReifiedEquals(v1, v2, reif::MustNotHold{})
+{
+}
+
+NotEqualsIf::NotEqualsIf(const IntegerVariableID v1, const IntegerVariableID v2, IntegerVariableCondition cond) :
+    ReifiedEquals(v1, v2, reif::NotIf{cond})
+{
+}
+
+NotEqualsIff::NotEqualsIff(const IntegerVariableID v1, const IntegerVariableID v2, IntegerVariableCondition cond) :
+    ReifiedEquals(v1, v2, reif::Iff{! cond})
+{
+}
+
+auto EqualsIff::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
+{
+    stringstream s;
+
+    print(s, "{} equals_iff", name);
+    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_cond));
+    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v1));
+    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v2));
+
+    return s.str();
 }
 
 auto EqualsIff::s_exprify(const string & name, const innards::ProofModel * const model) const -> string

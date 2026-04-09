@@ -18,6 +18,8 @@
 
 #include <fmt/core.h>
 
+#include <util/overloaded.hh>
+
 using namespace gcs;
 using namespace gcs::innards;
 

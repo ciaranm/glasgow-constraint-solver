@@ -11,7 +11,6 @@
 
 namespace gcs::innards
 {
-
     /**
      * Behaves similar to a SimpleIntegerVariableID, except only appears
      * in a Proof, with no associated State.
@@ -31,8 +30,6 @@ namespace gcs::innards
     };
 
     [[nodiscard]] auto debug_string(const ProofOnlySimpleIntegerVariableID &) -> std::string;
-
-    using SimpleOrProofOnlyIntegerVariableID = std::variant<SimpleIntegerVariableID, ProofOnlySimpleIntegerVariableID>;
 
     struct ProofBitVariable
     {
@@ -94,21 +91,6 @@ namespace gcs::innards
      * \sa ProofFlag
      */
     [[nodiscard]] auto operator!(const ProofLiteralOrFlag &) -> ProofLiteralOrFlag;
-}
-
-namespace gcs
-{
-    template <>
-    constexpr auto enable_conditional_variable_operators<innards::ProofOnlySimpleIntegerVariableID>() -> bool
-    {
-        return true;
-    }
-
-    template <>
-    constexpr auto enable_conditional_variable_operators<innards::SimpleOrProofOnlyIntegerVariableID>() -> bool
-    {
-        return true;
-    }
 }
 
 #endif

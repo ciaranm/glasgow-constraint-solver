@@ -1,10 +1,11 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_VARIABLE_ID_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_VARIABLE_ID_HH
 
-#include <functional>
 #include <gcs/integer.hh>
+#include <gcs/variable_id-fwd.hh>
+
+#include <functional>
 #include <string>
-#include <util/overloaded.hh>
 #include <utility>
 #include <variant>
 

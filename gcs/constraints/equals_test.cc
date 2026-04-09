@@ -55,6 +55,9 @@ auto run_equals_test(const string & which, bool proofs, variant<int, pair<int, i
     if constexpr (is_same_v<Constraint_, Equals>) {
         p.post(Constraint_{v1, v2});
     }
+    else if constexpr (is_same_v<Constraint_, NotEquals>) {
+        p.post(Constraint_{v1, v2});
+    }
     else {
         p.post(Constraint_{v1, v2, v3 >= 1_i});
     }
@@ -152,6 +155,9 @@ auto main(int, char *[]) -> int
         run_equals_test<Equals>("equals", false, r1, r2, [](int a, int b, int) { return a == b; });
         run_equals_test<EqualsIf>("equals if", false, r1, r2, [](int a, int b, int f) { return (! f) || (a == b); });
         run_equals_test<EqualsIff>("equals iff", false, r1, r2, [](int a, int b, int f) { return (a == b) == f; });
+        run_equals_test<NotEquals>("not equals", false, r1, r2, [](int a, int b, int) { return a != b; });
+        run_equals_test<NotEqualsIf>("not equals if", false, r1, r2, [](int a, int b, int f) { return (! f) || (a != b); });
+        run_equals_test<NotEqualsIff>("not equals iff", false, r1, r2, [](int a, int b, int f) { return (a != b) == f; });
     }
 
     if (can_run_veripb()) {
@@ -160,6 +166,9 @@ auto main(int, char *[]) -> int
             run_equals_test<Equals>("equals", true, r1, r2, [](int a, int b, int) { return a == b; });
             run_equals_test<EqualsIf>("equals if", true, r1, r2, [](int a, int b, int f) { return (! f) || (a == b); });
             run_equals_test<EqualsIff>("equals iff", true, r1, r2, [](int a, int b, int f) { return (a == b) == f; });
+            run_equals_test<NotEquals>("not equals", true, r1, r2, [](int a, int b, int) { return a != b; });
+            run_equals_test<NotEqualsIf>("not equals if", true, r1, r2, [](int a, int b, int f) { return (! f) || (a != b); });
+            run_equals_test<NotEqualsIff>("not equals iff", true, r1, r2, [](int a, int b, int f) { return (a != b) == f; });
         }
     }
 
