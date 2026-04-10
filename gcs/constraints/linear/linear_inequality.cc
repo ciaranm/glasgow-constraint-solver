@@ -258,7 +258,7 @@ auto ReifiedLinearInequality::s_exprify(const std::string & name, const ProofMod
 
     print(s, "{} {}", name, cons);
     if (rei) {
-        print(s, " {} ", "Z"); // TODO: This 'Z' is "reification on Z > 0" that I don't know how to handle yet.
+        print(s, " {} ", model->names_and_ids_tracker().s_expr_name_of(_reif_cond));
     }
     for (const auto & [c, v] : _coeff_vars.terms) {
         print(s, " {} {}", c.raw_value, model->names_and_ids_tracker().s_expr_name_of(v));

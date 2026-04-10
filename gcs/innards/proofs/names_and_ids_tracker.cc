@@ -723,12 +723,12 @@ auto NamesAndIDsTracker::s_expr_name_of(IntegerVariableID id) const -> string
 auto NamesAndIDsTracker::s_expr_name_of(Literal lit) const -> string
 {
     return overloaded{
-        [&](const TrueLiteral &) -> string { return "1"; },
-        [&](const FalseLiteral &) -> string { return "0"; },
+        [](const TrueLiteral &) -> string { return "1"; },
+        [](const FalseLiteral &) -> string { return "0"; },
         [&](const VariableConditionFrom<SimpleIntegerVariableID> & cond) -> string {
             return s_expr_name_of(cond.var);  
         },
-        [&](const VariableConditionFrom<ProofOnlySimpleIntegerVariableID> &) -> string {
+        [](const VariableConditionFrom<ProofOnlySimpleIntegerVariableID> &) -> string {
             throw UnimplementedException{};  
         }}
         .visit(simplify_literal(lit));
@@ -736,7 +736,46 @@ auto NamesAndIDsTracker::s_expr_name_of(Literal lit) const -> string
 
 auto NamesAndIDsTracker::s_expr_name_of(ReificationCondition cond) const -> string
 {
+    /*
+        using ReificationCondition = std::variant<
+        reif::MustHold,
+        reif::MustNotHold,
+        reif::If,
+        reif::NotIf,
+        reif::Iff>;
+    */
+
+    return overloaded{
+        [](const reif::MustHold &) -> string { return ""; },
+        [](const reif::MustNotHold &) -> string { return ""; },
+        [&](const auto & reif) -> string {  // This is safe, right?
+            return "(" + s_expr_name_of(reif.cond.var)        + " " 
+                       + s_expr_name_of(reif.cond.op)         + " " 
+                       + to_string(reif.cond.value.raw_value) + ")";
+        }
+    }.visit(cond);
+
     return "COND";
+}
+
+auto NamesAndIDsTracker::s_expr_name_of(VariableConditionOperator op) const -> string
+{
+    /*
+        enum class VariableConditionOperator
+        {
+            Equal,
+            NotEqual,
+            GreaterEqual,
+            Less
+        };
+    */
+    switch (op) {
+        case VariableConditionOperator::Equal        : return "eq";
+        case VariableConditionOperator::NotEqual     : return "neq";
+        case VariableConditionOperator::GreaterEqual : return "geq";
+        case VariableConditionOperator::Less         : return "lt";
+    }
+    // throw non exhaustive switch
 }
 
 auto NamesAndIDsTracker::reify(const WPBSumLE & ineq, const HalfReifyOnConjunctionOf & half_reif) -> WPBSumLE

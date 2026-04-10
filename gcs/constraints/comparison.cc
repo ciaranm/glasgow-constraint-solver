@@ -240,7 +240,8 @@ auto ReifiedCompareLessThanOrMaybeEqual::s_exprify(const std::string & name, con
             model->names_and_ids_tracker().s_expr_name_of(_v2));
     }
     else {
-        print(s, "{} {} {} {} {}", name, cmp, "Z",  // TODO: Z is "Z" because I don't know how to handle it properly.
+        print(s, "{} {} {} {} {}", name, cmp, 
+            model->names_and_ids_tracker().s_expr_name_of(_reif_cond),
             model->names_and_ids_tracker().s_expr_name_of(_v1),
             model->names_and_ids_tracker().s_expr_name_of(_v2));
     }

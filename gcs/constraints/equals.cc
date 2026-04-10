@@ -323,8 +323,8 @@ auto ReifiedEquals::s_exprify(const string & name, const innards::ProofModel * c
         [](const reif::MustNotHold &) -> string { return "not_equals"; },
         [](const reif::If &) -> string { return "equals_if"; },
         [](const reif::NotIf &) -> string { return "not_equals_if"; },
-        [neq = _neq](const reif::Iff &) -> string { 
-            return neq ? "not_equals_iff" : "equals_iff";
+        [&](const reif::Iff &) -> string { 
+            return _neq ? "not_equals_iff" : "equals_iff";
         }
     }.visit(_cond);
 

@@ -291,7 +291,7 @@ auto ReifiedLinearEquality::install(Propagators & propagators, State & state, Pr
                                 return propagate_linear(sanitised_cv, value, state, inference, logger, true, proof_line, reif.cond);
                             },
 
-                            [&](const evaluated_reif::MustNotHold & reif) {
+                            [&](const evaluated_reif::MustNotHold &) {
                                 // we now know the condition definitely doesn't hold, so it's a linear not-equals
                                 return propagate_linear_not_equals(sanitised_cv, value, state, inference, logger, all_vars);
                             },
@@ -395,7 +395,7 @@ auto ReifiedLinearEquality::s_exprify(const std::string & name, const ProofModel
 
     print(s, "{} {}", name, cons);
     if (rei) {
-        print(s, " {} ", "Z"); // TODO: Z is a placholdr for now.
+        print(s, " {} ", model->names_and_ids_tracker().s_expr_name_of(_reif_cond));
     }
     print(s, " (");
     for (const auto & [c, v] : _coeff_vars.terms) {

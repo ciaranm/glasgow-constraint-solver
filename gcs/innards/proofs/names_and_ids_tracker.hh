@@ -290,6 +290,11 @@ namespace gcs::innards
          */       
         [[nodiscard]] auto s_expr_name_of(ReificationCondition cond) const -> std::string;
 
+         /**
+         * Get the human-readable / s-expr name for a condition operator
+         */       
+        [[nodiscard]] auto s_expr_name_of(VariableConditionOperator op) const -> std::string;
+
         /**
          * Get the human-readable name for a variable.
          */
