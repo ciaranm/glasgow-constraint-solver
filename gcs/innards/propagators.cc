@@ -189,8 +189,9 @@ auto Propagators::define_and_install_table(State & state, ProofModel * const opt
 
         auto selector = state.allocate_integer_variable_with_state(0_i, Integer(depointinate(permitted).size() - 1));
         if (optional_model)
-            optional_model->set_up_integer_variable(selector, 0_i, Integer(depointinate(permitted).size() - 1), "aux_table",
-                    IntegerVariableProofRepresentation::DirectOnly);
+            optional_model->set_up_integer_variable(selector, 0_i, Integer(depointinate(permitted).size() - 1),
+                "aux_table" + to_string(selector.index),
+                IntegerVariableProofRepresentation::DirectOnly);
 
         // pb encoding, if necessary
         if (optional_model) {
