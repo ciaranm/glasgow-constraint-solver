@@ -635,15 +635,15 @@ auto Knapsack::s_exprify(const string & name, const innards::ProofModel * const 
     for (const auto & cs : _coeffs) {
         print(s, "\n                (");
         for (const auto & c : cs)
-            print(s, " c{}", c.raw_value);
+            print(s, " {}", c.raw_value);
         print(s, ")");
     }
     print(s, "\n            )\n            (");
     for (const auto & v : _vars)
-        print(s, " v{}", model->names_and_ids_tracker().s_expr_name_of(v));
+        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(v));
     print(s, ")\n            (");
     for (const auto & t : _totals)
-        print(s, " t{}", model->names_and_ids_tracker().s_expr_name_of(t));
+        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(t));
     print(s, ")\n        ");
 
     return s.str();
