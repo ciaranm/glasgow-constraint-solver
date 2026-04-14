@@ -625,44 +625,26 @@ auto Knapsack::install(Propagators & propagators, State & initial_state, ProofMo
 
 auto Knapsack::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
 {
-    /*
-     * sum(weights[i]*vars[i]) = weight
-     * sum(profits[i]*vars[i]) = profit
-     * 
-     * vector<Integer> weights
-     * vector<Integer> profits,
-     * vector<IntegerVariableID> vars
-     * IntegerVariableID weight
-     * IntegerVariableID profit) :
-     * std::vector<std::vector<Integer>> _coeffs({move(weights), move(profits)}),
-     * std::vector<IntegerVariableID> _vars(move(vars)),
-     * std::vector<IntegerVariableID> _totals({weight, profit})
-     * 
-     * predicate knapsack(array [$$I] of int: w,
-     *                    array [$$I] of int: p,
-     *                    array [$$I] of var int: x,
-     *                    var int: W,
-     *                    var int: P)
-     * 
-     * (name knapsack (w1 ... wn) (p1 ... pn) (x1 ... xn) W P)
-     */
-
     stringstream s;
-    auto weights = _coeffs.at(0);
-    auto profits = _coeffs.at(1);
-    auto W = model->names_and_ids_tracker().s_expr_name_of(_totals.at(0));
-    auto P = model->names_and_ids_tracker().s_expr_name_of(_totals.at(1));
+    // auto weights = _coeffs.at(0);
+    // auto profits = _coeffs.at(1);  // Causes index out of bounds
+    // auto W = model->names_and_ids_tracker().s_expr_name_of(_totals.at(0));
+    // auto P = model->names_and_ids_tracker().s_expr_name_of(_totals.at(1));   // Causes index out of bounds
 
     print(s, "{} knapsack\n            (", name);
-    for (const auto & w : weights)
-        print(s, " {}", w.raw_value);
+    for (const auto & cs : _coeffs) {
+        print(s, "\n                (");
+        for (const auto & c : cs)
+            print(s, " c{}", c.raw_value);
+        print(s, ")");
+    }
+    print(s, "\n            )\n            (");
+    for (const auto & v : _vars)
+        print(s, " v{}", model->names_and_ids_tracker().s_expr_name_of(v));
     print(s, ")\n            (");
-    for (const auto & p : profits)
-        print(s, " {}", p.raw_value);
-    print(s, ")\n            (");
-    for (const auto & c : _vars)
-        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(c));
-    print(s, ")\n            {} {}", W, P);
+    for (const auto & t : _totals)
+        print(s, " t{}", model->names_and_ids_tracker().s_expr_name_of(t));
+    print(s, ")\n        ");
 
     return s.str();
 }
