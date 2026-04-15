@@ -1212,7 +1212,6 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
 
 auto MultBC::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
 {
-    // (name mult_bc X Y Z)
     stringstream s;
 
     print(s, "{} mult_bc (", name);

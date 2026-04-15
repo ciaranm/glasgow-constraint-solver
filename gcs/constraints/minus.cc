@@ -54,7 +54,6 @@ auto Minus::install(Propagators & propagators, State &, ProofModel * const optio
 
 auto Minus::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
 {
-    // (name minus X Y Z)
     stringstream s;
 
     print(s, "{} minus (", name);

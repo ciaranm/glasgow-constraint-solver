@@ -244,10 +244,8 @@ auto ReifiedLinearInequality::install(Propagators & propagators, State & state, 
 
 auto ReifiedLinearInequality::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
 {
-    // (name lin_not_equals (c1 X1 c2 X2 ... cn Xn) Y)
-    // (name lin_not_equals_if Z (c1 X1 c2 X2 ... cn Xn) Y)
-    // (name lin_not_equals_iff Z (c1 X1 c2 X2 ... cn Xn) Y)
     stringstream s;
+    
     bool rei;
     auto cons = overloaded{
         [&](const reif::MustHold &) { rei = false; return "lin_less_than_equal"; },

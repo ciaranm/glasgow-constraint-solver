@@ -229,7 +229,6 @@ auto And::install(Propagators & propagators, State & initial_state, ProofModel *
 
 auto And::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
 {
-    // (name and (l1 l2 ... ln) Z)
     stringstream s;
 
     print(s, "{} and (", name);
@@ -273,7 +272,6 @@ auto Or::install(Propagators & propagators, State & initial_state, ProofModel * 
 
 auto Or::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
 {
-    // (name or (l1 l2 ... ln) Z)
     stringstream s;
 
     print(s, "{} or (", name);

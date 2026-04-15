@@ -377,26 +377,6 @@ auto Regular::install(Propagators & propagators, State & initial_state, ProofMod
 
 auto Regular::s_exprify(const string & name, const ProofModel * const model) const -> string
 {
-    /*
-        // From MiniZinc's global constraint catalogue:
-
-        predicate regular(array [int] of var int: x,  (_vars)
-                        int: Q,                       (_num_states)
-                        set of int: S,                (_symbols)       
-                        array [int,int] of int: d,    (_transitions)
-                        int: q0,                      [initial state = 0?]
-                        set of int: F).               (_final_states)
-        
-        // From the class definition:                
-        const std::vector<IntegerVariableID> _vars;
-        const std::vector<Integer> _symbols;
-        const long _num_states;
-        std::vector<std::unordered_map<Integer, long>> _transitions;
-        const std::vector<long> _final_states;
-    */
-
-    // (name regular (X1 ... Xn) Q (S1 ... Sk) ((D1 N1) (D2 N2) ... (Dn Nn)) (F1 F2 ... Fm))
-
     stringstream s;
 
     print(s, "{} regular (", name);

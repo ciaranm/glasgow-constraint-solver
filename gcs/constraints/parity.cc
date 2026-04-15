@@ -138,7 +138,6 @@ auto ParityOdd::install(Propagators & propagators, State &, ProofModel * const o
 }
 auto ParityOdd::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
 {
-    // (name parity_odd (X1 X2 ... Xn))
     stringstream s;
 
     print(s, "{} parity_odd (", name);

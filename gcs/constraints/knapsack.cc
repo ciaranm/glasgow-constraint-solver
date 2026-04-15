@@ -626,10 +626,6 @@ auto Knapsack::install(Propagators & propagators, State & initial_state, ProofMo
 auto Knapsack::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
 {
     stringstream s;
-    // auto weights = _coeffs.at(0);
-    // auto profits = _coeffs.at(1);  // Causes index out of bounds
-    // auto W = model->names_and_ids_tracker().s_expr_name_of(_totals.at(0));
-    // auto P = model->names_and_ids_tracker().s_expr_name_of(_totals.at(1));   // Causes index out of bounds
 
     print(s, "{} knapsack\n            (", name);
     for (const auto & cs : _coeffs) {

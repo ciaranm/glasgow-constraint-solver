@@ -233,12 +233,13 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state, Proof
 
 auto CircuitBase::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
 {
-    // (name circuit (X1 ... Xn))
     stringstream s;
+
     print(s, "{} circuit (", name);
     for (const auto & var : _succ)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
     print(s, ")");
+    
     return s.str();
 }   
 

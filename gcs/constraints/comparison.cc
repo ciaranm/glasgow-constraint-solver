@@ -192,34 +192,6 @@ auto ReifiedCompareLessThanOrMaybeEqual::install(Propagators & propagators, Stat
 // and move this implementation to a helper function or just implement all s_expify() subclass methods.
 auto ReifiedCompareLessThanOrMaybeEqual::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
 {
-    /*
-        private:
-        IntegerVariableID _v1, _v2;
-        ReificationCondition _reif_cond;
-        bool _full_reif;
-        bool _or_equal;
-        bool _vars_swapped;
-    */
-
-    // (name cmp X Y)
-    // or
-    // (name cmp Z X Y)
-    // where cmp is
-    // {{greater,less}_than{,_equal}}{,_if,_iff}
-
-    // greater_than             reif::MustHold{}, _or_equal = false, _vars_swapped = true
-    // greater_than_if          reif::If{},       _or_equal = false, _vars_swapped = true
-    // greater_than_iff         reif::Iff{},      _or_equal = false, _vars_swapped = true
-    // greater_than_equal       reif::MustHold{}, _or_equal = true,  _vars_swapped = true
-    // greater_than_equal_if    reif::If{},       _or_equal = true,  _vars_swapped = true
-    // greater_than_equal_iff   reif::Iff{},      _or_equal = true,  _vars_swapped = true
-    // less_than                reif::MustHold{}, _or_equal = false, _vars_swapped = false
-    // less_than_if             reif::If{},       _or_equal = false, _vars_swapped = false
-    // less_than_iff            reif::Iff{},      _or_equal = false, _vars_swapped = false
-    // less_than_equal          reif::MustHold{}, _or_equal = true,  _vars_swapped = false
-    // less_than_equal_if       reif::If{},       _or_equal = true,  _vars_swapped = false
-    // less_than_equal_iff      reif::Iff{},      _or_equal = true,  _vars_swapped = false
-
     stringstream s;
 
     auto reif = overloaded{
@@ -246,6 +218,5 @@ auto ReifiedCompareLessThanOrMaybeEqual::s_exprify(const std::string & name, con
             model->names_and_ids_tracker().s_expr_name_of(_v2));
     }
     
-
     return s.str();
 }

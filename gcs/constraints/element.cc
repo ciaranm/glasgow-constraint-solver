@@ -518,15 +518,8 @@ auto NDimensionalElement<EntryType_, dimensions_>::clone() const -> unique_ptr<C
 template <typename EntryType_, unsigned dimensions_>
 auto NDimensionalElement<EntryType_, dimensions_>::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
 {
-    // (element ((X0,0 X0,1 X0,2 ... X0,n-1)
-    //            ...
-    //           (Xm-1,0 Xm-1,1 Xm-1,2 ... Xm-1,n-1))
-    //           (Y1,offset1)
-    //           (Y2,offset2)
-    //            Z)
     stringstream s;
 
-    // Helper lmbda
     auto print_elem = [&](auto & s, const auto & elem, const auto & index) {
         if constexpr (std::is_same_v<EntryType_, IntegerVariableID>) {
             print(s, " {},{}", model->names_and_ids_tracker().s_expr_name_of(elem), index);
@@ -560,7 +553,6 @@ auto NDimensionalElement<EntryType_, dimensions_>::s_exprify(const std::string &
 
     print(s, "{} element (", name);
 
-    // Print array(s) -- works for any number of dimensions
     print_array(s, *_array, print_array);
     
     print(s, ")");

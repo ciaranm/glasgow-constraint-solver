@@ -56,7 +56,6 @@ auto Plus::install(Propagators & propagators, State &, ProofModel * const option
 
 auto Plus::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
 {
-    // (name plus X Y Z)
     stringstream s;
 
     print(s, "{} plus (", name);

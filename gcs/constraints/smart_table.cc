@@ -897,14 +897,6 @@ auto SmartTable::install(Propagators & propagators, State & initial_state, Proof
 
 auto SmartTable::s_exprify(const string & name, const ProofModel * const model) const -> string
 {
-    /**
-     * const std::vector<IntegerVariableID> _vars;
-     * SmartTuples _tuples; (std::vector<std::vector<SmartEntry>>)
-     * SmartEntry =        std::variant<BinaryEntry,  UnaryValueEntry,    UnarySetEntry>;
-     */
-
-    // (name smart_table (????) (vars...))
-
     auto to_op = [](SmartEntryConstraint c) 
     {
         switch (c) {
@@ -956,7 +948,6 @@ auto SmartTable::s_exprify(const string & name, const ProofModel * const model) 
     for (const auto & var : _vars)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
     print(s, ")\n        )");
-
 
     return s.str();
 }

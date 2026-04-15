@@ -175,8 +175,6 @@ auto ArrayMinMax::install(Propagators & propagators, State &, ProofModel * const
 
 auto ArrayMinMax::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
 {
-    // Only the binary op is shown in the specification file, but for the n-ary ...
-    // (name min/max (X1 ... Xn) Y)
     stringstream s;
 
     print(s, "{} {} (", name, _min ? "min" : "max");

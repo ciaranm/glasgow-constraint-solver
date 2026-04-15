@@ -112,8 +112,6 @@ auto NValue::install(Propagators & propagators, State & initial_state, ProofMode
 
 auto NValue::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
 {
-    // (name nvalue (X1 X2 ... Xn) Y)
-
     stringstream s;
 
     print(s, "{} nvalue (", name);

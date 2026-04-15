@@ -61,8 +61,8 @@ auto LexSmartTable::install(Propagators & propagators, State & initial_state, Pr
 
 auto LexSmartTable::s_exprify(const std::string & name, const innards::ProofModel * const model) const -> std::string
 {
-    // (name lex (vars_1) (vars_2))
     stringstream s;
+
     print(s, "{} lex (", name);
     for (const auto & var : _vars_1)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
@@ -70,5 +70,6 @@ auto LexSmartTable::s_exprify(const std::string & name, const innards::ProofMode
     for (const auto & var : _vars_2)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
     print(s, ")");
+    
     return s.str();
 }

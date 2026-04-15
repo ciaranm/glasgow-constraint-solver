@@ -746,15 +746,6 @@ auto NamesAndIDsTracker::s_expr_name_of(Literal lit) const -> string
 
 auto NamesAndIDsTracker::s_expr_name_of(ReificationCondition cond) const -> string
 {
-    /*
-        using ReificationCondition = std::variant<
-        reif::MustHold,
-        reif::MustNotHold,
-        reif::If,
-        reif::NotIf,
-        reif::Iff>;
-    */
-
     return overloaded{
         [](const reif::MustHold &) -> string { return ""; },
         [](const reif::MustNotHold &) -> string { return ""; },
@@ -768,15 +759,6 @@ auto NamesAndIDsTracker::s_expr_name_of(ReificationCondition cond) const -> stri
 
 auto NamesAndIDsTracker::s_expr_name_of(VariableConditionOperator op) const -> string
 {
-    /*
-        enum class VariableConditionOperator
-        {
-            Equal,
-            NotEqual,
-            GreaterEqual,
-            Less
-        };
-    */
     switch (op) {
     case VariableConditionOperator::Equal: return "eq";
     case VariableConditionOperator::NotEqual: return "neq";

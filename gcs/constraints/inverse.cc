@@ -140,7 +140,6 @@ auto Inverse::install(Propagators & propagators, State & initial_state, ProofMod
 
 auto Inverse::s_exprify(const std::string & name, const innards::ProofModel * const model) const -> std::string
 {
-    // (name inverse (X1 X2 ... Xn) (Y1 Y2 ... Yn) x_start y_start)
     stringstream s;
 
     print(s, "{} inverse\n          (", name);
