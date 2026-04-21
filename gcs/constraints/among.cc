@@ -57,24 +57,35 @@ auto Among::clone() const -> unique_ptr<Constraint>
     return make_unique<Among>(_vars, _values_of_interest, _how_many);
 }
 
-auto Among::install(Propagators & propagators, State &, ProofModel * const optional_model) && -> void
+auto Among::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
+{
+    if (!prepare(propagators, initial_state, optional_model)) 
+        return;
+
+    if (optional_model)
+        define_proof_model(*optional_model);
+
+    install_propagators(propagators);
+}
+
+auto Among::define_proof_model(ProofModel & model) -> void
+{
+    // very easy PB encoding: sum up over the condition that each variable equals one of the
+    // value of interest options, and make that equal the how many variable.
+    WPBSum sum;
+    for (auto & var : _vars)
+        for (auto & val : _values_of_interest)
+            sum += 1_i * (var == val);
+    sum_line = model.add_constraint("Among", "how many", sum == 1_i * _how_many);
+}
+
+auto Among::install_propagators(Propagators & propagators) -> void
 {
     // we only care about the bounds for how_many, but we care about any deletions for the
     // rest of the variables
     Triggers triggers;
     triggers.on_change.insert(triggers.on_change.end(), _vars.begin(), _vars.end());
     triggers.on_bounds.emplace_back(_how_many);
-
-    pair<optional<ProofLine>, optional<ProofLine>> sum_line;
-    if (optional_model) {
-        // very easy PB encoding: sum up over the condition that each variable equals one of the
-        // value of interest options, and make that equal the how many variable.
-        WPBSum sum;
-        for (auto & var : _vars)
-            for (auto & val : _values_of_interest)
-                sum += 1_i * (var == val);
-        sum_line = optional_model->add_constraint("Among", "how many", sum == 1_i * _how_many);
-    }
 
     // for proof logging, we're going to need at-most-one constraints over the
     // values of interest for each variable. compute these once and remember
@@ -87,7 +98,8 @@ auto Among::install(Propagators & propagators, State &, ProofModel * const optio
                 vector<IntegerVariableCondition> var_eq_vois;
                 for (const auto & voi : values_of_interest)
                     var_eq_vois.push_back(var != voi);
-                am1_lines->emplace(var, recover_am1<IntegerVariableCondition>(*logger, ProofLevel::Top, var_eq_vois, [&](const IntegerVariableCondition & a, const IntegerVariableCondition & b) {
+                am1_lines->emplace(var, recover_am1<IntegerVariableCondition>(*logger, ProofLevel::Top, var_eq_vois, 
+                    [&](const IntegerVariableCondition & a, const IntegerVariableCondition & b) {
                     logger->emit_proof_comment("among am1 recover follows");
                     return logger->emit(RUPProofRule{}, WPBSum{} + 1_i * a + 1_i * b >= 1_i, ProofLevel::Temporary);
                 }));

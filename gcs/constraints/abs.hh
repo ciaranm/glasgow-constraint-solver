@@ -16,9 +16,9 @@ namespace gcs
     {
     private:
         IntegerVariableID _v1, _v2;
-        virtual auto define_proof_model(innards::ProofModel & optional_model) -> void override;
-        virtual auto install_propagators(innards::Propagators & propagators) -> void override;
-        virtual auto prepare(innards::Propagators & propagators, innards::State & initial_state, innards::ProofModel * const optional_model) -> bool override;
+        virtual auto define_proof_model(innards::ProofModel &) -> void override;
+        virtual auto install_propagators(innards::Propagators &) -> void override;
+        virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
 
     public:
         explicit Abs(const IntegerVariableID v1, const IntegerVariableID v2);

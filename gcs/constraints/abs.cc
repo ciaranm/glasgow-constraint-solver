@@ -29,6 +29,7 @@ auto Abs::clone() const -> unique_ptr<Constraint>
     return make_unique<Abs>(_v1, _v2);
 }
 
+
 auto Abs::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
     if (!prepare(propagators, initial_state, optional_model)) 
