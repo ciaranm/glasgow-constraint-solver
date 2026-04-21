@@ -29,23 +29,25 @@ auto Abs::clone() const -> unique_ptr<Constraint>
     return make_unique<Abs>(_v1, _v2);
 }
 
-auto Abs::install(Propagators & propagators, State & initial_state,
-    ProofModel * const optional_model) && -> void
+auto Abs::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
-    // _v2 >= 0
-    propagators.trim_lower_bound(initial_state, optional_model, _v2, 0_i, "Abs");
+    if (!prepare(propagators, initial_state, optional_model)) 
+        return;
 
-    // _v1 <= upper_bound(_v2)
-    propagators.trim_upper_bound(initial_state, optional_model, _v1, initial_state.upper_bound(_v2), "Abs");
+    if (optional_model)
+        define_proof_model(*optional_model);
 
-    // _v1 >= -upper_bound(_v2)
-    propagators.trim_lower_bound(initial_state, optional_model, _v1, -initial_state.upper_bound(_v2), "Abs");
+    install_propagators(propagators);
+}
 
-    // _v2 <= max(upper_bound(_v1), -lower_bound(_v1))
-    auto v2u = max(initial_state.upper_bound(_v1), -initial_state.lower_bound(_v1));
-    propagators.trim_upper_bound(initial_state, optional_model, _v2, v2u, "Abs");
+auto Abs::define_proof_model(innards::ProofModel & model) -> void
+{
+    model.add_constraint("Abs", "non-negative", WPBSum{} + 1_i * _v2 + -1_i * _v1 == 0_i, Reason{_v1 >= 0_i});
+    model.add_constraint("Abs", "negative", WPBSum{} + 1_i * _v2 + 1_i * _v1 == 0_i, Reason{_v1 < 0_i});
+}
 
-    // _v2 = abs(_v1)
+auto Abs::install_propagators(Propagators & propagators) -> void
+{
     Triggers triggers{.on_change = {_v1, _v2}};
     propagators.install([v1 = _v1, v2 = _v2](
                             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
@@ -68,9 +70,22 @@ auto Abs::install(Propagators & propagators, State & initial_state,
         return PropagatorState::Enable;
     },
         triggers, "abs");
+}
 
-    if (optional_model) {
-        optional_model->add_constraint("Abs", "non-negative", WPBSum{} + 1_i * _v2 + -1_i * _v1 == 0_i, Reason{_v1 >= 0_i});
-        optional_model->add_constraint("Abs", "negative", WPBSum{} + 1_i * _v2 + 1_i * _v1 == 0_i, Reason{_v1 < 0_i});
-    }
+auto Abs::prepare(Propagators & propagators, State & initial_state, ProofModel * const optional_model) -> bool
+{
+    // _v2 >= 0
+    propagators.trim_lower_bound(initial_state, optional_model, _v2, 0_i, "Abs");
+
+    // _v1 <= upper_bound(_v2)
+    propagators.trim_upper_bound(initial_state, optional_model, _v1, initial_state.upper_bound(_v2), "Abs");
+
+    // _v1 >= -upper_bound(_v2)
+    propagators.trim_lower_bound(initial_state, optional_model, _v1, -initial_state.upper_bound(_v2), "Abs");
+
+    // _v2 <= max(upper_bound(_v1), -lower_bound(_v1))
+    auto v2u = max(initial_state.upper_bound(_v1), -initial_state.lower_bound(_v1));
+    propagators.trim_upper_bound(initial_state, optional_model, _v2, v2u, "Abs");
+
+    return true;
 }
