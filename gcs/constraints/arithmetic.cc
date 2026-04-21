@@ -33,9 +33,26 @@ auto GACArithmetic<op_>::clone() const -> unique_ptr<Constraint>
 template <ArithmeticOperator op_>
 auto GACArithmetic<op_>::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
-    bool v2_zero_is_ok = (op_ != ArithmeticOperator::Div && op_ != ArithmeticOperator::Mod);
+    if (!prepare(propagators, initial_state, optional_model)) 
+        return;
 
+    // The prepare() function does all the work and always returns false, so this code is unreachable.
+    // It's only here to match the pattern of Constraint::install() so maybe we can implement install()
+    // in the base class only at some point.
+    if (optional_model)
+        define_proof_model(*optional_model);
+
+    install_propagators(propagators);
+}
+
+template <ArithmeticOperator op_>
+auto GACArithmetic<op_>::prepare(Propagators & propagators, State & initial_state, ProofModel * const optional_model) -> bool
+{
+    // This is the exact logic of the old install function.  Because we are delegating the work
+    // to propagators.define_and_install_table(), we do everything in prepare() and return false
+    // to skip the rest of the install() logic.  Similar to how we would handle a contradiction.
     vector<vector<Integer>> permitted;
+    bool v2_zero_is_ok = (op_ != ArithmeticOperator::Div && op_ != ArithmeticOperator::Mod);
 
     for (const auto & v1 : initial_state.each_value_immutable(_v1))
         for (const auto & v2 : initial_state.each_value_immutable(_v2))
@@ -54,6 +71,7 @@ auto GACArithmetic<op_>::install(Propagators & propagators, State & initial_stat
             }
 
     propagators.define_and_install_table(initial_state, optional_model, vector{_v1, _v2, _result}, move(permitted), "arithmetic");
+    return false;
 }
 
 namespace gcs::innards

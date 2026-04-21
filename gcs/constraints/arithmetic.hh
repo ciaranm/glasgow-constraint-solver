@@ -35,10 +35,10 @@ namespace gcs
         {
         private:
             IntegerVariableID _v1, _v2, _result;
+            virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
 
         public:
             explicit GACArithmetic(const IntegerVariableID v1, const IntegerVariableID v2, const IntegerVariableID result);
-
             virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
             virtual auto clone() const -> std::unique_ptr<Constraint> override;
         };
