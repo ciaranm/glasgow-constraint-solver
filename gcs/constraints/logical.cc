@@ -30,30 +30,21 @@ namespace
         return result;
     }
 
-    auto install_and_or_or(Propagators & propagators, const State & initial_state,
-        ProofModel * const optional_model,
-        const Literals & _lits, const Literal & _full_reif,
-        const string & name) -> void
+    auto install_propagators_logical(Propagators & propagators, const Literals & lits, 
+            const Literal & full_reif, const LiteralIs & reif_state, const string & name) -> void
     {
-        auto reif_state = initial_state.test_literal(_full_reif);
-
         if (reif_state == LiteralIs::DefinitelyTrue) {
             // definitely true, just force all the literals
-            propagators.install_initialiser([full_reif = _full_reif, lits = _lits](
+            propagators.install_initialiser([full_reif = full_reif, lits = lits](
                                                 const State &, auto & inference, ProofLogger * const logger) {
                 for (auto & l : lits)
                     inference.infer(logger, l, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{full_reif}}; }});
             });
-
-            if (optional_model) {
-                for (auto & l : _lits)
-                    optional_model->add_constraint("Logical", "cnf", Literals{l});
-            }
         }
         else {
             Triggers triggers;
             bool saw_false = false;
-            for (auto & l : _lits)
+            for (auto & l : lits)
                 overloaded{
                     [&](const IntegerVariableCondition & cond) {
                         switch (cond.op) {
@@ -77,17 +68,13 @@ namespace
             if (saw_false) {
                 // we saw a false literal, the reif variable must be forced off and
                 // then we don't do anything else
-                propagators.install_initialiser([full_reif = _full_reif](
+                propagators.install_initialiser([full_reif = full_reif](
                                                     const State &, auto & inference, ProofLogger * const logger) -> void {
                     inference.infer(logger, ! full_reif, JustifyUsingRUP{}, ReasonFunction{});
                 });
-
-                if (optional_model) {
-                    optional_model->add_constraint("Logical", "saw reif false", Literals{! _full_reif});
-                }
             }
             else {
-                propagators.install([lits = _lits, full_reif = _full_reif](
+                propagators.install([lits = lits, full_reif = full_reif](
                                         const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                     switch (state.test_literal(full_reif)) {
                     case LiteralIs::DefinitelyTrue: {
@@ -173,21 +160,45 @@ namespace
                     throw NonExhaustiveSwitch{};
                 },
                     triggers, name);
+            }
+        }
+    }
 
-                if (optional_model) {
-                    if (LiteralIs::DefinitelyFalse != reif_state) {
-                        WPBSum forward;
-                        for (auto & l : _lits)
-                            forward += 1_i * PseudoBooleanTerm{l};
-                        optional_model->add_constraint("Logical", "if condition", forward >= Integer(_lits.size()), Reason{_full_reif});
-                    }
+    auto define_proof_model_logical(ProofModel & model, const Literals & lits, 
+            const Literal & full_reif, const LiteralIs & reif_state) -> void
+    {
+        if (reif_state == LiteralIs::DefinitelyTrue) {
+            for (auto & l : lits)
+                model.add_constraint("Logical", "cnf", Literals{l});
+        }
+        else {
+            bool saw_false = false;
+            for (auto & l : lits)
+                overloaded{
+                    [&](const FalseLiteral &) {
+                        saw_false = true;
+                    },
+                    [&](const auto &) {
+                        // Anything else -- not interested
+                    }}
+                    .visit(l);
 
-                    Literals reverse;
-                    for (auto & l : _lits)
-                        reverse.push_back(! l);
-                    reverse.push_back(_full_reif);
-                    optional_model->add_constraint("Logical", "if not condition", move(reverse));
+            if (saw_false) {
+                model.add_constraint("Logical", "saw reif false", Literals{! full_reif});
+            }
+            else {
+                if (LiteralIs::DefinitelyFalse != reif_state) {
+                    WPBSum forward;
+                    for (auto & l : lits)
+                        forward += 1_i * PseudoBooleanTerm{l};
+                    model.add_constraint("Logical", "if condition", forward >= Integer(lits.size()), Reason{full_reif});
                 }
+
+                Literals reverse;
+                for (auto & l : lits)
+                    reverse.push_back(! l);
+                reverse.push_back(full_reif);
+                model.add_constraint("Logical", "if not condition", move(reverse));
             }
         }
     }
@@ -216,7 +227,29 @@ auto And::clone() const -> unique_ptr<Constraint>
 
 auto And::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
-    install_and_or_or(propagators, initial_state, optional_model, _lits, _full_reif, "and");
+    if (!prepare(propagators, initial_state, optional_model)) 
+        return;
+
+    if (optional_model)
+        define_proof_model(*optional_model);
+
+    install_propagators(propagators);
+}
+
+auto And::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
+{
+    _reif_state = initial_state.test_literal(_full_reif);
+    return true;
+}
+
+auto And::define_proof_model(ProofModel & model) -> void
+{
+    define_proof_model_logical(model, _lits, _full_reif, _reif_state);
+}
+
+auto And::install_propagators(Propagators & propagators) -> void
+{
+    install_propagators_logical(propagators, _lits, _full_reif, _reif_state, "and");
 }
 
 Or::Or(const vector<IntegerVariableID> & vars, const IntegerVariableID & full_reif) :
@@ -242,9 +275,35 @@ auto Or::clone() const -> unique_ptr<Constraint>
 
 auto Or::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
+    if (!prepare(propagators, initial_state, optional_model)) 
+        return;
+
+    if (optional_model)
+        define_proof_model(*optional_model);
+
+    install_propagators(propagators);
+}
+
+auto Or::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
+{
+    _reif_state = initial_state.test_literal(!_full_reif);
+    return true;
+}
+
+auto Or::define_proof_model(ProofModel & model) -> void
+{
+    auto lits = _lits;
+    for (auto & l : lits)
+        l = ! l;
+    
+    define_proof_model_logical(model, move(lits), ! _full_reif, _reif_state);
+}
+
+auto Or::install_propagators(Propagators & propagators) -> void
+{
     auto lits = _lits;
     for (auto & l : lits)
         l = ! l;
 
-    install_and_or_or(propagators, initial_state, optional_model, lits, ! _full_reif, "or");
+    install_propagators_logical(propagators, move(lits), ! _full_reif, _reif_state, "or");
 }

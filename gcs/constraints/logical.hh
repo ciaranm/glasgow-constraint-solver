@@ -3,6 +3,7 @@
 
 #include <gcs/constraint.hh>
 #include <gcs/innards/literal.hh>
+#include <gcs/innards/state.hh>
 #include <gcs/variable_condition.hh>
 #include <gcs/variable_id.hh>
 
@@ -21,6 +22,10 @@ namespace gcs
     private:
         const innards::Literals _lits;
         const innards::Literal _full_reif;
+        innards::LiteralIs _reif_state;
+        virtual auto define_proof_model(innards::ProofModel &) -> void override;
+        virtual auto install_propagators(innards::Propagators &) -> void override;
+        virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
 
     public:
         // Equivalent to And([var != 0 : var in vars], full_reif != 0)
@@ -46,6 +51,10 @@ namespace gcs
     private:
         const innards::Literals _lits;
         const innards::Literal _full_reif;
+        innards::LiteralIs _reif_state;
+        virtual auto define_proof_model(innards::ProofModel &) -> void override;
+        virtual auto install_propagators(innards::Propagators &) -> void override;
+        virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
 
     public:
         // Equivalent to Or([var != 0 : var in vars], full_reif != 0)
