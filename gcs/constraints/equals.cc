@@ -92,7 +92,8 @@ namespace
 ReifiedEquals::ReifiedEquals(const IntegerVariableID v1, const IntegerVariableID v2, ReificationCondition cond) :
     _v1(v1),
     _v2(v2),
-    _cond(cond)
+    _cond(cond),
+    evaluated_cond(evaluated_reif::Deactivated{})
 {
 }
 
@@ -103,48 +104,67 @@ auto ReifiedEquals::clone() const -> unique_ptr<Constraint>
 
 auto ReifiedEquals::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
-    if (optional_model) {
-        overloaded{
-            [&](const reif::MustHold &) {
-                optional_model->add_constraint("ReifiedEquals", "equals option",
-                    WPBSum{} + (1_i * _v1) + (-1_i * _v2) == 0_i);
-            },
-            [&](const reif::MustNotHold &) {
-                auto gtflag = optional_model->create_proof_flag("gt");
-                optional_model->add_constraint("ReifiedEquals", "greater option",
-                    WPBSum{} + (1_i * _v1) + (-1_i * _v2) >= 1_i, HalfReifyOnConjunctionOf{{gtflag}});
-                optional_model->add_constraint("ReifiedEquals", "less option",
-                    WPBSum{} + (1_i * _v1) + (-1_i * _v2) <= -1_i, HalfReifyOnConjunctionOf{{! gtflag}});
-            },
-            [&](const reif::If & reif) {
-                optional_model->add_constraint("ReifiedEquals", "equals option",
-                    WPBSum{} + (1_i * _v1) + (-1_i * _v2) == 0_i, HalfReifyOnConjunctionOf{{reif.cond}});
-            },
-            [&](const reif::NotIf & reif) {
-                auto gtflag = optional_model->create_proof_flag("gt");
-                optional_model->add_constraint("ReifiedEquals", "greater option",
-                    WPBSum{} + (1_i * _v1) + (-1_i * _v2) >= 1_i, HalfReifyOnConjunctionOf{{reif.cond, gtflag}});
-                optional_model->add_constraint("ReifiedEquals", "less option",
-                    WPBSum{} + (1_i * _v1) + (-1_i * _v2) <= -1_i, HalfReifyOnConjunctionOf{{reif.cond, ! gtflag}});
-            },
-            [&](const reif::Iff & reif) {
-                // condition unknown, the condition implies it is neither greater nor less
-                optional_model->add_constraint("ReifiedEquals", "equals option",
-                    WPBSum{} + (1_i * _v1) + (-1_i * _v2) == 0_i, HalfReifyOnConjunctionOf{{reif.cond}});
+    if (!prepare(propagators, initial_state, optional_model)) 
+        return;
 
-                auto gtflag = optional_model->create_proof_flag("gt");
-                optional_model->add_constraint("ReifiedEquals", "greater option",
-                    WPBSum{} + (1_i * _v1) + (-1_i * _v2) >= 1_i, HalfReifyOnConjunctionOf{{gtflag}});
-                auto ltflag = optional_model->create_proof_flag("lt");
-                optional_model->add_constraint("ReifiedEquals", "less option",
-                    WPBSum{} + (1_i * _v1) + (-1_i * _v2) <= -1_i, HalfReifyOnConjunctionOf{{ltflag}});
+    if (optional_model)
+        define_proof_model(*optional_model);
 
-                // lt + eq + gt >= 1
-                optional_model->add_constraint("ReifiedEquals", "one of less than, equals, greater than",
-                    WPBSum{} + 1_i * ltflag + 1_i * gtflag + 1_i * reif.cond >= 1_i);
-            }}
-            .visit(_cond);
-    }
+    install_propagators(propagators);
+}
+
+auto ReifiedEquals::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
+{
+    evaluated_cond = initial_state.test_reification_condition(_cond);
+    return true;
+}
+
+auto ReifiedEquals::define_proof_model(ProofModel & model) -> void
+{
+    overloaded{
+        [&](const reif::MustHold &) {
+            model.add_constraint("ReifiedEquals", "equals option",
+                WPBSum{} + (1_i * _v1) + (-1_i * _v2) == 0_i);
+        },
+        [&](const reif::MustNotHold &) {
+            auto gtflag = model.create_proof_flag("gt");
+            model.add_constraint("ReifiedEquals", "greater option",
+                WPBSum{} + (1_i * _v1) + (-1_i * _v2) >= 1_i, HalfReifyOnConjunctionOf{{gtflag}});
+            model.add_constraint("ReifiedEquals", "less option",
+                WPBSum{} + (1_i * _v1) + (-1_i * _v2) <= -1_i, HalfReifyOnConjunctionOf{{! gtflag}});
+        },
+        [&](const reif::If & reif) {
+            model.add_constraint("ReifiedEquals", "equals option",
+                WPBSum{} + (1_i * _v1) + (-1_i * _v2) == 0_i, HalfReifyOnConjunctionOf{{reif.cond}});
+        },
+        [&](const reif::NotIf & reif) {
+            auto gtflag = model.create_proof_flag("gt");
+            model.add_constraint("ReifiedEquals", "greater option",
+                WPBSum{} + (1_i * _v1) + (-1_i * _v2) >= 1_i, HalfReifyOnConjunctionOf{{reif.cond, gtflag}});
+            model.add_constraint("ReifiedEquals", "less option",
+                WPBSum{} + (1_i * _v1) + (-1_i * _v2) <= -1_i, HalfReifyOnConjunctionOf{{reif.cond, ! gtflag}});
+        },
+        [&](const reif::Iff & reif) {
+            // condition unknown, the condition implies it is neither greater nor less
+            model.add_constraint("ReifiedEquals", "equals option",
+                WPBSum{} + (1_i * _v1) + (-1_i * _v2) == 0_i, HalfReifyOnConjunctionOf{{reif.cond}});
+
+            auto gtflag = model.create_proof_flag("gt");
+            model.add_constraint("ReifiedEquals", "greater option",
+                WPBSum{} + (1_i * _v1) + (-1_i * _v2) >= 1_i, HalfReifyOnConjunctionOf{{gtflag}});
+            auto ltflag = model.create_proof_flag("lt");
+            model.add_constraint("ReifiedEquals", "less option",
+                WPBSum{} + (1_i * _v1) + (-1_i * _v2) <= -1_i, HalfReifyOnConjunctionOf{{ltflag}});
+
+            // lt + eq + gt >= 1
+            model.add_constraint("ReifiedEquals", "one of less than, equals, greater than",
+                WPBSum{} + 1_i * ltflag + 1_i * gtflag + 1_i * reif.cond >= 1_i);
+        }}
+        .visit(_cond);
+}
+
+auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
+{
 
     overloaded{
         [&](const evaluated_reif::MustHold & reif) {
@@ -186,7 +206,7 @@ auto ReifiedEquals::install(Propagators & propagators, State & initial_state, Pr
         [&](const evaluated_reif::Undecided & reif) {
             Triggers triggers;
             triggers.on_change = {_v1, _v2, reif.cond.var};
-            propagators.install([v1 = _v1, v2 = _v2, outer_reif = reif, cond = _cond](
+            propagators.install([v1 = _v1, v2 = _v2, cond = _cond](
                                     const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                 return overloaded{
                     [&](const evaluated_reif::MustHold & reif) {
@@ -274,7 +294,7 @@ auto ReifiedEquals::install(Propagators & propagators, State & initial_state, Pr
         [&](const evaluated_reif::Deactivated &) {
         },
     }
-        .visit(initial_state.test_reification_condition(_cond));
+        .visit(evaluated_cond);
 }
 
 Equals::Equals(const IntegerVariableID v1, const IntegerVariableID v2) :

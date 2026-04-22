@@ -5,6 +5,7 @@
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/proofs/reification.hh>
 #include <gcs/innards/reason.hh>
+#include <gcs/innards/state.hh>
 #include <gcs/reification.hh>
 #include <gcs/variable_condition.hh>
 #include <gcs/variable_id.hh>
@@ -28,6 +29,10 @@ namespace gcs
     private:
         IntegerVariableID _v1, _v2;
         ReificationCondition _cond;
+        innards::EvaluatedReificationCondition evaluated_cond;
+        virtual auto define_proof_model(innards::ProofModel &) -> void override;
+        virtual auto install_propagators(innards::Propagators &) -> void override;
+        virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
 
     public:
         ReifiedEquals(const IntegerVariableID v1, const IntegerVariableID v2, ReificationCondition cond);
