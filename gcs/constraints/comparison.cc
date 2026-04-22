@@ -21,6 +21,7 @@ ReifiedCompareLessThanOrMaybeEqual::ReifiedCompareLessThanOrMaybeEqual(const Int
     _v2(v2),
     _reif_cond(cond),
     _or_equal(or_equal),
+    // I don't really want to instantiate this here, but apparently I must.
     evaluated_cond(evaluated_reif::Deactivated{})
 {
 }
