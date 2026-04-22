@@ -20,6 +20,10 @@ namespace gcs
     private:
         const std::vector<IntegerVariableID> _x, _y;
         const Integer _x_start, _y_start;
+        bool install_initialiser = false;
+        virtual auto define_proof_model(innards::ProofModel &) -> void override;
+        virtual auto install_propagators(innards::Propagators &) -> void override;
+        virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
 
     public:
         explicit Inverse(std::vector<IntegerVariableID> x, std::vector<IntegerVariableID> y,
