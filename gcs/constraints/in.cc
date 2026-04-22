@@ -44,6 +44,17 @@ auto In::clone() const -> unique_ptr<Constraint>
 
 auto In::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
+    if (!prepare(propagators, initial_state, optional_model)) 
+        return;
+
+    if (optional_model)
+        define_proof_model(*optional_model);
+
+    install_propagators(propagators);
+}
+
+auto In::prepare(Propagators & propagators, State & initial_state, ProofModel * const optional_model) -> bool
+{
     erase_if(_var_vals, [&](const IntegerVariableID & v) -> bool {
         auto const_val = initial_state.optional_single_value(v);
         if (const_val)
@@ -54,9 +65,12 @@ auto In::install(Propagators & propagators, State & initial_state, ProofModel * 
     sort(_val_vals.begin(), _val_vals.end());
     _val_vals.erase(unique(_val_vals.begin(), _val_vals.end()), _val_vals.end());
 
-    if (_var_vals.empty() && _val_vals.empty())
+    if (_var_vals.empty() && _val_vals.empty()) {
         propagators.model_contradiction(initial_state, optional_model, "No values or variables present for an 'In' constraint");
-    else if (_var_vals.empty()) {
+        return false;
+    }
+    
+    if (_var_vals.empty()) {
         vector<IntegerVariableID> vars;
         vars.emplace_back(_var);
 
@@ -65,8 +79,8 @@ auto In::install(Propagators & propagators, State & initial_state, ProofModel * 
             tuples.emplace_back(vector{{v}});
 
         propagators.define_and_install_table(initial_state, optional_model, move(vars), move(tuples), "in");
+        return false;
     }
-    else {
-        throw UnimplementedException{};
-    }
+
+    return false;
 }

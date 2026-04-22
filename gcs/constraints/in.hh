@@ -19,6 +19,7 @@ namespace gcs
         IntegerVariableID _var;
         std::vector<IntegerVariableID> _var_vals;
         std::vector<Integer> _val_vals;
+        virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
 
     public:
         explicit In(IntegerVariableID var, std::vector<IntegerVariableID> vars, std::vector<Integer> vals);
