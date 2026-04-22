@@ -177,7 +177,9 @@ auto NDimensionalElement<EntryType_, dimensions_>::prepare(Propagators & propaga
             propagators.model_contradiction(initial_state, optional_model, "NDimensionalElement constraint with no values");
             return false;
         }
-
+    }
+    for (const auto & [i, var] : enumerate(_index_vars)) {
+        auto s = Integer(get_dimension_size<dimensions_>(i, *_array));
         propagators.trim_lower_bound(initial_state, optional_model, var, _index_starts.at(i), "NDimensionalElement");
         propagators.trim_upper_bound(initial_state, optional_model, var, _index_starts.at(i) + s - 1_i, "NDimensionalElement");
     }
