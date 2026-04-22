@@ -1,6 +1,7 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_KNAPSACK_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_KNAPSACK_HH
 
+#include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/constraint.hh>
 #include <gcs/variable_id.hh>
 
@@ -20,6 +21,10 @@ namespace gcs
         const std::vector<std::vector<Integer>> _coeffs;
         const std::vector<IntegerVariableID> _vars;
         const std::vector<IntegerVariableID> _totals;
+        std::vector<std::pair<innards::ProofLine, innards::ProofLine>> eqns_lines;
+        virtual auto define_proof_model(innards::ProofModel &) -> void override;
+        virtual auto install_propagators(innards::Propagators &) -> void override;
+        virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
 
     public:
         explicit Knapsack(std::vector<Integer> weights, std::vector<Integer> profits,

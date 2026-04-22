@@ -571,13 +571,25 @@ namespace
 
 auto Knapsack::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
+    if (!prepare(propagators, initial_state, optional_model)) 
+        return;
+
+    if (optional_model)
+        define_proof_model(*optional_model);
+
+    install_propagators(propagators);
+}
+
+auto Knapsack::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
+{
+    // I am assuming a throw is logically equivalent to returning false here--but keeping the explainations.
     if (_coeffs.size() != _totals.size())
         throw UnexpectedException{"mismatch between coefficients and totals sizes for knapsack"};
 
     if (_coeffs.empty())
         throw UnexpectedException{"empty knapsack coefficients"};
-    unsigned n_vars = _coeffs.begin()->size();
 
+    unsigned n_vars = _coeffs.begin()->size();
     for (auto & c : _coeffs)
         if (c.size() != n_vars)
             throw UnexpectedException{"not sure what to do about different coefficient array sizes for knapsack"};
@@ -595,17 +607,23 @@ auto Knapsack::install(Propagators & propagators, State & initial_state, ProofMo
         if (initial_state.lower_bound(t) < 0_i)
             throw UnexpectedException{"not sure what to do about negative permitted totals for knapsack"};
 
-    vector<pair<ProofLine, ProofLine>> eqns_lines;
-    if (optional_model) {
-        for (const auto & [cc_idx, cc] : enumerate(_coeffs)) {
-            WPBSum sum_eq;
-            for (const auto & [idx, v] : enumerate(_vars))
-                sum_eq += cc.at(idx) * v;
-            auto [eq1, eq2] = optional_model->add_constraint(sum_eq == 1_i * _totals.at(cc_idx));
-            eqns_lines.emplace_back(eq1.value(), eq2.value());
-        }
-    }
+    return true;
+}
 
+auto Knapsack::define_proof_model(ProofModel & model) -> void
+{
+    for (const auto & [cc_idx, cc] : enumerate(_coeffs)) {
+        WPBSum sum_eq;
+        for (const auto & [idx, v] : enumerate(_vars))
+            sum_eq += cc.at(idx) * v;
+        auto [eq1, eq2] = model.add_constraint(sum_eq == 1_i * _totals.at(cc_idx));
+        eqns_lines.emplace_back(eq1.value(), eq2.value());
+    }
+}
+
+
+auto Knapsack::install_propagators(Propagators & propagators) -> void
+{
     Triggers triggers;
     triggers.on_change = {_vars.begin(), _vars.end()};
     triggers.on_change.insert(triggers.on_change.end(), _totals.begin(), _totals.end());
