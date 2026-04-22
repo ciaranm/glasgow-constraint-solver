@@ -130,45 +130,64 @@ namespace
 }
 
 template <typename EntryType_, unsigned dimensions_>
-auto NDimensionalElement<EntryType_, dimensions_>::install(innards::Propagators & propagators, innards::State & initial_state, innards::ProofModel * const optional_model) && -> void
+auto NDimensionalElement<EntryType_, dimensions_>::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
+{
+    if (!prepare(propagators, initial_state, optional_model)) 
+        return;
+
+    if (optional_model)
+        define_proof_model(*optional_model);
+
+    install_propagators(propagators);
+}
+
+template <typename EntryType_, unsigned dimensions_>
+auto NDimensionalElement<EntryType_, dimensions_>::define_proof_model(innards::ProofModel & model) -> void
+{
+    HalfReifyOnConjunctionOf reif;
+    vector<size_t> elem;
+
+    function<auto(unsigned)->void> build_implication_constraints = [&](unsigned d) {
+        auto s = get_dimension_size<dimensions_>(d, *_array);
+        for (size_t x = 0; x != s; ++x) {
+            reif.push_back(_index_vars.at(d) == Integer(x) + _index_starts.at(d));
+            elem.push_back(x);
+            if (elem.size() == dimensions_) {
+                // this still works out fine if the variable is actually a constant
+                auto array_var = get_array_var<dimensions_>(elem, *_array);
+                model.add_constraint("NDimensionalElement", "equality",
+                    WPBSum{} + (1_i * _result_var) + (-1_i * array_var) == 0_i, reif);
+            }
+            else {
+                build_implication_constraints(d + 1);
+            }
+            elem.pop_back();
+            reif.pop_back();
+        }
+    };
+    build_implication_constraints(0);
+}
+
+template <typename EntryType_, unsigned dimensions_>
+auto NDimensionalElement<EntryType_, dimensions_>::prepare(Propagators & propagators, State & initial_state, ProofModel * const optional_model) -> bool
 {
     for (const auto & [i, var] : enumerate(_index_vars)) {
         auto s = Integer(get_dimension_size<dimensions_>(i, *_array));
         if (0_i == s) {
             propagators.model_contradiction(initial_state, optional_model, "NDimensionalElement constraint with no values");
-            return;
+            return false;
         }
 
         propagators.trim_lower_bound(initial_state, optional_model, var, _index_starts.at(i), "NDimensionalElement");
         propagators.trim_upper_bound(initial_state, optional_model, var, _index_starts.at(i) + s - 1_i, "NDimensionalElement");
     }
+    array_has_nonconstants = any_array_variable_is_nonconstant(initial_state, *_array);
+    return true;
+}
 
-    if (optional_model) {
-        HalfReifyOnConjunctionOf reif;
-        vector<size_t> elem;
-
-        function<auto(unsigned)->void> build_implication_constraints = [&](unsigned d) {
-            auto s = get_dimension_size<dimensions_>(d, *_array);
-            for (size_t x = 0; x != s; ++x) {
-                reif.push_back(_index_vars.at(d) == Integer(x) + _index_starts.at(d));
-                elem.push_back(x);
-                if (elem.size() == dimensions_) {
-                    // this still works out fine if the variable is actually a constant
-                    auto array_var = get_array_var<dimensions_>(elem, *_array);
-                    optional_model->add_constraint("NDimensionalElement", "equality",
-                        WPBSum{} + (1_i * _result_var) + (-1_i * array_var) == 0_i, reif);
-                }
-                else {
-                    build_implication_constraints(d + 1);
-                }
-                elem.pop_back();
-                reif.pop_back();
-            }
-        };
-        build_implication_constraints(0);
-    }
-
-    auto array_has_nonconstants = any_array_variable_is_nonconstant(initial_state, *_array);
+template <typename EntryType_, unsigned dimensions_>
+auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(innards::Propagators & propagators) -> void
+{
 
     vector<IntegerVariableID> all_array_vars;
     {
