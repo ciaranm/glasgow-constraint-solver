@@ -19,6 +19,7 @@ namespace gcs
     private:
         std::vector<IntegerVariableID> _vars_1;
         std::vector<IntegerVariableID> _vars_2;
+        virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
 
     public:
         explicit LexSmartTable(std::vector<IntegerVariableID> vars_1, std::vector<IntegerVariableID> vars_2);
