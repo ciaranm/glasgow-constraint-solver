@@ -34,6 +34,19 @@ auto Plus::clone() const -> unique_ptr<Constraint>
     return make_unique<Plus>(_a, _b, _result);
 }
 
+auto Plus::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
+{
+    stringstream s;
+
+    print(s, "{} plus (", name);
+    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_a));
+    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_b));
+    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_result));
+    print(s, ")");
+
+    return s.str();
+}
+
 auto Plus::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
     if (! prepare(propagators, initial_state, optional_model))
@@ -61,19 +74,6 @@ auto Plus::install_propagators(Propagators & propagators) -> void
 auto Plus::define_proof_model(ProofModel & model) -> void
 {
     _sum_line = model.add_constraint("Plus", "sum", WPBSum{} + 1_i * _a + 1_i * _b == 1_i * _result);
-}
-
-auto Plus::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
-{
-    stringstream s;
-
-    print(s, "{} plus (", name);
-    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_a));
-    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_b));
-    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_result));
-    print(s, ")");
-
-    return s.str();
 }
 
 auto gcs::innards::propagate_plus(IntegerVariableID a, IntegerVariableID b, IntegerVariableID result,
