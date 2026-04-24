@@ -17,7 +17,6 @@ using std::nullopt;
 using std::string;
 using std::vector;
 
-
 auto main(int argc, char * argv[]) -> int
 {
     /**
@@ -30,15 +29,15 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::Options options("Consolidate Unary");
     cxxopts::ParseResult options_vars;
 
-    options.add_options("Program Options")
-        ("help", "Display help information")
+    options.add_options("Program Options")   //
+        ("help", "Display help information") //
         ("prove", "Create a proof");
 
     options_vars = options.parse(argc, argv);
 
     try {
-        options.add_options("Program Options")
-            ("help", "Display help information")
+        options.add_options("Program Options")   //
+            ("help", "Display help information") //
             ("prove", "Create a proof");
 
         options_vars = options.parse(argc, argv);

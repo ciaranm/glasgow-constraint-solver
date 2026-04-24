@@ -18,7 +18,6 @@ using std::make_optional;
 using std::nullopt;
 using std::vector;
 
-
 auto main(int argc, char * argv[]) -> int
 {
     // A simple AtMost1 constraint example, using the encoding as a Smart Table
@@ -29,13 +28,12 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program Options")
-            ("help", "Display help information")
+        options.add_options("Program Options")   //
+            ("help", "Display help information") //
             ("prove", "Create a proof");
 
         options.add_options()(
-            "n", "Integer value n: at most 1 out n variables can take the value n.", cxxopts::value<int>()->default_value("3")
-            );
+            "n", "Integer value n: at most 1 out n variables can take the value n.", cxxopts::value<int>()->default_value("3"));
 
         options_vars = options.parse(argc, argv);
     }

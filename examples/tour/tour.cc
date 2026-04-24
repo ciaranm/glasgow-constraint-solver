@@ -18,7 +18,6 @@ using std::nullopt;
 using std::string;
 using std::vector;
 
-
 auto main(int argc, char * argv[]) -> int
 {
     // Example for the circuit constraint: find a tour for some graph of locations
@@ -31,12 +30,12 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program Options")
-            ("help", "Display help information")
+        options.add_options("Program Options")   //
+            ("help", "Display help information") //
             ("prove", "Create a proof");
 
-        options.add_options()
-            ("propagator", "Specify which circuit propagation algorithm to use (prevent/scc)", cxxopts::value<string>()->default_value("scc"));
+        options.add_options()("propagator", "Specify which circuit propagation algorithm to use (prevent/scc)", //
+            cxxopts::value<string>()->default_value("scc"));
 
         options_vars = options.parse(argc, argv);
     }

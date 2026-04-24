@@ -21,19 +21,18 @@ using std::nullopt;
 using std::string;
 using std::vector;
 
-
 auto main(int argc, char * argv[]) -> int
 {
     cxxopts::Options options("N Queens Example");
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program Options")
-            ("help", "Display help information")
+        options.add_options("Program Options")   //
+            ("help", "Display help information") //
             ("prove", "Create a proof");
 
-        options.add_options()
-            ("size", "Size of the problem to solve", cxxopts::value<int>()->default_value("88"))
+        options.add_options()                                                                    //
+            ("size", "Size of the problem to solve", cxxopts::value<int>()->default_value("88")) //
             ("all", "Find all solutions");
 
         options.parse_positional({"size"});

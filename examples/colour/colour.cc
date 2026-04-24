@@ -33,19 +33,17 @@ using std::ranges::views::transform;
 using fmt::print;
 using fmt::println;
 
-
 auto main(int argc, char * argv[]) -> int
 {
     cxxopts::Options options("Program options");
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program options")
-            ("help", "Display help information")
+        options.add_options("Program options")   //
+            ("help", "Display help information") //
             ("prove", "Create a proof");
 
-        options.add_options()
-            ("file", "DIMACS format file to use for input", cxxopts::value<string>());
+        options.add_options()("file", "DIMACS format file to use for input", cxxopts::value<string>());
 
         options_vars = options.parse(argc, argv);
     }

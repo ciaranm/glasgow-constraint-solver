@@ -26,16 +26,15 @@ using fmt::println;
 
 using namespace std::literals::string_literals;
 
-
 auto main(int argc, char * argv[]) -> int
 {
     cxxopts::Options options("Program options");
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options()
-            ("help", "Display help information")
-            ("prove", "Create a proof")
+        options.add_options()                    //
+            ("help", "Display help information") //
+            ("prove", "Create a proof")          //
             ("full-proof-encoding", "Use the longer proof encoding");
 
         options_vars = options.parse(argc, argv);

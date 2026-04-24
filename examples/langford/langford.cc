@@ -26,19 +26,18 @@ using std::vector;
 using fmt::print;
 using fmt::println;
 
-
 auto main(int argc, char * argv[]) -> int
 {
     cxxopts::Options options("Knapsack");
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options()
-                ("help", "Display help information")
-                ("prove", "Create a proof");
+        options.add_options()                    //
+            ("help", "Display help information") //
+            ("prove", "Create a proof");
 
-        options.add_options()
-            ("size", "Size of the problem to solve", cxxopts::value<int>()->default_value("7"))
+        options.add_options()                                                                   //
+            ("size", "Size of the problem to solve", cxxopts::value<int>()->default_value("7")) //
             ("all", "Find all solutions");
 
         options.parse_positional({"size", "all"});

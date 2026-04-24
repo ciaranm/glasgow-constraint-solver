@@ -4,11 +4,11 @@
 #include <gcs/search_heuristics.hh>
 #include <gcs/solve.hh>
 
-#include <util/enumerate.hh>
-#include <cxxopts.hpp>
 #include <cstdlib>
+#include <cxxopts.hpp>
 #include <iostream>
 #include <optional>
+#include <util/enumerate.hh>
 #include <vector>
 
 using namespace gcs;
@@ -20,19 +20,18 @@ using std::make_optional;
 using std::nullopt;
 using std::vector;
 
-
 auto main(int argc, char * argv[]) -> int
 {
     cxxopts::Options options("Magic Series Example");
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program Options")
-            ("help", "Display help information")
-            ("prove", "Create a proof")
+        options.add_options("Program Options")   //
+            ("help", "Display help information") //
+            ("prove", "Create a proof")          //
             ("extra-constraints", "Use extra constraints described in the MiniCP paper");
 
-        options.add_options()
+        options.add_options() //
             ("size", "Size of the problem to solve", cxxopts::value<int>()->default_value("300"));
 
         options.parse_positional({"size"});

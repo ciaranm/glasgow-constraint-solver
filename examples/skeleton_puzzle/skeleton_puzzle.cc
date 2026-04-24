@@ -26,7 +26,6 @@ using std::vector;
 using fmt::print;
 using fmt::println;
 
-
 auto constrain_digit_sum(Problem & p, vector<SimpleIntegerVariableID> digits, SimpleIntegerVariableID number) -> void
 {
     WeightedSum wsum{};
@@ -43,12 +42,11 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options()
-            ("help", "Display help information")
+        options.add_options()                    //
+            ("help", "Display help information") //
             ("prove", "Create a proof");
 
         options_vars = options.parse(argc, argv);
-
     }
     catch (const cxxopts::exceptions::exception & e) {
         cerr << "Error: " << e.what() << endl;

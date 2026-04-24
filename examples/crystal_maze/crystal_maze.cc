@@ -32,19 +32,18 @@ using fmt::println;
 
 using namespace std::literals::string_literals;
 
-
 auto main(int argc, char * argv[]) -> int
 {
     cxxopts::Options options("Crystal Maze Example");
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program options")
-            ("help", "Display help information")
+        options.add_options("Program options")   //
+            ("help", "Display help information") //
             ("prove", "Create a proof");
 
-        options.add_options()
-            ("abs", "Use abs constraint")
+        options.add_options()             //
+            ("abs", "Use abs constraint") //
             ("gac", "Use GAC on the sum constraint");
 
         options_vars = options.parse(argc, argv);
