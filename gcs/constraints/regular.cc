@@ -319,55 +319,71 @@ auto Regular::clone() const -> unique_ptr<Constraint>
 
 auto Regular::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
-    vector<vector<ProofFlag>> state_at_pos_flags;
-    if (optional_model) {
-        // Make 2D array of flags: state_at_pos_flags[i][q] means the DFA is in state q when it receives the
-        // input value from vars[i], with an extra row of flags for the state after the last transition.
-        // NB: Might be easier to have a 1D array of ProofOnlyIntegerVariables, but making literals of these is
-        // awkward currently. (TODO ?)
-        for (unsigned int idx = 0; idx <= _vars.size(); ++idx) {
-            WPBSum exactly_1_true{};
-            state_at_pos_flags.emplace_back();
-            for (unsigned int q = 0; q < _num_states; ++q) {
-                state_at_pos_flags[idx].emplace_back(optional_model->create_proof_flag("state" + to_string(idx) + "is" + to_string(q)));
-                exactly_1_true += 1_i * state_at_pos_flags[idx][q];
-            }
-            optional_model->add_constraint(move(exactly_1_true) == 1_i);
-        }
+    if (! prepare(propagators, initial_state, optional_model))
+        return;
 
-        // State at pos 0 is 0
-        optional_model->add_constraint(WPBSum{} + 1_i * state_at_pos_flags[0][0] >= 1_i);
-        // State at pos n is one of the final states
-        WPBSum pos_n_states;
-        for (const auto & f : _final_states) {
-            pos_n_states += 1_i * state_at_pos_flags[_vars.size()][f];
-        }
-        optional_model->add_constraint(move(pos_n_states) >= 1_i);
+    if (optional_model)
+        define_proof_model(*optional_model);
 
-        for (unsigned int idx = 0; idx < _vars.size(); ++idx) {
-            for (unsigned int q = 0; q < _num_states; ++q) {
-                for (const auto & val : _symbols) {
-                    if (_transitions[q][val] == -1) {
-                        // No transition for q, v, so constrain ~(state_i = q /\ X_i = val)
-                        optional_model->add_constraint(
-                            WPBSum{} + 1_i * (_vars[idx] != val) + (1_i * ! state_at_pos_flags[idx][q]) >= 1_i);
-                    }
-                    else {
-                        auto new_q = _transitions[q][val];
-                        optional_model->add_constraint(
-                            WPBSum{} + 1_i * ! state_at_pos_flags[idx][q] + 1_i * (_vars[idx] != val) + 1_i * state_at_pos_flags[idx + 1][new_q] >= 1_i);
-                    }
+    install_propagators(propagators);
+}
+
+auto Regular::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
+{
+    RegularGraph graph = RegularGraph(_vars.size(), _num_states);
+    _graph_idx = initial_state.add_constraint_state(graph);
+    return true;
+}
+
+auto Regular::define_proof_model(ProofModel & model) -> void
+{
+    // Make 2D array of flags: state_at_pos_flags[i][q] means the DFA is in state q when it receives the
+    // input value from vars[i], with an extra row of flags for the state after the last transition.
+    // NB: Might be easier to have a 1D array of ProofOnlyIntegerVariables, but making literals of these is
+    // awkward currently. (TODO ?)
+    for (unsigned int idx = 0; idx <= _vars.size(); ++idx) {
+        WPBSum exactly_1_true{};
+        _state_at_pos_flags.emplace_back();
+        for (unsigned int q = 0; q < _num_states; ++q) {
+            _state_at_pos_flags[idx].emplace_back(model.create_proof_flag("state" + to_string(idx) + "is" + to_string(q)));
+            exactly_1_true += 1_i * _state_at_pos_flags[idx][q];
+        }
+        model.add_constraint(move(exactly_1_true) == 1_i);
+    }
+
+    // State at pos 0 is 0
+    model.add_constraint(WPBSum{} + 1_i * _state_at_pos_flags[0][0] >= 1_i);
+    // State at pos n is one of the final states
+    WPBSum pos_n_states;
+    for (const auto & f : _final_states) {
+        pos_n_states += 1_i * _state_at_pos_flags[_vars.size()][f];
+    }
+    model.add_constraint(move(pos_n_states) >= 1_i);
+
+    for (unsigned int idx = 0; idx < _vars.size(); ++idx) {
+        for (unsigned int q = 0; q < _num_states; ++q) {
+            for (const auto & val : _symbols) {
+                if (_transitions[q][val] == -1) {
+                    // No transition for q, v, so constrain ~(state_i = q /\ X_i = val)
+                    model.add_constraint(
+                        WPBSum{} + 1_i * (_vars[idx] != val) + (1_i * ! _state_at_pos_flags[idx][q]) >= 1_i);
+                }
+                else {
+                    auto new_q = _transitions[q][val];
+                    model.add_constraint(
+                        WPBSum{} + 1_i * ! _state_at_pos_flags[idx][q] + 1_i * (_vars[idx] != val) + 1_i * _state_at_pos_flags[idx + 1][new_q] >= 1_i);
                 }
             }
         }
     }
+}
 
+auto Regular::install_propagators(Propagators & propagators) -> void
+{
     Triggers triggers;
     triggers.on_change = {_vars.begin(), _vars.end()};
 
-    RegularGraph graph = RegularGraph(_vars.size(), _num_states);
-    auto graph_idx = initial_state.add_constraint_state(graph);
-    propagators.install([v = move(_vars), n = _num_states, t = move(_transitions), f = move(_final_states), g = graph_idx, flags = state_at_pos_flags](
+    propagators.install([v = move(_vars), n = _num_states, t = move(_transitions), f = move(_final_states), g = _graph_idx, flags = _state_at_pos_flags](
                             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
         propagate_regular(v, n, t, f, flags, g, state, inference, logger);
         return PropagatorState::Enable;
