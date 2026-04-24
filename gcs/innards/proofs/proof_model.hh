@@ -131,6 +131,11 @@ namespace gcs::innards
          */
         auto minimise(const IntegerVariableID &) -> void;
 
+        /**
+         * State that we might be enumerating, and specify the variables to preserve.
+         */
+        auto preserve(std::vector<IntegerVariableID> vars) -> void;
+
         ///@}
 
         /**

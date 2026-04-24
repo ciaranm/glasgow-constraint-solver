@@ -41,6 +41,7 @@ namespace
         SolveCallbacks & callbacks,
         ProofLogger * const logger,
         bool & this_subtree_contains_solution,
+        Integer & number_of_solutions,
         optional<Integer> & objective_value,
         atomic<bool> * optional_abort_flag) -> bool
     {
@@ -78,6 +79,7 @@ namespace
                     objective_value = state(*problem.optional_minimise_variable());
 
                 ++stats.solutions;
+                ++number_of_solutions;
                 this_subtree_contains_solution = true;
                 if (callbacks.solution && ! callbacks.solution(state.current()))
                     return false;
@@ -98,7 +100,7 @@ namespace
                     state.guess(guess);
                     bool child_contains_solution = false;
                     if (! solve_with_state(depth + 1, stats, problem, propagators, state, guess,
-                            callbacks, logger, child_contains_solution, objective_value, optional_abort_flag))
+                            callbacks, logger, child_contains_solution, number_of_solutions, objective_value, optional_abort_flag))
                         result = false;
 
                     if (child_contains_solution)
@@ -149,6 +151,9 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
     if (optional_proof) {
         if (problem.optional_minimise_variable())
             optional_proof->model()->minimise(*problem.optional_minimise_variable());
+
+        optional_proof->model()->preserve(problem.all_normal_variables());
+
         optional_proof->model()->finalise();
         optional_proof->model()->names_and_ids_tracker().switch_from_model_to_proof(optional_proof->logger());
         optional_proof->logger()->start_proof(*optional_proof->model());
@@ -192,9 +197,10 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
 
     if (initialisation_success && presolve_success) {
         bool child_contains_solution = false;
+        Integer number_of_solutions = 0_i;
         optional<Integer> objective_value = nullopt;
         if (solve_with_state(0, stats, problem, propagators, state, nullopt, callbacks, optional_proof ? optional_proof->logger() : nullptr,
-                child_contains_solution, objective_value, optional_abort_flag)) {
+                child_contains_solution, number_of_solutions, objective_value, optional_abort_flag)) {
             if (optional_proof) {
                 if (problem.optional_minimise_variable()) {
                     if (objective_value)
@@ -203,7 +209,7 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
                         optional_proof->logger()->conclude_unsatisfiable(true);
                 }
                 else if (child_contains_solution) {
-                    optional_proof->logger()->conclude_satisfiable();
+                    optional_proof->logger()->conclude_complete_enumeration(number_of_solutions);
                 }
                 else
                     optional_proof->logger()->conclude_unsatisfiable(false);
@@ -222,6 +228,8 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
                     else
                         optional_proof->logger()->conclude_none();
                 }
+                else if (child_contains_solution)
+                    optional_proof->logger()->conclude_satisfiable();
                 else
                     optional_proof->logger()->conclude_none();
             }
