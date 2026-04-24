@@ -2,8 +2,8 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_COUNT_HH
 
 #include <gcs/constraint.hh>
-#include <gcs/variable_id.hh>
 #include <gcs/innards/proofs/proof_only_variables.hh>
+#include <gcs/variable_id.hh>
 
 #include <vector>
 

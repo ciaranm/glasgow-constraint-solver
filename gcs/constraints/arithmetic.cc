@@ -41,7 +41,7 @@ auto GACArithmetic<op_>::clone() const -> unique_ptr<Constraint>
 template <ArithmeticOperator op_>
 auto GACArithmetic<op_>::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
-    if (!prepare(propagators, initial_state, optional_model)) 
+    if (! prepare(propagators, initial_state, optional_model))
         return;
 
     // The prepare() function does all the work and always returns false, so this code is unreachable.

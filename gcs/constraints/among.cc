@@ -63,7 +63,7 @@ auto Among::clone() const -> unique_ptr<Constraint>
 
 auto Among::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
-    if (!prepare(propagators, initial_state, optional_model)) 
+    if (! prepare(propagators, initial_state, optional_model))
         return;
 
     if (optional_model)
@@ -102,8 +102,7 @@ auto Among::install_propagators(Propagators & propagators) -> void
                 vector<IntegerVariableCondition> var_eq_vois;
                 for (const auto & voi : values_of_interest)
                     var_eq_vois.push_back(var != voi);
-                am1_lines->emplace(var, recover_am1<IntegerVariableCondition>(*logger, ProofLevel::Top, var_eq_vois, 
-                    [&](const IntegerVariableCondition & a, const IntegerVariableCondition & b) {
+                am1_lines->emplace(var, recover_am1<IntegerVariableCondition>(*logger, ProofLevel::Top, var_eq_vois, [&](const IntegerVariableCondition & a, const IntegerVariableCondition & b) {
                     logger->emit_proof_comment("among am1 recover follows");
                     return logger->emit(RUPProofRule{}, WPBSum{} + 1_i * a + 1_i * b >= 1_i, ProofLevel::Temporary);
                 }));

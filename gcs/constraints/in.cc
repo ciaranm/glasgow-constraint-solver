@@ -50,7 +50,7 @@ auto In::clone() const -> unique_ptr<Constraint>
 
 auto In::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
-    if (!prepare(propagators, initial_state, optional_model)) 
+    if (! prepare(propagators, initial_state, optional_model))
         return;
 
     if (optional_model)
@@ -75,7 +75,7 @@ auto In::prepare(Propagators & propagators, State & initial_state, ProofModel * 
         propagators.model_contradiction(initial_state, optional_model, "No values or variables present for an 'In' constraint");
         return false;
     }
-    
+
     if (_var_vals.empty()) {
         vector<IntegerVariableID> vars;
         vars.emplace_back(_var);

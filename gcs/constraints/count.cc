@@ -43,7 +43,7 @@ auto Count::clone() const -> unique_ptr<Constraint>
 
 auto Count::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
-    if (!prepare(propagators, initial_state, optional_model)) 
+    if (! prepare(propagators, initial_state, optional_model))
         return;
 
     if (optional_model)
@@ -96,7 +96,6 @@ auto Count::install_propagators(Propagators & propagators) -> void
     triggers.on_change.insert(triggers.on_change.end(), _vars.begin(), _vars.end());
     triggers.on_change.emplace_back(_value_of_interest);
     triggers.on_bounds.emplace_back(_how_many);
-
 
     vector<IntegerVariableID> all_vars = _vars;
     all_vars.push_back(_value_of_interest);

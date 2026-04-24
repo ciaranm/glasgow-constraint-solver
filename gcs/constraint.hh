@@ -32,7 +32,10 @@ namespace gcs
     protected:
         virtual auto define_proof_model(innards::ProofModel &) -> void {};
         virtual auto install_propagators(innards::Propagators &) -> void {};
-        virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool { return true; };
+        virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool
+        {
+            return true;
+        };
 
     public:
         virtual ~Constraint() = 0;

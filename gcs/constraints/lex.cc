@@ -35,7 +35,7 @@ auto LexSmartTable::clone() const -> unique_ptr<Constraint>
 
 auto LexSmartTable::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
-    if (!prepare(propagators, initial_state, optional_model)) 
+    if (! prepare(propagators, initial_state, optional_model))
         return;
 
     if (optional_model)

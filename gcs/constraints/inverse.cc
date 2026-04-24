@@ -64,13 +64,13 @@ auto Inverse::define_proof_model(ProofModel & model) -> void
             // y[j] = i -> x[i] = j
             model.add_constraint("Inverse", "y_j = i -> x[i] = j", WPBSum{} + 1_i * (y_j != Integer(i) + _x_start) + 1_i * (x_i == Integer(j) + _y_start) >= 1_i);
         }
-    
+
     install_initialiser = true;
 }
 
 auto Inverse::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
-    if (!prepare(propagators, initial_state, optional_model)) 
+    if (! prepare(propagators, initial_state, optional_model))
         return;
 
     if (optional_model)
@@ -108,16 +108,16 @@ auto Inverse::install_propagators(Propagators & propagators) -> void
 
     if (install_initialiser) {
         auto build_am1s = [](const vector<IntegerVariableID> & x, Integer x_start, const State &,
-                        auto &, ProofLogger * const logger, const auto & map) {
-        for (Integer v = x_start; v < x_start + Integer(x.size()); ++v) {
-            // make an am1 for x[i] = v
-            vector<IntegerVariableCondition> xieqvs;
-            for (const auto & var : x)
-                xieqvs.push_back(var != v);
-            map->emplace(v, recover_am1<IntegerVariableCondition>(*logger, ProofLevel::Top, xieqvs, [&](const IntegerVariableCondition & c1, const IntegerVariableCondition & c2) -> ProofLine {
-                return logger->emit(RUPProofRule{}, WPBSum{} + 1_i * c1 + 1_i * c2 >= 1_i, ProofLevel::Temporary);
-            }));
-        }
+                              auto &, ProofLogger * const logger, const auto & map) {
+            for (Integer v = x_start; v < x_start + Integer(x.size()); ++v) {
+                // make an am1 for x[i] = v
+                vector<IntegerVariableCondition> xieqvs;
+                for (const auto & var : x)
+                    xieqvs.push_back(var != v);
+                map->emplace(v, recover_am1<IntegerVariableCondition>(*logger, ProofLevel::Top, xieqvs, [&](const IntegerVariableCondition & c1, const IntegerVariableCondition & c2) -> ProofLine {
+                    return logger->emit(RUPProofRule{}, WPBSum{} + 1_i * c1 + 1_i * c2 >= 1_i, ProofLevel::Temporary);
+                }));
+            }
         };
         x_value_am1s = make_shared<map<Integer, ProofLine>>();
         propagators.install_initialiser([x = _x, x_start = _x_start, x_value_am1s = x_value_am1s, build_am1s = build_am1s](

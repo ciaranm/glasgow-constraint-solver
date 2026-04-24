@@ -38,8 +38,8 @@ namespace
         return result;
     }
 
-    auto install_propagators_logical(Propagators & propagators, const Literals & lits, 
-            const Literal & full_reif, const LiteralIs & reif_state, const string & name) -> void
+    auto install_propagators_logical(Propagators & propagators, const Literals & lits,
+        const Literal & full_reif, const LiteralIs & reif_state, const string & name) -> void
     {
         if (reif_state == LiteralIs::DefinitelyTrue) {
             // definitely true, just force all the literals
@@ -172,8 +172,8 @@ namespace
         }
     }
 
-    auto define_proof_model_logical(ProofModel & model, const Literals & lits, 
-            const Literal & full_reif, const LiteralIs & reif_state) -> void
+    auto define_proof_model_logical(ProofModel & model, const Literals & lits,
+        const Literal & full_reif, const LiteralIs & reif_state) -> void
     {
         if (reif_state == LiteralIs::DefinitelyTrue) {
             for (auto & l : lits)
@@ -235,7 +235,7 @@ auto And::clone() const -> unique_ptr<Constraint>
 
 auto And::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
-    if (!prepare(propagators, initial_state, optional_model)) 
+    if (! prepare(propagators, initial_state, optional_model))
         return;
 
     if (optional_model)
@@ -296,7 +296,7 @@ auto Or::clone() const -> unique_ptr<Constraint>
 
 auto Or::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
-    if (!prepare(propagators, initial_state, optional_model)) 
+    if (! prepare(propagators, initial_state, optional_model))
         return;
 
     if (optional_model)
@@ -307,7 +307,7 @@ auto Or::install(Propagators & propagators, State & initial_state, ProofModel * 
 
 auto Or::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
 {
-    _reif_state = initial_state.test_literal(!_full_reif);
+    _reif_state = initial_state.test_literal(! _full_reif);
     return true;
 }
 
@@ -316,7 +316,7 @@ auto Or::define_proof_model(ProofModel & model) -> void
     auto lits = _lits;
     for (auto & l : lits)
         l = ! l;
-    
+
     define_proof_model_logical(model, move(lits), ! _full_reif, _reif_state);
 }
 

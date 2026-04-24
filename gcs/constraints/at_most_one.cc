@@ -35,7 +35,7 @@ auto AtMostOneSmartTable::clone() const -> unique_ptr<Constraint>
 
 auto AtMostOneSmartTable::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
-    if (!prepare(propagators, initial_state, optional_model)) 
+    if (! prepare(propagators, initial_state, optional_model))
         return;
 
     if (optional_model)
@@ -45,7 +45,7 @@ auto AtMostOneSmartTable::install(Propagators & propagators, State & initial_sta
 }
 
 auto AtMostOneSmartTable::prepare(Propagators & propagators, State & initial_state,
-     ProofModel * const optional_model) -> bool
+    ProofModel * const optional_model) -> bool
 {
     // Build the constraint as smart table
     // Question: Do we trust this encoding as a smart table?

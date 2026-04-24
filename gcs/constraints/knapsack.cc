@@ -583,7 +583,7 @@ namespace
 
 auto Knapsack::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
-    if (!prepare(propagators, initial_state, optional_model)) 
+    if (! prepare(propagators, initial_state, optional_model))
         return;
 
     if (optional_model)
@@ -632,7 +632,6 @@ auto Knapsack::define_proof_model(ProofModel & model) -> void
         eqns_lines.emplace_back(eq1.value(), eq2.value());
     }
 }
-
 
 auto Knapsack::install_propagators(Propagators & propagators) -> void
 {
