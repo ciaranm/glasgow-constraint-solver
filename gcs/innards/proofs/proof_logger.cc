@@ -86,9 +86,9 @@ struct ProofLogger::Imp
 {
     NamesAndIDsTracker & tracker;
 
-    ProofLine proof_line = 0;
+    ProofLineNumber proof_line{0};
     int active_proof_level = 0;
-    deque<IntervalSet<ProofLine>> proof_lines_by_level;
+    deque<IntervalSet<long long>> proof_lines_by_level;
 
     string proof_file;
     fstream proof;
@@ -108,6 +108,11 @@ ProofLogger::ProofLogger(const ProofOptions & proof_options, NamesAndIDsTracker 
 }
 
 ProofLogger::~ProofLogger() = default;
+
+auto ProofLogger::advance_proof_line_number() -> ProofLineNumber
+{
+    return ProofLineNumber{++_imp->proof_line.number};
+}
 
 auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_variables_and_values,
     const optional<pair<IntegerVariableID, Integer>> & optional_minimise_variable_and_value) -> void
@@ -141,7 +146,7 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
             .visit(var);
 
     _imp->proof << ";\n";
-    record_proof_line(++_imp->proof_line, ProofLevel::Top);
+    record_proof_line(advance_proof_line_number(), ProofLevel::Top);
 
     if (optional_minimise_variable_and_value)
         visit([&](const auto & id) {
@@ -172,7 +177,7 @@ auto ProofLogger::conclude_unsatisfiable(bool is_optimisation) -> void
 {
     _imp->proof << "% asserting contradiction\n";
     _imp->proof << "rup >= 1 ;\n";
-    record_proof_line(++_imp->proof_line, ProofLevel::Top);
+    record_proof_line(advance_proof_line_number(), ProofLevel::Top);
     _imp->proof << "output NONE;\n";
     if (is_optimisation)
         _imp->proof << "conclusion BOUNDS INF INF;\n";
@@ -191,7 +196,7 @@ auto ProofLogger::conclude_satisfiable() -> void
 auto ProofLogger::conclude_complete_enumeration(Integer number_of_solutions) -> void
 {
     _imp->proof << "rup >= 1 ;\n";
-    record_proof_line(++_imp->proof_line, ProofLevel::Top);
+    record_proof_line(advance_proof_line_number(), ProofLevel::Top);
     _imp->proof << "output NONE;\n";
     _imp->proof << "conclusion ENUMERATION_COMPLETE " << number_of_solutions << " : -1 ;\n";
     end_proof();
@@ -253,7 +258,7 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
                 _imp->proof << "rup ";
                 emit_inequality_to(names_and_ids_tracker(), reify(move(terms) >= 1_i, reif), _imp->proof);
                 _imp->proof << ";\n";
-                record_proof_line(++_imp->proof_line, ProofLevel::Current);
+                record_proof_line(advance_proof_line_number(), ProofLevel::Current);
             }
         },
         [&]([[maybe_unused]] const AssertRatherThanJustifying & j) {
@@ -278,7 +283,7 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
                 _imp->proof << "a ";
                 emit_inequality_to(names_and_ids_tracker(), reify(move(terms) >= 1_i, reif), _imp->proof);
                 _imp->proof << ";\n";
-                record_proof_line(++_imp->proof_line, ProofLevel::Current);
+                record_proof_line(advance_proof_line_number(), ProofLevel::Current);
             }
         },
         [&](const JustifyExplicitly & x) {
@@ -342,7 +347,7 @@ auto ProofLogger::emit_proof_line(const string & s, ProofLevel level
 #endif
     write_indent();
     _imp->proof << s << '\n';
-    auto result = record_proof_line(++_imp->proof_line, level);
+    auto result = record_proof_line(advance_proof_line_number(), level);
     return result;
 }
 
@@ -375,12 +380,11 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<P
 
     emit_inequality_to(names_and_ids_tracker(), ineq, rule_line);
 
-    rule_line << overloaded{
-                     [&](const RUPProofRule &) -> string { return ";"; },
-                     [&](const ImpliesProofRule & rule) -> string { if (rule.line) { return " : " + to_string(*rule.line) + ";"; } else { return ";"; } },
-                     [&](const AssertProofRule &) -> string { return ";"; }}
-                     .visit(rule)
-              << " ";
+    overloaded{
+        [&](const RUPProofRule &) { rule_line << ";"; },
+        [&](const ImpliesProofRule & rule) { if (rule.line) { rule_line << " : " << *rule.line << ";"; } else { rule_line << ";"; } },
+        [&](const AssertProofRule &) { rule_line << ";"; }}
+        .visit(rule);
 
     return emit_proof_line(
         rule_line.str(), level
@@ -431,12 +435,11 @@ auto ProofLogger::emit_under_reason(
         emit_inequality_to(names_and_ids_tracker(), ineq, rule_line);
     }
 
-    rule_line << overloaded{
-                     [&](const RUPProofRule &) -> string { return ";"; },
-                     [&](const ImpliesProofRule & rule) -> string { if (rule.line) { return " : " + to_string(*rule.line) + ";" ;} else { return ";"; } },
-                     [&](const AssertProofRule &) -> string { return ";"; }}
-                     .visit(rule)
-              << " ";
+    overloaded{
+        [&](const RUPProofRule &) { rule_line << ";"; },
+        [&](const ImpliesProofRule & rule) { if (rule.line) { rule_line << " : " << *rule.line << ";"; } else { rule_line << ";"; } },
+        [&](const AssertProofRule &) { rule_line << ";"; }}
+        .visit(rule);
 
     return emit_proof_line(
         rule_line.str(), level
@@ -504,7 +507,7 @@ auto ProofLogger::forget_proof_level(int depth) -> void
             _imp->proof << "del id " << l << ";\n";
         }
         else
-            _imp->proof << "del range " << l << " " << u + 1 << ";\n";
+            _imp->proof << "del range " << l << " " << ProofLineNumber{u + 1} << ";\n";
     }
     lines.clear();
 }
@@ -516,7 +519,7 @@ auto ProofLogger::start_proof(const ProofModel & model) -> void
     _imp->proof << "pseudo-Boolean proof version 3.0\n";
 
     _imp->proof << "f " << model.number_of_constraints() << " ;\n";
-    _imp->proof_line += model.number_of_constraints();
+    _imp->proof_line.number += model.number_of_constraints().number;
 
     if (! _imp->proof)
         throw ProofError{"Error writing proof file to "
@@ -524,17 +527,17 @@ auto ProofLogger::start_proof(const ProofModel & model) -> void
                          ""};
 }
 
-auto ProofLogger::record_proof_line(ProofLine line, ProofLevel level) -> ProofLine
+auto ProofLogger::record_proof_line(ProofLineNumber line, ProofLevel level) -> ProofLineNumber
 {
     switch (level) {
     case ProofLevel::Top:
-        _imp->proof_lines_by_level.at(0).insert_at_end(line);
+        _imp->proof_lines_by_level.at(0).insert_at_end(line.number);
         break;
     case ProofLevel::Current:
-        _imp->proof_lines_by_level.at(_imp->active_proof_level).insert_at_end(line);
+        _imp->proof_lines_by_level.at(_imp->active_proof_level).insert_at_end(line.number);
         break;
     case ProofLevel::Temporary:
-        _imp->proof_lines_by_level.at(_imp->active_proof_level + 1).insert_at_end(line);
+        _imp->proof_lines_by_level.at(_imp->active_proof_level + 1).insert_at_end(line.number);
         break;
     }
 
@@ -546,13 +549,13 @@ auto ProofLogger::names_and_ids_tracker() -> NamesAndIDsTracker &
     return _imp->tracker;
 }
 
-auto ProofLogger::emit_subproofs(const map<string, Subproof> & subproofs)
+auto ProofLogger::emit_subproofs(const map<ProofGoal, Subproof> & subproofs)
 {
     _imp->proof << " : subproof\n";
-    ++_imp->proof_line;
+    advance_proof_line_number();
     _imp->current_indent += INDENT_WIDTH;
     for (const auto & [proofgoal, proof] : subproofs) {
-        ++_imp->proof_line;
+        advance_proof_line_number();
         write_indent();
         _imp->proof << "proofgoal " << proofgoal << "\n";
         _imp->current_indent += INDENT_WIDTH;
@@ -568,7 +571,7 @@ auto ProofLogger::emit_subproofs(const map<string, Subproof> & subproofs)
 
 auto ProofLogger::emit_red_proof_line(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
     const std::vector<std::pair<ProofLiteralOrFlag, ProofLiteralOrFlag>> & witness,
-    ProofLevel level, const std::optional<std::map<std::string, Subproof>> & subproofs
+    ProofLevel level, const std::optional<std::map<ProofGoal, Subproof>> & subproofs
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
     ,
     const std::source_location & where
@@ -593,11 +596,11 @@ auto ProofLogger::emit_red_proof_line(const SumLessThanEqual<Weighted<PseudoBool
     else
         _imp->proof << ";\n";
 
-    return record_proof_line(++_imp->proof_line, level);
+    return record_proof_line(advance_proof_line_number(), level);
 }
 
 auto ProofLogger::emit_red_proof_lines_forward_reifying(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLiteralOrFlag reif,
-    ProofLevel level, const optional<map<string, Subproof>> & subproofs
+    ProofLevel level, const optional<map<ProofGoal, Subproof>> & subproofs
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
     ,
     const std::source_location & where
@@ -618,11 +621,11 @@ auto ProofLogger::emit_red_proof_lines_forward_reifying(const SumLessThanEqual<W
     else
         _imp->proof << ";\n";
 
-    return record_proof_line(++_imp->proof_line, level);
+    return record_proof_line(advance_proof_line_number(), level);
 }
 
 auto ProofLogger::emit_red_proof_lines_reverse_reifying(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLiteralOrFlag reif,
-    ProofLevel level, const optional<map<string, Subproof>> & subproofs
+    ProofLevel level, const optional<map<ProofGoal, Subproof>> & subproofs
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
     ,
     const std::source_location & where
@@ -643,7 +646,7 @@ auto ProofLogger::emit_red_proof_lines_reverse_reifying(const SumLessThanEqual<W
         emit_subproofs(subproofs.value());
     else
         _imp->proof << ";\n";
-    return record_proof_line(++_imp->proof_line, level);
+    return record_proof_line(advance_proof_line_number(), level);
 }
 
 auto ProofLogger::emit_red_proof_lines_reifying(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLiteralOrFlag reif,

@@ -6,6 +6,7 @@
 #include <gcs/integer.hh>
 #include <gcs/variable_id.hh>
 
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -17,7 +18,7 @@ namespace gcs::innards
         const std::vector<std::pair<Integer, Integer>> & bounds,
         const SimpleIntegerVariableID & which_var_is_changing,
         bool use_second_constraint_for_equality,
-        ProofLine proof_line) -> void;
+        std::pair<std::optional<ProofLine>, std::optional<ProofLine>> proof_lines) -> void;
 }
 
 #endif

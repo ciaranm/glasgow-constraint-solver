@@ -349,10 +349,10 @@ namespace
                 prove_pos_alldiff_lines(logger, succ, pos_var_data, pos_alldiff_data);
             }
 
-            long backwards_reif_line;
+            ProofLine backwards_reif_line;
             if (i != root) {
                 // Redundance subproof:
-                auto subproofs = make_optional(map<string, Subproof>{});
+                auto subproofs = make_optional(map<ProofGoal, Subproof>{});
                 auto subproof = [&](ProofLogger & logger) {
                     logger.emit_proof_line("pol -2 " + logger.names_and_ids_tracker().pb_file_string_for(greater_than_flag) + " w;", ProofLevel::Top);
                     for (long k = 0; cmp_less(k, succ.size()); k++) {
@@ -377,7 +377,7 @@ namespace
                     }
                     logger.emit_rup_proof_line(WPBSum{} >= 1_i, ProofLevel::Top);
                 };
-                subproofs.value().emplace(to_string(forwards_reif_line), subproof);
+                subproofs.value().emplace(forwards_reif_line, subproof);
 
                 backwards_reif_line = logger.emit_red_proof_lines_reverse_reifying(
                     WPBSum{} + 1_i * pos_var_data.at(root).var + -1_i * pos_var_data.at(i).var >= 0_i,

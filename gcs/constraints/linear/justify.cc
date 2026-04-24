@@ -11,6 +11,7 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::optional;
 using std::pair;
 using std::stringstream;
 using std::variant;
@@ -22,10 +23,10 @@ auto gcs::innards::justify_linear_bounds(
     const vector<pair<Integer, Integer>> & bounds,
     const SimpleIntegerVariableID & change_var,
     bool second_constraint_for_equality,
-    ProofLine proof_line) -> void
+    pair<optional<ProofLine>, optional<ProofLine>> proof_lines) -> void
 {
     vector<pair<Integer, variant<ProofLine, XLiteral>>> terms_to_sum;
-    terms_to_sum.emplace_back(1_i, second_constraint_for_equality ? proof_line + 1 : proof_line);
+    terms_to_sum.emplace_back(1_i, second_constraint_for_equality ? proof_lines.second.value() : proof_lines.first.value());
 
     Integer change_var_coeff = 0_i;
     for (const auto & [idx, cv] : enumerate(coeff_vars.terms)) {
@@ -78,7 +79,7 @@ template auto gcs::innards::justify_linear_bounds(
     const vector<pair<Integer, Integer>> & bounds,
     const SimpleIntegerVariableID & change_var,
     bool second_constraint_for_equality,
-    ProofLine proof_line) -> void;
+    pair<optional<ProofLine>, optional<ProofLine>> proof_line) -> void;
 
 template auto gcs::innards::justify_linear_bounds(
     ProofLogger & logger,
@@ -86,7 +87,7 @@ template auto gcs::innards::justify_linear_bounds(
     const vector<pair<Integer, Integer>> & bounds,
     const SimpleIntegerVariableID & change_var,
     bool second_constraint_for_equality,
-    ProofLine proof_line) -> void;
+    pair<optional<ProofLine>, optional<ProofLine>> proof_line) -> void;
 
 template auto gcs::innards::justify_linear_bounds(
     ProofLogger & logger,
@@ -94,4 +95,4 @@ template auto gcs::innards::justify_linear_bounds(
     const vector<pair<Integer, Integer>> & bounds,
     const SimpleIntegerVariableID & change_var,
     bool second_constraint_for_equality,
-    ProofLine proof_line) -> void;
+    pair<optional<ProofLine>, optional<ProofLine>> proof_line) -> void;

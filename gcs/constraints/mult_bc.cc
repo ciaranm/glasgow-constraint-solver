@@ -70,7 +70,7 @@ namespace
         Integer rhs = 0_i;
         HalfReifyOnConjunctionOf half_reif = HalfReifyOnConjunctionOf{};
         optional<ReasonFunction> reason = nullopt;
-        ProofLine line = 0;
+        ProofLine line;
     };
 
     struct DerivedBounds
@@ -173,7 +173,13 @@ namespace
 
     auto add_lines(ProofLogger & logger, ProofLine line1, ProofLine line2, bool saturate = true) -> ProofLine
     {
-        return logger.emit_proof_line("pol " + to_string(line1) + " " + to_string(line2) + " +" + (saturate ? " s ;" : ";"),
+        auto stringify = [&](const auto & p) {
+            stringstream s;
+            s << p;
+            return s.str();
+        };
+
+        return logger.emit_proof_line("pol " + stringify(line1) + " " + stringify(line2) + " +" + (saturate ? " s ;" : ";"),
             ProofLevel::Temporary);
     }
 
@@ -459,24 +465,24 @@ namespace
         if (premises.empty())
             throw UnexpectedException{"Empty premise set for fusion resolution."};
 
-        map<string, Subproof> subproofs{};
+        map<ProofGoal, Subproof> subproofs{};
         vector<pair<HalfReifyOnConjunctionOf, ProofLine>> premise_line{};
 
         auto subproof = [&](ProofLogger & logger) {
             auto weakened_premises = vector<DerivedPBConstraint>{};
             // First weaken the premises to match our desired constraint
-            auto negation_line = -2;
+            ProofLineNumber negation_line{-2};
             for (const auto & p : premises) {
                 weakened_premises.emplace_back(result_of_deriving(logger, RUPProofRule{}, // implies?
                     want_to_derive, p.half_reif, ProofLevel::Temporary, ReasonFunction{}));
-                negation_line--;
+                negation_line.number--;
             }
 
             //  Then add the negation of our desired constraint to each of the weakened premises
             //  This should give us a collection of clauses
             for (const auto & p : weakened_premises) {
                 premise_line.emplace_back(p.half_reif, add_lines(logger, negation_line, p.line, true));
-                negation_line--;
+                negation_line.number--;
             }
 
             if (premise_line.size() <= 1) {
@@ -542,7 +548,7 @@ namespace
             inner_sum.add(lb_2.line, false);
             inner_sum.end();
             logger.emit_proof_line(inner_sum.str(), ProofLevel::Temporary);
-            auto implied_sum = logger.emit_under_reason(ImpliesProofRule{make_optional<ProofLine>(-1)},
+            auto implied_sum = logger.emit_under_reason(ImpliesProofRule{make_optional<ProofLine>(ProofLineNumber{-1})},
                 logger.reify(bitsum + lb_2.rhs * ProofBitVariable{mag_x, Integer(i), false} >= lb_2.rhs, reif),
                 ProofLevel::Temporary, reason);
             outer_sum.add_multiplied_by(implied_sum, power2(Integer(i)));
@@ -554,7 +560,7 @@ namespace
         auto bitproducts_bound = logger.emit_proof_line(outer_sum.str(), ProofLevel::Temporary);
         add_lines(logger, bitproducts_bound, z_eq_product_lines.first);
 
-        return result_of_deriving(logger, ImpliesProofRule{make_optional<ProofLine>(-1)},
+        return result_of_deriving(logger, ImpliesProofRule{make_optional<ProofLine>(ProofLineNumber{-1})},
             mag_z_sum >= lb_1.rhs * lb_2.rhs, reif,
             ProofLevel::Temporary, reason);
     }
@@ -631,7 +637,7 @@ namespace
             auto desired_constraint =
                 logger.reify(logger.reify(desired_sum >= rhs, reif), reason);
 
-            auto fusion_premise_1 = result_of_deriving(logger, ImpliesProofRule{make_optional<ProofLine>(-1)},
+            auto fusion_premise_1 = result_of_deriving(logger, ImpliesProofRule{make_optional<ProofLine>(ProofLineNumber{-1})},
                 desired_constraint, HalfReifyOnConjunctionOf{ProofBitVariable{mag_x, Integer(i), false}},
                 ProofLevel::Temporary, reason);
 
@@ -644,7 +650,7 @@ namespace
             // We now know a slightly cleaner way to do this, but this still works fine
             auto fusion_resolvent = derive_by_fusion_resolution(
                 logger,
-                DerivedPBConstraint{desired_sum, rhs, reif, reason, 0},
+                DerivedPBConstraint{desired_sum, rhs, reif, reason, ProofLineNumber{0}},
                 {fusion_premise_1, fusion_premise_2});
 
             outer_sum.add_multiplied_by(fusion_resolvent.line, power2(Integer(i)));
@@ -659,7 +665,7 @@ namespace
 
         add_lines(logger, bitproducts_bound, z_eq_product_lines.second);
 
-        return result_of_deriving(logger, ImpliesProofRule{make_optional<ProofLine>(-1)},
+        return result_of_deriving(logger, ImpliesProofRule{make_optional<ProofLine>(ProofLineNumber{-1})},
             mag_z_sum >= -ub_1.rhs * ub_2.rhs, reif,
             ProofLevel::Temporary, reason);
     }
@@ -771,8 +777,8 @@ namespace
                     ProofLevel::Temporary, reason)});
         }
 
-        auto final_lower_constraint = DerivedPBConstraint{z_sum, smallest_product, {}, reason, 0};
-        auto final_upper_constraint = DerivedPBConstraint{neg_z_sum, -largest_product, {}, reason, 0};
+        auto final_lower_constraint = DerivedPBConstraint{z_sum, smallest_product, {}, reason, ProofLineNumber{0}};
+        auto final_upper_constraint = DerivedPBConstraint{neg_z_sum, -largest_product, {}, reason, ProofLineNumber{0}};
         derive_by_fusion_resolution(logger, final_lower_constraint, lower_bounds_for_fusion);
         derive_by_fusion_resolution(logger, final_upper_constraint, upper_bounds_for_fusion);
     }

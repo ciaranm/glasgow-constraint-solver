@@ -138,7 +138,7 @@ namespace
 
 auto ReifiedLinearEquality::install(Propagators & propagators, State & state, ProofModel * const optional_model) && -> void
 {
-    optional<ProofLine> proof_line;
+    optional<pair<optional<ProofLine>, optional<ProofLine>>> proof_line;
     if (optional_model) {
         WPBSum terms;
         for (auto & [c, v] : _coeff_vars.terms)
@@ -147,7 +147,7 @@ auto ReifiedLinearEquality::install(Propagators & propagators, State & state, Pr
         overloaded{
             [&](const reif::MustHold &) {
                 // condition is definitely true, it's just an inequality
-                proof_line = optional_model->add_constraint("ReifiedLinearEquality", "unconditional sum", terms == _value, nullopt).first.value();
+                proof_line = optional_model->add_constraint("ReifiedLinearEquality", "unconditional sum", terms == _value, nullopt);
             },
             [&](const reif::MustNotHold &) {
                 // condition is definitely false, the flag implies either greater or less
@@ -156,7 +156,7 @@ auto ReifiedLinearEquality::install(Propagators & propagators, State & state, Pr
                 optional_model->add_constraint("ReifiedLinearEquality", "less than option", terms <= _value - 1_i, HalfReifyOnConjunctionOf{{! neflag}});
             },
             [&](const reif::If & cond) {
-                proof_line = optional_model->add_constraint("ReifiedLinearEquality", "unconditional sum", terms == _value, HalfReifyOnConjunctionOf{{cond.cond}}).first.value();
+                proof_line = optional_model->add_constraint("ReifiedLinearEquality", "unconditional sum", terms == _value, HalfReifyOnConjunctionOf{{cond.cond}});
             },
             [&](const reif::NotIf & cond) {
                 // condition is definitely false, the flag implies either greater or less
@@ -166,7 +166,7 @@ auto ReifiedLinearEquality::install(Propagators & propagators, State & state, Pr
             },
             [&](const reif::Iff & cond) {
                 // condition unknown, the condition implies it is neither greater nor less
-                proof_line = optional_model->add_constraint("ReifiedLinearEquality", "equals option", terms == _value, HalfReifyOnConjunctionOf{{cond.cond}}).first.value();
+                proof_line = optional_model->add_constraint("ReifiedLinearEquality", "equals option", terms == _value, HalfReifyOnConjunctionOf{{cond.cond}});
 
                 auto gtflag = optional_model->create_proof_flag("lineqgt");
                 optional_model->add_constraint("ReifiedLinearEquality", "greater option", terms >= _value + 1_i, HalfReifyOnConjunctionOf{{gtflag}});
