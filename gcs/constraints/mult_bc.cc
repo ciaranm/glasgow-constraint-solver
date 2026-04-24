@@ -1214,7 +1214,7 @@ auto MultBC::s_exprify(const string & name, const innards::ProofModel * const mo
 {
     stringstream s;
 
-    print(s, "{} mult (", name);
+    print(s, "{} multiply (", name);
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v1));
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v2));
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v3));
