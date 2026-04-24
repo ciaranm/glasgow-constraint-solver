@@ -163,10 +163,8 @@ auto run_linear_reif_test(bool full_reif, bool proofs, const string & mode, pair
 
         auto proof_name = proofs ? make_optional("linear_equality_test_" + mode) : nullopt;
 
-        if ((! is_same_v<Constraint_, LinearEqualityIff>) && (! is_same_v<Constraint_, LinearEqualityIf>) && (! is_same_v<Constraint_, LinearNotEqualsIf>)
-                && (! is_same_v<Constraint_, LinearNotEqualsIff>) && 1 == ineqs.size())
-            solve_for_tests_checking_consistency(p, proof_name, expected, actual, tuple{pair{v1, CheckConsistency::BC}, pair{v2, CheckConsistency::BC}, pair{v3, CheckConsistency::BC},
-                    pair{v4, CheckConsistency::GAC}});
+        if ((! is_same_v<Constraint_, LinearEqualityIff>) && (! is_same_v<Constraint_, LinearEqualityIf>) && (! is_same_v<Constraint_, LinearNotEqualsIf>) && (! is_same_v<Constraint_, LinearNotEqualsIff>) && 1 == ineqs.size())
+            solve_for_tests_checking_consistency(p, proof_name, expected, actual, tuple{pair{v1, CheckConsistency::BC}, pair{v2, CheckConsistency::BC}, pair{v3, CheckConsistency::BC}, pair{v4, CheckConsistency::GAC}});
         else
             solve_for_tests(p, proof_name, actual, tuple{v1, v2, v3, v4});
 
@@ -251,8 +249,8 @@ auto main(int argc, char * argv[]) -> int
         vector{pair{vector{4, -8, 10}, 94}});
 
     data.emplace_back(
-            pair{8, 14}, pair{0, 8}, pair{4, 19},
-            vector{pair{vector{-7, 6, 7}, 69}});
+        pair{8, 14}, pair{0, 8}, pair{4, 19},
+        vector{pair{vector{-7, 6, 7}, 69}});
 
     random_device rand_dev;
     mt19937 rand(rand_dev());
@@ -290,30 +288,30 @@ auto main(int argc, char * argv[]) -> int
 
     if (can_run_veripb())
         for (auto & [r1, r2, r3, constraints] : data) {
-        if (string{argv[1]} == "eq") {
-            run_linear_test<LinearEquality>(true, "eq", r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
-            run_linear_reif_test<LinearEqualityIf>(false, true, "eq", r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
-            run_linear_reif_test<LinearEqualityIff>(true, true, "eq", r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
-            run_linear_test_gac<LinearEquality>(true, "eq", r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
-        }
-        else if (string{argv[1]} == "ne") {
-            run_linear_test<LinearNotEquals>(true, "ne", r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
-            run_linear_reif_test<LinearNotEqualsIf>(false, true, "ne", r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
-            run_linear_reif_test<LinearNotEqualsIff>(true, true, "ne", r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
-            run_linear_test_gac<LinearNotEquals>(true, "ne", r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
-        }
-        else if (string{argv[1]} == "le") {
-            run_linear_test<LinearLessThanEqual>(true, "le", r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
-            run_linear_reif_test<LinearLessThanEqualIf>(false, true, "le", r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
-            run_linear_reif_test<LinearLessThanEqualIff>(true, true, "le", r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
-        }
-        else if (string{argv[1]} == "ge") {
-            run_linear_test<LinearGreaterThanEqual>(true, "ge", r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
-            run_linear_reif_test<LinearGreaterThanEqualIf>(false, true, "ge", r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
-            run_linear_reif_test<LinearGreaterThanEqualIff>(true, true, "ge", r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
-        }
-        else
-            throw UnimplementedException{};
+            if (string{argv[1]} == "eq") {
+                run_linear_test<LinearEquality>(true, "eq", r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
+                run_linear_reif_test<LinearEqualityIf>(false, true, "eq", r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
+                run_linear_reif_test<LinearEqualityIff>(true, true, "eq", r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
+                run_linear_test_gac<LinearEquality>(true, "eq", r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
+            }
+            else if (string{argv[1]} == "ne") {
+                run_linear_test<LinearNotEquals>(true, "ne", r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
+                run_linear_reif_test<LinearNotEqualsIf>(false, true, "ne", r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
+                run_linear_reif_test<LinearNotEqualsIff>(true, true, "ne", r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
+                run_linear_test_gac<LinearNotEquals>(true, "ne", r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
+            }
+            else if (string{argv[1]} == "le") {
+                run_linear_test<LinearLessThanEqual>(true, "le", r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
+                run_linear_reif_test<LinearLessThanEqualIf>(false, true, "le", r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
+                run_linear_reif_test<LinearLessThanEqualIff>(true, true, "le", r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
+            }
+            else if (string{argv[1]} == "ge") {
+                run_linear_test<LinearGreaterThanEqual>(true, "ge", r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
+                run_linear_reif_test<LinearGreaterThanEqualIf>(false, true, "ge", r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
+                run_linear_reif_test<LinearGreaterThanEqualIff>(true, true, "ge", r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
+            }
+            else
+                throw UnimplementedException{};
         }
 
     return EXIT_SUCCESS;

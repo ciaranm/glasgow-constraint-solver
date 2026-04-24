@@ -171,7 +171,7 @@ namespace gcs
         [[nodiscard]] auto each_constraint() const -> std::generator<const Constraint &>;
 
         [[nodiscard]] auto each_variable_with_bounds_and_name() const -> std::generator<
-                                                                          std::tuple<IntegerVariableID, Integer, Integer, std::string>>;
+            std::tuple<IntegerVariableID, Integer, Integer, std::string>>;
 
         /**
          * What is our objective variable, to minimise?

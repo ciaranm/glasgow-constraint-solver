@@ -71,7 +71,7 @@ namespace gcs
          */
         using VariableComparator = std::function<auto(const CurrentState &, const innards::Propagators &,
             const IntegerVariableID &, const IntegerVariableID &)
-                                                     ->bool>;
+                ->bool>;
 
         /**
          * Branch on the smallest non-assigned variable wrt this comparator.

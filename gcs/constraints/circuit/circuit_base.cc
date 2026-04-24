@@ -239,9 +239,9 @@ auto CircuitBase::s_exprify(const string & name, const innards::ProofModel * con
     for (const auto & var : _succ)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
     print(s, ")");
-    
+
     return s.str();
-}   
+}
 
 template auto gcs::innards::circuit::prevent_small_cycles(const std::vector<IntegerVariableID> & succ, const PosVarDataMap & pos_var_data,
     const ConstraintStateHandle & unassigned_handle, const State & state, SimpleInferenceTracker & inference_tracker, ProofLogger * const logger) -> void;

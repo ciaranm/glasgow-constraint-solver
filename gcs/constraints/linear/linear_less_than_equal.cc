@@ -17,4 +17,3 @@ LinearLessThanEqualIff::LinearLessThanEqualIff(WeightedSum coeff_vars, Integer v
     ReifiedLinearInequality(move(coeff_vars), value, reif::Iff{cond})
 {
 }
-

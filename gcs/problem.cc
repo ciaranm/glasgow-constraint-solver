@@ -90,7 +90,7 @@ auto Problem::check_name(const string & name) -> const string &
                 throw NamingError{"Mismatched brackets in variable name '" + name + "'"};
         }
     }
-    if (!stack.empty())
+    if (! stack.empty())
         throw NamingError{"Unbalanced brackets in variable name '" + name + "'"};
 
     // The name is valid, but check for duplicates

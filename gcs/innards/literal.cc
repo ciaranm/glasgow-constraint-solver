@@ -3,8 +3,8 @@
 #include <gcs/innards/variable_id_utils.hh>
 #include <gcs/variable_id.hh>
 
-#include <util/overloaded.hh>
 #include "literal.hh"
+#include <util/overloaded.hh>
 
 using namespace gcs;
 using namespace gcs::innards;

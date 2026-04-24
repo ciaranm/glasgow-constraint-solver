@@ -590,13 +590,13 @@ template auto gcs::innards::propagate_gac_all_different(
     ProofLogger * const logger) -> void;
 
 auto GACAllDifferent::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
-{   
+{
     stringstream s;
 
     print(s, "{} all_different (", name);
     for (const auto & var : _vars)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
     print(s, ")");
-    
+
     return s.str();
 }

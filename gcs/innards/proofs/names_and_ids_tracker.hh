@@ -280,19 +280,19 @@ namespace gcs::innards
          */
         [[nodiscard]] auto s_expr_name_of(IntegerVariableID id) const -> std::string;
 
-         /**
+        /**
          * Get the human-readable / s-expr name for a literal. Currently not sure about VariableConditionFrom<IntegerVariableID>
-         */       
+         */
         [[nodiscard]] auto s_expr_name_of(Literal lit) const -> std::string;
 
-         /**
+        /**
          * Get the human-readable / s-expr name for a reification condition
-         */       
+         */
         [[nodiscard]] auto s_expr_name_of(ReificationCondition cond) const -> std::string;
 
-         /**
+        /**
          * Get the human-readable / s-expr name for a condition operator
-         */       
+         */
         [[nodiscard]] auto s_expr_name_of(VariableConditionOperator op) const -> std::string;
 
         /**

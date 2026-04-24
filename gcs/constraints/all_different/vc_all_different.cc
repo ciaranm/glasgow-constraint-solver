@@ -151,6 +151,6 @@ auto VCAllDifferent::s_exprify(const string & name, const innards::ProofModel * 
     for (const auto & var : _vars)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
     print(s, ")");
-    
+
     return s.str();
 }
