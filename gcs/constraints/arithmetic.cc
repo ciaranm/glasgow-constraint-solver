@@ -80,11 +80,11 @@ auto GACArithmetic<op_>::s_exprify(const std::string & name, const innards::Proo
     // (name op v1 v2 result)
     string op_str;
     switch (op_) {
-    case ArithmeticOperator::Plus:  op_str = "plus";  break;
+    case ArithmeticOperator::Plus: op_str = "plus"; break;
     case ArithmeticOperator::Minus: op_str = "minus"; break;
     case ArithmeticOperator::Times: op_str = "times"; break;
-    case ArithmeticOperator::Div:   op_str = "div";   break;
-    case ArithmeticOperator::Mod:   op_str = "mod";   break;
+    case ArithmeticOperator::Div: op_str = "div"; break;
+    case ArithmeticOperator::Mod: op_str = "mod"; break;
     case ArithmeticOperator::Power: op_str = "power"; break;
     }
 

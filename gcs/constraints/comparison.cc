@@ -20,9 +20,9 @@ using namespace gcs::innards;
 using std::nullopt;
 using std::optional;
 using std::pair;
-using std::unique_ptr;
 using std::string;
 using std::stringstream;
+using std::unique_ptr;
 
 using fmt::print;
 
@@ -186,22 +186,18 @@ auto ReifiedCompareLessThanOrMaybeEqual::install(Propagators & propagators, Stat
     }
 }
 
-// ReifiedCompareLessThanOrMaybeEqual is the superclass of all the various less-than and less-than-or-equal constraints,
-// so I'm hoping to be able to get away with just one s_exprify implementation here, and not have to override
-// it in the subclasses. If that turns out not to be the case, I'll add overrides in the relevant subclasses
-// and move this implementation to a helper function or just implement all s_expify() subclass methods.
 auto ReifiedCompareLessThanOrMaybeEqual::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
 {
     stringstream s;
 
     auto reif = overloaded{
-            [&](const reif::MustHold &) -> string { return ""; },
-            [&](const reif::If &)       -> string { return "_if"; },
-            [&](const reif::Iff &)      -> string { return "_iff"; },
-            [&](const auto &) -> string { throw UnexpectedException{"Unexpected reification type in s_exprify"};}
-        }.visit(_reif_cond);
+        [&](const reif::MustHold &) -> string { return ""; },
+        [&](const reif::If &) -> string { return "_if"; },
+        [&](const reif::Iff &) -> string { return "_iff"; },
+        [&](const auto &) -> string { throw UnexpectedException{"Unexpected reification type in s_exprify"}; }}
+                    .visit(_reif_cond);
 
-    string cmp = fmt::format("{}{}{}", 
+    string cmp = fmt::format("{}{}{}",
         _vars_swapped ? "greater_than" : "less_than",
         _or_equal ? "_equal" : "",
         reif);
@@ -212,11 +208,11 @@ auto ReifiedCompareLessThanOrMaybeEqual::s_exprify(const std::string & name, con
             model->names_and_ids_tracker().s_expr_name_of(_v2));
     }
     else {
-        print(s, "{} {} {} {} {}", name, cmp, 
+        print(s, "{} {} {} {} {}", name, cmp,
             model->names_and_ids_tracker().s_expr_name_of(_reif_cond),
             model->names_and_ids_tracker().s_expr_name_of(_v1),
             model->names_and_ids_tracker().s_expr_name_of(_v2));
     }
-    
+
     return s.str();
 }

@@ -70,6 +70,6 @@ auto LexSmartTable::s_exprify(const std::string & name, const innards::ProofMode
     for (const auto & var : _vars_2)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
     print(s, ")");
-    
+
     return s.str();
 }

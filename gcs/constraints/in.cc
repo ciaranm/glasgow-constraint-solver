@@ -92,4 +92,3 @@ auto In::s_exprify(const string & name, const innards::ProofModel * const model)
 
     return s.str();
 }
-

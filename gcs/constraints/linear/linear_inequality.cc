@@ -15,6 +15,7 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::make_pair;
 using std::nullopt;
 using std::optional;
 using std::pair;
@@ -245,14 +246,13 @@ auto ReifiedLinearInequality::install(Propagators & propagators, State & state, 
 auto ReifiedLinearInequality::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
 {
     stringstream s;
-    
-    bool rei;
-    auto cons = overloaded{
-        [&](const reif::MustHold &) { rei = false; return "lin_less_than_equal"; },
-        [&](const reif::If &)       { rei = true;  return "lin_less_than_equal_if"; },
-        [&](const reif::Iff &)      { rei = true;  return "lin_less_than_equal_iff"; },
-        [&](const auto &)           { rei = false; throw UnexpectedException{"Unexpected reification type in s_exprify"}; return "";}
-    }.visit(_reif_cond);
+
+    auto [rei, cons] = overloaded{
+        [&](const reif::MustHold &) { return make_pair(false, "lin_less_than_equal"); },
+        [&](const reif::If &) { return make_pair(true, "lin_less_than_equal_if"); },
+        [&](const reif::Iff &) { return make_pair(true, "lin_less_than_equal_iff"); },
+        [&](const auto &) { throw UnexpectedException{"Unexpected reification type in s_exprify"}; return make_pair(false, ""); }}
+                           .visit(_reif_cond);
 
     print(s, "{} {}", name, cons);
     if (rei) {

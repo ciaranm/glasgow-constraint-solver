@@ -323,10 +323,9 @@ auto ReifiedEquals::s_exprify(const string & name, const innards::ProofModel * c
         [](const reif::MustNotHold &) -> string { return "not_equals"; },
         [](const reif::If &) -> string { return "equals_if"; },
         [](const reif::NotIf &) -> string { return "not_equals_if"; },
-        [&](const reif::Iff &) -> string { 
+        [&](const reif::Iff &) -> string {
             return _neq ? "not_equals_iff" : "equals_iff";
-        }
-    }.visit(_cond);
+        }}.visit(_cond);
 
     print(s, "{} {}", name, constraint_type);
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_cond));

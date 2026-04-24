@@ -8,8 +8,3 @@ using std::string;
 using namespace gcs;
 
 Constraint::~Constraint() = default;
-
-auto Constraint::s_exprify(const string &, const innards::ProofModel * const) const -> string
-{
-    throw UnimplementedException{"No s_exprify implementation for constraint type " + string{typeid(*this).name()}};
-}

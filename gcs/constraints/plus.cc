@@ -6,8 +6,6 @@
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
 
-
-
 #include <sstream>
 
 #include <fmt/core.h>

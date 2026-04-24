@@ -897,17 +897,16 @@ auto SmartTable::install(Propagators & propagators, State & initial_state, Proof
 
 auto SmartTable::s_exprify(const string & name, const ProofModel * const model) const -> string
 {
-    auto to_op = [](SmartEntryConstraint c) 
-    {
+    auto to_op = [](SmartEntryConstraint c) {
         switch (c) {
-        case SmartEntryConstraint::LessThan:         return "<";
-        case SmartEntryConstraint::LessThanEqual:    return "<=";
-        case SmartEntryConstraint::Equal:            return "=";
-        case SmartEntryConstraint::NotEqual:         return "!=";
-        case SmartEntryConstraint::GreaterThan:      return ">";
+        case SmartEntryConstraint::LessThan: return "<";
+        case SmartEntryConstraint::LessThanEqual: return "<=";
+        case SmartEntryConstraint::Equal: return "=";
+        case SmartEntryConstraint::NotEqual: return "!=";
+        case SmartEntryConstraint::GreaterThan: return ">";
         case SmartEntryConstraint::GreaterThanEqual: return ">=";
-        case SmartEntryConstraint::In:               return "in";
-        case SmartEntryConstraint::NotIn:            return "notin";
+        case SmartEntryConstraint::In: return "in";
+        case SmartEntryConstraint::NotIn: return "notin";
         }
         throw NonExhaustiveSwitch{};
     };

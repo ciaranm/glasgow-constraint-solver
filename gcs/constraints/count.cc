@@ -241,8 +241,8 @@ auto Count::s_exprify(const std::string & name, const ProofModel * const model) 
     for (const auto & v : _vars) {
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(v));
     }
-    print(s, ") {} {}", 
-        model->names_and_ids_tracker().s_expr_name_of(_value_of_interest), 
+    print(s, ") {} {}",
+        model->names_and_ids_tracker().s_expr_name_of(_value_of_interest),
         model->names_and_ids_tracker().s_expr_name_of(_how_many));
 
     return s.str();

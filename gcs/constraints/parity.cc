@@ -140,7 +140,7 @@ auto ParityOdd::s_exprify(const string & name, const innards::ProofModel * const
 {
     stringstream s;
 
-    print(s, "{} parity_odd (", name);
+    print(s, "{} xor (", name);
     for (const auto & lit : _lits) {
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(lit));
     }

@@ -22,7 +22,6 @@ using namespace gcs::innards;
 
 using fmt::print;
 
-
 AtMostOneSmartTable::AtMostOneSmartTable(vector<IntegerVariableID> vars, IntegerVariableID val) :
     _vars(move(vars)),
     _val(val)
@@ -65,11 +64,10 @@ auto AtMostOneSmartTable::s_exprify(const string & name, const innards::ProofMod
 {
     stringstream s;
 
-    print(s, "({} at_most_one (", name);
+    print(s, "{} at_most_one (", name);
     for (const auto & var : _vars)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
     print(s, ") {}", model->names_and_ids_tracker().s_expr_name_of(_val));
-    print(s, ")");
 
     return s.str();
 }

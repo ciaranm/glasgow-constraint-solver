@@ -18,8 +18,8 @@
 #include <memory>
 #include <sstream>
 #include <type_traits>
-#include <vector>
 #include <variant>
+#include <vector>
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -27,6 +27,7 @@ using namespace gcs::innards;
 using std::decay_t;
 using std::function;
 using std::is_same_v;
+using std::make_pair;
 using std::make_shared;
 using std::move;
 using std::nullopt;
@@ -38,12 +39,12 @@ using std::vector;
 
 using fmt::print;
 
-ReifiedLinearEquality::ReifiedLinearEquality(WeightedSum coeff_vars, Integer value, ReificationCondition cond, bool gac, bool flippedCond) :
+ReifiedLinearEquality::ReifiedLinearEquality(WeightedSum coeff_vars, Integer value, ReificationCondition cond, bool gac, bool flipped_cond) :
     _coeff_vars(move(coeff_vars)),
     _value(value),
     _reif_cond(cond),
     _gac(gac),
-    _flippedCond(flippedCond)
+    _flipped_cond(flipped_cond)
 {
 }
 
@@ -375,17 +376,14 @@ auto ReifiedLinearEquality::install(Propagators & propagators, State & state, Pr
 auto ReifiedLinearEquality::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
 {
     stringstream s;
-    
-    bool rei;
-    auto cons = overloaded{
-            [&](const reif::MustHold &)    { rei = false; return "lin_equals"; },
-            [&](const reif::If &)          { rei = true;  return "lin_equals_if"; },
-            [&](const reif::Iff &)         { rei = true;  return _flippedCond ? 
-                                                                 "lin_not_equals_iff" : 
-                                                                 "lin_equals_iff"; },
-            [&](const reif::MustNotHold &) { rei = false; return "lin_not_equals"; },
-            [&](const reif::NotIf &)       { rei = true;  return "lin_not_equals_if"; }
-        }.visit(_reif_cond);
+
+    auto [rei, cons] = overloaded{
+        [&](const reif::MustHold &) { return make_pair(false, "lin_equals"); },
+        [&](const reif::If &) { return make_pair(true, "lin_equals_if"); },
+        [&](const reif::Iff &) { return make_pair(true, _flipped_cond ? "lin_not_equals_iff" : "lin_equals_iff"); },
+        [&](const reif::MustNotHold &) { return make_pair(false, "lin_not_equals"); },
+        [&](const reif::NotIf &) { return make_pair(true, "lin_not_equals_if"); }}
+                           .visit(_reif_cond);
 
     print(s, "{} {}", name, cons);
     if (rei) {
@@ -398,12 +396,11 @@ auto ReifiedLinearEquality::s_exprify(const std::string & name, const ProofModel
     print(s, ") {}", _value.raw_value);
 
     return s.str();
-
 }
 
 auto ReifiedLinearEquality::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<ReifiedLinearEquality>(WeightedSum{_coeff_vars}, _value, _reif_cond, _gac, _flippedCond);
+    return make_unique<ReifiedLinearEquality>(WeightedSum{_coeff_vars}, _value, _reif_cond, _gac, _flipped_cond);
 }
 
 LinearEquality::LinearEquality(WeightedSum coeff_vars, Integer value, bool gac) :

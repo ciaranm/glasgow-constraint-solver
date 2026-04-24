@@ -523,14 +523,15 @@ auto NDimensionalElement<EntryType_, dimensions_>::s_exprify(const std::string &
     auto print_elem = [&](auto & s, const auto & elem, const auto & index) {
         if constexpr (std::is_same_v<EntryType_, IntegerVariableID>) {
             print(s, " {},{}", model->names_and_ids_tracker().s_expr_name_of(elem), index);
-        } else {
+        }
+        else {
             print(s, " {},{}", elem.raw_value, index);
         }
     };
 
     auto print_array = [&](auto & s, const auto & arr, auto self_ref) -> void {
         using ArrayType = std::decay_t<decltype(arr)>;
-        
+
         // Check if we're at the innermost level (vector of EntryType_)
         if constexpr (std::is_same_v<typename ArrayType::value_type, EntryType_>) {
             // Base case: print elements
@@ -543,7 +544,8 @@ auto NDimensionalElement<EntryType_, dimensions_>::s_exprify(const std::string &
             if (dimensions_ > 1) {
                 print(s, ")");
             }
-        } else {
+        }
+        else {
             // Recursive case: dig deeper
             for (const auto & sub_arr : arr) {
                 self_ref(s, sub_arr, self_ref);
@@ -554,17 +556,14 @@ auto NDimensionalElement<EntryType_, dimensions_>::s_exprify(const std::string &
     print(s, "{} element (", name);
 
     print_array(s, *_array, print_array);
-    
+
     print(s, ")");
-    
-    // print (Y, offset) pairs.  It looks like _index_vars.size() is always 2
+
     for (size_t i = 0; i < _index_vars.size(); ++i) {
-        print(s, " ({},{})", 
+        print(s, " ({},{})",
             model->names_and_ids_tracker().s_expr_name_of(_index_vars[i]),
             _index_starts[i].raw_value);
     }
-    
-    // Print Z
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_result_var));
 
     return s.str();
@@ -579,4 +578,3 @@ namespace gcs
     template class NDimensionalElement<Integer, 2>;
     template class NDimensionalElement<Integer, 3>;
 }
-

@@ -59,7 +59,7 @@ auto run_equals_test(const string & which, bool proofs, variant<int, pair<int, i
         p.post(Constraint_{v1, v2});
     }
     else {
-        p.post(Constraint_{v1, v2, v3 >= 1_i});
+        p.post(Constraint_{v1, v2, v3 == 1_i});
     }
 
     auto proof_name = proofs ? make_optional("equals_test") : nullopt;
@@ -141,14 +141,14 @@ auto main(int, char *[]) -> int
         {pair{-2, 4}, pair{-8, 7}},
         {pair{-7, 3}, pair{-10, 5}}};
 
-    // random_device rand_dev;
-    // mt19937 rand(rand_dev());
-    // for (int x = 0; x < 10; ++x)
-    //     generate_random_data(rand, data, random_bounds(-10, 10, 5, 15), random_bounds(-10, 10, 5, 15));
-    // for (int x = 0; x < 10; ++x)
-    //     generate_random_data(rand, data, random_constant(-10, 10), random_bounds(-10, 10, 5, 15));
-    // for (int x = 0; x < 10; ++x)
-    //     generate_random_data(rand, data, random_bounds(-10, 10, 5, 15), random_constant(-10, 10));
+    random_device rand_dev;
+    mt19937 rand(rand_dev());
+    for (int x = 0; x < 10; ++x)
+        generate_random_data(rand, data, random_bounds(-10, 10, 5, 15), random_bounds(-10, 10, 5, 15));
+    for (int x = 0; x < 10; ++x)
+        generate_random_data(rand, data, random_constant(-10, 10), random_bounds(-10, 10, 5, 15));
+    for (int x = 0; x < 10; ++x)
+        generate_random_data(rand, data, random_bounds(-10, 10, 5, 15), random_constant(-10, 10));
 
     run_no_overlap_equals_test(false);
     for (auto & [r1, r2] : data) {

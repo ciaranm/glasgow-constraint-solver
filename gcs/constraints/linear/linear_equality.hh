@@ -28,10 +28,10 @@ namespace gcs
         Integer _value;
         ReificationCondition _reif_cond;
         bool _gac;
-        bool _flippedCond;
+        bool _flipped_cond;
 
     public:
-        explicit ReifiedLinearEquality(WeightedSum coeff_vars, Integer value, ReificationCondition reif_cond, bool gac = false, bool flippedCond = false);
+        explicit ReifiedLinearEquality(WeightedSum coeff_vars, Integer value, ReificationCondition reif_cond, bool gac = false, bool flipped_cond = false);
 
         virtual auto install(innards::Propagators &, innards::State &,
             innards::ProofModel * const) && -> void override;

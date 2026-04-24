@@ -235,6 +235,7 @@ auto NegativeTable::install(Propagators & propagators, State &, ProofModel * con
     },
         _tuples);
 }
+
 auto NegativeTable::s_exprify(const string & name, const innards::ProofModel * const model) const -> std::string
 {
     stringstream s;
