@@ -765,7 +765,8 @@ auto NamesAndIDsTracker::s_expr_name_of(VariableConditionOperator op) const -> s
     case VariableConditionOperator::GreaterEqual: return "geq";
     case VariableConditionOperator::Less: return "lt";
     }
-    // throw non exhaustive switch
+
+    throw NonExhaustiveSwitch{};
 }
 
 auto NamesAndIDsTracker::reify(const WPBSumLE & ineq, const HalfReifyOnConjunctionOf & half_reif) -> WPBSumLE
