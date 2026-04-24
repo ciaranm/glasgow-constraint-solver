@@ -23,15 +23,14 @@ using std::vector;
 using fmt::print;
 using fmt::println;
 
-
 int main(int argc, char * argv[])
 {
     cxxopts::Options options("Talent Example");
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options()
-            ("help", "Display help information")
+        options.add_options()                    //
+            ("help", "Display help information") //
             ("prove", "Create a proof");
 
         options_vars = options.parse(argc, argv);

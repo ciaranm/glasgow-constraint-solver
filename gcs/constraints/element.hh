@@ -34,7 +34,7 @@ namespace gcs
         using IndexVariables = std::vector<IntegerVariableID>;
         using IndexStarts = std::vector<Integer>;
 
-    private:
+    protected:
         IntegerVariableID _result_var;
         IndexVariables _index_vars;
         IndexStarts _index_starts;
@@ -51,6 +51,7 @@ namespace gcs
     public:
         virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
+        [[nodiscard]] virtual auto s_exprify(const std::string & name, const innards::ProofModel * const) const -> std::string override;
     };
 
     class Element : public NDimensionalElement<IntegerVariableID, 1>

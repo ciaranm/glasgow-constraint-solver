@@ -8,6 +8,7 @@
 #include <gcs/innards/proofs/pseudo_boolean.hh>
 #include <gcs/innards/proofs/reification.hh>
 #include <gcs/proof.hh>
+#include <gcs/reification.hh>
 #include <gcs/variable_condition.hh>
 #include <gcs/variable_id.hh>
 
@@ -275,14 +276,34 @@ namespace gcs::innards
         auto track_variable_name(ProofFlag id, const std::string &) -> void;
 
         /**
-         * Get the human-readable name for a variable.
+         * Get the human-readable / s-expr name for a variable. Currently throws on views.
          */
-        [[nodiscard]] auto name_of(SimpleOrProofOnlyIntegerVariableID id) -> const std::string &;
+        [[nodiscard]] auto s_expr_name_of(IntegerVariableID id) const -> std::string;
+
+        /**
+         * Get the human-readable / s-expr name for a literal. Currently not sure about VariableConditionFrom<IntegerVariableID>
+         */
+        [[nodiscard]] auto s_expr_name_of(Literal lit) const -> std::string;
+
+        /**
+         * Get the human-readable / s-expr name for a reification condition
+         */
+        [[nodiscard]] auto s_expr_name_of(ReificationCondition cond) const -> std::string;
+
+        /**
+         * Get the human-readable / s-expr name for a condition operator
+         */
+        [[nodiscard]] auto s_expr_name_of(VariableConditionOperator op) const -> std::string;
 
         /**
          * Get the human-readable name for a variable.
          */
-        [[nodiscard]] auto name_of(ProofFlag id) -> const std::string &;
+        [[nodiscard]] auto name_of(SimpleOrProofOnlyIntegerVariableID id) const -> const std::string &;
+
+        /**
+         * Get the human-readable name for a variable.
+         */
+        [[nodiscard]] auto name_of(ProofFlag id) const -> const std::string &;
     };
 }
 

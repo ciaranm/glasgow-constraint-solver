@@ -37,7 +37,6 @@ using fmt::format;
 using fmt::print;
 using fmt::println;
 
-
 using namespace std::literals::string_literals;
 
 auto main(int argc, char * argv[]) -> int
@@ -46,13 +45,13 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program Options")
-            ("help", "Display help information")
+        options.add_options("Program Options")   //
+            ("help", "Display help information") //
             ("prove", "Create a proof");
 
-        options.add_options()
-            ("instance", "Problem instance to solve", cxxopts::value<int>()->default_value("7"))
-            ("autotable", "Use autotabulation")
+        options.add_options()                                                                    //
+            ("instance", "Problem instance to solve", cxxopts::value<int>()->default_value("7")) //
+            ("autotable", "Use autotabulation")                                                  //
             ("all", "Find all solutions");
 
         options.parse_positional({"instance", "autotable"});

@@ -113,18 +113,18 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        command_options.add_options("Program options")
-            ("help", "Display help information")
+        command_options.add_options("Program options") //
+            ("help", "Display help information")       //
             ("prove", "Create a proof");
 
-        command_options.add_options()
-            ("n", "Integer value n.", cxxopts::value<int>())
-            ("seed","Random seed.", cxxopts::value<unsigned int>())
-            ("prune_root", "SCC inference", cxxopts::value<bool>())
-            ("prune_skip", "SCC inference", cxxopts::value<bool>())
-            ("fix_req", "SCC inference", cxxopts::value<bool>())
-            ("prune_within", "SCC inference", cxxopts::value<bool>())
-            ("prove_using_dominance", "SCC inference", cxxopts::value<bool>())
+        command_options.add_options()                                          //
+            ("n", "Integer value n.", cxxopts::value<int>())                   //
+            ("seed", "Random seed.", cxxopts::value<unsigned int>())           //
+            ("prune_root", "SCC inference", cxxopts::value<bool>())            //
+            ("prune_skip", "SCC inference", cxxopts::value<bool>())            //
+            ("fix_req", "SCC inference", cxxopts::value<bool>())               //
+            ("prune_within", "SCC inference", cxxopts::value<bool>())          //
+            ("prove_using_dominance", "SCC inference", cxxopts::value<bool>()) //
             ("enable_comments", "SCC inference", cxxopts::value<bool>());
 
         options_vars = command_options.parse(argc, argv);

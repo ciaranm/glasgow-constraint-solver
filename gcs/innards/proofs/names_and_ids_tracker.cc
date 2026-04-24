@@ -10,6 +10,8 @@
 #include <fstream>
 #include <list>
 #include <map>
+#include <sstream>
+#include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -35,6 +37,7 @@ using std::nullopt;
 using std::optional;
 using std::pair;
 using std::string;
+using std::stringstream;
 using std::to_string;
 using std::unordered_map;
 using std::variant;
@@ -701,14 +704,69 @@ auto NamesAndIDsTracker::track_variable_name(ProofFlag id, const string & name) 
     _imp->flag_names.emplace(id, name);
 }
 
-auto NamesAndIDsTracker::name_of(SimpleOrProofOnlyIntegerVariableID id) -> const string &
+auto NamesAndIDsTracker::name_of(SimpleOrProofOnlyIntegerVariableID id) const -> const string &
 {
     return _imp->id_names.at(id);
 }
 
-auto NamesAndIDsTracker::name_of(ProofFlag id) -> const string &
+auto NamesAndIDsTracker::name_of(ProofFlag id) const -> const string &
 {
     return _imp->flag_names.at(id);
+}
+
+auto NamesAndIDsTracker::s_expr_name_of(IntegerVariableID id) const -> string
+{
+    return overloaded{
+        [&](const ConstantIntegerVariableID & c) -> string { return to_string(c.const_value.raw_value); },
+        [&](const SimpleIntegerVariableID & v) -> string { return name_of(v); },
+        [&](const ViewOfIntegerVariableID & vv) -> string {
+            stringstream name;
+            name << "(";
+            name << (vv.negate_first ? "-" : "");
+            name << name_of(vv.actual_variable) << " + " << to_string(vv.then_add.raw_value) << ")";
+            return name.str();
+            throw UnimplementedException{};
+        }}
+        .visit(id);
+}
+
+auto NamesAndIDsTracker::s_expr_name_of(Literal lit) const -> string
+{
+    return overloaded{
+        [](const TrueLiteral &) -> string { return "1"; },
+        [](const FalseLiteral &) -> string { return "0"; },
+        [&](const VariableConditionFrom<SimpleIntegerVariableID> & cond) -> string {
+            return s_expr_name_of(cond.var);
+        },
+        [](const VariableConditionFrom<ProofOnlySimpleIntegerVariableID> &) -> string {
+            throw UnimplementedException{};
+        }}
+        .visit(simplify_literal(lit));
+}
+
+auto NamesAndIDsTracker::s_expr_name_of(ReificationCondition cond) const -> string
+{
+    return overloaded{
+        [](const reif::MustHold &) -> string { return ""; },
+        [](const reif::MustNotHold &) -> string { return ""; },
+        [&](const auto & reif) -> string { // This is safe, right?
+            return "(" + s_expr_name_of(reif.cond.var) + " " + s_expr_name_of(reif.cond.op) + " " + to_string(reif.cond.value.raw_value) + ")";
+        }}
+        .visit(cond);
+
+    return "COND";
+}
+
+auto NamesAndIDsTracker::s_expr_name_of(VariableConditionOperator op) const -> string
+{
+    switch (op) {
+    case VariableConditionOperator::Equal: return "eq";
+    case VariableConditionOperator::NotEqual: return "neq";
+    case VariableConditionOperator::GreaterEqual: return "geq";
+    case VariableConditionOperator::Less: return "lt";
+    }
+
+    throw NonExhaustiveSwitch{};
 }
 
 auto NamesAndIDsTracker::reify(const WPBSumLE & ineq, const HalfReifyOnConjunctionOf & half_reif) -> WPBSumLE

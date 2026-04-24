@@ -12,10 +12,13 @@
 #include <util/enumerate.hh>
 #include <util/overloaded.hh>
 
+#include <fmt/ostream.h>
+
 #include <functional>
 #include <memory>
 #include <sstream>
 #include <type_traits>
+#include <variant>
 #include <vector>
 
 using namespace gcs;
@@ -24,6 +27,7 @@ using namespace gcs::innards;
 using std::decay_t;
 using std::function;
 using std::is_same_v;
+using std::make_pair;
 using std::make_shared;
 using std::move;
 using std::nullopt;
@@ -33,11 +37,14 @@ using std::stringstream;
 using std::unique_ptr;
 using std::vector;
 
-ReifiedLinearEquality::ReifiedLinearEquality(WeightedSum coeff_vars, Integer value, ReificationCondition cond, bool gac) :
+using fmt::print;
+
+ReifiedLinearEquality::ReifiedLinearEquality(WeightedSum coeff_vars, Integer value, ReificationCondition cond, bool gac, bool flipped_cond) :
     _coeff_vars(move(coeff_vars)),
     _value(value),
     _reif_cond(cond),
-    _gac(gac)
+    _gac(gac),
+    _flipped_cond(flipped_cond)
 {
 }
 
@@ -131,7 +138,7 @@ namespace
 
 auto ReifiedLinearEquality::install(Propagators & propagators, State & state, ProofModel * const optional_model) && -> void
 {
-    optional<ProofLine> proof_line;
+    optional<pair<optional<ProofLine>, optional<ProofLine>>> proof_line;
     if (optional_model) {
         WPBSum terms;
         for (auto & [c, v] : _coeff_vars.terms)
@@ -140,7 +147,7 @@ auto ReifiedLinearEquality::install(Propagators & propagators, State & state, Pr
         overloaded{
             [&](const reif::MustHold &) {
                 // condition is definitely true, it's just an inequality
-                proof_line = optional_model->add_constraint("ReifiedLinearEquality", "unconditional sum", terms == _value, nullopt).first.value();
+                proof_line = optional_model->add_constraint("ReifiedLinearEquality", "unconditional sum", terms == _value, nullopt);
             },
             [&](const reif::MustNotHold &) {
                 // condition is definitely false, the flag implies either greater or less
@@ -149,7 +156,7 @@ auto ReifiedLinearEquality::install(Propagators & propagators, State & state, Pr
                 optional_model->add_constraint("ReifiedLinearEquality", "less than option", terms <= _value - 1_i, HalfReifyOnConjunctionOf{{! neflag}});
             },
             [&](const reif::If & cond) {
-                proof_line = optional_model->add_constraint("ReifiedLinearEquality", "unconditional sum", terms == _value, HalfReifyOnConjunctionOf{{cond.cond}}).first.value();
+                proof_line = optional_model->add_constraint("ReifiedLinearEquality", "unconditional sum", terms == _value, HalfReifyOnConjunctionOf{{cond.cond}});
             },
             [&](const reif::NotIf & cond) {
                 // condition is definitely false, the flag implies either greater or less
@@ -159,7 +166,7 @@ auto ReifiedLinearEquality::install(Propagators & propagators, State & state, Pr
             },
             [&](const reif::Iff & cond) {
                 // condition unknown, the condition implies it is neither greater nor less
-                proof_line = optional_model->add_constraint("ReifiedLinearEquality", "equals option", terms == _value, HalfReifyOnConjunctionOf{{cond.cond}}).first.value();
+                proof_line = optional_model->add_constraint("ReifiedLinearEquality", "equals option", terms == _value, HalfReifyOnConjunctionOf{{cond.cond}});
 
                 auto gtflag = optional_model->create_proof_flag("lineqgt");
                 optional_model->add_constraint("ReifiedLinearEquality", "greater option", terms >= _value + 1_i, HalfReifyOnConjunctionOf{{gtflag}});
@@ -285,7 +292,7 @@ auto ReifiedLinearEquality::install(Propagators & propagators, State & state, Pr
                                 return propagate_linear(sanitised_cv, value, state, inference, logger, true, proof_line, reif.cond);
                             },
 
-                            [&](const evaluated_reif::MustNotHold & reif) {
+                            [&](const evaluated_reif::MustNotHold &) {
                                 // we now know the condition definitely doesn't hold, so it's a linear not-equals
                                 return propagate_linear_not_equals(sanitised_cv, value, state, inference, logger, all_vars);
                             },
@@ -366,9 +373,34 @@ auto ReifiedLinearEquality::install(Propagators & propagators, State & state, Pr
     }
 }
 
+auto ReifiedLinearEquality::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
+{
+    stringstream s;
+
+    auto [rei, cons] = overloaded{
+        [&](const reif::MustHold &) { return make_pair(false, "lin_equals"); },
+        [&](const reif::If &) { return make_pair(true, "lin_equals_if"); },
+        [&](const reif::Iff &) { return make_pair(true, _flipped_cond ? "lin_not_equals_iff" : "lin_equals_iff"); },
+        [&](const reif::MustNotHold &) { return make_pair(false, "lin_not_equals"); },
+        [&](const reif::NotIf &) { return make_pair(true, "lin_not_equals_if"); }}
+                           .visit(_reif_cond);
+
+    print(s, "{} {}", name, cons);
+    if (rei) {
+        print(s, " {} ", model->names_and_ids_tracker().s_expr_name_of(_reif_cond));
+    }
+    print(s, " (");
+    for (const auto & [c, v] : _coeff_vars.terms) {
+        print(s, " {} {}", c.raw_value, model->names_and_ids_tracker().s_expr_name_of(v));
+    }
+    print(s, ") {}", _value.raw_value);
+
+    return s.str();
+}
+
 auto ReifiedLinearEquality::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<ReifiedLinearEquality>(WeightedSum{_coeff_vars}, _value, _reif_cond, _gac);
+    return make_unique<ReifiedLinearEquality>(WeightedSum{_coeff_vars}, _value, _reif_cond, _gac, _flipped_cond);
 }
 
 LinearEquality::LinearEquality(WeightedSum coeff_vars, Integer value, bool gac) :
@@ -410,6 +442,6 @@ LinearNotEqualsIf::LinearNotEqualsIf(WeightedSum coeff_vars, Integer value, Lite
 }
 
 LinearNotEqualsIff::LinearNotEqualsIff(WeightedSum coeff_vars, Integer value, Literal cond, bool gac) :
-    ReifiedLinearEquality(move(coeff_vars), value, literal_to_reif<reif::Iff>(! cond), gac)
+    ReifiedLinearEquality(move(coeff_vars), value, literal_to_reif<reif::Iff>(! cond), gac, true)
 {
 }

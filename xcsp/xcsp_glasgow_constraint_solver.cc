@@ -638,7 +638,11 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::Options options("XCSP Glasgow Constraint Solver", "Get started by using option --help");
 
     try {
-        options.add_options("Program Options")("help", "Display help information")("prove", "Create a proof")("all", "Find all solutions")("timeout", "Timeout in seconds", cxxopts::value<int>());
+        options.add_options("Program Options")   //
+            ("help", "Display help information") //
+            ("prove", "Create a proof")          //
+            ("all", "Find all solutions")        //
+            ("timeout", "Timeout in seconds", cxxopts::value<int>());
 
         options.add_options()("file", "Input file in XCSP format", cxxopts::value<string>());
 

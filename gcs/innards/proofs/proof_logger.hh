@@ -13,9 +13,39 @@
 
 #include <map>
 #include <memory>
+#include <string>
 
 namespace gcs::innards
 {
+    struct ProofLineNumber
+    {
+        long long number;
+
+        [[nodiscard]] auto operator<=>(const ProofLineNumber &) const = default;
+    };
+
+    struct ProofLineLabel
+    {
+        std::string label;
+
+        [[nodiscard]] auto operator<=>(const ProofLineLabel &) const = default;
+    };
+
+    inline auto operator<<(std::ostream & s, const ProofLineNumber & n) -> std::ostream &
+    {
+        return s << n.number;
+    }
+
+    inline auto operator<<(std::ostream & s, const ProofLineLabel & l) -> std::ostream &
+    {
+        return s << "@" << l.label;
+    }
+
+    inline auto operator<<(std::ostream & s, const ProofLine & l) -> std::ostream &
+    {
+        return std::visit([&](const auto & l) -> std::ostream & { return s << l; }, l);
+    }
+
     using Subproof = std::function<auto(ProofLogger &)->void>;
 
     struct RUPProofRule
@@ -33,17 +63,26 @@ namespace gcs::innards
 
     using ProofRule = std::variant<RUPProofRule, AssertProofRule, ImpliesProofRule>;
 
+    using ProofGoal = std::variant<ProofLine, std::string>;
+
+    inline auto operator<<(std::ostream & s, const ProofGoal & l) -> std::ostream &
+    {
+        return std::visit([&](const auto & l) -> std::ostream & { return s << l; }, l);
+    }
+
     class ProofLogger
     {
     private:
         struct Imp;
         std::unique_ptr<Imp> _imp;
 
-        auto record_proof_line(ProofLine line, ProofLevel level) -> ProofLine;
+        auto advance_proof_line_number() -> ProofLineNumber;
+
+        auto record_proof_line(ProofLineNumber line, ProofLevel level) -> ProofLineNumber;
 
         auto end_proof() -> void;
 
-        auto emit_subproofs(const std::map<std::string, Subproof> & subproofs) -> auto;
+        auto emit_subproofs(const std::map<ProofGoal, Subproof> & subproofs) -> auto;
 
     public:
         /**
@@ -87,9 +126,14 @@ namespace gcs::innards
         auto conclude_unsatisfiable(bool is_optimisation) -> void;
 
         /**
-         * Log that we have reached an unsatisfiable conclusion at the end of the proof.
+         * Log that we have found at least one solution, but possibly have not performed a complete search.
          */
         auto conclude_satisfiable() -> void;
+
+        /**
+         * Log that we have found at least one solution, and that we have performed a complete search.
+         */
+        auto conclude_complete_enumeration(Integer number_of_solutions) -> void;
 
         /**
          * Log that we have reached an optimality conclusion at the end of the proof.
@@ -211,7 +255,7 @@ namespace gcs::innards
          */
         auto emit_red_proof_line(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &,
             const std::vector<std::pair<ProofLiteralOrFlag, ProofLiteralOrFlag>> & witness, ProofLevel level,
-            const std::optional<std::map<std::string, Subproof>> & subproofs = std::nullopt
+            const std::optional<std::map<ProofGoal, Subproof>> & subproofs = std::nullopt
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
             ,
             const std::source_location & w = std::source_location::current()
@@ -222,7 +266,7 @@ namespace gcs::innards
          * Emit a RED proof step for flag => specified expresion, creating a half reification.
          */
         auto emit_red_proof_lines_forward_reifying(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
-            ProofLiteralOrFlag reif, ProofLevel level, const std::optional<std::map<std::string, Subproof>> & subproof = std::nullopt
+            ProofLiteralOrFlag reif, ProofLevel level, const std::optional<std::map<ProofGoal, Subproof>> & subproof = std::nullopt
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
             ,
             const std::source_location & w = std::source_location::current()
@@ -233,7 +277,7 @@ namespace gcs::innards
          * Emit a RED proof step for ~flag => ~specified expresion, creating a reverse half reification.
          */
         auto emit_red_proof_lines_reverse_reifying(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &,
-            ProofLiteralOrFlag, ProofLevel level, const std::optional<std::map<std::string, Subproof>> & subproof = std::nullopt
+            ProofLiteralOrFlag, ProofLevel level, const std::optional<std::map<ProofGoal, Subproof>> & subproof = std::nullopt
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
             ,
             const std::source_location & w = std::source_location::current()

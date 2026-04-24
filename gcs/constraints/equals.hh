@@ -29,16 +29,18 @@ namespace gcs
     private:
         IntegerVariableID _v1, _v2;
         ReificationCondition _cond;
-        innards::EvaluatedReificationCondition evaluated_cond;
+        bool _neq;
+        innards::EvaluatedReificationCondition _evaluated_cond;
         virtual auto define_proof_model(innards::ProofModel &) -> void override;
         virtual auto install_propagators(innards::Propagators &) -> void override;
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
 
     public:
-        ReifiedEquals(const IntegerVariableID v1, const IntegerVariableID v2, ReificationCondition cond);
+        ReifiedEquals(const IntegerVariableID v1, const IntegerVariableID v2, ReificationCondition cond, bool neq = false);
 
         virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
+        [[nodiscard]] virtual auto s_exprify(const std::string & name, const innards::ProofModel * const) const -> std::string override;
     };
 
     /**

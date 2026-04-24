@@ -2,13 +2,20 @@
 #include <gcs/constraints/min_max.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
 
 #include <util/enumerate.hh>
 
+#include <sstream>
+
+#include <fmt/core.h>
+#include <fmt/ostream.h>
+
 #include <algorithm>
+#include <sstream>
 #include <string>
 
 using namespace gcs;
@@ -18,10 +25,13 @@ using std::nullopt;
 using std::optional;
 using std::pair;
 using std::string;
+using std::stringstream;
 using std::to_string;
 using std::unique_ptr;
 using std::vector;
 using std::ranges::any_of;
+
+using fmt::print;
 
 ArrayMinMax::ArrayMinMax(vector<IntegerVariableID> vars, const IntegerVariableID result, bool min) :
     _vars(move(vars)),
@@ -177,6 +187,19 @@ auto ArrayMinMax::define_proof_model(ProofModel & model) -> void
 
     // sum f_i >= 1
     model.add_constraint("ArrayMinMax", "result is one of the values", al1_selector >= 1_i);
+}
+
+auto ArrayMinMax::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
+{
+    stringstream s;
+
+    print(s, "{} {} (", name, _min ? "min" : "max");
+    for (const auto & v : _vars) {
+        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(v));
+    }
+    print(s, ") {}", model->names_and_ids_tracker().s_expr_name_of(_result));
+
+    return s.str();
 }
 
 Min::Min(const IntegerVariableID v1, const IntegerVariableID v2, const IntegerVariableID result) :

@@ -24,20 +24,18 @@ using std::make_optional;
 using std::nullopt;
 using std::vector;
 
-
 auto main(int argc, char * argv[]) -> int
 {
     cxxopts::Options options("Magic Square");
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program Options")
-            ("help", "Display help information")
-            ("prove", "Create a proof")
+        options.add_options("Program Options")   //
+            ("help", "Display help information") //
+            ("prove", "Create a proof")          //
             ("all-different", "Use AllDifferent rather than inequalities");
 
-        options.add_options()
-            ("size", "Size of the problem to solve", cxxopts::value<int>()->default_value("5"));
+        options.add_options()("size", "Size of the problem to solve", cxxopts::value<int>()->default_value("5"));
 
         options.parse_positional({"size"});
 

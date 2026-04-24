@@ -1,6 +1,7 @@
 #include <gcs/constraints/abs.hh>
 #include <gcs/constraints/abs/justify.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
@@ -8,6 +9,10 @@
 
 #include <algorithm>
 #include <optional>
+#include <sstream>
+
+#include <fmt/core.h>
+#include <fmt/ostream.h>
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -15,8 +20,13 @@ using namespace gcs::innards;
 using std::max;
 using std::optional;
 using std::pair;
+using std::string;
+using std::stringstream;
 using std::unique_ptr;
 using std::vector;
+
+using fmt::print;
+using fmt::println;
 
 Abs::Abs(const IntegerVariableID v1, const IntegerVariableID v2) :
     _v1(v1),
@@ -29,10 +39,9 @@ auto Abs::clone() const -> unique_ptr<Constraint>
     return make_unique<Abs>(_v1, _v2);
 }
 
-
 auto Abs::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
-    if (!prepare(propagators, initial_state, optional_model)) 
+    if (! prepare(propagators, initial_state, optional_model))
         return;
 
     if (optional_model)
@@ -89,4 +98,15 @@ auto Abs::prepare(Propagators & propagators, State & initial_state, ProofModel *
     propagators.trim_upper_bound(initial_state, optional_model, _v2, v2u, "Abs");
 
     return true;
+}
+
+auto Abs::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
+{
+    stringstream s;
+
+    print(s, "{} abs", name);
+    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v1));
+    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v2));
+
+    return s.str();
 }

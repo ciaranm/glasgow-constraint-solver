@@ -7,6 +7,8 @@
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
 
+#include <fmt/ostream.h>
+
 #include <util/enumerate.hh>
 
 #include <algorithm>
@@ -32,9 +34,12 @@ using std::pair;
 using std::set;
 using std::size_t;
 using std::string;
+using std::stringstream;
 using std::to_string;
 using std::unique_ptr;
 using std::vector;
+
+using fmt::print;
 
 Knapsack::Knapsack(vector<Integer> weights, vector<Integer> profits,
     vector<IntegerVariableID> vars, IntegerVariableID weight, IntegerVariableID profit) :
@@ -60,12 +65,19 @@ auto Knapsack::clone() const -> unique_ptr<Constraint>
 
 namespace
 {
+    auto stringify(const auto & p) -> string
+    {
+        stringstream s;
+        s << p;
+        return s.str();
+    }
+
     auto prepare_and_get_bound_p_term(const State & state, ProofLogger * const logger, IntegerVariableID var, bool upper) -> string
     {
         return overloaded{
             [&](const SimpleIntegerVariableID & var) -> string {
                 return overloaded{
-                    [&](const ProofLine & line) { return to_string(line); },
+                    [&](const ProofLine & line) { return visit([&](const auto & l) { std::stringstream s; s << l; return s.str(); }, line); },
                     [&](const XLiteral & s) { return logger->names_and_ids_tracker().pb_file_string_for(s); }}
                     .visit(logger->names_and_ids_tracker().need_pol_item_defining_literal(upper ? var < state.upper_bound(var) + 1_i : var >= state.lower_bound(var)));
             },
@@ -180,7 +192,7 @@ namespace
                             auto ge_data = growing_layer_ge_datas.at(x).find(new_sums.at(x));
                             if (ge_data == growing_layer_ge_datas.at(x).end()) {
                                 auto [flag, fwd, rev] = logger->create_proof_flag_reifying(
-                                    sums_so_far.at(x) >= new_sums.at(x), "s" + to_string(layer_number) + "x" + to_string(x) + "ge" + to_string(new_sums.at(x).raw_value),
+                                    sums_so_far.at(x) >= new_sums.at(x), "s" + stringify(layer_number) + "x" + stringify(x) + "ge" + stringify(new_sums.at(x).raw_value),
                                     ProofLevel::Temporary);
                                 ge_data = growing_layer_ge_datas.at(x).emplace(new_sums.at(x), NodeInequalityData{flag, fwd, rev}).first;
                             }
@@ -189,7 +201,7 @@ namespace
                             auto le_data = growing_layer_le_datas.at(x).find(new_sums.at(x));
                             if (le_data == growing_layer_le_datas.at(x).end()) {
                                 auto [flag, fwd, rev] = logger->create_proof_flag_reifying(
-                                    sums_so_far.at(x) <= new_sums.at(x), "s" + to_string(layer_number) + "x" + to_string(x) + "le" + to_string(new_sums.at(x).raw_value),
+                                    sums_so_far.at(x) <= new_sums.at(x), "s" + stringify(layer_number) + "x" + stringify(x) + "le" + stringify(new_sums.at(x).raw_value),
                                     ProofLevel::Temporary);
                                 le_data = growing_layer_le_datas.at(x).emplace(new_sums.at(x), NodeInequalityData{flag, fwd, rev}).first;
                             }
@@ -207,7 +219,7 @@ namespace
                             for (auto & l : le_datas) {
                                 all += 1_i * l->second.reif_flag;
                                 name += "_";
-                                name += to_string(l->first.raw_value);
+                                name += stringify(l->first.raw_value);
                                 les.push_back(l->second);
                             }
                             for (auto & g : ge_datas) {
@@ -216,7 +228,7 @@ namespace
                             }
 
                             auto [flag, _1, _2] = logger->create_proof_flag_reifying(all >= Integer(all.terms.size()),
-                                "s" + to_string(layer_number) + "x" + name, ProofLevel::Temporary);
+                                "s" + stringify(layer_number) + "x" + name, ProofLevel::Temporary);
                             node_data = growing_layer_nodes.emplace(new_sums, FullNodeData{flag, ges, les, {}}).first;
                         }
                         node_data->second->predecessors.emplace_back(sums, val);
@@ -229,8 +241,8 @@ namespace
                             // current choices and branch -> partial sum >= value
                             if (completed_node_data)
                                 logger->emit_proof_line("pol " +
-                                        to_string(ge_datas.at(x)->second.reverse_reif_line) + " " +
-                                        to_string(completed_node_data->ges.at(x).forward_reif_line) + " +;",
+                                        stringify(ge_datas.at(x)->second.reverse_reif_line) + " " +
+                                        stringify(completed_node_data->ges.at(x).forward_reif_line) + " +;",
                                     ProofLevel::Temporary);
                             logger->emit_rup_proof_line_under_reason(generic_reason(state, reason_variables),
                                 WPBSum{} + 1_i * not_in_ge_states.at(x) + 1_i * not_choice + 1_i * ge_datas.at(x)->second.reif_flag >= 1_i,
@@ -242,8 +254,8 @@ namespace
                             // current choices and branch -> partial sum <= value
                             if (completed_node_data)
                                 logger->emit_proof_line("pol " +
-                                        to_string(le_datas.at(x)->second.reverse_reif_line) + " " +
-                                        to_string(completed_node_data->les.at(x).forward_reif_line) + " +;",
+                                        stringify(le_datas.at(x)->second.reverse_reif_line) + " " +
+                                        stringify(completed_node_data->les.at(x).forward_reif_line) + " +;",
                                     ProofLevel::Temporary);
                             logger->emit_rup_proof_line_under_reason(generic_reason(state, reason_variables),
                                 WPBSum{} + 1_i * not_in_le_states.at(x) + 1_i * not_choice + 1_i * le_datas.at(x)->second.reif_flag >= 1_i,
@@ -264,8 +276,8 @@ namespace
                         for (const auto & [x, _] : enumerate(totals)) {
                             if (committed.at(x) + new_sums.at(x) > bounds.at(x).second) {
                                 auto weight_var_str = prepare_and_get_bound_p_term(state, logger, totals.at(x), true);
-                                logger->emit_proof_line("pol " + to_string(ge_datas.at(x)->second.forward_reif_line) + " " +
-                                        to_string(opb_lines->at(x).first) + " + " + weight_var_str + " +;",
+                                logger->emit_proof_line("pol " + stringify(ge_datas.at(x)->second.forward_reif_line) + " " +
+                                        stringify(opb_lines->at(x).first) + " + " + weight_var_str + " +;",
                                     ProofLevel::Temporary);
                                 logger->emit_rup_proof_line_under_reason(generic_reason(state, reason_variables),
                                     WPBSum{} + 1_i * not_in_ge_states.at(x) + 1_i * not_choice >= 1_i,
@@ -362,8 +374,8 @@ namespace
                 if (committed.at(x) + final_states_iter->first.at(x) < bounds.at(x).first) {
                     if constexpr (doing_proof_) {
                         auto weight_var_str = prepare_and_get_bound_p_term(state, logger, totals.at(x), false);
-                        logger->emit_proof_line("pol " + to_string(final_states_iter->second->les.at(x).forward_reif_line) +
-                                " " + to_string(opb_lines->at(x).second) + " + " + weight_var_str + " +;",
+                        logger->emit_proof_line("pol " + stringify(final_states_iter->second->les.at(x).forward_reif_line) +
+                                " " + stringify(opb_lines->at(x).second) + " + " + weight_var_str + " +;",
                             ProofLevel::Temporary);
                         logger->emit_rup_proof_line_under_reason(generic_reason(state, reason_variables),
                             WPBSum{} + 1_i * ! final_states_iter->second->les.at(x).reif_flag >= 1_i,
@@ -389,11 +401,11 @@ namespace
                 auto val = committed.at(x) + final_states_iter->first.at(x);
                 if (! state.in_domain(totals.at(x), val)) {
                     if constexpr (doing_proof_) {
-                        logger->emit_proof_line("pol " + to_string(final_states_iter->second->les.at(x).forward_reif_line) +
-                                " " + to_string(opb_lines->at(x).second) + " +;",
+                        logger->emit_proof_line("pol " + stringify(final_states_iter->second->les.at(x).forward_reif_line) +
+                                " " + stringify(opb_lines->at(x).second) + " +;",
                             ProofLevel::Temporary);
-                        logger->emit_proof_line("pol " + to_string(final_states_iter->second->ges.at(x).forward_reif_line) +
-                                " " + to_string(opb_lines->at(x).first) + " +;",
+                        logger->emit_proof_line("pol " + stringify(final_states_iter->second->ges.at(x).forward_reif_line) +
+                                " " + stringify(opb_lines->at(x).first) + " +;",
                             ProofLevel::Temporary);
                         logger->emit_rup_proof_line_under_reason(generic_reason(state, reason_variables),
                             WPBSum{} + 1_i * ! *final_states_iter->second->reif_flag + 1_i * (totals.at(x) == val) >= 1_i,
@@ -449,14 +461,14 @@ namespace
                             continue;
 
                         auto no_support_ge = WPBSum{} + 1_i * ! data->ges.at(x).reif_flag;
-                        logger->emit_proof_line("pol " + to_string(opb_lines->at(x).first) + " " + to_string(data->ges.at(x).forward_reif_line) + " +;",
+                        logger->emit_proof_line("pol " + stringify(opb_lines->at(x).first) + " " + stringify(data->ges.at(x).forward_reif_line) + " +;",
                             ProofLevel::Temporary);
                         logger->emit_rup_proof_line_under_reason(generic_reason(state, reason_variables),
                             no_support_ge + 1_i * (totals.at(x) >= committed.at(x) + lowest) >= 1_i,
                             ProofLevel::Temporary);
 
                         auto no_support_le = WPBSum{} + 1_i * ! data->les.at(x).reif_flag;
-                        logger->emit_proof_line("pol " + to_string(opb_lines->at(x).second) + " " + to_string(data->les.at(x).forward_reif_line) + " +;",
+                        logger->emit_proof_line("pol " + stringify(opb_lines->at(x).second) + " " + stringify(data->les.at(x).forward_reif_line) + " +;",
                             ProofLevel::Temporary);
                         logger->emit_rup_proof_line_under_reason(generic_reason(state, reason_variables),
                             no_support_le + 1_i * (totals.at(x) < 1_i + committed.at(x) + highest) >= 1_i,
@@ -634,4 +646,26 @@ auto Knapsack::install_propagators(Propagators & propagators) -> void
             return knapsack(state, logger, inference, coeffs, vars, totals, eqns_lines);
         },
         triggers, "knapsack");
+}
+
+auto Knapsack::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
+{
+    stringstream s;
+
+    print(s, "{} knapsack\n            (", name);
+    for (const auto & cs : _coeffs) {
+        print(s, "\n                (");
+        for (const auto & c : cs)
+            print(s, " {}", c.raw_value);
+        print(s, ")");
+    }
+    print(s, "\n            )\n            (");
+    for (const auto & v : _vars)
+        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(v));
+    print(s, ")\n            (");
+    for (const auto & t : _totals)
+        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(t));
+    print(s, ")\n        ");
+
+    return s.str();
 }

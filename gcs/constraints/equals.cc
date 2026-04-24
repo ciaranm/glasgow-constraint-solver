@@ -1,6 +1,7 @@
 #include <gcs/constraints/equals.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
@@ -10,6 +11,9 @@
 #include <algorithm>
 #include <sstream>
 #include <vector>
+
+#include <fmt/core.h>
+#include <fmt/ostream.h>
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -24,6 +28,8 @@ using std::string;
 using std::stringstream;
 using std::unique_ptr;
 using std::vector;
+
+using fmt::print;
 
 auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1, const auto & v2, const State & state,
     auto & inference, const Reason & reason) -> PropagatorState
@@ -89,11 +95,12 @@ namespace
     }
 }
 
-ReifiedEquals::ReifiedEquals(const IntegerVariableID v1, const IntegerVariableID v2, ReificationCondition cond) :
+ReifiedEquals::ReifiedEquals(const IntegerVariableID v1, const IntegerVariableID v2, ReificationCondition cond, bool neq) :
     _v1(v1),
     _v2(v2),
     _cond(cond),
-    evaluated_cond(evaluated_reif::Deactivated{})
+    _neq(neq),
+    _evaluated_cond(evaluated_reif::Deactivated{})
 {
 }
 
@@ -104,7 +111,7 @@ auto ReifiedEquals::clone() const -> unique_ptr<Constraint>
 
 auto ReifiedEquals::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
-    if (!prepare(propagators, initial_state, optional_model)) 
+    if (! prepare(propagators, initial_state, optional_model))
         return;
 
     if (optional_model)
@@ -115,7 +122,7 @@ auto ReifiedEquals::install(Propagators & propagators, State & initial_state, Pr
 
 auto ReifiedEquals::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
 {
-    evaluated_cond = initial_state.test_reification_condition(_cond);
+    _evaluated_cond = initial_state.test_reification_condition(_cond);
     return true;
 }
 
@@ -294,7 +301,7 @@ auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
         [&](const evaluated_reif::Deactivated &) {
         },
     }
-        .visit(evaluated_cond);
+        .visit(_evaluated_cond);
 }
 
 Equals::Equals(const IntegerVariableID v1, const IntegerVariableID v2) :
@@ -313,18 +320,39 @@ EqualsIff::EqualsIff(const IntegerVariableID v1, const IntegerVariableID v2, Int
 }
 
 NotEquals::NotEquals(const IntegerVariableID v1, const IntegerVariableID v2) :
-    ReifiedEquals(v1, v2, reif::MustNotHold{})
+    ReifiedEquals(v1, v2, reif::MustNotHold{}, true)
 {
 }
 
 NotEqualsIf::NotEqualsIf(const IntegerVariableID v1, const IntegerVariableID v2, IntegerVariableCondition cond) :
-    ReifiedEquals(v1, v2, reif::NotIf{cond})
+    ReifiedEquals(v1, v2, reif::NotIf{cond}, true)
 {
 }
 
 NotEqualsIff::NotEqualsIff(const IntegerVariableID v1, const IntegerVariableID v2, IntegerVariableCondition cond) :
-    ReifiedEquals(v1, v2, reif::Iff{! cond})
+    ReifiedEquals(v1, v2, reif::Iff{! cond}, true)
 {
+}
+
+auto ReifiedEquals::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
+{
+    stringstream s;
+
+    string constraint_type = overloaded{
+        [](const reif::MustHold &) -> string { return "equals"; },
+        [](const reif::MustNotHold &) -> string { return "not_equals"; },
+        [](const reif::If &) -> string { return "equals_if"; },
+        [](const reif::NotIf &) -> string { return "not_equals_if"; },
+        [&](const reif::Iff &) -> string {
+            return _neq ? "not_equals_iff" : "equals_iff";
+        }}.visit(_cond);
+
+    print(s, "{} {}", name, constraint_type);
+    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_cond));
+    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v1));
+    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v2));
+
+    return s.str();
 }
 
 template auto gcs::innards::enforce_equality(ProofLogger * const logger, const IntegerVariableID & v1, const IntegerVariableID & v2, const State & state,

@@ -28,14 +28,16 @@ namespace gcs
         Integer _value;
         ReificationCondition _reif_cond;
         bool _gac;
+        bool _flipped_cond;
 
     public:
-        explicit ReifiedLinearEquality(WeightedSum coeff_vars, Integer value, ReificationCondition reif_cond, bool gac = false);
+        explicit ReifiedLinearEquality(WeightedSum coeff_vars, Integer value, ReificationCondition reif_cond, bool gac = false, bool flipped_cond = false);
 
         virtual auto install(innards::Propagators &, innards::State &,
             innards::ProofModel * const) && -> void override;
 
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
+        [[nodiscard]] virtual auto s_exprify(const std::string & name, const innards::ProofModel * const) const -> std::string override;
     };
 
     class LinearEquality : public ReifiedLinearEquality

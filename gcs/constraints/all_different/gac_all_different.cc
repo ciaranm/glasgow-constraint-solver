@@ -10,6 +10,8 @@
 #include <gcs/innards/state.hh>
 #include <gcs/innards/variable_id_utils.hh>
 
+#include <fmt/ostream.h>
+
 #include <util/enumerate.hh>
 #include <util/overloaded.hh>
 
@@ -40,11 +42,14 @@ using std::optional;
 using std::pair;
 using std::shared_ptr;
 using std::sort;
+using std::string;
 using std::stringstream;
 using std::unique_ptr;
 using std::variant;
 using std::vector;
 using std::visit;
+
+using fmt::print;
 
 GACAllDifferent::GACAllDifferent(vector<IntegerVariableID> v) :
     _vars(move(v))
@@ -583,3 +588,15 @@ template auto gcs::innards::propagate_gac_all_different(
     const State & state,
     EagerProofLoggingInferenceTracker & inference_tracker,
     ProofLogger * const logger) -> void;
+
+auto GACAllDifferent::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
+{
+    stringstream s;
+
+    print(s, "{} all_different (", name);
+    for (const auto & var : _vars)
+        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
+    print(s, ")");
+
+    return s.str();
+}

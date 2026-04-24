@@ -1,4 +1,5 @@
 #include <gcs/constraints/all_different/encoding.hh>
+#include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 
 using std::vector;

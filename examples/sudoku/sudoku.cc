@@ -24,7 +24,6 @@ using std::vector;
 using fmt::print;
 using fmt::println;
 
-
 using namespace std::literals::string_literals;
 
 auto main(int argc, char * argv[]) -> int
@@ -33,13 +32,13 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program Options")
-            ("help", "Display help information")
-            ("prove", "Create a proof")
+        options.add_options("Program Options")   //
+            ("help", "Display help information") //
+            ("prove", "Create a proof")          //
             ("trace", "Trace progress");
 
-        options.add_options("Extended Options")
-            ("xv", "Solve the xv puzzle instead")
+        options.add_options("Extended Options")   //
+            ("xv", "Solve the xv puzzle instead") //
             ("all", "Find all solutions");
 
         options_vars = options.parse(argc, argv);

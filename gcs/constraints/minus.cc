@@ -1,16 +1,26 @@
 #include <gcs/constraints/minus.hh>
 #include <gcs/constraints/plus.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
+
+#include <sstream>
+
+#include <fmt/core.h>
+#include <fmt/ostream.h>
 
 using namespace gcs;
 using namespace gcs::innards;
 
 using std::optional;
 using std::pair;
+using std::string;
+using std::stringstream;
 using std::unique_ptr;
+
+using fmt::print;
 
 Minus::Minus(IntegerVariableID a, IntegerVariableID b, IntegerVariableID result) :
     _a(a),
@@ -45,7 +55,20 @@ auto Minus::install_propagators(Propagators & propagators) -> void
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             return propagate_plus(a, -b, result, state, inference, logger, sum_line);
         },
-        triggers, "plus");
+        triggers, "minus");
+}
+
+auto Minus::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
+{
+    stringstream s;
+
+    print(s, "{} minus (", name);
+    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_a));
+    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_b));
+    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_result));
+    print(s, ")");
+
+    return s.str();
 }
 
 auto Minus::define_proof_model(ProofModel & model) -> void

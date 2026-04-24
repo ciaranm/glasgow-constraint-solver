@@ -1,6 +1,7 @@
 #include <gcs/constraints/comparison.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
@@ -8,33 +9,41 @@
 
 #include <util/overloaded.hh>
 
+#include <fmt/ostream.h>
+
+#include <sstream>
+#include <string>
+
 using namespace gcs;
 using namespace gcs::innards;
 
 using std::nullopt;
 using std::optional;
 using std::pair;
+using std::string;
+using std::stringstream;
 using std::unique_ptr;
 
-ReifiedCompareLessThanOrMaybeEqual::ReifiedCompareLessThanOrMaybeEqual(const IntegerVariableID v1, const IntegerVariableID v2, ReificationCondition cond, bool or_equal) :
+using fmt::print;
+
+ReifiedCompareLessThanOrMaybeEqual::ReifiedCompareLessThanOrMaybeEqual(const IntegerVariableID v1, const IntegerVariableID v2, ReificationCondition cond, bool or_equal, bool vars_swapped) :
     _v1(v1),
     _v2(v2),
     _reif_cond(cond),
     _or_equal(or_equal),
-    // I don't really want to instantiate this here, but apparently I must.
-    // The same thing happens in ReifiedEquals.
-    evaluated_cond(evaluated_reif::Deactivated{})
+    _vars_swapped(vars_swapped),
+    _evaluated_cond(evaluated_reif::Deactivated{})
 {
 }
 
 auto ReifiedCompareLessThanOrMaybeEqual::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<ReifiedCompareLessThanOrMaybeEqual>(_v1, _v2, _reif_cond, _or_equal);
+    return make_unique<ReifiedCompareLessThanOrMaybeEqual>(_v1, _v2, _reif_cond, _or_equal, _vars_swapped);
 }
 
 auto ReifiedCompareLessThanOrMaybeEqual::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
-    if (!prepare(propagators, initial_state, optional_model)) 
+    if (! prepare(propagators, initial_state, optional_model))
         return;
 
     if (optional_model)
@@ -73,7 +82,7 @@ auto ReifiedCompareLessThanOrMaybeEqual::prepare(Propagators &, State & initial_
 {
     v1_is_constant = initial_state.optional_single_value(_v1);
     v2_is_constant = initial_state.optional_single_value(_v2);
-    evaluated_cond = initial_state.test_reification_condition(_reif_cond);
+    _evaluated_cond = initial_state.test_reification_condition(_reif_cond);
     return true;
 }
 
@@ -113,7 +122,7 @@ auto ReifiedCompareLessThanOrMaybeEqual::install_propagators(Propagators & propa
             },
             [](const evaluated_reif::Deactivated &) {
             }}
-            .visit(evaluated_cond);
+            .visit(_evaluated_cond);
     }
     else {
         overloaded{
@@ -190,6 +199,37 @@ auto ReifiedCompareLessThanOrMaybeEqual::install_propagators(Propagators & propa
             },
             [](const evaluated_reif::Deactivated &) {
             }}
-            .visit(evaluated_cond);
+            .visit(_evaluated_cond);
     }
+}
+
+auto ReifiedCompareLessThanOrMaybeEqual::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
+{
+    stringstream s;
+
+    auto reif = overloaded{
+        [&](const reif::MustHold &) -> string { return ""; },
+        [&](const reif::If &) -> string { return "_if"; },
+        [&](const reif::Iff &) -> string { return "_iff"; },
+        [&](const auto &) -> string { throw UnexpectedException{"Unexpected reification type in s_exprify"}; }}
+                    .visit(_reif_cond);
+
+    string cmp = fmt::format("{}{}{}",
+        _vars_swapped ? "greater_than" : "less_than",
+        _or_equal ? "_equal" : "",
+        reif);
+
+    if (reif.empty()) {
+        print(s, "{} {} {} {}", name, cmp,
+            model->names_and_ids_tracker().s_expr_name_of(_v1),
+            model->names_and_ids_tracker().s_expr_name_of(_v2));
+    }
+    else {
+        print(s, "{} {} {} {} {}", name, cmp,
+            model->names_and_ids_tracker().s_expr_name_of(_reif_cond),
+            model->names_and_ids_tracker().s_expr_name_of(_v1),
+            model->names_and_ids_tracker().s_expr_name_of(_v2));
+    }
+
+    return s.str();
 }

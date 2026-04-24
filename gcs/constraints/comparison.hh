@@ -32,19 +32,21 @@ namespace gcs
         ReificationCondition _reif_cond;
         bool _full_reif;
         bool _or_equal;
+        bool _vars_swapped;
         std::optional<Integer> v1_is_constant;
         std::optional<Integer> v2_is_constant;
-        innards::EvaluatedReificationCondition evaluated_cond;
+        innards::EvaluatedReificationCondition _evaluated_cond;
         virtual auto define_proof_model(innards::ProofModel &) -> void override;
         virtual auto install_propagators(innards::Propagators &) -> void override;
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
 
     public:
-        explicit ReifiedCompareLessThanOrMaybeEqual(const IntegerVariableID v1, const IntegerVariableID v2, ReificationCondition cond, bool or_equal);
+        explicit ReifiedCompareLessThanOrMaybeEqual(const IntegerVariableID v1, const IntegerVariableID v2, ReificationCondition cond, bool or_equal, bool vars_swapped = false);
 
         virtual auto install(innards::Propagators &, innards::State &,
             innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
+        [[nodiscard]] virtual auto s_exprify(const std::string & name, const innards::ProofModel * const) const -> std::string override;
     };
 
     /**
@@ -92,7 +94,7 @@ namespace gcs
     {
     public:
         inline explicit GreaterThan(const IntegerVariableID v1, const IntegerVariableID v2) :
-            ReifiedCompareLessThanOrMaybeEqual(v2, v1, reif::MustHold{}, false) {};
+            ReifiedCompareLessThanOrMaybeEqual(v2, v1, reif::MustHold{}, false, true) {};
     };
 
     /**
@@ -104,7 +106,7 @@ namespace gcs
     {
     public:
         inline explicit GreaterThanIf(const IntegerVariableID v1, const IntegerVariableID v2, IntegerVariableCondition cond) :
-            ReifiedCompareLessThanOrMaybeEqual(v2, v1, reif::If{cond}, false) {};
+            ReifiedCompareLessThanOrMaybeEqual(v2, v1, reif::If{cond}, false, true) {};
     };
 
     /**
@@ -116,7 +118,7 @@ namespace gcs
     {
     public:
         inline explicit GreaterThanEqual(const IntegerVariableID v1, const IntegerVariableID v2) :
-            ReifiedCompareLessThanOrMaybeEqual(v2, v1, reif::MustHold{}, true) {};
+            ReifiedCompareLessThanOrMaybeEqual(v2, v1, reif::MustHold{}, true, true) {};
     };
 
     /**
@@ -164,7 +166,7 @@ namespace gcs
     {
     public:
         inline explicit GreaterThanIff(const IntegerVariableID v1, const IntegerVariableID v2, IntegerVariableCondition cond) :
-            ReifiedCompareLessThanOrMaybeEqual(v2, v1, reif::Iff{cond}, false) {};
+            ReifiedCompareLessThanOrMaybeEqual(v2, v1, reif::Iff{cond}, false, true) {};
     };
 
     /**
@@ -176,7 +178,7 @@ namespace gcs
     {
     public:
         inline explicit GreaterThanEqualIf(const IntegerVariableID v1, const IntegerVariableID v2, IntegerVariableCondition cond) :
-            ReifiedCompareLessThanOrMaybeEqual(v2, v1, reif::If{cond}, true) {};
+            ReifiedCompareLessThanOrMaybeEqual(v2, v1, reif::If{cond}, true, true) {};
     };
 
     /**
@@ -188,7 +190,7 @@ namespace gcs
     {
     public:
         inline explicit GreaterThanEqualIff(const IntegerVariableID v1, const IntegerVariableID v2, IntegerVariableCondition cond) :
-            ReifiedCompareLessThanOrMaybeEqual(v2, v1, reif::Iff{cond}, true) {};
+            ReifiedCompareLessThanOrMaybeEqual(v2, v1, reif::Iff{cond}, true, true) {};
     };
 }
 

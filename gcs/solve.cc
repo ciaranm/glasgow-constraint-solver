@@ -1,5 +1,6 @@
 #include <gcs/exception.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
+#include <gcs/innards/proofs/proof_error.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
@@ -8,18 +9,30 @@
 #include <gcs/search_heuristics.hh>
 #include <gcs/solve.hh>
 
+#include <util/enumerate.hh>
+
+#include <fstream>
+#include <string>
+
+#include <fmt/core.h>
+#include <fmt/ostream.h>
+
 using namespace gcs;
 using namespace gcs::innards;
 
 using std::atomic;
 using std::max;
 using std::nullopt;
+using std::ofstream;
 using std::optional;
 using std::pair;
+using std::to_string;
 using std::vector;
 using std::chrono::duration_cast;
 using std::chrono::microseconds;
 using std::chrono::steady_clock;
+
+using fmt::println;
 
 namespace
 {
@@ -28,6 +41,7 @@ namespace
         SolveCallbacks & callbacks,
         ProofLogger * const logger,
         bool & this_subtree_contains_solution,
+        Integer & number_of_solutions,
         optional<Integer> & objective_value,
         atomic<bool> * optional_abort_flag) -> bool
     {
@@ -65,6 +79,7 @@ namespace
                     objective_value = state(*problem.optional_minimise_variable());
 
                 ++stats.solutions;
+                ++number_of_solutions;
                 this_subtree_contains_solution = true;
                 if (callbacks.solution && ! callbacks.solution(state.current()))
                     return false;
@@ -85,7 +100,7 @@ namespace
                     state.guess(guess);
                     bool child_contains_solution = false;
                     if (! solve_with_state(depth + 1, stats, problem, propagators, state, guess,
-                            callbacks, logger, child_contains_solution, objective_value, optional_abort_flag))
+                            callbacks, logger, child_contains_solution, number_of_solutions, objective_value, optional_abort_flag))
                         result = false;
 
                     if (child_contains_solution)
@@ -126,8 +141,9 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
     auto start_time = steady_clock::now();
 
     optional<Proof> optional_proof;
-    if (optional_proof_options)
+    if (optional_proof_options) {
         optional_proof.emplace(*optional_proof_options);
+    }
 
     auto state = problem.create_state_for_new_search(optional_proof ? optional_proof->model() : nullptr);
     auto propagators = problem.create_propagators(state, optional_proof ? optional_proof->model() : nullptr);
@@ -135,10 +151,35 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
     if (optional_proof) {
         if (problem.optional_minimise_variable())
             optional_proof->model()->minimise(*problem.optional_minimise_variable());
+
+        optional_proof->model()->preserve(problem.all_normal_variables());
+
         optional_proof->model()->finalise();
         optional_proof->model()->names_and_ids_tracker().switch_from_model_to_proof(optional_proof->logger());
         optional_proof->logger()->start_proof(*optional_proof->model());
         optional_proof->model()->names_and_ids_tracker().emit_delayed_proof_steps();
+
+        if (auto & fn = optional_proof_options->proof_file_names.s_expr_file) {
+            ofstream s_expr{*fn};
+            if (! s_expr)
+                throw ProofError{"Error writing proof s-expr file to '" + *fn + "'"};
+
+            println(s_expr, "(");
+            println(s_expr, "    (");
+            for (const auto & [_, l, u, n] : problem.each_variable_with_bounds_and_name()) {
+                println(s_expr, "        ({} {} {})", n, l.raw_value, u.raw_value);
+            }
+            println(s_expr, "    )");
+
+            println(s_expr, "    (");
+            unsigned n = 1;
+            for (const auto & c : problem.each_constraint()) {
+                println(s_expr, "        ({})", c.s_exprify("c" + to_string(n++), optional_proof->model()));
+            }
+            println(s_expr, "    )");
+
+            println(s_expr, ")");
+        }
     }
 
     if (callbacks.after_proof_started)
@@ -156,9 +197,10 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
 
     if (initialisation_success && presolve_success) {
         bool child_contains_solution = false;
+        Integer number_of_solutions = 0_i;
         optional<Integer> objective_value = nullopt;
         if (solve_with_state(0, stats, problem, propagators, state, nullopt, callbacks, optional_proof ? optional_proof->logger() : nullptr,
-                child_contains_solution, objective_value, optional_abort_flag)) {
+                child_contains_solution, number_of_solutions, objective_value, optional_abort_flag)) {
             if (optional_proof) {
                 if (problem.optional_minimise_variable()) {
                     if (objective_value)
@@ -167,7 +209,7 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
                         optional_proof->logger()->conclude_unsatisfiable(true);
                 }
                 else if (child_contains_solution) {
-                    optional_proof->logger()->conclude_satisfiable();
+                    optional_proof->logger()->conclude_complete_enumeration(number_of_solutions);
                 }
                 else
                     optional_proof->logger()->conclude_unsatisfiable(false);
@@ -186,6 +228,8 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
                     else
                         optional_proof->logger()->conclude_none();
                 }
+                else if (child_contains_solution)
+                    optional_proof->logger()->conclude_satisfiable();
                 else
                     optional_proof->logger()->conclude_none();
             }

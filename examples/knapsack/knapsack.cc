@@ -27,15 +27,14 @@ using std::vector;
 using fmt::print;
 using fmt::println;
 
-
 auto main(int argc, char * argv[]) -> int
 {
     cxxopts::Options options("Knapsack Example");
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program options")
-            ("help", "Display help information")
+        options.add_options("Program options")   //
+            ("help", "Display help information") //
             ("prove", "Create a proof");
 
         options_vars = options.parse(argc, argv);

@@ -32,12 +32,11 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program Options")
-    ("help", "Display help information")
-    ("prove", "Create a proof");
+        options.add_options("Program Options")   //
+            ("help", "Display help information") //
+            ("prove", "Create a proof");
 
-        options.add_options()
-            ("size", "Size of the problem to solve (max 12)", cxxopts::value<int>()->default_value("12"));
+        options.add_options()("size", "Size of the problem to solve (max 12)", cxxopts::value<int>()->default_value("12"));
 
         options.parse_positional({"size"});
 

@@ -8,13 +8,19 @@
 
 #include <sstream>
 
+#include <fmt/core.h>
+#include <fmt/ostream.h>
+
 using namespace gcs;
 using namespace gcs::innards;
 
 using std::optional;
 using std::pair;
+using std::string;
 using std::stringstream;
 using std::unique_ptr;
+
+using fmt::print;
 
 Plus::Plus(IntegerVariableID a, IntegerVariableID b, IntegerVariableID result) :
     _a(a),
@@ -55,6 +61,19 @@ auto Plus::install_propagators(Propagators & propagators) -> void
 auto Plus::define_proof_model(ProofModel & model) -> void
 {
     _sum_line = model.add_constraint("Plus", "sum", WPBSum{} + 1_i * _a + 1_i * _b == 1_i * _result);
+}
+
+auto Plus::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
+{
+    stringstream s;
+
+    print(s, "{} plus (", name);
+    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_a));
+    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_b));
+    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_result));
+    print(s, ")");
+
+    return s.str();
 }
 
 auto gcs::innards::propagate_plus(IntegerVariableID a, IntegerVariableID b, IntegerVariableID result,

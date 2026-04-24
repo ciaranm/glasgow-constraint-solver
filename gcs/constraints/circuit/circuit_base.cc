@@ -2,6 +2,7 @@
 #include <gcs/constraints/all_different/vc_all_different.hh>
 #include <gcs/constraints/circuit/circuit_base.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
 
@@ -11,6 +12,8 @@
 #include <string>
 #include <util/enumerate.hh>
 #include <utility>
+
+#include <fmt/ostream.h>
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -33,6 +36,8 @@ using std::to_string;
 using std::tuple;
 using std::unique_ptr;
 using std::vector;
+
+using fmt::print;
 
 using namespace gcs::innards::circuit;
 
@@ -224,6 +229,18 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state, Proof
     }
 
     return pos_var_data;
+}
+
+auto CircuitBase::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
+{
+    stringstream s;
+
+    print(s, "{} circuit (", name);
+    for (const auto & var : _succ)
+        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
+    print(s, ")");
+
+    return s.str();
 }
 
 template auto gcs::innards::circuit::prevent_small_cycles(const std::vector<IntegerVariableID> & succ, const PosVarDataMap & pos_var_data,

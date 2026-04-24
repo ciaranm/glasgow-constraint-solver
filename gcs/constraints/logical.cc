@@ -1,6 +1,7 @@
 #include <gcs/constraints/logical.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
@@ -9,6 +10,10 @@
 #include <util/overloaded.hh>
 
 #include <optional>
+#include <sstream>
+
+#include <fmt/core.h>
+#include <fmt/ostream.h>
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -16,8 +21,11 @@ using namespace gcs::innards;
 using std::optional;
 using std::pair;
 using std::string;
+using std::stringstream;
 using std::unique_ptr;
 using std::vector;
+
+using fmt::print;
 
 namespace
 {
@@ -252,6 +260,19 @@ auto And::install_propagators(Propagators & propagators) -> void
     install_propagators_logical(propagators, _lits, _full_reif, _reif_state, "and");
 }
 
+auto And::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
+{
+    stringstream s;
+
+    print(s, "{} and (", name);
+    for (const auto & lit : _lits) {
+        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(lit));
+    }
+    print(s, ") {}", model->names_and_ids_tracker().s_expr_name_of(_full_reif));
+
+    return s.str();
+}
+
 Or::Or(const vector<IntegerVariableID> & vars, const IntegerVariableID & full_reif) :
     Or(to_lits(vars), full_reif != 0_i)
 {
@@ -306,4 +327,17 @@ auto Or::install_propagators(Propagators & propagators) -> void
         l = ! l;
 
     install_propagators_logical(propagators, move(lits), ! _full_reif, _reif_state, "or");
+}
+
+auto Or::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
+{
+    stringstream s;
+
+    print(s, "{} or (", name);
+    for (const auto & lit : _lits) {
+        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(lit));
+    }
+    print(s, ") {}", model->names_and_ids_tracker().s_expr_name_of(_full_reif));
+
+    return s.str();
 }

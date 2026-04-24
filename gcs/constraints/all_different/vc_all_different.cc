@@ -1,10 +1,13 @@
 #include <gcs/constraints/all_different/encoding.hh>
 #include <gcs/constraints/all_different/vc_all_different.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
 #include <util/enumerate.hh>
+
+#include <fmt/ostream.h>
 
 #include <algorithm>
 #include <functional>
@@ -32,11 +35,14 @@ using std::nullopt;
 using std::optional;
 using std::pair;
 using std::sort;
+using std::string;
 using std::stringstream;
 using std::unique_ptr;
 using std::variant;
 using std::vector;
 using std::visit;
+
+using fmt::print;
 
 auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle,
     const State & state, auto & inference, ProofLogger * const logger) -> void
@@ -136,3 +142,15 @@ template auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintState
 
 template auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle, const State & state,
     EagerProofLoggingInferenceTracker & inference_tracker, ProofLogger * const logger) -> void;
+
+auto VCAllDifferent::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
+{
+    stringstream s;
+
+    print(s, "{} all_different (", name);
+    for (const auto & var : _vars)
+        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
+    print(s, ")");
+
+    return s.str();
+}

@@ -1,6 +1,8 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INNARDS_PROOFS_PROOF_LOGGER_FWD_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INNARDS_PROOFS_PROOF_LOGGER_FWD_HH
 
+#include <variant>
+
 namespace gcs::innards
 {
     class ProofLogger;
@@ -19,12 +21,17 @@ namespace gcs::innards
         Temporary
     };
 
+    struct ProofLineNumber;
+
+    struct ProofLineLabel;
+
     /**
-     * A proof line number, corresponding to a VeriPB constraint number.
+     * A proof line number, corresponding to either a VeriPB constraint number or a
+     * constraint name.
      *
      * \ingroup Innards
      */
-    using ProofLine = long long;
+    using ProofLine = std::variant<ProofLineNumber, ProofLineLabel>;
 }
 
 #endif

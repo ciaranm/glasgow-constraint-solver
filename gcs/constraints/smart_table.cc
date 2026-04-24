@@ -1,5 +1,6 @@
 #include <gcs/constraints/smart_table.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
@@ -13,6 +14,8 @@
 #include <unordered_map>
 #include <variant>
 #include <vector>
+
+#include <fmt/ostream.h>
 
 #include <gcs/exception.hh>
 #include <util/overloaded.hh>
@@ -36,6 +39,9 @@ using std::tuple;
 using std::unique_ptr;
 using std::unordered_map;
 using std::vector;
+
+using fmt::print;
+using fmt::println;
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -887,4 +893,60 @@ auto SmartTable::install(Propagators & propagators, State & initial_state, Proof
         },
         triggers,
         "smart table");
+}
+
+auto SmartTable::s_exprify(const string & name, const ProofModel * const model) const -> string
+{
+    auto to_op = [](SmartEntryConstraint c) {
+        switch (c) {
+        case SmartEntryConstraint::LessThan: return "<";
+        case SmartEntryConstraint::LessThanEqual: return "<=";
+        case SmartEntryConstraint::Equal: return "=";
+        case SmartEntryConstraint::NotEqual: return "!=";
+        case SmartEntryConstraint::GreaterThan: return ">";
+        case SmartEntryConstraint::GreaterThanEqual: return ">=";
+        case SmartEntryConstraint::In: return "in";
+        case SmartEntryConstraint::NotIn: return "notin";
+        }
+        throw NonExhaustiveSwitch{};
+    };
+
+    stringstream s;
+
+    print(s, "{} smart_table (\n        (", name);
+
+    for (const auto & tuple : _tuples) {
+        print(s, "(");
+        for (const auto & entry : tuple) {
+            overloaded{
+                [&](const BinaryEntry & binary_entry) {
+                    print(s, " ({} {} {})",
+                        model->names_and_ids_tracker().s_expr_name_of(binary_entry.var_1),
+                        to_op(binary_entry.constraint_type),
+                        model->names_and_ids_tracker().s_expr_name_of(binary_entry.var_2));
+                },
+                [&](const UnaryValueEntry & unary_val_entry) {
+                    print(s, " ({} {} {})",
+                        model->names_and_ids_tracker().s_expr_name_of(unary_val_entry.var),
+                        to_op(unary_val_entry.constraint_type),
+                        unary_val_entry.value.raw_value);
+                },
+                [&](const UnarySetEntry & unary_set_entry) {
+                    print(s, " ({} {} (",
+                        model->names_and_ids_tracker().s_expr_name_of(unary_set_entry.var),
+                        to_op(unary_set_entry.constraint_type));
+                    for (const auto & value : unary_set_entry.values)
+                        print(s, " {}", value.raw_value);
+                    print(s, "))");
+                }}
+                .visit(entry);
+        }
+    }
+    print(s, ")\n        (");
+
+    for (const auto & var : _vars)
+        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
+    print(s, ")\n        )");
+
+    return s.str();
 }

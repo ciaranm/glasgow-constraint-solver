@@ -1,14 +1,23 @@
 #include <algorithm>
 #include <gcs/constraints/lex.hh>
 #include <gcs/constraints/smart_table.hh>
+#include <gcs/innards/proofs/names_and_ids_tracker.hh>
+#include <gcs/innards/proofs/proof_model.hh>
 #include <optional>
+#include <sstream>
 #include <utility>
+
+#include <fmt/ostream.h>
 
 using std::min;
 using std::move;
 using std::optional;
+using std::string;
+using std::stringstream;
 using std::unique_ptr;
 using std::vector;
+
+using fmt::print;
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -60,4 +69,19 @@ auto LexSmartTable::prepare(Propagators & propagators, State & initial_state, Pr
     auto smt_table = SmartTable{all_vars, tuples};
     move(smt_table).install(propagators, initial_state, optional_model);
     return false;
+}
+
+auto LexSmartTable::s_exprify(const std::string & name, const innards::ProofModel * const model) const -> std::string
+{
+    stringstream s;
+
+    print(s, "{} lex (", name);
+    for (const auto & var : _vars_1)
+        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
+    print(s, ") (");
+    for (const auto & var : _vars_2)
+        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
+    print(s, ")");
+
+    return s.str();
 }

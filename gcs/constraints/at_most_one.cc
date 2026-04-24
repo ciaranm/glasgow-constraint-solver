@@ -1,17 +1,26 @@
 #include <algorithm>
 #include <gcs/constraints/at_most_one.hh>
 #include <gcs/constraints/smart_table.hh>
+#include <gcs/innards/proofs/names_and_ids_tracker.hh>
+#include <gcs/innards/proofs/proof_model.hh>
 #include <optional>
+#include <sstream>
 #include <utility>
+
+#include <fmt/ostream.h>
 
 using std::cmp_less;
 using std::move;
 using std::optional;
+using std::string;
+using std::stringstream;
 using std::unique_ptr;
 using std::vector;
 
 using namespace gcs;
 using namespace gcs::innards;
+
+using fmt::print;
 
 AtMostOneSmartTable::AtMostOneSmartTable(vector<IntegerVariableID> vars, IntegerVariableID val) :
     _vars(move(vars)),
@@ -60,4 +69,17 @@ auto AtMostOneSmartTable::prepare(Propagators & propagators, State & initial_sta
     SmartTable smt_table{all_vars, tuples};
     move(smt_table).install(propagators, initial_state, optional_model);
     return false;
+}
+
+// The "semantics of cp document" says "at_most_one (smart table wrapper, don’t bother and just use count)"
+auto AtMostOneSmartTable::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
+{
+    stringstream s;
+
+    print(s, "{} at_most_one (", name);
+    for (const auto & var : _vars)
+        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
+    print(s, ") {}", model->names_and_ids_tracker().s_expr_name_of(_val));
+
+    return s.str();
 }

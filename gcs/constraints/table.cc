@@ -1,6 +1,7 @@
 #include <gcs/constraints/table.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
@@ -19,15 +20,24 @@
 #include <utility>
 #include <variant>
 
+#include <fmt/core.h>
+#include <fmt/ostream.h>
+
 using namespace gcs;
 using namespace gcs::innards;
 
 using std::optional;
 using std::pair;
 using std::string;
+using std::stringstream;
+using std::to_string;
 using std::unique_ptr;
+using std::variant;
 using std::vector;
 using std::visit;
+
+using fmt::print;
+using fmt::println;
 
 Table::Table(vector<IntegerVariableID> v, ExtensionalTuples t) :
     _vars(move(v)),
@@ -53,6 +63,21 @@ namespace
     {
         return t;
     }
+
+    auto tuple_entry_as_string(Integer i) -> string
+    {
+        return to_string(i.raw_value);
+    }
+
+    auto tuple_entry_as_string(Wildcard) -> string
+    {
+        return "*";
+    }
+
+    auto tuple_entry_as_string(const variant<Integer, Wildcard> & v) -> string
+    {
+        return visit([](auto v) { return tuple_entry_as_string(v); }, v);
+    }
 }
 
 auto Table::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
@@ -65,6 +90,36 @@ auto Table::install(Propagators & propagators, State & initial_state, ProofModel
         _tuples);
 
     propagators.define_and_install_table(initial_state, optional_model, vector<IntegerVariableID>{_vars}, move(_tuples), "table");
+}
+
+auto Table::s_exprify(const string & name, const innards::ProofModel * const model) const -> std::string
+{
+    stringstream s;
+
+    print(s, "{} table", name);
+    println(s, "(");
+
+    println(s, "    (");
+    visit([&](const auto & tuples) {
+        for (const auto & t : depointinate(tuples)) {
+            println(s, "        (");
+            for (const auto & v : t) {
+                println(s, "            {}", tuple_entry_as_string(v));
+            }
+            println(s, "        )");
+        }
+    },
+        _tuples);
+    println(s, "    )");
+
+    println(s, "    (");
+    for (const auto & var : _vars)
+        println(s, "        {}", model->names_and_ids_tracker().s_expr_name_of(var));
+    println(s, "    )");
+
+    println(s, ")");
+
+    return s.str();
 }
 
 NegativeTable::NegativeTable(vector<IntegerVariableID> v, ExtensionalTuples t) :
@@ -179,4 +234,34 @@ auto NegativeTable::install(Propagators & propagators, State &, ProofModel * con
             triggers, "negative table");
     },
         _tuples);
+}
+
+auto NegativeTable::s_exprify(const string & name, const innards::ProofModel * const model) const -> std::string
+{
+    stringstream s;
+
+    print(s, "{} negative_table", name);
+    println(s, "(");
+
+    println(s, "    (");
+    visit([&](const auto & tuples) {
+        for (const auto & t : depointinate(tuples)) {
+            println(s, "        (");
+            for (const auto & v : t) {
+                println(s, "            {}", tuple_entry_as_string(v));
+            }
+            println(s, "        )");
+        }
+    },
+        _tuples);
+    println(s, "    )");
+
+    println(s, "    (");
+    for (const auto & var : _vars)
+        println(s, "        {}", model->names_and_ids_tracker().s_expr_name_of(var));
+    println(s, "    )");
+
+    println(s, ")");
+
+    return s.str();
 }

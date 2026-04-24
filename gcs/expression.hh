@@ -73,7 +73,7 @@ namespace gcs
      */
     template <typename Var_, typename Add_>
     [[nodiscard]] constexpr inline auto operator+(SumOf<Weighted<Var_>> a, Weighted<Add_> b) -> SumOf<Weighted<Var_>>
-    requires std::constructible_from<Var_, Add_>
+        requires std::constructible_from<Var_, Add_>
     {
         a.terms.push_back(Weighted<Var_>{b.coefficient, b.variable});
         return a;
@@ -86,7 +86,7 @@ namespace gcs
      */
     template <typename Var_, typename Add_>
     constexpr inline auto operator+=(SumOf<Weighted<Var_>> & a, Weighted<Add_> b) -> SumOf<Weighted<Var_>> &
-    requires std::constructible_from<Var_, Add_>
+        requires std::constructible_from<Var_, Add_>
     {
         a.terms.push_back(Weighted<Var_>{b.coefficient, b.variable});
         return a;
@@ -207,7 +207,7 @@ namespace gcs
      */
     template <typename Var_, typename RHS_>
     [[nodiscard]] constexpr inline auto operator==(SumOf<Weighted<Var_>> lhs, Weighted<RHS_> rhs) -> SumEquals<Weighted<Var_>>
-    requires std::constructible_from<Var_, RHS_>
+        requires std::constructible_from<Var_, RHS_>
     {
         SumEquals<Weighted<Var_>> result{std::move(lhs), 0_i};
         result.lhs += -rhs.coefficient * rhs.variable;

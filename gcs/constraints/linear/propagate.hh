@@ -20,7 +20,7 @@ namespace gcs::innards
      */
     auto propagate_linear(const auto & terms, Integer, const State &, auto & inference_tracker,
         ProofLogger * const logger, bool equality,
-        const std::optional<ProofLine> & proof_line,
+        const std::optional<std::pair<std::optional<ProofLine>, std::optional<ProofLine>>> & proof_line,
         const std::optional<Literal> & add_to_reason) -> PropagatorState;
 
     /**

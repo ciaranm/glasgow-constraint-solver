@@ -1,5 +1,6 @@
 #include <gcs/constraints/n_value.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
@@ -8,6 +9,9 @@
 #include <list>
 #include <map>
 #include <set>
+#include <sstream>
+
+#include <fmt/ostream.h>
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -18,8 +22,12 @@ using std::max;
 using std::optional;
 using std::pair;
 using std::set;
+using std::string;
+using std::stringstream;
 using std::unique_ptr;
 using std::vector;
+
+using fmt::print;
 
 NValue::NValue(const IntegerVariableID & n, std::vector<IntegerVariableID> vars) :
     _n_values(n),
@@ -115,4 +123,17 @@ auto NValue::install_propagators(Propagators & propagators) -> void
         return PropagatorState::Enable;
     },
         triggers, "nvalue");
+}
+
+auto NValue::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
+{
+    stringstream s;
+
+    print(s, "{} nvalue (", name);
+    for (const auto & var : _vars) {
+        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
+    }
+    print(s, ") {}", model->names_and_ids_tracker().s_expr_name_of(_n_values));
+
+    return s.str();
 }

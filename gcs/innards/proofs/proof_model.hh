@@ -34,6 +34,8 @@ namespace gcs::innards
         struct Imp;
         std::unique_ptr<Imp> _imp;
 
+        auto advance_constraint_counter() -> ProofLineNumber;
+
         auto set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::string &) -> void;
 
         auto set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::string &) -> void;
@@ -131,6 +133,11 @@ namespace gcs::innards
          */
         auto minimise(const IntegerVariableID &) -> void;
 
+        /**
+         * State that we might be enumerating, and specify the variables to preserve.
+         */
+        auto preserve(std::vector<IntegerVariableID> vars) -> void;
+
         ///@}
 
         /**
@@ -143,12 +150,17 @@ namespace gcs::innards
          * How many constraints do we have? Used to generate the proof header
          * inside a proof log.
          */
-        [[nodiscard]] auto number_of_constraints() const -> ProofLine;
+        [[nodiscard]] auto number_of_constraints() const -> ProofLineNumber;
 
         /**
          * Provide access to information about variables.
          */
         [[nodiscard]] auto names_and_ids_tracker() -> NamesAndIDsTracker &;
+
+        /**
+         * Provide access to information about variables.
+         */
+        [[nodiscard]] auto names_and_ids_tracker() const -> const NamesAndIDsTracker &;
     };
 }
 

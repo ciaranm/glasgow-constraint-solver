@@ -8,11 +8,15 @@
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
 
+#include <fmt/ostream.h>
+
 #include <sstream>
 
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::make_optional;
+using std::make_pair;
 using std::nullopt;
 using std::optional;
 using std::pair;
@@ -21,6 +25,8 @@ using std::stringstream;
 using std::unique_ptr;
 using std::variant;
 using std::vector;
+
+using fmt::print;
 
 ReifiedLinearInequality::ReifiedLinearInequality(WeightedSum coeff_vars, Integer value, ReificationCondition cond) :
     _coeff_vars(move(coeff_vars)),
@@ -37,10 +43,10 @@ auto ReifiedLinearInequality::clone() const -> unique_ptr<Constraint>
 namespace
 {
     auto justify_cond(const State & state, const auto & coeff_vars, ProofLogger & logger,
-        const ProofLine & proof_line) -> void
+        const pair<optional<ProofLine>, optional<ProofLine>> & proof_lines) -> void
     {
         vector<pair<Integer, variant<ProofLine, XLiteral>>> terms_to_sum;
-        terms_to_sum.emplace_back(1_i, proof_line);
+        terms_to_sum.emplace_back(1_i, proof_lines.first.value());
 
         for (const auto & cv : coeff_vars.terms) {
             // the following line of logic is definitely correct until you inevitably
@@ -82,7 +88,7 @@ namespace
 
 auto ReifiedLinearInequality::install(Propagators & propagators, State & state, ProofModel * const optional_model) && -> void
 {
-    optional<ProofLine> proof_line;
+    optional<pair<optional<ProofLine>, optional<ProofLine>>> proof_lines, proof_lines_swapped;
     if (optional_model) {
         WPBSum terms;
         for (auto & [c, v] : _coeff_vars.terms)
@@ -90,22 +96,25 @@ auto ReifiedLinearInequality::install(Propagators & propagators, State & state, 
 
         overloaded{
             [&](const reif::MustHold &) {
-                proof_line = optional_model->add_constraint("ReifiedLinearInequality", "unconditional less than", terms <= _value, nullopt);
+                proof_lines = pair{*optional_model->add_constraint("ReifiedLinearInequality", "unconditional less than", terms <= _value, nullopt), nullopt};
             },
             [&](const reif::MustNotHold &) {
-                proof_line = optional_model->add_constraint("ReifiedLinearInequality", "unconditional greater than", terms >= _value + 1_i, nullopt);
+                proof_lines = pair{*optional_model->add_constraint("ReifiedLinearInequality", "unconditional greater than", terms >= _value + 1_i, nullopt), nullopt};
             },
             [&](const reif::If & cond) {
-                proof_line = optional_model->add_constraint("ReifiedLinearInequality", "less than option", terms <= _value, HalfReifyOnConjunctionOf{cond.cond});
+                proof_lines = pair{*optional_model->add_constraint("ReifiedLinearInequality", "less than option", terms <= _value, HalfReifyOnConjunctionOf{cond.cond}), nullopt};
             },
             [&](const reif::NotIf & cond) {
-                proof_line = optional_model->add_constraint("ReifiedLinearInequality", "greater than option", terms <= _value, HalfReifyOnConjunctionOf{cond.cond});
+                proof_lines = pair{*optional_model->add_constraint("ReifiedLinearInequality", "greater than option", terms <= _value, HalfReifyOnConjunctionOf{cond.cond}), nullopt};
             },
             [&](const reif::Iff & cond) {
-                proof_line = optional_model->add_constraint("ReifiedLinearInequality", "less than option", terms <= _value, HalfReifyOnConjunctionOf{cond.cond});
-                optional_model->add_constraint("ReifiedLinearInequality", "greater than option", terms >= _value + 1_i, HalfReifyOnConjunctionOf{! cond.cond});
+                proof_lines = pair{
+                    *optional_model->add_constraint("ReifiedLinearInequality", "less than option", terms <= _value, HalfReifyOnConjunctionOf{cond.cond}),
+                    optional_model->add_constraint("ReifiedLinearInequality", "greater than option", terms >= _value + 1_i, HalfReifyOnConjunctionOf{! cond.cond})};
             }}
             .visit(_reif_cond);
+
+        proof_lines_swapped = pair{proof_lines->second, proof_lines->first};
     }
 
     auto [sanitised_cv, modifier] = tidy_up_linear(_coeff_vars);
@@ -119,9 +128,9 @@ auto ReifiedLinearInequality::install(Propagators & propagators, State & state, 
 
             visit(
                 [&, modifier = modifier](const auto & lin) {
-                    propagators.install([modifier = modifier, lin = lin, value = _value, cond = reif.cond, proof_line = proof_line](
+                    propagators.install([modifier = modifier, lin = lin, value = _value, cond = reif.cond, proof_lines = proof_lines](
                                             const State & state, auto & inference, ProofLogger * const logger) {
-                        return propagate_linear(lin, value + modifier, state, inference, logger, false, proof_line, cond);
+                        return propagate_linear(lin, value + modifier, state, inference, logger, false, proof_lines, cond);
                     },
                         triggers, "linear inequality");
                 },
@@ -140,9 +149,9 @@ auto ReifiedLinearInequality::install(Propagators & propagators, State & state, 
             auto [sanitised_neg_cv, neg_modifier] = tidy_up_linear(neg_coeff_vars);
             visit(
                 [&, neg_modifier = neg_modifier](const auto & lin) {
-                    propagators.install([neg_modifier = neg_modifier, lin = lin, value = -_value - 1_i, cond = reif.cond, proof_line = proof_line](
+                    propagators.install([neg_modifier = neg_modifier, lin = lin, value = -_value - 1_i, cond = reif.cond, proof_lines = proof_lines, proof_lines_swapped = proof_lines_swapped](
                                             const State & state, auto & inference, ProofLogger * const logger) {
-                        return propagate_linear(lin, value + neg_modifier, state, inference, logger, false, *proof_line + 1, cond);
+                        return propagate_linear(lin, value + neg_modifier, state, inference, logger, false, proof_lines_swapped, cond);
                     },
                         triggers, "linear inequality");
                 },
@@ -177,16 +186,16 @@ auto ReifiedLinearInequality::install(Propagators & propagators, State & state, 
 
             visit([&, modifier = modifier, neg_modifier = neg_modifier](const auto & sanitised_cv, const auto & sanitised_neg_cv) -> void {
                 propagators.install([cond = _reif_cond, sanitised_cv = sanitised_cv, sanitised_neg_cv = sanitised_neg_cv,
-                                        value = _value, modifier = modifier, neg_modifier = neg_modifier, proof_line = proof_line,
-                                        vars = vars](
+                                        value = _value, modifier = modifier, neg_modifier = neg_modifier, proof_lines = proof_lines,
+                                        proof_lines_swapped = proof_lines_swapped, vars = vars](
                                         const State & state, auto & inference, ProofLogger * const logger) {
                     return overloaded{
                         [&](const evaluated_reif::MustHold & reif) {
-                            return propagate_linear(sanitised_cv, value + modifier, state, inference, logger, false, proof_line, reif.cond);
+                            return propagate_linear(sanitised_cv, value + modifier, state, inference, logger, false, proof_lines, reif.cond);
                         },
 
                         [&](const evaluated_reif::MustNotHold & reif) {
-                            return propagate_linear(sanitised_neg_cv, -value + neg_modifier - 1_i, state, inference, logger, false, *proof_line + 1, reif.cond);
+                            return propagate_linear(sanitised_neg_cv, -value + neg_modifier - 1_i, state, inference, logger, false, proof_lines_swapped, reif.cond);
                         },
 
                         [&](const evaluated_reif::Deactivated &) {
@@ -210,14 +219,14 @@ auto ReifiedLinearInequality::install(Propagators & propagators, State & state, 
 
                             if (min_possible > value + modifier) {
                                 // cannot possibly hold
-                                auto just = [&](const ReasonFunction &) { return justify_cond(state, sanitised_cv, *logger, *proof_line); };
+                                auto just = [&](const ReasonFunction &) { return justify_cond(state, sanitised_cv, *logger, proof_lines.value()); };
                                 if (reif.set_not_cond_if_must_not_hold)
                                     inference.infer(logger, ! reif.cond, JustifyExplicitly{just}, generic_reason(state, vars));
                                 return PropagatorState::DisableUntilBacktrack;
                             }
                             else if (max_possible <= value + modifier) {
                                 // must definitely hold
-                                auto just = [&](const ReasonFunction &) { return justify_cond(state, sanitised_neg_cv, *logger, *proof_line + 1); };
+                                auto just = [&](const ReasonFunction &) { return justify_cond(state, sanitised_neg_cv, *logger, proof_lines_swapped.value()); };
                                 if (reif.set_cond_if_must_hold)
                                     inference.infer(logger, reif.cond, JustifyExplicitly{just}, generic_reason(state, vars));
                                 else if (reif.set_not_cond_if_must_hold)
@@ -236,4 +245,27 @@ auto ReifiedLinearInequality::install(Propagators & propagators, State & state, 
                 sanitised_cv, sanitised_neg_cv);
         }}
         .visit(state.test_reification_condition(_reif_cond));
+}
+
+auto ReifiedLinearInequality::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
+{
+    stringstream s;
+
+    auto [rei, cons] = overloaded{
+        [&](const reif::MustHold &) { return make_pair(false, "lin_less_than_equal"); },
+        [&](const reif::If &) { return make_pair(true, "lin_less_than_equal_if"); },
+        [&](const reif::Iff &) { return make_pair(true, "lin_less_than_equal_iff"); },
+        [&](const auto &) { throw UnexpectedException{"Unexpected reification type in s_exprify"}; return make_pair(false, ""); }}
+                           .visit(_reif_cond);
+
+    print(s, "{} {}", name, cons);
+    if (rei) {
+        print(s, " {} ", model->names_and_ids_tracker().s_expr_name_of(_reif_cond));
+    }
+    for (const auto & [c, v] : _coeff_vars.terms) {
+        print(s, " {} {}", c.raw_value, model->names_and_ids_tracker().s_expr_name_of(v));
+    }
+    print(s, ") {}", _value.raw_value);
+
+    return s.str();
 }
