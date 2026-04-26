@@ -3,6 +3,7 @@
 
 #include <gcs/innards/justification.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker-fwd.hh>
+#include <gcs/innards/proofs/proof_line.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/proofs/proof_model-fwd.hh>
 #include <gcs/innards/proofs/pseudo_boolean.hh>
@@ -17,35 +18,6 @@
 
 namespace gcs::innards
 {
-    struct ProofLineNumber
-    {
-        long long number;
-
-        [[nodiscard]] auto operator<=>(const ProofLineNumber &) const = default;
-    };
-
-    struct ProofLineLabel
-    {
-        std::string label;
-
-        [[nodiscard]] auto operator<=>(const ProofLineLabel &) const = default;
-    };
-
-    inline auto operator<<(std::ostream & s, const ProofLineNumber & n) -> std::ostream &
-    {
-        return s << n.number;
-    }
-
-    inline auto operator<<(std::ostream & s, const ProofLineLabel & l) -> std::ostream &
-    {
-        return s << "@" << l.label;
-    }
-
-    inline auto operator<<(std::ostream & s, const ProofLine & l) -> std::ostream &
-    {
-        return std::visit([&](const auto & l) -> std::ostream & { return s << l; }, l);
-    }
-
     using Subproof = std::function<auto(ProofLogger &)->void>;
 
     struct RUPProofRule
