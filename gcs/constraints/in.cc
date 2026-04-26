@@ -8,6 +8,14 @@
 
 #include <algorithm>
 #include <utility>
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <print>
+#else
+#include <fmt/core.h>
+#include <fmt/ostream.h>
+#endif
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -22,7 +30,11 @@ using std::unique;
 using std::unique_ptr;
 using std::vector;
 
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::print;
+#else
 using fmt::print;
+#endif
 
 In::In(IntegerVariableID var, vector<IntegerVariableID> vars, vector<Integer> vals) :
     _var(var),

@@ -20,7 +20,14 @@
 
 #include <nlohmann/json.hpp>
 
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <format>
+#include <print>
+#else
 #include <fmt/core.h>
+#endif
 
 #include <util/overloaded.hh>
 
@@ -47,7 +54,13 @@ using std::variant;
 using std::vector;
 using std::visit;
 
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::format;
+using std::print;
+#else
 using fmt::format;
+using fmt::print;
+#endif
 
 struct NamesAndIDsTracker::Imp
 {
@@ -99,7 +112,7 @@ NamesAndIDsTracker::NamesAndIDsTracker(const ProofOptions & proof_options) :
 NamesAndIDsTracker::~NamesAndIDsTracker()
 {
     if (_imp->variables_map_file && ! _imp->finalised && std::uncaught_exceptions() == 0) {
-        fmt::print(stderr, "NamesAndIDsTracker destroyed without calling finalise()\n");
+        print(stderr, "NamesAndIDsTracker destroyed without calling finalise()\n");
         std::abort();
     }
 }

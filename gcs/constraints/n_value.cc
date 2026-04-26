@@ -11,7 +11,13 @@
 #include <set>
 #include <sstream>
 
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <print>
+#else
 #include <fmt/ostream.h>
+#endif
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -27,7 +33,11 @@ using std::stringstream;
 using std::unique_ptr;
 using std::vector;
 
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::print;
+#else
 using fmt::print;
+#endif
 
 NValue::NValue(const IntegerVariableID & n, std::vector<IntegerVariableID> vars) :
     _n_values(n),

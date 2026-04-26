@@ -19,7 +19,14 @@
 #include <sstream>
 #include <unordered_map>
 
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <format>
+#include <print>
+#else
 #include <fmt/core.h>
+#endif
 
 #include <util/overloaded.hh>
 
@@ -46,7 +53,13 @@ using std::unordered_map;
 using std::variant;
 using std::vector;
 
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::format;
+using std::print;
+#else
 using fmt::format;
+using fmt::print;
+#endif
 
 struct ProofModel::Imp
 {
@@ -81,7 +94,7 @@ ProofModel::ProofModel(const ProofOptions & proof_options, NamesAndIDsTracker & 
 ProofModel::~ProofModel()
 {
     if (! _imp->finalised && std::uncaught_exceptions() == 0) {
-        fmt::print(stderr, "ProofModel destroyed without calling finalise()\n");
+        print(stderr, "ProofModel destroyed without calling finalise()\n");
         std::abort();
     }
 }

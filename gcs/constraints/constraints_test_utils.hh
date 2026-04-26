@@ -12,10 +12,6 @@
 #include <util/enumerate.hh>
 #include <util/overloaded.hh>
 
-#include <fmt/core.h>
-#include <fmt/ostream.h>
-#include <fmt/ranges.h>
-
 #include <cstdlib>
 #include <functional>
 #include <iostream>
@@ -25,14 +21,45 @@
 #include <tuple>
 #include <utility>
 #include <vector>
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <print>
+#include <variant>
+
+template <typename... Ts_>
+struct std::formatter<std::variant<Ts_...>> : std::formatter<std::string> {
+    template <typename FormatContext_>
+    auto format(const std::variant<Ts_...> & v, FormatContext_ & ctx) const
+    {
+        return std::visit(
+            [&](const auto & val) {
+                return std::formatter<std::string>::format(std::format("{}", val), ctx);
+            },
+            v);
+    }
+};
+#else
+#include <fmt/core.h>
+#include <fmt/ostream.h>
+#include <fmt/ranges.h>
+#include <fmt/std.h>
+#endif
 
 namespace gcs::test_innards
 {
     template <typename... Args_>
     [[nodiscard]] auto run_veripb(Args_... args) -> bool
     {
-        auto cmd = fmt::format("veripb {}", fmt::join(std::vector<std::string>{args...}, " "));
-        fmt::println(std::cerr, "$ {}", cmd);
+        std::string cmd{"veripb"};
+        for (auto & a : std::vector<std::string>{args...})
+            (cmd += ' ') += a;
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+        using std::println;
+#else
+        using fmt::println;
+#endif
+        println(std::cerr, "$ {}", cmd);
         return EXIT_SUCCESS == system(cmd.c_str());
     }
 
@@ -188,7 +215,11 @@ namespace gcs::test_innards
     template <typename ResultsSet_>
     auto check_results(const std::optional<std::string> & proof_name, const ResultsSet_ & expected, const ResultsSet_ & actual) -> void
     {
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+        using std::println;
+#else
         using fmt::println;
+#endif
         using std::cerr;
 
         if (expected != actual) {
@@ -261,7 +292,11 @@ namespace gcs::test_innards
     auto consistency_not_achieved(const std::string & which, const ResultsSet_ & expected, const CurrentState & s,
         const std::vector<IntegerVariableID> & all_vars, const IntegerVariableID & var, Integer val) -> void
     {
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+        using std::println;
+#else
         using fmt::println;
+#endif
         using std::cerr;
         println(cerr, "{} not achieved in test", which);
         println(cerr, "expected: {}", expected);

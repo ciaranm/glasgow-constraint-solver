@@ -11,8 +11,14 @@
 #include <optional>
 #include <sstream>
 
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <print>
+#else
 #include <fmt/core.h>
 #include <fmt/ostream.h>
+#endif
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -25,8 +31,13 @@ using std::stringstream;
 using std::unique_ptr;
 using std::vector;
 
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::print;
+using std::println;
+#else
 using fmt::print;
 using fmt::println;
+#endif
 
 Abs::Abs(const IntegerVariableID v1, const IntegerVariableID v2) :
     _v1(v1),

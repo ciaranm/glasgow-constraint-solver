@@ -7,7 +7,13 @@
 #include <sstream>
 #include <utility>
 
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <print>
+#else
 #include <fmt/ostream.h>
+#endif
 
 using std::cmp_less;
 using std::move;
@@ -20,7 +26,11 @@ using std::vector;
 using namespace gcs;
 using namespace gcs::innards;
 
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::print;
+#else
 using fmt::print;
+#endif
 
 AtMostOneSmartTable::AtMostOneSmartTable(vector<IntegerVariableID> vars, IntegerVariableID val) :
     _vars(move(vars)),

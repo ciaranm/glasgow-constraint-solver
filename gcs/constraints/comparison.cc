@@ -9,7 +9,15 @@
 
 #include <util/overloaded.hh>
 
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <format>
+#include <print>
+#else
+#include <fmt/core.h>
 #include <fmt/ostream.h>
+#endif
 
 #include <sstream>
 #include <string>
@@ -24,7 +32,13 @@ using std::string;
 using std::stringstream;
 using std::unique_ptr;
 
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::format;
+using std::print;
+#else
+using fmt::format;
 using fmt::print;
+#endif
 
 ReifiedCompareLessThanOrMaybeEqual::ReifiedCompareLessThanOrMaybeEqual(const IntegerVariableID v1, const IntegerVariableID v2, ReificationCondition cond, bool or_equal, bool vars_swapped) :
     _v1(v1),
@@ -197,7 +211,7 @@ auto ReifiedCompareLessThanOrMaybeEqual::s_exprify(const std::string & name, con
         [&](const auto &) -> string { throw UnexpectedException{"Unexpected reification type in s_exprify"}; }}
                     .visit(_reif_cond);
 
-    string cmp = fmt::format("{}{}{}",
+    string cmp = format("{}{}{}",
         _vars_swapped ? "greater_than" : "less_than",
         _or_equal ? "_equal" : "",
         reif);

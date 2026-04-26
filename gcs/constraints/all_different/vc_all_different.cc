@@ -7,7 +7,13 @@
 #include <gcs/innards/propagators.hh>
 #include <util/enumerate.hh>
 
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <print>
+#else
 #include <fmt/ostream.h>
+#endif
 
 #include <algorithm>
 #include <functional>
@@ -42,7 +48,11 @@ using std::variant;
 using std::vector;
 using std::visit;
 
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::print;
+#else
 using fmt::print;
+#endif
 
 auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle,
     const State & state, auto & inference, ProofLogger * const logger) -> void

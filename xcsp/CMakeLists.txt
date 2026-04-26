@@ -20,7 +20,10 @@ target_link_libraries(xcsp_glasgow_constraint_solver
 
 include_directories(${CMAKE_SOURCE_DIR}/XCSP3-CPP-Parser/src/XCSP3-CPP-Parser/include/)
 
-include_directories(${CMAKE_SOURCE_DIR}/generator/src/generator/include)
+if (GCS_COMPILER_HAS_GENERATOR)
+else (GCS_COMPILER_HAS_GENERATOR)
+    include_directories(${CMAKE_SOURCE_DIR}/generator/src/generator/include)
+endif (GCS_COMPILER_HAS_GENERATOR)
 
 add_test(NAME xcsp_sum_not_equals COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ sum_not_equals "^d FOUND SOLUTIONS 8$")
 set_tests_properties(xcsp_sum_not_equals PROPERTIES RESOURCE_LOCK xcsp)

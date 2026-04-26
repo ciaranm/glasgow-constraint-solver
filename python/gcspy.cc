@@ -11,6 +11,12 @@
 #include <python/gcspy.hh>
 #include <thread>
 
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <print>
+#endif
+
 namespace py = pybind11;
 using namespace gcs;
 
@@ -34,6 +40,12 @@ using std::chrono::nanoseconds;
 using std::chrono::round;
 using std::chrono::seconds;
 using std::chrono::system_clock;
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::println;
+#else
+using fmt::println;
+#endif
 
 #ifdef WRITE_API_CALLS
 auto Python::get_api_calls_str() -> string
@@ -201,7 +213,7 @@ auto Python::solve(
         return stats_map;
     }
     catch (const exception & e) {
-        fmt::println(cerr, "gcs: error: {}", e.what());
+        println(cerr, "gcs: error: {}", e.what());
 
         if (timeout_thread.joinable()) {
             {

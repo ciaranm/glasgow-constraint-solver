@@ -2,8 +2,14 @@
 #include <gcs/constraints/mult_bc.hh>
 
 #include <cstdlib>
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <print>
+#else
 #include <fmt/core.h>
 #include <fmt/ostream.h>
+#endif
 #include <iostream>
 #include <random>
 #include <set>
@@ -26,8 +32,13 @@ using std::tuple;
 using std::uniform_int_distribution;
 using std::vector;
 
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::print;
+using std::println;
+#else
 using fmt::print;
 using fmt::println;
+#endif
 
 using namespace gcs;
 using namespace gcs::test_innards;
