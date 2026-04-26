@@ -1,4 +1,8 @@
-include_directories(${CMAKE_SOURCE_DIR}/generator/src/generator/include)
+if (GCS_COMPILER_HAS_GENERATOR)
+else (GCS_COMPILER_HAS_GENERATOR)
+    include_directories(${CMAKE_SOURCE_DIR}/generator/src/generator/include)
+endif (GCS_COMPILER_HAS_GENERATOR)
+
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
 include(FetchContent)
@@ -12,7 +16,7 @@ FetchContent_MakeAvailable(pybind11)
 pybind11_add_module(gcspy gcspy.cc)
 target_link_libraries(gcspy PUBLIC glasgow_constraint_solver)
 
-target_link_libraries(gcspy PRIVATE fmt::fmt)
+target_link_libraries(gcspy PRIVATE gcs_fmt)
 
 install(TARGETS gcspy DESTINATION .)
 

@@ -374,10 +374,6 @@ simple constraints, but complex reasoning will require a ``JustifyExplicitly`` i
 includes a callback to create the relevant proof steps. The latter can be done using
 ``generic_reason``, if you do not have something better.
 
-If the compiler macro ``GCS_TRACK_ALL_PROPAGATIONS`` is defined, the proof log will include explicit
-origin statements for every ``JustifyUsingRUP`` propagation, which may be helpful in debugging bad
-proofs. It will also slow things down considerably.
-
 Backtracking Search
 -------------------
 

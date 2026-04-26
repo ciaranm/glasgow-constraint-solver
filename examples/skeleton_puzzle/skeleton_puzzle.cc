@@ -6,9 +6,16 @@
 #include <iostream>
 #include <optional>
 #include <string>
+#include <cmath>
 
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <print>
+#else
 #include <fmt/core.h>
 #include <fmt/ostream.h>
+#endif
 
 #include <cxxopts.hpp>
 
@@ -20,11 +27,17 @@ using std::endl;
 using std::make_optional;
 using std::nullopt;
 using std::optional;
+using std::pow;
 using std::string;
 using std::vector;
 
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::print;
+using std::println;
+#else
 using fmt::print;
 using fmt::println;
+#endif
 
 auto constrain_digit_sum(Problem & p, vector<SimpleIntegerVariableID> digits, SimpleIntegerVariableID number) -> void
 {

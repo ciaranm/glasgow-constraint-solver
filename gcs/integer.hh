@@ -5,6 +5,11 @@
 #include <limits>
 #include <ostream>
 #include <string>
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <format>
+#endif
 
 namespace gcs
 {
@@ -146,7 +151,7 @@ namespace gcs
     }
 
     /**
-     * \brief An Integer can be used with libfmt.
+     * \brief An Integer can be used with libfmt (via ADL) and std::format (via std::formatter specialisation).
      *
      * \ingroup IntegerWrapper
      */
@@ -175,6 +180,17 @@ namespace gcs
         return Integer(v);
     }
 }
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+template <>
+struct std::formatter<gcs::Integer> : std::formatter<long long> {
+    template <typename FormatContext_>
+    auto format(gcs::Integer i, FormatContext_ & ctx) const
+    {
+        return std::formatter<long long>::format(i.raw_value, ctx);
+    }
+};
+#endif
 
 template <>
 struct std::hash<gcs::Integer>

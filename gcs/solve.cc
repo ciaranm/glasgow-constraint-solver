@@ -13,9 +13,14 @@
 
 #include <fstream>
 #include <string>
+#include <version>
 
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <print>
+#else
 #include <fmt/core.h>
 #include <fmt/ostream.h>
+#endif
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -34,7 +39,11 @@ using std::chrono::duration_cast;
 using std::chrono::microseconds;
 using std::chrono::steady_clock;
 
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::println;
+#else
 using fmt::println;
+#endif
 
 namespace
 {

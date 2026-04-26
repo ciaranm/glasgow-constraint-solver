@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.18)
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
@@ -32,11 +32,11 @@ if (COMPILER_SUPPORTS_NO_STRINGOP_OVERREAD)
     add_compile_options(-Wno-stringop-overread) # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=104336
 endif (COMPILER_SUPPORTS_NO_STRINGOP_OVERREAD)
 
-unset(COMPILER_SUPPORTS_UNQUALIFIED_STD_CAST_CALL CACHE)
-CHECK_CXX_COMPILER_FLAG(-Wno-unqualified-std-cast-call COMPILER_SUPPORTS_UNQUALIFIED_STD_CAST_CALL)
-if (COMPILER_SUPPORTS_UNQUALIFIED_STD_CAST_CALL)
+unset(COMPILER_SUPPORTS_NO_UNQUALIFIED_STD_CAST_CALL CACHE)
+CHECK_CXX_COMPILER_FLAG(-Wno-unqualified-std-cast-call COMPILER_SUPPORTS_NO_UNQUALIFIED_STD_CAST_CALL)
+if (COMPILER_SUPPORTS_NO_UNQUALIFIED_STD_CAST_CALL)
     add_compile_options(-Wno-unqualified-std-cast-call)
-endif (COMPILER_SUPPORTS_UNQUALIFIED_STD_CAST_CALL)
+endif (COMPILER_SUPPORTS_NO_UNQUALIFIED_STD_CAST_CALL)
 
 add_compile_options(-g)
 add_compile_options(-g3)
@@ -49,14 +49,37 @@ if (NOT GCS_DEBUG_MODE)
     add_compile_options(-O3)
 endif (NOT GCS_DEBUG_MODE)
 
-# add_compile_options(-DGCS_TRACK_ALL_PROPAGATIONS=1)
-
 enable_testing()
 option(GCS_ENABLE_DOXYGEN "Add a doxygen target to generate the documentation" OFF)
 option(GCS_ENABLE_XCSP "Support for the XCSP modelling language" ON)
 option(GCS_ENABLE_MINIZINC "Support for the MiniZinc modelling language" ON)
 option(GCS_ENABLE_EXAMPLES "Build examples" ON)
 option(GCS_DEBUG_MODE "Disable compiler optimisation for debugging" OFF)
+
+add_library(gcs_fmt INTERFACE)
+
+try_compile(GCS_COMPILER_HAS_GENERATOR ${CMAKE_BINARY_DIR}/cmake_compile_tests ${CMAKE_SOURCE_DIR}/cmake_compile_tests/has_generator.cc)
+if (GCS_COMPILER_HAS_GENERATOR)
+    message("Using compiler's own <generator> implementation")
+else (GCS_COMPILER_HAS_GENERATOR)
+    message("Using external <generator> implementation")
+    include(ExternalProject)
+    ExternalProject_Add(
+            generator
+            PREFIX ${CMAKE_SOURCE_DIR}/generator
+            GIT_REPOSITORY https://github.com/todoubaba/generator
+            GIT_TAG a849a206f35c2447ab5e605edc5fcf44f673c628 # no release
+            INSTALL_COMMAND ""
+            BUILD_COMMAND ""
+)
+endif (GCS_COMPILER_HAS_GENERATOR)
+
+try_compile(GCS_COMPILER_HAS_STACKTRACE ${CMAKE_BINARY_DIR}/cmake_compile_tests ${CMAKE_SOURCE_DIR}/cmake_compile_tests/has_stacktrace.cc)
+if (GCS_COMPILER_HAS_STACKTRACE)
+    message("Using compiler's own <stacktrace> implementation")
+else (GCS_COMPILER_HAS_STACKTRACE)
+    message("No <stacktrace> implementation available")
+endif (GCS_COMPILER_HAS_STACKTRACE)
 
 include_directories(.)
 add_subdirectory(gcs)
@@ -104,7 +127,7 @@ Set(FETCHCONTENT_QUIET FALSE)
 FetchContent_Declare(
         Catch2
         GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-        GIT_TAG 6e79e682b726f524310d55dec8ddac4e9c52fb5f # v3.4.0
+        GIT_TAG b670de4fe12ac7c5e858b7de3a14fb4bd18c760e # v3.4.10
 )
 FetchContent_MakeAvailable(Catch2)
 
@@ -115,22 +138,19 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(cxxopts)
 
-FetchContent_Declare(
-        fmt
-        GIT_REPOSITORY https://github.com/fmtlib/fmt.git
-        GIT_TAG 40626af88bd7df9a5fb80be7b25ac85b122d6c21 # v11.2.0
-)
-FetchContent_MakeAvailable(fmt)
-
-include(ExternalProject)
-ExternalProject_Add(
-        generator
-        PREFIX ${CMAKE_SOURCE_DIR}/generator
-        GIT_REPOSITORY https://github.com/todoubaba/generator
-        GIT_TAG a849a206f35c2447ab5e605edc5fcf44f673c628 # no release
-        INSTALL_COMMAND ""
-        BUILD_COMMAND ""
-)
+try_compile(GCS_COMPILER_HAS_FORMAT ${CMAKE_BINARY_DIR}/cmake_compile_tests ${CMAKE_SOURCE_DIR}/cmake_compile_tests/has_format.cc)
+if (GCS_COMPILER_HAS_FORMAT)
+    message("Using compiler's own <format> and <print> implementation")
+else (GCS_COMPILER_HAS_FORMAT)
+    message("Using libfmt instead of <format> and <print>")
+    FetchContent_Declare(
+            fmt
+            GIT_REPOSITORY https://github.com/fmtlib/fmt.git
+            GIT_TAG 40626af88bd7df9a5fb80be7b25ac85b122d6c21 # v11.2.0
+    )
+    FetchContent_MakeAvailable(fmt)
+    target_link_libraries(gcs_fmt INTERFACE fmt::fmt)
+endif (GCS_COMPILER_HAS_FORMAT)
 
 set(JSON_BuildTests OFF CACHE INTERNAL "")
 FetchContent_Declare(

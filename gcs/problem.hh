@@ -19,8 +19,9 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <version>
 
-#if __has_cpp_attribute(__cpp_lib_generator)
+#ifdef __cpp_lib_generator
 #include <generator>
 #else
 #include <__generator.hpp>

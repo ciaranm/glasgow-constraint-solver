@@ -67,15 +67,20 @@ add_library(glasgow_constraint_solver
         presolvers/auto_table.cc
 )
 
-include_directories(${CMAKE_SOURCE_DIR}/generator/src/generator/include)
+if (GCS_COMPILER_HAS_STACKTRACE)
+    target_link_libraries(glasgow_constraint_solver PUBLIC stdc++exp)
+else (GCS_COMPILER_HAS_STACKTRACE)
+endif (GCS_COMPILER_HAS_STACKTRACE)
 
-# This appears to be necessary for the python install to work,
-# Not sure why exactly...
-add_dependencies(glasgow_constraint_solver generator)
+if (GCS_COMPILER_HAS_GENERATOR)
+else (GCS_COMPILER_HAS_GENERATOR)
+    include_directories(${CMAKE_SOURCE_DIR}/generator/src/generator/include)
+    add_dependencies(glasgow_constraint_solver generator)
+endif (GCS_COMPILER_HAS_GENERATOR)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 link_libraries(glasgow_constraint_solver)
-target_link_libraries(glasgow_constraint_solver PUBLIC fmt::fmt)
+target_link_libraries(glasgow_constraint_solver PUBLIC gcs_fmt)
 target_link_libraries(glasgow_constraint_solver PRIVATE nlohmann_json::nlohmann_json)
 
 add_executable(solve_test solve_test.cc)

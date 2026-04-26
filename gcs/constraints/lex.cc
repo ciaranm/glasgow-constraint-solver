@@ -6,8 +6,12 @@
 #include <optional>
 #include <sstream>
 #include <utility>
+#include <version>
 
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#else
 #include <fmt/ostream.h>
+#endif
 
 using std::min;
 using std::move;
@@ -17,7 +21,11 @@ using std::stringstream;
 using std::unique_ptr;
 using std::vector;
 
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::print;
+#else
 using fmt::print;
+#endif
 
 using namespace gcs;
 using namespace gcs::innards;

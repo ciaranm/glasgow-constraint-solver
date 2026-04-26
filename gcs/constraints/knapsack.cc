@@ -7,7 +7,13 @@
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
 
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <print>
+#else
 #include <fmt/ostream.h>
+#endif
 
 #include <util/enumerate.hh>
 
@@ -39,7 +45,11 @@ using std::to_string;
 using std::unique_ptr;
 using std::vector;
 
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::print;
+#else
 using fmt::print;
+#endif
 
 Knapsack::Knapsack(vector<Integer> weights, vector<Integer> profits,
     vector<IntegerVariableID> vars, IntegerVariableID weight, IntegerVariableID profit) :

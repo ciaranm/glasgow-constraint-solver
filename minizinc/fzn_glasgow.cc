@@ -5,10 +5,15 @@
 
 #include <cxxopts.hpp>
 
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <format>
+#include <print>
+#else
 #include <fmt/core.h>
 #include <fmt/ostream.h>
-#include <fmt/ranges.h>
-#include <fmt/std.h>
+#endif
 
 #include <atomic>
 #include <chrono>
@@ -57,8 +62,15 @@ using std::chrono::milliseconds;
 using std::chrono::seconds;
 using std::chrono::system_clock;
 
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::format;
+using std::print;
+using std::println;
+#else
+using fmt::format;
 using fmt::print;
 using fmt::println;
+#endif
 
 class FlatZincInterfaceError : public exception
 {
@@ -104,7 +116,7 @@ namespace
             string name = a;
             auto iter = data.constant_arrays.find(name);
             if (iter == data.constant_arrays.end())
-                throw FlatZincInterfaceError{fmt::format("Can't find constant array named {}", name)};
+                throw FlatZincInterfaceError{format("Can't find constant array named {}", name)};
             return &iter->second;
         }
         else if (a.is_array()) {
@@ -123,7 +135,7 @@ namespace
             return &data.unnamed_constant_arrays.back();
         }
         else
-            throw FlatZincInterfaceError{fmt::format("Unknown constant array type")};
+            throw FlatZincInterfaceError{format("Unknown constant array type")};
     }
 
     auto arg_as_set_of_integer(ExtractedData &, const auto & args, int idx) -> IntervalSet<Integer>
@@ -142,7 +154,7 @@ namespace
             string name = a;
             auto iter = data.variable_arrays.find(name);
             if (iter == data.variable_arrays.end())
-                throw FlatZincInterfaceError{fmt::format("Can't find variable array named {}", name)};
+                throw FlatZincInterfaceError{format("Can't find variable array named {}", name)};
             return iter->second.first;
         }
         else if (a.is_array()) {
@@ -151,11 +163,11 @@ namespace
                 if (v.is_string())
                     result.push_back(data.integer_variables.at(v).first);
                 else
-                    throw FlatZincInterfaceError{fmt::format("Don't know how to parse entry {} in array of variables", v.dump())};
+                    throw FlatZincInterfaceError{format("Don't know how to parse entry {} in array of variables", v.dump())};
             return result;
         }
         else {
-            throw UnimplementedException{fmt::format(
+            throw UnimplementedException{format(
                 "don't know how to parse array of variables at index {}", idx)};
         }
     }
@@ -167,7 +179,7 @@ namespace
             string name = a;
             auto iter = data.integer_variables.find(name);
             if (iter == data.integer_variables.end())
-                throw FlatZincInterfaceError{fmt::format("Can't find variable named {}", name)};
+                throw FlatZincInterfaceError{format("Can't find variable named {}", name)};
             return iter->second.first;
         }
         else if (a.is_number()) {
@@ -179,7 +191,7 @@ namespace
             return ConstantIntegerVariableID{val};
         }
         else
-            throw FlatZincInterfaceError{fmt::format("Didn't get a string or number for arg_as_var? arg is \"{}\"", a.dump())};
+            throw FlatZincInterfaceError{format("Didn't get a string or number for arg_as_var? arg is \"{}\"", a.dump())};
     }
 }
 
@@ -252,11 +264,11 @@ auto main(int argc, char * argv[]) -> int
         auto fznname = options_vars["file"].as<string>();
         ifstream infile{fznname};
         if (! infile)
-            throw FlatZincInterfaceError{fmt::format("Error reading from {}", fznname)};
+            throw FlatZincInterfaceError{format("Error reading from {}", fznname)};
 
         auto fzn = nlohmann::json::parse(infile);
         if (fzn["version"] != "1.0")
-            throw FlatZincInterfaceError{fmt::format("Unknown flatzinc version {} in {}", string{fzn["version"]}, fznname)};
+            throw FlatZincInterfaceError{format("Unknown flatzinc version {} in {}", string{fzn["version"]}, fznname)};
 
         Problem problem;
         ExtractedData data;
@@ -298,7 +310,7 @@ auto main(int argc, char * argv[]) -> int
                 }
             }
             else
-                throw FlatZincInterfaceError{fmt::format("Unknown flatzinc variable type {} for variable {} in {}", var_type, name, fznname)};
+                throw FlatZincInterfaceError{format("Unknown flatzinc variable type {} for variable {} in {}", var_type, name, fznname)};
         }
 
         for (auto a = fzn["arrays"].begin(), a_end = fzn["arrays"].end(); a != a_end; ++a) {
@@ -400,7 +412,7 @@ auto main(int argc, char * argv[]) -> int
                 const auto & vars = arg_as_array_of_var(data, args, 1);
                 Integer total{static_cast<long long>(args.at(2))};
                 if (coeffs->size() != vars.size())
-                    throw FlatZincInterfaceError{fmt::format("Array length mismatch in {} in {}", id, fznname)};
+                    throw FlatZincInterfaceError{format("Array length mismatch in {} in {}", id, fznname)};
 
                 SumOf<Weighted<IntegerVariableID>> terms;
                 for (size_t c = 0; c < coeffs->size(); ++c)
@@ -418,7 +430,7 @@ auto main(int argc, char * argv[]) -> int
                 const auto & vars = arg_as_array_of_var(data, args, 1);
                 Integer total{static_cast<long long>(args.at(2))};
                 if (coeffs->size() != vars.size())
-                    throw FlatZincInterfaceError{fmt::format("Array length mismatch in {} in {}", id, fznname)};
+                    throw FlatZincInterfaceError{format("Array length mismatch in {} in {}", id, fznname)};
                 const auto & reif = arg_as_var(data, args, 3);
 
                 SumOf<Weighted<IntegerVariableID>> terms;
@@ -630,7 +642,7 @@ auto main(int argc, char * argv[]) -> int
                 problem.post(Regular{vars, symbols, long(num_states), transitions, final_states_raw});
             }
             else
-                throw FlatZincInterfaceError{fmt::format("Unknown flatzinc constraint {} in {}", id, fznname)};
+                throw FlatZincInterfaceError{format("Unknown flatzinc constraint {} in {}", id, fznname)};
         }
 
         auto solve_method = fzn["solve"]["method"];
@@ -643,7 +655,7 @@ auto main(int argc, char * argv[]) -> int
             problem.maximise(data.integer_variables.at(fzn["solve"]["objective"]).first);
         }
         else
-            throw FlatZincInterfaceError{fmt::format("Unknown solve method {} in {}", string{solve_method}, fznname)};
+            throw FlatZincInterfaceError{format("Unknown solve method {} in {}", string{solve_method}, fznname)};
 
         BranchCallback brancher = branch_sequence(
             branch_with(variable_order::dom_then_deg(data.branch_variables), value_order::smallest_first()),
@@ -751,7 +763,7 @@ auto main(int argc, char * argv[]) -> int
                         if (data.integer_variables.contains(name)) {
                             auto vardata = data.integer_variables.at(name);
                             if (! s.has_single_value(data.integer_variables.at(name).first))
-                                throw UnimplementedException{fmt::format("Variable {} does not have a unique value", name)};
+                                throw UnimplementedException{format("Variable {} does not have a unique value", name)};
                             if (vardata.second)
                                 println(cout, "{} = {};", name, s(vardata.first) == 1_i ? "true" : "false");
                             else
@@ -761,16 +773,21 @@ auto main(int argc, char * argv[]) -> int
                             vector<string> vals;
                             for (auto & v : data.variable_arrays.at(name).first) {
                                 if (! s.has_single_value(v))
-                                    throw UnimplementedException{fmt::format("Variable inside array {} does not have a unique value", name)};
+                                    throw UnimplementedException{format("Variable inside array {} does not have a unique value", name)};
                                 if (data.variable_arrays.at(name).second)
-                                    vals.push_back(fmt::format("{}", s(v) == 1_i ? "true" : "false"));
+                                    vals.push_back(format("{}", s(v) == 1_i ? "true" : "false"));
                                 else
-                                    vals.push_back(fmt::format("{}", s(v)));
-                                println(cout, "{} = [{}];", name, fmt::join(vals, ", "));
+                                    vals.push_back(format("{}", s(v)));
                             }
+                            string vals_joined;
+                            for (size_t i_ = 0; i_ < vals.size(); ++i_) {
+                                if (i_ > 0) vals_joined += ", ";
+                                vals_joined += vals[i_];
+                            }
+                            println(cout, "{} = [{}];", name, vals_joined);
                         }
                         else
-                            throw FlatZincInterfaceError{fmt::format("Unknown output item {} in {}", name, fznname)};
+                            throw FlatZincInterfaceError{format("Unknown output item {} in {}", name, fznname)};
                     }
                     println(cout, "----------");
                     cout << flush;

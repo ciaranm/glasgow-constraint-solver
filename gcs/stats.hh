@@ -9,7 +9,13 @@
 #include <tuple>
 #include <vector>
 
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <format>
+#else
 #include <fmt/ostream.h>
+#endif
 
 namespace gcs
 {
@@ -44,9 +50,21 @@ namespace gcs
     auto operator<<(std::ostream &, const Stats &) -> std::ostream &;
 }
 
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+template <>
+struct std::formatter<gcs::Stats> : std::formatter<std::string> {
+    auto format(const gcs::Stats & s, std::format_context & ctx) const
+    {
+        std::ostringstream oss;
+        oss << s;
+        return std::formatter<std::string>::format(oss.str(), ctx);
+    }
+};
+#else
 template <>
 struct fmt::formatter<gcs::Stats> : ostream_formatter
 {
 };
+#endif
 
 #endif

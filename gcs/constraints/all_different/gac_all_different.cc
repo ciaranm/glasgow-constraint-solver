@@ -10,7 +10,13 @@
 #include <gcs/innards/state.hh>
 #include <gcs/innards/variable_id_utils.hh>
 
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <print>
+#else
 #include <fmt/ostream.h>
+#endif
 
 #include <util/enumerate.hh>
 #include <util/overloaded.hh>
@@ -49,7 +55,11 @@ using std::variant;
 using std::vector;
 using std::visit;
 
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::print;
+#else
 using fmt::print;
+#endif
 
 GACAllDifferent::GACAllDifferent(vector<IntegerVariableID> v) :
     _vars(move(v))
