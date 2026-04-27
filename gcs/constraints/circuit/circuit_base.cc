@@ -16,6 +16,7 @@
 #include <version>
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <format>
 #include <print>
 #else
 #include <fmt/ostream.h>
@@ -38,14 +39,15 @@ using std::pair;
 using std::size_t;
 using std::string;
 using std::stringstream;
-using std::to_string;
 using std::tuple;
 using std::unique_ptr;
 using std::vector;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::format;
 using std::print;
 #else
+using fmt::format;
 using fmt::print;
 #endif
 
@@ -91,7 +93,7 @@ auto gcs::innards::circuit::output_cycle_to_proof(const vector<IntegerVariableID
     }
 
     if (prevent_idx.has_value()) {
-        logger.emit_proof_comment("Preventing sub-cycle for succ[" + to_string(prevent_idx->raw_value) + "] = " + to_string(prevent_value->raw_value));
+        logger.emit_proof_comment(format("Preventing sub-cycle for succ[{}] = {}", prevent_idx->raw_value, prevent_value->raw_value));
         proof_step << pos_var_data.at(prevent_idx->raw_value).plus_one_lines.at(prevent_value->raw_value).geq_line
                    << " + ";
     }
@@ -187,7 +189,7 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state, Proof
         // Need extra proof variable: pos[i] = j means "the ith node visited in the circuit is the jth var"
         // WLOG start at node 0, so pos[0] = 0
         pos_var_data.emplace(0,
-            PosVarData{"p[0]", model->create_proof_only_integer_variable(0_i, Integer{n - 1}, "pos" + to_string(0), IntegerVariableProofRepresentation::Bits), map<long, PosVarLineData>{}});
+            PosVarData{"p[0]", model->create_proof_only_integer_variable(0_i, Integer{n - 1}, "pos0", IntegerVariableProofRepresentation::Bits), map<long, PosVarLineData>{}});
         model->add_constraint(WPBSum{} + 1_i * pos_var_data.at(0).var <= 0_i);
         // Hence we can only have succ[0] = 0 (self cycle) if there is only one node i.e. n - 1 = 0
         auto [leq_line, geq_line] = model->add_constraint(
@@ -198,8 +200,8 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state, Proof
 
         for (unsigned int idx = 1; idx < _succ.size(); ++idx) {
             pos_var_data.emplace(idx,
-                PosVarData{"p[" + to_string(idx) + "]",
-                    model->create_proof_only_integer_variable(0_i, Integer{n - 1}, "pos" + to_string(0),
+                PosVarData{format("p[{}]", idx),
+                    model->create_proof_only_integer_variable(0_i, Integer{n - 1}, "pos0",
                         IntegerVariableProofRepresentation::Bits),
                     map<long, PosVarLineData>{}});
         }

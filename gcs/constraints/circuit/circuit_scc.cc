@@ -333,7 +333,7 @@ namespace
         auto & root_gt_data = flag_data_for_root.greater_than;
         ProofFlag greater_than_flag{};
 
-        if (root_gt_data.count(i)) {
+        if (root_gt_data.contains(i)) {
             // If it was already defined, don't redefine it
             return root_gt_data.at(i);
         }
@@ -411,7 +411,7 @@ namespace
 
         auto maybe_create_and_emplace_flag_data =
             [&](ProofFlagDataMap & flag_data, const long i, const long j, const WPBSumLE & definition, const string & name, const string & name_suffix) {
-                if (! flag_data[i].count(j)) {
+                if (! flag_data[i].contains(j)) {
                     auto [flag, forwards_reif_line, backwards_reif_line] = logger.create_proof_flag_reifying(definition, name + name_suffix, ProofLevel::Top);
                     flag_data[i][j] = ProofFlagData{name, flag, forwards_reif_line, backwards_reif_line, {}};
                 }

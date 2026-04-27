@@ -213,7 +213,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install(innards::Propagators 
         Triggers index_triggers;
         if (array_has_nonconstants) {
             if (_bounds_only)
-                index_triggers.on_bounds.insert(index_triggers.on_change.end(), all_array_vars.begin(), all_array_vars.end());
+                index_triggers.on_bounds.insert(index_triggers.on_bounds.end(), all_array_vars.begin(), all_array_vars.end());
             else
                 index_triggers.on_change.insert(index_triggers.on_change.end(), all_array_vars.begin(), all_array_vars.end());
         }
@@ -336,7 +336,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install(innards::Propagators 
     if (_bounds_only) {
         Triggers result_triggers;
         if (array_has_nonconstants)
-            result_triggers.on_bounds.insert(result_triggers.on_change.end(), all_array_vars.begin(), all_array_vars.end());
+            result_triggers.on_bounds.insert(result_triggers.on_bounds.end(), all_array_vars.begin(), all_array_vars.end());
         result_triggers.on_change.insert(result_triggers.on_change.end(), _index_vars.begin(), _index_vars.end());
         result_triggers.on_bounds.emplace_back(_result_var);
 

@@ -219,12 +219,13 @@ auto NegativeTable::install(Propagators & propagators, State &, ProofModel * con
                 optional<Literal> l1, l2;
                 for (const auto & [idx, v] : enumerate(vars)) {
                     switch (state.test_literal(v == t[idx])) {
-                    case LiteralIs::DefinitelyFalse:
+                        using enum LiteralIs;
+                    case DefinitelyFalse:
                         falsified = true;
                         break;
-                    case LiteralIs::DefinitelyTrue:
+                    case DefinitelyTrue:
                         break;
-                    case LiteralIs::Undecided:
+                    case Undecided:
                         if (! l1)
                             l1 = (v != t[idx]);
                         else if (! l2)

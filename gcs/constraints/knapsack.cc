@@ -32,11 +32,12 @@ using std::conditional_t;
 using std::list;
 using std::make_unique;
 using std::map;
-using std::minmax_element;
 using std::move;
 using std::nullopt;
 using std::optional;
 using std::pair;
+using std::ranges::minmax_element;
+using std::ranges::none_of;
 using std::set;
 using std::size_t;
 using std::string;
@@ -446,7 +447,7 @@ namespace
             vector<Literal> inferences;
             for (const auto & [the_x, _] : enumerate(totals)) {
                 auto x = the_x; // clang
-                auto [lowest_iter, highest_iter] = minmax_element(completed_layers.back().begin(), completed_layers.back().end(),
+                auto [lowest_iter, highest_iter] = minmax_element(completed_layers.back(),
                     [&](const pair<vector<Integer>, optional<FullNodeData>> & a,
                         const pair<vector<Integer>, optional<FullNodeData>> & b) { return a.first.at(x) < b.first.at(x); });
 
@@ -458,7 +459,7 @@ namespace
 
                 for (auto v : state.each_value_immutable(totals.at(x))) {
                     if (v >= committed.at(x) + lowest && v < committed.at(x) + highest + 1_i)
-                        if (completed_layers.back().end() == find_if(completed_layers.back().begin(), completed_layers.back().end(), [&](const pair<vector<Integer>, optional<FullNodeData>> & a) {
+                        if (none_of(completed_layers.back(), [&](const pair<vector<Integer>, optional<FullNodeData>> & a) {
                                 return a.first.at(x) + committed.at(x) == v;
                             }))
                             inferences.emplace_back(totals.at(x) != v);

@@ -108,21 +108,22 @@ namespace
                 propagators.install([lits = _lits, full_reif = _full_reif](
                                         const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                     switch (state.test_literal(full_reif)) {
-                    case LiteralIs::DefinitelyTrue: {
+                        using enum LiteralIs;
+                    case DefinitelyTrue: {
                         for (auto & l : lits)
                             inference.infer(logger, l, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{full_reif}}; }});
                         return PropagatorState::DisableUntilBacktrack;
                     }
 
-                    case LiteralIs::DefinitelyFalse: {
+                    case DefinitelyFalse: {
                         bool any_false = false;
                         optional<Literal> undecided1;
 
                         for (auto & l : lits)
                             switch (state.test_literal(l)) {
-                            case LiteralIs::DefinitelyTrue: break;
-                            case LiteralIs::DefinitelyFalse: any_false = true; break;
-                            case LiteralIs::Undecided:
+                            case DefinitelyTrue: break;
+                            case DefinitelyFalse: any_false = true; break;
+                            case Undecided:
                                 if (undecided1)
                                     return PropagatorState::Enable;
                                 else
@@ -151,18 +152,18 @@ namespace
                         }
                     }
 
-                    case LiteralIs::Undecided: {
+                    case Undecided: {
                         optional<Literal> any_false;
                         bool all_true = true;
 
                         for (auto & l : lits)
                             switch (state.test_literal(l)) {
-                            case LiteralIs::DefinitelyTrue: break;
-                            case LiteralIs::DefinitelyFalse:
+                            case DefinitelyTrue: break;
+                            case DefinitelyFalse:
                                 any_false = l;
                                 all_true = false;
                                 break;
-                            case LiteralIs::Undecided: all_true = false; break;
+                            case Undecided: all_true = false; break;
                             }
 
                         if (any_false) {

@@ -108,17 +108,18 @@ auto ParityOdd::install(Propagators & propagators, State &, ProofModel * const o
         HalfReifyOnConjunctionOf reason;
         for (const auto & l : lits) {
             switch (state.test_literal(l)) {
-            case LiteralIs::DefinitelyTrue:
+                using enum LiteralIs;
+            case DefinitelyTrue:
                 reason.push_back(l);
                 ++how_many_1;
                 break;
 
-            case LiteralIs::DefinitelyFalse:
+            case DefinitelyFalse:
                 reason.push_back(! l);
                 ++how_many_0;
                 break;
 
-            case LiteralIs::Undecided:
+            case Undecided:
                 // two or more undecided literals? can't do anything
                 if (++how_many_unknown > 1)
                     return PropagatorState::Enable;
