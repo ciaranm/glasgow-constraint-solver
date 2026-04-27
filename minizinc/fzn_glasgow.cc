@@ -47,7 +47,6 @@ using std::mutex;
 using std::nullopt;
 using std::optional;
 using std::pair;
-using std::shared_ptr;
 using std::string;
 using std::thread;
 using std::unique_lock;
@@ -57,7 +56,6 @@ using std::chrono::milliseconds;
 using std::chrono::seconds;
 using std::chrono::system_clock;
 
-using fmt::print;
 using fmt::println;
 
 class FlatZincInterfaceError : public exception

@@ -6,8 +6,6 @@
 #include <gcs/integer.hh>
 #include <gcs/variable_id.hh>
 
-#include <tuple>
-
 namespace gcs
 {
     /**

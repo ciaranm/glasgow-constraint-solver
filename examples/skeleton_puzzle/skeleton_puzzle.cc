@@ -19,12 +19,10 @@ using std::cout;
 using std::endl;
 using std::make_optional;
 using std::nullopt;
-using std::optional;
 using std::string;
 using std::vector;
 
 using fmt::print;
-using fmt::println;
 
 auto constrain_digit_sum(Problem & p, vector<SimpleIntegerVariableID> digits, SimpleIntegerVariableID number) -> void
 {

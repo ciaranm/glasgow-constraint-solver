@@ -12,7 +12,6 @@
 #include <map>
 #include <sstream>
 #include <string>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -33,18 +32,14 @@ using std::list;
 using std::map;
 using std::max;
 using std::min;
-using std::nullopt;
 using std::optional;
 using std::pair;
 using std::string;
 using std::stringstream;
 using std::to_string;
-using std::unordered_map;
 using std::variant;
 using std::vector;
 using std::visit;
-
-using fmt::format;
 
 namespace
 {

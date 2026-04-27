@@ -16,19 +16,10 @@ using namespace gcs::innards;
 using namespace gcs::innards::circuit;
 
 using std::cmp_less;
-using std::cmp_not_equal;
-using std::get;
 using std::list;
-using std::make_optional;
-using std::make_pair;
 using std::map;
-using std::move;
-using std::nullopt;
-using std::optional;
-using std::pair;
 using std::size_t;
 using std::stringstream;
-using std::to_string;
 using std::unique_ptr;
 using std::vector;
 

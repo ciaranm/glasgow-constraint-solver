@@ -19,7 +19,6 @@ using std::cout;
 using std::make_optional;
 using std::nullopt;
 using std::string;
-using std::vector;
 
 using fmt::print;
 using fmt::println;

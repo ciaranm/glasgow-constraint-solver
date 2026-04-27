@@ -4,7 +4,6 @@
 #include <gcs/solve.hh>
 
 #include <cstdlib>
-#include <functional>
 #include <iostream>
 #include <optional>
 #include <random>
@@ -16,7 +15,6 @@
 using std::cerr;
 using std::cmp_equal;
 using std::flush;
-using std::function;
 using std::make_optional;
 using std::mt19937;
 using std::nullopt;
@@ -24,7 +22,6 @@ using std::pair;
 using std::random_device;
 using std::set;
 using std::string;
-using std::to_string;
 using std::tuple;
 using std::uniform_int_distribution;
 using std::variant;

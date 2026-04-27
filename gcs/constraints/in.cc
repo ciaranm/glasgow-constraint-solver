@@ -14,7 +14,6 @@ using namespace gcs::innards;
 
 using std::erase_if;
 using std::move;
-using std::optional;
 using std::sort;
 using std::string;
 using std::stringstream;

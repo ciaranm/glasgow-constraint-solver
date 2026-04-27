@@ -27,13 +27,9 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-<<<<<<< HEAD
-        options.add_options("Program Options")("help", "Display help information")("prove", "Create a proof");
-=======
         options.add_options("Program Options")   //
             ("help", "Display help information") //
             ("prove", "Create a proof");
->>>>>>> main
 
         options_vars = options.parse(argc, argv);
     }

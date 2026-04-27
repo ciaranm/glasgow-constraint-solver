@@ -6,7 +6,6 @@
 #include <gcs/innards/state-fwd.hh>
 
 #include <memory>
-#include <optional>
 #include <string>
 
 namespace gcs

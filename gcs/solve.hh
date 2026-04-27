@@ -8,7 +8,6 @@
 
 #include <atomic>
 #include <functional>
-#include <vector>
 
 #if __has_cpp_attribute(__cpp_lib_generator)
 #include <generator>

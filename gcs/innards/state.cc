@@ -10,7 +10,6 @@
 #include <list>
 #include <string>
 #include <tuple>
-#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -24,13 +23,11 @@ using std::get;
 using std::list;
 using std::make_optional;
 using std::make_shared;
-using std::max;
 using std::move;
 using std::nullopt;
 using std::optional;
 using std::pair;
 using std::string;
-using std::to_string;
 using std::tuple;
 using std::vector;
 using std::visit;

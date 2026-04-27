@@ -1,8 +1,8 @@
 #include <gcs/constraints/all_different.hh>
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/constraints_test_utils.hh>
+#include <gcs/constraints/equals.hh>
 #include <gcs/constraints/mult_bc.hh>
-#include <gcs/constraints/not_equals.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
@@ -11,9 +11,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <random>
-#include <set>
 #include <string>
-#include <tuple>
 
 #include <fmt/core.h>
 #include <fmt/ostream.h>
@@ -24,21 +22,13 @@ using namespace gcs;
 using std::cerr;
 using std::cout;
 using std::endl;
-using std::flush;
-using std::function;
 using std::make_optional;
 using std::mt19937;
 using std::nullopt;
-using std::pair;
-using std::random_device;
-using std::set;
 using std::string;
-using std::tuple;
-using std::uniform_int_distribution;
 using std::vector;
 
 using fmt::print;
-using fmt::println;
 
 auto main(int argc, char * argv[]) -> int
 {

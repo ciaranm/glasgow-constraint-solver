@@ -11,7 +11,6 @@
 
 #include <functional>
 #include <variant>
-#include <vector>
 
 namespace gcs::innards
 {

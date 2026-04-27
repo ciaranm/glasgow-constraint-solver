@@ -10,8 +10,6 @@
 #include <string>
 
 using namespace gcs;
-using fmt::print;
-using fmt::println;
 using std::cerr;
 using std::cout;
 using std::endl;

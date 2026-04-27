@@ -18,7 +18,6 @@
 using namespace gcs;
 
 using std::cerr;
-using std::cout;
 using std::cref;
 using std::getline;
 using std::ifstream;

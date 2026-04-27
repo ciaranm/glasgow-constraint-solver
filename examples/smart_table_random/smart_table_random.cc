@@ -6,7 +6,6 @@
 #include <cxxopts.hpp>
 
 #include <iostream>
-#include <numeric>
 #include <random>
 #include <sstream>
 #include <vector>
@@ -16,18 +15,14 @@ using namespace gcs;
 using std::cerr;
 using std::cout;
 using std::endl;
-using std::iota;
 using std::make_optional;
 using std::mt19937;
 using std::nullopt;
 using std::pair;
 using std::random_device;
 using std::shuffle;
-using std::ssize;
-using std::stoll;
 using std::string;
 using std::stringstream;
-using std::to_string;
 using std::uniform_int_distribution;
 using std::vector;
 

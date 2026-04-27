@@ -18,9 +18,7 @@
 using namespace gcs;
 using namespace gcs::innards;
 
-using std::make_optional;
 using std::optional;
-using std::pair;
 using std::string;
 using std::stringstream;
 using std::tuple;

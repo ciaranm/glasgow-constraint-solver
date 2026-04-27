@@ -19,8 +19,6 @@ using namespace gcs::innards;
 using std::list;
 using std::map;
 using std::max;
-using std::optional;
-using std::pair;
 using std::set;
 using std::string;
 using std::stringstream;

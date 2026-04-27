@@ -10,12 +10,9 @@
 #include <gcs/innards/proofs/simplify_literal.hh>
 
 #include <algorithm>
-#include <deque>
 #include <fstream>
 #include <iterator>
-#include <map>
 #include <sstream>
-#include <unordered_map>
 
 #include <fmt/core.h>
 
@@ -24,10 +21,8 @@
 using namespace gcs;
 using namespace gcs::innards;
 
-using std::deque;
 using std::fstream;
 using std::istreambuf_iterator;
-using std::map;
 using std::nullopt;
 using std::ofstream;
 using std::optional;
@@ -36,13 +31,9 @@ using std::pair;
 using std::sort;
 using std::string;
 using std::stringstream;
-using std::to_string;
 using std::unique;
-using std::unordered_map;
 using std::variant;
 using std::vector;
-
-using fmt::format;
 
 struct ProofModel::Imp
 {

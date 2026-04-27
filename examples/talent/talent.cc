@@ -20,7 +20,6 @@ using std::make_optional;
 using std::nullopt;
 using std::vector;
 
-using fmt::print;
 using fmt::println;
 
 int main(int argc, char * argv[])

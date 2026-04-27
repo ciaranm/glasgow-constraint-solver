@@ -14,7 +14,6 @@ using std::cout;
 using std::endl;
 using std::string;
 
-using fmt::print;
 using fmt::println;
 
 auto main(int argc, char * argv[]) -> int

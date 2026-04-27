@@ -1,5 +1,3 @@
-
-
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/smart_table.hh>
 #include <gcs/problem.hh>
@@ -10,7 +8,6 @@
 
 using namespace gcs;
 
-using std::cerr;
 using std::cout;
 using std::endl;
 using std::make_optional;

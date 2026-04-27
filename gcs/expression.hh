@@ -6,7 +6,6 @@
 
 #include <concepts>
 #include <iosfwd>
-#include <tuple>
 #include <vector>
 
 namespace gcs

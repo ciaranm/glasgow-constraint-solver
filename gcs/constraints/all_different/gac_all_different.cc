@@ -17,7 +17,6 @@
 
 #include <algorithm>
 #include <functional>
-#include <list>
 #include <map>
 #include <optional>
 #include <sstream>

@@ -7,7 +7,6 @@
 #include <fmt/ostream.h>
 
 #include <cmath>
-#include <tuple>
 #include <vector>
 
 using namespace gcs;
@@ -15,14 +14,11 @@ using namespace gcs::innards;
 
 using std::llroundl;
 using std::move;
-using std::optional;
 using std::pow;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
 using std::vector;
-
-using fmt::print;
 
 template <ArithmeticOperator op_>
 GACArithmetic<op_>::GACArithmetic(const IntegerVariableID v1, const IntegerVariableID v2, const IntegerVariableID result) :

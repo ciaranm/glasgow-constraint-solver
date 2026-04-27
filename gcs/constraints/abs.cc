@@ -18,15 +18,12 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::max;
-using std::optional;
-using std::pair;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
 using std::vector;
 
 using fmt::print;
-using fmt::println;
 
 Abs::Abs(const IntegerVariableID v1, const IntegerVariableID v2) :
     _v1(v1),
