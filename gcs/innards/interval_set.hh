@@ -15,6 +15,21 @@
 
 namespace gcs::innards
 {
+    /**
+     * \brief A set of integers stored as a sorted sequence of disjoint closed intervals.
+     *
+     * Intended for cases where the set may be large but can be compactly described by a
+     * small number of contiguous ranges. For example, the set {1, 2, 3, 4, 8, 9, 10}
+     * is stored internally as two intervals [1..4] and [8..10].
+     *
+     * Intervals are always maintained in sorted order with no two intervals touching
+     * or overlapping.
+     *
+     * \tparam Int_ The integer type used for values and bounds. Must support arithmetic
+     * and comparison operators, and construction from a literal zero or one.
+     *
+     * \ingroup Innards
+     */
     template <typename Int_>
     class IntervalSet
     {
@@ -23,8 +38,19 @@ namespace gcs::innards
         Intervals intervals;
 
     public:
+        /**
+         * \name Constructors, destructors, and assignment operators.
+         * @{
+         */
+
+        /**
+         * \brief Constructs an empty set.
+         */
         IntervalSet() = default;
 
+        /**
+         * \brief Constructs a set containing the single closed interval [lower..upper].
+         */
         IntervalSet(Int_ lower, Int_ upper) :
             intervals({{lower, upper}})
         {
@@ -40,11 +66,27 @@ namespace gcs::innards
 
         auto operator=(IntervalSet &&) -> IntervalSet & = default;
 
+        ///@}
+
+        /**
+         * \name Querying the set.
+         * @{
+         */
+
+        /**
+         * \brief Returns true if the set contains no values.
+         */
         [[nodiscard]] auto empty() const -> bool
         {
             return intervals.empty();
         }
 
+        /**
+         * \brief Returns the total number of values across all intervals.
+         *
+         * This is the number of distinct integers in the set, not the number of
+         * intervals used to represent it.
+         */
         [[nodiscard]] auto size() const -> Int_
         {
             Int_ result(0);
@@ -53,6 +95,92 @@ namespace gcs::innards
             return result;
         }
 
+        /**
+         * \brief Returns the smallest value in the set.
+         *
+         * \note The set must not be empty.
+         *
+         * \sa upper()
+         */
+        [[nodiscard]] auto lower() const -> Int_
+        {
+            return intervals.front().first;
+        }
+
+        /**
+         * \brief Returns the largest value in the set.
+         *
+         * \note The set must not be empty.
+         *
+         * \sa lower()
+         */
+        [[nodiscard]] auto upper() const -> Int_
+        {
+            return intervals.back().second;
+        }
+
+        /**
+         * \brief Returns true if \p value is a member of this set.
+         *
+         * \sa contains_any_of()
+         */
+        [[nodiscard]] auto contains(Int_ value) const -> bool
+        {
+            for (auto & [l, u] : intervals) {
+                if (l <= value && value <= u)
+                    return true;
+                if (u > value)
+                    return false;
+            }
+
+            return false;
+        }
+
+        /**
+         * \brief Returns true if this set and \p other share at least one value.
+         *
+         * \sa contains()
+         */
+        [[nodiscard]] auto contains_any_of(const IntervalSet & other) const -> bool
+        {
+            for (const auto & [l1, u1] : other.intervals) {
+                for (auto & [l2, u2] : intervals) {
+                    if (l2 <= u1 && l1 <= u2)
+                        return true;
+                    if (u2 > u1)
+                        break;
+                }
+            }
+
+            return false;
+        }
+
+        /**
+         * \brief Returns true if the set cannot be described by a single interval.
+         *
+         * Equivalently, returns true if there is at least one integer strictly between
+         * lower() and upper() that is not in the set.
+         *
+         * \sa lower(), upper(), each_gap(), each_gap_interval()
+         */
+        [[nodiscard]] auto has_holes() const -> bool
+        {
+            return intervals.size() > 1;
+        }
+
+        ///@}
+
+        /**
+         * \name Modifying the set.
+         * @{
+         */
+
+        /**
+         * \brief Removes a single value from the set.
+         *
+         * If \p value is not in the set, does nothing. If \p value falls in
+         * the interior of an interval, that interval is split into two.
+         */
         auto erase(Int_ value) -> void
         {
             for (auto iter = intervals.begin(), iter_end = intervals.end(); iter != iter_end; ++iter) {
@@ -81,6 +209,13 @@ namespace gcs::innards
             }
         }
 
+        /**
+         * \brief Removes all values strictly less than \p value.
+         *
+         * Equivalent to intersecting the set with [value, +inf).
+         *
+         * \sa erase_greater_than()
+         */
         auto erase_less_than(Int_ value) -> void
         {
             auto iter = intervals.begin(), iter_end = intervals.end();
@@ -101,6 +236,13 @@ namespace gcs::innards
                 intervals.clear();
         }
 
+        /**
+         * \brief Removes all values strictly greater than \p value.
+         *
+         * Equivalent to intersecting the set with (-inf, value].
+         *
+         * \sa erase_less_than()
+         */
         auto erase_greater_than(Int_ value) -> void
         {
             auto iter = intervals.begin(), iter_end = intervals.end();
@@ -117,52 +259,24 @@ namespace gcs::innards
             }
         }
 
-        [[nodiscard]] auto lower() const -> Int_
-        {
-            return intervals.front().first;
-        }
-
-        [[nodiscard]] auto upper() const -> Int_
-        {
-            return intervals.back().second;
-        }
-
-        [[nodiscard]] auto contains(Int_ value) const -> bool
-        {
-            for (auto & [l, u] : intervals) {
-                if (l <= value && value <= u)
-                    return true;
-                if (u > value)
-                    return false;
-            }
-
-            return false;
-        }
-
-        [[nodiscard]] auto contains_any_of(const IntervalSet & other) const -> bool
-        {
-            for (const auto & [l1, u1] : other.intervals) {
-                for (auto & [l2, u2] : intervals) {
-                    if (l2 <= u1 && l1 <= u2)
-                        return true;
-                    if (u2 > u1)
-                        break;
-                }
-            }
-
-            return false;
-        }
-
-        [[nodiscard]] auto has_holes() const -> bool
-        {
-            return intervals.size() > 1;
-        }
-
+        /**
+         * \brief Removes all values, leaving the set empty.
+         */
         auto clear() -> void
         {
             intervals.clear();
         }
 
+        /**
+         * \brief Appends a single value to the set.
+         *
+         * \p value must be greater than or equal to upper() if the set is non-empty,
+         * i.e. values must be inserted in non-decreasing order. If \p value is
+         * exactly upper() + 1, it is merged into the last interval rather than
+         * starting a new one.
+         *
+         * \sa insert_at_end(Int_, Int_)
+         */
         auto insert_at_end(Int_ value) -> void
         {
             if (intervals.empty())
@@ -173,6 +287,16 @@ namespace gcs::innards
                 intervals.emplace_back(value, value);
         }
 
+        /**
+         * \brief Appends a closed interval [lower..upper] to the set.
+         *
+         * \p lower must be greater than or equal to upper() if the set is non-empty,
+         * i.e. intervals must be inserted in non-decreasing order. If \p lower is
+         * exactly upper() + 1, the new interval is merged into the last interval
+         * rather than starting a new one.
+         *
+         * \sa insert_at_end(Int_)
+         */
         auto insert_at_end(Int_ lower, Int_ upper) -> void
         {
             if (intervals.empty())
@@ -183,6 +307,18 @@ namespace gcs::innards
                 intervals.emplace_back(lower, upper);
         }
 
+        ///@}
+
+        /**
+         * \name Iteration.
+         * @{
+         */
+
+        /**
+         * \brief Returns a generator that yields each value in the set in ascending order.
+         *
+         * \sa each_reversed(), each_interval()
+         */
         [[nodiscard]] auto each() const -> std::generator<Int_>
         {
             return [](const Intervals & intervals) -> std::generator<Int_> {
@@ -192,6 +328,12 @@ namespace gcs::innards
             }(intervals);
         }
 
+        /**
+         * \brief Returns a generator that yields each stored interval as a
+         * (lower, upper) pair, in ascending order.
+         *
+         * \sa each(), each_gap_interval()
+         */
         [[nodiscard]] auto each_interval() const -> std::generator<std::pair<Int_, Int_>>
         {
             return [](const Intervals & intervals) -> std::generator<std::pair<Int_, Int_>> {
@@ -200,6 +342,12 @@ namespace gcs::innards
             }(intervals);
         }
 
+        /**
+         * \brief Returns a generator that yields each integer strictly between lower()
+         * and upper() that is not a member of the set, in ascending order.
+         *
+         * \sa each_gap_interval(), has_holes()
+         */
         [[nodiscard]] auto each_gap() const -> std::generator<Int_>
         {
             return [](const Intervals & intervals) -> std::generator<Int_> {
@@ -209,6 +357,17 @@ namespace gcs::innards
             }(intervals);
         }
 
+        /**
+         * \brief Returns a generator that yields each gap in the set as a half-open
+         * (first, next) pair, in ascending order.
+         *
+         * Each yielded pair (a, b) represents the half-open range [a, b): a is the
+         * first absent value after an interval, and b is the lower bound of the next
+         * interval (the first present value after the gap). This is consistent with
+         * each_gap(), which iterates <code>i = a; i != b; ++i</code>.
+         *
+         * \sa each_gap(), has_holes()
+         */
         [[nodiscard]] auto each_gap_interval() const -> std::generator<std::pair<Int_, Int_>>
         {
             return [](const Intervals & intervals) -> std::generator<std::pair<Int_, Int_>> {
@@ -217,6 +376,11 @@ namespace gcs::innards
             }(intervals);
         }
 
+        /**
+         * \brief Returns a generator that yields each value in the set in descending order.
+         *
+         * \sa each()
+         */
         [[nodiscard]] auto each_reversed() const -> std::generator<Int_>
         {
             return [](const Intervals & intervals) -> std::generator<Int_> {
@@ -225,6 +389,8 @@ namespace gcs::innards
                         co_yield i;
             }(intervals);
         }
+
+        ///@}
     };
 }
 
