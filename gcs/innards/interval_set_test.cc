@@ -463,25 +463,98 @@ TEST_CASE("Contains any of with empty sets")
     CHECK(! empty.contains_any_of(empty));
 }
 
-TEST_CASE("Contains any of with multi-interval sets exercises the break path")
+TEST_CASE("Contains any of with multi-interval sets")
 {
     // this = {[1,2],[10,15]}, other = {[3,5],[11,12]}
-    // Checking other[0]=[3,5] against this[1]=[10,15]: u2=15 > u1=5 fires the break.
-    // Checking other[1]=[11,12] against this[1]=[10,15]: overlap found.
+    // i=[1,2] vs j=[3,5]: no overlap, i ends first → advance i
+    // i=[10,15] vs j=[3,5]: no overlap, j ends first → advance j
+    // i=[10,15] vs j=[11,12]: overlap → true
     IntervalSet<int> a, b;
     a.insert_at_end(1, 2);
     a.insert_at_end(10, 15);
     b.insert_at_end(3, 5);
     b.insert_at_end(11, 12);
     CHECK(a.contains_any_of(b));
-    CHECK(b.contains_any_of(a));
+    CHECK(b.contains_any_of(a)); // symmetry
 
     // two multi-interval sets that are completely disjoint
+    // i=[1,3] vs j=[4,6]: no overlap, i ends first → advance i
+    // i=[7,9] vs j=[4,6]: no overlap, j ends first → advance j
+    // i=[7,9] vs j=[10,12]: no overlap, i ends first → advance i
+    // i exhausted → false
     IntervalSet<int> c, d;
     c.insert_at_end(1, 3);
     c.insert_at_end(7, 9);
     d.insert_at_end(4, 6);
     d.insert_at_end(10, 12);
     CHECK(! c.contains_any_of(d));
+    CHECK(! d.contains_any_of(c)); // symmetry
+}
+
+TEST_CASE("Contains any of overlap at a single point")
+{
+    // intervals sharing exactly one value
+    IntervalSet<int> a(1, 5), b(5, 10);
+    CHECK(a.contains_any_of(b));
+    CHECK(b.contains_any_of(a));
+
+    // adjacent but not touching: [1,4] and [5,10] share nothing
+    IntervalSet<int> c(1, 4), e(5, 10);
+    CHECK(! c.contains_any_of(e));
+    CHECK(! e.contains_any_of(c));
+}
+
+TEST_CASE("Contains any of many advances before overlap")
+{
+    // build this = {[1,1],[3,3],[5,5],[7,7],[20,30]}
+    // build other = {[2,2],[4,4],[6,6],[8,8],[25,25]}
+    // the two-pointer walks through four non-overlapping pairs before hitting [20,30] vs [25,25]
+    IntervalSet<int> a, b;
+    for (int i = 1; i <= 7; i += 2)
+        a.insert_at_end(i, i);
+    a.insert_at_end(20, 30);
+    for (int i = 2; i <= 8; i += 2)
+        b.insert_at_end(i, i);
+    b.insert_at_end(25, 25);
+    CHECK(a.contains_any_of(b));
+    CHECK(b.contains_any_of(a));
+
+    // same structure but remove the overlapping tail — should be false
+    IntervalSet<int> c, d;
+    for (int i = 1; i <= 7; i += 2)
+        c.insert_at_end(i, i);
+    for (int i = 2; i <= 8; i += 2)
+        d.insert_at_end(i, i);
+    CHECK(! c.contains_any_of(d));
     CHECK(! d.contains_any_of(c));
+}
+
+TEST_CASE("Contains any of brute-force cross-check with multi-interval sets")
+{
+    // build several multi-interval sets and verify contains_any_of agrees
+    // with a direct element-by-element comparison
+    auto brute_force = [](const IntervalSet<int> & x, const IntervalSet<int> & y) {
+        for (auto v : x.each())
+            for (auto w : y.each())
+                if (v == w)
+                    return true;
+        return false;
+    };
+
+    IntervalSet<int> s1, s2, s3, s4;
+    s1.insert_at_end(1, 3);
+    s1.insert_at_end(8, 10);
+    s1.insert_at_end(15, 17);
+
+    s2.insert_at_end(4, 7);
+    s2.insert_at_end(11, 14);
+
+    s3.insert_at_end(3, 5);
+    s3.insert_at_end(9, 11);
+
+    s4.insert_at_end(18, 20);
+
+    for (const auto & a : {s1, s2, s3, s4})
+        for (const auto & b : {s1, s2, s3, s4})
+            CHECK(a.contains_any_of(b) == brute_force(a, b));
 }
