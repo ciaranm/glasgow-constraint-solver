@@ -21,3 +21,4 @@ python/venv
 .cache
 compile_commands.json
 out/
+.claude
