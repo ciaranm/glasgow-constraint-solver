@@ -136,49 +136,66 @@ namespace
     }
 }
 
-auto ReifiedLinearEquality::install(Propagators & propagators, State & state, ProofModel * const optional_model) && -> void
+auto ReifiedLinearEquality::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
-    optional<pair<optional<ProofLine>, optional<ProofLine>>> proof_line;
-    if (optional_model) {
-        WPBSum terms;
-        for (auto & [c, v] : _coeff_vars.terms)
-            terms += c * v;
+    if (! prepare(propagators, initial_state, optional_model))
+        return;
 
-        overloaded{
-            [&](const reif::MustHold &) {
-                // condition is definitely true, it's just an inequality
-                proof_line = optional_model->add_constraint("ReifiedLinearEquality", "unconditional sum", terms == _value, nullopt);
-            },
-            [&](const reif::MustNotHold &) {
-                // condition is definitely false, the flag implies either greater or less
-                auto neflag = optional_model->create_proof_flag("linne");
-                optional_model->add_constraint("ReifiedLinearEquality", "greater option", terms >= _value + 1_i, HalfReifyOnConjunctionOf{{neflag}});
-                optional_model->add_constraint("ReifiedLinearEquality", "less than option", terms <= _value - 1_i, HalfReifyOnConjunctionOf{{! neflag}});
-            },
-            [&](const reif::If & cond) {
-                proof_line = optional_model->add_constraint("ReifiedLinearEquality", "unconditional sum", terms == _value, HalfReifyOnConjunctionOf{{cond.cond}});
-            },
-            [&](const reif::NotIf & cond) {
-                // condition is definitely false, the flag implies either greater or less
-                auto neflag = optional_model->create_proof_flag("linne");
-                optional_model->add_constraint("ReifiedLinearEquality", "greater option", terms >= _value + 1_i, HalfReifyOnConjunctionOf{{cond.cond, neflag}});
-                optional_model->add_constraint("ReifiedLinearEquality", "less than option", terms <= _value - 1_i, HalfReifyOnConjunctionOf{{cond.cond, ! neflag}});
-            },
-            [&](const reif::Iff & cond) {
-                // condition unknown, the condition implies it is neither greater nor less
-                proof_line = optional_model->add_constraint("ReifiedLinearEquality", "equals option", terms == _value, HalfReifyOnConjunctionOf{{cond.cond}});
+    if (optional_model)
+        define_proof_model(*optional_model);
 
-                auto gtflag = optional_model->create_proof_flag("lineqgt");
-                optional_model->add_constraint("ReifiedLinearEquality", "greater option", terms >= _value + 1_i, HalfReifyOnConjunctionOf{{gtflag}});
-                auto ltflag = optional_model->create_proof_flag("lineqlt");
-                optional_model->add_constraint("ReifiedLinearEquality", "less than option", terms <= _value - 1_i, HalfReifyOnConjunctionOf{{ltflag}});
+    install_propagators(propagators);
+}
 
-                // lt + eq + gt >= 1
-                optional_model->add_constraint("ReifiedLinearEquality", "one of less than, equals, greater than", WPBSum{} + 1_i * ltflag + 1_i * gtflag + 1_i * cond.cond >= 1_i);
-            }}
-            .visit(_reif_cond);
-    }
+auto ReifiedLinearEquality::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
+{
+    _evaluated_cond = initial_state.test_reification_condition(_reif_cond);
+    return true;
+}
 
+auto ReifiedLinearEquality::define_proof_model(ProofModel & model) -> void
+{
+    WPBSum terms;
+    for (auto & [c, v] : _coeff_vars.terms)
+        terms += c * v;
+
+    overloaded{
+        [&](const reif::MustHold &) {
+            // condition is definitely true, it's just an inequality
+            _proof_line = model.add_constraint("ReifiedLinearEquality", "unconditional sum", terms == _value, nullopt);
+        },
+        [&](const reif::MustNotHold &) {
+            // condition is definitely false, the flag implies either greater or less
+            auto neflag = model.create_proof_flag("linne");
+            model.add_constraint("ReifiedLinearEquality", "greater option", terms >= _value + 1_i, HalfReifyOnConjunctionOf{{neflag}});
+            model.add_constraint("ReifiedLinearEquality", "less than option", terms <= _value - 1_i, HalfReifyOnConjunctionOf{{! neflag}});
+        },
+        [&](const reif::If & cond) {
+            _proof_line = model.add_constraint("ReifiedLinearEquality", "unconditional sum", terms == _value, HalfReifyOnConjunctionOf{{cond.cond}});
+        },
+        [&](const reif::NotIf & cond) {
+            // condition is definitely false, the flag implies either greater or less
+            auto neflag = model.create_proof_flag("linne");
+            model.add_constraint("ReifiedLinearEquality", "greater option", terms >= _value + 1_i, HalfReifyOnConjunctionOf{{cond.cond, neflag}});
+            model.add_constraint("ReifiedLinearEquality", "less than option", terms <= _value - 1_i, HalfReifyOnConjunctionOf{{cond.cond, ! neflag}});
+        },
+        [&](const reif::Iff & cond) {
+            // condition unknown, the condition implies it is neither greater nor less
+            _proof_line = model.add_constraint("ReifiedLinearEquality", "equals option", terms == _value, HalfReifyOnConjunctionOf{{cond.cond}});
+
+            auto gtflag = model.create_proof_flag("lineqgt");
+            model.add_constraint("ReifiedLinearEquality", "greater option", terms >= _value + 1_i, HalfReifyOnConjunctionOf{{gtflag}});
+            auto ltflag = model.create_proof_flag("lineqlt");
+            model.add_constraint("ReifiedLinearEquality", "less than option", terms <= _value - 1_i, HalfReifyOnConjunctionOf{{ltflag}});
+
+            // lt + eq + gt >= 1
+            model.add_constraint("ReifiedLinearEquality", "one of less than, equals, greater than", WPBSum{} + 1_i * ltflag + 1_i * gtflag + 1_i * cond.cond >= 1_i);
+        }}
+        .visit(_reif_cond);
+}
+
+auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> void
+{
     auto [sanitised_cv, modifier] = tidy_up_linear(_coeff_vars);
 
     vector<IntegerVariableID> all_vars;
@@ -238,7 +255,7 @@ auto ReifiedLinearEquality::install(Propagators & propagators, State & state, Pr
 
                 visit(
                     [&, modifier = modifier](const auto & lin) {
-                        propagators.install([modifier = modifier, lin = lin, value = _value, proof_line = proof_line, reason_from_cond = reif.cond](
+                        propagators.install([modifier = modifier, lin = lin, value = _value, proof_line = _proof_line, reason_from_cond = reif.cond](
                                                 const State & state, auto & inference, ProofLogger * const logger) {
                             return propagate_linear(lin, value + modifier, state, inference, logger, true, proof_line, reason_from_cond);
                         },
@@ -284,7 +301,7 @@ auto ReifiedLinearEquality::install(Propagators & propagators, State & state, Pr
                 triggers.on_change.push_back(reif.cond.var);
 
                 visit([&, modifier = modifier](const auto & sanitised_cv) {
-                    propagators.install([sanitised_cv = sanitised_cv, value = _value + modifier, cond = _reif_cond, proof_line = proof_line, all_vars = move(all_vars)](
+                    propagators.install([sanitised_cv = sanitised_cv, value = _value + modifier, cond = _reif_cond, proof_line = _proof_line, all_vars = move(all_vars)](
                                             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                         return overloaded{
                             [&](const evaluated_reif::MustHold & reif) {
@@ -369,7 +386,7 @@ auto ReifiedLinearEquality::install(Propagators & propagators, State & state, Pr
                 },
                     sanitised_cv);
             }}
-            .visit(state.test_reification_condition(_reif_cond));
+            .visit(_evaluated_cond);
     }
 }
 
