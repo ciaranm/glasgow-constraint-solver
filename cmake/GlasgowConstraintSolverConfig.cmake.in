@@ -1,0 +1,13 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+# If the library was built without std::format support it was compiled against
+# libfmt, and consumers need it too (for the public gcs/stats.hh formatter).
+if(@GCS_NEEDS_FMT@)
+    find_dependency(fmt)
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/GlasgowConstraintSolverTargets.cmake")
+
+check_required_components(GlasgowConstraintSolver)

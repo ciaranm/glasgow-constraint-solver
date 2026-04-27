@@ -1,15 +1,5 @@
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 add_executable(fzn-glasgow fzn_glasgow.cc)
-target_link_libraries(fzn-glasgow PUBLIC glasgow_constraint_solver)
-
-target_link_libraries(fzn-glasgow LINK_PUBLIC cxxopts)
-target_link_libraries(fzn-glasgow PRIVATE gcs_fmt)
-target_link_libraries(fzn-glasgow PRIVATE nlohmann_json::nlohmann_json)
-
-if (GCS_COMPILER_HAS_GENERATOR)
-else (GCS_COMPILER_HAS_GENERATOR)
-    include_directories(${CMAKE_SOURCE_DIR}/generator/src/generator/include)
-endif (GCS_COMPILER_HAS_GENERATOR)
+target_link_libraries(fzn-glasgow PRIVATE glasgow_constraint_solver cxxopts gcs_fmt nlohmann_json::nlohmann_json)
 
 add_test(NAME minizinc-abs COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ abs true true)
 set_tests_properties(minizinc-abs PROPERTIES SKIP_RETURN_CODE 66)
