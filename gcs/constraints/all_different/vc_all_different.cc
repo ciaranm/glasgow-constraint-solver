@@ -101,36 +101,49 @@ auto VCAllDifferent::clone() const -> unique_ptr<Constraint>
     return make_unique<VCAllDifferent>(_vars);
 }
 
-auto VCAllDifferent::install(innards::Propagators & propagators, innards::State & initial_state,
-    innards::ProofModel * const model) && -> void
+auto VCAllDifferent::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
-    if (model) {
-        define_clique_not_equals_encoding(*model, _vars);
-    }
-
-    auto sanitised_vars = move(_vars);
-    sort(sanitised_vars.begin(), sanitised_vars.end());
-    if (sanitised_vars.end() != adjacent_find(sanitised_vars.begin(), sanitised_vars.end())) {
-        propagators.model_contradiction(initial_state, model, "AllDifferent with duplicate variables");
+    if (! prepare(propagators, initial_state, optional_model))
         return;
-    }
 
-    Triggers triggers;
-    triggers.on_change = {sanitised_vars.begin(), sanitised_vars.end()};
-    vector<Integer> compressed_vals;
+    if (optional_model)
+        define_proof_model(*optional_model);
+
+    install_propagators(propagators);
+}
+
+auto VCAllDifferent::prepare(Propagators & propagators, State & initial_state, ProofModel * const model) -> bool
+{
+    _sanitised_vars = move(_vars);
+    sort(_sanitised_vars.begin(), _sanitised_vars.end());
+    if (_sanitised_vars.end() != adjacent_find(_sanitised_vars.begin(), _sanitised_vars.end())) {
+        propagators.model_contradiction(initial_state, model, "AllDifferent with duplicate variables");
+        return false;
+    }
 
     // Keep track of unassigned vars
     // Might want a more centralised way of doing this in future.
     list<IntegerVariableID> unassigned{};
-    for (auto & var : sanitised_vars)
+    for (auto & var : _sanitised_vars)
         if (! initial_state.has_single_value(var))
             unassigned.push_back(var);
 
-    auto unassigned_handle = initial_state.add_constraint_state(unassigned);
+    _unassigned_handle = initial_state.add_constraint_state(unassigned);
+    return true;
+}
+
+auto VCAllDifferent::define_proof_model(ProofModel & model) -> void
+{
+    define_clique_not_equals_encoding(model, _vars);
+}
+
+auto VCAllDifferent::install_propagators(Propagators & propagators) -> void
+{
+    Triggers triggers;
+    triggers.on_change = {_sanitised_vars.begin(), _sanitised_vars.end()};
 
     propagators.install(
-        [vars = move(sanitised_vars), unassigned_handle = unassigned_handle,
-            vals = move(compressed_vals)](const State & state, auto & tracker, ProofLogger * const logger) -> PropagatorState {
+        [unassigned_handle = _unassigned_handle](const State & state, auto & tracker, ProofLogger * const logger) -> PropagatorState {
             propagate_non_gac_alldifferent(unassigned_handle, state, tracker, logger);
             return PropagatorState::Enable;
         },
