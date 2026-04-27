@@ -245,7 +245,7 @@ def assign_snapshots_to_cases(
 def run_one_test(
     test_bin: Path,
     out_root: Path,
-    args: Optional[List[str]] = [],
+    args: List[str] = [],
     timeout_sec: int = 0
 ) -> Tuple[List[CaseEvent], List[Snapshot], int]:
     test_name = test_bin.name
