@@ -23,6 +23,7 @@ using std::bit_ceil;
 using std::move;
 using std::nullopt;
 using std::optional;
+using std::to_underlying;
 using std::pair;
 using std::string;
 using std::swap;
@@ -249,7 +250,7 @@ auto Propagators::propagate(const optional<Literal> & lit, State & state, ProofL
             auto & triggers = _imp->iv_triggers[v.index];
 
             for (auto & [p, mask] : triggers.ids_and_masks)
-                if (mask & (1 << static_cast<int>(inf))) {
+                if (mask & (1 << to_underlying(inf))) {
                     if (_imp->lookup[p] >= _imp->enqueued_end && _imp->lookup[p] < _imp->idle_end) {
                         auto being_swapped_item = _imp->queue[_imp->enqueued_end];
                         swap(_imp->queue[_imp->lookup[p]], _imp->queue[_imp->enqueued_end]);
@@ -360,9 +361,9 @@ auto Propagators::trigger_on_change(IntegerVariableID var, int t) -> void
             if (_imp->iv_triggers.size() <= v.index)
                 _imp->iv_triggers.resize(v.index + 1);
             _imp->iv_triggers[v.index].ids_and_masks.emplace_back(t,
-                (1 << static_cast<int>(Inference::InteriorValuesChanged)) |
-                    (1 << static_cast<int>(Inference::BoundsChanged)) |
-                    (1 << static_cast<int>(Inference::Instantiated)));
+                (1 << to_underlying(Inference::InteriorValuesChanged)) |
+                    (1 << to_underlying(Inference::BoundsChanged)) |
+                    (1 << to_underlying(Inference::Instantiated)));
         },
         [&](const ViewOfIntegerVariableID & v) {
             trigger_on_change(v.actual_variable, t);
@@ -379,8 +380,8 @@ auto Propagators::trigger_on_bounds(IntegerVariableID var, int t) -> void
             if (_imp->iv_triggers.size() <= v.index)
                 _imp->iv_triggers.resize(v.index + 1);
             _imp->iv_triggers[v.index].ids_and_masks.emplace_back(t,
-                (1 << static_cast<int>(Inference::BoundsChanged)) |
-                    (1 << static_cast<int>(Inference::Instantiated)));
+                (1 << to_underlying(Inference::BoundsChanged)) |
+                    (1 << to_underlying(Inference::Instantiated)));
         },
         [&](const ViewOfIntegerVariableID & v) {
             trigger_on_bounds(v.actual_variable, t);
@@ -397,7 +398,7 @@ auto Propagators::trigger_on_instantiated(IntegerVariableID var, int t) -> void
             if (_imp->iv_triggers.size() <= v.index)
                 _imp->iv_triggers.resize(v.index + 1);
             _imp->iv_triggers[v.index].ids_and_masks.emplace_back(t,
-                (1 << static_cast<int>(Inference::Instantiated)));
+                (1 << to_underlying(Inference::Instantiated)));
         },
         [&](const ViewOfIntegerVariableID & v) {
             trigger_on_instantiated(v.actual_variable, t);

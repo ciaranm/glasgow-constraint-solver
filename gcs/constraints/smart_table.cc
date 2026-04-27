@@ -26,7 +26,6 @@
 #include <gcs/exception.hh>
 #include <util/overloaded.hh>
 
-using std::copy_if;
 using std::count;
 using std::make_tuple;
 using std::make_unique;
@@ -34,10 +33,11 @@ using std::map;
 using std::move;
 using std::optional;
 using std::pair;
+using std::ranges::copy_if;
+using std::ranges::set_difference;
+using std::ranges::set_intersection;
+using std::ranges::sort;
 using std::set;
-using std::set_difference;
-using std::set_intersection;
-using std::sort;
 using std::string;
 using std::stringstream;
 using std::to_string;
@@ -145,14 +145,15 @@ namespace
 
                 auto dom_1 = get_for_actual_var(supported_by_tree, binary_entry.var_1);
                 auto dom_2 = get_for_actual_var(supported_by_tree, binary_entry.var_2);
-                sort(dom_1.begin(), dom_1.end());
-                sort(dom_2.begin(), dom_2.end());
+                sort(dom_1);
+                sort(dom_2);
 
                 switch (binary_entry.constraint_type) {
-                case SmartEntryConstraint::LessThan:
-                    copy_if(dom_2.begin(), dom_2.end(), back_inserter(new_dom_2),
+                    using enum SmartEntryConstraint;
+                case LessThan:
+                    copy_if(dom_2, back_inserter(new_dom_2),
                         [&](Integer val) { return val > dom_1[0]; });
-                    copy_if(dom_1.begin(), dom_1.end(), back_inserter(new_dom_1),
+                    copy_if(dom_1, back_inserter(new_dom_1),
                         [&](Integer val) { return val < dom_2[dom_2.size() - 1]; });
                     if (logger) {
                         if (new_dom_2.size() < dom_2.size())
@@ -163,10 +164,10 @@ namespace
                                 state, inference, reason);
                     }
                     break;
-                case SmartEntryConstraint::LessThanEqual:
-                    copy_if(dom_2.begin(), dom_2.end(), back_inserter(new_dom_2),
+                case LessThanEqual:
+                    copy_if(dom_2, back_inserter(new_dom_2),
                         [&](Integer val) { return val >= dom_1[0]; });
-                    copy_if(dom_1.begin(), dom_1.end(), back_inserter(new_dom_1),
+                    copy_if(dom_1, back_inserter(new_dom_1),
                         [&](Integer val) { return val <= dom_2[dom_2.size() - 1]; });
                     if (logger) {
                         if (new_dom_2.size() < dom_2.size())
@@ -175,18 +176,15 @@ namespace
                             log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) < (dom_2[dom_2.size() - 1] + 1_i), state, inference, reason);
                     }
                     break;
-                case SmartEntryConstraint::Equal:
-                    set_intersection(dom_1.begin(), dom_1.end(),
-                        dom_2.begin(), dom_2.end(),
-                        back_inserter(new_dom_1));
+                case Equal:
+                    set_intersection(dom_1, dom_2, back_inserter(new_dom_1));
                     new_dom_2 = new_dom_1;
 
                     if (logger) {
                         // This one seems particularly annoying. Is it necessary? - not sure
                         if (new_dom_1.size() < dom_1.size()) {
                             vector<Integer> discarded_dom1;
-                            set_difference(dom_1.begin(), dom_1.end(), dom_2.begin(), dom_2.end(),
-                                back_inserter(discarded_dom1));
+                            set_difference(dom_1, dom_2, back_inserter(discarded_dom1));
                             for (const auto & val : discarded_dom1) {
                                 log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) != val, state, inference, reason);
                             }
@@ -194,29 +192,24 @@ namespace
 
                         if (new_dom_2.size() < dom_2.size()) {
                             vector<Integer> discarded_dom2;
-                            set_difference(dom_2.begin(), dom_2.end(), dom_1.begin(), dom_1.end(),
-                                back_inserter(discarded_dom2));
+                            set_difference(dom_2, dom_1, back_inserter(discarded_dom2));
                             for (const auto & val : discarded_dom2) {
                                 log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) != val, state, inference, reason);
                             }
                         }
                     }
                     break;
-                case SmartEntryConstraint::NotEqual:
+                case NotEqual:
                     if (dom_1.size() == 1) {
                         new_dom_1 = dom_1;
-                        set_difference(dom_2.begin(), dom_2.end(),
-                            dom_1.begin(), dom_1.end(),
-                            back_inserter(new_dom_2));
+                        set_difference(dom_2, dom_1, back_inserter(new_dom_2));
                         if (logger && new_dom_2.size() < dom_2.size()) {
                             log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) != (dom_1[0]), state, inference, reason);
                         }
                     }
                     else if (dom_2.size() == 1) {
                         new_dom_2 = dom_2;
-                        set_difference(dom_1.begin(), dom_1.end(),
-                            dom_2.begin(), dom_2.end(),
-                            back_inserter(new_dom_1));
+                        set_difference(dom_1, dom_2, back_inserter(new_dom_1));
                         if (logger && new_dom_1.size() < dom_1.size()) {
                             log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) != (dom_2[0]), state, inference, reason);
                         }
@@ -226,10 +219,10 @@ namespace
                         new_dom_2 = move(dom_2);
                     }
                     break;
-                case SmartEntryConstraint::GreaterThan:
-                    copy_if(dom_1.begin(), dom_1.end(), back_inserter(new_dom_1),
+                case GreaterThan:
+                    copy_if(dom_1, back_inserter(new_dom_1),
                         [&](Integer val) { return val > dom_2[0]; });
-                    copy_if(dom_2.begin(), dom_2.end(), back_inserter(new_dom_2),
+                    copy_if(dom_2, back_inserter(new_dom_2),
                         [&](Integer val) { return val < dom_1[dom_1.size() - 1]; });
                     if (logger) {
                         if (new_dom_1.size() < dom_1.size())
@@ -238,10 +231,10 @@ namespace
                             log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) < dom_1[dom_1.size() - 1], state, inference, reason);
                     }
                     break;
-                case SmartEntryConstraint::GreaterThanEqual:
-                    copy_if(dom_1.begin(), dom_1.end(), back_inserter(new_dom_1),
+                case GreaterThanEqual:
+                    copy_if(dom_1, back_inserter(new_dom_1),
                         [&](Integer val) { return val >= dom_2[0]; });
-                    copy_if(dom_2.begin(), dom_2.end(), back_inserter(new_dom_2),
+                    copy_if(dom_2, back_inserter(new_dom_2),
                         [&](Integer val) { return val <= dom_1[dom_1.size() - 1]; });
                     if (logger) {
                         if (new_dom_1.size() < dom_1.size())
@@ -260,19 +253,16 @@ namespace
                 vector<Integer> new_dom{};
                 auto dom = get_for_actual_var(supported_by_tree, unary_set_entry.var);
                 auto set_values = unary_set_entry.values;
-                sort(dom.begin(), dom.end());
-                sort(set_values.begin(), set_values.end());
+                sort(dom);
+                sort(set_values);
 
                 switch (unary_set_entry.constraint_type) {
-                case SmartEntryConstraint::In:
-                    set_intersection(dom.begin(), dom.end(),
-                        set_values.begin(), set_values.end(),
-                        back_inserter(new_dom));
+                    using enum SmartEntryConstraint;
+                case In:
+                    set_intersection(dom, set_values, back_inserter(new_dom));
                     break;
-                case SmartEntryConstraint::NotIn:
-                    set_difference(dom.begin(), dom.end(),
-                        set_values.begin(), set_values.end(),
-                        back_inserter(new_dom));
+                case NotIn:
+                    set_difference(dom, set_values, back_inserter(new_dom));
                     break;
                 default:
                     throw UnexpectedException{"Unexpected SmartEntry type encountered."};
@@ -284,32 +274,27 @@ namespace
                 vector<Integer> new_dom{};
                 auto dom = get_for_actual_var(supported_by_tree, unary_val_entry.var);
                 auto value = unary_val_entry.value;
-                sort(dom.begin(), dom.end());
+                sort(dom);
 
                 switch (unary_val_entry.constraint_type) {
-                case SmartEntryConstraint::LessThan:
-                    copy_if(dom.begin(), dom.end(), back_inserter(new_dom),
-                        [&](Integer dom_val) { return dom_val < value; });
+                    using enum SmartEntryConstraint;
+                case LessThan:
+                    copy_if(dom, back_inserter(new_dom), [&](Integer dom_val) { return dom_val < value; });
                     break;
-                case SmartEntryConstraint::LessThanEqual:
-                    copy_if(dom.begin(), dom.end(), back_inserter(new_dom),
-                        [&](Integer dom_val) { return dom_val <= value; });
+                case LessThanEqual:
+                    copy_if(dom, back_inserter(new_dom), [&](Integer dom_val) { return dom_val <= value; });
                     break;
-                case SmartEntryConstraint::Equal:
-                    copy_if(dom.begin(), dom.end(), back_inserter(new_dom),
-                        [&](Integer dom_val) { return dom_val == value; });
+                case Equal:
+                    copy_if(dom, back_inserter(new_dom), [&](Integer dom_val) { return dom_val == value; });
                     break;
-                case SmartEntryConstraint::NotEqual:
-                    copy_if(dom.begin(), dom.end(), back_inserter(new_dom),
-                        [&](Integer dom_val) { return dom_val != value; });
+                case NotEqual:
+                    copy_if(dom, back_inserter(new_dom), [&](Integer dom_val) { return dom_val != value; });
                     break;
-                case SmartEntryConstraint::GreaterThan:
-                    copy_if(dom.begin(), dom.end(), back_inserter(new_dom),
-                        [&](Integer dom_val) { return dom_val > value; });
+                case GreaterThan:
+                    copy_if(dom, back_inserter(new_dom), [&](Integer dom_val) { return dom_val > value; });
                     break;
-                case SmartEntryConstraint::GreaterThanEqual:
-                    copy_if(dom.begin(), dom.end(), back_inserter(new_dom),
-                        [&](Integer dom_val) { return dom_val >= value; });
+                case GreaterThanEqual:
+                    copy_if(dom, back_inserter(new_dom), [&](Integer dom_val) { return dom_val >= value; });
                     break;
                 default:
                     throw UnexpectedException{"Unexpected SmartEntry type encountered."};
@@ -356,9 +341,7 @@ namespace
         vector<Integer> new_unsupported{};
         auto unsupported_set = set(unsupported[var].begin(), unsupported[var].end());
         auto to_remove_set = set(to_remove.begin(), to_remove.end());
-        set_difference(unsupported_set.begin(), unsupported_set.end(),
-            to_remove_set.begin(), to_remove_set.end(),
-            back_inserter(new_unsupported));
+        set_difference(unsupported_set, to_remove_set, back_inserter(new_unsupported));
 
         unsupported[var] = new_unsupported;
     }
@@ -414,9 +397,7 @@ namespace
         auto vars_set = set(vars.begin(), vars.end());
         auto vars_in_tuple_set = set(vars_in_tuple.begin(), vars_in_tuple.end());
 
-        set_difference(vars_set.begin(), vars_set.end(),
-            vars_in_tuple_set.begin(), vars_in_tuple_set.end(),
-            back_inserter(unrestricted));
+        set_difference(vars_set, vars_in_tuple_set, back_inserter(unrestricted));
         return unrestricted;
     }
 
@@ -574,7 +555,8 @@ namespace
     [[nodiscard]] auto make_binary_entry_flag(State &, ProofModel & model, const IntegerVariableID & var_1, const IntegerVariableID & var_2, const SmartEntryConstraint & c) -> ProofFlag
     {
         switch (c) {
-        case SmartEntryConstraint::Equal: {
+            using enum SmartEntryConstraint;
+        case Equal: {
             // f => var1 == var2
             auto flag = model.create_proof_flag("bin_eq");
             model.add_constraint(WPBSum{} + 1_i * var_1 + -1_i * var_2 == 0_i,
@@ -596,7 +578,7 @@ namespace
             return flag;
         }
 
-        case SmartEntryConstraint::GreaterThan: {
+        case GreaterThan: {
             auto flag = model.create_proof_flag("bin_gt");
             model.add_constraint(WPBSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i,
                 HalfReifyOnConjunctionOf{{flag}});
@@ -605,7 +587,7 @@ namespace
             return flag;
         }
 
-        case SmartEntryConstraint::LessThan: {
+        case LessThan: {
             auto flag = model.create_proof_flag("bin_lt");
             model.add_constraint(WPBSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i,
                 HalfReifyOnConjunctionOf{{flag}});
@@ -614,7 +596,7 @@ namespace
             return flag;
         }
 
-        case SmartEntryConstraint::LessThanEqual: {
+        case LessThanEqual: {
             auto flag = model.create_proof_flag("bin_le");
             model.add_constraint(WPBSum{} + 1_i * var_2 + -1_i * var_1 >= 0_i,
                 HalfReifyOnConjunctionOf{{flag}});
@@ -623,7 +605,7 @@ namespace
             return flag;
         }
 
-        case SmartEntryConstraint::NotEqual: {
+        case NotEqual: {
             // !f => var1 == var2
             auto flag = model.create_proof_flag("bin_eq");
             model.add_constraint(WPBSum{} + 1_i * var_1 + -1_i * var_2 == 0_i,
@@ -652,7 +634,7 @@ namespace
             return flag;
         }
 
-        case SmartEntryConstraint::GreaterThanEqual: {
+        case GreaterThanEqual: {
             auto flag = model.create_proof_flag("bin_ge");
             model.add_constraint(WPBSum{} + 1_i * var_1 + -1_i * var_2 >= 0_i,
                 HalfReifyOnConjunctionOf{{flag}});
@@ -661,8 +643,8 @@ namespace
             return flag;
         }
 
-        case SmartEntryConstraint::NotIn:
-        case SmartEntryConstraint::In:
+        case NotIn:
+        case In:
             throw UnexpectedException{"Unexpected SmartEntry type encountered while creating PB model."};
         }
         throw NonExhaustiveSwitch{};
@@ -673,20 +655,21 @@ namespace
         auto var = unary_entry.var;
         auto value = unary_entry.value;
         switch (unary_entry.constraint_type) {
-        case SmartEntryConstraint::LessThan:
+            using enum SmartEntryConstraint;
+        case LessThan:
             return var < value;
-        case SmartEntryConstraint::LessThanEqual:
+        case LessThanEqual:
             return var < value + 1_i;
-        case SmartEntryConstraint::Equal:
+        case Equal:
             return var == value;
-        case SmartEntryConstraint::NotEqual:
+        case NotEqual:
             return var != value;
-        case SmartEntryConstraint::GreaterThan:
+        case GreaterThan:
             return var >= value + 1_i;
-        case SmartEntryConstraint::GreaterThanEqual:
+        case GreaterThanEqual:
             return var >= value;
-        case SmartEntryConstraint::In:
-        case SmartEntryConstraint::NotIn:
+        case In:
+        case NotIn:
             throw UnexpectedException{"Unexpected SmartEntry type encountered while creating PB model."};
         }
         throw NonExhaustiveSwitch{};

@@ -9,7 +9,7 @@ using std::mt19937;
 using std::nullopt;
 using std::optional;
 using std::random_device;
-using std::shuffle;
+using std::ranges::shuffle;
 using std::tuple;
 using std::uniform_int_distribution;
 using std::vector;
@@ -155,7 +155,7 @@ auto gcs::value_order::random() -> BranchValueGenerator
 
             random_device rand_dev;
             mt19937 r(rand_dev());
-            shuffle(values.begin(), values.end(), r);
+            shuffle(values, r);
 
             for (auto v : values)
                 co_yield var == v;

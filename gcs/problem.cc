@@ -26,6 +26,7 @@ using std::make_optional;
 using std::move;
 using std::nullopt;
 using std::optional;
+using std::ranges::minmax_element;
 using std::regex;
 using std::regex_match;
 using std::size_t;
@@ -117,7 +118,7 @@ auto Problem::create_integer_variable(const vector<Integer> & domain, const opti
     if (domain.empty())
         throw UnexpectedException{"variable has empty domain"};
 
-    auto [min, max] = minmax_element(domain.begin(), domain.end());
+    auto [min, max] = minmax_element(domain);
 
     auto result = _imp->initial_state.allocate_integer_variable_with_state(*min, *max);
     _imp->integer_variables.emplace_back(result, *min, *max, name ? check_name(*name) : "_" + to_string(++_imp->next_anon_variable));

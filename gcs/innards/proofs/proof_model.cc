@@ -44,11 +44,11 @@ using std::ofstream;
 using std::optional;
 using std::ostreambuf_iterator;
 using std::pair;
-using std::sort;
+using std::ranges::sort;
+using std::ranges::unique;
 using std::string;
 using std::stringstream;
 using std::to_string;
-using std::unique;
 using std::unordered_map;
 using std::variant;
 using std::vector;
@@ -121,10 +121,10 @@ auto ProofModel::add_constraint(const StringLiteral & constraint_name, const Str
     }
 
     // put these in some kind of order
-    sort(sum.terms.begin(), sum.terms.end());
+    sort(sum.terms);
 
     // remove duplicates
-    sum.terms.erase(unique(sum.terms.begin(), sum.terms.end()), sum.terms.end());
+    sum.terms.erase(unique(sum.terms).begin(), sum.terms.end());
 
     return add_constraint(constraint_name, rule, move(sum) >= 1_i, nullopt);
 }

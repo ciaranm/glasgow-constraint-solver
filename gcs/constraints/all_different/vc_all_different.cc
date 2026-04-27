@@ -28,7 +28,6 @@
 using namespace gcs;
 using namespace gcs::innards;
 
-using std::adjacent_find;
 using std::cmp_not_equal;
 using std::count;
 using std::decay_t;
@@ -40,7 +39,8 @@ using std::min;
 using std::nullopt;
 using std::optional;
 using std::pair;
-using std::sort;
+using std::ranges::adjacent_find;
+using std::ranges::sort;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
@@ -119,8 +119,8 @@ auto VCAllDifferent::install(innards::Propagators & propagators, innards::State 
     }
 
     auto sanitised_vars = move(_vars);
-    sort(sanitised_vars.begin(), sanitised_vars.end());
-    if (sanitised_vars.end() != adjacent_find(sanitised_vars.begin(), sanitised_vars.end())) {
+    sort(sanitised_vars);
+    if (adjacent_find(sanitised_vars) != sanitised_vars.end()) {
         propagators.model_contradiction(initial_state, model, "AllDifferent with duplicate variables");
         return;
     }

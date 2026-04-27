@@ -16,10 +16,11 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::erase_if;
 using std::is_same_v;
 using std::pair;
-using std::remove_if;
-using std::sort;
+using std::ranges::all_of;
+using std::ranges::sort;
 using std::string;
 using std::stringstream;
 using std::to_string;
@@ -40,7 +41,7 @@ auto gcs::innards::tidy_up_linear(const WeightedSum & coeff_vars) -> pair<Tidied
             }}
             .visit(v);
 
-    sort(simplified_sum.terms.begin(), simplified_sum.terms.end(),
+    sort(simplified_sum.terms,
         [](const Weighted<SimpleIntegerVariableID> & a, const Weighted<SimpleIntegerVariableID> & b) {
             return a.variable < b.variable;
         });
@@ -59,23 +60,17 @@ auto gcs::innards::tidy_up_linear(const WeightedSum & coeff_vars) -> pair<Tidied
     }
 
     // remove zero coefficients
-    simplified_sum.terms.erase(remove_if(simplified_sum.terms.begin(), simplified_sum.terms.end(),
-                                   [](const Weighted<SimpleIntegerVariableID> & cv) {
-                                       return cv.coefficient == 0_i;
-                                   }),
-        simplified_sum.terms.end());
+    erase_if(simplified_sum.terms, [](const Weighted<SimpleIntegerVariableID> & cv) {
+        return cv.coefficient == 0_i;
+    });
 
-    if (simplified_sum.terms.end() == find_if(simplified_sum.terms.begin(), simplified_sum.terms.end(), [](const Weighted<SimpleIntegerVariableID> & cv) -> bool {
-            return cv.coefficient != 1_i;
-        })) {
+    if (all_of(simplified_sum.terms, [](const Weighted<SimpleIntegerVariableID> & cv) { return cv.coefficient == 1_i; })) {
         SumOf<SimpleIntegerVariableID> simple_result;
         for (auto & [_, v] : simplified_sum.terms)
             simple_result.terms.emplace_back(v);
         return pair{simple_result, modifier};
     }
-    else if (simplified_sum.terms.end() == find_if(simplified_sum.terms.begin(), simplified_sum.terms.end(), [](const Weighted<SimpleIntegerVariableID> & cv) -> bool {
-                 return cv.coefficient != 1_i && cv.coefficient != -1_i;
-             })) {
+    else if (all_of(simplified_sum.terms, [](const Weighted<SimpleIntegerVariableID> & cv) { return cv.coefficient == 1_i || cv.coefficient == -1_i; })) {
         SumOf<PositiveOrNegative<SimpleIntegerVariableID>> sum_result;
         for (auto & [c, v] : simplified_sum.terms)
             sum_result.terms.push_back(PositiveOrNegative<SimpleIntegerVariableID>{c == 1_i, v});

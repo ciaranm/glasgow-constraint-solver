@@ -10,6 +10,7 @@
 #include <version>
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <format>
 #include <print>
 #else
 #include <fmt/ostream.h>
@@ -32,16 +33,18 @@ using std::min;
 using std::nullopt;
 using std::optional;
 using std::pair;
-using std::set_intersection;
+using std::ranges::set_union;
+using std::ranges::sort;
 using std::string;
 using std::stringstream;
-using std::to_string;
 using std::unique_ptr;
 using std::vector;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::format;
 using std::print;
 #else
+using fmt::format;
 using fmt::print;
 #endif
 
@@ -417,9 +420,9 @@ namespace
                 if (found) break;
             }
 
-            sort(c1.first.begin(), c1.first.end());
-            sort(c2.first.begin(), c2.first.end());
-            set_union(c1.first.begin(), c1.first.end(), c2.first.begin(), c2.first.end(), back_inserter(lits));
+            sort(c1.first);
+            sort(c2.first);
+            set_union(c1.first, c2.first, back_inserter(lits));
             return {lits, line};
         };
 
@@ -846,8 +849,8 @@ namespace
             }
 
             if (lower > upper)
-                throw UnexpectedException{"var == x is " + to_string(var == x) +
-                    " lower is " + to_string(lower.raw_value) + ", upper is " + to_string(upper.raw_value) + ", assume_upper is " + to_string(assume_upper) + ", min_x is " + to_string(min_x.raw_value) + ", max_x is " + to_string(max_x.raw_value) + ", largest_quotient is " + to_string(largest_quotient.raw_value) + ", smallest_quotient is " + to_string(smallest_quotient.raw_value)};
+                throw UnexpectedException{format("var == x is {}, lower is {}, upper is {}, assume_upper is {}, min_x is {}, max_x is {}, largest_quotient is {}, smallest_quotient is {}",
+                    var == x, lower.raw_value, upper.raw_value, assume_upper, min_x.raw_value, max_x.raw_value, largest_quotient.raw_value, smallest_quotient.raw_value)};
 
             if (lower < 0_i) {
                 conditional_bounds[var].emplace_back(
@@ -1140,7 +1143,7 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
         for (Integer i = 0_i; i < v1_num_bits; i++) {
             bit_products.emplace_back();
             for (Integer j = 0_i; j < v2_num_bits; j++) {
-                auto flag = optional_model->create_proof_flag("xy[" + to_string(i.raw_value) + "][" + to_string(j.raw_value) + "]");
+                auto flag = optional_model->create_proof_flag(format("xy[{}][{}]", i.raw_value, j.raw_value));
 
                 auto forwards = optional_model->add_constraint(
                     WPBSum{} + 1_i * ProofBitVariable{v1_mag, i, true} + 1_i * ProofBitVariable{v2_mag, j, true} >= 2_i,
