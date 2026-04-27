@@ -370,9 +370,10 @@ Any inference that is carried out goes via an inference tracker, which is a temp
 might be a ``SimpleInferenceTracker`` or an ``EagerProofLoggingInferenceTracker``. As well as
 specifying the inference, you must also provide a justification for proof logging, and a reason. The
 former can be done by passing a ``NoJustificationNeeded`` or ``JustifyUsingRUP`` instance, for
-simple constraints, but complex reasoning will require a ``JustifyExplicitly`` instance which
-includes a callback to create the relevant proof steps. The latter can be done using
-``generic_reason``, if you do not have something better.
+simple constraints, but complex reasoning will require a ``JustifyExplicitlyOnly`` or
+``JustifyExplicitlyThenRUP`` instance which include a callback to create the relevant
+proof steps. These can be done using ``generic_reason``, if you do not have
+something better.
 
 If the compiler macro ``GCS_TRACK_ALL_PROPAGATIONS`` is defined, the proof log will include explicit
 origin statements for every ``JustifyUsingRUP`` propagation, which may be helpful in debugging bad

@@ -9,7 +9,6 @@
 
 #include <deque>
 #include <fstream>
-#include <iomanip>
 #include <sstream>
 
 #include <util/overloaded.hh>
@@ -20,14 +19,11 @@ using std::flush;
 using std::fstream;
 using std::ios;
 using std::map;
-using std::max;
-using std::nullopt;
 using std::optional;
 using std::ostream;
 using std::pair;
 using std::string;
 using std::stringstream;
-using std::to_string;
 using std::tuple;
 using std::variant;
 using std::vector;
@@ -150,6 +146,10 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
 
     if (optional_minimise_variable_and_value)
         visit([&](const auto & id) {
+            _imp->proof << "e ";
+            emit_inequality_to(names_and_ids_tracker(), WPBSum{} + 1_i * id <= optional_minimise_variable_and_value->second - 1_i, _imp->proof);
+            _imp->proof << ":" << _imp->proof_line << ";\n";
+
             emit_rup_proof_line(WPBSum{} + 1_i * (id < optional_minimise_variable_and_value->second) >= 1_i, ProofLevel::Top);
         },
             optional_minimise_variable_and_value->first);
@@ -286,7 +286,16 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
                 record_proof_line(advance_proof_line_number(), ProofLevel::Current);
             }
         },
-        [&](const JustifyExplicitly & x) {
+        [&](const JustifyExplicitlyOnly & x) {
+#ifdef GCS_TRACK_ALL_PROPAGATIONS
+            _imp->proof << "% explicit on lit " << debug_string(lit) << " with reason from " << x.where.file_name() << ":"
+                        << x.where.line() << " in " << x.where.function_name() << '\n';
+#endif
+            auto t = temporary_proof_level();
+            x.add_proof_steps(reason);
+            forget_proof_level(t);
+        },
+        [&](const JustifyExplicitlyThenRUP & x) {
 #ifdef GCS_TRACK_ALL_PROPAGATIONS
             _imp->proof << "% explicit on lit " << debug_string(lit) << " with reason from " << x.where.file_name() << ":"
                         << x.where.line() << " in " << x.where.function_name() << '\n';
@@ -380,11 +389,33 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<P
 
     emit_inequality_to(names_and_ids_tracker(), ineq, rule_line);
 
-    overloaded{
-        [&](const RUPProofRule &) { rule_line << ";"; },
-        [&](const ImpliesProofRule & rule) { if (rule.line) { rule_line << " : " << *rule.line << ";"; } else { rule_line << ";"; } },
-        [&](const AssertProofRule &) { rule_line << ";"; }}
-        .visit(rule);
+    rule_line << overloaded{
+        [&](const RUPProofRule & rule) -> string { 
+                        if (rule.lines) {
+                            stringstream hints;
+                            hints << ": ";
+                            for (auto & line : *rule.lines) {
+                                hints << line << ' ';
+                            }
+                            hints << " ;";
+                            return hints.str(); 
+                        } else {
+                            return ";";
+                        } },
+        [&](const ImpliesProofRule & rule) -> string {
+            if (rule.line) {
+                stringstream hints;
+                hints << ": ";
+                hints << *rule.line << ' ';
+                hints << " ;";
+                return hints.str();
+            }
+            else {
+                return ";";
+            }
+        },
+        [&](const AssertProofRule &) -> string { return ";"; }}
+                     .visit(rule);
 
     return emit_proof_line(
         rule_line.str(), level
@@ -435,11 +466,28 @@ auto ProofLogger::emit_under_reason(
         emit_inequality_to(names_and_ids_tracker(), ineq, rule_line);
     }
 
-    overloaded{
-        [&](const RUPProofRule &) { rule_line << ";"; },
-        [&](const ImpliesProofRule & rule) { if (rule.line) { rule_line << " : " << *rule.line << ";"; } else { rule_line << ";"; } },
-        [&](const AssertProofRule &) { rule_line << ";"; }}
-        .visit(rule);
+    rule_line << overloaded{
+                     [&](const RUPProofRule & rule) -> string { 
+                       if(rule.lines) {
+                            stringstream hints;
+                            hints << ": ";
+                            for (const auto & line : *rule.lines) {
+                                hints << line << " ";
+                            }
+                            hints << " ;";
+                            return hints.str();
+                       } {
+                        return ";"; } },
+                     [&](const ImpliesProofRule & rule) -> string { if (rule.line) {
+                            stringstream hints;
+                            hints << ": ";
+                            hints << *rule.line << " ";
+                            hints << " ;";
+                            return hints.str();
+					 } else { return ";"; } },
+                     [&](const AssertProofRule &) -> string { return ";"; }}
+                     .visit(rule)
+              << " ";
 
     return emit_proof_line(
         rule_line.str(), level
@@ -569,6 +617,11 @@ auto ProofLogger::emit_subproofs(const map<ProofGoal, Subproof> & subproofs)
     _imp->proof << "qed;\n";
 }
 
+auto ProofLogger::get_current_proof_line() -> ProofLineNumber
+{
+    return _imp->proof_line;
+}
+
 auto ProofLogger::emit_red_proof_line(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
     const std::vector<std::pair<ProofLiteralOrFlag, ProofLiteralOrFlag>> & witness,
     ProofLevel level, const std::optional<std::map<ProofGoal, Subproof>> & subproofs
@@ -677,6 +730,11 @@ auto ProofLogger::create_proof_flag_reifying(const SumLessThanEqual<Weighted<Pse
 auto ProofLogger::create_proof_flag(const string & name) -> ProofFlag
 {
     return names_and_ids_tracker().create_proof_flag(name);
+}
+
+auto ProofLogger::delete_range(ProofLine from, ProofLine up_to) -> void
+{
+    _imp->proof << "del range " << from << " " << up_to << ";\n";
 }
 
 auto ProofLogger::write_indent() -> void

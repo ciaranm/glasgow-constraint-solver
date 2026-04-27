@@ -1,0 +1,5 @@
+add_executable(multiply_random multiply_random.cc)
+target_link_libraries(multiply_random PUBLIC glasgow_constraint_solver)
+
+
+target_link_libraries(multiply_random LINK_PUBLIC cxxopts)

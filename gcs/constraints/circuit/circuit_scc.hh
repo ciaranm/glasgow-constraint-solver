@@ -20,6 +20,8 @@ namespace gcs
         bool prune_within = true;
         bool prove_using_dominance = false;
         bool enable_comments = true;
+        bool prove_am1_by_constradiction = true;
+        bool short_reasons = true;
     };
 
     class CircuitSCC : public innards::circuit::CircuitBase

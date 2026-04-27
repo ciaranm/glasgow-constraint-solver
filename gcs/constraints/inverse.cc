@@ -14,10 +14,6 @@
 
 #include <fmt/ostream.h>
 
-#include <algorithm>
-#include <optional>
-#include <ranges>
-#include <set>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -28,16 +24,11 @@ using namespace gcs::innards;
 
 using std::make_shared;
 using std::map;
-using std::max;
-using std::min;
-using std::optional;
-using std::pair;
 using std::shared_ptr;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
 using std::vector;
-using std::visit;
 
 using fmt::print;
 

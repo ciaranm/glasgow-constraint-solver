@@ -214,6 +214,13 @@ namespace gcs::innards
             const std::vector<std::pair<Integer, XLiteral>> & bit_vars) -> void;
 
         /**
+         * Track that a given equality variable exists, and has a string name
+         * and associated defining constraints.
+         */
+        auto track_eqvar(SimpleIntegerVariableID, Integer,
+            const std::pair<std::variant<ProofLine, XLiteral>, std::variant<ProofLine, XLiteral>> &) -> void;
+
+        /**
          * Track that a given greater-or-equal variable exists, and has a string name
          * and associated defining constraints.
          */
