@@ -24,6 +24,14 @@ namespace gcs
 
     class CircuitSCC : public innards::circuit::CircuitBase
     {
+    private:
+        innards::ConstraintStateHandle _pos_var_data_handle;
+        innards::ConstraintStateHandle _unassigned_handle;
+        innards::ConstraintStateHandle _proof_flag_data_handle;
+        innards::ConstraintStateHandle _pos_alldiff_data_handle;
+        virtual auto install_propagators(innards::Propagators &) -> void override;
+        virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
+
     protected:
         const SCCOptions scc_options;
 

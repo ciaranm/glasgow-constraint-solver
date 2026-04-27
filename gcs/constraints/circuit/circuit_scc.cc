@@ -1169,7 +1169,18 @@ auto CircuitSCC::clone() const -> unique_ptr<Constraint>
     return make_unique<CircuitSCC>(_succ, _gac_all_different, scc_options);
 }
 
-auto CircuitSCC::install(Propagators & propagators, State & initial_state, ProofModel * const model) && -> void
+auto CircuitSCC::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
+{
+    if (! prepare(propagators, initial_state, optional_model))
+        return;
+
+    if (optional_model)
+        define_proof_model(*optional_model);
+
+    install_propagators(propagators);
+}
+
+auto CircuitSCC::prepare(Propagators & propagators, State & initial_state, ProofModel * const model) -> bool
 {
     auto pos_var_data = CircuitBase::set_up(propagators, initial_state, model);
 
@@ -1178,19 +1189,23 @@ auto CircuitSCC::install(Propagators & propagators, State & initial_state, Proof
     for (auto v : _succ) {
         unassigned.emplace_back(v);
     }
-    auto pos_var_data_handle = initial_state.add_persistent_constraint_state(pos_var_data);
-    auto unassigned_handle = initial_state.add_constraint_state(unassigned);
-    auto proof_flag_data_handle = initial_state.add_persistent_constraint_state(map<long, ShiftedPosDataMaps>{});
-    auto pos_alldiff_data_handle = initial_state.add_persistent_constraint_state(PosAllDiffData{});
+    _pos_var_data_handle = initial_state.add_persistent_constraint_state(pos_var_data);
+    _unassigned_handle = initial_state.add_constraint_state(unassigned);
+    _proof_flag_data_handle = initial_state.add_persistent_constraint_state(map<long, ShiftedPosDataMaps>{});
+    _pos_alldiff_data_handle = initial_state.add_persistent_constraint_state(PosAllDiffData{});
+    return true;
+}
 
+auto CircuitSCC::install_propagators(Propagators & propagators) -> void
+{
     Triggers triggers;
     triggers.on_change = {_succ.begin(), _succ.end()};
     propagators.install(
         [succ = _succ,
-            pos_var_data_handle = pos_var_data_handle,
-            proof_flag_data_handle = proof_flag_data_handle,
-            pos_alldiff_data_handle = pos_alldiff_data_handle,
-            unassigned_handle = unassigned_handle,
+            pos_var_data_handle = _pos_var_data_handle,
+            proof_flag_data_handle = _proof_flag_data_handle,
+            pos_alldiff_data_handle = _pos_alldiff_data_handle,
+            unassigned_handle = _unassigned_handle,
             options = scc_options](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             auto reason = generic_reason(state, succ);
             propagate_circuit_using_scc(state, inference, logger, reason,

@@ -87,23 +87,36 @@ auto CircuitPrevent::clone() const -> unique_ptr<Constraint>
     return make_unique<CircuitPrevent>(_succ, _gac_all_different);
 }
 
-auto CircuitPrevent::install(innards::Propagators & propagators, innards::State & initial_state,
-    innards::ProofModel * const model) && -> void
+auto CircuitPrevent::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
+{
+    if (! prepare(propagators, initial_state, optional_model))
+        return;
+
+    if (optional_model)
+        define_proof_model(*optional_model);
+
+    install_propagators(propagators);
+}
+
+auto CircuitPrevent::prepare(Propagators & propagators, State & initial_state, ProofModel * const model) -> bool
 {
     // Keep track of unassigned vars
     list<IntegerVariableID> unassigned{};
     for (auto v : _succ) {
         unassigned.emplace_back(v);
     }
-    auto unassigned_handle = initial_state.add_constraint_state(unassigned);
+    _unassigned_handle = initial_state.add_constraint_state(unassigned);
+    _pos_var_data = CircuitBase::set_up(propagators, initial_state, model);
+    return true;
+}
 
-    auto pos_var_data = CircuitBase::set_up(propagators, initial_state, model);
-
+auto CircuitPrevent::install_propagators(Propagators & propagators) -> void
+{
     Triggers triggers;
     triggers.on_instantiated = {_succ.begin(), _succ.end()};
     propagators.install(
-        [succ = _succ, pvd = pos_var_data,
-            unassigned_handle = unassigned_handle](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+        [succ = _succ, pvd = _pos_var_data,
+            unassigned_handle = _unassigned_handle](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             propagate_circuit_using_prevent(succ, pvd, unassigned_handle, state, inference, logger);
             return PropagatorState::Enable;
         },

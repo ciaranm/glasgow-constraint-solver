@@ -11,6 +11,12 @@ namespace gcs
      */
     class CircuitPrevent : public innards::circuit::CircuitBase
     {
+    private:
+        innards::ConstraintStateHandle _unassigned_handle;
+        innards::circuit::PosVarDataMap _pos_var_data;
+        virtual auto install_propagators(innards::Propagators &) -> void override;
+        virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
+
     public:
         using CircuitBase::CircuitBase;
         [[nodiscard]] auto clone() const -> std::unique_ptr<Constraint> override;
