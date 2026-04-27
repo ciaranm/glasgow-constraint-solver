@@ -1,5 +1,5 @@
 add_executable(skeleton_puzzle skeleton_puzzle.cc)
-target_link_libraries(skeleton_puzzle PUBLIC glasgow_constraint_solver)
+target_link_libraries(skeleton_puzzle PRIVATE glasgow_constraint_solver)
 
 
-target_link_libraries(skeleton_puzzle LINK_PUBLIC cxxopts)
+target_link_libraries(skeleton_puzzle PRIVATE cxxopts)

@@ -4,14 +4,31 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Build Commands
 
+Three build types are supported: `Release` (default), `Debug`, and `Sanitize`.
+Use named presets from `CMakePresets.json` for convenience:
+
+```shell
+cmake --preset release  && cmake --build --preset release   # optimised (default)
+cmake --preset debug    && cmake --build --preset debug     # -O0, full debug info
+cmake --preset sanitize && cmake --build --preset sanitize  # ASan + UBSan
+```
+
+Or explicitly without presets (release equivalent):
 ```shell
 cmake -S . -B build
-cmake --build build
+cmake --build build --parallel $(nproc 2>/dev/null || sysctl -n hw.logicalcpu)
 ```
+
+Use `--parallel N` for parallel builds. The expression `$(nproc 2>/dev/null || sysctl -n
+hw.logicalcpu)` gives the CPU count on both Linux and macOS. Omitting the count causes
+`make` to spawn unlimited jobs, which exhausts memory. If the build fails and the error
+output is hard to read, re-run without `--parallel` to get clean sequential output.
+For `ctest`, use `-j $(nproc 2>/dev/null || sysctl -n hw.logicalcpu)`.
 
 Run all tests (requires `veripb` installed):
 ```shell
-cd build && ctest
+ctest --preset release      # with presets
+cd build && ctest           # without presets
 ```
 
 Run a single test binary directly:
@@ -24,18 +41,78 @@ Run a single test with proof verification (uses `run_test_and_verify.bash`):
 ./run_test_and_verify.bash ./build/circuit_disconnected_test
 ```
 
-Build with debug mode (disables -O3):
-```shell
-cmake -S . -B build -DGCS_DEBUG_MODE=ON
-cmake --build build
-```
-
 Disable XCSP or MiniZinc support to reduce dependencies:
 ```shell
 cmake -S . -B build -DGCS_ENABLE_XCSP=OFF -DGCS_ENABLE_MINIZINC=OFF
 ```
 
 Format code with clang-format (all source is formatted this way).
+
+## Compiler and Standard Library Support
+
+The codebase is built with both **GCC 15.2.0** and **clang 21**. Clang on macOS uses
+**libc++** (Apple's standard library), not libstdc++. This matters for C++23 feature
+availability: some features are in libstdc++ but not yet libc++.
+
+Known unavailable in libc++ (clang 21):
+- `std::views::enumerate` — use `util/enumerate.hh` instead; do not remove that file
+
+Known unavailable in libstdc++ on the GitHub Actions Ubuntu 24.04 runner (GCC 13), which
+we still support:
+- `std::vector::append_range` — use `vec.insert(vec.end(), src.begin(), src.end())` instead
+
+When adding a new C++23 feature, build with both compilers before committing.
+
+## Code Style
+
+### `using` declarations
+
+The `using` declarations block near the top of each `.cc` file is sorted **alphabetically
+by the full qualified name**. `std::ranges::` names sort under 'r', so they fall between
+`std::pair` and `std::string`. Example:
+
+```cpp
+using std::pair;
+using std::ranges::sort;   // 'r' < 's'
+using std::string;
+```
+
+### Ranges algorithms
+
+When replacing a classic algorithm with its `std::ranges::` equivalent:
+- Remove `using std::foo;`
+- Add `using std::ranges::foo;` in the correct sorted position
+- Leave the call site **unqualified** — do not write `std::ranges::sort(v)` at the call site
+
+### `using enum`
+
+Place `using enum SomeEnum;` on the **first line inside the switch body**, indented one
+level past the `switch` keyword, before the first `case` label:
+
+```cpp
+switch (x) {
+    using enum SomeEnum;
+case Value1:
+```
+
+This pattern is already used in the codebase; follow it consistently.
+
+### `std::format` / `fmt::format`
+
+Files that use `format()` for string building must use the conditional pattern:
+
+```cpp
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <format>
+using std::format;
+#else
+#include <fmt/core.h>
+using fmt::format;
+#endif
+```
+
+Add `#include <format>` in the same `#if` block as `#include <print>` where both are
+needed.
 
 ## Architecture Overview
 
