@@ -32,6 +32,11 @@ namespace gcs
     {
     private:
         const std::vector<IntegerVariableID> _vars;
+        std::vector<IntegerVariableID> _sanitised_vars;
+        std::vector<Integer> _compressed_vals;
+        virtual auto define_proof_model(innards::ProofModel &) -> void override;
+        virtual auto install_propagators(innards::Propagators &) -> void override;
+        virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
 
     public:
         explicit GACAllDifferent(std::vector<IntegerVariableID> vars);
