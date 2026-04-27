@@ -143,13 +143,16 @@ namespace gcs::innards
          */
         [[nodiscard]] auto contains_any_of(const IntervalSet & other) const -> bool
         {
-            for (const auto & [l1, u1] : other.intervals) {
-                for (auto & [l2, u2] : intervals) {
-                    if (l2 <= u1 && l1 <= u2)
-                        return true;
-                    if (u2 > u1)
-                        break;
-                }
+            auto i = intervals.begin();
+            auto j = other.intervals.begin();
+
+            while (i != intervals.end() && j != other.intervals.end()) {
+                if (i->first <= j->second && j->first <= i->second)
+                    return true;
+                if (i->second < j->second)
+                    ++i;
+                else
+                    ++j;
             }
 
             return false;
