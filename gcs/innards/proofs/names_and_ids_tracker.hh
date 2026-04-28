@@ -15,7 +15,15 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <variant>
+#include <version>
+
+#ifdef __cpp_lib_generator
+#include <generator>
+#else
+#include <__generator.hpp>
+#endif
 
 namespace gcs::innards
 {
@@ -185,8 +193,8 @@ namespace gcs::innards
          * Call the supplied function for each bit making up the given variable, specifying
          * its raw PB literal and coefficient.
          */
-        auto for_each_bit(const SimpleOrProofOnlyIntegerVariableID &,
-            const std::function<auto(Integer, const XLiteral &)->void> &) -> void;
+        auto each_bit(const SimpleOrProofOnlyIntegerVariableID &)
+            -> std::generator<std::pair<Integer, XLiteral>>;
 
         /**
          * Get the name and coefficient for the bit position in the representation of the given var.

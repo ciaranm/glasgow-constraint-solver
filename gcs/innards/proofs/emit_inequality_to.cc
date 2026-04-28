@@ -45,23 +45,18 @@ auto gcs::innards::emit_inequality_to(
             [&, w = w](const IntegerVariableID & var) {
                 overloaded{
                     [&](const SimpleIntegerVariableID & var) {
-                        names_and_ids_tracker.for_each_bit(var, [&](Integer bit_value, const XLiteral & bit_lit) {
+                        for (const auto & [bit_value, bit_lit] : names_and_ids_tracker.each_bit(var))
                             stream << -w * bit_value << " " << names_and_ids_tracker.pb_file_string_for(bit_lit) << " ";
-                        });
                     },
                     [&](const ViewOfIntegerVariableID & view) {
                         if (! view.negate_first) {
-                            names_and_ids_tracker.for_each_bit(view.actual_variable,
-                                [&](Integer bit_value, const XLiteral & bit_lit) {
-                                    stream << -w * bit_value << " " << names_and_ids_tracker.pb_file_string_for(bit_lit) << " ";
-                                });
+                            for (const auto & [bit_value, bit_lit] : names_and_ids_tracker.each_bit(view.actual_variable))
+                                stream << -w * bit_value << " " << names_and_ids_tracker.pb_file_string_for(bit_lit) << " ";
                             rhs += w * view.then_add;
                         }
                         else {
-                            names_and_ids_tracker.for_each_bit(view.actual_variable,
-                                [&](Integer bit_value, const XLiteral & bit_lit) {
-                                    stream << w * bit_value << " " << names_and_ids_tracker.pb_file_string_for(bit_lit) << " ";
-                                });
+                            for (const auto & [bit_value, bit_lit] : names_and_ids_tracker.each_bit(view.actual_variable))
+                                stream << w * bit_value << " " << names_and_ids_tracker.pb_file_string_for(bit_lit) << " ";
                             rhs += w * view.then_add;
                         }
                     },
@@ -71,9 +66,8 @@ auto gcs::innards::emit_inequality_to(
                     .visit(var);
             },
             [&, w = w](const ProofOnlySimpleIntegerVariableID & var) {
-                names_and_ids_tracker.for_each_bit(var, [&](Integer bit_value, const XLiteral & bit_lit) {
+                for (const auto & [bit_value, bit_lit] : names_and_ids_tracker.each_bit(var))
                     stream << -w * bit_value << " " << names_and_ids_tracker.pb_file_string_for(bit_lit) << " ";
-                });
             },
             [&, w = w](const ProofBitVariable & bit) {
                 auto [_, bit_name] = names_and_ids_tracker.get_bit(bit);

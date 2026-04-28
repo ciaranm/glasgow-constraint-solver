@@ -343,18 +343,16 @@ auto ProofModel::finalise() -> void
             full_opb << "min: ";
             overloaded{
                 [&](const SimpleIntegerVariableID & v) {
-                    names_and_ids_tracker().for_each_bit(v, [&](Integer bit_value, const XLiteral & bit_name) {
+                    for (const auto & [bit_value, bit_name] : names_and_ids_tracker().each_bit(v))
                         full_opb << bit_value << " " << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
-                    });
                 },
                 [&](const ConstantIntegerVariableID &) {
                     throw UnimplementedException{};
                 },
                 [&](const ViewOfIntegerVariableID & v) {
                     // the "then add" bit is irrelevant for the objective function
-                    names_and_ids_tracker().for_each_bit(v.actual_variable, [&](Integer bit_value, const XLiteral & bit_name) {
+                    for (const auto & [bit_value, bit_name] : names_and_ids_tracker().each_bit(v.actual_variable))
                         full_opb << (v.negate_first ? -bit_value : bit_value) << " " << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
-                    });
                 }}
                 .visit(*_imp->optional_minimise_variable);
 
@@ -366,17 +364,15 @@ auto ProofModel::finalise() -> void
             for (const auto & var : *_imp->preserved_variables) {
                 overloaded{
                     [&](const SimpleIntegerVariableID & v) {
-                        names_and_ids_tracker().for_each_bit(v, [&](Integer, const XLiteral & bit_name) {
+                        for (const auto & [bit_value, bit_name] : names_and_ids_tracker().each_bit(v))
                             full_opb << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
-                        });
                     },
                     [&](const ConstantIntegerVariableID &) {
                     },
                     [&](const ViewOfIntegerVariableID & v) {
                         // the "then add" bit is irrelevant for the objective function
-                        names_and_ids_tracker().for_each_bit(v.actual_variable, [&](Integer, const XLiteral & bit_name) {
+                        for (const auto & [bit_value, bit_name] : names_and_ids_tracker().each_bit(v.actual_variable))
                             full_opb << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
-                        });
                     }}
                     .visit(var);
             }
