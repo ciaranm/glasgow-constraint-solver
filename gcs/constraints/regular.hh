@@ -24,18 +24,20 @@ namespace gcs
         const long _num_states;
         std::vector<std::unordered_map<Integer, long>> _transitions;
         const std::vector<long> _final_states;
+        const bool _short_reasons;
 
     public:
         explicit Regular(std::vector<IntegerVariableID> vars,
             std::vector<Integer> symbols,
             long num_states,
             std::vector<std::unordered_map<Integer, long>> transitions,
-            std::vector<long> final_states);
+            std::vector<long> final_states, bool sr = true);
 
         explicit Regular(std::vector<IntegerVariableID> v,
             std::vector<Integer> s,
             long n, std::vector<std::vector<long>> transitions,
-            std::vector<long> f);
+            std::vector<long> f,
+            bool sr = true);
 
         virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
