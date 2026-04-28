@@ -794,20 +794,31 @@ auto SmartTable::clone() const -> unique_ptr<Constraint>
 
 auto SmartTable::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
-    vector<IntegerVariableID> selectors;
-    vector<ProofFlag> pb_selectors;
+    if (! prepare(propagators, initial_state, optional_model))
+        return;
 
+    if (optional_model)
+        define_proof_model(*optional_model);
+
+    install_propagators(propagators);
+}
+
+auto SmartTable::prepare(Propagators &, State & initial_state, ProofModel * const optional_model) -> bool
+{
     for (unsigned int i = 0; i < _tuples.size(); ++i) {
-        selectors.emplace_back(initial_state.allocate_integer_variable_with_state(0_i, 1_i));
+        _selectors.emplace_back(initial_state.allocate_integer_variable_with_state(0_i, 1_i));
     }
 
+    // Unlike MultBC, which writes to the initial_state, the proof model needs read access to the initial_state
+    // In previous constraints, I have removed the need to access the initial state by pre-computing the
+    // things it was used for (e.g. _evaluated_cond), but this one seems way more complicated.
     if (optional_model) {
         for (unsigned int i = 0; i < _tuples.size(); ++i) {
-            pb_selectors.emplace_back(optional_model->create_proof_flag("t" + to_string(i)));
+            _pb_selectors.emplace_back(optional_model->create_proof_flag("t" + to_string(i)));
         }
         WPBSum sum_pb_selectors{};
 
-        for (const auto & s : pb_selectors)
+        for (const auto & s : _pb_selectors)
             sum_pb_selectors += 1_i * s;
 
         optional_model->add_constraint(sum_pb_selectors >= 1_i);
@@ -872,12 +883,16 @@ auto SmartTable::install(Propagators & propagators, State & initial_state, Proof
             }
             auto tuple_len = Integer{static_cast<long long>(entry_flags_sum.terms.size())};
             optional_model->add_constraint(move(entry_flags_sum) >= tuple_len,
-                HalfReifyOnConjunctionOf{{pb_selectors[tuple_idx]}});
+                HalfReifyOnConjunctionOf{{_pb_selectors[tuple_idx]}});
             optional_model->add_constraint(move(entry_flags_neg_sum) >= -tuple_len + 1_i,
-                HalfReifyOnConjunctionOf{{! pb_selectors[tuple_idx]}});
+                HalfReifyOnConjunctionOf{{! _pb_selectors[tuple_idx]}});
         }
     }
+    return true;
+}
 
+auto SmartTable::install_propagators(Propagators & propagators) -> void
+{
     // Trigger when any var changes? Is this over-kill?
     Triggers triggers;
     triggers.on_change = {_vars.begin(), _vars.end()};
@@ -885,7 +900,7 @@ auto SmartTable::install(Propagators & propagators, State & initial_state, Proof
     vector<Forest> forests = build_forests(_tuples);
 
     propagators.install(
-        [selectors, vars = _vars, tuples = move(_tuples), forests = move(forests), pb_selectors = move(pb_selectors)](
+        [selectors = _selectors, vars = _vars, tuples = move(_tuples), forests = move(forests), pb_selectors = _pb_selectors](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             auto reason = generic_reason(state, vars);
             propagate_using_smart_str(selectors, vars, tuples, forests, state, inference, reason, pb_selectors, logger);
