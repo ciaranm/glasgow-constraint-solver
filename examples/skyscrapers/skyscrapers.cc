@@ -67,7 +67,7 @@ auto main(int argc, char * argv[]) -> int
             ("autotable", "Use autotabulation")                                                  //
             ("all", "Find all solutions");
 
-        options.parse_positional({"instance", "autotable"});
+        options.parse_positional({"instance"});
 
         options_vars = options.parse(argc, argv);
     }
