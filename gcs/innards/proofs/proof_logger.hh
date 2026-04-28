@@ -22,6 +22,7 @@ namespace gcs::innards
 
     struct RUPProofRule
     {
+        std::optional<std::vector<ProofLine>> lines;
     };
 
     struct AssertProofRule

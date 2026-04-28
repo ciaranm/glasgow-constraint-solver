@@ -379,8 +379,26 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<P
     emit_inequality_to(names_and_ids_tracker(), ineq, rule_line);
 
     overloaded{
-        [&](const RUPProofRule &) { rule_line << ";"; },
-        [&](const ImpliesProofRule & rule) { if (rule.line) { rule_line << " : " << *rule.line << ";"; } else { rule_line << ";"; } },
+        [&](const RUPProofRule & rule) { 
+                        if (rule.lines) {
+                            rule_line << ": ";
+                            for (auto & line : *rule.lines) {
+                                rule_line << line << ' ';
+                            }
+                            rule_line << " ;";
+                        } else {
+                            rule_line << ";";
+                        } },
+        [&](const ImpliesProofRule & rule) {
+            if (rule.line) {
+                rule_line << ": ";
+                rule_line << *rule.line << ' ';
+                rule_line << " ;";
+            }
+            else {
+                rule_line << ";";
+            }
+        },
         [&](const AssertProofRule &) { rule_line << ";"; }}
         .visit(rule);
 
@@ -420,8 +438,20 @@ auto ProofLogger::emit_under_reason(
     }
 
     overloaded{
-        [&](const RUPProofRule &) { rule_line << ";"; },
-        [&](const ImpliesProofRule & rule) { if (rule.line) { rule_line << " : " << *rule.line << ";"; } else { rule_line << ";"; } },
+        [&](const RUPProofRule & rule) { 
+			if(rule.lines) {
+				rule_line << ": ";
+				for (const auto & line : *rule.lines) {
+					rule_line << line << " ";
+				}
+				rule_line << " ;";
+			} else {
+				rule_line << ";"; } },
+        [&](const ImpliesProofRule & rule) { if (rule.line) {
+				rule_line << ": ";
+				rule_line << *rule.line << " ";
+				rule_line << " ;";
+			} else { rule_line << ";"; } },
         [&](const AssertProofRule &) { rule_line << ";"; }}
         .visit(rule);
 
