@@ -556,6 +556,11 @@ auto ProofLogger::emit_subproofs(const map<ProofGoal, Subproof> & subproofs)
     _imp->proof << "qed;\n";
 }
 
+auto ProofLogger::get_current_proof_line() -> ProofLineNumber
+{
+    return _imp->proof_line;
+}
+
 auto ProofLogger::emit_red_proof_line(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
     const std::vector<std::pair<ProofLiteralOrFlag, ProofLiteralOrFlag>> & witness,
     ProofLevel level, const std::optional<std::map<ProofGoal, Subproof>> & subproofs) -> ProofLine
@@ -636,6 +641,11 @@ auto ProofLogger::create_proof_flag_reifying(const SumLessThanEqual<Weighted<Pse
 auto ProofLogger::create_proof_flag(const string & name) -> ProofFlag
 {
     return names_and_ids_tracker().create_proof_flag(name);
+}
+
+auto ProofLogger::delete_range(ProofLine from, ProofLine up_to) -> void
+{
+    _imp->proof << "del range " << from << " " << up_to << ";\n";
 }
 
 auto ProofLogger::write_indent() -> void

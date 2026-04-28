@@ -174,6 +174,11 @@ namespace gcs::innards
         auto reify(const WPBSumLE &, const ReasonFunction &) -> WPBSumLE;
 
         /**
+         * Get the current proof line ID (i.e. the next one to be used.
+         */
+        auto get_current_proof_line() -> ProofLineNumber;
+
+        /**
          * Emit the specified text as a proof line.
          */
         auto emit_proof_line(const std::string &, ProofLevel level) -> ProofLine;
@@ -234,6 +239,11 @@ namespace gcs::innards
          * Provide access to information about variables.
          */
         [[nodiscard]] auto names_and_ids_tracker() -> NamesAndIDsTracker &;
+
+        /**
+         * Delete a specified range of ids;
+         */
+        auto delete_range(ProofLine from, ProofLine up_to) -> void;
 
         /**
          * Write a number of spaces equal to current_indent.
