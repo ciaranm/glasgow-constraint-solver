@@ -7,6 +7,7 @@
 #include <gcs/innards/state.hh>
 
 #include <algorithm>
+#include <sstream>
 #include <utility>
 
 using namespace gcs;

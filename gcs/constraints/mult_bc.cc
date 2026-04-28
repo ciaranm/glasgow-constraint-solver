@@ -7,10 +7,12 @@
 #include <gcs/innards/propagators.hh>
 #include <gcs/presolvers/auto_table.hh>
 #include <iostream>
+#include <sstream>
 
 #include <fmt/ostream.h>
 
 #include <algorithm>
+#include <sstream>
 #include <utility>
 
 using namespace gcs;
