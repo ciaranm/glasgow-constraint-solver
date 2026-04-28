@@ -79,11 +79,6 @@ auto CurrentState::in_domain(const IntegerVariableID v, Integer n) const -> bool
     return _full_state.in_domain(v, n);
 }
 
-auto CurrentState::for_each_value(const IntegerVariableID v, std::function<auto(Integer)->void> f) const -> void
-{
-    _full_state.for_each_value(v, f);
-}
-
 auto CurrentState::each_value(const IntegerVariableID v) const -> generator<Integer>
 {
     return _full_state.each_value_mutable(v);

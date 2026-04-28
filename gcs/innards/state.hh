@@ -368,58 +368,6 @@ namespace gcs::innards
         [[nodiscard]] auto has_single_value(const IntegerVariableID) const -> bool;
 
         /**
-         * Call the callback for each value present in a variable's domain. The
-         * iterated value may be removed during iteration. Call using either
-         * IntegerVariableID or one of its more specific types.
-         *
-         * \sa State::for_each_value_while()
-         * \sa State::for_each_value_while_immutable()
-         * \sa State::each_value_mutable()
-         */
-        template <IntegerVariableIDLike VarType_>
-        auto for_each_value(const VarType_ &, const std::function<auto(Integer)->void> &) const -> void;
-
-        /**
-         * Call the callback for each value present in a variable's domain. The
-         * iterated domain must not be modified by the callback. Call using either
-         * IntegerVariableID or one of its more specific types.
-         *
-         * \sa State::for_each_value()
-         * \sa State::for_each_value_while_immutable()
-         * \sa State::each_value_immutable()
-         */
-        template <IntegerVariableIDLike VarType_>
-        auto for_each_value_immutable(const VarType_ &, const std::function<auto(Integer)->void> &) const -> void;
-
-        /**
-         * Call the callback for each value present in a variable's domain,
-         * stopping if the callback returns false. The iterated value may be
-         * removed during iteration. Call using either IntegerVariableID or one
-         * of its more specific types. Returns false if the callback ever
-         * returns false.
-         *
-         * \sa State::for_each_value()
-         * \sa State::for_each_value_while_immutable()
-         * \sa State::each_value_mutable()
-         */
-        template <IntegerVariableIDLike VarType_>
-        auto for_each_value_while(const VarType_ &, const std::function<auto(Integer)->bool> &) const -> bool;
-
-        /**
-         * Call the callback for each value present in a variable's domain,
-         * stopping if the callback returns false. The variable's domain must
-         * not be modified by the callback. Call using either IntegerVariableID
-         * or one of its more specific types. Returns false if the callback
-         * ever returns false.
-         *
-         * \sa State::for_each_value()
-         * \sa State::for_each_value_while()
-         * \sa State::each_value_immutable()
-         */
-        template <IntegerVariableIDLike VarType_>
-        auto for_each_value_while_immutable(const VarType_ &, const std::function<auto(Integer)->bool> &) const -> bool;
-
-        /**
          * Provide a generator that iterates over each value in a variable's domain. The
          * variable's domain must not be modified whilst the generator is alive. Call using
          * either IntegerVariableID or one of its more specific types.

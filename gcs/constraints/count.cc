@@ -127,17 +127,17 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
             auto justf = [&](const ReasonFunction & reason) -> void {
                 for (const auto & [idx, var] : enumerate(vars)) {
                     bool seen_any = false;
-                    state.for_each_value_while_immutable(var, [&](const Integer & val) -> bool {
-                        if (state.in_domain(value_of_interest, val))
+                    for (const auto & val : state.each_value_immutable(var)) {
+                        if (state.in_domain(value_of_interest, val)) {
                             seen_any = true;
-                        return ! seen_any;
-                    });
+                            break;
+                        }
+                    }
 
                     if (! seen_any) {
-                        state.for_each_value(value_of_interest, [&](const Integer & val) {
+                        for (const auto & val : state.each_value_immutable(value_of_interest))
                             logger->emit_rup_proof_line_under_reason(reason,
                                 WPBSum{} + 1_i * (value_of_interest != val) + 1_i * (! get<0>(flags[idx])) >= 1_i, ProofLevel::Temporary);
-                        });
                         logger->emit_rup_proof_line_under_reason(reason,
                             WPBSum{} + 1_i * (! get<0>(flags[idx])) >= 1_i, ProofLevel::Temporary);
                     }
@@ -204,12 +204,10 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
             if (lowest_how_many_must) {
                 auto just = JustifyExplicitly{
                     [&](const ReasonFunction & reason) -> void {
-                        state.for_each_value_while_immutable(value_of_interest, [&](Integer voi) -> bool {
+                        for (const auto & voi : state.each_value_immutable(value_of_interest))
                             logger->emit_rup_proof_line_under_reason(reason,
                                 WPBSum{} + 1_i * (value_of_interest != voi) + 1_i * (how_many >= *lowest_how_many_must) >= 1_i,
                                 ProofLevel::Temporary);
-                            return true;
-                        });
                     }};
                 inference.infer(logger, how_many >= *lowest_how_many_must, just, generic_reason(state, all_vars));
             }
@@ -217,7 +215,7 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
             if (highest_how_many_might) {
                 auto just = JustifyExplicitly{
                     [&](const ReasonFunction & reason) -> void {
-                        state.for_each_value_while_immutable(value_of_interest, [&](Integer voi) -> bool {
+                        for (const auto & voi : state.each_value_immutable(value_of_interest)) {
                             for (const auto & [idx, var] : enumerate(vars)) {
                                 if (! state.in_domain(var, voi)) {
                                     logger->emit_rup_proof_line_under_reason(reason,
@@ -232,8 +230,7 @@ auto Count::install(Propagators & propagators, State &, ProofModel * const optio
                             logger->emit_rup_proof_line_under_reason(reason,
                                 WPBSum{} + 1_i * (value_of_interest != voi) + 1_i * (how_many < *highest_how_many_might + 1_i) >= 1_i,
                                 ProofLevel::Temporary);
-                            return true;
-                        });
+                        }
                     }};
                 inference.infer(logger, how_many < *highest_how_many_might + 1_i, just, generic_reason(state, all_vars));
             }
