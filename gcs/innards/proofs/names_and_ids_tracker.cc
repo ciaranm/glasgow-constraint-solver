@@ -607,12 +607,12 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning(SimpleOrProofOnlyIntegerVaria
 
         overloaded{
             [&](const SimpleIntegerVariableID & id) -> void {
-                string name = format("i[{}][{}{}]", name_of(id), (op == EqualsOrGreaterEqual::Equals ? "eq" : "ge"), value_name);
+                string name = fmt::format("i[{}][{}{}]", name_of(id), (op == EqualsOrGreaterEqual::Equals ? "eq" : "ge"), value_name);
                 _imp->xlits_to_verbose_names.emplace(result, name);
                 _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
             },
             [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
-                string name = format("p[{}_{}][{}{}]", id.index, name_of(id),
+                string name = fmt::format("p[{}_{}][{}{}]", id.index, name_of(id),
                     (op == EqualsOrGreaterEqual::Equals ? "eq" : "ge"), value_name);
                 _imp->xlits_to_verbose_names.emplace(result, name);
                 _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
@@ -649,7 +649,7 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning(ProofFlag flag) -> XLiteral
     auto result = XLiteral{++_imp->next_xliteral_nr, false};
 
     if (_imp->verbose_names) {
-        string name = format("f[{}][{}]", flag.index, name_of(flag));
+        string name = fmt::format("f[{}][{}]", flag.index, name_of(flag));
         _imp->xlits_to_verbose_names.emplace(result, name);
         _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
     }
@@ -672,12 +672,12 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning_negative_bit_of(SimpleOrProof
     if (_imp->verbose_names) {
         overloaded{
             [&](const SimpleIntegerVariableID & id) -> void {
-                string name = format("i[{}][neg]", name_of(id));
+                string name = fmt::format("i[{}][neg]", name_of(id));
                 _imp->xlits_to_verbose_names.emplace(result, name);
                 _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
             },
             [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
-                string name = format("p[{}_{}][neg]", id.index, name_of(id));
+                string name = fmt::format("p[{}_{}][neg]", id.index, name_of(id));
                 _imp->xlits_to_verbose_names.emplace(result, name);
                 _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
             }}
@@ -713,12 +713,12 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning_bit_of(SimpleOrProofOnlyInteg
     if (_imp->verbose_names) {
         overloaded{
             [&](const SimpleIntegerVariableID & id) -> void {
-                string name = format("i[{}][b{}]", name_of(id), to_string(power.raw_value));
+                string name = fmt::format("i[{}][b{}]", name_of(id), to_string(power.raw_value));
                 _imp->xlits_to_verbose_names.emplace(result, name);
                 _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
             },
             [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
-                string name = format("p[{}_{}][b{}]", id.index, name_of(id), to_string(power.raw_value));
+                string name = fmt::format("p[{}_{}][b{}]", id.index, name_of(id), to_string(power.raw_value));
                 _imp->xlits_to_verbose_names.emplace(result, name);
                 _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
             }}
