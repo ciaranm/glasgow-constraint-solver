@@ -15,6 +15,8 @@ namespace gcs::innards
     using ReasonFunction = std::function<auto()->Reason>;
 
     [[nodiscard]] auto generic_reason(const State & state, const std::vector<IntegerVariableID> & vars) -> ReasonFunction;
+
+    [[nodiscard]] auto singleton_reason(const ProofLiteralOrFlag & lit) -> ReasonFunction;
 }
 
 #endif
