@@ -199,9 +199,15 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
 
     auto initialisation_success = propagators.initialise(state, optional_proof ? optional_proof->logger() : nullptr);
 
-    auto presolve_success = (! initialisation_success) ? false : problem.for_each_presolver([&](Presolver & presolver) -> bool {
-        return presolver.run(problem, propagators, state, optional_proof ? optional_proof->logger() : nullptr);
-    });
+    auto presolve_success = initialisation_success;
+    if (initialisation_success) {
+        for (auto & presolver : problem.each_presolver()) {
+            if (! presolver.run(problem, propagators, state, optional_proof ? optional_proof->logger() : nullptr)) {
+                presolve_success = false;
+                break;
+            }
+        }
+    }
 
     Integer objective_lower_bound_for_proof = 0_i;
     if (optional_proof && problem.optional_minimise_variable())

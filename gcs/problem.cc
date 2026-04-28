@@ -20,7 +20,6 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::deque;
-using std::function;
 using std::generator;
 using std::make_optional;
 using std::move;
@@ -184,13 +183,10 @@ auto Problem::create_propagators(State & state, ProofModel * const optional_proo
     return result;
 }
 
-auto Problem::for_each_presolver(const function<auto(Presolver &)->bool> & f) const -> bool
+auto Problem::each_presolver() const -> generator<Presolver &>
 {
     for (auto & p : _imp->presolvers)
-        if (! f(*p))
-            return false;
-
-    return true;
+        co_yield *p;
 }
 
 auto Problem::minimise(IntegerVariableID var) -> void

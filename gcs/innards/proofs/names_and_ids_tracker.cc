@@ -37,6 +37,7 @@ using namespace gcs::innards;
 using std::any_of;
 using std::fstream;
 using std::function;
+using std::generator;
 using std::ios;
 using std::ios_base;
 using std::list;
@@ -317,14 +318,14 @@ auto NamesAndIDsTracker::negative_bit_coefficient(const SimpleOrProofOnlyInteger
     return it->second.first;
 }
 
-auto NamesAndIDsTracker::for_each_bit(const SimpleOrProofOnlyIntegerVariableID & id,
-    const function<auto(Integer, const XLiteral &)->void> & f) -> void
+auto NamesAndIDsTracker::each_bit(const SimpleOrProofOnlyIntegerVariableID & id)
+    -> generator<pair<Integer, XLiteral>>
 {
     auto it = _imp->integer_variable_bits_to_size_and_proof_vars.find(id);
     if (it == _imp->integer_variable_bits_to_size_and_proof_vars.end())
         throw ProofError("missing bits");
     for (auto & [c, n] : it->second.second)
-        f(c, n);
+        co_yield pair{c, n};
 }
 
 auto NamesAndIDsTracker::get_bit(const gcs::innards::SimpleOrProofOnlyIntegerVariableID & var, Integer position) -> pair<Integer, XLiteral>
@@ -856,23 +857,18 @@ auto NamesAndIDsTracker::reify(const WPBSumLE & ineq, const HalfReifyOnConjuncti
             [&, w = w](const IntegerVariableID & var) {
                 overloaded{
                     [&](const SimpleIntegerVariableID & var) {
-                        for_each_bit(var, [&](Integer bit_value, const XLiteral &) {
+                        for (const auto & [bit_value, bit_lit] : each_bit(var))
                             max_contribution_from_positive_terms += max(0_i, w * bit_value);
-                        });
                     },
                     [&](const ViewOfIntegerVariableID & view) {
                         if (! view.negate_first) {
-                            for_each_bit(view.actual_variable,
-                                [&](Integer bit_value, const XLiteral &) {
-                                    max_contribution_from_positive_terms += max(0_i, w * bit_value);
-                                });
+                            for (const auto & [bit_value, bit_lit] : each_bit(view.actual_variable))
+                                max_contribution_from_positive_terms += max(0_i, w * bit_value);
                             max_contribution_from_positive_terms += max(0_i, w * view.then_add);
                         }
                         else {
-                            for_each_bit(view.actual_variable,
-                                [&](Integer bit_value, const XLiteral &) {
-                                    max_contribution_from_positive_terms += max(0_i, -w * bit_value);
-                                });
+                            for (const auto & [bit_value, bit_lit] : each_bit(view.actual_variable))
+                                max_contribution_from_positive_terms += max(0_i, -w * bit_value);
                             max_contribution_from_positive_terms += max(0_i, -w * view.then_add);
                         }
                     },
@@ -882,9 +878,8 @@ auto NamesAndIDsTracker::reify(const WPBSumLE & ineq, const HalfReifyOnConjuncti
                     .visit(var);
             },
             [&, w = w](const ProofOnlySimpleIntegerVariableID & var) {
-                for_each_bit(var, [&](Integer bit_value, const XLiteral &) {
+                for (const auto & [bit_value, bit_lit] : each_bit(var))
                     max_contribution_from_positive_terms += max(0_i, w * bit_value);
-                });
             },
             [&, w = w](const ProofBitVariable &) {
                 max_contribution_from_positive_terms += max(0_i, w);
