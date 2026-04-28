@@ -13,14 +13,11 @@
 using namespace gcs;
 
 using std::cerr;
-using std::cmp_less;
 using std::cout;
 using std::endl;
 using std::make_optional;
-using std::make_pair;
 using std::mt19937;
 using std::nullopt;
-using std::pair;
 using std::random_device;
 using std::string;
 using std::uniform_real_distribution;
@@ -28,7 +25,7 @@ using std::vector;
 
 static const double EDGE_PROBABILITY = 0.7;
 
-auto create_graph_from_seed(int n, double p, unsigned int seed) -> pair<vector<vector<long>>, unsigned int>
+auto create_graph_from_seed(int n, double p, unsigned int seed) -> vector<vector<long>>
 {
     std::mt19937 gen(seed);
     std::uniform_real_distribution<> dis(0.0, 1.0);
@@ -47,17 +44,10 @@ auto create_graph_from_seed(int n, double p, unsigned int seed) -> pair<vector<v
         }
     }
 
-    return make_pair(distances, seed);
+    return distances;
 }
 
-auto generate_random_graph(int n, double p) -> pair<vector<vector<long>>, unsigned int>
-{
-    std::random_device rd;
-    auto seed = rd();
-    return create_graph_from_seed(n, p, seed);
-}
-
-Stats run_circuit_problem(int n, const vector<vector<long>> & distances, SCCOptions options)
+Stats run_circuit_problem(int n, const vector<vector<long>> & distances, SCCOptions options, bool print_solutions, bool prove, string proof_prefix)
 {
     Problem p;
     auto x = p.create_integer_variable_vector(n, 0_i, Integer{n - 1});
@@ -69,7 +59,8 @@ Stats run_circuit_problem(int n, const vector<vector<long>> & distances, SCCOpti
             }
         }
     }
-    p.post(Circuit{x, false, options});
+    auto use_gac_all_different = false;
+    p.post(Circuit{x, use_gac_all_different, options});
 
     // Minimise the distance between any two stops
     auto max_leg = p.create_integer_variable(0_i, 100_i, "max_leg");
@@ -82,28 +73,28 @@ Stats run_circuit_problem(int n, const vector<vector<long>> & distances, SCCOpti
 
     p.minimise(max_leg);
 
-    cout << "n = " << n << endl;
     auto stats = solve_with(p,
         SolveCallbacks{
             .solution = [&](const CurrentState & s) -> bool {
-                for (const auto & v : x) {
-                    cout << s(v) << " ";
+                if (print_solutions) {
+                    for (const auto & v : x) {
+                        cout << s(v) << " ";
+                    }
+                    cout << endl;
+                    cout << 0 << " -> " << s(x[0]);
+                    auto current = s(x[0]);
+                    while (current != 0_i) {
+                        cout << " -> ";
+                        cout << s(x[current.raw_value]);
+                        current = s(x[current.raw_value]);
+                    }
+                    cout << "\nMax leg = " << s(max_leg) << endl;
+                    cout << "\n";
                 }
-                cout << endl;
-                cout << 0 << " -> " << s(x[0]);
-                auto current = s(x[0]);
-                while (current != 0_i) {
-                    cout << " -> ";
-                    cout << s(x[current.raw_value]);
-                    current = s(x[current.raw_value]);
-                }
-                cout << "\nMax leg = " << s(max_leg) << endl;
-                cout << "\n";
-
                 return true;
             },
         },
-        make_optional<ProofOptions>("circuit_random"));
+        prove ? make_optional<ProofOptions>(proof_prefix) : nullopt);
     return stats;
 }
 
@@ -117,15 +108,22 @@ auto main(int argc, char * argv[]) -> int
             ("help", "Display help information")       //
             ("prove", "Create a proof");
 
-        command_options.add_options()                                          //
-            ("n", "Integer value n.", cxxopts::value<int>())                   //
-            ("seed", "Random seed.", cxxopts::value<unsigned int>())           //
-            ("prune_root", "SCC inference", cxxopts::value<bool>())            //
-            ("prune_skip", "SCC inference", cxxopts::value<bool>())            //
-            ("fix_req", "SCC inference", cxxopts::value<bool>())               //
-            ("prune_within", "SCC inference", cxxopts::value<bool>())          //
-            ("prove_using_dominance", "SCC inference", cxxopts::value<bool>()) //
-            ("enable_comments", "SCC inference", cxxopts::value<bool>());
+        command_options.add_options()                                                      //
+            ("n", "Integer value n.", cxxopts::value<int>()->default_value("3"))           //
+            ("seed", "Random seed.", cxxopts::value<int>()->default_value("-1"))           //
+            ("stats", "Print statistics")                                                  //
+            ("proof-prefix", "Path and name of the opb and pbp files",                     //
+                cxxopts::value<string>()->default_value("circuit_random"))                 //
+            ("print-distances", "Print the input graph used for the probllem")             //
+            ("print-solutions", "Print each solution found while optimising")              //
+            ("no-prune-root", "SCC inference")                                             //
+            ("no-prune-skip", "SCC inference")                                             //
+            ("no-fix-req", "SCC inference")                                                //
+            ("no-prune-within", "SCC inference")                                           //
+            ("no-prove-am1-contradiction", "SCC optimisation")                             //
+            ("prove-using-dominance", "SCC inference")                                     //
+            ("enable-comments", "SCC inference")                                           //
+            ("short-reasons", "Use redundance to reify reasons in proofs to save space."); //
 
         options_vars = command_options.parse(argc, argv);
     }
@@ -143,20 +141,31 @@ auto main(int argc, char * argv[]) -> int
     }
 
     SCCOptions options{
-        options_vars["prune_root"].as<bool>(),
-        options_vars["prune_skip"].as<bool>(),
-        options_vars["fix_req"].as<bool>(),
-        options_vars["prune_within"].as<bool>(),
-        options_vars["prove_using_dominance"].as<bool>(),
-        options_vars["enable_comments"].as<bool>()};
+        ! options_vars.contains("no-prune-root"),
+        ! options_vars.contains("no-prune-skip"),
+        ! options_vars.contains("no-fix-req"),
+        ! options_vars.contains("no-prune-within"),
+        false,
+        options_vars.contains("enable_comments"),
+        ! options_vars.contains("no-prove-am1-contradiction"),
+        options_vars.contains("short-reasons"),
+    };
 
-    if (options_vars.contains("seed")) {
-        if (! options_vars.contains("n")) {
-            cout << "Need to specify n.";
-            return EXIT_FAILURE;
-        }
-        auto n = options_vars["n"].as<int>();
-        auto [distances, seed] = create_graph_from_seed(n, EDGE_PROBABILITY, options_vars["seed"].as<unsigned int>());
+    auto n = options_vars["n"].as<int>();
+    auto seed = options_vars["seed"].as<int>();
+    auto proof_prefix = options_vars["proof-prefix"].as<string>();
+    auto print_distances = options_vars.contains("print-distances");
+    auto print_solutions = options_vars.contains("print-solutions");
+    auto print_stats = options_vars.contains("stats");
+    auto prove = options_vars.contains("prove");
+
+    if (seed == -1) {
+        random_device rand_dev;
+        seed = rand_dev();
+    }
+
+    auto distances = create_graph_from_seed(n, EDGE_PROBABILITY, seed);
+    if (print_distances) {
         for (unsigned int i = 0; i < distances.size(); ++i) {
             cout << i << ": ";
             for (unsigned int j = 0; j < distances[i].size(); ++j) {
@@ -165,30 +174,13 @@ auto main(int argc, char * argv[]) -> int
             }
             cout << endl;
         }
-
-        run_circuit_problem(n, distances, options);
     }
-    else {
-        int smallest_n = 8;
-        int largest_n = 20;
-        int repetitions = 20;
 
-        for (int n = smallest_n; n <= largest_n; ++n) {
-            for (int r = 0; r < repetitions; ++r) {
-                auto [distances, seed] = generate_random_graph(n, EDGE_PROBABILITY);
+    auto stats = run_circuit_problem(n, distances, options, print_solutions, prove, proof_prefix);
 
-                Stats stats = run_circuit_problem(n, distances, options);
-
-                cout << "Num solutions: " << stats.solutions << endl;
-
-                //                if (0 != system("veripb circuit_random.opb circuit_random.veripb")) {
-                //                    cout << stats;
-                //                    cout << "Seed: " << seed << endl;
-                //                    cout << "n: " << n << endl;
-                //                    return EXIT_FAILURE;
-                //                }
-            }
-        }
+    if (print_stats) {
+        cout << "seed: " << seed << endl;
+        cout << stats << endl;
     }
 
     return EXIT_SUCCESS;

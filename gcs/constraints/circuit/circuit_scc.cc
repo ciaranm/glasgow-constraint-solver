@@ -15,8 +15,6 @@
 #include <variant>
 #include <vector>
 
-#include <fmt/ostream.h>
-#include <iostream>
 using std::cmp_less;
 using std::cmp_less_equal;
 using std::cmp_not_equal;
