@@ -73,6 +73,8 @@ struct NamesAndIDsTracker::Imp
     map<SimpleOrProofOnlyIntegerVariableID, pair<Integer, vector<pair<Integer, XLiteral>>>> integer_variable_bits_to_size_and_proof_vars;
     map<SimpleOrProofOnlyIntegerVariableID, pair<Integer, Integer>> integer_variable_definition_bounds;
     map<SimpleOrProofOnlyIntegerVariableID, map<Integer, pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>>>> gevars_that_exist;
+    map<SimpleOrProofOnlyIntegerVariableID, map<Integer, pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>>>> eqvars_that_exist;
+
     map<ProofFlag, XLiteral> flags;
 
     map<SimpleOrProofOnlyIntegerVariableID, string> id_names;
@@ -208,9 +210,11 @@ auto NamesAndIDsTracker::need_pol_item_defining_literal(const IntegerVariableCon
                 need_gevar(var, cond.value);
                 return _imp->gevars_that_exist.at(var).at(cond.value).second;
             case Equal:
-                throw UnimplementedException{};
+                need_direct_encoding_for(var, cond.value);
+                return _imp->eqvars_that_exist.at(var).at(cond.value).first;
             case NotEqual:
-                throw UnimplementedException{};
+                need_direct_encoding_for(var, cond.value);
+                return _imp->eqvars_that_exist.at(var).at(cond.value).second;
             }
             throw NonExhaustiveSwitch{};
         },
@@ -372,6 +376,12 @@ auto NamesAndIDsTracker::allocate_flag_index() -> unsigned long long
     return _imp->flags.size() / 2;
 }
 
+auto NamesAndIDsTracker::track_eqvar(SimpleIntegerVariableID id, Integer val,
+    const pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>> & names) -> void
+{
+    _imp->eqvars_that_exist[id].emplace(val, names);
+}
+
 auto NamesAndIDsTracker::track_gevar(SimpleIntegerVariableID id, Integer val,
     const pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>> & names) -> void
 {
@@ -388,19 +398,22 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
     _imp->variable_conditions_to_x.emplace(id != v, ! eqvar);
 
     auto bounds = _imp->integer_variable_definition_bounds.find(id);
+    ProofLine forwards_line, reverse_line;
     if (bounds != _imp->integer_variable_definition_bounds.end() && bounds->second.first == v) {
         // it's a lower bound
         if (_imp->logger) {
             visit([&](const auto & id) {
-                _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + 1_i * ! (id >= (v + 1_i)) >= 1_i,
+                auto [_f_line, _r_line] = _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + 1_i * ! (id >= (v + 1_i)) >= 1_i,
                     id == v, ProofLevel::Top);
+                forwards_line = _f_line;
+                reverse_line = _r_line;
             },
                 id);
         }
         else {
             visit([&](const auto & id) {
-                _imp->model->add_constraint(WPBSum{} + 1_i * ! (id >= (v + 1_i)) >= 1_i, {{id == v}});
-                _imp->model->add_constraint(WPBSum{} + 1_i * (id >= (v + 1_i)) >= 1_i, {{id != v}});
+                forwards_line = *_imp->model->add_constraint(WPBSum{} + 1_i * ! (id >= (v + 1_i)) >= 1_i, {{id == v}});
+                reverse_line = *_imp->model->add_constraint(WPBSum{} + 1_i * (id >= (v + 1_i)) >= 1_i, {{id != v}});
             },
                 id);
             ++_imp->model_variables;
@@ -410,14 +423,16 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
         // it's an upper bound
         if (_imp->logger) {
             visit([&](const auto & id) {
-                _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + 1_i * (id >= v) >= 1_i, id == v, ProofLevel::Top);
+                auto [_f_line, _r_line] = _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + 1_i * (id >= v) >= 1_i, id == v, ProofLevel::Top);
+                forwards_line = _f_line;
+                reverse_line = _r_line;
             },
                 id);
         }
         else {
             visit([&](const auto & id) {
-                _imp->model->add_constraint(WPBSum{} + 1_i * (id >= v) >= 1_i, {{id == v}});
-                _imp->model->add_constraint(WPBSum{} + 1_i * ! (id >= v) >= 1_i, {{id != v}});
+                forwards_line = *_imp->model->add_constraint(WPBSum{} + 1_i * (id >= v) >= 1_i, {{id == v}});
+                reverse_line = *_imp->model->add_constraint(WPBSum{} + 1_i * ! (id >= v) >= 1_i, {{id != v}});
             },
                 id);
             ++_imp->model_variables;
@@ -427,20 +442,24 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
         // neither a lower nor an upper bound
         if (_imp->logger)
             visit([&](const auto & id) {
-                _imp->logger->emit_red_proof_lines_reifying(
+                auto [_f_line, _r_line] = _imp->logger->emit_red_proof_lines_reifying(
                     WPBSum{} + (1_i * (id >= v)) + (1_i * ! (id >= (v + 1_i))) >= 2_i,
                     id == v, ProofLevel::Top);
+                forwards_line = _f_line;
+                reverse_line = _r_line;
             },
                 id);
         else {
             visit([&](const auto & id) {
-                _imp->model->add_constraint(WPBSum{} + 1_i * (id >= v) + 1_i * ! (id >= v + 1_i) >= 2_i, {{id == v}});
-                _imp->model->add_constraint(WPBSum{} + 1_i * ! (id >= v) + 1_i * (id >= v + 1_i) >= 1_i, {{id != v}});
+                forwards_line = *_imp->model->add_constraint(WPBSum{} + 1_i * (id >= v) + 1_i * ! (id >= v + 1_i) >= 2_i, {{id == v}});
+                reverse_line = *_imp->model->add_constraint(WPBSum{} + 1_i * ! (id >= v) + 1_i * (id >= v + 1_i) >= 1_i, {{id != v}});
             },
                 id);
             ++_imp->model_variables;
         }
     }
+
+    _imp->eqvars_that_exist[id].emplace(v, pair{forwards_line, reverse_line});
 }
 
 auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> void
