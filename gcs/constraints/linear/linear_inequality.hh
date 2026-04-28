@@ -4,8 +4,10 @@
 #include <gcs/constraint.hh>
 #include <gcs/expression.hh>
 #include <gcs/innards/literal.hh>
+#include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/propagators-fwd.hh>
 #include <gcs/innards/state-fwd.hh>
+#include <gcs/innards/state.hh>
 #include <gcs/reification.hh>
 
 #include <memory>
@@ -27,6 +29,11 @@ namespace gcs
         WeightedSum _coeff_vars;
         Integer _value;
         ReificationCondition _reif_cond;
+        std::pair<std::optional<innards::ProofLine>, std::optional<innards::ProofLine>> _proof_lines;
+        innards::EvaluatedReificationCondition _evaluated_cond = innards::evaluated_reif::Deactivated{};
+        virtual auto define_proof_model(innards::ProofModel &) -> void override;
+        virtual auto install_propagators(innards::Propagators &) -> void override;
+        virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
 
     public:
         explicit ReifiedLinearInequality(WeightedSum coeff_vars, Integer value, ReificationCondition cond);
