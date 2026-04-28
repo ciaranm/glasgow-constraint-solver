@@ -56,13 +56,14 @@ namespace
         optional<ProofLine> partial_product_2;
     };
 
-    struct ChannellingData
-    {
-        ProofLine pos_ge;
-        ProofLine pos_le;
-        ProofLine neg_ge;
-        ProofLine neg_le;
-    };
+    // This is needed in the header now :(
+    // struct ChannellingData
+    // {
+    //     ProofLine pos_ge;
+    //     ProofLine pos_le;
+    //     ProofLine neg_ge;
+    //     ProofLine neg_le;
+    // };
 
     struct DerivedPBConstraint
     {
@@ -216,7 +217,7 @@ namespace
         ProofLogger & logger,
         bool is_negative,
         const DerivedPBConstraint & constr,
-        const map<SimpleIntegerVariableID, ChannellingData> & channelling_constraints,
+        const map<SimpleIntegerVariableID, MultBC::ChannellingData> & channelling_constraints,
         const map<SimpleIntegerVariableID, ProofOnlySimpleIntegerVariableID> & mag_var,
         const ReasonFunction & reason,
         const optional<HalfReifyOnConjunctionOf> & assumption = nullopt) -> DerivedPBConstraint
@@ -293,7 +294,7 @@ namespace
         ProofLogger & logger,
         DerivedPBConstraint & constr,
         const SimpleIntegerVariableID & z,
-        const map<SimpleIntegerVariableID, ChannellingData> & channelling_constraints,
+        const map<SimpleIntegerVariableID, MultBC::ChannellingData> & channelling_constraints,
         const ReasonFunction & reason)
         -> DerivedPBConstraint
     {
@@ -675,7 +676,7 @@ namespace
         const SimpleIntegerVariableID x, const SimpleIntegerVariableID y, const SimpleIntegerVariableID z,
         const map<IntegerVariableID, pair<Integer, Integer>> & var_bounds,
         const Integer & smallest_product, const Integer & largest_product,
-        const map<SimpleIntegerVariableID, ChannellingData> & channelling_constraints,
+        const map<SimpleIntegerVariableID, MultBC::ChannellingData> & channelling_constraints,
         const map<SimpleIntegerVariableID, ProofOnlySimpleIntegerVariableID> & mag_var,
         const pair<ProofLine, ProofLine> z_eq_product_lines) -> void
     {
@@ -790,7 +791,7 @@ namespace
         const SimpleIntegerVariableID x, const SimpleIntegerVariableID y, const SimpleIntegerVariableID z,
         const map<IntegerVariableID, pair<Integer, Integer>> & var_bounds,
         const Integer smallest_quotient, const Integer largest_quotient,
-        const map<SimpleIntegerVariableID, ChannellingData> & channelling_constraints,
+        const map<SimpleIntegerVariableID, MultBC::ChannellingData> & channelling_constraints,
         const map<SimpleIntegerVariableID, ProofOnlySimpleIntegerVariableID> & mag_var,
         const pair<ProofLine, ProofLine> z_eq_product_lines,
         bool x_is_first,
@@ -952,7 +953,7 @@ namespace
     auto filter_quotient(SimpleIntegerVariableID x_var, SimpleIntegerVariableID y_var, SimpleIntegerVariableID z_var,
         Integer z_min, Integer z_max, Integer y_min, Integer y_max,
         vector<IntegerVariableID> & all_vars, const State & state, auto & inference,
-        const map<SimpleIntegerVariableID, ChannellingData> & channelling_constraints,
+        const map<SimpleIntegerVariableID, MultBC::ChannellingData> & channelling_constraints,
         const map<SimpleIntegerVariableID, ProofOnlySimpleIntegerVariableID> & mag_var,
         const pair<ProofLine, ProofLine> z_eq_product_lines,
         ProofLogger * const logger,
@@ -1072,16 +1073,19 @@ auto MultBC::clone() const -> unique_ptr<Constraint>
 
 auto MultBC::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
-    Triggers triggers;
-    triggers.on_bounds.emplace_back(_v1);
-    triggers.on_bounds.emplace_back(_v2);
-    triggers.on_bounds.emplace_back(_v3);
+    if (! prepare(propagators, initial_state, optional_model))
+        return;
+
+    if (optional_model)
+        define_proof_model(*optional_model);
+
+    install_propagators(propagators);
+}
+
+auto MultBC::prepare(Propagators &, State & initial_state, ProofModel * const optional_model) -> bool
+{
     vector<vector<BitProductData>> bit_products{};
 
-    map<SimpleIntegerVariableID, ChannellingData> channelling_constraints{};
-    map<SimpleIntegerVariableID, ProofOnlySimpleIntegerVariableID> mag_var{};
-
-    pair<ProofLine, ProofLine> v3_eq_product_lines;
     if (optional_model) {
         // PB Encoding
         auto make_magnitude_representation = [&](SimpleIntegerVariableID & v, const string & name)
@@ -1109,9 +1113,9 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
                 auto neg_le = optional_model->add_constraint(
                     bit_sum_without_neg + (1_i * v_magnitude) <= power2(num_bits - 1_i), HalfReifyOnConjunctionOf{sign_bit});
 
-                channelling_constraints.insert({v, ChannellingData{*pos_ge, *pos_le, *neg_ge, *neg_le}});
+                _channelling_constraints.insert({v, MultBC::ChannellingData{*pos_ge, *pos_le, *neg_ge, *neg_le}});
 
-                mag_var.insert({v, v_magnitude});
+                _mag_var.insert({v, v_magnitude});
 
                 return make_pair(v_magnitude, sign_bit);
             }
@@ -1148,20 +1152,20 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
         visit(
             [&](auto v3_mag) {
                 auto s = optional_model->add_constraint(bit_product_sum + (-1_i * v3_mag) == 0_i);
-                v3_eq_product_lines = make_pair(*s.first, *s.second);
+                _v3_eq_product_lines = make_pair(*s.first, *s.second);
             },
             v3_mag);
         auto xyss = optional_model->create_proof_flag("xy[s][s]");
         optional_model->add_constraint(
             WPBSum{} + 1_i * ! xyss >= 1_i, HalfReifyOnConjunctionOf{! v1_sign, ! v2_sign});
 
-        if (mag_var.contains(_v1))
+        if (_mag_var.contains(_v1))
             optional_model->add_constraint(
                 WPBSum{} + 1_i * xyss >= 1_i, HalfReifyOnConjunctionOf{v1_sign, ! v2_sign});
-        if (mag_var.contains(_v2))
+        if (_mag_var.contains(_v2))
             optional_model->add_constraint(
                 WPBSum{} + 1_i * xyss >= 1_i, HalfReifyOnConjunctionOf{! v1_sign, v2_sign});
-        if (mag_var.contains(_v1) && mag_var.contains(_v2))
+        if (_mag_var.contains(_v1) && _mag_var.contains(_v2))
             optional_model->add_constraint(
                 WPBSum{} + 1_i * ! xyss >= 1_i, HalfReifyOnConjunctionOf{v1_sign, v2_sign});
 
@@ -1174,11 +1178,20 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
             HalfReifyOnConjunctionOf{! v3_sign});
     }
 
-    ConstraintStateHandle bit_products_handle = initial_state.add_constraint_state(bit_products);
+    _bit_products_handle = initial_state.add_constraint_state(bit_products);
+    return true;
+}
 
-    propagators.install([v1 = _v1, v2 = _v2, v3 = _v3, bit_products_h = bit_products_handle,
-                            channelling_constraints = channelling_constraints,
-                            mag_var = mag_var, v3_eq_product_lines = v3_eq_product_lines](const State & state, auto & inference,
+auto MultBC::install_propagators(Propagators & propagators) -> void
+{
+    Triggers triggers;
+    triggers.on_bounds.emplace_back(_v1);
+    triggers.on_bounds.emplace_back(_v2);
+    triggers.on_bounds.emplace_back(_v3);
+
+    propagators.install([v1 = _v1, v2 = _v2, v3 = _v3, bit_products_h = _bit_products_handle,
+                            channelling_constraints = _channelling_constraints,
+                            mag_var = _mag_var, v3_eq_product_lines = _v3_eq_product_lines](const State & state, auto & inference,
                             ProofLogger * const logger) -> PropagatorState {
         vector<IntegerVariableID> all_vars = {v1, v2, v3};
 
