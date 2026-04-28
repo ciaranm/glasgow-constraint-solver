@@ -1,0 +1,5 @@
+add_executable(random_polynomial random_polynomial.cc)
+target_link_libraries(random_polynomial PUBLIC glasgow_constraint_solver)
+
+
+target_link_libraries(random_polynomial LINK_PUBLIC cxxopts)
