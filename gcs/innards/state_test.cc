@@ -23,7 +23,7 @@ auto check_range(State & state, IntegerVariableID var, Integer lower, Integer up
     for (auto i = -20_i; i <= 20_i; ++i)
         CHECK(state.in_domain(var, i) == (i >= lower && i <= upper));
     vector<Integer> values;
-    state.for_each_value(var, [&](Integer v) { values.push_back(v); });
+    for (const auto & v : state.each_value_immutable(var)) values.push_back(v);
     CHECK(Integer(values.size()) == upper - lower + 1_i);
     for (auto i = -20_i; i <= 20_i; ++i)
         CHECK(count(values.begin(), values.end(), i) == (i >= lower && i <= upper ? 1 : 0));
