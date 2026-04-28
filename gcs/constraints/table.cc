@@ -82,6 +82,17 @@ namespace
 
 auto Table::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
+    if (! prepare(propagators, initial_state, optional_model))
+        return;
+
+    if (optional_model)
+        define_proof_model(*optional_model);
+
+    install_propagators(propagators);
+}
+
+auto Table::prepare(Propagators & propagators, State & initial_state, ProofModel * const optional_model) -> bool
+{
     visit([&](auto & tuples) {
         for (auto & tuple : depointinate(tuples))
             if (tuple.size() != _vars.size())
@@ -90,6 +101,7 @@ auto Table::install(Propagators & propagators, State & initial_state, ProofModel
         _tuples);
 
     propagators.define_and_install_table(initial_state, optional_model, vector<IntegerVariableID>{_vars}, move(_tuples), "table");
+    return false;
 }
 
 auto Table::s_exprify(const string & name, const innards::ProofModel * const model) const -> std::string
@@ -179,24 +191,43 @@ namespace gcs
     using ::operator!=;
 }
 
-auto NegativeTable::install(Propagators & propagators, State &, ProofModel * const optional_model) && -> void
+auto NegativeTable::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
+{
+    if (! prepare(propagators, initial_state, optional_model))
+        return;
+
+    if (optional_model)
+        define_proof_model(*optional_model);
+
+    install_propagators(propagators);
+}
+
+auto NegativeTable::prepare(Propagators &, State &, ProofModel * const) -> bool
 {
     visit([&](auto & tuples) {
         for (auto & tuple : depointinate(tuples))
             if (tuple.size() != _vars.size())
                 throw UnexpectedException{"table size mismatch"};
+    },
+        _tuples);
+    return true;
+}
 
-        if (optional_model) {
-            for (auto & t : depointinate(tuples)) {
-                Literals lits;
-                for (const auto & [idx, v] : enumerate(_vars))
-                    add_literal(lits, v, t[idx]);
-                optional_model->add_constraint("NegativeTable", "forbidden", move(lits));
-            }
+auto NegativeTable::define_proof_model(ProofModel & model) -> void
+{
+    visit([&](auto & tuples) {
+        for (auto & t : depointinate(tuples)) {
+            Literals lits;
+            for (const auto & [idx, v] : enumerate(_vars))
+                add_literal(lits, v, t[idx]);
+            model.add_constraint("NegativeTable", "forbidden", move(lits));
         }
     },
         _tuples);
+}
 
+auto NegativeTable::install_propagators(Propagators & propagators) -> void
+{
     Triggers triggers;
     for (auto & v : _vars)
         triggers.on_change.emplace_back(v);
