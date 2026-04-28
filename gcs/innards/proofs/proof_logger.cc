@@ -303,8 +303,12 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
                 record_proof_line(advance_proof_line_number(), ProofLevel::Current);
             }
         },
-        [&](const JustifyExplicitly & x) {
-            log_stacktrace();
+        [&](const JustifyExplicitlyOnly & x) {
+            auto t = temporary_proof_level();
+            x.add_proof_steps(reason);
+            forget_proof_level(t);
+        },
+        [&](const JustifyExplicitlyThenRUP & x) {
             need_lit();
             auto t = temporary_proof_level();
             x.add_proof_steps(reason);
@@ -473,7 +477,8 @@ auto ProofLogger::start_proof(const ProofModel & model) -> void
         _imp->proof.open(_imp->proof_file, ios::out);
         _imp->proof << "pseudo-Boolean proof version 3.0\n";
         _imp->proof << "f " << model.number_of_constraints() << " ;\n";
-    } catch (const ios_base::failure &) {
+    }
+    catch (const ios_base::failure &) {
         throw ProofError{"Error writing proof file to '" + _imp->proof_file + "'"};
     }
     _imp->proof_line.number += model.number_of_constraints().number;

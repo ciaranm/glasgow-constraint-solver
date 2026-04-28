@@ -82,7 +82,7 @@ auto Abs::install(Propagators & propagators, State & initial_state,
                 auto just = [v1, v2, val, logger](const ReasonFunction & reason) {
                     justify_abs_hole(*logger, reason, v1, v2, val);
                 };
-                inference.infer_not_equal(logger, v2, val, JustifyExplicitly{just}, ReasonFunction{[=]() { return Reason{{v1 != val, v1 != -val}}; }});
+                inference.infer_not_equal(logger, v2, val, JustifyExplicitlyThenRUP{just}, ReasonFunction{[=]() { return Reason{{v1 != val, v1 != -val}}; }});
             }
         }
 

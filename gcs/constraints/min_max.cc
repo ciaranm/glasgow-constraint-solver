@@ -121,7 +121,7 @@ auto ArrayMinMax::install(Propagators & propagators, State &, ProofModel * const
                 for (auto & var : vars)
                     reason.emplace_back(var != value);
 
-                inference.infer_not_equal(logger, result, value, JustifyExplicitly{[logger, result, value, &selectors](const ReasonFunction & reason) {
+                inference.infer_not_equal(logger, result, value, JustifyExplicitlyThenRUP{[logger, result, value, &selectors](const ReasonFunction & reason) {
                     // show that none of the selectors work, if we're taking the result to be that value and also
                     // that the value is missing from all of the vars
                     for (const auto & sel : selectors)
@@ -160,7 +160,7 @@ auto ArrayMinMax::install(Propagators & propagators, State &, ProofModel * const
 
             for (const auto & val : state.each_value_mutable(*support_1))
                 if (! state.in_domain(result, val))
-                    inference.infer(logger, *support_1 != val, JustifyExplicitly{[&](const ReasonFunction & reason) {
+                    inference.infer(logger, *support_1 != val, JustifyExplicitlyThenRUP{[&](const ReasonFunction & reason) {
                         // first, show that the selector can't be true for anything other than the supporting variable
                         for (const auto & [idx, var] : enumerate(vars)) {
                             if (var != *support_1) {

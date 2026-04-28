@@ -998,7 +998,7 @@ namespace
             };
 
             inference.infer(logger, x_var < largest_possible_quotient + 1_i,
-                JustifyExplicitly{lower_justf},
+                JustifyExplicitlyOnly{lower_justf},
                 [lits = Reason{z_var >= var_bounds.at(z_var).first, z_var < var_bounds.at(z_var).second + 1_i, y_var >= var_bounds.at(y_var).first, y_var < var_bounds.at(y_var).second + 1_i}]() { return lits; });
 
             var_bounds.at(x_var).first = min(var_bounds.at(x_var).first, largest_possible_quotient);
@@ -1011,7 +1011,7 @@ namespace
             };
 
             inference.infer(logger, x_var >= smallest_possible_quotient,
-                JustifyExplicitly{upper_justf},
+                JustifyExplicitlyOnly{upper_justf},
                 [lits = Reason{z_var >= var_bounds.at(z_var).first, z_var < var_bounds.at(z_var).second + 1_i, y_var >= var_bounds.at(y_var).first, y_var < var_bounds.at(y_var).second + 1_i}]() { return lits; });
         }
         else if (y_min == 0_i && y_max != 0_i && (z_min > 0_i || z_max < 0_i)) {
@@ -1051,17 +1051,17 @@ namespace
             };
 
             if (smallest_possible_quotient > largest_possible_quotient) {
-                inference.infer(logger, FalseLiteral{}, JustifyExplicitly{both_justf},
+                inference.infer(logger, FalseLiteral{}, JustifyExplicitlyOnly{both_justf},
                     [lits = Reason{z_var >= var_bounds.at(z_var).first, z_var < var_bounds.at(z_var).second + 1_i,
                          y_var >= var_bounds.at(y_var).first, y_var < var_bounds.at(y_var).second + 1_i}]() { return lits; });
             }
             else {
                 inference.infer(logger, x_var < largest_possible_quotient + 1_i,
-                    JustifyExplicitly{upper_justf},
+                    JustifyExplicitlyOnly{upper_justf},
                     [lits = Reason{z_var >= var_bounds.at(z_var).first, z_var < var_bounds.at(z_var).second + 1_i,
                          y_var >= var_bounds.at(y_var).first, y_var < var_bounds.at(y_var).second + 1_i}]() { return lits; });
                 inference.infer(logger, x_var >= smallest_possible_quotient,
-                    JustifyExplicitly{lower_justf},
+                    JustifyExplicitlyOnly{lower_justf},
                     [lits = Reason{z_var >= var_bounds.at(z_var).first, z_var < var_bounds.at(z_var).second + 1_i,
                          y_var >= var_bounds.at(y_var).first, y_var < var_bounds.at(y_var).second + 1_i}]() { return lits; });
             }
@@ -1211,7 +1211,7 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
             };
 
             inference.infer_all(logger, {v3 < largest_product + 1_i, v3 >= smallest_product},
-                JustifyExplicitly{justf},
+                JustifyExplicitlyOnly{justf},
                 [lits = Reason{v1 >= var_bounds.at(v1).first, v1 < var_bounds.at(v1).second + 1_i,
                      v2 >= var_bounds.at(v2).first, v2 < var_bounds.at(v2).second + 1_i}]() { return lits; });
 

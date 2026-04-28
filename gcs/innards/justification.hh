@@ -17,27 +17,43 @@ namespace gcs::innards
      * the outside inference is provided for convenience.
      *
      * \ingroup Innards
-     * \sa JustifyExplicitly
+     * \sa JustifyExplicitlyThenRUP
      */
     using ExplicitJustificationFunction = std::function<auto(const ReasonFunction & reason)->void>;
 
     /**
      * \brief Specify that an inference requires an explicit justification in
-     * the proof log.
+     * the proof log. There will be no RUP step at the end of the explicit justifiction.
      *
      * \ingroup Innards
      * \sa Justification
      */
-    struct JustifyExplicitly
+    struct JustifyExplicitlyOnly
     {
         ExplicitJustificationFunction add_proof_steps;
 
-        explicit JustifyExplicitly(const ExplicitJustificationFunction & a) :
+        explicit JustifyExplicitlyOnly(const ExplicitJustificationFunction & a) :
             add_proof_steps(a)
         {
         }
     };
 
+    /**
+     * \brief Specify that an inference requires an explicit justification in
+     * the proof log. This will be followed by a final RUP step for the inference itself.
+     *
+     * \ingroup Innards
+     * \sa Justification
+     */
+    struct JustifyExplicitlyThenRUP
+    {
+        ExplicitJustificationFunction add_proof_steps;
+
+        explicit JustifyExplicitlyThenRUP(const ExplicitJustificationFunction & a) :
+            add_proof_steps(a)
+        {
+        }
+    };
     /**
      * \brief Specify that an inference can be justified using reverse unit
      * propagation.
@@ -80,7 +96,7 @@ namespace gcs::innards
      *
      * \ingroup Innards
      */
-    using Justification = std::variant<JustifyUsingRUP, JustifyExplicitly, AssertRatherThanJustifying, NoJustificationNeeded>;
+    using Justification = std::variant<JustifyUsingRUP, JustifyExplicitlyOnly, JustifyExplicitlyThenRUP, AssertRatherThanJustifying, NoJustificationNeeded>;
 }
 
 #endif

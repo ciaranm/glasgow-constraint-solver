@@ -196,7 +196,7 @@ namespace
         ProofLogger & logger,
         const vector<pair<Left, Right>> & edges,
         const vector<uint8_t> & left_covered,
-        const vector<optional<Right>> & matching) -> pair<JustifyExplicitly, ReasonFunction>
+        const vector<optional<Right>> & matching) -> pair<JustifyExplicitlyThenRUP, ReasonFunction>
     {
         vector<optional<Left>> inverse_matching(vals.size(), nullopt);
         for (const auto & [l, r] : enumerate(matching))
@@ -252,7 +252,7 @@ namespace
             if (hall_values[v.offset])
                 hall_value_nrs.push_back(vals[v.offset]);
 
-        return pair{JustifyExplicitly{
+        return pair{JustifyExplicitlyThenRUP{
                         [vars, &logger, &value_am1_constraint_numbers, hall_variable_ids, hall_value_nrs](const ReasonFunction &) -> void {
                             justify_all_different_hall_set_or_violator(logger, vars, hall_variable_ids, hall_value_nrs, value_am1_constraint_numbers);
                         }},
@@ -348,7 +348,7 @@ namespace
                 if (hall_right[v.offset])
                     hall_value_nrs.push_back(vals[v.offset]);
 
-            return pair{JustifyExplicitly{
+            return pair{JustifyExplicitlyThenRUP{
                             [vars, &logger, &value_am1_constraint_numbers, hall_variable_ids, hall_value_nrs](
                                 const ReasonFunction &) -> void {
                                 justify_all_different_hall_set_or_violator(logger, vars, hall_variable_ids, hall_value_nrs, value_am1_constraint_numbers);
