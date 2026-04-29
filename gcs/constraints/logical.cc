@@ -198,7 +198,7 @@ namespace
                         WPBSum forward;
                         for (auto & l : _lits)
                             forward += 1_i * PseudoBooleanTerm{l};
-                        optional_model->add_constraint("Logical", "if condition", forward >= Integer(_lits.size()), Reason{_full_reif});
+                        optional_model->add_constraint("Logical", "if condition", forward >= Integer(_lits.size()), HalfReifyOnConjunctionOf{_full_reif});
                     }
 
                     Literals reverse;

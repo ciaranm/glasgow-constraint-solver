@@ -105,7 +105,7 @@ auto ParityOdd::install(Propagators & propagators, State &, ProofModel * const o
                             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
         long how_many_0 = 0, how_many_1 = 0, how_many_unknown = 0;
         optional<Literal> an_unknown;
-        HalfReifyOnConjunctionOf reason;
+        Reason reason;
         for (const auto & l : lits) {
             switch (state.test_literal(l)) {
                 using enum LiteralIs;
