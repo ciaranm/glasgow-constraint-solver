@@ -883,18 +883,18 @@ auto State::each_value_immutable(const VarType_ & var) const -> generator<Intege
 
     return overloaded{
         [&](const IntegerVariableConstantState & c) {
-            return [](const IntegerVariableConstantState & c, auto apply) -> generator<Integer> {
+            return [](IntegerVariableConstantState c, auto apply) -> generator<Integer> {
                 co_yield apply(c.value);
             }(c, apply);
         },
         [&](const IntegerVariableRangeState & r) {
-            return [](const IntegerVariableRangeState & r, auto apply) -> generator<Integer> {
+            return [](IntegerVariableRangeState r, auto apply) -> generator<Integer> {
                 for (auto v = r.lower; v <= r.upper; ++v)
                     co_yield apply(v);
             }(r, apply);
         },
         [&](const IntegerVariableSmallSetState & r) {
-            return [](const IntegerVariableSmallSetState & r, auto apply) -> generator<Integer> {
+            return [](IntegerVariableSmallSetState r, auto apply) -> generator<Integer> {
                 for (unsigned w = 0; w < Bits::n_words; ++w) {
                     auto b = r.bits.data[w];
                     while (true) {
@@ -908,7 +908,7 @@ auto State::each_value_immutable(const VarType_ & var) const -> generator<Intege
             }(r, apply);
         },
         [&](const IntegerVariableIntervalSetState & s) {
-            return [](const IntegerVariableIntervalSetState & s, auto apply) -> generator<Integer> {
+            return [](IntegerVariableIntervalSetState s, auto apply) -> generator<Integer> {
                 for (auto i : s.values->each())
                     co_yield apply(i);
             }(s, apply);
