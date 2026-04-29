@@ -76,7 +76,11 @@ auto main(int, char *[]) -> int
         variant<int, pair<int, int>>, variant<int, pair<int, int>>, variant<int, pair<int, int>>>>
         data = {
             {pair{1, 6}, pair{1, 6}, pair{1, 6}, pair{1, 6}, pair{1, 6}, pair{1, 6}},
-            {pair{0, 5}, pair{1, 6}, pair{2, 7}, pair{3, 8}, pair{4, 9}, pair{5, 6}}};
+            {pair{0, 5}, pair{1, 6}, pair{2, 7}, pair{3, 8}, pair{4, 9}, pair{5, 6}},
+            // issue #108: constants in hall set crash prove_matching_is_too_small
+            {pair{-2, 3}, 5, pair{3, 5}, pair{3, 6}, 3, pair{3, 5}},
+            // issue #108: constants in hall set crash prove_deletion_using_sccs
+            {pair{1, 2}, pair{1, 2}, 3, pair{3, 4}, pair{4, 5}, pair{5, 6}}};
 
     random_device rand_dev;
     mt19937 rand(rand_dev());

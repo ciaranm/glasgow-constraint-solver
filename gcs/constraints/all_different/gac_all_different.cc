@@ -234,7 +234,7 @@ namespace
 
         vector<IntegerVariableID> hall_variable_ids;
         for (Left v{0}; v.offset != vars.size(); ++v.offset)
-            if (hall_variables[v.offset])
+            if (hall_variables[v.offset] && ! is_constant_variable(vars[v.offset]))
                 hall_variable_ids.push_back(vars[v.offset]);
 
         vector<Integer> hall_value_nrs;
@@ -321,7 +321,7 @@ namespace
 
         vector<IntegerVariableID> hall_variable_ids;
         for (Left v{0}; v.offset != vars.size(); ++v.offset)
-            if (hall_left[v.offset])
+            if (hall_left[v.offset] && ! is_constant_variable(vars[v.offset]))
                 hall_variable_ids.push_back(vars[v.offset]);
 
         if (hall_variable_ids.empty()) {
