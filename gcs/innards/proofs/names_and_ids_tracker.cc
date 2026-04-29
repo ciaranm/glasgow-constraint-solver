@@ -509,17 +509,48 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
     auto this_gevar = other_gevars.find(v);
     auto higher_gevar = next(this_gevar);
 
+    auto make_pol_chain_line = [&](IntegerVariableCondition cond1, IntegerVariableCondition cond2) -> string {
+        std::stringstream pol;
+        pol << "pol ";
+        for (const auto & cond : {! cond1, ! cond2}) {
+            auto item = need_pol_item_defining_literal(cond);
+            overloaded{
+                [&](ProofLine & p) -> void { pol << p; },
+                [&](XLiteral & x) -> void { pol << pb_file_string_for(x); }}
+                .visit(item);
+            pol << " ";
+        }
+        pol << " + s ;";
+        return pol.str();
+    };
+
     // implied by the next highest gevar, if there is one?
-    if (higher_gevar != other_gevars.end())
-        visit([&](auto id) { emit_proof_line_now_or_at_start([c = WPBSum{} + (1_i * (id >= v)) + (1_i * ! (id >= higher_gevar->first)) >= 1_i](ProofLogger * const logger) {
-                                 logger->emit_rup_proof_line(c, ProofLevel::Top);
-                             }); }, id);
+    if (higher_gevar != other_gevars.end()) {
+        overloaded{
+            [&](const ProofOnlySimpleIntegerVariableID & id) {
+                auto chain_con = WPBSum{} + (1_i * (id >= v)) + (1_i * ! (id >= higher_gevar->first)) >= 1_i;
+                emit_proof_line_now_or_at_start([c = chain_con](ProofLogger * const logger) { logger->emit_rup_proof_line(c, ProofLevel::Top); });
+            },
+            [&](const SimpleIntegerVariableID & id) {
+                auto pol_line = make_pol_chain_line(id >= v, ! (id >= higher_gevar->first));
+                emit_proof_line_now_or_at_start([p = pol_line](ProofLogger * const logger) { logger->emit_proof_line(p, ProofLevel::Top); });
+            }}
+            .visit(id);
+    }
 
     // implies the next lowest gevar, if there is one?
-    if (this_gevar != other_gevars.begin())
-        visit([&](auto id) { emit_proof_line_now_or_at_start([c = WPBSum{} + (1_i * (id >= prev(this_gevar)->first)) + (1_i * ! (id >= v)) >= 1_i](ProofLogger * const logger) {
-                                 logger->emit_rup_proof_line(c, ProofLevel::Top);
-                             }); }, id);
+    if (this_gevar != other_gevars.begin()) {
+        overloaded{
+            [&](const ProofOnlySimpleIntegerVariableID & id) {
+                auto chain_con = WPBSum{} + (1_i * (id >= prev(this_gevar)->first)) + (1_i * ! (id >= v)) >= 1_i;
+                emit_proof_line_now_or_at_start([c = chain_con](ProofLogger * const logger) { logger->emit_rup_proof_line(c, ProofLevel::Top); });
+            },
+            [&](const SimpleIntegerVariableID & id) {
+                auto pol_line = make_pol_chain_line(id >= prev(this_gevar)->first, ! (id >= v));
+                emit_proof_line_now_or_at_start([p = pol_line](ProofLogger * const logger) { logger->emit_proof_line(p, ProofLevel::Top); });
+            }}
+            .visit(id);
+    }
 }
 
 auto NamesAndIDsTracker::track_bounds(const SimpleOrProofOnlyIntegerVariableID & id, Integer lower, Integer upper) -> void
