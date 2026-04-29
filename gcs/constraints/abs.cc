@@ -91,8 +91,8 @@ auto Abs::install(Propagators & propagators, State & initial_state,
         triggers, "abs");
 
     if (optional_model) {
-        optional_model->add_constraint("Abs", "non-negative", WPBSum{} + 1_i * _v2 + -1_i * _v1 == 0_i, Reason{_v1 >= 0_i});
-        optional_model->add_constraint("Abs", "negative", WPBSum{} + 1_i * _v2 + 1_i * _v1 == 0_i, Reason{_v1 < 0_i});
+        optional_model->add_constraint("Abs", "non-negative", WPBSum{} + 1_i * _v2 + -1_i * _v1 == 0_i, HalfReifyOnConjunctionOf{_v1 >= 0_i});
+        optional_model->add_constraint("Abs", "negative", WPBSum{} + 1_i * _v2 + 1_i * _v1 == 0_i, HalfReifyOnConjunctionOf{_v1 < 0_i});
     }
 }
 
