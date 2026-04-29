@@ -25,7 +25,6 @@ using std::cout;
 using std::make_optional;
 using std::nullopt;
 using std::string;
-using std::vector;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::print;

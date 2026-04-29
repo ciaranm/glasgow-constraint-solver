@@ -6,7 +6,6 @@
 #include <gcs/integer.hh>
 
 #include <memory>
-#include <optional>
 #include <string>
 #include <variant>
 

@@ -15,7 +15,6 @@
 #endif
 
 #include <cmath>
-#include <tuple>
 #include <vector>
 
 using namespace gcs;
@@ -23,20 +22,11 @@ using namespace gcs::innards;
 
 using std::llroundl;
 using std::move;
-using std::optional;
 using std::pow;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
 using std::vector;
-
-#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
-using std::format;
-using std::print;
-#else
-using fmt::format;
-using fmt::print;
-#endif
 
 template <ArithmeticOperator op_>
 GACArithmetic<op_>::GACArithmetic(const IntegerVariableID v1, const IntegerVariableID v2, const IntegerVariableID result) :

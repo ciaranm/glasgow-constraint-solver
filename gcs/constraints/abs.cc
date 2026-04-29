@@ -24,8 +24,6 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::max;
-using std::optional;
-using std::pair;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
@@ -36,7 +34,6 @@ using std::print;
 using std::println;
 #else
 using fmt::print;
-using fmt::println;
 #endif
 
 Abs::Abs(const IntegerVariableID v1, const IntegerVariableID v2) :

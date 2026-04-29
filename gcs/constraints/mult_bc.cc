@@ -25,7 +25,6 @@
 using namespace gcs;
 using namespace gcs::innards;
 
-using std::llabs;
 using std::make_optional;
 using std::make_pair;
 using std::make_unique;
@@ -35,12 +34,12 @@ using std::min;
 using std::nullopt;
 using std::optional;
 using std::pair;
-using std::ranges::set_union;
-using std::ranges::sort;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
 using std::vector;
+using std::ranges::set_union;
+using std::ranges::sort;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::format;

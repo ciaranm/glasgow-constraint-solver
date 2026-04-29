@@ -52,7 +52,6 @@ using std::mutex;
 using std::nullopt;
 using std::optional;
 using std::pair;
-using std::shared_ptr;
 using std::string;
 using std::thread;
 using std::unique_lock;
@@ -68,7 +67,6 @@ using std::print;
 using std::println;
 #else
 using fmt::format;
-using fmt::print;
 using fmt::println;
 #endif
 

@@ -1,6 +1,4 @@
 #include <cxxopts.hpp>
-#include <fmt/core.h>
-#include <fmt/ostream.h>
 #include <gcs/constraints/mult_bc.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>

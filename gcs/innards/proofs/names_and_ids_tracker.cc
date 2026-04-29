@@ -14,7 +14,6 @@
 #include <map>
 #include <sstream>
 #include <string>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -44,13 +43,11 @@ using std::list;
 using std::map;
 using std::max;
 using std::min;
-using std::nullopt;
 using std::optional;
 using std::pair;
 using std::string;
 using std::stringstream;
 using std::to_string;
-using std::unordered_map;
 using std::variant;
 using std::vector;
 using std::visit;
@@ -59,7 +56,6 @@ using std::visit;
 using std::format;
 using std::print;
 #else
-using fmt::format;
 using fmt::print;
 #endif
 
@@ -106,7 +102,8 @@ NamesAndIDsTracker::NamesAndIDsTracker(const ProofOptions & proof_options) :
             _imp->variables_map_file->exceptions(ios::failbit | ios::badbit);
             _imp->variables_map_file->open(_imp->variables_map_file_name, ios::out);
             *_imp->variables_map_file << "{\n";
-        } catch (const ios_base::failure &) {
+        }
+        catch (const ios_base::failure &) {
             throw ProofError{"Error writing proof variables mapping file to '" + _imp->variables_map_file_name + "'"};
         }
     }
@@ -126,7 +123,8 @@ auto NamesAndIDsTracker::finalise() -> void
     if (_imp->variables_map_file) {
         try {
             *_imp->variables_map_file << "\n}\n";
-        } catch (const ios_base::failure &) {
+        }
+        catch (const ios_base::failure &) {
             throw ProofError{"Error writing proof variables mapping file to '" + _imp->variables_map_file_name + "'"};
         }
     }
@@ -642,7 +640,8 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning(SimpleOrProofOnlyIntegerVaria
             data["value"] = value.raw_value;
 
             write_vardata(*_imp->variables_map_file, _imp->first_varmap_entry, pb_file_string_for(result), data);
-        } catch (const ios_base::failure &) {
+        }
+        catch (const ios_base::failure &) {
             throw ProofError{"Error writing proof variables mapping file to '" + _imp->variables_map_file_name + "'"};
         }
     }
@@ -667,7 +666,8 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning(ProofFlag flag) -> XLiteral
             data["name"] = name_of(flag);
 
             write_vardata(*_imp->variables_map_file, _imp->first_varmap_entry, pb_file_string_for(result), data);
-        } catch (const ios_base::failure &) {
+        }
+        catch (const ios_base::failure &) {
             throw ProofError{"Error writing proof variables mapping file to '" + _imp->variables_map_file_name + "'"};
         }
     }
@@ -712,7 +712,8 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning_negative_bit_of(SimpleOrProof
             data["power"] = power.raw_value;
 
             write_vardata(*_imp->variables_map_file, _imp->first_varmap_entry, pb_file_string_for(result), data);
-        } catch (const ios_base::failure &) {
+        }
+        catch (const ios_base::failure &) {
             throw ProofError{"Error writing proof variables mapping file to '" + _imp->variables_map_file_name + "'"};
         }
     }
@@ -758,7 +759,8 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning_bit_of(SimpleOrProofOnlyInteg
             data["power"] = power.raw_value;
 
             write_vardata(*_imp->variables_map_file, _imp->first_varmap_entry, pb_file_string_for(result), data);
-        } catch (const ios_base::failure &) {
+        }
+        catch (const ios_base::failure &) {
             throw ProofError{"Error writing proof variables mapping file to '" + _imp->variables_map_file_name + "'"};
         }
     }

@@ -9,14 +9,8 @@
 
 #include <util/enumerate.hh>
 
-#include <algorithm>
-#include <functional>
-#include <list>
-#include <map>
 #include <optional>
-#include <set>
 #include <sstream>
-#include <type_traits>
 #include <utility>
 #include <variant>
 #include <version>
@@ -32,7 +26,6 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::optional;
-using std::pair;
 using std::string;
 using std::stringstream;
 using std::to_string;

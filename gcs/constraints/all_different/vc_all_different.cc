@@ -18,7 +18,6 @@
 #include <algorithm>
 #include <functional>
 #include <list>
-#include <map>
 #include <optional>
 #include <sstream>
 #include <type_traits>
@@ -28,25 +27,18 @@
 using namespace gcs;
 using namespace gcs::innards;
 
-using std::cmp_not_equal;
-using std::count;
 using std::decay_t;
 using std::function;
 using std::is_same_v;
 using std::list;
-using std::map;
-using std::min;
-using std::nullopt;
-using std::optional;
 using std::pair;
-using std::ranges::adjacent_find;
-using std::ranges::sort;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
 using std::variant;
 using std::vector;
-using std::visit;
+using std::ranges::adjacent_find;
+using std::ranges::sort;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::print;

@@ -17,11 +17,8 @@
 #include <any>
 #include <cstdio>
 #include <functional>
-#include <list>
-#include <optional>
 #include <set>
 #include <sstream>
-#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -34,13 +31,8 @@ using namespace gcs::innards;
 
 using std::any_cast;
 using std::cmp_less;
-using std::cmp_not_equal;
-using std::getline;
 using std::ios;
 using std::move;
-using std::optional;
-using std::pair;
-using std::rename;
 using std::set;
 using std::string;
 using std::stringstream;

@@ -8,7 +8,6 @@
 
 #include <util/overloaded.hh>
 
-#include <algorithm>
 #include <sstream>
 #include <vector>
 
@@ -25,9 +24,6 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::make_unique;
-using std::max;
-using std::min;
-using std::nullopt;
 using std::optional;
 using std::pair;
 using std::string;

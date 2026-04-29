@@ -7,6 +7,7 @@
 #include <gcs/innards/state.hh>
 
 #include <algorithm>
+#include <sstream>
 #include <utility>
 #include <version>
 
@@ -22,13 +23,12 @@ using namespace gcs::innards;
 
 using std::erase_if;
 using std::move;
-using std::optional;
-using std::ranges::sort;
-using std::ranges::unique;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
 using std::vector;
+using std::ranges::sort;
+using std::ranges::unique;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::print;

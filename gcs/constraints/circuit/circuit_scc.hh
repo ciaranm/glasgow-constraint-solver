@@ -5,9 +5,6 @@
 #include <gcs/constraints/circuit/circuit_base.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/variable_id.hh>
-#include <list>
-#include <map>
-#include <optional>
 #include <vector>
 
 namespace gcs

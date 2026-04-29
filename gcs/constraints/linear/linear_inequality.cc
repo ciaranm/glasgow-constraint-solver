@@ -21,7 +21,6 @@
 using namespace gcs;
 using namespace gcs::innards;
 
-using std::make_optional;
 using std::make_pair;
 using std::nullopt;
 using std::optional;

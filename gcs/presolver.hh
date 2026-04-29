@@ -7,8 +7,6 @@
 #include <gcs/problem-fwd.hh>
 
 #include <memory>
-#include <optional>
-#include <string>
 
 namespace gcs
 {

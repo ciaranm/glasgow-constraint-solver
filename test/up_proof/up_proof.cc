@@ -1,5 +1,3 @@
-
-
 #include <gcs/gcs.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
@@ -8,12 +6,10 @@
 
 using namespace gcs;
 
-using std::cerr;
 using std::cout;
 using std::endl;
 using std::make_optional;
 using std::string;
-using std::vector;
 
 auto main(int, char *[]) -> int
 {

@@ -10,7 +10,6 @@
 
 #include <chrono>
 #include <cstdlib>
-#include <functional>
 #include <iostream>
 #include <optional>
 #include <string>

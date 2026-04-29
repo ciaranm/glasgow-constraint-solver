@@ -4,7 +4,6 @@
 #include <gcs/solve.hh>
 
 #include <cstdlib>
-#include <iostream>
 #include <vector>
 
 #include <version>

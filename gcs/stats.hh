@@ -1,13 +1,8 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_STATS_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_STATS_HH
 
-#include <algorithm>
 #include <chrono>
 #include <iosfwd>
-#include <sstream>
-#include <string>
-#include <tuple>
-#include <vector>
 
 #include <version>
 

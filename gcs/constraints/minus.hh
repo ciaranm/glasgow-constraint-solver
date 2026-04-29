@@ -4,9 +4,6 @@
 #include <gcs/constraint.hh>
 #include <gcs/variable_id.hh>
 
-#include <optional>
-#include <utility>
-
 namespace gcs
 {
     /**

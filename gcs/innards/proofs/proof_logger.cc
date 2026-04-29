@@ -9,7 +9,6 @@
 
 #include <deque>
 #include <fstream>
-#include <iomanip>
 #include <sstream>
 
 #include <version>
@@ -26,14 +25,11 @@ using std::fstream;
 using std::ios;
 using std::ios_base;
 using std::map;
-using std::max;
-using std::nullopt;
 using std::optional;
 using std::ostream;
 using std::pair;
 using std::string;
 using std::stringstream;
-using std::to_string;
 using std::tuple;
 using std::variant;
 using std::vector;

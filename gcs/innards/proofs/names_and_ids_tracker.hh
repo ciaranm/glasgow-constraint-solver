@@ -13,7 +13,6 @@
 #include <gcs/variable_id.hh>
 
 #include <memory>
-#include <optional>
 #include <string>
 #include <utility>
 #include <variant>

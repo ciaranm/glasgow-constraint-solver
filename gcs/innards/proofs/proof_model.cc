@@ -11,13 +11,10 @@
 
 #include <algorithm>
 #include <cstdlib>
-#include <deque>
 #include <exception>
 #include <fstream>
 #include <iterator>
-#include <map>
 #include <sstream>
-#include <unordered_map>
 
 #include <version>
 
@@ -33,31 +30,26 @@
 using namespace gcs;
 using namespace gcs::innards;
 
-using std::deque;
 using std::fstream;
 using std::ios;
 using std::ios_base;
 using std::istreambuf_iterator;
-using std::map;
 using std::nullopt;
 using std::ofstream;
 using std::optional;
 using std::ostreambuf_iterator;
 using std::pair;
-using std::ranges::sort;
-using std::ranges::unique;
 using std::string;
 using std::stringstream;
-using std::to_string;
-using std::unordered_map;
 using std::variant;
 using std::vector;
+using std::ranges::sort;
+using std::ranges::unique;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::format;
 using std::print;
 #else
-using fmt::format;
 using fmt::print;
 #endif
 
@@ -385,7 +377,8 @@ auto ProofModel::finalise() -> void
 
         copy(istreambuf_iterator<char>{_imp->opb}, istreambuf_iterator<char>{}, ostreambuf_iterator<char>{full_opb});
         _imp->opb = stringstream{};
-    } catch (const ios_base::failure &) {
+    }
+    catch (const ios_base::failure &) {
         throw ProofError{"Error writing opb file to '" + _imp->opb_file + "'"};
     }
 }

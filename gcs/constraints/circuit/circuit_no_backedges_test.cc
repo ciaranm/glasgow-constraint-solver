@@ -8,12 +8,10 @@
 
 using namespace gcs;
 
-using std::cerr;
 using std::cmp_less;
 using std::cout;
 using std::endl;
 using std::make_optional;
-using std::nullopt;
 using std::string;
 using std::vector;
 

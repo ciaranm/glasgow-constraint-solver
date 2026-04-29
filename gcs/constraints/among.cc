@@ -25,7 +25,6 @@
 using namespace gcs;
 using namespace gcs::innards;
 
-using std::make_optional;
 using std::make_shared;
 using std::map;
 using std::optional;
@@ -33,8 +32,6 @@ using std::pair;
 using std::shared_ptr;
 using std::string;
 using std::stringstream;
-using std::to_string;
-using std::tuple;
 using std::unique_ptr;
 using std::vector;
 using std::ranges::contains;

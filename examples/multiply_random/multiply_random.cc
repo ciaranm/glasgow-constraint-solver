@@ -1,6 +1,4 @@
 #include <cxxopts.hpp>
-#include <fmt/core.h>
-#include <fmt/ostream.h>
 #include <gcs/constraints/mult_bc.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
@@ -13,8 +11,6 @@ using std::cerr;
 using std::cout;
 using std::endl;
 using std::string;
-
-using fmt::println;
 
 auto main(int argc, char * argv[]) -> int
 {

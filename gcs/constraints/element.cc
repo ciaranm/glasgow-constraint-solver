@@ -24,7 +24,6 @@
 #include <functional>
 #include <memory>
 #include <optional>
-#include <set>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -33,20 +32,14 @@
 using namespace gcs;
 using namespace gcs::innards;
 
-using std::array;
 using std::function;
-using std::make_shared;
 using std::max;
 using std::min;
 using std::optional;
-using std::pair;
-using std::set;
-using std::shared_ptr;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
 using std::vector;
-using std::visit;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::print;
