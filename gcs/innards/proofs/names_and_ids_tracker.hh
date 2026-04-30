@@ -72,6 +72,13 @@ namespace gcs::innards
         explicit NamesAndIDsTracker(const ProofOptions &);
         ~NamesAndIDsTracker();
 
+        /**
+         * Must be called after all proof writing is complete to flush and
+         * close any supplementary output files (e.g. the variables map).
+         * Must not be called from a destructor.
+         */
+        auto finalise() -> void;
+
         auto operator=(const NamesAndIDsTracker &) -> NamesAndIDsTracker & = delete;
         NamesAndIDsTracker(const NamesAndIDsTracker &) = delete;
 
