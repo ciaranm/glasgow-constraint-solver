@@ -19,6 +19,7 @@ using std::deque;
 using std::flush;
 using std::fstream;
 using std::ios;
+using std::ios_base;
 using std::map;
 using std::max;
 using std::nullopt;
@@ -514,17 +515,15 @@ auto ProofLogger::forget_proof_level(int depth) -> void
 
 auto ProofLogger::start_proof(const ProofModel & model) -> void
 {
-    _imp->proof.open(_imp->proof_file, ios::out);
-
-    _imp->proof << "pseudo-Boolean proof version 3.0\n";
-
-    _imp->proof << "f " << model.number_of_constraints() << " ;\n";
+    try {
+        _imp->proof.exceptions(ios::failbit | ios::badbit);
+        _imp->proof.open(_imp->proof_file, ios::out);
+        _imp->proof << "pseudo-Boolean proof version 3.0\n";
+        _imp->proof << "f " << model.number_of_constraints() << " ;\n";
+    } catch (const ios_base::failure &) {
+        throw ProofError{"Error writing proof file to '" + _imp->proof_file + "'"};
+    }
     _imp->proof_line.number += model.number_of_constraints().number;
-
-    if (! _imp->proof)
-        throw ProofError{"Error writing proof file to "
-                         " + _imp->proof_file + "
-                         ""};
 }
 
 auto ProofLogger::record_proof_line(ProofLineNumber line, ProofLevel level) -> ProofLineNumber

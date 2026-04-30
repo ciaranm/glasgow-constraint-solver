@@ -21,6 +21,8 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::atomic;
+using std::ios;
+using std::ios_base;
 using std::max;
 using std::nullopt;
 using std::ofstream;
@@ -160,25 +162,26 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
         optional_proof->model()->names_and_ids_tracker().emit_delayed_proof_steps();
 
         if (auto & fn = optional_proof_options->proof_file_names.s_expr_file) {
-            ofstream s_expr{*fn};
-            if (! s_expr)
+            try {
+                ofstream s_expr;
+                s_expr.exceptions(ios::failbit | ios::badbit);
+                s_expr.open(*fn);
+                println(s_expr, "(");
+                println(s_expr, "    (");
+                for (const auto & [_, l, u, n] : problem.each_variable_with_bounds_and_name()) {
+                    println(s_expr, "        ({} {} {})", n, l.raw_value, u.raw_value);
+                }
+                println(s_expr, "    )");
+                println(s_expr, "    (");
+                unsigned n = 1;
+                for (const auto & c : problem.each_constraint()) {
+                    println(s_expr, "        ({})", c.s_exprify("c" + to_string(n++), optional_proof->model()));
+                }
+                println(s_expr, "    )");
+                println(s_expr, ")");
+            } catch (const ios_base::failure &) {
                 throw ProofError{"Error writing proof s-expr file to '" + *fn + "'"};
-
-            println(s_expr, "(");
-            println(s_expr, "    (");
-            for (const auto & [_, l, u, n] : problem.each_variable_with_bounds_and_name()) {
-                println(s_expr, "        ({} {} {})", n, l.raw_value, u.raw_value);
             }
-            println(s_expr, "    )");
-
-            println(s_expr, "    (");
-            unsigned n = 1;
-            for (const auto & c : problem.each_constraint()) {
-                println(s_expr, "        ({})", c.s_exprify("c" + to_string(n++), optional_proof->model()));
-            }
-            println(s_expr, "    )");
-
-            println(s_expr, ")");
         }
     }
 
@@ -241,6 +244,9 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
         if (callbacks.completed)
             callbacks.completed();
     }
+
+    if (optional_proof)
+        optional_proof->model()->names_and_ids_tracker().finalise();
 
     stats.solve_time = duration_cast<microseconds>(steady_clock::now() - start_time);
     propagators.fill_in_constraint_stats(stats);

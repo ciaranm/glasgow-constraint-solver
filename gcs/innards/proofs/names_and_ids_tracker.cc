@@ -7,6 +7,8 @@
 #include <gcs/innards/variable_id_utils.hh>
 
 #include <algorithm>
+#include <cstdlib>
+#include <exception>
 #include <fstream>
 #include <list>
 #include <map>
@@ -29,6 +31,7 @@ using std::any_of;
 using std::fstream;
 using std::function;
 using std::ios;
+using std::ios_base;
 using std::list;
 using std::map;
 using std::max;
@@ -69,7 +72,9 @@ struct NamesAndIDsTracker::Imp
     long long next_xliteral_nr = 0;
 
     optional<fstream> variables_map_file;
+    string variables_map_file_name;
     bool first_varmap_entry = true;
+    bool finalised = false;
     bool verbose_names;
 };
 
@@ -79,18 +84,35 @@ NamesAndIDsTracker::NamesAndIDsTracker(const ProofOptions & proof_options) :
     _imp->verbose_names = proof_options.verbose_names;
 
     if (proof_options.proof_file_names.variables_map_file) {
+        _imp->variables_map_file_name = *proof_options.proof_file_names.variables_map_file;
         _imp->variables_map_file.emplace();
-        _imp->variables_map_file->open(*proof_options.proof_file_names.variables_map_file, ios::out);
-        if (! *_imp->variables_map_file)
-            throw ProofError{"Error writing proof variables mapping file to '" + *proof_options.proof_file_names.variables_map_file + "'"};
-        *_imp->variables_map_file << "{\n";
+        try {
+            _imp->variables_map_file->exceptions(ios::failbit | ios::badbit);
+            _imp->variables_map_file->open(_imp->variables_map_file_name, ios::out);
+            *_imp->variables_map_file << "{\n";
+        } catch (const ios_base::failure &) {
+            throw ProofError{"Error writing proof variables mapping file to '" + _imp->variables_map_file_name + "'"};
+        }
     }
 }
 
 NamesAndIDsTracker::~NamesAndIDsTracker()
 {
-    if (_imp->variables_map_file && *_imp->variables_map_file) {
-        *_imp->variables_map_file << "\n}\n";
+    if (_imp->variables_map_file && ! _imp->finalised && std::uncaught_exceptions() == 0) {
+        fmt::print(stderr, "NamesAndIDsTracker destroyed without calling finalise()\n");
+        std::abort();
+    }
+}
+
+auto NamesAndIDsTracker::finalise() -> void
+{
+    _imp->finalised = true;
+    if (_imp->variables_map_file) {
+        try {
+            *_imp->variables_map_file << "\n}\n";
+        } catch (const ios_base::failure &) {
+            throw ProofError{"Error writing proof variables mapping file to '" + _imp->variables_map_file_name + "'"};
+        }
     }
 }
 
@@ -567,24 +589,28 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning(SimpleOrProofOnlyIntegerVaria
     }
 
     if (_imp->variables_map_file) {
-        nlohmann::json data;
-        data["type"] = "condition";
-        overloaded{
-            [&](const SimpleIntegerVariableID & id) -> void {
-                data["cpvartype"] = "intvar";
-                data["cpvarid"] = id.index;
-            },
-            [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
-                data["cpvartype"] = "proofintvar";
-                data["cpvarid"] = id.index;
-            }}
-            .visit(id);
+        try {
+            nlohmann::json data;
+            data["type"] = "condition";
+            overloaded{
+                [&](const SimpleIntegerVariableID & id) -> void {
+                    data["cpvartype"] = "intvar";
+                    data["cpvarid"] = id.index;
+                },
+                [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
+                    data["cpvartype"] = "proofintvar";
+                    data["cpvarid"] = id.index;
+                }}
+                .visit(id);
 
-        data["name"] = name_of(id);
-        data["operator"] = (op == EqualsOrGreaterEqual::Equals ? "=" : ">=");
-        data["value"] = value.raw_value;
+            data["name"] = name_of(id);
+            data["operator"] = (op == EqualsOrGreaterEqual::Equals ? "=" : ">=");
+            data["value"] = value.raw_value;
 
-        write_vardata(*_imp->variables_map_file, _imp->first_varmap_entry, pb_file_string_for(result), data);
+            write_vardata(*_imp->variables_map_file, _imp->first_varmap_entry, pb_file_string_for(result), data);
+        } catch (const ios_base::failure &) {
+            throw ProofError{"Error writing proof variables mapping file to '" + _imp->variables_map_file_name + "'"};
+        }
     }
 
     return result;
@@ -601,11 +627,15 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning(ProofFlag flag) -> XLiteral
     }
 
     if (_imp->variables_map_file) {
-        nlohmann::json data;
-        data["type"] = "proofflag";
-        data["name"] = name_of(flag);
+        try {
+            nlohmann::json data;
+            data["type"] = "proofflag";
+            data["name"] = name_of(flag);
 
-        write_vardata(*_imp->variables_map_file, _imp->first_varmap_entry, pb_file_string_for(result), data);
+            write_vardata(*_imp->variables_map_file, _imp->first_varmap_entry, pb_file_string_for(result), data);
+        } catch (const ios_base::failure &) {
+            throw ProofError{"Error writing proof variables mapping file to '" + _imp->variables_map_file_name + "'"};
+        }
     }
 
     return result;
@@ -631,22 +661,26 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning_negative_bit_of(SimpleOrProof
     }
 
     if (_imp->variables_map_file) {
-        nlohmann::json data;
-        data["type"] = "intvarnegbit";
-        overloaded{
-            [&](const SimpleIntegerVariableID & id) -> void {
-                data["cpvartype"] = "intvar";
-                data["cpvarid"] = id.index;
-            },
-            [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
-                data["cpvartype"] = "proofintvar";
-                data["cpvarid"] = id.index;
-            }}
-            .visit(id);
-        data["name"] = name_of(id);
-        data["power"] = power.raw_value;
+        try {
+            nlohmann::json data;
+            data["type"] = "intvarnegbit";
+            overloaded{
+                [&](const SimpleIntegerVariableID & id) -> void {
+                    data["cpvartype"] = "intvar";
+                    data["cpvarid"] = id.index;
+                },
+                [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
+                    data["cpvartype"] = "proofintvar";
+                    data["cpvarid"] = id.index;
+                }}
+                .visit(id);
+            data["name"] = name_of(id);
+            data["power"] = power.raw_value;
 
-        write_vardata(*_imp->variables_map_file, _imp->first_varmap_entry, pb_file_string_for(result), data);
+            write_vardata(*_imp->variables_map_file, _imp->first_varmap_entry, pb_file_string_for(result), data);
+        } catch (const ios_base::failure &) {
+            throw ProofError{"Error writing proof variables mapping file to '" + _imp->variables_map_file_name + "'"};
+        }
     }
 
     return result;
@@ -672,23 +706,27 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning_bit_of(SimpleOrProofOnlyInteg
     }
 
     if (_imp->variables_map_file) {
-        nlohmann::json data;
-        data["type"] = "intvarbit";
-        overloaded{
-            [&](const SimpleIntegerVariableID & id) -> void {
-                data["cpvartype"] = "intvar";
-                data["cpvarid"] = id.index;
-            },
-            [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
-                data["cpvartype"] = "proofintvar";
-                data["cpvarid"] = id.index;
-            }}
-            .visit(id);
+        try {
+            nlohmann::json data;
+            data["type"] = "intvarbit";
+            overloaded{
+                [&](const SimpleIntegerVariableID & id) -> void {
+                    data["cpvartype"] = "intvar";
+                    data["cpvarid"] = id.index;
+                },
+                [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
+                    data["cpvartype"] = "proofintvar";
+                    data["cpvarid"] = id.index;
+                }}
+                .visit(id);
 
-        data["name"] = name_of(id);
-        data["power"] = power.raw_value;
+            data["name"] = name_of(id);
+            data["power"] = power.raw_value;
 
-        write_vardata(*_imp->variables_map_file, _imp->first_varmap_entry, pb_file_string_for(result), data);
+            write_vardata(*_imp->variables_map_file, _imp->first_varmap_entry, pb_file_string_for(result), data);
+        } catch (const ios_base::failure &) {
+            throw ProofError{"Error writing proof variables mapping file to '" + _imp->variables_map_file_name + "'"};
+        }
     }
 
     return result;
