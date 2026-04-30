@@ -357,10 +357,10 @@ auto Regular::install(Propagators & propagators, State & initial_state, ProofMod
         // input value from vars[i], with an extra row of flags for the state after the last transition.
         // NB: Might be easier to have a 1D array of ProofOnlyIntegerVariables, but making literals of these is
         // awkward currently. (TODO ?)
-        for (unsigned int idx = 0; idx <= _vars.size(); ++idx) {
+        for (size_t idx = 0; idx <= _vars.size(); ++idx) {
             WPBSum exactly_1_true{};
             state_at_pos_flags.emplace_back();
-            for (unsigned int q = 0; q < _num_states; ++q) {
+            for (long q = 0; q < _num_states; ++q) {
                 state_at_pos_flags[idx].emplace_back(optional_model->create_proof_flag("state" + to_string(idx) + "is" + to_string(q)));
                 exactly_1_true += 1_i * state_at_pos_flags[idx][q];
             }
@@ -376,8 +376,8 @@ auto Regular::install(Propagators & propagators, State & initial_state, ProofMod
         }
         optional_model->add_constraint(move(pos_n_states) >= 1_i);
 
-        for (unsigned int idx = 0; idx < _vars.size(); ++idx) {
-            for (unsigned int q = 0; q < _num_states; ++q) {
+        for (size_t idx = 0; idx < _vars.size(); ++idx) {
+            for (long q = 0; q < _num_states; ++q) {
                 for (const auto & val : _symbols) {
                     if (_transitions[q][val] == -1) {
                         // No transition for q, v, so constrain ~(state_i = q /\ X_i = val)
