@@ -116,6 +116,7 @@ if(GCS_BUILD_TESTS)
     add_executable(in_test constraints/in_test.cc)
     add_executable(inverse_test constraints/inverse_test.cc)
     add_executable(knapsack_test constraints/knapsack_test.cc)
+    add_executable(lex_test constraints/lex_test.cc)
     add_executable(linear_test constraints/linear/linear_test.cc)
     add_executable(logical_test constraints/logical_test.cc)
     add_executable(min_max_test constraints/min_max_test.cc)
@@ -128,7 +129,7 @@ if(GCS_BUILD_TESTS)
 
     foreach(test_target
             abs_test all_different_test among_test arithmetic_test comparison_test
-            count_test element_test equals_test in_test inverse_test knapsack_test linear_test
+            count_test element_test equals_test in_test inverse_test knapsack_test lex_test linear_test
             logical_test min_max_test mult_bc_test n_value_test parity_test
             plus_minus_test smart_table_test table_test)
         target_link_libraries(${test_target} PRIVATE glasgow_constraint_solver)
@@ -145,6 +146,7 @@ if(GCS_BUILD_TESTS)
     add_test(NAME in_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:in_test>)
     add_test(NAME inverse_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:inverse_test>)
     add_test(NAME knapsack_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:knapsack_test>)
+    add_test(NAME lex_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:lex_test>)
     add_test(NAME linear_constraint_eq COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:linear_test> eq)
     add_test(NAME linear_constraint_ne COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:linear_test> le)
     add_test(NAME linear_constraint_le COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:linear_test> ne)
