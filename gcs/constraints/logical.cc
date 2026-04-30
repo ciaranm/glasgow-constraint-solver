@@ -53,8 +53,9 @@ namespace
         const string & name) -> void
     {
         auto reif_state = initial_state.test_literal(_full_reif);
+        using enum LiteralIs;
 
-        if (reif_state == LiteralIs::DefinitelyTrue) {
+        if (reif_state == DefinitelyTrue) {
             // definitely true, just force all the literals
             propagators.install_initialiser([full_reif = _full_reif, lits = _lits](
                                                 const State &, auto & inference, ProofLogger * const logger) {
@@ -108,7 +109,6 @@ namespace
                 propagators.install([lits = _lits, full_reif = _full_reif](
                                         const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                     switch (state.test_literal(full_reif)) {
-                        using enum LiteralIs;
                     case DefinitelyTrue: {
                         for (auto & l : lits)
                             inference.infer(logger, l, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{full_reif}}; }});
@@ -194,7 +194,7 @@ namespace
                     triggers, name);
 
                 if (optional_model) {
-                    if (LiteralIs::DefinitelyFalse != reif_state) {
+                    if (DefinitelyFalse != reif_state) {
                         WPBSum forward;
                         for (auto & l : _lits)
                             forward += 1_i * PseudoBooleanTerm{l};
