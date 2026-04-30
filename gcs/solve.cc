@@ -16,6 +16,7 @@
 #include <version>
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <format>
 #include <print>
 #else
 #include <fmt/core.h>
@@ -33,15 +34,16 @@ using std::nullopt;
 using std::ofstream;
 using std::optional;
 using std::pair;
-using std::to_string;
 using std::vector;
 using std::chrono::duration_cast;
 using std::chrono::microseconds;
 using std::chrono::steady_clock;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::format;
 using std::println;
 #else
+using fmt::format;
 using fmt::println;
 #endif
 
@@ -184,7 +186,7 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
                 println(s_expr, "    (");
                 unsigned n = 1;
                 for (const auto & c : problem.each_constraint()) {
-                    println(s_expr, "        ({})", c.s_exprify("c" + to_string(n++), optional_proof->model()));
+                    println(s_expr, "        ({})", c.s_exprify(format("c{}", n++), optional_proof->model()));
                 }
                 println(s_expr, "    )");
                 println(s_expr, ")");

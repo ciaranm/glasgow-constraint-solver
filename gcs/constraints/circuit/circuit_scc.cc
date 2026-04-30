@@ -7,6 +7,7 @@
 #include <util/enumerate.hh>
 
 #include <list>
+#include <map>
 #include <random>
 #include <set>
 #include <sstream>
@@ -14,6 +15,15 @@
 #include <utility>
 #include <variant>
 #include <vector>
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <format>
+using std::format;
+#else
+#include <fmt/core.h>
+using fmt::format;
+#endif
 
 using std::cmp_less;
 using std::cmp_less_equal;
@@ -29,9 +39,7 @@ using std::pair;
 using std::set;
 using std::string;
 using std::stringstream;
-using std::to_string;
 using std::unique_ptr;
-using std::variant;
 using std::vector;
 
 using namespace gcs;
@@ -216,9 +224,9 @@ namespace
             p_line.end();
             ctx.logger.emit_proof_line(p_line.str(), ProofLevel::Temporary);
 
-            ctx.logger.emit_proof_comment("Not both: " +
-                shifted_pos_eq[i][k].comment_name + "=" + to_string(k) + " and " +
-                shifted_pos_eq[i][l].comment_name + "=" + to_string(l));
+            ctx.logger.emit_proof_comment(format("Not both: {}={} and {}={}",
+                shifted_pos_eq[i][k].comment_name, k,
+                shifted_pos_eq[i][l].comment_name, l));
 
             neq_line = ctx.logger.emit_rup_proof_line(
                 WPBSum{} + 1_i * ! shifted_pos_eq[i][k].flag + 1_i * ! shifted_pos_eq[i][l].flag >= 1_i,
@@ -233,9 +241,9 @@ namespace
                 return shifted_pos[i][l].neq_lines[k];
             }
 
-            ctx.logger.emit_proof_comment("Not both:" +
-                ctx.pos_var_data.at(i).comment_name + "=" + to_string(k) + " and " +
-                ctx.pos_var_data.at(i).comment_name + "=" + to_string(l));
+            ctx.logger.emit_proof_comment(format("Not both:{}={} and {}={}",
+                ctx.pos_var_data.at(i).comment_name, k,
+                ctx.pos_var_data.at(i).comment_name, l));
 
             neq_line = ctx.logger.emit_rup_proof_line(
                 WPBSum{} + 1_i * (ctx.pos_var_data.at(i).var != Integer{k}) + 1_i * (ctx.pos_var_data.at(i).var != Integer{l}) >= 1_i,
@@ -276,7 +284,7 @@ namespace
             if (using_shifted_pos)
                 ctx.logger.emit_proof_comment("AM1 " + ctx.root_flag_data.shifted_pos_eq[node][*values.begin()].comment_name);
             else
-                ctx.logger.emit_proof_comment("AM1 p[" + to_string(node) + "]");
+                ctx.logger.emit_proof_comment(format("AM1 p[{}]", node));
 
             proofline << ';';
             return ctx.logger.emit_proof_line(proofline.str(), ProofLevel::Top);
@@ -291,7 +299,7 @@ namespace
                     ProofLevel::Top);
             }
             else {
-                ctx.logger.emit_proof_comment("AM1 p[" + to_string(node) + "]");
+                ctx.logger.emit_proof_comment(format("AM1 p[{}]", node));
                 return ctx.logger.emit_rup_proof_line(
                     WPBSum{} + 1_i * ! (ctx.pos_var_data.at(node).var == Integer{idx}) >= 0_i,
                     ProofLevel::Top);
@@ -403,7 +411,7 @@ namespace
                     ctx.logger.emit_rup_proof_line(
                         next_pos_vars + 1_i * ! (ctx.pos_var_data.at(i).var == Integer{j - 1}) >= 1_i, ProofLevel::Top));
             }
-            ctx.logger.emit_proof_comment("AL1 p[i] = " + to_string(j));
+            ctx.logger.emit_proof_comment(format("AL1 p[i] = {}", j));
             p_line.add_and_saturate(last_al1_line);
             p_line.end();
             ctx.pos_alldiff_data.at_least_1_lines[j] = ctx.logger.emit_proof_line(p_line.str(), ProofLevel::Top);
@@ -437,7 +445,7 @@ namespace
             return gt_data.at(i);
         }
         else {
-            auto flag_name = "d[" + to_string(j) + "][" + to_string(i) + "]";
+            auto flag_name = format("d[{}][{}]", ctx.root, i);
             greater_than_flag = ctx.logger.create_proof_flag(flag_name);
 
             auto forwards_reif_line = ctx.logger.emit_red_proof_lines_forward_reifying(
@@ -514,26 +522,26 @@ namespace
                 }
             };
 
-        // q[r,i]ge[dist] <=> pos[i] - pos[r] + nd[r,i] >= dist
+        // q[r,i]gej <=> pos[i] - pos[r] + nd[r,i] >= j
         maybe_create_and_emplace_flag_data(ctx.root_flag_data.shifted_pos_geq, i, dist,
             WPBSum{} + 1_i * ctx.pos_var_data.at(i).var + -1_i * ctx.pos_var_data.at(ctx.root).var + Integer{n} * greater_than_flag >= Integer{dist},
-            "q[" + to_string(ctx.root) + "][" + to_string(i) + "]", "ge" + to_string(dist));
+            format("q[{}][{}]", ctx.root, i), format("ge{}", dist));
 
-        // q[r,i]ge[j+1] <=> pos[i] - pos[r] + nd[r,i] >= dist +1
+        // q[r,i]gej+1 <=> pos[i] - pos[r] + nd[r,i] >= j+1
         maybe_create_and_emplace_flag_data(ctx.root_flag_data.shifted_pos_geq, i, dist + 1,
             WPBSum{} + 1_i * ctx.pos_var_data.at(i).var + -1_i * ctx.pos_var_data.at(ctx.root).var + Integer{n} * greater_than_flag >= Integer{dist + 1},
-            "q[" + to_string(ctx.root) + "][" + to_string(i) + "]", "ge" + to_string(dist + 1));
+            format("q[{}][{}]", ctx.root, i), format("ge{}", dist + 1));
 
         // q[r,i]eqj <=> q[r,i]gej /\ ~q[r,i]gej+1
         maybe_create_and_emplace_flag_data(ctx.root_flag_data.shifted_pos_eq, i, dist,
             WPBSum{} + 1_i * ctx.root_flag_data.shifted_pos_geq[i][dist].flag + 1_i * ! ctx.root_flag_data.shifted_pos_geq[i][dist + 1].flag >= 2_i,
-            "q[" + to_string(ctx.root) + "][" + to_string(i) + "]", "eq" + to_string(dist));
+            format("q[{}][{}]", ctx.root, i), format("eq{}", dist));
     }
 
     auto prove_root_is_0(SCCProofContext & ctx) -> ProofLine
     {
         // Prove that (shift)pos[root]== 0
-        ctx.logger.emit_proof_comment("AL1 pos = " + to_string(0));
+        ctx.logger.emit_proof_comment("AL1 pos = 0");
 
         auto line = ProofLine{};
         if (ctx.root != 0) {
@@ -604,7 +612,7 @@ namespace
                     p_line << ctx.pos_var_data.at(node).plus_one_lines.at(next_node).leq_line << " "
                            << root_greater_than.at(node).forwards_reif_line << " + "
                            << root_greater_than.at(next_node).backwards_reif_line << " + "
-                           << to_string(2 * n) << " d ";
+                           << (2 * n) << " d ";
                 }
                 else {
                     p_line << ctx.logger.emit_rup_proof_line(
@@ -618,7 +626,7 @@ namespace
                 }
 
                 p_line
-                    << to_string(n) << " * "
+                    << n << " * "
                     << ctx.pos_var_data.at(node).plus_one_lines.at(next_node).geq_line << " + "
                     << shifted_pos_geq.at(node).at(count - 1).forwards_reif_line << " + "
                     << shifted_pos_geq.at(next_node).at(count).backwards_reif_line << " +;";
@@ -630,18 +638,19 @@ namespace
                 p_line << ctx.pos_var_data.at(node).plus_one_lines.at(next_node).geq_line << " "
                        << root_greater_than.at(node).backwards_reif_line << " + "
                        << root_greater_than.at(next_node).forwards_reif_line << " + "
-                       << to_string(2 * n) << " d ";
+                       << (2 * n) << " d ";
 
                 p_line
-                    << to_string(n) << " * "
+                    << n << " * "
                     << ctx.pos_var_data.at(node).plus_one_lines.at(next_node).leq_line << " + "
                     << shifted_pos_geq.at(node).at(count).backwards_reif_line << " + "
                     << shifted_pos_geq.at(next_node).at(count + 1).forwards_reif_line << " +;";
                 ctx.logger.emit_proof_line(p_line.str(), ProofLevel::Temporary);
 
-                ctx.logger.emit_proof_comment("Next implies: succ[" + to_string(node) + "] = " + to_string(next_node) + " and " +
-                    shifted_pos_eq[node][count - 1].comment_name + " = " + to_string(count - 1) + " => " +
-                    shifted_pos_eq[next_node][count].comment_name + " = " + to_string(count));
+                ctx.logger.emit_proof_comment(format("Next implies: succ[{}] = {} and {} = {} => {} = {}",
+                    node, next_node,
+                    shifted_pos_eq[node][count - 1].comment_name, count - 1,
+                    shifted_pos_eq[next_node][count].comment_name, count));
 
                 // RUP shifted_pos[node][count-1] /\ succ[node] = next_node => shifted_pos[next_node][i]
                 successor_implies_line = ctx.logger.emit_rup_proof_line_under_reason(ctx.reason,
@@ -662,8 +671,9 @@ namespace
                 p_line << ctx.pos_var_data.at(node).plus_one_lines.at(next_node).leq_line << " + s;";
                 ctx.logger.emit_proof_line(p_line.str(), ProofLevel::Temporary);
 
-                ctx.logger.emit_proof_comment("Next implies: succ[" + to_string(node) + "] = " + to_string(next_node) + " and " +
-                    shifted_pos_eq[node][count - 1].comment_name + " = " + to_string(count - 1) + " => 0 >= 1");
+                ctx.logger.emit_proof_comment(format("Next implies: succ[{}] = {} and {} = {} => 0 >= 1",
+                    node, next_node,
+                    shifted_pos_eq[node][count - 1].comment_name, count - 1));
 
                 successor_implies_line = ctx.logger.emit_rup_proof_line(WPBSum{} + 1_i * (! shifted_pos_eq[node][count - 1].flag) + 1_i * (ctx.succ[node] != Integer{next_node}) >= 1_i, ProofLevel::Current);
             }
@@ -838,7 +848,7 @@ namespace
 
     auto prove_reachable_set_too_small(SCCProofContext & ctx, const Literal & assumption = TrueLiteral{}, const optional<OrderingAssumption> & ordering = nullopt) -> void
     {
-        ctx.logger.emit_proof_comment("REACHABLE SET from " + to_string(ctx.root));
+        ctx.logger.emit_proof_comment(format("REACHABLE SET from {}", ctx.root));
 
         map<long, set<long>> all_values_seen{};
         const auto using_shifted_pos = ctx.root != 0;
@@ -962,7 +972,7 @@ namespace
                 }
             }
 
-            ctx.logger.emit_proof_comment("AL1 pos = " + to_string(count));
+            ctx.logger.emit_proof_comment(format("AL1 pos = {}", count));
             add_for_at_least_1.divide_by(add_for_at_least_1.count);
             add_for_at_least_1.end();
             last_al1_line = ctx.logger.emit_proof_line(add_for_at_least_1.str(), ProofLevel::Current);
@@ -1096,14 +1106,12 @@ namespace
                 else if (options.prune_skip && data.visit_number[next_node] < data.start_prev_subtree) {
                     if (logger) {
                         if (next_node == data.root) {
-                            logger->emit_proof_comment("Pruning edge to the root from a subtree other than the first (" +
-                                to_string(node) + ", " + to_string(next_node) + ")");
+                            logger->emit_proof_comment(format("Pruning edge to the root from a subtree other than the first ({}, {})", node, next_node));
                             auto ctx = SCCProofContext(state, *logger, reason, succ, proof_data, data.prev_subroot, options);
                             prove_reachable_set_too_small(ctx, succ[node] == w);
                         }
                         else {
-                            logger->emit_proof_comment("Pruning edge that would skip subtree (" +
-                                to_string(node) + ", " + to_string(next_node) + ")");
+                            logger->emit_proof_comment(format("Pruning edge that would skip subtree ({}, {})", node, next_node));
                             auto ctx = SCCProofContext(state, *logger, reason, succ, proof_data, data.root, options);
                             prove_skipped_subtree(ctx, node, next_node, data.prev_subroot);
                         }
@@ -1157,7 +1165,7 @@ namespace
                     auto to_node = back_edges[0].second;
                     if (! state.optional_single_value(succ[from_node])) {
                         if (logger) {
-                            logger->emit_proof_comment("Fix required back edge (" + to_string(from_node) + ", " + to_string(to_node) + "):");
+                            logger->emit_proof_comment(format("Fix required back edge ({}, {}):", from_node, to_node));
 
                             auto ctx = SCCProofContext(state, *logger, reason, succ, proof_data, from_node, options);
                             prove_reachable_set_too_small(ctx, succ[from_node] != Integer{to_node});

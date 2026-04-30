@@ -18,6 +18,7 @@
 #include <version>
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <format>
 #include <print>
 #else
 #include <fmt/ostream.h>
@@ -34,7 +35,6 @@ using std::move;
 using std::set;
 using std::string;
 using std::stringstream;
-using std::to_string;
 using std::tuple;
 using std::unique_ptr;
 using std::unordered_map;
@@ -45,9 +45,11 @@ using std::ranges::set_intersection;
 using std::ranges::sort;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::format;
 using std::print;
 using std::println;
 #else
+using fmt::format;
 using fmt::print;
 using fmt::println;
 #endif
@@ -852,7 +854,7 @@ auto SmartTable::install(Propagators & propagators, State & initial_state, Proof
 
     if (optional_model) {
         for (unsigned int i = 0; i < _tuples.size(); ++i) {
-            pb_selectors.emplace_back(optional_model->create_proof_flag("t" + to_string(i)));
+            pb_selectors.emplace_back(optional_model->create_proof_flag(format("t{}", i)));
         }
         WPBSum sum_pb_selectors{};
 

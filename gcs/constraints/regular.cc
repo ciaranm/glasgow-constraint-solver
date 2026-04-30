@@ -9,6 +9,7 @@
 #include <version>
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <format>
 #include <print>
 #else
 #include <fmt/ostream.h>
@@ -34,15 +35,16 @@ using std::move;
 using std::set;
 using std::string;
 using std::stringstream;
-using std::to_string;
 using std::unique_ptr;
 using std::unordered_map;
 using std::unordered_set;
 using std::vector;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::format;
 using std::print;
 #else
+using fmt::format;
 using fmt::print;
 #endif
 
@@ -361,7 +363,7 @@ auto Regular::install(Propagators & propagators, State & initial_state, ProofMod
             WPBSum exactly_1_true{};
             state_at_pos_flags.emplace_back();
             for (long q = 0; q < _num_states; ++q) {
-                state_at_pos_flags[idx].emplace_back(optional_model->create_proof_flag("state" + to_string(idx) + "is" + to_string(q)));
+                state_at_pos_flags[idx].emplace_back(optional_model->create_proof_flag(format("state{}is{}", idx, q)));
                 exactly_1_true += 1_i * state_at_pos_flags[idx][q];
             }
             optional_model->add_constraint(move(exactly_1_true) == 1_i);

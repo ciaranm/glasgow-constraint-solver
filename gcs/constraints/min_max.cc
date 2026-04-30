@@ -14,6 +14,7 @@
 #include <version>
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <format>
 #include <print>
 #else
 #include <fmt/core.h>
@@ -31,14 +32,15 @@ using std::nullopt;
 using std::optional;
 using std::string;
 using std::stringstream;
-using std::to_string;
 using std::unique_ptr;
 using std::vector;
 using std::ranges::any_of;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::format;
 using std::print;
 #else
+using fmt::format;
 using fmt::print;
 #endif
 
@@ -74,7 +76,7 @@ auto ArrayMinMax::install(Propagators & propagators, State &, ProofModel * const
 
         // (for min) f_i <-> var[i] <= result, i.e. var - result <= 0
         for (const auto & [id, var] : enumerate(_vars)) {
-            auto selector = optional_model->create_proof_flag("arrayminmax" + to_string(id));
+            auto selector = optional_model->create_proof_flag(format("arrayminmax{}", id));
             selectors.push_back(selector);
             optional_model->add_constraint("ArrayMinMax", "result is this value", WPBSum{} + (_min ? 1_i : -1_i) * var + (_min ? -1_i : 1_i) * _result <= 0_i, {{selector}});
             optional_model->add_constraint("ArrayMinMax", "result is this value", WPBSum{} + (_min ? 1_i : -1_i) * var + (_min ? -1_i : 1_i) * _result >= 1_i, {{! selector}});

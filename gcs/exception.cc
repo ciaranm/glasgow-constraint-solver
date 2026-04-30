@@ -1,14 +1,21 @@
 #include <gcs/exception.hh>
 
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <format>
+using std::format;
+#else
+#include <fmt/core.h>
+using fmt::format;
+#endif
+
 using namespace gcs;
 
 #if __has_include(<source_location>) && __cpp_lib_source_location
 using std::source_location;
 #endif
 using std::string;
-#if __has_include(<source_location>) && __cpp_lib_source_location
-using std::to_string;
-#endif
 
 UnexpectedException::UnexpectedException(const string & w) :
     _wat("unexpected problem: " + w)
@@ -26,7 +33,7 @@ namespace
 {
     auto where_does_it_hurt(const source_location & where) -> string
     {
-        return string{where.file_name()} + ":" + to_string(where.line()) + " in " + string{where.function_name()};
+        return format("{}:{} in {}", where.file_name(), where.line(), where.function_name());
     }
 }
 

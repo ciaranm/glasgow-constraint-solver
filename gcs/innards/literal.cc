@@ -6,6 +6,16 @@
 #include "literal.hh"
 #include <util/overloaded.hh>
 
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <format>
+using std::format;
+#else
+#include <fmt/core.h>
+using fmt::format;
+#endif
+
 using namespace gcs;
 using namespace gcs::innards;
 
@@ -35,13 +45,13 @@ auto gcs::innards::debug_string(const Literal & lit) -> string
             switch (ilit.op) {
                 using enum VariableConditionOperator;
             case Equal:
-                return "intvars[" + debug_string(ilit.var) + "] = " + ilit.value.to_string();
+                return format("intvars[{}] = {}", debug_string(ilit.var), ilit.value.raw_value);
             case NotEqual:
-                return "intvars[" + debug_string(ilit.var) + "] != " + ilit.value.to_string();
+                return format("intvars[{}] != {}", debug_string(ilit.var), ilit.value.raw_value);
             case GreaterEqual:
-                return "intvars[" + debug_string(ilit.var) + "] >= " + ilit.value.to_string();
+                return format("intvars[{}] >= {}", debug_string(ilit.var), ilit.value.raw_value);
             case Less:
-                return "intvars[" + debug_string(ilit.var) + "] < " + ilit.value.to_string();
+                return format("intvars[{}] < {}", debug_string(ilit.var), ilit.value.raw_value);
             }
             throw NonExhaustiveSwitch{};
         },
