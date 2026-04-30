@@ -88,12 +88,13 @@ auto ParityOdd::install(Propagators & propagators, State &, ProofModel * const o
             [&](const FalseLiteral &) {},
             [&](const IntegerVariableCondition & cond) {
                 switch (cond.op) {
-                case VariableConditionOperator::NotEqual:
-                case VariableConditionOperator::Equal:
+                    using enum VariableConditionOperator;
+                case NotEqual:
+                case Equal:
                     triggers.on_change.push_back(cond.var);
                     break;
-                case VariableConditionOperator::Less:
-                case VariableConditionOperator::GreaterEqual:
+                case Less:
+                case GreaterEqual:
                     triggers.on_bounds.push_back(cond.var);
                     break;
                 }

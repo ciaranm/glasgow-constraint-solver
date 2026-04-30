@@ -77,16 +77,17 @@ namespace
                 [&](const FalseLiteral &) {},
                 [&](const IntegerVariableCondition & cond) {
                     switch (cond.op) {
-                    case VariableConditionOperator::NotEqual:
+                        using enum VariableConditionOperator;
+                    case NotEqual:
                         reason.emplace_back(cond.var != cond.value);
                         break;
-                    case VariableConditionOperator::Equal:
+                    case Equal:
                         reason.emplace_back(cond.var == cond.value);
                         break;
-                    case VariableConditionOperator::Less:
+                    case Less:
                         reason.emplace_back(cond.var < cond.value);
                         break;
-                    case VariableConditionOperator::GreaterEqual:
+                    case GreaterEqual:
                         reason.emplace_back(cond.var >= cond.value);
                         break;
                     }

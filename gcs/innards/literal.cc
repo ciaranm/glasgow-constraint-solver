@@ -33,13 +33,14 @@ auto gcs::innards::debug_string(const Literal & lit) -> string
     return overloaded{
         [](const IntegerVariableCondition & ilit) -> string {
             switch (ilit.op) {
-            case VariableConditionOperator::Equal:
+                using enum VariableConditionOperator;
+            case Equal:
                 return "intvars[" + debug_string(ilit.var) + "] = " + ilit.value.to_string();
-            case VariableConditionOperator::NotEqual:
+            case NotEqual:
                 return "intvars[" + debug_string(ilit.var) + "] != " + ilit.value.to_string();
-            case VariableConditionOperator::GreaterEqual:
+            case GreaterEqual:
                 return "intvars[" + debug_string(ilit.var) + "] >= " + ilit.value.to_string();
-            case VariableConditionOperator::Less:
+            case Less:
                 return "intvars[" + debug_string(ilit.var) + "] < " + ilit.value.to_string();
             }
             throw NonExhaustiveSwitch{};
@@ -71,10 +72,11 @@ auto gcs::innards::is_literally_true_or_false(const Literal & lit) -> optional<b
                 [&](ViewOfIntegerVariableID) -> optional<bool> { return nullopt; },
                 [&](ConstantIntegerVariableID x) -> optional<bool> {
                     switch (ilit.op) {
-                    case VariableConditionOperator::Equal: return x.const_value == ilit.value;
-                    case VariableConditionOperator::NotEqual: return x.const_value != ilit.value;
-                    case VariableConditionOperator::GreaterEqual: return x.const_value >= ilit.value;
-                    case VariableConditionOperator::Less: return x.const_value < ilit.value;
+                        using enum VariableConditionOperator;
+                    case Equal: return x.const_value == ilit.value;
+                    case NotEqual: return x.const_value != ilit.value;
+                    case GreaterEqual: return x.const_value >= ilit.value;
+                    case Less: return x.const_value < ilit.value;
                     }
                     throw NonExhaustiveSwitch{};
                 }}

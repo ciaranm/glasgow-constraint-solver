@@ -75,12 +75,13 @@ namespace
                 overloaded{
                     [&](const IntegerVariableCondition & cond) {
                         switch (cond.op) {
-                        case VariableConditionOperator::Equal:
-                        case VariableConditionOperator::NotEqual:
+                            using enum VariableConditionOperator;
+                        case Equal:
+                        case NotEqual:
                             triggers.on_change.push_back(cond.var);
                             break;
-                        case VariableConditionOperator::Less:
-                        case VariableConditionOperator::GreaterEqual:
+                        case Less:
+                        case GreaterEqual:
                             triggers.on_bounds.push_back(cond.var);
                             break;
                         }

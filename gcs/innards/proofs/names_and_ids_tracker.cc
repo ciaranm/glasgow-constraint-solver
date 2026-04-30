@@ -249,12 +249,13 @@ auto NamesAndIDsTracker::create_literals_for_introduced_variable_value(
 auto NamesAndIDsTracker::need_proof_name(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> & cond) -> void
 {
     switch (cond.op) {
-    case VariableConditionOperator::Equal:
-    case VariableConditionOperator::NotEqual:
+        using enum VariableConditionOperator;
+    case Equal:
+    case NotEqual:
         need_direct_encoding_for(cond.var, cond.value);
         break;
-    case VariableConditionOperator::Less:
-    case VariableConditionOperator::GreaterEqual:
+    case Less:
+    case GreaterEqual:
         need_gevar(cond.var, cond.value);
         break;
     }
@@ -812,10 +813,11 @@ auto NamesAndIDsTracker::s_expr_name_of(ReificationCondition cond) const -> stri
 auto NamesAndIDsTracker::s_expr_name_of(VariableConditionOperator op) const -> string
 {
     switch (op) {
-    case VariableConditionOperator::Equal: return "eq";
-    case VariableConditionOperator::NotEqual: return "neq";
-    case VariableConditionOperator::GreaterEqual: return "geq";
-    case VariableConditionOperator::Less: return "lt";
+        using enum VariableConditionOperator;
+    case Equal: return "eq";
+    case NotEqual: return "neq";
+    case GreaterEqual: return "geq";
+    case Less: return "lt";
     }
 
     throw NonExhaustiveSwitch{};
