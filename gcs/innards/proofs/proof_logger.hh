@@ -241,7 +241,8 @@ namespace gcs::innards
         [[nodiscard]] auto names_and_ids_tracker() -> NamesAndIDsTracker &;
 
         /**
-         * Delete a specified range of ids;
+         * Delete a specified range of ids.
+         * NB: This uses half-open range semantics, so "from" is included but "up_to" is excluded.
          */
         auto delete_range(ProofLine from, ProofLine up_to) -> void;
 
