@@ -355,7 +355,8 @@ Regular::Regular(vector<IntegerVariableID> v, long n, vector<vector<long>> trans
 {
     for (size_t i = 0; i < transitions.size(); i++)
         for (size_t j = 0; j < transitions[i].size(); j++)
-            _transitions[i][Integer(j)] = transitions[i][j];
+            if (transitions[i][j] != -1)
+                _transitions[i][Integer(j)] = transitions[i][j];
     set<Integer> sym_set;
     for (const auto & state_map : _transitions)
         for (const auto & [val, _] : state_map)
