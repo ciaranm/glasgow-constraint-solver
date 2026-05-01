@@ -63,7 +63,7 @@ auto run_lex_test_2(bool proofs,
     p.post(Lex{{v1, v2}, {v3, v4}});
 
     auto proof_name = proofs ? make_optional("lex_test") : nullopt;
-    solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{v1, v2, v3, v4});
+    solve_for_tests(p, proof_name, actual, tuple{v1, v2, v3, v4});
     check_results(proof_name, expected, actual);
 }
 
@@ -93,7 +93,7 @@ auto run_lex_test_3(bool proofs,
     p.post(Lex{{v1, v2, v3}, {v4, v5, v6}});
 
     auto proof_name = proofs ? make_optional("lex_test") : nullopt;
-    solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{v1, v2, v3, v4, v5, v6});
+    solve_for_tests(p, proof_name, actual, tuple{v1, v2, v3, v4, v5, v6});
     check_results(proof_name, expected, actual);
 }
 
