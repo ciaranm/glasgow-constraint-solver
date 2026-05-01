@@ -43,21 +43,6 @@ using fmt::println;
 using namespace gcs;
 using namespace gcs::test_innards;
 
-// Build a complete transition table initialised to -1 (no transition) everywhere,
-// then apply the given edges. The propagator uses operator[] which returns 0 for
-// absent keys — NOT -1 — so every reachable (state, symbol) pair must be explicit.
-auto make_transitions(int num_states, int num_symbols, vector<tuple<int, int, int>> edges)
-    -> vector<unordered_map<Integer, long>>
-{
-    vector<unordered_map<Integer, long>> trans(num_states);
-    for (int q = 0; q < num_states; ++q)
-        for (int j = 0; j < num_symbols; ++j)
-            trans[q][Integer(j)] = -1L;
-    for (auto [from, sym, to] : edges)
-        trans[from][Integer(sym)] = to;
-    return trans;
-}
-
 // symbols must be {0_i, 1_i, ..., n-1_i} — see Regular's documentation.
 auto run_regular_test(bool proofs, const string & desc,
     vector<pair<int, int>> var_ranges,
@@ -103,16 +88,16 @@ auto run_all_tests(bool proofs) -> void
     run_regular_test(proofs, "even zeros",
         {{0, 1}, {0, 1}, {0, 1}},
         {0_i, 1_i}, 2,
-        make_transitions(2, 2, {{0, 0, 1}, {0, 1, 0}, {1, 0, 0}, {1, 1, 1}}),
+        {{{0_i, 1}, {1_i, 0}}, {{0_i, 0}, {1_i, 1}}},
         {0});
 
     // DFA: no two consecutive 0s, binary alphabet {0,1}
     // State 0 (initial, final): 0->1, 1->0
-    // State 1 (final, last was 0): 0->dead(-1), 1->0
+    // State 1 (final, last was 0): 0->dead (absent), 1->0
     run_regular_test(proofs, "no consecutive 0s",
         {{0, 1}, {0, 1}, {0, 1}, {0, 1}},
         {0_i, 1_i}, 2,
-        make_transitions(2, 2, {{0, 0, 1}, {0, 1, 0}, {1, 1, 0}}),
+        {{{0_i, 1}, {1_i, 0}}, {{1_i, 0}}},
         {0, 1});
 
     // DFA: sequence contains at least one 2, ternary alphabet {0,1,2}
@@ -121,7 +106,7 @@ auto run_all_tests(bool proofs) -> void
     run_regular_test(proofs, "contains 2",
         {{0, 2}, {0, 2}, {0, 2}},
         {0_i, 1_i, 2_i}, 2,
-        make_transitions(2, 3, {{0, 0, 0}, {0, 1, 0}, {0, 2, 1}, {1, 0, 1}, {1, 1, 1}, {1, 2, 1}}),
+        {{{0_i, 0}, {1_i, 0}, {2_i, 1}}, {{0_i, 1}, {1_i, 1}, {2_i, 1}}},
         {1});
 
     // Same DFA: first two variables restricted to {0,1}, last to {0,1,2}.
@@ -130,25 +115,24 @@ auto run_all_tests(bool proofs) -> void
     run_regular_test(proofs, "contains 2, last forced to 2",
         {{0, 1}, {0, 1}, {0, 2}},
         {0_i, 1_i, 2_i}, 2,
-        make_transitions(2, 3, {{0, 0, 0}, {0, 1, 0}, {0, 2, 1}, {1, 0, 1}, {1, 1, 1}, {1, 2, 1}}),
+        {{{0_i, 0}, {1_i, 0}, {2_i, 1}}, {{0_i, 1}, {1_i, 1}, {2_i, 1}}},
         {1});
 
     // DFA: all symbols in the sequence must be identical, binary alphabet {0,1}
     // State 0 (initial): 0->1, 1->2
-    // State 1 (all 0s so far, final): 0->1, 1->3(dead)
-    // State 2 (all 1s so far, final): 0->3(dead), 1->2
-    // State 3 (dead): 0->3, 1->3
+    // State 1 (all 0s so far, final): 0->1, 1->dead (absent)
+    // State 2 (all 1s so far, final): 0->dead (absent), 1->2
     run_regular_test(proofs, "all same",
         {{0, 1}, {0, 1}, {0, 1}, {0, 1}},
         {0_i, 1_i}, 4,
-        make_transitions(4, 2, {{0, 0, 1}, {0, 1, 2}, {1, 0, 1}, {1, 1, 3}, {2, 0, 3}, {2, 1, 2}, {3, 0, 3}, {3, 1, 3}}),
+        {{{0_i, 1}, {1_i, 2}}, {{0_i, 1}}, {{1_i, 2}}, {}},
         {1, 2});
 
     // Unsatisfiable: no final states
     run_regular_test(proofs, "no final states",
         {{0, 1}, {0, 1}, {0, 1}},
         {0_i, 1_i}, 2,
-        make_transitions(2, 2, {{0, 0, 1}, {0, 1, 0}, {1, 0, 0}, {1, 1, 1}}),
+        {{{0_i, 1}, {1_i, 0}}, {{0_i, 0}, {1_i, 1}}},
         {});
 
     // Unsatisfiable: variable domains exclude all accepting paths.
@@ -156,7 +140,7 @@ auto run_all_tests(bool proofs) -> void
     run_regular_test(proofs, "domain excludes accepting paths",
         {{0, 1}, {0, 1}, {0, 1}},
         {0_i, 1_i, 2_i}, 2,
-        make_transitions(2, 3, {{0, 0, 0}, {0, 1, 0}, {0, 2, 1}, {1, 0, 1}, {1, 1, 1}, {1, 2, 1}}),
+        {{{0_i, 0}, {1_i, 0}, {2_i, 1}}, {{0_i, 1}, {1_i, 1}, {2_i, 1}}},
         {1});
 }
 

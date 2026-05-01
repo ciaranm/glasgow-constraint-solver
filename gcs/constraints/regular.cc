@@ -50,6 +50,16 @@ using fmt::print;
 
 namespace
 {
+    // Returns the next state for (state, val), or -1 if no transition exists.
+    // Treats both absent keys and explicit -1 values as disallowed transitions.
+    auto find_transition(const unordered_map<Integer, long> & state_transitions, Integer val) -> long
+    {
+        auto it = state_transitions.find(val);
+        if (it == state_transitions.end())
+            return -1L;
+        return it->second;
+    }
+
     struct RegularGraph
     {
         vector<unordered_map<Integer, set<long>>> states_supporting;
@@ -103,9 +113,10 @@ namespace
         for (unsigned long i = 0; i < num_vars; ++i) {
             for (auto val : state.each_value_immutable(vars[i])) {
                 for (const auto & q : graph.nodes[i]) {
-                    if (transitions[q][val] != -1) {
+                    auto next_q = find_transition(transitions[q], val);
+                    if (next_q != -1) {
                         graph.states_supporting[i][val].insert(q);
-                        graph.nodes[i + 1].insert(transitions[q][val]);
+                        graph.nodes[i + 1].insert(next_q);
                     }
                 }
             }
@@ -149,12 +160,12 @@ namespace
             for (auto val : state.each_value_mutable(vars[i])) {
                 set<long> states = graph.states_supporting[i][val];
                 for (const auto & q : states) {
-
-                    if (graph.nodes[i + 1].contains(transitions[q][val])) {
-                        graph.out_edges[i][q][transitions[q][val]].emplace(val);
+                    auto next_q = find_transition(transitions[q], val);
+                    if (next_q != -1 && graph.nodes[i + 1].contains(next_q)) {
+                        graph.out_edges[i][q][next_q].emplace(val);
                         graph.out_deg[i][q]++;
-                        graph.in_edges[i + 1][transitions[q][val]][q].emplace(val);
-                        graph.in_deg[i + 1][transitions[q][val]]++;
+                        graph.in_edges[i + 1][next_q][q].emplace(val);
+                        graph.in_deg[i + 1][next_q]++;
                         state_is_support[q] = true;
                     }
                     else {
@@ -280,7 +291,7 @@ namespace
                 if (! graph.states_supporting[i][val].empty() && ! state.in_domain(vars[i], val)) {
 
                     for (const auto & q : graph.states_supporting[i][val]) {
-                        auto next_q = transitions[q][val];
+                        auto next_q = find_transition(transitions[q], val);
 
                         if (graph.out_edges[i][q].contains(next_q)) {
                             graph.out_edges[i][q][next_q].erase(val);
@@ -381,13 +392,13 @@ auto Regular::install(Propagators & propagators, State & initial_state, ProofMod
         for (size_t idx = 0; idx < _vars.size(); ++idx) {
             for (long q = 0; q < _num_states; ++q) {
                 for (const auto & val : _symbols) {
-                    if (_transitions[q][val] == -1) {
+                    auto new_q = find_transition(_transitions[q], val);
+                    if (new_q == -1) {
                         // No transition for q, v, so constrain ~(state_i = q /\ X_i = val)
                         optional_model->add_constraint(
                             WPBSum{} + 1_i * (_vars[idx] != val) + (1_i * ! state_at_pos_flags[idx][q]) >= 1_i);
                     }
                     else {
-                        auto new_q = _transitions[q][val];
                         optional_model->add_constraint(
                             WPBSum{} + 1_i * ! state_at_pos_flags[idx][q] + 1_i * (_vars[idx] != val) + 1_i * state_at_pos_flags[idx + 1][new_q] >= 1_i);
                     }
