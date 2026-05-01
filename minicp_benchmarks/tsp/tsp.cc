@@ -93,10 +93,10 @@ auto main(int argc, char * argv[]) -> int
     else if (options_vars["propagator"].as<string>() == "scc") {
         SCCOptions options{};
         options.enable_comments = false;
-        p.post(CircuitSCC{succ, true, options});
+        p.post(CircuitSCC{succ, false, options});
     }
     else {
-        p.post(Circuit{succ, true});
+        p.post(Circuit{succ, false});
     }
 
     for (unsigned i = 0; i < n; ++i)
