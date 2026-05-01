@@ -95,23 +95,23 @@ namespace gcs::innards
 
         auto infer_all(ProofLogger * const logger, const std::vector<Literal> & lits, const Justification & why, const ReasonFunction & reason) -> void
         {
-            // only do explicit justifications once, but note that infer might not
-            // actually call the justification if nothing is inferred
-            auto just = visit([&](const auto & j) -> Justification {
-                if constexpr (std::is_same_v<std::decay_t<decltype(j)>, JustifyExplicitlyThenRUP>)
-                    return JustifyExplicitlyThenRUP{[done = false, &j](const ReasonFunction & reason) mutable -> void {
-                        if (! done) {
-                            j.add_proof_steps(reason);
-                            done = true;
-                        }
-                    }};
-                else
-                    return j;
-            },
-                why);
-
-            for (const auto & lit : lits)
-                infer(logger, lit, just, reason);
+            // For JustifyExplicitlyThenRUP: enter the temporary proof level once,
+            // run the explicit scaffolding once, then RUP each inference under the
+            // shared scaffolding. Without this, each infer() would enter and exit
+            // its own temporary level, wiping the scaffolding before subsequent
+            // inferences can use it.
+            if (logger && std::holds_alternative<JustifyExplicitlyThenRUP>(why)) {
+                const auto & j = std::get<JustifyExplicitlyThenRUP>(why);
+                auto t = logger->temporary_proof_level();
+                j.add_proof_steps(reason);
+                for (const auto & lit : lits)
+                    infer(logger, lit, JustifyUsingRUP{}, reason);
+                logger->forget_proof_level(t);
+            }
+            else {
+                for (const auto & lit : lits)
+                    infer(logger, lit, why, reason);
+            }
         }
 
         auto each_inference() const -> std::generator<std::pair<SimpleIntegerVariableID, Inference>>
