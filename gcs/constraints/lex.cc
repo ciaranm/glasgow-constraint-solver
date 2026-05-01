@@ -162,9 +162,6 @@ auto Lex::install(Propagators & propagators, State & initial_state, ProofModel *
     for (auto & v : _vars_2)
         triggers.on_bounds.push_back(v);
 
-    // TODO: return PropagatorState::DisableUntilBacktrack once the constraint
-    // is fully discharged (e.g. strict already forced at some position) instead
-    // of always re-firing.
     propagators.install([vars_1 = move(_vars_1), vars_2 = move(_vars_2),
                             prefix_equal_flags, decision_at_flags](
                             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
@@ -284,7 +281,10 @@ auto Lex::install(Propagators & propagators, State & initial_state, ProofModel *
             }
         }
 
-        return PropagatorState::Enable;
+        // If strict is already forced at some position, the constraint is
+        // fully discharged for this branch: bounds only ever tighten further,
+        // so this can never become un-discharged before backtrack.
+        return strict_forced ? PropagatorState::DisableUntilBacktrack : PropagatorState::Enable;
     },
         triggers, "lex");
 }
