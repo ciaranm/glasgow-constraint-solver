@@ -43,10 +43,8 @@ using fmt::println;
 using namespace gcs;
 using namespace gcs::test_innards;
 
-// symbols must be {0_i, 1_i, ..., n-1_i} — see Regular's documentation.
 auto run_regular_test(bool proofs, const string & desc,
     vector<pair<int, int>> var_ranges,
-    vector<Integer> symbols,
     long num_states,
     vector<unordered_map<Integer, long>> transitions,
     vector<long> final_states) -> void
@@ -73,7 +71,7 @@ auto run_regular_test(bool proofs, const string & desc,
     vector<IntegerVariableID> vars;
     for (const auto & [lo, hi] : var_ranges)
         vars.push_back(p.create_integer_variable(Integer(lo), Integer(hi)));
-    p.post(Regular{vars, symbols, num_states, transitions, final_states});
+    p.post(Regular{vars, num_states, transitions, final_states});
 
     auto proof_name = proofs ? make_optional("regular_test") : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{vars});
@@ -87,7 +85,7 @@ auto run_all_tests(bool proofs) -> void
     // State 1: 0->0, 1->1
     run_regular_test(proofs, "even zeros",
         {{0, 1}, {0, 1}, {0, 1}},
-        {0_i, 1_i}, 2,
+        2,
         {{{0_i, 1}, {1_i, 0}}, {{0_i, 0}, {1_i, 1}}},
         {0});
 
@@ -96,7 +94,7 @@ auto run_all_tests(bool proofs) -> void
     // State 1 (final, last was 0): 0->dead (absent), 1->0
     run_regular_test(proofs, "no consecutive 0s",
         {{0, 1}, {0, 1}, {0, 1}, {0, 1}},
-        {0_i, 1_i}, 2,
+        2,
         {{{0_i, 1}, {1_i, 0}}, {{1_i, 0}}},
         {0, 1});
 
@@ -105,7 +103,7 @@ auto run_all_tests(bool proofs) -> void
     // State 1 (final): all symbols -> 1
     run_regular_test(proofs, "contains 2",
         {{0, 2}, {0, 2}, {0, 2}},
-        {0_i, 1_i, 2_i}, 2,
+        2,
         {{{0_i, 0}, {1_i, 0}, {2_i, 1}}, {{0_i, 1}, {1_i, 1}, {2_i, 1}}},
         {1});
 
@@ -114,7 +112,7 @@ auto run_all_tests(bool proofs) -> void
     // no accepting path exists unless some variable carries the value 2.
     run_regular_test(proofs, "contains 2, last forced to 2",
         {{0, 1}, {0, 1}, {0, 2}},
-        {0_i, 1_i, 2_i}, 2,
+        2,
         {{{0_i, 0}, {1_i, 0}, {2_i, 1}}, {{0_i, 1}, {1_i, 1}, {2_i, 1}}},
         {1});
 
@@ -124,14 +122,14 @@ auto run_all_tests(bool proofs) -> void
     // State 2 (all 1s so far, final): 0->dead (absent), 1->2
     run_regular_test(proofs, "all same",
         {{0, 1}, {0, 1}, {0, 1}, {0, 1}},
-        {0_i, 1_i}, 4,
+        4,
         {{{0_i, 1}, {1_i, 2}}, {{0_i, 1}}, {{1_i, 2}}, {}},
         {1, 2});
 
     // Unsatisfiable: no final states
     run_regular_test(proofs, "no final states",
         {{0, 1}, {0, 1}, {0, 1}},
-        {0_i, 1_i}, 2,
+        2,
         {{{0_i, 1}, {1_i, 0}}, {{0_i, 0}, {1_i, 1}}},
         {});
 
@@ -139,7 +137,7 @@ auto run_all_tests(bool proofs) -> void
     // "Contains 2" DFA with all variables restricted to {0,1} — 2 is never reachable.
     run_regular_test(proofs, "domain excludes accepting paths",
         {{0, 1}, {0, 1}, {0, 1}},
-        {0_i, 1_i, 2_i}, 2,
+        2,
         {{{0_i, 0}, {1_i, 0}, {2_i, 1}}, {{0_i, 1}, {1_i, 1}, {2_i, 1}}},
         {1});
 }

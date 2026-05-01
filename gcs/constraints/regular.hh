@@ -15,36 +15,30 @@ namespace gcs
      * reasons when proof logging is enabled, which can result in shorter
      * proofs.
      *
-     * \warning The `symbols` parameter must be exactly `{0_i, 1_i, 2_i, ...}`
-     * (zero-indexed integers). The matrix-form constructor stores transitions
-     * keyed by symbol index, not symbol value, so a non-zero-based alphabet
-     * produces a mismatch between the transition table and the variable values
-     * looked up during propagation.
-     *
      * \ingroup Constraints
      */
     class Regular : public Constraint
     {
     private:
         const std::vector<IntegerVariableID> _vars;
-        const std::vector<Integer> _symbols;
         const long _num_states;
         std::vector<std::unordered_map<Integer, long>> _transitions;
         const std::vector<long> _final_states;
         const bool _short_reasons;
+        std::vector<Integer> _symbols;
+
+        [[nodiscard]] auto symbols() const -> const std::vector<Integer> &;
 
     public:
         explicit Regular(std::vector<IntegerVariableID> vars,
-            std::vector<Integer> symbols,
             long num_states,
             std::vector<std::unordered_map<Integer, long>> transitions,
             std::vector<long> final_states, bool short_reasons = true);
 
-        explicit Regular(std::vector<IntegerVariableID> v,
-            std::vector<Integer> s,
-            long n, std::vector<std::vector<long>> t,
-            std::vector<long> f,
-            bool sr = true);
+        explicit Regular(std::vector<IntegerVariableID> vars,
+            long num_states,
+            std::vector<std::vector<long>> transitions,
+            std::vector<long> final_states, bool sr = true);
 
         virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;

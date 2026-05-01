@@ -332,34 +332,45 @@ namespace
     }
 }
 
-Regular::Regular(vector<IntegerVariableID> v, vector<Integer> s, long n, vector<unordered_map<Integer, long>> t, vector<long> f, bool sr) :
+Regular::Regular(vector<IntegerVariableID> v, long n, vector<unordered_map<Integer, long>> t, vector<long> f, bool sr) :
     _vars(move(v)),
-    _symbols(move(s)),
     _num_states(n),
     _transitions(move(t)),
     _final_states(move(f)),
     _short_reasons(sr)
 {
+    set<Integer> sym_set;
+    for (const auto & state_map : _transitions)
+        for (const auto & [val, _] : state_map)
+            sym_set.insert(val);
+    _symbols.assign(sym_set.begin(), sym_set.end());
 }
 
-Regular::Regular(vector<IntegerVariableID> v, vector<Integer> s, long n, vector<vector<long>> transitions, vector<long> f, bool sr) :
+Regular::Regular(vector<IntegerVariableID> v, long n, vector<vector<long>> transitions, vector<long> f, bool sr) :
     _vars(move(v)),
-    _symbols(move(s)),
     _num_states(n),
     _transitions(vector<unordered_map<Integer, long>>(n, unordered_map<Integer, long>{})),
     _final_states(move(f)),
     _short_reasons(sr)
 {
-    for (size_t i = 0; i < transitions.size(); i++) {
-        for (size_t j = 0; j < transitions[i].size(); j++) {
+    for (size_t i = 0; i < transitions.size(); i++)
+        for (size_t j = 0; j < transitions[i].size(); j++)
             _transitions[i][Integer(j)] = transitions[i][j];
-        }
-    }
+    set<Integer> sym_set;
+    for (const auto & state_map : _transitions)
+        for (const auto & [val, _] : state_map)
+            sym_set.insert(val);
+    _symbols.assign(sym_set.begin(), sym_set.end());
+}
+
+auto Regular::symbols() const -> const vector<Integer> &
+{
+    return _symbols;
 }
 
 auto Regular::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<Regular>(_vars, _symbols, _num_states, _transitions, _final_states, _short_reasons);
+    return make_unique<Regular>(_vars, _num_states, _transitions, _final_states, _short_reasons);
 }
 
 auto Regular::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
@@ -391,7 +402,7 @@ auto Regular::install(Propagators & propagators, State & initial_state, ProofMod
 
         for (size_t idx = 0; idx < _vars.size(); ++idx) {
             for (long q = 0; q < _num_states; ++q) {
-                for (const auto & val : _symbols) {
+                for (const auto & val : symbols()) {
                     auto new_q = find_transition(_transitions[q], val);
                     if (new_q == -1) {
                         // No transition for q, v, so constrain ~(state_i = q /\ X_i = val)
@@ -428,7 +439,7 @@ auto Regular::s_exprify(const string & name, const ProofModel * const model) con
     for (const auto & var : _vars)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
     print(s, ") {}\n       (", _num_states);
-    for (const auto & sym : _symbols)
+    for (const auto & sym : symbols())
         print(s, " {}", sym);
     print(s, ")\n       ((");
     for (size_t i = 0; i < _transitions.size(); i++) {

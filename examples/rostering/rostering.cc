@@ -88,7 +88,7 @@ auto main(int argc, char * argv[]) -> int
     transitions[6][2] = 3;
     transitions[6][0] = 1;
 
-    auto regular = Regular{day, {0_i, 1_i, 2_i, 3_i}, 7, transitions, {0, 1, 2, 3, 4, 5, 6}};
+    auto regular = Regular{day, 7, transitions, {0, 1, 2, 3, 4, 5, 6}};
 
     p.post(regular);
 

@@ -60,7 +60,7 @@ auto main(int argc, char * argv[]) -> int
     transitions[3][0] = 3;
     transitions[4][2] = 4;
 
-    auto regular = Regular{x, {0_i, 1_i, 2_i}, 5, transitions, {3, 4}};
+    auto regular = Regular{x, 5, transitions, {3, 4}};
 
     p.post(regular);
 

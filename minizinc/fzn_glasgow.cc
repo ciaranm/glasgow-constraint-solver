@@ -605,10 +605,6 @@ auto main(int argc, char * argv[]) -> int
                 const auto & vars = arg_as_array_of_var(data, args, 0);
                 const auto & num_states = static_cast<long long>(args.at(1));
                 const auto & num_symbols = static_cast<long long>(args.at(2));
-                vector<Integer> symbols{};
-                for (int i = 0; i <= num_symbols - 1; i++) {
-                    symbols.emplace_back(i);
-                }
                 const auto & raw_transitions = arg_as_array_of_integer(data, args, 3);
                 const auto & start_state = static_cast<long long>(args.at(4));
 
@@ -637,7 +633,7 @@ auto main(int argc, char * argv[]) -> int
                     }
                 }
 
-                problem.post(Regular{vars, symbols, long(num_states), transitions, final_states_raw});
+                problem.post(Regular{vars, long(num_states), transitions, final_states_raw});
             }
             else
                 throw FlatZincInterfaceError{format("Unknown flatzinc constraint {} in {}", id, fznname)};

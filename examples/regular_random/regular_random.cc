@@ -64,9 +64,7 @@ auto post_random_regular(Problem & p, const int & n, mt19937 & rng, bool short_r
         string_rep << "s" << i << "\n";
     }
     string_rep << "#alphabet\n";
-    vector<Integer> symbols{};
     for (int i = 0; i < n; i++) {
-        symbols.emplace_back(i);
         string_rep << i << "\n";
     }
 
@@ -80,7 +78,7 @@ auto post_random_regular(Problem & p, const int & n, mt19937 & rng, bool short_r
         }
     }
 
-    p.post(Regular{x, symbols, num_states, transitions, final_states, short_reasons});
+    p.post(Regular{x, num_states, transitions, final_states, short_reasons});
 }
 
 auto main(int argc, char * argv[]) -> int
