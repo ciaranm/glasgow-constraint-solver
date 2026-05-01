@@ -152,10 +152,7 @@ namespace
         // Backward phase: validate
         for (long i = num_vars - 1; i >= 0; --i) {
 
-            unordered_map<long, bool> state_is_support;
-            for (const auto & q : graph.nodes[i]) {
-                state_is_support[q] = false;
-            }
+            vector<char> state_is_support(num_states, 0);
 
             for (auto val : state.each_value_mutable(vars[i])) {
                 set<long> states = graph.states_supporting[i][val];
@@ -166,7 +163,7 @@ namespace
                         graph.out_deg[i][q]++;
                         graph.in_edges[i + 1][next_q][q].emplace(val);
                         graph.in_deg[i + 1][next_q]++;
-                        state_is_support[q] = true;
+                        state_is_support[q] = 1;
                     }
                     else {
                         graph.states_supporting[i][val].erase(q);
