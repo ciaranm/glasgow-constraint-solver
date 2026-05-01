@@ -97,6 +97,34 @@ auto run_lex_test_3(bool proofs,
     check_results(proof_name, expected, actual);
 }
 
+auto run_lex_test_6(bool proofs,
+    pair<int, int> r1, pair<int, int> r2, pair<int, int> r3,
+    pair<int, int> r4, pair<int, int> r5, pair<int, int> r6,
+    pair<int, int> r7, pair<int, int> r8, pair<int, int> r9,
+    pair<int, int> r10, pair<int, int> r11, pair<int, int> r12) -> void
+{
+    print(cerr, "lex 6 with proofs={}:", proofs);
+    cerr << flush;
+
+    set<tuple<vector<int>>> expected, actual;
+    build_expected(expected, [](vector<int> v) {
+        return tie(v[0], v[1], v[2], v[3], v[4], v[5]) > tie(v[6], v[7], v[8], v[9], v[10], v[11]);
+    }, vector<pair<int, int>>{r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12});
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    vector<IntegerVariableID> all_vars;
+    for (const auto & r : {r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12})
+        all_vars.push_back(p.create_integer_variable(Integer(r.first), Integer(r.second)));
+
+    p.post(Lex{vector<IntegerVariableID>{all_vars.begin(), all_vars.begin() + 6},
+        vector<IntegerVariableID>{all_vars.begin() + 6, all_vars.end()}});
+
+    auto proof_name = proofs ? make_optional("lex_test") : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{all_vars});
+    check_results(proof_name, expected, actual);
+}
+
 auto run_all_tests(bool proofs) -> void
 {
     // Length-2: same domain for both arrays
@@ -115,6 +143,9 @@ auto run_all_tests(bool proofs) -> void
     // Length-2: negative values
     run_lex_test_2(proofs, {-2, 1}, {-2, 1}, {-2, 1}, {-2, 1});
 
+    // Length-2: larger domain
+    run_lex_test_2(proofs, {1, 6}, {1, 6}, {1, 6}, {1, 6});
+
     // Length-3: same domain for both arrays
     run_lex_test_3(proofs, {1, 3}, {1, 3}, {1, 3}, {1, 3}, {1, 3}, {1, 3});
     run_lex_test_3(proofs, {1, 2}, {1, 2}, {1, 2}, {1, 2}, {1, 2}, {1, 2});
@@ -124,6 +155,14 @@ auto run_all_tests(bool proofs) -> void
 
     // Length-3: first two positions equal, third determines order
     run_lex_test_3(proofs, {1, 2}, {1, 2}, {1, 3}, {1, 2}, {1, 2}, {1, 3});
+
+    // Length-3: larger domain
+    run_lex_test_3(proofs, {1, 5}, {1, 5}, {1, 5}, {1, 5}, {1, 5}, {1, 5});
+
+    // Length-6 with small domains, to exercise longer chains
+    run_lex_test_6(proofs,
+        {1, 2}, {1, 2}, {1, 2}, {1, 2}, {1, 2}, {1, 2},
+        {1, 2}, {1, 2}, {1, 2}, {1, 2}, {1, 2}, {1, 2});
 }
 
 auto main(int, char *[]) -> int
