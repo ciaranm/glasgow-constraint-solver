@@ -10,7 +10,8 @@
 namespace gcs
 {
     /**
-     * \brief Lexicographic ordering constraint. Enforce vars_1 >_lex vars_2.
+     * \brief Lexicographic ordering constraint, encoded as a SmartTable.
+     * Enforce vars_1 >_lex vars_2.
      *
      * \ingroup Constraints
      */
@@ -28,8 +29,24 @@ namespace gcs
         [[nodiscard]] virtual auto s_exprify(const std::string & name, const innards::ProofModel * const) const -> std::string override;
     };
 
-    // Currently only implemented via a Smart Table
-    using Lex = LexSmartTable;
+    /**
+     * \brief Lexicographic ordering constraint. Enforce vars_1 >_lex vars_2.
+     *
+     * \ingroup Constraints
+     */
+    class Lex : public Constraint
+    {
+    private:
+        std::vector<IntegerVariableID> _vars_1;
+        std::vector<IntegerVariableID> _vars_2;
+
+    public:
+        explicit Lex(std::vector<IntegerVariableID> vars_1, std::vector<IntegerVariableID> vars_2);
+
+        virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
+        virtual auto clone() const -> std::unique_ptr<Constraint> override;
+        [[nodiscard]] virtual auto s_exprify(const std::string & name, const innards::ProofModel * const) const -> std::string override;
+    };
 }
 
 #endif
