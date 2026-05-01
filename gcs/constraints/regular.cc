@@ -310,6 +310,7 @@ namespace
             }
         }
 
+        // // Need to check later whether this is safe to do now we have enumeration proofs
         // if (logger && short_reasons) {
         //     if (short_reasons) {
         //         logger->delete_range(reason_definition_1, reason_definition_2 + 1);
