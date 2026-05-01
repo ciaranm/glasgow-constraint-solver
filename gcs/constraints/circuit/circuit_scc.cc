@@ -361,7 +361,7 @@ namespace
 
     auto prove_at_most_1_pos(SCCProofContext ctx, const long & node, const set<long> & values, bool using_shifted_pos) -> ProofLine
     {
-        if (ctx.options.prove_am1_by_constradiction) {
+        if (ctx.options.prove_am1_by_contradiction) {
             return prove_at_most_1_pos_using_contradiction(ctx, node, values, using_shifted_pos);
         }
         else {
