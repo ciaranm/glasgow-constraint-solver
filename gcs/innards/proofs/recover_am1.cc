@@ -1,3 +1,4 @@
+#include <gcs/exception.hh>
 #include <gcs/innards/proofs/recover_am1.hh>
 #include <util/enumerate.hh>
 
@@ -18,7 +19,7 @@ template <typename Literal_>
     const function<auto(const Literal_ &, const Literal_ &)->ProofLine> & pair_ne) -> ProofLine
 {
     if (atoms.size() < 2)
-        throw UnimplementedException{};
+        throw UnexpectedException{"recover_am1 requires at least 2 atoms"};
 
     auto temporary_proof_level = logger.temporary_proof_level();
 

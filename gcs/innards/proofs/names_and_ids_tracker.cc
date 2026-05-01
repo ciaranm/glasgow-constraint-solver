@@ -831,7 +831,6 @@ auto NamesAndIDsTracker::s_expr_name_of(IntegerVariableID id) const -> string
             name << (vv.negate_first ? "-" : "");
             name << name_of(vv.actual_variable) << " + " << to_string(vv.then_add.raw_value) << ")";
             return name.str();
-            throw UnimplementedException{};
         }}
         .visit(id);
 }
