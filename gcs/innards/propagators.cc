@@ -10,18 +10,13 @@
 #include <util/overloaded.hh>
 
 #include <algorithm>
-#include <bit>
-#include <chrono>
-#include <list>
 #include <utility>
 
 using namespace gcs;
 using namespace gcs::innards;
 
 using std::atomic;
-using std::bit_ceil;
 using std::move;
-using std::nullopt;
 using std::optional;
 using std::to_underlying;
 using std::pair;

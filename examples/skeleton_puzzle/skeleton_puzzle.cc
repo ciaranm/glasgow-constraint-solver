@@ -3,10 +3,10 @@
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
+#include <cmath>
 #include <iostream>
 #include <optional>
 #include <string>
-#include <cmath>
 
 #include <version>
 
@@ -26,8 +26,6 @@ using std::cout;
 using std::endl;
 using std::make_optional;
 using std::nullopt;
-using std::optional;
-using std::pow;
 using std::string;
 using std::vector;
 
@@ -36,7 +34,6 @@ using std::print;
 using std::println;
 #else
 using fmt::print;
-using fmt::println;
 #endif
 
 auto constrain_digit_sum(Problem & p, vector<SimpleIntegerVariableID> digits, SimpleIntegerVariableID number) -> void

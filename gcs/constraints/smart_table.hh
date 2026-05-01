@@ -51,8 +51,10 @@ namespace gcs
     using SmartTuples = std::vector<std::vector<SmartEntry>>;
 
     /**
-     * \brief Constrain that the specified variables are equal to one of the specified
-     * smart tuples.
+     * \brief Constrain that the specified variables are equal to one of the
+     * specified smart tuples. "short_reasons" uses aliases for reasons when
+     * proof logging is enabled, which can result in shorter proofs.
+     *
      *
      * \ingroup Constraints
      * \see Table
@@ -62,9 +64,10 @@ namespace gcs
     private:
         const std::vector<IntegerVariableID> _vars;
         SmartTuples _tuples;
+        bool _short_reasons;
 
     public:
-        explicit SmartTable(std::vector<IntegerVariableID> vars, SmartTuples tuples);
+        explicit SmartTable(std::vector<IntegerVariableID> vars, SmartTuples tuples, bool short_reasons = true);
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
         virtual auto install(innards::Propagators &, innards::State &,
             innards::ProofModel * const) && -> void override;

@@ -25,22 +25,15 @@
 using namespace gcs;
 using namespace gcs::innards;
 
-using std::cmp_equal;
 using std::cmp_less;
 using std::cmp_not_equal;
 using std::list;
-using std::make_optional;
-using std::make_pair;
 using std::map;
-using std::move;
 using std::nullopt;
 using std::optional;
-using std::pair;
 using std::size_t;
 using std::string;
 using std::stringstream;
-using std::tuple;
-using std::unique_ptr;
 using std::vector;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
@@ -151,7 +144,7 @@ auto gcs::innards::circuit::prevent_small_cycles(
             auto justf = [&](const ReasonFunction &) {
                 output_cycle_to_proof(succ, i, length, pos_var_data, state, *logger, Integer{end[i]}, Integer{i});
             };
-            inference.infer(logger, succ[end[i]] != Integer{i}, JustifyExplicitly{justf}, generic_reason(state, succ));
+            inference.infer(logger, succ[end[i]] != Integer{i}, JustifyExplicitlyThenRUP{justf}, generic_reason(state, succ));
         }
         else {
             inference.infer(logger, succ[end[i]] == Integer{i}, JustifyUsingRUP{}, generic_reason(state, succ));

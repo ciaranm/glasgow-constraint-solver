@@ -3,7 +3,6 @@
 #include <gcs/constraints/smart_table.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_model.hh>
-#include <optional>
 #include <sstream>
 #include <utility>
 #include <version>
@@ -15,7 +14,6 @@
 
 using std::min;
 using std::move;
-using std::optional;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;

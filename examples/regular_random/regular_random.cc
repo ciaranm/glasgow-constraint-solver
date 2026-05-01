@@ -20,10 +20,8 @@ using std::iota;
 using std::make_optional;
 using std::mt19937;
 using std::nullopt;
-using std::pair;
 using std::random_device;
 using std::shuffle;
-using std::ssize;
 using std::string;
 using std::stringstream;
 using std::uniform_int_distribution;
@@ -37,11 +35,9 @@ auto index_of(const IntegerVariableID & val, const vector<IntegerVariableID> & v
     return (int)pos;
 }
 
-auto test_regular(const int & n, mt19937 & rng, bool prove)
+auto post_random_regular(Problem & p, const int & n, mt19937 & rng, bool short_reasons)
 {
     stringstream string_rep;
-
-    Problem p;
 
     auto x = p.create_integer_variable_vector(n, 0_i, Integer{n - 1}, "x");
     uniform_int_distribution<> dist_2_to_4n(2, 4 * n);
@@ -84,18 +80,7 @@ auto test_regular(const int & n, mt19937 & rng, bool prove)
         }
     }
 
-    p.post(Regular{x, symbols, num_states, transitions, final_states});
-
-    solve_with(p,
-        SolveCallbacks{
-            .solution = [&](const CurrentState &) -> bool {
-                return true;
-            }},
-        prove ? make_optional(ProofOptions{"random_regular"}) : nullopt);
-
-    //        cout << "Num solutions: " << stats.solutions << endl;
-
-    return true;
+    p.post(Regular{x, symbols, num_states, transitions, final_states, short_reasons});
 }
 
 auto main(int argc, char * argv[]) -> int
@@ -104,11 +89,14 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program Options")                                                                         //
-            ("help", "Display help information")                                                                       //
-            ("prove", "Create a proof")                                                                                //
-            ("seed", "Seed for random DFA generator (-1 for random seed)", cxxopts::value<int>()->default_value("-1")) //
-            ("n", "Max sequence length", cxxopts::value<int>()->default_value("6"));
+        options.add_options("Program Options")                                                                                     //
+            ("help", "Display help information")                                                                                   //
+            ("prove", "Create a proof")                                                                                            //
+            ("seed", "Seed for random DFA generator (-1 for random seed)", cxxopts::value<int>()->default_value("-1"))             //
+            ("n", "Number of variables in the sequence", cxxopts::value<int>()->default_value("6"))                                //
+            ("stats", "Print stats, including solve time")                                                                         //
+            ("proof-prefix", "Alternative path and name for the proof", cxxopts::value<string>()->default_value("regular_random")) //
+            ("short-reasons", "Use short reasons method");
 
         options_vars = options.parse(argc, argv);
     }
@@ -126,22 +114,33 @@ auto main(int argc, char * argv[]) -> int
     }
 
     auto seed = options_vars["seed"].as<int>();
-    auto max_n = options_vars["n"].as<int>();
+    auto n = options_vars["n"].as<int>();
+    auto prove = options_vars.contains("prove");
+    auto print_stats = options_vars.contains("stats");
+    auto short_reasons = options_vars.contains("short-reasons");
+    auto proof_prefix = options_vars["proof-prefix"].as<string>();
 
     if (seed == -1) {
         random_device rand_dev;
         seed = rand_dev();
     }
+
     std::mt19937 rng(seed);
     // cout << "Seed for random DFAs for Regular: " << seed << endl;
     //    mt19937 rng(0); // Switch to this to have it the same every time.
-    for (int n = 3; n < max_n; n++) {
-        for (int r = 0; r < 10 / n; r++) {
-            if (! test_regular(n, rng, options_vars.contains("prove"))) {
-                cout << "n == " << n << " r == " << r << endl;
-                return EXIT_FAILURE;
-            }
-        }
+    auto p = Problem{};
+    post_random_regular(p, n, rng, short_reasons);
+
+    auto stats = solve_with(p,
+        SolveCallbacks{
+            .solution = [&](const CurrentState &) -> bool {
+                return false;
+            }},
+        prove ? make_optional(ProofOptions{proof_prefix}) : nullopt);
+
+    if (print_stats) {
+        cout << "seed: " << seed << endl;
+        cout << stats << endl;
     }
 
     return EXIT_SUCCESS;

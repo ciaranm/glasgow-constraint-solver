@@ -9,8 +9,6 @@
 #include <gcs/reification.hh>
 
 #include <any>
-#include <concepts>
-#include <exception>
 #include <functional>
 #include <memory>
 #include <optional>

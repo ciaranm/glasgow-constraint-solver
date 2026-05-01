@@ -14,7 +14,6 @@
 #include <map>
 #include <sstream>
 #include <string>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -44,13 +43,11 @@ using std::list;
 using std::map;
 using std::max;
 using std::min;
-using std::nullopt;
 using std::optional;
 using std::pair;
 using std::string;
 using std::stringstream;
 using std::to_string;
-using std::unordered_map;
 using std::variant;
 using std::vector;
 using std::visit;
@@ -73,6 +70,8 @@ struct NamesAndIDsTracker::Imp
     map<SimpleOrProofOnlyIntegerVariableID, pair<Integer, vector<pair<Integer, XLiteral>>>> integer_variable_bits_to_size_and_proof_vars;
     map<SimpleOrProofOnlyIntegerVariableID, pair<Integer, Integer>> integer_variable_definition_bounds;
     map<SimpleOrProofOnlyIntegerVariableID, map<Integer, pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>>>> gevars_that_exist;
+    map<SimpleOrProofOnlyIntegerVariableID, map<Integer, pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>>>> eqvars_that_exist;
+
     map<ProofFlag, XLiteral> flags;
 
     map<SimpleOrProofOnlyIntegerVariableID, string> id_names;
@@ -104,7 +103,8 @@ NamesAndIDsTracker::NamesAndIDsTracker(const ProofOptions & proof_options) :
             _imp->variables_map_file->exceptions(ios::failbit | ios::badbit);
             _imp->variables_map_file->open(_imp->variables_map_file_name, ios::out);
             *_imp->variables_map_file << "{\n";
-        } catch (const ios_base::failure &) {
+        }
+        catch (const ios_base::failure &) {
             throw ProofError{"Error writing proof variables mapping file to '" + _imp->variables_map_file_name + "'"};
         }
     }
@@ -124,7 +124,8 @@ auto NamesAndIDsTracker::finalise() -> void
     if (_imp->variables_map_file) {
         try {
             *_imp->variables_map_file << "\n}\n";
-        } catch (const ios_base::failure &) {
+        }
+        catch (const ios_base::failure &) {
             throw ProofError{"Error writing proof variables mapping file to '" + _imp->variables_map_file_name + "'"};
         }
     }
@@ -208,9 +209,11 @@ auto NamesAndIDsTracker::need_pol_item_defining_literal(const IntegerVariableCon
                 need_gevar(var, cond.value);
                 return _imp->gevars_that_exist.at(var).at(cond.value).second;
             case Equal:
-                throw UnimplementedException{};
+                need_direct_encoding_for(var, cond.value);
+                return _imp->eqvars_that_exist.at(var).at(cond.value).first;
             case NotEqual:
-                throw UnimplementedException{};
+                need_direct_encoding_for(var, cond.value);
+                return _imp->eqvars_that_exist.at(var).at(cond.value).second;
             }
             throw NonExhaustiveSwitch{};
         },
@@ -372,6 +375,12 @@ auto NamesAndIDsTracker::allocate_flag_index() -> unsigned long long
     return _imp->flags.size() / 2;
 }
 
+auto NamesAndIDsTracker::track_eqvar(SimpleIntegerVariableID id, Integer val,
+    const pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>> & names) -> void
+{
+    _imp->eqvars_that_exist[id].emplace(val, names);
+}
+
 auto NamesAndIDsTracker::track_gevar(SimpleIntegerVariableID id, Integer val,
     const pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>> & names) -> void
 {
@@ -388,19 +397,22 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
     _imp->variable_conditions_to_x.emplace(id != v, ! eqvar);
 
     auto bounds = _imp->integer_variable_definition_bounds.find(id);
+    ProofLine forwards_line, reverse_line;
     if (bounds != _imp->integer_variable_definition_bounds.end() && bounds->second.first == v) {
         // it's a lower bound
         if (_imp->logger) {
             visit([&](const auto & id) {
-                _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + 1_i * ! (id >= (v + 1_i)) >= 1_i,
+                auto [_f_line, _r_line] = _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + 1_i * ! (id >= (v + 1_i)) >= 1_i,
                     id == v, ProofLevel::Top);
+                forwards_line = _f_line;
+                reverse_line = _r_line;
             },
                 id);
         }
         else {
             visit([&](const auto & id) {
-                _imp->model->add_constraint(WPBSum{} + 1_i * ! (id >= (v + 1_i)) >= 1_i, {{id == v}});
-                _imp->model->add_constraint(WPBSum{} + 1_i * (id >= (v + 1_i)) >= 1_i, {{id != v}});
+                forwards_line = *_imp->model->add_constraint(WPBSum{} + 1_i * ! (id >= (v + 1_i)) >= 1_i, {{id == v}});
+                reverse_line = *_imp->model->add_constraint(WPBSum{} + 1_i * (id >= (v + 1_i)) >= 1_i, {{id != v}});
             },
                 id);
             ++_imp->model_variables;
@@ -410,14 +422,16 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
         // it's an upper bound
         if (_imp->logger) {
             visit([&](const auto & id) {
-                _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + 1_i * (id >= v) >= 1_i, id == v, ProofLevel::Top);
+                auto [_f_line, _r_line] = _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + 1_i * (id >= v) >= 1_i, id == v, ProofLevel::Top);
+                forwards_line = _f_line;
+                reverse_line = _r_line;
             },
                 id);
         }
         else {
             visit([&](const auto & id) {
-                _imp->model->add_constraint(WPBSum{} + 1_i * (id >= v) >= 1_i, {{id == v}});
-                _imp->model->add_constraint(WPBSum{} + 1_i * ! (id >= v) >= 1_i, {{id != v}});
+                forwards_line = *_imp->model->add_constraint(WPBSum{} + 1_i * (id >= v) >= 1_i, {{id == v}});
+                reverse_line = *_imp->model->add_constraint(WPBSum{} + 1_i * ! (id >= v) >= 1_i, {{id != v}});
             },
                 id);
             ++_imp->model_variables;
@@ -427,20 +441,24 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
         // neither a lower nor an upper bound
         if (_imp->logger)
             visit([&](const auto & id) {
-                _imp->logger->emit_red_proof_lines_reifying(
+                auto [_f_line, _r_line] = _imp->logger->emit_red_proof_lines_reifying(
                     WPBSum{} + (1_i * (id >= v)) + (1_i * ! (id >= (v + 1_i))) >= 2_i,
                     id == v, ProofLevel::Top);
+                forwards_line = _f_line;
+                reverse_line = _r_line;
             },
                 id);
         else {
             visit([&](const auto & id) {
-                _imp->model->add_constraint(WPBSum{} + 1_i * (id >= v) + 1_i * ! (id >= v + 1_i) >= 2_i, {{id == v}});
-                _imp->model->add_constraint(WPBSum{} + 1_i * ! (id >= v) + 1_i * (id >= v + 1_i) >= 1_i, {{id != v}});
+                forwards_line = *_imp->model->add_constraint(WPBSum{} + 1_i * (id >= v) + 1_i * ! (id >= v + 1_i) >= 2_i, {{id == v}});
+                reverse_line = *_imp->model->add_constraint(WPBSum{} + 1_i * ! (id >= v) + 1_i * (id >= v + 1_i) >= 1_i, {{id != v}});
             },
                 id);
             ++_imp->model_variables;
         }
     }
+
+    _imp->eqvars_that_exist[id].emplace(v, pair{forwards_line, reverse_line});
 }
 
 auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> void
@@ -492,17 +510,48 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
     auto this_gevar = other_gevars.find(v);
     auto higher_gevar = next(this_gevar);
 
+    auto make_pol_chain_line = [&](IntegerVariableCondition cond1, IntegerVariableCondition cond2) -> string {
+        std::stringstream pol;
+        pol << "pol ";
+        for (const auto & cond : {! cond1, ! cond2}) {
+            auto item = need_pol_item_defining_literal(cond);
+            overloaded{
+                [&](ProofLine & p) -> void { pol << p; },
+                [&](XLiteral & x) -> void { pol << pb_file_string_for(x); }}
+                .visit(item);
+            pol << " ";
+        }
+        pol << " + s ;";
+        return pol.str();
+    };
+
     // implied by the next highest gevar, if there is one?
-    if (higher_gevar != other_gevars.end())
-        visit([&](auto id) { emit_proof_line_now_or_at_start([c = WPBSum{} + (1_i * (id >= v)) + (1_i * ! (id >= higher_gevar->first)) >= 1_i](ProofLogger * const logger) {
-                                 logger->emit_rup_proof_line(c, ProofLevel::Top);
-                             }); }, id);
+    if (higher_gevar != other_gevars.end()) {
+        overloaded{
+            [&](const ProofOnlySimpleIntegerVariableID & id) {
+                auto chain_con = WPBSum{} + (1_i * (id >= v)) + (1_i * ! (id >= higher_gevar->first)) >= 1_i;
+                emit_proof_line_now_or_at_start([c = chain_con](ProofLogger * const logger) { logger->emit_rup_proof_line(c, ProofLevel::Top); });
+            },
+            [&](const SimpleIntegerVariableID & id) {
+                auto pol_line = make_pol_chain_line(id >= v, ! (id >= higher_gevar->first));
+                emit_proof_line_now_or_at_start([p = pol_line](ProofLogger * const logger) { logger->emit_proof_line(p, ProofLevel::Top); });
+            }}
+            .visit(id);
+    }
 
     // implies the next lowest gevar, if there is one?
-    if (this_gevar != other_gevars.begin())
-        visit([&](auto id) { emit_proof_line_now_or_at_start([c = WPBSum{} + (1_i * (id >= prev(this_gevar)->first)) + (1_i * ! (id >= v)) >= 1_i](ProofLogger * const logger) {
-                                 logger->emit_rup_proof_line(c, ProofLevel::Top);
-                             }); }, id);
+    if (this_gevar != other_gevars.begin()) {
+        overloaded{
+            [&](const ProofOnlySimpleIntegerVariableID & id) {
+                auto chain_con = WPBSum{} + (1_i * (id >= prev(this_gevar)->first)) + (1_i * ! (id >= v)) >= 1_i;
+                emit_proof_line_now_or_at_start([c = chain_con](ProofLogger * const logger) { logger->emit_rup_proof_line(c, ProofLevel::Top); });
+            },
+            [&](const SimpleIntegerVariableID & id) {
+                auto pol_line = make_pol_chain_line(id >= prev(this_gevar)->first, ! (id >= v));
+                emit_proof_line_now_or_at_start([p = pol_line](ProofLogger * const logger) { logger->emit_proof_line(p, ProofLevel::Top); });
+            }}
+            .visit(id);
+    }
 }
 
 auto NamesAndIDsTracker::track_bounds(const SimpleOrProofOnlyIntegerVariableID & id, Integer lower, Integer upper) -> void
@@ -623,7 +672,8 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning(SimpleOrProofOnlyIntegerVaria
             data["value"] = value.raw_value;
 
             write_vardata(*_imp->variables_map_file, _imp->first_varmap_entry, pb_file_string_for(result), data);
-        } catch (const ios_base::failure &) {
+        }
+        catch (const ios_base::failure &) {
             throw ProofError{"Error writing proof variables mapping file to '" + _imp->variables_map_file_name + "'"};
         }
     }
@@ -648,7 +698,8 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning(ProofFlag flag) -> XLiteral
             data["name"] = name_of(flag);
 
             write_vardata(*_imp->variables_map_file, _imp->first_varmap_entry, pb_file_string_for(result), data);
-        } catch (const ios_base::failure &) {
+        }
+        catch (const ios_base::failure &) {
             throw ProofError{"Error writing proof variables mapping file to '" + _imp->variables_map_file_name + "'"};
         }
     }
@@ -693,7 +744,8 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning_negative_bit_of(SimpleOrProof
             data["power"] = power.raw_value;
 
             write_vardata(*_imp->variables_map_file, _imp->first_varmap_entry, pb_file_string_for(result), data);
-        } catch (const ios_base::failure &) {
+        }
+        catch (const ios_base::failure &) {
             throw ProofError{"Error writing proof variables mapping file to '" + _imp->variables_map_file_name + "'"};
         }
     }
@@ -739,7 +791,8 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning_bit_of(SimpleOrProofOnlyInteg
             data["power"] = power.raw_value;
 
             write_vardata(*_imp->variables_map_file, _imp->first_varmap_entry, pb_file_string_for(result), data);
-        } catch (const ios_base::failure &) {
+        }
+        catch (const ios_base::failure &) {
             throw ProofError{"Error writing proof variables mapping file to '" + _imp->variables_map_file_name + "'"};
         }
     }

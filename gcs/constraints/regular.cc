@@ -17,11 +17,8 @@
 #include <any>
 #include <cstdio>
 #include <functional>
-#include <list>
-#include <optional>
 #include <set>
 #include <sstream>
-#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -32,13 +29,8 @@ using namespace gcs::innards;
 
 using std::any_cast;
 using std::cmp_less;
-using std::cmp_not_equal;
-using std::getline;
 using std::ios;
 using std::move;
-using std::optional;
-using std::pair;
-using std::rename;
 using std::set;
 using std::string;
 using std::stringstream;
@@ -250,10 +242,31 @@ namespace
         const ConstraintStateHandle & graph_handle,
         const State & state,
         auto & inference,
-        ProofLogger * const logger) -> void
+        ProofLogger * const logger,
+        const bool short_reasons) -> void
     {
         auto & graph = any_cast<RegularGraph &>(state.get_constraint_state(graph_handle));
-        auto reason = generic_reason(state, vars);
+        auto gen_reason = generic_reason(state, vars);
+
+        ReasonFunction reason;
+        ProofLine reason_definition_1, reason_definition_2;
+
+        if (logger && short_reasons) {
+            auto reason_sum = WPBSum{};
+            for (const auto & lit : gen_reason()) {
+                reason_sum += 1_i * get<ProofLiteral>(lit);
+            }
+            // We will manually delete this later.
+            auto [_reason_short, _line1, _line2] =
+                logger->create_proof_flag_reifying(reason_sum >= Integer(reason_sum.terms.size()), "", ProofLevel::Top);
+            ProofFlag reason_short = _reason_short;
+            reason_definition_1 = _line1;
+            reason_definition_2 = _line2;
+            reason = singleton_reason(reason_short);
+        }
+        else {
+            reason = gen_reason;
+        }
 
         if (! graph.initialised)
             initialise_graph(graph, vars, num_states, transitions, final_states, state_at_pos_flags, state, reason, logger);
@@ -296,24 +309,33 @@ namespace
                     inference.infer_not_equal(logger, vars[i], val, JustifyUsingRUP{}, reason);
             }
         }
+
+        // // Need to check later whether this is safe to do now we have enumeration proofs
+        // if (logger && short_reasons) {
+        //     if (short_reasons) {
+        //         logger->delete_range(reason_definition_1, reason_definition_2 + 1);
+        //     }
+        // }
     }
 }
 
-Regular::Regular(vector<IntegerVariableID> v, vector<Integer> s, long n, vector<unordered_map<Integer, long>> t, vector<long> f) :
+Regular::Regular(vector<IntegerVariableID> v, vector<Integer> s, long n, vector<unordered_map<Integer, long>> t, vector<long> f, bool sr) :
     _vars(move(v)),
     _symbols(move(s)),
     _num_states(n),
     _transitions(move(t)),
-    _final_states(move(f))
+    _final_states(move(f)),
+    _short_reasons(sr)
 {
 }
 
-Regular::Regular(vector<IntegerVariableID> v, vector<Integer> s, long n, vector<vector<long>> transitions, vector<long> f) :
+Regular::Regular(vector<IntegerVariableID> v, vector<Integer> s, long n, vector<vector<long>> transitions, vector<long> f, bool sr) :
     _vars(move(v)),
     _symbols(move(s)),
     _num_states(n),
     _transitions(vector<unordered_map<Integer, long>>(n, unordered_map<Integer, long>{})),
-    _final_states(move(f))
+    _final_states(move(f)),
+    _short_reasons(sr)
 {
     for (size_t i = 0; i < transitions.size(); i++) {
         for (size_t j = 0; j < transitions[i].size(); j++) {
@@ -324,7 +346,7 @@ Regular::Regular(vector<IntegerVariableID> v, vector<Integer> s, long n, vector<
 
 auto Regular::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<Regular>(_vars, _symbols, _num_states, _transitions, _final_states);
+    return make_unique<Regular>(_vars, _symbols, _num_states, _transitions, _final_states, _short_reasons);
 }
 
 auto Regular::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
@@ -377,9 +399,9 @@ auto Regular::install(Propagators & propagators, State & initial_state, ProofMod
 
     RegularGraph graph = RegularGraph(_vars.size(), _num_states);
     auto graph_idx = initial_state.add_constraint_state(graph);
-    propagators.install([v = move(_vars), n = _num_states, t = move(_transitions), f = move(_final_states), g = graph_idx, flags = state_at_pos_flags](
+    propagators.install([v = move(_vars), n = _num_states, t = move(_transitions), f = move(_final_states), g = graph_idx, flags = state_at_pos_flags, sr = _short_reasons](
                             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-        propagate_regular(v, n, t, f, flags, g, state, inference, logger);
+        propagate_regular(v, n, t, f, flags, g, state, inference, logger, sr);
         return PropagatorState::Enable;
     },
         triggers, "regular");

@@ -5,7 +5,6 @@
 #include <gcs/search_heuristics.hh>
 #include <gcs/solve.hh>
 
-#include <algorithm>
 #include <array>
 #include <cstdlib>
 #include <fstream>

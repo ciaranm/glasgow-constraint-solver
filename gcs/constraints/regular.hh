@@ -6,13 +6,14 @@
 #include <gcs/variable_id.hh>
 #include <unordered_map>
 #include <vector>
-
 namespace gcs
 {
     /**
      * \brief Constrain that the sequence of variables is a member of the
      * language recognised by the given Deterministic Finite Automaton,
-     * equivalent to a regex expression.
+     * equivalent to a regex expression. "short_reasons" uses aliases for
+     * reasons when proof logging is enabled, which can result in shorter
+     * proofs.
      *
      * \ingroup Constraints
      */
@@ -24,18 +25,20 @@ namespace gcs
         const long _num_states;
         std::vector<std::unordered_map<Integer, long>> _transitions;
         const std::vector<long> _final_states;
+        const bool _short_reasons;
 
     public:
         explicit Regular(std::vector<IntegerVariableID> vars,
             std::vector<Integer> symbols,
             long num_states,
             std::vector<std::unordered_map<Integer, long>> transitions,
-            std::vector<long> final_states);
+            std::vector<long> final_states, bool short_reasons = true);
 
         explicit Regular(std::vector<IntegerVariableID> v,
             std::vector<Integer> s,
-            long n, std::vector<std::vector<long>> transitions,
-            std::vector<long> f);
+            long n, std::vector<std::vector<long>> t,
+            std::vector<long> f,
+            bool sr = true);
 
         virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;

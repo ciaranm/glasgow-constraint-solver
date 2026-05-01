@@ -24,8 +24,6 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::max;
-using std::optional;
-using std::pair;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
@@ -36,7 +34,6 @@ using std::print;
 using std::println;
 #else
 using fmt::print;
-using fmt::println;
 #endif
 
 Abs::Abs(const IntegerVariableID v1, const IntegerVariableID v2) :
@@ -82,7 +79,7 @@ auto Abs::install(Propagators & propagators, State & initial_state,
                 auto just = [v1, v2, val, logger](const ReasonFunction & reason) {
                     justify_abs_hole(*logger, reason, v1, v2, val);
                 };
-                inference.infer_not_equal(logger, v2, val, JustifyExplicitly{just}, ReasonFunction{[=]() { return Reason{{v1 != val, v1 != -val}}; }});
+                inference.infer_not_equal(logger, v2, val, JustifyExplicitlyThenRUP{just}, ReasonFunction{[=]() { return Reason{{v1 != val, v1 != -val}}; }});
             }
         }
 

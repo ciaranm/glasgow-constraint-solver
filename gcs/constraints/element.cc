@@ -24,7 +24,6 @@
 #include <functional>
 #include <memory>
 #include <optional>
-#include <set>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -33,20 +32,14 @@
 using namespace gcs;
 using namespace gcs::innards;
 
-using std::array;
 using std::function;
-using std::make_shared;
 using std::max;
 using std::min;
 using std::optional;
-using std::pair;
-using std::set;
-using std::shared_ptr;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
 using std::vector;
-using std::visit;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::print;
@@ -279,7 +272,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install(innards::Propagators 
                 };
 
                 if (! look_for_support(0)) {
-                    inference.infer_not_equal(logger, index_vars.at(fixed_dim), test_val, JustifyExplicitly{[&](const ReasonFunction & reason) {
+                    inference.infer_not_equal(logger, index_vars.at(fixed_dim), test_val, JustifyExplicitlyThenRUP{[&](const ReasonFunction & reason) {
                         // show there's no overlap between array_var and result, for any way the other
                         // index vars are assigned
                         vector<size_t> elem;
@@ -381,7 +374,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install(innards::Propagators 
                     reason.push_back(ge ? (var >= relevant_bound) : (var < relevant_bound + 1_i));
                 reason.push_back(result_var >= current_bounds.first);
                 reason.push_back(result_var < current_bounds.second + 1_i);
-                inference.infer(logger, lit_to_infer, JustifyExplicitly{[&](const ReasonFunction & reason) {
+                inference.infer(logger, lit_to_infer, JustifyExplicitlyThenRUP{[&](const ReasonFunction & reason) {
                     // show that it doesn't work for any feasible choice of indices
                     WPBSum sum_so_far;
                     function<auto(unsigned)->void> rule_out = [&](unsigned d) {
@@ -455,7 +448,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install(innards::Propagators 
                 Reason reason = generic_reason(state, index_vars)();
                 for (const auto & var : considered_vars)
                     reason.push_back(var != value);
-                inference.infer_not_equal(logger, result_var, value, JustifyExplicitly{[&](const ReasonFunction & reason) {
+                inference.infer_not_equal(logger, result_var, value, JustifyExplicitlyThenRUP{[&](const ReasonFunction & reason) {
                     // show that it doesn't work for any feasible choice of indices
                     WPBSum sum_so_far;
                     function<auto(unsigned)->void> rule_out = [&](unsigned d) {

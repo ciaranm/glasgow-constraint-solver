@@ -10,9 +10,6 @@
 using namespace gcs;
 
 using std::cout;
-using std::endl;
-using std::make_optional;
-using std::nullopt;
 using std::vector;
 
 auto main(int, char *[]) -> int

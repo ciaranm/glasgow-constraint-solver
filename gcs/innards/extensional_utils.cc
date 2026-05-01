@@ -3,8 +3,6 @@
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/state.hh>
 
-using std::optional;
-using std::pair;
 using std::vector;
 using std::visit;
 

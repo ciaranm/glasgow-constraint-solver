@@ -3,8 +3,8 @@
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
+#include <algorithm>
 #include <cstdlib>
-#include <functional>
 #include <iostream>
 #include <optional>
 #include <random>
@@ -14,17 +14,15 @@
 #include <vector>
 
 using std::cerr;
+using std::count_if;
 using std::flush;
-using std::function;
 using std::make_optional;
 using std::mt19937;
 using std::nullopt;
-using std::optional;
 using std::pair;
 using std::random_device;
 using std::set;
 using std::string;
-using std::to_string;
 using std::tuple;
 using std::uniform_int_distribution;
 using std::vector;

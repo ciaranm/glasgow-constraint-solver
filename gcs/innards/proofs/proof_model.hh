@@ -12,7 +12,6 @@
 #include <memory>
 #include <optional>
 #include <type_traits>
-#include <variant>
 #include <vector>
 
 namespace gcs::innards

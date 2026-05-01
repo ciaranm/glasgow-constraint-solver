@@ -5,9 +5,6 @@
 #include <gcs/constraints/circuit/circuit_base.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/variable_id.hh>
-#include <list>
-#include <map>
-#include <optional>
 #include <vector>
 
 namespace gcs
@@ -20,6 +17,8 @@ namespace gcs
         bool prune_within = true;
         bool prove_using_dominance = false;
         bool enable_comments = true;
+        bool prove_am1_by_contradiction = true;
+        bool short_reasons = true;
     };
 
     class CircuitSCC : public innards::circuit::CircuitBase

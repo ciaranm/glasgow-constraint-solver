@@ -21,7 +21,6 @@
 using namespace gcs;
 using namespace gcs::innards;
 
-using std::make_optional;
 using std::make_pair;
 using std::nullopt;
 using std::optional;
@@ -231,16 +230,16 @@ auto ReifiedLinearInequality::install(Propagators & propagators, State & state, 
                                 // cannot possibly hold
                                 auto just = [&](const ReasonFunction &) { return justify_cond(state, sanitised_cv, *logger, proof_lines.value()); };
                                 if (reif.set_not_cond_if_must_not_hold)
-                                    inference.infer(logger, ! reif.cond, JustifyExplicitly{just}, generic_reason(state, vars));
+                                    inference.infer(logger, ! reif.cond, JustifyExplicitlyThenRUP{just}, generic_reason(state, vars));
                                 return PropagatorState::DisableUntilBacktrack;
                             }
                             else if (max_possible <= value + modifier) {
                                 // must definitely hold
                                 auto just = [&](const ReasonFunction &) { return justify_cond(state, sanitised_neg_cv, *logger, proof_lines_swapped.value()); };
                                 if (reif.set_cond_if_must_hold)
-                                    inference.infer(logger, reif.cond, JustifyExplicitly{just}, generic_reason(state, vars));
+                                    inference.infer(logger, reif.cond, JustifyExplicitlyThenRUP{just}, generic_reason(state, vars));
                                 else if (reif.set_not_cond_if_must_hold)
-                                    inference.infer(logger, ! reif.cond, JustifyExplicitly{just}, generic_reason(state, vars));
+                                    inference.infer(logger, ! reif.cond, JustifyExplicitlyThenRUP{just}, generic_reason(state, vars));
                                 return PropagatorState::DisableUntilBacktrack;
                             }
                             else {

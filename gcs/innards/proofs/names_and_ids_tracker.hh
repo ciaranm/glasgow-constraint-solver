@@ -13,7 +13,6 @@
 #include <gcs/variable_id.hh>
 
 #include <memory>
-#include <optional>
 #include <string>
 #include <utility>
 #include <variant>
@@ -227,6 +226,13 @@ namespace gcs::innards
          */
         auto track_bits(const SimpleOrProofOnlyIntegerVariableID & id, Integer negative_coeff,
             const std::vector<std::pair<Integer, XLiteral>> & bit_vars) -> void;
+
+        /**
+         * Track that a given equality variable exists, and has a string name
+         * and associated defining constraints.
+         */
+        auto track_eqvar(SimpleIntegerVariableID, Integer,
+            const std::pair<std::variant<ProofLine, XLiteral>, std::variant<ProofLine, XLiteral>> &) -> void;
 
         /**
          * Track that a given greater-or-equal variable exists, and has a string name

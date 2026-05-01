@@ -1,6 +1,5 @@
 #include <gcs/stats.hh>
 
-#include <algorithm>
 #include <chrono>
 #include <ostream>
 

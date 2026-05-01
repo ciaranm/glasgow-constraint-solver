@@ -25,7 +25,6 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::optional;
-using std::pair;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
@@ -177,7 +176,7 @@ namespace
                                     logger->emit_rup_proof_line_under_reason(reason,
                                         WPBSum{} + 1_i * l >= 1_i, ProofLevel::Temporary);
                             };
-                            inference.infer(logger, full_reif, JustifyExplicitly{justf}, ReasonFunction{[=]() {
+                            inference.infer(logger, full_reif, JustifyExplicitlyThenRUP{justf}, ReasonFunction{[=]() {
                                 vector<ProofLiteral> reason_lits{};
                                 for (auto & l : lits)
                                     reason_lits.emplace_back(l);

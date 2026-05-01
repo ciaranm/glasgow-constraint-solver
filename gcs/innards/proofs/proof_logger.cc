@@ -9,7 +9,6 @@
 
 #include <deque>
 #include <fstream>
-#include <iomanip>
 #include <sstream>
 
 #include <version>
@@ -26,14 +25,11 @@ using std::fstream;
 using std::ios;
 using std::ios_base;
 using std::map;
-using std::max;
-using std::nullopt;
 using std::optional;
 using std::ostream;
 using std::pair;
 using std::string;
 using std::stringstream;
-using std::to_string;
 using std::tuple;
 using std::variant;
 using std::vector;
@@ -173,6 +169,10 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
 
     if (optional_minimise_variable_and_value)
         visit([&](const auto & id) {
+            _imp->proof << "e ";
+            emit_inequality_to(names_and_ids_tracker(), WPBSum{} + 1_i * id <= optional_minimise_variable_and_value->second - 1_i, _imp->proof);
+            _imp->proof << ":" << _imp->proof_line << ";\n";
+
             emit_rup_proof_line(WPBSum{} + 1_i * (id < optional_minimise_variable_and_value->second) >= 1_i, ProofLevel::Top);
         },
             optional_minimise_variable_and_value->first);
@@ -303,8 +303,12 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
                 record_proof_line(advance_proof_line_number(), ProofLevel::Current);
             }
         },
-        [&](const JustifyExplicitly & x) {
-            log_stacktrace();
+        [&](const JustifyExplicitlyOnly & x) {
+            auto t = temporary_proof_level();
+            x.add_proof_steps(reason);
+            forget_proof_level(t);
+        },
+        [&](const JustifyExplicitlyThenRUP & x) {
             need_lit();
             auto t = temporary_proof_level();
             x.add_proof_steps(reason);
@@ -375,8 +379,28 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<P
     emit_inequality_to(names_and_ids_tracker(), ineq, rule_line);
 
     overloaded{
-        [&](const RUPProofRule &) { rule_line << ";"; },
-        [&](const ImpliesProofRule & rule) { if (rule.line) { rule_line << " : " << *rule.line << ";"; } else { rule_line << ";"; } },
+        [&](const RUPProofRule & rule) {
+            if (rule.lines) {
+                rule_line << ": ";
+                for (auto & line : *rule.lines) {
+                    rule_line << line << ' ';
+                }
+                rule_line << " ;";
+            }
+            else {
+                rule_line << ";";
+            }
+        },
+        [&](const ImpliesProofRule & rule) {
+            if (rule.line) {
+                rule_line << ": ";
+                rule_line << *rule.line << ' ';
+                rule_line << " ;";
+            }
+            else {
+                rule_line << ";";
+            }
+        },
         [&](const AssertProofRule &) { rule_line << ";"; }}
         .visit(rule);
 
@@ -416,8 +440,20 @@ auto ProofLogger::emit_under_reason(
     }
 
     overloaded{
-        [&](const RUPProofRule &) { rule_line << ";"; },
-        [&](const ImpliesProofRule & rule) { if (rule.line) { rule_line << " : " << *rule.line << ";"; } else { rule_line << ";"; } },
+        [&](const RUPProofRule & rule) { 
+			if(rule.lines) {
+				rule_line << ": ";
+				for (const auto & line : *rule.lines) {
+					rule_line << line << " ";
+				}
+				rule_line << " ;";
+			} else {
+				rule_line << ";"; } },
+        [&](const ImpliesProofRule & rule) { if (rule.line) {
+				rule_line << ": ";
+				rule_line << *rule.line << " ";
+				rule_line << " ;";
+			} else { rule_line << ";"; } },
         [&](const AssertProofRule &) { rule_line << ";"; }}
         .visit(rule);
 
@@ -473,7 +509,8 @@ auto ProofLogger::start_proof(const ProofModel & model) -> void
         _imp->proof.open(_imp->proof_file, ios::out);
         _imp->proof << "pseudo-Boolean proof version 3.0\n";
         _imp->proof << "f " << model.number_of_constraints() << " ;\n";
-    } catch (const ios_base::failure &) {
+    }
+    catch (const ios_base::failure &) {
         throw ProofError{"Error writing proof file to '" + _imp->proof_file + "'"};
     }
     _imp->proof_line.number += model.number_of_constraints().number;
@@ -519,6 +556,11 @@ auto ProofLogger::emit_subproofs(const map<ProofGoal, Subproof> & subproofs)
     _imp->current_indent -= INDENT_WIDTH;
     write_indent();
     _imp->proof << "qed;\n";
+}
+
+auto ProofLogger::get_current_proof_line() -> ProofLineNumber
+{
+    return _imp->proof_line;
 }
 
 auto ProofLogger::emit_red_proof_line(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
@@ -601,6 +643,11 @@ auto ProofLogger::create_proof_flag_reifying(const SumLessThanEqual<Weighted<Pse
 auto ProofLogger::create_proof_flag(const string & name) -> ProofFlag
 {
     return names_and_ids_tracker().create_proof_flag(name);
+}
+
+auto ProofLogger::delete_range(ProofLine from, ProofLine up_to) -> void
+{
+    _imp->proof << "del range " << from << " " << up_to << ";\n";
 }
 
 auto ProofLogger::write_indent() -> void
