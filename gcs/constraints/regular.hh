@@ -15,6 +15,12 @@ namespace gcs
      * reasons when proof logging is enabled, which can result in shorter
      * proofs.
      *
+     * \warning The `symbols` parameter must be exactly `{0_i, 1_i, 2_i, ...}`
+     * (zero-indexed integers). The matrix-form constructor stores transitions
+     * keyed by symbol index, not symbol value, so a non-zero-based alphabet
+     * produces a mismatch between the transition table and the variable values
+     * looked up during propagation.
+     *
      * \ingroup Constraints
      */
     class Regular : public Constraint

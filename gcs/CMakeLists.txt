@@ -124,6 +124,7 @@ if(GCS_BUILD_TESTS)
     add_executable(n_value_test constraints/n_value_test.cc)
     add_executable(parity_test constraints/parity_test.cc)
     add_executable(plus_minus_test constraints/plus_minus_test.cc)
+    add_executable(regular_test constraints/regular_test.cc)
     add_executable(smart_table_test constraints/smart_table_test.cc)
     add_executable(table_test constraints/table_test.cc)
 
@@ -131,7 +132,7 @@ if(GCS_BUILD_TESTS)
             abs_test all_different_test among_test arithmetic_test comparison_test
             count_test element_test equals_test in_test inverse_test knapsack_test lex_test linear_test
             logical_test min_max_test mult_bc_test n_value_test parity_test
-            plus_minus_test smart_table_test table_test)
+            plus_minus_test regular_test smart_table_test table_test)
         target_link_libraries(${test_target} PRIVATE glasgow_constraint_solver)
     endforeach()
 
@@ -155,6 +156,7 @@ if(GCS_BUILD_TESTS)
     add_test(NAME min_max_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:min_max_test>)
     add_test(NAME mult_bc_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:mult_bc_test>)
     add_test(NAME n_value_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:n_value_test>)
+    add_test(NAME regular_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:regular_test>)
     add_test(NAME smart_table_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:smart_table_test>)
     add_test(NAME table_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:table_test>)
     add_test(NAME parity_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:parity_test>)
