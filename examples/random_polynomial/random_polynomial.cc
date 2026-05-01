@@ -18,13 +18,14 @@ using std::stringstream;
 // Posted by Michael Burr, modified by community. See post 'Timeline' for change history
 // Retrieved 2026-03-03, License - CC BY-SA 3.0
 
-template <class BidiIter>
-BidiIter random_unique(BidiIter begin, BidiIter end, size_t num_random)
+template <class BidiIter_>
+BidiIter_ random_unique(BidiIter_ begin, BidiIter_ end, size_t num_random, std::mt19937 rng)
 {
     size_t left = std::distance(begin, end);
     while (num_random--) {
-        BidiIter r = begin;
-        std::advance(r, rand() % left);
+        BidiIter_ r = begin;
+        std::uniform_int_distribution<> dist(0, left - 1);
+        std::advance(r, dist(rng));
         std::swap(*begin, *r);
         ++begin;
         --left;
@@ -98,7 +99,7 @@ auto main(int argc, char * argv[]) -> int
             indexed.emplace_back(vars[i], i);
         }
 
-        random_unique(indexed.begin(), indexed.end(), d);
+        random_unique(indexed.begin(), indexed.end(), d, rng);
 
         SimpleIntegerVariableID current_prod{0};
         if (percentage(rng) < 50) {
