@@ -85,6 +85,7 @@ namespace
         ConstraintStateHandle proof_flag_data_handle;
         ConstraintStateHandle pos_alldiff_data_handle;
     };
+
     struct SCCProofContext
     {
         const State & state;
