@@ -21,6 +21,7 @@
 #include <fmt/ostream.h>
 #endif
 
+using std::any_cast;
 using std::make_shared;
 using std::min;
 using std::move;
@@ -41,6 +42,14 @@ using fmt::print;
 
 using namespace gcs;
 using namespace gcs::innards;
+
+namespace
+{
+    struct LexState
+    {
+        size_t alpha = 0;
+    };
+}
 
 LexSmartTable::LexSmartTable(vector<IntegerVariableID> vars_1, vector<IntegerVariableID> vars_2) :
     _vars_1(move(vars_1)),
@@ -162,10 +171,28 @@ auto Lex::install(Propagators & propagators, State & initial_state, ProofModel *
     for (auto & v : _vars_2)
         triggers.on_bounds.push_back(v);
 
+    auto state_handle = initial_state.add_constraint_state(LexState{});
+
     propagators.install([vars_1 = move(_vars_1), vars_2 = move(_vars_2),
-                            prefix_equal_flags, decision_at_flags](
+                            prefix_equal_flags, decision_at_flags, state_handle](
                             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
         auto n = min(vars_1.size(), vars_2.size());
+
+        auto & lex_state = any_cast<LexState &>(state.get_constraint_state(state_handle));
+        auto alpha = lex_state.alpha;
+
+        // Advance alpha through any newly-forced-equal positions. No inferences
+        // happen here: those positions had vars_1[k] = vars_2[k] forced by a
+        // prior call (or by branching), so the bounds in the reason already
+        // imply ~decision_at[k] for all k < alpha.
+        while (alpha < n) {
+            auto b1 = state.bounds(vars_1[alpha]);
+            auto b2 = state.bounds(vars_2[alpha]);
+            if (b1.first == b1.second && b2.first == b2.second && b1.first == b2.first)
+                ++alpha;
+            else
+                break;
+        }
 
         // One reason for every inference this call: bounds of every variable.
         auto all_vars = vars_1;
@@ -175,70 +202,19 @@ auto Lex::install(Propagators & propagators, State & initial_state, ProofModel *
         // Helper: emit RUP line forcing decision_at[k] = FALSE under the reason.
         // RUP succeeds when bounds make decision_at[k] -> vars_1[k] - vars_2[k] >= 1
         // unsatisfiable: either both fixed-equal (k < alpha) or strict-infeasible
-        // (k >= alpha after RL pass found no beta).
+        // (k >= alpha and bounds say vars_1[k].hi <= vars_2[k].lo). For k beyond
+        // a prefix-blocking position, RUP chains via ~prefix_equal[blocking+1]
+        // (itself derivable from bounds + half-reif) and prefix_equal[k] ->
+        // prefix_equal[blocking+1].
         auto emit_not_d = [&](const ReasonFunction & r, size_t k) -> void {
             logger->emit_rup_proof_line_under_reason(r,
                 WPBSum{} + 1_i * ! decision_at_flags->at(k) >= 1_i,
                 ProofLevel::Temporary);
         };
 
-        // Left-to-right pass: while still in the forced-equal prefix, enforce
-        // vars_1[i] >= vars_2[i] and decide whether to stop.
-        size_t alpha = n;
         bool strict_forced = false;
 
-        for (size_t i = 0; i < n; ++i) {
-            auto b1 = state.bounds(vars_1[i]);
-            auto b2 = state.bounds(vars_2[i]);
-
-            // Scaffolding for the LR-pass tightening at position i.
-            // - For k < i (forced fixed-equal): emit ~decision_at[k].
-            // - For k > i: emit the clause "(vars_1[i] >= b2.first) OR ~prefix_equal[k+1]".
-            //   This is RUP-derivable because the chain prefix_equal[k+1] -> ... ->
-            //   prefix_equal[i+1] -> vars_1[i] = vars_2[i], combined with the bound
-            //   on vars_2[i] in the reason, forces vars_1[i] >= b2.first when
-            //   prefix_equal[k+1] is true. With these clauses available, the
-            //   framework's RUP for the inference can chain through
-            //   ~prefix_equal[k+1] -> ~prefix_equal[k] -> ... -> ~decision_at[k].
-            auto lr_proof = [&, i](const ReasonFunction & r) -> void {
-                if (! logger) return;
-                for (size_t k = 0; k < i; ++k)
-                    emit_not_d(r, k);
-                // Emit the chain clauses for prefix_equal[i+1..n], so the
-                // framework's RUP for the inference can propagate
-                // ~prefix_equal[k] through the chain.
-                for (size_t k = i; k < n; ++k) {
-                    logger->emit_rup_proof_line_under_reason(r,
-                        WPBSum{} + 1_i * (vars_1[i] >= b2.first) + 1_i * ! prefix_equal_flags->at(k + 1) >= 1_i,
-                        ProofLevel::Temporary);
-                    logger->emit_rup_proof_line_under_reason(r,
-                        WPBSum{} + 1_i * (vars_2[i] < b1.second + 1_i) + 1_i * ! prefix_equal_flags->at(k + 1) >= 1_i,
-                        ProofLevel::Temporary);
-                }
-            };
-
-            inference.infer_all(logger,
-                {vars_1[i] >= b2.first, vars_2[i] < b1.second + 1_i},
-                JustifyExplicitlyThenRUP{lr_proof}, reason);
-
-            auto nb1 = state.bounds(vars_1[i]);
-            auto nb2 = state.bounds(vars_2[i]);
-
-            if (nb1.first > nb2.second) {
-                // Strict already forced at i: constraint discharged here.
-                strict_forced = true;
-                break;
-            }
-            if (nb1.first == nb1.second && nb2.first == nb2.second && nb1.first == nb2.first) {
-                // Both fixed to the same value: keep walking.
-                continue;
-            }
-
-            alpha = i;
-            break;
-        }
-
-        if ((! strict_forced) && alpha == n) {
+        if (alpha == n) {
             // Walked off the end with everything forced equal: strict is
             // required somewhere, so infeasible.
             auto contradiction_proof = [&, n](const ReasonFunction & r) -> void {
@@ -249,24 +225,78 @@ auto Lex::install(Propagators & propagators, State & initial_state, ProofModel *
             inference.contradiction(logger, JustifyExplicitlyThenRUP{contradiction_proof}, reason);
         }
 
-        if (! strict_forced) {
-            // Right-to-left pass: any beta > alpha where strict greater is
-            // feasible? If not, strict has to happen at alpha.
-            bool strict_possible_after_alpha = false;
-            for (size_t i = n; i-- > alpha + 1;) {
-                auto b1 = state.bounds(vars_1[i]);
-                auto b2 = state.bounds(vars_2[i]);
-                if (b1.second > b2.first) {
-                    strict_possible_after_alpha = true;
+        // Tighten at alpha (the >= part of the constraint): vars_1[alpha] must
+        // be at least vars_2[alpha].lo, and vars_2[alpha] at most vars_1[alpha].hi.
+        auto b1_alpha = state.bounds(vars_1[alpha]);
+        auto b2_alpha = state.bounds(vars_2[alpha]);
+
+        // Scaffolding for the tightening at position alpha:
+        // - For k < alpha (forced fixed-equal): emit ~decision_at[k].
+        // - For k >= alpha: emit "(vars_1[alpha] >= b2.first) OR ~prefix_equal[k+1]".
+        //   Under the assumption ~(vars_1[alpha] >= b2.first), the framework's
+        //   RUP can then chain ~prefix_equal[k+1] -> ~prefix_equal[k] -> ... ->
+        //   ~decision_at[k] for k >= alpha, plus ~decision_at[alpha] from the
+        //   bound assumption directly. Symmetric clauses for vars_2[alpha].
+        auto tighten_proof = [&, alpha](const ReasonFunction & r) -> void {
+            if (! logger) return;
+            for (size_t k = 0; k < alpha; ++k)
+                emit_not_d(r, k);
+            for (size_t k = alpha; k < n; ++k) {
+                logger->emit_rup_proof_line_under_reason(r,
+                    WPBSum{} + 1_i * (vars_1[alpha] >= b2_alpha.first) + 1_i * ! prefix_equal_flags->at(k + 1) >= 1_i,
+                    ProofLevel::Temporary);
+                logger->emit_rup_proof_line_under_reason(r,
+                    WPBSum{} + 1_i * (vars_2[alpha] < b1_alpha.second + 1_i) + 1_i * ! prefix_equal_flags->at(k + 1) >= 1_i,
+                    ProofLevel::Temporary);
+            }
+        };
+
+        inference.infer_all(logger,
+            {vars_1[alpha] >= b2_alpha.first, vars_2[alpha] < b1_alpha.second + 1_i},
+            JustifyExplicitlyThenRUP{tighten_proof}, reason);
+
+        auto nb1_alpha = state.bounds(vars_1[alpha]);
+        auto nb2_alpha = state.bounds(vars_2[alpha]);
+
+        if (nb1_alpha.first > nb2_alpha.second) {
+            strict_forced = true;
+        }
+        else {
+            // Stateful gamma scan: walk from alpha+1 looking for the first
+            // position where strict-greater becomes feasible (a candidate beta)
+            // or where the equal-prefix breaks (no later witness is reachable).
+            bool found_beta = false;
+            for (size_t k = alpha + 1; k < n; ++k) {
+                auto bk1 = state.bounds(vars_1[k]);
+                auto bk2 = state.bounds(vars_2[k]);
+                if (bk1.second > bk2.first) {
+                    found_beta = true;
                     break;
                 }
+                if (bk1.second < bk2.first) {
+                    // Prefix-blocked: no k' > k can be the witness either,
+                    // because vars_1[k] = vars_2[k] is infeasible.
+                    break;
+                }
+                // bk1.second == bk2.first: strict infeasible here, but the
+                // prefix can still be equal at this position.
             }
 
-            if (! strict_possible_after_alpha) {
-                auto b1_alpha = state.bounds(vars_1[alpha]);
-                auto b2_alpha = state.bounds(vars_2[alpha]);
+            if (! found_beta) {
+                bool alpha_candidate = (nb1_alpha.second > nb2_alpha.first);
 
-                auto explicit_proof = [&, alpha, n](const ReasonFunction & r) -> void {
+                if (! alpha_candidate) {
+                    // No witness anywhere: contradiction.
+                    auto contradiction_proof = [&, n](const ReasonFunction & r) -> void {
+                        if (! logger) return;
+                        for (size_t k = 0; k < n; ++k)
+                            emit_not_d(r, k);
+                    };
+                    inference.contradiction(logger, JustifyExplicitlyThenRUP{contradiction_proof}, reason);
+                }
+
+                // alpha is the only possible witness: force strict-greater there.
+                auto force_strict_proof = [&, alpha, n](const ReasonFunction & r) -> void {
                     if (! logger) return;
                     for (size_t k = 0; k < n; ++k) {
                         if (k == alpha) continue;
@@ -275,11 +305,18 @@ auto Lex::install(Propagators & propagators, State & initial_state, ProofModel *
                 };
 
                 inference.infer_all(logger,
-                    {vars_1[alpha] >= b2_alpha.first + 1_i,
-                        vars_2[alpha] < b1_alpha.second},
-                    JustifyExplicitlyThenRUP{explicit_proof}, reason);
+                    {vars_1[alpha] >= nb2_alpha.first + 1_i,
+                        vars_2[alpha] < nb1_alpha.second},
+                    JustifyExplicitlyThenRUP{force_strict_proof}, reason);
+
+                auto fb1 = state.bounds(vars_1[alpha]);
+                auto fb2 = state.bounds(vars_2[alpha]);
+                if (fb1.first > fb2.second)
+                    strict_forced = true;
             }
         }
+
+        lex_state.alpha = alpha;
 
         // If strict is already forced at some position, the constraint is
         // fully discharged for this branch: bounds only ever tighten further,
