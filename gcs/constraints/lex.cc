@@ -3,21 +3,28 @@
 #include <gcs/constraints/smart_table.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
+#include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
+#include <gcs/innards/proofs/reification.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/reason.hh>
 #include <gcs/innards/state.hh>
+#include <memory>
 #include <sstream>
 #include <utility>
 #include <version>
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <format>
 #else
+#include <fmt/core.h>
 #include <fmt/ostream.h>
 #endif
 
+using std::make_shared;
 using std::min;
 using std::move;
+using std::shared_ptr;
 using std::size_t;
 using std::string;
 using std::stringstream;
@@ -25,8 +32,10 @@ using std::unique_ptr;
 using std::vector;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::format;
 using std::print;
 #else
+using fmt::format;
 using fmt::print;
 #endif
 
@@ -98,12 +107,53 @@ auto Lex::clone() const -> unique_ptr<Constraint>
 
 auto Lex::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
+    auto n = min(_vars_1.size(), _vars_2.size());
+
+    // Saved proof flags shared with the propagator, so per-call explicit
+    // justification functions can refer to them by name.
+    auto prefix_equal_flags = make_shared<vector<ProofFlag>>();
+    auto decision_at_flags = make_shared<vector<ProofFlag>>();
+
     if (optional_model) {
-        // Phase 2: keep delegating to LexSmartTable when a proof model is being
-        // built. Phase 3 will replace this with our own proof encoding.
-        auto smt_table = LexSmartTable{move(_vars_1), move(_vars_2)};
-        move(smt_table).install(propagators, initial_state, optional_model);
-        return;
+        // Flag-per-position OPB encoding. Two flags per position:
+        //   prefix_equal[i] = TRUE iff vars_1[j] = vars_2[j] for all j < i
+        //   decision_at[i]  = TRUE iff i is a witness deciding position
+        // plus a global disjunction saying at least one decision_at must hold.
+        for (size_t i = 0; i <= n; ++i)
+            prefix_equal_flags->push_back(optional_model->create_proof_flag(format("lex_prefix_equal_{}", i)));
+        for (size_t i = 0; i < n; ++i)
+            decision_at_flags->push_back(optional_model->create_proof_flag(format("lex_decision_at_{}", i)));
+
+        // prefix_equal[0] is unconditionally TRUE.
+        optional_model->add_constraint(WPBSum{} + 1_i * prefix_equal_flags->at(0) >= 1_i);
+
+        for (size_t i = 0; i < n; ++i) {
+            // prefix_equal[i+1] -> prefix_equal[i]
+            optional_model->add_constraint(
+                WPBSum{} + 1_i * prefix_equal_flags->at(i) >= 1_i,
+                HalfReifyOnConjunctionOf{prefix_equal_flags->at(i + 1)});
+
+            // prefix_equal[i+1] -> vars_1[i] = vars_2[i]
+            optional_model->add_constraint(
+                WPBSum{} + 1_i * _vars_1[i] + -1_i * _vars_2[i] == 0_i,
+                HalfReifyOnConjunctionOf{prefix_equal_flags->at(i + 1)});
+
+            // decision_at[i] -> prefix_equal[i]
+            optional_model->add_constraint(
+                WPBSum{} + 1_i * prefix_equal_flags->at(i) >= 1_i,
+                HalfReifyOnConjunctionOf{decision_at_flags->at(i)});
+
+            // decision_at[i] -> vars_1[i] > vars_2[i]
+            optional_model->add_constraint(
+                WPBSum{} + 1_i * _vars_1[i] + -1_i * _vars_2[i] >= 1_i,
+                HalfReifyOnConjunctionOf{decision_at_flags->at(i)});
+        }
+
+        // At least one decision_at[i] must hold.
+        WPBSum at_least_one_decision;
+        for (auto & d : *decision_at_flags)
+            at_least_one_decision += 1_i * d;
+        optional_model->add_constraint(move(at_least_one_decision) >= 1_i);
     }
 
     Triggers triggers;
@@ -115,7 +165,8 @@ auto Lex::install(Propagators & propagators, State & initial_state, ProofModel *
     // TODO: return PropagatorState::DisableUntilBacktrack once the constraint
     // is fully discharged (e.g. strict already forced at some position) instead
     // of always re-firing.
-    propagators.install([vars_1 = move(_vars_1), vars_2 = move(_vars_2)](
+    propagators.install([vars_1 = move(_vars_1), vars_2 = move(_vars_2),
+                            prefix_equal_flags, decision_at_flags](
                             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
         auto n = min(vars_1.size(), vars_2.size());
 
@@ -123,6 +174,16 @@ auto Lex::install(Propagators & propagators, State & initial_state, ProofModel *
         auto all_vars = vars_1;
         all_vars.insert(all_vars.end(), vars_2.begin(), vars_2.end());
         auto reason = bounds_reason(state, all_vars);
+
+        // Helper: emit RUP line forcing decision_at[k] = FALSE under the reason.
+        // RUP succeeds when bounds make decision_at[k] -> vars_1[k] - vars_2[k] >= 1
+        // unsatisfiable: either both fixed-equal (k < alpha) or strict-infeasible
+        // (k >= alpha after RL pass found no beta).
+        auto emit_not_d = [&](const ReasonFunction & r, size_t k) -> void {
+            logger->emit_rup_proof_line_under_reason(r,
+                WPBSum{} + 1_i * ! decision_at_flags->at(k) >= 1_i,
+                ProofLevel::Temporary);
+        };
 
         // Left-to-right pass: while still in the forced-equal prefix, enforce
         // vars_1[i] >= vars_2[i] and decide whether to stop.
@@ -133,10 +194,35 @@ auto Lex::install(Propagators & propagators, State & initial_state, ProofModel *
             auto b1 = state.bounds(vars_1[i]);
             auto b2 = state.bounds(vars_2[i]);
 
-            // Either of these may raise a contradiction internally if the
-            // tightened bound becomes infeasible.
-            inference.infer_greater_than_or_equal(logger, vars_1[i], b2.first, JustifyUsingRUP{}, reason);
-            inference.infer_less_than(logger, vars_2[i], b1.second + 1_i, JustifyUsingRUP{}, reason);
+            // Scaffolding for the LR-pass tightening at position i.
+            // - For k < i (forced fixed-equal): emit ~decision_at[k].
+            // - For k > i: emit the clause "(vars_1[i] >= b2.first) OR ~prefix_equal[k+1]".
+            //   This is RUP-derivable because the chain prefix_equal[k+1] -> ... ->
+            //   prefix_equal[i+1] -> vars_1[i] = vars_2[i], combined with the bound
+            //   on vars_2[i] in the reason, forces vars_1[i] >= b2.first when
+            //   prefix_equal[k+1] is true. With these clauses available, the
+            //   framework's RUP for the inference can chain through
+            //   ~prefix_equal[k+1] -> ~prefix_equal[k] -> ... -> ~decision_at[k].
+            auto lr_proof = [&, i](const ReasonFunction & r) -> void {
+                if (! logger) return;
+                for (size_t k = 0; k < i; ++k)
+                    emit_not_d(r, k);
+                // Emit the chain clauses for prefix_equal[i+1..n], so the
+                // framework's RUP for the inference can propagate
+                // ~prefix_equal[k] through the chain.
+                for (size_t k = i; k < n; ++k) {
+                    logger->emit_rup_proof_line_under_reason(r,
+                        WPBSum{} + 1_i * (vars_1[i] >= b2.first) + 1_i * ! prefix_equal_flags->at(k + 1) >= 1_i,
+                        ProofLevel::Temporary);
+                    logger->emit_rup_proof_line_under_reason(r,
+                        WPBSum{} + 1_i * (vars_2[i] < b1.second + 1_i) + 1_i * ! prefix_equal_flags->at(k + 1) >= 1_i,
+                        ProofLevel::Temporary);
+                }
+            };
+
+            inference.infer_all(logger,
+                {vars_1[i] >= b2.first, vars_2[i] < b1.second + 1_i},
+                JustifyExplicitlyThenRUP{lr_proof}, reason);
 
             auto nb1 = state.bounds(vars_1[i]);
             auto nb2 = state.bounds(vars_2[i]);
@@ -158,7 +244,12 @@ auto Lex::install(Propagators & propagators, State & initial_state, ProofModel *
         if ((! strict_forced) && alpha == n) {
             // Walked off the end with everything forced equal: strict is
             // required somewhere, so infeasible.
-            inference.contradiction(logger, JustifyUsingRUP{}, reason);
+            auto contradiction_proof = [&, n](const ReasonFunction & r) -> void {
+                if (! logger) return;
+                for (size_t k = 0; k < n; ++k)
+                    emit_not_d(r, k);
+            };
+            inference.contradiction(logger, JustifyExplicitlyThenRUP{contradiction_proof}, reason);
         }
 
         if (! strict_forced) {
@@ -175,10 +266,21 @@ auto Lex::install(Propagators & propagators, State & initial_state, ProofModel *
             }
 
             if (! strict_possible_after_alpha) {
-                auto b1 = state.bounds(vars_1[alpha]);
-                auto b2 = state.bounds(vars_2[alpha]);
-                inference.infer_greater_than_or_equal(logger, vars_1[alpha], b2.first + 1_i, JustifyUsingRUP{}, reason);
-                inference.infer_less_than(logger, vars_2[alpha], b1.second, JustifyUsingRUP{}, reason);
+                auto b1_alpha = state.bounds(vars_1[alpha]);
+                auto b2_alpha = state.bounds(vars_2[alpha]);
+
+                auto explicit_proof = [&, alpha, n](const ReasonFunction & r) -> void {
+                    if (! logger) return;
+                    for (size_t k = 0; k < n; ++k) {
+                        if (k == alpha) continue;
+                        emit_not_d(r, k);
+                    }
+                };
+
+                inference.infer_all(logger,
+                    {vars_1[alpha] >= b2_alpha.first + 1_i,
+                        vars_2[alpha] < b1_alpha.second},
+                    JustifyExplicitlyThenRUP{explicit_proof}, reason);
             }
         }
 
