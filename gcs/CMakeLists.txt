@@ -106,6 +106,7 @@ if(GCS_BUILD_TESTS)
     add_test(NAME problem_test COMMAND $<TARGET_FILE:problem_test>)
 
     add_executable(abs_test constraints/abs_test.cc)
+    add_executable(at_most_one_test constraints/at_most_one_test.cc)
     add_executable(all_different_test constraints/all_different_test.cc)
     add_executable(among_test constraints/among_test.cc)
     add_executable(arithmetic_test constraints/arithmetic_test.cc)
@@ -129,7 +130,7 @@ if(GCS_BUILD_TESTS)
     add_executable(table_test constraints/table_test.cc)
 
     foreach(test_target
-            abs_test all_different_test among_test arithmetic_test comparison_test
+            abs_test at_most_one_test all_different_test among_test arithmetic_test comparison_test
             count_test element_test equals_test in_test inverse_test knapsack_test lex_test linear_test
             logical_test min_max_test mult_bc_test n_value_test parity_test
             plus_minus_test regular_test smart_table_test table_test)
@@ -137,6 +138,7 @@ if(GCS_BUILD_TESTS)
     endforeach()
 
     add_test(NAME abs_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:abs_test>)
+    add_test(NAME at_most_one_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:at_most_one_test>)
     add_test(NAME all_different_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:all_different_test>)
     add_test(NAME among_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:among_test>)
     add_test(NAME arithmetic_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:arithmetic_test>)
