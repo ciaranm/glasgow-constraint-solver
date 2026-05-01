@@ -13,6 +13,9 @@ namespace gcs
      * \brief Lexicographic ordering constraint, encoded as a SmartTable.
      * Enforce vars_1 >_lex vars_2.
      *
+     * Kept around alongside Lex for benchmarking and as a reference encoding;
+     * for normal use, prefer Lex, which has a dedicated propagator.
+     *
      * \ingroup Constraints
      */
     class LexSmartTable : public Constraint
@@ -32,7 +35,22 @@ namespace gcs
     /**
      * \brief Lexicographic ordering constraint. Enforce vars_1 >_lex vars_2.
      *
+     * Uses a stateless two-pass propagator: a left-to-right walk that enforces
+     * vars_1[i] >= vars_2[i] while in the forced-equal prefix, plus a
+     * right-to-left scan to identify whether strict-greater can still happen
+     * later, forcing strict at the first uncertain position when it cannot.
+     * The propagator is sound but not GAC; search picks up any unpruned
+     * inconsistencies.
+     *
+     * Proof logging uses a flag-per-position OPB encoding (prefix_equal[i]
+     * and decision_at[i] half-reified to vars_1[i] = vars_2[i] and
+     * vars_1[i] > vars_2[i] respectively, plus a global at-least-one
+     * disjunction over decision_at). Inferences emit RUP scaffolding lines
+     * via JustifyExplicitlyThenRUP so VeriPB's PB unit propagation can
+     * verify each step in isolation.
+     *
      * \ingroup Constraints
+     * \sa LexSmartTable
      */
     class Lex : public Constraint
     {
