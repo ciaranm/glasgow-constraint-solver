@@ -79,3 +79,37 @@ auto LexSmartTable::s_exprify(const std::string & name, const innards::ProofMode
 
     return s.str();
 }
+
+Lex::Lex(vector<IntegerVariableID> vars_1, vector<IntegerVariableID> vars_2) :
+    _vars_1(move(vars_1)),
+    _vars_2(move(vars_2))
+{
+}
+
+auto Lex::clone() const -> unique_ptr<Constraint>
+{
+    return make_unique<Lex>(_vars_1, _vars_2);
+}
+
+auto Lex::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
+{
+    // Phase 1: delegate to LexSmartTable. To be replaced with a dedicated
+    // propagator in subsequent phases.
+    auto smt_table = LexSmartTable{move(_vars_1), move(_vars_2)};
+    move(smt_table).install(propagators, initial_state, optional_model);
+}
+
+auto Lex::s_exprify(const std::string & name, const innards::ProofModel * const model) const -> std::string
+{
+    stringstream s;
+
+    print(s, "{} lex (", name);
+    for (const auto & var : _vars_1)
+        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
+    print(s, ") (");
+    for (const auto & var : _vars_2)
+        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
+    print(s, ")");
+
+    return s.str();
+}
