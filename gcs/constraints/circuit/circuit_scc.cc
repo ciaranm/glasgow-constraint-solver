@@ -195,7 +195,7 @@ namespace
             return min(a, b);
     }
 
-    auto prove_not_both(SCCProofContext ctx, long i, long l, long k, const bool using_shifted_pos) -> ProofLine
+    auto prove_not_both(SCCProofContext & ctx, long i, long l, long k, const bool using_shifted_pos) -> ProofLine
     {
         // Prove that (shift)pos[i] != l \/ (shift)pos[i] != k
         ProofLine neq_line{};
@@ -246,7 +246,7 @@ namespace
         return neq_line;
     }
 
-    auto prove_at_most_1_pos_using_clique(SCCProofContext ctx, const long & node, const set<long> & values, bool using_shifted_pos) -> ProofLine
+    auto prove_at_most_1_pos_using_clique(SCCProofContext & ctx, const long & node, const set<long> & values, bool using_shifted_pos) -> ProofLine
     {
         // Prove that at most one (shift)pos[node] == v is true for v in values
         stringstream proofline;
@@ -301,7 +301,7 @@ namespace
             throw UnexpectedException{"trying to prove an AM1 over zero values?"};
     }
 
-    auto prove_at_most_1_pos_using_contradiction(SCCProofContext ctx, const long & node, const set<long> & values, bool using_shifted_pos) -> ProofLine
+    auto prove_at_most_1_pos_using_contradiction(SCCProofContext & ctx, const long & node, const set<long> & values, bool using_shifted_pos) -> ProofLine
     {
         auto am1_sum = WPBSum{};
         if (using_shifted_pos) {
@@ -359,7 +359,7 @@ namespace
         }
     }
 
-    auto prove_at_most_1_pos(SCCProofContext ctx, const long & node, const set<long> & values, bool using_shifted_pos) -> ProofLine
+    auto prove_at_most_1_pos(SCCProofContext & ctx, const long & node, const set<long> & values, bool using_shifted_pos) -> ProofLine
     {
         if (ctx.options.prove_am1_by_contradiction) {
             return prove_at_most_1_pos_using_contradiction(ctx, node, values, using_shifted_pos);
