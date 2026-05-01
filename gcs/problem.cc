@@ -20,12 +20,12 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::deque;
-using std::function;
 using std::generator;
 using std::make_optional;
 using std::move;
 using std::nullopt;
 using std::optional;
+using std::ranges::minmax_element;
 using std::regex;
 using std::regex_match;
 using std::size_t;
@@ -117,7 +117,7 @@ auto Problem::create_integer_variable(const vector<Integer> & domain, const opti
     if (domain.empty())
         throw UnexpectedException{"variable has empty domain"};
 
-    auto [min, max] = minmax_element(domain.begin(), domain.end());
+    auto [min, max] = minmax_element(domain);
 
     auto result = _imp->initial_state.allocate_integer_variable_with_state(*min, *max);
     _imp->integer_variables.emplace_back(result, *min, *max, name ? check_name(*name) : "_" + to_string(++_imp->next_anon_variable));
@@ -183,13 +183,10 @@ auto Problem::create_propagators(State & state, ProofModel * const optional_proo
     return result;
 }
 
-auto Problem::for_each_presolver(const function<auto(Presolver &)->bool> & f) const -> bool
+auto Problem::each_presolver() const -> generator<Presolver &>
 {
     for (auto & p : _imp->presolvers)
-        if (! f(*p))
-            return false;
-
-    return true;
+        co_yield *p;
 }
 
 auto Problem::minimise(IntegerVariableID var) -> void

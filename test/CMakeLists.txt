@@ -1,5 +1,3 @@
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
-include_directories(${CMAKE_SOURCE_DIR}/generator/src/generator/include)
 add_subdirectory(break_table)
 add_subdirectory(break_table_with_constants)
 add_subdirectory(break_views)

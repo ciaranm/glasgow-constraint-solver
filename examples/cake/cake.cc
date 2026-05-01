@@ -9,8 +9,14 @@
 
 #include <cxxopts.hpp>
 
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <print>
+#else
 #include <fmt/core.h>
 #include <fmt/ostream.h>
+#endif
 
 using namespace gcs;
 
@@ -21,8 +27,13 @@ using std::nullopt;
 using std::string;
 using std::vector;
 
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::print;
+using std::println;
+#else
 using fmt::print;
 using fmt::println;
+#endif
 
 using namespace std::literals::string_literals;
 

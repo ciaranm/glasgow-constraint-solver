@@ -10,14 +10,23 @@
 #include <gcs/innards/proofs/simplify_literal.hh>
 
 #include <algorithm>
+#include <cstdlib>
 #include <deque>
+#include <exception>
 #include <fstream>
 #include <iterator>
 #include <map>
 #include <sstream>
 #include <unordered_map>
 
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <format>
+#include <print>
+#else
 #include <fmt/core.h>
+#endif
 
 #include <util/overloaded.hh>
 
@@ -26,6 +35,8 @@ using namespace gcs::innards;
 
 using std::deque;
 using std::fstream;
+using std::ios;
+using std::ios_base;
 using std::istreambuf_iterator;
 using std::map;
 using std::nullopt;
@@ -33,16 +44,22 @@ using std::ofstream;
 using std::optional;
 using std::ostreambuf_iterator;
 using std::pair;
-using std::sort;
+using std::ranges::sort;
+using std::ranges::unique;
 using std::string;
 using std::stringstream;
 using std::to_string;
-using std::unique;
 using std::unordered_map;
 using std::variant;
 using std::vector;
 
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::format;
+using std::print;
+#else
 using fmt::format;
+using fmt::print;
+#endif
 
 struct ProofModel::Imp
 {
@@ -59,6 +76,7 @@ struct ProofModel::Imp
     stringstream opb;
 
     bool always_use_full_encoding = false;
+    bool finalised = false;
 
     explicit Imp(NamesAndIDsTracker & t) :
         tracker(t)
@@ -73,7 +91,13 @@ ProofModel::ProofModel(const ProofOptions & proof_options, NamesAndIDsTracker & 
     _imp->always_use_full_encoding = proof_options.always_use_full_encoding;
 }
 
-ProofModel::~ProofModel() = default;
+ProofModel::~ProofModel()
+{
+    if (! _imp->finalised && std::uncaught_exceptions() == 0) {
+        print(stderr, "ProofModel destroyed without calling finalise()\n");
+        std::abort();
+    }
+}
 
 auto ProofModel::advance_constraint_counter() -> ProofLineNumber
 {
@@ -97,10 +121,10 @@ auto ProofModel::add_constraint(const StringLiteral & constraint_name, const Str
     }
 
     // put these in some kind of order
-    sort(sum.terms.begin(), sum.terms.end());
+    sort(sum.terms);
 
     // remove duplicates
-    sum.terms.erase(unique(sum.terms.begin(), sum.terms.end()), sum.terms.end());
+    sum.terms.erase(unique(sum.terms).begin(), sum.terms.end());
 
     return add_constraint(constraint_name, rule, move(sum) >= 1_i, nullopt);
 }
@@ -308,60 +332,59 @@ auto ProofModel::create_proof_flag(const string & name) -> ProofFlag
 
 auto ProofModel::finalise() -> void
 {
-    ofstream full_opb{_imp->opb_file};
-    full_opb << "* #variable= " << _imp->model_variables << " #constraint= " << _imp->number_of_constraints.number << '\n';
+    _imp->finalised = true;
+    try {
+        ofstream full_opb;
+        full_opb.exceptions(ios::failbit | ios::badbit);
+        full_opb.open(_imp->opb_file);
+        full_opb << "* #variable= " << _imp->model_variables << " #constraint= " << _imp->number_of_constraints.number << '\n';
 
-    if (_imp->optional_minimise_variable) {
-        full_opb << "min: ";
-        overloaded{
-            [&](const SimpleIntegerVariableID & v) {
-                names_and_ids_tracker().for_each_bit(v, [&](Integer bit_value, const XLiteral & bit_name) {
-                    full_opb << bit_value << " " << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
-                });
-            },
-            [&](const ConstantIntegerVariableID &) {
-                throw UnimplementedException{};
-            },
-            [&](const ViewOfIntegerVariableID & v) {
-                // the "then add" bit is irrelevant for the objective function
-                names_and_ids_tracker().for_each_bit(v.actual_variable, [&](Integer bit_value, const XLiteral & bit_name) {
-                    full_opb << (v.negate_first ? -bit_value : bit_value) << " " << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
-                });
-            }}
-            .visit(*_imp->optional_minimise_variable);
-
-        full_opb << ";\n";
-    }
-
-    if (_imp->preserved_variables) {
-        full_opb << "preserved: ";
-        for (const auto & var : *_imp->preserved_variables) {
+        if (_imp->optional_minimise_variable) {
+            full_opb << "min: ";
             overloaded{
                 [&](const SimpleIntegerVariableID & v) {
-                    names_and_ids_tracker().for_each_bit(v, [&](Integer, const XLiteral & bit_name) {
-                        full_opb << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
-                    });
+                    for (const auto & [bit_value, bit_name] : names_and_ids_tracker().each_bit(v))
+                        full_opb << bit_value << " " << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
                 },
                 [&](const ConstantIntegerVariableID &) {
+                    throw UnimplementedException{};
                 },
                 [&](const ViewOfIntegerVariableID & v) {
                     // the "then add" bit is irrelevant for the objective function
-                    names_and_ids_tracker().for_each_bit(v.actual_variable, [&](Integer, const XLiteral & bit_name) {
-                        full_opb << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
-                    });
+                    for (const auto & [bit_value, bit_name] : names_and_ids_tracker().each_bit(v.actual_variable))
+                        full_opb << (v.negate_first ? -bit_value : bit_value) << " " << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
                 }}
-                .visit(var);
+                .visit(*_imp->optional_minimise_variable);
+
+            full_opb << ";\n";
         }
 
-        full_opb << ";\n";
-    }
+        if (_imp->preserved_variables) {
+            full_opb << "preserved: ";
+            for (const auto & var : *_imp->preserved_variables) {
+                overloaded{
+                    [&](const SimpleIntegerVariableID & v) {
+                        for (const auto & [bit_value, bit_name] : names_and_ids_tracker().each_bit(v))
+                            full_opb << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
+                    },
+                    [&](const ConstantIntegerVariableID &) {
+                    },
+                    [&](const ViewOfIntegerVariableID & v) {
+                        // the "then add" bit is irrelevant for the objective function
+                        for (const auto & [bit_value, bit_name] : names_and_ids_tracker().each_bit(v.actual_variable))
+                            full_opb << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
+                    }}
+                    .visit(var);
+            }
 
-    copy(istreambuf_iterator<char>{_imp->opb}, istreambuf_iterator<char>{}, ostreambuf_iterator<char>{full_opb});
-    _imp->opb = stringstream{};
+            full_opb << ";\n";
+        }
 
-    if (! full_opb)
+        copy(istreambuf_iterator<char>{_imp->opb}, istreambuf_iterator<char>{}, ostreambuf_iterator<char>{full_opb});
+        _imp->opb = stringstream{};
+    } catch (const ios_base::failure &) {
         throw ProofError{"Error writing opb file to '" + _imp->opb_file + "'"};
-    full_opb.close();
+    }
 }
 
 auto ProofModel::number_of_constraints() const -> ProofLineNumber

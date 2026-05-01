@@ -1,4 +1,4 @@
 add_executable(consolidate_unary consolidate_unary.cc)
-target_link_libraries(consolidate_unary PUBLIC glasgow_constraint_solver)
+target_link_libraries(consolidate_unary PRIVATE glasgow_constraint_solver)
 
-target_link_libraries(consolidate_unary LINK_PUBLIC cxxopts)
+target_link_libraries(consolidate_unary PRIVATE cxxopts)

@@ -12,8 +12,14 @@
 #include <sstream>
 #include <vector>
 
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <print>
+#else
 #include <fmt/core.h>
 #include <fmt/ostream.h>
+#endif
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -29,7 +35,11 @@ using std::stringstream;
 using std::unique_ptr;
 using std::vector;
 
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::print;
+#else
 using fmt::print;
+#endif
 
 auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1, const auto & v2, const State & state,
     auto & inference, const Reason & reason) -> PropagatorState

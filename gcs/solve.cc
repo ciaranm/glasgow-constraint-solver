@@ -13,14 +13,21 @@
 
 #include <fstream>
 #include <string>
+#include <version>
 
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <print>
+#else
 #include <fmt/core.h>
 #include <fmt/ostream.h>
+#endif
 
 using namespace gcs;
 using namespace gcs::innards;
 
 using std::atomic;
+using std::ios;
+using std::ios_base;
 using std::max;
 using std::nullopt;
 using std::ofstream;
@@ -32,7 +39,11 @@ using std::chrono::duration_cast;
 using std::chrono::microseconds;
 using std::chrono::steady_clock;
 
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::println;
+#else
 using fmt::println;
+#endif
 
 namespace
 {
@@ -160,25 +171,26 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
         optional_proof->model()->names_and_ids_tracker().emit_delayed_proof_steps();
 
         if (auto & fn = optional_proof_options->proof_file_names.s_expr_file) {
-            ofstream s_expr{*fn};
-            if (! s_expr)
+            try {
+                ofstream s_expr;
+                s_expr.exceptions(ios::failbit | ios::badbit);
+                s_expr.open(*fn);
+                println(s_expr, "(");
+                println(s_expr, "    (");
+                for (const auto & [_, l, u, n] : problem.each_variable_with_bounds_and_name()) {
+                    println(s_expr, "        ({} {} {})", n, l.raw_value, u.raw_value);
+                }
+                println(s_expr, "    )");
+                println(s_expr, "    (");
+                unsigned n = 1;
+                for (const auto & c : problem.each_constraint()) {
+                    println(s_expr, "        ({})", c.s_exprify("c" + to_string(n++), optional_proof->model()));
+                }
+                println(s_expr, "    )");
+                println(s_expr, ")");
+            } catch (const ios_base::failure &) {
                 throw ProofError{"Error writing proof s-expr file to '" + *fn + "'"};
-
-            println(s_expr, "(");
-            println(s_expr, "    (");
-            for (const auto & [_, l, u, n] : problem.each_variable_with_bounds_and_name()) {
-                println(s_expr, "        ({} {} {})", n, l.raw_value, u.raw_value);
             }
-            println(s_expr, "    )");
-
-            println(s_expr, "    (");
-            unsigned n = 1;
-            for (const auto & c : problem.each_constraint()) {
-                println(s_expr, "        ({})", c.s_exprify("c" + to_string(n++), optional_proof->model()));
-            }
-            println(s_expr, "    )");
-
-            println(s_expr, ")");
         }
     }
 
@@ -187,9 +199,15 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
 
     auto initialisation_success = propagators.initialise(state, optional_proof ? optional_proof->logger() : nullptr);
 
-    auto presolve_success = (! initialisation_success) ? false : problem.for_each_presolver([&](Presolver & presolver) -> bool {
-        return presolver.run(problem, propagators, state, optional_proof ? optional_proof->logger() : nullptr);
-    });
+    auto presolve_success = initialisation_success;
+    if (initialisation_success) {
+        for (auto & presolver : problem.each_presolver()) {
+            if (! presolver.run(problem, propagators, state, optional_proof ? optional_proof->logger() : nullptr)) {
+                presolve_success = false;
+                break;
+            }
+        }
+    }
 
     Integer objective_lower_bound_for_proof = 0_i;
     if (optional_proof && problem.optional_minimise_variable())
@@ -241,6 +259,9 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
         if (callbacks.completed)
             callbacks.completed();
     }
+
+    if (optional_proof)
+        optional_proof->model()->names_and_ids_tracker().finalise();
 
     stats.solve_time = duration_cast<microseconds>(steady_clock::now() - start_time);
     propagators.fill_in_constraint_stats(stats);

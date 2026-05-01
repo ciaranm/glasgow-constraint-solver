@@ -5,22 +5,17 @@ ExternalProject_Add(XCSP3-CPP-Parser
     GIT_TAG 807f475c5b705d085215de61b811c1fbf0152398
     INSTALL_COMMAND "")
 
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 add_executable(xcsp_glasgow_constraint_solver xcsp_glasgow_constraint_solver.cc)
+target_include_directories(xcsp_glasgow_constraint_solver PRIVATE
+    ${CMAKE_SOURCE_DIR}/XCSP3-CPP-Parser/src/XCSP3-CPP-Parser/include/)
 
 find_package(LibXml2 REQUIRED)
-include_directories(${LIBXML2_INCLUDE_DIR})
 
-target_link_libraries(xcsp_glasgow_constraint_solver
-    PUBLIC
+target_link_libraries(xcsp_glasgow_constraint_solver PRIVATE
     ${CMAKE_SOURCE_DIR}/XCSP3-CPP-Parser/src/XCSP3-CPP-Parser/lib/libxcsp3parser.a
     glasgow_constraint_solver
     cxxopts
-    ${LIBXML2_LIBRARIES})
-
-include_directories(${CMAKE_SOURCE_DIR}/XCSP3-CPP-Parser/src/XCSP3-CPP-Parser/include/)
-
-include_directories(${CMAKE_SOURCE_DIR}/generator/src/generator/include)
+    LibXml2::LibXml2)
 
 add_test(NAME xcsp_sum_not_equals COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ sum_not_equals "^d FOUND SOLUTIONS 8$")
 set_tests_properties(xcsp_sum_not_equals PROPERTIES RESOURCE_LOCK xcsp)

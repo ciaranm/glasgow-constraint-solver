@@ -10,7 +10,13 @@
 #include <gcs/innards/state.hh>
 #include <gcs/innards/variable_id_utils.hh>
 
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <print>
+#else
 #include <fmt/ostream.h>
+#endif
 
 #include <util/enumerate.hh>
 #include <util/overloaded.hh>
@@ -28,7 +34,6 @@
 using namespace gcs;
 using namespace gcs::innards;
 
-using std::adjacent_find;
 using std::cmp_not_equal;
 using std::count;
 using std::decay_t;
@@ -41,15 +46,20 @@ using std::nullopt;
 using std::optional;
 using std::pair;
 using std::shared_ptr;
-using std::sort;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
 using std::variant;
 using std::vector;
 using std::visit;
+using std::ranges::adjacent_find;
+using std::ranges::sort;
 
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::print;
+#else
 using fmt::print;
+#endif
 
 GACAllDifferent::GACAllDifferent(vector<IntegerVariableID> v) :
     _vars(move(v))
@@ -234,7 +244,7 @@ namespace
 
         vector<IntegerVariableID> hall_variable_ids;
         for (Left v{0}; v.offset != vars.size(); ++v.offset)
-            if (hall_variables[v.offset])
+            if (hall_variables[v.offset] && ! is_constant_variable(vars[v.offset]))
                 hall_variable_ids.push_back(vars[v.offset]);
 
         vector<Integer> hall_value_nrs;
@@ -321,7 +331,7 @@ namespace
 
         vector<IntegerVariableID> hall_variable_ids;
         for (Left v{0}; v.offset != vars.size(); ++v.offset)
-            if (hall_left[v.offset])
+            if (hall_left[v.offset] && ! is_constant_variable(vars[v.offset]))
                 hall_variable_ids.push_back(vars[v.offset]);
 
         if (hall_variable_ids.empty()) {
@@ -551,8 +561,8 @@ auto GACAllDifferent::install(Propagators & propagators, State & initial_state, 
 auto GACAllDifferent::prepare(Propagators & propagators, State & initial_state, ProofModel * const optional_model) -> bool
 {
     _sanitised_vars = move(_vars);
-    sort(_sanitised_vars.begin(), _sanitised_vars.end());
-    if (_sanitised_vars.end() != adjacent_find(_sanitised_vars.begin(), _sanitised_vars.end())) {
+    sort(_sanitised_vars);
+    if (adjacent_find(_sanitised_vars) != _sanitised_vars.end()) {
         propagators.model_contradiction(initial_state, optional_model, "AllDifferent with duplicate variables");
         return false;
     }

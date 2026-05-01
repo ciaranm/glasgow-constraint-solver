@@ -7,6 +7,8 @@
 #include <gcs/innards/variable_id_utils.hh>
 
 #include <algorithm>
+#include <cstdlib>
+#include <exception>
 #include <fstream>
 #include <list>
 #include <map>
@@ -18,7 +20,14 @@
 
 #include <nlohmann/json.hpp>
 
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <format>
+#include <print>
+#else
 #include <fmt/core.h>
+#endif
 
 #include <util/overloaded.hh>
 
@@ -28,7 +37,9 @@ using namespace gcs::innards;
 using std::any_of;
 using std::fstream;
 using std::function;
+using std::generator;
 using std::ios;
+using std::ios_base;
 using std::list;
 using std::map;
 using std::max;
@@ -44,7 +55,13 @@ using std::variant;
 using std::vector;
 using std::visit;
 
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::format;
+using std::print;
+#else
 using fmt::format;
+using fmt::print;
+#endif
 
 struct NamesAndIDsTracker::Imp
 {
@@ -69,7 +86,9 @@ struct NamesAndIDsTracker::Imp
     long long next_xliteral_nr = 0;
 
     optional<fstream> variables_map_file;
+    string variables_map_file_name;
     bool first_varmap_entry = true;
+    bool finalised = false;
     bool verbose_names;
 };
 
@@ -79,18 +98,35 @@ NamesAndIDsTracker::NamesAndIDsTracker(const ProofOptions & proof_options) :
     _imp->verbose_names = proof_options.verbose_names;
 
     if (proof_options.proof_file_names.variables_map_file) {
+        _imp->variables_map_file_name = *proof_options.proof_file_names.variables_map_file;
         _imp->variables_map_file.emplace();
-        _imp->variables_map_file->open(*proof_options.proof_file_names.variables_map_file, ios::out);
-        if (! *_imp->variables_map_file)
-            throw ProofError{"Error writing proof variables mapping file to '" + *proof_options.proof_file_names.variables_map_file + "'"};
-        *_imp->variables_map_file << "{\n";
+        try {
+            _imp->variables_map_file->exceptions(ios::failbit | ios::badbit);
+            _imp->variables_map_file->open(_imp->variables_map_file_name, ios::out);
+            *_imp->variables_map_file << "{\n";
+        } catch (const ios_base::failure &) {
+            throw ProofError{"Error writing proof variables mapping file to '" + _imp->variables_map_file_name + "'"};
+        }
     }
 }
 
 NamesAndIDsTracker::~NamesAndIDsTracker()
 {
-    if (_imp->variables_map_file && *_imp->variables_map_file) {
-        *_imp->variables_map_file << "\n}\n";
+    if (_imp->variables_map_file && ! _imp->finalised && std::uncaught_exceptions() == 0) {
+        print(stderr, "NamesAndIDsTracker destroyed without calling finalise()\n");
+        std::abort();
+    }
+}
+
+auto NamesAndIDsTracker::finalise() -> void
+{
+    _imp->finalised = true;
+    if (_imp->variables_map_file) {
+        try {
+            *_imp->variables_map_file << "\n}\n";
+        } catch (const ios_base::failure &) {
+            throw ProofError{"Error writing proof variables mapping file to '" + _imp->variables_map_file_name + "'"};
+        }
     }
 }
 
@@ -282,14 +318,14 @@ auto NamesAndIDsTracker::negative_bit_coefficient(const SimpleOrProofOnlyInteger
     return it->second.first;
 }
 
-auto NamesAndIDsTracker::for_each_bit(const SimpleOrProofOnlyIntegerVariableID & id,
-    const function<auto(Integer, const XLiteral &)->void> & f) -> void
+auto NamesAndIDsTracker::each_bit(const SimpleOrProofOnlyIntegerVariableID & id)
+    -> generator<pair<Integer, XLiteral>>
 {
     auto it = _imp->integer_variable_bits_to_size_and_proof_vars.find(id);
     if (it == _imp->integer_variable_bits_to_size_and_proof_vars.end())
         throw ProofError("missing bits");
     for (auto & [c, n] : it->second.second)
-        f(c, n);
+        co_yield pair{c, n};
 }
 
 auto NamesAndIDsTracker::get_bit(const gcs::innards::SimpleOrProofOnlyIntegerVariableID & var, Integer position) -> pair<Integer, XLiteral>
@@ -567,24 +603,28 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning(SimpleOrProofOnlyIntegerVaria
     }
 
     if (_imp->variables_map_file) {
-        nlohmann::json data;
-        data["type"] = "condition";
-        overloaded{
-            [&](const SimpleIntegerVariableID & id) -> void {
-                data["cpvartype"] = "intvar";
-                data["cpvarid"] = id.index;
-            },
-            [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
-                data["cpvartype"] = "proofintvar";
-                data["cpvarid"] = id.index;
-            }}
-            .visit(id);
+        try {
+            nlohmann::json data;
+            data["type"] = "condition";
+            overloaded{
+                [&](const SimpleIntegerVariableID & id) -> void {
+                    data["cpvartype"] = "intvar";
+                    data["cpvarid"] = id.index;
+                },
+                [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
+                    data["cpvartype"] = "proofintvar";
+                    data["cpvarid"] = id.index;
+                }}
+                .visit(id);
 
-        data["name"] = name_of(id);
-        data["operator"] = (op == EqualsOrGreaterEqual::Equals ? "=" : ">=");
-        data["value"] = value.raw_value;
+            data["name"] = name_of(id);
+            data["operator"] = (op == EqualsOrGreaterEqual::Equals ? "=" : ">=");
+            data["value"] = value.raw_value;
 
-        write_vardata(*_imp->variables_map_file, _imp->first_varmap_entry, pb_file_string_for(result), data);
+            write_vardata(*_imp->variables_map_file, _imp->first_varmap_entry, pb_file_string_for(result), data);
+        } catch (const ios_base::failure &) {
+            throw ProofError{"Error writing proof variables mapping file to '" + _imp->variables_map_file_name + "'"};
+        }
     }
 
     return result;
@@ -601,11 +641,15 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning(ProofFlag flag) -> XLiteral
     }
 
     if (_imp->variables_map_file) {
-        nlohmann::json data;
-        data["type"] = "proofflag";
-        data["name"] = name_of(flag);
+        try {
+            nlohmann::json data;
+            data["type"] = "proofflag";
+            data["name"] = name_of(flag);
 
-        write_vardata(*_imp->variables_map_file, _imp->first_varmap_entry, pb_file_string_for(result), data);
+            write_vardata(*_imp->variables_map_file, _imp->first_varmap_entry, pb_file_string_for(result), data);
+        } catch (const ios_base::failure &) {
+            throw ProofError{"Error writing proof variables mapping file to '" + _imp->variables_map_file_name + "'"};
+        }
     }
 
     return result;
@@ -631,22 +675,26 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning_negative_bit_of(SimpleOrProof
     }
 
     if (_imp->variables_map_file) {
-        nlohmann::json data;
-        data["type"] = "intvarnegbit";
-        overloaded{
-            [&](const SimpleIntegerVariableID & id) -> void {
-                data["cpvartype"] = "intvar";
-                data["cpvarid"] = id.index;
-            },
-            [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
-                data["cpvartype"] = "proofintvar";
-                data["cpvarid"] = id.index;
-            }}
-            .visit(id);
-        data["name"] = name_of(id);
-        data["power"] = power.raw_value;
+        try {
+            nlohmann::json data;
+            data["type"] = "intvarnegbit";
+            overloaded{
+                [&](const SimpleIntegerVariableID & id) -> void {
+                    data["cpvartype"] = "intvar";
+                    data["cpvarid"] = id.index;
+                },
+                [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
+                    data["cpvartype"] = "proofintvar";
+                    data["cpvarid"] = id.index;
+                }}
+                .visit(id);
+            data["name"] = name_of(id);
+            data["power"] = power.raw_value;
 
-        write_vardata(*_imp->variables_map_file, _imp->first_varmap_entry, pb_file_string_for(result), data);
+            write_vardata(*_imp->variables_map_file, _imp->first_varmap_entry, pb_file_string_for(result), data);
+        } catch (const ios_base::failure &) {
+            throw ProofError{"Error writing proof variables mapping file to '" + _imp->variables_map_file_name + "'"};
+        }
     }
 
     return result;
@@ -672,23 +720,27 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning_bit_of(SimpleOrProofOnlyInteg
     }
 
     if (_imp->variables_map_file) {
-        nlohmann::json data;
-        data["type"] = "intvarbit";
-        overloaded{
-            [&](const SimpleIntegerVariableID & id) -> void {
-                data["cpvartype"] = "intvar";
-                data["cpvarid"] = id.index;
-            },
-            [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
-                data["cpvartype"] = "proofintvar";
-                data["cpvarid"] = id.index;
-            }}
-            .visit(id);
+        try {
+            nlohmann::json data;
+            data["type"] = "intvarbit";
+            overloaded{
+                [&](const SimpleIntegerVariableID & id) -> void {
+                    data["cpvartype"] = "intvar";
+                    data["cpvarid"] = id.index;
+                },
+                [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
+                    data["cpvartype"] = "proofintvar";
+                    data["cpvarid"] = id.index;
+                }}
+                .visit(id);
 
-        data["name"] = name_of(id);
-        data["power"] = power.raw_value;
+            data["name"] = name_of(id);
+            data["power"] = power.raw_value;
 
-        write_vardata(*_imp->variables_map_file, _imp->first_varmap_entry, pb_file_string_for(result), data);
+            write_vardata(*_imp->variables_map_file, _imp->first_varmap_entry, pb_file_string_for(result), data);
+        } catch (const ios_base::failure &) {
+            throw ProofError{"Error writing proof variables mapping file to '" + _imp->variables_map_file_name + "'"};
+        }
     }
 
     return result;
@@ -805,23 +857,18 @@ auto NamesAndIDsTracker::reify(const WPBSumLE & ineq, const HalfReifyOnConjuncti
             [&, w = w](const IntegerVariableID & var) {
                 overloaded{
                     [&](const SimpleIntegerVariableID & var) {
-                        for_each_bit(var, [&](Integer bit_value, const XLiteral &) {
+                        for (const auto & [bit_value, bit_lit] : each_bit(var))
                             max_contribution_from_positive_terms += max(0_i, w * bit_value);
-                        });
                     },
                     [&](const ViewOfIntegerVariableID & view) {
                         if (! view.negate_first) {
-                            for_each_bit(view.actual_variable,
-                                [&](Integer bit_value, const XLiteral &) {
-                                    max_contribution_from_positive_terms += max(0_i, w * bit_value);
-                                });
+                            for (const auto & [bit_value, bit_lit] : each_bit(view.actual_variable))
+                                max_contribution_from_positive_terms += max(0_i, w * bit_value);
                             max_contribution_from_positive_terms += max(0_i, w * view.then_add);
                         }
                         else {
-                            for_each_bit(view.actual_variable,
-                                [&](Integer bit_value, const XLiteral &) {
-                                    max_contribution_from_positive_terms += max(0_i, -w * bit_value);
-                                });
+                            for (const auto & [bit_value, bit_lit] : each_bit(view.actual_variable))
+                                max_contribution_from_positive_terms += max(0_i, -w * bit_value);
                             max_contribution_from_positive_terms += max(0_i, -w * view.then_add);
                         }
                     },
@@ -831,9 +878,8 @@ auto NamesAndIDsTracker::reify(const WPBSumLE & ineq, const HalfReifyOnConjuncti
                     .visit(var);
             },
             [&, w = w](const ProofOnlySimpleIntegerVariableID & var) {
-                for_each_bit(var, [&](Integer bit_value, const XLiteral &) {
+                for (const auto & [bit_value, bit_lit] : each_bit(var))
                     max_contribution_from_positive_terms += max(0_i, w * bit_value);
-                });
             },
             [&, w = w](const ProofBitVariable &) {
                 max_contribution_from_positive_terms += max(0_i, w);

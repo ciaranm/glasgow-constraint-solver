@@ -19,8 +19,9 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <version>
 
-#if __has_cpp_attribute(__cpp_lib_generator)
+#ifdef __cpp_lib_generator
 #include <generator>
 #else
 #include <__generator.hpp>
@@ -164,7 +165,7 @@ namespace gcs
 
         [[nodiscard]] auto create_propagators(innards::State &, innards::ProofModel * const) const -> innards::Propagators;
 
-        [[nodiscard]] auto for_each_presolver(const std::function<auto(Presolver &)->bool> &) const -> bool;
+        [[nodiscard]] auto each_presolver() const -> std::generator<Presolver &>;
 
         auto all_normal_variables() const -> const std::vector<IntegerVariableID> &;
 

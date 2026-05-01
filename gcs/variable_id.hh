@@ -91,6 +91,22 @@ namespace gcs
     using IntegerVariableID = std::variant<SimpleIntegerVariableID, ViewOfIntegerVariableID, ConstantIntegerVariableID>;
 
     /**
+     * \brief Returns true if the given IntegerVariableID is a constant rather
+     * than a genuine variable.
+     *
+     * Useful when filtering constants out of variable lists, for example to
+     * avoid passing them to operations that only accept non-constant variables.
+     *
+     * \sa IntegerVariableID
+     * \sa ConstantIntegerVariableID
+     * \ingroup Core
+     */
+    [[nodiscard]] constexpr inline auto is_constant_variable(const IntegerVariableID & v) -> bool
+    {
+        return std::holds_alternative<ConstantIntegerVariableID>(v);
+    }
+
+    /**
      * \brief Create an IntegerVariableID for a constant value.
      *
      * \sa IntegerVariableID

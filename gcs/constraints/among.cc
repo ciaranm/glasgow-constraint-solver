@@ -7,7 +7,13 @@
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
 
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <print>
+#else
 #include <fmt/ostream.h>
+#endif
 
 #include <algorithm>
 #include <map>
@@ -31,20 +37,28 @@ using std::to_string;
 using std::tuple;
 using std::unique_ptr;
 using std::vector;
+using std::ranges::contains;
 using std::ranges::distance;
 using std::ranges::empty;
 using std::ranges::none_of;
+using std::ranges::partition;
+using std::ranges::sort;
 using std::ranges::subrange;
+using std::ranges::unique;
 
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::print;
+#else
 using fmt::print;
+#endif
 
 namespace
 {
     auto uniqueify(const vector<Integer> & v) -> vector<Integer>
     {
         auto result = v;
-        sort(result.begin(), result.end());
-        result.erase(unique(result.begin(), result.end()), result.end());
+        sort(result);
+        result.erase(unique(result).begin(), result.end());
         return result;
     }
 }
@@ -116,14 +130,14 @@ auto Among::install_propagators(Propagators & propagators) -> void
             // partition variables to be 1) those that must not match, 2) those that must match, and 3) those
             // where they might match but don't have to.
             vector<IntegerVariableID> partitioned_vars = vars;
-            auto not_impossible_start = partition(partitioned_vars.begin(), partitioned_vars.end(), [&](const auto & var) -> bool {
+            auto not_impossible_start = partition(partitioned_vars, [&](const auto & var) -> bool {
                 return none_of(values_of_interest, [&](const auto & val) -> bool { return state.in_domain(var, val); });
-            });
-            auto can_be_either_start = partition(not_impossible_start, partitioned_vars.end(), [&](const auto & var) -> bool {
+            }).begin();
+            auto can_be_either_start = partition(subrange{not_impossible_start, partitioned_vars.end()}, [&](const auto & var) -> bool {
                 return none_of(state.each_value_immutable(var), [&](const auto & val) -> bool {
-                    return values_of_interest.end() == find(values_of_interest.begin(), values_of_interest.end(), val);
+                    return ! contains(values_of_interest, val);
                 });
-            });
+            }).begin();
 
             auto must_not_match_vars = subrange{partitioned_vars.begin(), not_impossible_start};
             auto must_match_vars = subrange{not_impossible_start, can_be_either_start};
@@ -178,7 +192,7 @@ auto Among::install_propagators(Propagators & propagators) -> void
                 for (const auto & var : vars) {
                     bool all_match = true;
                     for (const auto & val : state.each_value_immutable(var))
-                        if (values_of_interest.end() == find(values_of_interest.begin(), values_of_interest.end(), val))
+                        if (! contains(values_of_interest, val))
                             all_match = false;
 
                     if (! all_match) {
@@ -229,7 +243,7 @@ auto Among::install_propagators(Propagators & propagators) -> void
 
                         if (might_match)
                             for (const auto & val : state.each_value_mutable(var))
-                                if (values_of_interest.end() == find(values_of_interest.begin(), values_of_interest.end(), val)) {
+                                if (! contains(values_of_interest, val)) {
                                     inference.infer(logger, var != val, JustifyExplicitly{[&](const ReasonFunction &) {
                                         // need to point out that if var == val then var != voi for each voi
                                         for (const auto & voi : values_of_interest)

@@ -4,7 +4,15 @@
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
 
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <format>
+#include <print>
+#else
+#include <fmt/core.h>
 #include <fmt/ostream.h>
+#endif
 
 #include <cmath>
 #include <tuple>
@@ -22,7 +30,13 @@ using std::stringstream;
 using std::unique_ptr;
 using std::vector;
 
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::format;
+using std::print;
+#else
+using fmt::format;
 using fmt::print;
+#endif
 
 template <ArithmeticOperator op_>
 GACArithmetic<op_>::GACArithmetic(const IntegerVariableID v1, const IntegerVariableID v2, const IntegerVariableID result) :
@@ -106,7 +120,7 @@ auto GACArithmetic<op_>::s_exprify(const std::string & name, const innards::Proo
     case ArithmeticOperator::Power: op_str = "power"; break;
     }
 
-    return fmt::format("({} {} {} {} {})", name, op_str,
+    return format("({} {} {} {} {})", name, op_str,
         model->names_and_ids_tracker().s_expr_name_of(_v1),
         model->names_and_ids_tracker().s_expr_name_of(_v2),
         model->names_and_ids_tracker().s_expr_name_of(_result));

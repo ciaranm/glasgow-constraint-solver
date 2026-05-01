@@ -1,5 +1,5 @@
 add_executable(smart_table_am1 smart_table_am1.cc)
-target_link_libraries(smart_table_am1 PUBLIC glasgow_constraint_solver)
+target_link_libraries(smart_table_am1 PRIVATE glasgow_constraint_solver)
 
 
-target_link_libraries(smart_table_am1 LINK_PUBLIC cxxopts)
+target_link_libraries(smart_table_am1 PRIVATE cxxopts)

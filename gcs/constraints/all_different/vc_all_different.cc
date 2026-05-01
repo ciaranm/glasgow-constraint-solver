@@ -7,7 +7,13 @@
 #include <gcs/innards/propagators.hh>
 #include <util/enumerate.hh>
 
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <print>
+#else
 #include <fmt/ostream.h>
+#endif
 
 #include <algorithm>
 #include <functional>
@@ -22,7 +28,6 @@
 using namespace gcs;
 using namespace gcs::innards;
 
-using std::adjacent_find;
 using std::cmp_not_equal;
 using std::count;
 using std::decay_t;
@@ -34,7 +39,8 @@ using std::min;
 using std::nullopt;
 using std::optional;
 using std::pair;
-using std::sort;
+using std::ranges::adjacent_find;
+using std::ranges::sort;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
@@ -42,7 +48,11 @@ using std::variant;
 using std::vector;
 using std::visit;
 
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::print;
+#else
 using fmt::print;
+#endif
 
 auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle,
     const State & state, auto & inference, ProofLogger * const logger) -> void
@@ -115,8 +125,8 @@ auto VCAllDifferent::install(Propagators & propagators, State & initial_state, P
 auto VCAllDifferent::prepare(Propagators & propagators, State & initial_state, ProofModel * const model) -> bool
 {
     _sanitised_vars = move(_vars);
-    sort(_sanitised_vars.begin(), _sanitised_vars.end());
-    if (_sanitised_vars.end() != adjacent_find(_sanitised_vars.begin(), _sanitised_vars.end())) {
+    sort(_sanitised_vars);
+    if (adjacent_find(_sanitised_vars) != _sanitised_vars.end()) {
         propagators.model_contradiction(initial_state, model, "AllDifferent with duplicate variables");
         return false;
     }

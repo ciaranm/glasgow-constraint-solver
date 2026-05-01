@@ -8,7 +8,13 @@
 
 #include <util/enumerate.hh>
 
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <print>
+#else
 #include <fmt/ostream.h>
+#endif
 
 #include <optional>
 #include <sstream>
@@ -27,7 +33,11 @@ using std::tuple;
 using std::unique_ptr;
 using std::vector;
 
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::print;
+#else
 using fmt::print;
+#endif
 
 Count::Count(std::vector<IntegerVariableID> vars, const IntegerVariableID & value_of_interest, const IntegerVariableID & how_many) :
     _vars(move(vars)),
@@ -128,17 +138,17 @@ auto Count::install_propagators(Propagators & propagators) -> void
             auto justf = [&](const ReasonFunction & reason) -> void {
                 for (const auto & [idx, var] : enumerate(vars)) {
                     bool seen_any = false;
-                    state.for_each_value_while_immutable(var, [&](const Integer & val) -> bool {
-                        if (state.in_domain(value_of_interest, val))
+                    for (const auto & val : state.each_value_immutable(var)) {
+                        if (state.in_domain(value_of_interest, val)) {
                             seen_any = true;
-                        return ! seen_any;
-                    });
+                            break;
+                        }
+                    }
 
                     if (! seen_any) {
-                        state.for_each_value(value_of_interest, [&](const Integer & val) {
+                        for (const auto & val : state.each_value_immutable(value_of_interest))
                             logger->emit_rup_proof_line_under_reason(reason,
                                 WPBSum{} + 1_i * (value_of_interest != val) + 1_i * (! get<0>(flags[idx])) >= 1_i, ProofLevel::Temporary);
-                        });
                         logger->emit_rup_proof_line_under_reason(reason,
                             WPBSum{} + 1_i * (! get<0>(flags[idx])) >= 1_i, ProofLevel::Temporary);
                     }
@@ -205,12 +215,10 @@ auto Count::install_propagators(Propagators & propagators) -> void
             if (lowest_how_many_must) {
                 auto just = JustifyExplicitly{
                     [&](const ReasonFunction & reason) -> void {
-                        state.for_each_value_while_immutable(value_of_interest, [&](Integer voi) -> bool {
+                        for (const auto & voi : state.each_value_immutable(value_of_interest))
                             logger->emit_rup_proof_line_under_reason(reason,
                                 WPBSum{} + 1_i * (value_of_interest != voi) + 1_i * (how_many >= *lowest_how_many_must) >= 1_i,
                                 ProofLevel::Temporary);
-                            return true;
-                        });
                     }};
                 inference.infer(logger, how_many >= *lowest_how_many_must, just, generic_reason(state, all_vars));
             }
@@ -218,7 +226,7 @@ auto Count::install_propagators(Propagators & propagators) -> void
             if (highest_how_many_might) {
                 auto just = JustifyExplicitly{
                     [&](const ReasonFunction & reason) -> void {
-                        state.for_each_value_while_immutable(value_of_interest, [&](Integer voi) -> bool {
+                        for (const auto & voi : state.each_value_immutable(value_of_interest)) {
                             for (const auto & [idx, var] : enumerate(vars)) {
                                 if (! state.in_domain(var, voi)) {
                                     logger->emit_rup_proof_line_under_reason(reason,
@@ -233,8 +241,7 @@ auto Count::install_propagators(Propagators & propagators) -> void
                             logger->emit_rup_proof_line_under_reason(reason,
                                 WPBSum{} + 1_i * (value_of_interest != voi) + 1_i * (how_many < *highest_how_many_might + 1_i) >= 1_i,
                                 ProofLevel::Temporary);
-                            return true;
-                        });
+                        }
                     }};
                 inference.infer(logger, how_many < *highest_how_many_might + 1_i, just, generic_reason(state, all_vars));
             }

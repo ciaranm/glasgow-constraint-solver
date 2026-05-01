@@ -8,8 +8,14 @@
 
 #include <sstream>
 
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <print>
+#else
 #include <fmt/core.h>
 #include <fmt/ostream.h>
+#endif
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -20,7 +26,11 @@ using std::string;
 using std::stringstream;
 using std::unique_ptr;
 
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::print;
+#else
 using fmt::print;
+#endif
 
 Minus::Minus(IntegerVariableID a, IntegerVariableID b, IntegerVariableID result) :
     _a(a),

@@ -19,9 +19,14 @@
 #include <type_traits>
 #include <utility>
 #include <variant>
+#include <version>
 
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <print>
+#else
 #include <fmt/core.h>
 #include <fmt/ostream.h>
+#endif
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -36,8 +41,13 @@ using std::variant;
 using std::vector;
 using std::visit;
 
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::print;
+using std::println;
+#else
 using fmt::print;
 using fmt::println;
+#endif
 
 Table::Table(vector<IntegerVariableID> v, ExtensionalTuples t) :
     _vars(move(v)),
@@ -240,12 +250,13 @@ auto NegativeTable::install_propagators(Propagators & propagators) -> void
                 optional<Literal> l1, l2;
                 for (const auto & [idx, v] : enumerate(vars)) {
                     switch (state.test_literal(v == t[idx])) {
-                    case LiteralIs::DefinitelyFalse:
+                        using enum LiteralIs;
+                    case DefinitelyFalse:
                         falsified = true;
                         break;
-                    case LiteralIs::DefinitelyTrue:
+                    case DefinitelyTrue:
                         break;
-                    case LiteralIs::Undecided:
+                    case Undecided:
                         if (! l1)
                             l1 = (v != t[idx]);
                         else if (! l2)

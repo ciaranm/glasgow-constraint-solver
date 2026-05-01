@@ -12,9 +12,15 @@
 #include <utility>
 #include <vector>
 
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <print>
+#else
 #include <fmt/core.h>
 #include <fmt/ostream.h>
 #include <fmt/ranges.h>
+#endif
 
 using std::cerr;
 using std::flush;
@@ -31,8 +37,13 @@ using std::tuple;
 using std::variant;
 using std::vector;
 
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::print;
+using std::println;
+#else
 using fmt::print;
 using fmt::println;
+#endif
 
 using namespace gcs;
 using namespace gcs::test_innards;
@@ -76,7 +87,11 @@ auto main(int, char *[]) -> int
         variant<int, pair<int, int>>, variant<int, pair<int, int>>, variant<int, pair<int, int>>>>
         data = {
             {pair{1, 6}, pair{1, 6}, pair{1, 6}, pair{1, 6}, pair{1, 6}, pair{1, 6}},
-            {pair{0, 5}, pair{1, 6}, pair{2, 7}, pair{3, 8}, pair{4, 9}, pair{5, 6}}};
+            {pair{0, 5}, pair{1, 6}, pair{2, 7}, pair{3, 8}, pair{4, 9}, pair{5, 6}},
+            // issue #108: constants in hall set crash prove_matching_is_too_small
+            {pair{-2, 3}, 5, pair{3, 5}, pair{3, 6}, 3, pair{3, 5}},
+            // issue #108: constants in hall set crash prove_deletion_using_sccs
+            {pair{1, 2}, pair{1, 2}, 3, pair{3, 4}, pair{4, 5}, pair{5, 6}}};
 
     random_device rand_dev;
     mt19937 rand(rand_dev());

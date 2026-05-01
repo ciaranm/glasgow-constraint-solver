@@ -12,6 +12,11 @@
 #include <iomanip>
 #include <sstream>
 
+#include <version>
+#ifdef __cpp_lib_stacktrace
+#include <stacktrace>
+#endif
+
 #include <util/overloaded.hh>
 
 using std::cmp_less_equal;
@@ -19,6 +24,7 @@ using std::deque;
 using std::flush;
 using std::fstream;
 using std::ios;
+using std::ios_base;
 using std::map;
 using std::max;
 using std::nullopt;
@@ -108,6 +114,23 @@ ProofLogger::ProofLogger(const ProofOptions & proof_options, NamesAndIDsTracker 
 }
 
 ProofLogger::~ProofLogger() = default;
+
+auto ProofLogger::log_stacktrace() -> void
+{
+#ifdef __cpp_lib_stacktrace
+    static bool do_logging = []() {
+        return getenv("GCS_VERBOSE_LOGGING");
+    }();
+
+    using std::stacktrace;
+    if (do_logging) [[unlikely]] {
+        for (const auto & entry : stacktrace::current()) {
+            if (entry.source_file().contains("/gcs/"))
+                _imp->proof << "% " << to_string(entry) << '\n';
+        }
+    }
+#endif
+}
 
 auto ProofLogger::advance_proof_line_number() -> ProofLineNumber
 {
@@ -235,10 +258,7 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
 
     overloaded{
         [&]([[maybe_unused]] const JustifyUsingRUP & j) {
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-            _imp->proof << "% RUP on lit " << debug_string(lit) << " with reason from " << j.where.file_name() << ":"
-                        << j.where.line() << " in " << j.where.function_name() << "\n";
-#endif
+            log_stacktrace();
             need_lit();
             optional<Reason> reason_literals;
             if (reason)
@@ -262,10 +282,7 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
             }
         },
         [&]([[maybe_unused]] const AssertRatherThanJustifying & j) {
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-            _imp->proof << "% assert on lit " << debug_string(lit) << " with reason from " << j.where.file_name() << ":"
-                        << j.where.line() << " in " << j.where.function_name() << '\n';
-#endif
+            log_stacktrace();
             need_lit();
             optional<Reason> reason_literals;
             if (reason)
@@ -287,19 +304,11 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
             }
         },
         [&](const JustifyExplicitly & x) {
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-            _imp->proof << "% explicit on lit " << debug_string(lit) << " with reason from " << x.where.file_name() << ":"
-                        << x.where.line() << " in " << x.where.function_name() << '\n';
-#endif
+            log_stacktrace();
             need_lit();
             auto t = temporary_proof_level();
             x.add_proof_steps(reason);
-            infer(lit, JustifyUsingRUP{
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-                           x.where
-#endif
-                       },
-                reason);
+            infer(lit, JustifyUsingRUP{}, reason);
             forget_proof_level(t);
         },
         [&](const NoJustificationNeeded &) {
@@ -335,16 +344,9 @@ auto ProofLogger::reify(const WPBSumLE & ineq, const ReasonFunction & reason) ->
     return names_and_ids_tracker().reify(ineq, HalfReifyOnConjunctionOf{reason_proof_literals});
 }
 
-auto ProofLogger::emit_proof_line(const string & s, ProofLevel level
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-    ,
-    const std::source_location & where
-#endif
-    ) -> ProofLine
+auto ProofLogger::emit_proof_line(const string & s, ProofLevel level) -> ProofLine
 {
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-    _imp->proof << "% emit proof line from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
-#endif
+    log_stacktrace();
     write_indent();
     _imp->proof << s << '\n';
     auto result = record_proof_line(advance_proof_line_number(), level);
@@ -356,18 +358,10 @@ auto ProofLogger::emit_proof_comment(const string & s) -> void
     _imp->proof << "% " << s << '\n';
 }
 
-auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
-    ProofLevel level
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-    ,
-    const std::source_location & where
-#endif
-    ) -> ProofLine
+auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level) -> ProofLine
 {
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-    _imp->proof << "% emit proof line from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
-#endif
+    log_stacktrace();
 
     stringstream rule_line;
 
@@ -386,23 +380,12 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<P
         [&](const AssertProofRule &) { rule_line << ";"; }}
         .visit(rule);
 
-    return emit_proof_line(
-        rule_line.str(), level
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-        ,
-        where
-#endif
-    );
+    return emit_proof_line(rule_line.str(), level);
 }
 
 auto ProofLogger::emit_under_reason(
     const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
-    ProofLevel level, const ReasonFunction & reason
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-    ,
-    const std::source_location & where
-#endif
-    ) -> ProofLine
+    ProofLevel level, const ReasonFunction & reason) -> ProofLine
 {
     optional<Reason> reason_literals;
     if (reason)
@@ -412,10 +395,7 @@ auto ProofLogger::emit_under_reason(
 
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
 
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-    _imp->proof << "% emit proof line from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
-#endif
-
+    log_stacktrace();
     stringstream rule_line;
 
     rule_line << overloaded{
@@ -441,44 +421,18 @@ auto ProofLogger::emit_under_reason(
         [&](const AssertProofRule &) { rule_line << ";"; }}
         .visit(rule);
 
-    return emit_proof_line(
-        rule_line.str(), level
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-        ,
-        where
-#endif
-    );
+    return emit_proof_line(rule_line.str(), level);
 }
 
-auto ProofLogger::emit_rup_proof_line(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-    ,
-    const std::source_location & where
-#endif
-    ) -> ProofLine
+auto ProofLogger::emit_rup_proof_line(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level) -> ProofLine
 {
-    return emit(RUPProofRule{}, ineq, level
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-        ,
-        where
-#endif
-    );
+    return emit(RUPProofRule{}, ineq, level);
 }
 
 auto ProofLogger::emit_rup_proof_line_under_reason(const ReasonFunction & reason, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
-    ProofLevel level
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-    ,
-    const std::source_location & where
-#endif
-    ) -> ProofLine
+    ProofLevel level) -> ProofLine
 {
-    return emit_under_reason(RUPProofRule{}, ineq, level, reason
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-        ,
-        where
-#endif
-    );
+    return emit_under_reason(RUPProofRule{}, ineq, level, reason);
 }
 
 auto ProofLogger::proof_level() -> int
@@ -514,17 +468,15 @@ auto ProofLogger::forget_proof_level(int depth) -> void
 
 auto ProofLogger::start_proof(const ProofModel & model) -> void
 {
-    _imp->proof.open(_imp->proof_file, ios::out);
-
-    _imp->proof << "pseudo-Boolean proof version 3.0\n";
-
-    _imp->proof << "f " << model.number_of_constraints() << " ;\n";
+    try {
+        _imp->proof.exceptions(ios::failbit | ios::badbit);
+        _imp->proof.open(_imp->proof_file, ios::out);
+        _imp->proof << "pseudo-Boolean proof version 3.0\n";
+        _imp->proof << "f " << model.number_of_constraints() << " ;\n";
+    } catch (const ios_base::failure &) {
+        throw ProofError{"Error writing proof file to '" + _imp->proof_file + "'"};
+    }
     _imp->proof_line.number += model.number_of_constraints().number;
-
-    if (! _imp->proof)
-        throw ProofError{"Error writing proof file to "
-                         " + _imp->proof_file + "
-                         ""};
 }
 
 auto ProofLogger::record_proof_line(ProofLineNumber line, ProofLevel level) -> ProofLineNumber
@@ -571,18 +523,11 @@ auto ProofLogger::emit_subproofs(const map<ProofGoal, Subproof> & subproofs)
 
 auto ProofLogger::emit_red_proof_line(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
     const std::vector<std::pair<ProofLiteralOrFlag, ProofLiteralOrFlag>> & witness,
-    ProofLevel level, const std::optional<std::map<ProofGoal, Subproof>> & subproofs
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-    ,
-    const std::source_location & where
-#endif
-    ) -> ProofLine
+    ProofLevel level, const std::optional<std::map<ProofGoal, Subproof>> & subproofs) -> ProofLine
 {
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
 
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-    _imp->proof << "% emit red line from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << "\n";
-#endif
+    log_stacktrace();
     write_indent();
     _imp->proof << "red ";
     emit_inequality_to(names_and_ids_tracker(), ineq, _imp->proof);
@@ -600,16 +545,9 @@ auto ProofLogger::emit_red_proof_line(const SumLessThanEqual<Weighted<PseudoBool
 }
 
 auto ProofLogger::emit_red_proof_lines_forward_reifying(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLiteralOrFlag reif,
-    ProofLevel level, const optional<map<ProofGoal, Subproof>> & subproofs
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-    ,
-    const std::source_location & where
-#endif
-    ) -> ProofLine
+    ProofLevel level, const optional<map<ProofGoal, Subproof>> & subproofs) -> ProofLine
 {
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-    _imp->proof << "% emit red lines forward reifying from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << "\n";
-#endif
+    log_stacktrace();
 
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
     write_indent();
@@ -625,16 +563,9 @@ auto ProofLogger::emit_red_proof_lines_forward_reifying(const SumLessThanEqual<W
 }
 
 auto ProofLogger::emit_red_proof_lines_reverse_reifying(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLiteralOrFlag reif,
-    ProofLevel level, const optional<map<ProofGoal, Subproof>> & subproofs
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-    ,
-    const std::source_location & where
-#endif
-    ) -> ProofLine
+    ProofLevel level, const optional<map<ProofGoal, Subproof>> & subproofs) -> ProofLine
 {
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-    _imp->proof << "% emit red lines reverse reifying from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
-#endif
+    log_stacktrace();
 
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
     auto negated_ineq = ineq.lhs >= ineq.rhs + 1_i;
@@ -650,16 +581,9 @@ auto ProofLogger::emit_red_proof_lines_reverse_reifying(const SumLessThanEqual<W
 }
 
 auto ProofLogger::emit_red_proof_lines_reifying(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLiteralOrFlag reif,
-    ProofLevel level
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-    ,
-    const std::source_location & where
-#endif
-    ) -> pair<ProofLine, ProofLine>
+    ProofLevel level) -> pair<ProofLine, ProofLine>
 {
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-    _imp->proof << "% emit red lines reifying from " << where.file_name() << ":" << where.line() << " in " << where.function_name() << '\n';
-#endif
+    log_stacktrace();
 
     auto forward_result = emit_red_proof_lines_forward_reifying(ineq, reif, level);
     auto reverse_result = emit_red_proof_lines_reverse_reifying(ineq, reif, level);

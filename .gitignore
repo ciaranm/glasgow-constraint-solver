@@ -2,7 +2,7 @@ intermediate
 perf.data
 perf.data.old
 html
-build
+build*
 Doxyfile
 *.a
 *.log
@@ -21,3 +21,4 @@ python/venv
 .cache
 compile_commands.json
 out/
+.claude

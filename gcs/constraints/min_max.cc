@@ -11,8 +11,14 @@
 
 #include <sstream>
 
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <print>
+#else
 #include <fmt/core.h>
 #include <fmt/ostream.h>
+#endif
 
 #include <algorithm>
 #include <sstream>
@@ -31,7 +37,11 @@ using std::unique_ptr;
 using std::vector;
 using std::ranges::any_of;
 
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::print;
+#else
 using fmt::print;
+#endif
 
 ArrayMinMax::ArrayMinMax(vector<IntegerVariableID> vars, const IntegerVariableID result, bool min) :
     _vars(move(vars)),

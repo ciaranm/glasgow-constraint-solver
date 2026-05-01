@@ -163,14 +163,15 @@ namespace gcs
     [[nodiscard]] inline auto operator!(const VariableConditionFrom<VariableType_> & cond) -> VariableConditionFrom<VariableType_>
     {
         switch (cond.op) {
-        case VariableConditionOperator::Equal:
-            return VariableConditionFrom<VariableType_>{cond.var, VariableConditionOperator::NotEqual, cond.value};
-        case VariableConditionOperator::NotEqual:
-            return VariableConditionFrom<VariableType_>{cond.var, VariableConditionOperator::Equal, cond.value};
-        case VariableConditionOperator::Less:
-            return VariableConditionFrom<VariableType_>{cond.var, VariableConditionOperator::GreaterEqual, cond.value};
-        case VariableConditionOperator::GreaterEqual:
-            return VariableConditionFrom<VariableType_>{cond.var, VariableConditionOperator::Less, cond.value};
+            using enum VariableConditionOperator;
+        case Equal:
+            return VariableConditionFrom<VariableType_>{cond.var, NotEqual, cond.value};
+        case NotEqual:
+            return VariableConditionFrom<VariableType_>{cond.var, Equal, cond.value};
+        case Less:
+            return VariableConditionFrom<VariableType_>{cond.var, GreaterEqual, cond.value};
+        case GreaterEqual:
+            return VariableConditionFrom<VariableType_>{cond.var, Less, cond.value};
         }
         throw NonExhaustiveSwitch{};
     }

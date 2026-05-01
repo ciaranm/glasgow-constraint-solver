@@ -3,6 +3,7 @@
 
 #include <gcs/innards/justification.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker-fwd.hh>
+#include <gcs/innards/proofs/proof_line.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/proofs/proof_model-fwd.hh>
 #include <gcs/innards/proofs/pseudo_boolean.hh>
@@ -17,35 +18,6 @@
 
 namespace gcs::innards
 {
-    struct ProofLineNumber
-    {
-        long long number;
-
-        [[nodiscard]] auto operator<=>(const ProofLineNumber &) const = default;
-    };
-
-    struct ProofLineLabel
-    {
-        std::string label;
-
-        [[nodiscard]] auto operator<=>(const ProofLineLabel &) const = default;
-    };
-
-    inline auto operator<<(std::ostream & s, const ProofLineNumber & n) -> std::ostream &
-    {
-        return s << n.number;
-    }
-
-    inline auto operator<<(std::ostream & s, const ProofLineLabel & l) -> std::ostream &
-    {
-        return s << "@" << l.label;
-    }
-
-    inline auto operator<<(std::ostream & s, const ProofLine & l) -> std::ostream &
-    {
-        return std::visit([&](const auto & l) -> std::ostream & { return s << l; }, l);
-    }
-
     using Subproof = std::function<auto(ProofLogger &)->void>;
 
     struct RUPProofRule
@@ -83,6 +55,8 @@ namespace gcs::innards
         auto end_proof() -> void;
 
         auto emit_subproofs(const std::map<ProofGoal, Subproof> & subproofs) -> auto;
+
+        auto log_stacktrace() -> void;
 
     public:
         /**
@@ -201,99 +175,54 @@ namespace gcs::innards
         /**
          * Emit the specified text as a proof line.
          */
-        auto emit_proof_line(const std::string &, ProofLevel level
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-            ,
-            const std::source_location & w = std::source_location::current()
-#endif
-                ) -> ProofLine;
+        auto emit_proof_line(const std::string &, ProofLevel level) -> ProofLine;
 
         /**
          * Emit a proof step, with a specified rule.
          */
-        auto emit(const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-            ,
-            const std::source_location & w = std::source_location::current()
-#endif
-                ) -> ProofLine;
+        auto emit(const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level) -> ProofLine;
 
         /**
          * Emit a proof step, with a specified rule.
          */
-        auto emit_under_reason(const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level, const ReasonFunction &
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-            ,
-            const std::source_location & w = std::source_location::current()
-#endif
-                ) -> ProofLine;
+        auto emit_under_reason(const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level, const ReasonFunction &) -> ProofLine;
 
         /**
          * Emit a RUP proof step for the specified expression, not subject to
          * any reasons.
          */
-        auto emit_rup_proof_line(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-            ,
-            const std::source_location & w = std::source_location::current()
-#endif
-                ) -> ProofLine;
+        auto emit_rup_proof_line(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level) -> ProofLine;
 
         /**
          * Emit a RUP proof step for the specified expression, subject to a
          * given reason.
          */
-        auto emit_rup_proof_line_under_reason(const ReasonFunction &, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-            ,
-            const std::source_location & w = std::source_location::current()
-#endif
-                ) -> ProofLine;
+        auto emit_rup_proof_line_under_reason(const ReasonFunction &, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level) -> ProofLine;
 
         /**
          * Emit a RED proof step for the specified expression.
          */
         auto emit_red_proof_line(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &,
             const std::vector<std::pair<ProofLiteralOrFlag, ProofLiteralOrFlag>> & witness, ProofLevel level,
-            const std::optional<std::map<ProofGoal, Subproof>> & subproofs = std::nullopt
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-            ,
-            const std::source_location & w = std::source_location::current()
-#endif
-                ) -> ProofLine;
+            const std::optional<std::map<ProofGoal, Subproof>> & subproofs = std::nullopt) -> ProofLine;
 
         /**
          * Emit a RED proof step for flag => specified expresion, creating a half reification.
          */
         auto emit_red_proof_lines_forward_reifying(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
-            ProofLiteralOrFlag reif, ProofLevel level, const std::optional<std::map<ProofGoal, Subproof>> & subproof = std::nullopt
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-            ,
-            const std::source_location & w = std::source_location::current()
-#endif
-                ) -> ProofLine;
+            ProofLiteralOrFlag reif, ProofLevel level, const std::optional<std::map<ProofGoal, Subproof>> & subproof = std::nullopt) -> ProofLine;
 
         /**
          * Emit a RED proof step for ~flag => ~specified expresion, creating a reverse half reification.
          */
         auto emit_red_proof_lines_reverse_reifying(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &,
-            ProofLiteralOrFlag, ProofLevel level, const std::optional<std::map<ProofGoal, Subproof>> & subproof = std::nullopt
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-            ,
-            const std::source_location & w = std::source_location::current()
-#endif
-                ) -> ProofLine;
+            ProofLiteralOrFlag, ProofLevel level, const std::optional<std::map<ProofGoal, Subproof>> & subproof = std::nullopt) -> ProofLine;
 
         /**
          * Emit a pair of RED proofs step for the specified expression, fully reified on the specified flag.
          */
         auto emit_red_proof_lines_reifying(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &,
-            ProofLiteralOrFlag, ProofLevel level
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-            ,
-            const std::source_location & w = std::source_location::current()
-#endif
-                ) -> std::pair<ProofLine, ProofLine>;
+            ProofLiteralOrFlag, ProofLevel level) -> std::pair<ProofLine, ProofLine>;
 
         auto create_proof_flag(const std::string &) -> ProofFlag;
 
@@ -310,7 +239,6 @@ namespace gcs::innards
          */
         auto write_indent() -> void;
     };
-
 }
 
 #endif

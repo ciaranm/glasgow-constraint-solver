@@ -12,7 +12,13 @@
 
 #include <util/enumerate.hh>
 
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <print>
+#else
 #include <fmt/ostream.h>
+#endif
 
 #include <algorithm>
 #include <functional>
@@ -42,7 +48,11 @@ using std::unique_ptr;
 using std::vector;
 using std::visit;
 
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::print;
+#else
 using fmt::print;
+#endif
 
 namespace
 {
@@ -224,7 +234,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(innards::
         Triggers index_triggers;
         if (array_has_nonconstants) {
             if (_bounds_only)
-                index_triggers.on_bounds.insert(index_triggers.on_change.end(), all_array_vars.begin(), all_array_vars.end());
+                index_triggers.on_bounds.insert(index_triggers.on_bounds.end(), all_array_vars.begin(), all_array_vars.end());
             else
                 index_triggers.on_change.insert(index_triggers.on_change.end(), all_array_vars.begin(), all_array_vars.end());
         }
@@ -347,7 +357,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(innards::
     if (_bounds_only) {
         Triggers result_triggers;
         if (array_has_nonconstants)
-            result_triggers.on_bounds.insert(result_triggers.on_change.end(), all_array_vars.begin(), all_array_vars.end());
+            result_triggers.on_bounds.insert(result_triggers.on_bounds.end(), all_array_vars.begin(), all_array_vars.end());
         result_triggers.on_change.insert(result_triggers.on_change.end(), _index_vars.begin(), _index_vars.end());
         result_triggers.on_bounds.emplace_back(_result_var);
 

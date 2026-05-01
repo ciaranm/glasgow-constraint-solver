@@ -12,7 +12,13 @@
 #include <optional>
 #include <sstream>
 
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <print>
+#else
 #include <fmt/ostream.h>
+#endif
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -24,7 +30,11 @@ using std::stringstream;
 using std::unique_ptr;
 using std::vector;
 
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::print;
+#else
 using fmt::print;
+#endif
 
 namespace
 {
@@ -107,20 +117,21 @@ auto ParityOdd::install_propagators(Propagators & propagators) -> void
                             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
         long how_many_0 = 0, how_many_1 = 0, how_many_unknown = 0; // <- how_many_0 is never used.  Why is it being tracked?
         optional<Literal> an_unknown;
-        HalfReifyOnConjunctionOf reason;
+        Reason reason;
         for (const auto & l : lits) {
             switch (state.test_literal(l)) {
-            case LiteralIs::DefinitelyTrue:
+                using enum LiteralIs;
+            case DefinitelyTrue:
                 reason.push_back(l);
                 ++how_many_1;
                 break;
 
-            case LiteralIs::DefinitelyFalse:
+            case DefinitelyFalse:
                 reason.push_back(! l);
                 ++how_many_0;
                 break;
 
-            case LiteralIs::Undecided:
+            case Undecided:
                 // two or more undecided literals? can't do anything
                 if (++how_many_unknown > 1)
                     return PropagatorState::Enable;

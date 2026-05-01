@@ -27,57 +27,102 @@ Getting Started
 
 This section describes how to build the solver, and how to create and solve a simple problem.
 
-[//]: # (Dependencies)
-
-[//]: # (---------------------)
-
-[//]: # ()
-[//]: # (No dependencies at the moment - boost removed.)
-
 Compiling
 ---------
 
-To build, you will need a C++20 compiler.
+### Dependencies
+
+**Required:**
+- A C++23 compiler. GCC 13 (Ubuntu 24.04) is the oldest tested; GCC 15 and Clang 21
+  are the primary development compilers. Clang on macOS uses libc++ rather than
+  libstdc++, which affects which C++23 features are available natively.
+- CMake 3.21 or later.
+
+**Fetched automatically by CMake** (no manual installation needed):
+- [Catch2](https://github.com/catchorg/Catch2) — test framework (tests only)
+- [cxxopts](https://github.com/jarro2783/cxxopts) — command-line parsing (examples and
+  MiniZinc frontend only)
+- [nlohmann/json](https://github.com/nlohmann/json) — JSON parsing (MiniZinc support only)
+- [fmt](https://github.com/fmtlib/fmt) — string formatting, fetched only when the
+  compiler's standard library lacks ``<format>`` (e.g. Clang with libc++ on macOS)
+- A ``<generator>`` polyfill, fetched only when the compiler's standard library lacks
+  ``std::generator`` (e.g. Clang with libc++ on macOS)
+
+**Optional external tools:**
+- [VeriPB](https://gitlab.com/MIAOresearch/software/VeriPB) — proof checker, required
+  to run the full test suite. Written in Rust; install with ``cargo install --path .``
+  after cloning.
+- libxml2 — required for XCSP support (``libxml2-dev`` on Ubuntu, ``libxml2`` via Brew).
+  XCSP support can be disabled with ``-DGCS_ENABLE_XCSP=OFF``.
+- [MiniZinc](https://www.minizinc.org) — required to use the MiniZinc frontend
+  (``minizincide`` via Brew on macOS). The frontend can be disabled with
+  ``-DGCS_ENABLE_MINIZINC=OFF``.
+- [Doxygen](https://www.doxygen.nl) — required to generate API documentation.
+
+### Build types
+
+Three build types are supported, selected via `CMAKE_BUILD_TYPE`. The easiest way to use
+them is through the named presets in `CMakePresets.json`:
+
+```shell
+cmake --preset release  && cmake --build --preset release  --parallel $(nproc 2>/dev/null || sysctl -n hw.logicalcpu)  # optimised, -march=native
+cmake --preset debug    && cmake --build --preset debug    --parallel $(nproc 2>/dev/null || sysctl -n hw.logicalcpu)  # -O0, full debug info
+cmake --preset sanitize && cmake --build --preset sanitize --parallel $(nproc 2>/dev/null || sysctl -n hw.logicalcpu)  # AddressSanitizer + UBSan
+```
+
+Each preset configures its own build directory (`build/`, `build-debug/`,
+`build-sanitize/`), so all three can coexist on disk.
+
+If you prefer not to use presets, the release build is just:
 
 ```shell
 cmake -S . -B build
-cmake --build build
+cmake --build build --parallel $(nproc 2>/dev/null || sysctl -n hw.logicalcpu)
 ```
 
-If you have ``veripb`` installed (see below), you should then run
+The sanitize build runs the code under [AddressSanitizer](https://clang.llvm.org/docs/AddressSanitizer.html)
+and [UndefinedBehaviourSanitizer](https://clang.llvm.org/docs/UndefinedBehaviorSanitizer.html),
+which catch memory errors and undefined behaviour at runtime. It is roughly 2× slower than
+release and is run automatically on every check-in.
 
+### Running the tests
+
+If you have ``veripb`` installed (see below), run the tests with:
 
 ```shell
-{ cd build ; ctest ; }
+ctest --preset release          # using presets
+{ cd build ; ctest ; }          # without presets
 ```
 
-To generate API documentation, Doxygen must be installed. Then instead do:
+For a sanitizer test run, set the following environment variables so that the first error
+halts the process with a useful backtrace rather than continuing:
+
+```shell
+ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
+ctest --preset sanitize
+```
+
+### Optional features
+
+XCSP and MiniZinc support are enabled by default but can be turned off to reduce
+build dependencies (see the Dependencies section above for what each requires):
+
+```shell
+cmake -S . -B build -DGCS_ENABLE_XCSP=OFF -DGCS_ENABLE_MINIZINC=OFF
+cmake --build build --parallel $(nproc 2>/dev/null || sysctl -n hw.logicalcpu)
+```
+
+Note that both frontends are currently extremely minimal and do not support most
+constraints or language features.
+
+To generate API documentation with Doxygen:
 
 ```shell
 cmake -S . -B build -DGCS_ENABLE_DOXYGEN=ON
-cmake --build build
+cmake --build build --parallel $(nproc 2>/dev/null || sysctl -n hw.logicalcpu)
 cmake --build build --target docs
 ```
-
-By default, XCSP support will be enabled, which requires libxml2 (``libxml2-dev`` on Ubuntu,
-``libxml2`` with Brew) and which will use Git to fetch an external dependency for parsing XCSP. To
-turn this off, do:
-
-```shell
-cmake -S . -B build -DGCS_ENABLE_XCSP=OFF
-cmake --build build
-```
-
-By default, MiniZinc support will also be enabled, which will bring in external dependencies for
-parsing JSON. To turn this off, do:
-
-```shell
-cmake -S . -B build -DGCS_ENABLE_MINIZINC=OFF
-cmake --build build
-```
-
-Note that both XCSP and MiniZinc support are currently extremely minimal, and do not include most
-constraints or support for many language features.
 
 Using the XCSP Solver
 ---------------------
@@ -373,10 +418,6 @@ former can be done by passing a ``NoJustificationNeeded`` or ``JustifyUsingRUP``
 simple constraints, but complex reasoning will require a ``JustifyExplicitly`` instance which
 includes a callback to create the relevant proof steps. The latter can be done using
 ``generic_reason``, if you do not have something better.
-
-If the compiler macro ``GCS_TRACK_ALL_PROPAGATIONS`` is defined, the proof log will include explicit
-origin statements for every ``JustifyUsingRUP`` propagation, which may be helpful in debugging bad
-proofs. It will also slow things down considerably.
 
 Backtracking Search
 -------------------

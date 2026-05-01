@@ -5,10 +5,6 @@
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/reason.hh>
 
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-#include <source_location>
-#endif
-
 #include <functional>
 #include <variant>
 #include <vector>
@@ -35,21 +31,9 @@ namespace gcs::innards
     struct JustifyExplicitly
     {
         ExplicitJustificationFunction add_proof_steps;
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-        std::source_location where;
-#endif
 
-        explicit JustifyExplicitly(const ExplicitJustificationFunction & a
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-            ,
-            const std::source_location & w = std::source_location::current()
-#endif
-                ) :
+        explicit JustifyExplicitly(const ExplicitJustificationFunction & a) :
             add_proof_steps(a)
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-            ,
-            where(w)
-#endif
         {
         }
     };
@@ -63,20 +47,9 @@ namespace gcs::innards
      */
     struct JustifyUsingRUP
     {
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-        std::source_location where;
-#endif
-
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-        explicit JustifyUsingRUP(const std::source_location & w = std::source_location::current()) :
-            where(w)
-        {
-        }
-#else
         explicit JustifyUsingRUP()
         {
         }
-#endif
     };
 
     /**
@@ -87,20 +60,9 @@ namespace gcs::innards
      */
     struct AssertRatherThanJustifying
     {
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-        std::source_location where;
-#endif
-
-#ifdef GCS_TRACK_ALL_PROPAGATIONS
-        explicit AssertRatherThanJustifying(const std::source_location & w = std::source_location::current()) :
-            where(w)
-        {
-        }
-#else
         explicit AssertRatherThanJustifying()
         {
         }
-#endif
     };
 
     /**
