@@ -63,7 +63,7 @@ auto run_lex_test_2(bool proofs,
     p.post(Lex{{v1, v2}, {v3, v4}});
 
     auto proof_name = proofs ? make_optional("lex_test") : nullopt;
-    solve_for_tests(p, proof_name, actual, tuple{v1, v2, v3, v4});
+    solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{v1, v2, v3, v4});
     check_results(proof_name, expected, actual);
 }
 
@@ -93,7 +93,7 @@ auto run_lex_test_3(bool proofs,
     p.post(Lex{{v1, v2, v3}, {v4, v5, v6}});
 
     auto proof_name = proofs ? make_optional("lex_test") : nullopt;
-    solve_for_tests(p, proof_name, actual, tuple{v1, v2, v3, v4, v5, v6});
+    solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{v1, v2, v3, v4, v5, v6});
     check_results(proof_name, expected, actual);
 }
 
@@ -121,7 +121,7 @@ auto run_lex_test_6(bool proofs,
         vector<IntegerVariableID>{all_vars.begin() + 6, all_vars.end()}});
 
     auto proof_name = proofs ? make_optional("lex_test") : nullopt;
-    solve_for_tests(p, proof_name, actual, tuple{all_vars});
+    solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{all_vars});
     check_results(proof_name, expected, actual);
 }
 
@@ -155,6 +155,11 @@ auto run_all_tests(bool proofs) -> void
 
     // Length-3: first two positions equal, third determines order
     run_lex_test_3(proofs, {1, 2}, {1, 2}, {1, 3}, {1, 2}, {1, 2}, {1, 3});
+
+    // Length-3 GAC: middle position forces witness at position 0.
+    // vars_1[1] = 1 < vars_2[1] = 2 prefix-blocks any witness at position >= 1,
+    // so the only witness can be position 0, forcing vars_1[0] > vars_2[0].
+    run_lex_test_3(proofs, {1, 2}, {1, 1}, {1, 2}, {1, 2}, {2, 2}, {1, 2});
 
     // Length-3: larger domain
     run_lex_test_3(proofs, {1, 5}, {1, 5}, {1, 5}, {1, 5}, {1, 5}, {1, 5});
