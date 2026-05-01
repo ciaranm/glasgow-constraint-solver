@@ -16,6 +16,16 @@ namespace gcs::innards
 
     [[nodiscard]] auto generic_reason(const State & state, const std::vector<IntegerVariableID> & vars) -> ReasonFunction;
 
+    /**
+     * \brief Like generic_reason but records only the lower and upper bounds of each
+     * variable, omitting any holes in the domain.
+     *
+     * Suitable for propagators whose inferences depend only on bounds (every
+     * fact consulted is a comparison against `lo` or `hi`). Produces smaller
+     * reasons than generic_reason when domains are wide.
+     */
+    [[nodiscard]] auto bounds_reason(const State & state, const std::vector<IntegerVariableID> & vars) -> ReasonFunction;
+
     [[nodiscard]] auto singleton_reason(const ProofLiteralOrFlag & lit) -> ReasonFunction;
 }
 
