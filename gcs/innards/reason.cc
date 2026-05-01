@@ -25,6 +25,22 @@ auto gcs::innards::generic_reason(const State & state, const std::vector<Integer
     return [=]() { return reason; };
 }
 
+auto gcs::innards::bounds_reason(const State & state, const std::vector<IntegerVariableID> & vars) -> ReasonFunction
+{
+    Reason reason;
+    for (const auto & var : vars) {
+        auto bounds = state.bounds(var);
+        if (bounds.first == bounds.second)
+            reason.push_back(var == bounds.first);
+        else {
+            reason.push_back(var >= bounds.first);
+            reason.push_back(var < bounds.second + 1_i);
+        }
+    }
+
+    return [=]() { return reason; };
+}
+
 auto innards::singleton_reason(const ProofLiteralOrFlag & lit) -> ReasonFunction
 {
     Reason reason;
