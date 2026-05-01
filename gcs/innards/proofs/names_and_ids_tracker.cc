@@ -56,6 +56,7 @@ using std::visit;
 using std::format;
 using std::print;
 #else
+using fmt::format;
 using fmt::print;
 #endif
 

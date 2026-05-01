@@ -6,6 +6,21 @@
 #include <random>
 #include <string>
 
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <format>
+#include <print>
+#else
+#include <fmt/core.h>
+#include <fmt/ostream.h>
+#endif
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::println;
+#else
+using fmt::print;
+using fmt::println;
+#endif
+
 using namespace gcs;
 using std::cerr;
 using std::cout;
