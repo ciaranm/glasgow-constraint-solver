@@ -99,7 +99,7 @@ namespace
     }
 
     auto initialise_graph(RegularGraph & graph, const vector<IntegerVariableID> & vars,
-        const long num_states, vector<unordered_map<Integer, long>> & transitions,
+        const long num_states, const vector<unordered_map<Integer, long>> & transitions,
         const vector<long> & final_states, const vector<vector<ProofFlag>> & state_at_pos_flags,
         const State & state, const ReasonFunction & reason, ProofLogger * const logger)
     {
@@ -246,7 +246,7 @@ namespace
 
     auto propagate_regular(const vector<IntegerVariableID> & vars,
         const long num_states,
-        vector<unordered_map<Integer, long>> transitions,
+        const vector<unordered_map<Integer, long>> & transitions,
         const vector<long> & final_states,
         const vector<vector<ProofFlag>> & state_at_pos_flags,
         const ConstraintStateHandle & graph_handle,
