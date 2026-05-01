@@ -35,12 +35,14 @@ namespace gcs
     /**
      * \brief Lexicographic ordering constraint. Enforce vars_1 >_lex vars_2.
      *
-     * Uses a stateless two-pass propagator: a left-to-right walk that enforces
-     * vars_1[i] >= vars_2[i] while in the forced-equal prefix, plus a
-     * right-to-left scan to identify whether strict-greater can still happen
-     * later, forcing strict at the first uncertain position when it cannot.
-     * The propagator is sound but not GAC; search picks up any unpruned
-     * inconsistencies.
+     * Uses a stateful propagator that maintains the leftmost not-yet-forced-
+     * equal position alpha across calls (restored on backtrack via
+     * State::add_constraint_state). At each call: advance alpha through any
+     * newly-fixed-equal prefix, tighten vars_1[alpha] >= vars_2[alpha], then
+     * scan from alpha+1 looking for either a position where strict-greater
+     * is feasible (a candidate witness) or a position whose bounds prevent
+     * the equal-prefix from extending. If no later witness is reachable,
+     * strict-greater is forced at alpha.
      *
      * Proof logging uses a flag-per-position OPB encoding (prefix_equal[i]
      * and decision_at[i] half-reified to vars_1[i] = vars_2[i] and
