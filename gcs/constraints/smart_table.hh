@@ -51,8 +51,10 @@ namespace gcs
     using SmartTuples = std::vector<std::vector<SmartEntry>>;
 
     /**
-     * \brief Constrain that the specified variables are equal to one of the specified
-     * smart tuples.
+     * \brief Constrain that the specified variables are equal to one of the
+     * specified smart tuples. "short_reasons" uses aliases for reasons when
+     * proof logging is enabled, which can result in shorter proofs.
+     *
      *
      * \ingroup Constraints
      * \see Table
