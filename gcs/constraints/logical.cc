@@ -184,7 +184,6 @@ namespace
         }
     }
 
-<<<<<<< split_up_install
     auto define_proof_model_logical(ProofModel & model, const Literals & lits,
         const Literal & full_reif, const LiteralIs & reif_state) -> void
     {
@@ -203,15 +202,6 @@ namespace
                         // Anything else -- not interested
                     }}
                     .visit(l);
-=======
-                if (optional_model) {
-                    if (LiteralIs::DefinitelyFalse != reif_state) {
-                        WPBSum forward;
-                        for (auto & l : _lits)
-                            forward += 1_i * PseudoBooleanTerm{l};
-                        optional_model->add_constraint("Logical", "if condition", forward >= Integer(_lits.size()), HalfReifyOnConjunctionOf{_full_reif});
-                    }
->>>>>>> main
 
             if (saw_false) {
                 model.add_constraint("Logical", "saw reif false", Literals{! full_reif});

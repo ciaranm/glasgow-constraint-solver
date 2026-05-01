@@ -45,8 +45,6 @@ using std::min;
 using std::nullopt;
 using std::optional;
 using std::pair;
-using std::ranges::adjacent_find;
-using std::ranges::sort;
 using std::shared_ptr;
 using std::string;
 using std::stringstream;
@@ -560,17 +558,11 @@ auto GACAllDifferent::install(Propagators & propagators, State & initial_state, 
     install_propagators(propagators);
 }
 
-<<<<<<< split_up_install
 auto GACAllDifferent::prepare(Propagators & propagators, State & initial_state, ProofModel * const optional_model) -> bool
 {
     _sanitised_vars = move(_vars);
     sort(_sanitised_vars);
     if (adjacent_find(_sanitised_vars) != _sanitised_vars.end()) {
-=======
-    auto sanitised_vars = move(_vars);
-    sort(sanitised_vars);
-    if (adjacent_find(sanitised_vars) != sanitised_vars.end()) {
->>>>>>> main
         propagators.model_contradiction(initial_state, optional_model, "AllDifferent with duplicate variables");
         return false;
     }

@@ -39,14 +39,14 @@ using std::min;
 using std::nullopt;
 using std::optional;
 using std::pair;
-using std::ranges::adjacent_find;
-using std::ranges::sort;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
 using std::variant;
 using std::vector;
 using std::visit;
+using std::ranges::adjacent_find;
+using std::ranges::sort;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::print;
@@ -116,7 +116,6 @@ auto VCAllDifferent::install(Propagators & propagators, State & initial_state, P
     if (! prepare(propagators, initial_state, optional_model))
         return;
 
-<<<<<<< split_up_install
     if (optional_model)
         define_proof_model(*optional_model);
 
@@ -128,11 +127,6 @@ auto VCAllDifferent::prepare(Propagators & propagators, State & initial_state, P
     _sanitised_vars = move(_vars);
     sort(_sanitised_vars);
     if (adjacent_find(_sanitised_vars) != _sanitised_vars.end()) {
-=======
-    auto sanitised_vars = move(_vars);
-    sort(sanitised_vars);
-    if (adjacent_find(sanitised_vars) != sanitised_vars.end()) {
->>>>>>> main
         propagators.model_contradiction(initial_state, model, "AllDifferent with duplicate variables");
         return false;
     }
