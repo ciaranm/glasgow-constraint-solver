@@ -24,8 +24,6 @@
 #include <utility>
 #include <variant>
 
-#include <iostream>
-
 using namespace gcs;
 using namespace gcs::innards;
 
