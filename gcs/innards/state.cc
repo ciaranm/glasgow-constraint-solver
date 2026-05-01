@@ -616,13 +616,14 @@ template <IntegerVariableIDLike VarType_>
 auto State::infer(const VariableConditionFrom<VarType_> & cond) -> Inference
 {
     switch (cond.op) {
-    case VariableConditionOperator::Equal:
+        using enum VariableConditionOperator;
+    case Equal:
         return infer_equal(cond.var, cond.value);
-    case VariableConditionOperator::NotEqual:
+    case NotEqual:
         return infer_not_equal(cond.var, cond.value);
-    case VariableConditionOperator::Less:
+    case Less:
         return infer_less_than(cond.var, cond.value);
-    case VariableConditionOperator::GreaterEqual:
+    case GreaterEqual:
         return infer_greater_than_or_equal(cond.var, cond.value);
     }
     throw NonExhaustiveSwitch{};
@@ -1024,7 +1025,8 @@ auto State::test_literal(const Literal & lit) const -> LiteralIs
 auto State::test_literal(const IntegerVariableCondition & cond) const -> LiteralIs
 {
     switch (cond.op) {
-    case VariableConditionOperator::Equal:
+        using enum VariableConditionOperator;
+    case Equal:
         if (! in_domain(cond.var, cond.value))
             return LiteralIs::DefinitelyFalse;
         else if (has_single_value(cond.var))
@@ -1032,7 +1034,7 @@ auto State::test_literal(const IntegerVariableCondition & cond) const -> Literal
         else
             return LiteralIs::Undecided;
 
-    case VariableConditionOperator::Less:
+    case Less:
         if (lower_bound(cond.var) < cond.value) {
             if (upper_bound(cond.var) < cond.value)
                 return LiteralIs::DefinitelyTrue;
@@ -1042,7 +1044,7 @@ auto State::test_literal(const IntegerVariableCondition & cond) const -> Literal
         else
             return LiteralIs::DefinitelyFalse;
 
-    case VariableConditionOperator::GreaterEqual:
+    case GreaterEqual:
         if (upper_bound(cond.var) >= cond.value) {
             if (lower_bound(cond.var) >= cond.value)
                 return LiteralIs::DefinitelyTrue;
@@ -1052,7 +1054,7 @@ auto State::test_literal(const IntegerVariableCondition & cond) const -> Literal
         else
             return LiteralIs::DefinitelyFalse;
 
-    case VariableConditionOperator::NotEqual:
+    case NotEqual:
         if (! in_domain(cond.var, cond.value))
             return LiteralIs::DefinitelyTrue;
         else if (has_single_value(cond.var))

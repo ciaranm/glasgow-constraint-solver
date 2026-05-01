@@ -108,7 +108,14 @@ auto Abs::prepare(Propagators & propagators, State & initial_state, ProofModel *
     auto v2u = max(initial_state.upper_bound(_v1), -initial_state.lower_bound(_v1));
     propagators.trim_upper_bound(initial_state, optional_model, _v2, v2u, "Abs");
 
+<<<<<<< split_up_install
     return true;
+=======
+    if (optional_model) {
+        optional_model->add_constraint("Abs", "non-negative", WPBSum{} + 1_i * _v2 + -1_i * _v1 == 0_i, HalfReifyOnConjunctionOf{_v1 >= 0_i});
+        optional_model->add_constraint("Abs", "negative", WPBSum{} + 1_i * _v2 + 1_i * _v1 == 0_i, HalfReifyOnConjunctionOf{_v1 < 0_i});
+    }
+>>>>>>> main
 }
 
 auto Abs::s_exprify(const string & name, const innards::ProofModel * const model) const -> string

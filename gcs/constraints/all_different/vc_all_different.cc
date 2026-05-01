@@ -116,6 +116,7 @@ auto VCAllDifferent::install(Propagators & propagators, State & initial_state, P
     if (! prepare(propagators, initial_state, optional_model))
         return;
 
+<<<<<<< split_up_install
     if (optional_model)
         define_proof_model(*optional_model);
 
@@ -127,6 +128,11 @@ auto VCAllDifferent::prepare(Propagators & propagators, State & initial_state, P
     _sanitised_vars = move(_vars);
     sort(_sanitised_vars);
     if (adjacent_find(_sanitised_vars) != _sanitised_vars.end()) {
+=======
+    auto sanitised_vars = move(_vars);
+    sort(sanitised_vars);
+    if (adjacent_find(sanitised_vars) != sanitised_vars.end()) {
+>>>>>>> main
         propagators.model_contradiction(initial_state, model, "AllDifferent with duplicate variables");
         return false;
     }
