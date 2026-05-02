@@ -70,29 +70,8 @@ namespace
             }
         }
 
-        if (add_to_reason) {
-            overloaded{
-                [&](const TrueLiteral &) {},
-                [&](const FalseLiteral &) {},
-                [&](const IntegerVariableCondition & cond) {
-                    switch (cond.op) {
-                        using enum VariableConditionOperator;
-                    case NotEqual:
-                        reason.emplace_back(cond.var != cond.value);
-                        break;
-                    case Equal:
-                        reason.emplace_back(cond.var == cond.value);
-                        break;
-                    case Less:
-                        reason.emplace_back(cond.var < cond.value);
-                        break;
-                    case GreaterEqual:
-                        reason.emplace_back(cond.var >= cond.value);
-                        break;
-                    }
-                }}
-                .visit(*add_to_reason);
-        }
+        if (add_to_reason)
+            reason.push_back(*add_to_reason);
 
         return ReasonFunction{[=]() { return reason; }};
     }
