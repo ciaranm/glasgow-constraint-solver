@@ -26,6 +26,7 @@
 #include <util/overloaded.hh>
 
 using std::any_cast;
+using std::get;
 using std::make_shared;
 using std::min;
 using std::move;
@@ -67,7 +68,7 @@ namespace
         const vector<IntegerVariableID> & vars_1,
         const vector<IntegerVariableID> & vars_2,
         bool or_equal,
-        const shared_ptr<vector<ProofFlag>> & prefix_equal_flags,
+        const shared_ptr<vector<optional<ProofFlag>>> & prefix_equal_flags,
         const shared_ptr<vector<ProofFlag>> & decision_at_flags,
         const Literal & cond,
         ConstraintStateHandle state_handle) -> PropagatorState
@@ -132,10 +133,10 @@ namespace
                 emit_not_d(r, k);
             for (size_t k = alpha; k < n; ++k) {
                 logger->emit_rup_proof_line_under_reason(r,
-                    WPBSum{} + 1_i * (vars_1[alpha] >= b2_alpha.first) + 1_i * ! prefix_equal_flags->at(k + 1) >= 1_i,
+                    WPBSum{} + 1_i * (vars_1[alpha] >= b2_alpha.first) + 1_i * ! *prefix_equal_flags->at(k + 1) >= 1_i,
                     ProofLevel::Temporary);
                 logger->emit_rup_proof_line_under_reason(r,
-                    WPBSum{} + 1_i * (vars_2[alpha] < b1_alpha.second + 1_i) + 1_i * ! prefix_equal_flags->at(k + 1) >= 1_i,
+                    WPBSum{} + 1_i * (vars_2[alpha] < b1_alpha.second + 1_i) + 1_i * ! *prefix_equal_flags->at(k + 1) >= 1_i,
                     ProofLevel::Temporary);
             }
         };
@@ -176,7 +177,7 @@ namespace
                 auto emit_not_prefix_equal_for_or_equal = [&](const ReasonFunction & r) -> void {
                     if (or_equal && prefix_blocked)
                         logger->emit_rup_proof_line_under_reason(r,
-                            WPBSum{} + 1_i * ! prefix_equal_flags->at(blocking_position + 1) >= 1_i,
+                            WPBSum{} + 1_i * ! *prefix_equal_flags->at(blocking_position + 1) >= 1_i,
                             ProofLevel::Temporary);
                 };
 
@@ -231,7 +232,7 @@ namespace
         const vector<IntegerVariableID> & vars_1,
         const vector<IntegerVariableID> & vars_2,
         size_t n,
-        const shared_ptr<vector<ProofFlag>> & prefix_equal_flags,
+        const shared_ptr<vector<optional<ProofFlag>>> & prefix_equal_flags,
         const shared_ptr<vector<ProofFlag>> & decision_at_flags) -> void
     {
         // First not-equal position (where bounds prevent vars_1[k0] =
@@ -246,7 +247,7 @@ namespace
             // Bounds force inequality iff there's no overlap.
             if (b1.first > b2.second || b1.second < b2.first) {
                 logger->emit_rup_proof_line_under_reason(r,
-                    WPBSum{} + 1_i * ! prefix_equal_flags->at(k + 1) >= 1_i,
+                    WPBSum{} + 1_i * ! *prefix_equal_flags->at(k + 1) >= 1_i,
                     ProofLevel::Temporary);
             }
             break;
@@ -273,9 +274,9 @@ namespace
         const vector<IntegerVariableID> & vars_1,
         const vector<IntegerVariableID> & vars_2,
         bool or_equal,
-        const shared_ptr<vector<ProofFlag>> & prefix_equal_gt_flags,
+        const shared_ptr<vector<optional<ProofFlag>>> & prefix_equal_gt_flags,
         const shared_ptr<vector<ProofFlag>> & decision_at_gt_flags,
-        const shared_ptr<vector<ProofFlag>> & prefix_equal_lt_flags,
+        const shared_ptr<vector<optional<ProofFlag>>> & prefix_equal_lt_flags,
         const shared_ptr<vector<ProofFlag>> & decision_at_lt_flags,
         const evaluated_reif::Undecided & reif) -> PropagatorState
     {
@@ -368,7 +369,10 @@ namespace
 
     struct DirectionFlags
     {
-        shared_ptr<vector<ProofFlag>> prefix_equal;
+        // prefix_equal[0] is the empty-prefix flag — trivially TRUE — so
+        // we don't bother creating a ProofFlag for it; element 0 is
+        // nullopt. Indices 1..n are real ProofFlag instances.
+        shared_ptr<vector<optional<ProofFlag>>> prefix_equal;
         shared_ptr<vector<ProofFlag>> decision_at;
     };
 
@@ -400,9 +404,10 @@ namespace
         auto n = min(vars_1.size(), vars_2.size());
 
         DirectionFlags d;
-        d.prefix_equal = make_shared<vector<ProofFlag>>();
+        d.prefix_equal = make_shared<vector<optional<ProofFlag>>>();
         d.decision_at = make_shared<vector<ProofFlag>>();
-        for (size_t i = 0; i <= n; ++i)
+        d.prefix_equal->push_back(nullopt);
+        for (size_t i = 1; i <= n; ++i)
             d.prefix_equal->push_back(model.create_proof_flag(format("lex_{}_prefix_equal_{}", flag_prefix, i)));
         for (size_t i = 0; i < n; ++i)
             d.decision_at->push_back(model.create_proof_flag(format("lex_{}_decision_at_{}", flag_prefix, i)));
@@ -413,27 +418,27 @@ namespace
             return base;
         };
 
-        // prefix_equal[0] is unconditionally TRUE (within the direction).
-        if (cond_half_reify)
-            model.add_constraint(WPBSum{} + 1_i * d.prefix_equal->at(0) >= 1_i, *cond_half_reify);
-        else
-            model.add_constraint(WPBSum{} + 1_i * d.prefix_equal->at(0) >= 1_i);
-
+        // No "prefix_equal[0] >= 1" constraint needed: prefix_equal[0] is
+        // the empty-prefix-is-equal flag, trivially TRUE. Likewise the
+        // chain and decision_at aux defs at i=0 reduce to "X -> TRUE" and
+        // are skipped.
         for (size_t i = 0; i < n; ++i) {
-            // prefix_equal[i+1] -> prefix_equal[i]
-            model.add_constraint(
-                WPBSum{} + 1_i * d.prefix_equal->at(i) >= 1_i,
-                with_cond(HalfReifyOnConjunctionOf{d.prefix_equal->at(i + 1)}));
+            if (i > 0) {
+                // prefix_equal[i+1] -> prefix_equal[i]
+                model.add_constraint(
+                    WPBSum{} + 1_i * *d.prefix_equal->at(i) >= 1_i,
+                    with_cond(HalfReifyOnConjunctionOf{*d.prefix_equal->at(i + 1)}));
+
+                // decision_at[i] -> prefix_equal[i]
+                model.add_constraint(
+                    WPBSum{} + 1_i * *d.prefix_equal->at(i) >= 1_i,
+                    with_cond(HalfReifyOnConjunctionOf{d.decision_at->at(i)}));
+            }
 
             // prefix_equal[i+1] -> vars_1[i] = vars_2[i]
             model.add_constraint(
                 WPBSum{} + 1_i * vars_1[i] + -1_i * vars_2[i] == 0_i,
-                with_cond(HalfReifyOnConjunctionOf{d.prefix_equal->at(i + 1)}));
-
-            // decision_at[i] -> prefix_equal[i]
-            model.add_constraint(
-                WPBSum{} + 1_i * d.prefix_equal->at(i) >= 1_i,
-                with_cond(HalfReifyOnConjunctionOf{d.decision_at->at(i)}));
+                with_cond(HalfReifyOnConjunctionOf{*d.prefix_equal->at(i + 1)}));
 
             // decision_at[i] -> vars_1[i] > vars_2[i]
             model.add_constraint(
@@ -446,7 +451,7 @@ namespace
         for (auto & da : *d.decision_at)
             at_least_one += 1_i * da;
         if (or_equal)
-            at_least_one += 1_i * d.prefix_equal->at(n);
+            at_least_one += 1_i * *d.prefix_equal->at(n);
         model.add_constraint(move(at_least_one) >= 1_i, cond_half_reify);
 
         return d;
