@@ -10,8 +10,10 @@
 #include <gcs/innards/reason.hh>
 #include <gcs/innards/state.hh>
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <utility>
+#include <variant>
 #include <version>
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
@@ -21,16 +23,21 @@
 #include <fmt/ostream.h>
 #endif
 
+#include <util/overloaded.hh>
+
 using std::any_cast;
 using std::make_shared;
 using std::min;
 using std::move;
+using std::nullopt;
+using std::optional;
 using std::shared_ptr;
 using std::size_t;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
 using std::vector;
+using std::visit;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::format;
@@ -49,6 +56,401 @@ namespace
     {
         size_t alpha = 0;
     };
+
+    // One propagation pass enforcing vars_1 (>|>=)_lex vars_2. This is the
+    // forward direction from the propagator's point of view; for backward
+    // (negation) propagation, callers swap vars_1/vars_2 and flip or_equal.
+    auto run_lex_pass(
+        const State & state,
+        auto & inference,
+        ProofLogger * const logger,
+        const vector<IntegerVariableID> & vars_1,
+        const vector<IntegerVariableID> & vars_2,
+        bool or_equal,
+        const shared_ptr<vector<ProofFlag>> & prefix_equal_flags,
+        const shared_ptr<vector<ProofFlag>> & decision_at_flags,
+        const Literal & cond,
+        ConstraintStateHandle state_handle) -> PropagatorState
+    {
+        auto n = min(vars_1.size(), vars_2.size());
+
+        auto & lex_state = any_cast<LexState &>(state.get_constraint_state(state_handle));
+        auto alpha = lex_state.alpha;
+
+        // Advance alpha through any newly-forced-equal positions. No
+        // inferences happen here: those positions had vars_1[k] = vars_2[k]
+        // forced by a prior call (or by branching), so the bounds in the
+        // reason already imply ~decision_at[k] for all k < alpha.
+        while (alpha < n) {
+            auto b1 = state.bounds(vars_1[alpha]);
+            auto b2 = state.bounds(vars_2[alpha]);
+            if (b1.first == b1.second && b2.first == b2.second && b1.first == b2.first)
+                ++alpha;
+            else
+                break;
+        }
+
+        auto all_vars = vars_1;
+        all_vars.insert(all_vars.end(), vars_2.begin(), vars_2.end());
+        auto reason = bounds_reason(state, all_vars, cond);
+
+        // For non-strict, walking off the end means all positions are forced
+        // equal, which is itself a valid solution. The constraint is now
+        // fully discharged.
+        if (alpha == n) {
+            lex_state.alpha = alpha;
+            if (or_equal)
+                return PropagatorState::DisableUntilBacktrack;
+
+            // Strict variant: walked off with everything equal, infeasible.
+            auto contradiction_proof = [&, n](const ReasonFunction & r) -> void {
+                if (! logger) return;
+                for (size_t k = 0; k < n; ++k)
+                    logger->emit_rup_proof_line_under_reason(r,
+                        WPBSum{} + 1_i * ! decision_at_flags->at(k) >= 1_i,
+                        ProofLevel::Temporary);
+            };
+            inference.contradiction(logger, JustifyExplicitlyThenRUP{contradiction_proof}, reason);
+        }
+
+        auto emit_not_d = [&](const ReasonFunction & r, size_t k) -> void {
+            logger->emit_rup_proof_line_under_reason(r,
+                WPBSum{} + 1_i * ! decision_at_flags->at(k) >= 1_i,
+                ProofLevel::Temporary);
+        };
+
+        bool strict_forced = false;
+
+        // Tighten at alpha (the >= part of the constraint): vars_1[alpha] must
+        // be at least vars_2[alpha].lo, and vars_2[alpha] at most vars_1[alpha].hi.
+        auto b1_alpha = state.bounds(vars_1[alpha]);
+        auto b2_alpha = state.bounds(vars_2[alpha]);
+
+        auto tighten_proof = [&, alpha](const ReasonFunction & r) -> void {
+            if (! logger) return;
+            for (size_t k = 0; k < alpha; ++k)
+                emit_not_d(r, k);
+            for (size_t k = alpha; k < n; ++k) {
+                logger->emit_rup_proof_line_under_reason(r,
+                    WPBSum{} + 1_i * (vars_1[alpha] >= b2_alpha.first) + 1_i * ! prefix_equal_flags->at(k + 1) >= 1_i,
+                    ProofLevel::Temporary);
+                logger->emit_rup_proof_line_under_reason(r,
+                    WPBSum{} + 1_i * (vars_2[alpha] < b1_alpha.second + 1_i) + 1_i * ! prefix_equal_flags->at(k + 1) >= 1_i,
+                    ProofLevel::Temporary);
+            }
+        };
+
+        inference.infer_all(logger,
+            {vars_1[alpha] >= b2_alpha.first, vars_2[alpha] < b1_alpha.second + 1_i},
+            JustifyExplicitlyThenRUP{tighten_proof}, reason);
+
+        auto nb1_alpha = state.bounds(vars_1[alpha]);
+        auto nb2_alpha = state.bounds(vars_2[alpha]);
+
+        if (nb1_alpha.first > nb2_alpha.second) {
+            strict_forced = true;
+        }
+        else {
+            bool found_beta = false;
+            bool prefix_blocked = false;
+            size_t blocking_position = n;
+            for (size_t k = alpha + 1; k < n; ++k) {
+                auto bk1 = state.bounds(vars_1[k]);
+                auto bk2 = state.bounds(vars_2[k]);
+                if (bk1.second > bk2.first) {
+                    found_beta = true;
+                    break;
+                }
+                if (bk1.second < bk2.first) {
+                    prefix_blocked = true;
+                    blocking_position = k;
+                    break;
+                }
+            }
+
+            bool must_force_strict = (! found_beta) && ((! or_equal) || prefix_blocked);
+
+            if (must_force_strict) {
+                bool alpha_candidate = (nb1_alpha.second > nb2_alpha.first);
+
+                auto emit_not_prefix_equal_for_or_equal = [&](const ReasonFunction & r) -> void {
+                    if (or_equal && prefix_blocked)
+                        logger->emit_rup_proof_line_under_reason(r,
+                            WPBSum{} + 1_i * ! prefix_equal_flags->at(blocking_position + 1) >= 1_i,
+                            ProofLevel::Temporary);
+                };
+
+                if (! alpha_candidate) {
+                    auto contradiction_proof = [&, n](const ReasonFunction & r) -> void {
+                        if (! logger) return;
+                        for (size_t k = 0; k < n; ++k)
+                            emit_not_d(r, k);
+                        emit_not_prefix_equal_for_or_equal(r);
+                    };
+                    inference.contradiction(logger, JustifyExplicitlyThenRUP{contradiction_proof}, reason);
+                }
+
+                auto force_strict_proof = [&, alpha, n](const ReasonFunction & r) -> void {
+                    if (! logger) return;
+                    for (size_t k = 0; k < n; ++k) {
+                        if (k == alpha) continue;
+                        emit_not_d(r, k);
+                    }
+                    emit_not_prefix_equal_for_or_equal(r);
+                };
+
+                inference.infer_all(logger,
+                    {vars_1[alpha] >= nb2_alpha.first + 1_i,
+                        vars_2[alpha] < nb1_alpha.second},
+                    JustifyExplicitlyThenRUP{force_strict_proof}, reason);
+
+                auto fb1 = state.bounds(vars_1[alpha]);
+                auto fb2 = state.bounds(vars_2[alpha]);
+                if (fb1.first > fb2.second)
+                    strict_forced = true;
+            }
+        }
+
+        lex_state.alpha = alpha;
+
+        return strict_forced ? PropagatorState::DisableUntilBacktrack : PropagatorState::Enable;
+    }
+
+    // Emit RUP scaffolding to convince VeriPB that, under the given reason,
+    // the encoding of "vars_1 (>|>=)_lex vars_2" cannot be satisfied —
+    // forcing all decision_at flags to FALSE, plus ~prefix_equal[k0+1] at
+    // the first not-equal position so VeriPB can chain it through to
+    // ~prefix_equal[n]. Used when inferring the reification literal: under
+    // the negation of the inferred cond, the half-reified at-least-one
+    // constraint becomes active and conflicts with the bounds-forced aux
+    // flag values.
+    auto emit_lex_unsat_scaffold(
+        const State & state,
+        ProofLogger * const logger,
+        const ReasonFunction & r,
+        const vector<IntegerVariableID> & vars_1,
+        const vector<IntegerVariableID> & vars_2,
+        size_t n,
+        const shared_ptr<vector<ProofFlag>> & prefix_equal_flags,
+        const shared_ptr<vector<ProofFlag>> & decision_at_flags) -> void
+    {
+        // First not-equal position (where bounds prevent vars_1[k0] =
+        // vars_2[k0]). ~prefix_equal[k0+1] is RUP-derivable directly from
+        // bounds and the prefix_equal half-reif at k0.
+        for (size_t k = 0; k < n; ++k) {
+            auto b1 = state.bounds(vars_1[k]);
+            auto b2 = state.bounds(vars_2[k]);
+            bool fixed_equal = (b1.first == b1.second && b2.first == b2.second && b1.first == b2.first);
+            if (fixed_equal)
+                continue;
+            // Bounds force inequality iff there's no overlap.
+            if (b1.first > b2.second || b1.second < b2.first) {
+                logger->emit_rup_proof_line_under_reason(r,
+                    WPBSum{} + 1_i * ! prefix_equal_flags->at(k + 1) >= 1_i,
+                    ProofLevel::Temporary);
+            }
+            break;
+        }
+
+        // ~decision_at[k] for every position. Each is RUP-derivable directly
+        // from bounds (decision_at[k] -> prefix_equal[k] AND vars_1[k] >
+        // vars_2[k]; one of these always conflicts under the assumed bounds,
+        // chaining via the just-emitted ~prefix_equal[k0+1] for k > k0).
+        for (size_t k = 0; k < n; ++k)
+            logger->emit_rup_proof_line_under_reason(r,
+                WPBSum{} + 1_i * ! decision_at_flags->at(k) >= 1_i,
+                ProofLevel::Temporary);
+    }
+
+    // Detection-only logic for when the reification condition is undecided.
+    // Walk through positions: if we can prove the constraint definitely
+    // holds (or definitely doesn't hold) from the current bounds, infer
+    // the cond literal accordingly. Otherwise, leave alone.
+    auto run_lex_undecided_detection(
+        const State & state,
+        auto & inference,
+        ProofLogger * const logger,
+        const vector<IntegerVariableID> & vars_1,
+        const vector<IntegerVariableID> & vars_2,
+        bool or_equal,
+        const shared_ptr<vector<ProofFlag>> & prefix_equal_gt_flags,
+        const shared_ptr<vector<ProofFlag>> & decision_at_gt_flags,
+        const shared_ptr<vector<ProofFlag>> & prefix_equal_lt_flags,
+        const shared_ptr<vector<ProofFlag>> & decision_at_lt_flags,
+        const evaluated_reif::Undecided & reif) -> PropagatorState
+    {
+        auto n = min(vars_1.size(), vars_2.size());
+
+        auto all_vars = vars_1;
+        all_vars.insert(all_vars.end(), vars_2.begin(), vars_2.end());
+        auto reason = bounds_reason(state, all_vars);
+
+        size_t k = 0;
+        bool definitely_holds = false;
+        bool definitely_does_not_hold = false;
+
+        for (; k < n; ++k) {
+            auto b1 = state.bounds(vars_1[k]);
+            auto b2 = state.bounds(vars_2[k]);
+
+            bool fixed_equal = (b1.first == b1.second && b2.first == b2.second && b1.first == b2.first);
+            if (fixed_equal)
+                continue;
+
+            if (b1.first > b2.second) {
+                // Strict-greater forced at first non-equal position: constraint
+                // (>=, or strict >) definitely holds.
+                definitely_holds = true;
+            }
+            else if (b1.second < b2.first) {
+                // Strict-less forced: constraint definitely does not hold.
+                definitely_does_not_hold = true;
+            }
+            // else: bounds overlap, leave the determination to a later call
+            // once tighter bounds arrive.
+            break;
+        }
+
+        if (k == n) {
+            // All positions forced equal: constraint holds for non-strict,
+            // does not hold for strict.
+            if (or_equal)
+                definitely_holds = true;
+            else
+                definitely_does_not_hold = true;
+        }
+
+        // When inferring cond, scaffold the proof: under the negation of
+        // the inferred literal, the opposite-direction encoding's
+        // at-least-one is activated, and the bounds make every aux flag
+        // forced to FALSE — violating the at-least-one. Emit those
+        // ~aux_flag lines so VeriPB's RUP can chain through.
+        //
+        // The scaffolding lines need the *opposite* cond polarity in their
+        // reason (so that the aux defs of the relevant direction, which are
+        // half-reified on that polarity, fire under PB unit propagation).
+        // The inference itself stays under just the bounds reason.
+        auto reason_under_cond_false = [base = reason, cond = reif.cond]() {
+            auto rl = base();
+            rl.push_back(! cond);
+            return rl;
+        };
+        auto reason_under_cond_true = [base = reason, cond = reif.cond]() {
+            auto rl = base();
+            rl.push_back(cond);
+            return rl;
+        };
+
+        auto justify_for_must_hold = [&](const ReasonFunction &) -> void {
+            if (logger && prefix_equal_lt_flags && decision_at_lt_flags)
+                emit_lex_unsat_scaffold(state, logger, ReasonFunction{reason_under_cond_false},
+                    vars_2, vars_1, n,
+                    prefix_equal_lt_flags, decision_at_lt_flags);
+        };
+        auto justify_for_must_not_hold = [&](const ReasonFunction &) -> void {
+            if (logger && prefix_equal_gt_flags && decision_at_gt_flags)
+                emit_lex_unsat_scaffold(state, logger, ReasonFunction{reason_under_cond_true},
+                    vars_1, vars_2, n,
+                    prefix_equal_gt_flags, decision_at_gt_flags);
+        };
+
+        if (definitely_holds && reif.set_cond_if_must_hold)
+            inference.infer(logger, reif.cond, JustifyExplicitlyThenRUP{justify_for_must_hold}, reason);
+        else if (definitely_holds && reif.set_not_cond_if_must_hold)
+            inference.infer(logger, ! reif.cond, JustifyExplicitlyThenRUP{justify_for_must_hold}, reason);
+        else if (definitely_does_not_hold && reif.set_not_cond_if_must_not_hold)
+            inference.infer(logger, ! reif.cond, JustifyExplicitlyThenRUP{justify_for_must_not_hold}, reason);
+
+        if (definitely_holds || definitely_does_not_hold)
+            return PropagatorState::DisableUntilBacktrack;
+        return PropagatorState::Enable;
+    }
+
+    struct DirectionFlags
+    {
+        shared_ptr<vector<ProofFlag>> prefix_equal;
+        shared_ptr<vector<ProofFlag>> decision_at;
+    };
+
+    struct EncodingFlags
+    {
+        DirectionFlags gt;
+        DirectionFlags lt;
+    };
+
+    // Build the OPB encoding for one "direction" of the lex constraint.
+    // The direction here is "vars_1 (>|>=)_lex vars_2" with the given
+    // or_equal flag, and the encoding optionally half-reified on a cond
+    // literal (so that under !cond, all aux constraints are vacuous and
+    // the aux flags can take any value).
+    //
+    // The half-reify is applied to *every* aux constraint, not just the
+    // global at-least-one disjunction: this ensures that under a
+    // hypothetical "cond=FALSE" assignment, VeriPB can verify a solution
+    // by leaving the aux flags entirely unconstrained, rather than
+    // tripping over residual implications between them.
+    auto build_lex_direction_encoding(
+        ProofModel & model,
+        const vector<IntegerVariableID> & vars_1,
+        const vector<IntegerVariableID> & vars_2,
+        bool or_equal,
+        const optional<HalfReifyOnConjunctionOf> & cond_half_reify,
+        const string & flag_prefix) -> DirectionFlags
+    {
+        auto n = min(vars_1.size(), vars_2.size());
+
+        DirectionFlags d;
+        d.prefix_equal = make_shared<vector<ProofFlag>>();
+        d.decision_at = make_shared<vector<ProofFlag>>();
+        for (size_t i = 0; i <= n; ++i)
+            d.prefix_equal->push_back(model.create_proof_flag(format("lex_{}_prefix_equal_{}", flag_prefix, i)));
+        for (size_t i = 0; i < n; ++i)
+            d.decision_at->push_back(model.create_proof_flag(format("lex_{}_decision_at_{}", flag_prefix, i)));
+
+        auto with_cond = [&](HalfReifyOnConjunctionOf base) {
+            if (cond_half_reify)
+                base.insert(base.end(), cond_half_reify->begin(), cond_half_reify->end());
+            return base;
+        };
+
+        // prefix_equal[0] is unconditionally TRUE (within the direction).
+        if (cond_half_reify)
+            model.add_constraint(WPBSum{} + 1_i * d.prefix_equal->at(0) >= 1_i, *cond_half_reify);
+        else
+            model.add_constraint(WPBSum{} + 1_i * d.prefix_equal->at(0) >= 1_i);
+
+        for (size_t i = 0; i < n; ++i) {
+            // prefix_equal[i+1] -> prefix_equal[i]
+            model.add_constraint(
+                WPBSum{} + 1_i * d.prefix_equal->at(i) >= 1_i,
+                with_cond(HalfReifyOnConjunctionOf{d.prefix_equal->at(i + 1)}));
+
+            // prefix_equal[i+1] -> vars_1[i] = vars_2[i]
+            model.add_constraint(
+                WPBSum{} + 1_i * vars_1[i] + -1_i * vars_2[i] == 0_i,
+                with_cond(HalfReifyOnConjunctionOf{d.prefix_equal->at(i + 1)}));
+
+            // decision_at[i] -> prefix_equal[i]
+            model.add_constraint(
+                WPBSum{} + 1_i * d.prefix_equal->at(i) >= 1_i,
+                with_cond(HalfReifyOnConjunctionOf{d.decision_at->at(i)}));
+
+            // decision_at[i] -> vars_1[i] > vars_2[i]
+            model.add_constraint(
+                WPBSum{} + 1_i * vars_1[i] + -1_i * vars_2[i] >= 1_i,
+                with_cond(HalfReifyOnConjunctionOf{d.decision_at->at(i)}));
+        }
+
+        // At-least-one: cond -> sum decision_at + (or_equal ? prefix_equal[n] : 0) >= 1.
+        WPBSum at_least_one;
+        for (auto & da : *d.decision_at)
+            at_least_one += 1_i * da;
+        if (or_equal)
+            at_least_one += 1_i * d.prefix_equal->at(n);
+        model.add_constraint(move(at_least_one) >= 1_i, cond_half_reify);
+
+        return d;
+    }
 }
 
 LexSmartTable::LexSmartTable(vector<IntegerVariableID> vars_1, vector<IntegerVariableID> vars_2) :
@@ -64,10 +466,6 @@ auto LexSmartTable::clone() const -> unique_ptr<Constraint>
 
 auto LexSmartTable::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
-    // Build the constraint as smart table
-    // Question: Do we trust this encoding as a smart table?
-    // Should we morally have a simpler PB encoding and reformulate?
-    // Like an auto-smart-table proof?
     SmartTuples tuples;
 
     for (unsigned int i = 0; i < min(_vars_1.size(), _vars_2.size()); ++i) {
@@ -104,9 +502,11 @@ auto LexSmartTable::s_exprify(const std::string & name, const innards::ProofMode
 }
 
 LexCompareGreaterThanOrMaybeEqual::LexCompareGreaterThanOrMaybeEqual(
-    vector<IntegerVariableID> vars_1, vector<IntegerVariableID> vars_2, bool or_equal, bool vars_swapped) :
+    vector<IntegerVariableID> vars_1, vector<IntegerVariableID> vars_2,
+    ReificationCondition reif_cond, bool or_equal, bool vars_swapped) :
     _vars_1(move(vars_1)),
     _vars_2(move(vars_2)),
+    _reif_cond(reif_cond),
     _or_equal(or_equal),
     _vars_swapped(vars_swapped)
 {
@@ -114,63 +514,57 @@ LexCompareGreaterThanOrMaybeEqual::LexCompareGreaterThanOrMaybeEqual(
 
 auto LexCompareGreaterThanOrMaybeEqual::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<LexCompareGreaterThanOrMaybeEqual>(_vars_1, _vars_2, _or_equal, _vars_swapped);
+    return make_unique<LexCompareGreaterThanOrMaybeEqual>(_vars_1, _vars_2, _reif_cond, _or_equal, _vars_swapped);
 }
 
 auto LexCompareGreaterThanOrMaybeEqual::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
     auto or_equal = _or_equal;
-    auto n = min(_vars_1.size(), _vars_2.size());
 
-    // Saved proof flags shared with the propagator, so per-call explicit
-    // justification functions can refer to them by name.
-    auto prefix_equal_flags = make_shared<vector<ProofFlag>>();
-    auto decision_at_flags = make_shared<vector<ProofFlag>>();
+    // Decide which directions of the encoding we need based on the
+    // reification type. If always picks just the constraint direction;
+    // NotIf picks the negation; Iff picks both.
+    bool need_gt_direction = false;
+    bool need_lt_direction = false;
+    optional<HalfReifyOnConjunctionOf> half_reify_for_gt;
+    optional<HalfReifyOnConjunctionOf> half_reify_for_lt;
 
+    overloaded{
+        [&](const reif::MustHold &) {
+            need_gt_direction = true;
+        },
+        [&](const reif::MustNotHold &) {
+            need_lt_direction = true;
+        },
+        [&](const reif::If & r) {
+            need_gt_direction = true;
+            half_reify_for_gt = HalfReifyOnConjunctionOf{r.cond};
+        },
+        [&](const reif::NotIf & r) {
+            need_lt_direction = true;
+            half_reify_for_lt = HalfReifyOnConjunctionOf{r.cond};
+        },
+        [&](const reif::Iff & r) {
+            need_gt_direction = true;
+            need_lt_direction = true;
+            half_reify_for_gt = HalfReifyOnConjunctionOf{r.cond};
+            half_reify_for_lt = HalfReifyOnConjunctionOf{! r.cond};
+        }}
+        .visit(_reif_cond);
+
+    EncodingFlags flags;
     if (optional_model) {
-        // Flag-per-position OPB encoding. Two flags per position:
-        //   prefix_equal[i] = TRUE iff vars_1[j] = vars_2[j] for all j < i
-        //   decision_at[i]  = TRUE iff i is a witness deciding position
-        // plus a global disjunction saying at least one decision_at must hold.
-        for (size_t i = 0; i <= n; ++i)
-            prefix_equal_flags->push_back(optional_model->create_proof_flag(format("lex_prefix_equal_{}", i)));
-        for (size_t i = 0; i < n; ++i)
-            decision_at_flags->push_back(optional_model->create_proof_flag(format("lex_decision_at_{}", i)));
-
-        // prefix_equal[0] is unconditionally TRUE.
-        optional_model->add_constraint(WPBSum{} + 1_i * prefix_equal_flags->at(0) >= 1_i);
-
-        for (size_t i = 0; i < n; ++i) {
-            // prefix_equal[i+1] -> prefix_equal[i]
-            optional_model->add_constraint(
-                WPBSum{} + 1_i * prefix_equal_flags->at(i) >= 1_i,
-                HalfReifyOnConjunctionOf{prefix_equal_flags->at(i + 1)});
-
-            // prefix_equal[i+1] -> vars_1[i] = vars_2[i]
-            optional_model->add_constraint(
-                WPBSum{} + 1_i * _vars_1[i] + -1_i * _vars_2[i] == 0_i,
-                HalfReifyOnConjunctionOf{prefix_equal_flags->at(i + 1)});
-
-            // decision_at[i] -> prefix_equal[i]
-            optional_model->add_constraint(
-                WPBSum{} + 1_i * prefix_equal_flags->at(i) >= 1_i,
-                HalfReifyOnConjunctionOf{decision_at_flags->at(i)});
-
-            // decision_at[i] -> vars_1[i] > vars_2[i]
-            optional_model->add_constraint(
-                WPBSum{} + 1_i * _vars_1[i] + -1_i * _vars_2[i] >= 1_i,
-                HalfReifyOnConjunctionOf{decision_at_flags->at(i)});
-        }
-
-        // At least one decision_at[i] must hold — or, for the non-strict
-        // variant, the all-equal flag prefix_equal[n] is also acceptable.
-        WPBSum at_least_one_decision;
-        for (auto & d : *decision_at_flags)
-            at_least_one_decision += 1_i * d;
-        if (or_equal)
-            at_least_one_decision += 1_i * prefix_equal_flags->at(n);
-        optional_model->add_constraint(move(at_least_one_decision) >= 1_i);
+        if (need_gt_direction)
+            flags.gt = build_lex_direction_encoding(*optional_model,
+                _vars_1, _vars_2, _or_equal, half_reify_for_gt, "gt");
+        if (need_lt_direction)
+            flags.lt = build_lex_direction_encoding(*optional_model,
+                _vars_2, _vars_1, ! _or_equal, half_reify_for_lt, "lt");
     }
+    auto prefix_equal_gt_flags = flags.gt.prefix_equal;
+    auto decision_at_gt_flags = flags.gt.decision_at;
+    auto prefix_equal_lt_flags = flags.lt.prefix_equal;
+    auto decision_at_lt_flags = flags.lt.decision_at;
 
     Triggers triggers;
     for (auto & v : _vars_1)
@@ -180,209 +574,112 @@ auto LexCompareGreaterThanOrMaybeEqual::install(Propagators & propagators, State
 
     auto state_handle = initial_state.add_constraint_state(LexState{});
 
-    propagators.install([vars_1 = move(_vars_1), vars_2 = move(_vars_2),
-                            prefix_equal_flags, decision_at_flags, state_handle, or_equal](
-                            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-        auto n = min(vars_1.size(), vars_2.size());
-
-        auto & lex_state = any_cast<LexState &>(state.get_constraint_state(state_handle));
-        auto alpha = lex_state.alpha;
-
-        // Advance alpha through any newly-forced-equal positions. No inferences
-        // happen here: those positions had vars_1[k] = vars_2[k] forced by a
-        // prior call (or by branching), so the bounds in the reason already
-        // imply ~decision_at[k] for all k < alpha.
-        while (alpha < n) {
-            auto b1 = state.bounds(vars_1[alpha]);
-            auto b2 = state.bounds(vars_2[alpha]);
-            if (b1.first == b1.second && b2.first == b2.second && b1.first == b2.first)
-                ++alpha;
-            else
-                break;
-        }
-
-        // For non-strict, walking off the end means all positions are forced
-        // equal, which is itself a valid solution. The constraint is now
-        // fully discharged.
-        if (alpha == n) {
-            lex_state.alpha = alpha;
-            if (or_equal)
-                return PropagatorState::DisableUntilBacktrack;
-
-            // Strict variant: walked off with everything equal, infeasible.
-            auto all_vars_for_reason = vars_1;
-            all_vars_for_reason.insert(all_vars_for_reason.end(), vars_2.begin(), vars_2.end());
-            auto reason = bounds_reason(state, all_vars_for_reason);
-            auto contradiction_proof = [&, n](const ReasonFunction & r) -> void {
-                if (! logger) return;
-                for (size_t k = 0; k < n; ++k)
-                    logger->emit_rup_proof_line_under_reason(r,
-                        WPBSum{} + 1_i * ! decision_at_flags->at(k) >= 1_i,
-                        ProofLevel::Temporary);
-            };
-            inference.contradiction(logger, JustifyExplicitlyThenRUP{contradiction_proof}, reason);
-        }
-
-        // One reason for every inference this call: bounds of every variable.
-        auto all_vars = vars_1;
-        all_vars.insert(all_vars.end(), vars_2.begin(), vars_2.end());
-        auto reason = bounds_reason(state, all_vars);
-
-        // Helper: emit RUP line forcing decision_at[k] = FALSE under the reason.
-        // RUP succeeds when bounds make decision_at[k] -> vars_1[k] - vars_2[k] >= 1
-        // unsatisfiable: either both fixed-equal (k < alpha) or strict-infeasible
-        // (k >= alpha and bounds say vars_1[k].hi <= vars_2[k].lo). For k beyond
-        // a prefix-blocking position, RUP chains via ~prefix_equal[blocking+1]
-        // (itself derivable from bounds + half-reif) and prefix_equal[k] ->
-        // prefix_equal[blocking+1].
-        auto emit_not_d = [&](const ReasonFunction & r, size_t k) -> void {
-            logger->emit_rup_proof_line_under_reason(r,
-                WPBSum{} + 1_i * ! decision_at_flags->at(k) >= 1_i,
-                ProofLevel::Temporary);
-        };
-
-        bool strict_forced = false;
-
-        // Tighten at alpha (the >= part of the constraint): vars_1[alpha] must
-        // be at least vars_2[alpha].lo, and vars_2[alpha] at most vars_1[alpha].hi.
-        auto b1_alpha = state.bounds(vars_1[alpha]);
-        auto b2_alpha = state.bounds(vars_2[alpha]);
-
-        // Scaffolding for the tightening at position alpha:
-        // - For k < alpha (forced fixed-equal): emit ~decision_at[k].
-        // - For k >= alpha: emit "(vars_1[alpha] >= b2.first) OR ~prefix_equal[k+1]".
-        //   Under the assumption ~(vars_1[alpha] >= b2.first), the framework's
-        //   RUP can then chain ~prefix_equal[k+1] -> ~prefix_equal[k] -> ... ->
-        //   ~decision_at[k] for k >= alpha, plus ~decision_at[alpha] from the
-        //   bound assumption directly. For non-strict, the chain also gives
-        //   ~prefix_equal[n], which is needed to kill the extra term in the
-        //   global at-least-one constraint. Symmetric clauses for vars_2[alpha].
-        auto tighten_proof = [&, alpha](const ReasonFunction & r) -> void {
-            if (! logger) return;
-            for (size_t k = 0; k < alpha; ++k)
-                emit_not_d(r, k);
-            for (size_t k = alpha; k < n; ++k) {
-                logger->emit_rup_proof_line_under_reason(r,
-                    WPBSum{} + 1_i * (vars_1[alpha] >= b2_alpha.first) + 1_i * ! prefix_equal_flags->at(k + 1) >= 1_i,
-                    ProofLevel::Temporary);
-                logger->emit_rup_proof_line_under_reason(r,
-                    WPBSum{} + 1_i * (vars_2[alpha] < b1_alpha.second + 1_i) + 1_i * ! prefix_equal_flags->at(k + 1) >= 1_i,
-                    ProofLevel::Temporary);
-            }
-        };
-
-        inference.infer_all(logger,
-            {vars_1[alpha] >= b2_alpha.first, vars_2[alpha] < b1_alpha.second + 1_i},
-            JustifyExplicitlyThenRUP{tighten_proof}, reason);
-
-        auto nb1_alpha = state.bounds(vars_1[alpha]);
-        auto nb2_alpha = state.bounds(vars_2[alpha]);
-
-        if (nb1_alpha.first > nb2_alpha.second) {
-            strict_forced = true;
-        }
-        else {
-            // Stateful gamma scan: walk from alpha+1 looking for the first
-            // position where strict-greater becomes feasible (a candidate beta)
-            // or where the equal-prefix breaks (no later witness is reachable).
-            bool found_beta = false;
-            bool prefix_blocked = false;
-            size_t blocking_position = n;
-            for (size_t k = alpha + 1; k < n; ++k) {
-                auto bk1 = state.bounds(vars_1[k]);
-                auto bk2 = state.bounds(vars_2[k]);
-                if (bk1.second > bk2.first) {
-                    found_beta = true;
-                    break;
-                }
-                if (bk1.second < bk2.first) {
-                    // Prefix-blocked: vars_1[k] = vars_2[k] is infeasible, so
-                    // no k' > k can extend the equal prefix to be a witness.
-                    // For non-strict, this also means the all-equal-from-alpha
-                    // scenario fails (vars_1 would be lex-less at position k),
-                    // so the constraint forces strict-greater at alpha.
-                    prefix_blocked = true;
-                    blocking_position = k;
-                    break;
-                }
-                // bk1.second == bk2.first: strict infeasible here, but the
-                // prefix can still be equal at this position.
-            }
-
-            // For strict (`!or_equal`), no later witness means strict must
-            // happen at alpha. For non-strict, all-equal-from-alpha is a valid
-            // alternative *unless* the equal prefix gets blocked before n.
-            bool must_force_strict = (! found_beta) && ((! or_equal) || prefix_blocked);
-
-            if (must_force_strict) {
-                bool alpha_candidate = (nb1_alpha.second > nb2_alpha.first);
-
-                // For non-strict, the global at-least-one constraint includes
-                // prefix_equal[n]; scaffold ~prefix_equal[blocking+1] so the
-                // framework's RUP can chain it to ~prefix_equal[n] (one PB
-                // unit-prop step per chain link).
-                auto emit_not_prefix_equal_for_or_equal = [&](const ReasonFunction & r) -> void {
-                    if (or_equal && prefix_blocked)
-                        logger->emit_rup_proof_line_under_reason(r,
-                            WPBSum{} + 1_i * ! prefix_equal_flags->at(blocking_position + 1) >= 1_i,
-                            ProofLevel::Temporary);
-                };
-
-                if (! alpha_candidate) {
-                    // No witness anywhere: contradiction.
-                    auto contradiction_proof = [&, n](const ReasonFunction & r) -> void {
-                        if (! logger) return;
-                        for (size_t k = 0; k < n; ++k)
-                            emit_not_d(r, k);
-                        emit_not_prefix_equal_for_or_equal(r);
-                    };
-                    inference.contradiction(logger, JustifyExplicitlyThenRUP{contradiction_proof}, reason);
-                }
-
-                // alpha is the only possible witness: force strict-greater there.
-                auto force_strict_proof = [&, alpha, n](const ReasonFunction & r) -> void {
-                    if (! logger) return;
-                    for (size_t k = 0; k < n; ++k) {
-                        if (k == alpha) continue;
-                        emit_not_d(r, k);
-                    }
-                    emit_not_prefix_equal_for_or_equal(r);
-                };
-
-                inference.infer_all(logger,
-                    {vars_1[alpha] >= nb2_alpha.first + 1_i,
-                        vars_2[alpha] < nb1_alpha.second},
-                    JustifyExplicitlyThenRUP{force_strict_proof}, reason);
-
-                auto fb1 = state.bounds(vars_1[alpha]);
-                auto fb2 = state.bounds(vars_2[alpha]);
-                if (fb1.first > fb2.second)
-                    strict_forced = true;
-            }
-        }
-
-        lex_state.alpha = alpha;
-
-        // If strict is already forced at some position, the constraint is
-        // fully discharged for this branch: bounds only ever tighten further,
-        // so this can never become un-discharged before backtrack.
-        return strict_forced ? PropagatorState::DisableUntilBacktrack : PropagatorState::Enable;
-    },
-        triggers, "lex");
+    // The outer lambdas of the overloaded visitor below are pure references
+    // and don't move anything at construction. Only one branch's body
+    // executes at runtime, so it's safe for each branch to move-capture
+    // _vars_1/_vars_2/_reif_cond into the inner propagator lambda.
+    overloaded{
+        [&](const evaluated_reif::MustHold & reif) {
+            propagators.install(
+                [vars_1 = move(_vars_1), vars_2 = move(_vars_2), or_equal,
+                    prefix_equal_gt_flags, decision_at_gt_flags, state_handle, cond = reif.cond](
+                    const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+                    return run_lex_pass(state, inference, logger,
+                        vars_1, vars_2, or_equal,
+                        prefix_equal_gt_flags, decision_at_gt_flags,
+                        cond, state_handle);
+                },
+                triggers, "lex");
+        },
+        [&](const evaluated_reif::MustNotHold & reif) {
+            // Negation: enforce vars_2 (>|>=) vars_1 with or_equal flipped.
+            propagators.install(
+                [vars_1 = move(_vars_1), vars_2 = move(_vars_2), or_equal,
+                    prefix_equal_lt_flags, decision_at_lt_flags, state_handle, cond = reif.cond](
+                    const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+                    return run_lex_pass(state, inference, logger,
+                        vars_2, vars_1, ! or_equal,
+                        prefix_equal_lt_flags, decision_at_lt_flags,
+                        cond, state_handle);
+                },
+                triggers, "lex");
+        },
+        [&](const evaluated_reif::Undecided & reif) {
+            // Re-evaluate the reification on every call: if cond becomes
+            // decided we forward- or backward-propagate; while it's still
+            // undecided we monitor and infer cond when the constraint state
+            // forces it.
+            triggers.on_change.push_back(reif.cond.var);
+            propagators.install(
+                [vars_1 = move(_vars_1), vars_2 = move(_vars_2), or_equal,
+                    prefix_equal_gt_flags, decision_at_gt_flags,
+                    prefix_equal_lt_flags, decision_at_lt_flags,
+                    state_handle, reif_cond = move(_reif_cond)](
+                    const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+                    return overloaded{
+                        [&](const evaluated_reif::MustHold & reif) {
+                            return run_lex_pass(state, inference, logger,
+                                vars_1, vars_2, or_equal,
+                                prefix_equal_gt_flags, decision_at_gt_flags,
+                                reif.cond, state_handle);
+                        },
+                        [&](const evaluated_reif::MustNotHold & reif) {
+                            return run_lex_pass(state, inference, logger,
+                                vars_2, vars_1, ! or_equal,
+                                prefix_equal_lt_flags, decision_at_lt_flags,
+                                reif.cond, state_handle);
+                        },
+                        [&](const evaluated_reif::Undecided & reif) {
+                            return run_lex_undecided_detection(state, inference, logger,
+                                vars_1, vars_2, or_equal,
+                                prefix_equal_gt_flags, decision_at_gt_flags,
+                                prefix_equal_lt_flags, decision_at_lt_flags,
+                                reif);
+                        },
+                        [&](const evaluated_reif::Deactivated &) {
+                            return PropagatorState::DisableUntilBacktrack;
+                        }}
+                        .visit(state.test_reification_condition(reif_cond));
+                },
+                triggers, "lex reified");
+        },
+        [&](const evaluated_reif::Deactivated &) {
+            // Reification condition pins the constraint as inactive.
+        }}
+        .visit(initial_state.test_reification_condition(_reif_cond));
 }
 
 auto LexCompareGreaterThanOrMaybeEqual::s_exprify(const std::string & name, const innards::ProofModel * const model) const -> std::string
 {
     stringstream s;
 
-    string cmp = format("lex_{}_than{}",
-        _vars_swapped ? "less" : "greater",
-        _or_equal ? "_equal" : "");
+    string reif_suffix = overloaded{
+        [](const reif::MustHold &) -> string { return ""; },
+        [](const reif::MustNotHold &) -> string { return "_not"; },
+        [](const reif::If &) -> string { return "_if"; },
+        [](const reif::NotIf &) -> string { return "_not_if"; },
+        [](const reif::Iff &) -> string { return "_iff"; }}
+                             .visit(_reif_cond);
 
-    print(s, "{} {} (", name, cmp);
-    // The base stores the constraint as vars_1 (>|>=) vars_2; for less-than
-    // variants the user-facing arguments were swapped at construction time,
-    // so swap them back when printing.
+    string cmp = format("lex_{}_than{}{}",
+        _vars_swapped ? "less" : "greater",
+        _or_equal ? "_equal" : "",
+        reif_suffix);
+
+    print(s, "{} {}", name, cmp);
+
+    auto cond_lit = overloaded{
+        [](const reif::MustHold &) -> optional<IntegerVariableCondition> { return nullopt; },
+        [](const reif::MustNotHold &) -> optional<IntegerVariableCondition> { return nullopt; },
+        [](const reif::If & r) -> optional<IntegerVariableCondition> { return r.cond; },
+        [](const reif::NotIf & r) -> optional<IntegerVariableCondition> { return r.cond; },
+        [](const reif::Iff & r) -> optional<IntegerVariableCondition> { return r.cond; }}
+                        .visit(_reif_cond);
+
+    if (cond_lit)
+        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(*cond_lit));
+
+    print(s, " (");
     auto & first = _vars_swapped ? _vars_2 : _vars_1;
     auto & second = _vars_swapped ? _vars_1 : _vars_2;
     for (const auto & var : first)

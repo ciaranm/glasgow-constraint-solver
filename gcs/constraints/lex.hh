@@ -3,6 +3,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_LEX_HH
 
 #include <gcs/constraint.hh>
+#include <gcs/reification.hh>
 #include <gcs/variable_id.hh>
 
 #include <vector>
@@ -34,13 +35,15 @@ namespace gcs
     };
 
     /**
-     * \brief General implementation for lexicographic ordering constraints.
+     * \brief General implementation for lexicographic ordering constraints,
+     * including reified and half-reified forms.
      *
      * Internally enforces vars_1 (>|>=)_lex vars_2 — strict or non-strict
-     * depending on the `or_equal` flag. The `vars_swapped` flag is a hint
-     * to s_exprify about whether the user-facing direction was less-than
-     * (variants swap their arguments at construction so the propagator
-     * always sees a "greater" problem).
+     * depending on the `or_equal` flag — under a `ReificationCondition`. The
+     * `vars_swapped` flag is a hint to s_exprify about whether the
+     * user-facing direction was less-than (less-than variants swap their
+     * arguments at construction so the propagator always sees a "greater"
+     * problem).
      *
      * Uses a stateful propagator that maintains the leftmost not-yet-
      * forced-equal position alpha across calls (restored on backtrack via
@@ -53,12 +56,20 @@ namespace gcs
      * non-strict, only force strict when the equal-prefix cannot extend
      * to the end (since otherwise all-equal is itself a valid solution).
      *
+     * For reified cases, the same alpha-walk is used to detect whether the
+     * constraint definitely holds, definitely does not hold, or is still
+     * undetermined; the propagator then either forward-propagates the
+     * constraint, propagates its negation, or just monitors and infers the
+     * reification literal when the constraint state forces it.
+     *
      * Proof logging uses a flag-per-position OPB encoding (prefix_equal[i]
      * and decision_at[i] half-reified to vars_1[i] = vars_2[i] and
      * vars_1[i] > vars_2[i] respectively). The global at-least-one
      * disjunction is over decision_at[i] for strict, with prefix_equal[n]
-     * additionally allowed for non-strict (so an all-equal assignment
-     * satisfies the constraint). Inferences emit RUP scaffolding lines via
+     * additionally allowed for non-strict. For Iff, two encodings are
+     * installed (one for the constraint, one for its negation) with
+     * separate flag sets, half-reified on the cond and its negation
+     * respectively. Inferences emit RUP scaffolding lines via
      * JustifyExplicitlyThenRUP so VeriPB's PB unit propagation can verify
      * each step in isolation.
      *
@@ -68,6 +79,14 @@ namespace gcs
      * \sa LexGreaterEqual
      * \sa LexLessThan
      * \sa LexLessThanEqual
+     * \sa LexGreaterThanIf
+     * \sa LexGreaterThanIff
+     * \sa LexGreaterEqualIf
+     * \sa LexGreaterEqualIff
+     * \sa LexLessThanIf
+     * \sa LexLessThanIff
+     * \sa LexLessThanEqualIf
+     * \sa LexLessThanEqualIff
      * \sa LexSmartTable
      */
     class LexCompareGreaterThanOrMaybeEqual : public Constraint
@@ -75,11 +94,12 @@ namespace gcs
     private:
         std::vector<IntegerVariableID> _vars_1;
         std::vector<IntegerVariableID> _vars_2;
+        ReificationCondition _reif_cond;
         bool _or_equal;
         bool _vars_swapped;
 
     public:
-        explicit LexCompareGreaterThanOrMaybeEqual(std::vector<IntegerVariableID> vars_1, std::vector<IntegerVariableID> vars_2, bool or_equal, bool vars_swapped = false);
+        explicit LexCompareGreaterThanOrMaybeEqual(std::vector<IntegerVariableID> vars_1, std::vector<IntegerVariableID> vars_2, ReificationCondition reif_cond, bool or_equal, bool vars_swapped = false);
 
         virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
@@ -95,7 +115,31 @@ namespace gcs
     {
     public:
         inline explicit LexGreaterThan(std::vector<IntegerVariableID> vars_1, std::vector<IntegerVariableID> vars_2) :
-            LexCompareGreaterThanOrMaybeEqual(std::move(vars_1), std::move(vars_2), false, false) {};
+            LexCompareGreaterThanOrMaybeEqual(std::move(vars_1), std::move(vars_2), reif::MustHold{}, false, false) {};
+    };
+
+    /**
+     * \brief Constrain that vars_1 >_lex vars_2 if `cond` holds.
+     *
+     * \ingroup Constraints
+     */
+    class LexGreaterThanIf : public LexCompareGreaterThanOrMaybeEqual
+    {
+    public:
+        inline explicit LexGreaterThanIf(std::vector<IntegerVariableID> vars_1, std::vector<IntegerVariableID> vars_2, IntegerVariableCondition cond) :
+            LexCompareGreaterThanOrMaybeEqual(std::move(vars_1), std::move(vars_2), reif::If{cond}, false, false) {};
+    };
+
+    /**
+     * \brief Constrain that vars_1 >_lex vars_2 if and only if `cond` holds.
+     *
+     * \ingroup Constraints
+     */
+    class LexGreaterThanIff : public LexCompareGreaterThanOrMaybeEqual
+    {
+    public:
+        inline explicit LexGreaterThanIff(std::vector<IntegerVariableID> vars_1, std::vector<IntegerVariableID> vars_2, IntegerVariableCondition cond) :
+            LexCompareGreaterThanOrMaybeEqual(std::move(vars_1), std::move(vars_2), reif::Iff{cond}, false, false) {};
     };
 
     /**
@@ -107,7 +151,31 @@ namespace gcs
     {
     public:
         inline explicit LexGreaterEqual(std::vector<IntegerVariableID> vars_1, std::vector<IntegerVariableID> vars_2) :
-            LexCompareGreaterThanOrMaybeEqual(std::move(vars_1), std::move(vars_2), true, false) {};
+            LexCompareGreaterThanOrMaybeEqual(std::move(vars_1), std::move(vars_2), reif::MustHold{}, true, false) {};
+    };
+
+    /**
+     * \brief Constrain that vars_1 >=_lex vars_2 if `cond` holds.
+     *
+     * \ingroup Constraints
+     */
+    class LexGreaterEqualIf : public LexCompareGreaterThanOrMaybeEqual
+    {
+    public:
+        inline explicit LexGreaterEqualIf(std::vector<IntegerVariableID> vars_1, std::vector<IntegerVariableID> vars_2, IntegerVariableCondition cond) :
+            LexCompareGreaterThanOrMaybeEqual(std::move(vars_1), std::move(vars_2), reif::If{cond}, true, false) {};
+    };
+
+    /**
+     * \brief Constrain that vars_1 >=_lex vars_2 if and only if `cond` holds.
+     *
+     * \ingroup Constraints
+     */
+    class LexGreaterEqualIff : public LexCompareGreaterThanOrMaybeEqual
+    {
+    public:
+        inline explicit LexGreaterEqualIff(std::vector<IntegerVariableID> vars_1, std::vector<IntegerVariableID> vars_2, IntegerVariableCondition cond) :
+            LexCompareGreaterThanOrMaybeEqual(std::move(vars_1), std::move(vars_2), reif::Iff{cond}, true, false) {};
     };
 
     /**
@@ -119,7 +187,31 @@ namespace gcs
     {
     public:
         inline explicit LexLessThan(std::vector<IntegerVariableID> vars_1, std::vector<IntegerVariableID> vars_2) :
-            LexCompareGreaterThanOrMaybeEqual(std::move(vars_2), std::move(vars_1), false, true) {};
+            LexCompareGreaterThanOrMaybeEqual(std::move(vars_2), std::move(vars_1), reif::MustHold{}, false, true) {};
+    };
+
+    /**
+     * \brief Constrain that vars_1 <_lex vars_2 if `cond` holds.
+     *
+     * \ingroup Constraints
+     */
+    class LexLessThanIf : public LexCompareGreaterThanOrMaybeEqual
+    {
+    public:
+        inline explicit LexLessThanIf(std::vector<IntegerVariableID> vars_1, std::vector<IntegerVariableID> vars_2, IntegerVariableCondition cond) :
+            LexCompareGreaterThanOrMaybeEqual(std::move(vars_2), std::move(vars_1), reif::If{cond}, false, true) {};
+    };
+
+    /**
+     * \brief Constrain that vars_1 <_lex vars_2 if and only if `cond` holds.
+     *
+     * \ingroup Constraints
+     */
+    class LexLessThanIff : public LexCompareGreaterThanOrMaybeEqual
+    {
+    public:
+        inline explicit LexLessThanIff(std::vector<IntegerVariableID> vars_1, std::vector<IntegerVariableID> vars_2, IntegerVariableCondition cond) :
+            LexCompareGreaterThanOrMaybeEqual(std::move(vars_2), std::move(vars_1), reif::Iff{cond}, false, true) {};
     };
 
     /**
@@ -131,7 +223,31 @@ namespace gcs
     {
     public:
         inline explicit LexLessThanEqual(std::vector<IntegerVariableID> vars_1, std::vector<IntegerVariableID> vars_2) :
-            LexCompareGreaterThanOrMaybeEqual(std::move(vars_2), std::move(vars_1), true, true) {};
+            LexCompareGreaterThanOrMaybeEqual(std::move(vars_2), std::move(vars_1), reif::MustHold{}, true, true) {};
+    };
+
+    /**
+     * \brief Constrain that vars_1 <=_lex vars_2 if `cond` holds.
+     *
+     * \ingroup Constraints
+     */
+    class LexLessThanEqualIf : public LexCompareGreaterThanOrMaybeEqual
+    {
+    public:
+        inline explicit LexLessThanEqualIf(std::vector<IntegerVariableID> vars_1, std::vector<IntegerVariableID> vars_2, IntegerVariableCondition cond) :
+            LexCompareGreaterThanOrMaybeEqual(std::move(vars_2), std::move(vars_1), reif::If{cond}, true, true) {};
+    };
+
+    /**
+     * \brief Constrain that vars_1 <=_lex vars_2 if and only if `cond` holds.
+     *
+     * \ingroup Constraints
+     */
+    class LexLessThanEqualIff : public LexCompareGreaterThanOrMaybeEqual
+    {
+    public:
+        inline explicit LexLessThanEqualIff(std::vector<IntegerVariableID> vars_1, std::vector<IntegerVariableID> vars_2, IntegerVariableCondition cond) :
+            LexCompareGreaterThanOrMaybeEqual(std::move(vars_2), std::move(vars_1), reif::Iff{cond}, true, true) {};
     };
 }
 
