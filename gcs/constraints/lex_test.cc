@@ -170,6 +170,141 @@ auto run_lex_test_6(bool proofs,
     check_results(proof_name, expected, actual);
 }
 
+enum class ReifKind
+{
+    If,
+    Iff
+};
+
+template <LexVariant V, ReifKind R>
+auto post_reified_lex(Problem & p, vector<IntegerVariableID> v1, vector<IntegerVariableID> v2,
+    IntegerVariableCondition cond) -> void
+{
+    if constexpr (R == ReifKind::If) {
+        if constexpr (V == LexVariant::GreaterThan)
+            p.post(LexGreaterThanIf{std::move(v1), std::move(v2), cond});
+        else if constexpr (V == LexVariant::GreaterEqual)
+            p.post(LexGreaterEqualIf{std::move(v1), std::move(v2), cond});
+        else if constexpr (V == LexVariant::LessThan)
+            p.post(LexLessThanIf{std::move(v1), std::move(v2), cond});
+        else
+            p.post(LexLessThanEqualIf{std::move(v1), std::move(v2), cond});
+    }
+    else {
+        if constexpr (V == LexVariant::GreaterThan)
+            p.post(LexGreaterThanIff{std::move(v1), std::move(v2), cond});
+        else if constexpr (V == LexVariant::GreaterEqual)
+            p.post(LexGreaterEqualIff{std::move(v1), std::move(v2), cond});
+        else if constexpr (V == LexVariant::LessThan)
+            p.post(LexLessThanIff{std::move(v1), std::move(v2), cond});
+        else
+            p.post(LexLessThanEqualIff{std::move(v1), std::move(v2), cond});
+    }
+}
+
+template <ReifKind R>
+auto reif_kind_name() -> const char *
+{
+    if constexpr (R == ReifKind::If) return "if";
+    else return "iff";
+}
+
+template <LexVariant V, ReifKind R>
+auto run_lex_reified_test_2(bool proofs,
+    pair<int, int> r1, pair<int, int> r2,
+    pair<int, int> r3, pair<int, int> r4) -> void
+{
+    print(cerr, "lex 2 [{},{}] [{},{}] {} {} [{},{}] [{},{}]{}",
+        r1.first, r1.second, r2.first, r2.second,
+        variant_name<V>(), reif_kind_name<R>(),
+        r3.first, r3.second, r4.first, r4.second,
+        proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    set<tuple<int, int, int, int, int>> expected, actual;
+    // Tuple is (a1, a2, b1, b2, cond_value).
+    build_expected(expected, [](int a1, int a2, int b1, int b2, int c) {
+        bool constraint_holds = cmp_lex<V>(tie(a1, a2), tie(b1, b2));
+        if constexpr (R == ReifKind::If)
+            return (c == 0) || constraint_holds;
+        else
+            return (c == 1) == constraint_holds;
+    }, r1, r2, r3, r4, pair{0, 1});
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    auto v1 = p.create_integer_variable(Integer(r1.first), Integer(r1.second));
+    auto v2 = p.create_integer_variable(Integer(r2.first), Integer(r2.second));
+    auto v3 = p.create_integer_variable(Integer(r3.first), Integer(r3.second));
+    auto v4 = p.create_integer_variable(Integer(r4.first), Integer(r4.second));
+    auto c = p.create_integer_variable(0_i, 1_i);
+    post_reified_lex<V, R>(p, {v1, v2}, {v3, v4}, c == 1_i);
+
+    auto proof_name = proofs ? make_optional("lex_test") : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{v1, v2, v3, v4, c});
+    check_results(proof_name, expected, actual);
+}
+
+template <LexVariant V, ReifKind R>
+auto run_lex_reified_test_3(bool proofs,
+    pair<int, int> r1, pair<int, int> r2, pair<int, int> r3,
+    pair<int, int> r4, pair<int, int> r5, pair<int, int> r6) -> void
+{
+    print(cerr, "lex 3 [{},{}] [{},{}] [{},{}] {} {} [{},{}] [{},{}] [{},{}]{}",
+        r1.first, r1.second, r2.first, r2.second, r3.first, r3.second,
+        variant_name<V>(), reif_kind_name<R>(),
+        r4.first, r4.second, r5.first, r5.second, r6.first, r6.second,
+        proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    set<tuple<int, int, int, int, int, int, int>> expected, actual;
+    build_expected(expected, [](int a1, int a2, int a3, int b1, int b2, int b3, int c) {
+        bool constraint_holds = cmp_lex<V>(tie(a1, a2, a3), tie(b1, b2, b3));
+        if constexpr (R == ReifKind::If)
+            return (c == 0) || constraint_holds;
+        else
+            return (c == 1) == constraint_holds;
+    }, r1, r2, r3, r4, r5, r6, pair{0, 1});
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    auto v1 = p.create_integer_variable(Integer(r1.first), Integer(r1.second));
+    auto v2 = p.create_integer_variable(Integer(r2.first), Integer(r2.second));
+    auto v3 = p.create_integer_variable(Integer(r3.first), Integer(r3.second));
+    auto v4 = p.create_integer_variable(Integer(r4.first), Integer(r4.second));
+    auto v5 = p.create_integer_variable(Integer(r5.first), Integer(r5.second));
+    auto v6 = p.create_integer_variable(Integer(r6.first), Integer(r6.second));
+    auto c = p.create_integer_variable(0_i, 1_i);
+    post_reified_lex<V, R>(p, {v1, v2, v3}, {v4, v5, v6}, c == 1_i);
+
+    auto proof_name = proofs ? make_optional("lex_test") : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{v1, v2, v3, v4, v5, v6, c});
+    check_results(proof_name, expected, actual);
+}
+
+template <LexVariant V, ReifKind R>
+auto run_reified_variant_tests(bool proofs) -> void
+{
+    // Same domain length 2: exercises must-hold (cond=TRUE) path for some
+    // assignments and must-not-hold (cond=FALSE) for others.
+    run_lex_reified_test_2<V, R>(proofs, {1, 2}, {1, 2}, {1, 2}, {1, 2});
+
+    // Asymmetric: at first position vars_1 dominates -> constraint forced
+    // hold/fail in some directions.
+    run_lex_reified_test_2<V, R>(proofs, {2, 4}, {1, 3}, {1, 3}, {1, 3});
+
+    // Unsat-for-strict: vars_2 strictly dominates vars_1.
+    run_lex_reified_test_2<V, R>(proofs, {1, 1}, {1, 2}, {2, 3}, {3, 4});
+
+    // Length-3: prefix-blocking case to test strict force-strict path.
+    run_lex_reified_test_3<V, R>(proofs,
+        {1, 2}, {1, 1}, {1, 2}, {1, 2}, {2, 2}, {1, 2});
+
+    // Length-3: same domain larger search space.
+    run_lex_reified_test_3<V, R>(proofs,
+        {1, 2}, {1, 2}, {1, 2}, {1, 2}, {1, 2}, {1, 2});
+}
+
 template <LexVariant V>
 auto run_variant_tests(bool proofs) -> void
 {
@@ -224,6 +359,15 @@ auto run_all_tests(bool proofs) -> void
     run_variant_tests<LexVariant::GreaterEqual>(proofs);
     run_variant_tests<LexVariant::LessThan>(proofs);
     run_variant_tests<LexVariant::LessThanEqual>(proofs);
+
+    run_reified_variant_tests<LexVariant::GreaterThan, ReifKind::If>(proofs);
+    run_reified_variant_tests<LexVariant::GreaterThan, ReifKind::Iff>(proofs);
+    run_reified_variant_tests<LexVariant::GreaterEqual, ReifKind::If>(proofs);
+    run_reified_variant_tests<LexVariant::GreaterEqual, ReifKind::Iff>(proofs);
+    run_reified_variant_tests<LexVariant::LessThan, ReifKind::If>(proofs);
+    run_reified_variant_tests<LexVariant::LessThan, ReifKind::Iff>(proofs);
+    run_reified_variant_tests<LexVariant::LessThanEqual, ReifKind::If>(proofs);
+    run_reified_variant_tests<LexVariant::LessThanEqual, ReifKind::Iff>(proofs);
 }
 
 auto main(int, char *[]) -> int
