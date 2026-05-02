@@ -30,6 +30,7 @@ add_library(glasgow_constraint_solver
         constraints/inverse.cc
         constraints/knapsack.cc
         constraints/lex.cc
+        constraints/lex_smart_table.cc
         constraints/linear/justify.cc
         constraints/linear/linear_equality.cc
         constraints/linear/linear_greater_than_equal.cc

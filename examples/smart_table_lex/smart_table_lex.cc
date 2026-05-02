@@ -1,7 +1,7 @@
 #include <cxxopts.hpp>
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/equals.hh>
-#include <gcs/constraints/lex.hh>
+#include <gcs/constraints/lex_smart_table.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 #include <iostream>

@@ -11,30 +11,6 @@
 namespace gcs
 {
     /**
-     * \brief Lexicographic ordering constraint, encoded as a SmartTable.
-     * Enforce vars_1 >_lex vars_2.
-     *
-     * Kept around alongside LexGreaterThan for benchmarking and as a
-     * reference encoding; for normal use, prefer one of the dedicated
-     * Lex* constraints, which share a single propagator.
-     *
-     * \ingroup Constraints
-     */
-    class LexSmartTable : public Constraint
-    {
-    private:
-        std::vector<IntegerVariableID> _vars_1;
-        std::vector<IntegerVariableID> _vars_2;
-
-    public:
-        explicit LexSmartTable(std::vector<IntegerVariableID> vars_1, std::vector<IntegerVariableID> vars_2);
-
-        virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
-        virtual auto clone() const -> std::unique_ptr<Constraint> override;
-        [[nodiscard]] virtual auto s_exprify(const std::string & name, const innards::ProofModel * const) const -> std::string override;
-    };
-
-    /**
      * \brief General implementation for lexicographic ordering constraints,
      * including reified and half-reified forms.
      *
@@ -87,7 +63,6 @@ namespace gcs
      * \sa LexLessThanIff
      * \sa LexLessThanEqualIf
      * \sa LexLessThanEqualIff
-     * \sa LexSmartTable
      */
     class LexCompareGreaterThanOrMaybeEqual : public Constraint
     {
