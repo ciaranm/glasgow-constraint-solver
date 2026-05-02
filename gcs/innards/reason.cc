@@ -4,7 +4,8 @@
 using namespace gcs;
 using namespace gcs::innards;
 
-auto gcs::innards::generic_reason(const State & state, const std::vector<IntegerVariableID> & vars) -> ReasonFunction
+auto gcs::innards::generic_reason(const State & state, const std::vector<IntegerVariableID> & vars,
+    const std::optional<Literal> & extra_lit) -> ReasonFunction
 {
     Reason reason;
     for (const auto & var : vars) {
@@ -21,11 +22,14 @@ auto gcs::innards::generic_reason(const State & state, const std::vector<Integer
             }
         }
     }
+    if (extra_lit)
+        reason.push_back(*extra_lit);
 
     return [=]() { return reason; };
 }
 
-auto gcs::innards::bounds_reason(const State & state, const std::vector<IntegerVariableID> & vars) -> ReasonFunction
+auto gcs::innards::bounds_reason(const State & state, const std::vector<IntegerVariableID> & vars,
+    const std::optional<Literal> & extra_lit) -> ReasonFunction
 {
     Reason reason;
     for (const auto & var : vars) {
@@ -37,6 +41,8 @@ auto gcs::innards::bounds_reason(const State & state, const std::vector<IntegerV
             reason.push_back(var < bounds.second + 1_i);
         }
     }
+    if (extra_lit)
+        reason.push_back(*extra_lit);
 
     return [=]() { return reason; };
 }
