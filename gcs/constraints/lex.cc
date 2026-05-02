@@ -103,19 +103,23 @@ auto LexSmartTable::s_exprify(const std::string & name, const innards::ProofMode
     return s.str();
 }
 
-Lex::Lex(vector<IntegerVariableID> vars_1, vector<IntegerVariableID> vars_2) :
+LexCompareGreaterThanOrMaybeEqual::LexCompareGreaterThanOrMaybeEqual(
+    vector<IntegerVariableID> vars_1, vector<IntegerVariableID> vars_2, bool or_equal, bool vars_swapped) :
     _vars_1(move(vars_1)),
-    _vars_2(move(vars_2))
+    _vars_2(move(vars_2)),
+    _or_equal(or_equal),
+    _vars_swapped(vars_swapped)
 {
 }
 
-auto Lex::clone() const -> unique_ptr<Constraint>
+auto LexCompareGreaterThanOrMaybeEqual::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<Lex>(_vars_1, _vars_2);
+    return make_unique<LexCompareGreaterThanOrMaybeEqual>(_vars_1, _vars_2, _or_equal, _vars_swapped);
 }
 
-auto Lex::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
+auto LexCompareGreaterThanOrMaybeEqual::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
+    auto or_equal = _or_equal;
     auto n = min(_vars_1.size(), _vars_2.size());
 
     // Saved proof flags shared with the propagator, so per-call explicit
@@ -158,10 +162,13 @@ auto Lex::install(Propagators & propagators, State & initial_state, ProofModel *
                 HalfReifyOnConjunctionOf{decision_at_flags->at(i)});
         }
 
-        // At least one decision_at[i] must hold.
+        // At least one decision_at[i] must hold — or, for the non-strict
+        // variant, the all-equal flag prefix_equal[n] is also acceptable.
         WPBSum at_least_one_decision;
         for (auto & d : *decision_at_flags)
             at_least_one_decision += 1_i * d;
+        if (or_equal)
+            at_least_one_decision += 1_i * prefix_equal_flags->at(n);
         optional_model->add_constraint(move(at_least_one_decision) >= 1_i);
     }
 
@@ -174,7 +181,7 @@ auto Lex::install(Propagators & propagators, State & initial_state, ProofModel *
     auto state_handle = initial_state.add_constraint_state(LexState{});
 
     propagators.install([vars_1 = move(_vars_1), vars_2 = move(_vars_2),
-                            prefix_equal_flags, decision_at_flags, state_handle](
+                            prefix_equal_flags, decision_at_flags, state_handle, or_equal](
                             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
         auto n = min(vars_1.size(), vars_2.size());
 
@@ -192,6 +199,28 @@ auto Lex::install(Propagators & propagators, State & initial_state, ProofModel *
                 ++alpha;
             else
                 break;
+        }
+
+        // For non-strict, walking off the end means all positions are forced
+        // equal, which is itself a valid solution. The constraint is now
+        // fully discharged.
+        if (alpha == n) {
+            lex_state.alpha = alpha;
+            if (or_equal)
+                return PropagatorState::DisableUntilBacktrack;
+
+            // Strict variant: walked off with everything equal, infeasible.
+            auto all_vars_for_reason = vars_1;
+            all_vars_for_reason.insert(all_vars_for_reason.end(), vars_2.begin(), vars_2.end());
+            auto reason = bounds_reason(state, all_vars_for_reason);
+            auto contradiction_proof = [&, n](const ReasonFunction & r) -> void {
+                if (! logger) return;
+                for (size_t k = 0; k < n; ++k)
+                    logger->emit_rup_proof_line_under_reason(r,
+                        WPBSum{} + 1_i * ! decision_at_flags->at(k) >= 1_i,
+                        ProofLevel::Temporary);
+            };
+            inference.contradiction(logger, JustifyExplicitlyThenRUP{contradiction_proof}, reason);
         }
 
         // One reason for every inference this call: bounds of every variable.
@@ -214,17 +243,6 @@ auto Lex::install(Propagators & propagators, State & initial_state, ProofModel *
 
         bool strict_forced = false;
 
-        if (alpha == n) {
-            // Walked off the end with everything forced equal: strict is
-            // required somewhere, so infeasible.
-            auto contradiction_proof = [&, n](const ReasonFunction & r) -> void {
-                if (! logger) return;
-                for (size_t k = 0; k < n; ++k)
-                    emit_not_d(r, k);
-            };
-            inference.contradiction(logger, JustifyExplicitlyThenRUP{contradiction_proof}, reason);
-        }
-
         // Tighten at alpha (the >= part of the constraint): vars_1[alpha] must
         // be at least vars_2[alpha].lo, and vars_2[alpha] at most vars_1[alpha].hi.
         auto b1_alpha = state.bounds(vars_1[alpha]);
@@ -236,7 +254,9 @@ auto Lex::install(Propagators & propagators, State & initial_state, ProofModel *
         //   Under the assumption ~(vars_1[alpha] >= b2.first), the framework's
         //   RUP can then chain ~prefix_equal[k+1] -> ~prefix_equal[k] -> ... ->
         //   ~decision_at[k] for k >= alpha, plus ~decision_at[alpha] from the
-        //   bound assumption directly. Symmetric clauses for vars_2[alpha].
+        //   bound assumption directly. For non-strict, the chain also gives
+        //   ~prefix_equal[n], which is needed to kill the extra term in the
+        //   global at-least-one constraint. Symmetric clauses for vars_2[alpha].
         auto tighten_proof = [&, alpha](const ReasonFunction & r) -> void {
             if (! logger) return;
             for (size_t k = 0; k < alpha; ++k)
@@ -266,6 +286,8 @@ auto Lex::install(Propagators & propagators, State & initial_state, ProofModel *
             // position where strict-greater becomes feasible (a candidate beta)
             // or where the equal-prefix breaks (no later witness is reachable).
             bool found_beta = false;
+            bool prefix_blocked = false;
+            size_t blocking_position = n;
             for (size_t k = alpha + 1; k < n; ++k) {
                 auto bk1 = state.bounds(vars_1[k]);
                 auto bk2 = state.bounds(vars_2[k]);
@@ -274,16 +296,37 @@ auto Lex::install(Propagators & propagators, State & initial_state, ProofModel *
                     break;
                 }
                 if (bk1.second < bk2.first) {
-                    // Prefix-blocked: no k' > k can be the witness either,
-                    // because vars_1[k] = vars_2[k] is infeasible.
+                    // Prefix-blocked: vars_1[k] = vars_2[k] is infeasible, so
+                    // no k' > k can extend the equal prefix to be a witness.
+                    // For non-strict, this also means the all-equal-from-alpha
+                    // scenario fails (vars_1 would be lex-less at position k),
+                    // so the constraint forces strict-greater at alpha.
+                    prefix_blocked = true;
+                    blocking_position = k;
                     break;
                 }
                 // bk1.second == bk2.first: strict infeasible here, but the
                 // prefix can still be equal at this position.
             }
 
-            if (! found_beta) {
+            // For strict (`!or_equal`), no later witness means strict must
+            // happen at alpha. For non-strict, all-equal-from-alpha is a valid
+            // alternative *unless* the equal prefix gets blocked before n.
+            bool must_force_strict = (! found_beta) && ((! or_equal) || prefix_blocked);
+
+            if (must_force_strict) {
                 bool alpha_candidate = (nb1_alpha.second > nb2_alpha.first);
+
+                // For non-strict, the global at-least-one constraint includes
+                // prefix_equal[n]; scaffold ~prefix_equal[blocking+1] so the
+                // framework's RUP can chain it to ~prefix_equal[n] (one PB
+                // unit-prop step per chain link).
+                auto emit_not_prefix_equal_for_or_equal = [&](const ReasonFunction & r) -> void {
+                    if (or_equal && prefix_blocked)
+                        logger->emit_rup_proof_line_under_reason(r,
+                            WPBSum{} + 1_i * ! prefix_equal_flags->at(blocking_position + 1) >= 1_i,
+                            ProofLevel::Temporary);
+                };
 
                 if (! alpha_candidate) {
                     // No witness anywhere: contradiction.
@@ -291,6 +334,7 @@ auto Lex::install(Propagators & propagators, State & initial_state, ProofModel *
                         if (! logger) return;
                         for (size_t k = 0; k < n; ++k)
                             emit_not_d(r, k);
+                        emit_not_prefix_equal_for_or_equal(r);
                     };
                     inference.contradiction(logger, JustifyExplicitlyThenRUP{contradiction_proof}, reason);
                 }
@@ -302,6 +346,7 @@ auto Lex::install(Propagators & propagators, State & initial_state, ProofModel *
                         if (k == alpha) continue;
                         emit_not_d(r, k);
                     }
+                    emit_not_prefix_equal_for_or_equal(r);
                 };
 
                 inference.infer_all(logger,
@@ -326,15 +371,24 @@ auto Lex::install(Propagators & propagators, State & initial_state, ProofModel *
         triggers, "lex");
 }
 
-auto Lex::s_exprify(const std::string & name, const innards::ProofModel * const model) const -> std::string
+auto LexCompareGreaterThanOrMaybeEqual::s_exprify(const std::string & name, const innards::ProofModel * const model) const -> std::string
 {
     stringstream s;
 
-    print(s, "{} lex (", name);
-    for (const auto & var : _vars_1)
+    string cmp = format("lex_{}_than{}",
+        _vars_swapped ? "less" : "greater",
+        _or_equal ? "_equal" : "");
+
+    print(s, "{} {} (", name, cmp);
+    // The base stores the constraint as vars_1 (>|>=) vars_2; for less-than
+    // variants the user-facing arguments were swapped at construction time,
+    // so swap them back when printing.
+    auto & first = _vars_swapped ? _vars_2 : _vars_1;
+    auto & second = _vars_swapped ? _vars_1 : _vars_2;
+    for (const auto & var : first)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
     print(s, ") (");
-    for (const auto & var : _vars_2)
+    for (const auto & var : second)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
     print(s, ")");
 
