@@ -1,6 +1,4 @@
-#include <algorithm>
 #include <gcs/constraints/lex.hh>
-#include <gcs/constraints/smart_table.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
@@ -9,6 +7,10 @@
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/reason.hh>
 #include <gcs/innards/state.hh>
+
+#include <util/overloaded.hh>
+
+#include <algorithm>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -22,8 +24,6 @@
 #include <fmt/core.h>
 #include <fmt/ostream.h>
 #endif
-
-#include <util/overloaded.hh>
 
 using std::any_cast;
 using std::get;
@@ -456,54 +456,6 @@ namespace
 
         return d;
     }
-}
-
-LexSmartTable::LexSmartTable(vector<IntegerVariableID> vars_1, vector<IntegerVariableID> vars_2) :
-    _vars_1(move(vars_1)),
-    _vars_2(move(vars_2))
-{
-}
-
-auto LexSmartTable::clone() const -> unique_ptr<Constraint>
-{
-    return make_unique<LexSmartTable>(_vars_1, _vars_2);
-}
-
-auto LexSmartTable::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
-{
-    SmartTuples tuples;
-
-    for (unsigned int i = 0; i < min(_vars_1.size(), _vars_2.size()); ++i) {
-        vector<SmartEntry> tuple;
-        for (unsigned int j = 0; j < i + 1; ++j) {
-            if (j < i)
-                tuple.emplace_back(SmartTable::equals(_vars_1[j], _vars_2[j]));
-            else if (j == i)
-                tuple.emplace_back(SmartTable::greater_than(_vars_1[j], _vars_2[j]));
-        }
-        tuples.emplace_back(tuple);
-    }
-
-    auto all_vars = _vars_1;
-    all_vars.insert(all_vars.end(), _vars_2.begin(), _vars_2.end());
-
-    auto smt_table = SmartTable{all_vars, tuples};
-    move(smt_table).install(propagators, initial_state, optional_model);
-}
-
-auto LexSmartTable::s_exprify(const std::string & name, const innards::ProofModel * const model) const -> std::string
-{
-    stringstream s;
-
-    print(s, "{} lex (", name);
-    for (const auto & var : _vars_1)
-        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
-    print(s, ") (");
-    for (const auto & var : _vars_2)
-        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
-    print(s, ")");
-
-    return s.str();
 }
 
 LexCompareGreaterThanOrMaybeEqual::LexCompareGreaterThanOrMaybeEqual(
