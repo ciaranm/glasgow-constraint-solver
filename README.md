@@ -315,8 +315,7 @@ Developer Documentation
 
 In-depth notes on individual subsystems live in the ``dev_docs/`` directory. These are aimed at
 developers (human or AI) working on the solver itself, not at end users. See ``dev_docs/README.md``
-for an index. The first entry covers reification and is worth reading before working on any reified
-constraint.
+for an index.
 
 How Does the Solver Work Internally?
 ====================================
