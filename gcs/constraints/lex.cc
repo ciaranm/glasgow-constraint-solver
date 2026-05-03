@@ -266,11 +266,12 @@ namespace
 
     // Detection-only logic for when the reification condition is undecided.
     // Walk through positions: if we can prove the constraint definitely
-    // holds (or definitely doesn't hold) from the current bounds, infer
-    // the cond literal accordingly. Otherwise, leave alone.
+    // holds (or definitely doesn't hold) from the current bounds, return
+    // the appropriate verdict (carrying the materials for the dispatcher
+    // to use if it decides to infer the cond literal). Otherwise, return
+    // StillUndecided.
     auto run_lex_undecided_detection(
         const State & state,
-        auto & inference,
         ProofLogger * const logger,
         const vector<IntegerVariableID> & vars_1,
         const vector<IntegerVariableID> & vars_2,
@@ -279,7 +280,7 @@ namespace
         const shared_ptr<vector<ProofFlag>> & decision_at_gt_flags,
         const shared_ptr<vector<optional<ProofFlag>>> & prefix_equal_lt_flags,
         const shared_ptr<vector<ProofFlag>> & decision_at_lt_flags,
-        const evaluated_reif::Undecided & reif) -> PropagatorState
+        const IntegerVariableCondition & cond) -> ReificationVerdict
     {
         auto n = min(vars_1.size(), vars_2.size());
 
@@ -322,50 +323,51 @@ namespace
                 definitely_does_not_hold = true;
         }
 
-        // When inferring cond, scaffold the proof: under the negation of
-        // the inferred literal, the opposite-direction encoding's
-        // at-least-one is activated, and the bounds make every aux flag
-        // forced to FALSE — violating the at-least-one. Emit those
-        // ~aux_flag lines so VeriPB's RUP can chain through.
-        //
-        // The scaffolding lines need the *opposite* cond polarity in their
-        // reason (so that the aux defs of the relevant direction, which are
-        // half-reified on that polarity, fire under PB unit propagation).
-        // The inference itself stays under just the bounds reason.
-        auto reason_under_cond_false = [base = reason, cond = reif.cond]() {
-            auto rl = base();
-            rl.push_back(! cond);
-            return rl;
-        };
-        auto reason_under_cond_true = [base = reason, cond = reif.cond]() {
-            auto rl = base();
-            rl.push_back(cond);
-            return rl;
-        };
+        if (! definitely_holds && ! definitely_does_not_hold)
+            return reification_verdict::StillUndecided{};
 
-        auto justify_for_must_hold = [&](const ReasonFunction &) -> void {
-            if (logger && prefix_equal_lt_flags && decision_at_lt_flags)
-                emit_lex_unsat_scaffold(state, logger, ReasonFunction{reason_under_cond_false},
-                    vars_2, vars_1, n,
-                    prefix_equal_lt_flags, decision_at_lt_flags);
-        };
-        auto justify_for_must_not_hold = [&](const ReasonFunction &) -> void {
-            if (logger && prefix_equal_gt_flags && decision_at_gt_flags)
-                emit_lex_unsat_scaffold(state, logger, ReasonFunction{reason_under_cond_true},
-                    vars_1, vars_2, n,
-                    prefix_equal_gt_flags, decision_at_gt_flags);
-        };
-
-        if (definitely_holds && reif.set_cond_if_must_hold)
-            inference.infer(logger, reif.cond, JustifyExplicitlyThenRUP{justify_for_must_hold}, reason);
-        else if (definitely_holds && reif.set_not_cond_if_must_hold)
-            inference.infer(logger, ! reif.cond, JustifyExplicitlyThenRUP{justify_for_must_hold}, reason);
-        else if (definitely_does_not_hold && reif.set_not_cond_if_must_not_hold)
-            inference.infer(logger, ! reif.cond, JustifyExplicitlyThenRUP{justify_for_must_not_hold}, reason);
-
-        if (definitely_holds || definitely_does_not_hold)
-            return PropagatorState::DisableUntilBacktrack;
-        return PropagatorState::Enable;
+        // When the dispatcher infers cond, the framework's RUP step will
+        // assume the *negation* of the inferred literal. The scaffolding
+        // therefore lives under that negation: the opposite-direction
+        // encoding's at-least-one is then active, and the bounds force
+        // every aux flag to FALSE, violating it. We pre-emit those
+        // ~aux_flag lines so VeriPB's PB unit propagation can chain.
+        if (definitely_holds) {
+            auto reason_under_cond_false = [base = reason, cond]() {
+                auto rl = base();
+                rl.push_back(! cond);
+                return rl;
+            };
+            auto justify = [&state, logger, vars_1, vars_2, n,
+                               prefix_equal_lt_flags, decision_at_lt_flags,
+                               reason_under_cond_false](const ReasonFunction &) -> void {
+                if (logger && prefix_equal_lt_flags && decision_at_lt_flags)
+                    emit_lex_unsat_scaffold(state, logger, ReasonFunction{reason_under_cond_false},
+                        vars_2, vars_1, n,
+                        prefix_equal_lt_flags, decision_at_lt_flags);
+            };
+            return reification_verdict::MustHold{
+                .justification = JustifyExplicitlyThenRUP{justify},
+                .reason = std::move(reason)};
+        }
+        else {
+            auto reason_under_cond_true = [base = reason, cond]() {
+                auto rl = base();
+                rl.push_back(cond);
+                return rl;
+            };
+            auto justify = [&state, logger, vars_1, vars_2, n,
+                               prefix_equal_gt_flags, decision_at_gt_flags,
+                               reason_under_cond_true](const ReasonFunction &) -> void {
+                if (logger && prefix_equal_gt_flags && decision_at_gt_flags)
+                    emit_lex_unsat_scaffold(state, logger, ReasonFunction{reason_under_cond_true},
+                        vars_1, vars_2, n,
+                        prefix_equal_gt_flags, decision_at_gt_flags);
+            };
+            return reification_verdict::MustNotHold{
+                .justification = JustifyExplicitlyThenRUP{justify},
+                .reason = std::move(reason)};
+        }
     }
 
     struct DirectionFlags
@@ -556,13 +558,13 @@ auto LexCompareGreaterThanOrMaybeEqual::install(Propagators & propagators, State
     auto infer_cond_when_undecided = [vars_1 = move(_vars_1), vars_2 = move(_vars_2), or_equal,
                                          prefix_equal_gt_flags, decision_at_gt_flags,
                                          prefix_equal_lt_flags, decision_at_lt_flags](
-                                         const State & state, auto & inference, ProofLogger * const logger,
-                                         const evaluated_reif::Undecided & reif) -> PropagatorState {
-        return run_lex_undecided_detection(state, inference, logger,
+                                         const State & state, auto &, ProofLogger * const logger,
+                                         const IntegerVariableCondition & cond) -> ReificationVerdict {
+        return run_lex_undecided_detection(state, logger,
             vars_1, vars_2, or_equal,
             prefix_equal_gt_flags, decision_at_gt_flags,
             prefix_equal_lt_flags, decision_at_lt_flags,
-            reif);
+            cond);
     };
 
     install_reified_dispatcher(propagators, initial_state.test_reification_condition(_reif_cond), _reif_cond, triggers,
