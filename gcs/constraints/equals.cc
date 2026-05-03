@@ -1,4 +1,5 @@
 #include <gcs/constraints/equals.hh>
+#include <gcs/constraints/innards/reified_dispatcher.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -177,135 +178,97 @@ auto ReifiedEquals::define_proof_model(ProofModel & model) -> void
 
 auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
 {
-    overloaded{
-        [&](const evaluated_reif::MustHold & reif) {
-            Triggers triggers;
-            triggers.on_change = {_v1, _v2};
+    auto enforce_constraint_must_hold = [v1 = _v1, v2 = _v2](
+                                            const State & state, auto & inference, ProofLogger * const logger,
+                                            const Literal & cond) -> PropagatorState {
+        return visit([&](auto & v1, auto & v2) {
+            return enforce_equality(logger, v1, v2, state, inference, Reason{cond});
+        },
+            v1, v2);
+    };
 
-            visit([&](auto & _v1, auto & _v2) {
-                propagators.install([v1 = _v1, v2 = _v2, cond = reif.cond](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-                    return enforce_equality(logger, v1, v2, state, inference, Reason{cond});
-                },
-                    triggers, "equals");
-            },
-                _v1, _v2);
-        },
-        [&](const evaluated_reif::MustNotHold & reif) {
-            Triggers triggers;
-            triggers.on_instantiated = {_v1, _v2};
+    auto enforce_constraint_must_not_hold = [v1 = _v1, v2 = _v2](
+                                                const State & state, auto & inference, ProofLogger * const logger,
+                                                const Literal & cond) -> PropagatorState {
+        auto value1 = state.optional_single_value(v1);
+        if (value1) {
+            inference.infer_not_equal(logger, v2, *value1, JustifyUsingRUP{},
+                ReasonFunction{[=]() { return Reason{{cond, v1 == *value1}}; }});
+            return PropagatorState::DisableUntilBacktrack;
+        }
+        auto value2 = state.optional_single_value(v2);
+        if (value2) {
+            inference.infer_not_equal(logger, v1, *value2, JustifyUsingRUP{},
+                ReasonFunction{[=]() { return Reason{{cond, v2 == *value2}}; }});
+            return PropagatorState::DisableUntilBacktrack;
+        }
+        return PropagatorState::Enable;
+    };
 
-            visit([&](auto & _v1, auto & _v2) {
-                propagators.install([v1 = _v1, v2 = _v2, cond = reif.cond](
-                                        const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-                    auto value1 = state.optional_single_value(v1);
-                    if (value1) {
-                        inference.infer_not_equal(logger, v2, *value1,
-                            JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{cond, v1 == *value1}}; }});
-                        return PropagatorState::DisableUntilBacktrack;
-                    }
-                    auto value2 = state.optional_single_value(v2);
-                    if (value2) {
-                        inference.infer_not_equal(logger, v1, *value2, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{cond, v2 == *value2}}; }});
-                        return PropagatorState::DisableUntilBacktrack;
-                    }
-                    return PropagatorState::Enable;
-                },
-                    triggers, "not equals");
-            },
-                _v1, _v2);
-        },
-        [&](const evaluated_reif::Undecided & reif) {
-            Triggers triggers;
-            triggers.on_change = {_v1, _v2, reif.cond.var};
-            propagators.install([v1 = _v1, v2 = _v2, cond = _cond](
-                                    const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-                return overloaded{
-                    [&](const evaluated_reif::MustHold & reif) {
-                        return visit([&](auto & v1, auto & v2) {
-                            return enforce_equality(logger, v1, v2, state, inference, Reason{{reif.cond}});
-                        },
-                            v1, v2);
-                    },
-                    [&](const evaluated_reif::MustNotHold & reif) {
-                        auto value1 = state.optional_single_value(v1);
-                        if (value1) {
-                            inference.infer_not_equal(logger, v2, *value1,
-                                JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{reif.cond, v1 == *value1}}; }});
-                            return PropagatorState::DisableUntilBacktrack;
-                        }
-                        auto value2 = state.optional_single_value(v2);
-                        if (value2) {
-                            inference.infer_not_equal(logger, v1, *value2, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{reif.cond, v2 == *value2}}; }});
-                            return PropagatorState::DisableUntilBacktrack;
-                        }
-                        return PropagatorState::Enable;
-                    },
-                    [&](const evaluated_reif::Undecided & reif) {
-                        // condition is undecided, are we in a situation where it's now forced?
-                        auto value1 = state.optional_single_value(v1);
-                        auto value2 = state.optional_single_value(v2);
-                        if (value1 && value2) {
-                            if (reif.set_cond_if_must_hold && *value1 == *value2)
-                                inference.infer(logger, reif.cond, JustifyUsingRUP{},
-                                    [=]() { return Reason{v1 == *value1, v2 == *value2}; });
-                            else if (reif.set_not_cond_if_must_hold && *value1 == *value2)
-                                inference.infer(logger, ! reif.cond, JustifyUsingRUP{},
-                                    [=]() { return Reason{v1 == *value1, v2 == *value2}; });
-                            else if (reif.set_not_cond_if_must_not_hold && *value1 != *value2)
-                                inference.infer(logger, ! reif.cond, JustifyUsingRUP{},
-                                    [=]() { return Reason{v1 == *value1, v2 == *value2}; });
-                            return PropagatorState::DisableUntilBacktrack;
-                        }
-                        else if (value1) {
-                            if (! state.in_domain(v2, *value1)) {
-                                if (reif.set_not_cond_if_must_not_hold)
-                                    inference.infer(logger, ! reif.cond, JustifyUsingRUP{},
-                                        [=]() { return Reason{v1 == *value1, v2 != *value1}; });
-                                return PropagatorState::DisableUntilBacktrack;
-                            }
-                            else
-                                return PropagatorState::Enable;
-                        }
-                        else if (value2) {
-                            if (! state.in_domain(v1, *value2)) {
-                                if (reif.set_not_cond_if_must_not_hold)
-                                    inference.infer(logger, ! reif.cond, JustifyUsingRUP{},
-                                        [=]() { return Reason{v2 == *value2, v1 != *value2}; });
-                                return PropagatorState::DisableUntilBacktrack;
-                            }
-                            else
-                                return PropagatorState::Enable;
-                        }
-                        else {
-                            // not equals is forced if there's no overlap between domains
-                            bool overlap = false;
-                            for (auto val : state.each_value_immutable(v1))
-                                if (state.in_domain(v2, val)) {
-                                    overlap = true;
-                                    break;
-                                }
+    auto infer_cond_when_undecided = [v1 = _v1, v2 = _v2](
+                                         const State & state, auto & inference, ProofLogger * const logger,
+                                         const evaluated_reif::Undecided & reif) -> PropagatorState {
+        auto value1 = state.optional_single_value(v1);
+        auto value2 = state.optional_single_value(v2);
+        if (value1 && value2) {
+            if (reif.set_cond_if_must_hold && *value1 == *value2)
+                inference.infer(logger, reif.cond, JustifyUsingRUP{},
+                    [=]() { return Reason{v1 == *value1, v2 == *value2}; });
+            else if (reif.set_not_cond_if_must_hold && *value1 == *value2)
+                inference.infer(logger, ! reif.cond, JustifyUsingRUP{},
+                    [=]() { return Reason{v1 == *value1, v2 == *value2}; });
+            else if (reif.set_not_cond_if_must_not_hold && *value1 != *value2)
+                inference.infer(logger, ! reif.cond, JustifyUsingRUP{},
+                    [=]() { return Reason{v1 == *value1, v2 == *value2}; });
+            return PropagatorState::DisableUntilBacktrack;
+        }
+        else if (value1) {
+            if (! state.in_domain(v2, *value1)) {
+                if (reif.set_not_cond_if_must_not_hold)
+                    inference.infer(logger, ! reif.cond, JustifyUsingRUP{},
+                        [=]() { return Reason{v1 == *value1, v2 != *value1}; });
+                return PropagatorState::DisableUntilBacktrack;
+            }
+            else
+                return PropagatorState::Enable;
+        }
+        else if (value2) {
+            if (! state.in_domain(v1, *value2)) {
+                if (reif.set_not_cond_if_must_not_hold)
+                    inference.infer(logger, ! reif.cond, JustifyUsingRUP{},
+                        [=]() { return Reason{v2 == *value2, v1 != *value2}; });
+                return PropagatorState::DisableUntilBacktrack;
+            }
+            else
+                return PropagatorState::Enable;
+        }
+        else {
+            // not equals is forced if there's no overlap between domains
+            bool overlap = false;
+            for (auto val : state.each_value_immutable(v1))
+                if (state.in_domain(v2, val)) {
+                    overlap = true;
+                    break;
+                }
 
-                            if (! overlap) {
-                                auto [just, reason] = no_overlap_justification(state, logger, v1, v2, reif.cond);
-                                if (reif.set_not_cond_if_must_not_hold)
-                                    inference.infer(logger, ! reif.cond, just, reason);
-                                return PropagatorState::DisableUntilBacktrack;
-                            }
-                            else
-                                return PropagatorState::Enable;
-                        }
-                    },
-                    [&](const evaluated_reif::Deactivated &) {
-                        return PropagatorState::DisableUntilBacktrack;
-                    }}
-                    .visit(state.test_reification_condition(cond));
-            },
-                triggers, "not equals");
-        },
-        [&](const evaluated_reif::Deactivated &) {
-        },
-    }
-        .visit(_evaluated_cond);
+            if (! overlap) {
+                auto [just, reason] = no_overlap_justification(state, logger, v1, v2, reif.cond);
+                if (reif.set_not_cond_if_must_not_hold)
+                    inference.infer(logger, ! reif.cond, just, reason);
+                return PropagatorState::DisableUntilBacktrack;
+            }
+            else
+                return PropagatorState::Enable;
+        }
+    };
+
+    Triggers triggers;
+    triggers.on_change = {_v1, _v2};
+    install_reified_dispatcher(propagators, _evaluated_cond, _cond, triggers,
+        std::move(enforce_constraint_must_hold),
+        std::move(enforce_constraint_must_not_hold),
+        std::move(infer_cond_when_undecided),
+        "reified equals");
 }
 
 Equals::Equals(const IntegerVariableID v1, const IntegerVariableID v2) :
