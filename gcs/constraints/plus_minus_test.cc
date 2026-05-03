@@ -1,4 +1,4 @@
-#include <gcs/constraints/constraints_test_utils.hh>
+#include <gcs/constraints/innards/constraints_test_utils.hh>
 #include <gcs/constraints/minus.hh>
 #include <gcs/constraints/plus.hh>
 #include <gcs/problem.hh>

@@ -1,4 +1,4 @@
-#include <gcs/constraints/constraints_test_utils.hh>
+#include <gcs/constraints/innards/constraints_test_utils.hh>
 #include <gcs/constraints/smart_table.hh>
 #include <gcs/exception.hh>
 #include <gcs/problem.hh>

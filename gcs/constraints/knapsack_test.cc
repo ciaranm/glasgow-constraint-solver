@@ -1,4 +1,4 @@
-#include <gcs/constraints/constraints_test_utils.hh>
+#include <gcs/constraints/innards/constraints_test_utils.hh>
 #include <gcs/constraints/knapsack.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
