@@ -15,6 +15,7 @@ Contents
   * [Manually Solving a Constraint Optimisation Problem](#manually-solving-a-constraint-optimisation-problem)
   * [Proof Logging](#proof-logging)
 - [Navigating the Source Code](#navigating-the-source-code)
+- [Developer Documentation](#developer-documentation)
 - [How Does the Solver Work Internally?](#how-does-the-solver-work-internally)
   * [Variables](#variables)
   * [Constraints](#constraints)
@@ -308,6 +309,14 @@ something better".
 The contents of the ``gcs/innards/`` directory, and anything in the ``gcs::innards`` namespace, are
 the solver's innards. These are probably not useful for end users, and if they are, they should
 probably be turned into a cleaner API rather than exposed directly.
+
+Developer Documentation
+=======================
+
+In-depth notes on individual subsystems live in the ``dev_docs/`` directory. These are aimed at
+developers (human or AI) working on the solver itself, not at end users. See ``dev_docs/README.md``
+for an index. The first entry covers reification and is worth reading before working on any reified
+constraint.
 
 How Does the Solver Work Internally?
 ====================================
