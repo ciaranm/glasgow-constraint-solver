@@ -62,6 +62,14 @@ namespace
     // One propagation pass enforcing vars_1 (>|>=)_lex vars_2. This is the
     // forward direction from the propagator's point of view; for backward
     // (negation) propagation, callers swap vars_1/vars_2 and flip or_equal.
+    //
+    // Standard lex semantics on unequal lengths: when the common prefix is
+    // entirely equal, the longer array is the greater one. So a fully-equal
+    // common prefix satisfies the constraint iff vars_1 is strictly longer,
+    // or (it's non-strict and the lengths are equal). That combined
+    // condition is captured by `equal_prefix_satisfies`, which replaces
+    // `or_equal` at every decision point that asks "is prefix_equal[n] alone
+    // enough?".
     auto run_lex_pass(
         const State & state,
         auto & inference,
@@ -74,7 +82,10 @@ namespace
         const Literal & cond,
         ConstraintStateHandle state_handle) -> PropagatorState
     {
-        auto n = min(vars_1.size(), vars_2.size());
+        auto n1 = vars_1.size();
+        auto n2 = vars_2.size();
+        auto n = min(n1, n2);
+        bool equal_prefix_satisfies = (n1 > n2) || (or_equal && n1 == n2);
 
         auto & lex_state = any_cast<LexState &>(state.get_constraint_state(state_handle));
         auto alpha = lex_state.alpha;
@@ -96,15 +107,16 @@ namespace
         all_vars.insert(all_vars.end(), vars_2.begin(), vars_2.end());
         auto reason = bounds_reason(state, all_vars, cond);
 
-        // For non-strict, walking off the end means all positions are forced
-        // equal, which is itself a valid solution. The constraint is now
-        // fully discharged.
+        // Walking off the end means all common-prefix positions are forced
+        // equal. Whether that satisfies the constraint depends on
+        // equal_prefix_satisfies: non-strict same-length is satisfied,
+        // and vars_1-strictly-longer is satisfied (longer wins). Otherwise
+        // (strict same-length, or vars_1-shorter) it's infeasible.
         if (alpha == n) {
             lex_state.alpha = alpha;
-            if (or_equal)
+            if (equal_prefix_satisfies)
                 return PropagatorState::DisableUntilBacktrack;
 
-            // Strict variant: walked off with everything equal, infeasible.
             auto contradiction_proof = [&, n](const ReasonFunction & r) -> void {
                 if (! logger) return;
                 for (size_t k = 0; k < n; ++k)
@@ -170,13 +182,13 @@ namespace
                 }
             }
 
-            bool must_force_strict = (! found_beta) && ((! or_equal) || prefix_blocked);
+            bool must_force_strict = (! found_beta) && ((! equal_prefix_satisfies) || prefix_blocked);
 
             if (must_force_strict) {
                 bool alpha_candidate = (nb1_alpha.second > nb2_alpha.first);
 
-                auto emit_not_prefix_equal_for_or_equal = [&](const ReasonFunction & r) -> void {
-                    if (or_equal && prefix_blocked)
+                auto emit_not_prefix_equal_if_credited = [&](const ReasonFunction & r) -> void {
+                    if (equal_prefix_satisfies && prefix_blocked)
                         logger->emit_rup_proof_line_under_reason(r,
                             WPBSum{} + 1_i * ! *prefix_equal_flags->at(blocking_position + 1) >= 1_i,
                             ProofLevel::Temporary);
@@ -187,7 +199,7 @@ namespace
                         if (! logger) return;
                         for (size_t k = 0; k < n; ++k)
                             emit_not_d(r, k);
-                        emit_not_prefix_equal_for_or_equal(r);
+                        emit_not_prefix_equal_if_credited(r);
                     };
                     inference.contradiction(logger, JustifyExplicitlyThenRUP{contradiction_proof}, reason);
                 }
@@ -198,7 +210,7 @@ namespace
                         if (k == alpha) continue;
                         emit_not_d(r, k);
                     }
-                    emit_not_prefix_equal_for_or_equal(r);
+                    emit_not_prefix_equal_if_credited(r);
                 };
 
                 inference.infer_all(logger,
@@ -282,7 +294,10 @@ namespace
         const shared_ptr<vector<ProofFlag>> & decision_at_lt_flags,
         const IntegerVariableCondition & cond) -> ReificationVerdict
     {
-        auto n = min(vars_1.size(), vars_2.size());
+        auto n1 = vars_1.size();
+        auto n2 = vars_2.size();
+        auto n = min(n1, n2);
+        bool equal_prefix_satisfies = (n1 > n2) || (or_equal && n1 == n2);
 
         auto all_vars = vars_1;
         all_vars.insert(all_vars.end(), vars_2.begin(), vars_2.end());
@@ -315,9 +330,11 @@ namespace
         }
 
         if (k == n) {
-            // All positions forced equal: constraint holds for non-strict,
-            // does not hold for strict.
-            if (or_equal)
+            // All common-prefix positions forced equal. Standard lex
+            // semantics: longer wins. equal_prefix_satisfies captures
+            // whether that combined with the lengths satisfies the
+            // constraint.
+            if (equal_prefix_satisfies)
                 definitely_holds = true;
             else
                 definitely_does_not_hold = true;
@@ -404,7 +421,10 @@ namespace
         const optional<HalfReifyOnConjunctionOf> & cond_half_reify,
         const string & flag_prefix) -> DirectionFlags
     {
-        auto n = min(vars_1.size(), vars_2.size());
+        auto n1 = vars_1.size();
+        auto n2 = vars_2.size();
+        auto n = min(n1, n2);
+        bool equal_prefix_satisfies = (n1 > n2) || (or_equal && n1 == n2);
 
         DirectionFlags d;
         d.prefix_equal = make_shared<vector<optional<ProofFlag>>>();
@@ -449,11 +469,15 @@ namespace
                 with_cond(HalfReifyOnConjunctionOf{d.decision_at->at(i)}));
         }
 
-        // At-least-one: cond -> sum decision_at + (or_equal ? prefix_equal[n] : 0) >= 1.
+        // At-least-one: cond -> sum decision_at + (equal_prefix_satisfies ? prefix_equal[n] : 0) >= 1.
+        // The prefix_equal[n] term is included exactly when "all common-prefix
+        // positions equal" is itself sufficient — that is, vars_1 strictly
+        // longer (longer wins regardless of strictness), or non-strict and
+        // equal lengths.
         WPBSum at_least_one;
         for (auto & da : *d.decision_at)
             at_least_one += 1_i * da;
-        if (or_equal)
+        if (equal_prefix_satisfies)
             at_least_one += 1_i * *d.prefix_equal->at(n);
         model.add_constraint(move(at_least_one) >= 1_i, cond_half_reify);
 
