@@ -141,6 +141,45 @@ auto run_lex_test_3(bool proofs,
 }
 
 template <LexVariant V>
+auto run_lex_test_unequal(bool proofs,
+    vector<pair<int, int>> r_left,
+    vector<pair<int, int>> r_right) -> void
+{
+    print(cerr, "lex unequal len {} {} len {}{}",
+        r_left.size(), variant_name<V>(), r_right.size(),
+        proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    auto n_left = r_left.size();
+    set<tuple<vector<int>>> expected, actual;
+    build_expected(expected, [n_left](vector<int> v) {
+        vector<int> left(v.begin(), v.begin() + n_left);
+        vector<int> right(v.begin() + n_left, v.end());
+        return cmp_lex<V>(left, right);
+    }, [&]() {
+        vector<pair<int, int>> all = r_left;
+        all.insert(all.end(), r_right.begin(), r_right.end());
+        return all;
+    }());
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    vector<IntegerVariableID> all_vars;
+    for (const auto & r : r_left)
+        all_vars.push_back(p.create_integer_variable(Integer(r.first), Integer(r.second)));
+    for (const auto & r : r_right)
+        all_vars.push_back(p.create_integer_variable(Integer(r.first), Integer(r.second)));
+
+    post_lex<V>(p,
+        vector<IntegerVariableID>{all_vars.begin(), all_vars.begin() + n_left},
+        vector<IntegerVariableID>{all_vars.begin() + n_left, all_vars.end()});
+
+    auto proof_name = proofs ? make_optional("lex_test") : nullopt;
+    solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{all_vars});
+    check_results(proof_name, expected, actual);
+}
+
+template <LexVariant V>
 auto run_lex_test_6(bool proofs,
     pair<int, int> r1, pair<int, int> r2, pair<int, int> r3,
     pair<int, int> r4, pair<int, int> r5, pair<int, int> r6,
@@ -283,6 +322,51 @@ auto run_lex_reified_test_3(bool proofs,
 }
 
 template <LexVariant V, ReifKind R>
+auto run_lex_reified_test_unequal(bool proofs,
+    vector<pair<int, int>> r_left,
+    vector<pair<int, int>> r_right) -> void
+{
+    print(cerr, "lex unequal len {} {} {} len {}{}",
+        r_left.size(), variant_name<V>(), reif_kind_name<R>(), r_right.size(),
+        proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    auto n_left = r_left.size();
+    auto n_right = r_right.size();
+    set<tuple<vector<int>, int>> expected, actual;
+    build_expected(expected, [n_left, n_right](vector<int> v, int c) {
+        vector<int> left(v.begin(), v.begin() + n_left);
+        vector<int> right(v.begin() + n_left, v.begin() + n_left + n_right);
+        bool constraint_holds = cmp_lex<V>(left, right);
+        if constexpr (R == ReifKind::If)
+            return (c == 0) || constraint_holds;
+        else
+            return (c == 1) == constraint_holds;
+    }, [&]() {
+        vector<pair<int, int>> all = r_left;
+        all.insert(all.end(), r_right.begin(), r_right.end());
+        return all;
+    }(), pair{0, 1});
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    vector<IntegerVariableID> all_vars;
+    for (const auto & r : r_left)
+        all_vars.push_back(p.create_integer_variable(Integer(r.first), Integer(r.second)));
+    for (const auto & r : r_right)
+        all_vars.push_back(p.create_integer_variable(Integer(r.first), Integer(r.second)));
+    auto c = p.create_integer_variable(0_i, 1_i);
+    post_reified_lex<V, R>(p,
+        vector<IntegerVariableID>{all_vars.begin(), all_vars.begin() + n_left},
+        vector<IntegerVariableID>{all_vars.begin() + n_left, all_vars.end()},
+        c == 1_i);
+
+    auto proof_name = proofs ? make_optional("lex_test") : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{all_vars, c});
+    check_results(proof_name, expected, actual);
+}
+
+template <LexVariant V, ReifKind R>
 auto run_reified_variant_tests(bool proofs) -> void
 {
     // Same domain length 2: exercises must-hold (cond=TRUE) path for some
@@ -303,6 +387,13 @@ auto run_reified_variant_tests(bool proofs) -> void
     // Length-3: same domain larger search space.
     run_lex_reified_test_3<V, R>(proofs,
         {1, 2}, {1, 2}, {1, 2}, {1, 2}, {1, 2}, {1, 2});
+
+    // Unequal lengths, both directions, exercising the cond-inference path
+    // when the common prefix can be forced equal but lengths differ.
+    run_lex_reified_test_unequal<V, R>(proofs, {{1, 2}, {1, 2}}, {{1, 2}, {1, 2}, {1, 2}});
+    run_lex_reified_test_unequal<V, R>(proofs, {{1, 2}, {1, 2}, {1, 2}}, {{1, 2}, {1, 2}});
+    run_lex_reified_test_unequal<V, R>(proofs, {{1, 3}}, {{1, 3}, {1, 3}});
+    run_lex_reified_test_unequal<V, R>(proofs, {{1, 3}, {1, 3}}, {{1, 3}});
 }
 
 template <LexVariant V>
@@ -351,6 +442,22 @@ auto run_variant_tests(bool proofs) -> void
     run_lex_test_6<V>(proofs,
         {1, 2}, {1, 2}, {1, 2}, {1, 2}, {1, 2}, {1, 2},
         {1, 2}, {1, 2}, {1, 2}, {1, 2}, {1, 2}, {1, 2});
+
+    // Unequal lengths: standard lex semantics says longer wins on equal
+    // common prefix. So [1,2] <_lex [1,2,0] holds and [1,2,0] <=_lex [1,2]
+    // does not. Cover both directions and several common-prefix shapes.
+    run_lex_test_unequal<V>(proofs, {{1, 2}, {1, 2}}, {{1, 2}, {1, 2}, {1, 2}});
+    run_lex_test_unequal<V>(proofs, {{1, 2}, {1, 2}, {1, 2}}, {{1, 2}, {1, 2}});
+
+    // Asymmetric domains so the longer side cannot necessarily extend the
+    // equal prefix freely.
+    run_lex_test_unequal<V>(proofs, {{1, 3}, {1, 2}}, {{1, 3}, {1, 2}, {0, 2}});
+    run_lex_test_unequal<V>(proofs, {{1, 3}, {1, 2}, {0, 2}}, {{1, 3}, {1, 2}});
+
+    // Length 1 vs length 3: degenerate "all common prefix is just the first
+    // element" case.
+    run_lex_test_unequal<V>(proofs, {{1, 3}}, {{1, 3}, {1, 3}, {1, 3}});
+    run_lex_test_unequal<V>(proofs, {{1, 3}, {1, 3}, {1, 3}}, {{1, 3}});
 }
 
 auto run_all_tests(bool proofs) -> void
