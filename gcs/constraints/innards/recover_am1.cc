@@ -1,5 +1,6 @@
+#include <gcs/constraints/innards/recover_am1.hh>
 #include <gcs/exception.hh>
-#include <gcs/innards/proofs/recover_am1.hh>
+
 #include <util/enumerate.hh>
 
 #include <sstream>
