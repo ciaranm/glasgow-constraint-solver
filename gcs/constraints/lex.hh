@@ -21,16 +21,23 @@ namespace gcs
      * arguments at construction so the propagator always sees a "greater"
      * problem).
      *
+     * Standard lex semantics for unequal-length arrays: when the common
+     * prefix is entirely equal, the longer array is the greater one. So
+     * `[1,2] <_lex [1,2,0]` and `[1,2,0] >_lex [1,2]` both hold. The two
+     * arrays do not need to be the same length.
+     *
      * Uses a stateful propagator that maintains the leftmost not-yet-
      * forced-equal position alpha across calls (restored on backtrack via
      * State::add_constraint_state). At each call: advance alpha through any
      * newly-fixed-equal prefix, tighten vars_1[alpha] >= vars_2[alpha], then
      * scan from alpha+1 looking for either a position where strict-greater
      * is feasible (a candidate witness) or a position whose bounds prevent
-     * the equal-prefix from extending. For strict (`!or_equal`), force
-     * strict at alpha whenever no later witness is reachable; for
-     * non-strict, only force strict when the equal-prefix cannot extend
-     * to the end (since otherwise all-equal is itself a valid solution).
+     * the equal-prefix from extending. Whether "common prefix all equal" is
+     * itself a valid outcome depends on the lengths and strictness combined:
+     * vars_1 strictly longer always satisfies; equal lengths satisfies only
+     * the non-strict variant; vars_1 shorter never satisfies. When that
+     * fall-through outcome is invalid (and no later witness is reachable),
+     * force strict at alpha.
      *
      * For reified cases, the same alpha-walk is used to detect whether the
      * constraint definitely holds, definitely does not hold, or is still
