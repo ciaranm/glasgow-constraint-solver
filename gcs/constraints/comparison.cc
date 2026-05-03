@@ -165,28 +165,23 @@ auto ReifiedCompareLessThanOrMaybeEqual::install_propagators(Propagators & propa
         };
 
         auto infer_cond_when_undecided = [v1 = _v1, v2 = _v2, or_equal = _or_equal](
-                                             const State & state, auto & inference, ProofLogger * const logger,
-                                             const evaluated_reif::Undecided & reif) -> PropagatorState {
+                                             const State & state, auto &, ProofLogger * const,
+                                             const IntegerVariableCondition &) -> ReificationVerdict {
             auto v1_bounds = state.bounds(v1), v2_bounds = state.bounds(v2);
             if (or_equal ? (v1_bounds.second <= v2_bounds.first) : (v1_bounds.second < v2_bounds.first)) {
-                // v1 has to be less than (or equal)
-                if (reif.set_cond_if_must_hold)
-                    inference.infer(logger, reif.cond, JustifyUsingRUP{},
-                        ReasonFunction{[=]() { return Reason{{v1 < v1_bounds.second + 1_i, v2 >= v2_bounds.first}}; }});
-                else if (reif.set_not_cond_if_must_hold)
-                    inference.infer(logger, ! reif.cond, JustifyUsingRUP{},
-                        ReasonFunction{[=]() { return Reason{{v1 < v1_bounds.second + 1_i, v2 >= v2_bounds.first}}; }});
-                return PropagatorState::DisableUntilBacktrack;
+                // v1 has to be less than (or equal): constraint must hold.
+                return reification_verdict::MustHold{
+                    .justification = JustifyUsingRUP{},
+                    .reason = ReasonFunction{[=]() { return Reason{{v1 < v1_bounds.second + 1_i, v2 >= v2_bounds.first}}; }}};
             }
             else if (or_equal ? (v1_bounds.first > v2_bounds.second) : (v1_bounds.first >= v2_bounds.second)) {
-                // v1 has to be greater than (or equal)
-                if (reif.set_not_cond_if_must_not_hold)
-                    inference.infer(logger, ! reif.cond, JustifyUsingRUP{},
-                        ReasonFunction{[=]() { return Reason{{v1 >= v1_bounds.first, v2 < v2_bounds.second + 1_i}}; }});
-                return PropagatorState::DisableUntilBacktrack;
+                // v1 has to be greater than (or equal): constraint cannot hold.
+                return reification_verdict::MustNotHold{
+                    .justification = JustifyUsingRUP{},
+                    .reason = ReasonFunction{[=]() { return Reason{{v1 >= v1_bounds.first, v2 < v2_bounds.second + 1_i}}; }}};
             }
             else
-                return PropagatorState::Enable;
+                return reification_verdict::StillUndecided{};
         };
 
         Triggers triggers{.on_bounds = {_v1, _v2}};
