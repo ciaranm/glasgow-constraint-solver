@@ -1,4 +1,5 @@
 #include <gcs/constraints/lex.hh>
+#include <gcs/constraints/innards/reified_dispatcher.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
@@ -531,79 +532,44 @@ auto LexCompareGreaterThanOrMaybeEqual::install(Propagators & propagators, State
 
     auto state_handle = initial_state.add_constraint_state(LexState{});
 
-    // The outer lambdas of the overloaded visitor below are pure references
-    // and don't move anything at construction. Only one branch's body
-    // executes at runtime, so it's safe for each branch to move-capture
-    // _vars_1/_vars_2/_reif_cond into the inner propagator lambda.
-    overloaded{
-        [&](const evaluated_reif::MustHold & reif) {
-            propagators.install(
-                [vars_1 = move(_vars_1), vars_2 = move(_vars_2), or_equal,
-                    prefix_equal_gt_flags, decision_at_gt_flags, state_handle, cond = reif.cond](
-                    const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-                    return run_lex_pass(state, inference, logger,
-                        vars_1, vars_2, or_equal,
-                        prefix_equal_gt_flags, decision_at_gt_flags,
-                        cond, state_handle);
-                },
-                triggers, "lex");
-        },
-        [&](const evaluated_reif::MustNotHold & reif) {
-            // Negation: enforce vars_2 (>|>=) vars_1 with or_equal flipped.
-            propagators.install(
-                [vars_1 = move(_vars_1), vars_2 = move(_vars_2), or_equal,
-                    prefix_equal_lt_flags, decision_at_lt_flags, state_handle, cond = reif.cond](
-                    const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-                    return run_lex_pass(state, inference, logger,
-                        vars_2, vars_1, ! or_equal,
-                        prefix_equal_lt_flags, decision_at_lt_flags,
-                        cond, state_handle);
-                },
-                triggers, "lex");
-        },
-        [&](const evaluated_reif::Undecided & reif) {
-            // Re-evaluate the reification on every call: if cond becomes
-            // decided we forward- or backward-propagate; while it's still
-            // undecided we monitor and infer cond when the constraint state
-            // forces it.
-            triggers.on_change.push_back(reif.cond.var);
-            propagators.install(
-                [vars_1 = move(_vars_1), vars_2 = move(_vars_2), or_equal,
-                    prefix_equal_gt_flags, decision_at_gt_flags,
-                    prefix_equal_lt_flags, decision_at_lt_flags,
-                    state_handle, reif_cond = move(_reif_cond)](
-                    const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-                    return overloaded{
-                        [&](const evaluated_reif::MustHold & reif) {
-                            return run_lex_pass(state, inference, logger,
-                                vars_1, vars_2, or_equal,
-                                prefix_equal_gt_flags, decision_at_gt_flags,
-                                reif.cond, state_handle);
-                        },
-                        [&](const evaluated_reif::MustNotHold & reif) {
-                            return run_lex_pass(state, inference, logger,
-                                vars_2, vars_1, ! or_equal,
-                                prefix_equal_lt_flags, decision_at_lt_flags,
-                                reif.cond, state_handle);
-                        },
-                        [&](const evaluated_reif::Undecided & reif) {
-                            return run_lex_undecided_detection(state, inference, logger,
-                                vars_1, vars_2, or_equal,
-                                prefix_equal_gt_flags, decision_at_gt_flags,
-                                prefix_equal_lt_flags, decision_at_lt_flags,
-                                reif);
-                        },
-                        [&](const evaluated_reif::Deactivated &) {
-                            return PropagatorState::DisableUntilBacktrack;
-                        }}
-                        .visit(state.test_reification_condition(reif_cond));
-                },
-                triggers, "lex reified");
-        },
-        [&](const evaluated_reif::Deactivated &) {
-            // Reification condition pins the constraint as inactive.
-        }}
-        .visit(initial_state.test_reification_condition(_reif_cond));
+    auto enforce_constraint_must_hold = [vars_1 = _vars_1, vars_2 = _vars_2, or_equal,
+                                            prefix_equal_gt_flags, decision_at_gt_flags, state_handle](
+                                            const State & state, auto & inference, ProofLogger * const logger,
+                                            const Literal & cond) -> PropagatorState {
+        return run_lex_pass(state, inference, logger,
+            vars_1, vars_2, or_equal,
+            prefix_equal_gt_flags, decision_at_gt_flags,
+            cond, state_handle);
+    };
+
+    auto enforce_constraint_must_not_hold = [vars_1 = _vars_1, vars_2 = _vars_2, or_equal,
+                                                prefix_equal_lt_flags, decision_at_lt_flags, state_handle](
+                                                const State & state, auto & inference, ProofLogger * const logger,
+                                                const Literal & cond) -> PropagatorState {
+        // Negation: enforce vars_2 (>|>=) vars_1 with or_equal flipped.
+        return run_lex_pass(state, inference, logger,
+            vars_2, vars_1, ! or_equal,
+            prefix_equal_lt_flags, decision_at_lt_flags,
+            cond, state_handle);
+    };
+
+    auto infer_cond_when_undecided = [vars_1 = move(_vars_1), vars_2 = move(_vars_2), or_equal,
+                                         prefix_equal_gt_flags, decision_at_gt_flags,
+                                         prefix_equal_lt_flags, decision_at_lt_flags](
+                                         const State & state, auto & inference, ProofLogger * const logger,
+                                         const evaluated_reif::Undecided & reif) -> PropagatorState {
+        return run_lex_undecided_detection(state, inference, logger,
+            vars_1, vars_2, or_equal,
+            prefix_equal_gt_flags, decision_at_gt_flags,
+            prefix_equal_lt_flags, decision_at_lt_flags,
+            reif);
+    };
+
+    install_reified_dispatcher(propagators, initial_state.test_reification_condition(_reif_cond), _reif_cond, triggers,
+        std::move(enforce_constraint_must_hold),
+        std::move(enforce_constraint_must_not_hold),
+        std::move(infer_cond_when_undecided),
+        "lex");
 }
 
 auto LexCompareGreaterThanOrMaybeEqual::s_exprify(const std::string & name, const innards::ProofModel * const model) const -> std::string
