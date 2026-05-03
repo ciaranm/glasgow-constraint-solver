@@ -26,6 +26,7 @@
 #include <gcs/constraints/equals.hh>
 #include <gcs/constraints/inverse.hh>
 #include <gcs/constraints/knapsack.hh>
+#include <gcs/constraints/lex.hh>
 #include <gcs/constraints/linear.hh>
 #include <gcs/constraints/logical.hh>
 #include <gcs/constraints/min_max.hh>
