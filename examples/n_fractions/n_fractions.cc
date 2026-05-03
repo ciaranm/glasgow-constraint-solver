@@ -1,7 +1,7 @@
 #include <gcs/constraints/all_different.hh>
 #include <gcs/constraints/comparison.hh>
-#include <gcs/constraints/constraints_test_utils.hh>
 #include <gcs/constraints/equals.hh>
+#include <gcs/constraints/innards/constraints_test_utils.hh>
 #include <gcs/constraints/mult_bc.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
