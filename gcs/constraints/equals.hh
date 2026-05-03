@@ -5,7 +5,7 @@
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/proofs/reification.hh>
 #include <gcs/innards/reason.hh>
-#include <gcs/innards/state.hh>
+#include <gcs/constraints/innards/reified_state.hh>
 #include <gcs/reification.hh>
 #include <gcs/variable_condition.hh>
 #include <gcs/variable_id.hh>
