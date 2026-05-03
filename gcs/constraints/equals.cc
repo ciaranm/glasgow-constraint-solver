@@ -188,41 +188,30 @@ auto ReifiedEquals::install(Propagators & propagators, State & initial_state, Pr
     };
 
     auto infer_cond_when_undecided = [v1 = _v1, v2 = _v2](
-                                         const State & state, auto & inference, ProofLogger * const logger,
-                                         const evaluated_reif::Undecided & reif) -> PropagatorState {
+                                         const State & state, auto &, ProofLogger * const logger,
+                                         const IntegerVariableCondition & cond) -> ReificationVerdict {
         auto value1 = state.optional_single_value(v1);
         auto value2 = state.optional_single_value(v2);
         if (value1 && value2) {
-            if (reif.set_cond_if_must_hold && *value1 == *value2)
-                inference.infer(logger, reif.cond, JustifyUsingRUP{},
-                    [=]() { return Reason{v1 == *value1, v2 == *value2}; });
-            else if (reif.set_not_cond_if_must_hold && *value1 == *value2)
-                inference.infer(logger, ! reif.cond, JustifyUsingRUP{},
-                    [=]() { return Reason{v1 == *value1, v2 == *value2}; });
-            else if (reif.set_not_cond_if_must_not_hold && *value1 != *value2)
-                inference.infer(logger, ! reif.cond, JustifyUsingRUP{},
-                    [=]() { return Reason{v1 == *value1, v2 == *value2}; });
-            return PropagatorState::DisableUntilBacktrack;
+            auto reason = ReasonFunction{[=]() { return Reason{v1 == *value1, v2 == *value2}; }};
+            if (*value1 == *value2)
+                return reification_verdict::MustHold{.justification = JustifyUsingRUP{}, .reason = reason};
+            else
+                return reification_verdict::MustNotHold{.justification = JustifyUsingRUP{}, .reason = reason};
         }
         else if (value1) {
-            if (! state.in_domain(v2, *value1)) {
-                if (reif.set_not_cond_if_must_not_hold)
-                    inference.infer(logger, ! reif.cond, JustifyUsingRUP{},
-                        [=]() { return Reason{v1 == *value1, v2 != *value1}; });
-                return PropagatorState::DisableUntilBacktrack;
-            }
-            else
-                return PropagatorState::Enable;
+            if (! state.in_domain(v2, *value1))
+                return reification_verdict::MustNotHold{
+                    .justification = JustifyUsingRUP{},
+                    .reason = ReasonFunction{[=]() { return Reason{v1 == *value1, v2 != *value1}; }}};
+            return reification_verdict::StillUndecided{};
         }
         else if (value2) {
-            if (! state.in_domain(v1, *value2)) {
-                if (reif.set_not_cond_if_must_not_hold)
-                    inference.infer(logger, ! reif.cond, JustifyUsingRUP{},
-                        [=]() { return Reason{v2 == *value2, v1 != *value2}; });
-                return PropagatorState::DisableUntilBacktrack;
-            }
-            else
-                return PropagatorState::Enable;
+            if (! state.in_domain(v1, *value2))
+                return reification_verdict::MustNotHold{
+                    .justification = JustifyUsingRUP{},
+                    .reason = ReasonFunction{[=]() { return Reason{v2 == *value2, v1 != *value2}; }}};
+            return reification_verdict::StillUndecided{};
         }
         else {
             // not equals is forced if there's no overlap between domains
@@ -234,13 +223,10 @@ auto ReifiedEquals::install(Propagators & propagators, State & initial_state, Pr
                 }
 
             if (! overlap) {
-                auto [just, reason] = no_overlap_justification(state, logger, v1, v2, reif.cond);
-                if (reif.set_not_cond_if_must_not_hold)
-                    inference.infer(logger, ! reif.cond, just, reason);
-                return PropagatorState::DisableUntilBacktrack;
+                auto [just, reason] = no_overlap_justification(state, logger, v1, v2, cond);
+                return reification_verdict::MustNotHold{.justification = just, .reason = reason};
             }
-            else
-                return PropagatorState::Enable;
+            return reification_verdict::StillUndecided{};
         }
     };
 
