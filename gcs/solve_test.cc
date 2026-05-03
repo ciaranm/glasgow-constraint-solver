@@ -1,5 +1,5 @@
 #include <gcs/constraints/comparison.hh>
-#include <gcs/constraints/constraints_test_utils.hh>
+#include <gcs/constraints/innards/constraints_test_utils.hh>
 #include <gcs/expression.hh>
 #include <gcs/presolvers/auto_table.hh>
 #include <gcs/problem.hh>
