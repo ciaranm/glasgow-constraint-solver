@@ -27,6 +27,7 @@ add_library(glasgow_constraint_solver
         constraints/element.cc
         constraints/equals.cc
         constraints/in.cc
+        constraints/innards/recover_am1.cc
         constraints/inverse.cc
         constraints/knapsack.cc
         constraints/lex.cc
@@ -59,7 +60,6 @@ add_library(glasgow_constraint_solver
         innards/proofs/proof_logger.cc
         innards/proofs/proof_model.cc
         innards/proofs/proof_only_variables.cc
-        innards/proofs/recover_am1.cc
         innards/proofs/simplify_literal.cc
         innards/propagators.cc
         innards/reason.cc
