@@ -2,6 +2,7 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_INNARDS_REIFIED_DISPATCHER_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_INNARDS_REIFIED_DISPATCHER_HH
 
+#include <gcs/constraints/innards/reified_state.hh>
 #include <gcs/innards/justification.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/reason.hh>
@@ -134,15 +135,13 @@ namespace gcs::innards
                                 return PropagatorState::Enable;
                             },
                             [&](const reification_verdict::MustHold & h) {
-                                if (reif.set_cond_if_must_hold)
-                                    inference.infer(logger, reif.cond, h.justification, h.reason);
-                                else if (reif.set_not_cond_if_must_hold)
-                                    inference.infer(logger, ! reif.cond, h.justification, h.reason);
+                                if (auto lit = reif.cond_to_infer_if_constraint_must_hold())
+                                    inference.infer(logger, *lit, h.justification, h.reason);
                                 return PropagatorState::DisableUntilBacktrack;
                             },
                             [&](const reification_verdict::MustNotHold & n) {
-                                if (reif.set_not_cond_if_must_not_hold)
-                                    inference.infer(logger, ! reif.cond, n.justification, n.reason);
+                                if (auto lit = reif.cond_to_infer_if_constraint_must_not_hold())
+                                    inference.infer(logger, *lit, n.justification, n.reason);
                                 return PropagatorState::DisableUntilBacktrack;
                             }}
                             .visit(infer_cond_when_undecided(state, inference, logger, reif.cond));
@@ -150,7 +149,7 @@ namespace gcs::innards
                     [&](const evaluated_reif::Deactivated &) {
                         return PropagatorState::DisableUntilBacktrack;
                     }}
-                    .visit(state.test_reification_condition(reif_cond));
+                    .visit(test_reification_condition(state, reif_cond));
             },
             triggers, name);
     }

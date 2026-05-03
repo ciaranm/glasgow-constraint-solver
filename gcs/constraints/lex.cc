@@ -567,7 +567,7 @@ auto LexCompareGreaterThanOrMaybeEqual::install(Propagators & propagators, State
             cond);
     };
 
-    install_reified_dispatcher(propagators, initial_state.test_reification_condition(_reif_cond), _reif_cond, triggers,
+    install_reified_dispatcher(propagators, test_reification_condition(initial_state, _reif_cond), _reif_cond, triggers,
         std::move(enforce_constraint_must_hold),
         std::move(enforce_constraint_must_not_hold),
         std::move(infer_cond_when_undecided),

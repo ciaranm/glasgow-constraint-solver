@@ -128,7 +128,7 @@ auto ReifiedEquals::install(Propagators & propagators, State & initial_state, Pr
 
 auto ReifiedEquals::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
 {
-    _evaluated_cond = initial_state.test_reification_condition(_cond);
+    _evaluated_cond = test_reification_condition(initial_state, _cond);
     return true;
 }
 

@@ -1,4 +1,5 @@
 #include <gcs/constraints/linear/linear_equality.hh>
+#include <gcs/constraints/innards/reified_state.hh>
 #include <gcs/constraints/linear/propagate.hh>
 #include <gcs/constraints/linear/utils.hh>
 #include <gcs/exception.hh>
@@ -159,7 +160,7 @@ auto ReifiedLinearEquality::install(Propagators & propagators, State & initial_s
 
 auto ReifiedLinearEquality::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
 {
-    _evaluated_cond = initial_state.test_reification_condition(_reif_cond);
+    _evaluated_cond = test_reification_condition(initial_state, _reif_cond);
     return true;
 }
 
@@ -351,15 +352,13 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> vo
                                     // every variable is assigned, so we know what the condition must be (if we're fully
                                     // reified)
                                     if (accum == value) {
-                                        if (reif.set_cond_if_must_hold)
-                                            inference.infer(logger, reif.cond, JustifyUsingRUP{}, generic_reason(state, all_vars));
-                                        else if (reif.set_not_cond_if_must_hold)
-                                            inference.infer(logger, ! reif.cond, JustifyUsingRUP{}, generic_reason(state, all_vars));
+                                        if (auto lit = reif.cond_to_infer_if_constraint_must_hold())
+                                            inference.infer(logger, *lit, JustifyUsingRUP{}, generic_reason(state, all_vars));
                                         return PropagatorState::DisableUntilBacktrack;
                                     }
                                     else {
-                                        if (reif.set_not_cond_if_must_not_hold)
-                                            inference.infer(logger, ! reif.cond, JustifyUsingRUP{}, generic_reason(state, all_vars));
+                                        if (auto lit = reif.cond_to_infer_if_constraint_must_not_hold())
+                                            inference.infer(logger, *lit, JustifyUsingRUP{}, generic_reason(state, all_vars));
                                         return PropagatorState::DisableUntilBacktrack;
                                     }
                                 }
@@ -372,8 +371,8 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> vo
                                         if (! state.in_domain(get_var(*single_unset), would_make_equal)) {
                                             // no way for the remaining variable to take that value, so the condition
                                             // has to be false
-                                            if (reif.set_not_cond_if_must_not_hold)
-                                                inference.infer(logger, ! reif.cond, JustifyUsingRUP{}, generic_reason(state, all_vars));
+                                            if (auto lit = reif.cond_to_infer_if_constraint_must_not_hold())
+                                                inference.infer(logger, *lit, JustifyUsingRUP{}, generic_reason(state, all_vars));
                                             return PropagatorState::DisableUntilBacktrack;
                                         }
                                         else {
@@ -384,13 +383,13 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> vo
                                     else {
                                         // the value that would make the equality work isn't an integer, so the condition
                                         // has to be false
-                                        if (reif.set_not_cond_if_must_not_hold)
-                                            inference.infer(logger, ! reif.cond, JustifyUsingRUP{}, generic_reason(state, all_vars));
+                                        if (auto lit = reif.cond_to_infer_if_constraint_must_not_hold())
+                                            inference.infer(logger, *lit, JustifyUsingRUP{}, generic_reason(state, all_vars));
                                         return PropagatorState::DisableUntilBacktrack;
                                     }
                                 }
                             }}
-                            .visit(state.test_reification_condition(cond));
+                            .visit(test_reification_condition(state, cond));
                     },
                         triggers, "linear");
                 },

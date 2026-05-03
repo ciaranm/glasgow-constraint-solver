@@ -1,5 +1,6 @@
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/innards/reified_dispatcher.hh>
+#include <gcs/constraints/innards/reified_state.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -69,7 +70,7 @@ auto ReifiedCompareLessThanOrMaybeEqual::prepare(Propagators &, State & initial_
 {
     _v1_is_constant = initial_state.optional_single_value(_v1);
     _v2_is_constant = initial_state.optional_single_value(_v2);
-    _evaluated_cond = initial_state.test_reification_condition(_reif_cond);
+    _evaluated_cond = test_reification_condition(initial_state, _reif_cond);
     return true;
 }
 
@@ -122,15 +123,13 @@ auto ReifiedCompareLessThanOrMaybeEqual::install_propagators(Propagators & propa
                     });
             },
             [&](const evaluated_reif::Undecided & reif) {
-                if (holds && reif.set_cond_if_must_hold)
-                    propagators.install_initialiser([v1 = _v1, v2 = _v2, v1_is_constant = _v1_is_constant, v2_is_constant = _v2_is_constant, cond = reif.cond](
+                auto lit = holds
+                    ? reif.cond_to_infer_if_constraint_must_hold()
+                    : reif.cond_to_infer_if_constraint_must_not_hold();
+                if (lit)
+                    propagators.install_initialiser([v1 = _v1, v2 = _v2, v1_is_constant = _v1_is_constant, v2_is_constant = _v2_is_constant, lit = *lit](
                                                         const State &, auto & inference, ProofLogger * const logger) -> void {
-                        inference.infer(logger, cond, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{v1 == *v1_is_constant, v2 == *v2_is_constant}}; }});
-                    });
-                else if ((holds && reif.set_not_cond_if_must_hold) || (! holds && reif.set_not_cond_if_must_not_hold))
-                    propagators.install_initialiser([v1 = _v1, v2 = _v2, v1_is_constant = _v1_is_constant, v2_is_constant = _v2_is_constant, cond = reif.cond](
-                                                        const State &, auto & inference, ProofLogger * const logger) -> void {
-                        inference.infer(logger, ! cond, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{v1 == *v1_is_constant, v2 == *v2_is_constant}}; }});
+                        inference.infer(logger, lit, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{v1 == *v1_is_constant, v2 == *v2_is_constant}}; }});
                     });
             },
             [](const evaluated_reif::Deactivated &) {

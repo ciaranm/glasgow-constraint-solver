@@ -5,7 +5,7 @@
 #include <gcs/expression.hh>
 #include <gcs/innards/literal.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
-#include <gcs/innards/state.hh>
+#include <gcs/constraints/innards/reified_state.hh>
 #include <gcs/reification.hh>
 
 #include <optional>

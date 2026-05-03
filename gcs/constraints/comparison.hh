@@ -3,7 +3,7 @@
 
 #include <gcs/constraint.hh>
 #include <gcs/innards/literal.hh>
-#include <gcs/innards/state.hh>
+#include <gcs/constraints/innards/reified_state.hh>
 #include <gcs/integer.hh>
 #include <gcs/reification.hh>
 #include <gcs/variable_condition.hh>
