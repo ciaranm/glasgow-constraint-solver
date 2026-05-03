@@ -1,4 +1,5 @@
 #include <gcs/constraints/linear/linear_inequality.hh>
+#include <gcs/constraints/innards/reified_state.hh>
 #include <gcs/constraints/linear/propagate.hh>
 #include <gcs/constraints/linear/utils.hh>
 #include <gcs/innards/inference_tracker.hh>
@@ -229,17 +230,15 @@ auto ReifiedLinearInequality::install(Propagators & propagators, State & state, 
                             if (min_possible > value + modifier) {
                                 // cannot possibly hold
                                 auto just = [&](const ReasonFunction &) { return justify_cond(state, sanitised_cv, *logger, proof_lines.value()); };
-                                if (reif.set_not_cond_if_must_not_hold)
-                                    inference.infer(logger, ! reif.cond, JustifyExplicitlyThenRUP{just}, generic_reason(state, vars));
+                                if (auto lit = reif.cond_to_infer_if_constraint_must_not_hold())
+                                    inference.infer(logger, *lit, JustifyExplicitlyThenRUP{just}, generic_reason(state, vars));
                                 return PropagatorState::DisableUntilBacktrack;
                             }
                             else if (max_possible <= value + modifier) {
                                 // must definitely hold
                                 auto just = [&](const ReasonFunction &) { return justify_cond(state, sanitised_neg_cv, *logger, proof_lines_swapped.value()); };
-                                if (reif.set_cond_if_must_hold)
-                                    inference.infer(logger, reif.cond, JustifyExplicitlyThenRUP{just}, generic_reason(state, vars));
-                                else if (reif.set_not_cond_if_must_hold)
-                                    inference.infer(logger, ! reif.cond, JustifyExplicitlyThenRUP{just}, generic_reason(state, vars));
+                                if (auto lit = reif.cond_to_infer_if_constraint_must_hold())
+                                    inference.infer(logger, *lit, JustifyExplicitlyThenRUP{just}, generic_reason(state, vars));
                                 return PropagatorState::DisableUntilBacktrack;
                             }
                             else {
@@ -247,13 +246,13 @@ auto ReifiedLinearInequality::install(Propagators & propagators, State & state, 
                                 return PropagatorState::Enable;
                             }
                         }}
-                        .visit(state.test_reification_condition(cond));
+                        .visit(test_reification_condition(state, cond));
                 },
                     triggers, "linear inequality");
             },
                 sanitised_cv, sanitised_neg_cv);
         }}
-        .visit(state.test_reification_condition(_reif_cond));
+        .visit(test_reification_condition(state, _reif_cond));
 }
 
 auto ReifiedLinearInequality::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string

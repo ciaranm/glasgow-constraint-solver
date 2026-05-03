@@ -28,6 +28,7 @@ add_library(glasgow_constraint_solver
         constraints/equals.cc
         constraints/in.cc
         constraints/innards/recover_am1.cc
+        constraints/innards/reified_state.cc
         constraints/inverse.cc
         constraints/knapsack.cc
         constraints/lex.cc
