@@ -601,6 +601,28 @@ auto main(int argc, char * argv[]) -> int
                 const auto & vars2 = arg_as_array_of_var(data, args, 1);
                 problem.post(Inverse{vars1, vars2, 1_i, 1_i});
             }
+            else if (id == "glasgow_lex_less_int" || id == "glasgow_lex_less_bool") {
+                const auto & vars1 = arg_as_array_of_var(data, args, 0);
+                const auto & vars2 = arg_as_array_of_var(data, args, 1);
+                problem.post(LexLessThan{vars1, vars2});
+            }
+            else if (id == "glasgow_lex_lesseq_int" || id == "glasgow_lex_lesseq_bool") {
+                const auto & vars1 = arg_as_array_of_var(data, args, 0);
+                const auto & vars2 = arg_as_array_of_var(data, args, 1);
+                problem.post(LexLessThanEqual{vars1, vars2});
+            }
+            else if (id == "glasgow_lex_less_int_reif" || id == "glasgow_lex_less_bool_reif") {
+                const auto & vars1 = arg_as_array_of_var(data, args, 0);
+                const auto & vars2 = arg_as_array_of_var(data, args, 1);
+                const auto & reif = arg_as_var(data, args, 2);
+                problem.post(LexLessThanIff{vars1, vars2, reif == 1_i});
+            }
+            else if (id == "glasgow_lex_lesseq_int_reif" || id == "glasgow_lex_lesseq_bool_reif") {
+                const auto & vars1 = arg_as_array_of_var(data, args, 0);
+                const auto & vars2 = arg_as_array_of_var(data, args, 1);
+                const auto & reif = arg_as_var(data, args, 2);
+                problem.post(LexLessThanEqualIff{vars1, vars2, reif == 1_i});
+            }
             else if (id == "glasgow_regular") {
                 const auto & vars = arg_as_array_of_var(data, args, 0);
                 const auto & num_states = static_cast<long long>(args.at(1));
