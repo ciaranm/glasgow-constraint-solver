@@ -1,4 +1,5 @@
 #include <gcs/constraints/comparison.hh>
+#include <gcs/constraints/innards/reified_dispatcher.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -121,81 +122,63 @@ auto ReifiedCompareLessThanOrMaybeEqual::install(Propagators & propagators, Stat
             .visit(initial_state.test_reification_condition(_reif_cond));
     }
     else {
-        overloaded{
-            [&](const evaluated_reif::MustHold & reif) {
-                Triggers triggers{.on_bounds = {_v1, _v2}};
+        auto enforce_constraint_must_hold = [v1 = _v1, v2 = _v2, or_equal = _or_equal](
+                                                const State & state, auto & inference, ProofLogger * const logger,
+                                                const Literal & cond) -> PropagatorState {
+            auto v1_bounds = state.bounds(v1), v2_bounds = state.bounds(v2);
+            inference.infer_less_than(logger, v1, v2_bounds.second + (or_equal ? 1_i : 0_i), JustifyUsingRUP{},
+                ReasonFunction{[=]() { return Reason{{cond, v2 < v2_bounds.second + 1_i}}; }});
+            inference.infer_greater_than_or_equal(logger, v2, v1_bounds.first + (or_equal ? 0_i : 1_i), JustifyUsingRUP{},
+                ReasonFunction{[=]() { return Reason{{cond, v1 >= v1_bounds.first}}; }});
+            return v1_bounds.second < (v2_bounds.first + (or_equal ? 1_i : 0_i))
+                ? PropagatorState::DisableUntilBacktrack
+                : PropagatorState::Enable;
+        };
 
-                propagators.install([v1 = _v1, v2 = _v2, cond = reif.cond, or_equal = _or_equal](
-                                        const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-                    auto v1_bounds = state.bounds(v1), v2_bounds = state.bounds(v2);
-                    inference.infer_less_than(logger, v1, v2_bounds.second + (or_equal ? 1_i : 0_i), JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{cond, v2 < v2_bounds.second + 1_i}}; }});
-                    inference.infer_greater_than_or_equal(logger, v2, v1_bounds.first + (or_equal ? 0_i : 1_i), JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{cond, v1 >= v1_bounds.first}}; }});
-                    return v1_bounds.second < (v2_bounds.first + (or_equal ? 1_i : 0_i)) ? PropagatorState::DisableUntilBacktrack : PropagatorState::Enable;
-                },
-                    triggers, "reified compare less than or maybe equal");
-            },
-            [&](const evaluated_reif::MustNotHold & reif) {
-                Triggers triggers{.on_bounds = {_v1, _v2}};
+        auto enforce_constraint_must_not_hold = [v1 = _v1, v2 = _v2, or_equal = _or_equal](
+                                                    const State & state, auto & inference, ProofLogger * const logger,
+                                                    const Literal & cond) -> PropagatorState {
+            auto v1_bounds = state.bounds(v1), v2_bounds = state.bounds(v2);
+            inference.infer_less_than(logger, v2, v1_bounds.second + (! or_equal ? 1_i : 0_i), JustifyUsingRUP{},
+                ReasonFunction{[=]() { return Reason{{cond, v1 < v1_bounds.second + 1_i}}; }});
+            inference.infer_greater_than_or_equal(logger, v1, v2_bounds.first + (! or_equal ? 0_i : 1_i), JustifyUsingRUP{},
+                ReasonFunction{[=]() { return Reason{{cond, v2 >= v2_bounds.first}}; }});
+            return v2_bounds.second < (v1_bounds.first + (! or_equal ? 1_i : 0_i))
+                ? PropagatorState::DisableUntilBacktrack
+                : PropagatorState::Enable;
+        };
 
-                propagators.install([v1 = _v1, v2 = _v2, cond = reif.cond, or_equal = _or_equal](
-                                        const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-                    auto v1_bounds = state.bounds(v1), v2_bounds = state.bounds(v2);
-                    inference.infer_less_than(logger, v2, v1_bounds.second + (! or_equal ? 1_i : 0_i), JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{cond, v1 < v1_bounds.second + 1_i}}; }});
-                    inference.infer_greater_than_or_equal(logger, v1, v2_bounds.first + (! or_equal ? 0_i : 1_i), JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{cond, v2 >= v2_bounds.first}}; }});
-                    return v2_bounds.second < (v1_bounds.first + (! or_equal ? 1_i : 0_i)) ? PropagatorState::DisableUntilBacktrack : PropagatorState::Enable;
-                },
-                    triggers, "reified compare less than or maybe equal");
-            },
-            [&](const evaluated_reif::Undecided & reif) {
-                Triggers triggers{.on_bounds = {_v1, _v2}};
-                triggers.on_change.push_back(reif.cond.var);
+        auto infer_cond_when_undecided = [v1 = _v1, v2 = _v2, or_equal = _or_equal](
+                                             const State & state, auto & inference, ProofLogger * const logger,
+                                             const evaluated_reif::Undecided & reif) -> PropagatorState {
+            auto v1_bounds = state.bounds(v1), v2_bounds = state.bounds(v2);
+            if (or_equal ? (v1_bounds.second <= v2_bounds.first) : (v1_bounds.second < v2_bounds.first)) {
+                // v1 has to be less than (or equal)
+                if (reif.set_cond_if_must_hold)
+                    inference.infer(logger, reif.cond, JustifyUsingRUP{},
+                        ReasonFunction{[=]() { return Reason{{v1 < v1_bounds.second + 1_i, v2 >= v2_bounds.first}}; }});
+                else if (reif.set_not_cond_if_must_hold)
+                    inference.infer(logger, ! reif.cond, JustifyUsingRUP{},
+                        ReasonFunction{[=]() { return Reason{{v1 < v1_bounds.second + 1_i, v2 >= v2_bounds.first}}; }});
+                return PropagatorState::DisableUntilBacktrack;
+            }
+            else if (or_equal ? (v1_bounds.first > v2_bounds.second) : (v1_bounds.first >= v2_bounds.second)) {
+                // v1 has to be greater than (or equal)
+                if (reif.set_not_cond_if_must_not_hold)
+                    inference.infer(logger, ! reif.cond, JustifyUsingRUP{},
+                        ReasonFunction{[=]() { return Reason{{v1 >= v1_bounds.first, v2 < v2_bounds.second + 1_i}}; }});
+                return PropagatorState::DisableUntilBacktrack;
+            }
+            else
+                return PropagatorState::Enable;
+        };
 
-                propagators.install([v1 = _v1, v2 = _v2, or_equal = _or_equal, reif_cond = _reif_cond](
-                                        const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-                    return overloaded{
-                        [&](const evaluated_reif::MustHold & reif) {
-                            auto v1_bounds = state.bounds(v1), v2_bounds = state.bounds(v2);
-                            inference.infer_less_than(logger, v1, v2_bounds.second + (or_equal ? 1_i : 0_i), JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{reif.cond, v2 < v2_bounds.second + 1_i}}; }});
-                            inference.infer_greater_than_or_equal(logger, v2, v1_bounds.first + (or_equal ? 0_i : 1_i), JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{reif.cond, v1 >= v1_bounds.first}}; }});
-                            return v1_bounds.second < (v2_bounds.first + (or_equal ? 1_i : 0_i)) ? PropagatorState::DisableUntilBacktrack : PropagatorState::Enable;
-                        },
-                        [&](const evaluated_reif::MustNotHold & reif) {
-                            auto v1_bounds = state.bounds(v1), v2_bounds = state.bounds(v2);
-                            inference.infer_less_than(logger, v2, v1_bounds.second + (! or_equal ? 1_i : 0_i), JustifyUsingRUP{},
-                                ReasonFunction{[=]() { return Reason{{reif.cond, v1 < v1_bounds.second + 1_i}}; }});
-                            inference.infer_greater_than_or_equal(logger, v1, v2_bounds.first + (! or_equal ? 0_i : 1_i), JustifyUsingRUP{},
-                                ReasonFunction{[=]() { return Reason{{reif.cond, v2 >= v2_bounds.first}}; }});
-                            return v2_bounds.second < (v1_bounds.first + (! or_equal ? 1_i : 0_i)) ? PropagatorState::DisableUntilBacktrack : PropagatorState::Enable;
-                        },
-                        [&](const evaluated_reif::Undecided & reif) {
-                            auto v1_bounds = state.bounds(v1), v2_bounds = state.bounds(v2);
-                            if (or_equal ? (v1_bounds.second <= v2_bounds.first) : (v1_bounds.second < v2_bounds.first)) {
-                                // v1 has to be less than (or equal)
-                                if (reif.set_cond_if_must_hold)
-                                    inference.infer(logger, reif.cond, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{v1 < v1_bounds.second + 1_i, v2 >= v2_bounds.first}}; }});
-                                else if (reif.set_not_cond_if_must_hold)
-                                    inference.infer(logger, ! reif.cond, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{v1 < v1_bounds.second + 1_i, v2 >= v2_bounds.first}}; }});
-                                return PropagatorState::DisableUntilBacktrack;
-                            }
-                            else if (or_equal ? (v1_bounds.first > v2_bounds.second) : (v1_bounds.first >= v2_bounds.second)) {
-                                // v1 has to be greater than (or equal)
-                                if (reif.set_not_cond_if_must_not_hold)
-                                    inference.infer(logger, ! reif.cond, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{v1 >= v1_bounds.first, v2 < v2_bounds.second + 1_i}}; }});
-                                return PropagatorState::DisableUntilBacktrack;
-                            }
-                            else
-                                return PropagatorState::Enable;
-                        },
-                        [&](const evaluated_reif::Deactivated &) {
-                            return PropagatorState::DisableUntilBacktrack;
-                        }}
-                        .visit(state.test_reification_condition(reif_cond));
-                },
-                    triggers, "reified compare less than or maybe equal");
-            },
-            [](const evaluated_reif::Deactivated &) {
-            }}
-            .visit(initial_state.test_reification_condition(_reif_cond));
+        Triggers triggers{.on_bounds = {_v1, _v2}};
+        install_reified_dispatcher(propagators, initial_state, _reif_cond, triggers,
+            std::move(enforce_constraint_must_hold),
+            std::move(enforce_constraint_must_not_hold),
+            std::move(infer_cond_when_undecided),
+            "reified compare less than or maybe equal");
     }
 }
 
