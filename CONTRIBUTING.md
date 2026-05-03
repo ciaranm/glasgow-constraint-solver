@@ -26,3 +26,12 @@ quite a lot in propagators). The proof logging code is similarly high-risk.
 All contributions should pass both the `release` and `sanitize` build and tests
 before submission, including the full test suite (witth VeriPB installed) in
 both modes. See `README.md` for details.
+
+Developer Documentation
+=======================
+
+Architectural notes on individual subsystems live in `dev_docs/`. AI agents in
+particular should read the relevant document before making non-trivial changes
+to a subsystem — this is the most efficient way to absorb the design
+decisions and conventions that aren't obvious from the code alone. See
+`dev_docs/README.md` for the current index.
