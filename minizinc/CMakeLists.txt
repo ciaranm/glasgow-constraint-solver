@@ -55,6 +55,30 @@ set_tests_properties(minizinc-inverses PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-lessthans COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ lessthans true true)
 set_tests_properties(minizinc-lessthans PROPERTIES SKIP_RETURN_CODE 66)
 
+add_test(NAME minizinc-lexbool COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ lexbool true true)
+set_tests_properties(minizinc-lexbool PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-lexgequnequal COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ lexgequnequal true true)
+set_tests_properties(minizinc-lexgequnequal PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-lexgtunequal COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ lexgtunequal true true)
+set_tests_properties(minizinc-lexgtunequal PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-lexlequnequal COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ lexlequnequal true true)
+set_tests_properties(minizinc-lexlequnequal PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-lexless COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ lexless true true)
+set_tests_properties(minizinc-lexless PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-lexlesseq COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ lexlesseq true true)
+set_tests_properties(minizinc-lexlesseq PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-lexltunequal COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ lexltunequal true true)
+set_tests_properties(minizinc-lexltunequal PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-lexreif COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ lexreif true true)
+set_tests_properties(minizinc-lexreif PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-minmax COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ minmax false true)
 set_tests_properties(minizinc-minmax PROPERTIES SKIP_RETURN_CODE 66)
 
