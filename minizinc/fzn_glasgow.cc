@@ -596,6 +596,10 @@ auto main(int argc, char * argv[]) -> int
                 const auto & varcount = arg_as_var(data, args, 2);
                 problem.post(Count{vars, varmatch, varcount});
             }
+            else if (id == "glasgow_increasing_int" || id == "glasgow_increasing_bool") {
+                const auto & vars = arg_as_array_of_var(data, args, 0);
+                problem.post(Increasing{vars});
+            }
             else if (id == "glasgow_inverse") {
                 const auto & vars1 = arg_as_array_of_var(data, args, 0);
                 const auto & vars2 = arg_as_array_of_var(data, args, 1);
@@ -660,6 +664,10 @@ auto main(int argc, char * argv[]) -> int
             else if (id == "glasgow_seq_precede_chain_int") {
                 const auto & vars = arg_as_array_of_var(data, args, 0);
                 problem.post(SeqPrecedeChain{vars});
+            }
+            else if (id == "glasgow_strictly_increasing_int") {
+                const auto & vars = arg_as_array_of_var(data, args, 0);
+                problem.post(StrictlyIncreasing{vars});
             }
             else if (id == "glasgow_value_precede_int") {
                 Integer s{static_cast<long long>(args.at(0))};
