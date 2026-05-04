@@ -89,12 +89,12 @@ auto main(int, char *[]) -> int
         {{{0, 2}, {1, 3}, {0, 2}, {0, 3}}, {{0, 3}, {1, 2}, {1, 3}, {0, 3}}},
         {{{0, 2}, {0, 2}, {0, 2}, {0, 4}, {0, 4}}, {{0, 4}, {0, 4}, {0, 4}, {3, 4}, {3, 4}}}};
 
-    for (auto & [x, y] : var_data)
-        run_inverse_test(false, x, y);
-
-    if (can_run_veripb())
+    for (bool proofs : {false, true}) {
+        if (proofs && ! can_run_veripb())
+            continue;
         for (auto & [x, y] : var_data)
-            run_inverse_test(true, x, y);
+            run_inverse_test(proofs, x, y);
+    }
 
     return EXIT_SUCCESS;
 }

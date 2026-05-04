@@ -79,12 +79,12 @@ auto main(int, char *[]) -> int
         generate_random_data(rand, data, vector{size_t(n_values), random_bounds(-1, 1, 0, 1)});
     }
 
-    for (auto & v : data)
-        run_parity_test(false, v);
-
-    if (can_run_veripb())
+    for (bool proofs : {false, true}) {
+        if (proofs && ! can_run_veripb())
+            continue;
         for (auto & v : data)
-            run_parity_test(true, v);
+            run_parity_test(proofs, v);
+    }
 
     return EXIT_SUCCESS;
 }

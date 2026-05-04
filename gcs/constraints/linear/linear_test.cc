@@ -263,92 +263,54 @@ auto main(int argc, char * argv[]) -> int
         generate_random_data(rand, data, random_bounds(-10, 10, 5, 15), random_bounds(-10, 10, 5, 15),
             random_bounds(-10, 10, 5, 15), vector(nc_dist(rand), pair{vector(3, uniform_int_distribution(-10, 10)), uniform_int_distribution(-200, 200)}));
 
-    for (auto & [r1, r2, r3, constraints] : data) {
-        if (string{argv[1]} == "eq") {
-            run_linear_test<LinearEquality>(false, string{argv[1]}, r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
-            run_linear_test_gac<LinearEquality>(false, string{argv[1]}, r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
-        }
-        else if (string{argv[1]} == "eq_if") {
-            run_linear_reif_test<LinearEqualityIf>(false, false, string{argv[1]}, r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
-        }
-        else if (string{argv[1]} == "eq_iff") {
-            run_linear_reif_test<LinearEqualityIff>(true, false, string{argv[1]}, r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
-        }
-        else if (string{argv[1]} == "ne") {
-            run_linear_test<LinearNotEquals>(false, string{argv[1]}, r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
-            run_linear_test_gac<LinearNotEquals>(false, string{argv[1]}, r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
-        }
-        else if (string{argv[1]} == "ne_if") {
-            run_linear_reif_test<LinearNotEqualsIf>(false, false, string{argv[1]}, r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
-        }
-        else if (string{argv[1]} == "ne_iff") {
-            run_linear_reif_test<LinearNotEqualsIff>(true, false, string{argv[1]}, r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
-        }
-        else if (string{argv[1]} == "le") {
-            run_linear_test<LinearLessThanEqual>(false, string{argv[1]}, r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
-        }
-        else if (string{argv[1]} == "le_if") {
-            run_linear_reif_test<LinearLessThanEqualIf>(false, false, string{argv[1]}, r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
-        }
-        else if (string{argv[1]} == "le_iff") {
-            run_linear_reif_test<LinearLessThanEqualIff>(true, false, string{argv[1]}, r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
-        }
-        else if (string{argv[1]} == "ge") {
-            run_linear_test<LinearGreaterThanEqual>(false, string{argv[1]}, r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
-        }
-        else if (string{argv[1]} == "ge_if") {
-            run_linear_reif_test<LinearGreaterThanEqualIf>(false, false, string{argv[1]}, r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
-        }
-        else if (string{argv[1]} == "ge_iff") {
-            run_linear_reif_test<LinearGreaterThanEqualIff>(true, false, string{argv[1]}, r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
-        }
-        else
-            throw UnimplementedException{};
-    }
+    string mode{argv[1]};
 
-    if (can_run_veripb())
+    for (bool proofs : {false, true}) {
+        if (proofs && ! can_run_veripb())
+            continue;
         for (auto & [r1, r2, r3, constraints] : data) {
-            if (string{argv[1]} == "eq") {
-                run_linear_test<LinearEquality>(true, string{argv[1]}, r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
-                run_linear_test_gac<LinearEquality>(true, string{argv[1]}, r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
+            if (mode == "eq") {
+                run_linear_test<LinearEquality>(proofs, mode, r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
+                run_linear_test_gac<LinearEquality>(proofs, mode, r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
             }
-            else if (string{argv[1]} == "eq_if") {
-                run_linear_reif_test<LinearEqualityIf>(false, true, string{argv[1]}, r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
+            else if (mode == "eq_if") {
+                run_linear_reif_test<LinearEqualityIf>(false, proofs, mode, r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
             }
-            else if (string{argv[1]} == "eq_iff") {
-                run_linear_reif_test<LinearEqualityIff>(true, true, string{argv[1]}, r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
+            else if (mode == "eq_iff") {
+                run_linear_reif_test<LinearEqualityIff>(true, proofs, mode, r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
             }
-            else if (string{argv[1]} == "ne") {
-                run_linear_test<LinearNotEquals>(true, string{argv[1]}, r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
-                run_linear_test_gac<LinearNotEquals>(true, string{argv[1]}, r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
+            else if (mode == "ne") {
+                run_linear_test<LinearNotEquals>(proofs, mode, r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
+                run_linear_test_gac<LinearNotEquals>(proofs, mode, r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
             }
-            else if (string{argv[1]} == "ne_if") {
-                run_linear_reif_test<LinearNotEqualsIf>(false, true, string{argv[1]}, r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
+            else if (mode == "ne_if") {
+                run_linear_reif_test<LinearNotEqualsIf>(false, proofs, mode, r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
             }
-            else if (string{argv[1]} == "ne_iff") {
-                run_linear_reif_test<LinearNotEqualsIff>(true, true, string{argv[1]}, r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
+            else if (mode == "ne_iff") {
+                run_linear_reif_test<LinearNotEqualsIff>(true, proofs, mode, r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
             }
-            else if (string{argv[1]} == "le") {
-                run_linear_test<LinearLessThanEqual>(true, string{argv[1]}, r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
+            else if (mode == "le") {
+                run_linear_test<LinearLessThanEqual>(proofs, mode, r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
             }
-            else if (string{argv[1]} == "le_if") {
-                run_linear_reif_test<LinearLessThanEqualIf>(false, true, string{argv[1]}, r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
+            else if (mode == "le_if") {
+                run_linear_reif_test<LinearLessThanEqualIf>(false, proofs, mode, r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
             }
-            else if (string{argv[1]} == "le_iff") {
-                run_linear_reif_test<LinearLessThanEqualIff>(true, true, string{argv[1]}, r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
+            else if (mode == "le_iff") {
+                run_linear_reif_test<LinearLessThanEqualIff>(true, proofs, mode, r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
             }
-            else if (string{argv[1]} == "ge") {
-                run_linear_test<LinearGreaterThanEqual>(true, string{argv[1]}, r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
+            else if (mode == "ge") {
+                run_linear_test<LinearGreaterThanEqual>(proofs, mode, r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
             }
-            else if (string{argv[1]} == "ge_if") {
-                run_linear_reif_test<LinearGreaterThanEqualIf>(false, true, string{argv[1]}, r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
+            else if (mode == "ge_if") {
+                run_linear_reif_test<LinearGreaterThanEqualIf>(false, proofs, mode, r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
             }
-            else if (string{argv[1]} == "ge_iff") {
-                run_linear_reif_test<LinearGreaterThanEqualIff>(true, true, string{argv[1]}, r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
+            else if (mode == "ge_iff") {
+                run_linear_reif_test<LinearGreaterThanEqualIff>(true, proofs, mode, r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
             }
             else
                 throw UnimplementedException{};
         }
+    }
 
     return EXIT_SUCCESS;
 }

@@ -89,12 +89,12 @@ auto main(int, char *[]) -> int
         generate_random_data(rand, data, random_constant(-5, 5), vector(n_values, random_bounds(-5, 5, 2, 7)));
     }
 
-    for (auto & [r1, r2] : data)
-        run_n_value_test(false, r1, r2);
-
-    if (can_run_veripb())
+    for (bool proofs : {false, true}) {
+        if (proofs && ! can_run_veripb())
+            continue;
         for (auto & [r1, r2] : data)
-            run_n_value_test(true, r1, r2);
+            run_n_value_test(proofs, r1, r2);
+    }
 
     return EXIT_SUCCESS;
 }

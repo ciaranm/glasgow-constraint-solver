@@ -106,16 +106,14 @@ auto main(int, char *[]) -> int
         generate_random_data(rand, data, random_constant(-5, 5), vector(n_values, random_bounds(-5, 5, 3, 8)));
     }
 
-    for (auto & [r1, r2] : data) {
-        run_min_max_test(false, false, r1, r2);
-        run_min_max_test(false, true, r1, r2);
-    }
-
-    if (can_run_veripb())
+    for (bool proofs : {false, true}) {
+        if (proofs && ! can_run_veripb())
+            continue;
         for (auto & [r1, r2] : data) {
-            run_min_max_test(true, false, r1, r2);
-            run_min_max_test(true, true, r1, r2);
+            run_min_max_test(proofs, false, r1, r2);
+            run_min_max_test(proofs, true, r1, r2);
         }
+    }
 
     return EXIT_SUCCESS;
 }
