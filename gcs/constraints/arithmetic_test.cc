@@ -119,22 +119,17 @@ auto main(int, char *[]) -> int
     for (int x = 0; x < 10; ++x)
         generate_random_data(rand, data, random_bounds(-10, 10, 5, 15), random_bounds(-10, 10, 5, 15), random_bounds(-10, 10, 5, 15));
 
-    for (auto & [r1, r2, r3] : data) {
-        run_arithmetic_test<PlusGAC>(false, r1, r2, r3, [](int a, int b, int c) { return a + b == c; });
-        run_arithmetic_test<MinusGAC>(false, r1, r2, r3, [](int a, int b, int c) { return a - b == c; });
-        run_arithmetic_test<Times>(false, r1, r2, r3, [](int a, int b, int c) { return a * b == c; });
-        run_arithmetic_test<Div>(false, r1, r2, r3, [](int a, int b, int c) { return 0 != b && a / b == c; });
-        run_arithmetic_test<Mod>(false, r1, r2, r3, [](int a, int b, int c) { return 0 != b && a % b == c; });
-    }
-
-    if (can_run_veripb())
+    for (bool proofs : {false, true}) {
+        if (proofs && ! can_run_veripb())
+            continue;
         for (auto & [r1, r2, r3] : data) {
-            run_arithmetic_test<PlusGAC>(true, r1, r2, r3, [](int a, int b, int c) { return a + b == c; });
-            run_arithmetic_test<MinusGAC>(true, r1, r2, r3, [](int a, int b, int c) { return a - b == c; });
-            run_arithmetic_test<Times>(true, r1, r2, r3, [](int a, int b, int c) { return a * b == c; });
-            run_arithmetic_test<Div>(true, r1, r2, r3, [](int a, int b, int c) { return 0 != b && a / b == c; });
-            run_arithmetic_test<Mod>(true, r1, r2, r3, [](int a, int b, int c) { return 0 != b && a % b == c; });
+            run_arithmetic_test<PlusGAC>(proofs, r1, r2, r3, [](int a, int b, int c) { return a + b == c; });
+            run_arithmetic_test<MinusGAC>(proofs, r1, r2, r3, [](int a, int b, int c) { return a - b == c; });
+            run_arithmetic_test<Times>(proofs, r1, r2, r3, [](int a, int b, int c) { return a * b == c; });
+            run_arithmetic_test<Div>(proofs, r1, r2, r3, [](int a, int b, int c) { return 0 != b && a / b == c; });
+            run_arithmetic_test<Mod>(proofs, r1, r2, r3, [](int a, int b, int c) { return 0 != b && a % b == c; });
         }
+    }
 
     return EXIT_SUCCESS;
 }

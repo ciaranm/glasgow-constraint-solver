@@ -90,12 +90,12 @@ auto main(int, char *[]) -> int
     for (int x = 0; x < 10; ++x)
         generate_random_data(rand, data, random_bounds(-10, 10, 5, 15), random_constant(-10, 10));
 
-    for (auto & [r1, r2] : data)
-        run_abs_test(false, r1, r2);
-
-    if (can_run_veripb())
+    for (bool proofs : {false, true}) {
+        if (proofs && ! can_run_veripb())
+            continue;
         for (auto & [r1, r2] : data)
-            run_abs_test(true, r1, r2);
+            run_abs_test(proofs, r1, r2);
+    }
 
     return EXIT_SUCCESS;
 }

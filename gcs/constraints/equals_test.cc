@@ -153,25 +153,17 @@ auto main(int, char *[]) -> int
     for (int x = 0; x < 10; ++x)
         generate_random_data(rand, data, random_bounds(-10, 10, 5, 15), random_constant(-10, 10));
 
-    run_no_overlap_equals_test(false);
-    for (auto & [r1, r2] : data) {
-        run_equals_test<Equals>("equals", false, r1, r2, [](int a, int b, int) { return a == b; });
-        run_equals_test<EqualsIf>("equals if", false, r1, r2, [](int a, int b, int f) { return (! f) || (a == b); });
-        run_equals_test<EqualsIff>("equals iff", false, r1, r2, [](int a, int b, int f) { return (a == b) == f; });
-        run_equals_test<NotEquals>("not equals", false, r1, r2, [](int a, int b, int) { return a != b; });
-        run_equals_test<NotEqualsIf>("not equals if", false, r1, r2, [](int a, int b, int f) { return (! f) || (a != b); });
-        run_equals_test<NotEqualsIff>("not equals iff", false, r1, r2, [](int a, int b, int f) { return (a != b) == f; });
-    }
-
-    if (can_run_veripb()) {
-        run_no_overlap_equals_test(true);
+    for (bool proofs : {false, true}) {
+        if (proofs && ! can_run_veripb())
+            continue;
+        run_no_overlap_equals_test(proofs);
         for (auto & [r1, r2] : data) {
-            run_equals_test<Equals>("equals", true, r1, r2, [](int a, int b, int) { return a == b; });
-            run_equals_test<EqualsIf>("equals if", true, r1, r2, [](int a, int b, int f) { return (! f) || (a == b); });
-            run_equals_test<EqualsIff>("equals iff", true, r1, r2, [](int a, int b, int f) { return (a == b) == f; });
-            run_equals_test<NotEquals>("not equals", true, r1, r2, [](int a, int b, int) { return a != b; });
-            run_equals_test<NotEqualsIf>("not equals if", true, r1, r2, [](int a, int b, int f) { return (! f) || (a != b); });
-            run_equals_test<NotEqualsIff>("not equals iff", true, r1, r2, [](int a, int b, int f) { return (a != b) == f; });
+            run_equals_test<Equals>("equals", proofs, r1, r2, [](int a, int b, int) { return a == b; });
+            run_equals_test<EqualsIf>("equals if", proofs, r1, r2, [](int a, int b, int f) { return (! f) || (a == b); });
+            run_equals_test<EqualsIff>("equals iff", proofs, r1, r2, [](int a, int b, int f) { return (a == b) == f; });
+            run_equals_test<NotEquals>("not equals", proofs, r1, r2, [](int a, int b, int) { return a != b; });
+            run_equals_test<NotEqualsIf>("not equals if", proofs, r1, r2, [](int a, int b, int f) { return (! f) || (a != b); });
+            run_equals_test<NotEqualsIff>("not equals iff", proofs, r1, r2, [](int a, int b, int f) { return (a != b) == f; });
         }
     }
 

@@ -88,14 +88,13 @@ auto main(int, char *[]) -> int
         generate_random_data(rand, data, random_bounds(0, 100, 1, 10), random_bounds(0, 50, 0, 5), random_bounds(0, 1000, 0, 2000));
     }
 
-    for (auto & [r1, r2, r3] : data) {
-        run_mult_test(false, r1, r2, r3, [](int a, int b, int c) { return a * b == c; });
-    }
-
-    if (can_run_veripb())
+    for (bool proofs : {false, true}) {
+        if (proofs && ! can_run_veripb())
+            continue;
         for (auto & [r1, r2, r3] : data) {
-            run_mult_test(true, r1, r2, r3, [](int a, int b, int c) { return a * b == c; });
+            run_mult_test(proofs, r1, r2, r3, [](int a, int b, int c) { return a * b == c; });
         }
+    }
 
     return EXIT_SUCCESS;
 }

@@ -199,88 +199,50 @@ auto main(int argc, char * argv[]) -> int
 
     string mode{argv[1]};
 
-    for (auto & [r1, r2] : data) {
-        if (mode == "lt") {
-            run_binary_comparison_test<LessThan>(false, mode, r1, r2, [](int a, int b) { return a < b; });
-        }
-        else if (mode == "lt_if") {
-            run_reif_binary_comparison_test<LessThanIf>(false, mode, r1, r2, [](int a, int b) { return a < b; }, false);
-        }
-        else if (mode == "lt_iff") {
-            run_reif_binary_comparison_test<LessThanIff>(false, mode, r1, r2, [](int a, int b) { return a < b; }, true);
-        }
-        else if (mode == "le") {
-            run_binary_comparison_test<LessThanEqual>(false, mode, r1, r2, [](int a, int b) { return a <= b; });
-        }
-        else if (mode == "le_if") {
-            run_reif_binary_comparison_test<LessThanEqualIf>(false, mode, r1, r2, [](int a, int b) { return a <= b; }, false);
-        }
-        else if (mode == "le_iff") {
-            run_reif_binary_comparison_test<LessThanEqualIff>(false, mode, r1, r2, [](int a, int b) { return a <= b; }, true);
-        }
-        else if (mode == "gt") {
-            run_binary_comparison_test<GreaterThan>(false, mode, r1, r2, [](int a, int b) { return a > b; });
-        }
-        else if (mode == "gt_if") {
-            run_reif_binary_comparison_test<GreaterThanIf>(false, mode, r1, r2, [](int a, int b) { return a > b; }, false);
-        }
-        else if (mode == "gt_iff") {
-            run_reif_binary_comparison_test<GreaterThanIff>(false, mode, r1, r2, [](int a, int b) { return a > b; }, true);
-        }
-        else if (mode == "ge") {
-            run_binary_comparison_test<GreaterThanEqual>(false, mode, r1, r2, [](int a, int b) { return a >= b; });
-        }
-        else if (mode == "ge_if") {
-            run_reif_binary_comparison_test<GreaterThanEqualIf>(false, mode, r1, r2, [](int a, int b) { return a >= b; }, false);
-        }
-        else if (mode == "ge_iff") {
-            run_reif_binary_comparison_test<GreaterThanEqualIff>(false, mode, r1, r2, [](int a, int b) { return a >= b; }, true);
-        }
-        else
-            throw UnimplementedException{};
-    }
-
-    if (can_run_veripb())
+    for (bool proofs : {false, true}) {
+        if (proofs && ! can_run_veripb())
+            continue;
         for (auto & [r1, r2] : data) {
             if (mode == "lt") {
-                run_binary_comparison_test<LessThan>(true, mode, r1, r2, [](int a, int b) { return a < b; });
+                run_binary_comparison_test<LessThan>(proofs, mode, r1, r2, [](int a, int b) { return a < b; });
             }
             else if (mode == "lt_if") {
-                run_reif_binary_comparison_test<LessThanIf>(true, mode, r1, r2, [](int a, int b) { return a < b; }, false);
+                run_reif_binary_comparison_test<LessThanIf>(proofs, mode, r1, r2, [](int a, int b) { return a < b; }, false);
             }
             else if (mode == "lt_iff") {
-                run_reif_binary_comparison_test<LessThanIff>(true, mode, r1, r2, [](int a, int b) { return a < b; }, true);
+                run_reif_binary_comparison_test<LessThanIff>(proofs, mode, r1, r2, [](int a, int b) { return a < b; }, true);
             }
             else if (mode == "le") {
-                run_binary_comparison_test<LessThanEqual>(true, mode, r1, r2, [](int a, int b) { return a <= b; });
+                run_binary_comparison_test<LessThanEqual>(proofs, mode, r1, r2, [](int a, int b) { return a <= b; });
             }
             else if (mode == "le_if") {
-                run_reif_binary_comparison_test<LessThanEqualIf>(true, mode, r1, r2, [](int a, int b) { return a <= b; }, false);
+                run_reif_binary_comparison_test<LessThanEqualIf>(proofs, mode, r1, r2, [](int a, int b) { return a <= b; }, false);
             }
             else if (mode == "le_iff") {
-                run_reif_binary_comparison_test<LessThanEqualIff>(true, mode, r1, r2, [](int a, int b) { return a <= b; }, true);
+                run_reif_binary_comparison_test<LessThanEqualIff>(proofs, mode, r1, r2, [](int a, int b) { return a <= b; }, true);
             }
             else if (mode == "gt") {
-                run_binary_comparison_test<GreaterThan>(true, mode, r1, r2, [](int a, int b) { return a > b; });
+                run_binary_comparison_test<GreaterThan>(proofs, mode, r1, r2, [](int a, int b) { return a > b; });
             }
             else if (mode == "gt_if") {
-                run_reif_binary_comparison_test<GreaterThanIf>(true, mode, r1, r2, [](int a, int b) { return a > b; }, false);
+                run_reif_binary_comparison_test<GreaterThanIf>(proofs, mode, r1, r2, [](int a, int b) { return a > b; }, false);
             }
             else if (mode == "gt_iff") {
-                run_reif_binary_comparison_test<GreaterThanIff>(true, mode, r1, r2, [](int a, int b) { return a > b; }, true);
+                run_reif_binary_comparison_test<GreaterThanIff>(proofs, mode, r1, r2, [](int a, int b) { return a > b; }, true);
             }
             else if (mode == "ge") {
-                run_binary_comparison_test<GreaterThanEqual>(true, mode, r1, r2, [](int a, int b) { return a >= b; });
+                run_binary_comparison_test<GreaterThanEqual>(proofs, mode, r1, r2, [](int a, int b) { return a >= b; });
             }
             else if (mode == "ge_if") {
-                run_reif_binary_comparison_test<GreaterThanEqualIf>(true, mode, r1, r2, [](int a, int b) { return a >= b; }, false);
+                run_reif_binary_comparison_test<GreaterThanEqualIf>(proofs, mode, r1, r2, [](int a, int b) { return a >= b; }, false);
             }
             else if (mode == "ge_iff") {
-                run_reif_binary_comparison_test<GreaterThanEqualIff>(true, mode, r1, r2, [](int a, int b) { return a >= b; }, true);
+                run_reif_binary_comparison_test<GreaterThanEqualIff>(proofs, mode, r1, r2, [](int a, int b) { return a >= b; }, true);
             }
             else
                 throw UnimplementedException{};
         }
+    }
 
     return EXIT_SUCCESS;
 }
