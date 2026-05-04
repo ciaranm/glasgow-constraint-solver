@@ -135,8 +135,8 @@ auto main(int, char *[]) -> int
 {
     run_all_tests(false);
 
-    // Proof verification tests will be added in a follow-up commit once the
-    // OPB encoding is in place.
+    if (can_run_veripb())
+        run_all_tests(true);
 
     return EXIT_SUCCESS;
 }
