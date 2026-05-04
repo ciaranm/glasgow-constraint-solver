@@ -6,15 +6,18 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <optional>
 #include <vector>
 
 using std::cout;
+using std::make_optional;
+using std::nullopt;
+using std::optional;
 using std::pair;
 using std::vector;
 
 using namespace gcs;
 using namespace gcs::test_innards;
-;
 
 auto check_lex(vector<Integer> & x_sols, vector<Integer> & y_sols, bool or_equal = false) -> bool
 {
@@ -44,7 +47,7 @@ auto check_at_most_1(vector<Integer> & x_sols, Integer value, bool at_least, boo
     return at_least ? count >= 1 : count <= 1;
 }
 
-auto run_lex_test(int length, vector<pair<int, int>> ranges, bool reverse = false, bool or_equal = false, bool fixed_y = false) -> bool
+auto run_lex_test(bool proofs, int length, vector<pair<int, int>> ranges, bool reverse = false, bool or_equal = false, bool fixed_y = false) -> bool
 {
     vector<IntegerVariableID> x;
     vector<IntegerVariableID> y;
@@ -111,6 +114,7 @@ auto run_lex_test(int length, vector<pair<int, int>> ranges, bool reverse = fals
     p.post(SmartTable{all_vars, tuples});
 
     bool lex_violated = false;
+    optional<ProofOptions> proof_options = proofs ? make_optional(ProofOptions{"smart_table_test"}) : nullopt;
     solve_with(p,
         SolveCallbacks{
             .solution = [&](const CurrentState & s) -> bool {
@@ -123,12 +127,14 @@ auto run_lex_test(int length, vector<pair<int, int>> ranges, bool reverse = fals
                 lex_violated = lex_violated || (reverse ? (! check_lex(y_sols, x_sols, or_equal)) : (! check_lex(x_sols, y_sols, or_equal)));
                 return true;
             }},
-        ProofOptions{"smart_table_test"});
+        proof_options);
 
-    return ! lex_violated && run_veripb("smart_table_test.opb", "smart_table_test.pbp");
+    if (lex_violated)
+        return false;
+    return ! proofs || run_veripb("smart_table_test.opb", "smart_table_test.pbp");
 }
 
-auto run_at_most_1_test(int length, vector<pair<int, int>> & ranges, bool at_least, bool in_set) -> bool
+auto run_at_most_1_test(bool proofs, int length, vector<pair<int, int>> & ranges, bool at_least, bool in_set) -> bool
 {
     vector<IntegerVariableID> x;
     Problem p;
@@ -171,6 +177,7 @@ auto run_at_most_1_test(int length, vector<pair<int, int>> & ranges, bool at_lea
     p.post(SmartTable{all_vars, tuples});
     bool at_most_1_violated = false;
 
+    optional<ProofOptions> proof_options = proofs ? make_optional(ProofOptions{"smart_table_test"}) : nullopt;
     solve_with(p,
         SolveCallbacks{
             .solution = [&](const CurrentState & s) -> bool {
@@ -180,10 +187,12 @@ auto run_at_most_1_test(int length, vector<pair<int, int>> & ranges, bool at_lea
                 at_most_1_violated = at_most_1_violated || ! check_at_most_1(x_sols, Integer{length}, at_least, in_set);
                 return true;
             }},
-        ProofOptions{"smart_table_test"});
+        proof_options);
 
-    return ! at_most_1_violated && run_veripb("smart_table_test.opb", "smart_table_test.pbp");
-};
+    if (at_most_1_violated)
+        return false;
+    return ! proofs || run_veripb("smart_table_test.opb", "smart_table_test.pbp");
+}
 
 auto main(int, char *[]) -> int
 {
@@ -196,48 +205,52 @@ auto main(int, char *[]) -> int
         {5, {{-1, 4}, {3, 6}, {2, 2}, {3, 3}, {3, 5}}},
         {5, {{1, 1}, {2, 2}, {3, 3}, {4, 4}, {1, 10}}}};
 
-    for (auto & [length, ranges] : data) {
-        // x > y
-        if (! run_lex_test(length, ranges, false, false, false))
-            return EXIT_FAILURE;
-        // x >= y
-        if (! run_lex_test(length, ranges, false, true, false))
-            return EXIT_FAILURE;
-        // x < y
-        if (! run_lex_test(length, ranges, true, false, false))
-            return EXIT_FAILURE;
-        // x <= y
-        if (! run_lex_test(length, ranges, true, true, false))
-            return EXIT_FAILURE;
+    for (bool proofs : {false, true}) {
+        if (proofs && ! can_run_veripb())
+            continue;
+        for (auto & [length, ranges] : data) {
+            // x > y
+            if (! run_lex_test(proofs, length, ranges, false, false, false))
+                return EXIT_FAILURE;
+            // x >= y
+            if (! run_lex_test(proofs, length, ranges, false, true, false))
+                return EXIT_FAILURE;
+            // x < y
+            if (! run_lex_test(proofs, length, ranges, true, false, false))
+                return EXIT_FAILURE;
+            // x <= y
+            if (! run_lex_test(proofs, length, ranges, true, true, false))
+                return EXIT_FAILURE;
 
-        // x > [1,..,n]
-        if (! run_lex_test(length, ranges, false, false, true))
-            return EXIT_FAILURE;
-        // x >= [1,..,n]
-        if (! run_lex_test(length, ranges, false, true, true))
-            return EXIT_FAILURE;
-        // x < [1,..,n]
-        if (! run_lex_test(length, ranges, true, false, true))
-            return EXIT_FAILURE;
-        // x <= [1,..,n]
-        if (! run_lex_test(length, ranges, true, true, true))
-            return EXIT_FAILURE;
+            // x > [1,..,n]
+            if (! run_lex_test(proofs, length, ranges, false, false, true))
+                return EXIT_FAILURE;
+            // x >= [1,..,n]
+            if (! run_lex_test(proofs, length, ranges, false, true, true))
+                return EXIT_FAILURE;
+            // x < [1,..,n]
+            if (! run_lex_test(proofs, length, ranges, true, false, true))
+                return EXIT_FAILURE;
+            // x <= [1,..,n]
+            if (! run_lex_test(proofs, length, ranges, true, true, true))
+                return EXIT_FAILURE;
 
-        // at most one var in x == length
-        if (! run_at_most_1_test(length, ranges, false, false))
-            return EXIT_FAILURE;
+            // at most one var in x == length
+            if (! run_at_most_1_test(proofs, length, ranges, false, false))
+                return EXIT_FAILURE;
 
-        // at most one var in x one of {1, length}
-        if (! run_at_most_1_test(length, ranges, false, true))
-            return EXIT_FAILURE;
+            // at most one var in x one of {1, length}
+            if (! run_at_most_1_test(proofs, length, ranges, false, true))
+                return EXIT_FAILURE;
 
-        // at least one var in x == length
-        if (! run_at_most_1_test(length, ranges, true, false))
-            return EXIT_FAILURE;
+            // at least one var in x == length
+            if (! run_at_most_1_test(proofs, length, ranges, true, false))
+                return EXIT_FAILURE;
 
-        // at least one var in x one of {1, length}
-        if (! run_at_most_1_test(length, ranges, true, true))
-            return EXIT_FAILURE;
+            // at least one var in x one of {1, length}
+            if (! run_at_most_1_test(proofs, length, ranges, true, true))
+                return EXIT_FAILURE;
+        }
     }
 
     return EXIT_SUCCESS;
