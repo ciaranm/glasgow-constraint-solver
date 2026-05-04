@@ -398,9 +398,18 @@ auto Regular::install(Propagators & propagators, State & initial_state, ProofMod
         }
         optional_model->add_constraint(move(pos_n_states) >= 1_i);
 
+        // Build the OPB alphabet: the union of transition keys and each var's initial
+        // domain. Domain values absent from every transition get a "no transition"
+        // constraint emitted below, which is what veripb needs to verify the
+        // propagator's RUP-justified pruning of those values.
+        set<Integer> opb_alphabet(_symbols.begin(), _symbols.end());
+        for (const auto & var : _vars)
+            for (const auto & val : initial_state.each_value_immutable(var))
+                opb_alphabet.insert(val);
+
         for (size_t idx = 0; idx < _vars.size(); ++idx) {
             for (long q = 0; q < _num_states; ++q) {
-                for (const auto & val : symbols()) {
+                for (const auto & val : opb_alphabet) {
                     auto new_q = find_transition(_transitions[q], val);
                     if (new_q == -1) {
                         // No transition for q, v, so constrain ~(state_i = q /\ X_i = val)
