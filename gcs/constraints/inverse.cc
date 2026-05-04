@@ -156,7 +156,7 @@ auto Inverse::install_propagators(Propagators & propagators) -> void
                         [&]() { return Reason{x.at((y_i_value - x_start).as_index()) != Integer(i) + y_start}; });
         }
 
-        propagate_gac_all_different(x, x_values, *x_value_am1s.get(), state, inf, logger);
+        propagate_gac_all_different(x, x_values, vector<Integer>{}, *x_value_am1s.get(), state, inf, logger);
 
         return PropagatorState::Enable;
     },
