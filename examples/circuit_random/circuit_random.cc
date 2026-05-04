@@ -85,8 +85,8 @@ Stats run_circuit_problem(int n, const vector<vector<long>> & distances, SCCOpti
                     auto current = s(x[0]);
                     while (current != 0_i) {
                         cout << " -> ";
-                        cout << s(x[current.raw_value]);
-                        current = s(x[current.raw_value]);
+                        cout << s(x[current.as_index()]);
+                        current = s(x[current.as_index()]);
                     }
                     cout << "\nMax leg = " << s(max_leg) << endl;
                     cout << "\n";

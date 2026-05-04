@@ -1,6 +1,7 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INTEGER_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INTEGER_HH
 
+#include <cstddef>
 #include <functional>
 #include <limits>
 #include <ostream>
@@ -40,6 +41,19 @@ namespace gcs
         [[nodiscard]] auto to_string() const -> std::string
         {
             return std::to_string(raw_value);
+        }
+
+        /**
+         * \brief Convert to a std::size_t for use as a 0-based container index.
+         *
+         * Use in preference to .raw_value when subscripting a vector / bitset /
+         * std::ranges::views::drop / .at(): it documents intent and acts as a
+         * grep-able sentinel for "this Integer is being used as an index, not as
+         * generic numeric data". Behaviour is undefined if the value is negative.
+         */
+        [[nodiscard]] constexpr auto as_index() const noexcept -> std::size_t
+        {
+            return static_cast<std::size_t>(raw_value);
         }
 
         ///@{

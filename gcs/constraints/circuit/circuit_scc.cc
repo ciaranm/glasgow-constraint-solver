@@ -1190,7 +1190,7 @@ namespace
 
         if (options.prune_root && data.start_prev_subtree > 1) {
             for (const auto & v : state.each_value_mutable(succ[data.root])) {
-                if (data.visit_number[v.raw_value] < data.start_prev_subtree) {
+                if (data.visit_number[v.as_index()] < data.start_prev_subtree) {
                     if (logger) {
                         logger->emit_proof_comment("Prune impossible edges from root node");
                         auto ctx = SCCProofContext(state, *logger, reason, succ, proof_data, data.root, options);

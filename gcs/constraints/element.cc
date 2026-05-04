@@ -236,7 +236,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install(innards::Propagators 
                     // we're iterating over every dimension recursively, except for the one where
                     // we're checking support for the fixed test_val.
                     auto do_it_with = [&](Integer x) {
-                        elem.push_back(x.raw_value - index_starts.at(d).raw_value);
+                        elem.push_back((x - index_starts.at(d)).as_index());
                         if (elem.size() == dimensions_) {
                             auto array_var = get_array_var<dimensions_>(elem, *array);
                             if (array_has_nonconstants)
@@ -281,7 +281,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install(innards::Propagators 
                             // again, we're iterating over every dimension recursively, except for the one where
                             // we're checking support for the fixed test_val.
                             auto do_it_with = [&](Integer x) {
-                                elem.push_back(x.raw_value - index_starts.at(d).raw_value);
+                                elem.push_back((x - index_starts.at(d)).as_index());
 
                                 if (elem.size() == dimensions_) {
                                     auto array_var = get_array_var<dimensions_>(elem, *array);
@@ -346,7 +346,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install(innards::Propagators 
                     if (lowest_found && *lowest_found <= current_bounds.first && highest_found && *highest_found >= current_bounds.second)
                         return;
 
-                    elem.push_back(x.raw_value - index_starts.at(d).raw_value);
+                    elem.push_back((x - index_starts.at(d)).as_index());
                     if (elem.size() == dimensions_) {
                         auto array_var = get_array_var<dimensions_>(elem, *array);
                         if (array_has_nonconstants)
@@ -428,7 +428,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install(innards::Propagators 
                     if (still_to_find_support_for.empty())
                         return;
 
-                    elem.push_back(x.raw_value - index_starts.at(d).raw_value);
+                    elem.push_back((x - index_starts.at(d)).as_index());
                     if (elem.size() == dimensions_) {
                         auto array_var = get_array_var<dimensions_>(elem, *array);
                         if (array_has_nonconstants)
@@ -497,7 +497,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install(innards::Propagators 
                     index_is_fully_defined = false;
                     break;
                 }
-                elem.push_back(v->raw_value - index_starts.at(p).raw_value);
+                elem.push_back((*v - index_starts.at(p)).as_index());
                 index_reason.push_back(i == *v);
             }
 

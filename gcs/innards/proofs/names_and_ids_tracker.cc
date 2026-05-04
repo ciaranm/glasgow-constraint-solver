@@ -338,7 +338,7 @@ auto NamesAndIDsTracker::get_bit(const gcs::innards::SimpleOrProofOnlyIntegerVar
     if (it == _imp->integer_variable_bits_to_size_and_proof_vars.end())
         throw ProofError("missing bits");
 
-    return it->second.second.at(position.raw_value);
+    return it->second.second.at(position.as_index());
 }
 
 auto NamesAndIDsTracker::get_bit(const ProofBitVariable & bit) -> pair<Integer, XLiteral>
@@ -347,7 +347,7 @@ auto NamesAndIDsTracker::get_bit(const ProofBitVariable & bit) -> pair<Integer, 
     if (it == _imp->integer_variable_bits_to_size_and_proof_vars.end())
         throw ProofError("missing bits");
 
-    auto bit_data = it->second.second.at(bit.position.raw_value);
+    auto bit_data = it->second.second.at(bit.position.as_index());
 
     if (! bit.positive)
         bit_data.second.negated = ! bit_data.second.negated;

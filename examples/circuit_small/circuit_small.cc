@@ -96,8 +96,8 @@ auto main(int argc, char * argv[]) -> int
             auto current = s(nodes[0]);
             while (current != 0_i) {
                 cout << " -> ";
-                cout << s(nodes[current.raw_value]);
-                current = s(nodes[current.raw_value]);
+                cout << s(nodes[current.as_index()]);
+                current = s(nodes[current.as_index()]);
             }
             cout << "\n\n";
             return true;

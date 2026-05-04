@@ -133,8 +133,8 @@ auto main(int argc, char * argv[]) -> int
                 auto current = s(succ[0]);
                 while (current != 0_i) {
                     cout << " -> ";
-                    cout << s(succ[current.raw_value]);
-                    current = s(succ[current.raw_value]);
+                    cout << s(succ[current.as_index()]);
+                    current = s(succ[current.as_index()]);
                 }
                 cout << "\n\n";
                 return true;
