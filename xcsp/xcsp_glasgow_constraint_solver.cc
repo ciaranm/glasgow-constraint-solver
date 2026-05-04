@@ -115,7 +115,7 @@ auto disintentionify_to_intvar(const string & s, string::size_type & pos, Proble
             ++pos;
 
             if (tok == "dist") {
-                auto bound = Integer{max(upper1.raw_value, upper2.raw_value) - min(lower1.raw_value, lower2.raw_value) + 1};
+                auto bound = max(upper1, upper2) - min(lower1, lower2) + 1_i;
                 auto r = problem.create_integer_variable(0_i, bound, "distresult");
                 auto d = problem.create_integer_variable(-bound, bound, "dist");
                 problem.post(WeightedSum{} + 1_i * *v1 + -1_i * *v2 == 1_i * d);

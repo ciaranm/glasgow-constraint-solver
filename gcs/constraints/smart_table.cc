@@ -980,14 +980,14 @@ auto SmartTable::s_exprify(const string & name, const ProofModel * const model) 
                     print(s, " ({} {} {})",
                         model->names_and_ids_tracker().s_expr_name_of(unary_val_entry.var),
                         to_op(unary_val_entry.constraint_type),
-                        unary_val_entry.value.raw_value);
+                        unary_val_entry.value);
                 },
                 [&](const UnarySetEntry & unary_set_entry) {
                     print(s, " ({} {} (",
                         model->names_and_ids_tracker().s_expr_name_of(unary_set_entry.var),
                         to_op(unary_set_entry.constraint_type));
                     for (const auto & value : unary_set_entry.values)
-                        print(s, " {}", value.raw_value);
+                        print(s, " {}", value);
                     print(s, "))");
                 }}
                 .visit(entry);

@@ -417,9 +417,9 @@ auto ReifiedLinearEquality::s_exprify(const std::string & name, const ProofModel
     }
     print(s, " (");
     for (const auto & [c, v] : _coeff_vars.terms) {
-        print(s, " {} {}", c.raw_value, model->names_and_ids_tracker().s_expr_name_of(v));
+        print(s, " {} {}", c, model->names_and_ids_tracker().s_expr_name_of(v));
     }
-    print(s, ") {}", _value.raw_value);
+    print(s, ") {}", _value);
 
     return s.str();
 }

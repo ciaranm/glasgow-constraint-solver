@@ -131,9 +131,9 @@ auto random_tuples(int tuple_length, vector<IntegerVariableID> & vars, mt19937 &
                         table_as_string << constraint_type_str(constraint_type);
                         table_as_string << " {";
                         for (int j = 0; j < how_many - 1; j++) {
-                            table_as_string << random_set[j].raw_value << ", ";
+                            table_as_string << random_set[j] << ", ";
                         }
-                        table_as_string << random_set[how_many - 1].raw_value << "};  ";
+                        table_as_string << random_set[how_many - 1] << "};  ";
                     }
                     tuple.emplace_back(innards::UnarySetEntry{
                         shuffled_vars[partition_indices[i]],
@@ -199,9 +199,9 @@ auto random_tuples(int tuple_length, vector<IntegerVariableID> & vars, mt19937 &
                     table_as_string << constraint_type_str(constraint_type);
                     table_as_string << " {";
                     for (int j = 0; j < how_many - 1; j++) {
-                        table_as_string << random_set[j].raw_value << ", ";
+                        table_as_string << random_set[j] << ", ";
                     }
-                    table_as_string << random_set[how_many - 1].raw_value << "};  ";
+                    table_as_string << random_set[how_many - 1] << "};  ";
                 }
 
                 tuple.emplace_back(innards::UnarySetEntry{

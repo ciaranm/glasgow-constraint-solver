@@ -45,13 +45,13 @@ auto gcs::innards::debug_string(const Literal & lit) -> string
             switch (ilit.op) {
                 using enum VariableConditionOperator;
             case Equal:
-                return format("intvars[{}] = {}", debug_string(ilit.var), ilit.value.raw_value);
+                return format("intvars[{}] = {}", debug_string(ilit.var), ilit.value);
             case NotEqual:
-                return format("intvars[{}] != {}", debug_string(ilit.var), ilit.value.raw_value);
+                return format("intvars[{}] != {}", debug_string(ilit.var), ilit.value);
             case GreaterEqual:
-                return format("intvars[{}] >= {}", debug_string(ilit.var), ilit.value.raw_value);
+                return format("intvars[{}] >= {}", debug_string(ilit.var), ilit.value);
             case Less:
-                return format("intvars[{}] < {}", debug_string(ilit.var), ilit.value.raw_value);
+                return format("intvars[{}] < {}", debug_string(ilit.var), ilit.value);
             }
             throw NonExhaustiveSwitch{};
         },
