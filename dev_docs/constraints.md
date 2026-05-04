@@ -319,9 +319,11 @@ auto run_test(bool proofs, /* args */) -> void
 
 auto main(int, char *[]) -> int
 {
-    run_all_tests(false);
-    if (can_run_veripb())
-        run_all_tests(true);
+    for (bool proofs : {false, true}) {
+        if (proofs && ! can_run_veripb())
+            continue;
+        run_all_tests(proofs);
+    }
     return EXIT_SUCCESS;
 }
 ```
@@ -332,9 +334,72 @@ solution — a strong correctness check, useful for constraints that
 claim to achieve GAC. Use plain `solve_for_tests` for constraints
 that are only bounds-consistent.
 
-The test runs twice: once without proof verification (always), once
-with `--prove` if `veripb` is on `PATH`. The CMake test target points
-at `run_test_only.bash` which handles this.
+The for-each over `{false, true}` runs every test case twice: once
+without proof verification (always), once with `--prove` if `veripb`
+is on `PATH`. The CMake test target points at `run_test_only.bash`
+which handles this.
+
+### Splitting a slow test for parallelism
+
+If a test takes a long time, it becomes a parallelism bottleneck —
+ctest runs each `add_test` entry as one process, so a 100-second
+test serialises 100 seconds even if the rest of the suite is fast.
+
+To split: take an `argv` parameter, dispatch on it, and add multiple
+`add_test` entries that pass different arguments. See
+`linear_test.cc`, `comparison_test.cc`, and `element_test.cc` for
+examples — typically the split is per-operator, per-reif-kind, or
+per-data-shape:
+
+```cpp
+auto main(int argc, char * argv[]) -> int
+{
+    if (argc != 2)
+        throw UnimplementedException{};
+
+    string mode{argv[1]};
+
+    for (bool proofs : {false, true}) {
+        if (proofs && ! can_run_veripb())
+            continue;
+        for (auto & data_row : data) {
+            if (mode == "eq") {
+                run_test_for_eq(proofs, mode, data_row);
+            }
+            else if (mode == "ne") {
+                run_test_for_ne(proofs, mode, data_row);
+            }
+            // ...
+            else
+                throw UnimplementedException{};
+        }
+    }
+    return EXIT_SUCCESS;
+}
+```
+
+CMakeLists side:
+```cmake
+add_test(NAME foo_constraint_eq COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:foo_test> eq)
+add_test(NAME foo_constraint_ne COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:foo_test> ne)
+```
+
+**The proof-file-name gotcha.** When the test binary is invoked
+multiple times in parallel (one per ctest entry), each invocation
+must write to a distinct OPB/PBP filename. If they all write to the
+same file, parallel runs clobber each other's proofs mid-VeriPB and
+fail intermittently — but pass when run solo, which makes the
+failure mode confusing.
+
+Thread the `mode` string into the proof file name:
+
+```cpp
+auto proof_name = proofs ? make_optional("foo_test_" + mode) : nullopt;
+```
+
+This was the failure mode we hit twice when first splitting
+`comparison_test` and `linear_test`. Always verify the split with
+`ctest -j N` (not just running each entry solo) before committing.
 
 ## Adding a new constraint: checklist
 
@@ -342,8 +407,9 @@ at `run_test_only.bash` which handles this.
    trio of virtual methods.
 2. `.cc` file with constructor, `install` method (OPB block + propagator
    registration), `clone`, `s_exprify`.
-3. Test file with `run_all_tests(false)` always, `run_all_tests(true)`
-   gated on `can_run_veripb()`.
+3. Test file with the standard `for (bool proofs : {false, true})`
+   loop and a `can_run_veripb()` gate on the proofs leg. Split into
+   multiple ctest entries via an argv mode if the test gets slow.
 4. Add the `.cc` to the library and the test target to
    `gcs/CMakeLists.txt` (alphabetically), plus an `add_test` entry.
 5. Add the header to `gcs/gcs.hh` (alphabetically).
