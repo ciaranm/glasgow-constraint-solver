@@ -49,7 +49,7 @@ using fmt::println;
 using namespace gcs;
 using namespace gcs::test_innards;
 
-auto run_element_test(bool proofs, pair<int, int> var_range, pair<int, int> idx_range, const vector<pair<int, int>> & array_range) -> void
+auto run_element_test(bool proofs, const string & mode, pair<int, int> var_range, pair<int, int> idx_range, const vector<pair<int, int>> & array_range) -> void
 {
     print(cerr, "element {} {} {} {}", var_range, idx_range, array_range, proofs ? " with proofs:" : ":");
     cerr << flush;
@@ -71,13 +71,13 @@ auto run_element_test(bool proofs, pair<int, int> var_range, pair<int, int> idx_
         array.push_back(p.create_integer_variable(Integer(l), Integer(u)));
     p.post(Element{var, idx, &array});
 
-    auto proof_name = proofs ? make_optional("element_test") : nullopt;
+    auto proof_name = proofs ? make_optional("element_test_" + mode) : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{var, idx, array});
 
     check_results(proof_name, expected, actual);
 }
 
-auto run_element_constant_test(bool proofs, pair<int, int> var_range, pair<int, int> idx_range, const vector<int> & array) -> void
+auto run_element_constant_test(bool proofs, const string & mode, pair<int, int> var_range, pair<int, int> idx_range, const vector<int> & array) -> void
 {
     print(cerr, "element constant {} {} {} {}", var_range, idx_range, array, proofs ? " with proofs:" : ":");
     cerr << flush;
@@ -99,14 +99,14 @@ auto run_element_constant_test(bool proofs, pair<int, int> var_range, pair<int, 
         a.push_back(Integer(v));
     p.post(ElementConstantArray{var, idx, &a});
 
-    auto proof_name = proofs ? make_optional("element_test") : nullopt;
+    auto proof_name = proofs ? make_optional("element_test_" + mode) : nullopt;
     solve_for_tests_checking_consistency(p, proof_name, expected, actual,
         tuple{pair{var, CheckConsistency::BC}, pair{idx, CheckConsistency::GAC}});
 
     check_results(proof_name, expected, actual);
 }
 
-auto run_element2d_test(bool proofs, pair<int, int> var_range, pair<int, int> idx1_range, pair<int, int> idx2_range, const vector<vector<pair<int, int>>> & array_range) -> void
+auto run_element2d_test(bool proofs, const string & mode, pair<int, int> var_range, pair<int, int> idx1_range, pair<int, int> idx2_range, const vector<vector<pair<int, int>>> & array_range) -> void
 {
     print(cerr, "element2d {} {} {} {} {}", var_range, idx1_range, idx2_range, array_range, proofs ? " with proofs:" : ":");
     cerr << flush;
@@ -132,13 +132,13 @@ auto run_element2d_test(bool proofs, pair<int, int> var_range, pair<int, int> id
     }
     p.post(Element2D{var, idx1, idx2, &a});
 
-    auto proof_name = proofs ? make_optional("element_test") : nullopt;
+    auto proof_name = proofs ? make_optional("element_test_" + mode) : nullopt;
     solve_for_tests(p, proof_name, actual, tuple{var, idx1, idx2, a});
 
     check_results(proof_name, expected, actual);
 }
 
-auto run_element2d_constant_test(bool proofs, pair<int, int> var_range, pair<int, int> idx1_range, pair<int, int> idx2_range, const vector<vector<int>> & array) -> void
+auto run_element2d_constant_test(bool proofs, const string & mode, pair<int, int> var_range, pair<int, int> idx1_range, pair<int, int> idx2_range, const vector<vector<int>> & array) -> void
 {
     print(cerr, "element 2d constant {} {} {} {} {}", var_range, idx1_range, idx2_range, array, proofs ? " with proofs:" : ":");
     cerr << flush;
@@ -164,15 +164,20 @@ auto run_element2d_constant_test(bool proofs, pair<int, int> var_range, pair<int
     }
     p.post(Element2DConstantArray{var, idx1, idx2, &a});
 
-    auto proof_name = proofs ? make_optional("element_test") : nullopt;
+    auto proof_name = proofs ? make_optional("element_test_" + mode) : nullopt;
     solve_for_tests_checking_consistency(p, proof_name, expected, actual,
         tuple{pair{var, CheckConsistency::BC}, pair{idx1, CheckConsistency::GAC}, pair{idx2, CheckConsistency::GAC}});
 
     check_results(proof_name, expected, actual);
 }
 
-auto main(int, char *[]) -> int
+auto main(int argc, char * argv[]) -> int
 {
+    if (argc != 2)
+        throw UnimplementedException{};
+
+    string mode{argv[1]};
+
     vector<tuple<pair<int, int>, pair<int, int>, vector<pair<int, int>>>> var_data = {
         {{1, 2}, {0, 1}, {{1, 2}, {1, 2}}},
         {{1, 2}, {-2, 2}, {{1, 2}, {1, 2}}},
@@ -234,33 +239,28 @@ auto main(int, char *[]) -> int
             vector{size_t(n_values_1), vector{size_t(n_values_2), random_bounds(-3, 3, 0, 3)}});
     }
 
-    for (auto & [r1, r2, r3] : var_data)
-        run_element_test(false, r1, r2, r3);
-
-    if (can_run_veripb())
-        for (auto & [r1, r2, r3] : var_data)
-            run_element_test(true, r1, r2, r3);
-
-    for (auto & [r1, r2, r3] : const_data)
-        run_element_constant_test(false, r1, r2, r3);
-
-    if (can_run_veripb())
-        for (auto & [r1, r2, r3] : const_data)
-            run_element_constant_test(true, r1, r2, r3);
-
-    for (auto & [r1, r2, r3, r4] : const2d_data)
-        run_element2d_constant_test(false, r1, r2, r3, r4);
-
-    if (can_run_veripb())
-        for (auto & [r1, r2, r3, r4] : const2d_data)
-            run_element2d_constant_test(true, r1, r2, r3, r4);
-
-    for (auto & [r1, r2, r3, r4] : var2d_data)
-        run_element2d_test(false, r1, r2, r3, r4);
-
-    if (can_run_veripb())
-        for (auto & [r1, r2, r3, r4] : var2d_data)
-            run_element2d_test(true, r1, r2, r3, r4);
+    for (bool proofs : {false, true}) {
+        if (proofs && ! can_run_veripb())
+            continue;
+        if (mode == "var") {
+            for (auto & [r1, r2, r3] : var_data)
+                run_element_test(proofs, mode, r1, r2, r3);
+        }
+        else if (mode == "const") {
+            for (auto & [r1, r2, r3] : const_data)
+                run_element_constant_test(proofs, mode, r1, r2, r3);
+        }
+        else if (mode == "const2d") {
+            for (auto & [r1, r2, r3, r4] : const2d_data)
+                run_element2d_constant_test(proofs, mode, r1, r2, r3, r4);
+        }
+        else if (mode == "var2d") {
+            for (auto & [r1, r2, r3, r4] : var2d_data)
+                run_element2d_test(proofs, mode, r1, r2, r3, r4);
+        }
+        else
+            throw UnimplementedException{};
+    }
 
     return EXIT_SUCCESS;
 }
