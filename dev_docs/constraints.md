@@ -48,6 +48,34 @@ Then three places to wire it up:
   easy to forget**; downstream consumers (`fzn-glasgow`, examples) get
   the class via this umbrella header.
 
+### Constraint families
+
+Some constraints come in groups — multiple algorithms
+(`gac_all_different`, `vc_all_different`), variants
+(`AllDifferentExcept`, `AllDifferentExceptZero`), or shared
+encoding/justify helpers (`encoding.cc`, `justify.cc`). When a new
+constraint shares concepts with an existing one, put its files inside
+the family's subdirectory:
+
+```
+gcs/constraints/all_different.hh                       public umbrella header
+gcs/constraints/all_different/gac_all_different.hh     one variant's interface
+gcs/constraints/all_different/all_different_except.hh  another variant
+gcs/constraints/all_different/encoding.{hh,cc}         shared OPB helper
+gcs/constraints/all_different/justify.{hh,cc}          shared proof helper
+gcs/constraints/all_different/*_test.cc                tests
+```
+
+The umbrella `gcs/constraints/<family>.hh` just `#include`s every
+variant's header (and may add a `using AllDifferent = GACAllDifferent;`
+style alias). `gcs/gcs.hh` then only needs the umbrella, not each
+variant.
+
+Look for an existing family before adding a new top-level
+`gcs/constraints/foo.{hh,cc}`: `all_different/`, `circuit/`,
+`linear/`, `innards/`. A constraint that's genuinely standalone (no
+shared concepts with any existing family) keeps the flat layout.
+
 ## The header
 
 ```cpp
