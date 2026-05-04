@@ -88,7 +88,7 @@ namespace
 
     auto build_matching(
         const vector<IntegerVariableID> & vars,
-        const vector<Integer> & vals,
+        size_t n_right,
         const vector<pair<Left, Right>> & edges,
         vector<uint8_t> & left_covered,
         vector<uint8_t> & right_covered,
@@ -106,9 +106,9 @@ namespace
         // now augment
         while (true) {
             vector<uint8_t> reached_on_the_left(vars.size(), 0);
-            vector<uint8_t> reached_on_the_right(vals.size(), 0);
+            vector<uint8_t> reached_on_the_right(n_right, 0);
 
-            vector<Left> how_we_got_to_on_the_right(vals.size(), Left{});
+            vector<Left> how_we_got_to_on_the_right(n_right, Left{});
             vector<Right> how_we_got_to_on_the_left(vars.size(), Right{});
 
             // start from exposed variables
@@ -190,6 +190,8 @@ namespace
     auto prove_matching_is_too_small(
         const vector<IntegerVariableID> & vars,
         const vector<Integer> & vals,
+        const vector<Integer> & excluded,
+        size_t n_right,
         map<Integer, ProofLine> & value_am1_constraint_numbers,
         const State & state,
         ProofLogger & logger,
@@ -197,13 +199,13 @@ namespace
         const vector<uint8_t> & left_covered,
         const vector<optional<Right>> & matching) -> pair<JustifyExplicitlyThenRUP, ReasonFunction>
     {
-        vector<optional<Left>> inverse_matching(vals.size(), nullopt);
+        vector<optional<Left>> inverse_matching(n_right, nullopt);
         for (const auto & [l, r] : enumerate(matching))
             if (r)
                 inverse_matching[r->offset] = Left{l};
 
         vector<uint8_t> hall_variables(vars.size(), 0);
-        vector<uint8_t> hall_values(vals.size(), 0);
+        vector<uint8_t> hall_values(n_right, 0);
 
         // there must be at least one thing uncovered, and this will
         // necessarily participate in a hall violator
@@ -216,14 +218,14 @@ namespace
         // either we have found a hall violator, or we have a spare value
         // on the right
         while (true) {
-            vector<uint8_t> n_of_hall_variables(vals.size(), 0);
+            vector<uint8_t> n_of_hall_variables(n_right, 0);
             for (const auto & [l, r] : edges)
                 if (hall_variables[l.offset])
                     n_of_hall_variables[r.offset] = 1;
 
             bool is_subset = true;
             Right not_subset_witness;
-            for (Right v{0}; v.offset != vals.size(); ++v.offset)
+            for (Right v{0}; v.offset != n_right; ++v.offset)
                 if (n_of_hall_variables[v.offset] && ! hall_values[v.offset]) {
                     is_subset = false;
                     not_subset_witness = v;
@@ -255,7 +257,13 @@ namespace
                         [vars, &logger, &value_am1_constraint_numbers, hall_variable_ids, hall_value_nrs](const ReasonFunction &) -> void {
                             justify_all_different_hall_set_or_violator(logger, vars, hall_variable_ids, hall_value_nrs, value_am1_constraint_numbers);
                         }},
-            generic_reason(state, hall_variable_ids)};
+            ReasonFunction{[hall_variable_ids, excluded, &state]() -> Reason {
+                auto reason = generic_reason(state, hall_variable_ids)();
+                for (const auto & v : hall_variable_ids)
+                    for (const auto & s : excluded)
+                        reason.emplace_back(v != s);
+                return reason;
+            }}};
     }
 
     using Vertex = variant<Left, Right>;
@@ -274,6 +282,8 @@ namespace
     auto prove_deletion_using_sccs(
         const vector<IntegerVariableID> & vars,
         const vector<Integer> & vals,
+        const vector<Integer> & excluded,
+        size_t n_right,
         map<Integer, ProofLine> & value_am1_constraint_numbers,
         const State & state,
         ProofLogger & logger,
@@ -285,12 +295,12 @@ namespace
         // we know a hall set exists, but we have to find it. starting
         // from but not including the end of the edge we're deleting,
         // everything reachable forms a hall set.
-        vector<uint8_t> in_to_explore(vars.size() + vals.size(), 0);
+        vector<uint8_t> in_to_explore(vars.size() + n_right, 0);
         vector<Vertex> to_explore;
 
-        vector<uint8_t> explored(vars.size() + vals.size(), 0);
+        vector<uint8_t> explored(vars.size() + n_right, 0);
         vector<uint8_t> hall_left(vars.size(), 0);
-        vector<uint8_t> hall_right(vals.size(), 0);
+        vector<uint8_t> hall_right(n_right, 0);
 
         in_to_explore[vertex_to_offset(vars, vals, delete_value)] = 1;
         to_explore.push_back(delete_value);
@@ -352,7 +362,13 @@ namespace
                                 const ReasonFunction &) -> void {
                                 justify_all_different_hall_set_or_violator(logger, vars, hall_variable_ids, hall_value_nrs, value_am1_constraint_numbers);
                             }},
-                generic_reason(state, hall_variable_ids)};
+                ReasonFunction{[hall_variable_ids, excluded, &state]() -> Reason {
+                    auto reason = generic_reason(state, hall_variable_ids)();
+                    for (const auto & v : hall_variable_ids)
+                        for (const auto & s : excluded)
+                            reason.emplace_back(v != s);
+                    return reason;
+                }}};
         }
     }
 }
@@ -360,6 +376,7 @@ namespace
 auto gcs::innards::propagate_gac_all_different(
     const vector<IntegerVariableID> & vars,
     const vector<Integer> & vals,
+    const vector<Integer> & excluded,
     map<Integer, ProofLine> & value_am1_constraint_numbers,
     const State & state,
     auto & tracker,
@@ -373,25 +390,41 @@ auto gcs::innards::propagate_gac_all_different(
             if (state.in_domain(var, val))
                 edges.emplace_back(Left{var_idx}, Right{val_idx});
 
+    // Add a private phantom right-vertex per variable that has any excluded
+    // value still in its current domain. The phantom edge represents "this
+    // variable opts out of the alldifferent by taking an excluded value", so
+    // it can absorb any one variable freely. Phantom right offsets live past
+    // vals.size().
+    auto n_right = vals.size();
+    if (! excluded.empty()) {
+        for (const auto & [var_idx, var] : enumerate(vars))
+            for (const auto & s : excluded)
+                if (state.in_domain(var, s)) {
+                    edges.emplace_back(Left{var_idx}, Right{n_right});
+                    ++n_right;
+                    break;
+                }
+    }
+
     vector<uint8_t> left_covered(vars.size(), 0);
-    vector<uint8_t> right_covered(vals.size(), 0);
+    vector<uint8_t> right_covered(n_right, 0);
     vector<optional<Right>> matching(vars.size(), nullopt);
 
-    build_matching(vars, vals, edges, left_covered, right_covered, matching);
+    build_matching(vars, n_right, edges, left_covered, right_covered, matching);
 
     if (cmp_not_equal(count(left_covered.begin(), left_covered.end(), 1), vars.size())) {
         // nope. we've got a maximum cardinality matching that leaves at least
         // one thing on the left uncovered.
-        auto [just, reason] = prove_matching_is_too_small(vars, vals, value_am1_constraint_numbers, state, *logger, edges, left_covered, matching);
+        auto [just, reason] = prove_matching_is_too_small(vars, vals, excluded, n_right, value_am1_constraint_numbers, state, *logger, edges, left_covered, matching);
         return tracker.infer(logger, FalseLiteral{}, just, reason);
     }
 
     // we have a matching that uses every variable. however, some edges may
     // not occur in any maximum cardinality matching, and we can delete
     // these. first we need to build the directed matching graph...
-    vector<vector<Vertex>> edges_out_from(vars.size() + vals.size(), vector<Vertex>{});
+    vector<vector<Vertex>> edges_out_from(vars.size() + n_right, vector<Vertex>{});
     vector<vector<Right>> edges_out_from_variable(vars.size()), edges_in_to_variable(vars.size());
-    vector<vector<Left>> edges_out_from_value(vals.size()), edges_in_to_value(vals.size());
+    vector<vector<Left>> edges_out_from_value(n_right), edges_in_to_value(n_right);
 
     for (auto & [f, t] : edges)
         if (matching[f.offset] == t) {
@@ -406,9 +439,9 @@ auto gcs::innards::propagate_gac_all_different(
         }
 
     // now we need to find strongly connected components...
-    vector<int> indices(vars.size() + vals.size(), 0), lowlinks(vars.size() + vals.size(), 0), components(vars.size() + vals.size(), 0);
+    vector<int> indices(vars.size() + n_right, 0), lowlinks(vars.size() + n_right, 0), components(vars.size() + n_right, 0);
     vector<Vertex> stack;
-    vector<uint8_t> enstackinated(vars.size() + vals.size());
+    vector<uint8_t> enstackinated(vars.size() + n_right);
     int next_index = 1, number_of_components = 0;
 
     function<auto(Vertex)->void> scc;
@@ -449,25 +482,28 @@ auto gcs::innards::propagate_gac_all_different(
         if (0 == indices[vertex_to_offset(vars, vals, v)])
             scc(v);
 
-    for (Right v{0}; v.offset != vals.size(); ++v.offset)
+    for (Right v{0}; v.offset != n_right; ++v.offset)
         if (0 == indices[vertex_to_offset(vars, vals, v)])
             scc(v);
 
     // every edge in the original matching is used, and so cannot be
-    // deleted
+    // deleted. used_edges only tracks real (non-phantom) right offsets;
+    // phantom edges are never deletable and are skipped below.
     vector<vector<uint8_t>> used_edges(vars.size(), vector<uint8_t>(vals.size(), 0));
     for (const auto & [l, r] : enumerate(matching))
-        if (r)
+        if (r && r->offset < vals.size())
             used_edges[l][r->offset] = 1;
 
     // for each unmatched vertex, bring in everything that could be updated
-    // to take it
+    // to take it. Phantom rights participate too (when their owner is
+    // matched to a real value, the phantom is unmatched and its presence
+    // here marks the owner's edges as redirectable).
     {
         vector<Vertex> to_explore;
-        vector<uint8_t> in_to_explore(vars.size() + vals.size(), 0);
+        vector<uint8_t> in_to_explore(vars.size() + n_right, 0);
 
-        vector<uint8_t> explored(vars.size() + vals.size(), 0);
-        for (Right v{0}; v.offset != vals.size(); ++v.offset)
+        vector<uint8_t> explored(vars.size() + n_right, 0);
+        for (Right v{0}; v.offset != n_right; ++v.offset)
             in_to_explore[vertex_to_offset(vars, vals, v)] = 1;
 
         for (auto & t : matching)
@@ -478,7 +514,7 @@ auto gcs::innards::propagate_gac_all_different(
             if (in_to_explore[vertex_to_offset(vars, vals, v)])
                 to_explore.push_back(v);
 
-        for (Right v{0}; v.offset != vals.size(); ++v.offset)
+        for (Right v{0}; v.offset != n_right; ++v.offset)
             if (in_to_explore[vertex_to_offset(vars, vals, v)])
                 to_explore.push_back(v);
 
@@ -491,7 +527,8 @@ auto gcs::innards::propagate_gac_all_different(
             visit([&](const auto & x) {
                 if constexpr (is_same_v<decay_t<decltype(x)>, Left>) {
                     for (auto & t : edges_in_to_variable[x.offset]) {
-                        used_edges[x.offset][t.offset] = 1;
+                        if (t.offset < vals.size())
+                            used_edges[x.offset][t.offset] = 1;
                         if (! explored[vertex_to_offset(vars, vals, t)]) {
                             if (! in_to_explore[vertex_to_offset(vars, vals, t)]) {
                                 to_explore.push_back(t);
@@ -502,7 +539,8 @@ auto gcs::innards::propagate_gac_all_different(
                 }
                 else {
                     for (auto & t : edges_in_to_value[x.offset]) {
-                        used_edges[t.offset][x.offset] = 1;
+                        if (x.offset < vals.size())
+                            used_edges[t.offset][x.offset] = 1;
                         if (! explored[vertex_to_offset(vars, vals, t)]) {
                             if (! in_to_explore[vertex_to_offset(vars, vals, t)]) {
                                 to_explore.push_back(t);
@@ -517,18 +555,22 @@ auto gcs::innards::propagate_gac_all_different(
     }
 
     // every edge that starts and ends in the same component is also used
+    // (skipping phantom edges, which never appear in used_edges)
     for (auto & [f, t] : edges)
-        if (components[vertex_to_offset(vars, vals, f)] == components[vertex_to_offset(vars, vals, t)])
+        if (t.offset < vals.size() && components[vertex_to_offset(vars, vals, f)] == components[vertex_to_offset(vars, vals, t)])
             used_edges[f.offset][t.offset] = 1;
 
     // avoid outputting duplicate proof lines
     vector<uint8_t> sccs_already_done(number_of_components + 1, 0);
 
     // anything left can be deleted. need to do all of these together if we're doing
-    // justifications, to avoid having to figure out an ordering for nested Hall sets
+    // justifications, to avoid having to figure out an ordering for nested Hall sets.
+    // Phantom edges are skipped: they're never deletable.
     vector<vector<Literal>> deletions_by_scc(number_of_components);
     vector<optional<Right>> representatives_for_scc(number_of_components);
     for (auto & [delete_var_name, delete_value] : edges) {
+        if (delete_value.offset >= vals.size())
+            continue;
         if (used_edges[delete_var_name.offset][delete_value.offset])
             continue;
         auto scc = components[vertex_to_offset(vars, vals, delete_value)];
@@ -540,7 +582,7 @@ auto gcs::innards::propagate_gac_all_different(
         if (! representatives_for_scc[scc])
             continue;
 
-        auto [just, reason] = prove_deletion_using_sccs(vars, vals, value_am1_constraint_numbers, state, *logger,
+        auto [just, reason] = prove_deletion_using_sccs(vars, vals, excluded, n_right, value_am1_constraint_numbers, state, *logger,
             edges_out_from_variable, edges_out_from_value, *representatives_for_scc[scc], components);
         tracker.infer_all(logger, deletions_by_scc[scc], just, reason);
     }
@@ -576,7 +618,7 @@ auto GACAllDifferent::install(Propagators & propagators, State & initial_state, 
             vals = move(compressed_vals),
             value_am1_constraint_numbers = move(value_am1_constraint_numbers)](const State & state, auto & inference,
             ProofLogger * const logger) -> PropagatorState {
-            propagate_gac_all_different(vars, vals, *value_am1_constraint_numbers.get(), state, inference, logger);
+            propagate_gac_all_different(vars, vals, vector<Integer>{}, *value_am1_constraint_numbers.get(), state, inference, logger);
             return PropagatorState::Enable;
         },
         triggers, "alldiff");
@@ -585,6 +627,7 @@ auto GACAllDifferent::install(Propagators & propagators, State & initial_state, 
 template auto gcs::innards::propagate_gac_all_different(
     const std::vector<IntegerVariableID> & vars,
     const std::vector<Integer> & vals,
+    const std::vector<Integer> & excluded,
     std::map<Integer, ProofLine> & value_am1_constraint_numbers,
     const State & state,
     SimpleInferenceTracker & inference_tracker,
@@ -593,6 +636,7 @@ template auto gcs::innards::propagate_gac_all_different(
 template auto gcs::innards::propagate_gac_all_different(
     const std::vector<IntegerVariableID> & vars,
     const std::vector<Integer> & vals,
+    const std::vector<Integer> & excluded,
     std::map<Integer, ProofLine> & value_am1_constraint_numbers,
     const State & state,
     EagerProofLoggingInferenceTracker & inference_tracker,

@@ -16,3 +16,25 @@ auto gcs::innards::define_clique_not_equals_encoding(ProofModel & model, const v
             model.add_constraint("AllDifferent", "not equals because higher", WPBSum{} + -1_i * vars[i] + 1_i * vars[j] <= -1_i, HalfReifyOnConjunctionOf{! selector});
         }
 }
+
+auto gcs::innards::define_clique_not_equals_except_encoding(ProofModel & model,
+    const vector<gcs::IntegerVariableID> & vars,
+    const vector<gcs::Integer> & excluded) -> void
+{
+    for (unsigned i = 0; i < vars.size(); ++i)
+        for (unsigned j = i + 1; j < vars.size(); ++j) {
+            auto selector = model.create_proof_flag("notequals_except");
+            HalfReifyOnConjunctionOf lower_conj{selector};
+            HalfReifyOnConjunctionOf higher_conj{! selector};
+            for (const auto & s : excluded) {
+                lower_conj.emplace_back(vars[i] != s);
+                lower_conj.emplace_back(vars[j] != s);
+                higher_conj.emplace_back(vars[i] != s);
+                higher_conj.emplace_back(vars[j] != s);
+            }
+            model.add_constraint("AllDifferentExcept", "not equals because lower",
+                WPBSum{} + 1_i * vars[i] + -1_i * vars[j] <= -1_i, lower_conj);
+            model.add_constraint("AllDifferentExcept", "not equals because higher",
+                WPBSum{} + -1_i * vars[i] + 1_i * vars[j] <= -1_i, higher_conj);
+        }
+}
