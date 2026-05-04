@@ -6,6 +6,7 @@
 #include <gcs/innards/proofs/proof_only_variables.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/variable_id.hh>
+#include <set>
 #include <unordered_map>
 #include <vector>
 namespace gcs
@@ -30,6 +31,7 @@ namespace gcs
         std::vector<Integer> _symbols;
         std::vector<std::vector<innards::ProofFlag>> _state_at_pos_flags;
         innards::ConstraintStateHandle _graph_idx;
+        std::set<Integer> _opb_alphabet;
 
         [[nodiscard]] auto symbols() const -> const std::vector<Integer> &;
 

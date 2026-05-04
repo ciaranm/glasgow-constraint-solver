@@ -385,6 +385,16 @@ auto Regular::install(Propagators & propagators, State & initial_state, ProofMod
 auto Regular::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
 {
     _graph_idx = initial_state.add_constraint_state(RegularGraph(_vars.size(), _num_states));
+
+    // Build the OPB alphabet: the union of transition keys and each var's initial
+    // domain. Domain values absent from every transition get a "no transition"
+    // constraint emitted below, which is what veripb needs to verify the
+    // propagator's RUP-justified pruning of those values.
+    _opb_alphabet.insert(_symbols.begin(), _symbols.end());
+    for (const auto & var : _vars)
+        for (const auto & val : initial_state.each_value_immutable(var))
+            _opb_alphabet.insert(val);
+
     return true;
 }
 
@@ -415,7 +425,7 @@ auto Regular::define_proof_model(ProofModel & model) -> void
 
     for (size_t idx = 0; idx < _vars.size(); ++idx) {
         for (long q = 0; q < _num_states; ++q) {
-            for (const auto & val : symbols()) {
+            for (const auto & val : _opb_alphabet) {
                 auto new_q = find_transition(_transitions[q], val);
                 if (new_q == -1) {
                     // No transition for q, v, so constrain ~(state_i = q /\ X_i = val)
