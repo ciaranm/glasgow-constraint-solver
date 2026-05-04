@@ -8,7 +8,7 @@
 #include <string>
 #include <version>
 
-#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#if defined(__cpp_lib_format)
 #include <format>
 #endif
 
@@ -195,7 +195,7 @@ namespace gcs
     }
 }
 
-#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#if defined(__cpp_lib_format)
 template <>
 struct std::formatter<gcs::Integer> : std::formatter<long long> {
     template <typename FormatContext_>
