@@ -7,6 +7,9 @@ constraints. It is aimed at developers (human or AI) working on the
 MiniZinc solver should read the "Using the MiniZinc Solver" section
 of the top-level `README.md` instead.
 
+For implementing the underlying C++ constraint that a binding exposes,
+see [constraints.md](constraints.md).
+
 ## What MiniZinc bindings do
 
 MiniZinc is a high-level modelling language; FlatZinc is its low-level
