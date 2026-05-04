@@ -27,6 +27,7 @@ add_library(glasgow_constraint_solver
         constraints/element.cc
         constraints/equals.cc
         constraints/in.cc
+        constraints/increasing.cc
         constraints/innards/recover_am1.cc
         constraints/innards/reified_state.cc
         constraints/inverse.cc
@@ -119,6 +120,7 @@ if(GCS_BUILD_TESTS)
     add_executable(element_test constraints/element_test.cc)
     add_executable(equals_test constraints/equals_test.cc)
     add_executable(in_test constraints/in_test.cc)
+    add_executable(increasing_test constraints/increasing_test.cc)
     add_executable(inverse_test constraints/inverse_test.cc)
     add_executable(knapsack_test constraints/knapsack_test.cc)
     add_executable(lex_test constraints/lex_test.cc)
@@ -137,7 +139,7 @@ if(GCS_BUILD_TESTS)
 
     foreach(test_target
             abs_test all_different_test among_test arithmetic_test at_most_one_test comparison_test
-            count_test element_test equals_test in_test inverse_test knapsack_test lex_test linear_test
+            count_test element_test equals_test in_test increasing_test inverse_test knapsack_test lex_test linear_test
             logical_test min_max_test mult_bc_test n_value_test parity_test
             plus_minus_test regular_test seq_precede_chain_test smart_table_test table_test value_precede_test)
         target_link_libraries(${test_target} PRIVATE glasgow_constraint_solver)
@@ -167,6 +169,7 @@ if(GCS_BUILD_TESTS)
     add_test(NAME element_constraint_var2d COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:element_test> var2d)
     add_test(NAME equals_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:equals_test>)
     add_test(NAME in_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:in_test>)
+    add_test(NAME increasing_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:increasing_test>)
     add_test(NAME inverse_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:inverse_test>)
     add_test(NAME knapsack_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:knapsack_test>)
     add_test(NAME lex_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:lex_test>)
