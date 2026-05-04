@@ -5,6 +5,7 @@
 #include <gcs/innards/inference_tracker-fwd.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/state.hh>
+#include <gcs/integer.hh>
 #include <gcs/variable_id.hh>
 #include <vector>
 
@@ -14,6 +15,10 @@ namespace gcs
     {
         auto define_clique_not_equals_encoding(ProofModel & model,
             const std::vector<IntegerVariableID> & vars) -> void;
+
+        auto define_clique_not_equals_except_encoding(ProofModel & model,
+            const std::vector<IntegerVariableID> & vars,
+            const std::vector<Integer> & excluded) -> void;
     }
 }
 
