@@ -4,6 +4,12 @@ target_link_libraries(fzn-glasgow PRIVATE glasgow_constraint_solver cxxopts gcs_
 add_test(NAME minizinc-abs COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ abs true true)
 set_tests_properties(minizinc-abs PROPERTIES SKIP_RETURN_CODE 66)
 
+add_test(NAME minizinc-alldifferentexcept COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ alldifferentexcept true true)
+set_tests_properties(minizinc-alldifferentexcept PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-alldifferentexceptzero COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ alldifferentexceptzero true true)
+set_tests_properties(minizinc-alldifferentexceptzero PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-among COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ amongtest true true)
 set_tests_properties(minizinc-among PROPERTIES SKIP_RETURN_CODE 66)
 
