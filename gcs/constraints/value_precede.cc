@@ -85,7 +85,7 @@ auto ValuePrecede::install(Propagators & propagators, State &, ProofModel * cons
             if (! pos_vars.contains(v)) {
                 auto pv = optional_model->create_proof_only_integer_variable(
                     0_i, Integer{static_cast<long long>(n)},
-                    format("value_precede_pos_{}", v.raw_value),
+                    format("value_precede_pos_{}", v),
                     IntegerVariableProofRepresentation::Bits);
                 pos_vars.emplace(v, pv);
             }
@@ -197,7 +197,7 @@ auto ValuePrecede::s_exprify(const string & name, const ProofModel * const model
 
     print(s, "{} value_precede (", name);
     for (const auto & val : _chain)
-        print(s, " {}", val.raw_value);
+        print(s, " {}", val);
     print(s, ") (");
     for (const auto & var : _vars)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));

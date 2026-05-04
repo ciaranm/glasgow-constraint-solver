@@ -20,10 +20,10 @@ auto gcs::innards::debug_string(const IntegerVariableState & ivar) -> string
 {
     return overloaded{
         [](const IntegerVariableConstantState & c) {
-            return format("const {}", c.value.raw_value);
+            return format("const {}", c.value);
         },
         [](const IntegerVariableRangeState & r) {
-            return format("range {}..{}", r.lower.raw_value, r.upper.raw_value);
+            return format("range {}..{}", r.lower, r.upper);
         },
         [](const IntegerVariableSmallSetState & s) {
             string result = "small set";
@@ -35,7 +35,7 @@ auto gcs::innards::debug_string(const IntegerVariableState & ivar) -> string
         [](const IntegerVariableIntervalSetState & s) {
             string result = "iset";
             for (const auto & [l, u] : s.values->each_interval())
-                result += format(" {}..{}", l.raw_value, u.raw_value);
+                result += format(" {}..{}", l, u);
             return result;
         }}
         .visit(ivar);

@@ -65,7 +65,7 @@ auto gcs::innards::circuit::output_cycle_to_proof(const vector<IntegerVariableID
     if (current_val == nullopt)
         throw UnexpectedException("Circuit propagator tried to output a cycle that doesn't exist");
 
-    if (current_val->raw_value < 0)
+    if (*current_val < 0_i)
         throw UnimplementedException("Successor encoding for circuit can't have negative values");
 
     stringstream proof_step;
@@ -86,7 +86,7 @@ auto gcs::innards::circuit::output_cycle_to_proof(const vector<IntegerVariableID
     }
 
     if (prevent_idx.has_value()) {
-        logger.emit_proof_comment(format("Preventing sub-cycle for succ[{}] = {}", prevent_idx->raw_value, prevent_value->raw_value));
+        logger.emit_proof_comment(format("Preventing sub-cycle for succ[{}] = {}", *prevent_idx, *prevent_value));
         proof_step << pos_var_data.at(prevent_idx->raw_value).plus_one_lines.at(prevent_value->raw_value).geq_line
                    << " + ";
     }

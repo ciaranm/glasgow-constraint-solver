@@ -180,7 +180,7 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
                 println(s_expr, "(");
                 println(s_expr, "    (");
                 for (const auto & [_, l, u, n] : problem.each_variable_with_bounds_and_name()) {
-                    println(s_expr, "        ({} {} {})", n, l.raw_value, u.raw_value);
+                    println(s_expr, "        ({} {} {})", n, l, u);
                 }
                 println(s_expr, "    )");
                 println(s_expr, "    (");

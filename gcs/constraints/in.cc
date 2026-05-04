@@ -99,7 +99,7 @@ auto In::s_exprify(const string & name, const innards::ProofModel * const model)
     for (auto & v : _var_vals)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(v));
     for (auto & v : _val_vals)
-        print(s, " {}", v.raw_value);
+        print(s, " {}", v);
     print(s, ")");
 
     return s.str();

@@ -528,7 +528,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::s_exprify(const std::string &
             print(s, " {},{}", model->names_and_ids_tracker().s_expr_name_of(elem), index);
         }
         else {
-            print(s, " {},{}", elem.raw_value, index);
+            print(s, " {},{}", elem, index);
         }
     };
 
@@ -565,7 +565,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::s_exprify(const std::string &
     for (size_t i = 0; i < _index_vars.size(); ++i) {
         print(s, " ({},{})",
             model->names_and_ids_tracker().s_expr_name_of(_index_vars[i]),
-            _index_starts[i].raw_value);
+            _index_starts[i]);
     }
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_result_var));
 

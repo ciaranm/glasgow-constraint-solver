@@ -632,10 +632,10 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning(SimpleOrProofOnlyIntegerVaria
 
     if (_imp->verbose_names) {
         string value_name;
-        if (value.raw_value < 0)
-            value_name = "minus" + to_string(std::abs(value.raw_value));
+        if (value < 0_i)
+            value_name = "minus" + abs(value).to_string();
         else
-            value_name = to_string(value.raw_value);
+            value_name = value.to_string();
 
         overloaded{
             [&](const SimpleIntegerVariableID & id) -> void {
@@ -760,12 +760,12 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning_bit_of(SimpleOrProofOnlyInteg
     if (_imp->verbose_names) {
         overloaded{
             [&](const SimpleIntegerVariableID & id) -> void {
-                string name = format("i[{}][b{}]", name_of(id), to_string(power.raw_value));
+                string name = format("i[{}][b{}]", name_of(id), power);
                 _imp->xlits_to_verbose_names.emplace(result, name);
                 _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
             },
             [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
-                string name = format("p[{}_{}][b{}]", id.index, name_of(id), to_string(power.raw_value));
+                string name = format("p[{}_{}][b{}]", id.index, name_of(id), power);
                 _imp->xlits_to_verbose_names.emplace(result, name);
                 _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
             }}
@@ -823,13 +823,13 @@ auto NamesAndIDsTracker::name_of(ProofFlag id) const -> const string &
 auto NamesAndIDsTracker::s_expr_name_of(IntegerVariableID id) const -> string
 {
     return overloaded{
-        [&](const ConstantIntegerVariableID & c) -> string { return to_string(c.const_value.raw_value); },
+        [&](const ConstantIntegerVariableID & c) -> string { return c.const_value.to_string(); },
         [&](const SimpleIntegerVariableID & v) -> string { return name_of(v); },
         [&](const ViewOfIntegerVariableID & vv) -> string {
             stringstream name;
             name << "(";
             name << (vv.negate_first ? "-" : "");
-            name << name_of(vv.actual_variable) << " + " << to_string(vv.then_add.raw_value) << ")";
+            name << name_of(vv.actual_variable) << " + " << vv.then_add << ")";
             return name.str();
         }}
         .visit(id);
@@ -855,7 +855,7 @@ auto NamesAndIDsTracker::s_expr_name_of(ReificationCondition cond) const -> stri
         [](const reif::MustHold &) -> string { return ""; },
         [](const reif::MustNotHold &) -> string { return ""; },
         [&](const auto & reif) -> string { // This is safe, right?
-            return "(" + s_expr_name_of(reif.cond.var) + " " + s_expr_name_of(reif.cond.op) + " " + to_string(reif.cond.value.raw_value) + ")";
+            return "(" + s_expr_name_of(reif.cond.var) + " " + s_expr_name_of(reif.cond.op) + " " + reif.cond.value.to_string() + ")";
         }}
         .visit(cond);
 
