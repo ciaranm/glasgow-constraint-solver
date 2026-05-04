@@ -973,7 +973,7 @@ namespace
 
             if (lower > upper)
                 throw UnexpectedException{format("var == x is {}, lower is {}, upper is {}, assume_upper is {}, min_x is {}, max_x is {}, largest_quotient is {}, smallest_quotient is {}",
-                    var == x, lower.raw_value, upper.raw_value, assume_upper, min_x.raw_value, max_x.raw_value, largest_quotient.raw_value, smallest_quotient.raw_value)};
+                    var == x, lower, upper, assume_upper, min_x, max_x, largest_quotient, smallest_quotient)};
 
             if (lower < 0_i) {
                 conditional_bounds[var].emplace_back(
@@ -1274,7 +1274,7 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
         for (Integer i = 0_i; i < v1_num_bits; i++) {
             bit_products.emplace_back();
             for (Integer j = 0_i; j < v2_num_bits; j++) {
-                auto flag = optional_model->create_proof_flag(format("xy[{}][{}]", i.raw_value, j.raw_value));
+                auto flag = optional_model->create_proof_flag(format("xy[{}][{}]", i, j));
 
                 auto forwards = optional_model->add_constraint(
                     WPBSum{} + 1_i * ProofBitVariable{v1_mag, i, true} + 1_i * ProofBitVariable{v2_mag, j, true} >= 2_i,

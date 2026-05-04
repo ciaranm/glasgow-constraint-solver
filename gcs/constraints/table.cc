@@ -69,7 +69,7 @@ namespace
 
     auto tuple_entry_as_string(Integer i) -> string
     {
-        return to_string(i.raw_value);
+        return i.to_string();
     }
 
     auto tuple_entry_as_string(Wildcard) -> string

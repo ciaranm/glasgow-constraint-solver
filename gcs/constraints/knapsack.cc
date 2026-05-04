@@ -202,7 +202,7 @@ namespace
                             auto ge_data = growing_layer_ge_datas.at(x).find(new_sums.at(x));
                             if (ge_data == growing_layer_ge_datas.at(x).end()) {
                                 auto [flag, fwd, rev] = logger->create_proof_flag_reifying(
-                                    sums_so_far.at(x) >= new_sums.at(x), "s" + stringify(layer_number) + "x" + stringify(x) + "ge" + stringify(new_sums.at(x).raw_value),
+                                    sums_so_far.at(x) >= new_sums.at(x), "s" + stringify(layer_number) + "x" + stringify(x) + "ge" + stringify(new_sums.at(x)),
                                     ProofLevel::Temporary);
                                 ge_data = growing_layer_ge_datas.at(x).emplace(new_sums.at(x), NodeInequalityData{flag, fwd, rev}).first;
                             }
@@ -211,7 +211,7 @@ namespace
                             auto le_data = growing_layer_le_datas.at(x).find(new_sums.at(x));
                             if (le_data == growing_layer_le_datas.at(x).end()) {
                                 auto [flag, fwd, rev] = logger->create_proof_flag_reifying(
-                                    sums_so_far.at(x) <= new_sums.at(x), "s" + stringify(layer_number) + "x" + stringify(x) + "le" + stringify(new_sums.at(x).raw_value),
+                                    sums_so_far.at(x) <= new_sums.at(x), "s" + stringify(layer_number) + "x" + stringify(x) + "le" + stringify(new_sums.at(x)),
                                     ProofLevel::Temporary);
                                 le_data = growing_layer_le_datas.at(x).emplace(new_sums.at(x), NodeInequalityData{flag, fwd, rev}).first;
                             }
@@ -229,7 +229,7 @@ namespace
                             for (auto & l : le_datas) {
                                 all += 1_i * l->second.reif_flag;
                                 name += "_";
-                                name += stringify(l->first.raw_value);
+                                name += stringify(l->first);
                                 les.push_back(l->second);
                             }
                             for (auto & g : ge_datas) {
@@ -664,7 +664,7 @@ auto Knapsack::s_exprify(const string & name, const innards::ProofModel * const 
     for (const auto & cs : _coeffs) {
         print(s, "\n                (");
         for (const auto & c : cs)
-            print(s, " {}", c.raw_value);
+            print(s, " {}", c);
         print(s, ")");
     }
     print(s, "\n            )\n            (");
