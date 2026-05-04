@@ -107,12 +107,12 @@ auto main(int, char *[]) -> int
             vector{size_t(n_values_2), random_bounds_or_constant(-5, 8, 3, 8)});
     }
 
-    for (auto & [r1, r2, r3] : data)
-        run_among_test(false, r1, r2, r3);
-
-    if (can_run_veripb())
+    for (bool proofs : {false, true}) {
+        if (proofs && ! can_run_veripb())
+            continue;
         for (auto & [r1, r2, r3] : data)
-            run_among_test(true, r1, r2, r3);
+            run_among_test(proofs, r1, r2, r3);
+    }
 
     return EXIT_SUCCESS;
 }
