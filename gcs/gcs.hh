@@ -36,6 +36,7 @@
 #include <gcs/constraints/parity.hh>
 #include <gcs/constraints/plus.hh>
 #include <gcs/constraints/regular.hh>
+#include <gcs/constraints/seq_precede_chain.hh>
 #include <gcs/constraints/smart_table.hh>
 #include <gcs/constraints/table.hh>
 #include <gcs/constraints/value_precede.hh>
