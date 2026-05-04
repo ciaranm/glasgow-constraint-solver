@@ -123,12 +123,12 @@ auto main(int, char *[]) -> int
         generate_random_data(rand, data, random_bounds(0, 2, 1, 3), vector(n_coeffs, vector(size, item_dist)), boundses);
     }
 
-    for (auto & [valrange, coeffs, bounds] : data)
-        run_knapsack_test(false, valrange, coeffs, bounds);
-
-    if (can_run_veripb())
+    for (bool proofs : {false, true}) {
+        if (proofs && ! can_run_veripb())
+            continue;
         for (auto & [valrange, coeffs, bounds] : data)
-            run_knapsack_test(true, valrange, coeffs, bounds);
+            run_knapsack_test(proofs, valrange, coeffs, bounds);
+    }
 
     return EXIT_SUCCESS;
 }

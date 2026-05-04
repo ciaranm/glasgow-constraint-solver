@@ -149,12 +149,11 @@ auto run_all_tests(bool proofs) -> void
 
 auto main(int, char *[]) -> int
 {
-    run_all_tests(false);
-    run_scale_test(false);
-
-    if (can_run_veripb()) {
-        run_all_tests(true);
-        run_scale_test(true);
+    for (bool proofs : {false, true}) {
+        if (proofs && ! can_run_veripb())
+            continue;
+        run_all_tests(proofs);
+        run_scale_test(proofs);
     }
 
     return EXIT_SUCCESS;

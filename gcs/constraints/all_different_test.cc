@@ -108,12 +108,12 @@ auto main(int, char *[]) -> int
         generate_random_data(rand, data, random_constant(-10, 10), random_constant(-10, 10), random_constant(-10, 10),
             random_constant(-10, 10), random_constant(-10, 10), random_constant(-10, 10));
 
-    for (auto & [r1, r2, r3, r4, r5, r6] : data)
-        run_all_different_test(false, r1, r2, r3, r4, r5, r6);
-
-    if (can_run_veripb())
+    for (bool proofs : {false, true}) {
+        if (proofs && ! can_run_veripb())
+            continue;
         for (auto & [r1, r2, r3, r4, r5, r6] : data)
-            run_all_different_test(true, r1, r2, r3, r4, r5, r6);
+            run_all_different_test(proofs, r1, r2, r3, r4, r5, r6);
+    }
 
     return EXIT_SUCCESS;
 }

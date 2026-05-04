@@ -116,16 +116,14 @@ auto main(int, char *[]) -> int
     for (int x = 0; x < 10; ++x)
         generate_random_data(rand, data, random_bounds(-10, 10, 5, 15), random_bounds(-10, 10, 5, 15), random_bounds(-10, 10, 5, 15));
 
-    for (auto & [r1, r2, r3] : data) {
-        run_plus_minus_test<Plus>(false, r1, r2, r3, [](int a, int b, int c) { return a + b == c; });
-        run_plus_minus_test<Minus>(false, r1, r2, r3, [](int a, int b, int c) { return a - b == c; });
-    }
-
-    if (can_run_veripb())
+    for (bool proofs : {false, true}) {
+        if (proofs && ! can_run_veripb())
+            continue;
         for (auto & [r1, r2, r3] : data) {
-            run_plus_minus_test<Plus>(true, r1, r2, r3, [](int a, int b, int c) { return a + b == c; });
-            run_plus_minus_test<Minus>(true, r1, r2, r3, [](int a, int b, int c) { return a - b == c; });
+            run_plus_minus_test<Plus>(proofs, r1, r2, r3, [](int a, int b, int c) { return a + b == c; });
+            run_plus_minus_test<Minus>(proofs, r1, r2, r3, [](int a, int b, int c) { return a - b == c; });
         }
+    }
 
     return EXIT_SUCCESS;
 }
