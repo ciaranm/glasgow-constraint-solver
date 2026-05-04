@@ -657,6 +657,17 @@ auto main(int argc, char * argv[]) -> int
 
                 problem.post(Regular{vars, long(num_states), transitions, final_states_raw});
             }
+            else if (id == "glasgow_value_precede_int") {
+                Integer s{static_cast<long long>(args.at(0))};
+                Integer t{static_cast<long long>(args.at(1))};
+                const auto & vars = arg_as_array_of_var(data, args, 2);
+                problem.post(ValuePrecede{s, t, vars});
+            }
+            else if (id == "glasgow_value_precede_chain_int") {
+                auto chain = arg_as_array_of_integer(data, args, 0);
+                const auto & vars = arg_as_array_of_var(data, args, 1);
+                problem.post(ValuePrecede{*chain, vars});
+            }
             else
                 throw FlatZincInterfaceError{format("Unknown flatzinc constraint {} in {}", id, fznname)};
         }

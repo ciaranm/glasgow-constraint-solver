@@ -1,0 +1,2 @@
+predicate glasgow_value_precede_chain_int(array[int] of int: c, array[int] of var int: x);
+predicate fzn_value_precede_chain_int(array[int] of int: c, array[int] of var int: x) = glasgow_value_precede_chain_int(c, x);

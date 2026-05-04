@@ -105,3 +105,9 @@ set_tests_properties(minizinc-times PROPERTIES SKIP_RETURN_CODE 66)
 
 add_test(NAME minizinc-tsp COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ tsp false true)
 set_tests_properties(minizinc-tsp PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-valueprecede COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ valueprecede true true)
+set_tests_properties(minizinc-valueprecede PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-valueprecedechain COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ valueprecedechain true true)
+set_tests_properties(minizinc-valueprecedechain PROPERTIES SKIP_RETURN_CODE 66)
