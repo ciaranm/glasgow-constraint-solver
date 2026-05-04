@@ -71,23 +71,23 @@ auto gcs::innards::circuit::output_cycle_to_proof(const vector<IntegerVariableID
     stringstream proof_step;
 
     proof_step << "pol ";
-    proof_step << pos_var_data.at(start).plus_one_lines.at(current_val->raw_value).geq_line << " ";
+    proof_step << pos_var_data.at(start).plus_one_lines.at(current_val->as_index()).geq_line << " ";
     long cycle_length = 1;
     while (cmp_not_equal(current_val->raw_value, start)) {
         auto last_val = current_val;
-        auto next_var = succ[last_val->raw_value];
+        auto next_var = succ[last_val->as_index()];
         current_val = state.optional_single_value(next_var);
 
         if (current_val == nullopt || cycle_length == length) break;
 
-        proof_step << pos_var_data.at(last_val->raw_value).plus_one_lines.at(current_val->raw_value).geq_line
+        proof_step << pos_var_data.at(last_val->as_index()).plus_one_lines.at(current_val->as_index()).geq_line
                    << " + ";
         cycle_length++;
     }
 
     if (prevent_idx.has_value()) {
         logger.emit_proof_comment(format("Preventing sub-cycle for succ[{}] = {}", *prevent_idx, *prevent_value));
-        proof_step << pos_var_data.at(prevent_idx->raw_value).plus_one_lines.at(prevent_value->raw_value).geq_line
+        proof_step << pos_var_data.at(prevent_idx->as_index()).plus_one_lines.at(prevent_value->as_index()).geq_line
                    << " + ";
     }
     else {

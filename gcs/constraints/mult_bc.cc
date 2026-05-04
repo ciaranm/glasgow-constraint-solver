@@ -1284,7 +1284,7 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
                     WPBSum{} + -1_i * ProofBitVariable{v1_mag, i, true} + -1_i * ProofBitVariable{v2_mag, j, true} >= -1_i,
                     HalfReifyOnConjunctionOf{! flag});
 
-                bit_products[i.raw_value].emplace_back(BitProductData{flag, *forwards, *backwards, nullopt, nullopt});
+                bit_products[i.as_index()].emplace_back(BitProductData{flag, *forwards, *backwards, nullopt, nullopt});
                 bit_product_sum += power2(i + j) * flag;
             }
         }

@@ -302,7 +302,7 @@ auto State::change_state_for_equal(
             if (value < svar.lower || value > (svar.lower + Integer{Bits::number_of_bits - 1})) {
                 return Inference::Contradiction;
             }
-            else if (! svar.bits.test((value - svar.lower).raw_value)) {
+            else if (! svar.bits.test((value - svar.lower).as_index())) {
                 return Inference::Contradiction;
             }
             else if (svar.bits.popcount() == 1) {
@@ -385,7 +385,7 @@ auto State::change_state_for_not_equal(
                     IntegerVariableSmallSetState svar{Integer{0}, Bits{}};
                     for (Integer v = rvar.lower; v <= rvar.upper; ++v)
                         if (v != value)
-                            svar.bits.set(v.raw_value);
+                            svar.bits.set(v.as_index());
                     assign_to_state_of(var) = move(svar);
                 }
                 return Inference::InteriorValuesChanged;
@@ -396,7 +396,7 @@ auto State::change_state_for_not_equal(
                 // out of bounds, not in domain
                 return Inference::NoChange;
             }
-            else if (! svar.bits.test((value - svar.lower).raw_value)) {
+            else if (! svar.bits.test((value - svar.lower).as_index())) {
                 // not in domain, no problem
                 return Inference::NoChange;
             }
@@ -404,7 +404,7 @@ auto State::change_state_for_not_equal(
             // Knock out the value
             bool is_bound = (value == svar.lower + Integer{svar.bits.countr_zero()}) ||
                 (value == svar.lower + Integer{Bits::number_of_bits} - Integer{svar.bits.countl_zero()} - 1_i);
-            svar.bits.reset((value - svar.lower).raw_value);
+            svar.bits.reset((value - svar.lower).as_index());
             if (svar.bits.has_single_bit()) {
                 assign_to_state_of(var) = IntegerVariableConstantState{svar.lower + Integer{svar.bits.countr_zero()}};
                 return Inference::Instantiated;
@@ -765,7 +765,7 @@ auto State::in_domain(const VarType_ & var, const Integer val) const -> bool
             if (val < v.lower || val > (v.lower + Integer{Bits::number_of_bits - 1}))
                 return false;
             else
-                return v.bits.test((val - v.lower).raw_value);
+                return v.bits.test((val - v.lower).as_index());
         },
         [val = actual_val](const IntegerVariableIntervalSetState & v) { return v.values->contains(val); }}
         .visit(get_state.state);
