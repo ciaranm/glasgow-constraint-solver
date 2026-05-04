@@ -6,9 +6,11 @@ new reified constraints, the OPB encoding pattern for proof logging, and the
 reasoning behind the design.
 
 It is aimed at developers (human and AI) writing new reified constraints, or
-modifying an existing one. The runnable examples are
-`gcs/constraints/comparison.cc`, `gcs/constraints/equals.cc`, and
-`gcs/constraints/lex.cc`.
+modifying an existing one. Read [constraints.md](constraints.md) first for
+the general structure of any constraint — this document only covers what
+*additionally* applies when the constraint is reified. The runnable
+examples are `gcs/constraints/comparison.cc`, `gcs/constraints/equals.cc`,
+and `gcs/constraints/lex.cc`.
 
 ## What "reification" means
 
