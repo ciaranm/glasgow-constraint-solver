@@ -112,6 +112,12 @@ auto Inverse::install_propagators(Propagators & propagators) -> void
     if (_x_value_am1s) {
         auto build_am1s = [](const vector<IntegerVariableID> & x, Integer x_start, const State &,
                               auto &, ProofLogger * const logger, const auto & map) {
+            // recover_am1 requires at least two atoms; with one variable
+            // the at-most-one is trivially true and the map is never read
+            // (gac_all_different's hall-set/scc paths do not fire on a
+            // single variable).
+            if (x.size() < 2)
+                return;
             for (Integer v = x_start; v < x_start + Integer(x.size()); ++v) {
                 // make an am1 for x[i] = v
                 vector<IntegerVariableCondition> xieqvs;
