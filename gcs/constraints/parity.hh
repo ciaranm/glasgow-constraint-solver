@@ -20,6 +20,9 @@ namespace gcs
     private:
         const innards::Literals _lits;
 
+        virtual auto define_proof_model(innards::ProofModel &) -> void override;
+        virtual auto install_propagators(innards::Propagators &) -> void override;
+
     public:
         // Equivalent to ParityOdd([var != 0 : var in vars])
         explicit ParityOdd(const std::vector<IntegerVariableID> & vars);
