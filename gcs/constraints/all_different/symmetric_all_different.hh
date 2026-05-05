@@ -15,11 +15,10 @@ namespace gcs
      * `[start, start + size)`, the variables are pairwise distinct, and
      * `x[x[i] - start] = i + start`.
      *
-     * Implemented as `Inverse(x, x, start, start)`. This achieves
-     * AllDifferent-GAC plus Régin's pairwise channeling rule on the
-     * inverse, which is strictly weaker than the symmetric-alldifferent
-     * GAC of Régin (1999) — the latter requires non-bipartite matching
-     * and is left as future work.
+     * Achieves AllDifferent-GAC plus Régin's pairwise channeling rule
+     * on the inverse. This is strictly weaker than the
+     * symmetric-alldifferent GAC of Régin (1999) — the latter requires
+     * non-bipartite matching and is left as future work.
      *
      * \ingroup Constraints
      * \sa AllDifferent
