@@ -548,32 +548,46 @@ auto gcs::innards::propagate_gac_all_different(
 
 auto GACAllDifferent::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
-    shared_ptr<map<Integer, ProofLine>> value_am1_constraint_numbers;
-
-    auto sanitised_vars = move(_vars);
-    sort(sanitised_vars);
-    if (adjacent_find(sanitised_vars) != sanitised_vars.end()) {
-        propagators.model_contradiction(initial_state, optional_model, "AllDifferent with duplicate variables");
+    if (! prepare(propagators, initial_state, optional_model))
         return;
+
+    if (optional_model)
+        define_proof_model(*optional_model);
+
+    install_propagators(propagators);
+}
+
+auto GACAllDifferent::prepare(Propagators & propagators, State & initial_state, ProofModel * const optional_model) -> bool
+{
+    _sanitised_vars = move(_vars);
+    sort(_sanitised_vars);
+    if (adjacent_find(_sanitised_vars) != _sanitised_vars.end()) {
+        propagators.model_contradiction(initial_state, optional_model, "AllDifferent with duplicate variables");
+        return false;
     }
 
-    if (optional_model) {
-        value_am1_constraint_numbers = make_shared<map<Integer, ProofLine>>();
-        define_clique_not_equals_encoding(*optional_model, sanitised_vars);
-    }
-
-    Triggers triggers;
-    triggers.on_change = {sanitised_vars.begin(), sanitised_vars.end()};
-    vector<Integer> compressed_vals;
-
-    for (auto & var : sanitised_vars)
+    for (auto & var : _sanitised_vars)
         for (const auto & val : initial_state.each_value_immutable(var))
-            if (compressed_vals.end() == find(compressed_vals.begin(), compressed_vals.end(), val))
-                compressed_vals.push_back(val);
+            if (_compressed_vals.end() == find(_compressed_vals.begin(), _compressed_vals.end(), val))
+                _compressed_vals.push_back(val);
 
+    return true;
+}
+
+auto GACAllDifferent::define_proof_model(ProofModel & model) -> void
+{
+    define_clique_not_equals_encoding(model, _sanitised_vars);
+}
+
+auto GACAllDifferent::install_propagators(Propagators & propagators) -> void
+{
+    Triggers triggers;
+    triggers.on_change = {_sanitised_vars.begin(), _sanitised_vars.end()};
+
+    auto value_am1_constraint_numbers = make_shared<map<Integer, ProofLine>>();
     propagators.install(
-        [vars = move(sanitised_vars),
-            vals = move(compressed_vals),
+        [vars = move(_sanitised_vars),
+            vals = move(_compressed_vals),
             value_am1_constraint_numbers = move(value_am1_constraint_numbers)](const State & state, auto & inference,
             ProofLogger * const logger) -> PropagatorState {
             propagate_gac_all_different(vars, vals, *value_am1_constraint_numbers.get(), state, inference, logger);
