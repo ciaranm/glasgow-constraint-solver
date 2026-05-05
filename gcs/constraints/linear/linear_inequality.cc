@@ -95,36 +95,54 @@ namespace
     }
 }
 
-auto ReifiedLinearInequality::install(Propagators & propagators, State & state, ProofModel * const optional_model) && -> void
+auto ReifiedLinearInequality::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
-    optional<pair<optional<ProofLine>, optional<ProofLine>>> proof_lines, proof_lines_swapped;
-    if (optional_model) {
-        WPBSum terms;
-        for (auto & [c, v] : _coeff_vars.terms)
-            terms += c * v;
+    if (! prepare(propagators, initial_state, optional_model))
+        return;
 
-        overloaded{
-            [&](const reif::MustHold &) {
-                proof_lines = pair{*optional_model->add_constraint("ReifiedLinearInequality", "unconditional less than", terms <= _value, nullopt), nullopt};
-            },
-            [&](const reif::MustNotHold &) {
-                proof_lines = pair{*optional_model->add_constraint("ReifiedLinearInequality", "unconditional greater than", terms >= _value + 1_i, nullopt), nullopt};
-            },
-            [&](const reif::If & cond) {
-                proof_lines = pair{*optional_model->add_constraint("ReifiedLinearInequality", "less than option", terms <= _value, HalfReifyOnConjunctionOf{cond.cond}), nullopt};
-            },
-            [&](const reif::NotIf & cond) {
-                proof_lines = pair{*optional_model->add_constraint("ReifiedLinearInequality", "greater than option", terms <= _value, HalfReifyOnConjunctionOf{cond.cond}), nullopt};
-            },
-            [&](const reif::Iff & cond) {
-                proof_lines = pair{
-                    *optional_model->add_constraint("ReifiedLinearInequality", "less than option", terms <= _value, HalfReifyOnConjunctionOf{cond.cond}),
-                    optional_model->add_constraint("ReifiedLinearInequality", "greater than option", terms >= _value + 1_i, HalfReifyOnConjunctionOf{! cond.cond})};
-            }}
-            .visit(_reif_cond);
+    if (optional_model)
+        define_proof_model(*optional_model);
 
-        proof_lines_swapped = pair{proof_lines->second, proof_lines->first};
-    }
+    install_propagators(propagators);
+}
+
+auto ReifiedLinearInequality::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
+{
+    _evaluated_cond = initial_state.test_reification_condition(_reif_cond);
+    return true;
+}
+
+auto ReifiedLinearInequality::define_proof_model(ProofModel & model) -> void
+{
+    WPBSum terms;
+    for (auto & [c, v] : _coeff_vars.terms)
+        terms += c * v;
+
+    overloaded{
+        [&](const reif::MustHold &) {
+            _proof_lines = pair{*model.add_constraint("ReifiedLinearInequality", "unconditional less than", terms <= _value, nullopt), nullopt};
+        },
+        [&](const reif::MustNotHold &) {
+            _proof_lines = pair{*model.add_constraint("ReifiedLinearInequality", "unconditional greater than", terms >= _value + 1_i, nullopt), nullopt};
+        },
+        [&](const reif::If & cond) {
+            _proof_lines = pair{*model.add_constraint("ReifiedLinearInequality", "less than option", terms <= _value, HalfReifyOnConjunctionOf{cond.cond}), nullopt};
+        },
+        [&](const reif::NotIf & cond) {
+            _proof_lines = pair{*model.add_constraint("ReifiedLinearInequality", "greater than option", terms <= _value, HalfReifyOnConjunctionOf{cond.cond}), nullopt};
+        },
+        [&](const reif::Iff & cond) {
+            _proof_lines = pair{
+                *model.add_constraint("ReifiedLinearInequality", "less than option", terms <= _value, HalfReifyOnConjunctionOf{cond.cond}),
+                model.add_constraint("ReifiedLinearInequality", "greater than option", terms >= _value + 1_i, HalfReifyOnConjunctionOf{! cond.cond})};
+        }}
+        .visit(_reif_cond);
+}
+
+auto ReifiedLinearInequality::install_propagators(Propagators & propagators) -> void
+{
+    auto proof_lines = _proof_lines;
+    auto proof_lines_swapped = pair{_proof_lines.second, _proof_lines.first};
 
     auto [sanitised_cv, modifier] = tidy_up_linear(_coeff_vars);
 
@@ -228,14 +246,14 @@ auto ReifiedLinearInequality::install(Propagators & propagators, State & state, 
 
                             if (min_possible > value + modifier) {
                                 // cannot possibly hold
-                                auto just = [&](const ReasonFunction &) { return justify_cond(state, sanitised_cv, *logger, proof_lines.value()); };
+                                auto just = [&](const ReasonFunction &) { return justify_cond(state, sanitised_cv, *logger, proof_lines); };
                                 if (reif.set_not_cond_if_must_not_hold)
                                     inference.infer(logger, ! reif.cond, JustifyExplicitlyThenRUP{just}, generic_reason(state, vars));
                                 return PropagatorState::DisableUntilBacktrack;
                             }
                             else if (max_possible <= value + modifier) {
                                 // must definitely hold
-                                auto just = [&](const ReasonFunction &) { return justify_cond(state, sanitised_neg_cv, *logger, proof_lines_swapped.value()); };
+                                auto just = [&](const ReasonFunction &) { return justify_cond(state, sanitised_neg_cv, *logger, proof_lines_swapped); };
                                 if (reif.set_cond_if_must_hold)
                                     inference.infer(logger, reif.cond, JustifyExplicitlyThenRUP{just}, generic_reason(state, vars));
                                 else if (reif.set_not_cond_if_must_hold)
@@ -253,7 +271,7 @@ auto ReifiedLinearInequality::install(Propagators & propagators, State & state, 
             },
                 sanitised_cv, sanitised_neg_cv);
         }}
-        .visit(state.test_reification_condition(_reif_cond));
+        .visit(_evaluated_cond);
 }
 
 auto ReifiedLinearInequality::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
