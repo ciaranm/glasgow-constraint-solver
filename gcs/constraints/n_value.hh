@@ -4,6 +4,8 @@
 #include <gcs/constraint.hh>
 #include <gcs/variable_id.hh>
 
+#include <list>
+#include <map>
 #include <vector>
 
 namespace gcs
@@ -20,6 +22,11 @@ namespace gcs
     private:
         IntegerVariableID _n_values;
         const std::vector<IntegerVariableID> _vars;
+        std::map<Integer, std::list<IntegerVariableID>> _possible_values;
+
+        virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
+        virtual auto define_proof_model(innards::ProofModel &) -> void override;
+        virtual auto install_propagators(innards::Propagators &) -> void override;
 
     public:
         explicit NValue(const IntegerVariableID &, std::vector<IntegerVariableID>);
