@@ -53,72 +53,88 @@ auto ReifiedCompareLessThanOrMaybeEqual::clone() const -> unique_ptr<Constraint>
     return make_unique<ReifiedCompareLessThanOrMaybeEqual>(_v1, _v2, _reif_cond, _or_equal, _vars_swapped);
 }
 
-auto ReifiedCompareLessThanOrMaybeEqual::install(Propagators & propagators, State & initial_state,
-    ProofModel * const optional_model) && -> void
+auto ReifiedCompareLessThanOrMaybeEqual::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
-    if (optional_model) {
-        auto do_less = [&](IntegerVariableID v1, IntegerVariableID v2, optional<HalfReifyOnConjunctionOf> cond, bool or_equal, const StringLiteral & rule) {
-            optional_model->add_constraint("ReifiedCompareLessThanOrMaybeEqual", rule, WPBSum{} + 1_i * v1 + -1_i * v2 <= (or_equal ? 0_i : -1_i), cond);
-        };
+    if (! prepare(propagators, initial_state, optional_model))
+        return;
 
-        overloaded{
-            [&](const reif::MustHold &) {
-                do_less(_v1, _v2, nullopt, _or_equal, "condition true");
-            },
-            [&](const reif::MustNotHold &) {
-                do_less(_v2, _v1, nullopt, ! _or_equal, "condition false");
-            },
-            [&](const reif::If & cond) {
-                do_less(_v1, _v2, HalfReifyOnConjunctionOf{{cond.cond}}, _or_equal, "if condition");
-            },
-            [&](const reif::NotIf & cond) {
-                do_less(_v2, _v1, HalfReifyOnConjunctionOf{{cond.cond}}, ! _or_equal, "if condition");
-            },
-            [&](const reif::Iff & cond) {
-                do_less(_v1, _v2, HalfReifyOnConjunctionOf{{cond.cond}}, _or_equal, "if condition");
-                do_less(_v2, _v1, HalfReifyOnConjunctionOf{{! cond.cond}}, ! _or_equal, "if not condition");
-            }}
-            .visit(_reif_cond);
-    }
+    if (optional_model)
+        define_proof_model(*optional_model);
 
-    auto v1_is_constant = initial_state.optional_single_value(_v1);
-    auto v2_is_constant = initial_state.optional_single_value(_v2);
+    install_propagators(propagators);
+}
 
-    if (v1_is_constant && v2_is_constant) {
+auto ReifiedCompareLessThanOrMaybeEqual::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
+{
+    _v1_is_constant = initial_state.optional_single_value(_v1);
+    _v2_is_constant = initial_state.optional_single_value(_v2);
+    _evaluated_cond = initial_state.test_reification_condition(_reif_cond);
+    return true;
+}
+
+auto ReifiedCompareLessThanOrMaybeEqual::define_proof_model(ProofModel & model) -> void
+{
+    auto do_less = [&](IntegerVariableID v1, IntegerVariableID v2, optional<HalfReifyOnConjunctionOf> cond, bool or_equal, const StringLiteral & rule) {
+        model.add_constraint("ReifiedCompareLessThanOrMaybeEqual", rule, WPBSum{} + 1_i * v1 + -1_i * v2 <= (or_equal ? 0_i : -1_i), cond);
+    };
+
+    overloaded{
+        [&](const reif::MustHold &) {
+            do_less(_v1, _v2, nullopt, _or_equal, "condition true");
+        },
+        [&](const reif::MustNotHold &) {
+            do_less(_v2, _v1, nullopt, ! _or_equal, "condition false");
+        },
+        [&](const reif::If & cond) {
+            do_less(_v1, _v2, HalfReifyOnConjunctionOf{{cond.cond}}, _or_equal, "if condition");
+        },
+        [&](const reif::NotIf & cond) {
+            do_less(_v2, _v1, HalfReifyOnConjunctionOf{{cond.cond}}, ! _or_equal, "if condition");
+        },
+        [&](const reif::Iff & cond) {
+            do_less(_v1, _v2, HalfReifyOnConjunctionOf{{cond.cond}}, _or_equal, "if condition");
+            do_less(_v2, _v1, HalfReifyOnConjunctionOf{{! cond.cond}}, ! _or_equal, "if not condition");
+        }}
+        .visit(_reif_cond);
+}
+
+auto ReifiedCompareLessThanOrMaybeEqual::install_propagators(Propagators & propagators) -> void
+{
+    if (_v1_is_constant && _v2_is_constant) {
         /* special case: both values are constant, so we're potentially forcing
          * the reification condition, or just giving contradiction, but will never
          * propagate beyond that. */
-        bool holds = (_or_equal ? *v1_is_constant <= *v2_is_constant : *v1_is_constant < *v2_is_constant);
+        bool holds = (_or_equal ? *_v1_is_constant <= *_v2_is_constant : *_v1_is_constant < *_v2_is_constant);
         overloaded{
             [&](const evaluated_reif::MustHold & reif) {
                 if (! holds)
-                    propagators.install_initialiser([v1 = _v1, v2 = _v2, v1_is_constant = v1_is_constant, v2_is_constant = v2_is_constant, cond = reif.cond](
+                    propagators.install_initialiser([v1 = _v1, v2 = _v2, v1_is_constant = _v1_is_constant, v2_is_constant = _v2_is_constant, cond = reif.cond](
                                                         const State &, auto & inference, ProofLogger * const logger) -> void {
                         inference.infer(logger, ! cond, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{cond, v1 == *v1_is_constant, v2 == *v2_is_constant}}; }});
                     });
             },
             [&](const evaluated_reif::MustNotHold & reif) {
                 if (holds)
-                    propagators.install_initialiser([v1 = _v1, v2 = _v2, v1_is_constant = v1_is_constant, v2_is_constant = v2_is_constant, cond = reif.cond](
+                    propagators.install_initialiser([v1 = _v1, v2 = _v2, v1_is_constant = _v1_is_constant, v2_is_constant = _v2_is_constant, cond = reif.cond](
                                                         const State &, auto & inference, ProofLogger * const logger) -> void {
                         inference.infer(logger, ! cond, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{cond, v1 == *v1_is_constant, v2 == *v2_is_constant}}; }});
                     });
             },
             [&](const evaluated_reif::Undecided & reif) {
                 if (holds && reif.set_cond_if_must_hold)
-                    propagators.install_initialiser([v1 = _v1, v2 = _v2, v1_is_constant = v1_is_constant, v2_is_constant = v2_is_constant, cond = reif.cond](
+                    propagators.install_initialiser([v1 = _v1, v2 = _v2, v1_is_constant = _v1_is_constant, v2_is_constant = _v2_is_constant, cond = reif.cond](
                                                         const State &, auto & inference, ProofLogger * const logger) -> void {
                         inference.infer(logger, cond, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{v1 == *v1_is_constant, v2 == *v2_is_constant}}; }});
                     });
                 else if ((holds && reif.set_not_cond_if_must_hold) || (! holds && reif.set_not_cond_if_must_not_hold))
-                    propagators.install_initialiser([v1 = _v1, v2 = _v2, v1_is_constant = v1_is_constant, v2_is_constant = v2_is_constant, cond = reif.cond](
+                    propagators.install_initialiser([v1 = _v1, v2 = _v2, v1_is_constant = _v1_is_constant, v2_is_constant = _v2_is_constant, cond = reif.cond](
                                                         const State &, auto & inference, ProofLogger * const logger) -> void {
                         inference.infer(logger, ! cond, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{v1 == *v1_is_constant, v2 == *v2_is_constant}}; }});
                     });
             },
             [](const evaluated_reif::Deactivated &) {
             }}
-            .visit(initial_state.test_reification_condition(_reif_cond));
+            .visit(_evaluated_cond);
     }
     else {
         overloaded{
@@ -195,7 +211,7 @@ auto ReifiedCompareLessThanOrMaybeEqual::install(Propagators & propagators, Stat
             },
             [](const evaluated_reif::Deactivated &) {
             }}
-            .visit(initial_state.test_reification_condition(_reif_cond));
+            .visit(_evaluated_cond);
     }
 }
 
