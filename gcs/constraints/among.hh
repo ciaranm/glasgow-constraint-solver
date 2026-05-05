@@ -2,8 +2,11 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_AMONG_HH
 
 #include <gcs/constraint.hh>
+#include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/variable_id.hh>
 
+#include <optional>
+#include <utility>
 #include <vector>
 
 namespace gcs
@@ -20,6 +23,10 @@ namespace gcs
         const std::vector<IntegerVariableID> _vars;
         const std::vector<Integer> _values_of_interest;
         IntegerVariableID _how_many;
+        std::pair<std::optional<innards::ProofLine>, std::optional<innards::ProofLine>> _sum_line;
+
+        virtual auto define_proof_model(innards::ProofModel &) -> void override;
+        virtual auto install_propagators(innards::Propagators &) -> void override;
 
     public:
         explicit Among(std::vector<IntegerVariableID>, const std::vector<Integer> & values_of_interest, const IntegerVariableID & how_many);
