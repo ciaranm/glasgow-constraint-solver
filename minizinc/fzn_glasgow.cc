@@ -677,6 +677,10 @@ auto main(int argc, char * argv[]) -> int
                 const auto & vars = arg_as_array_of_var(data, args, 0);
                 problem.post(StrictlyIncreasing{vars});
             }
+            else if (id == "glasgow_symmetric_all_different") {
+                const auto & vars = arg_as_array_of_var(data, args, 0);
+                problem.post(SymmetricAllDifferent{vars, 1_i});
+            }
             else if (id == "glasgow_value_precede_int") {
                 Integer s{static_cast<long long>(args.at(0))};
                 Integer t{static_cast<long long>(args.at(1))};

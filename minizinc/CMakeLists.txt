@@ -121,6 +121,9 @@ set_tests_properties(minizinc-strictlydecreasing PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-strictlyincreasing COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ strictlyincreasing true true)
 set_tests_properties(minizinc-strictlyincreasing PROPERTIES SKIP_RETURN_CODE 66)
 
+add_test(NAME minizinc-symmetricalldifferent COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ symmetricalldifferent true true)
+set_tests_properties(minizinc-symmetricalldifferent PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-times COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ times true true)
 set_tests_properties(minizinc-times PROPERTIES SKIP_RETURN_CODE 66)
 
