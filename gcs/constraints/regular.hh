@@ -3,6 +3,8 @@
 
 #include <gcs/constraint.hh>
 #include <gcs/extensional.hh>
+#include <gcs/innards/proofs/proof_only_variables.hh>
+#include <gcs/innards/state.hh>
 #include <gcs/variable_id.hh>
 #include <unordered_map>
 #include <vector>
@@ -26,8 +28,14 @@ namespace gcs
         const std::vector<long> _final_states;
         const bool _short_reasons;
         std::vector<Integer> _symbols;
+        std::vector<std::vector<innards::ProofFlag>> _state_at_pos_flags;
+        innards::ConstraintStateHandle _graph_idx;
 
         [[nodiscard]] auto symbols() const -> const std::vector<Integer> &;
+
+        virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
+        virtual auto define_proof_model(innards::ProofModel &) -> void override;
+        virtual auto install_propagators(innards::Propagators &) -> void override;
 
     public:
         explicit Regular(std::vector<IntegerVariableID> vars,
