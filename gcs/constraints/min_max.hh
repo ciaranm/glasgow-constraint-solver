@@ -2,6 +2,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_MIN_MAX_HH
 
 #include <gcs/constraint.hh>
+#include <gcs/innards/proofs/proof_only_variables.hh>
 #include <gcs/variable_id.hh>
 
 #include <vector>
@@ -27,6 +28,11 @@ namespace gcs
             const std::vector<IntegerVariableID> _vars;
             IntegerVariableID _result;
             bool _min;
+            std::vector<innards::ProofFlag> _selectors;
+
+            virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
+            virtual auto define_proof_model(innards::ProofModel &) -> void override;
+            virtual auto install_propagators(innards::Propagators &) -> void override;
 
         public:
             explicit ArrayMinMax(std::vector<IntegerVariableID> vars, const IntegerVariableID result, bool min);

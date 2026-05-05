@@ -56,38 +56,53 @@ auto ArrayMinMax::clone() const -> unique_ptr<Constraint>
     return make_unique<ArrayMinMax>(_vars, _result, _min);
 }
 
-auto ArrayMinMax::install(Propagators & propagators, State &, ProofModel * const optional_model) && -> void
+auto ArrayMinMax::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
+{
+    if (! prepare(propagators, initial_state, optional_model))
+        return;
+
+    if (optional_model)
+        define_proof_model(*optional_model);
+
+    install_propagators(propagators);
+}
+
+auto ArrayMinMax::prepare(Propagators &, State &, ProofModel * const) -> bool
 {
     if (_vars.empty())
         throw UnexpectedException{"not sure how min and max are defined over an empty array"};
+    return true;
+}
 
+auto ArrayMinMax::define_proof_model(ProofModel & model) -> void
+{
+    // (for min) each var >= result, i.e. var - result >= 0
+    for (const auto & v : _vars) {
+        model.add_constraint("ArrayMinMax", "result compared to value", WPBSum{} + (_min ? 1_i : -1_i) * v + (_min ? -1_i : 1_i) * _result >= 0_i, nullopt);
+    }
+
+    WPBSum al1_selector;
+
+    // (for min) f_i <-> var[i] <= result, i.e. var - result <= 0
+    for (const auto & [id, var] : enumerate(_vars)) {
+        auto selector = model.create_proof_flag(format("arrayminmax{}", id));
+        _selectors.push_back(selector);
+        model.add_constraint("ArrayMinMax", "result is this value", WPBSum{} + (_min ? 1_i : -1_i) * var + (_min ? -1_i : 1_i) * _result <= 0_i, {{selector}});
+        model.add_constraint("ArrayMinMax", "result is this value", WPBSum{} + (_min ? 1_i : -1_i) * var + (_min ? -1_i : 1_i) * _result >= 1_i, {{! selector}});
+        al1_selector += 1_i * selector;
+    }
+
+    // sum f_i >= 1
+    model.add_constraint("ArrayMinMax", "result is one of the values", al1_selector >= 1_i);
+}
+
+auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
+{
     Triggers triggers{.on_change = {_result}};
     for (const auto & v : _vars)
         triggers.on_change.emplace_back(v);
 
-    vector<ProofFlag> selectors;
-    if (optional_model) {
-        // (for min) each var >= result, i.e. var - result >= 0
-        for (const auto & v : _vars) {
-            optional_model->add_constraint("ArrayMinMax", "result compared to value", WPBSum{} + (_min ? 1_i : -1_i) * v + (_min ? -1_i : 1_i) * _result >= 0_i, nullopt);
-        }
-
-        WPBSum al1_selector;
-
-        // (for min) f_i <-> var[i] <= result, i.e. var - result <= 0
-        for (const auto & [id, var] : enumerate(_vars)) {
-            auto selector = optional_model->create_proof_flag(format("arrayminmax{}", id));
-            selectors.push_back(selector);
-            optional_model->add_constraint("ArrayMinMax", "result is this value", WPBSum{} + (_min ? 1_i : -1_i) * var + (_min ? -1_i : 1_i) * _result <= 0_i, {{selector}});
-            optional_model->add_constraint("ArrayMinMax", "result is this value", WPBSum{} + (_min ? 1_i : -1_i) * var + (_min ? -1_i : 1_i) * _result >= 1_i, {{! selector}});
-            al1_selector += 1_i * selector;
-        }
-
-        // sum f_i >= 1
-        optional_model->add_constraint("ArrayMinMax", "result is one of the values", al1_selector >= 1_i);
-    }
-
-    propagators.install([vars = _vars, result = _result, min = _min, selectors = selectors](
+    propagators.install([vars = _vars, result = _result, min = _min, selectors = _selectors](
                             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
         // result <= upper bound of each vars
         for (auto & var : vars) {
