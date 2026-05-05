@@ -47,30 +47,43 @@ auto IncreasingChain::clone() const -> unique_ptr<Constraint>
     return make_unique<IncreasingChain>(_vars, _strict, _descending);
 }
 
-auto IncreasingChain::install(Propagators & propagators, State &, ProofModel * const optional_model) && -> void
+auto IncreasingChain::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
-    // Reverse for descending so the rest of install is single-direction.
-    auto vars = move(_vars);
-    if (_descending)
-        reverse(vars);
-
-    if (vars.size() <= 1)
+    if (! prepare(propagators, initial_state, optional_model))
         return;
 
-    auto strict = _strict;
-    auto offset = strict ? -1_i : 0_i;
-    auto step = strict ? 1_i : 0_i;
+    if (optional_model)
+        define_proof_model(*optional_model);
 
-    if (optional_model) {
-        for (size_t i = 0; i + 1 < vars.size(); ++i)
-            optional_model->add_constraint("IncreasingChain", "chain step",
-                WPBSum{} + 1_i * vars[i] + -1_i * vars[i + 1] <= offset);
-    }
+    install_propagators(propagators);
+}
+
+auto IncreasingChain::prepare(Propagators &, State &, ProofModel * const) -> bool
+{
+    // Reverse for descending so the rest of install is single-direction.
+    _ordered_vars = move(_vars);
+    if (_descending)
+        reverse(_ordered_vars);
+
+    return _ordered_vars.size() > 1;
+}
+
+auto IncreasingChain::define_proof_model(ProofModel & model) -> void
+{
+    auto offset = _strict ? -1_i : 0_i;
+    for (size_t i = 0; i + 1 < _ordered_vars.size(); ++i)
+        model.add_constraint("IncreasingChain", "chain step",
+            WPBSum{} + 1_i * _ordered_vars[i] + -1_i * _ordered_vars[i + 1] <= offset);
+}
+
+auto IncreasingChain::install_propagators(Propagators & propagators) -> void
+{
+    auto step = _strict ? 1_i : 0_i;
 
     Triggers triggers;
-    triggers.on_bounds.insert(triggers.on_bounds.end(), vars.begin(), vars.end());
+    triggers.on_bounds.insert(triggers.on_bounds.end(), _ordered_vars.begin(), _ordered_vars.end());
 
-    propagators.install([vars = move(vars), step](
+    propagators.install([vars = move(_ordered_vars), step](
                             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
         auto n = vars.size();
 
