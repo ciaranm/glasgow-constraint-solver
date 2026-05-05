@@ -30,6 +30,11 @@ namespace gcs
         std::vector<IntegerVariableID> _vars;
         bool _strict;
         bool _descending;
+        std::vector<IntegerVariableID> _ordered_vars;
+
+        virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
+        virtual auto define_proof_model(innards::ProofModel &) -> void override;
+        virtual auto install_propagators(innards::Propagators &) -> void override;
 
     public:
         explicit IncreasingChain(std::vector<IntegerVariableID> vars, bool strict, bool descending);
