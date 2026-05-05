@@ -3,9 +3,13 @@
 
 #include <gcs/constraint.hh>
 #include <gcs/innards/literal.hh>
+#include <gcs/innards/state.hh>
+#include <gcs/integer.hh>
 #include <gcs/reification.hh>
 #include <gcs/variable_condition.hh>
 #include <gcs/variable_id.hh>
+
+#include <optional>
 
 namespace gcs
 {
@@ -31,6 +35,12 @@ namespace gcs
         ReificationCondition _reif_cond;
         bool _or_equal;
         bool _vars_swapped;
+        std::optional<Integer> _v1_is_constant, _v2_is_constant;
+        innards::EvaluatedReificationCondition _evaluated_cond = innards::evaluated_reif::Deactivated{};
+
+        virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
+        virtual auto define_proof_model(innards::ProofModel &) -> void override;
+        virtual auto install_propagators(innards::Propagators &) -> void override;
 
     public:
         explicit ReifiedCompareLessThanOrMaybeEqual(const IntegerVariableID v1, const IntegerVariableID v2, ReificationCondition cond, bool or_equal, bool vars_swapped = false);
