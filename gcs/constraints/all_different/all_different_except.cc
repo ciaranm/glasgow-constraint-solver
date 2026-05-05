@@ -17,6 +17,7 @@
 #endif
 
 #include <algorithm>
+#include <iterator>
 #include <map>
 #include <sstream>
 #include <string>
@@ -25,11 +26,14 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::adjacent_find;
+using std::distance;
 using std::find;
+using std::find_if;
 using std::make_shared;
 using std::make_unique;
 using std::map;
 using std::move;
+using std::next;
 using std::ranges::sort;
 using std::shared_ptr;
 using std::string;
@@ -58,10 +62,6 @@ auto AllDifferentExcept::install(Propagators & propagators, State & initial_stat
 {
     auto sanitised_vars = move(_vars);
     sort(sanitised_vars);
-    if (adjacent_find(sanitised_vars.begin(), sanitised_vars.end()) != sanitised_vars.end()) {
-        propagators.model_contradiction(initial_state, optional_model, "AllDifferentExcept with duplicate variables");
-        return;
-    }
 
     // Drop excluded values that don't appear in any variable's initial domain.
     // Such values can never be taken anyway, so they neither shape the OPB
@@ -78,11 +78,73 @@ auto AllDifferentExcept::install(Propagators & propagators, State & initial_stat
                                  }),
         sanitised_excluded.end());
 
+    // A variable that appears more than once must equal itself, so the
+    // constraint forces it into the excluded set. With no usable excluded
+    // values left, that's a hard contradiction (matches plain AllDifferent
+    // semantics on duplicates).
+    bool has_duplicates = adjacent_find(sanitised_vars.begin(), sanitised_vars.end()) != sanitised_vars.end();
+    if (has_duplicates && sanitised_excluded.empty()) {
+        propagators.model_contradiction(initial_state, optional_model, "AllDifferentExcept with duplicate variables and no usable excluded values");
+        return;
+    }
+
     shared_ptr<map<Integer, ProofLine>> value_am1_constraint_numbers;
+    map<IntegerVariableID, ProofFlag> duplicate_selectors;
 
     if (optional_model) {
         value_am1_constraint_numbers = make_shared<map<Integer, ProofLine>>();
-        define_clique_not_equals_except_encoding(*optional_model, sanitised_vars, sanitised_excluded);
+        duplicate_selectors = define_clique_not_equals_except_encoding(*optional_model, sanitised_vars, sanitised_excluded);
+    }
+
+    // For each duplicated variable, install an initialiser that forces it
+    // into the excluded set: for every value v in its current domain that is
+    // not in `excluded`, infer var != v. The justification rests on the two
+    // half-reified constraints emitted for the duplicate pair: each on its
+    // own implies "selector OR var-in-excluded" or "!selector OR
+    // var-in-excluded", so under the hypothesis var = v with v not in
+    // excluded, both directions of the selector are simultaneously forced.
+    if (has_duplicates) {
+        vector<IntegerVariableID> duplicated_vars;
+        for (auto it = sanitised_vars.begin(); it != sanitised_vars.end();) {
+            auto run_end = find_if(next(it), sanitised_vars.end(),
+                [&](const IntegerVariableID & v) { return v != *it; });
+            if (distance(it, run_end) > 1)
+                duplicated_vars.push_back(*it);
+            it = run_end;
+        }
+
+        propagators.install_initialiser(
+            [duplicated_vars = move(duplicated_vars),
+                excluded = sanitised_excluded,
+                duplicate_selectors = move(duplicate_selectors)](
+                const State & state, auto & inf, ProofLogger * const logger) -> void {
+                for (const auto & x : duplicated_vars) {
+                    vector<Integer> non_excluded_values;
+                    for (const auto & v : state.each_value_immutable(x))
+                        if (find(excluded.begin(), excluded.end(), v) == excluded.end())
+                            non_excluded_values.push_back(v);
+                    for (const auto & v : non_excluded_values) {
+                        inf.infer(logger, x != v,
+                            JustifyExplicitlyThenRUP{
+                                [&logger, x, v, &duplicate_selectors](const ReasonFunction &) -> void {
+                                    const auto & selector = duplicate_selectors.at(x);
+                                    logger->emit(RUPProofRule{},
+                                        WPBSum{} + 1_i * (x != v) + 1_i * selector >= 1_i,
+                                        ProofLevel::Temporary);
+                                    logger->emit(RUPProofRule{},
+                                        WPBSum{} + 1_i * (x != v) + 1_i * (! selector) >= 1_i,
+                                        ProofLevel::Temporary);
+                                }},
+                            []() -> Reason { return Reason{}; });
+                    }
+                }
+            });
+
+        // Dedupe before the propagator runs: bipartite matching can't model
+        // duplicate left-vertices correctly, but the initialiser has already
+        // forced each duplicate's domain into `excluded`, so the propagator
+        // sees a single instance of each variable with its restricted domain.
+        sanitised_vars.erase(std::unique(sanitised_vars.begin(), sanitised_vars.end()), sanitised_vars.end());
     }
 
     Triggers triggers;

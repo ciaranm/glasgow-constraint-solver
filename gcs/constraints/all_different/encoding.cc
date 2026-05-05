@@ -2,6 +2,7 @@
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 
+using std::map;
 using std::vector;
 
 using namespace gcs;
@@ -19,8 +20,10 @@ auto gcs::innards::define_clique_not_equals_encoding(ProofModel & model, const v
 
 auto gcs::innards::define_clique_not_equals_except_encoding(ProofModel & model,
     const vector<gcs::IntegerVariableID> & vars,
-    const vector<gcs::Integer> & excluded) -> void
+    const vector<gcs::Integer> & excluded) -> map<IntegerVariableID, ProofFlag>
 {
+    map<IntegerVariableID, ProofFlag> duplicate_selectors;
+
     for (unsigned i = 0; i < vars.size(); ++i)
         for (unsigned j = i + 1; j < vars.size(); ++j) {
             auto selector = model.create_proof_flag("notequals_except");
@@ -36,5 +39,10 @@ auto gcs::innards::define_clique_not_equals_except_encoding(ProofModel & model,
                 WPBSum{} + 1_i * vars[i] + -1_i * vars[j] <= -1_i, lower_conj);
             model.add_constraint("AllDifferentExcept", "not equals because higher",
                 WPBSum{} + -1_i * vars[i] + 1_i * vars[j] <= -1_i, higher_conj);
+
+            if (vars[i] == vars[j])
+                duplicate_selectors.insert_or_assign(vars[i], selector);
         }
+
+    return duplicate_selectors;
 }
