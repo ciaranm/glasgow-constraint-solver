@@ -18,11 +18,11 @@ using namespace gcs::innards;
 using std::atomic;
 using std::move;
 using std::optional;
-using std::to_underlying;
 using std::pair;
 using std::string;
 using std::swap;
 using std::to_string;
+using std::to_underlying;
 using std::vector;
 using std::visit;
 
@@ -127,100 +127,6 @@ auto Propagators::install(PropagationFunction && f, const Triggers & triggers, c
 auto Propagators::install_initialiser(InitialisationFunction && f) -> void
 {
     _imp->initialisation_functions.emplace_back(move(f));
-}
-
-namespace
-{
-    auto is_immediately_infeasible(const IntegerVariableID & var, const Integer & val) -> bool
-    {
-        return is_literally_false(var == val);
-    }
-
-    auto is_immediately_infeasible(const IntegerVariableID &, const Wildcard &) -> bool
-    {
-        return false;
-    }
-
-    auto is_immediately_infeasible(const IntegerVariableID & var, const IntegerOrWildcard & val) -> bool
-    {
-        return visit([&](const auto & val) { return is_immediately_infeasible(var, val); }, val);
-    }
-
-    auto add_lit_unless_immediately_true(WPBSum & lits, const IntegerVariableID & var, const Integer & val) -> void
-    {
-        if (! is_literally_true(var == val))
-            lits += 1_i * (var == val);
-    }
-
-    auto add_lit_unless_immediately_true(WPBSum &, const IntegerVariableID &, const Wildcard &) -> void
-    {
-    }
-
-    auto add_lit_unless_immediately_true(WPBSum & lits, const IntegerVariableID & var, const IntegerOrWildcard & val) -> void
-    {
-        return visit([&](const auto & val) { add_lit_unless_immediately_true(lits, var, val); }, val);
-    }
-
-    template <typename T_>
-    auto depointinate(const std::shared_ptr<const T_> & t) -> const T_ &
-    {
-        return *t;
-    }
-
-    template <typename T_>
-    auto depointinate(const T_ & t) -> const T_ &
-    {
-        return t;
-    }
-}
-
-auto Propagators::define_and_install_table(State & state, ProofModel * const optional_model, const vector<IntegerVariableID> & vars,
-    ExtensionalTuples permitted, const string & x) -> void
-{
-    visit([&](auto && permitted) {
-        if (depointinate(permitted).empty()) {
-            model_contradiction(state, optional_model, "Empty table constraint from " + x);
-            return;
-        }
-
-        auto selector = state.allocate_integer_variable_with_state(0_i, Integer(depointinate(permitted).size() - 1));
-        if (optional_model)
-            optional_model->set_up_integer_variable(selector, 0_i, Integer(depointinate(permitted).size() - 1),
-                "aux_table" + to_string(selector.index),
-                IntegerVariableProofRepresentation::DirectOnly);
-
-        // pb encoding, if necessary
-        if (optional_model) {
-            for (const auto & [tuple_idx, tuple] : enumerate(depointinate(permitted))) {
-                // selector == tuple_idx -> /\_i vars[i] == tuple[i]
-                bool infeasible = false;
-                WPBSum lits;
-                lits += Integer(tuple.size()) * (selector != Integer(tuple_idx));
-                for (const auto & [var_idx, var] : enumerate(vars)) {
-                    if (is_immediately_infeasible(var, tuple[var_idx]))
-                        infeasible = true;
-                    else
-                        add_lit_unless_immediately_true(lits, var, tuple[var_idx]);
-                }
-                if (infeasible)
-                    optional_model->add_constraint({selector != Integer(tuple_idx)});
-                else
-                    optional_model->add_constraint(lits >= Integer(lits.terms.size() - 1));
-            }
-        }
-
-        Triggers triggers;
-        for (auto & v : vars)
-            triggers.on_change.push_back(v);
-        triggers.on_change.push_back(selector);
-
-        install([table = ExtensionalData{selector, move(vars), move(permitted)}](
-                    const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-            return propagate_extensional(table, state, inference, logger);
-        },
-            triggers, "extenstional");
-    },
-        move(permitted));
 }
 
 auto Propagators::initialise(State & state, ProofLogger * const logger) const -> bool

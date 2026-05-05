@@ -21,11 +21,15 @@ namespace gcs
     private:
         const std::vector<IntegerVariableID> _vars;
         ExtensionalTuples _tuples;
+        SimpleIntegerVariableID _selector{0};
 
     public:
         explicit Table(std::vector<IntegerVariableID> vars, ExtensionalTuples tuples);
 
         virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
+        virtual auto define_proof_model(innards::ProofModel &) -> void override;
+        virtual auto install_propagators(innards::Propagators &) -> void override;
+        virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
 
         [[nodiscard]] virtual auto s_exprify(const std::string & name, const innards::ProofModel * const) const -> std::string override;

@@ -2,6 +2,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_ARITHMETIC_HH
 
 #include <gcs/constraint.hh>
+#include <gcs/constraints/table.hh>
 #include <gcs/variable_id.hh>
 
 namespace gcs
@@ -35,6 +36,11 @@ namespace gcs
         {
         private:
             IntegerVariableID _v1, _v2, _result;
+            std::unique_ptr<Table> _table;
+
+            virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
+            virtual auto define_proof_model(innards::ProofModel &) -> void override;
+            virtual auto install_propagators(innards::Propagators &) -> void override;
 
         public:
             explicit GACArithmetic(const IntegerVariableID v1, const IntegerVariableID v2, const IntegerVariableID result);

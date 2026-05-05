@@ -45,12 +45,23 @@ auto GACArithmetic<op_>::clone() const -> unique_ptr<Constraint>
 template <ArithmeticOperator op_>
 auto GACArithmetic<op_>::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
+    if (! prepare(propagators, initial_state, optional_model))
+        return;
+
+    if (optional_model)
+        define_proof_model(*optional_model);
+
+    install_propagators(propagators);
+}
+
+template <ArithmeticOperator op_>
+auto GACArithmetic<op_>::prepare(Propagators & propagators, State & initial_state, ProofModel * const optional_model) -> bool
+{
+    vector<vector<Integer>> permitted;
     bool v2_zero_is_ok = (op_ != ArithmeticOperator::Div && op_ != ArithmeticOperator::Mod);
 
-    vector<vector<Integer>> permitted;
-
-    for (const auto & v1 : initial_state.each_value_immutable(_v1))
-        for (const auto & v2 : initial_state.each_value_immutable(_v2))
+    for (const auto & v1 : initial_state.each_value_immutable(_v1)) {
+        for (const auto & v2 : initial_state.each_value_immutable(_v2)) {
             if ((v2_zero_is_ok || v2 != 0_i) && initial_state.in_domain(_v2, v2)) {
                 Integer r = 0_i;
                 switch (op_) {
@@ -64,8 +75,22 @@ auto GACArithmetic<op_>::install(Propagators & propagators, State & initial_stat
                 if (initial_state.in_domain(_result, r))
                     permitted.push_back(vector{v1, v2, r});
             }
+        }
+    }
+    _table = std::make_unique<Table>(vector{_v1, _v2, _result}, move(permitted));
+    return _table->prepare(propagators, initial_state, optional_model);
+}
 
-    propagators.define_and_install_table(initial_state, optional_model, vector{_v1, _v2, _result}, move(permitted), "arithmetic");
+template <ArithmeticOperator op_>
+auto GACArithmetic<op_>::define_proof_model(ProofModel & model) -> void
+{
+    _table->define_proof_model(model);
+}
+
+template <ArithmeticOperator op_>
+auto GACArithmetic<op_>::install_propagators(Propagators & propagators) -> void
+{
+    _table->install_propagators(propagators);
 }
 
 namespace gcs::innards
