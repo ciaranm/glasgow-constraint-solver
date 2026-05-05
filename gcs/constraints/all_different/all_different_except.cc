@@ -60,42 +60,75 @@ auto AllDifferentExcept::clone() const -> unique_ptr<Constraint>
 
 auto AllDifferentExcept::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
-    auto sanitised_vars = move(_vars);
-    sort(sanitised_vars);
+    if (! prepare(propagators, initial_state, optional_model))
+        return;
+
+    if (optional_model)
+        define_proof_model(*optional_model);
+
+    install_propagators(propagators);
+}
+
+auto AllDifferentExcept::prepare(Propagators & propagators, State & initial_state, ProofModel * const optional_model) -> bool
+{
+    _sanitised_vars = move(_vars);
+    sort(_sanitised_vars);
 
     // Drop excluded values that don't appear in any variable's initial domain.
     // Such values can never be taken anyway, so they neither shape the OPB
     // encoding nor warrant phantom edges in the propagator's matching graph.
-    auto sanitised_excluded = move(_excluded);
-    sort(sanitised_excluded);
-    sanitised_excluded.erase(std::unique(sanitised_excluded.begin(), sanitised_excluded.end()), sanitised_excluded.end());
-    sanitised_excluded.erase(std::remove_if(sanitised_excluded.begin(), sanitised_excluded.end(),
-                                 [&](const Integer & s) {
-                                     for (const auto & v : sanitised_vars)
-                                         if (initial_state.in_domain(v, s))
-                                             return false;
-                                     return true;
-                                 }),
-        sanitised_excluded.end());
+    _sanitised_excluded = move(_excluded);
+    sort(_sanitised_excluded);
+    _sanitised_excluded.erase(std::unique(_sanitised_excluded.begin(), _sanitised_excluded.end()), _sanitised_excluded.end());
+    _sanitised_excluded.erase(std::remove_if(_sanitised_excluded.begin(), _sanitised_excluded.end(),
+                                  [&](const Integer & s) {
+                                      for (const auto & v : _sanitised_vars)
+                                          if (initial_state.in_domain(v, s))
+                                              return false;
+                                      return true;
+                                  }),
+        _sanitised_excluded.end());
 
     // A variable that appears more than once must equal itself, so the
     // constraint forces it into the excluded set. With no usable excluded
     // values left, that's a hard contradiction (matches plain AllDifferent
     // semantics on duplicates).
-    bool has_duplicates = adjacent_find(sanitised_vars.begin(), sanitised_vars.end()) != sanitised_vars.end();
-    if (has_duplicates && sanitised_excluded.empty()) {
+    _has_duplicates = adjacent_find(_sanitised_vars.begin(), _sanitised_vars.end()) != _sanitised_vars.end();
+    if (_has_duplicates && _sanitised_excluded.empty()) {
         propagators.model_contradiction(initial_state, optional_model, "AllDifferentExcept with duplicate variables and no usable excluded values");
-        return;
+        return false;
     }
 
-    shared_ptr<map<Integer, ProofLine>> value_am1_constraint_numbers;
-    map<IntegerVariableID, ProofFlag> duplicate_selectors;
-
-    if (optional_model) {
-        value_am1_constraint_numbers = make_shared<map<Integer, ProofLine>>();
-        duplicate_selectors = define_clique_not_equals_except_encoding(*optional_model, sanitised_vars, sanitised_excluded);
+    if (_has_duplicates) {
+        for (auto it = _sanitised_vars.begin(); it != _sanitised_vars.end();) {
+            auto run_end = find_if(next(it), _sanitised_vars.end(),
+                [&](const IntegerVariableID & v) { return v != *it; });
+            if (distance(it, run_end) > 1)
+                _duplicated_vars.push_back(*it);
+            it = run_end;
+        }
     }
 
+    // Compressed value list for the propagator: real (non-excluded) values
+    // from the union of variable domains. Excluded values are not part of
+    // the bipartite right side; phantoms cover them.
+    for (auto & var : _sanitised_vars)
+        for (const auto & val : initial_state.each_value_immutable(var))
+            if (find(_sanitised_excluded.begin(), _sanitised_excluded.end(), val) == _sanitised_excluded.end())
+                if (find(_compressed_vals.begin(), _compressed_vals.end(), val) == _compressed_vals.end())
+                    _compressed_vals.push_back(val);
+
+    return true;
+}
+
+auto AllDifferentExcept::define_proof_model(ProofModel & model) -> void
+{
+    _value_am1_constraint_numbers = make_shared<map<Integer, ProofLine>>();
+    _duplicate_selectors = define_clique_not_equals_except_encoding(model, _sanitised_vars, _sanitised_excluded);
+}
+
+auto AllDifferentExcept::install_propagators(Propagators & propagators) -> void
+{
     // For each duplicated variable, install an initialiser that forces it
     // into the excluded set: for every value v in its current domain that is
     // not in `excluded`, infer var != v. The justification rests on the two
@@ -103,20 +136,11 @@ auto AllDifferentExcept::install(Propagators & propagators, State & initial_stat
     // own implies "selector OR var-in-excluded" or "!selector OR
     // var-in-excluded", so under the hypothesis var = v with v not in
     // excluded, both directions of the selector are simultaneously forced.
-    if (has_duplicates) {
-        vector<IntegerVariableID> duplicated_vars;
-        for (auto it = sanitised_vars.begin(); it != sanitised_vars.end();) {
-            auto run_end = find_if(next(it), sanitised_vars.end(),
-                [&](const IntegerVariableID & v) { return v != *it; });
-            if (distance(it, run_end) > 1)
-                duplicated_vars.push_back(*it);
-            it = run_end;
-        }
-
+    if (_has_duplicates) {
         propagators.install_initialiser(
-            [duplicated_vars = move(duplicated_vars),
-                excluded = sanitised_excluded,
-                duplicate_selectors = move(duplicate_selectors)](
+            [duplicated_vars = move(_duplicated_vars),
+                excluded = _sanitised_excluded,
+                duplicate_selectors = move(_duplicate_selectors)](
                 const State & state, auto & inf, ProofLogger * const logger) -> void {
                 for (const auto & x : duplicated_vars) {
                     vector<Integer> non_excluded_values;
@@ -144,27 +168,20 @@ auto AllDifferentExcept::install(Propagators & propagators, State & initial_stat
         // duplicate left-vertices correctly, but the initialiser has already
         // forced each duplicate's domain into `excluded`, so the propagator
         // sees a single instance of each variable with its restricted domain.
-        sanitised_vars.erase(std::unique(sanitised_vars.begin(), sanitised_vars.end()), sanitised_vars.end());
+        _sanitised_vars.erase(std::unique(_sanitised_vars.begin(), _sanitised_vars.end()), _sanitised_vars.end());
     }
 
     Triggers triggers;
-    triggers.on_change = {sanitised_vars.begin(), sanitised_vars.end()};
+    triggers.on_change = {_sanitised_vars.begin(), _sanitised_vars.end()};
 
-    // Compressed value list for the propagator: real (non-excluded) values
-    // from the union of variable domains. Excluded values are not part of
-    // the bipartite right side; phantoms cover them.
-    vector<Integer> compressed_vals;
-    for (auto & var : sanitised_vars)
-        for (const auto & val : initial_state.each_value_immutable(var))
-            if (find(sanitised_excluded.begin(), sanitised_excluded.end(), val) == sanitised_excluded.end())
-                if (find(compressed_vals.begin(), compressed_vals.end(), val) == compressed_vals.end())
-                    compressed_vals.push_back(val);
+    if (! _value_am1_constraint_numbers)
+        _value_am1_constraint_numbers = make_shared<map<Integer, ProofLine>>();
 
     propagators.install(
-        [vars = move(sanitised_vars),
-            vals = move(compressed_vals),
-            excluded = move(sanitised_excluded),
-            value_am1_constraint_numbers = move(value_am1_constraint_numbers)](const State & state, auto & inference,
+        [vars = move(_sanitised_vars),
+            vals = move(_compressed_vals),
+            excluded = move(_sanitised_excluded),
+            value_am1_constraint_numbers = _value_am1_constraint_numbers](const State & state, auto & inference,
             ProofLogger * const logger) -> PropagatorState {
             propagate_gac_all_different(vars, vals, excluded, *value_am1_constraint_numbers.get(), state, inference, logger);
             return PropagatorState::Enable;
