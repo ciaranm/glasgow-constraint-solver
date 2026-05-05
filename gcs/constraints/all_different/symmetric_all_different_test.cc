@@ -106,6 +106,39 @@ namespace
         check_results(proof_name, expected, actual);
     }
 
+    auto run_symalldiff_dup_test(bool proofs, const vector<vector<int>> & unique_domains,
+        const vector<int> & positions, int start) -> void
+    {
+        print(cerr, "symmetric_all_different domains {} positions {} start {}{}",
+            unique_domains, positions, start, proofs ? " with proofs:" : ":");
+        cerr << flush;
+
+        // Posting the same variable twice in a SymmetricAllDifferent is
+        // always infeasible (the constraint requires X != X). We confirm
+        // the propagator rejects it with model_contradiction by checking
+        // that the proof still verifies as UNSATISFIABLE; expected is
+        // necessarily empty.
+        set<tuple<vector<int>>> expected, actual;
+        println(cerr, " expecting 0 solutions");
+
+        Problem p;
+        vector<IntegerVariableID> unique_vars;
+        for (const auto & d : unique_domains) {
+            vector<Integer> vals;
+            for (int v : d)
+                vals.push_back(Integer(v));
+            unique_vars.push_back(p.create_integer_variable(vals));
+        }
+        vector<IntegerVariableID> posted_vars;
+        for (auto pos : positions)
+            posted_vars.push_back(unique_vars[pos]);
+        p.post(SymmetricAllDifferent{posted_vars, Integer(start)});
+
+        auto proof_name = proofs ? make_optional("symmetric_all_different_test") : nullopt;
+        solve_for_tests(p, proof_name, actual, tuple{unique_vars});
+        check_results(proof_name, expected, actual);
+    }
+
     auto run_all_tests(bool proofs) -> void
     {
         // Trivial sizes.
@@ -148,6 +181,10 @@ namespace
 
         // Same triangle plus a forced fixed point on the side.
         run_symalldiff_test(proofs, false, {{1, 2}, {0, 2}, {0, 1}, {3}}, 0);
+
+        // Duplicate variables: always infeasible (X != X cannot hold).
+        run_symalldiff_dup_test(proofs, {{0, 1}}, {0, 0}, 0);
+        run_symalldiff_dup_test(proofs, {{0, 1, 2}, {0, 1, 2}}, {0, 0, 1}, 0);
     }
 }
 
