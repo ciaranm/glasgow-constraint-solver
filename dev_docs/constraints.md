@@ -362,6 +362,17 @@ solution — a strong correctness check, useful for constraints that
 claim to achieve GAC. Use plain `solve_for_tests` for constraints
 that are only bounds-consistent.
 
+GAC on each of two constraints separately is *not* GAC on their
+conjunction. So if your constraint is implemented as a composition
+or decomposition of other GAC propagators, the resulting consistency
+level is typically weaker than GAC on the constraint as a whole —
+e.g., `Inverse(x, x)` (= symmetric all-different) is not GAC, even
+though both AllDifferent and Inverse-channeling individually are.
+Write at least one test case that probes the intersection: if it
+passes `solve_for_tests_checking_gac`, you haven't found the gap
+yet; once it fails, switch that case to `solve_for_tests` with a
+comment explaining what GAC algorithm would close the gap.
+
 The for-each over `{false, true}` runs every test case twice: once
 without proof verification (always), once with `--prove` if `veripb`
 is on `PATH`. The CMake test target points at `run_test_only.bash`
