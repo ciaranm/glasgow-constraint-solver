@@ -23,6 +23,7 @@ using namespace gcs::innards;
 
 using std::erase_if;
 using std::move;
+using std::optional;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
@@ -62,6 +63,17 @@ auto In::clone() const -> unique_ptr<Constraint>
 
 auto In::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
+    if (! prepare(propagators, initial_state, optional_model))
+        return;
+
+    if (optional_model)
+        define_proof_model(*optional_model);
+
+    install_propagators(propagators);
+}
+
+auto In::prepare(Propagators & propagators, State & initial_state, ProofModel * const optional_model) -> bool
+{
     erase_if(_var_vals, [&](const IntegerVariableID & v) -> bool {
         auto const_val = initial_state.optional_single_value(v);
         if (const_val)
@@ -82,11 +94,23 @@ auto In::install(Propagators & propagators, State & initial_state, ProofModel * 
         for (auto & v : _val_vals)
             tuples.emplace_back(vector{{v}});
 
-        propagators.define_and_install_table(initial_state, optional_model, move(vars), move(tuples), "in");
+        _table = std::make_unique<Table>(move(vars), move(tuples));
+        return _table->prepare(propagators, initial_state, optional_model);
     }
     else {
         throw UnimplementedException{};
     }
+    return false;
+}
+
+auto In::define_proof_model(ProofModel & model) -> void
+{
+    _table->define_proof_model(model);
+}
+
+auto In::install_propagators(Propagators & propagators) -> void
+{
+    _table->install_propagators(propagators);
 }
 
 auto In::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
