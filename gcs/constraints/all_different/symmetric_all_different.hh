@@ -2,9 +2,12 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_ALL_DIFFERENT_SYMMETRIC_ALL_DIFFERENT_HH
 
 #include <gcs/constraint.hh>
+#include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/integer.hh>
 #include <gcs/variable_id.hh>
 
+#include <map>
+#include <memory>
 #include <vector>
 
 namespace gcs
@@ -29,6 +32,11 @@ namespace gcs
     private:
         std::vector<IntegerVariableID> _vars;
         Integer _start;
+        std::shared_ptr<std::map<Integer, innards::ProofLine>> _value_am1s;
+
+        virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
+        virtual auto define_proof_model(innards::ProofModel &) -> void override;
+        virtual auto install_propagators(innards::Propagators &) -> void override;
 
     public:
         explicit SymmetricAllDifferent(std::vector<IntegerVariableID> vars, Integer start = 0_i);

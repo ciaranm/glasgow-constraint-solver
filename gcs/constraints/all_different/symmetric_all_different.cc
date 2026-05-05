@@ -58,68 +58,91 @@ auto SymmetricAllDifferent::clone() const -> unique_ptr<Constraint>
 
 auto SymmetricAllDifferent::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
-    auto vars = move(_vars);
-    auto start = _start;
-    auto n = vars.size();
+    if (! prepare(propagators, initial_state, optional_model))
+        return;
+
+    if (optional_model)
+        define_proof_model(*optional_model);
+
+    install_propagators(propagators);
+}
+
+auto SymmetricAllDifferent::prepare(Propagators & propagators, State & initial_state, ProofModel * const optional_model) -> bool
+{
+    auto n = _vars.size();
 
     // A variable appearing more than once would have to equal itself
     // *and* be pairwise different from itself; that's never satisfiable,
     // and propagate_gac_all_different's bipartite matching does not
     // model duplicate left-vertices, so we reject upfront.
     {
-        auto sorted_vars = vars;
+        auto sorted_vars = _vars;
         sort(sorted_vars);
         if (adjacent_find(sorted_vars) != sorted_vars.end()) {
             propagators.model_contradiction(initial_state, optional_model, "SymmetricAllDifferent with duplicate variables");
-            return;
+            return false;
         }
     }
 
-    for (const auto & v : vars) {
-        propagators.trim_lower_bound(initial_state, optional_model, v, start, "SymmetricAllDifferent");
-        propagators.trim_upper_bound(initial_state, optional_model, v, start + Integer(n) - 1_i, "SymmetricAllDifferent");
+    for (const auto & v : _vars) {
+        propagators.trim_lower_bound(initial_state, optional_model, v, _start, "SymmetricAllDifferent");
+        propagators.trim_upper_bound(initial_state, optional_model, v, _start + Integer(n) - 1_i, "SymmetricAllDifferent");
     }
 
-    shared_ptr<map<Integer, ProofLine>> value_am1s;
+    return true;
+}
 
-    if (optional_model) {
-        // x_i = j  iff  x_j = i, posted as two implications per (i, j) with
-        // i < j. (The pair (j, i) gives the same two implications swapped, so
-        // iterating only i < j is enough — half of what Inverse(x, y) emits
-        // for general x and y.)
-        for (size_t i = 0; i < n; ++i)
-            for (size_t j = i + 1; j < n; ++j) {
-                optional_model->add_constraint("SymmetricAllDifferent", "x_i = j -> x_j = i",
-                    WPBSum{} + 1_i * (vars[i] != Integer(j) + start)
-                        + 1_i * (vars[j] == Integer(i) + start) >= 1_i);
-                optional_model->add_constraint("SymmetricAllDifferent", "x_j = i -> x_i = j",
-                    WPBSum{} + 1_i * (vars[j] != Integer(i) + start)
-                        + 1_i * (vars[i] == Integer(j) + start) >= 1_i);
-            }
+auto SymmetricAllDifferent::define_proof_model(ProofModel & model) -> void
+{
+    auto n = _vars.size();
 
-        define_clique_not_equals_encoding(*optional_model, vars);
-
-        // Per-value am1s for the alldiff hall-set / SCC justifications,
-        // built once at the root.
-        value_am1s = make_shared<map<Integer, ProofLine>>();
-        if (n >= 2) {
-            propagators.install_initialiser(
-                [vars, start, n, value_am1s](
-                    const State &, auto &, ProofLogger * const logger) -> void {
-                    for (Integer v = start; v < start + Integer(n); ++v) {
-                        vector<IntegerVariableCondition> xieqvs;
-                        for (const auto & var : vars)
-                            xieqvs.push_back(var != v);
-                        value_am1s->emplace(v, recover_am1<IntegerVariableCondition>(
-                                                   *logger, ProofLevel::Top, xieqvs,
-                                                   [&](const IntegerVariableCondition & c1, const IntegerVariableCondition & c2) -> ProofLine {
-                                                       return logger->emit(RUPProofRule{},
-                                                           WPBSum{} + 1_i * c1 + 1_i * c2 >= 1_i, ProofLevel::Temporary);
-                                                   }));
-                    }
-                });
+    // x_i = j  iff  x_j = i, posted as two implications per (i, j) with
+    // i < j. (The pair (j, i) gives the same two implications swapped, so
+    // iterating only i < j is enough — half of what Inverse(x, y) emits
+    // for general x and y.)
+    for (size_t i = 0; i < n; ++i)
+        for (size_t j = i + 1; j < n; ++j) {
+            model.add_constraint("SymmetricAllDifferent", "x_i = j -> x_j = i",
+                WPBSum{} + 1_i * (_vars[i] != Integer(j) + _start)
+                    + 1_i * (_vars[j] == Integer(i) + _start) >= 1_i);
+            model.add_constraint("SymmetricAllDifferent", "x_j = i -> x_i = j",
+                WPBSum{} + 1_i * (_vars[j] != Integer(i) + _start)
+                    + 1_i * (_vars[i] == Integer(j) + _start) >= 1_i);
         }
+
+    define_clique_not_equals_encoding(model, _vars);
+
+    // Per-value am1s for the alldiff hall-set / SCC justifications,
+    // built once at the root.
+    _value_am1s = make_shared<map<Integer, ProofLine>>();
+}
+
+auto SymmetricAllDifferent::install_propagators(Propagators & propagators) -> void
+{
+    auto vars = move(_vars);
+    auto start = _start;
+    auto n = vars.size();
+
+    if (_value_am1s && n >= 2) {
+        propagators.install_initialiser(
+            [vars, start, n, value_am1s = _value_am1s](
+                const State &, auto &, ProofLogger * const logger) -> void {
+                for (Integer v = start; v < start + Integer(n); ++v) {
+                    vector<IntegerVariableCondition> xieqvs;
+                    for (const auto & var : vars)
+                        xieqvs.push_back(var != v);
+                    value_am1s->emplace(v, recover_am1<IntegerVariableCondition>(
+                                               *logger, ProofLevel::Top, xieqvs,
+                                               [&](const IntegerVariableCondition & c1, const IntegerVariableCondition & c2) -> ProofLine {
+                                                   return logger->emit(RUPProofRule{},
+                                                       WPBSum{} + 1_i * c1 + 1_i * c2 >= 1_i, ProofLevel::Temporary);
+                                               }));
+                }
+            });
     }
+
+    if (! _value_am1s)
+        _value_am1s = make_shared<map<Integer, ProofLine>>();
 
     Triggers triggers;
     triggers.on_change.insert(triggers.on_change.end(), vars.begin(), vars.end());
@@ -129,7 +152,7 @@ auto SymmetricAllDifferent::install(Propagators & propagators, State & initial_s
         values.push_back(start + Integer(i));
 
     propagators.install(
-        [vars, start, values = move(values), value_am1s = move(value_am1s)](
+        [vars, start, values = move(values), value_am1s = _value_am1s](
             const State & state, auto & inf, ProofLogger * const logger) -> PropagatorState {
             // Channeling: x_i = v  =>  x_v = i. If i is not in D(x_v), prune
             // v from D(x_i). Single pass — Inverse(x, y) runs this in both
