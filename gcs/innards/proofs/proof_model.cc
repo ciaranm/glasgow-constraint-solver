@@ -199,6 +199,8 @@ auto ProofModel::create_proof_only_integer_variable(Integer lower, Integer upper
 auto ProofModel::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariableID id, Integer lower, Integer upper,
     const string & name) -> void
 {
+    names_and_ids_tracker().track_bounds(id, lower, upper);
+
     if (0_i == lower && 1_i == upper) {
         names_and_ids_tracker().track_variable_name(id, name);
         auto eqvar = names_and_ids_tracker().allocate_xliteral_meaning(id, EqualsOrGreaterEqual::Equals, 1_i);
