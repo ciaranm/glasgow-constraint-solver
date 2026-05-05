@@ -44,18 +44,29 @@ auto Minus::clone() const -> unique_ptr<Constraint>
     return make_unique<Minus>(_a, _b, _result);
 }
 
-auto Minus::install(Propagators & propagators, State &, ProofModel * const optional_model) && -> void
+auto Minus::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
+{
+    if (! prepare(propagators, initial_state, optional_model))
+        return;
+
+    if (optional_model)
+        define_proof_model(*optional_model);
+
+    install_propagators(propagators);
+}
+
+auto Minus::define_proof_model(ProofModel & model) -> void
+{
+    _sum_line = model.add_constraint("Minus", "sum", WPBSum{} + 1_i * _a + -1_i * _b == 1_i * _result);
+}
+
+auto Minus::install_propagators(Propagators & propagators) -> void
 {
     Triggers triggers;
     triggers.on_bounds.insert(triggers.on_change.end(), {_a, _b, _result});
 
-    pair<optional<ProofLine>, optional<ProofLine>> sum_line;
-    if (optional_model) {
-        sum_line = optional_model->add_constraint("Minus", "sum", WPBSum{} + 1_i * _a + -1_i * _b == 1_i * _result);
-    }
-
     propagators.install(
-        [a = _a, b = _b, result = _result, sum_line = sum_line](
+        [a = _a, b = _b, result = _result, sum_line = _sum_line](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             return propagate_plus(a, -b, result, state, inference, logger, sum_line);
         },
