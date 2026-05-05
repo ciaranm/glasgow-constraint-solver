@@ -58,9 +58,20 @@ auto Inverse::clone() const -> unique_ptr<Constraint>
 
 auto Inverse::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
+    if (! prepare(propagators, initial_state, optional_model))
+        return;
+
+    if (optional_model)
+        define_proof_model(*optional_model);
+
+    install_propagators(propagators);
+}
+
+auto Inverse::prepare(Propagators & propagators, State & initial_state, ProofModel * const optional_model) -> bool
+{
     if (_x.size() != _y.size()) {
         propagators.model_contradiction(initial_state, optional_model, "Inverse constraint on different sized arrays");
-        return;
+        return false;
     }
 
     for (const auto & [idx, v] : enumerate(_x)) {
@@ -73,22 +84,32 @@ auto Inverse::install(Propagators & propagators, State & initial_state, ProofMod
         propagators.trim_upper_bound(initial_state, optional_model, v, Integer(_x.size()) + _x_start - 1_i, "Inverse");
     }
 
-    if (optional_model) {
-        for (const auto & [i, x_i] : enumerate(_x))
-            for (const auto & [j, y_j] : enumerate(_y)) {
-                // x[i] = j -> y[j] = i
-                optional_model->add_constraint("Inverse", "x_i = j -> y[j] = i", WPBSum{} + 1_i * (x_i != Integer(j) + _y_start) + 1_i * (y_j == Integer(i) + _x_start) >= 1_i);
-                // y[j] = i -> x[i] = j
-                optional_model->add_constraint("Inverse", "y_j = i -> x[i] = j", WPBSum{} + 1_i * (y_j != Integer(i) + _x_start) + 1_i * (x_i == Integer(j) + _y_start) >= 1_i);
-            }
-    }
+    return true;
+}
 
+auto Inverse::define_proof_model(ProofModel & model) -> void
+{
+    for (const auto & [i, x_i] : enumerate(_x))
+        for (const auto & [j, y_j] : enumerate(_y)) {
+            // x[i] = j -> y[j] = i
+            model.add_constraint("Inverse", "x_i = j -> y[j] = i", WPBSum{} + 1_i * (x_i != Integer(j) + _y_start) + 1_i * (y_j == Integer(i) + _x_start) >= 1_i);
+            // y[j] = i -> x[i] = j
+            model.add_constraint("Inverse", "y_j = i -> x[i] = j", WPBSum{} + 1_i * (y_j != Integer(i) + _x_start) + 1_i * (x_i == Integer(j) + _y_start) >= 1_i);
+        }
+
+    // Set up the AM1 map only when proof logging is on; the propagator captures it
+    // by value, so it must always be non-null but stays empty when define_proof_model
+    // wasn't called.
+    _x_value_am1s = make_shared<map<Integer, ProofLine>>();
+}
+
+auto Inverse::install_propagators(Propagators & propagators) -> void
+{
     Triggers triggers;
     triggers.on_change.insert(triggers.on_change.end(), _x.begin(), _x.end());
     triggers.on_change.insert(triggers.on_change.end(), _y.begin(), _y.end());
 
-    shared_ptr<map<Integer, ProofLine>> x_value_am1s;
-    if (optional_model) {
+    if (_x_value_am1s) {
         auto build_am1s = [](const vector<IntegerVariableID> & x, Integer x_start, const State &,
                               auto &, ProofLogger * const logger, const auto & map) {
             for (Integer v = x_start; v < x_start + Integer(x.size()); ++v) {
@@ -102,11 +123,14 @@ auto Inverse::install(Propagators & propagators, State & initial_state, ProofMod
             }
         };
 
-        x_value_am1s = make_shared<map<Integer, ProofLine>>();
-        propagators.install_initialiser([x = _x, x_start = _x_start, x_value_am1s = x_value_am1s, build_am1s = build_am1s](
+        propagators.install_initialiser([x = _x, x_start = _x_start, x_value_am1s = _x_value_am1s, build_am1s = build_am1s](
                                             const State & state, auto & inference, ProofLogger * const logger) -> void {
             build_am1s(x, x_start, state, inference, logger, x_value_am1s);
         });
+    }
+    else {
+        // No proof model: propagator still captures this map (must be non-null), but it stays empty.
+        _x_value_am1s = make_shared<map<Integer, ProofLine>>();
     }
 
     vector<Integer> x_values;
@@ -114,7 +138,7 @@ auto Inverse::install(Propagators & propagators, State & initial_state, ProofMod
         x_values.push_back(Integer(i) + _x_start);
 
     propagators.install([x = _x, y = _y, x_start = _x_start, y_start = _y_start,
-                            x_values = move(x_values), x_value_am1s = x_value_am1s](
+                            x_values = move(x_values), x_value_am1s = _x_value_am1s](
                             const State & state, auto & inf, ProofLogger * const logger) -> PropagatorState {
         for (const auto & [i, x_i] : enumerate(x)) {
             for (auto x_i_value : state.each_value_mutable(x_i))
