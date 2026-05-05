@@ -74,6 +74,52 @@ auto run_alldiffexcept_test(bool proofs, const vector<pair<int, int>> & domains,
     check_results(proof_name, expected, actual);
 }
 
+auto run_alldiffexcept_dup_test(bool proofs,
+    const vector<pair<int, int>> & unique_domains,
+    const vector<int> & positions,
+    const vector<int> & excluded) -> void
+{
+    print(cerr, "all_different_except domains {} positions {} excl {}{}",
+        unique_domains, positions, excluded, proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    auto is_satisfying = [&](vector<int> unique_values) {
+        vector<int> v;
+        v.reserve(positions.size());
+        for (auto p : positions)
+            v.push_back(unique_values[p]);
+        for (size_t i = 0; i < v.size(); ++i) {
+            for (size_t j = i + 1; j < v.size(); ++j) {
+                bool i_excl = std::find(excluded.begin(), excluded.end(), v[i]) != excluded.end();
+                bool j_excl = std::find(excluded.begin(), excluded.end(), v[j]) != excluded.end();
+                if (! i_excl && ! j_excl && v[i] == v[j])
+                    return false;
+            }
+        }
+        return true;
+    };
+
+    set<tuple<vector<int>>> expected, actual;
+    build_expected(expected, is_satisfying, unique_domains);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    vector<IntegerVariableID> unique_vars;
+    for (const auto & d : unique_domains)
+        unique_vars.push_back(p.create_integer_variable(Integer(d.first), Integer(d.second)));
+    vector<IntegerVariableID> posted_vars;
+    for (auto pos : positions)
+        posted_vars.push_back(unique_vars[pos]);
+    vector<Integer> excluded_i;
+    for (const auto & v : excluded)
+        excluded_i.push_back(Integer(v));
+    p.post(AllDifferentExcept{posted_vars, excluded_i});
+
+    auto proof_name = proofs ? make_optional("all_different_except_test") : nullopt;
+    solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{unique_vars});
+    check_results(proof_name, expected, actual);
+}
+
 auto run_all_tests(bool proofs) -> void
 {
     // Empty / single — trivial cases.
@@ -100,6 +146,21 @@ auto run_all_tests(bool proofs) -> void
     // Mix where pruning by Hall set is exercised.
     run_alldiffexcept_test(proofs, {{0, 2}, {1, 2}, {1, 2}}, {0});
     run_alldiffexcept_test(proofs, {{0, 1}, {0, 1}, {0, 2}, {0, 2}}, {0});
+
+    // Same variable in two positions: forces it into the excluded set.
+    run_alldiffexcept_dup_test(proofs, {{0, 3}}, {0, 0}, {0});
+    run_alldiffexcept_dup_test(proofs, {{0, 3}}, {0, 0, 0}, {0});
+
+    // Same variable in two positions but no value in `excluded` available:
+    // infeasible.
+    run_alldiffexcept_dup_test(proofs, {{1, 3}}, {0, 0}, {0});
+
+    // Two unique variables, one duplicated, one not, with two excluded values.
+    run_alldiffexcept_dup_test(proofs, {{0, 3}, {0, 3}}, {0, 0, 1}, {0});
+    run_alldiffexcept_dup_test(proofs, {{0, 3}, {0, 3}}, {0, 0, 1}, {0, 1});
+
+    // Two duplicate runs in the same constraint.
+    run_alldiffexcept_dup_test(proofs, {{0, 3}, {0, 3}}, {0, 0, 1, 1}, {0, 1});
 }
 
 auto main(int, char *[]) -> int
