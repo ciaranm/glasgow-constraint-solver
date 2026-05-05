@@ -16,6 +16,7 @@ add_library(glasgow_constraint_solver
         constraints/all_different/encoding.cc
         constraints/all_different/gac_all_different.cc
         constraints/all_different/justify.cc
+        constraints/all_different/symmetric_all_different.cc
         constraints/all_different/vc_all_different.cc
         constraints/among.cc
         constraints/arithmetic.cc
@@ -136,6 +137,7 @@ if(GCS_BUILD_TESTS)
     add_executable(regular_test constraints/regular_test.cc)
     add_executable(seq_precede_chain_test constraints/seq_precede_chain_test.cc)
     add_executable(smart_table_test constraints/smart_table_test.cc)
+    add_executable(symmetric_all_different_test constraints/all_different/symmetric_all_different_test.cc)
     add_executable(table_test constraints/table_test.cc)
     add_executable(value_precede_test constraints/value_precede_test.cc)
 
@@ -143,7 +145,7 @@ if(GCS_BUILD_TESTS)
             abs_test all_different_test all_different_except_test among_test arithmetic_test at_most_one_test comparison_test
             count_test element_test equals_test in_test increasing_test inverse_test knapsack_test lex_test linear_test
             logical_test min_max_test mult_bc_test n_value_test parity_test
-            plus_minus_test regular_test seq_precede_chain_test smart_table_test table_test value_precede_test)
+            plus_minus_test regular_test seq_precede_chain_test smart_table_test symmetric_all_different_test table_test value_precede_test)
         target_link_libraries(${test_target} PRIVATE glasgow_constraint_solver)
     endforeach()
 
@@ -197,6 +199,7 @@ if(GCS_BUILD_TESTS)
     add_test(NAME regular_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:regular_test>)
     add_test(NAME seq_precede_chain_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:seq_precede_chain_test>)
     add_test(NAME smart_table_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:smart_table_test>)
+    add_test(NAME symmetric_all_different_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:symmetric_all_different_test>)
     add_test(NAME table_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:table_test>)
     add_test(NAME value_precede_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:value_precede_test>)
 
