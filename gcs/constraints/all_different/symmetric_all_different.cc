@@ -19,6 +19,7 @@
 #include <fmt/ostream.h>
 #endif
 
+#include <algorithm>
 #include <map>
 #include <sstream>
 #include <utility>
@@ -30,6 +31,8 @@ using std::make_shared;
 using std::make_unique;
 using std::map;
 using std::move;
+using std::ranges::adjacent_find;
+using std::ranges::sort;
 using std::shared_ptr;
 using std::string;
 using std::stringstream;
@@ -58,6 +61,19 @@ auto SymmetricAllDifferent::install(Propagators & propagators, State & initial_s
     auto vars = move(_vars);
     auto start = _start;
     auto n = vars.size();
+
+    // A variable appearing more than once would have to equal itself
+    // *and* be pairwise different from itself; that's never satisfiable,
+    // and propagate_gac_all_different's bipartite matching does not
+    // model duplicate left-vertices, so we reject upfront.
+    {
+        auto sorted_vars = vars;
+        sort(sorted_vars);
+        if (adjacent_find(sorted_vars) != sorted_vars.end()) {
+            propagators.model_contradiction(initial_state, optional_model, "SymmetricAllDifferent with duplicate variables");
+            return;
+        }
+    }
 
     for (const auto & v : vars) {
         propagators.trim_lower_bound(initial_state, optional_model, v, start, "SymmetricAllDifferent");
