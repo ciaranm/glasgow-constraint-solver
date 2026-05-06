@@ -57,9 +57,13 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program Options")   //
-            ("help", "Display help information") //
-            ("prove", "Create a proof");
+        options.add_options("Program Options")                                                       //
+            ("help", "Display help information")                                                     //
+            ("prove", "Create a proof")                                                              //
+            ("proof-files-basename", "Basename for the .opb and .pbp files",                         //
+                cxxopts::value<string>()->default_value("skyscrapers"))                              //
+            ("stats", "Print solve statistics")                                                      //
+            ;
 
         options.add_options()                                                                    //
             ("instance", "Problem instance to solve", cxxopts::value<int>()->default_value("7")) //
@@ -282,9 +286,12 @@ auto main(int argc, char * argv[]) -> int
                 return true;
             },
             .branch = branch_with(variable_order::dom_then_deg(branch_vars), value_order::smallest_first())},
-        options_vars.contains("prove") ? make_optional<ProofOptions>("skyscrapers") : nullopt);
+        options_vars.contains("prove")
+            ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>())
+            : nullopt);
 
-    print("{}", stats);
+    if (options_vars.contains("stats"))
+        print("{}", stats);
 
     return EXIT_SUCCESS;
 }

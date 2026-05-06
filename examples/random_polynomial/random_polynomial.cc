@@ -48,7 +48,7 @@ auto main(int argc, char * argv[]) -> int
             ("d", "Max degree of each term", cxxopts::value<int>()->default_value("3")) //
             ("stats", "Print stats")                                                    //
             ("display-problem", "Display problem and solution (if any)")                //
-            ("proof-prefix", "Path and name of the opb and pbp files",                  //
+            ("proof-files-basename", "Path and name of the opb and pbp files",                  //
                 cxxopts::value<string>()->default_value("random_polynomial"));          //
 
         options_vars = options.parse(argc, argv);
@@ -67,7 +67,7 @@ auto main(int argc, char * argv[]) -> int
     auto n = options_vars["n"].as<int>();
     auto d = options_vars["d"].as<int>();
     auto seed = options_vars["seed"].as<int>();
-    auto proof_prefix = options_vars["proof-prefix"].as<string>();
+    auto proof_prefix = options_vars["proof-files-basename"].as<string>();
     auto prove = options_vars.contains("prove");
     auto print_stats = options_vars.contains("stats");
     auto display_problem = options_vars.contains("display-problem");

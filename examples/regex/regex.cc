@@ -15,6 +15,7 @@ using std::cout;
 using std::endl;
 using std::make_optional;
 using std::nullopt;
+using std::string;
 using std::vector;
 
 auto main(int argc, char * argv[]) -> int
@@ -27,9 +28,13 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program Options")   //
-            ("help", "Display help information") //
-            ("prove", "Create a proof");
+        options.add_options("Program Options")                                                       //
+            ("help", "Display help information")                                                     //
+            ("prove", "Create a proof")                                                              //
+            ("proof-files-basename", "Basename for the .opb and .pbp files",                         //
+                cxxopts::value<string>()->default_value("regex"))                                    //
+            ("stats", "Print solve statistics")                                                      //
+            ;
 
         options_vars = options.parse(argc, argv);
     }
@@ -74,9 +79,12 @@ auto main(int argc, char * argv[]) -> int
                 return true;
             },
         },
-        options_vars.contains("prove") ? make_optional<ProofOptions>("regex") : nullopt);
+        options_vars.contains("prove")
+            ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>())
+            : nullopt);
 
-    cout << stats;
+    if (options_vars.contains("stats"))
+        cout << stats;
 
     //    system("veripb --trace --useColor regex.opb regex.pbp");
     return EXIT_SUCCESS;

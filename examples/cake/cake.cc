@@ -43,10 +43,14 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options()                    //
-            ("help", "Display help information") //
-            ("prove", "Create a proof")          //
-            ("full-proof-encoding", "Use the longer proof encoding");
+        options.add_options()                                                //
+            ("help", "Display help information")                             //
+            ("prove", "Create a proof")                                      //
+            ("proof-files-basename", "Basename for the .opb and .pbp files", //
+                cxxopts::value<string>()->default_value("cake"))             //
+            ("stats", "Print solve statistics")                              //
+            ("full-proof-encoding", "Use the longer proof encoding")         //
+            ;
 
         options_vars = options.parse(argc, argv);
     }
@@ -88,10 +92,12 @@ auto main(int argc, char * argv[]) -> int
                 variable_order::dom_then_deg(vector<IntegerVariableID>{banana, chocolate}),
                 value_order::largest_first())},
         options_vars.contains("prove")
-            ? make_optional<ProofOptions>(ProofFileNames{"cake"}, true, options_vars.count("full-proof-encoding"))
+            ? make_optional<ProofOptions>(ProofFileNames{options_vars["proof-files-basename"].as<string>()},
+                  true, options_vars.count("full-proof-encoding"))
             : nullopt);
 
-    print("{}", stats);
+    if (options_vars.contains("stats"))
+        print("{}", stats);
 
     return EXIT_SUCCESS;
 }

@@ -112,7 +112,7 @@ auto main(int argc, char * argv[]) -> int
             ("n", "Integer value n.", cxxopts::value<int>()->default_value("3"))           //
             ("seed", "Random seed.", cxxopts::value<int>()->default_value("-1"))           //
             ("stats", "Print statistics")                                                  //
-            ("proof-prefix", "Path and name of the opb and pbp files",                     //
+            ("proof-files-basename", "Path and name of the opb and pbp files",                     //
                 cxxopts::value<string>()->default_value("circuit_random"))                 //
             ("print-distances", "Print the input graph used for the probllem")             //
             ("print-solutions", "Print each solution found while optimising")              //
@@ -153,7 +153,7 @@ auto main(int argc, char * argv[]) -> int
 
     auto n = options_vars["n"].as<int>();
     auto seed = options_vars["seed"].as<int>();
-    auto proof_prefix = options_vars["proof-prefix"].as<string>();
+    auto proof_prefix = options_vars["proof-files-basename"].as<string>();
     auto print_distances = options_vars.contains("print-distances");
     auto print_solutions = options_vars.contains("print-solutions");
     auto print_stats = options_vars.contains("stats");

@@ -93,7 +93,7 @@ auto main(int argc, char * argv[]) -> int
             ("seed", "Seed for random DFA generator (-1 for random seed)", cxxopts::value<int>()->default_value("-1"))             //
             ("n", "Number of variables in the sequence", cxxopts::value<int>()->default_value("6"))                                //
             ("stats", "Print stats, including solve time")                                                                         //
-            ("proof-prefix", "Alternative path and name for the proof", cxxopts::value<string>()->default_value("regular_random")) //
+            ("proof-files-basename", "Alternative path and name for the proof", cxxopts::value<string>()->default_value("regular_random")) //
             ("short-reasons", "Use short reasons method");
 
         options_vars = options.parse(argc, argv);
@@ -116,7 +116,7 @@ auto main(int argc, char * argv[]) -> int
     auto prove = options_vars.contains("prove");
     auto print_stats = options_vars.contains("stats");
     auto short_reasons = options_vars.contains("short-reasons");
-    auto proof_prefix = options_vars["proof-prefix"].as<string>();
+    auto proof_prefix = options_vars["proof-files-basename"].as<string>();
 
     if (seed == -1) {
         random_device rand_dev;

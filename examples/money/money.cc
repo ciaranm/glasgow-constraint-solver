@@ -4,7 +4,11 @@
 #include <gcs/solve.hh>
 
 #include <cstdlib>
+#include <iostream>
+#include <string>
 #include <vector>
+
+#include <cxxopts.hpp>
 
 #include <version>
 
@@ -17,6 +21,11 @@
 
 using namespace gcs;
 
+using std::cerr;
+using std::cout;
+using std::make_optional;
+using std::nullopt;
+using std::string;
 using std::vector;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
@@ -27,8 +36,35 @@ using fmt::print;
 using fmt::println;
 #endif
 
-auto main(int, char *[]) -> int
+auto main(int argc, char * argv[]) -> int
 {
+    cxxopts::Options options("Money Example");
+    cxxopts::ParseResult options_vars;
+
+    try {
+        options.add_options()                                                //
+            ("help", "Display help information")                             //
+            ("prove", "Create a proof")                                      //
+            ("proof-files-basename", "Basename for the .opb and .pbp files", //
+                cxxopts::value<string>()->default_value("money"))            //
+            ("stats", "Print solve statistics")                              //
+            ;
+
+        options_vars = options.parse(argc, argv);
+    }
+    catch (const cxxopts::exceptions::exception & e) {
+        println(cerr, "Error: {}", e.what());
+        println(cerr, "Try {} --help", argv[0]);
+        return EXIT_FAILURE;
+    }
+
+    if (options_vars.contains("help")) {
+        println("Usage: {} [options]", argv[0]);
+        println("");
+        cout << options.help() << std::endl;
+        return EXIT_SUCCESS;
+    }
+
     Problem p;
 
     auto s = p.create_integer_variable(1_i, 9_i, "s");
@@ -59,9 +95,12 @@ auto main(int, char *[]) -> int
 
             return true;
         },
-        ProofOptions{"money"});
+        options_vars.contains("prove")
+            ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>())
+            : nullopt);
 
-    print("{}", stats);
+    if (options_vars.contains("stats"))
+        print("{}", stats);
 
     return EXIT_SUCCESS;
 }

@@ -30,9 +30,13 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program Options")   //
-            ("help", "Display help information") //
-            ("prove", "Create a proof");
+        options.add_options("Program Options")                                                       //
+            ("help", "Display help information")                                                     //
+            ("prove", "Create a proof")                                                              //
+            ("proof-files-basename", "Basename for the .opb and .pbp files",                         //
+                cxxopts::value<string>()->default_value("tour"))                                     //
+            ("stats", "Print solve statistics")                                                      //
+            ;
 
         options.add_options()("propagator", "Specify which circuit propagation algorithm to use (prevent/scc)", //
             cxxopts::value<string>()->default_value("scc"));
@@ -139,8 +143,11 @@ auto main(int argc, char * argv[]) -> int
                 cout << "\n\n";
                 return true;
             }},
-        options_vars.contains("prove") ? make_optional<ProofOptions>("tour") : nullopt);
+        options_vars.contains("prove")
+            ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>())
+            : nullopt);
 
-    cout << stats;
+    if (options_vars.contains("stats"))
+        cout << stats;
     return EXIT_SUCCESS;
 }
