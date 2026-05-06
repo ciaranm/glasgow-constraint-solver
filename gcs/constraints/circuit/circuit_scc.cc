@@ -1284,6 +1284,5 @@ auto CircuitSCC::install(Propagators & propagators, State & initial_state, Proof
                 succ, options, pos_var_data_handle, proof_flag_data_handle, pos_alldiff_data_handle, unassigned_handle);
             return PropagatorState::Enable;
         },
-        triggers,
-        "circuit");
+        triggers);
 }

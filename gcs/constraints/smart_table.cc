@@ -942,8 +942,7 @@ auto SmartTable::install(Propagators & propagators, State & initial_state, Proof
             propagate_using_smart_str(selectors, vars, tuples, forests, state, inference, reason, pb_selectors, logger, short_reasons);
             return PropagatorState::Enable;
         },
-        triggers,
-        "smart table");
+        triggers);
 }
 
 auto SmartTable::s_exprify(const string & name, const ProofModel * const model) const -> string

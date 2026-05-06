@@ -451,7 +451,7 @@ auto Regular::install_propagators(Propagators & propagators) -> void
         propagate_regular(v, n, t, f, flags, g, state, inference, logger, sr);
         return PropagatorState::Enable;
     },
-        triggers, "regular");
+        triggers);
 }
 
 auto Regular::s_exprify(const string & name, const ProofModel * const model) const -> string

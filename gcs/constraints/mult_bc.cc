@@ -1358,7 +1358,7 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
 
         return PropagatorState::Enable;
     },
-        triggers, "mult");
+        triggers);
 }
 
 auto MultBC::s_exprify(const string & name, const innards::ProofModel * const model) const -> string

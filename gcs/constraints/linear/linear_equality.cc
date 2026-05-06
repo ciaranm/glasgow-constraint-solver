@@ -245,7 +245,7 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> vo
                 else
                     return PropagatorState::DisableUntilBacktrack;
             },
-                triggers, "lin_eq_gac");
+                triggers);
         },
             sanitised_cv);
     }
@@ -270,7 +270,7 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> vo
                                                 const State & state, auto & inference, ProofLogger * const logger) {
                             return propagate_linear(lin, value + modifier, state, inference, logger, true, proof_line, reason_from_cond);
                         },
-                            triggers, "linear equality");
+                            triggers);
                     },
                     sanitised_cv);
             },
@@ -294,7 +294,7 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> vo
                                             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                         return propagate_linear_not_equals(sanitised_cv, value, state, inference, logger, all_vars);
                     },
-                        triggers, "linear nonequality");
+                        triggers);
                 },
                     sanitised_cv);
             },
@@ -391,7 +391,7 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> vo
                             }}
                             .visit(test_reification_condition(state, cond));
                     },
-                        triggers, "linear");
+                        triggers);
                 },
                     sanitised_cv);
             }}

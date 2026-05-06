@@ -128,7 +128,7 @@ auto Foo::install(Propagators & propagators, State & initial_state,
             // Propagation body.
             return PropagatorState::Enable;
         },
-        triggers, "constraint name");
+        triggers);
 }
 ```
 
@@ -191,7 +191,7 @@ propagators.install(
         auto & my_state = std::any_cast<MyState &>(state.get_constraint_state(state_handle));
         // ...
     },
-    triggers, "...");
+    triggers);
 ```
 
 `Lex` uses this for its alpha pointer; `Circuit` uses it for incremental

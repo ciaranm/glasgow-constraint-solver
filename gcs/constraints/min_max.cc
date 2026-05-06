@@ -196,7 +196,7 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
 
         return PropagatorState::Enable;
     },
-        triggers, "array min max");
+        triggers);
 }
 
 auto ArrayMinMax::s_exprify(const string & name, const innards::ProofModel * const model) const -> string

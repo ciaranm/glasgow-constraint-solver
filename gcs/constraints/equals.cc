@@ -253,8 +253,7 @@ auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
     install_reified_dispatcher(propagators, _evaluated_cond, _cond, triggers,
         std::move(enforce_constraint_must_hold),
         std::move(enforce_constraint_must_not_hold),
-        std::move(infer_cond_when_undecided),
-        "reified equals");
+        std::move(infer_cond_when_undecided));
 }
 
 Equals::Equals(const IntegerVariableID v1, const IntegerVariableID v2) :

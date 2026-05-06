@@ -98,6 +98,5 @@ auto CircuitPrevent::install(innards::Propagators & propagators, innards::State 
             propagate_circuit_using_prevent(succ, pvd, unassigned_handle, state, inference, logger);
             return PropagatorState::Enable;
         },
-        triggers,
-        "circuit");
+        triggers);
 }

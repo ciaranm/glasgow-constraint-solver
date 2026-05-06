@@ -246,7 +246,7 @@ auto Count::install_propagators(Propagators & propagators) -> void
 
             return PropagatorState::Enable;
         },
-        triggers, "count");
+        triggers);
 }
 
 auto Count::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string

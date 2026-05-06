@@ -70,7 +70,7 @@ auto Plus::install_propagators(Propagators & propagators) -> void
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             return propagate_plus(a, b, result, state, inference, logger, sum_line);
         },
-        triggers, "plus");
+        triggers);
 }
 
 auto Plus::s_exprify(const string & name, const innards::ProofModel * const model) const -> string

@@ -149,7 +149,7 @@ auto VCAllDifferent::install_propagators(Propagators & propagators) -> void
             propagate_non_gac_alldifferent(unassigned_handle, state, tracker, logger);
             return PropagatorState::Enable;
         },
-        triggers, "vcalldiff");
+        triggers);
 }
 
 template auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle, const State & state,

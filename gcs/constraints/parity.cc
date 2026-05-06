@@ -157,7 +157,7 @@ auto ParityOdd::install_propagators(Propagators & propagators) -> void
             }
         }
     },
-        triggers, "parity odd");
+        triggers);
 }
 auto ParityOdd::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
 {
