@@ -3,6 +3,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_INNARDS_REIFIED_DISPATCHER_HH
 
 #include <gcs/constraints/innards/reified_state.hh>
+#include <gcs/constraints/innards/triggers.hh>
 #include <gcs/innards/justification.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/reason.hh>
@@ -113,7 +114,7 @@ namespace gcs::innards
             return;
         if (std::holds_alternative<evaluated_reif::Undecided>(initial_evaluated)) {
             const auto & undecided = std::get<evaluated_reif::Undecided>(initial_evaluated);
-            triggers.on_change.push_back(undecided.cond.var);
+            add_trigger_for(triggers, undecided.cond);
         }
 
         propagators.install(

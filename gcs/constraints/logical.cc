@@ -1,3 +1,4 @@
+#include <gcs/constraints/innards/triggers.hh>
 #include <gcs/constraints/logical.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
@@ -64,27 +65,11 @@ namespace
 
         Triggers triggers;
         bool saw_false = false;
-        for (auto & l : lits)
-            overloaded{
-                [&](const IntegerVariableCondition & cond) {
-                    switch (cond.op) {
-                        using enum VariableConditionOperator;
-                    case Equal:
-                    case NotEqual:
-                        triggers.on_change.push_back(cond.var);
-                        break;
-                    case Less:
-                    case GreaterEqual:
-                        triggers.on_bounds.push_back(cond.var);
-                        break;
-                    }
-                },
-                [&](const TrueLiteral &) {
-                },
-                [&](const FalseLiteral &) {
-                    saw_false = true;
-                }}
-                .visit(l);
+        for (auto & l : lits) {
+            add_trigger_for(triggers, l);
+            if (holds_alternative<FalseLiteral>(l))
+                saw_false = true;
+        }
 
         if (saw_false) {
             // we saw a false literal, the reif variable must be forced off and
