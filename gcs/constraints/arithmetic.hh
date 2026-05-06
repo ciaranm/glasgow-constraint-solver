@@ -22,6 +22,12 @@ namespace gcs
         /**
          * \brief Arithmetic constraint, constraints that `v1 op v2 = result`.
          *
+         * \warning This is a last-resort implementation: it materialises the
+         * full list of permitted (v1, v2, result) tuples in memory, so it is
+         * O(|domain(v1)| * |domain(v2)|) in space and will exhaust memory for
+         * even moderately wide domains.  Prefer one of the dedicated
+         * propagators where one exists (see the typedef-specific notes below).
+         *
          * \ingroup Constraints
          * \ingroup Innards
          * \sa gcs::Plus
@@ -52,28 +58,47 @@ namespace gcs
     }
 
     /**
-     * \brief Constrain that `v1 + v2 = result`.
+     * \brief Constrain that `v1 + v2 = result` via a materialised tuple table.
+     *
+     * \warning Memory usage is O(|domain(v1)| * |domain(v2)|).  Under normal
+     * circumstances you should use gcs::Plus, which propagates without
+     * enumerating tuples.
      *
      * \ingroup Constraints
+     * \sa gcs::Plus
      */
     using PlusGAC = innards::GACArithmetic<innards::ArithmeticOperator::Plus>;
 
     /**
-     * \brief Constrain that `v1 - v2 = result`.
+     * \brief Constrain that `v1 - v2 = result` via a materialised tuple table.
+     *
+     * \warning Memory usage is O(|domain(v1)| * |domain(v2)|).  Under normal
+     * circumstances you should use gcs::Minus, which propagates without
+     * enumerating tuples.
      *
      * \ingroup Constraints
+     * \sa gcs::Minus
      */
     using MinusGAC = innards::GACArithmetic<innards::ArithmeticOperator::Minus>;
 
     /**
-     * \brief Constrain that `v1 * v2 = result`.
+     * \brief Constrain that `v1 * v2 = result` via a materialised tuple table.
+     *
+     * \warning Memory usage is O(|domain(v1)| * |domain(v2)|).  Under normal
+     * circumstances you should use gcs::LinearEquality if one of the operands
+     * is a constant, or gcs::MultBC otherwise.
      *
      * \ingroup Constraints
+     * \sa gcs::LinearEquality
+     * \sa gcs::MultBC
      */
     using Times = innards::GACArithmetic<innards::ArithmeticOperator::Times>;
 
     /**
      * \brief Constrain that `v1 / v2 = result`.
+     *
+     * \warning Memory usage is O(|domain(v1)| * |domain(v2)|): the full tuple
+     * table is materialised, so wide variable domains will exhaust memory.
      *
      * \ingroup Constraints
      */
@@ -82,12 +107,18 @@ namespace gcs
     /**
      * \brief Constrain that `v1 % v2 = result`.
      *
+     * \warning Memory usage is O(|domain(v1)| * |domain(v2)|): the full tuple
+     * table is materialised, so wide variable domains will exhaust memory.
+     *
      * \ingroup Constraints
      */
     using Mod = innards::GACArithmetic<innards::ArithmeticOperator::Mod>;
 
     /**
      * \brief Constrain that `power(v1, v2) = result`.
+     *
+     * \warning Memory usage is O(|domain(v1)| * |domain(v2)|): the full tuple
+     * table is materialised, so wide variable domains will exhaust memory.
      *
      * \ingroup Constraints
      */
