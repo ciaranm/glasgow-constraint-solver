@@ -24,6 +24,7 @@
 #include <gcs/constraints/count.hh>
 #include <gcs/constraints/element.hh>
 #include <gcs/constraints/equals.hh>
+#include <gcs/constraints/in.hh>
 #include <gcs/constraints/increasing.hh>
 #include <gcs/constraints/inverse.hh>
 #include <gcs/constraints/knapsack.hh>

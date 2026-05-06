@@ -635,6 +635,11 @@ auto main(int argc, char * argv[]) -> int
                 const auto & reif = arg_as_var(data, args, 2);
                 problem.post(LexLessThanEqualIff{vars1, vars2, reif == 1_i});
             }
+            else if (id == "glasgow_member_int" || id == "glasgow_member_bool") {
+                const auto & vars = arg_as_array_of_var(data, args, 0);
+                const auto & var = arg_as_var(data, args, 1);
+                problem.post(In{var, vars});
+            }
             else if (id == "glasgow_regular") {
                 const auto & vars = arg_as_array_of_var(data, args, 0);
                 const auto & num_states = static_cast<long long>(args.at(1));
