@@ -91,6 +91,9 @@ set_tests_properties(minizinc-lexltunequal PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-lexreif COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ lexreif true true)
 set_tests_properties(minizinc-lexreif PROPERTIES SKIP_RETURN_CODE 66)
 
+add_test(NAME minizinc-member COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ membertest true true)
+set_tests_properties(minizinc-member PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-minmax COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ minmax false true)
 set_tests_properties(minizinc-minmax PROPERTIES SKIP_RETURN_CODE 66)
 
