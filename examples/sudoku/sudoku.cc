@@ -13,6 +13,7 @@
 #include <version>
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <format>
 #include <print>
 #else
 #include <fmt/core.h>
@@ -29,9 +30,11 @@ using std::string;
 using std::vector;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::format;
 using std::print;
 using std::println;
 #else
+using fmt::format;
 using fmt::print;
 using fmt::println;
 #endif
@@ -140,7 +143,7 @@ auto main(int argc, char * argv[]) -> int
     vector<vector<IntegerVariableID>> grid;
 
     for (int r = 0; r < n; ++r)
-        grid.emplace_back(p.create_integer_variable_vector(n, 1_i, Integer{n}, "grid"));
+        grid.emplace_back(p.create_integer_variable_vector(n, 1_i, Integer{n}, format("grid[{}]", r)));
 
     for (int r = 0; r < n; ++r)
         p.post(AllDifferent{grid[r]});
