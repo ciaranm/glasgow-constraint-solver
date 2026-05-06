@@ -503,8 +503,24 @@ auto LexCompareGreaterThanOrMaybeEqual::clone() const -> unique_ptr<Constraint>
 
 auto LexCompareGreaterThanOrMaybeEqual::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
-    auto or_equal = _or_equal;
+    if (! prepare(propagators, initial_state, optional_model))
+        return;
 
+    if (optional_model)
+        define_proof_model(*optional_model);
+
+    install_propagators(propagators);
+}
+
+auto LexCompareGreaterThanOrMaybeEqual::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
+{
+    _evaluated_cond = test_reification_condition(initial_state, _reif_cond);
+    _state_handle = initial_state.add_constraint_state(LexState{});
+    return true;
+}
+
+auto LexCompareGreaterThanOrMaybeEqual::define_proof_model(ProofModel & model) -> void
+{
     // Decide which directions of the encoding we need based on the
     // reification type. If always picks just the constraint direction;
     // NotIf picks the negation; Iff picks both.
@@ -536,19 +552,23 @@ auto LexCompareGreaterThanOrMaybeEqual::install(Propagators & propagators, State
         }}
         .visit(_reif_cond);
 
-    EncodingFlags flags;
-    if (optional_model) {
-        if (need_gt_direction)
-            flags.gt = build_lex_direction_encoding(*optional_model,
-                _vars_1, _vars_2, _or_equal, half_reify_for_gt, "gt");
-        if (need_lt_direction)
-            flags.lt = build_lex_direction_encoding(*optional_model,
-                _vars_2, _vars_1, ! _or_equal, half_reify_for_lt, "lt");
+    if (need_gt_direction) {
+        auto gt = build_lex_direction_encoding(model,
+            _vars_1, _vars_2, _or_equal, half_reify_for_gt, "gt");
+        _prefix_equal_gt_flags = gt.prefix_equal;
+        _decision_at_gt_flags = gt.decision_at;
     }
-    auto prefix_equal_gt_flags = flags.gt.prefix_equal;
-    auto decision_at_gt_flags = flags.gt.decision_at;
-    auto prefix_equal_lt_flags = flags.lt.prefix_equal;
-    auto decision_at_lt_flags = flags.lt.decision_at;
+    if (need_lt_direction) {
+        auto lt = build_lex_direction_encoding(model,
+            _vars_2, _vars_1, ! _or_equal, half_reify_for_lt, "lt");
+        _prefix_equal_lt_flags = lt.prefix_equal;
+        _decision_at_lt_flags = lt.decision_at;
+    }
+}
+
+auto LexCompareGreaterThanOrMaybeEqual::install_propagators(Propagators & propagators) -> void
+{
+    auto or_equal = _or_equal;
 
     Triggers triggers;
     for (auto & v : _vars_1)
@@ -556,10 +576,10 @@ auto LexCompareGreaterThanOrMaybeEqual::install(Propagators & propagators, State
     for (auto & v : _vars_2)
         triggers.on_bounds.push_back(v);
 
-    auto state_handle = initial_state.add_constraint_state(LexState{});
-
     auto enforce_constraint_must_hold = [vars_1 = _vars_1, vars_2 = _vars_2, or_equal,
-                                            prefix_equal_gt_flags, decision_at_gt_flags, state_handle](
+                                            prefix_equal_gt_flags = _prefix_equal_gt_flags,
+                                            decision_at_gt_flags = _decision_at_gt_flags,
+                                            state_handle = _state_handle](
                                             const State & state, auto & inference, ProofLogger * const logger,
                                             const Literal & cond) -> PropagatorState {
         return run_lex_pass(state, inference, logger,
@@ -569,7 +589,9 @@ auto LexCompareGreaterThanOrMaybeEqual::install(Propagators & propagators, State
     };
 
     auto enforce_constraint_must_not_hold = [vars_1 = _vars_1, vars_2 = _vars_2, or_equal,
-                                                prefix_equal_lt_flags, decision_at_lt_flags, state_handle](
+                                                prefix_equal_lt_flags = _prefix_equal_lt_flags,
+                                                decision_at_lt_flags = _decision_at_lt_flags,
+                                                state_handle = _state_handle](
                                                 const State & state, auto & inference, ProofLogger * const logger,
                                                 const Literal & cond) -> PropagatorState {
         // Negation: enforce vars_2 (>|>=) vars_1 with or_equal flipped.
@@ -580,8 +602,10 @@ auto LexCompareGreaterThanOrMaybeEqual::install(Propagators & propagators, State
     };
 
     auto infer_cond_when_undecided = [vars_1 = move(_vars_1), vars_2 = move(_vars_2), or_equal,
-                                         prefix_equal_gt_flags, decision_at_gt_flags,
-                                         prefix_equal_lt_flags, decision_at_lt_flags](
+                                         prefix_equal_gt_flags = _prefix_equal_gt_flags,
+                                         decision_at_gt_flags = _decision_at_gt_flags,
+                                         prefix_equal_lt_flags = _prefix_equal_lt_flags,
+                                         decision_at_lt_flags = _decision_at_lt_flags](
                                          const State & state, auto &, ProofLogger * const logger,
                                          const IntegerVariableCondition & cond) -> ReificationVerdict {
         return run_lex_undecided_detection(state, logger,
@@ -591,7 +615,7 @@ auto LexCompareGreaterThanOrMaybeEqual::install(Propagators & propagators, State
             cond);
     };
 
-    install_reified_dispatcher(propagators, test_reification_condition(initial_state, _reif_cond), _reif_cond, triggers,
+    install_reified_dispatcher(propagators, _evaluated_cond, _reif_cond, triggers,
         std::move(enforce_constraint_must_hold),
         std::move(enforce_constraint_must_not_hold),
         std::move(infer_cond_when_undecided),

@@ -3,9 +3,14 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_LEX_HH
 
 #include <gcs/constraint.hh>
+#include <gcs/constraints/innards/reified_state.hh>
+#include <gcs/innards/proofs/proof_only_variables.hh>
+#include <gcs/innards/state.hh>
 #include <gcs/reification.hh>
 #include <gcs/variable_id.hh>
 
+#include <memory>
+#include <optional>
 #include <vector>
 
 namespace gcs
@@ -79,6 +84,16 @@ namespace gcs
         ReificationCondition _reif_cond;
         bool _or_equal;
         bool _vars_swapped;
+        innards::EvaluatedReificationCondition _evaluated_cond = innards::evaluated_reif::Deactivated{};
+        innards::ConstraintStateHandle _state_handle;
+        std::shared_ptr<std::vector<std::optional<innards::ProofFlag>>> _prefix_equal_gt_flags;
+        std::shared_ptr<std::vector<innards::ProofFlag>> _decision_at_gt_flags;
+        std::shared_ptr<std::vector<std::optional<innards::ProofFlag>>> _prefix_equal_lt_flags;
+        std::shared_ptr<std::vector<innards::ProofFlag>> _decision_at_lt_flags;
+
+        virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
+        virtual auto define_proof_model(innards::ProofModel &) -> void override;
+        virtual auto install_propagators(innards::Propagators &) -> void override;
 
     public:
         explicit LexCompareGreaterThanOrMaybeEqual(std::vector<IntegerVariableID> vars_1, std::vector<IntegerVariableID> vars_2, ReificationCondition reif_cond, bool or_equal, bool vars_swapped = false);
