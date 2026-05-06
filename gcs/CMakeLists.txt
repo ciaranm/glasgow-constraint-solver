@@ -57,6 +57,7 @@ add_library(glasgow_constraint_solver
         constraints/table.cc
         constraints/value_precede.cc
         innards/extensional_utils.cc
+        innards/integer_overflow.cc
         innards/integer_variable_state.cc
         innards/literal.cc
         innards/power.cc
@@ -220,6 +221,10 @@ if(GCS_BUILD_TESTS)
     add_executable(interval_set_test innards/interval_set_test.cc)
     target_link_libraries(interval_set_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME interval_set_test COMMAND $<TARGET_FILE:interval_set_test>)
+
+    add_executable(integer_test integer_test.cc)
+    target_link_libraries(integer_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
+    add_test(NAME integer_test COMMAND $<TARGET_FILE:integer_test>)
 
     add_executable(state_test innards/state_test.cc)
     target_link_libraries(state_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)

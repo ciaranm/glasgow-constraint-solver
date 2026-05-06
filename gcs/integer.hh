@@ -1,7 +1,10 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INTEGER_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INTEGER_HH
 
+#include <gcs/innards/integer_overflow.hh>
+
 #include <cstddef>
+#include <cstdlib>
 #include <functional>
 #include <limits>
 #include <ostream>
@@ -63,26 +66,30 @@ namespace gcs
 
         [[nodiscard]] constexpr auto operator<=>(const Integer &) const = default;
 
-        auto operator++() -> Integer &
+        constexpr auto operator++() -> Integer &
         {
+            if (raw_value == std::numeric_limits<long long>::max())
+                innards::throw_integer_overflow("++", raw_value);
             ++raw_value;
             return *this;
         }
 
-        auto operator++(int) -> Integer
+        constexpr auto operator++(int) -> Integer
         {
             Integer old = *this;
             operator++();
             return old;
         }
 
-        auto operator--() -> Integer &
+        constexpr auto operator--() -> Integer &
         {
+            if (raw_value == std::numeric_limits<long long>::min())
+                innards::throw_integer_overflow("--", raw_value);
             --raw_value;
             return *this;
         }
 
-        auto operator--(int) -> Integer
+        constexpr auto operator--(int) -> Integer
         {
             Integer old = *this;
             operator--();
@@ -112,43 +119,64 @@ namespace gcs
 
     [[nodiscard]] constexpr inline auto operator+(Integer a, Integer b) -> Integer
     {
-        return Integer{a.raw_value + b.raw_value};
+        long long r;
+        if (__builtin_add_overflow(a.raw_value, b.raw_value, &r))
+            innards::throw_integer_overflow("+", a.raw_value, b.raw_value);
+        return Integer{r};
     }
 
     constexpr inline auto operator+=(Integer & a, Integer b) -> Integer &
     {
-        a.raw_value += b.raw_value;
+        if (__builtin_add_overflow(a.raw_value, b.raw_value, &a.raw_value))
+            innards::throw_integer_overflow("+=", a.raw_value, b.raw_value);
         return a;
     }
 
     [[nodiscard]] constexpr inline auto operator-(Integer a, Integer b) -> Integer
     {
-        return Integer{a.raw_value - b.raw_value};
+        long long r;
+        if (__builtin_sub_overflow(a.raw_value, b.raw_value, &r))
+            innards::throw_integer_overflow("-", a.raw_value, b.raw_value);
+        return Integer{r};
     }
 
     constexpr inline auto operator-=(Integer & a, Integer b) -> Integer &
     {
-        a.raw_value -= b.raw_value;
+        if (__builtin_sub_overflow(a.raw_value, b.raw_value, &a.raw_value))
+            innards::throw_integer_overflow("-=", a.raw_value, b.raw_value);
         return a;
     }
 
     [[nodiscard]] constexpr inline auto operator*(Integer a, Integer b) -> Integer
     {
-        return Integer{a.raw_value * b.raw_value};
+        long long r;
+        if (__builtin_mul_overflow(a.raw_value, b.raw_value, &r))
+            innards::throw_integer_overflow("*", a.raw_value, b.raw_value);
+        return Integer{r};
     }
 
     [[nodiscard]] constexpr inline auto operator/(Integer a, Integer b) -> Integer
     {
+        if (b.raw_value == 0)
+            innards::throw_integer_overflow("/", a.raw_value, b.raw_value);
+        if (a.raw_value == std::numeric_limits<long long>::min() && b.raw_value == -1)
+            innards::throw_integer_overflow("/", a.raw_value, b.raw_value);
         return Integer{a.raw_value / b.raw_value};
     }
 
     [[nodiscard]] constexpr inline auto operator%(Integer a, Integer b) -> Integer
     {
+        if (b.raw_value == 0)
+            innards::throw_integer_overflow("%", a.raw_value, b.raw_value);
+        if (a.raw_value == std::numeric_limits<long long>::min() && b.raw_value == -1)
+            innards::throw_integer_overflow("%", a.raw_value, b.raw_value);
         return Integer{a.raw_value % b.raw_value};
     }
 
     [[nodiscard]] constexpr inline auto operator-(Integer a) -> Integer
     {
+        if (a.raw_value == std::numeric_limits<long long>::min())
+            innards::throw_integer_overflow("-", a.raw_value);
         return Integer{-a.raw_value};
     }
 
@@ -181,6 +209,8 @@ namespace gcs
      */
     inline auto abs(Integer i) -> Integer
     {
+        if (i.raw_value == std::numeric_limits<long long>::min())
+            innards::throw_integer_overflow("abs", i.raw_value);
         return Integer{std::llabs(i.raw_value)};
     }
 
