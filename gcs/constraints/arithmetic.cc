@@ -1,4 +1,5 @@
 #include <gcs/constraints/arithmetic.hh>
+#include <gcs/innards/power.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
@@ -14,15 +15,14 @@
 #include <fmt/ostream.h>
 #endif
 
-#include <cmath>
+#include <optional>
 #include <vector>
 
 using namespace gcs;
 using namespace gcs::innards;
 
-using std::llroundl;
 using std::move;
-using std::pow;
+using std::optional;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
@@ -63,17 +63,17 @@ auto GACArithmetic<op_>::prepare(Propagators & propagators, State & initial_stat
     for (const auto & v1 : initial_state.each_value_immutable(_v1)) {
         for (const auto & v2 : initial_state.each_value_immutable(_v2)) {
             if ((v2_zero_is_ok || v2 != 0_i) && initial_state.in_domain(_v2, v2)) {
-                Integer r = 0_i;
+                optional<Integer> r;
                 switch (op_) {
                 case ArithmeticOperator::Plus: r = v1 + v2; break;
                 case ArithmeticOperator::Minus: r = v1 - v2; break;
                 case ArithmeticOperator::Times: r = v1 * v2; break;
                 case ArithmeticOperator::Div: r = v1 / v2; break;
                 case ArithmeticOperator::Mod: r = v1 % v2; break;
-                case ArithmeticOperator::Power: r = Integer{llroundl(pow(v1.raw_value, v2.raw_value))}; break;
+                case ArithmeticOperator::Power: r = checked_integer_power(v1, v2); break;
                 }
-                if (initial_state.in_domain(_result, r))
-                    permitted.push_back(vector{v1, v2, r});
+                if (r && initial_state.in_domain(_result, *r))
+                    permitted.push_back(vector{v1, v2, *r});
             }
         }
     }
