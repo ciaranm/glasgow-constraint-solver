@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <optional>
+#include <string>
 #include <vector>
 
 using std::cout;
@@ -14,6 +15,7 @@ using std::make_optional;
 using std::nullopt;
 using std::optional;
 using std::pair;
+using std::string;
 using std::vector;
 
 using namespace gcs;
@@ -47,8 +49,9 @@ auto check_at_most_1(vector<Integer> & x_sols, Integer value, bool at_least, boo
     return at_least ? count >= 1 : count <= 1;
 }
 
-auto run_lex_test(bool proofs, int length, vector<pair<int, int>> ranges, bool reverse = false, bool or_equal = false, bool fixed_y = false) -> bool
+auto run_lex_test(bool proofs, const string & mode, int length, vector<pair<int, int>> ranges, bool reverse = false, bool or_equal = false, bool fixed_y = false) -> bool
 {
+    auto proof_basename = "smart_table_test_" + mode;
     vector<IntegerVariableID> x;
     vector<IntegerVariableID> y;
     vector<Integer> fixed_y_vals;
@@ -114,7 +117,7 @@ auto run_lex_test(bool proofs, int length, vector<pair<int, int>> ranges, bool r
     p.post(SmartTable{all_vars, tuples});
 
     bool lex_violated = false;
-    optional<ProofOptions> proof_options = proofs ? make_optional(ProofOptions{"smart_table_test"}) : nullopt;
+    optional<ProofOptions> proof_options = proofs ? make_optional(ProofOptions{proof_basename}) : nullopt;
     solve_with(p,
         SolveCallbacks{
             .solution = [&](const CurrentState & s) -> bool {
@@ -131,11 +134,12 @@ auto run_lex_test(bool proofs, int length, vector<pair<int, int>> ranges, bool r
 
     if (lex_violated)
         return false;
-    return ! proofs || run_veripb("smart_table_test.opb", "smart_table_test.pbp");
+    return ! proofs || run_veripb(proof_basename + ".opb", proof_basename + ".pbp");
 }
 
-auto run_at_most_1_test(bool proofs, int length, vector<pair<int, int>> & ranges, bool at_least, bool in_set) -> bool
+auto run_at_most_1_test(bool proofs, const string & mode, int length, vector<pair<int, int>> & ranges, bool at_least, bool in_set) -> bool
 {
+    auto proof_basename = "smart_table_test_" + mode;
     vector<IntegerVariableID> x;
     Problem p;
 
@@ -177,7 +181,7 @@ auto run_at_most_1_test(bool proofs, int length, vector<pair<int, int>> & ranges
     p.post(SmartTable{all_vars, tuples});
     bool at_most_1_violated = false;
 
-    optional<ProofOptions> proof_options = proofs ? make_optional(ProofOptions{"smart_table_test"}) : nullopt;
+    optional<ProofOptions> proof_options = proofs ? make_optional(ProofOptions{proof_basename}) : nullopt;
     solve_with(p,
         SolveCallbacks{
             .solution = [&](const CurrentState & s) -> bool {
@@ -191,11 +195,14 @@ auto run_at_most_1_test(bool proofs, int length, vector<pair<int, int>> & ranges
 
     if (at_most_1_violated)
         return false;
-    return ! proofs || run_veripb("smart_table_test.opb", "smart_table_test.pbp");
+    return ! proofs || run_veripb(proof_basename + ".opb", proof_basename + ".pbp");
 }
 
-auto main(int, char *[]) -> int
+auto main(int argc, char * argv[]) -> int
 {
+    if (argc != 2)
+        throw UnimplementedException{};
+
     vector<pair<int, vector<pair<int, int>>>> data = {
         // Length    //Ranges
         {3, {{1, 3}, {1, 2}, {2, 3}}},
@@ -205,51 +212,74 @@ auto main(int, char *[]) -> int
         {5, {{-1, 4}, {3, 6}, {2, 2}, {3, 3}, {3, 5}}},
         {5, {{1, 1}, {2, 2}, {3, 3}, {4, 4}, {1, 10}}}};
 
+    string mode{argv[1]};
+
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
             continue;
         for (auto & [length, ranges] : data) {
-            // x > y
-            if (! run_lex_test(proofs, length, ranges, false, false, false))
-                return EXIT_FAILURE;
-            // x >= y
-            if (! run_lex_test(proofs, length, ranges, false, true, false))
-                return EXIT_FAILURE;
-            // x < y
-            if (! run_lex_test(proofs, length, ranges, true, false, false))
-                return EXIT_FAILURE;
-            // x <= y
-            if (! run_lex_test(proofs, length, ranges, true, true, false))
-                return EXIT_FAILURE;
-
-            // x > [1,..,n]
-            if (! run_lex_test(proofs, length, ranges, false, false, true))
-                return EXIT_FAILURE;
-            // x >= [1,..,n]
-            if (! run_lex_test(proofs, length, ranges, false, true, true))
-                return EXIT_FAILURE;
-            // x < [1,..,n]
-            if (! run_lex_test(proofs, length, ranges, true, false, true))
-                return EXIT_FAILURE;
-            // x <= [1,..,n]
-            if (! run_lex_test(proofs, length, ranges, true, true, true))
-                return EXIT_FAILURE;
-
-            // at most one var in x == length
-            if (! run_at_most_1_test(proofs, length, ranges, false, false))
-                return EXIT_FAILURE;
-
-            // at most one var in x one of {1, length}
-            if (! run_at_most_1_test(proofs, length, ranges, false, true))
-                return EXIT_FAILURE;
-
-            // at least one var in x == length
-            if (! run_at_most_1_test(proofs, length, ranges, true, false))
-                return EXIT_FAILURE;
-
-            // at least one var in x one of {1, length}
-            if (! run_at_most_1_test(proofs, length, ranges, true, true))
-                return EXIT_FAILURE;
+            if (mode == "lex_gt") {
+                // x > y
+                if (! run_lex_test(proofs, mode, length, ranges, false, false, false))
+                    return EXIT_FAILURE;
+            }
+            else if (mode == "lex_ge") {
+                // x >= y
+                if (! run_lex_test(proofs, mode, length, ranges, false, true, false))
+                    return EXIT_FAILURE;
+            }
+            else if (mode == "lex_lt") {
+                // x < y
+                if (! run_lex_test(proofs, mode, length, ranges, true, false, false))
+                    return EXIT_FAILURE;
+            }
+            else if (mode == "lex_le") {
+                // x <= y
+                if (! run_lex_test(proofs, mode, length, ranges, true, true, false))
+                    return EXIT_FAILURE;
+            }
+            else if (mode == "lex_gt_fixed") {
+                // x > [1,..,n]
+                if (! run_lex_test(proofs, mode, length, ranges, false, false, true))
+                    return EXIT_FAILURE;
+            }
+            else if (mode == "lex_ge_fixed") {
+                // x >= [1,..,n]
+                if (! run_lex_test(proofs, mode, length, ranges, false, true, true))
+                    return EXIT_FAILURE;
+            }
+            else if (mode == "lex_lt_fixed") {
+                // x < [1,..,n]
+                if (! run_lex_test(proofs, mode, length, ranges, true, false, true))
+                    return EXIT_FAILURE;
+            }
+            else if (mode == "lex_le_fixed") {
+                // x <= [1,..,n]
+                if (! run_lex_test(proofs, mode, length, ranges, true, true, true))
+                    return EXIT_FAILURE;
+            }
+            else if (mode == "am1_eq") {
+                // at most one var in x == length
+                if (! run_at_most_1_test(proofs, mode, length, ranges, false, false))
+                    return EXIT_FAILURE;
+            }
+            else if (mode == "am1_in_set") {
+                // at most one var in x one of {1, length}
+                if (! run_at_most_1_test(proofs, mode, length, ranges, false, true))
+                    return EXIT_FAILURE;
+            }
+            else if (mode == "al1_eq") {
+                // at least one var in x == length
+                if (! run_at_most_1_test(proofs, mode, length, ranges, true, false))
+                    return EXIT_FAILURE;
+            }
+            else if (mode == "al1_in_set") {
+                // at least one var in x one of {1, length}
+                if (! run_at_most_1_test(proofs, mode, length, ranges, true, true))
+                    return EXIT_FAILURE;
+            }
+            else
+                throw UnimplementedException{};
         }
     }
 
