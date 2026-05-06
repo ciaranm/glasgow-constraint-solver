@@ -39,9 +39,13 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program Options")   //
-            ("help", "Display help information") //
-            ("prove", "Create a proof");
+        options.add_options("Program Options")                                                       //
+            ("help", "Display help information")                                                     //
+            ("prove", "Create a proof")                                                              //
+            ("proof-files-basename", "Basename for the .opb and .pbp files",                         //
+                cxxopts::value<string>()->default_value("odd_even_sum"))                             //
+            ("stats", "Print solve statistics")                                                      //
+            ;
         options_vars = options.parse(argc, argv);
     }
     catch (const cxxopts::exceptions::exception & e) {
@@ -73,9 +77,12 @@ auto main(int argc, char * argv[]) -> int
             println("{} {} {} {} {}", s(a), s(b), s(c), s(d), s(e));
             return true;
         },
-        options_vars.count("prove") ? make_optional<ProofOptions>("odd_even_sum") : nullopt);
+        options_vars.count("prove")
+            ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>())
+            : nullopt);
 
-    print("{}", stats);
+    if (options_vars.contains("stats"))
+        print("{}", stats);
 
     return EXIT_SUCCESS;
 }

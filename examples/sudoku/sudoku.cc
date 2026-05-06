@@ -25,6 +25,7 @@ using std::cerr;
 using std::cout;
 using std::make_optional;
 using std::nullopt;
+using std::string;
 using std::vector;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
@@ -43,10 +44,14 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program Options")   //
-            ("help", "Display help information") //
-            ("prove", "Create a proof")          //
-            ("trace", "Trace progress");
+        options.add_options("Program Options")                                                       //
+            ("help", "Display help information")                                                     //
+            ("prove", "Create a proof")                                                              //
+            ("proof-files-basename", "Basename for the .opb and .pbp files",                         //
+                cxxopts::value<string>()->default_value("sudoku"))                                   //
+            ("stats", "Print solve statistics")                                                      //
+            ("trace", "Trace progress")                                                              //
+            ;
 
         options.add_options("Extended Options")   //
             ("xv", "Solve the xv puzzle instead") //
@@ -238,9 +243,12 @@ auto main(int argc, char * argv[]) -> int
                 println("");
                 return true;
             }},
-        options_vars.contains("prove") ? make_optional<ProofOptions>("sudoku") : nullopt);
+        options_vars.contains("prove")
+            ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>())
+            : nullopt);
 
-    print("{}", stats);
+    if (options_vars.contains("stats"))
+        print("{}", stats);
 
     return EXIT_SUCCESS;
 }

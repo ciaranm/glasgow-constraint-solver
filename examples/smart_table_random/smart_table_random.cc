@@ -246,7 +246,7 @@ auto main(int argc, char * argv[]) -> int
             ("repeat", "Repeat for this many randomly generated tables.",                                    //
                 cxxopts::value<int>()->default_value("1"))                                                   //
             ("short-reasons", "Use redundance to reify reasons in proofs to save space.")                    //
-            ("proof-prefix", "Path and name of the opb and pbp files",                                       //
+            ("proof-files-basename", "Path and name of the opb and pbp files",                                       //
                 cxxopts::value<string>()->default_value("smart_table_random"))                               //
             ("stats", "Print stats, including solve time");                                                  //
 
@@ -266,7 +266,7 @@ auto main(int argc, char * argv[]) -> int
     auto n = options_vars["n"].as<int>();
     auto seed = options_vars["seed"].as<int>();
     auto repeat = options_vars["repeat"].as<int>();
-    auto proof_prefix = options_vars["proof-prefix"].as<string>();
+    auto proof_prefix = options_vars["proof-files-basename"].as<string>();
     auto display_table = options_vars.contains("display-table");
     auto prove = options_vars.contains("prove");
     auto short_reasons = options_vars.contains("short-reasons");

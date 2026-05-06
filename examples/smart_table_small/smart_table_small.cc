@@ -14,6 +14,9 @@ using namespace gcs;
 using std::cerr;
 using std::cout;
 using std::endl;
+using std::make_optional;
+using std::nullopt;
+using std::string;
 using std::vector;
 
 auto main(int argc, char * argv[]) -> int
@@ -24,9 +27,13 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program Options")   //
-            ("help", "Display help information") //
-            ("prove", "Create a proof");
+        options.add_options("Program Options")                                                       //
+            ("help", "Display help information")                                                     //
+            ("prove", "Create a proof")                                                              //
+            ("proof-files-basename", "Basename for the .opb and .pbp files",                         //
+                cxxopts::value<string>()->default_value("smart_table_small"))                        //
+            ("stats", "Print solve statistics")                                                      //
+            ;
 
         options_vars = options.parse(argc, argv);
     }
@@ -60,9 +67,12 @@ auto main(int argc, char * argv[]) -> int
                 cout << "A = " << s(A) << " B = " << s(B) << " C = " << s(C) << endl;
                 return true;
             }},
-        ProofOptions{"smart_table_small"});
+        options_vars.contains("prove")
+            ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>())
+            : nullopt);
 
-    cout << stats;
+    if (options_vars.contains("stats"))
+        cout << stats;
 
     return EXIT_SUCCESS;
 }
