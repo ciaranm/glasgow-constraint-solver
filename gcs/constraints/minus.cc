@@ -63,7 +63,7 @@ auto Minus::define_proof_model(ProofModel & model) -> void
 auto Minus::install_propagators(Propagators & propagators) -> void
 {
     Triggers triggers;
-    triggers.on_bounds.insert(triggers.on_change.end(), {_a, _b, _result});
+    triggers.on_bounds.insert(triggers.on_bounds.end(), {_a, _b, _result});
 
     propagators.install(
         [a = _a, b = _b, result = _result, sum_line = _sum_line](
