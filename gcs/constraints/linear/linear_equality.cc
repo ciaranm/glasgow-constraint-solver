@@ -1,5 +1,6 @@
 #include <gcs/constraints/linear/linear_equality.hh>
 #include <gcs/constraints/innards/reified_state.hh>
+#include <gcs/constraints/innards/triggers.hh>
 #include <gcs/constraints/linear/propagate.hh>
 #include <gcs/constraints/linear/utils.hh>
 #include <gcs/exception.hh>
@@ -309,7 +310,7 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> vo
                 Triggers triggers;
                 for (auto & [_, v] : _coeff_vars.terms)
                     triggers.on_change.push_back(v);
-                triggers.on_change.push_back(reif.cond.var);
+                add_trigger_for(triggers, reif.cond);
 
                 visit([&, modifier = modifier](const auto & sanitised_cv) {
                     propagators.install([sanitised_cv = sanitised_cv, value = _value + modifier, cond = _reif_cond, proof_line = _proof_line, all_vars = move(all_vars)](

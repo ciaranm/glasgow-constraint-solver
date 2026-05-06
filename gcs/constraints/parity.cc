@@ -1,3 +1,4 @@
+#include <gcs/constraints/innards/triggers.hh>
 #include <gcs/constraints/parity.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
@@ -6,8 +7,6 @@
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
-
-#include <util/overloaded.hh>
 
 #include <optional>
 #include <sstream>
@@ -93,25 +92,8 @@ auto ParityOdd::define_proof_model(ProofModel & model) -> void
 auto ParityOdd::install_propagators(Propagators & propagators) -> void
 {
     Triggers triggers;
-    for (const auto & l : _lits) {
-        overloaded{
-            [&](const TrueLiteral &) {},
-            [&](const FalseLiteral &) {},
-            [&](const IntegerVariableCondition & cond) {
-                switch (cond.op) {
-                    using enum VariableConditionOperator;
-                case NotEqual:
-                case Equal:
-                    triggers.on_change.push_back(cond.var);
-                    break;
-                case Less:
-                case GreaterEqual:
-                    triggers.on_bounds.push_back(cond.var);
-                    break;
-                }
-            }}
-            .visit(l);
-    }
+    for (const auto & l : _lits)
+        add_trigger_for(triggers, l);
 
     propagators.install([lits = _lits](
                             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
