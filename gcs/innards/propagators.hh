@@ -176,17 +176,6 @@ namespace gcs::innards
          */
         auto install_initialiser(InitialisationFunction &&) -> void;
 
-        /**
-         * Install a propagator for the provided table constraint, and take
-         * care of definitions if want_definitions() is true. This is used by
-         * Table, but also by various other constraints that turn themselves
-         * into table-like constraints.
-         *
-         * \sa gcs::innards::propagate_extensional()
-         */
-        // auto define_and_install_table(State &, innards::ProofModel * const, const std::vector<IntegerVariableID> &,
-        //     ExtensionalTuples, const std::string & name) -> void;
-
         ///@}
 
         /**
