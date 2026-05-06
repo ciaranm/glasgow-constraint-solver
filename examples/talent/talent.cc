@@ -15,7 +15,10 @@
 #include <version>
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <format>
 #include <print>
+#else
+#include <fmt/core.h>
 #endif
 
 using namespace gcs;
@@ -27,9 +30,11 @@ using std::string;
 using std::vector;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::format;
 using std::print;
 using std::println;
 #else
+using fmt::format;
 using fmt::print;
 using fmt::println;
 #endif
@@ -95,7 +100,7 @@ int main(int argc, char * argv[])
                 actorsScenes.back().emplace_back(s);
             }
         }
-        auto actorsSlots = p.create_integer_variable_vector(actorsScenes.size(), 0_i, Integer(numScenes - 1), "actorsSlots");
+        auto actorsSlots = p.create_integer_variable_vector(actorsScenes.size(), 0_i, Integer(numScenes - 1), format("actorsSlots[{}]", a));
         for (unsigned int s = 0; s < actorsScenes.size(); s++) {
             p.post(Equals{actorsSlots[s], slot[actorsScenes[a][s]]});
         }
