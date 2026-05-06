@@ -635,7 +635,7 @@ auto GACAllDifferent::install_propagators(Propagators & propagators) -> void
             propagate_gac_all_different(vars, vals, vector<Integer>{}, *value_am1_constraint_numbers.get(), state, inference, logger);
             return PropagatorState::Enable;
         },
-        triggers, "alldiff");
+        triggers);
 }
 
 template auto gcs::innards::propagate_gac_all_different(

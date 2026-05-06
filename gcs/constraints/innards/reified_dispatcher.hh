@@ -106,8 +106,7 @@ namespace gcs::innards
         Triggers triggers,
         EnforceMustHold_ enforce_constraint_must_hold,
         EnforceMustNotHold_ enforce_constraint_must_not_hold,
-        InferCondWhenUndecided_ infer_cond_when_undecided,
-        const std::string & name) -> void
+        InferCondWhenUndecided_ infer_cond_when_undecided) -> void
     {
         if (std::holds_alternative<evaluated_reif::Deactivated>(initial_evaluated))
             return;
@@ -151,7 +150,7 @@ namespace gcs::innards
                     }}
                     .visit(test_reification_condition(state, reif_cond));
             },
-            triggers, name);
+            triggers);
     }
 }
 

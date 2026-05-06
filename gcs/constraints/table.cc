@@ -186,7 +186,7 @@ auto Table::install_propagators(Propagators & propagators) -> void
                                 const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             return propagate_extensional(table, state, inference, logger);
         },
-            triggers, "extenstional");
+            triggers);
     },
         move(_tuples));
 }
@@ -350,7 +350,7 @@ auto NegativeTable::install_propagators(Propagators & propagators) -> void
             }
             return PropagatorState::Enable;
         },
-            triggers, "negative table");
+            triggers);
     },
         _tuples);
 }

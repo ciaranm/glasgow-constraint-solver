@@ -230,7 +230,7 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state, Proof
             }
             return PropagatorState::DisableUntilBacktrack;
         },
-            Triggers{}, "circuit init");
+            Triggers{});
     }
 
     return pos_var_data;

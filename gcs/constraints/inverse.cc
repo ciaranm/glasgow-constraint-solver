@@ -166,7 +166,7 @@ auto Inverse::install_propagators(Propagators & propagators) -> void
 
         return PropagatorState::Enable;
     },
-        triggers, "inverse");
+        triggers);
 }
 
 auto Inverse::s_exprify(const std::string & name, const innards::ProofModel * const model) const -> std::string

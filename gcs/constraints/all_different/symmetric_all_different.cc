@@ -168,7 +168,7 @@ auto SymmetricAllDifferent::install_propagators(Propagators & propagators) -> vo
             propagate_gac_all_different(vars, values, vector<Integer>{}, *value_am1s.get(), state, inf, logger);
             return PropagatorState::Enable;
         },
-        triggers, "symmetric_all_different");
+        triggers);
 }
 
 auto SymmetricAllDifferent::s_exprify(const string & name, const ProofModel * const model) const -> string

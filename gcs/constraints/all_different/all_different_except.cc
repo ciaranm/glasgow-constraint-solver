@@ -186,7 +186,7 @@ auto AllDifferentExcept::install_propagators(Propagators & propagators) -> void
             propagate_gac_all_different(vars, vals, excluded, *value_am1_constraint_numbers.get(), state, inference, logger);
             return PropagatorState::Enable;
         },
-        triggers, "alldiff_except");
+        triggers);
 }
 
 auto AllDifferentExcept::s_exprify(const string & name, const ProofModel * const model) const -> string

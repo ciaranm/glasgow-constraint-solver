@@ -70,7 +70,7 @@ auto Propagators::model_contradiction(const State &, ProofModel * const optional
     install([explain_yourself = explain_yourself](const State &, auto & inference, ProofLogger * const logger) -> PropagatorState {
         inference.contradiction(logger, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{}; }});
     },
-        Triggers{}, "model contradiction");
+        Triggers{});
 }
 
 auto Propagators::trim_lower_bound(const State & state, ProofModel * const optional_model, IntegerVariableID var, Integer val, const string & x) -> void
@@ -103,7 +103,7 @@ auto Propagators::trim_upper_bound(const State & state, ProofModel * const optio
     }
 }
 
-auto Propagators::install(PropagationFunction && f, const Triggers & triggers, const string &) -> void
+auto Propagators::install(PropagationFunction && f, const Triggers & triggers) -> void
 {
     int id = _imp->propagation_functions.size();
     _imp->propagation_functions.emplace_back(move(f));

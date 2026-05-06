@@ -132,7 +132,7 @@ auto IncreasingChain::install_propagators(Propagators & propagators) -> void
         }
         return entailed ? PropagatorState::DisableUntilBacktrack : PropagatorState::Enable;
     },
-        triggers, "increasing chain");
+        triggers);
 }
 
 auto IncreasingChain::s_exprify(const string & name, const ProofModel * const model) const -> string

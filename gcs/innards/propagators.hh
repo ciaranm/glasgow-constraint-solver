@@ -168,7 +168,7 @@ namespace gcs::innards
          * Triggers are specified, and a constraint may be called even if its
          * trigger condition is not met.
          */
-        auto install(PropagationFunction &&, const Triggers & trigger_vars, const std::string & name) -> void;
+        auto install(PropagationFunction &&, const Triggers & trigger_vars) -> void;
 
         /**
          * Install an initialiser, which will be called once just before search

@@ -653,7 +653,7 @@ auto Knapsack::install_propagators(Propagators & propagators) -> void
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             return knapsack(state, logger, inference, coeffs, vars, totals, eqns_lines);
         },
-        triggers, "knapsack");
+        triggers);
 }
 
 auto Knapsack::s_exprify(const string & name, const innards::ProofModel * const model) const -> string

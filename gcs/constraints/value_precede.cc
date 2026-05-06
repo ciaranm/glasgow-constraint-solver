@@ -201,7 +201,7 @@ auto ValuePrecede::install_propagators(Propagators & propagators) -> void
 
                 return PropagatorState::Enable;
             },
-            triggers, "value_precede");
+            triggers);
     }
 }
 

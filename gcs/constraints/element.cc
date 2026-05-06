@@ -349,7 +349,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
 
             return PropagatorState::Enable;
         },
-            index_triggers, "NDimensionalElement index");
+            index_triggers);
     }
 
     if (_bounds_only) {
@@ -435,7 +435,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
 
             return PropagatorState::Enable;
         },
-            result_triggers, "NDimensionalElement");
+            result_triggers);
     }
     else {
         Triggers result_triggers;
@@ -503,7 +503,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
 
             return PropagatorState::Enable;
         },
-            result_triggers, "NDimensionalElement");
+            result_triggers);
     }
 
     if (array_has_nonconstants) {
@@ -534,7 +534,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
 
             return PropagatorState::Enable;
         },
-            equality_triggers, "NDimensionalElement");
+            equality_triggers);
     }
 }
 

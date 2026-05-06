@@ -48,7 +48,7 @@ namespace
     }
 
     auto install_propagators_logical(Propagators & propagators, const Literals & lits,
-        const Literal & full_reif, LiteralIs reif_state, const string & name) -> void
+        const Literal & full_reif, LiteralIs reif_state) -> void
     {
         using enum LiteralIs;
 
@@ -181,7 +181,7 @@ namespace
 
             throw NonExhaustiveSwitch{};
         },
-            triggers, name);
+            triggers);
     }
 
     auto define_proof_model_logical(ProofModel & model, const Literals & lits,
@@ -267,7 +267,7 @@ auto And::define_proof_model(ProofModel & model) -> void
 
 auto And::install_propagators(Propagators & propagators) -> void
 {
-    install_propagators_logical(propagators, _lits, _full_reif, _reif_state, "and");
+    install_propagators_logical(propagators, _lits, _full_reif, _reif_state);
 }
 
 auto And::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
@@ -334,7 +334,7 @@ auto Or::install_propagators(Propagators & propagators) -> void
     Literals lits = _lits;
     for (auto & l : lits)
         l = ! l;
-    install_propagators_logical(propagators, move(lits), ! _full_reif, _reif_state, "or");
+    install_propagators_logical(propagators, move(lits), ! _full_reif, _reif_state);
 }
 
 auto Or::s_exprify(const string & name, const innards::ProofModel * const model) const -> string

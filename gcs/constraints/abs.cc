@@ -106,7 +106,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
 
         return PropagatorState::Enable;
     },
-        triggers, "abs");
+        triggers);
 }
 
 auto Abs::s_exprify(const string & name, const innards::ProofModel * const model) const -> string

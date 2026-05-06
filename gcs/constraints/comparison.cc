@@ -187,8 +187,7 @@ auto ReifiedCompareLessThanOrMaybeEqual::install_propagators(Propagators & propa
         install_reified_dispatcher(propagators, _evaluated_cond, _reif_cond, triggers,
             std::move(enforce_constraint_must_hold),
             std::move(enforce_constraint_must_not_hold),
-            std::move(infer_cond_when_undecided),
-            "reified compare less than or maybe equal");
+            std::move(infer_cond_when_undecided));
     }
 }
 

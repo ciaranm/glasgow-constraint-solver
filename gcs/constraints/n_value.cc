@@ -130,7 +130,7 @@ auto NValue::install_propagators(Propagators & propagators) -> void
 
         return PropagatorState::Enable;
     },
-        triggers, "nvalue");
+        triggers);
 }
 
 auto NValue::s_exprify(const string & name, const innards::ProofModel * const model) const -> string

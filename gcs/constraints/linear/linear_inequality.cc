@@ -217,8 +217,7 @@ auto ReifiedLinearInequality::install_propagators(Propagators & propagators) -> 
         install_reified_dispatcher(propagators, _evaluated_cond, _reif_cond, triggers,
             std::move(enforce_constraint_must_hold),
             std::move(enforce_constraint_must_not_hold),
-            std::move(infer_cond_when_undecided),
-            "linear inequality");
+            std::move(infer_cond_when_undecided));
     },
         sanitised_cv, sanitised_neg_cv);
 }
