@@ -10,6 +10,11 @@ library. For an introduction to *using* the solver, start with the top-level
 
 ## Contents
 
+- [State and variables](state-and-variables.md) — how variables and their
+  state are represented inside the solver: the `IntegerVariableID` family,
+  the `State` class, the `IntervalSet` domain representation, chronological
+  backtracking via epochs, and the inference paths through which propagators
+  modify domains. Read first when changing the solver internals.
 - [Implementing a constraint](constraints.md) — the structural pattern every
   constraint follows: class shape, the `install` method, the propagator
   framework, triggers, the inference and justification APIs, OPB encoding

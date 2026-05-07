@@ -132,7 +132,7 @@ This is a C++23 constraint programming solver with a key focus on **proof loggin
 
 Not part of the public API. Key components:
 
-- **`State`** (`innards/state.hh`) — holds all variable domains; uses algebraic types (`IntegerVariableConstantState`, `IntegerVariableRangeState`, `IntegerVariableSmallSetState`, `IntegerVariableSetState`) to compactly represent domains
+- **`State`** (`innards/state.hh`) — holds all variable domains as `IntervalSet<Integer>` (a sorted sequence of disjoint closed intervals, with small-buffer optimisation for the common one-or-two-interval case). See `dev_docs/state-and-variables.md` for the full picture: the `IntegerVariableID` family, epoch-based backtracking, and the `change_state_for_*` inference paths.
 - **`Propagators`** (`innards/propagators.hh`) — manages constraint propagators, triggers, and the propagation queue
 - **`InferenceTracker`** (`innards/inference_tracker.hh`) — templated on `SimpleInferenceTracker` or `EagerProofLoggingInferenceTracker`; all domain modifications go through this
 - **`ProofLogger`** (`innards/proofs/proof_logger.hh`) — writes OPB/VeriPB proof files
