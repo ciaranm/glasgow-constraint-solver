@@ -24,7 +24,7 @@ make subtle mistakes when dealing with complicated conditions (which show up
 quite a lot in propagators). The proof logging code is similarly high-risk.
 
 All contributions should pass both the `release` and `sanitize` build and tests
-before submission, including the full test suite (witth VeriPB installed) in
+before submission, including the full test suite (with VeriPB installed) in
 both modes. See `README.md` for details.
 
 Developer Documentation

@@ -502,11 +502,13 @@ This was the failure mode we hit twice when first splitting
 
 ## See also
 
+- [state-and-variables.md](state-and-variables.md) — the variable-ID
+  family, the `State` class, `IntervalSet` domain storage, epoch-based
+  backtracking, and the `change_state_for_*` inference paths your
+  propagator's `inference.infer(...)` calls into.
 - [reification.md](reification.md) — the additional machinery for
   reified constraints (`If`/`NotIf`/`Iff` forms, the
   `install_reified_dispatcher` helper, the `evaluated_reif` runtime
   types).
 - [minizinc.md](minizinc.md) — exposing finished constraints via
   FlatZinc.
-- The "Constraints" section of the top-level `README.md` for the
-  high-level rationale behind the design.
