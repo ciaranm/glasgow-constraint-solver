@@ -170,6 +170,22 @@ auto ProofModel::add_constraint(const WPBSumEq & eq, const optional<HalfReifyOnC
     return add_constraint("?", "?", eq, half_reif);
 }
 
+auto ProofModel::add_two_way_reified_constraint(const StringLiteral & constraint_name, const StringLiteral & rule,
+    const WPBSumLE & ineq, const ProofFlag & flag) -> pair<optional<ProofLine>, optional<ProofLine>>
+{
+    auto forward = add_constraint(constraint_name, rule, ineq, HalfReifyOnConjunctionOf{{flag}});
+    auto reverse = add_constraint(constraint_name, rule, negate_inequality(ineq), HalfReifyOnConjunctionOf{{! flag}});
+    return {forward, reverse};
+}
+
+auto ProofModel::create_proof_flag_fully_reifying(const string & flag_name,
+    const StringLiteral & constraint_name, const StringLiteral & rule, const WPBSumLE & ineq) -> ProofFlag
+{
+    auto flag = create_proof_flag(flag_name);
+    add_two_way_reified_constraint(constraint_name, rule, ineq, flag);
+    return flag;
+}
+
 auto ProofModel::names_and_ids_tracker() -> NamesAndIDsTracker &
 {
     return _imp->tracker;

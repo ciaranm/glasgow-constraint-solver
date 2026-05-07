@@ -63,30 +63,19 @@ auto Count::install(Propagators & propagators, State & initial_state, ProofModel
 auto Count::define_proof_model(ProofModel & model) -> void
 {
     for (auto & var : _vars) {
-        auto flag = model.create_proof_flag("count");
-        auto var_minus_val_gt_0 = model.create_proof_flag("countg");
-        auto var_minus_val_lt_0 = model.create_proof_flag("countl");
+        // var_minus_val_gt_0 ⇔ var > val
+        auto var_minus_val_gt_0 = model.create_proof_flag_fully_reifying("countg",
+            "Count", "var greater", WPBSum{} + 1_i * var + -1_i * _value_of_interest >= 1_i);
+
+        // var_minus_val_lt_0 ⇔ var < val
+        auto var_minus_val_lt_0 = model.create_proof_flag_fully_reifying("countl",
+            "Count", "var less", WPBSum{} + 1_i * var + -1_i * _value_of_interest <= -1_i);
+
+        // flag ⇔ var = val (encoded as ¬gt ∧ ¬lt)
+        auto flag = model.create_proof_flag_fully_reifying("count",
+            "Count", "var equal", WPBSum{} + 1_i * ! var_minus_val_gt_0 + 1_i * ! var_minus_val_lt_0 >= 2_i);
+
         _flags.emplace_back(flag, var_minus_val_gt_0, var_minus_val_lt_0);
-
-        // var_minus_val_gt_0 -> var - val > 0
-        model.add_constraint("Count", "var bigger",
-            WPBSum{} + 1_i * var + -1_i * _value_of_interest >= 1_i, HalfReifyOnConjunctionOf{{var_minus_val_gt_0}});
-
-        // ! var_minus_val_gt_0 -> var - val <= 0
-        model.add_constraint("Count", "var not bigger",
-            WPBSum{} + 1_i * var + -1_i * _value_of_interest <= 0_i, HalfReifyOnConjunctionOf{{! var_minus_val_gt_0}});
-
-        // var_minus_val_lt_0 -> var - val <= -1
-        model.add_constraint("Count", "var smaller", WPBSum{} + 1_i * var + -1_i * _value_of_interest <= -1_i, HalfReifyOnConjunctionOf{{var_minus_val_lt_0}});
-
-        // ! var_minus_val_lt_0 -> var - val > -1
-        model.add_constraint("Count", "var not smaller", WPBSum{} + 1_i * var + -1_i * _value_of_interest >= 0_i, HalfReifyOnConjunctionOf{{! var_minus_val_lt_0}});
-
-        // flag => ! countg /\ ! countl
-        model.add_constraint("Count", "var equal", WPBSum{} + 1_i * ! var_minus_val_gt_0 + 1_i * ! var_minus_val_lt_0 >= 2_i, HalfReifyOnConjunctionOf{{flag}});
-
-        // ! flag => countg \/ countl
-        model.add_constraint("Count", "var not equal", WPBSum{} + 1_i * var_minus_val_gt_0 + 1_i * var_minus_val_lt_0 >= 1_i, HalfReifyOnConjunctionOf{{! flag}});
     }
 
     // sum flag == how_many
