@@ -59,7 +59,6 @@ add_library(glasgow_constraint_solver
         constraints/value_precede.cc
         innards/extensional_utils.cc
         innards/integer_overflow.cc
-        innards/integer_variable_state.cc
         innards/literal.cc
         innards/power.cc
         innards/proofs/bits_encoding.cc
