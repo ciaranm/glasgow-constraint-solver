@@ -227,13 +227,19 @@ auto In::install_propagators(Propagators & propagators) -> void
 
                     inference.infer_not_equal(logger, V, val,
                         JustifyExplicitlyThenRUP{[logger, &state, &var_vals, &selectors, var, i](const ReasonFunction & reason) {
+                            // When var is fixed, dom(var) is a single value and the inner-loop
+                            // scaffolding line `! sel_j + (var != w)` collapses (under the reason's
+                            // `var = w` literal) to the same constraint as the outer `! sel_j`, so
+                            // skip the inner loop entirely.
+                            bool var_fixed = state.has_single_value(var);
                             for (const auto & [j, V_j] : enumerate(var_vals)) {
                                 if (j == i)
                                     continue;
-                                for (const auto & w : state.each_value_immutable(var))
-                                    logger->emit_rup_proof_line_under_reason(reason,
-                                        WPBSum{} + 1_i * ! selectors[j] + 1_i * (var != w) >= 1_i,
-                                        ProofLevel::Temporary);
+                                if (! var_fixed)
+                                    for (const auto & w : state.each_value_immutable(var))
+                                        logger->emit_rup_proof_line_under_reason(reason,
+                                            WPBSum{} + 1_i * ! selectors[j] + 1_i * (var != w) >= 1_i,
+                                            ProofLevel::Temporary);
                                 logger->emit_rup_proof_line_under_reason(reason,
                                     WPBSum{} + 1_i * ! selectors[j] >= 1_i,
                                     ProofLevel::Temporary);
