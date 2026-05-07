@@ -613,6 +613,14 @@ auto main(int argc, char * argv[]) -> int
                 const auto & vars2 = arg_as_array_of_var(data, args, 1);
                 problem.post(Inverse{vars1, vars2, 1_i, 1_i});
             }
+            else if (id == "glasgow_knapsack") {
+                auto weights = arg_as_array_of_integer(data, args, 0);
+                auto profits = arg_as_array_of_integer(data, args, 1);
+                const auto & vars = arg_as_array_of_var(data, args, 2);
+                const auto & weight = arg_as_var(data, args, 3);
+                const auto & profit = arg_as_var(data, args, 4);
+                problem.post(Knapsack{*weights, *profits, vars, weight, profit});
+            }
             else if (id == "glasgow_lex_less_int" || id == "glasgow_lex_less_bool") {
                 const auto & vars1 = arg_as_array_of_var(data, args, 0);
                 const auto & vars2 = arg_as_array_of_var(data, args, 1);
@@ -639,6 +647,11 @@ auto main(int argc, char * argv[]) -> int
                 const auto & vars = arg_as_array_of_var(data, args, 0);
                 const auto & var = arg_as_var(data, args, 1);
                 problem.post(In{var, vars});
+            }
+            else if (id == "glasgow_nvalue") {
+                const auto & n = arg_as_var(data, args, 0);
+                const auto & vars = arg_as_array_of_var(data, args, 1);
+                problem.post(NValue{n, vars});
             }
             else if (id == "glasgow_regular") {
                 const auto & vars = arg_as_array_of_var(data, args, 0);
@@ -685,6 +698,27 @@ auto main(int argc, char * argv[]) -> int
             else if (id == "glasgow_symmetric_all_different") {
                 const auto & vars = arg_as_array_of_var(data, args, 0);
                 problem.post(SymmetricAllDifferent{vars, 1_i});
+            }
+            else if (id == "glasgow_table_int" || id == "glasgow_table_bool") {
+                const auto & vars = arg_as_array_of_var(data, args, 0);
+                auto flat_table = arg_as_array_of_integer(data, args, 1);
+                auto arity = vars.size();
+                if (arity == 0)
+                    throw FlatZincInterfaceError{format("Empty variable array in {} in {}", id, fznname)};
+                if (flat_table->size() % arity != 0)
+                    throw FlatZincInterfaceError{format("Table size {} not a multiple of arity {} in {} in {}",
+                        flat_table->size(), arity, id, fznname)};
+                auto num_tuples = flat_table->size() / arity;
+                SimpleTuples tuples;
+                tuples.reserve(num_tuples);
+                for (size_t i = 0; i < num_tuples; ++i) {
+                    vector<Integer> row;
+                    row.reserve(arity);
+                    for (size_t j = 0; j < arity; ++j)
+                        row.push_back((*flat_table)[i * arity + j]);
+                    tuples.push_back(move(row));
+                }
+                problem.post(Table{vars, move(tuples)});
             }
             else if (id == "glasgow_value_precede_int") {
                 Integer s{static_cast<long long>(args.at(0))};

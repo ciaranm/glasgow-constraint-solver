@@ -40,6 +40,9 @@ set_tests_properties(minizinc-cake PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-count COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ counttest true true)
 set_tests_properties(minizinc-count PROPERTIES SKIP_RETURN_CODE 66)
 
+add_test(NAME minizinc-countops COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ countops true true)
+set_tests_properties(minizinc-countops PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-crystalmaze COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ crystalmaze true true)
 set_tests_properties(minizinc-crystalmaze PROPERTIES SKIP_RETURN_CODE 66)
 
@@ -63,6 +66,9 @@ set_tests_properties(minizinc-increasing PROPERTIES SKIP_RETURN_CODE 66)
 
 add_test(NAME minizinc-inverses COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ inverses true true)
 set_tests_properties(minizinc-inverses PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-knapsack COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ knapsacktest false true)
+set_tests_properties(minizinc-knapsack PROPERTIES SKIP_RETURN_CODE 66)
 
 add_test(NAME minizinc-lessthans COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ lessthans true true)
 set_tests_properties(minizinc-lessthans PROPERTIES SKIP_RETURN_CODE 66)
@@ -91,6 +97,9 @@ set_tests_properties(minizinc-lexltunequal PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-lexreif COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ lexreif true true)
 set_tests_properties(minizinc-lexreif PROPERTIES SKIP_RETURN_CODE 66)
 
+add_test(NAME minizinc-allequal COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ allequaltest true true)
+set_tests_properties(minizinc-allequal PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-member COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ membertest true true)
 set_tests_properties(minizinc-member PROPERTIES SKIP_RETURN_CODE 66)
 
@@ -99,6 +108,9 @@ set_tests_properties(minizinc-minmax PROPERTIES SKIP_RETURN_CODE 66)
 
 add_test(NAME minizinc-notequalsreif COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ notequalsreif true true)
 set_tests_properties(minizinc-notequalsreif PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-nvalue COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ nvaluetest true true)
+set_tests_properties(minizinc-nvalue PROPERTIES SKIP_RETURN_CODE 66)
 
 add_test(NAME minizinc-regex COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ regex true true)
 set_tests_properties(minizinc-regex PROPERTIES SKIP_RETURN_CODE 66)
@@ -126,6 +138,12 @@ set_tests_properties(minizinc-strictlyincreasing PROPERTIES SKIP_RETURN_CODE 66)
 
 add_test(NAME minizinc-symmetricalldifferent COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ symmetricalldifferent true true)
 set_tests_properties(minizinc-symmetricalldifferent PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-tablebool COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ tablebool true true)
+set_tests_properties(minizinc-tablebool PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-tableint COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ tableint true true)
+set_tests_properties(minizinc-tableint PROPERTIES SKIP_RETURN_CODE 66)
 
 add_test(NAME minizinc-times COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ times true true)
 set_tests_properties(minizinc-times PROPERTIES SKIP_RETURN_CODE 66)
