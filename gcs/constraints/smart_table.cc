@@ -127,14 +127,18 @@ namespace
             .visit(v);
     }
 
-    auto log_filtering_inference(ProofLogger * const logger, const ProofFlag & tuple_selector, const Literal & lit,
+    auto log_filtering_inference(ProofLogger * const logger, const ProofFlag * tuple_selector, const Literal & lit,
         const State &, auto &, const ReasonFunction & reason)
     {
         logger->emit_rup_proof_line_under_reason(reason,
-            WPBSum{} + 1_i * (! tuple_selector) + 1_i * lit >= 1_i, ProofLevel::Current);
+            WPBSum{} + 1_i * (! *tuple_selector) + 1_i * lit >= 1_i, ProofLevel::Current);
     }
 
-    auto filter_edge(const SmartEntry & edge, VariableDomainMap & supported_by_tree, const ProofFlag & tuple_selector,
+    // tuple_selector may be null when proofs are disabled; the body only uses it inside
+    // `if (logger)` branches (which are also the only branches that actually need it),
+    // so passing nullptr is safe in that case and avoids forming a reference into an
+    // empty pb_selectors vector at the call site.
+    auto filter_edge(const SmartEntry & edge, VariableDomainMap & supported_by_tree, const ProofFlag * tuple_selector,
         const State & state, auto & inference, const ReasonFunction &, ProofLogger * const logger) -> void
     {
         // Currently filter both domains - might be overkill
@@ -307,7 +311,7 @@ namespace
     }
 
     [[nodiscard]] auto filter_and_check_valid(const TreeEdges & tree, VariableDomainMap & supported_by_tree,
-        const ProofFlag & tuple_selector, const State & state, auto & inference,
+        const ProofFlag * tuple_selector, const State & state, auto & inference,
         const ReasonFunction & reason, ProofLogger * const logger) -> bool
     {
         for (int l = tree.size() - 1; l >= 0; --l) {
@@ -348,7 +352,7 @@ namespace
     }
 
     auto filter_again_and_remove_supported(const TreeEdges & tree, VariableDomainMap & supported_by_tree,
-        VariableDomainMap & unsupported, const ProofFlag & tuple_selector, const State & state,
+        VariableDomainMap & unsupported, const ProofFlag * tuple_selector, const State & state,
         auto & inference, const ReasonFunction & reason, ProofLogger * const logger) -> void
     {
         for (int l = tree.size() - 1; l >= 0; --l) {
@@ -422,6 +426,10 @@ namespace
                 continue;
             }
 
+            // pb_selectors is only populated when proof logging is enabled; index it
+            // only in that case to avoid out-of-bounds access on an empty vector.
+            const auto * pb_selector = logger ? &pb_selectors[tuple_idx] : nullptr;
+
             for (const auto & tree : forests[tuple_idx]) {
                 // Initialise supported by tree to current variable domains
                 VariableDomainMap supported_by_tree{};
@@ -431,13 +439,13 @@ namespace
                         supported_by_tree[var].emplace_back(value);
 
                 // First pass of filtering supported_by_tree and check of validity
-                if (! filter_and_check_valid(tree, supported_by_tree, pb_selectors[tuple_idx], state, inference, reason, logger)) {
+                if (! filter_and_check_valid(tree, supported_by_tree, pb_selector, state, inference, reason, logger)) {
                     // Not feasible
                     inference.infer_equal(logger, selectors[tuple_idx], 0_i, NoJustificationNeeded{}, ReasonFunction{});
                     break;
                 }
 
-                filter_again_and_remove_supported(tree, supported_by_tree, unsupported, pb_selectors[tuple_idx],
+                filter_again_and_remove_supported(tree, supported_by_tree, unsupported, pb_selector,
                     state, inference, reason, logger);
             }
 
