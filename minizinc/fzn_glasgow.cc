@@ -119,8 +119,12 @@ namespace
         }
         else if (a.is_array()) {
             vector<Integer> result;
-            for (const auto & val : a)
-                result.push_back(Integer{static_cast<long long>(val)});
+            for (const auto & val : a) {
+                if (val.is_boolean())
+                    result.push_back(static_cast<bool>(val) ? 1_i : 0_i);
+                else
+                    result.push_back(Integer{static_cast<long long>(val)});
+            }
             data.unnamed_constant_arrays.push_back(move(result));
             return &data.unnamed_constant_arrays.back();
         }
