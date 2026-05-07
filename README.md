@@ -48,6 +48,8 @@ Compiling
   compiler's standard library lacks ``<format>`` (e.g. Clang with libc++ on macOS)
 - A ``<generator>`` polyfill, fetched only when the compiler's standard library lacks
   ``std::generator`` (e.g. Clang with libc++ on macOS)
+- [gch::small_vector](https://github.com/gharveymn/small_vector) — small-buffer-optimised
+  vector container, used internally for variable domain storage
 
 **Optional external tools:**
 - [VeriPB](https://gitlab.com/MIAOresearch/software/VeriPB) — proof checker, required

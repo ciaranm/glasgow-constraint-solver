@@ -128,6 +128,15 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(json)
 FetchContent_GetProperties(json)  # sets json_SOURCE_DIR in this scope (inherited by subdirs)
 
+set(GCH_SMALL_VECTOR_ENABLE_TESTS OFF CACHE INTERNAL "")
+set(GCH_SMALL_VECTOR_ENABLE_BENCHMARKS OFF CACHE INTERNAL "")
+FetchContent_Declare(
+        gch_small_vector
+        GIT_REPOSITORY https://github.com/gharveymn/small_vector.git
+        GIT_TAG f0725471b273245a5aa6855612079fbdc40f532b # v0.9.2
+)
+FetchContent_MakeAvailable(gch_small_vector)
+
 add_library(gcs_fmt INTERFACE)
 
 try_compile(GCS_COMPILER_HAS_FORMAT ${CMAKE_CURRENT_BINARY_DIR}/cmake_compile_tests ${CMAKE_CURRENT_SOURCE_DIR}/cmake_compile_tests/has_format.cc)

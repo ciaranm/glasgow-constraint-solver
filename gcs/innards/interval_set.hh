@@ -3,8 +3,10 @@
 
 #include <gcs/innards/interval_set-fwd.hh>
 
+#include <gch/small_vector.hpp>
+
 #include <cstdlib>
-#include <vector>
+#include <utility>
 #include <version>
 
 #ifdef __cpp_lib_generator
@@ -34,7 +36,13 @@ namespace gcs::innards
     class IntervalSet
     {
     private:
-        using Intervals = std::vector<std::pair<Int_, Int_>>;
+        // Inline capacity tuned for the dominant case in the solver: variable
+        // domains usually start as a single contiguous interval, and after a
+        // handful of != assertions still have ≤ 2 intervals. Bigger values pay
+        // for unused inline storage on every variable and on every snapshot
+        // copy at new_epoch().
+        static constexpr std::size_t inline_intervals = 2;
+        using Intervals = gch::small_vector<std::pair<Int_, Int_>, inline_intervals>;
         Intervals intervals;
 
     public:
