@@ -11,6 +11,7 @@
 
 #include <util/overloaded.hh>
 
+#include <algorithm>
 #include <deque>
 #include <regex>
 #include <tuple>

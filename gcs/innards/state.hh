@@ -2,10 +2,11 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_STATE_HH
 
 #include <gcs/current_state.hh>
-#include <gcs/innards/integer_variable_state.hh>
+#include <gcs/innards/interval_set.hh>
 #include <gcs/innards/literal.hh>
 #include <gcs/innards/state-fwd.hh>
 #include <gcs/innards/variable_id_utils.hh>
+#include <gcs/integer.hh>
 
 #include <any>
 #include <functional>
@@ -79,50 +80,27 @@ namespace gcs::innards
     class State
     {
     private:
-        template <typename VarType_>
-        struct GetStateAndOffsetOf;
-
-        template <typename VarType_>
-        struct GetMutableStateAndOffsetOf;
-
         struct Imp;
         std::unique_ptr<Imp> _imp;
 
-        template <DirectIntegerVariableIDLike VarType_>
-        [[nodiscard]] auto change_state_for_literal(
-            const VarType_ & var,
-            VariableConditionOperator op,
-            Integer value) -> Inference;
-
-        template <DirectIntegerVariableIDLike VarType_>
         [[nodiscard]] auto change_state_for_equal(
-            const VarType_ & var,
+            const SimpleIntegerVariableID & var,
             Integer value) -> Inference;
 
-        template <DirectIntegerVariableIDLike VarType_>
         [[nodiscard]] auto change_state_for_not_equal(
-            const VarType_ & var,
+            const SimpleIntegerVariableID & var,
             Integer value) -> Inference;
 
-        template <DirectIntegerVariableIDLike VarType_>
         [[nodiscard]] auto change_state_for_less_than(
-            const VarType_ & var,
+            const SimpleIntegerVariableID & var,
             Integer value) -> Inference;
 
-        template <DirectIntegerVariableIDLike VarType_>
         [[nodiscard]] auto change_state_for_greater_than_or_equal(
-            const VarType_ & var,
+            const SimpleIntegerVariableID & var,
             Integer value) -> Inference;
 
-        [[nodiscard]] inline auto assign_to_state_of(const DirectIntegerVariableID) -> innards::IntegerVariableState &;
-
-        [[nodiscard]] inline auto state_of(const DirectIntegerVariableID &, innards::IntegerVariableState & space) -> innards::IntegerVariableState &;
-        [[nodiscard]] inline auto state_of(const ConstantIntegerVariableID &, innards::IntegerVariableState & space) -> innards::IntegerVariableState &;
-        [[nodiscard]] inline auto state_of(const SimpleIntegerVariableID &) -> innards::IntegerVariableState &;
-
-        [[nodiscard]] inline auto state_of(const DirectIntegerVariableID &, innards::IntegerVariableState & space) const -> const innards::IntegerVariableState &;
-        [[nodiscard]] inline auto state_of(const ConstantIntegerVariableID &, innards::IntegerVariableState & space) const -> const innards::IntegerVariableState &;
-        [[nodiscard]] inline auto state_of(const SimpleIntegerVariableID &) const -> const innards::IntegerVariableState &;
+        [[nodiscard]] inline auto state_of(const SimpleIntegerVariableID &) -> IntervalSet<Integer> &;
+        [[nodiscard]] inline auto state_of(const SimpleIntegerVariableID &) const -> const IntervalSet<Integer> &;
 
     public:
         /**
