@@ -329,7 +329,9 @@ auto main(int argc, char * argv[]) -> int
                     seen_a_bool = seen_a_bool || data.integer_variables.at(string{v}).second;
                 }
                 else {
-                    auto val = Integer{v.get<long long>()};
+                    Integer val = v.is_boolean()
+                        ? (static_cast<bool>(v) ? 1_i : 0_i)
+                        : Integer{v.get<long long>()};
                     values.push_back(val);
                     variables.push_back(ConstantIntegerVariableID{val});
                 }
