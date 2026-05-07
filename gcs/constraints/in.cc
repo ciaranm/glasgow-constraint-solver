@@ -121,28 +121,13 @@ auto In::define_proof_model(ProofModel & model) -> void
     // Mirrors the encoding used by Count. Full reification of every
     // proof flag is the project rule for new OPB encodings.
     for (const auto & [idx, V] : enumerate(_var_vals)) {
-        auto lt = model.create_proof_flag(format("inlt{}", idx));
-        auto gt = model.create_proof_flag(format("ingt{}", idx));
-        auto sel = model.create_proof_flag(format("in{}", idx));
+        auto lt = model.create_proof_flag_fully_reifying(format("inlt{}", idx),
+            "In", "var less than", WPBSum{} + 1_i * _var + -1_i * V <= -1_i);
+        auto gt = model.create_proof_flag_fully_reifying(format("ingt{}", idx),
+            "In", "var greater than", WPBSum{} + 1_i * _var + -1_i * V >= 1_i);
+        auto sel = model.create_proof_flag_fully_reifying(format("in{}", idx),
+            "In", "var equal", WPBSum{} + 1_i * ! lt + 1_i * ! gt >= 2_i);
         _selectors.push_back(sel);
-
-        // gt ⇔ var > V_i
-        model.add_constraint("In", "var greater than",
-            WPBSum{} + 1_i * _var + -1_i * V >= 1_i, {{gt}});
-        model.add_constraint("In", "var not greater than",
-            WPBSum{} + 1_i * _var + -1_i * V <= 0_i, {{! gt}});
-
-        // lt ⇔ var < V_i
-        model.add_constraint("In", "var less than",
-            WPBSum{} + 1_i * _var + -1_i * V <= -1_i, {{lt}});
-        model.add_constraint("In", "var not less than",
-            WPBSum{} + 1_i * _var + -1_i * V >= 0_i, {{! lt}});
-
-        // sel ⇔ ¬lt ∧ ¬gt
-        model.add_constraint("In", "selector implies var equals",
-            WPBSum{} + 1_i * ! lt + 1_i * ! gt >= 2_i, {{sel}});
-        model.add_constraint("In", "var unequal implies not selector",
-            WPBSum{} + 1_i * lt + 1_i * gt >= 1_i, {{! sel}});
 
         sum += 1_i * sel;
     }

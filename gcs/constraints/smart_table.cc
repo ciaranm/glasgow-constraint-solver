@@ -627,48 +627,27 @@ namespace
             model.add_constraint(WPBSum{} + 1_i * var_1 + -1_i * var_2 == 0_i,
                 HalfReifyOnConjunctionOf{{flag}});
 
-            // !f => var1 != var2
-            auto flag_lt = model.create_proof_flag("lt");
-            auto flag_gt = model.create_proof_flag("gt");
-            model.add_constraint(WPBSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i,
-                HalfReifyOnConjunctionOf{{flag_gt}});
-            model.add_constraint(WPBSum{} + 1_i * var_2 + -1_i * var_1 >= 0_i,
-                HalfReifyOnConjunctionOf{{! flag_gt}});
-            model.add_constraint(WPBSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i,
-                HalfReifyOnConjunctionOf{{flag_lt}});
-            model.add_constraint(WPBSum{} + 1_i * var_1 + -1_i * var_2 >= 0_i,
-                HalfReifyOnConjunctionOf{{! flag_lt}});
+            // !f => var1 != var2 via fully reified lt/gt and a selector
+            auto flag_gt = model.create_proof_flag_fully_reifying("gt", "SmartTable", "binary entry",
+                WPBSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i);
+            auto flag_lt = model.create_proof_flag_fully_reifying("lt", "SmartTable", "binary entry",
+                WPBSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i);
             model.add_constraint(WPBSum{} + 1_i * flag_lt + 1_i * flag_gt >= 1_i,
                 HalfReifyOnConjunctionOf{{! flag}});
             return flag;
         }
 
-        case GreaterThan: {
-            auto flag = model.create_proof_flag("bin_gt");
-            model.add_constraint(WPBSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i,
-                HalfReifyOnConjunctionOf{{flag}});
-            model.add_constraint(WPBSum{} + 1_i * var_2 + -1_i * var_1 >= 0_i,
-                HalfReifyOnConjunctionOf{{! flag}});
-            return flag;
-        }
+        case GreaterThan:
+            return model.create_proof_flag_fully_reifying("bin_gt", "SmartTable", "binary entry",
+                WPBSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i);
 
-        case LessThan: {
-            auto flag = model.create_proof_flag("bin_lt");
-            model.add_constraint(WPBSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i,
-                HalfReifyOnConjunctionOf{{flag}});
-            model.add_constraint(WPBSum{} + 1_i * var_1 + -1_i * var_2 >= 0_i,
-                HalfReifyOnConjunctionOf{{! flag}});
-            return flag;
-        }
+        case LessThan:
+            return model.create_proof_flag_fully_reifying("bin_lt", "SmartTable", "binary entry",
+                WPBSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i);
 
-        case LessThanEqual: {
-            auto flag = model.create_proof_flag("bin_le");
-            model.add_constraint(WPBSum{} + 1_i * var_2 + -1_i * var_1 >= 0_i,
-                HalfReifyOnConjunctionOf{{flag}});
-            model.add_constraint(WPBSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i,
-                HalfReifyOnConjunctionOf{{! flag}});
-            return flag;
-        }
+        case LessThanEqual:
+            return model.create_proof_flag_fully_reifying("bin_le", "SmartTable", "binary entry",
+                WPBSum{} + 1_i * var_2 + -1_i * var_1 >= 0_i);
 
         case NotEqual: {
             // !f => var1 == var2
@@ -676,37 +655,20 @@ namespace
             model.add_constraint(WPBSum{} + 1_i * var_1 + -1_i * var_2 == 0_i,
                 HalfReifyOnConjunctionOf{{! flag}});
 
-            // f => var1 != var2
-            auto flag_lt = model.create_proof_flag("lt");
-            auto flag_gt = model.create_proof_flag("gt");
-
-            // Means we need f => fgt or flt
+            // f => var1 != var2, via fully reified lt/gt and a selector
+            auto flag_gt = model.create_proof_flag_fully_reifying("gt", "SmartTable", "binary entry",
+                WPBSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i);
+            auto flag_lt = model.create_proof_flag_fully_reifying("lt", "SmartTable", "binary entry",
+                WPBSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i);
             model.add_constraint(WPBSum{} + 1_i * flag_lt + 1_i * flag_gt >= 1_i,
                 HalfReifyOnConjunctionOf{{flag}});
 
-            // And then fgt <==> var1 > var2
-            model.add_constraint(WPBSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i,
-                HalfReifyOnConjunctionOf{{flag_gt}});
-            model.add_constraint(WPBSum{} + 1_i * var_2 + -1_i * var_1 >= 0_i,
-                HalfReifyOnConjunctionOf{{! flag_gt}});
-
-            // flt <==> var1 < var2
-            model.add_constraint(WPBSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i,
-                HalfReifyOnConjunctionOf{{flag_lt}});
-            model.add_constraint(WPBSum{} + 1_i * var_1 + -1_i * var_2 >= 0_i,
-                HalfReifyOnConjunctionOf{{! flag_lt}});
-
             return flag;
         }
 
-        case GreaterThanEqual: {
-            auto flag = model.create_proof_flag("bin_ge");
-            model.add_constraint(WPBSum{} + 1_i * var_1 + -1_i * var_2 >= 0_i,
-                HalfReifyOnConjunctionOf{{flag}});
-            model.add_constraint(WPBSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i,
-                HalfReifyOnConjunctionOf{{! flag}});
-            return flag;
-        }
+        case GreaterThanEqual:
+            return model.create_proof_flag_fully_reifying("bin_ge", "SmartTable", "binary entry",
+                WPBSum{} + 1_i * var_1 + -1_i * var_2 >= 0_i);
 
         case NotIn:
         case In:

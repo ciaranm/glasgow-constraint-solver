@@ -105,6 +105,32 @@ namespace gcs::innards
             const StringLiteral & rule,
             const Literals & lits) -> std::optional<ProofLine>;
 
+        /**
+         * \brief Encode `flag ⇔ ineq` in OPB by emitting both halves of the equivalence:
+         * the forward implication `flag → ineq` and the reverse `¬flag → ¬ineq`. The
+         * reverse half is the integer negation of `ineq`.
+         *
+         * Replaces the common pattern of writing the two halves by hand, which makes
+         * it easy to forget one direction (leaving the flag UP-free under solution
+         * extension) or to compute the negation incorrectly.
+         */
+        auto add_two_way_reified_constraint(
+            const StringLiteral & constraint_name,
+            const StringLiteral & rule,
+            const WPBSumLE & ineq,
+            const ProofFlag & flag) -> std::pair<std::optional<ProofLine>, std::optional<ProofLine>>;
+
+        /**
+         * \brief Create a fresh proof flag and fully reify it against `ineq` in one
+         * go: equivalent to `create_proof_flag` followed by
+         * `add_two_way_reified_constraint`.
+         */
+        [[nodiscard]] auto create_proof_flag_fully_reifying(
+            const std::string & flag_name,
+            const StringLiteral & constraint_name,
+            const StringLiteral & rule,
+            const WPBSumLE & ineq) -> ProofFlag;
+
         ///@}
 
         /**

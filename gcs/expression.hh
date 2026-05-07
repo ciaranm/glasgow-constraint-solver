@@ -174,6 +174,25 @@ namespace gcs
     }
 
     /**
+     * \brief Negate an integer SumLessThanEqual: `lhs ≤ rhs` ↦ `lhs ≥ rhs + 1`,
+     * returned in `SumLessThanEqual` form (so the result is `-lhs ≤ -rhs - 1`).
+     *
+     * Useful for emitting the second half of a fully reified constraint:
+     * given `ineq, {flag}` (forward implication), `negate_inequality(ineq), {!flag}`
+     * is the corresponding reverse implication.
+     *
+     * \ingroup Expressions
+     */
+    template <typename Var_>
+    [[nodiscard]] constexpr inline auto negate_inequality(SumLessThanEqual<Weighted<Var_>> ineq) -> SumLessThanEqual<Weighted<Var_>>
+    {
+        for (auto & [c, _] : ineq.lhs.terms)
+            c = -c;
+        ineq.rhs = -ineq.rhs - 1_i;
+        return ineq;
+    }
+
+    /**
      * A syntactic equality.
      *
      * Often created by writing `WeightedSum{} + 42_i * var1 + 23_i * var2 == 1234_i`.
