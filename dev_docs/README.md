@@ -24,6 +24,10 @@ library. For an introduction to *using* the solver, start with the top-level
   the MiniZinc / FlatZinc ecosystem: `fzn-glasgow`, the `mznlib/` predicate
   overrides, `.msc` solver-config files, the cross-solver test harness, and
   the recipe for exposing an existing C++ constraint.
+- [Benchmarking](benchmarking.md) — the curated set of benchmarks for
+  measuring the wall-time impact of a performance-sensitive change, the
+  rationale for each pick, the harness pattern for comparing two builds,
+  and what to capture. Use when quantifying a refactor's perf impact.
 
 More documents will be added here as we build up coverage of other parts of
 the codebase.
