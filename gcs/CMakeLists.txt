@@ -98,6 +98,10 @@ endif()
 
 target_link_libraries(glasgow_constraint_solver PUBLIC gcs_fmt)
 
+# gch::small_vector is used in interval_set.hh which is transitively reached
+# through state.hh, so the include directories must propagate to consumers.
+target_link_libraries(glasgow_constraint_solver PUBLIC gch::small_vector)
+
 # nlohmann_json is header-only and used only in .cc files (not public headers), so we
 # pull in its include directory directly rather than linking the CMake target.  Linking
 # the target would create a reference in the installed export set that consumers can't
