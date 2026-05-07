@@ -415,6 +415,22 @@ auto State::copy_of_values(const VarType_ & var) const -> IntervalSet<Integer>
     return shifted;
 }
 
+namespace
+{
+    auto each_value_generator(IntervalSet<Integer> set,
+        std::function<auto(Integer)->Integer> apply) -> generator<Integer>
+    {
+        for (auto i : set.each())
+            co_yield apply(i);
+    }
+
+    auto each_value_constant_generator(Integer val,
+        std::function<auto(Integer)->Integer> apply) -> generator<Integer>
+    {
+        co_yield apply(val);
+    }
+}
+
 template <IntegerVariableIDLike VarType_>
 auto State::each_value_immutable(const VarType_ & var) const -> generator<Integer>
 {
@@ -424,12 +440,14 @@ auto State::each_value_immutable(const VarType_ & var) const -> generator<Intege
         return apply_view(v, negate_first, then_add);
     };
 
-    return visit_actual(actual_var, [&](const SimpleIntegerVariableID & v) -> generator<Integer> { return [](IntervalSet<Integer> set, auto apply) -> generator<Integer> {
-                                                                                                       for (auto i : set.each())
-                                                                                                           co_yield apply(i);
-                                                                                                   }(state_of(v), apply); }, [&](const ConstantIntegerVariableID & v) -> generator<Integer> { return [](Integer val, auto apply) -> generator<Integer> {
-                                                                                                                                                                                                                                                                        co_yield apply(val);
-                                                                                                                                                                                                                                                                    }(v.const_value, apply); });
+    return visit_actual(
+        actual_var,
+        [&](const SimpleIntegerVariableID & v) {
+            return each_value_generator(state_of(v), apply);
+        },
+        [&](const ConstantIntegerVariableID & v) {
+            return each_value_constant_generator(v.const_value, apply);
+        });
 }
 
 template <IntegerVariableIDLike VarType_>
@@ -441,31 +459,21 @@ auto State::each_value_mutable(const VarType_ & var) const -> generator<Integer>
         return apply_view(v, negate_first, then_add);
     };
 
-    return visit_actual(actual_var, [&](const SimpleIntegerVariableID & v) -> generator<Integer> { return [](IntervalSet<Integer> set, auto apply) -> generator<Integer> {
-                                                                                                       for (auto i : set.each())
-                                                                                                           co_yield apply(i);
-                                                                                                   }(state_of(v), apply); }, [&](const ConstantIntegerVariableID & v) -> generator<Integer> { return [](Integer val, auto apply) -> generator<Integer> {
-                                                                                                                                                                                                                                                                        co_yield apply(val);
-                                                                                                                                                                                                                                                                    }(v.const_value, apply); });
-}
-
-namespace
-{
-    auto debug_string_for(const IntervalSet<Integer> & set) -> string;
+    return visit_actual(
+        actual_var,
+        [&](const SimpleIntegerVariableID & v) {
+            return each_value_generator(state_of(v), apply);
+        },
+        [&](const ConstantIntegerVariableID & v) {
+            return each_value_constant_generator(v.const_value, apply);
+        });
 }
 
 auto State::operator()(const IntegerVariableID & i) const -> Integer
 {
     if (auto result = optional_single_value(i))
         return *result;
-    auto [actual_var, _1, _2] = deview(i);
-    throw VariableDoesNotHaveUniqueValue{"Integer variable " + overloaded{[&](const SimpleIntegerVariableID & v) {
-                                                                              return debug_string(IntegerVariableID{v}) + " " + debug_string_for(state_of(v));
-                                                                          },
-                                                                   [&](const ConstantIntegerVariableID & v) {
-                                                                       return debug_string(IntegerVariableID{v}) + " const " + v.const_value.to_string();
-                                                                   }}
-                                                                   .visit(actual_var)};
+    throw VariableDoesNotHaveUniqueValue{"Integer variable " + debug_string(i) + " does not have a unique value"};
 }
 
 auto State::new_epoch(bool subsearch) -> Timestamp
@@ -591,19 +599,6 @@ auto innards::State::get_constraint_state(const ConstraintStateHandle h) const -
 auto innards::State::get_persistent_constraint_state(const ConstraintStateHandle h) const -> ConstraintState &
 {
     return _imp->persistent_constraint_states[h.index];
-}
-
-namespace
-{
-    auto debug_string_for(const IntervalSet<Integer> & set) -> string
-    {
-        if (set.empty())
-            return "iset (empty)";
-        string result = "iset";
-        for (const auto & [l, u] : set.each_interval())
-            result += " " + l.to_string() + ".." + u.to_string();
-        return result;
-    }
 }
 
 namespace gcs
