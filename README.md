@@ -16,10 +16,6 @@ Contents
   * [Proof Logging](#proof-logging)
 - [Navigating the Source Code](#navigating-the-source-code)
 - [Developer Documentation](#developer-documentation)
-- [How Does the Solver Work Internally?](#how-does-the-solver-work-internally)
-  * [Variables](#variables)
-  * [Constraints](#constraints)
-  * [Backtracking Search](#backtracking-search)
 - [How Do We Know It's Correct?](#how-do-we-know-its-correct)
 - [Acknowledgements](#acknowledgements)
 
@@ -222,13 +218,13 @@ solve(p, [&](const CurrentState & s) -> bool {
 The second argument here is a lambda, or callback function. It will be called every time the solver
 finds a new candidate solution, and the last time it is called will be when an optimal solution has
 been found. To get the actual value of a variable inside this callback, we use the ``s`` argument as
-it it were a function. We return ``true`` from our callback to say that we want the solver to keep
+if it were a function. We return ``true`` from our callback to say that we want the solver to keep
 going and try to find a better solution.
 
 Finally, it is often a good idea to tell the solver which variables it should use for making
 decisions. In this case, the banana and chocolate variables are our decision variables, so we could
 instead use the ``solve_with`` function to specify a search strategy. The ``branch``
-parameter here can also be a callbacks, but there are some common options available using the
+parameter here can also be a callback, but there are some common options available using the
 ``branch_with`` function, and the functions in the ``gcs::variable_order::`` and
 ``gcs::value_order::`` namespaces.
 
@@ -260,7 +256,7 @@ VeriPB 3.0 format. You can find out more here:
 
 * VeriPB from https://gitlab.com/MIAOresearch/software/VeriPB
 
-VeriPB is now written in Rust and can be installed via the default Russt build tool `cargo`. 
+VeriPB is now written in Rust and can be installed via the default Rust build tool `cargo`. 
 After cloning the repository:
 ```bash
 cd ./VeriPB
@@ -319,122 +315,6 @@ In-depth notes on individual subsystems live in the ``dev_docs/`` directory. The
 developers (human or AI) working on the solver itself, not at end users. See ``dev_docs/README.md``
 for an index.
 
-How Does the Solver Work Internally?
-====================================
-
-If we're looking to do as little as possible to get a working but not particularly efficient solver,
-we probably need:
-
-- integer variables
-- a core set of constraints
-- some kind of backtracking search
-- some way sticking these things together
-
-Variables
----------
-
-There are two extremes on how to deal with variables, and various things in the middle. In a typical
-SAT solver, variables are just integer indices, and the actual state of variables is held elsewhere
-in the trail. Meanwhile, in a conventional OO-style constraint solver, a variable is a class that
-holds a set of values. I'm becoming increasingly unfond of the OO style, for at least four reasons:
-
-- It puts state in awkward places. Is the variable you create when you define your model the same as
-  the variable you get when you've found a solution? Can you just read its value, or do you have to
-  mess around with it? Every solution I've seen to this is ugly in some way.
-
-- What about multi-threading, etc?
-
-- It makes having lots of variables expensive. If something simple like a binary variable involves
-  multiple memory allocations, performance is terrible compared to a SAT solver.
-
-- It gives us object lifetime issues. Think Sudoku, and how every variable appears in several all
-  different constraints: this means variables need to be references rather than raw objects. But
-  then also think temporaries, used in arithmetic expressions, etc. Where do they live? Who is
-  responsible for the variable object's lifetime?
-
-On the other hand, treating everything as a binary variable, like in a SAT solver, means awful
-blowups on large domains. So, whilst I like the idea of variables just being identifiers that,
-behind the scenes, index into a state data structure, it's worth thinking carefully about how we
-store this state. The solution I'm going with for now is:
-
-- We have a Problem object, which does bookkeeping.
-
-- From a user perspective, variables are IDs, which are an opaque, lightweight thing you can copy
-  around etc. We can create new ones as needed via our problem object. Also, we can create 'fake'
-  variables corresponding to integer constants in an easy way, because this is convenient, and avoids
-  having to overload constraints.
-
-- Whenever we've found a solution, we're given a temporary reference to a State object, that can
-  be queried using a variable identifier to get its value. (Actually, we get a CurrentState, which
-  avoids exposing all sorts of ugly innards.)
-
-Then there's the question of how variable state is stored. A variable is a set of values, but a set
-is a horribly inefficient data structure that is expensive to copy, and involves all kinds of
-unpleasant memory allocation and dereferencing. If we knew that variables only ever store ranges,
-we could just store bounds, or if we knew variables were small, we could use a fixed size bitset
-for its domain, but both of these solutions lack generality. So how do we get all of the nice
-things?
-
-If we can abstract away all the places that actually directly play around with a variable's values
-directly, there's nothing stopping us from using algebraic types behind the scenes to store a
-variable's state as either a constant, or a range, or a compact bitset, or an ugly big set if it's
-really necessary. For constraints, it looks like it suffices to support a small list of query
-operations for each variable:
-
-- How many values are in the domain?
-- What is the lower / upper bound?
-- Is this value in the domain?
-- Iterate over each value in the domain in order.
-
-And for the public user interface, we might only need a single common operation:
-
-- Give me the single value in this domain, or exception if it doesn't have a unique value.
-
-To modify state, we seem to need:
-
-- This variable takes exactly this value.
-- This variable does not take this value.
-- This variable is at least / at most this value.
-
-Whilst there's a bit of complexity in dealing with each of these operations and with all of the
-things it might do to the different ways a value set might be represented, we can put this code in
-exactly one place. An additional advantage of keeping all this together is for tracking state
-changes, for watches etc: three constraints might each think they're eliminating an arbitrary value
-from a domain, but we can spot that together they've just done a bounds change. I expect this will
-be similarly useful for proof logging.
-
-Constraints
------------
-
-Constraints are user-facing. Each constraint is associated with zero or more propagators, which do
-the actual work. A propagator is always called at least once, at the root node. After that, it is
-only called when triggered by an event. Events include a specific variable being instantiated, a
-specific variable having its bounds changed, and a specific variable having any of its values
-deleted. (Instantiated implies both other kinds of events, and bounds implies any values, so
-multiple triggers are not needed.) A propagator is then called, and it can make some inferences. It
-must then return information on whether or not it actually changed anything, and whether or not it
-should be called again in the future. The easiest constraints to understand are probably
-``NotEquals`` and ``Table`` (the latter of which uses ``propagate_extensional`` to do the hard work,
-because this code is used by other constraints too).
-
-For proof logging, every constraint must also be able to describe itself in low level terms. Usually
-this is done via members of the ``Propagators`` class such as ``define`` and ``define_cnf``.
-This should only be done if ``Propagators::want_nonpropagating()`` is true.
-
-Any inference that is carried out goes via an inference tracker, which is a templated argument that
-might be a ``SimpleInferenceTracker`` or an ``EagerProofLoggingInferenceTracker``. As well as
-specifying the inference, you must also provide a justification for proof logging, and a reason. The
-former can be done by passing a ``NoJustificationNeeded`` or ``JustifyUsingRUP`` instance, for
-simple constraints, but complex reasoning will require a ``JustifyExplicitlyOnly`` or
-``JustifyExplicitlyThenRUP`` instance which include a callback to create the relevant
-proof steps. These can be done using ``generic_reason``, if you do not have
-something better.
-
-Backtracking Search
--------------------
-
-For now, this is boring. In the future, we'll probably do something like Solution-Biased search.
-
 How Do We Know It's Correct?
 ============================
 
@@ -463,27 +343,8 @@ OPB file we produce is actually representative of the high level constraint mode
 VeriPB checker. The latter we take on faith, although the VeriPB format is intentionally simple
 enough that you should probably be able to write your own proof checker if you prefer.
 
-Encoding high level constraints in OPB format is mostly almost straightforward, because we
-deliberately use a very simple encoding, and derive any additional constraints or inference in a way
-that is proof-checked. The main problem is all the awful special edge cases: whilst you might think
-it is easy to explain what the constraint "(x < y) <-> z" does, this gets to be moderately fiddly
-when x and y have different and potentially non-overlapping domains. So, for each constraint, we
-test that it is defined correctly over a range of hand-crafted and randomly generated sequences of
-variables: we enumerate all solutions to the problem that has just that constraint, and compare
-them to a computer-generated list of all solutions that is created just using a piece of
-solution-checking code. This means that, if we believe we can write a function that checks whether
-"(x < y) <-> z" holds given ints x and y and a boolean z, then we can believe we have defined the
-constraint correctly, at least for the choices of test input. We then also run the VeriPB proof
-checker on the "find all solutions" search tree, to check that the OPB definition is consistent.
-
-This isn't perfect, though: it assumes we can generate a good set of test variable domains. It also
-doesn't check edge cases that we haven't thought of, like "what if x and y are the same variable?",
-or "what if z is defined as a literal that mentions x?".
-
-Finally, we also use this setup to test that a constraint achieves GAC (assuming it is supposed to):
-during every step of the backtracking search, we also check that every remaining value has a
-support. This isn't particularly fast, but it's not so slow that it's prohibitive to do it as part
-of a normal automated test run.
+For how each constraint produces its OPB encoding and how we test that the encoding matches the
+constraint's semantics, see the [developer documentation](dev_docs/).
 
 Acknowledgements
 ================
