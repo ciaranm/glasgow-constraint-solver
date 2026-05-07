@@ -114,28 +114,35 @@ auto In::define_proof_model(ProofModel & model) -> void
         if (! is_literally_false(_var == v))
             sum += 1_i * (_var == v);
 
-    // For each non-constant V_i we introduce three flags: sel_i, lt_i, gt_i, with
-    // sel_i ⇒ var = V_i, lt_i ⇒ var < V_i, gt_i ⇒ var > V_i, plus the trichotomy
-    // sel_i + lt_i + gt_i >= 1. The trichotomy gives the reverse direction
-    // (var = V_i ⇒ sel_i) implicitly: if neither lt_i nor gt_i can hold, sel_i
-    // must hold. Without this, unit propagation in proofs cannot force sel_i
-    // active when var = V_i, so the al1 selector sum below would not propagate.
+    // For each non-constant V_i, fully reify three flags:
+    //   lt_i ⇔ var < V_i
+    //   gt_i ⇔ var > V_i
+    //   sel_i ⇔ ¬lt_i ∧ ¬gt_i  (i.e. sel_i ⇔ var = V_i)
+    // Mirrors the encoding used by Count. Full reification of every
+    // proof flag is the project rule for new OPB encodings.
     for (const auto & [idx, V] : enumerate(_var_vals)) {
-        auto sel = model.create_proof_flag(format("in{}", idx));
         auto lt = model.create_proof_flag(format("inlt{}", idx));
         auto gt = model.create_proof_flag(format("ingt{}", idx));
+        auto sel = model.create_proof_flag(format("in{}", idx));
         _selectors.push_back(sel);
 
-        model.add_constraint("In", "selector implies var equals",
-            WPBSum{} + 1_i * _var + -1_i * V >= 0_i, {{sel}});
-        model.add_constraint("In", "selector implies var equals",
-            WPBSum{} + 1_i * _var + -1_i * V <= 0_i, {{sel}});
-        model.add_constraint("In", "lt implies var less than",
-            WPBSum{} + 1_i * _var + -1_i * V <= -1_i, {{lt}});
-        model.add_constraint("In", "gt implies var greater than",
+        // gt ⇔ var > V_i
+        model.add_constraint("In", "var greater than",
             WPBSum{} + 1_i * _var + -1_i * V >= 1_i, {{gt}});
-        model.add_constraint("In", "var is less, equal, or greater",
-            WPBSum{} + 1_i * sel + 1_i * lt + 1_i * gt >= 1_i);
+        model.add_constraint("In", "var not greater than",
+            WPBSum{} + 1_i * _var + -1_i * V <= 0_i, {{! gt}});
+
+        // lt ⇔ var < V_i
+        model.add_constraint("In", "var less than",
+            WPBSum{} + 1_i * _var + -1_i * V <= -1_i, {{lt}});
+        model.add_constraint("In", "var not less than",
+            WPBSum{} + 1_i * _var + -1_i * V >= 0_i, {{! lt}});
+
+        // sel ⇔ ¬lt ∧ ¬gt
+        model.add_constraint("In", "selector implies var equals",
+            WPBSum{} + 1_i * ! lt + 1_i * ! gt >= 2_i, {{sel}});
+        model.add_constraint("In", "var unequal implies not selector",
+            WPBSum{} + 1_i * lt + 1_i * gt >= 1_i, {{! sel}});
 
         sum += 1_i * sel;
     }
