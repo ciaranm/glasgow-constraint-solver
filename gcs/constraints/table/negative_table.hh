@@ -10,8 +10,9 @@
 namespace gcs
 {
     /**
-     * \brief Constrain that the specified variables are not equal to one of the specified
-     * tuples.
+     * \brief Constrain that the assignment to the specified variables does not match
+     * any of the specified tuples — equivalently, for every tuple `t`, at least one
+     * `vars[i]` differs from `t[i]`.
      *
      * \ingroup Constraints
      */
