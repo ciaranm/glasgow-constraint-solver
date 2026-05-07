@@ -267,6 +267,13 @@ encoding (still fails with `Assert*`) or the justification (passes
 with `Assert*`, fails with the real one). Never commit code that uses
 it.
 
+**Tracing proof line provenance.** Set `GCS_VERBOSE_LOGGING=1` in the
+environment before running a test. Every line written to the `.pbp`
+will be preceded by a C++ stacktrace as comment lines (`% ...`), so a
+VeriPB failure at `foo_test.pbp:N` can be traced back to the exact
+emit site. Cheap to use and often faster than narrowing the failure by
+inspection.
+
 ## The OPB encoding
 
 Inside `if (optional_model) { ... }`, build PB constraints with `WPBSum`
@@ -317,6 +324,42 @@ optional_model->add_constraint(
 
 This emits "the conjunction → the constraint" rather than asserting it
 unconditionally. The natural way to express conditional encodings.
+
+### Fully reified flags
+
+When you introduce a *new* `ProofFlag` whose meaning is "this
+inequality holds", encode it as a full equivalence — both
+`flag → ineq` and `¬flag → ¬ineq` — not just one direction. Use:
+
+```cpp
+auto gt = optional_model->create_proof_flag_fully_reifying(
+    "gt", "Foo", "var greater than",
+    WPBSum{} + 1_i * v1 + -1_i * v2 >= 1_i);
+```
+
+This creates `gt` and emits both halves of `gt ⇔ (v1 > v2)`. The
+equivalent two-step form is
+`add_two_way_reified_constraint(name, rule, ineq, flag)` if you've
+already created the flag elsewhere. Both compute the reverse direction
+by integer-negating the supplied inequality.
+
+**Why full reif and not half reif?** A half-reified flag is left
+UP-free by VeriPB: under any complete assignment to the real
+variables, the flag could still be either 0 or 1, so any later
+constraint that *requires* the flag to be a particular value
+(e.g. an at-least-one selector sum `Σ sel_i ≥ 1`) will fail
+verification on `solx`. Full reif lets unit propagation determine
+the flag from the underlying variables, mirroring what `Count` and
+`SmartTable` do.
+
+**When half reif is still right.** If the flag is acting as a
+*selector* — i.e. the reverse half is a *different* inequality, not
+the integer negation of the forward — keep two `add_constraint`
+calls. The classic example is `≠`, encoded as
+`flag → v1 > v2` plus `¬flag → v1 < v2`: the second half is *not*
+`v1 ≤ v2`, it's the strictly stronger `v1 < v2`, and using the
+two-way API here would silently allow `v1 = v2`. `ReifiedEquals`
+and the main `Equal` flag in `SmartTable` use this pattern.
 
 ## Testing
 
