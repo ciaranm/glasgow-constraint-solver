@@ -8,9 +8,11 @@
 #include <cstdlib>
 #include <iostream>
 #include <optional>
+#include <random>
 #include <set>
 #include <tuple>
 #include <utility>
+#include <variant>
 #include <vector>
 #include <version>
 
@@ -25,10 +27,14 @@
 using std::cerr;
 using std::flush;
 using std::make_optional;
+using std::mt19937;
 using std::nullopt;
 using std::pair;
+using std::random_device;
 using std::set;
 using std::tuple;
+using std::uniform_int_distribution;
+using std::variant;
 using std::vector;
 using std::chrono::duration;
 using std::chrono::steady_clock;
@@ -64,7 +70,7 @@ namespace
     }
 }
 
-auto run_test(bool proofs, const vector<pair<int, int>> & domains) -> void
+auto run_test(bool proofs, const vector<variant<int, pair<int, int>>> & domains) -> void
 {
     print(cerr, "seq_precede_chain domains={}{}",
         domains, proofs ? " with proofs:" : ":");
@@ -78,8 +84,8 @@ auto run_test(bool proofs, const vector<pair<int, int>> & domains) -> void
 
     Problem p;
     vector<IntegerVariableID> vars;
-    for (const auto & d : domains)
-        vars.push_back(p.create_integer_variable(Integer(d.first), Integer(d.second)));
+    for (const auto & entry : domains)
+        vars.push_back(visit([&](auto e) { return create_integer_variable_or_constant(p, e); }, entry));
     p.post(SeqPrecedeChain{vars});
 
     auto proof_name = proofs ? make_optional("seq_precede_chain_test") : nullopt;
@@ -123,37 +129,60 @@ auto run_scale_test(bool proofs) -> void
 auto run_all_tests(bool proofs) -> void
 {
     // Length-2: smallest meaningful chain.
-    run_test(proofs, {{1, 2}, {1, 2}});
-    run_test(proofs, {{1, 5}, {1, 5}});
+    run_test(proofs, {pair{1, 2}, pair{1, 2}});
+    run_test(proofs, {pair{1, 5}, pair{1, 5}});
 
     // Length-3 with domain == array length, no truncation needed.
-    run_test(proofs, {{1, 3}, {1, 3}, {1, 3}});
+    run_test(proofs, {pair{1, 3}, pair{1, 3}, pair{1, 3}});
 
     // Length-3 with domain > array length, exercises truncation.
-    run_test(proofs, {{1, 6}, {1, 6}, {1, 6}});
+    run_test(proofs, {pair{1, 6}, pair{1, 6}, pair{1, 6}});
 
     // Length-5 with domain 2x array length: the headline case scaled
     // down enough for build_expected.
-    run_test(proofs, {{1, 10}, {1, 10}, {1, 10}, {1, 10}, {1, 10}});
+    run_test(proofs, {pair{1, 10}, pair{1, 10}, pair{1, 10}, pair{1, 10}, pair{1, 10}});
 
     // Negative and zero values: unconstrained by the chain.
-    run_test(proofs, {{-2, 3}, {-2, 3}, {-2, 3}});
+    run_test(proofs, {pair{-2, 3}, pair{-2, 3}, pair{-2, 3}});
 
     // Non-uniform domains, one var with a wildly larger upper bound.
     // Catches any "compute max from initial_state" bug.
-    run_test(proofs, {{1, 4}, {1, 4}, {1, 100}, {1, 4}});
+    run_test(proofs, {pair{1, 4}, pair{1, 4}, pair{1, 100}, pair{1, 4}});
 
     // Empty array: trivially satisfied.
     run_test(proofs, {});
+
+    // Constant entries pinning specific positions in the chain.
+    run_test(proofs, {1, pair{1, 4}, 2, pair{1, 4}});
+    run_test(proofs, {pair{1, 4}, 1, pair{1, 4}, 2});
+    // Constant zero / negative entries are unconstrained by the chain.
+    run_test(proofs, {0, pair{1, 3}, -1, pair{1, 3}});
 }
 
 auto main(int, char *[]) -> int
 {
+    random_device rand_dev;
+    mt19937 rand(rand_dev());
+
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
             continue;
         run_all_tests(proofs);
         run_scale_test(proofs);
+
+        // Random sweep: length 2..5 with domains 1..5. SeqPrecedeChain on
+        // length n with values 1..n yields B(n) (Bell number) solutions
+        // when domains permit. B(5) = 52, comfortably bounded for VeriPB.
+        // random_bounds_or_constant means each entry is occasionally a
+        // constant, which the chain handles via clamping at min(max, n).
+        uniform_int_distribution n_dist{2, 5};
+        for (int x = 0; x < 8; ++x) {
+            int n = n_dist(rand);
+            vector<variant<int, pair<int, int>>> doms;
+            for (int i = 0; i < n; ++i)
+                doms.emplace_back(generate_random_data_item(rand, random_bounds_or_constant(0, 3, 1, 3)));
+            run_test(proofs, doms);
+        }
     }
 
     return EXIT_SUCCESS;
