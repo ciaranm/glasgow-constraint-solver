@@ -44,6 +44,12 @@ auto AtMostOneSmartTable::clone() const -> unique_ptr<Constraint>
 auto AtMostOneSmartTable::install(Propagators & propagators, State & initial_state,
     ProofModel * const optional_model) && -> void
 {
+    // 0 or 1 vars: "at most 1 of n equals val" is vacuously true. The
+    // SmartTable below would build empty tuples for n == 0, which means
+    // "no row matches" i.e. UNSAT — wrong for the trivial case. Skip.
+    if (_vars.size() < 2)
+        return;
+
     // Build the constraint as smart table
     // Question: Do we trust this encoding as a smart table?
     // Should we morally have a simpler PB encoding and reformulate?
