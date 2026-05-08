@@ -112,8 +112,11 @@ cmake -S . -B build -DGCS_ENABLE_XCSP=OFF -DGCS_ENABLE_MINIZINC=OFF
 cmake --build build --parallel $(nproc 2>/dev/null || sysctl -n hw.logicalcpu)
 ```
 
-Note that both frontends are currently extremely minimal and do not support most
-constraints or language features.
+The XCSP3 frontend covers the full XCSP3-core (v3.2) constraint vocabulary, with
+the four families that have no propagator yet (`noOverlap`, `cumulative`,
+`binPacking`, `mdd`) reporting `s UNSUPPORTED`. The MiniZinc frontend is more
+limited and routes most predicates through the stdlib decomposition; only a
+selected set of globals reaches a dedicated propagator.
 
 To generate API documentation with Doxygen:
 
@@ -126,11 +129,24 @@ cmake --build build --target docs
 Using the XCSP Solver
 ---------------------
 
-To use the XCSP solver, run:
+To use the XCSP solver on an XCSP3 instance, run:
 
 ```shell
 ./build/xcsp_glasgow_constraint_solver instance.xml
 ```
+
+Useful options:
+
+- `--all` — enumerate every solution (CSP only; ignored on COP).
+- `--prove` — emit OPB and VeriPB proof artefacts under `xcsp.{opb,pbp}` for external verification.
+- `--timeout <seconds>` — abort search after the given wall-clock time and report `s UNKNOWN` (or `s SATISFIABLE` for a partial COP solution).
+
+For developer documentation on the XCSP3 frontend (the callbacks layer,
+the intension tree walker, the testing flow with cached expected outputs
+and ACE cross-checking, and the recipe for adding a new constraint
+binding), see [`dev_docs/xcsp.md`](dev_docs/xcsp.md). The corresponding
+support matrix across all three frontends is in
+[`dev_docs/frontend-support-matrix.md`](dev_docs/frontend-support-matrix.md).
 
 Using the MiniZinc Solver
 -------------------------
