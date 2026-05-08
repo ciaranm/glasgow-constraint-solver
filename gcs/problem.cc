@@ -164,6 +164,14 @@ auto Problem::post(const Constraint & c) -> void
     _imp->constraints.push_back(std::move(cloned));
 }
 
+auto Problem::post(const Constraint & c, const string & name) -> void
+{
+    auto cloned = c.clone();
+    if (std::holds_alternative<CurrentlyUnnamedConstraint>(cloned->name()))
+        cloned->set_name(NamedConstraint{name});
+    _imp->constraints.push_back(std::move(cloned));
+}
+
 auto Problem::post(SumLessThanEqual<Weighted<IntegerVariableID>> expr) -> void
 {
     post(LinearLessThanEqual(move(expr.lhs), expr.rhs));

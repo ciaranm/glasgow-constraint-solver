@@ -22,3 +22,4 @@ python/venv
 compile_commands.json
 out/
 .claude
+Testing/

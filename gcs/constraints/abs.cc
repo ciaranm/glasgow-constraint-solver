@@ -239,18 +239,11 @@ auto Abs::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
-auto Abs::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
+auto Abs::s_exprify(const innards::ProofModel * const model) const -> string
 {
     stringstream s;
 
-    string local_name;
-    overloaded {
-        [&](const CurrentlyUnnamedConstraint &) { local_name = "unnamed"; },
-        [&](const NumberedConstraint & nc) { local_name = format("C{}", nc.number); },
-        [&](const NamedConstraint & nc) { local_name = nc.name; }
-    }.visit(_name);
-
-    print(s, "{} abs", local_name);
+    print(s, "{} abs", as_string(_name));
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v1));
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v2));
 

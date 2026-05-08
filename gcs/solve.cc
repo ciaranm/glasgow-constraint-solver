@@ -186,7 +186,7 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
                 println(s_expr, "    (");
                 unsigned n = 1;
                 for (const auto & c : problem.each_constraint()) {
-                    println(s_expr, "        ({})", c.s_exprify(format("c{}", n++), optional_proof->model()));
+                    println(s_expr, "        ({})", c.s_exprify(optional_proof->model()));
                 }
                 println(s_expr, "    )");
                 println(s_expr, ")");

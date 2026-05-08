@@ -670,7 +670,7 @@ auto GACAllDifferent::s_exprify(const string & name, const innards::ProofModel *
 {
     stringstream s;
 
-    print(s, "{} all_different (", name);
+    print(s, "{} all_different (", as_string(_name));
     for (const auto & var : _vars)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
     print(s, ")");

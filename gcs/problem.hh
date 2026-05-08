@@ -88,6 +88,11 @@ namespace gcs
         auto post(const Constraint &) -> void;
 
         /**
+         * \brief Add a named clone of this Constraint to the model.
+         */
+        auto post(const Constraint &, const std::string &) -> void;
+
+        /**
          * \brief Post this expression as a LinearLessThanEqual constraint.
          */
         auto post(SumLessThanEqual<Weighted<IntegerVariableID>>) -> void;

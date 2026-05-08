@@ -17,6 +17,7 @@ namespace gcs
 
     struct CurrentlyUnnamedConstraint final
     {
+        auto as_string() const -> std::string { return "unnamed"; }
     };
 
     struct NumberedConstraint final
@@ -26,15 +27,19 @@ namespace gcs
         // Claude (web) says this is a good idea for comparisons.
         // Do we need comparisons? (C++20 spaceship operator)
         auto operator<=>(const NumberedConstraint &) const = default;
+        auto as_string() const -> std::string { return "C" + std::to_string(number); }  // TODO: change "C" to "_" at some point before merge
     };
 
     struct NamedConstraint final
     {
         std::string name;
         auto operator<=>(const NamedConstraint &) const = default;
+        auto as_string() const -> std::string { return name; }
     };
 
     using ConstraintName = std::variant<CurrentlyUnnamedConstraint, NumberedConstraint, NamedConstraint>;
+
+    auto as_string(const ConstraintName &) -> std::string;
 
     /**
      * \brief Subclasses of Constraint give a high level way of defining
@@ -83,7 +88,7 @@ namespace gcs
         /**
          * Return an s-expr representation of the constraint. To be used internally.
          */
-        [[nodiscard]] virtual auto s_exprify(const std::string & name, const innards::ProofModel * const) const -> std::string = 0;
+        [[nodiscard]] virtual auto s_exprify(const innards::ProofModel * const) const -> std::string = 0;
     };
 }
 
