@@ -23,7 +23,6 @@ testname=$1
 script_dir=$(cd "$(dirname "$0")" && pwd)
 testsdir="$script_dir/tests"
 instance="$testsdir/$testname.xml"
-expected="$testsdir/expected/$testname.sols"
 
 if [[ -z "${ACE_JAR:-}" ]]; then
     echo "error: ACE_JAR is not set" >&2
@@ -43,7 +42,31 @@ fi
 
 mkdir -p "$testsdir/expected"
 
-# ACE prints solutions as
+# Detect CSP vs COP by looking for an <objectives> element in the instance.
+if grep -q '<objectives>' "$instance"; then
+    expected="$testsdir/expected/$testname.opt"
+    # ACE on a COP runs to completion and ends with a final
+    #   d BOUND  <value>  (...)
+    # line. Extract that.
+    raw=$(java -jar "$ACE_JAR" "$instance" 2>/dev/null)
+    bound=$(printf '%s\n' "$raw" \
+        | sed -E 's/\x1b\[[0-9;]*m//g' \
+        | grep '^d BOUND' \
+        | tail -1 \
+        | awk '{print $3}')
+    if [[ -z $bound ]]; then
+        echo "error: could not extract optimum from ACE output" >&2
+        echo "$raw" | tail -20 >&2
+        exit 1
+    fi
+    echo "$bound" > "$expected"
+    echo "wrote $expected (optimum = $bound)"
+    exit 0
+fi
+
+expected="$testsdir/expected/$testname.sols"
+
+# CSP enumeration mode. ACE prints solutions as
 #   v  <instantiation id='solN' type='solution'> <list> a b c </list> <values> 1 2 3 </values> </instantiation>
 # with ANSI colour escapes around the leading 'v'. The list may use array
 # shorthand like `s[]` or `m[][]`, which we expand here using the array
