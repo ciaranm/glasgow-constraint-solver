@@ -3,6 +3,8 @@
 #include <util/enumerate.hh>
 
 #include <XCSP3CoreParser.h>
+#include <XCSP3Tree.h>
+#include <XCSP3TreeNode.h>
 
 #include <algorithm>
 #include <atomic>
@@ -11,19 +13,27 @@
 #include <csignal>
 #include <cstdlib>
 #include <iostream>
+#include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <cxxopts.hpp>
 
 using XCSP3Core::ExpressionObjective;
+using XCSP3Core::ExpressionType;
+using XCSP3Core::Node;
+using XCSP3Core::NodeConstant;
+using XCSP3Core::NodeVariable;
 using XCSP3Core::OperandType;
 using XCSP3Core::OrderType;
 using XCSP3Core::RankType;
+using XCSP3Core::Tree;
 using XCSP3Core::XCondition;
 using XCSP3Core::XCSP3CoreCallbacks;
 using XCSP3Core::XCSP3CoreParser;
@@ -37,8 +47,7 @@ using std::condition_variable;
 using std::cout;
 using std::cv_status;
 using std::endl;
-using std::flush;
-using std::get;
+using std::make_optional;
 using std::make_shared;
 using std::map;
 using std::max;
@@ -48,13 +57,12 @@ using std::mutex;
 using std::nullopt;
 using std::optional;
 using std::set;
+using std::shared_ptr;
 using std::signal;
 using std::stoll;
 using std::string;
 using std::thread;
-using std::tuple;
 using std::unique_lock;
-using std::unique_ptr;
 using std::vector;
 
 using std::chrono::duration_cast;
@@ -67,572 +75,589 @@ using namespace std::literals::string_literals;
 
 namespace
 {
-    static atomic<bool> abort_flag{false}, was_terminated{false};
+    atomic<bool> abort_flag{false};
+    atomic<bool> was_terminated{false};
 
     auto sig_int_or_term_handler(int) -> void
     {
         abort_flag.store(true);
         was_terminated.store(true);
     }
-}
 
-using VarInfo = tuple<optional<IntegerVariableID>, Integer, Integer, optional<vector<int>>>;
-using VariableMapping = map<string, VarInfo>;
-
-auto need_variable(Problem & problem, VarInfo & t, const string & s) -> void
-{
-    if (! get<0>(t)) {
-        if (get<3>(t)) {
-            vector<Integer> vals;
-            for (auto & v : *get<3>(t))
-                vals.emplace_back(Integer{v});
-            get<0>(t) = problem.create_integer_variable(vals, s);
-        }
-        else
-            get<0>(t) = problem.create_integer_variable(get<1>(t), get<2>(t), s);
-    }
-}
-
-auto disintentionify_to_intvar(const string & s, string::size_type & pos, Problem & problem,
-    VariableMapping & mapping) -> VarInfo
-{
-    auto epos = s.find_first_of(",()", pos);
-    if (string::npos == epos)
-        throw UnimplementedException{"parse error"};
-    auto tok = s.substr(pos, epos - pos);
-    pos = epos;
-
-    if (s.at(epos) == '(') {
-        if (tok == "dist" || tok == "eq" || tok == "ne" || tok == "add" || tok == "sub" || tok == "mul" || tok == "mod" || tok == "div") {
-            ++pos;
-            auto [v1, lower1, upper1, _1] = disintentionify_to_intvar(s, pos, problem, mapping);
-            if (s.at(pos) != ',')
-                throw UnimplementedException{"parse error"};
-            ++pos;
-            auto [v2, lower2, upper2, _2] = disintentionify_to_intvar(s, pos, problem, mapping);
-            if (s.at(pos) != ')')
-                throw UnimplementedException{"parse error"};
-            ++pos;
-
-            if (tok == "dist") {
-                auto bound = max(upper1, upper2) - min(lower1, lower2) + 1_i;
-                auto r = problem.create_integer_variable(0_i, bound, "distresult");
-                auto d = problem.create_integer_variable(-bound, bound, "dist");
-                problem.post(WeightedSum{} + 1_i * *v1 + -1_i * *v2 == 1_i * d);
-                problem.post(Abs{d, r});
-                return tuple{r, 0_i, bound, nullopt};
-            }
-            else if (tok == "add") {
-                if (lower2 == upper2) {
-                    auto r = *v1 + Integer{lower2};
-                    return tuple{r, lower1 + lower2, upper1 + upper2, nullopt};
-                }
-                else {
-                    auto lower_bound = Integer{lower1 + lower2};
-                    auto upper_bound = Integer{upper1 + upper2};
-                    auto r = problem.create_integer_variable(lower_bound, upper_bound, "addresult");
-                    problem.post(WeightedSum{} + 1_i * *v1 + 1_i * *v2 == 1_i * r);
-                    return tuple{r, lower_bound, upper_bound, nullopt};
-                }
-            }
-            else if (tok == "sub") {
-                if (lower2 == upper2) {
-                    auto r = *v1 - Integer{lower2};
-                    return tuple{r, lower1 - lower2, upper1 - upper2, nullopt};
-                }
-                else {
-                    auto lower_bound = min({lower1 - lower2, lower1 - upper2, upper1 - lower2, upper2 - upper2});
-                    auto upper_bound = max({lower1 - lower2, lower1 - upper2, upper1 - lower2, upper2 - upper2});
-                    auto r = problem.create_integer_variable(lower_bound, upper_bound, "subresult");
-                    problem.post(WeightedSum{} + 1_i * *v1 + -1_i * *v2 == 1_i * r);
-                    return tuple{r, lower_bound, upper_bound, nullopt};
-                }
-            }
-            else if (tok == "mul") {
-                auto lower_bound = min({lower1 * lower2, lower1 * upper2, upper1 * lower2, upper2 * upper2});
-                auto upper_bound = max({lower1 * lower2, lower1 * upper2, upper1 * lower2, upper2 * upper2});
-                auto r = problem.create_integer_variable(lower_bound, upper_bound, "mulresult");
-                if (lower2 == upper2)
-                    problem.post(WeightedSum{} + lower2 * *v1 == 1_i * r);
-                else
-                    problem.post(Times{*v1, *v2, r});
-                return tuple{r, lower_bound, upper_bound, nullopt};
-            }
-            else if (tok == "mod") {
-                auto bound = max(abs(lower2), abs(upper2));
-                auto r = problem.create_integer_variable(-bound, bound, "modresult");
-                problem.post(Mod{*v1, *v2, r});
-                return tuple{r, -bound, bound, nullopt};
-            }
-            else if (tok == "div") {
-                auto bound = max(abs(lower1), abs(upper1));
-                auto r = problem.create_integer_variable(-bound, bound, "modresult");
-                problem.post(Div{*v1, *v2, r});
-                return tuple{r, -bound, bound, nullopt};
-            }
-            else if (tok == "eq") {
-                auto control = problem.create_integer_variable(0_i, 1_i, "eqresult");
-                problem.post(EqualsIff{*v1, *v2, control == 1_i});
-                return tuple{control, 0_i, 1_i, nullopt};
-            }
-            else if (tok == "ne") {
-                auto control = problem.create_integer_variable(0_i, 1_i, "neresult");
-                problem.post(EqualsIff{*v1, *v2, control == 0_i});
-                return tuple{control, 0_i, 1_i, nullopt};
-            }
-            else
-                throw NonExhaustiveSwitch{};
-        }
-        else if (tok == "or" || tok == "and") {
-            ++pos;
-            vector<IntegerVariableID> vars;
-            while (true) {
-                vars.emplace_back(*get<0>(disintentionify_to_intvar(s, pos, problem, mapping)));
-                if (pos >= s.size())
-                    throw UnimplementedException{"parse error"};
-                else if (s.at(pos) == ')') {
-                    ++pos;
-                    break;
-                }
-                else if (s.at(pos) == ',')
-                    ++pos;
-                else {
-                    throw UnimplementedException{"parse error"};
-                }
-            }
-            auto control = problem.create_integer_variable(0_i, 1_i, tok + "result");
-            if (tok == "or")
-                problem.post(Or{vars, control});
-            else
-                problem.post(And{vars, control});
-            return tuple{control, 0_i, 1_i, nullopt};
-        }
-        else {
-            throw UnimplementedException{"unknown token '" + tok + "'"};
-        }
-    }
-    else {
-        if (string::npos == tok.find_first_not_of("0123456789") ||
-            (tok.starts_with("-") && string::npos == tok.find_first_not_of("0123456789", 1))) {
-            Integer val{stoll(tok)};
-            return tuple{constant_variable(val), val, val, nullopt};
-        }
-
-        auto m = mapping.find(tok);
-        if (m == mapping.end())
-            throw UnimplementedException{"no mapping for '" + tok + "'"};
-        need_variable(problem, m->second, tok);
-
-        return m->second;
-    }
-}
-
-auto disintentionify_to_set_of_ints(const string & s, string::size_type & pos, Problem &,
-    VariableMapping &) -> set<long long>
-{
-    auto epos = s.find_first_of(",()", pos);
-    if (string::npos == epos)
-        throw UnimplementedException{"parse error"};
-    auto tok = s.substr(pos, epos - pos);
-    pos = epos;
-
-    if (s.at(epos) != '(' || tok != "set")
-        throw UnimplementedException{"tok is '" + tok + "'"};
-    ++pos;
-
-    set<long long> result;
-    while (true) {
-        auto epos = s.find_first_of(",)", pos);
-        if (string::npos == epos)
-            throw UnimplementedException{"parse error"};
-        auto tok = s.substr(pos, epos - pos);
-        if (tok.empty() || string::npos != tok.find_first_not_of("0123456789"))
-            throw UnimplementedException{"tok is '" + tok + "'"};
-        result.insert(stoll(tok));
-        pos = epos + 1;
-        if (s.at(epos) == ')')
-            break;
-    }
-    return result;
-}
-
-auto disintentionify(const string & s, Problem & problem, VariableMapping & mapping) -> void
-{
-    if (s.empty())
-        return;
-
-    auto pos = s.find('(');
-    if (string::npos == pos)
-        throw UnimplementedException{"parse error"};
-
-    auto op = s.substr(0, pos);
-    if (op == "eq" || op == "or" || op == "le" || op == "lt" || op == "ne" || op == "gt" || op == "ge") {
-        ++pos;
-        vector<IntegerVariableID> vars;
-        while (true) {
-            vars.emplace_back(*get<0>(disintentionify_to_intvar(s, pos, problem, mapping)));
-            if (pos >= s.size())
-                throw UnimplementedException{"parse error"};
-            else if (s.at(pos) == ')') {
-                ++pos;
-                break;
-            }
-            else if (s.at(pos) == ',')
-                ++pos;
-            else {
-                throw UnimplementedException{"parse error"};
-            }
-        }
-
-        if (op == "eq") {
-            if (vars.size() < 2)
-                throw UnimplementedException{"too few values for eq"};
-            for (auto i_end = vars.size(), i = 1ul; i != i_end; ++i)
-                problem.post(Equals{vars.at(0), vars.at(i)});
-        }
-        else if (op == "or") {
-            problem.post(Or{vars});
-        }
-        else if (op == "le") {
-            if (vars.size() != 2)
-                throw UnimplementedException{"didn't get exactly two values for le"};
-            problem.post(LessThanEqual{vars.at(0), vars.at(1)});
-        }
-        else if (op == "ne") {
-            if (vars.size() != 2)
-                throw UnimplementedException{"didn't get exactly two values for ne"};
-            problem.post(NotEquals{vars.at(0), vars.at(1)});
-        }
-        else if (op == "lt") {
-            if (vars.size() != 2)
-                throw UnimplementedException{"didn't get exactly two values for lt"};
-            problem.post(LessThan{vars.at(0), vars.at(1)});
-        }
-        else if (op == "gt") {
-            if (vars.size() != 2)
-                throw UnimplementedException{"didn't get exactly two values for gt"};
-            problem.post(GreaterThan{vars.at(0), vars.at(1)});
-        }
-        else if (op == "ge") {
-            if (vars.size() != 2)
-                throw UnimplementedException{"didn't get exactly two values for ge"};
-            problem.post(GreaterThanEqual{vars.at(0), vars.at(1)});
-        }
-        else
-            throw NonExhaustiveSwitch{};
-    }
-    else if (op == "in") {
-        ++pos;
-        auto var = get<0>(disintentionify_to_intvar(s, pos, problem, mapping));
-        if (s.at(pos) != ',')
-            throw UnimplementedException{"parse error"};
-        ++pos;
-        auto vals = disintentionify_to_set_of_ints(s, pos, problem, mapping);
-        if (s.at(pos) != ')')
-            throw UnimplementedException{"parse error"};
-        vector<IntegerVariableID> vars{*var};
-        vector<vector<Integer>> feasible;
-        for (auto & v : vals)
-            feasible.emplace_back(vector{Integer{v}});
-        problem.post(Table{vars, move(feasible)});
-        ++pos;
-    }
-    else
-        throw UnimplementedException{"top level operator '" + op + "'"};
-
-    if (pos != s.size())
-        throw UnimplementedException{"trailing text '" + s.substr(pos) + "'"};
-}
-
-struct ParserCallbacks : XCSP3CoreCallbacks
-{
-    Problem & problem;
-    VariableMapping mapping;
-
-    shared_ptr<WildcardTuples> most_recent_tuples;
-    bool is_optimisation = false;
-    optional<IntegerVariableID> objective_variable;
-
-    explicit ParserCallbacks(Problem & p) :
-        problem(p)
+    // A variable as parsed from the XCSP3 instance. The IntegerVariableID is
+    // created lazily on first use, so variables that are declared but never
+    // referenced don't create unused state. `values` is set when the domain
+    // is given as an explicit value list rather than a range.
+    struct ManagedVariable
     {
-        intensionUsingString = true;
-        recognizeSpecialIntensionCases = false;
+        optional<IntegerVariableID> id;
+        Integer lower;
+        Integer upper;
+        optional<vector<int>> values;
+    };
+
+    // The result of walking an intension expression: a variable holding the
+    // expression's value, with the bounds we computed so callers can size
+    // any further composition correctly.
+    struct ExprResult
+    {
+        IntegerVariableID var;
+        Integer lower;
+        Integer upper;
+    };
+
+    [[noreturn]] auto report_unsupported(const string & constraint, const string & reason) -> void
+    {
+        throw UnimplementedException{"XCSP3 " + constraint + ": " + reason};
     }
 
-    virtual auto buildVariableInteger(string id, int min_value, int max_value) -> void override
+    class XCSPCallbacks : public XCSP3CoreCallbacks
     {
-        mapping.emplace(id, tuple{nullopt, Integer{min_value}, Integer{max_value}, nullopt});
-    }
-
-    virtual auto buildVariableInteger(string id, vector<int> & vals) -> void override
-    {
-        if (vals.empty())
-            throw UnimplementedException{"empty values"};
-        auto [min, max] = minmax_element(vals.begin(), vals.end());
-        mapping.emplace(id, tuple{nullopt, Integer{*min}, Integer{*max}, vals});
-    }
-
-    virtual auto buildConstraintExtension(string, vector<XVariable *> x_vars, vector<vector<int>> & x_tuples, bool is_support, bool) -> void override
-    {
-        vector<IntegerVariableID> vars;
-        for (auto & v : x_vars) {
-            auto m = mapping.find(v->id);
-            need_variable(problem, m->second, v->id);
-            vars.emplace_back(*get<0>(m->second));
+    public:
+        explicit XCSPCallbacks(Problem & p) :
+            _problem(p)
+        {
+            intensionUsingString = false;
+            recognizeSpecialIntensionCases = false;
         }
 
-        most_recent_tuples = make_shared<WildcardTuples>();
-        for (auto & t : x_tuples) {
-            vector<IntegerOrWildcard> tuple;
-            for (auto & v : t)
-                if (v == STAR)
+        // Public so main() can read these after parsing.
+        bool is_optimisation = false;
+        optional<IntegerVariableID> objective_variable;
+
+        auto variables() const -> const map<string, ManagedVariable> &
+        {
+            return _variables;
+        }
+
+        auto buildVariableInteger(string id, int min_value, int max_value) -> void override
+        {
+            _variables.emplace(id, ManagedVariable{nullopt, Integer{min_value}, Integer{max_value}, nullopt});
+        }
+
+        auto buildVariableInteger(string id, vector<int> & vals) -> void override
+        {
+            if (vals.empty())
+                report_unsupported("variable " + id, "empty value list");
+            auto [lo, hi] = minmax_element(vals.begin(), vals.end());
+            _variables.emplace(id, ManagedVariable{nullopt, Integer{*lo}, Integer{*hi}, vals});
+        }
+
+        auto buildConstraintExtension(string, vector<XVariable *> x_vars, vector<vector<int>> & x_tuples,
+            bool is_support, bool) -> void override
+        {
+            auto vars = need_variables(x_vars);
+            _most_recent_tuples = make_shared<WildcardTuples>();
+            for (auto & t : x_tuples) {
+                vector<IntegerOrWildcard> tuple;
+                for (auto & v : t)
+                    if (v == STAR)
+                        tuple.emplace_back(Wildcard{});
+                    else
+                        tuple.emplace_back(Integer{v});
+                _most_recent_tuples->emplace_back(std::move(tuple));
+            }
+            post_table(vars, is_support);
+        }
+
+        auto buildConstraintExtensionAs(string, vector<XVariable *> x_vars, bool is_support, bool) -> void override
+        {
+            post_table(need_variables(x_vars), is_support);
+        }
+
+        auto buildConstraintExtension(string, XVariable * x_var, vector<int> & x_tuples,
+            bool is_support, bool) -> void override
+        {
+            vector<IntegerVariableID> vars{need_variable(x_var->id)};
+            _most_recent_tuples = make_shared<WildcardTuples>();
+            for (auto & t : x_tuples) {
+                vector<IntegerOrWildcard> tuple;
+                if (t == STAR)
                     tuple.emplace_back(Wildcard{});
                 else
-                    tuple.emplace_back(Integer{v});
-            most_recent_tuples->emplace_back(move(tuple));
-        }
-
-        if (is_support)
-            problem.post(Table{vars, SharedWildcardTuples{most_recent_tuples}});
-        else
-            problem.post(NegativeTable{vars, SharedWildcardTuples{most_recent_tuples}});
-    }
-
-    virtual auto buildConstraintExtensionAs(string, vector<XVariable *> x_vars, bool is_support, bool) -> void override
-    {
-        vector<IntegerVariableID> vars;
-        for (auto & v : x_vars) {
-            auto m = mapping.find(v->id);
-            need_variable(problem, m->second, v->id);
-            vars.emplace_back(*get<0>(m->second));
-        }
-
-        if (is_support)
-            problem.post(Table{vars, SharedWildcardTuples{most_recent_tuples}});
-        else
-            problem.post(NegativeTable{vars, SharedWildcardTuples{most_recent_tuples}});
-    }
-
-    virtual auto buildConstraintExtension(string, XVariable * x_var, vector<int> & x_tuples, bool is_support, bool) -> void override
-    {
-        vector<IntegerVariableID> vars;
-        auto m = mapping.find(x_var->id);
-        need_variable(problem, m->second, x_var->id);
-        vars.emplace_back(*get<0>(m->second));
-
-        most_recent_tuples = make_shared<WildcardTuples>();
-        for (auto & t : x_tuples) {
-            vector<IntegerOrWildcard> tuple;
-            if (t == STAR)
-                tuple.emplace_back(Wildcard{});
-            else
-                tuple.emplace_back(Integer{t});
-            most_recent_tuples->emplace_back(move(tuple));
-        }
-
-        if (is_support)
-            problem.post(Table{vars, SharedWildcardTuples{most_recent_tuples}});
-        else
-            problem.post(NegativeTable{vars, SharedWildcardTuples{most_recent_tuples}});
-    }
-
-    virtual auto buildConstraintAlldifferent(string, vector<XVariable *> & x_vars) -> void override
-    {
-        vector<IntegerVariableID> vars;
-        for (auto & v : x_vars) {
-            auto m = mapping.find(v->id);
-            need_variable(problem, m->second, v->id);
-            vars.emplace_back(*get<0>(m->second));
-        }
-        problem.post(AllDifferent{vars});
-    }
-
-    auto buildConstraintSumCommon(string, vector<XVariable *> & x_vars, const optional<vector<int>> & coeffs, XCondition & cond) -> void
-    {
-        WeightedSum cvs;
-        Integer range = 0_i;
-        for (const auto & [idx, x] : enumerate(x_vars)) {
-            auto m = mapping.find(x->id);
-            need_variable(problem, m->second, x->id);
-            cvs += (coeffs ? Integer{coeffs->at(idx)} : 1_i) * *get<0>(m->second);
-            range += abs(cvs.terms.back().coefficient) * max(abs(get<1>(m->second)), abs(get<2>(m->second)));
-        }
-
-        Integer bound = 0_i;
-        switch (cond.operandType) {
-        case OperandType::VARIABLE:
-            bound = 0_i;
-            {
-                auto m = mapping.find(cond.var);
-                need_variable(problem, m->second, cond.var);
-                cvs += -1_i * *get<0>(mapping.at(cond.var));
+                    tuple.emplace_back(Integer{t});
+                _most_recent_tuples->emplace_back(std::move(tuple));
             }
-            break;
-        case OperandType::INTEGER:
-            bound = Integer{cond.val};
-            break;
-        case OperandType::INTERVAL:
-            throw UnimplementedException{"intervals"};
+            post_table(vars, is_support);
         }
 
-        switch (cond.op) {
-        case OrderType::LE:
-            problem.post(move(cvs) <= bound);
-            break;
-        case OrderType::LT:
-            problem.post(move(cvs) <= bound - 1_i);
-            break;
-        case OrderType::EQ:
-            problem.post(move(cvs) == bound);
-            break;
-        case OrderType::GT:
-            problem.post(move(cvs) >= bound + 1_i);
-            break;
-        case OrderType::GE:
-            problem.post(move(cvs) >= bound);
-            break;
-        case OrderType::NE: {
-            auto diff = problem.create_integer_variable(-range, range, "ne");
-            cvs += 1_i * diff;
-            problem.post(move(cvs) == bound);
-            problem.post(NotEquals{diff, 0_c});
-        } break;
-        case OrderType::IN:
-        case OrderType::NOTIN:
-            throw UnimplementedException{"order type"};
-        }
-    }
-
-    virtual auto buildConstraintSum(string id, vector<XVariable *> & x_vars, vector<int> & coeffs, XCondition & cond) -> void override
-    {
-        buildConstraintSumCommon(id, x_vars, coeffs, cond);
-    }
-
-    virtual auto buildConstraintSum(string id, vector<XVariable *> & x_vars, XCondition & cond) -> void override
-    {
-        buildConstraintSumCommon(id, x_vars, nullopt, cond);
-    }
-
-    virtual auto buildConstraintIntension(string, string expr) -> void override
-    {
-        disintentionify(expr, problem, mapping);
-    }
-
-    virtual auto buildConstraintElement(string, vector<XVariable *> & x_vars,
-        int startIndex, XVariable * index, RankType rank, int value) -> void override
-    {
-        if (0 != startIndex)
-            throw UnimplementedException{"non-zero start index"};
-        if (rank != RankType::ANY)
-            throw UnimplementedException{"non-any rank"};
-
-        vector<IntegerVariableID> vars;
-        for (auto & v : x_vars) {
-            auto m = mapping.find(v->id);
-            need_variable(problem, m->second, v->id);
-            vars.emplace_back(*get<0>(m->second));
+        auto buildConstraintAlldifferent(string, vector<XVariable *> & x_vars) -> void override
+        {
+            _problem.post(AllDifferent{need_variables(x_vars)});
         }
 
-        auto m = mapping.find(index->id);
-        need_variable(problem, m->second, index->id);
+        auto buildConstraintSum(string, vector<XVariable *> & x_vars, vector<int> & coeffs,
+            XCondition & cond) -> void override
+        {
+            build_sum_common(x_vars, coeffs, cond);
+        }
 
-        problem.post(Element{constant_variable(Integer{value}), *get<0>(m->second), &vars});
-    }
+        auto buildConstraintSum(string, vector<XVariable *> & x_vars, XCondition & cond) -> void override
+        {
+            build_sum_common(x_vars, nullopt, cond);
+        }
 
-    virtual auto buildConstraintElement(string, vector<int> & vals,
-        int startIndex, XVariable * index, RankType rank, XVariable * value) -> void override
-    {
-        if (0 != startIndex)
-            throw UnimplementedException{"non-zero start index"};
-        if (rank != RankType::ANY)
-            throw UnimplementedException{"non-any rank"};
+        auto buildConstraintIntension(string, Tree * tree) -> void override
+        {
+            post_intension_top_level(tree->root);
+        }
 
-        vector<IntegerVariableID> vars;
-        for (auto & v : vals)
-            vars.emplace_back(constant_variable(Integer{v}));
+        auto buildConstraintElement(string, vector<XVariable *> & x_vars,
+            int startIndex, XVariable * index, RankType rank, int value) -> void override
+        {
+            check_element_simple(startIndex, rank);
+            auto idx = need_variable(index->id);
+            _problem.post(Element{constant_variable(Integer{value}), idx, allocate_element_array(x_vars)});
+        }
 
-        auto m = mapping.find(index->id);
-        need_variable(problem, m->second, index->id);
+        auto buildConstraintElement(string, vector<int> & vals,
+            int startIndex, XVariable * index, RankType rank, XVariable * value) -> void override
+        {
+            check_element_simple(startIndex, rank);
+            auto idx = need_variable(index->id);
+            auto val = need_variable(value->id);
+            _problem.post(Element{val, idx, allocate_element_array(vals)});
+        }
 
-        auto n = mapping.find(value->id);
-        need_variable(problem, n->second, value->id);
+        auto buildObjectiveMinimize(ExpressionObjective type, vector<XVariable *> & x_vars,
+            vector<int> & coeffs) -> void override
+        {
+            build_objective_common(type, x_vars, coeffs, false);
+        }
 
-        problem.post(Element{*get<0>(n->second), *get<0>(m->second), &vars});
-    }
+        auto buildObjectiveMaximize(ExpressionObjective type, vector<XVariable *> & x_vars,
+            vector<int> & coeffs) -> void override
+        {
+            build_objective_common(type, x_vars, coeffs, true);
+        }
 
-    virtual auto buildObjectiveMinimize(ExpressionObjective type, vector<XVariable *> & x_vars, vector<int> & coeffs) -> void override
-    {
-        buildObjectiveCommon(type, x_vars, coeffs, false);
-    }
+    private:
+        Problem & _problem;
+        map<string, ManagedVariable> _variables;
+        shared_ptr<WildcardTuples> _most_recent_tuples;
+        // Storage for the variable arrays passed to Element. The Element
+        // constraint takes a raw pointer to the array and keeps it through
+        // its clone(), so the storage must outlive the Problem. We hold it
+        // in the callbacks object, which itself lives in main() alongside
+        // the Problem.
+        vector<std::unique_ptr<vector<IntegerVariableID>>> _element_arrays;
 
-    virtual auto buildObjectiveMaximize(ExpressionObjective type, vector<XVariable *> & x_vars, vector<int> & coeffs) -> void override
-    {
-        buildObjectiveCommon(type, x_vars, coeffs, true);
-    }
+        // Variable lookup helpers. need_variable() lazily creates the
+        // IntegerVariableID on first use.
 
-    auto buildObjectiveCommon(ExpressionObjective type, vector<XVariable *> & x_vars, vector<int> & coeffs, bool is_max) -> void
-    {
-        is_optimisation = true;
-
-        if (type == ExpressionObjective::MINIMUM_O || type == ExpressionObjective::MAXIMUM_O) {
-            optional<Integer> lower, upper;
-            vector<IntegerVariableID> vars;
-            for (auto & x : x_vars) {
-                auto m = mapping.find(x->id);
-                need_variable(problem, m->second, x->id);
-                auto [var, l, u, _] = m->second;
-                if (! lower)
-                    lower = l;
-                if (! upper)
-                    upper = u;
-                lower = min(*lower, l);
-                upper = max(*upper, u);
-
-                vars.push_back(*var);
+        auto need_variable(const string & name) -> IntegerVariableID
+        {
+            auto m = _variables.find(name);
+            if (m == _variables.end())
+                report_unsupported("intension", "no mapping for variable '" + name + "'");
+            auto & v = m->second;
+            if (! v.id) {
+                if (v.values) {
+                    vector<Integer> vals;
+                    vals.reserve(v.values->size());
+                    for (auto & x : *v.values)
+                        vals.emplace_back(Integer{x});
+                    v.id = _problem.create_integer_variable(vals, name);
+                }
+                else
+                    v.id = _problem.create_integer_variable(v.lower, v.upper, name);
             }
-
-            auto obj = problem.create_integer_variable(*lower, *upper, "objective");
-            objective_variable = obj;
-
-            if (type == ExpressionObjective::MINIMUM_O)
-                problem.post(ArrayMin{vars, obj});
-            else
-                problem.post(ArrayMax{vars, obj});
-
-            if (is_max)
-                problem.maximise(obj);
-            else
-                problem.minimise(obj);
+            return *v.id;
         }
-        else if (type == ExpressionObjective::SUM_O) {
-            Integer lower = 0_i, upper = 0_i;
+
+        auto find_variable(const string & name) -> ManagedVariable &
+        {
+            auto m = _variables.find(name);
+            if (m == _variables.end())
+                report_unsupported("intension", "no mapping for variable '" + name + "'");
+            return m->second;
+        }
+
+        auto need_variables(const vector<XVariable *> & x_vars) -> vector<IntegerVariableID>
+        {
+            vector<IntegerVariableID> result;
+            result.reserve(x_vars.size());
+            for (auto & v : x_vars)
+                result.emplace_back(need_variable(v->id));
+            return result;
+        }
+
+        auto allocate_element_array(vector<XVariable *> & x_vars) -> vector<IntegerVariableID> *
+        {
+            auto vars = std::make_unique<vector<IntegerVariableID>>();
+            vars->reserve(x_vars.size());
+            for (auto & v : x_vars)
+                vars->emplace_back(need_variable(v->id));
+            auto * raw = vars.get();
+            _element_arrays.push_back(std::move(vars));
+            return raw;
+        }
+
+        auto allocate_element_array(vector<int> & vals) -> vector<IntegerVariableID> *
+        {
+            auto vars = std::make_unique<vector<IntegerVariableID>>();
+            vars->reserve(vals.size());
+            for (auto & v : vals)
+                vars->emplace_back(constant_variable(Integer{v}));
+            auto * raw = vars.get();
+            _element_arrays.push_back(std::move(vars));
+            return raw;
+        }
+
+        auto post_table(const vector<IntegerVariableID> & vars, bool is_support) -> void
+        {
+            if (is_support)
+                _problem.post(Table{vars, SharedWildcardTuples{_most_recent_tuples}});
+            else
+                _problem.post(NegativeTable{vars, SharedWildcardTuples{_most_recent_tuples}});
+        }
+
+        auto check_element_simple(int startIndex, RankType rank) -> void
+        {
+            if (0 != startIndex)
+                report_unsupported("element", "non-zero start index");
+            if (rank != RankType::ANY)
+                report_unsupported("element", "non-any rank");
+        }
+
+        auto build_sum_common(vector<XVariable *> & x_vars, const optional<vector<int>> & coeffs,
+            XCondition & cond) -> void
+        {
             WeightedSum cvs;
+            Integer range = 0_i;
             for (const auto & [idx, x] : enumerate(x_vars)) {
-                auto m = mapping.find(x->id);
-                need_variable(problem, m->second, x->id);
-                auto [var, l, u, _] = m->second;
-                cvs += Integer{coeffs.at(idx)} * *var;
-                if (coeffs.at(idx) < 0) {
-                    lower += Integer{coeffs.at(idx)} * u;
-                    upper += Integer{coeffs.at(idx)} * l;
-                }
-                else {
-                    lower += Integer{coeffs.at(idx)} * l;
-                    upper += Integer{coeffs.at(idx)} * u;
-                }
+                auto & mv = find_variable(x->id);
+                auto var = need_variable(x->id);
+                auto coeff = coeffs ? Integer{coeffs->at(idx)} : 1_i;
+                cvs += coeff * var;
+                range += abs(coeff) * max(abs(mv.lower), abs(mv.upper));
             }
 
-            auto obj = problem.create_integer_variable(lower, upper, "objective");
-            objective_variable = obj;
-            problem.post(move(cvs) == 1_i * obj);
-            if (is_max)
-                problem.maximise(obj);
-            else
-                problem.minimise(obj);
+            Integer bound = 0_i;
+            switch (cond.operandType) {
+                using enum OperandType;
+            case VARIABLE:
+                cvs += -1_i * need_variable(cond.var);
+                break;
+            case INTEGER:
+                bound = Integer{cond.val};
+                break;
+            case INTERVAL:
+                report_unsupported("sum", "interval condition");
+            case SET:
+                report_unsupported("sum", "set condition");
+            }
+
+            switch (cond.op) {
+                using enum OrderType;
+            case LE:
+                _problem.post(std::move(cvs) <= bound);
+                break;
+            case LT:
+                _problem.post(std::move(cvs) <= bound - 1_i);
+                break;
+            case EQ:
+                _problem.post(std::move(cvs) == bound);
+                break;
+            case GT:
+                _problem.post(std::move(cvs) >= bound + 1_i);
+                break;
+            case GE:
+                _problem.post(std::move(cvs) >= bound);
+                break;
+            case NE: {
+                auto diff = _problem.create_integer_variable(-range, range, "ne");
+                cvs += 1_i * diff;
+                _problem.post(std::move(cvs) == bound);
+                _problem.post(NotEquals{diff, 0_c});
+            } break;
+            case IN:
+            case NOTIN:
+                report_unsupported("sum", "set membership condition");
+            }
         }
-    }
-};
+
+        auto build_objective_common(ExpressionObjective type, vector<XVariable *> & x_vars,
+            vector<int> & coeffs, bool is_max) -> void
+        {
+            is_optimisation = true;
+
+            if (type == ExpressionObjective::MINIMUM_O || type == ExpressionObjective::MAXIMUM_O) {
+                optional<Integer> lower, upper;
+                vector<IntegerVariableID> vars;
+                vars.reserve(x_vars.size());
+                for (auto & x : x_vars) {
+                    auto & mv = find_variable(x->id);
+                    vars.emplace_back(need_variable(x->id));
+                    lower = lower ? min(*lower, mv.lower) : mv.lower;
+                    upper = upper ? max(*upper, mv.upper) : mv.upper;
+                }
+
+                auto obj = _problem.create_integer_variable(*lower, *upper, "objective");
+                objective_variable = obj;
+                if (type == ExpressionObjective::MINIMUM_O)
+                    _problem.post(ArrayMin{vars, obj});
+                else
+                    _problem.post(ArrayMax{vars, obj});
+
+                if (is_max)
+                    _problem.maximise(obj);
+                else
+                    _problem.minimise(obj);
+            }
+            else if (type == ExpressionObjective::SUM_O) {
+                Integer lower = 0_i, upper = 0_i;
+                WeightedSum cvs;
+                for (const auto & [idx, x] : enumerate(x_vars)) {
+                    auto & mv = find_variable(x->id);
+                    auto coeff = Integer{coeffs.at(idx)};
+                    cvs += coeff * need_variable(x->id);
+                    if (coeff < 0_i) {
+                        lower += coeff * mv.upper;
+                        upper += coeff * mv.lower;
+                    }
+                    else {
+                        lower += coeff * mv.lower;
+                        upper += coeff * mv.upper;
+                    }
+                }
+
+                auto obj = _problem.create_integer_variable(lower, upper, "objective");
+                objective_variable = obj;
+                _problem.post(std::move(cvs) == 1_i * obj);
+                if (is_max)
+                    _problem.maximise(obj);
+                else
+                    _problem.minimise(obj);
+            }
+            else
+                report_unsupported("objective", "expression form not implemented");
+        }
+
+        // -------- intension tree walking --------
+
+        // Walk an intension subexpression and return a variable holding its
+        // value plus the bounds we computed. Boolean-valued nodes (e.g. eq
+        // inside an arithmetic context) are reified to a 0/1 variable here.
+        auto walk_intension(Node * node) -> ExprResult
+        {
+            switch (node->type) {
+                using enum ExpressionType;
+
+            case ODECIMAL: {
+                auto val = Integer{static_cast<NodeConstant *>(node)->val};
+                return {constant_variable(val), val, val};
+            }
+
+            case OVAR: {
+                auto & name = static_cast<NodeVariable *>(node)->var;
+                auto & mv = find_variable(name);
+                return {need_variable(name), mv.lower, mv.upper};
+            }
+
+            case OADD: {
+                Integer lower = 0_i, upper = 0_i;
+                WeightedSum cvs;
+                for (auto * p : node->parameters) {
+                    auto sub = walk_intension(p);
+                    lower += sub.lower;
+                    upper += sub.upper;
+                    cvs += 1_i * sub.var;
+                }
+                auto r = _problem.create_integer_variable(lower, upper, "addresult");
+                cvs += -1_i * r;
+                _problem.post(std::move(cvs) == 0_i);
+                return {r, lower, upper};
+            }
+
+            case OSUB: {
+                auto a = walk_intension(node->parameters.at(0));
+                auto b = walk_intension(node->parameters.at(1));
+                auto lower = a.lower - b.upper;
+                auto upper = a.upper - b.lower;
+                auto r = _problem.create_integer_variable(lower, upper, "subresult");
+                _problem.post(WeightedSum{} + 1_i * a.var + -1_i * b.var == 1_i * r);
+                return {r, lower, upper};
+            }
+
+            case OMUL: {
+                if (node->parameters.size() != 2)
+                    report_unsupported("intension", "n-ary mul");
+                auto a = walk_intension(node->parameters.at(0));
+                auto b = walk_intension(node->parameters.at(1));
+                auto lower = min({a.lower * b.lower, a.lower * b.upper, a.upper * b.lower, a.upper * b.upper});
+                auto upper = max({a.lower * b.lower, a.lower * b.upper, a.upper * b.lower, a.upper * b.upper});
+                auto r = _problem.create_integer_variable(lower, upper, "mulresult");
+                if (a.lower == a.upper)
+                    _problem.post(WeightedSum{} + a.lower * b.var == 1_i * r);
+                else if (b.lower == b.upper)
+                    _problem.post(WeightedSum{} + b.lower * a.var == 1_i * r);
+                else
+                    _problem.post(Times{a.var, b.var, r});
+                return {r, lower, upper};
+            }
+
+            case OMOD: {
+                auto a = walk_intension(node->parameters.at(0));
+                auto b = walk_intension(node->parameters.at(1));
+                auto bound = max(abs(b.lower), abs(b.upper));
+                auto r = _problem.create_integer_variable(-bound, bound, "modresult");
+                _problem.post(Mod{a.var, b.var, r});
+                return {r, -bound, bound};
+            }
+
+            case ODIV: {
+                auto a = walk_intension(node->parameters.at(0));
+                auto b = walk_intension(node->parameters.at(1));
+                auto bound = max(abs(a.lower), abs(a.upper));
+                auto r = _problem.create_integer_variable(-bound, bound, "divresult");
+                _problem.post(Div{a.var, b.var, r});
+                return {r, -bound, bound};
+            }
+
+            case ODIST: {
+                auto a = walk_intension(node->parameters.at(0));
+                auto b = walk_intension(node->parameters.at(1));
+                auto bound = max(a.upper, b.upper) - min(a.lower, b.lower);
+                auto diff = _problem.create_integer_variable(-bound, bound, "dist");
+                auto r = _problem.create_integer_variable(0_i, bound, "distresult");
+                _problem.post(WeightedSum{} + 1_i * a.var + -1_i * b.var == 1_i * diff);
+                _problem.post(Abs{diff, r});
+                return {r, 0_i, bound};
+            }
+
+            case OEQ: {
+                if (node->parameters.size() != 2)
+                    report_unsupported("intension", "n-ary eq inside expression");
+                auto a = walk_intension(node->parameters.at(0));
+                auto b = walk_intension(node->parameters.at(1));
+                auto control = _problem.create_integer_variable(0_i, 1_i, "eqresult");
+                _problem.post(EqualsIff{a.var, b.var, control == 1_i});
+                return {control, 0_i, 1_i};
+            }
+
+            case ONE: {
+                auto a = walk_intension(node->parameters.at(0));
+                auto b = walk_intension(node->parameters.at(1));
+                auto control = _problem.create_integer_variable(0_i, 1_i, "neresult");
+                _problem.post(EqualsIff{a.var, b.var, control == 0_i});
+                return {control, 0_i, 1_i};
+            }
+
+            case OAND:
+            case OOR: {
+                vector<IntegerVariableID> vars;
+                vars.reserve(node->parameters.size());
+                for (auto * p : node->parameters)
+                    vars.emplace_back(walk_intension(p).var);
+                auto control = _problem.create_integer_variable(0_i, 1_i,
+                    node->type == OAND ? "andresult" : "orresult");
+                if (node->type == OAND)
+                    _problem.post(And{vars, control});
+                else
+                    _problem.post(Or{vars, control});
+                return {control, 0_i, 1_i};
+            }
+
+            default:
+                report_unsupported("intension",
+                    "operator '" + XCSP3Core::operatorToString(node->type) + "' inside expression");
+            }
+        }
+
+        // Walk an intension at the top level of a constraint, posting it
+        // directly (no reification) when the root is a relational operator
+        // we can express natively.
+        auto post_intension_top_level(Node * root) -> void
+        {
+            switch (root->type) {
+                using enum ExpressionType;
+
+            case OEQ: {
+                if (root->parameters.size() < 2)
+                    report_unsupported("intension", "eq with < 2 children");
+                auto first = walk_intension(root->parameters.at(0));
+                for (size_t i = 1; i < root->parameters.size(); ++i) {
+                    auto rest = walk_intension(root->parameters.at(i));
+                    _problem.post(Equals{first.var, rest.var});
+                }
+                return;
+            }
+            case ONE: {
+                if (root->parameters.size() != 2)
+                    report_unsupported("intension", "ne with != 2 children");
+                auto a = walk_intension(root->parameters.at(0));
+                auto b = walk_intension(root->parameters.at(1));
+                _problem.post(NotEquals{a.var, b.var});
+                return;
+            }
+            case OLE: {
+                auto a = walk_intension(root->parameters.at(0));
+                auto b = walk_intension(root->parameters.at(1));
+                _problem.post(LessThanEqual{a.var, b.var});
+                return;
+            }
+            case OLT: {
+                auto a = walk_intension(root->parameters.at(0));
+                auto b = walk_intension(root->parameters.at(1));
+                _problem.post(LessThan{a.var, b.var});
+                return;
+            }
+            case OGT: {
+                auto a = walk_intension(root->parameters.at(0));
+                auto b = walk_intension(root->parameters.at(1));
+                _problem.post(GreaterThan{a.var, b.var});
+                return;
+            }
+            case OGE: {
+                auto a = walk_intension(root->parameters.at(0));
+                auto b = walk_intension(root->parameters.at(1));
+                _problem.post(GreaterThanEqual{a.var, b.var});
+                return;
+            }
+            case OOR: {
+                vector<IntegerVariableID> vars;
+                vars.reserve(root->parameters.size());
+                for (auto * p : root->parameters)
+                    vars.emplace_back(walk_intension(p).var);
+                _problem.post(Or{vars});
+                return;
+            }
+            case OIN: {
+                if (root->parameters.size() != 2)
+                    report_unsupported("intension", "in with != 2 children");
+                auto a = walk_intension(root->parameters.at(0));
+                auto vals = walk_set_literal(root->parameters.at(1));
+                vector<IntegerVariableID> vars{a.var};
+                vector<vector<Integer>> feasible;
+                feasible.reserve(vals.size());
+                for (auto & v : vals)
+                    feasible.emplace_back(vector{Integer{v}});
+                _problem.post(Table{vars, std::move(feasible)});
+                return;
+            }
+            default:
+                // Anything else: reify to 0/1 and assert it's true.
+                auto r = walk_intension(root);
+                _problem.post(Equals{r.var, 1_c});
+                return;
+            }
+        }
+
+        auto walk_set_literal(Node * node) -> set<long long>
+        {
+            if (node->type != ExpressionType::OSET)
+                report_unsupported("intension", "expected set literal");
+            set<long long> result;
+            for (auto * p : node->parameters) {
+                if (p->type != ExpressionType::ODECIMAL)
+                    report_unsupported("intension", "non-constant set element");
+                result.insert(static_cast<NodeConstant *>(p)->val);
+            }
+            return result;
+        }
+    };
+}
 
 auto main(int argc, char * argv[]) -> int
 {
@@ -667,7 +692,7 @@ auto main(int argc, char * argv[]) -> int
     auto start_time = steady_clock::now();
 
     Problem problem;
-    ParserCallbacks callbacks{problem};
+    XCSPCallbacks callbacks{problem};
     try {
         XCSP3Core::XCSP3CoreParser parser{&callbacks};
         parser.parse(options_vars["file"].as<string>().c_str());
@@ -756,13 +781,13 @@ auto main(int argc, char * argv[]) -> int
     if (saved_solution) {
         cout << "v <instantiation>" << endl;
         cout << "v   <list>";
-        for (const auto & [n, _] : callbacks.mapping)
+        for (const auto & [n, _] : callbacks.variables())
             cout << " " << n;
         cout << " </list>" << endl;
         cout << "v   <values>";
-        for (const auto & [_, v] : callbacks.mapping)
-            if (get<0>(v))
-                cout << " " << (*saved_solution)(*get<0>(v));
+        for (const auto & [_, v] : callbacks.variables())
+            if (v.id)
+                cout << " " << (*saved_solution)(*v.id);
             else
                 cout << " *";
         cout << " </values>" << endl;
