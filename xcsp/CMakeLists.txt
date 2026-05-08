@@ -80,3 +80,6 @@ set_tests_properties(xcsp_lex_matrix PROPERTIES RESOURCE_LOCK xcsp)
 
 add_test(NAME xcsp_all_different_matrix COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ all_different_matrix "^d FOUND SOLUTIONS 2$")
 set_tests_properties(xcsp_all_different_matrix PROPERTIES RESOURCE_LOCK xcsp)
+
+add_test(NAME xcsp_slide COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ slide "^d FOUND SOLUTIONS 48$")
+set_tests_properties(xcsp_slide PROPERTIES RESOURCE_LOCK xcsp)
