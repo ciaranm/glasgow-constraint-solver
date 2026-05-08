@@ -1,0 +1,11 @@
+<instance format="XCSP3" type="CSP">
+    <variables>
+        <array id="m" size="[2][2]"> 0..1 </array>
+    </variables>
+    <constraints>
+        <lex>
+            <matrix> m[][] </matrix>
+            <operator> le </operator>
+        </lex>
+    </constraints>
+</instance>

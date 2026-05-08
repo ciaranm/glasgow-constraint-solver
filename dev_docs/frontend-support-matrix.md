@@ -36,7 +36,7 @@ equivalent for that frontend's vocabulary).
 | regular | `Regular` | ✓ | frontend gap (#150) | ? |
 | mdd | solver gap (#149) | ? | solver gap (#149) | ? |
 | allDifferent | `AllDifferent` | ✓ | ✓ | ? |
-| allDifferent-list / -matrix | various decompositions | ? | frontend gap (#150) | ? |
+| allDifferent-list / -matrix | various decompositions | ? | matrix ✓ (rows + columns `AllDifferent`); list `s UNSUPPORTED` | ? |
 | allEqual | `Equals` chain (decompose; native propagator tracked in #61) | ✓ | ✓ via decompose (#150) | ? |
 | ordered (increasing/decreasing) | `Increasing` / `Decreasing` | ✓ | ✓ (basic + lengths form) | ? |
 | precedence (value precedence) | `ValuePrecede` | ✓ | ✓ (with explicit values, `covered=false`) | ? |
@@ -53,7 +53,7 @@ equivalent for that frontend's vocabulary).
 | knapsack | `Knapsack` | ✓ | ✓ (basic with two `XCondition`s; not yet exercised by a test) | ? |
 | circuit | `Circuit` | ✓ | ✓ (basic; sub-circuit with size param `s UNSUPPORTED`) | ? |
 | instantiation | `Equals` to constant | ✓ | ✓ | ? |
-| lex (ordered list) | `Lex` | ✓ | frontend gap (#150) | ? |
+| lex (ordered list) | `LexLessThan` / `LexLessThanEqual` / `LexGreaterThan` / `LexGreaterEqual` | ✓ | ✓ (lists; matrix as lex² over rows + columns) | ? |
 | slide (meta-constraint) | apply template per window | ? | frontend gap (#150) | ? |
 
 The MiniZinc column is best-effort: see `minizinc/fzn_glasgow.cc` for the

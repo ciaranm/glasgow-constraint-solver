@@ -71,3 +71,12 @@ set_tests_properties(xcsp_circuit PROPERTIES RESOURCE_LOCK xcsp)
 
 add_test(NAME xcsp_instantiation COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ instantiation "^d FOUND SOLUTIONS 1$")
 set_tests_properties(xcsp_instantiation PROPERTIES RESOURCE_LOCK xcsp)
+
+add_test(NAME xcsp_lex COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ lex "^d FOUND SOLUTIONS 6$")
+set_tests_properties(xcsp_lex PROPERTIES RESOURCE_LOCK xcsp)
+
+add_test(NAME xcsp_lex_matrix COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ lex_matrix "^d FOUND SOLUTIONS 7$")
+set_tests_properties(xcsp_lex_matrix PROPERTIES RESOURCE_LOCK xcsp)
+
+add_test(NAME xcsp_all_different_matrix COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ all_different_matrix "^d FOUND SOLUTIONS 2$")
+set_tests_properties(xcsp_all_different_matrix PROPERTIES RESOURCE_LOCK xcsp)
