@@ -318,6 +318,39 @@ namespace gcs::innards
                 intervals.emplace_back(lower, upper);
         }
 
+        /**
+         * \brief Removes from this set every value not present in \p other.
+         *
+         * In-place set intersection: after the call, this set contains exactly
+         * the values that were in both <code>*this</code> and \p other.
+         *
+         * Walks both interval lists via merge in
+         * <code>O(intervals(this) + intervals(other) + intervals(output))</code>,
+         * without copying either input.
+         *
+         * \sa contains_any_of(), each_interval_minus()
+         */
+        auto intersect_with(const IntervalSet & other) -> void
+        {
+            Intervals result;
+            auto j = other.intervals.begin();
+            for (auto i = intervals.begin(); i != intervals.end(); ++i) {
+                while (j != other.intervals.end() && j->second < i->first)
+                    ++j;
+                auto k = j;
+                while (k != other.intervals.end() && k->first <= i->second) {
+                    Int_ lo = i->first > k->first ? i->first : k->first;
+                    Int_ hi = i->second < k->second ? i->second : k->second;
+                    result.emplace_back(lo, hi);
+                    if (k->second > i->second)
+                        break;
+                    ++k;
+                }
+                j = k;
+            }
+            intervals = std::move(result);
+        }
+
         ///@}
 
         /**

@@ -698,3 +698,154 @@ TEST_CASE("each_interval_minus brute-force cross-check with multi-interval sets"
         for (const auto & b : {s0, s1, s2, s3, s4, s5})
             CHECK(expand(intervals_minus(a, b)) == brute_force(a, b));
 }
+
+namespace
+{
+    auto intersected_with(IntervalSet<int> a, const IntervalSet<int> & b) -> vector<pair<int, int>>
+    {
+        a.intersect_with(b);
+        return intervals_of(a);
+    }
+}
+
+TEST_CASE("intersect_with: empty other empties this")
+{
+    IntervalSet<int> a, b;
+    a.insert_at_end(1, 5);
+    a.insert_at_end(10, 15);
+    CHECK(intersected_with(a, b).empty());
+}
+
+TEST_CASE("intersect_with: empty this stays empty")
+{
+    IntervalSet<int> a, b(1, 10);
+    CHECK(intersected_with(a, b).empty());
+}
+
+TEST_CASE("intersect_with: disjoint sets yield empty")
+{
+    IntervalSet<int> a(1, 5), b(10, 15);
+    CHECK(intersected_with(a, b).empty());
+    CHECK(intersected_with(b, a).empty());
+}
+
+TEST_CASE("intersect_with: other entirely covers this yields this")
+{
+    IntervalSet<int> a(3, 5), b(1, 10);
+    CHECK(intersected_with(a, b) == vector<pair<int, int>>{{3, 5}});
+}
+
+TEST_CASE("intersect_with: this entirely contains other yields other")
+{
+    IntervalSet<int> a(1, 10), b(3, 5);
+    CHECK(intersected_with(a, b) == vector<pair<int, int>>{{3, 5}});
+}
+
+TEST_CASE("intersect_with: single-value overlap")
+{
+    IntervalSet<int> a(1, 5), b(5, 10);
+    CHECK(intersected_with(a, b) == vector<pair<int, int>>{{5, 5}});
+    CHECK(intersected_with(b, a) == vector<pair<int, int>>{{5, 5}});
+}
+
+TEST_CASE("intersect_with: other touches lower bound")
+{
+    IntervalSet<int> a(1, 5), b(1, 2);
+    CHECK(intersected_with(a, b) == vector<pair<int, int>>{{1, 2}});
+}
+
+TEST_CASE("intersect_with: other touches upper bound")
+{
+    IntervalSet<int> a(1, 5), b(4, 5);
+    CHECK(intersected_with(a, b) == vector<pair<int, int>>{{4, 5}});
+}
+
+TEST_CASE("intersect_with: other extends beyond this on both sides")
+{
+    IntervalSet<int> a(3, 7), b(1, 10);
+    CHECK(intersected_with(a, b) == vector<pair<int, int>>{{3, 7}});
+}
+
+TEST_CASE("intersect_with: multiple other intervals punching one this interval")
+{
+    IntervalSet<int> a(1, 20);
+    IntervalSet<int> b;
+    b.insert_at_end(3, 5);
+    b.insert_at_end(8, 10);
+    b.insert_at_end(15, 17);
+    CHECK(intersected_with(a, b) == vector<pair<int, int>>{{3, 5}, {8, 10}, {15, 17}});
+}
+
+TEST_CASE("intersect_with: other spans multiple this-intervals")
+{
+    IntervalSet<int> a;
+    a.insert_at_end(1, 3);
+    a.insert_at_end(7, 9);
+    a.insert_at_end(13, 15);
+    IntervalSet<int> b(2, 14);
+    // a = {1..3, 7..9, 13..15}, b = {2..14}
+    // a ∩ b = {2..3, 7..9, 13..14}
+    CHECK(intersected_with(a, b) == vector<pair<int, int>>{{2, 3}, {7, 9}, {13, 14}});
+}
+
+TEST_CASE("intersect_with: a == b yields a")
+{
+    IntervalSet<int> a;
+    a.insert_at_end(1, 3);
+    a.insert_at_end(8, 10);
+    CHECK(intersected_with(a, a) == vector<pair<int, int>>{{1, 3}, {8, 10}});
+}
+
+TEST_CASE("intersect_with: an other-interval shared by two this-intervals")
+{
+    // an other-interval that overlaps two consecutive this-intervals must not
+    // be consumed prematurely after the first hit
+    IntervalSet<int> a;
+    a.insert_at_end(1, 5);
+    a.insert_at_end(7, 10);
+    IntervalSet<int> b(3, 8);
+    // a ∩ b = {3..5, 7..8}
+    CHECK(intersected_with(a, b) == vector<pair<int, int>>{{3, 5}, {7, 8}});
+}
+
+TEST_CASE("intersect_with brute-force cross-check with multi-interval sets")
+{
+    // For every pair drawn from a small library of multi-interval sets,
+    // intersect_with must produce exactly the values that a brute-force
+    // per-value test reports as in both a and b.
+    auto brute_force = [](const IntervalSet<int> & x, const IntervalSet<int> & y) {
+        vector<int> result;
+        for (auto v : x.each())
+            if (y.contains(v))
+                result.push_back(v);
+        return result;
+    };
+
+    auto expand = [](const vector<pair<int, int>> & intervals) {
+        vector<int> result;
+        for (auto [l, u] : intervals)
+            for (int v = l; v <= u; ++v)
+                result.push_back(v);
+        return result;
+    };
+
+    IntervalSet<int> s0;
+    IntervalSet<int> s1, s2, s3, s4, s5;
+    s1.insert_at_end(1, 3);
+    s1.insert_at_end(8, 10);
+    s1.insert_at_end(15, 17);
+
+    s2.insert_at_end(4, 7);
+    s2.insert_at_end(11, 14);
+
+    s3.insert_at_end(3, 5);
+    s3.insert_at_end(9, 11);
+
+    s4.insert_at_end(18, 20);
+
+    s5.insert_at_end(1, 20);
+
+    for (const auto & a : {s0, s1, s2, s3, s4, s5})
+        for (const auto & b : {s0, s1, s2, s3, s4, s5})
+            CHECK(expand(intersected_with(a, b)) == brute_force(a, b));
+}
