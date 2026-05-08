@@ -50,9 +50,9 @@ equivalent for that frontend's vocabulary).
 | noOverlap (Disjunctive) | solver gap (#146) | ? | solver gap (#146) | ? |
 | cumulative | solver gap (#147) | ? | solver gap (#147) | ? |
 | binPacking | solver gap (#148) | ? | solver gap (#148) | ? |
-| knapsack | `Knapsack` | ✓ | frontend gap (#150) | ? |
-| circuit | `Circuit` | ✓ | frontend gap (#150) | ? |
-| instantiation | `Equals` to constant | ✓ | frontend gap (#150) | ? |
+| knapsack | `Knapsack` | ✓ | ✓ (basic with two `XCondition`s; not yet exercised by a test) | ? |
+| circuit | `Circuit` | ✓ | ✓ (basic; sub-circuit with size param `s UNSUPPORTED`) | ? |
+| instantiation | `Equals` to constant | ✓ | ✓ | ? |
 | lex (ordered list) | `Lex` | ✓ | frontend gap (#150) | ? |
 | slide (meta-constraint) | apply template per window | ? | frontend gap (#150) | ? |
 
