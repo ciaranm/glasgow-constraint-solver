@@ -197,9 +197,17 @@ auto Count::install_propagators(Propagators & propagators) -> void
             if (highest_how_many_might) {
                 auto just = JustifyExplicitlyThenRUP{
                     [&](const ReasonFunction & reason) -> void {
-                        for (const auto & voi : state.each_value_immutable(value_of_interest)) {
-                            for (const auto & [idx, var] : enumerate(vars)) {
-                                if (! state.in_domain(var, voi)) {
+                        // Per-(voi, var) conditional pairs: emit when voi is
+                        // in value_of_interest's domain but not var's. Outer
+                        // loop is over var so we can call each_interval_minus
+                        // once per var; the (A, B) pair for one (voi, var) is
+                        // order-sensitive but the (voi, var) iterations
+                        // themselves are not.
+                        auto voi_set = state.copy_of_values(value_of_interest);
+                        for (const auto & [idx, var] : enumerate(vars)) {
+                            auto var_set = state.copy_of_values(var);
+                            for (auto [lo, hi] : voi_set.each_interval_minus(var_set))
+                                for (Integer voi = lo; voi <= hi; ++voi) {
                                     logger->emit_rup_proof_line_under_reason(reason,
                                         WPBSum{} + 1_i * (value_of_interest != voi) + 1_i * (! get<0>(flags[idx])) >= 1_i,
                                         ProofLevel::Temporary);
@@ -207,12 +215,15 @@ auto Count::install_propagators(Propagators & propagators) -> void
                                         WPBSum{} + 1_i * (value_of_interest != voi) + 1_i * (var != voi) >= 1_i,
                                         ProofLevel::Temporary);
                                 }
-                            }
+                        }
 
+                        // Per-voi unconditional lines: emit after all the
+                        // conditionals so they have the full set of pairwise
+                        // facts to RUP-derive against.
+                        for (const auto & voi : voi_set.each())
                             logger->emit_rup_proof_line_under_reason(reason,
                                 WPBSum{} + 1_i * (value_of_interest != voi) + 1_i * (how_many < *highest_how_many_might + 1_i) >= 1_i,
                                 ProofLevel::Temporary);
-                        }
                     }};
                 inference.infer(logger, how_many < *highest_how_many_might + 1_i, just, generic_reason(state, all_vars));
             }
