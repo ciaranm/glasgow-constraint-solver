@@ -139,6 +139,11 @@ The class has the operations propagators care about: `lower()`, `upper()`,
 `empty()`, plus mutators `erase(value)`, `erase_less_than(value)`,
 `erase_greater_than(value)`, `clear()`, `insert_at_end(value)`. Iteration
 is via `each()` (per-value) and `each_interval()` (per-interval pair).
+For set-difference idioms (yield each maximal interval present in
+`*this` and absent from another set), there's
+`each_interval_minus(other)` — a merge walk that's strictly cheaper
+than per-value membership testing. Yielded `(l, u)` pairs are *closed*
+intervals, matching `each_interval()`'s convention.
 
 `has_holes()` is allowed to over-approximate: a `false` return guarantees
 no holes, but a `true` return doesn't guarantee any. The current
@@ -290,8 +295,18 @@ constants:
   the `IntervalSet` into the coroutine frame), so they are
   behaviourally interchangeable today — but `_immutable` callers must
   not rely on that, since it is allowed to be optimised in future to
-  avoid the copy.
+  avoid the copy. `CurrentState` exposes a single `each_value` (forward)
+  and `each_value_reversed` (descending) for callback-time consumers.
 - `copy_of_values(var)` — full snapshot as an `IntervalSet<Integer>`.
+- `domain_intersects_with(var, IntervalSet)` — does the variable's
+  domain share any value with the given set? The common case
+  (SimpleIntegerVariableID, no view offset) walks the stored interval
+  set against the given set without copying either side. Cheaper than
+  `set.contains_any_of(state.copy_of_values(var))`.
+- `domains_intersect(var1, var2)` — same shape, but for two variables.
+  The common case of two SimpleIntegerVariableIDs with no offsets walks
+  both stored interval sets in merge order — no copy of either side.
+  Useful in overlap-detection propagators (`Equals`, `Count`).
 
 Each one applies the view offset (and bound-swap for `negate_first`)
 after computing the answer in the actual variable's coordinate system.

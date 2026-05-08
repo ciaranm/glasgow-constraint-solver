@@ -207,6 +207,10 @@ Inside the propagator body, the `State` parameter exposes:
 - `state.each_value_immutable(v)` / `state.each_value_mutable(v)` →
   ranges over the current domain. Use `_immutable` if you only read;
   `_mutable` if you might infer a removal mid-iteration.
+- `state.domains_intersect(v1, v2)` → bool. Does the variables' domains
+  share any value? Walks both stored interval sets in merge order
+  without copying for the common case. Use this instead of
+  `for (auto val : state.each_value_immutable(v1)) if (state.in_domain(v2, val))`.
 
 These are read-only — modifying the state goes through `inference`.
 
