@@ -591,6 +591,10 @@ auto main(int argc, char * argv[]) -> int
                     excluded.push_back(v);
                 problem.post(AllDifferentExcept{vars, excluded});
             }
+            else if (id == "glasgow_all_equal_int") {
+                const auto & vars = arg_as_array_of_var(data, args, 0);
+                problem.post(AllEqual{vars});
+            }
             else if (id == "glasgow_among") {
                 const auto & varcount = arg_as_var(data, args, 0);
                 const auto & vars = arg_as_array_of_var(data, args, 1);
