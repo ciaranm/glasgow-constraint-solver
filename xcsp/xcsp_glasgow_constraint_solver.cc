@@ -119,6 +119,7 @@ namespace
         {
             intensionUsingString = false;
             recognizeSpecialIntensionCases = false;
+            recognizeSpecialCountCases = true;
         }
 
         // Public so main() can read these after parsing.
@@ -288,6 +289,105 @@ namespace
             build_sum_common(x_vars, nullopt, cond);
         }
 
+        auto buildConstraintCount(string, vector<XVariable *> & x_vars, vector<int> & values,
+            XCondition & cond) -> void override
+        {
+            auto vars = need_variables(x_vars);
+            auto how_many = _problem.create_integer_variable(0_i,
+                Integer{static_cast<long long>(vars.size())}, "countresult");
+            if (values.size() == 1)
+                _problem.post(Count{vars, constant_variable(Integer{values[0]}), how_many});
+            else {
+                vector<Integer> ivals;
+                ivals.reserve(values.size());
+                for (auto v : values)
+                    ivals.emplace_back(Integer{v});
+                _problem.post(Among{vars, ivals, how_many});
+            }
+            apply_count_condition(how_many, cond, "count");
+        }
+
+        auto buildConstraintAmong(string, vector<XVariable *> & x_vars,
+            vector<int> & values, int k) -> void override
+        {
+            auto vars = need_variables(x_vars);
+            auto how_many = _problem.create_integer_variable(Integer{k}, Integer{k}, "amongresult");
+            vector<Integer> ivals;
+            ivals.reserve(values.size());
+            for (auto v : values)
+                ivals.emplace_back(Integer{v});
+            _problem.post(Among{vars, ivals, how_many});
+        }
+
+        auto buildConstraintAtMost(string, vector<XVariable *> & x_vars,
+            int value, int k) -> void override
+        {
+            auto vars = need_variables(x_vars);
+            auto how_many = _problem.create_integer_variable(0_i, Integer{k}, "atmost");
+            _problem.post(Count{vars, constant_variable(Integer{value}), how_many});
+        }
+
+        auto buildConstraintAtLeast(string, vector<XVariable *> & x_vars,
+            int value, int k) -> void override
+        {
+            auto vars = need_variables(x_vars);
+            auto how_many = _problem.create_integer_variable(Integer{k},
+                Integer{static_cast<long long>(vars.size())}, "atleast");
+            _problem.post(Count{vars, constant_variable(Integer{value}), how_many});
+        }
+
+        auto buildConstraintExactlyK(string, vector<XVariable *> & x_vars,
+            int value, int k) -> void override
+        {
+            auto vars = need_variables(x_vars);
+            auto how_many = _problem.create_integer_variable(Integer{k}, Integer{k}, "exactlyk");
+            _problem.post(Count{vars, constant_variable(Integer{value}), how_many});
+        }
+
+        auto buildConstraintExactlyVariable(string, vector<XVariable *> & x_vars,
+            int value, XVariable * x) -> void override
+        {
+            auto vars = need_variables(x_vars);
+            _problem.post(Count{vars, constant_variable(Integer{value}), need_variable(x->id)});
+        }
+
+        auto buildConstraintNValues(string, vector<XVariable *> & x_vars,
+            XCondition & cond) -> void override
+        {
+            auto vars = need_variables(x_vars);
+            auto n_values = _problem.create_integer_variable(1_i,
+                Integer{static_cast<long long>(vars.size())}, "nvalues");
+            _problem.post(NValue{n_values, vars});
+            apply_count_condition(n_values, cond, "nValues");
+        }
+
+        auto buildConstraintCardinality(string, vector<XVariable *> & x_vars,
+            vector<int> values, vector<int> & occurs, bool closed) -> void override
+        {
+            // Decomposition: one Count per (value, occurrence) pair. A
+            // native GCC propagator would be a future improvement (see the
+            // CPMpy globals list in #61).
+            if (values.size() != occurs.size())
+                report_unsupported("cardinality", "values/occurs size mismatch");
+            auto vars = need_variables(x_vars);
+            for (size_t i = 0; i != values.size(); ++i)
+                _problem.post(Count{vars, constant_variable(Integer{values[i]}),
+                    constant_variable(Integer{occurs[i]})});
+            if (closed) {
+                // Every var must take a value from the given list.
+                vector<Integer> ivals;
+                ivals.reserve(values.size());
+                for (auto v : values)
+                    ivals.emplace_back(Integer{v});
+                vector<vector<Integer>> tuples;
+                tuples.reserve(ivals.size());
+                for (auto v : ivals)
+                    tuples.emplace_back(vector{v});
+                for (auto v : vars)
+                    _problem.post(Table{vector<IntegerVariableID>{v}, tuples});
+            }
+        }
+
         auto buildConstraintIntension(string, Tree * tree) -> void override
         {
             post_intension_top_level(tree->root);
@@ -409,6 +509,55 @@ namespace
                 report_unsupported("element", "non-zero start index");
             if (rank != RankType::ANY)
                 report_unsupported("element", "non-any rank");
+        }
+
+        // Apply a count-style XCondition to a single result variable:
+        // posts `result <op> rhs` directly, where rhs is either a variable
+        // or a constant. Used by count, nValues, etc.
+        auto apply_count_condition(IntegerVariableID result, XCondition & xc,
+            const string & ctx) -> void
+        {
+            IntegerVariableID rhs = constant_variable(0_i);
+            switch (xc.operandType) {
+                using enum OperandType;
+            case VARIABLE:
+                rhs = need_variable(xc.var);
+                break;
+            case INTEGER:
+                rhs = constant_variable(Integer{xc.val});
+                break;
+            case INTERVAL:
+                _problem.post(WeightedSum{} + 1_i * result >= Integer{xc.min});
+                _problem.post(WeightedSum{} + 1_i * result <= Integer{xc.max});
+                return;
+            case SET:
+                report_unsupported(ctx, "set condition");
+            }
+
+            switch (xc.op) {
+                using enum OrderType;
+            case LE:
+                _problem.post(LessThanEqual{result, rhs});
+                break;
+            case LT:
+                _problem.post(LessThan{result, rhs});
+                break;
+            case EQ:
+                _problem.post(Equals{result, rhs});
+                break;
+            case GT:
+                _problem.post(GreaterThan{result, rhs});
+                break;
+            case GE:
+                _problem.post(GreaterThanEqual{result, rhs});
+                break;
+            case NE:
+                _problem.post(NotEquals{result, rhs});
+                break;
+            case IN:
+            case NOTIN:
+                report_unsupported(ctx, "set membership condition");
+            }
         }
 
         auto build_sum_common(vector<XVariable *> & x_vars, const optional<vector<int>> & coeffs,
