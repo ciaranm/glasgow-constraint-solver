@@ -7,12 +7,37 @@
 
 #include <memory>
 #include <string>
+#include <variant>
 
 namespace gcs
 {
     /**
      * \defgroup Constraints Constraints
      */
+
+    struct CurrentlyUnnamedConstraint final
+    {
+    };
+
+    struct NumberedConstraint final
+    {
+        unsigned long long number;
+
+        // Claude (web) says this is a good idea for comparisons.
+        // Do we need comparisons? (C++20 spaceship operator)
+        auto operator<=>(const NumberedConstraint &) const = default;
+    };
+
+    struct NamedConstraint final
+    {
+        std::string name;
+
+        // Claude (web) says this is a good idea for comparisons.
+        // Do we need comparisons? (C++20 spaceship operator)
+        auto operator<=>(const NamedConstraint &) const = default;
+    };
+
+    using ConstraintName = std::variant<CurrentlyUnnamedConstraint, NumberedConstraint, NamedConstraint>;
 
     /**
      * \brief Subclasses of Constraint give a high level way of defining
