@@ -496,6 +496,14 @@ namespace gcs::test_innards
     template <typename Random_>
     auto generate_random_data_item(Random_ & rand, const RandomBoundsOrConstant & bounds)
     {
+        // One in three calls produces a constant in the support of the
+        // bounds-pair shape; the rest produce the pair, matching the spirit
+        // of equals_test's 2:1 var-to-constant ratio.
+        std::uniform_int_distribution<int> choice{0, 2};
+        if (choice(rand) == 0) {
+            std::uniform_int_distribution<int> const_dist{bounds.lower_min, bounds.lower_max + bounds.add_max};
+            return std::variant<int, std::pair<int, int>>{const_dist(rand)};
+        }
         std::uniform_int_distribution<int> lower_dist{bounds.lower_min, bounds.lower_max}, add_dist{bounds.add_min, bounds.add_max};
         auto lower = lower_dist(rand);
         auto upper = lower + add_dist(rand);
