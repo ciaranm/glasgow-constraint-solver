@@ -440,6 +440,36 @@ auto State::domain_intersects_with(const VarType_ & var, const IntervalSet<Integ
         });
 }
 
+auto State::domains_intersect(const IntegerVariableID & var1, const IntegerVariableID & var2) const -> bool
+{
+    auto [actual1, neg1, add1] = deview(var1);
+    auto [actual2, neg2, add2] = deview(var2);
+    if (neg1 || neg2)
+        throw UnimplementedException{};
+    return visit_actual(
+        actual1,
+        [&](const SimpleIntegerVariableID & v1) -> bool {
+            return visit_actual(
+                actual2,
+                [&](const SimpleIntegerVariableID & v2) -> bool {
+                    // Common case: both Simple with no view offsets — walk
+                    // the two stored interval sets in merge order without
+                    // copying either side.
+                    if (add1 == 0_i && add2 == 0_i)
+                        return state_of(v1).contains_any_of(state_of(v2));
+                    // At least one side has an offset; fall back to the
+                    // IntervalSet overload. copy_of_values handles the offset.
+                    return domain_intersects_with(var1, copy_of_values(var2));
+                },
+                [&](const ConstantIntegerVariableID & v2) -> bool {
+                    return in_domain(var1, v2.const_value + add2);
+                });
+        },
+        [&](const ConstantIntegerVariableID & v1) -> bool {
+            return in_domain(var2, v1.const_value + add1);
+        });
+}
+
 namespace
 {
     auto each_value_generator(IntervalSet<Integer> set,

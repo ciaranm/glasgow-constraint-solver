@@ -106,33 +106,17 @@ auto Count::install_propagators(Propagators & propagators) -> void
             int how_many_definitely_do_not = 0;
             auto viable_places = 0_i;
             for (auto & var : vars) {
-                bool seen_any = false;
-                for (const auto & voi : state.each_value_immutable(value_of_interest)) {
-                    if (state.in_domain(var, voi)) {
-                        seen_any = true;
-                        break;
-                    }
-                }
-
-                if (! seen_any)
-                    ++how_many_definitely_do_not;
-                else
+                if (state.domains_intersect(value_of_interest, var))
                     ++viable_places;
+                else
+                    ++how_many_definitely_do_not;
             }
 
             // can't have more that this many occurrences of the value of interest
             auto how_many_is_less_than = Integer(vars.size() - how_many_definitely_do_not) + 1_i;
             auto justf = [&](const ReasonFunction & reason) -> void {
                 for (const auto & [idx, var] : enumerate(vars)) {
-                    bool seen_any = false;
-                    for (const auto & val : state.each_value_immutable(var)) {
-                        if (state.in_domain(value_of_interest, val)) {
-                            seen_any = true;
-                            break;
-                        }
-                    }
-
-                    if (! seen_any) {
+                    if (! state.domains_intersect(var, value_of_interest)) {
                         for (const auto & val : state.each_value_immutable(value_of_interest))
                             logger->emit_rup_proof_line_under_reason(reason,
                                 WPBSum{} + 1_i * (value_of_interest != val) + 1_i * (! get<0>(flags[idx])) >= 1_i, ProofLevel::Temporary);

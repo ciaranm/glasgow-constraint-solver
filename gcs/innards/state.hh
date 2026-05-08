@@ -351,6 +351,16 @@ namespace gcs::innards
         [[nodiscard]] auto domain_intersects_with(const VarType_ &, const IntervalSet<Integer> & set) const -> bool;
 
         /**
+         * Returns true if the two variables' domains share any value.
+         * Equivalent to "for some v in domain(var1), v in domain(var2)" —
+         * but the common case of two SimpleIntegerVariableIDs with no view
+         * offsets walks both stored interval sets directly via merge, no
+         * copy of either side. Constant on either side short-circuits via
+         * in_domain on the other.
+         */
+        [[nodiscard]] auto domains_intersect(const IntegerVariableID &, const IntegerVariableID &) const -> bool;
+
+        /**
          * Returns true if this variable's domain is potentially not just
          * contiguous values. May spuriously claim holes are present.
          */
