@@ -29,3 +29,15 @@ set_tests_properties(xcsp_intension_boolean PROPERTIES RESOURCE_LOCK xcsp)
 
 add_test(NAME xcsp_intension_reified COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ intension_reified "^d FOUND SOLUTIONS 2$")
 set_tests_properties(xcsp_intension_reified PROPERTIES RESOURCE_LOCK xcsp)
+
+add_test(NAME xcsp_all_equal COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ all_equal "^d FOUND SOLUTIONS 3$")
+set_tests_properties(xcsp_all_equal PROPERTIES RESOURCE_LOCK xcsp)
+
+add_test(NAME xcsp_ordered_strict COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ ordered_strict "^d FOUND SOLUTIONS 4$")
+set_tests_properties(xcsp_ordered_strict PROPERTIES RESOURCE_LOCK xcsp)
+
+add_test(NAME xcsp_ordered_lengths COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ ordered_lengths "^d FOUND SOLUTIONS 10$")
+set_tests_properties(xcsp_ordered_lengths PROPERTIES RESOURCE_LOCK xcsp)
+
+add_test(NAME xcsp_precedence COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ precedence "^d FOUND SOLUTIONS 14$")
+set_tests_properties(xcsp_precedence PROPERTIES RESOURCE_LOCK xcsp)

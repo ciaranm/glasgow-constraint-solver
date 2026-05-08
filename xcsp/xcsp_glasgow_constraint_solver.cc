@@ -186,6 +186,97 @@ namespace
             _problem.post(AllDifferent{need_variables(x_vars)});
         }
 
+        auto buildConstraintAllEqual(string, vector<XVariable *> & x_vars) -> void override
+        {
+            // Decomposition into a chain of pairwise Equals. A native
+            // AllEqual propagator would be a small win in propagation and
+            // proof size: tracked alongside the other globals in #61.
+            auto vars = need_variables(x_vars);
+            for (size_t i = 1; i < vars.size(); ++i)
+                _problem.post(Equals{vars[0], vars[i]});
+        }
+
+        auto buildConstraintOrdered(string, vector<XVariable *> & x_vars,
+            OrderType order) -> void override
+        {
+            auto vars = need_variables(x_vars);
+            switch (order) {
+                using enum OrderType;
+            case LE:
+                _problem.post(Increasing{vars});
+                break;
+            case LT:
+                _problem.post(StrictlyIncreasing{vars});
+                break;
+            case GE:
+                _problem.post(Decreasing{vars});
+                break;
+            case GT:
+                _problem.post(StrictlyDecreasing{vars});
+                break;
+            case EQ:
+            case NE:
+            case IN:
+            case NOTIN:
+                report_unsupported("ordered", "non-ordering order type");
+            }
+        }
+
+        auto buildConstraintOrdered(string, vector<XVariable *> & x_vars,
+            vector<int> & lengths, OrderType order) -> void override
+        {
+            auto vars = need_variables(x_vars);
+            if (lengths.size() + 1 != vars.size())
+                report_unsupported("ordered", "lengths size must be |vars| - 1");
+            for (size_t i = 0; i + 1 < vars.size(); ++i) {
+                auto len = Integer{lengths[i]};
+                switch (order) {
+                    using enum OrderType;
+                case LE:
+                    // vars[i] + len <= vars[i+1]
+                    _problem.post(WeightedSum{} + 1_i * vars[i] + -1_i * vars[i + 1] <= -len);
+                    break;
+                case LT:
+                    _problem.post(WeightedSum{} + 1_i * vars[i] + -1_i * vars[i + 1] <= -len - 1_i);
+                    break;
+                case GE:
+                    // vars[i] + len >= vars[i+1]
+                    _problem.post(WeightedSum{} + -1_i * vars[i] + 1_i * vars[i + 1] <= len);
+                    break;
+                case GT:
+                    _problem.post(WeightedSum{} + -1_i * vars[i] + 1_i * vars[i + 1] <= len - 1_i);
+                    break;
+                case EQ:
+                case NE:
+                case IN:
+                case NOTIN:
+                    report_unsupported("ordered", "non-ordering order type");
+                }
+            }
+        }
+
+        auto buildConstraintPrecedence(string, vector<XVariable *> & x_vars, bool) -> void override
+        {
+            // The form without an explicit value list requires us to derive
+            // the value chain from the union of vars' domains; not yet
+            // implemented (issue #150 phase 2b).
+            (void)x_vars;
+            report_unsupported("precedence", "without explicit value list");
+        }
+
+        auto buildConstraintPrecedence(string, vector<XVariable *> & x_vars,
+            vector<int> values, bool covered) -> void override
+        {
+            if (covered)
+                report_unsupported("precedence", "covered=true");
+            auto vars = need_variables(x_vars);
+            vector<Integer> chain;
+            chain.reserve(values.size());
+            for (auto v : values)
+                chain.emplace_back(Integer{v});
+            _problem.post(ValuePrecede{std::move(chain), vars});
+        }
+
         auto buildConstraintSum(string, vector<XVariable *> & x_vars, vector<int> & coeffs,
             XCondition & cond) -> void override
         {
