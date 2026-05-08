@@ -1,0 +1,14 @@
+<instance format="XCSP3" type="CSP">
+    <variables>
+        <var id="a"> 0..5 </var>
+        <var id="b"> 0..5 </var>
+        <var id="c"> 0..5 </var>
+    </variables>
+    <constraints>
+        <ordered>
+            <list> a b c </list>
+            <lengths> 2 1 </lengths>
+            <operator> le </operator>
+        </ordered>
+    </constraints>
+</instance>

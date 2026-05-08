@@ -1,0 +1,12 @@
+<instance format="XCSP3" type="CSP">
+    <variables>
+        <var id="x"> 0..2 </var>
+        <var id="y"> 0..2 </var>
+        <var id="z"> 0..2 </var>
+    </variables>
+    <constraints>
+        <allEqual>
+            <list> x y z </list>
+        </allEqual>
+    </constraints>
+</instance>
