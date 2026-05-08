@@ -5,9 +5,11 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <random>
 #include <set>
 #include <tuple>
 #include <utility>
+#include <variant>
 #include <vector>
 #include <version>
 
@@ -16,15 +18,20 @@
 #else
 #include <fmt/core.h>
 #include <fmt/ostream.h>
+#include <fmt/ranges.h>
 #endif
 
 using std::cerr;
 using std::flush;
 using std::make_optional;
+using std::mt19937;
 using std::nullopt;
 using std::pair;
+using std::random_device;
 using std::set;
 using std::tuple;
+using std::uniform_int_distribution;
+using std::variant;
 using std::vector;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
@@ -89,7 +96,7 @@ auto variant_name() -> const char *
 }
 
 template <IncVariant V>
-auto run_inc_test(bool proofs, const vector<pair<int, int>> & domains) -> void
+auto run_inc_test(bool proofs, const vector<variant<int, pair<int, int>>> & domains) -> void
 {
     print(cerr, "{} {}{}", variant_name<V>(), domains, proofs ? " with proofs:" : ":");
     cerr << flush;
@@ -100,8 +107,8 @@ auto run_inc_test(bool proofs, const vector<pair<int, int>> & domains) -> void
 
     Problem p;
     vector<IntegerVariableID> vars;
-    for (const auto & d : domains)
-        vars.push_back(p.create_integer_variable(Integer(d.first), Integer(d.second)));
+    for (const auto & entry : domains)
+        vars.push_back(visit([&](auto e) { return create_integer_variable_or_constant(p, e); }, entry));
     post_inc<V>(p, vars);
 
     auto proof_name = proofs ? make_optional("increasing_test") : nullopt;
@@ -114,28 +121,47 @@ auto run_all_for_variant(bool proofs) -> void
 {
     // Trivial cases.
     run_inc_test<V>(proofs, {});
-    run_inc_test<V>(proofs, {{0, 3}});
+    run_inc_test<V>(proofs, {pair{0, 3}});
 
     // Pairs.
-    run_inc_test<V>(proofs, {{0, 3}, {0, 3}});
-    run_inc_test<V>(proofs, {{2, 5}, {0, 3}});
+    run_inc_test<V>(proofs, {pair{0, 3}, pair{0, 3}});
+    run_inc_test<V>(proofs, {pair{2, 5}, pair{0, 3}});
 
     // Triples — exercise both forward and backward sweeps.
-    run_inc_test<V>(proofs, {{0, 3}, {0, 3}, {0, 3}});
-    run_inc_test<V>(proofs, {{1, 2}, {0, 5}, {3, 4}});
+    run_inc_test<V>(proofs, {pair{0, 3}, pair{0, 3}, pair{0, 3}});
+    run_inc_test<V>(proofs, {pair{1, 2}, pair{0, 5}, pair{3, 4}});
 
     // A negative-domain case.
-    run_inc_test<V>(proofs, {{-2, 1}, {-1, 2}, {0, 3}});
+    run_inc_test<V>(proofs, {pair{-2, 1}, pair{-1, 2}, pair{0, 3}});
 
     // Tight infeasible / nearly-infeasible for strict variants.
-    run_inc_test<V>(proofs, {{0, 2}, {0, 2}, {0, 2}, {0, 2}});
+    run_inc_test<V>(proofs, {pair{0, 2}, pair{0, 2}, pair{0, 2}, pair{0, 2}});
 
     // Length 5 to exercise the propagator on a longer chain.
-    run_inc_test<V>(proofs, {{0, 4}, {0, 4}, {0, 4}, {0, 4}, {0, 4}});
+    run_inc_test<V>(proofs, {pair{0, 4}, pair{0, 4}, pair{0, 4}, pair{0, 4}, pair{0, 4}});
+
+    // Constant entries pinning the chain at a fixed value.
+    run_inc_test<V>(proofs, {pair{0, 5}, 3, pair{0, 5}});
+    run_inc_test<V>(proofs, {2, pair{0, 5}, 4});
 }
 
 auto main(int, char *[]) -> int
 {
+    random_device rand_dev;
+    mt19937 rand(rand_dev());
+
+    auto random_run = [&]<IncVariant V>(bool proofs) {
+        // Sizes 2..5 with modest domains. For Increasing and 5 vars over a
+        // 6-value domain the worst case is C(6+5-1, 5) = 252 solutions; the
+        // strict variants are smaller. VeriPB stays fast on these.
+        uniform_int_distribution n_vars_dist{2, 5};
+        int n_vars = n_vars_dist(rand);
+        vector<variant<int, pair<int, int>>> doms;
+        for (int i = 0; i < n_vars; ++i)
+            doms.emplace_back(generate_random_data_item(rand, random_bounds_or_constant(-3, 3, 2, 4)));
+        run_inc_test<V>(proofs, doms);
+    };
+
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
             continue;
@@ -143,6 +169,13 @@ auto main(int, char *[]) -> int
         run_all_for_variant<IncVariant::StrictlyIncreasing>(proofs);
         run_all_for_variant<IncVariant::Decreasing>(proofs);
         run_all_for_variant<IncVariant::StrictlyDecreasing>(proofs);
+
+        for (int x = 0; x < 5; ++x) {
+            random_run.template operator()<IncVariant::Increasing>(proofs);
+            random_run.template operator()<IncVariant::StrictlyIncreasing>(proofs);
+            random_run.template operator()<IncVariant::Decreasing>(proofs);
+            random_run.template operator()<IncVariant::StrictlyDecreasing>(proofs);
+        }
     }
     return EXIT_SUCCESS;
 }
