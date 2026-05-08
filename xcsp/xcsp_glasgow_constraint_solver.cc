@@ -623,6 +623,36 @@ namespace
             build_objective_common(type, x_vars, coeffs, true);
         }
 
+        auto buildObjectiveMinimize(ExpressionObjective type,
+            vector<XVariable *> & x_vars) -> void override
+        {
+            vector<int> coefs(x_vars.size(), 1);
+            build_objective_common(type, x_vars, coefs, false);
+        }
+
+        auto buildObjectiveMaximize(ExpressionObjective type,
+            vector<XVariable *> & x_vars) -> void override
+        {
+            vector<int> coefs(x_vars.size(), 1);
+            build_objective_common(type, x_vars, coefs, true);
+        }
+
+        auto buildObjectiveMinimizeVariable(XVariable * x) -> void override
+        {
+            is_optimisation = true;
+            auto var = need_variable(x->id);
+            objective_variable = var;
+            _problem.minimise(var);
+        }
+
+        auto buildObjectiveMaximizeVariable(XVariable * x) -> void override
+        {
+            is_optimisation = true;
+            auto var = need_variable(x->id);
+            objective_variable = var;
+            _problem.maximise(var);
+        }
+
     private:
         Problem & _problem;
         map<string, ManagedVariable> _variables;

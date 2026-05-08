@@ -54,7 +54,7 @@ equivalent for that frontend's vocabulary).
 | circuit | `Circuit` | ✓ | ✓ (basic; sub-circuit with size param `s UNSUPPORTED`) | ? |
 | instantiation | `Equals` to constant | ✓ | ✓ | ? |
 | lex (ordered list) | `LexLessThan` / `LexLessThanEqual` / `LexGreaterThan` / `LexGreaterEqual` | ✓ | ✓ (lists; matrix as lex² over rows + columns) | ? |
-| slide (meta-constraint) | apply template per window | ? | frontend gap (#150) | ? |
+| slide (meta-constraint) | apply template per window | ? | ✓ (parser unfolds into per-window constraints) | ? |
 
 The MiniZinc column is best-effort: see `minizinc/fzn_glasgow.cc` for the
 authoritative list of `fzn_*` builtins handled there.

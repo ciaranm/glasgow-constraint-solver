@@ -1,0 +1,11 @@
+<instance format="XCSP3" type="CSP">
+    <variables>
+        <array id="x" size="[5]"> 0..2 </array>
+    </variables>
+    <constraints>
+        <slide>
+            <list> x[] </list>
+            <intension> ne(%0,%1) </intension>
+        </slide>
+    </constraints>
+</instance>
