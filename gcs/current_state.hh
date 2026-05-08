@@ -139,6 +139,14 @@ namespace gcs
         auto each_value(const IntegerVariableID) const -> std::generator<Integer>;
 
         /**
+         * \brief Returns a generator that gives each value in the variable's
+         * domain in descending order.
+         *
+         * \sa CurrentState::each_value()
+         */
+        auto each_value_reversed(const IntegerVariableID) const -> std::generator<Integer>;
+
+        /**
          * \brief Returns the values in a variable's domain, in an interval set representation. Usually
          * you want CurrentState::each_value() instead for a friendlier API.
          *

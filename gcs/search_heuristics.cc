@@ -284,8 +284,7 @@ auto gcs::value_order::largest_first() -> BranchValueGenerator
 {
     return [](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {
         return [](const CurrentState & s, IntegerVariableID var) -> generator<IntegerVariableCondition> {
-            auto values = s.copy_of_values(var);
-            for (auto v : values.each_reversed())
+            for (auto v : s.each_value_reversed(var))
                 co_yield var == v;
         }(s, var);
     };
