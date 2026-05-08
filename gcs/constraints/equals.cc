@@ -54,12 +54,22 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
     }
 
     if (state.domain_has_holes(v1) || state.domain_has_holes(v2)) {
-        for (auto val : state.each_value_mutable(v1))
-            if (! state.in_domain(v2, val))
+        // Symmetric difference: remove from each side anything not present in
+        // the other. Materialise both domains once and walk via merge —
+        // O(intervals(v1) + intervals(v2) + |output|) instead of the
+        // O(|domain| × intervals(other)) per-value membership scan. The
+        // per-value loop inside the yielded interval still fires one
+        // infer_not_equal per value (same as before); a future
+        // infer_not_in_interval primitive could collapse it further.
+        auto v1_set = state.copy_of_values(v1);
+        auto v2_set = state.copy_of_values(v2);
+
+        for (auto [lo, hi] : v1_set.each_interval_minus(v2_set))
+            for (Integer val = lo; val <= hi; ++val)
                 inference.infer_not_equal(logger, v1, val, JustifyUsingRUP{}, ReasonFunction{[=, reason = reason]() mutable { reason.emplace_back(v2 != val); return reason; }});
 
-        for (auto val : state.each_value_mutable(v2))
-            if (! state.in_domain(v1, val))
+        for (auto [lo, hi] : v2_set.each_interval_minus(v1_set))
+            for (Integer val = lo; val <= hi; ++val)
                 inference.infer_not_equal(logger, v2, val, JustifyUsingRUP{}, ReasonFunction{[=, reason = reason]() mutable { reason.emplace_back(v1 != val); return reason; }});
     }
     else {

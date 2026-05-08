@@ -174,8 +174,10 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
                     reason.emplace_back(var != val);
             }
 
-            for (const auto & val : state.each_value_mutable(*support_1))
-                if (! state.in_domain(result, val))
+            auto support_1_set = state.copy_of_values(*support_1);
+            auto result_set = state.copy_of_values(result);
+            for (auto [lo, hi] : support_1_set.each_interval_minus(result_set))
+                for (Integer val = lo; val <= hi; ++val)
                     inference.infer(logger, *support_1 != val, JustifyExplicitlyThenRUP{[&](const ReasonFunction & reason) {
                         // first, show that the selector can't be true for anything other than the supporting variable
                         for (const auto & [idx, var] : enumerate(vars)) {

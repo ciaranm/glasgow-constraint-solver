@@ -558,3 +558,143 @@ TEST_CASE("Contains any of brute-force cross-check with multi-interval sets")
         for (const auto & b : {s1, s2, s3, s4})
             CHECK(a.contains_any_of(b) == brute_force(a, b));
 }
+
+namespace
+{
+    auto intervals_minus(const IntervalSet<int> & a, const IntervalSet<int> & b) -> vector<pair<int, int>>
+    {
+        vector<pair<int, int>> result;
+        for (auto [l, u] : a.each_interval_minus(b))
+            result.emplace_back(l, u);
+        return result;
+    }
+}
+
+TEST_CASE("each_interval_minus: empty other yields all of this")
+{
+    IntervalSet<int> a, b;
+    a.insert_at_end(1, 5);
+    a.insert_at_end(10, 15);
+    CHECK(intervals_minus(a, b) == vector<pair<int, int>>{{1, 5}, {10, 15}});
+}
+
+TEST_CASE("each_interval_minus: empty this yields nothing")
+{
+    IntervalSet<int> a, b(1, 10);
+    CHECK(intervals_minus(a, b).empty());
+}
+
+TEST_CASE("each_interval_minus: disjoint other yields all of this")
+{
+    IntervalSet<int> a(1, 5), b(10, 15);
+    CHECK(intervals_minus(a, b) == vector<pair<int, int>>{{1, 5}});
+    CHECK(intervals_minus(b, a) == vector<pair<int, int>>{{10, 15}});
+}
+
+TEST_CASE("each_interval_minus: other entirely covers this yields nothing")
+{
+    IntervalSet<int> a(3, 5), b(1, 10);
+    CHECK(intervals_minus(a, b).empty());
+}
+
+TEST_CASE("each_interval_minus: this entirely contains other yields the gaps")
+{
+    IntervalSet<int> a(1, 10), b(3, 5);
+    CHECK(intervals_minus(a, b) == vector<pair<int, int>>{{1, 2}, {6, 10}});
+}
+
+TEST_CASE("each_interval_minus: single-value gap")
+{
+    IntervalSet<int> a(1, 5), b(3, 3);
+    CHECK(intervals_minus(a, b) == vector<pair<int, int>>{{1, 2}, {4, 5}});
+}
+
+TEST_CASE("each_interval_minus: other touches lower bound")
+{
+    IntervalSet<int> a(1, 5), b(1, 2);
+    CHECK(intervals_minus(a, b) == vector<pair<int, int>>{{3, 5}});
+}
+
+TEST_CASE("each_interval_minus: other touches upper bound")
+{
+    IntervalSet<int> a(1, 5), b(4, 5);
+    CHECK(intervals_minus(a, b) == vector<pair<int, int>>{{1, 3}});
+}
+
+TEST_CASE("each_interval_minus: other extends beyond this on both sides")
+{
+    IntervalSet<int> a(3, 7), b(1, 10);
+    CHECK(intervals_minus(a, b).empty());
+}
+
+TEST_CASE("each_interval_minus: multiple punches in one interval")
+{
+    IntervalSet<int> a(1, 20);
+    IntervalSet<int> b;
+    b.insert_at_end(3, 5);
+    b.insert_at_end(8, 10);
+    b.insert_at_end(15, 17);
+    CHECK(intervals_minus(a, b) == vector<pair<int, int>>{{1, 2}, {6, 7}, {11, 14}, {18, 20}});
+}
+
+TEST_CASE("each_interval_minus: other spans multiple this-intervals")
+{
+    IntervalSet<int> a;
+    a.insert_at_end(1, 3);
+    a.insert_at_end(7, 9);
+    a.insert_at_end(13, 15);
+    IntervalSet<int> b(2, 14);
+    // a = {1..3, 7..9, 13..15}, b = {2..14}
+    // a \ b = {1, 15}
+    CHECK(intervals_minus(a, b) == vector<pair<int, int>>{{1, 1}, {15, 15}});
+}
+
+TEST_CASE("each_interval_minus: a == b yields nothing")
+{
+    IntervalSet<int> a;
+    a.insert_at_end(1, 3);
+    a.insert_at_end(8, 10);
+    CHECK(intervals_minus(a, a).empty());
+}
+
+TEST_CASE("each_interval_minus brute-force cross-check with multi-interval sets")
+{
+    // For every pair drawn from a small library of multi-interval sets, the
+    // generator's yielded intervals must enumerate exactly the values that
+    // a brute-force per-value test reports as in `a` and not in `b`.
+    auto brute_force = [](const IntervalSet<int> & x, const IntervalSet<int> & y) {
+        vector<int> result;
+        for (auto v : x.each())
+            if (! y.contains(v))
+                result.push_back(v);
+        return result;
+    };
+
+    auto expand = [](const vector<pair<int, int>> & intervals) {
+        vector<int> result;
+        for (auto [l, u] : intervals)
+            for (int v = l; v <= u; ++v)
+                result.push_back(v);
+        return result;
+    };
+
+    IntervalSet<int> s0;
+    IntervalSet<int> s1, s2, s3, s4, s5;
+    s1.insert_at_end(1, 3);
+    s1.insert_at_end(8, 10);
+    s1.insert_at_end(15, 17);
+
+    s2.insert_at_end(4, 7);
+    s2.insert_at_end(11, 14);
+
+    s3.insert_at_end(3, 5);
+    s3.insert_at_end(9, 11);
+
+    s4.insert_at_end(18, 20);
+
+    s5.insert_at_end(1, 20);
+
+    for (const auto & a : {s0, s1, s2, s3, s4, s5})
+        for (const auto & b : {s0, s1, s2, s3, s4, s5})
+            CHECK(expand(intervals_minus(a, b)) == brute_force(a, b));
+}
