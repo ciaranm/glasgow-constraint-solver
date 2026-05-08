@@ -361,6 +361,70 @@ namespace
             apply_count_condition(n_values, cond, "nValues");
         }
 
+        auto buildConstraintCircuit(string, vector<XVariable *> & x_vars,
+            int startIndex) -> void override
+        {
+            if (startIndex != 0)
+                report_unsupported("circuit", "non-zero startIndex");
+            _problem.post(Circuit{need_variables(x_vars)});
+        }
+
+        auto buildConstraintCircuit(string, vector<XVariable *> & x_vars,
+            int startIndex, int size) -> void override
+        {
+            (void)x_vars;
+            (void)startIndex;
+            (void)size;
+            report_unsupported("circuit", "fixed-size sub-circuit");
+        }
+
+        auto buildConstraintCircuit(string, vector<XVariable *> & x_vars,
+            int startIndex, XVariable * size) -> void override
+        {
+            (void)x_vars;
+            (void)startIndex;
+            (void)size;
+            report_unsupported("circuit", "variable-size sub-circuit");
+        }
+
+        auto buildConstraintInstantiation(string, vector<XVariable *> & x_vars,
+            vector<int> & values) -> void override
+        {
+            if (x_vars.size() != values.size())
+                report_unsupported("instantiation", "vars/values size mismatch");
+            for (size_t i = 0; i != x_vars.size(); ++i)
+                _problem.post(Equals{need_variable(x_vars[i]->id),
+                    constant_variable(Integer{values[i]})});
+        }
+
+        auto buildConstraintKnapsack(string, vector<XVariable *> & x_vars,
+            vector<int> & weights, vector<int> & profits,
+            XCondition weightCondition, XCondition & profitCondition) -> void override
+        {
+            if (x_vars.size() != weights.size() || x_vars.size() != profits.size())
+                report_unsupported("knapsack", "vars/weights/profits size mismatch");
+            auto vars = need_variables(x_vars);
+            vector<Integer> ws, ps;
+            ws.reserve(weights.size());
+            ps.reserve(profits.size());
+            Integer wmin = 0_i, wmax = 0_i, pmin = 0_i, pmax = 0_i;
+            for (size_t i = 0; i != weights.size(); ++i) {
+                ws.emplace_back(Integer{weights[i]});
+                ps.emplace_back(Integer{profits[i]});
+                auto & mv = find_variable(x_vars[i]->id);
+                // Vars are typically 0..1 indicators; bound by var range.
+                wmin += min(Integer{weights[i]} * mv.lower, Integer{weights[i]} * mv.upper);
+                wmax += max(Integer{weights[i]} * mv.lower, Integer{weights[i]} * mv.upper);
+                pmin += min(Integer{profits[i]} * mv.lower, Integer{profits[i]} * mv.upper);
+                pmax += max(Integer{profits[i]} * mv.lower, Integer{profits[i]} * mv.upper);
+            }
+            auto weight_total = _problem.create_integer_variable(wmin, wmax, "knap_weight");
+            auto profit_total = _problem.create_integer_variable(pmin, pmax, "knap_profit");
+            _problem.post(Knapsack{std::move(ws), std::move(ps), vars, weight_total, profit_total});
+            apply_count_condition(weight_total, weightCondition, "knapsack weight");
+            apply_count_condition(profit_total, profitCondition, "knapsack profit");
+        }
+
         auto buildConstraintCardinality(string, vector<XVariable *> & x_vars,
             vector<int> values, vector<int> & occurs, bool closed) -> void override
         {

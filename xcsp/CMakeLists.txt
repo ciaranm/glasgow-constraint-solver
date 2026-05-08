@@ -65,3 +65,9 @@ set_tests_properties(xcsp_channel_self PROPERTIES RESOURCE_LOCK xcsp)
 
 add_test(NAME xcsp_channel_two COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ channel_two "^d FOUND SOLUTIONS 6$")
 set_tests_properties(xcsp_channel_two PROPERTIES RESOURCE_LOCK xcsp)
+
+add_test(NAME xcsp_circuit COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ circuit "^d FOUND SOLUTIONS 2$")
+set_tests_properties(xcsp_circuit PROPERTIES RESOURCE_LOCK xcsp)
+
+add_test(NAME xcsp_instantiation COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ instantiation "^d FOUND SOLUTIONS 1$")
+set_tests_properties(xcsp_instantiation PROPERTIES RESOURCE_LOCK xcsp)
