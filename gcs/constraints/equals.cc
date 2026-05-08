@@ -233,14 +233,7 @@ auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
         }
         else {
             // not equals is forced if there's no overlap between domains
-            bool overlap = false;
-            for (auto val : state.each_value_immutable(v1))
-                if (state.in_domain(v2, val)) {
-                    overlap = true;
-                    break;
-                }
-
-            if (! overlap) {
+            if (! state.domains_intersect(v1, v2)) {
                 auto [just, reason] = no_overlap_justification(state, logger, v1, v2, cond);
                 return reification_verdict::MustNotHold{.justification = just, .reason = reason};
             }
