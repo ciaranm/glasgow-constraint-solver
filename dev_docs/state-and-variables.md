@@ -143,7 +143,9 @@ For set-difference idioms (yield each maximal interval present in
 `*this` and absent from another set), there's
 `each_interval_minus(other)` — a merge walk that's strictly cheaper
 than per-value membership testing. Yielded `(l, u)` pairs are *closed*
-intervals, matching `each_interval()`'s convention.
+intervals, matching `each_interval()`'s convention. The corresponding
+in-place set-intersection is `intersect_with(other)`, which retains
+exactly the values present in both sets via the same merge walk.
 
 `has_holes()` is allowed to over-approximate: a `false` return guarantees
 no holes, but a `true` return doesn't guarantee any. The current
