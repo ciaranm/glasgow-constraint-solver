@@ -1,0 +1,12 @@
+<instance format="XCSP3" type="CSP">
+    <variables>
+        <var id="x"> 0..3 </var>
+        <var id="y"> 0..3 </var>
+        <var id="z"> 0..3 </var>
+    </variables>
+    <constraints>
+        <intension> eq(z,if(lt(x,y),x,y)) </intension>
+        <intension> eq(add(x,y),3) </intension>
+        <intension> notin(z,set(0,3)) </intension>
+    </constraints>
+</instance>

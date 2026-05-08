@@ -1,0 +1,13 @@
+<instance format="XCSP3" type="CSP">
+    <variables>
+        <var id="x"> -2..2 </var>
+        <var id="y"> 0..4 </var>
+        <var id="z"> 1..3 </var>
+    </variables>
+    <constraints>
+        <intension> eq(abs(x),y) </intension>
+        <intension> eq(sqr(x),y) </intension>
+        <intension> eq(min(x,y,z),0) </intension>
+        <intension> eq(mul(z,z),pow(z,2)) </intension>
+    </constraints>
+</instance>
