@@ -415,6 +415,31 @@ auto State::copy_of_values(const VarType_ & var) const -> IntervalSet<Integer>
     return shifted;
 }
 
+template <IntegerVariableIDLike VarType_>
+auto State::domain_intersects_with(const VarType_ & var, const IntervalSet<Integer> & set) const -> bool
+{
+    auto [actual_var, negate_first, then_add] = deview(var);
+    if (negate_first)
+        throw UnimplementedException{};
+    return visit_actual(
+        actual_var,
+        [&](const SimpleIntegerVariableID & v) -> bool {
+            // Common case: SimpleIntegerVariableID with no view offset. Walk
+            // the stored interval set against `set` directly via IntervalSet's
+            // merge-walk; no copy.
+            if (then_add == 0_i)
+                return state_of(v).contains_any_of(set);
+            // Rare case: a non-trivial offset means we'd need an offset-aware
+            // merge-walk. Fall back to materialising the shifted domain — the
+            // copy cost is the price of a feature that almost no Element-style
+            // caller actually exercises.
+            return copy_of_values(var).contains_any_of(set);
+        },
+        [&](const ConstantIntegerVariableID & v) -> bool {
+            return set.contains(v.const_value + then_add);
+        });
+}
+
 namespace
 {
     auto each_value_generator(IntervalSet<Integer> set,
@@ -635,6 +660,11 @@ namespace gcs
     template auto State::copy_of_values(const SimpleIntegerVariableID &) const -> IntervalSet<Integer>;
     template auto State::copy_of_values(const ViewOfIntegerVariableID &) const -> IntervalSet<Integer>;
     template auto State::copy_of_values(const ConstantIntegerVariableID &) const -> IntervalSet<Integer>;
+
+    template auto State::domain_intersects_with(const IntegerVariableID &, const IntervalSet<Integer> &) const -> bool;
+    template auto State::domain_intersects_with(const SimpleIntegerVariableID &, const IntervalSet<Integer> &) const -> bool;
+    template auto State::domain_intersects_with(const ViewOfIntegerVariableID &, const IntervalSet<Integer> &) const -> bool;
+    template auto State::domain_intersects_with(const ConstantIntegerVariableID &, const IntervalSet<Integer> &) const -> bool;
 
     template auto State::infer(const VariableConditionFrom<IntegerVariableID> &) -> Inference;
     template auto State::infer(const VariableConditionFrom<SimpleIntegerVariableID> &) -> Inference;

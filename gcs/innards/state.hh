@@ -341,6 +341,16 @@ namespace gcs::innards
         auto copy_of_values(const VarType_ &) const -> IntervalSet<Integer>;
 
         /**
+         * Returns true if the variable's domain intersects with the given
+         * IntervalSet. Equivalent to (but cheaper than)
+         * \c set.contains_any_of(state.copy_of_values(var)) — the common case
+         * of a SimpleIntegerVariableID with no view offset walks the stored
+         * interval set against \p set without copying.
+         */
+        template <IntegerVariableIDLike VarType_>
+        [[nodiscard]] auto domain_intersects_with(const VarType_ &, const IntervalSet<Integer> & set) const -> bool;
+
+        /**
          * Returns true if this variable's domain is potentially not just
          * contiguous values. May spuriously claim holes are present.
          */
