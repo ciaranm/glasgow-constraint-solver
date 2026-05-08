@@ -5,6 +5,8 @@
 #include <gcs/variable_condition.hh>
 #include <gcs/variable_id.hh>
 
+#include <gch/small_vector.hpp>
+
 #include <optional>
 #include <string>
 #include <variant>
@@ -65,11 +67,16 @@ namespace gcs::innards
     [[nodiscard]] auto operator!(const Literal &) -> Literal;
 
     /**
-     * \brief A vector of Literal values.
+     * \brief A small vector of Literal values.
+     *
+     * Used for CNF clause emission and proof model add_constraint, where
+     * clauses are usually short (a handful of literals). Inline capacity 2
+     * keeps the common cases off the heap; longer clauses still work via
+     * fallback heap allocation.
      *
      * \ingroup Literals
      */
-    using Literals = std::vector<Literal>;
+    using Literals = gch::small_vector<Literal, 2>;
 
     /**
      * \brief Returns whether a Literal is either a TrueLiteral, a FalseLiteral,
