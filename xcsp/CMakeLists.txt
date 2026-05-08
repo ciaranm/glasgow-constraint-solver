@@ -17,3 +17,6 @@ target_link_libraries(xcsp_glasgow_constraint_solver PRIVATE
 
 add_test(NAME xcsp_sum_not_equals COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ sum_not_equals "^d FOUND SOLUTIONS 8$")
 set_tests_properties(xcsp_sum_not_equals PROPERTIES RESOURCE_LOCK xcsp)
+
+add_test(NAME xcsp_intension_basic COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ intension_basic "^d FOUND SOLUTIONS 5$")
+set_tests_properties(xcsp_intension_basic PROPERTIES RESOURCE_LOCK xcsp)
