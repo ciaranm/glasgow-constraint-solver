@@ -33,6 +33,10 @@ library. For an introduction to *using* the solver, start with the top-level
   measuring the wall-time impact of a performance-sensitive change, the
   rationale for each pick, the harness pattern for comparing two builds,
   and what to capture. Use when quantifying a refactor's perf impact.
+- [Frontend support matrix](frontend-support-matrix.md) — single source of
+  truth for which gcs propagators each frontend (MiniZinc, XCSP3, CPMpy)
+  exposes, plus where the solver-side gaps are tracked. Update when adding
+  a propagator or a frontend binding.
 
 More documents will be added here as we build up coverage of other parts of
 the codebase.
