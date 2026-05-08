@@ -1619,15 +1619,28 @@ auto main(int argc, char * argv[]) -> int
     auto stats = solve_with(problem,
         SolveCallbacks{
             .solution = [&](const CurrentState & s) -> bool {
-                saved_solution.emplace(s.clone());
                 if (callbacks.is_optimisation) {
+                    saved_solution.emplace(s.clone());
                     cout << "o " << s(*callbacks.objective_variable) << endl;
                     return true;
                 }
-                else if (options_vars.contains("all"))
+                else if (options_vars.contains("all")) {
+                    // Stream each solution as a compact tuple line. The
+                    // test runner sorts and diffs these against the cached
+                    // expected output.
+                    cout << "ENUMSOL:";
+                    for (const auto & [n, v] : callbacks.variables())
+                        if (v.id)
+                            cout << " " << n << "=" << s(*v.id);
+                        else
+                            cout << " " << n << "=*";
+                    cout << endl;
                     return true;
-                else
+                }
+                else {
+                    saved_solution.emplace(s.clone());
                     return false;
+                }
             }},
         options_vars.contains("prove") ? make_optional<ProofOptions>("xcsp") : nullopt,
         &abort_flag);
@@ -1644,12 +1657,12 @@ auto main(int argc, char * argv[]) -> int
     bool actually_aborted = actually_timed_out || was_terminated.load();
 
     if (actually_aborted) {
-        if (callbacks.is_optimisation && saved_solution)
+        if (stats.solutions > 0)
             cout << "s SATISFIABLE" << endl;
         else
             cout << "s UNKNOWN" << endl;
     }
-    else if (! saved_solution) {
+    else if (stats.solutions == 0) {
         cout << "s UNSATISFIABLE" << endl;
     }
     else if (callbacks.is_optimisation)
