@@ -31,9 +31,6 @@ namespace gcs
     struct NamedConstraint final
     {
         std::string name;
-
-        // Claude (web) says this is a good idea for comparisons.
-        // Do we need comparisons? (C++20 spaceship operator)
         auto operator<=>(const NamedConstraint &) const = default;
     };
 
@@ -54,6 +51,9 @@ namespace gcs
     class [[nodiscard]] Constraint
     {
     protected:
+        ConstraintName _name;
+        Constraint() : _name(CurrentlyUnnamedConstraint{}) {};
+        explicit Constraint(ConstraintName name) : _name(std::move(name)) {};
         virtual auto define_proof_model(innards::ProofModel &) -> void {};
         virtual auto install_propagators(innards::Propagators &) -> void {};
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool
@@ -63,7 +63,8 @@ namespace gcs
 
     public:
         virtual ~Constraint() = 0;
-
+        auto name() const -> const ConstraintName & { return _name; }
+        auto set_name(ConstraintName name) -> void { _name = std::move(name); }
         /**
          * Called internally to install the constraint. A Constraint is expected
          * to define zero or more propagators, and to provide a description of

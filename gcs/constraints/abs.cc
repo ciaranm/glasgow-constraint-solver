@@ -31,9 +31,11 @@ using std::unique_ptr;
 using std::vector;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::format;
 using std::print;
 using std::println;
 #else
+using fmt::format;
 using fmt::print;
 #endif
 
@@ -241,7 +243,14 @@ auto Abs::s_exprify(const string & name, const innards::ProofModel * const model
 {
     stringstream s;
 
-    print(s, "{} abs", name);
+    string local_name;
+    overloaded {
+        [&](const CurrentlyUnnamedConstraint &) { local_name = "unnamed"; },
+        [&](const NumberedConstraint & nc) { local_name = format("C{}", nc.number); },
+        [&](const NamedConstraint & nc) { local_name = nc.name; }
+    }.visit(_name);
+
+    print(s, "{} abs", local_name);
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v1));
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v2));
 

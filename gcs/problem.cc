@@ -1,3 +1,4 @@
+#include "gcs/constraint.hh"
 #include <gcs/constraints/in.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
@@ -16,6 +17,7 @@
 #include <regex>
 #include <tuple>
 #include <unordered_set>
+#include <variant>
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -58,6 +60,7 @@ struct Problem::Imp
     optional<IntegerVariableID> optional_minimise_variable{};
     unordered_set<string> names;
     unsigned long long next_anon_variable = 0;
+    unsigned long long next_constraint_number = 0;
 };
 
 Problem::Problem() :
@@ -155,7 +158,10 @@ auto Problem::create_state_for_new_search(
 
 auto Problem::post(const Constraint & c) -> void
 {
-    _imp->constraints.push_back(c.clone());
+    auto cloned = c.clone();
+    if (std::holds_alternative<CurrentlyUnnamedConstraint>(cloned->name()))
+        cloned->set_name(NumberedConstraint{++_imp->next_constraint_number});
+    _imp->constraints.push_back(std::move(cloned));
 }
 
 auto Problem::post(SumLessThanEqual<Weighted<IntegerVariableID>> expr) -> void
