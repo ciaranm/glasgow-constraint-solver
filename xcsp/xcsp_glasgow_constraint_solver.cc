@@ -187,6 +187,70 @@ namespace
             _problem.post(AllDifferent{need_variables(x_vars)});
         }
 
+        auto buildConstraintAlldifferentMatrix(string,
+            vector<vector<XVariable *>> & matrix) -> void override
+        {
+            if (matrix.empty())
+                return;
+            // Rows: each row's vars are pairwise distinct.
+            vector<vector<IntegerVariableID>> rows;
+            rows.reserve(matrix.size());
+            for (auto & r : matrix) {
+                rows.emplace_back(need_variables(r));
+                _problem.post(AllDifferent{rows.back()});
+            }
+            // Columns: each column's vars are pairwise distinct.
+            auto ncols = matrix[0].size();
+            for (size_t c = 0; c < ncols; ++c) {
+                vector<IntegerVariableID> col;
+                col.reserve(rows.size());
+                for (auto & r : rows)
+                    col.emplace_back(r[c]);
+                _problem.post(AllDifferent{col});
+            }
+        }
+
+        auto buildConstraintLex(string, vector<vector<XVariable *>> & lists,
+            OrderType order) -> void override
+        {
+            if (lists.size() < 2)
+                return;
+            vector<vector<IntegerVariableID>> ilists;
+            ilists.reserve(lists.size());
+            for (auto & l : lists)
+                ilists.emplace_back(need_variables(l));
+            for (size_t i = 0; i + 1 < ilists.size(); ++i)
+                post_lex_pair(ilists[i], ilists[i + 1], order);
+        }
+
+        auto buildConstraintLexMatrix(string, vector<vector<XVariable *>> & matrix,
+            OrderType order) -> void override
+        {
+            if (matrix.empty())
+                return;
+            vector<vector<IntegerVariableID>> rows;
+            rows.reserve(matrix.size());
+            for (auto & r : matrix)
+                rows.emplace_back(need_variables(r));
+            // Each consecutive row pair lex-ordered.
+            for (size_t i = 0; i + 1 < rows.size(); ++i)
+                post_lex_pair(rows[i], rows[i + 1], order);
+            // Each consecutive column pair lex-ordered.
+            if (rows[0].empty())
+                return;
+            auto ncols = rows[0].size();
+            for (size_t c = 0; c + 1 < ncols; ++c) {
+                vector<IntegerVariableID> col1, col2;
+                col1.reserve(rows.size());
+                col2.reserve(rows.size());
+                for (auto & r : rows) {
+                    col1.emplace_back(r[c]);
+                    col2.emplace_back(r[c + 1]);
+                }
+                post_lex_pair(col1, col2, order);
+            }
+        }
+
         auto buildConstraintAllEqual(string, vector<XVariable *> & x_vars) -> void override
         {
             // Decomposition into a chain of pairwise Equals. A native
@@ -693,6 +757,31 @@ namespace
         {
             if (rank != RankType::ANY)
                 report_unsupported("element", "non-any rank");
+        }
+
+        auto post_lex_pair(const vector<IntegerVariableID> & a,
+            const vector<IntegerVariableID> & b, OrderType order) -> void
+        {
+            switch (order) {
+                using enum OrderType;
+            case LT:
+                _problem.post(LexLessThan{a, b});
+                break;
+            case LE:
+                _problem.post(LexLessThanEqual{a, b});
+                break;
+            case GT:
+                _problem.post(LexGreaterThan{a, b});
+                break;
+            case GE:
+                _problem.post(LexGreaterEqual{a, b});
+                break;
+            case EQ:
+            case NE:
+            case IN:
+            case NOTIN:
+                report_unsupported("lex", "non-ordering order type");
+            }
         }
 
         auto build_min_max_common(vector<XVariable *> & x_vars, XCondition & cond,

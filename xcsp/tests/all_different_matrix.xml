@@ -1,0 +1,10 @@
+<instance format="XCSP3" type="CSP">
+    <variables>
+        <array id="m" size="[2][2]"> 0..1 </array>
+    </variables>
+    <constraints>
+        <allDifferent>
+            <matrix> m[][] </matrix>
+        </allDifferent>
+    </constraints>
+</instance>

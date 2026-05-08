@@ -1,0 +1,13 @@
+<instance format="XCSP3" type="CSP">
+    <variables>
+        <array id="a" size="[2]"> 0..1 </array>
+        <array id="b" size="[2]"> 0..1 </array>
+    </variables>
+    <constraints>
+        <lex>
+            <list> a[] </list>
+            <list> b[] </list>
+            <operator> lt </operator>
+        </lex>
+    </constraints>
+</instance>
