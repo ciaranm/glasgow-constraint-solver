@@ -1,0 +1,15 @@
+<instance format="XCSP3" type="CSP">
+    <variables>
+        <var id="a"> 0..2 </var>
+        <var id="b"> 0..2 </var>
+        <var id="c"> 0..2 </var>
+        <var id="d"> 0..2 </var>
+    </variables>
+    <constraints>
+        <cardinality>
+            <list> a b c d </list>
+            <values> 0 1 </values>
+            <occurs> 2 1 </occurs>
+        </cardinality>
+    </constraints>
+</instance>

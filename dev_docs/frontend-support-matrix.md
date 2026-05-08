@@ -41,9 +41,9 @@ equivalent for that frontend's vocabulary).
 | ordered (increasing/decreasing) | `Increasing` / `Decreasing` | ✓ | ✓ (basic + lengths form) | ? |
 | precedence (value precedence) | `ValuePrecede` | ✓ | ✓ (with explicit values, `covered=false`) | ? |
 | sum (linear) | `WeightedSum` | ✓ | ✓ | ? |
-| count | `Count` | ✓ | frontend gap (#150) | ? |
-| nValues | `NValue` | ✓ | frontend gap (#150) | ? |
-| cardinality (GCC) | decompose to `Count` | ? | frontend gap (#150) | ? |
+| count | `Count` (single value) / `Among` (multi-value set) | ✓ | ✓ (incl. atMost/atLeast/exactlyK/among special-cases) | ? |
+| nValues | `NValue` | ✓ | ✓ (basic; without-`except` form) | ? |
+| cardinality (GCC) | decompose to `Count` | ? | ✓ via decompose (constant values + constant occurs; closed flag) | ? |
 | maximum / minimum (constraint) | `ArrayMax` / `ArrayMin` | ✓ | frontend gap (#150) | ? |
 | element | `Element` | ✓ | frontend gap (#150) (matrix form) | ? |
 | channel (inverse) | `Inverse` | ✓ | frontend gap (#150) | ? |

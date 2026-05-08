@@ -1,0 +1,14 @@
+<instance format="XCSP3" type="CSP">
+    <variables>
+        <var id="a"> 0..3 </var>
+        <var id="b"> 0..3 </var>
+        <var id="c"> 0..3 </var>
+    </variables>
+    <constraints>
+        <count>
+            <list> a b c </list>
+            <values> 1 2 </values>
+            <condition> (eq, 2) </condition>
+        </count>
+    </constraints>
+</instance>

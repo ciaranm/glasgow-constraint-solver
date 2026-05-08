@@ -41,3 +41,15 @@ set_tests_properties(xcsp_ordered_lengths PROPERTIES RESOURCE_LOCK xcsp)
 
 add_test(NAME xcsp_precedence COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ precedence "^d FOUND SOLUTIONS 14$")
 set_tests_properties(xcsp_precedence PROPERTIES RESOURCE_LOCK xcsp)
+
+add_test(NAME xcsp_count COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ count "^d FOUND SOLUTIONS 24$")
+set_tests_properties(xcsp_count PROPERTIES RESOURCE_LOCK xcsp)
+
+add_test(NAME xcsp_count_among COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ count_among "^d FOUND SOLUTIONS 24$")
+set_tests_properties(xcsp_count_among PROPERTIES RESOURCE_LOCK xcsp)
+
+add_test(NAME xcsp_n_values COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ n_values "^d FOUND SOLUTIONS 2$")
+set_tests_properties(xcsp_n_values PROPERTIES RESOURCE_LOCK xcsp)
+
+add_test(NAME xcsp_cardinality COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ cardinality "^d FOUND SOLUTIONS 12$")
+set_tests_properties(xcsp_cardinality PROPERTIES RESOURCE_LOCK xcsp)
