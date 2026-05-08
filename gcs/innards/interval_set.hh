@@ -388,6 +388,48 @@ namespace gcs::innards
         }
 
         /**
+         * \brief Returns a generator that yields each maximal interval of values
+         * that are present in this set and absent from \p other, in ascending order.
+         *
+         * Each yielded pair (l, u) represents the closed interval [l, u] — both
+         * endpoints are values that are in <code>*this</code> and not in
+         * \p other, mirroring each_interval()'s convention. Per-value
+         * iteration is <code>for (Int_ v = l; v <= u; ++v)</code>. (Note: this
+         * differs from each_gap_interval(), which yields half-open ranges.)
+         *
+         * Equivalent to (but cheaper than) iterating each value in the set and
+         * testing membership in \p other one at a time: walks both interval lists
+         * via merge in <code>O(intervals(this) + intervals(other) + |output|)</code>.
+         *
+         * Use this when implementing set-difference inference patterns. The
+         * yielded intervals can be expanded to per-value via a nested loop, or
+         * later passed wholesale to an interval-level inference primitive.
+         *
+         * \sa each_interval(), each_gap_interval()
+         */
+        [[nodiscard]] auto each_interval_minus(const IntervalSet & other) const -> std::generator<std::pair<Int_, Int_>>
+        {
+            return [](Intervals self_intervals, Intervals other_intervals) -> std::generator<std::pair<Int_, Int_>> {
+                auto j = other_intervals.begin();
+                for (auto i = self_intervals.begin(); i != self_intervals.end(); ++i) {
+                    Int_ cur = i->first;
+                    while (j != other_intervals.end() && j->second < cur)
+                        ++j;
+                    while (j != other_intervals.end() && j->first <= i->second) {
+                        if (j->first > cur)
+                            co_yield std::pair{cur, j->first - Int_{1}};
+                        cur = j->second + Int_{1};
+                        if (cur > i->second)
+                            break;
+                        ++j;
+                    }
+                    if (cur <= i->second)
+                        co_yield std::pair{cur, i->second};
+                }
+            }(intervals, other.intervals);
+        }
+
+        /**
          * \brief Returns a generator that yields each value in the set in descending order.
          *
          * \sa each()
