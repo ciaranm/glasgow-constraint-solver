@@ -18,12 +18,18 @@ Testing
 -------
 
 Tests cross-check our solver against [ACE](https://github.com/xcsp3team/ACE),
-the reference XCSP3 solver, by comparing the full set of solutions on small
-hand-written instances. The expected solution set for each test is cached
-under `tests/expected/<name>.sols` (one solution per line, alphabetised
-`name=value` tuples), so day-to-day testing does not require ACE — the
-runner just diffs our output against the cache. If the cache is missing,
-the test is **skipped** (ctest exit code 66) rather than failed.
+the reference XCSP3 solver, by comparing either the full set of solutions
+(CSP) or the optimum value (COP) on small hand-written instances. The
+expected output for each test is cached:
+
+- `tests/expected/<name>.sols` — one solution per line, alphabetised
+  `name=value` tuples (CSP enumeration mode).
+- `tests/expected/<name>.opt` — a single integer, the proven optimum
+  (COP optimisation mode).
+
+Day-to-day testing does not require ACE — the runner just diffs our
+output against the cache. If neither cache file is present for a test,
+it is **skipped** (ctest exit code 66) rather than failed.
 
 ACE is needed only to (re)generate the cache. Run:
 
