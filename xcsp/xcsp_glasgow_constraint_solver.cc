@@ -499,6 +499,7 @@ struct ParserCallbacks : XCSP3CoreCallbacks
             problem.post(NotEquals{diff, 0_c});
         } break;
         case OrderType::IN:
+        case OrderType::NOTIN:
             throw UnimplementedException{"order type"};
         }
     }
