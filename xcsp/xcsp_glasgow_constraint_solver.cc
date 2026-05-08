@@ -20,6 +20,7 @@
 #include <set>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -37,6 +38,7 @@ using XCSP3Core::Tree;
 using XCSP3Core::XCondition;
 using XCSP3Core::XCSP3CoreCallbacks;
 using XCSP3Core::XCSP3CoreParser;
+using XCSP3Core::XTransition;
 using XCSP3Core::XVariable;
 
 using namespace gcs;
@@ -63,6 +65,7 @@ using std::stoll;
 using std::string;
 using std::thread;
 using std::unique_lock;
+using std::unordered_map;
 using std::vector;
 
 using std::chrono::duration_cast;
@@ -423,6 +426,121 @@ namespace
                 Integer{static_cast<long long>(vars.size())}, "nvalues");
             _problem.post(NValue{n_values, vars});
             apply_count_condition(n_values, cond, "nValues");
+        }
+
+        auto buildConstraintRegular(string, vector<XVariable *> & x_vars,
+            string start, vector<string> & final, vector<XTransition> & transitions) -> void override
+        {
+            auto vars = need_variables(x_vars);
+
+            // Map state names to integers; the start state gets 0.
+            map<string, long> state_idx;
+            state_idx.emplace(start, 0);
+            auto get_state = [&](const string & name) -> long {
+                auto it = state_idx.find(name);
+                if (it != state_idx.end())
+                    return it->second;
+                long idx = static_cast<long>(state_idx.size());
+                state_idx.emplace(name, idx);
+                return idx;
+            };
+
+            vector<unordered_map<Integer, long>> trans_table;
+            for (const auto & t : transitions) {
+                long from_idx = get_state(t.from);
+                long to_idx = get_state(t.to);
+                if (static_cast<size_t>(from_idx) >= trans_table.size())
+                    trans_table.resize(from_idx + 1);
+                trans_table[from_idx].emplace(Integer{t.val}, to_idx);
+            }
+
+            vector<long> finals;
+            finals.reserve(final.size());
+            for (const auto & name : final)
+                finals.emplace_back(get_state(name));
+
+            auto num_states = static_cast<long>(state_idx.size());
+            if (static_cast<long>(trans_table.size()) < num_states)
+                trans_table.resize(num_states);
+
+            _problem.post(Regular{vars, num_states, std::move(trans_table), std::move(finals)});
+        }
+
+        // Solver gaps: each XCSP3 constraint family below maps to a missing
+        // gcs propagator. Override the parser's default (which throws an
+        // uncaught runtime_error) with our standard report_unsupported so
+        // main() emits a clean s UNSUPPORTED.
+
+        auto buildConstraintMDD(string, vector<XVariable *> &,
+            vector<XTransition> &) -> void override
+        {
+            report_unsupported("mdd", "no MDD propagator yet (#149)");
+        }
+
+        auto buildConstraintNoOverlap(string, vector<XVariable *> &,
+            vector<int> &, bool) -> void override
+        {
+            report_unsupported("noOverlap", "no Disjunctive propagator yet (#146)");
+        }
+
+        auto buildConstraintNoOverlap(string, vector<XVariable *> &,
+            vector<XVariable *> &, bool) -> void override
+        {
+            report_unsupported("noOverlap", "no Disjunctive propagator yet (#146)");
+        }
+
+        auto buildConstraintNoOverlap(string, vector<vector<XVariable *>> &,
+            vector<vector<int>> &, bool) -> void override
+        {
+            report_unsupported("noOverlap", "no Disjunctive2D propagator yet (#146)");
+        }
+
+        auto buildConstraintNoOverlap(string, vector<vector<XVariable *>> &,
+            vector<vector<XVariable *>> &, bool) -> void override
+        {
+            report_unsupported("noOverlap", "no Disjunctive2D propagator yet (#146)");
+        }
+
+        auto buildConstraintCumulative(string, vector<XVariable *> &,
+            vector<int> &, vector<int> &, XCondition &) -> void override
+        {
+            report_unsupported("cumulative", "no Cumulative propagator yet (#147)");
+        }
+
+        auto buildConstraintCumulative(string, vector<XVariable *> &,
+            vector<int> &, vector<XVariable *> &, XCondition &) -> void override
+        {
+            report_unsupported("cumulative", "no Cumulative propagator yet (#147)");
+        }
+
+        auto buildConstraintCumulative(string, vector<XVariable *> &,
+            vector<XVariable *> &, vector<int> &, XCondition &) -> void override
+        {
+            report_unsupported("cumulative", "no Cumulative propagator yet (#147)");
+        }
+
+        auto buildConstraintBinPacking(string, vector<XVariable *> &, vector<int> &,
+            XCondition &) -> void override
+        {
+            report_unsupported("binPacking", "no BinPacking propagator yet (#148)");
+        }
+
+        auto buildConstraintBinPacking(string, vector<XVariable *> &, vector<int> &,
+            vector<int> &, bool) -> void override
+        {
+            report_unsupported("binPacking", "no BinPacking propagator yet (#148)");
+        }
+
+        auto buildConstraintBinPacking(string, vector<XVariable *> &, vector<int> &,
+            vector<XVariable *> &, bool) -> void override
+        {
+            report_unsupported("binPacking", "no BinPacking propagator yet (#148)");
+        }
+
+        auto buildConstraintBinPacking(string, vector<XVariable *> &, vector<int> &,
+            vector<XCondition> &, int) -> void override
+        {
+            report_unsupported("binPacking", "no BinPacking propagator yet (#148)");
         }
 
         auto buildConstraintCircuit(string, vector<XVariable *> & x_vars,
@@ -1452,6 +1570,13 @@ auto main(int argc, char * argv[]) -> int
         parser.parse(options_vars["file"].as<string>().c_str());
     }
     catch (const UnimplementedException & e) {
+        cout << "s UNSUPPORTED" << endl;
+        cout << "c " << e.what() << endl;
+        return EXIT_FAILURE;
+    }
+    catch (const std::runtime_error & e) {
+        // Catch the parser's default-throw for unhandled callbacks so we
+        // exit cleanly rather than terminating on an uncaught exception.
         cout << "s UNSUPPORTED" << endl;
         cout << "c " << e.what() << endl;
         return EXIT_FAILURE;
