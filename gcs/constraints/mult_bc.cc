@@ -201,7 +201,7 @@ namespace
         return proof_line;
     }
 
-    auto get_rup_hints_for(ProofLogger & logger, const vector<ProofLiteralOrFlag> & lits) -> vector<ProofLine>
+    auto get_rup_hints_for(ProofLogger & logger, const HalfReifyOnConjunctionOf & lits) -> vector<ProofLine>
     {
         auto rup_hints = vector<ProofLine>{};
         for (const auto & lit : lits) {

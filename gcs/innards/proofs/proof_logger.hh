@@ -159,7 +159,7 @@ namespace gcs::innards
         /**
          * Given a reason, return the vector of literals in the conjunction.
          */
-        auto reason_to_lits(const ReasonFunction & reason) -> std::vector<ProofLiteralOrFlag>;
+        auto reason_to_lits(const ReasonFunction & reason) -> Reason;
 
         /**
          * Given a PB constraint C and a conjunction of literals L, return the native

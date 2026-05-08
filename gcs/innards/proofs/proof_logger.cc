@@ -320,7 +320,7 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
         .visit(why);
 }
 
-auto ProofLogger::reason_to_lits(const ReasonFunction & reason) -> vector<ProofLiteralOrFlag>
+auto ProofLogger::reason_to_lits(const ReasonFunction & reason) -> Reason
 {
     optional<Reason> reason_literals;
     if (reason)
@@ -329,7 +329,7 @@ auto ProofLogger::reason_to_lits(const ReasonFunction & reason) -> vector<ProofL
     if (reason_literals)
         names_and_ids_tracker().need_all_proof_names_in(*reason_literals);
 
-    vector<ProofLiteralOrFlag> reason_proof_literals{};
+    Reason reason_proof_literals{};
     for (auto & r : *reason_literals)
         reason_proof_literals.emplace_back(r);
 
@@ -430,10 +430,7 @@ auto ProofLogger::emit_under_reason(
               << " ";
 
     if (reason_literals) {
-        vector<ProofLiteralOrFlag> reason_proof_literals{};
-        for (auto & r : *reason_literals)
-            reason_proof_literals.emplace_back(r);
-        emit_inequality_to(names_and_ids_tracker(), reify(ineq, reason_proof_literals), rule_line);
+        emit_inequality_to(names_and_ids_tracker(), reify(ineq, *reason_literals), rule_line);
     }
     else {
         emit_inequality_to(names_and_ids_tracker(), ineq, rule_line);
