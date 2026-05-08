@@ -20,3 +20,12 @@ set_tests_properties(xcsp_sum_not_equals PROPERTIES RESOURCE_LOCK xcsp)
 
 add_test(NAME xcsp_intension_basic COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ intension_basic "^d FOUND SOLUTIONS 5$")
 set_tests_properties(xcsp_intension_basic PROPERTIES RESOURCE_LOCK xcsp)
+
+add_test(NAME xcsp_intension_arithmetic COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ intension_arithmetic "^d FOUND SOLUTIONS 3$")
+set_tests_properties(xcsp_intension_arithmetic PROPERTIES RESOURCE_LOCK xcsp)
+
+add_test(NAME xcsp_intension_boolean COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ intension_boolean "^d FOUND SOLUTIONS 3$")
+set_tests_properties(xcsp_intension_boolean PROPERTIES RESOURCE_LOCK xcsp)
+
+add_test(NAME xcsp_intension_reified COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ intension_reified "^d FOUND SOLUTIONS 2$")
+set_tests_properties(xcsp_intension_reified PROPERTIES RESOURCE_LOCK xcsp)

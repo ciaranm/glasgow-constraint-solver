@@ -436,6 +436,39 @@ namespace
 
         // -------- intension tree walking --------
 
+        // Helper for binary relational operators inside an expression: walks
+        // both children and posts the corresponding *Iff reification with
+        // a fresh 0/1 control variable.
+        template <typename Constraint_>
+        auto reify_binary(Node * node, const string & name) -> ExprResult
+        {
+            auto a = walk_intension(node->parameters.at(0));
+            auto b = walk_intension(node->parameters.at(1));
+            auto control = _problem.create_integer_variable(0_i, 1_i, name);
+            _problem.post(Constraint_{a.var, b.var, control == 1_i});
+            return {control, 0_i, 1_i};
+        }
+
+        // Multiply two ExprResults via Times (or WeightedSum if either side
+        // is a constant). Used by binary and n-ary OMUL, OSQR, and OPOW.
+        // The constant-folding in this helper is a workaround for #153 —
+        // ideally the user-facing Times constraint would do it itself and
+        // also choose between the GAC and BC implementations based on
+        // domain widths.
+        auto post_product(ExprResult a, ExprResult b, const string & name) -> ExprResult
+        {
+            auto lower = min({a.lower * b.lower, a.lower * b.upper, a.upper * b.lower, a.upper * b.upper});
+            auto upper = max({a.lower * b.lower, a.lower * b.upper, a.upper * b.lower, a.upper * b.upper});
+            auto r = _problem.create_integer_variable(lower, upper, name);
+            if (a.lower == a.upper)
+                _problem.post(WeightedSum{} + a.lower * b.var == 1_i * r);
+            else if (b.lower == b.upper)
+                _problem.post(WeightedSum{} + b.lower * a.var == 1_i * r);
+            else
+                _problem.post(Times{a.var, b.var, r});
+            return {r, lower, upper};
+        }
+
         // Walk an intension subexpression and return a variable holding its
         // value plus the bounds we computed. Boolean-valued nodes (e.g. eq
         // inside an arithmetic context) are reified to a 0/1 variable here.
@@ -481,20 +514,90 @@ namespace
             }
 
             case OMUL: {
-                if (node->parameters.size() != 2)
-                    report_unsupported("intension", "n-ary mul");
+                if (node->parameters.empty())
+                    report_unsupported("intension", "empty mul");
+                auto chain = walk_intension(node->parameters.at(0));
+                for (size_t i = 1; i < node->parameters.size(); ++i)
+                    chain = post_product(chain, walk_intension(node->parameters.at(i)), "mulresult");
+                return chain;
+            }
+
+            case ONEG: {
                 auto a = walk_intension(node->parameters.at(0));
-                auto b = walk_intension(node->parameters.at(1));
-                auto lower = min({a.lower * b.lower, a.lower * b.upper, a.upper * b.lower, a.upper * b.upper});
-                auto upper = max({a.lower * b.lower, a.lower * b.upper, a.upper * b.lower, a.upper * b.upper});
-                auto r = _problem.create_integer_variable(lower, upper, "mulresult");
-                if (a.lower == a.upper)
-                    _problem.post(WeightedSum{} + a.lower * b.var == 1_i * r);
-                else if (b.lower == b.upper)
-                    _problem.post(WeightedSum{} + b.lower * a.var == 1_i * r);
-                else
-                    _problem.post(Times{a.var, b.var, r});
+                auto lower = -a.upper;
+                auto upper = -a.lower;
+                auto r = _problem.create_integer_variable(lower, upper, "negresult");
+                _problem.post(WeightedSum{} + 1_i * a.var + 1_i * r == 0_i);
                 return {r, lower, upper};
+            }
+
+            case OABS: {
+                auto a = walk_intension(node->parameters.at(0));
+                auto upper = max(abs(a.lower), abs(a.upper));
+                auto lower = (a.lower >= 0_i) ? a.lower
+                    : (a.upper <= 0_i)        ? -a.upper
+                                              : 0_i;
+                auto r = _problem.create_integer_variable(lower, upper, "absresult");
+                _problem.post(Abs{a.var, r});
+                return {r, lower, upper};
+            }
+
+            case OSQR: {
+                auto a = walk_intension(node->parameters.at(0));
+                return post_product(a, a, "sqrresult");
+            }
+
+            case ONOT: {
+                auto a = walk_intension(node->parameters.at(0));
+                auto r = _problem.create_integer_variable(0_i, 1_i, "notresult");
+                _problem.post(WeightedSum{} + 1_i * a.var + 1_i * r == 1_i);
+                return {r, 0_i, 1_i};
+            }
+
+            case OMIN:
+            case OMAX: {
+                vector<IntegerVariableID> vars;
+                vars.reserve(node->parameters.size());
+                Integer lower = 0_i, upper = 0_i;
+                bool first = true;
+                for (auto * p : node->parameters) {
+                    auto sub = walk_intension(p);
+                    vars.emplace_back(sub.var);
+                    if (first) {
+                        lower = sub.lower;
+                        upper = sub.upper;
+                        first = false;
+                    }
+                    else {
+                        lower = (node->type == OMIN) ? min(lower, sub.lower) : max(lower, sub.lower);
+                        upper = (node->type == OMIN) ? min(upper, sub.upper) : max(upper, sub.upper);
+                    }
+                }
+                auto r = _problem.create_integer_variable(lower, upper,
+                    node->type == OMIN ? "minresult" : "maxresult");
+                if (node->type == OMIN)
+                    _problem.post(ArrayMin{vars, r});
+                else
+                    _problem.post(ArrayMax{vars, r});
+                return {r, lower, upper};
+            }
+
+            case OPOW: {
+                // Only support a constant non-negative exponent: decompose
+                // to a chain of products. x^0 = 1, x^1 = x, x^k = x * x^(k-1).
+                auto base = walk_intension(node->parameters.at(0));
+                auto exp = node->parameters.at(1);
+                if (exp->type != ODECIMAL)
+                    report_unsupported("intension", "pow with non-constant exponent");
+                auto k = static_cast<NodeConstant *>(exp)->val;
+                if (k < 0)
+                    report_unsupported("intension", "pow with negative exponent");
+                if (k == 0)
+                    return {constant_variable(1_i), 1_i, 1_i};
+                auto chain = base;
+                for (int i = 1; i < k; ++i)
+                    chain = post_product(chain, base, "powresult");
+                return chain;
             }
 
             case OMOD: {
@@ -529,19 +632,68 @@ namespace
             case OEQ: {
                 if (node->parameters.size() != 2)
                     report_unsupported("intension", "n-ary eq inside expression");
-                auto a = walk_intension(node->parameters.at(0));
-                auto b = walk_intension(node->parameters.at(1));
-                auto control = _problem.create_integer_variable(0_i, 1_i, "eqresult");
-                _problem.post(EqualsIff{a.var, b.var, control == 1_i});
-                return {control, 0_i, 1_i};
+                return reify_binary<EqualsIff>(node, "eqresult");
             }
 
-            case ONE: {
+            case ONE:
+                return reify_binary<NotEqualsIff>(node, "neresult");
+
+            case OLT:
+                return reify_binary<LessThanIff>(node, "ltresult");
+            case OLE:
+                return reify_binary<LessThanEqualIff>(node, "leresult");
+            case OGT:
+                return reify_binary<GreaterThanIff>(node, "gtresult");
+            case OGE:
+                return reify_binary<GreaterThanEqualIff>(node, "geresult");
+
+            case OIFF: {
+                // For Boolean a, b: r ⇔ (a == b). EqualsIff handles this.
+                if (node->parameters.size() != 2)
+                    report_unsupported("intension", "n-ary iff inside expression");
+                return reify_binary<EqualsIff>(node, "iffresult");
+            }
+
+            case OIMP: {
+                // a ⇒ b ≡ (¬a) ∨ b. We materialise ¬a as 1-a and reify Or.
                 auto a = walk_intension(node->parameters.at(0));
                 auto b = walk_intension(node->parameters.at(1));
-                auto control = _problem.create_integer_variable(0_i, 1_i, "neresult");
-                _problem.post(EqualsIff{a.var, b.var, control == 0_i});
-                return {control, 0_i, 1_i};
+                auto not_a = _problem.create_integer_variable(0_i, 1_i, "not_a");
+                _problem.post(WeightedSum{} + 1_i * a.var + 1_i * not_a == 1_i);
+                auto r = _problem.create_integer_variable(0_i, 1_i, "impresult");
+                vector<IntegerVariableID> args{not_a, b.var};
+                _problem.post(Or{args, r});
+                return {r, 0_i, 1_i};
+            }
+
+            case OXOR: {
+                // r ⇔ (odd number of args == 1). Encoded as
+                // ParityOdd({args, 1-r}): if r=1 the 1-r contributes 0 so
+                // args must have odd parity; if r=0 the 1-r contributes 1
+                // so args must have even parity.
+                vector<IntegerVariableID> vars;
+                vars.reserve(node->parameters.size() + 1);
+                for (auto * p : node->parameters)
+                    vars.emplace_back(walk_intension(p).var);
+                auto r = _problem.create_integer_variable(0_i, 1_i, "xorresult");
+                auto not_r = _problem.create_integer_variable(0_i, 1_i, "not_xorresult");
+                _problem.post(WeightedSum{} + 1_i * r + 1_i * not_r == 1_i);
+                vars.emplace_back(not_r);
+                _problem.post(ParityOdd{vars});
+                return {r, 0_i, 1_i};
+            }
+
+            case OIF: {
+                // if(cond, then, else): cond=1 ⇒ r=then; cond=0 ⇒ r=else.
+                auto cond = walk_intension(node->parameters.at(0));
+                auto t = walk_intension(node->parameters.at(1));
+                auto e = walk_intension(node->parameters.at(2));
+                auto lower = min(t.lower, e.lower);
+                auto upper = max(t.upper, e.upper);
+                auto r = _problem.create_integer_variable(lower, upper, "ifresult");
+                _problem.post(EqualsIf{r, t.var, cond.var == 1_i});
+                _problem.post(EqualsIf{r, e.var, cond.var == 0_i});
+                return {r, lower, upper};
             }
 
             case OAND:
@@ -623,17 +775,55 @@ namespace
                 _problem.post(Or{vars});
                 return;
             }
-            case OIN: {
+            case OIN:
+            case ONOTIN: {
                 if (root->parameters.size() != 2)
-                    report_unsupported("intension", "in with != 2 children");
+                    report_unsupported("intension", "in/notin with != 2 children");
                 auto a = walk_intension(root->parameters.at(0));
                 auto vals = walk_set_literal(root->parameters.at(1));
                 vector<IntegerVariableID> vars{a.var};
-                vector<vector<Integer>> feasible;
-                feasible.reserve(vals.size());
+                vector<vector<Integer>> tuples;
+                tuples.reserve(vals.size());
                 for (auto & v : vals)
-                    feasible.emplace_back(vector{Integer{v}});
-                _problem.post(Table{vars, std::move(feasible)});
+                    tuples.emplace_back(vector{Integer{v}});
+                if (root->type == OIN)
+                    _problem.post(Table{vars, std::move(tuples)});
+                else
+                    _problem.post(NegativeTable{vars, std::move(tuples)});
+                return;
+            }
+            case OAND: {
+                // Top-level conjunction: post each conjunct independently.
+                for (auto * p : root->parameters)
+                    post_intension_top_level(p);
+                return;
+            }
+            case OXOR: {
+                // Top-level XOR: parity of the args must be odd.
+                vector<IntegerVariableID> vars;
+                vars.reserve(root->parameters.size());
+                for (auto * p : root->parameters)
+                    vars.emplace_back(walk_intension(p).var);
+                _problem.post(ParityOdd{vars});
+                return;
+            }
+            case OIMP: {
+                // a ⇒ b at top level: post Or{¬a, b}.
+                auto a = walk_intension(root->parameters.at(0));
+                auto b = walk_intension(root->parameters.at(1));
+                auto not_a = _problem.create_integer_variable(0_i, 1_i, "not_a");
+                _problem.post(WeightedSum{} + 1_i * a.var + 1_i * not_a == 1_i);
+                vector<IntegerVariableID> args{not_a, b.var};
+                _problem.post(Or{args});
+                return;
+            }
+            case OIFF: {
+                // a ⇔ b at top level: just post Equals.
+                if (root->parameters.size() != 2)
+                    report_unsupported("intension", "n-ary iff at top level");
+                auto a = walk_intension(root->parameters.at(0));
+                auto b = walk_intension(root->parameters.at(1));
+                _problem.post(Equals{a.var, b.var});
                 return;
             }
             default:
