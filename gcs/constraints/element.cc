@@ -250,11 +250,15 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                                 array_has_nonconstants = array_has_nonconstants, bounds_only = _bounds_only](
                                 const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // for each index variable, update it to only contain values where
-            // there's at least one supporting option
-            for (const auto & test_val : state.each_value_mutable(index_vars.at(fixed_dim))) {
-                auto looking_for = state.copy_of_values(result_var);
-                auto looking_for_bounds = state.bounds(result_var);
+            // there's at least one supporting option. result_var's domain is
+            // not modified by anything inside the loop body (the only infer_*
+            // calls are on index_vars[fixed_dim]), so the looking_for set and
+            // its bounds are constant across iterations and only need
+            // computing once.
+            auto looking_for = state.copy_of_values(result_var);
+            auto looking_for_bounds = state.bounds(result_var);
 
+            for (const auto & test_val : state.each_value_mutable(index_vars.at(fixed_dim))) {
                 vector<size_t> elem;
                 vector<IntegerVariableID> explored_vars;
                 explored_vars.push_back(result_var);
@@ -273,7 +277,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                                     return true;
                             }
                             else {
-                                if (looking_for.contains_any_of(state.copy_of_values(array_var)))
+                                if (state.domain_intersects_with(array_var, looking_for))
                                     return true;
                             }
                         }
