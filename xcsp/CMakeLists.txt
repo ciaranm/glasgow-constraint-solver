@@ -53,3 +53,15 @@ set_tests_properties(xcsp_n_values PROPERTIES RESOURCE_LOCK xcsp)
 
 add_test(NAME xcsp_cardinality COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ cardinality "^d FOUND SOLUTIONS 12$")
 set_tests_properties(xcsp_cardinality PROPERTIES RESOURCE_LOCK xcsp)
+
+add_test(NAME xcsp_minimum COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ minimum "^d FOUND SOLUTIONS 19$")
+set_tests_properties(xcsp_minimum PROPERTIES RESOURCE_LOCK xcsp)
+
+add_test(NAME xcsp_maximum COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ maximum "^d FOUND SOLUTIONS 19$")
+set_tests_properties(xcsp_maximum PROPERTIES RESOURCE_LOCK xcsp)
+
+add_test(NAME xcsp_channel_self COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ channel_self "^d FOUND SOLUTIONS 4$")
+set_tests_properties(xcsp_channel_self PROPERTIES RESOURCE_LOCK xcsp)
+
+add_test(NAME xcsp_channel_two COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ channel_two "^d FOUND SOLUTIONS 6$")
+set_tests_properties(xcsp_channel_two PROPERTIES RESOURCE_LOCK xcsp)

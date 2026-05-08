@@ -44,9 +44,9 @@ equivalent for that frontend's vocabulary).
 | count | `Count` (single value) / `Among` (multi-value set) | ✓ | ✓ (incl. atMost/atLeast/exactlyK/among special-cases) | ? |
 | nValues | `NValue` | ✓ | ✓ (basic; without-`except` form) | ? |
 | cardinality (GCC) | decompose to `Count` | ? | ✓ via decompose (constant values + constant occurs; closed flag) | ? |
-| maximum / minimum (constraint) | `ArrayMax` / `ArrayMin` | ✓ | frontend gap (#150) | ? |
-| element | `Element` | ✓ | frontend gap (#150) (matrix form) | ? |
-| channel (inverse) | `Inverse` | ✓ | frontend gap (#150) | ? |
+| maximum / minimum (constraint) | `ArrayMax` / `ArrayMin` | ✓ | ✓ (basic with `XCondition`; indexed form pending) | ? |
+| element | `Element` / `Element2D` | ✓ | ✓ (1D vector and constant-list; 2D matrix variable + constant) | ? |
+| channel (inverse) | `Inverse` | ✓ | ✓ (1- and 2-list inverse; one-to-many form `s UNSUPPORTED`) | ? |
 | noOverlap (Disjunctive) | solver gap (#146) | ? | solver gap (#146) | ? |
 | cumulative | solver gap (#147) | ? | solver gap (#147) | ? |
 | binPacking | solver gap (#148) | ? | solver gap (#148) | ? |

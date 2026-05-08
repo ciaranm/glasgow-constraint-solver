@@ -396,18 +396,91 @@ namespace
         auto buildConstraintElement(string, vector<XVariable *> & x_vars,
             int startIndex, XVariable * index, RankType rank, int value) -> void override
         {
-            check_element_simple(startIndex, rank);
-            auto idx = need_variable(index->id);
+            check_element_rank(rank);
+            auto idx = zero_based_index(index, startIndex);
             _problem.post(Element{constant_variable(Integer{value}), idx, allocate_element_array(x_vars)});
         }
 
         auto buildConstraintElement(string, vector<int> & vals,
             int startIndex, XVariable * index, RankType rank, XVariable * value) -> void override
         {
-            check_element_simple(startIndex, rank);
-            auto idx = need_variable(index->id);
+            check_element_rank(rank);
+            auto idx = zero_based_index(index, startIndex);
             auto val = need_variable(value->id);
             _problem.post(Element{val, idx, allocate_element_array(vals)});
+        }
+
+        auto buildConstraintElement(string, vector<vector<XVariable *>> & matrix,
+            int startRowIndex, XVariable * rowIndex, int startColIndex, XVariable * colIndex,
+            XVariable * value) -> void override
+        {
+            auto val = need_variable(value->id);
+            auto row = need_variable(rowIndex->id);
+            auto col = need_variable(colIndex->id);
+            _problem.post(Element2D{val,
+                {row, Integer{startRowIndex}}, {col, Integer{startColIndex}},
+                allocate_element_matrix(matrix)});
+        }
+
+        auto buildConstraintElement(string, vector<vector<XVariable *>> & matrix,
+            int startRowIndex, XVariable * rowIndex, int startColIndex, XVariable * colIndex,
+            int value) -> void override
+        {
+            auto row = need_variable(rowIndex->id);
+            auto col = need_variable(colIndex->id);
+            _problem.post(Element2D{constant_variable(Integer{value}),
+                {row, Integer{startRowIndex}}, {col, Integer{startColIndex}},
+                allocate_element_matrix(matrix)});
+        }
+
+        auto buildConstraintElement(string, vector<vector<int>> & matrix,
+            int startRowIndex, XVariable * rowIndex, int startColIndex, XVariable * colIndex,
+            XVariable * value) -> void override
+        {
+            auto val = need_variable(value->id);
+            auto row = need_variable(rowIndex->id);
+            auto col = need_variable(colIndex->id);
+            _problem.post(Element2DConstantArray{val,
+                {row, Integer{startRowIndex}}, {col, Integer{startColIndex}},
+                allocate_element_matrix(matrix)});
+        }
+
+        auto buildConstraintMinimum(string, vector<XVariable *> & x_vars,
+            XCondition & cond) -> void override
+        {
+            build_min_max_common(x_vars, cond, true);
+        }
+
+        auto buildConstraintMaximum(string, vector<XVariable *> & x_vars,
+            XCondition & cond) -> void override
+        {
+            build_min_max_common(x_vars, cond, false);
+        }
+
+        auto buildConstraintChannel(string, vector<XVariable *> & x_vars,
+            int startIndex) -> void override
+        {
+            auto vars = need_variables(x_vars);
+            _problem.post(Inverse{vars, vars, Integer{startIndex}, Integer{startIndex}});
+        }
+
+        auto buildConstraintChannel(string, vector<XVariable *> & list1, int startIndex1,
+            vector<XVariable *> & list2, int startIndex2) -> void override
+        {
+            _problem.post(Inverse{need_variables(list1), need_variables(list2),
+                Integer{startIndex1}, Integer{startIndex2}});
+        }
+
+        auto buildConstraintChannel(string, vector<XVariable *> & list,
+            int startIndex, XVariable * value) -> void override
+        {
+            // One-to-many channeling: list[i] = 1 ⇔ value = i + startIndex.
+            // Not yet implemented; needs an EqualsIff chain or a custom
+            // decomposition.
+            (void)list;
+            (void)startIndex;
+            (void)value;
+            report_unsupported("channel", "one-to-many form (list + value)");
         }
 
         auto buildObjectiveMinimize(ExpressionObjective type, vector<XVariable *> & x_vars,
@@ -432,6 +505,8 @@ namespace
         // in the callbacks object, which itself lives in main() alongside
         // the Problem.
         vector<std::unique_ptr<vector<IntegerVariableID>>> _element_arrays;
+        vector<std::unique_ptr<vector<vector<IntegerVariableID>>>> _element_2d_var_arrays;
+        vector<std::unique_ptr<vector<vector<Integer>>>> _element_2d_const_arrays;
 
         // Variable lookup helpers. need_variable() lazily creates the
         // IntegerVariableID on first use.
@@ -495,6 +570,53 @@ namespace
             return raw;
         }
 
+        auto allocate_element_matrix(vector<vector<XVariable *>> & matrix) -> vector<vector<IntegerVariableID>> *
+        {
+            auto rows = std::make_unique<vector<vector<IntegerVariableID>>>();
+            rows->reserve(matrix.size());
+            for (auto & row : matrix) {
+                vector<IntegerVariableID> r;
+                r.reserve(row.size());
+                for (auto * v : row)
+                    r.emplace_back(need_variable(v->id));
+                rows->emplace_back(std::move(r));
+            }
+            auto * raw = rows.get();
+            _element_2d_var_arrays.push_back(std::move(rows));
+            return raw;
+        }
+
+        auto allocate_element_matrix(vector<vector<int>> & matrix) -> vector<vector<Integer>> *
+        {
+            auto rows = std::make_unique<vector<vector<Integer>>>();
+            rows->reserve(matrix.size());
+            for (auto & row : matrix) {
+                vector<Integer> r;
+                r.reserve(row.size());
+                for (auto & v : row)
+                    r.emplace_back(Integer{v});
+                rows->emplace_back(std::move(r));
+            }
+            auto * raw = rows.get();
+            _element_2d_const_arrays.push_back(std::move(rows));
+            return raw;
+        }
+
+        // Shift an index variable by -startIndex, returning a fresh
+        // 0-based variable. Used by 1D Element where the Element wrapper
+        // doesn't expose the start-index parameter directly.
+        auto zero_based_index(XVariable * x, int startIndex) -> IntegerVariableID
+        {
+            auto idx = need_variable(x->id);
+            if (startIndex == 0)
+                return idx;
+            auto & mv = find_variable(x->id);
+            auto shifted = _problem.create_integer_variable(
+                mv.lower - Integer{startIndex}, mv.upper - Integer{startIndex}, "idx_shifted");
+            _problem.post(WeightedSum{} + 1_i * idx + -1_i * shifted == Integer{startIndex});
+            return shifted;
+        }
+
         auto post_table(const vector<IntegerVariableID> & vars, bool is_support) -> void
         {
             if (is_support)
@@ -503,12 +625,31 @@ namespace
                 _problem.post(NegativeTable{vars, SharedWildcardTuples{_most_recent_tuples}});
         }
 
-        auto check_element_simple(int startIndex, RankType rank) -> void
+        auto check_element_rank(RankType rank) -> void
         {
-            if (0 != startIndex)
-                report_unsupported("element", "non-zero start index");
             if (rank != RankType::ANY)
                 report_unsupported("element", "non-any rank");
+        }
+
+        auto build_min_max_common(vector<XVariable *> & x_vars, XCondition & cond,
+            bool is_min) -> void
+        {
+            optional<Integer> lower, upper;
+            vector<IntegerVariableID> vars;
+            vars.reserve(x_vars.size());
+            for (auto * x : x_vars) {
+                auto & mv = find_variable(x->id);
+                vars.emplace_back(need_variable(x->id));
+                lower = lower ? min(*lower, mv.lower) : mv.lower;
+                upper = upper ? max(*upper, mv.upper) : mv.upper;
+            }
+            auto result = _problem.create_integer_variable(*lower, *upper,
+                is_min ? "minresult" : "maxresult");
+            if (is_min)
+                _problem.post(ArrayMin{vars, result});
+            else
+                _problem.post(ArrayMax{vars, result});
+            apply_count_condition(result, cond, is_min ? "minimum" : "maximum");
         }
 
         // Apply a count-style XCondition to a single result variable:
