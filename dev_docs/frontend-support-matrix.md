@@ -51,7 +51,7 @@ equivalent for that frontend's vocabulary).
 | cumulative | solver gap (#147) | ? | solver gap (#147) | ? |
 | binPacking | solver gap (#148) | ? | solver gap (#148) | ? |
 | knapsack | `Knapsack` | ✓ | ✓ (basic with two `XCondition`s; not yet exercised by a test) | ? |
-| circuit | `Circuit` | ✓ | ✓ (basic; sub-circuit with size param `s UNSUPPORTED`) | ? |
+| circuit | `Circuit` | ✓ | ✓ (basic; sub-circuit with size param `s UNSUPPORTED`); semantics mismatch with XCSP3 spec, see #167 | ? |
 | instantiation | `Equals` to constant | ✓ | ✓ | ? |
 | lex (ordered list) | `LexLessThan` / `LexLessThanEqual` / `LexGreaterThan` / `LexGreaterEqual` | ✓ | ✓ (lists; matrix as lex² over rows + columns) | ? |
 | slide (meta-constraint) | apply template per window | ? | ✓ (parser unfolds into per-window constraints) | ? |

@@ -19,15 +19,22 @@ Testing
 
 Tests cross-check our solver against [ACE](https://github.com/xcsp3team/ACE),
 the reference XCSP3 solver, by comparing the full set of solutions on small
-hand-written instances. The expected solution set for each test is cached in
-this repository, so day-to-day testing does not require ACE — the runner just
-diffs our output against the cache. ACE is needed only when *adding* a new
-test, or to *regenerate* the cache if a test instance changes.
+hand-written instances. The expected solution set for each test is cached
+under `tests/expected/<name>.sols` (one solution per line, alphabetised
+`name=value` tuples), so day-to-day testing does not require ACE — the
+runner just diffs our output against the cache. If the cache is missing,
+the test is **skipped** (ctest exit code 66) rather than failed.
 
-The test infrastructure that consumes these tools is being added under
-[#150](https://github.com/ciaranm/glasgow-constraint-solver/issues/150)
-(Phase 4); the install recipes below are recorded here so contributors can
-set up the environment ahead of time.
+ACE is needed only to (re)generate the cache. Run:
+
+```shell
+ACE_JAR=/path/to/ACE-2.6.jar xcsp/regenerate_expected.bash <testname>
+```
+
+This invokes ACE in enumerate mode (`-s=all -xe -xc=false`), parses the
+streamed `<instantiation>` blocks, expands array shorthand (`s[]`,
+`m[][]`, …) using the dimensions read from the instance XML, and writes
+the canonical sorted output. Commit the file alongside the new test.
 
 ### Optional dependencies for adding new tests
 
