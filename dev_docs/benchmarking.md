@@ -84,8 +84,7 @@ Then run a script that alternates trials between the two builds. Per-build
 3-trial sweep is usually enough; the long benchmarks (`tsp`, `n_queens_88`)
 have low variance anyway, the short ones can be noisy. Take the median.
 
-A minimal harness (the one used for issue #134 Phase 2 lives in
-`/tmp/bench-phase2/run.sh`):
+A minimal harness:
 
 ```bash
 #!/bin/bash
