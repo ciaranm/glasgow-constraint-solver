@@ -126,7 +126,10 @@ auto NValue::install_propagators(Propagators & propagators) -> void
                 all_definite_values.insert(*val);
         }
 
-        inference.infer(logger, n_values >= max(1_i, Integer(all_definite_values.size())), JustifyUsingRUP{}, generic_reason(state, all_vars));
+        // The "at least 1" floor only applies when the array is non-empty;
+        // an empty array contributes 0 distinct values.
+        auto distinct_floor = vars.empty() ? 0_i : 1_i;
+        inference.infer(logger, n_values >= max(distinct_floor, Integer(all_definite_values.size())), JustifyUsingRUP{}, generic_reason(state, all_vars));
 
         return PropagatorState::Enable;
     },
