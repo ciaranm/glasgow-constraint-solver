@@ -15,74 +15,42 @@ target_link_libraries(xcsp_glasgow_constraint_solver PRIVATE
     glasgow_constraint_solver
     cxxopts)
 
-add_test(NAME xcsp_sum_not_equals COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ sum_not_equals "^d FOUND SOLUTIONS 8$")
-set_tests_properties(xcsp_sum_not_equals PROPERTIES RESOURCE_LOCK xcsp)
+# Each XCSP3 ctest runs the binding with --prove --all on the given
+# instance and diffs the streamed solutions against a cached expected
+# output committed under tests/expected/<name>.sols. If the cache is
+# missing, the test skips (ctest exit code 66) rather than failing.
+function(add_xcsp_test name)
+    add_test(NAME xcsp_${name}
+        COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash
+            $<TARGET_FILE:xcsp_glasgow_constraint_solver>
+            ${CMAKE_SOURCE_DIR}/xcsp/tests/
+            ${name})
+    set_tests_properties(xcsp_${name} PROPERTIES
+        RESOURCE_LOCK xcsp
+        SKIP_RETURN_CODE 66)
+endfunction()
 
-add_test(NAME xcsp_intension_basic COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test_v2.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ intension_basic)
-set_tests_properties(xcsp_intension_basic PROPERTIES RESOURCE_LOCK xcsp SKIP_RETURN_CODE 66)
-
-add_test(NAME xcsp_intension_arithmetic COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ intension_arithmetic "^d FOUND SOLUTIONS 3$")
-set_tests_properties(xcsp_intension_arithmetic PROPERTIES RESOURCE_LOCK xcsp)
-
-add_test(NAME xcsp_intension_boolean COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ intension_boolean "^d FOUND SOLUTIONS 3$")
-set_tests_properties(xcsp_intension_boolean PROPERTIES RESOURCE_LOCK xcsp)
-
-add_test(NAME xcsp_intension_reified COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ intension_reified "^d FOUND SOLUTIONS 2$")
-set_tests_properties(xcsp_intension_reified PROPERTIES RESOURCE_LOCK xcsp)
-
-add_test(NAME xcsp_all_equal COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ all_equal "^d FOUND SOLUTIONS 3$")
-set_tests_properties(xcsp_all_equal PROPERTIES RESOURCE_LOCK xcsp)
-
-add_test(NAME xcsp_ordered_strict COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ ordered_strict "^d FOUND SOLUTIONS 4$")
-set_tests_properties(xcsp_ordered_strict PROPERTIES RESOURCE_LOCK xcsp)
-
-add_test(NAME xcsp_ordered_lengths COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ ordered_lengths "^d FOUND SOLUTIONS 10$")
-set_tests_properties(xcsp_ordered_lengths PROPERTIES RESOURCE_LOCK xcsp)
-
-add_test(NAME xcsp_precedence COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ precedence "^d FOUND SOLUTIONS 14$")
-set_tests_properties(xcsp_precedence PROPERTIES RESOURCE_LOCK xcsp)
-
-add_test(NAME xcsp_count COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ count "^d FOUND SOLUTIONS 24$")
-set_tests_properties(xcsp_count PROPERTIES RESOURCE_LOCK xcsp)
-
-add_test(NAME xcsp_count_among COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ count_among "^d FOUND SOLUTIONS 24$")
-set_tests_properties(xcsp_count_among PROPERTIES RESOURCE_LOCK xcsp)
-
-add_test(NAME xcsp_n_values COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ n_values "^d FOUND SOLUTIONS 2$")
-set_tests_properties(xcsp_n_values PROPERTIES RESOURCE_LOCK xcsp)
-
-add_test(NAME xcsp_cardinality COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ cardinality "^d FOUND SOLUTIONS 12$")
-set_tests_properties(xcsp_cardinality PROPERTIES RESOURCE_LOCK xcsp)
-
-add_test(NAME xcsp_minimum COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ minimum "^d FOUND SOLUTIONS 19$")
-set_tests_properties(xcsp_minimum PROPERTIES RESOURCE_LOCK xcsp)
-
-add_test(NAME xcsp_maximum COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ maximum "^d FOUND SOLUTIONS 19$")
-set_tests_properties(xcsp_maximum PROPERTIES RESOURCE_LOCK xcsp)
-
-add_test(NAME xcsp_channel_self COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ channel_self "^d FOUND SOLUTIONS 4$")
-set_tests_properties(xcsp_channel_self PROPERTIES RESOURCE_LOCK xcsp)
-
-add_test(NAME xcsp_channel_two COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ channel_two "^d FOUND SOLUTIONS 6$")
-set_tests_properties(xcsp_channel_two PROPERTIES RESOURCE_LOCK xcsp)
-
-add_test(NAME xcsp_circuit COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ circuit "^d FOUND SOLUTIONS 2$")
-set_tests_properties(xcsp_circuit PROPERTIES RESOURCE_LOCK xcsp)
-
-add_test(NAME xcsp_instantiation COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ instantiation "^d FOUND SOLUTIONS 1$")
-set_tests_properties(xcsp_instantiation PROPERTIES RESOURCE_LOCK xcsp)
-
-add_test(NAME xcsp_lex COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ lex "^d FOUND SOLUTIONS 6$")
-set_tests_properties(xcsp_lex PROPERTIES RESOURCE_LOCK xcsp)
-
-add_test(NAME xcsp_lex_matrix COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ lex_matrix "^d FOUND SOLUTIONS 7$")
-set_tests_properties(xcsp_lex_matrix PROPERTIES RESOURCE_LOCK xcsp)
-
-add_test(NAME xcsp_all_different_matrix COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ all_different_matrix "^d FOUND SOLUTIONS 2$")
-set_tests_properties(xcsp_all_different_matrix PROPERTIES RESOURCE_LOCK xcsp)
-
-add_test(NAME xcsp_slide COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ slide "^d FOUND SOLUTIONS 48$")
-set_tests_properties(xcsp_slide PROPERTIES RESOURCE_LOCK xcsp)
-
-add_test(NAME xcsp_regular COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash $<TARGET_FILE:xcsp_glasgow_constraint_solver> ${CMAKE_SOURCE_DIR}/xcsp/tests/ regular "^d FOUND SOLUTIONS 4$")
-set_tests_properties(xcsp_regular PROPERTIES RESOURCE_LOCK xcsp)
+add_xcsp_test(all_different_matrix)
+add_xcsp_test(all_equal)
+add_xcsp_test(cardinality)
+add_xcsp_test(channel_self)
+add_xcsp_test(channel_two)
+add_xcsp_test(circuit)
+add_xcsp_test(count)
+add_xcsp_test(count_among)
+add_xcsp_test(instantiation)
+add_xcsp_test(intension_arithmetic)
+add_xcsp_test(intension_basic)
+add_xcsp_test(intension_boolean)
+add_xcsp_test(intension_reified)
+add_xcsp_test(lex)
+add_xcsp_test(lex_matrix)
+add_xcsp_test(maximum)
+add_xcsp_test(minimum)
+add_xcsp_test(n_values)
+add_xcsp_test(ordered_lengths)
+add_xcsp_test(ordered_strict)
+add_xcsp_test(precedence)
+add_xcsp_test(regular)
+add_xcsp_test(slide)
+add_xcsp_test(sum_not_equals)
