@@ -404,23 +404,36 @@ template <IntegerVariableIDLike VarType_>
 auto State::copy_of_values(const VarType_ & var) const -> IntervalSet<Integer>
 {
     auto [actual_var, negate_first, then_add] = deview(var);
-    if (negate_first)
-        throw UnimplementedException{};
     auto raw = visit_actual(actual_var, [&](const SimpleIntegerVariableID & v) -> IntervalSet<Integer> { return state_of(v); }, [&](const ConstantIntegerVariableID & v) -> IntervalSet<Integer> { return IntervalSet<Integer>{v.const_value, v.const_value}; });
-    if (then_add == 0_i)
+    if (! negate_first && then_add == 0_i)
         return raw;
-    IntervalSet<Integer> shifted;
-    for (const auto & [l, u] : raw.each_interval())
-        shifted.insert_at_end(l + then_add, u + then_add);
-    return shifted;
+    IntervalSet<Integer> result;
+    if (negate_first) {
+        // Each stored interval [l, u] becomes [-u + then_add, -l + then_add],
+        // and negation reverses the order, so iterate in reverse to keep
+        // result intervals sorted for insert_at_end.
+        std::vector<std::pair<Integer, Integer>> intervals;
+        for (auto p : raw.each_interval())
+            intervals.push_back(p);
+        for (auto it = intervals.rbegin(); it != intervals.rend(); ++it)
+            result.insert_at_end(-it->second + then_add, -it->first + then_add);
+    }
+    else {
+        for (const auto & [l, u] : raw.each_interval())
+            result.insert_at_end(l + then_add, u + then_add);
+    }
+    return result;
 }
 
 template <IntegerVariableIDLike VarType_>
 auto State::domain_intersects_with(const VarType_ & var, const IntervalSet<Integer> & set) const -> bool
 {
     auto [actual_var, negate_first, then_add] = deview(var);
-    if (negate_first)
-        throw UnimplementedException{};
+    if (negate_first) {
+        // Negated views are rare. Fall back to materialising the view's
+        // values via copy_of_values, which already handles negation.
+        return copy_of_values(var).contains_any_of(set);
+    }
     return visit_actual(
         actual_var,
         [&](const SimpleIntegerVariableID & v) -> bool {
@@ -444,8 +457,17 @@ auto State::domains_intersect(const IntegerVariableID & var1, const IntegerVaria
 {
     auto [actual1, neg1, add1] = deview(var1);
     auto [actual2, neg2, add2] = deview(var2);
-    if (neg1 || neg2)
-        throw UnimplementedException{};
+    if (neg1 || neg2) {
+        // Negated views are rare. Materialise one side's values via
+        // copy_of_values (which handles negation) and reuse the
+        // var-vs-IntervalSet path. Pick the negated side to materialise
+        // so the other side stays in its stored form for the merge-walk
+        // when possible.
+        if (neg1)
+            return domain_intersects_with(var2, copy_of_values(var1));
+        else
+            return domain_intersects_with(var1, copy_of_values(var2));
+    }
     return visit_actual(
         actual1,
         [&](const SimpleIntegerVariableID & v1) -> bool {
