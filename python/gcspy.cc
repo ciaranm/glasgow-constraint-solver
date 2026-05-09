@@ -402,11 +402,11 @@ auto Python::post_less_than_equal_reif(const string & var_id_1, const string & v
     }
     else {
 #ifdef WRITE_API_CALLS
-        api_calls << "p.post(innards::CompareLessThanReif{v" << var_id_1 << ", "
+        api_calls << "p.post(LessThanEqualIf{v" << var_id_1 << ", "
                   << "v" << var_id_2 << ", v" << reif << " != 0_i"
-                  << ", false, true});" << endl;
+                  << "});" << endl;
 #endif
-        p.post(innards::CompareLessThanReif{get_var(var_id_1), get_var(var_id_2), get_var_as_cond(reif), false, true});
+        p.post(LessThanEqualIf{get_var(var_id_1), get_var(var_id_2), get_var_as_cond(reif)});
     }
 }
 
@@ -422,11 +422,11 @@ auto Python::post_greater_than_reif(const string & var_id_1, const string & var_
     }
     else {
 #ifdef WRITE_API_CALLS
-        api_calls << "p.post(innards::CompareLessThanReif{v" << var_id_2 << ", "
-                  << "v" << var_id_1 << ", v" << reif << " != 0_i"
-                  << ", false, false});" << endl;
+        api_calls << "p.post(GreaterThanIf{v" << var_id_1 << ", "
+                  << "v" << var_id_2 << ", v" << reif << " != 0_i"
+                  << "});" << endl;
 #endif
-        p.post(innards::CompareLessThanReif{get_var(var_id_2), get_var(var_id_1), get_var_as_cond(reif), false, false});
+        p.post(GreaterThanIf{get_var(var_id_1), get_var(var_id_2), get_var_as_cond(reif)});
     }
 }
 
@@ -442,11 +442,11 @@ auto Python::post_greater_than_equal_reif(const string & var_id_1, const string 
     }
     else {
 #ifdef WRITE_API_CALLS
-        api_calls << "p.post(innards::CompareLessThanReif{v" << var_id_1 << ", "
+        api_calls << "p.post(GreaterThanEqualIf{v" << var_id_1 << ", "
                   << "v" << var_id_2 << ", v" << reif << " != 0_i"
-                  << ", false, true});" << endl;
+                  << "});" << endl;
 #endif
-        p.post(innards::CompareLessThanReif{get_var(var_id_2), get_var(var_id_1), get_var_as_cond(reif), false, true});
+        p.post(GreaterThanEqualIf{get_var(var_id_1), get_var(var_id_2), get_var_as_cond(reif)});
     }
 }
 
