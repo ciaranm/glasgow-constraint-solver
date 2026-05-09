@@ -500,6 +500,26 @@ auto Python::post_not_equals(const string & var_id_1, const string & var_id_2) -
     p.post(NotEquals(get_var(var_id_1), get_var(var_id_2)));
 }
 
+auto Python::post_not_equals_reif(const string & var_id_1, const string & var_id_2, const string & reif_id, bool fully_reify) -> void
+{
+    if (fully_reify) {
+#ifdef WRITE_API_CALLS
+        api_calls << "p.post(NotEqualsIff{v" << var_id_1 << ", "
+                  << "v" << var_id_2 << ", v" << reif_id << " != 0_i"
+                  << "});" << endl;
+#endif
+        p.post(NotEqualsIff(get_var(var_id_1), get_var(var_id_2), get_var(reif_id) != 0_i));
+    }
+    else {
+#ifdef WRITE_API_CALLS
+        api_calls << "p.post(NotEqualsIf{v" << var_id_1 << ", "
+                  << "v" << var_id_2 << ", v" << reif_id << " != 0_i"
+                  << "});" << endl;
+#endif
+        p.post(NotEqualsIf(get_var(var_id_1), get_var(var_id_2), get_var(reif_id) != 0_i));
+    }
+}
+
 auto Python::post_in(const string & var_id, const vector<long long int> & domain) -> void
 {
 #ifdef WRITE_API_CALLS
@@ -802,6 +822,7 @@ PYBIND11_MODULE(gcspy, m)
         .def("post_equals_reif", &Python::post_equals_reif)
 
         .def("post_not_equals", &Python::post_not_equals)
+        .def("post_not_equals_reif", &Python::post_not_equals_reif)
         .def("post_in", &Python::post_in)
         .def("post_in_vars", &Python::post_in_vars)
         .def("post_linear_equality", &Python::post_linear_equality)
