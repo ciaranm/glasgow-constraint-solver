@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <iostream>
+#include <random>
 #include <set>
 #include <tuple>
 #include <utility>
@@ -23,10 +24,13 @@
 using std::cerr;
 using std::flush;
 using std::make_optional;
+using std::mt19937;
 using std::nullopt;
 using std::pair;
+using std::random_device;
 using std::set;
 using std::tuple;
+using std::uniform_int_distribution;
 using std::vector;
 using std::ranges::find;
 
@@ -228,12 +232,62 @@ auto run_all_tests(bool proofs) -> void
     run_in_self_reference_test(proofs, {-2, 2});
 }
 
+auto run_random_tests(bool proofs, mt19937 & rand) -> void
+{
+    // Small random sweep. Each shape gets 5 instances. Brute-force cost is
+    // O(|dom(var)| * prod(|dom(V_i)|)) per case; on these bounds (var up to
+    // width 5, var list up to 3 entries width 4) that's well under 1k
+    // combinations per case, so VeriPB stays fast.
+    uniform_int_distribution lo_dist{-3, 5};
+    uniform_int_distribution width_dist{1, 4};
+    uniform_int_distribution count_dist{1, 4};
+    uniform_int_distribution val_dist{-3, 8};
+    uniform_int_distribution n_vars_dist{1, 3};
+
+    auto random_pair = [&]() {
+        int lo = lo_dist(rand);
+        return pair{lo, lo + width_dist(rand)};
+    };
+    auto random_vals = [&](int n) {
+        vector<int> vs;
+        for (int i = 0; i < n; ++i)
+            vs.push_back(val_dist(rand));
+        return vs;
+    };
+
+    for (int x = 0; x < 5; ++x)
+        run_in_integer_vals_test(proofs, random_pair(), random_vals(count_dist(rand)));
+
+    for (int x = 0; x < 5; ++x)
+        run_in_const_vars_test(proofs, random_pair(), random_vals(count_dist(rand)));
+
+    for (int x = 0; x < 5; ++x) {
+        vector<pair<int, int>> ranges;
+        int n = n_vars_dist(rand);
+        for (int i = 0; i < n; ++i)
+            ranges.push_back(random_pair());
+        run_in_var_list_test(proofs, random_pair(), ranges);
+    }
+
+    for (int x = 0; x < 5; ++x) {
+        vector<pair<int, int>> ranges;
+        int n = n_vars_dist(rand);
+        for (int i = 0; i < n; ++i)
+            ranges.push_back(random_pair());
+        run_in_var_list_mixed_test(proofs, random_pair(), ranges, random_vals(count_dist(rand)));
+    }
+}
+
 auto main(int, char *[]) -> int
 {
+    random_device rand_dev;
+    mt19937 rand(rand_dev());
+
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
             continue;
         run_all_tests(proofs);
+        run_random_tests(proofs, rand);
     }
 
     return EXIT_SUCCESS;
