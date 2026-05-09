@@ -7,7 +7,6 @@
 
 #include <cstdlib>
 #include <iostream>
-#include <map>
 #include <optional>
 #include <random>
 #include <set>
@@ -52,32 +51,9 @@ using fmt::println;
 using namespace gcs;
 using namespace gcs::test_innards;
 
-// Issue #171: Inverse's per-value AM1 reconstruction calls recover_am1
-// over the atoms `x[i] != v` (resp. `y[j] != v`). When two array entries
-// are constants pinned to the same value, two atoms in the AM1 are
-// always-false and pair_ne emits PB lines that the resulting `pol`
-// expression can't sum cleanly — VeriPB rejects it with a parse error
-// at the truncated `pol N +;` line. The propagator itself handles
-// duplicate-value constants fine (the instance is just infeasible);
-// only the proof leg breaks.
-template <typename Range_>
-auto has_duplicate_constants(const Range_ & range) -> bool
-{
-    std::map<int, int> counts;
-    for (const auto & entry : range)
-        if (std::holds_alternative<int>(entry))
-            ++counts[std::get<int>(entry)];
-    for (const auto & [_, c] : counts)
-        if (c >= 2) return true;
-    return false;
-}
-
 auto run_inverse_test(bool proofs, const vector<variant<int, pair<int, int>>> & x_range, const vector<variant<int, pair<int, int>>> & y_range) -> void
 {
-    bool effective_proofs = proofs && ! has_duplicate_constants(x_range) && ! has_duplicate_constants(y_range);
-
-    print(cerr, "inverse {} {} {}", x_range, y_range,
-        effective_proofs ? " with proofs:" : (proofs ? " (no-proofs: dup const, issue #171):" : ":"));
+    print(cerr, "inverse {} {} {}", x_range, y_range, proofs ? " with proofs:" : ":");
     cerr << flush;
 
     set<tuple<vector<int>, vector<int>>> expected, actual;
@@ -113,7 +89,7 @@ auto run_inverse_test(bool proofs, const vector<variant<int, pair<int, int>>> & 
         y.push_back(visit([&](auto e) { return create_integer_variable_or_constant(p, e); }, entry));
     p.post(Inverse{x, y});
 
-    auto proof_name = effective_proofs ? make_optional("inverse_test") : nullopt;
+    auto proof_name = proofs ? make_optional("inverse_test") : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{x, y});
 
     check_results(proof_name, expected, actual);
@@ -135,10 +111,11 @@ auto main(int, char *[]) -> int
         // Constant entries pin one inverse pair.
         {{1, pair{0, 2}, pair{0, 2}}, {pair{0, 2}, 0, pair{0, 2}}},
         {{pair{0, 3}, pair{0, 3}, 0, pair{0, 3}}, {2, pair{0, 3}, pair{0, 3}, pair{0, 3}}},
-        // Issue #171 regression: two x-positions pinned to the same constant
-        // makes the constraint infeasible (Inverse forces a permutation), but
-        // the propagator handles it correctly. The proof leg is skipped via
-        // has_duplicate_constants until #171 is fixed.
+        // Issue #171 regression: two array positions pinned to the same constant
+        // makes the constraint infeasible (Inverse forces a permutation). The
+        // recovered "AM1" line for the duplicate-pinned value is now a direct
+        // `0 ≥ 1` contradiction, which downstream pol expressions sum into a
+        // valid contradiction proof.
         {{3, 2, 3, pair{0, 3}}, {pair{0, 3}, pair{0, 3}, pair{0, 3}, pair{0, 3}}},
         {{pair{0, 3}, pair{0, 3}, pair{0, 3}, pair{0, 3}}, {1, pair{0, 3}, 1, pair{0, 3}}}};
 

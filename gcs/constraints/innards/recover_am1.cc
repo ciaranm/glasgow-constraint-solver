@@ -1,14 +1,19 @@
 #include <gcs/constraints/innards/recover_am1.hh>
 #include <gcs/exception.hh>
+#include <gcs/innards/proofs/simplify_literal.hh>
 
 #include <util/enumerate.hh>
 
 #include <sstream>
+#include <type_traits>
+#include <variant>
 
 using namespace gcs;
 using namespace gcs::innards;
 
 using std::function;
+using std::holds_alternative;
+using std::is_same_v;
 using std::stringstream;
 using std::vector;
 
@@ -21,6 +26,30 @@ template <typename Literal_>
 {
     if (atoms.size() < 2)
         throw UnexpectedException{"recover_am1 requires at least 2 atoms"};
+
+    if constexpr (is_same_v<Literal_, IntegerVariableCondition>) {
+        // If ≥2 atoms simplify to FalseLiteral (e.g. literals over constants
+        // that don't satisfy the condition), the AM1 they're meant to
+        // capture is genuinely violated by the input: literal-as-PB gives
+        // ≥2 of them as 0, so Σ atoms ≥ n - 1 fails. Folding pair_ne lines
+        // via the usual pol expression doesn't recover a valid line —
+        // pair_ne over two false atoms emits a direct `0 ≥ 1` contradiction,
+        // and the pol summation embeds it in a malformed expression that
+        // VeriPB rejects at parse. Short-circuit: emit a `0 ≥ 1`
+        // contradiction at the caller-supplied level directly (RUP-derivable
+        // because the OPB has unit clauses forcing the same variable to
+        // multiple values) and return that as the "AM1" line. Downstream
+        // consumers fold this into further pol expressions to derive a
+        // stronger contradiction — the correct outcome, since the input is
+        // infeasible. Issue #171.
+        unsigned n_false = 0;
+        for (const auto & atom : atoms) {
+            if (holds_alternative<FalseLiteral>(simplify_literal(atom))) {
+                if (++n_false >= 2)
+                    return logger.emit(RUPProofRule{}, WPBSum{} >= 1_i, level);
+            }
+        }
+    }
 
     auto temporary_proof_level = logger.temporary_proof_level();
 
