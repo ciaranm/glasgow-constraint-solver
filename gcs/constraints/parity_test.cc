@@ -11,7 +11,17 @@
 #include <set>
 #include <tuple>
 #include <utility>
+#include <variant>
 #include <vector>
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <print>
+#else
+#include <fmt/core.h>
+#include <fmt/ostream.h>
+#include <fmt/ranges.h>
+#endif
 
 using std::cerr;
 using std::count_if;
@@ -22,9 +32,9 @@ using std::nullopt;
 using std::pair;
 using std::random_device;
 using std::set;
-using std::string;
 using std::tuple;
 using std::uniform_int_distribution;
+using std::variant;
 using std::vector;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
@@ -38,7 +48,7 @@ using fmt::println;
 using namespace gcs;
 using namespace gcs::test_innards;
 
-auto run_parity_test(bool proofs, const vector<pair<int, int>> & array_range) -> void
+auto run_parity_test(bool proofs, const vector<variant<int, pair<int, int>>> & array_range) -> void
 {
     print(cerr, "parity odd {} {}", array_range, proofs ? " with proofs:" : ":");
     cerr << flush;
@@ -53,8 +63,8 @@ auto run_parity_test(bool proofs, const vector<pair<int, int>> & array_range) ->
 
     Problem p;
     vector<IntegerVariableID> array;
-    for (const auto & [l, u] : array_range)
-        array.push_back(p.create_integer_variable(Integer(l), Integer(u)));
+    for (const auto & entry : array_range)
+        array.push_back(visit([&](const auto & e) { return create_integer_variable_or_constant(p, e); }, entry));
     p.post(ParityOdd{array});
 
     auto proof_name = proofs ? make_optional("parity_test") : nullopt;
@@ -65,18 +75,42 @@ auto run_parity_test(bool proofs, const vector<pair<int, int>> & array_range) ->
 
 auto main(int, char *[]) -> int
 {
-    vector<vector<pair<int, int>>> data = {
-        {{{0, 1}}},
-        {{{0, 1}, {0, 1}}},
-        {{{0, 1}, {0, 1}, {0, 1}}},
-        {{{0, 1}, {0, 1}, {0, 1}, {0, 1}}}};
+    using Entry = variant<int, pair<int, int>>;
+    vector<vector<Entry>> data = {
+        // Boundary: empty array — UNSAT (0 is even, not odd).
+        {},
+        // Singleton over {0, 1} — only x=1 satisfies.
+        {pair{0, 1}},
+        // Existing tight {0,1} cases.
+        {pair{0, 1}, pair{0, 1}},
+        {pair{0, 1}, pair{0, 1}, pair{0, 1}},
+        {pair{0, 1}, pair{0, 1}, pair{0, 1}, pair{0, 1}},
+        // Wider non-binary domains — predicate is "nonzero count is odd",
+        // so any nonzero value contributes.
+        {pair{0, 4}, pair{0, 4}, pair{0, 4}},
+        {pair{-3, 3}, pair{-3, 3}},
+        // Domains that don't include 0 — every entry is nonzero.
+        {pair{1, 5}, pair{1, 5}, pair{1, 5}},
+        {pair{-3, -1}, pair{1, 3}},
+        // Constant entries: a fixed nonzero contributes 1 to the count;
+        // a fixed 0 contributes nothing.
+        {1, pair{0, 3}, pair{0, 3}},
+        {0, pair{0, 3}, pair{0, 3}},
+        {3, 0, pair{0, 3}, pair{0, 3}},
+        // All-constant infeasible (count = 2, even).
+        {1, 1, 0},
+        // All-constant feasible (count = 1, odd).
+        {1, 0, 0}};
 
     random_device rand_dev;
     mt19937 rand(rand_dev());
     for (int x = 0; x < 10; ++x) {
         uniform_int_distribution n_values_dist(1, 4);
         auto n_values = n_values_dist(rand);
-        generate_random_data(rand, data, vector{size_t(n_values), random_bounds(-1, 1, 0, 1)});
+        // random_bounds_or_constant occasionally produces a constant entry,
+        // mixing with bounds-pairs over {-1..2}..{1..4}. Predicate handles
+        // any int value — only zero/non-zero matters — so wide ranges are safe.
+        generate_random_data(rand, data, vector{size_t(n_values), random_bounds_or_constant(-1, 2, 1, 4)});
     }
 
     for (bool proofs : {false, true}) {
