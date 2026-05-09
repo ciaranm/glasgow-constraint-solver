@@ -38,7 +38,7 @@ using fmt::println;
 using namespace gcs;
 using namespace gcs::test_innards;
 
-auto run_n_value_test(bool proofs, variant<int, pair<int, int>> result_range, const vector<pair<int, int>> & array_range) -> void
+auto run_n_value_test(bool proofs, variant<int, pair<int, int>> result_range, const vector<variant<int, pair<int, int>>> & array_range) -> void
 {
     visit([&](auto r) { print(cerr, "nvalue {} {} {}", r, array_range, proofs ? " with proofs:" : ":"); }, result_range);
     cerr << flush;
@@ -54,8 +54,8 @@ auto run_n_value_test(bool proofs, variant<int, pair<int, int>> result_range, co
     Problem p;
     auto result = visit([&](auto r) { return create_integer_variable_or_constant(p, r); }, result_range);
     vector<IntegerVariableID> array;
-    for (const auto & [l, u] : array_range)
-        array.push_back(p.create_integer_variable(Integer(l), Integer(u)));
+    for (const auto & entry : array_range)
+        array.push_back(visit([&](auto e) { return create_integer_variable_or_constant(p, e); }, entry));
     p.post(NValue{result, array});
 
     auto proof_name = proofs ? make_optional("n_value_test") : nullopt;
@@ -66,27 +66,37 @@ auto run_n_value_test(bool proofs, variant<int, pair<int, int>> result_range, co
 
 auto main(int, char *[]) -> int
 {
-    vector<tuple<variant<int, pair<int, int>>, vector<pair<int, int>>>> data = {
-        {pair{1, 2}, {{1, 2}, {1, 2}}},
-        {pair{1, 2}, {{1, 2}, {1, 2}, {1, 2}}},
-        {pair{0, 4}, {{1, 2}, {1, 2}, {1, 2}}},
-        {pair{1, 3}, {{0, 4}, {0, 5}, {0, 6}}},
-        {pair{-1, 3}, {{-1, 2}, {1, 3}, {4, 5}}},
-        {pair{1, 4}, {{1, 4}, {2, 3}, {0, 5}, {-2, 0}, {5, 7}}},
-        {pair{-5, 5}, {{-8, 0}, {4, 4}, {10, 10}, {2, 11}, {4, 10}}}};
+    using ArrayEntry = variant<int, pair<int, int>>;
+    vector<tuple<variant<int, pair<int, int>>, vector<ArrayEntry>>> data = {
+        // Boundary: empty array forces result == 0.
+        {pair{0, 3}, {}},
+        {0, {}},
+        // Boundary: singleton forces result == 1.
+        {pair{0, 3}, {pair{2, 5}}},
+        {1, {pair{0, 9}}},
+        {pair{1, 2}, {pair{1, 2}, pair{1, 2}}},
+        {pair{1, 2}, {pair{1, 2}, pair{1, 2}, pair{1, 2}}},
+        {pair{0, 4}, {pair{1, 2}, pair{1, 2}, pair{1, 2}}},
+        {pair{1, 3}, {pair{0, 4}, pair{0, 5}, pair{0, 6}}},
+        {pair{-1, 3}, {pair{-1, 2}, pair{1, 3}, pair{4, 5}}},
+        {pair{1, 4}, {pair{1, 4}, pair{2, 3}, pair{0, 5}, pair{-2, 0}, pair{5, 7}}},
+        {pair{-5, 5}, {pair{-8, 0}, pair{4, 4}, pair{10, 10}, pair{2, 11}, pair{4, 10}}},
+        // Constant array entries: pinned values count toward distinct.
+        {pair{0, 5}, {3, pair{1, 4}, 3}},
+        {pair{0, 5}, {1, 2, 3, pair{0, 5}}}};
 
     random_device rand_dev;
     mt19937 rand(rand_dev());
     for (int x = 0; x < 10; ++x) {
         uniform_int_distribution n_values_dist(1, 5);
         auto n_values = n_values_dist(rand);
-        generate_random_data(rand, data, random_bounds(-5, 5, 2, 7), vector(n_values, random_bounds(-5, 5, 2, 7)));
+        generate_random_data(rand, data, random_bounds(-5, 5, 2, 7), vector(n_values, random_bounds_or_constant(-5, 5, 2, 7)));
     }
 
     for (int x = 0; x < 10; ++x) {
         uniform_int_distribution n_values_dist(1, 5);
         auto n_values = n_values_dist(rand);
-        generate_random_data(rand, data, random_constant(-5, 5), vector(n_values, random_bounds(-5, 5, 2, 7)));
+        generate_random_data(rand, data, random_constant(-5, 5), vector(n_values, random_bounds_or_constant(-5, 5, 2, 7)));
     }
 
     for (bool proofs : {false, true}) {
