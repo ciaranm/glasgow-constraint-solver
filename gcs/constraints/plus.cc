@@ -20,6 +20,7 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::holds_alternative;
 using std::optional;
 using std::pair;
 using std::string;
@@ -105,25 +106,29 @@ auto gcs::innards::propagate_plus(IntegerVariableID a, IntegerVariableID b, Inte
     auto justify = [&](Conclude c) -> JustifyExplicitlyThenRUP {
         return JustifyExplicitlyThenRUP{
             [c, sum_line, logger](const ReasonFunction & reason) {
-                if (! (c == Conclude::LE ? sum_line.first : sum_line.second))
+                auto sum_line_value = (c == Conclude::LE ? sum_line.first : sum_line.second);
+                if (! sum_line_value)
                     return;
 
                 stringstream pol;
-                pol << "pol " << (c == Conclude::LE ? sum_line.first.value() : sum_line.second.value()) << " ";
+                pol << "pol " << *sum_line_value;
 
-                auto first_reason_lit = get<IntegerVariableCondition>(get<Literal>(get<ProofLiteral>(reason().at(0))));
-                auto second_reason_lit = get<IntegerVariableCondition>(get<Literal>(get<ProofLiteral>(reason().at(1))));
-                overloaded{
-                    [&](const XLiteral & x) { pol << logger->names_and_ids_tracker().pb_file_string_for(x) << " +"; },
-                    [&](const ProofLine & x) { pol << x << " +"; }}
-                    .visit(logger->names_and_ids_tracker().need_pol_item_defining_literal(first_reason_lit));
-
-                pol << " ";
-
-                overloaded{
-                    [&](const XLiteral & x) { pol << logger->names_and_ids_tracker().pb_file_string_for(x) << " +;"; },
-                    [&](const ProofLine & x) { pol << x << " +;"; }}
-                    .visit(logger->names_and_ids_tracker().need_pol_item_defining_literal(second_reason_lit));
+                // Constants in WPBSum are baked into the OPB sum_line directly
+                // (see emit_inequality_to.cc:58–60), so a reason literal whose
+                // variable is a ConstantIntegerVariableID already contributes
+                // to sum_line and doesn't need (or have) a pol-side defining
+                // line — need_pol_item_defining_literal would throw on it.
+                // Issue #166.
+                for (size_t i = 0; i < 2; ++i) {
+                    auto lit = get<IntegerVariableCondition>(get<Literal>(get<ProofLiteral>(reason().at(i))));
+                    if (holds_alternative<ConstantIntegerVariableID>(lit.var))
+                        continue;
+                    overloaded{
+                        [&](const XLiteral & x) { pol << " " << logger->names_and_ids_tracker().pb_file_string_for(x) << " +"; },
+                        [&](const ProofLine & x) { pol << " " << x << " +"; }}
+                        .visit(logger->names_and_ids_tracker().need_pol_item_defining_literal(lit));
+                }
+                pol << ";";
 
                 logger->emit_proof_line(pol.str(), ProofLevel::Temporary);
             }};

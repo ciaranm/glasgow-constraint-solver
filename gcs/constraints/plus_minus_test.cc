@@ -69,18 +69,8 @@ namespace
 template <typename Constraint_, typename V1_, typename V2_, typename V3_>
 auto run_plus_minus_test(bool proofs, V1_ v1_range, V2_ v2_range, V3_ v3_range, const function<auto(int, int, int)->bool> & is_satisfying) -> void
 {
-    // Issue #166: Plus/Minus's hand-built `pol` justification calls
-    // need_pol_item_defining_literal, which crashes on constant arguments.
-    // The propagator itself works fine, so we still exercise constant
-    // arguments end-to-end — just not the proof leg. Remove the skip once
-    // #166 lands.
-    auto holds_int = [](const auto & v) { return std::holds_alternative<int>(v); };
-    bool any_constant = holds_int(v1_range) || holds_int(v2_range) || holds_int(v3_range);
-    bool effective_proofs = proofs && ! any_constant;
-
     visit([&](const auto & v1, const auto & v2, const auto & v3) {
-        print(cerr, "{} {} {} {} {}", NameOf<Constraint_>::name, v1, v2, v3,
-            effective_proofs ? " with proofs:" : (proofs ? " (no-proofs: constant arg):" : ":"));
+        print(cerr, "{} {} {} {} {}", NameOf<Constraint_>::name, v1, v2, v3, proofs ? " with proofs:" : ":");
     },
         v1_range, v2_range, v3_range);
     cerr << flush;
@@ -98,7 +88,7 @@ auto run_plus_minus_test(bool proofs, V1_ v1_range, V2_ v2_range, V3_ v3_range, 
     auto v3 = visit([&](const auto & r) { return create_integer_variable_or_constant(p, r); }, v3_range);
     p.post(Constraint_{v1, v2, v3});
 
-    auto proof_name = effective_proofs ? make_optional("plus_minus_test") : nullopt;
+    auto proof_name = proofs ? make_optional("plus_minus_test") : nullopt;
     solve_for_tests_checking_consistency(p, proof_name, expected, actual, tuple{pair{v1, CheckConsistency::None}, pair{v2, CheckConsistency::None}, pair{v3, CheckConsistency::None}});
 
     check_results(proof_name, expected, actual);
