@@ -37,7 +37,7 @@ equivalent for that frontend's vocabulary).
 | mdd | solver gap (#149) | ? | solver gap (#149) | ? |
 | allDifferent | `AllDifferent` | ✓ | ✓ | ? |
 | allDifferent-list / -matrix | various decompositions | ? | matrix ✓ (rows + columns `AllDifferent`); list `s UNSUPPORTED` | ? |
-| allEqual | `Equals` chain (decompose; native propagator tracked in #61) | ✓ | ✓ via decompose (#150) | ? |
+| allEqual | `AllEqual` | ✓ | ✓ | ? |
 | ordered (increasing/decreasing) | `Increasing` / `Decreasing` | ✓ | ✓ (basic + lengths form) | ? |
 | precedence (value precedence) | `ValuePrecede` | ✓ | ✓ (with explicit values, `covered=false`) | ? |
 | sum (linear) | `WeightedSum` | ✓ | ✓ | ? |
