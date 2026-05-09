@@ -55,20 +55,25 @@ auto gcs::innards::justify_all_different_hall_set_or_violator(
         at_least_one_constraints.push_back(logger.names_and_ids_tracker().need_constraint_saying_variable_takes_at_least_one_value(var));
 
     // each variable in the violator has to take at least one value that is
-    // left in its domain...
+    // left in its domain, and each value in the component can only be used
+    // once. Both kinds of summand share a single `first` flag — the leading
+    // "+" is omitted only on the very first push, since the `+` operator
+    // requires two stack elements. If at_least_one_constraints is empty
+    // (every Hall variable filtered out as a constant) the first AM1 line
+    // becomes the initial push.
     stringstream proof_step;
     proof_step << "pol";
     bool first = true;
-    for (auto & c : at_least_one_constraints) {
-        proof_step << " " << c;
+    auto add = [&](ProofLine line) {
+        proof_step << " " << line;
         if (! first)
             proof_step << " +";
         first = false;
-    }
-
-    // and each value in the component can only be used once
+    };
+    for (auto & c : at_least_one_constraints)
+        add(c);
     for (const auto & val : hall_values)
-        proof_step << " " << value_am1_constraint_numbers.at(val) << " +";
+        add(value_am1_constraint_numbers.at(val));
 
     proof_step << ';';
     logger.emit_proof_line(proof_step.str(), ProofLevel::Current);
