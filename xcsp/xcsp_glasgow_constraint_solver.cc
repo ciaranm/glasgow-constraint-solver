@@ -256,12 +256,7 @@ namespace
 
         auto buildConstraintAllEqual(string, vector<XVariable *> & x_vars) -> void override
         {
-            // Decomposition into a chain of pairwise Equals. A native
-            // AllEqual propagator would be a small win in propagation and
-            // proof size: tracked alongside the other globals in #61.
-            auto vars = need_variables(x_vars);
-            for (size_t i = 1; i < vars.size(); ++i)
-                _problem.post(Equals{vars[0], vars[i]});
+            _problem.post(AllEqual{need_variables(x_vars)});
         }
 
         auto buildConstraintOrdered(string, vector<XVariable *> & x_vars,
