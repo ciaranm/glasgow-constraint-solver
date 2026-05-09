@@ -133,7 +133,7 @@ set(GCH_SMALL_VECTOR_ENABLE_BENCHMARKS OFF CACHE INTERNAL "")
 FetchContent_Declare(
         gch_small_vector
         GIT_REPOSITORY https://github.com/gharveymn/small_vector.git
-        GIT_TAG f0725471b273245a5aa6855612079fbdc40f532b # v0.9.2
+        GIT_TAG 66998cd7d6621e83ad193e03ac119e62dad9b2d5 # not a release, but has C++23 fixes we need
 )
 FetchContent_MakeAvailable(gch_small_vector)
 
