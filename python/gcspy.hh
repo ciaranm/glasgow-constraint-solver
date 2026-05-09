@@ -82,6 +82,7 @@ public:
     auto post_greater_than_reif(const string & var_id_1, const string & var_id_2, const string & reif, bool fully_reify) -> void;
     auto post_greater_than_equal_reif(const string & var_id_1, const string & var_id_2, const string & reif, const bool fully_reify) -> void;
     auto post_equals_reif(const string & var_id_1, const string & var_id_2, const string & reif_id, bool fully_reify) -> void;
+    auto post_not_equals_reif(const string & var_id_1, const string & var_id_2, const string & reif_id, bool fully_reify) -> void;
 
     // Linear
     auto post_linear_equality(const vector<string> & var_ids, const vector<long long int> & coeffs, long long int value) -> void;
