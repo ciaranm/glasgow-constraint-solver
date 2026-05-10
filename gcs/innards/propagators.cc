@@ -10,6 +10,7 @@
 #include <util/overloaded.hh>
 
 #include <algorithm>
+#include <array>
 #include <utility>
 
 using namespace gcs;
@@ -37,7 +38,7 @@ namespace
 struct Propagators::Imp
 {
     vector<PropagationFunction> propagation_functions;
-    vector<InitialisationFunction> initialisation_functions;
+    std::array<vector<InitialisationFunction>, number_of_initialiser_priorities> initialisation_functions_by_priority;
 
     // Every propagation function's index appears exactly once in queue, and lookup[id] always tells
     // us where that position is. The items from index 0 to enqueued_end - 1 are ready to be
@@ -124,20 +125,31 @@ auto Propagators::install(PropagationFunction && f, const Triggers & triggers) -
     }
 }
 
-auto Propagators::install_initialiser(InitialisationFunction && f) -> void
+auto Propagators::install_initialiser(InitialisationFunction && f, InitialiserPriority priority) -> void
 {
-    _imp->initialisation_functions.emplace_back(move(f));
+    _imp->initialisation_functions_by_priority[to_underlying(priority)].emplace_back(move(f));
+}
+
+auto Propagators::install_initial_contradiction(const string &, Justification why, ReasonFunction reason, InitialiserPriority priority) -> void
+{
+    install_initialiser(
+        [why = move(why), reason = move(reason)](const State &, auto & inference, ProofLogger * const logger) -> void {
+            inference.contradiction(logger, why, reason);
+        },
+        priority);
 }
 
 auto Propagators::initialise(State & state, ProofLogger * const logger) const -> bool
 {
-    for (auto & f : _imp->initialisation_functions) {
-        EagerProofLoggingInferenceTracker inf(state);
-        try {
-            f(state, inf, logger);
-        }
-        catch (const TrackedPropagationFailed &) {
-            return false;
+    for (auto & bucket : _imp->initialisation_functions_by_priority) {
+        for (auto & f : bucket) {
+            EagerProofLoggingInferenceTracker inf(state);
+            try {
+                f(state, inf, logger);
+            }
+            catch (const TrackedPropagationFailed &) {
+                return false;
+            }
         }
     }
 

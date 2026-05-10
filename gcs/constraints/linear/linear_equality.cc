@@ -237,7 +237,8 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> vo
                 *data = build_table(coeff_vars, value, cond, state, logger);
                 if (! data->has_value())
                     inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{}; }});
-            });
+            },
+                InitialiserPriority::Expensive);
 
             propagators.install([data = data](
                                     const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {

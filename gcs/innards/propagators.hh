@@ -4,8 +4,10 @@
 #include <gcs/expression.hh>
 #include <gcs/extensional.hh>
 #include <gcs/innards/inference_tracker-fwd.hh>
+#include <gcs/innards/justification.hh>
 #include <gcs/innards/literal.hh>
 #include <gcs/innards/propagators-fwd.hh>
+#include <gcs/innards/reason.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/problem.hh>
 
@@ -79,6 +81,24 @@ namespace gcs::innards
     };
 
     using InitialisationFunction = std::function<auto(State &, EagerProofLoggingInferenceTracker &, ProofLogger * const)->void>;
+
+    /**
+     * \brief Priority for initialisers, controlling the order in which they run.
+     *
+     * Initialisers run in the order SimpleDefinition, Cheap, Expensive. Within
+     * the same priority they run in registration order.
+     *
+     * \ingroup Innards
+     * \sa Propagators::install_initialiser
+     */
+    enum class InitialiserPriority
+    {
+        SimpleDefinition,
+        Cheap,
+        Expensive
+    };
+
+    constexpr std::size_t number_of_initialiser_priorities = 3;
 
     /**
      * \brief Tell Propagators when a Constraint's propagators should be triggered.
@@ -172,9 +192,25 @@ namespace gcs::innards
 
         /**
          * Install an initialiser, which will be called once just before search
-         * starts.
+         * starts. Initialisers run in priority order
+         * (\c SimpleDefinition before \c Cheap before \c Expensive); within
+         * the same priority they run in registration order.
          */
-        auto install_initialiser(InitialisationFunction &&) -> void;
+        auto install_initialiser(InitialisationFunction &&,
+            InitialiserPriority priority = InitialiserPriority::SimpleDefinition) -> void;
+
+        /**
+         * Install an initialiser whose only job is to immediately raise a
+         * contradiction with the given Justification (RUP, explicit, or
+         * none) and ReasonFunction. Convenience wrapper around
+         * install_initialiser; intended for cases where the OPB encoding
+         * emitted by define_proof_model collapses to a trivially-false
+         * constraint and we want propagation to detect that up front.
+         */
+        auto install_initial_contradiction(const std::string & explain_yourself,
+            Justification why,
+            ReasonFunction reason = ReasonFunction{},
+            InitialiserPriority priority = InitialiserPriority::SimpleDefinition) -> void;
 
         ///@}
 
