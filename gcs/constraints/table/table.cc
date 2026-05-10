@@ -125,15 +125,17 @@ auto Table::install(Propagators & propagators, State & initial_state, ProofModel
     install_propagators(propagators);
 }
 
-auto Table::prepare(Propagators & propagators, State & initial_state, ProofModel * const optional_model) -> bool
+auto Table::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
 {
-    bool continue_installation = true;
     visit([&](auto & tuples) {
         if (depointinate(tuples).empty()) {
-            propagators.model_contradiction(initial_state, optional_model, "Empty table constraint from table");
-            // throw UnexpectedException{"Empty table constraint from table"};
-            continue_installation = false;
-
+            // No allowed tuples means the constraint is UNSAT. We let
+            // define_proof_model emit a trivially-false `0 >= 1` constraint
+            // (which is morally what an empty selector domain encodes), and
+            // install_propagators installs a contradiction initialiser. Skip
+            // the selector allocation: an empty range [0, -1] would be
+            // invalid, and the propagator won't run anyway.
+            _has_no_tuples = true;
             return;
         }
         for (auto & tuple : depointinate(tuples))
@@ -143,11 +145,17 @@ auto Table::prepare(Propagators & propagators, State & initial_state, ProofModel
     },
         _tuples);
 
-    return continue_installation;
+    return true;
 }
 
 auto Table::define_proof_model(ProofModel & model) -> void
 {
+    if (_has_no_tuples) {
+        // Morally equivalent to a selector with empty domain (`0 ≥ 1`).
+        model.add_constraint("Table", "no allowed tuples", WPBSum{} >= 1_i);
+        return;
+    }
+
     visit([&](auto && tuples) {
         model.set_up_integer_variable(_selector, 0_i, Integer(depointinate(tuples).size() - 1),
             "aux_table" + to_string(_selector.index),
@@ -176,6 +184,12 @@ auto Table::define_proof_model(ProofModel & model) -> void
 
 auto Table::install_propagators(Propagators & propagators) -> void
 {
+    if (_has_no_tuples) {
+        propagators.install_initial_contradiction("Empty table constraint from table",
+            JustifyUsingRUP{});
+        return;
+    }
+
     visit([&](auto && tuples) {
         Triggers triggers;
         for (auto & v : _vars)

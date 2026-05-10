@@ -599,13 +599,18 @@ auto GACAllDifferent::install(Propagators & propagators, State & initial_state, 
     install_propagators(propagators);
 }
 
-auto GACAllDifferent::prepare(Propagators & propagators, State & initial_state, ProofModel * const optional_model) -> bool
+auto GACAllDifferent::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
 {
     _sanitised_vars = move(_vars);
     sort(_sanitised_vars);
-    if (adjacent_find(_sanitised_vars) != _sanitised_vars.end()) {
-        propagators.model_contradiction(initial_state, optional_model, "AllDifferent with duplicate variables");
-        return false;
+    _has_duplicate_vars = adjacent_find(_sanitised_vars) != _sanitised_vars.end();
+    if (_has_duplicate_vars) {
+        // The matching propagator can't model duplicate left-vertices, so
+        // install_propagators only installs a contradiction initialiser. We
+        // still let define_proof_model run unchanged: the encoding emits a
+        // self-contradicting half-reified pair for the duplicated variable
+        // for the initialiser to cite.
+        return true;
     }
 
     for (auto & var : _sanitised_vars)
@@ -618,11 +623,16 @@ auto GACAllDifferent::prepare(Propagators & propagators, State & initial_state, 
 
 auto GACAllDifferent::define_proof_model(ProofModel & model) -> void
 {
-    define_clique_not_equals_encoding(model, _sanitised_vars);
+    _duplicate_selectors = define_clique_not_equals_encoding(model, _sanitised_vars);
 }
 
 auto GACAllDifferent::install_propagators(Propagators & propagators) -> void
 {
+    if (_has_duplicate_vars) {
+        install_clique_duplicate_contradiction_initialiser(propagators, move(_duplicate_selectors));
+        return;
+    }
+
     Triggers triggers;
     triggers.on_change = {_sanitised_vars.begin(), _sanitised_vars.end()};
 
