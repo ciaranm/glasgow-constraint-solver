@@ -249,6 +249,25 @@ namespace gcs::test_innards
             proof_name ? std::make_optional<ProofOptions>(ProofFileNames{*proof_name}, true, false) : std::nullopt);
     }
 
+    /**
+     * Solve only as far as the first complete propagation, then bail out via
+     * a trace callback returning false. VeriPB checks any RUP / pol steps the
+     * initialisers emitted and accepts the resulting "conclusion NONE" proof,
+     * without making us pay for full enumeration. Useful for testing the
+     * proofs emitted by initialisers in isolation.
+     */
+    auto check_initialisation_only_for_tests(Problem & p, const std::string & proof_name) -> void
+    {
+        solve_with(p,
+            SolveCallbacks{
+                .trace = [](const CurrentState &) -> bool { return false; },
+                .branch = branch_with(variable_order::random(p), value_order::random_out())},
+            std::make_optional<ProofOptions>(ProofFileNames{proof_name}, true, false));
+
+        if (! run_veripb(proof_name + ".opb", proof_name + ".pbp"))
+            throw UnexpectedException{"veripb verification failed"};
+    }
+
     auto extract_from_state(const CurrentState & s, IntegerVariableID v) -> int
     {
         return s(v).raw_value;
