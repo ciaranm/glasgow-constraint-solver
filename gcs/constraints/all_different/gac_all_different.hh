@@ -1,9 +1,10 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GAC_ALL_DIFFERENT_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GAC_ALL_DIFFERENT_HH
 
-#include <gcs/constraint.hh>
+#include <gcs/constraints/all_different/encoding.hh>
 #include <gcs/innards/inference_tracker-fwd.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
+#include <gcs/innards/proofs/proof_only_variables.hh>
 #include <gcs/variable_id.hh>
 
 #include <map>
@@ -35,6 +36,8 @@ namespace gcs
         const std::vector<IntegerVariableID> _vars;
         std::vector<IntegerVariableID> _sanitised_vars;
         std::vector<Integer> _compressed_vals;
+        bool _has_duplicate_vars = false;
+        std::map<IntegerVariableID, innards::ProofFlag> _duplicate_selectors;
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &) -> void override;

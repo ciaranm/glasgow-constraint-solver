@@ -1,11 +1,13 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_VC_ALL_DIFFERENT_HH
 #define GLASGOW_CONSTRAINT_SOLVER_VC_ALL_DIFFERENT_HH
 
-#include <gcs/constraint.hh>
+#include <gcs/constraints/all_different/encoding.hh>
 #include <gcs/innards/inference_tracker-fwd.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
+#include <gcs/innards/proofs/proof_only_variables.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/variable_id.hh>
+#include <map>
 #include <vector>
 
 namespace gcs
@@ -15,9 +17,6 @@ namespace gcs
         auto propagate_non_gac_alldifferent(
             const ConstraintStateHandle & unassigned_handle, const State & state,
             auto & inference_tracker, ProofLogger * const logger) -> void;
-
-        auto define_clique_not_equals_encoding(ProofModel & model,
-            const std::vector<IntegerVariableID> & vars) -> void;
     }
 
     /**
@@ -33,6 +32,8 @@ namespace gcs
         const std::vector<IntegerVariableID> _vars;
         std::vector<IntegerVariableID> _sanitised_vars;
         innards::ConstraintStateHandle _unassigned_handle;
+        bool _has_duplicate_vars = false;
+        std::map<IntegerVariableID, innards::ProofFlag> _duplicate_selectors;
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &) -> void override;

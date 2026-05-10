@@ -22,6 +22,7 @@ namespace gcs
         const std::vector<IntegerVariableID> _vars;
         ExtensionalTuples _tuples;
         SimpleIntegerVariableID _selector{0};
+        bool _has_no_tuples = false;
 
     public:
         explicit Table(std::vector<IntegerVariableID> vars, ExtensionalTuples tuples);

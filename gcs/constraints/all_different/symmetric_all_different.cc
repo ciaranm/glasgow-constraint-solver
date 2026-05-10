@@ -71,17 +71,22 @@ auto SymmetricAllDifferent::prepare(Propagators & propagators, State & initial_s
 {
     auto n = _vars.size();
 
-    // A variable appearing more than once would have to equal itself
-    // *and* be pairwise different from itself; that's never satisfiable,
-    // and propagate_gac_all_different's bipartite matching does not
-    // model duplicate left-vertices, so we reject upfront.
     {
         auto sorted_vars = _vars;
         sort(sorted_vars);
-        if (adjacent_find(sorted_vars) != sorted_vars.end()) {
-            propagators.model_contradiction(initial_state, optional_model, "SymmetricAllDifferent with duplicate variables");
-            return false;
-        }
+        _has_duplicate_vars = adjacent_find(sorted_vars) != sorted_vars.end();
+    }
+
+    if (_has_duplicate_vars) {
+        // A variable appearing more than once would have to equal itself
+        // *and* be pairwise different from itself, so the constraint is UNSAT.
+        // The bipartite matching used by propagate_gac_all_different doesn't
+        // model duplicate left-vertices either, so install_propagators only
+        // installs a contradiction initialiser. We let define_proof_model run
+        // unchanged: the clique-of-not-equals encoding emits a self-
+        // contradicting half-reified pair for the duplicated variable, which
+        // the initialiser cites in its proof.
+        return true;
     }
 
     for (const auto & v : _vars) {
@@ -110,7 +115,7 @@ auto SymmetricAllDifferent::define_proof_model(ProofModel & model) -> void
                     + 1_i * (_vars[i] == Integer(j) + _start) >= 1_i);
         }
 
-    define_clique_not_equals_encoding(model, _vars);
+    _duplicate_selectors = define_clique_not_equals_encoding(model, _vars);
 
     // Per-value am1s for the alldiff hall-set / SCC justifications,
     // built once at the root.
@@ -119,6 +124,11 @@ auto SymmetricAllDifferent::define_proof_model(ProofModel & model) -> void
 
 auto SymmetricAllDifferent::install_propagators(Propagators & propagators) -> void
 {
+    if (_has_duplicate_vars) {
+        install_clique_duplicate_contradiction_initialiser(propagators, move(_duplicate_selectors));
+        return;
+    }
+
     auto vars = move(_vars);
     auto start = _start;
     auto n = vars.size();

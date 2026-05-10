@@ -3,6 +3,7 @@
 
 #include <gcs/constraint.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
+#include <gcs/innards/proofs/proof_only_variables.hh>
 #include <gcs/integer.hh>
 #include <gcs/variable_id.hh>
 
@@ -33,6 +34,8 @@ namespace gcs
         std::vector<IntegerVariableID> _vars;
         Integer _start;
         std::shared_ptr<std::map<Integer, innards::ProofLine>> _value_am1s;
+        bool _has_duplicate_vars = false;
+        std::map<IntegerVariableID, innards::ProofFlag> _duplicate_selectors;
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &) -> void override;

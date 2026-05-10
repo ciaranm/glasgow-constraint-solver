@@ -69,7 +69,7 @@ auto AllDifferentExcept::install(Propagators & propagators, State & initial_stat
     install_propagators(propagators);
 }
 
-auto AllDifferentExcept::prepare(Propagators & propagators, State & initial_state, ProofModel * const optional_model) -> bool
+auto AllDifferentExcept::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
 {
     _sanitised_vars = move(_vars);
     sort(_sanitised_vars);
@@ -91,13 +91,11 @@ auto AllDifferentExcept::prepare(Propagators & propagators, State & initial_stat
 
     // A variable that appears more than once must equal itself, so the
     // constraint forces it into the excluded set. With no usable excluded
-    // values left, that's a hard contradiction (matches plain AllDifferent
-    // semantics on duplicates).
+    // values left, the encoding emitted by define_clique_not_equals_except
+    // collapses to a self-contradicting half-reified pair (no excluded
+    // relaxation), and install_propagators installs a clique-duplicate
+    // contradiction initialiser to fail at search start.
     _has_duplicates = adjacent_find(_sanitised_vars.begin(), _sanitised_vars.end()) != _sanitised_vars.end();
-    if (_has_duplicates && _sanitised_excluded.empty()) {
-        propagators.model_contradiction(initial_state, optional_model, "AllDifferentExcept with duplicate variables and no usable excluded values");
-        return false;
-    }
 
     if (_has_duplicates) {
         for (auto it = _sanitised_vars.begin(); it != _sanitised_vars.end();) {
@@ -129,6 +127,17 @@ auto AllDifferentExcept::define_proof_model(ProofModel & model) -> void
 
 auto AllDifferentExcept::install_propagators(Propagators & propagators) -> void
 {
+    if (_has_duplicates && _sanitised_excluded.empty()) {
+        // Same shape as plain AllDifferent on duplicates: with empty excluded,
+        // the encoding's half-reified relaxation terms disappear and the
+        // duplicate pair's two constraints jointly force selector and
+        // !selector simultaneously. Install the shared clique-contradiction
+        // initialiser instead of the per-value path below; the propagator
+        // also can't run, so we early-return.
+        install_clique_duplicate_contradiction_initialiser(propagators, move(_duplicate_selectors));
+        return;
+    }
+
     // For each duplicated variable, install an initialiser that forces it
     // into the excluded set: for every value v in its current domain that is
     // not in `excluded`, infer var != v. The justification rests on the two
