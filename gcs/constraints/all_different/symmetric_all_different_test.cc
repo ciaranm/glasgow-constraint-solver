@@ -115,9 +115,9 @@ namespace
 
         // Posting the same variable twice in a SymmetricAllDifferent is
         // always infeasible (the constraint requires X != X). We confirm
-        // the propagator rejects it with model_contradiction by checking
-        // that the proof still verifies as UNSATISFIABLE; expected is
-        // necessarily empty.
+        // an initialiser rejects it with a clique-duplicate contradiction
+        // proof by checking that the proof still verifies as UNSATISFIABLE;
+        // expected is necessarily empty.
         set<tuple<vector<int>>> expected, actual;
         println(cerr, " expecting 0 solutions");
 

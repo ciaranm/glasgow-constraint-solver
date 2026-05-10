@@ -1,4 +1,5 @@
 #include <gcs/constraints/all_different.hh>
+#include <gcs/constraints/all_different/vc_all_different.hh>
 #include <gcs/constraints/innards/constraints_test_utils.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
@@ -78,6 +79,41 @@ auto run_all_different_test(bool proofs, variant<int, pair<int, int>> v1_range, 
     check_results(proof_name, expected, actual);
 }
 
+// AllDifferent with the same variable in two positions is unsatisfiable
+// (the constraint requires `x != x`). Exercise both the GAC and VC
+// flavours: the consequence-contradiction path runs the standard
+// clique-of-not-equals encoding (which emits a self-contradicting
+// half-reified pair for the duplicated variable) and a contradiction
+// initialiser that cites one duplicated pair's selector flag.
+template <typename AllDifferentVariant_>
+auto run_alldiff_dup_test(bool proofs, const vector<vector<int>> & unique_domains,
+    const vector<int> & positions, const string & flavour) -> void
+{
+    print(cerr, "all_different_dup [{}] domains {} positions {}{}",
+        flavour, unique_domains, positions, proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    set<tuple<vector<int>>> expected, actual;
+    println(cerr, " expecting 0 solutions");
+
+    Problem p;
+    vector<IntegerVariableID> unique_vars;
+    for (const auto & d : unique_domains) {
+        vector<Integer> vals;
+        for (int v : d)
+            vals.push_back(Integer(v));
+        unique_vars.push_back(p.create_integer_variable(vals));
+    }
+    vector<IntegerVariableID> posted_vars;
+    for (auto pos : positions)
+        posted_vars.push_back(unique_vars[pos]);
+    p.post(AllDifferentVariant_{posted_vars});
+
+    auto proof_name = proofs ? make_optional("all_different_test") : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{unique_vars});
+    check_results(proof_name, expected, actual);
+}
+
 auto main(int, char *[]) -> int
 {
     vector<tuple<variant<int, pair<int, int>>, variant<int, pair<int, int>>, variant<int, pair<int, int>>,
@@ -113,6 +149,16 @@ auto main(int, char *[]) -> int
             continue;
         for (auto & [r1, r2, r3, r4, r5, r6] : data)
             run_all_different_test(proofs, r1, r2, r3, r4, r5, r6);
+
+        // Duplicate-variable cases for both flavours: smallest non-trivial
+        // pair, a duplicate among more variables, and two duplicate runs.
+        for (auto & [unique_domains, positions] : vector<pair<vector<vector<int>>, vector<int>>>{
+                 {{{0, 1}}, {0, 0}},
+                 {{{0, 3}, {0, 3}}, {0, 0, 1}},
+                 {{{0, 3}, {0, 3}}, {0, 0, 1, 1}}}) {
+            run_alldiff_dup_test<GACAllDifferent>(proofs, unique_domains, positions, "gac");
+            run_alldiff_dup_test<VCAllDifferent>(proofs, unique_domains, positions, "vc");
+        }
     }
 
     return EXIT_SUCCESS;
