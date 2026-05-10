@@ -67,6 +67,25 @@ auto run_abs_test(bool proofs, variant<int, pair<int, int>> v1_range, variant<in
     check_results(proof_name, expected, actual);
 }
 
+// Targeted tests for the proofs Abs::prepare emits for its four consequence
+// bounds. Domains are picked so that one specific bound is non-trivial, so a
+// proof failure points unambiguously at that bound. Uses
+// check_initialisation_only_for_tests to verify just the initialisation proof
+// (cheap: no full search, no solution enumeration).
+auto run_abs_initialiser_test(const string & label, pair<int, int> v1_range, pair<int, int> v2_range) -> void
+{
+    print(cerr, "abs initialiser [{}] v1=[{},{}] v2=[{},{}] with proofs\n",
+        label, v1_range.first, v1_range.second, v2_range.first, v2_range.second);
+    cerr << flush;
+
+    Problem p;
+    auto v1 = p.create_integer_variable(Integer{v1_range.first}, Integer{v1_range.second});
+    auto v2 = p.create_integer_variable(Integer{v2_range.first}, Integer{v2_range.second});
+    p.post(Abs{v1, v2});
+
+    check_initialisation_only_for_tests(p, "abs_initialiser_" + label);
+}
+
 auto main(int, char *[]) -> int
 {
     vector<pair<variant<int, pair<int, int>>, variant<int, pair<int, int>>>> data = {
@@ -89,6 +108,37 @@ auto main(int, char *[]) -> int
         generate_random_data(rand, data, random_constant(-10, 10), random_bounds(-10, 10, 5, 15));
     for (int x = 0; x < 10; ++x)
         generate_random_data(rand, data, random_bounds(-10, 10, 5, 15), random_constant(-10, 10));
+
+    if (can_run_veripb()) {
+        // Each case isolates one of Abs::prepare's four consequence bounds.
+        // The first failure aborts; comment out earlier cases as each one's
+        // proof gets fixed. Run before the rest of the proof suite so the
+        // failure is unambiguous — the random tests below also exercise these
+        // bounds and will fail until the proofs are filled in.
+
+        // Bound 1: v2 >= 0 — non-trivial (v2.lb < 0); other bounds trivial.
+        run_abs_initialiser_test("bound1_v2_ge_0", {-3, 3}, {-2, 3});
+
+        // Bound 2: v1 <= ub(v2) — non-trivial (v1.ub > v2.ub); others trivial.
+        run_abs_initialiser_test("bound2_v1_le_ubv2", {-3, 5}, {0, 3});
+
+        // Bound 3: v1 >= -ub(v2) — non-trivial (v1.lb < -v2.ub); others trivial.
+        run_abs_initialiser_test("bound3_v1_ge_negubv2", {-5, 3}, {0, 3});
+
+        // Bound 4: v2 <= max(ub(v1), -lb(v1)) — non-trivial (v2.ub > that max).
+        run_abs_initialiser_test("bound4_v2_le_maxv1", {-3, 3}, {0, 5});
+
+        // Wider domains that cross bit-encoding boundaries — the pol-step
+        // shape mustn't rely on small bit widths happening to keep things
+        // simple. Domains chosen to bracket powers of two (where the bit
+        // encoding picks up an extra bit), and asymmetric ranges where M =
+        // -lb(v1) ≠ ub(v1). UNSAT cases keep enumeration cheap.
+        run_abs_initialiser_test("wide_8bit", {-32, 31}, {-16, 47});
+        run_abs_initialiser_test("wide_just_over_8bit", {-33, 32}, {-16, 47});
+        run_abs_initialiser_test("wide_unsat", {-50, 50}, {100, 200});
+        run_abs_initialiser_test("wide_asym_lb_dominant", {-50, 5}, {0, 80});
+        run_abs_initialiser_test("wide_asym_ub_dominant", {-5, 50}, {0, 80});
+    }
 
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
