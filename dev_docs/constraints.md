@@ -110,20 +110,43 @@ debugging.
 
 ## install: the entry point
 
+The recommended shape splits `install` into three phases, each
+override-able as a protected virtual on `Constraint`:
+
 ```cpp
 auto Foo::install(Propagators & propagators, State & initial_state,
     ProofModel * const optional_model) && -> void
 {
-    if (optional_model) {
-        // Emit OPB definition.
-    }
+    if (! prepare(propagators, initial_state, optional_model))
+        return;
 
-    // Register propagators.
+    if (optional_model)
+        define_proof_model(*optional_model);
+
+    install_propagators(propagators);
+}
+
+auto Foo::prepare(Propagators &, State & initial_state,
+    ProofModel * const) -> bool
+{
+    // Early-out for trivial cases; precompute state shared by the
+    // next two phases. Return false to skip them.
+    return /* not trivially satisfied */;
+}
+
+auto Foo::define_proof_model(ProofModel & model) -> void
+{
+    // OPB definition only. State precomputed in prepare() may be
+    // referenced via private members.
+}
+
+auto Foo::install_propagators(Propagators & propagators) -> void
+{
     Triggers triggers;
     // ... fill in trigger sets ...
-
     propagators.install(
-        [/* captures */](const State & state, auto & inference,
+        [/* captures, typically moving in member fields */](
+            const State & state, auto & inference,
             ProofLogger * const logger) -> PropagatorState {
             // Propagation body.
             return PropagatorState::Enable;
@@ -131,6 +154,14 @@ auto Foo::install(Propagators & propagators, State & initial_state,
         triggers);
 }
 ```
+
+State that needs to flow between phases (filtered task lists, proof-flag
+handles, cached line numbers) goes on the class as private members.
+`all_equal.cc`, `count.cc`, and `cumulative.cc` are good references.
+
+Older constraints (e.g. `Knapsack`) still inline everything in
+`install()`; new code shouldn't follow that — the split form is the
+target everything is moving toward.
 
 The lambda runs once at the root and again whenever any of its triggers
 fire. It returns `PropagatorState::Enable` to stay registered, or
@@ -270,6 +301,57 @@ development to isolate whether a VeriPB failure is in the OPB
 encoding (still fails with `Assert*`) or the justification (passes
 with `Assert*`, fails with the real one). Never commit code that uses
 it.
+
+### When RUP isn't enough: explicit `pol`
+
+VeriPB's RUP unit-propagation can't combine the *coefficients* of a
+linear OPB constraint with the *values* of unit literals on the same
+variables — what feels like a one-step linear deduction is actually
+two reasoning steps for VeriPB. When the proof needs to compute "the
+load already pinned to 1 exceeds the bound", emit the arithmetic
+explicitly as a `pol` (polish-notation reverse-polish-style
+combination of existing constraint IDs):
+
+```cpp
+stringstream pol;
+pol << "pol " << C_t_line;
+for (auto & [line, weight] : scaled_units)
+    pol << " " << line << " " << weight << " * +";
+pol << " ;";
+logger->emit_proof_line(pol.str(), ProofLevel::Temporary);
+```
+
+After the `pol`, the resulting constraint sits in the proof database;
+a wrapping RUP can then close cleanly because the cross-coefficient
+arithmetic is already done.
+
+The `Cumulative` propagator uses this pattern in three places (one for
+each inference); see [`cumulative-proof-logging.md`](cumulative-proof-logging.md)
+for a concrete walk-through with PB-form line shapes.
+
+### Pinning a hypothetical fact under "extended reason"
+
+Sometimes the proof step needs a fact that's *not* in the reason — a
+literal we're assuming for contradiction, not one we have a witness
+for. The trick is to reify the inference under
+`{reason ∪ ¬extended_lit}`, which in OPB terms means appending
+`extended_lit` as an extra disjunct on the goal:
+
+```cpp
+logger->emit_rup_proof_line_under_reason(reason,
+    WPBSum{} + 1_i * flag + 1_i * extended_lit >= 1_i,
+    ProofLevel::Temporary);
+```
+
+VeriPB checks the RUP by negating both the flag and `extended_lit`,
+which puts it in exactly the context where the underlying inference
+holds. The closing wrapping RUP then supplies `¬extended_lit` from
+its own negated goal.
+
+`Cumulative`'s bound-push proofs use this for the task being pushed:
+the literal "task `j` is at most/at least so-and-so" doesn't live in
+the bounds reason, but it appears in the closing RUP's negation,
+where it cancels against the extra disjunct.
 
 **Tracing proof line provenance.** Set `GCS_VERBOSE_LOGGING=1` in the
 environment before running a test. Every line written to the `.pbp`
