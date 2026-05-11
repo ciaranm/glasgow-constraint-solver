@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <optional>
+#include <random>
 #include <set>
 #include <tuple>
 #include <utility>
@@ -26,10 +27,13 @@ using std::flush;
 using std::make_optional;
 using std::max;
 using std::min;
+using std::mt19937;
 using std::nullopt;
 using std::pair;
+using std::random_device;
 using std::set;
 using std::tuple;
+using std::uniform_int_distribution;
 using std::vector;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
@@ -127,6 +131,41 @@ auto main(int, char *[]) -> int
         // Two tasks of differing lengths, cap 1: gaps matter.
         {{{0, 3}, {0, 3}}, {1, 2}, {1, 1}, 1},
     };
+
+    // Random instances for breadth. Kept small because search is exhaustive
+    // and the constraint is enumerated via brute-force over the start
+    // domains: a wider horizon multiplies the enumeration cost across all
+    // tasks. Sized so total runtime stays under a second even unoptimised.
+    random_device rand_dev;
+    mt19937 rand(rand_dev());
+
+    auto random_instance = [&](int n, int max_start, int max_length, int max_height, int max_cap)
+        -> tuple<vector<pair<int, int>>, vector<int>, vector<int>, int> {
+        uniform_int_distribution<> lo_dist(0, max_start), span_dist(0, max_start),
+            len_dist(0, max_length), ht_dist(0, max_height), cap_dist(0, max_cap);
+        vector<pair<int, int>> sr;
+        vector<int> lens, hts;
+        for (int i = 0; i < n; ++i) {
+            auto lo = lo_dist(rand), span = span_dist(rand);
+            sr.emplace_back(lo, min(lo + span, max_start));
+            lens.push_back(len_dist(rand));
+            hts.push_back(ht_dist(rand));
+        }
+        return {sr, lens, hts, cap_dist(rand)};
+    };
+
+    // 25 small random cases (n=2 or 3, narrow horizons).
+    for (int k = 0; k < 25; ++k) {
+        uniform_int_distribution<> n_dist(2, 3);
+        data.emplace_back(random_instance(n_dist(rand), 3, 3, 2, 3));
+    }
+
+    // 15 medium random cases (n=3 or 4, wider domains). TT should keep
+    // these fast; verifies it actually does propagation.
+    for (int k = 0; k < 15; ++k) {
+        uniform_int_distribution<> n_dist(3, 4);
+        data.emplace_back(random_instance(n_dist(rand), 4, 3, 2, 4));
+    }
 
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())

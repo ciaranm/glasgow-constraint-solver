@@ -148,35 +148,90 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
 {
     Triggers triggers;
     for (auto i : _active_tasks)
-        triggers.on_instantiated.emplace_back(_starts[i]);
+        triggers.on_bounds.emplace_back(_starts[i]);
 
     propagators.install(
         [starts = move(_starts), lengths = move(_lengths), heights = move(_heights),
             capacity = _capacity, active_tasks = move(_active_tasks)](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-            // Only fire once every active task has a fixed start.
-            for (auto i : active_tasks)
-                if (! state.has_single_value(starts[i]))
-                    return PropagatorState::Enable;
+            // Time-table consistency. The mandatory part of task i is the
+            // half-open interval [lst_i, eet_i) where lst_i = ub(s_i) and
+            // eet_i = lb(s_i) + l_i. Summing heights over mandatory parts
+            // gives the load profile. Each task's bounds are then pushed
+            // away from time points where placing it would force the load
+            // over capacity.
+            //
+            // Justifications are stubbed with AssertRatherThanJustifying:
+            // proof logging for this algorithm comes in a later stage.
 
-            // The load profile only changes at task start points, so checking
-            // the load at every active task's start time is enough.
+            // Determine the time window we care about: the union of every
+            // task's possibly-active range. This bounds both the mandatory
+            // profile and the per-task bound search.
+            bool any = false;
+            Integer t_lo = 0_i, t_hi = -1_i;
             for (auto i : active_tasks) {
-                auto t = state.lower_bound(starts[i]);
-                Integer load = 0_i;
-                for (auto j : active_tasks) {
-                    auto sj = state.lower_bound(starts[j]);
-                    if (sj <= t && t < sj + lengths[j])
-                        load += heights[j];
-                }
-                if (load > capacity) {
-                    inference.contradiction(logger, JustifyUsingRUP{},
+                auto [s_lo, s_hi] = state.bounds(starts[i]);
+                auto lo = s_lo, hi = s_hi + lengths[i] - 1_i;
+                if (! any || lo < t_lo) t_lo = lo;
+                if (! any || hi > t_hi) t_hi = hi;
+                any = true;
+            }
+            if (! any)
+                return PropagatorState::DisableUntilBacktrack;
+
+            auto range = (t_hi - t_lo + 1_i).raw_value;
+            vector<Integer> mand_load(range, 0_i);
+
+            for (auto i : active_tasks) {
+                auto lst = state.upper_bound(starts[i]);
+                auto eet = state.lower_bound(starts[i]) + lengths[i];
+                if (lst < eet)
+                    for (Integer t = lst; t < eet; ++t)
+                        mand_load[(t - t_lo).raw_value] += heights[i];
+            }
+
+            for (auto idx = 0; idx < range; ++idx)
+                if (mand_load[idx] > capacity) {
+                    inference.contradiction(logger, AssertRatherThanJustifying{},
                         generic_reason(state, starts));
                     return PropagatorState::DisableUntilBacktrack;
                 }
+
+            for (auto j : active_tasks) {
+                auto [cur_lb, cur_ub] = state.bounds(starts[j]);
+                if (cur_lb == cur_ub)
+                    continue;
+
+                auto lst_j = cur_ub, eet_j = cur_lb + lengths[j];
+                auto fits_at = [&](Integer s) -> bool {
+                    for (Integer t = s; t < s + lengths[j]; ++t) {
+                        auto load = mand_load[(t - t_lo).raw_value];
+                        if (lst_j < eet_j && t >= lst_j && t < eet_j)
+                            load -= heights[j];
+                        if (load + heights[j] > capacity)
+                            return false;
+                    }
+                    return true;
+                };
+
+                auto new_lb = cur_lb;
+                while (new_lb <= cur_ub && ! fits_at(new_lb))
+                    ++new_lb;
+                if (new_lb > cur_lb)
+                    inference.infer_greater_than_or_equal(logger, starts[j], new_lb,
+                        AssertRatherThanJustifying{},
+                        generic_reason(state, starts));
+
+                auto new_ub = cur_ub;
+                while (new_ub >= cur_lb && ! fits_at(new_ub))
+                    --new_ub;
+                if (new_ub < cur_ub)
+                    inference.infer_less_than(logger, starts[j], new_ub + 1_i,
+                        AssertRatherThanJustifying{},
+                        generic_reason(state, starts));
             }
 
-            return PropagatorState::DisableUntilBacktrack;
+            return PropagatorState::Enable;
         },
         triggers);
 }

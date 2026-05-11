@@ -18,10 +18,14 @@ namespace gcs
      * A task <em>i</em> is active at time <em>t</em> iff
      * <em>starts[i] &le; t &lt; starts[i] + lengths[i]</em>.
      *
-     * Stage-1 propagation is purely a feasibility checker: it fires only when
-     * every start has been instantiated and reports a contradiction if the
-     * load profile ever exceeds the capacity. Stronger propagation
-     * (time-table consistency, edge-finding, ...) is left for future work.
+     * Propagation is time-table consistent. For each task, the
+     * <em>mandatory part</em> is the interval
+     * <em>[ub(start), lb(start) + length)</em> &mdash; the time it must occupy
+     * regardless of where exactly it starts. Summing heights over mandatory
+     * parts gives a load profile; if that profile exceeds capacity anywhere,
+     * the constraint is infeasible. Each task's bounds are pushed away from
+     * any time point where placing it would force the load over capacity.
+     * Stronger reasoning (edge-finding, energetic) is left for future work.
      *
      * \ingroup Constraints
      */
