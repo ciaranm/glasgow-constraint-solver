@@ -166,9 +166,6 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
             // gives the load profile. Each task's bounds are then pushed
             // away from time points where placing it would force the load
             // over capacity.
-            //
-            // Justifications are stubbed with AssertRatherThanJustifying:
-            // proof logging for this algorithm comes in a later stage.
 
             // Determine the time window we care about: the union of every
             // task's possibly-active range. This bounds both the mandatory
@@ -251,6 +248,74 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                     return PropagatorState::DisableUntilBacktrack;
                 }
 
+            // One step of a bound-push proof chain: a blocked time t and the
+            // tasks (≠ j) whose mandatory parts cover t. Used by both
+            // lb-push and ub-push.
+            struct ChainStep
+            {
+                Integer t;
+                vector<size_t> contributing;
+            };
+
+            // Helper: emit (a)–(d) for one chain step.
+            //
+            // `ext_lit` is the literal added to the reason in PB form (= the
+            // negation of "task j is active at t"-as-bounded-by-the-running
+            // half):
+            //   lb-push:  ext_lit = (s_j ≥ t + 1)
+            //   ub-push:  ext_lit = (s_j ≤ t − l_j)
+            //
+            // `emit_intermediate` deposits ext_lit as a unit under reason —
+            // needed for every step except the last (the framework's wrapping
+            // RUP closes the final inference).
+            auto emit_chain_step = [&](size_t j_idx, Integer t,
+                                       const vector<size_t> & contributing,
+                                       IntegerVariableCondition ext_lit,
+                                       bool emit_intermediate,
+                                       const ReasonFunction & reason) -> void {
+                // (a) Pin active_{i,t} = 1 for each task i ≠ j mandatory at t.
+                vector<ProofLine> active_lines;
+                for (auto i : contributing) {
+                    auto fi = (t - per_task_t_lo[i]).raw_value;
+                    logger->emit_rup_proof_line_under_reason(reason,
+                        WPBSum{} + 1_i * before_flags[i][fi] >= 1_i, ProofLevel::Temporary);
+                    logger->emit_rup_proof_line_under_reason(reason,
+                        WPBSum{} + 1_i * after_flags[i][fi] >= 1_i, ProofLevel::Temporary);
+                    auto line = logger->emit_rup_proof_line_under_reason(reason,
+                        WPBSum{} + 1_i * active_flags[i][fi] >= 1_i, ProofLevel::Temporary);
+                    active_lines.push_back(line);
+                }
+
+                // (b) Pin active_{j,t} = 1 under the extended reason. In OPB
+                // terms that's "(reason ∧ ¬ext_lit) ⇒ active=1", encoded by
+                // appending ext_lit as a disjunct to each line.
+                auto fj = (t - per_task_t_lo[j_idx]).raw_value;
+                logger->emit_rup_proof_line_under_reason(reason,
+                    WPBSum{} + 1_i * before_flags[j_idx][fj] + 1_i * ext_lit >= 1_i,
+                    ProofLevel::Temporary);
+                logger->emit_rup_proof_line_under_reason(reason,
+                    WPBSum{} + 1_i * after_flags[j_idx][fj] + 1_i * ext_lit >= 1_i,
+                    ProofLevel::Temporary);
+                auto j_active_line = logger->emit_rup_proof_line_under_reason(reason,
+                    WPBSum{} + 1_i * active_flags[j_idx][fj] + 1_i * ext_lit >= 1_i,
+                    ProofLevel::Temporary);
+
+                // (c) pol C_t + sum of scaled active=1 lines, including j's.
+                stringstream pol;
+                pol << "pol " << capacity_lines.at(t);
+                for (size_t k = 0; k < contributing.size(); ++k)
+                    pol << " " << active_lines[k] << " " << heights[contributing[k]].raw_value << " * +";
+                pol << " " << j_active_line << " " << heights[j_idx].raw_value << " * +";
+                pol << " ;";
+                logger->emit_proof_line(pol.str(), ProofLevel::Temporary);
+
+                // (d) Deposit the running-bound advance as a fact under
+                // reason for the next chain step's UP.
+                if (emit_intermediate)
+                    logger->emit_rup_proof_line_under_reason(reason,
+                        WPBSum{} + 1_i * ext_lit >= 1_i, ProofLevel::Temporary);
+            };
+
             for (auto j : active_tasks) {
                 auto [cur_lb, cur_ub] = state.bounds(starts[j]);
                 if (cur_lb == cur_ub)
@@ -268,99 +333,52 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                     return true;
                 };
 
+                auto is_blocked_at = [&](Integer t) -> bool {
+                    auto load = mand_load[(t - t_lo).raw_value];
+                    if (lst_j < eet_j && t >= lst_j && t < eet_j)
+                        load -= heights[j];
+                    return load + heights[j] > capacity;
+                };
+
+                auto contributors_at = [&](Integer t) -> vector<size_t> {
+                    vector<size_t> result;
+                    for (auto i : active_tasks) {
+                        if (i == j) continue;
+                        auto lst_i = state.upper_bound(starts[i]);
+                        auto eet_i = state.lower_bound(starts[i]) + lengths[i];
+                        if (lst_i < eet_i && t >= lst_i && t < eet_i)
+                            result.push_back(i);
+                    }
+                    return result;
+                };
+
+                // lb-push: find smallest s with fits_at(s), then chain
+                // through blocked t's picking the LARGEST in each step's
+                // window so the bound advances as far as possible per step.
                 auto new_lb = cur_lb;
                 while (new_lb <= cur_ub && ! fits_at(new_lb))
                     ++new_lb;
                 if (new_lb > cur_lb) {
-                    // Build a chain of blocked t's that walks the bound from
-                    // cur_lb up to new_lb. At each step we pick the LARGEST
-                    // blocked t in [running_bound, running_bound + l_j − 1]
-                    // so each chain step advances the bound as far as
-                    // possible.
-                    struct ChainStep
-                    {
-                        Integer t;
-                        vector<size_t> contributing; // tasks i ≠ j with mandatory part at t
-                    };
                     vector<ChainStep> chain;
                     Integer running_bound = cur_lb;
                     while (running_bound < new_lb) {
                         bool found = false;
-                        for (Integer t = running_bound + lengths[j] - 1_i; t >= running_bound; --t) {
-                            auto load_excl_j = mand_load[(t - t_lo).raw_value];
-                            if (lst_j < eet_j && t >= lst_j && t < eet_j)
-                                load_excl_j -= heights[j];
-                            if (load_excl_j + heights[j] > capacity) {
-                                vector<size_t> step_contributing;
-                                for (auto i : active_tasks) {
-                                    if (i == j) continue;
-                                    auto lst_i = state.upper_bound(starts[i]);
-                                    auto eet_i = state.lower_bound(starts[i]) + lengths[i];
-                                    if (lst_i < eet_i && t >= lst_i && t < eet_i)
-                                        step_contributing.push_back(i);
-                                }
-                                chain.push_back(ChainStep{t, move(step_contributing)});
+                        for (Integer t = running_bound + lengths[j] - 1_i; t >= running_bound; --t)
+                            if (is_blocked_at(t)) {
+                                chain.push_back(ChainStep{t, contributors_at(t)});
                                 running_bound = t + 1_i;
                                 found = true;
                                 break;
                             }
-                        }
                         if (! found) break;
                     }
 
                     auto justify = [&, j, chain](const ReasonFunction & reason) -> void {
                         if (! logger) return;
-                        for (size_t step = 0; step < chain.size(); ++step) {
-                            auto & cstep = chain[step];
-                            auto t = cstep.t;
-
-                            // (a) Mandatory tasks at t (≠ j): RUP active=1
-                            // under reason, with intermediate before/after.
-                            vector<ProofLine> active_lines;
-                            for (auto i : cstep.contributing) {
-                                auto fi = (t - per_task_t_lo[i]).raw_value;
-                                logger->emit_rup_proof_line_under_reason(reason,
-                                    WPBSum{} + 1_i * before_flags[i][fi] >= 1_i, ProofLevel::Temporary);
-                                logger->emit_rup_proof_line_under_reason(reason,
-                                    WPBSum{} + 1_i * after_flags[i][fi] >= 1_i, ProofLevel::Temporary);
-                                auto line = logger->emit_rup_proof_line_under_reason(reason,
-                                    WPBSum{} + 1_i * active_flags[i][fi] >= 1_i, ProofLevel::Temporary);
-                                active_lines.push_back(line);
-                            }
-
-                            // (b) Task j under EXTENDED reason {reason ∪
-                            // s_j ≤ t}: the extra disjunct in each line is
-                            // (s_j ≥ t+1), i.e., the negation of s_j ≤ t.
-                            auto fj = (t - per_task_t_lo[j]).raw_value;
-                            logger->emit_rup_proof_line_under_reason(reason,
-                                WPBSum{} + 1_i * before_flags[j][fj] + 1_i * (starts[j] >= t + 1_i) >= 1_i,
-                                ProofLevel::Temporary);
-                            logger->emit_rup_proof_line_under_reason(reason,
-                                WPBSum{} + 1_i * after_flags[j][fj] + 1_i * (starts[j] >= t + 1_i) >= 1_i,
-                                ProofLevel::Temporary);
-                            auto j_active_line = logger->emit_rup_proof_line_under_reason(reason,
-                                WPBSum{} + 1_i * active_flags[j][fj] + 1_i * (starts[j] >= t + 1_i) >= 1_i,
-                                ProofLevel::Temporary);
-
-                            // (c) pol C_t + sum of scaled active=1 lines,
-                            // including j's conditional one.
-                            stringstream pol;
-                            pol << "pol " << capacity_lines.at(t);
-                            for (size_t k = 0; k < cstep.contributing.size(); ++k)
-                                pol << " " << active_lines[k] << " " << heights[cstep.contributing[k]].raw_value << " * +";
-                            pol << " " << j_active_line << " " << heights[j].raw_value << " * +";
-                            pol << " ;";
-                            logger->emit_proof_line(pol.str(), ProofLevel::Temporary);
-
-                            // (d) If not the last step, deposit s_j ≥ t+1 as
-                            // a fact under reason for subsequent steps to
-                            // chain through. The final step's pol leaves a
-                            // constraint that the framework's wrapping RUP
-                            // turns into s_j ≥ new_lb.
-                            if (step + 1 < chain.size())
-                                logger->emit_rup_proof_line_under_reason(reason,
-                                    WPBSum{} + 1_i * (starts[j] >= t + 1_i) >= 1_i, ProofLevel::Temporary);
-                        }
+                        for (size_t step = 0; step < chain.size(); ++step)
+                            emit_chain_step(j, chain[step].t, chain[step].contributing,
+                                starts[j] >= chain[step].t + 1_i,
+                                step + 1 < chain.size(), reason);
                     };
 
                     inference.infer_greater_than_or_equal(logger, starts[j], new_lb,
@@ -368,13 +386,39 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                         generic_reason(state, starts));
                 }
 
+                // ub-push: mirror image. Pick SMALLEST blocked t in each
+                // step's window so the upper bound drops the most. Each
+                // step turns a blocked t into the fact s_j ≤ t − l_j.
                 auto new_ub = cur_ub;
                 while (new_ub >= cur_lb && ! fits_at(new_ub))
                     --new_ub;
-                if (new_ub < cur_ub)
+                if (new_ub < cur_ub) {
+                    vector<ChainStep> chain;
+                    Integer running_bound = cur_ub;
+                    while (running_bound > new_ub) {
+                        bool found = false;
+                        for (Integer t = running_bound; t <= running_bound + lengths[j] - 1_i; ++t)
+                            if (is_blocked_at(t)) {
+                                chain.push_back(ChainStep{t, contributors_at(t)});
+                                running_bound = t - lengths[j];
+                                found = true;
+                                break;
+                            }
+                        if (! found) break;
+                    }
+
+                    auto justify = [&, j, chain](const ReasonFunction & reason) -> void {
+                        if (! logger) return;
+                        for (size_t step = 0; step < chain.size(); ++step)
+                            emit_chain_step(j, chain[step].t, chain[step].contributing,
+                                starts[j] < chain[step].t - lengths[j] + 1_i,
+                                step + 1 < chain.size(), reason);
+                    };
+
                     inference.infer_less_than(logger, starts[j], new_ub + 1_i,
-                        AssertRatherThanJustifying{},
+                        JustifyExplicitlyThenRUP{justify},
                         generic_reason(state, starts));
+                }
             }
 
             return PropagatorState::Enable;
