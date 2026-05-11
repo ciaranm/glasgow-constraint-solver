@@ -271,10 +271,102 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                 auto new_lb = cur_lb;
                 while (new_lb <= cur_ub && ! fits_at(new_lb))
                     ++new_lb;
-                if (new_lb > cur_lb)
+                if (new_lb > cur_lb) {
+                    // Build a chain of blocked t's that walks the bound from
+                    // cur_lb up to new_lb. At each step we pick the LARGEST
+                    // blocked t in [running_bound, running_bound + l_j − 1]
+                    // so each chain step advances the bound as far as
+                    // possible.
+                    struct ChainStep
+                    {
+                        Integer t;
+                        vector<size_t> contributing; // tasks i ≠ j with mandatory part at t
+                    };
+                    vector<ChainStep> chain;
+                    Integer running_bound = cur_lb;
+                    while (running_bound < new_lb) {
+                        bool found = false;
+                        for (Integer t = running_bound + lengths[j] - 1_i; t >= running_bound; --t) {
+                            auto load_excl_j = mand_load[(t - t_lo).raw_value];
+                            if (lst_j < eet_j && t >= lst_j && t < eet_j)
+                                load_excl_j -= heights[j];
+                            if (load_excl_j + heights[j] > capacity) {
+                                vector<size_t> step_contributing;
+                                for (auto i : active_tasks) {
+                                    if (i == j) continue;
+                                    auto lst_i = state.upper_bound(starts[i]);
+                                    auto eet_i = state.lower_bound(starts[i]) + lengths[i];
+                                    if (lst_i < eet_i && t >= lst_i && t < eet_i)
+                                        step_contributing.push_back(i);
+                                }
+                                chain.push_back(ChainStep{t, move(step_contributing)});
+                                running_bound = t + 1_i;
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (! found) break;
+                    }
+
+                    auto justify = [&, j, chain](const ReasonFunction & reason) -> void {
+                        if (! logger) return;
+                        for (size_t step = 0; step < chain.size(); ++step) {
+                            auto & cstep = chain[step];
+                            auto t = cstep.t;
+
+                            // (a) Mandatory tasks at t (≠ j): RUP active=1
+                            // under reason, with intermediate before/after.
+                            vector<ProofLine> active_lines;
+                            for (auto i : cstep.contributing) {
+                                auto fi = (t - per_task_t_lo[i]).raw_value;
+                                logger->emit_rup_proof_line_under_reason(reason,
+                                    WPBSum{} + 1_i * before_flags[i][fi] >= 1_i, ProofLevel::Temporary);
+                                logger->emit_rup_proof_line_under_reason(reason,
+                                    WPBSum{} + 1_i * after_flags[i][fi] >= 1_i, ProofLevel::Temporary);
+                                auto line = logger->emit_rup_proof_line_under_reason(reason,
+                                    WPBSum{} + 1_i * active_flags[i][fi] >= 1_i, ProofLevel::Temporary);
+                                active_lines.push_back(line);
+                            }
+
+                            // (b) Task j under EXTENDED reason {reason ∪
+                            // s_j ≤ t}: the extra disjunct in each line is
+                            // (s_j ≥ t+1), i.e., the negation of s_j ≤ t.
+                            auto fj = (t - per_task_t_lo[j]).raw_value;
+                            logger->emit_rup_proof_line_under_reason(reason,
+                                WPBSum{} + 1_i * before_flags[j][fj] + 1_i * (starts[j] >= t + 1_i) >= 1_i,
+                                ProofLevel::Temporary);
+                            logger->emit_rup_proof_line_under_reason(reason,
+                                WPBSum{} + 1_i * after_flags[j][fj] + 1_i * (starts[j] >= t + 1_i) >= 1_i,
+                                ProofLevel::Temporary);
+                            auto j_active_line = logger->emit_rup_proof_line_under_reason(reason,
+                                WPBSum{} + 1_i * active_flags[j][fj] + 1_i * (starts[j] >= t + 1_i) >= 1_i,
+                                ProofLevel::Temporary);
+
+                            // (c) pol C_t + sum of scaled active=1 lines,
+                            // including j's conditional one.
+                            stringstream pol;
+                            pol << "pol " << capacity_lines.at(t);
+                            for (size_t k = 0; k < cstep.contributing.size(); ++k)
+                                pol << " " << active_lines[k] << " " << heights[cstep.contributing[k]].raw_value << " * +";
+                            pol << " " << j_active_line << " " << heights[j].raw_value << " * +";
+                            pol << " ;";
+                            logger->emit_proof_line(pol.str(), ProofLevel::Temporary);
+
+                            // (d) If not the last step, deposit s_j ≥ t+1 as
+                            // a fact under reason for subsequent steps to
+                            // chain through. The final step's pol leaves a
+                            // constraint that the framework's wrapping RUP
+                            // turns into s_j ≥ new_lb.
+                            if (step + 1 < chain.size())
+                                logger->emit_rup_proof_line_under_reason(reason,
+                                    WPBSum{} + 1_i * (starts[j] >= t + 1_i) >= 1_i, ProofLevel::Temporary);
+                        }
+                    };
+
                     inference.infer_greater_than_or_equal(logger, starts[j], new_lb,
-                        AssertRatherThanJustifying{},
+                        JustifyExplicitlyThenRUP{justify},
                         generic_reason(state, starts));
+                }
 
                 auto new_ub = cur_ub;
                 while (new_ub >= cur_lb && ! fits_at(new_ub))
