@@ -2,10 +2,13 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_CUMULATIVE_HH
 
 #include <gcs/constraint.hh>
+#include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/integer.hh>
 #include <gcs/variable_id.hh>
 
 #include <cstddef>
+#include <map>
+#include <optional>
 #include <vector>
 
 namespace gcs
@@ -39,6 +42,13 @@ namespace gcs
         std::vector<std::size_t> _active_tasks;
         std::vector<Integer> _per_task_t_lo;
         std::vector<Integer> _per_task_t_hi;
+
+        // Filled in by define_proof_model; consumed by install_propagators.
+        // Each [task_idx] is indexed by t − _per_task_t_lo[i].
+        std::vector<std::vector<innards::ProofFlag>> _before_flags;
+        std::vector<std::vector<innards::ProofFlag>> _after_flags;
+        std::vector<std::vector<innards::ProofFlag>> _active_flags;
+        std::map<Integer, innards::ProofLine> _capacity_lines; // t -> proof line for the per-t time-table constraint
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &) -> void override;

@@ -101,11 +101,9 @@ auto Cumulative::define_proof_model(ProofModel & model) -> void
     //     active_{i,t} ⇔  before_{i,t} ∧ after_{i,t}
     //   for each time point t:
     //     Σ heights[i] · active_{i,t} ≤ capacity
-    struct TaskActivity
-    {
-        vector<ProofFlag> active_per_time; // indexed by t − _per_task_t_lo[i]
-    };
-    vector<TaskActivity> task_activity(_starts.size());
+    _before_flags.assign(_starts.size(), {});
+    _after_flags.assign(_starts.size(), {});
+    _active_flags.assign(_starts.size(), {});
 
     Integer global_lo = 0_i, global_hi = -1_i;
     bool first = true;
@@ -124,7 +122,9 @@ auto Cumulative::define_proof_model(ProofModel & model) -> void
             auto active = model.create_proof_flag_fully_reifying(
                 "cumactive", "Cumulative", "task active at time",
                 WPBSum{} + 1_i * before + 1_i * after >= 2_i);
-            task_activity[i].active_per_time.push_back(active);
+            _before_flags[i].push_back(before);
+            _after_flags[i].push_back(after);
+            _active_flags[i].push_back(active);
         }
     }
 
@@ -135,12 +135,15 @@ auto Cumulative::define_proof_model(ProofModel & model) -> void
             if (t < _per_task_t_lo[i] || t > _per_task_t_hi[i])
                 continue;
             auto idx = (t - _per_task_t_lo[i]).raw_value;
-            load += _heights[i] * task_activity[i].active_per_time[idx];
+            load += _heights[i] * _active_flags[i][idx];
             any = true;
         }
-        if (any)
-            model.add_constraint("Cumulative", "load at time",
+        if (any) {
+            auto line = model.add_constraint("Cumulative", "load at time",
                 load <= _capacity);
+            if (line)
+                _capacity_lines.emplace(t, *line);
+        }
     }
 }
 
@@ -152,7 +155,10 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
 
     propagators.install(
         [starts = move(_starts), lengths = move(_lengths), heights = move(_heights),
-            capacity = _capacity, active_tasks = move(_active_tasks)](
+            capacity = _capacity, active_tasks = move(_active_tasks),
+            before_flags = move(_before_flags), after_flags = move(_after_flags),
+            active_flags = move(_active_flags), capacity_lines = move(_capacity_lines),
+            per_task_t_lo = move(_per_task_t_lo)](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // Time-table consistency. The mandatory part of task i is the
             // half-open interval [lst_i, eet_i) where lst_i = ub(s_i) and
@@ -192,7 +198,55 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
 
             for (auto idx = 0; idx < range; ++idx)
                 if (mand_load[idx] > capacity) {
-                    inference.contradiction(logger, AssertRatherThanJustifying{},
+                    auto violating_t = t_lo + Integer{idx};
+
+                    // Tasks whose mandatory part covers violating_t — the ones
+                    // we'll pin to active=1 in the proof.
+                    vector<size_t> contributing;
+                    for (auto i : active_tasks) {
+                        auto lst = state.upper_bound(starts[i]);
+                        auto eet = state.lower_bound(starts[i]) + lengths[i];
+                        if (lst < eet && violating_t >= lst && violating_t < eet)
+                            contributing.push_back(i);
+                    }
+
+                    auto justify = [&, violating_t, contributing](const ReasonFunction & reason) -> void {
+                        if (! logger) return;
+                        // For each contributing task: RUP before=1, then
+                        // after=1, then active=1. VeriPB UP can't chase
+                        // through the AND-gate of `active` in one step; the
+                        // intermediate before/after units give it the unit
+                        // facts it needs to close the reverse-half of
+                        // `active`'s reification.
+                        //
+                        // Once every contributing active=1 line exists, a
+                        // pol line combines C_t with the scaled assertions
+                        // to produce a constraint that's unsatisfiable
+                        // under the reason context, closing the framework's
+                        // wrapping RUP step.
+                        vector<ProofLine> active_lines;
+                        for (auto i : contributing) {
+                            auto fi = (violating_t - per_task_t_lo[i]).raw_value;
+                            logger->emit_rup_proof_line_under_reason(reason,
+                                WPBSum{} + 1_i * before_flags[i][fi] >= 1_i,
+                                ProofLevel::Temporary);
+                            logger->emit_rup_proof_line_under_reason(reason,
+                                WPBSum{} + 1_i * after_flags[i][fi] >= 1_i,
+                                ProofLevel::Temporary);
+                            auto line = logger->emit_rup_proof_line_under_reason(reason,
+                                WPBSum{} + 1_i * active_flags[i][fi] >= 1_i,
+                                ProofLevel::Temporary);
+                            active_lines.push_back(line);
+                        }
+                        stringstream pol;
+                        pol << "pol " << capacity_lines.at(violating_t);
+                        for (size_t k = 0; k < contributing.size(); ++k)
+                            pol << " " << active_lines[k] << " " << heights[contributing[k]].raw_value << " * +";
+                        pol << " ;";
+                        logger->emit_proof_line(pol.str(), ProofLevel::Temporary);
+                    };
+
+                    inference.contradiction(logger, JustifyExplicitlyThenRUP{justify},
                         generic_reason(state, starts));
                     return PropagatorState::DisableUntilBacktrack;
                 }
