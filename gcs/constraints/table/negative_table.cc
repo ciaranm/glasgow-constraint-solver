@@ -303,11 +303,11 @@ auto NegativeTable::install_propagators(Propagators & propagators) -> void
         _tuples);
 }
 
-auto NegativeTable::s_exprify(const string & name, const innards::ProofModel * const model) const -> std::string
+auto NegativeTable::s_exprify(const innards::ProofModel * const model) const -> std::string
 {
     stringstream s;
 
-    print(s, "{} negative_table", name);
+    print(s, "{} negative_table", _name);
     println(s, "(");
 
     println(s, "    (");

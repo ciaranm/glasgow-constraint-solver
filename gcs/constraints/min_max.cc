@@ -201,11 +201,11 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
-auto ArrayMinMax::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
+auto ArrayMinMax::s_exprify(const innards::ProofModel * const model) const -> string
 {
     stringstream s;
 
-    print(s, "{} {} (", name, _min ? "min" : "max");
+    print(s, "{} {} (", _name, _min ? "min" : "max");
     for (const auto & v : _vars) {
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(v));
     }

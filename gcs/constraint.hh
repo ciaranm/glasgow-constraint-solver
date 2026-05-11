@@ -5,6 +5,7 @@
 #include <gcs/innards/propagators-fwd.hh>
 #include <gcs/innards/state-fwd.hh>
 
+#include <format>
 #include <memory>
 #include <string>
 #include <variant>
@@ -91,5 +92,29 @@ namespace gcs
         [[nodiscard]] virtual auto s_exprify(const innards::ProofModel * const) const -> std::string = 0;
     };
 }
+
+// The following is needed to allow ConstraintName to be used in format strings.
+// We do this quite a lot in s_exprify().  If we didn't do this, we'd have to write
+// `format("{}", as_string(_name))` everywhere instead of just `format("{}", _name)`.
+// It's comfort over clarity.  What's the best option?
+#if defined(__cpp_lib_format)
+template <>
+struct std::formatter<gcs::ConstraintName> : std::formatter<std::string>
+{
+    auto format(const gcs::ConstraintName & name, std::format_context & ctx) const
+    {
+        return std::formatter<std::string>::format(gcs::as_string(name), ctx);
+    }
+};
+#else
+template <>
+struct fmt::formatter<gcs::ConstraintName> : fmt::formatter<std::string>
+{
+    auto format(const gcs::ConstraintName & name, fmt::format_context & ctx) const
+    {
+        return fmt::formatter<std::string>::format(gcs::as_string(name), ctx);
+    }
+};
+#endif
 
 #endif

@@ -656,11 +656,11 @@ auto Knapsack::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
-auto Knapsack::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
+auto Knapsack::s_exprify(const innards::ProofModel * const model) const -> string
 {
     stringstream s;
 
-    print(s, "{} knapsack\n            (", name);
+    print(s, "{} knapsack\n            (", _name);
     for (const auto & cs : _coeffs) {
         print(s, "\n                (");
         for (const auto & c : cs)

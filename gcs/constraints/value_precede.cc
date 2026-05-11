@@ -205,11 +205,11 @@ auto ValuePrecede::install_propagators(Propagators & propagators) -> void
     }
 }
 
-auto ValuePrecede::s_exprify(const string & name, const ProofModel * const model) const -> string
+auto ValuePrecede::s_exprify(const ProofModel * const model) const -> string
 {
     stringstream s;
 
-    print(s, "{} value_precede (", name);
+    print(s, "{} value_precede (", _name);
     for (const auto & val : _chain)
         print(s, " {}", val);
     print(s, ") (");

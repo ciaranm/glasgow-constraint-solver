@@ -74,11 +74,11 @@ auto Plus::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
-auto Plus::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
+auto Plus::s_exprify(const innards::ProofModel * const model) const -> string
 {
     stringstream s;
 
-    print(s, "{} plus (", name);
+    print(s, "{} plus (", _name);
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_a));
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_b));
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_result));

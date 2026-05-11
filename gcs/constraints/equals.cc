@@ -289,7 +289,7 @@ NotEqualsIff::NotEqualsIff(const IntegerVariableID v1, const IntegerVariableID v
 {
 }
 
-auto ReifiedEquals::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
+auto ReifiedEquals::s_exprify(const innards::ProofModel * const model) const -> string
 {
     stringstream s;
 
@@ -302,7 +302,7 @@ auto ReifiedEquals::s_exprify(const string & name, const innards::ProofModel * c
             return _neq ? "not_equals_iff" : "equals_iff";
         }}.visit(_cond);
 
-    print(s, "{} {}", name, constraint_type);
+    print(s, "{} {}", _name, constraint_type);
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_cond));
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v1));
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v2));

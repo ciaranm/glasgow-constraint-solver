@@ -202,11 +202,11 @@ auto AllDifferentExcept::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
-auto AllDifferentExcept::s_exprify(const string & name, const ProofModel * const model) const -> string
+auto AllDifferentExcept::s_exprify(const ProofModel * const model) const -> string
 {
     stringstream s;
 
-    print(s, "{} all_different_except (", name);
+    print(s, "{} all_different_except (", _name);
     for (const auto & var : _vars)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
     print(s, ") (");

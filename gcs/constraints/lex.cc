@@ -621,7 +621,7 @@ auto LexCompareGreaterThanOrMaybeEqual::install_propagators(Propagators & propag
         std::move(infer_cond_when_undecided));
 }
 
-auto LexCompareGreaterThanOrMaybeEqual::s_exprify(const std::string & name, const innards::ProofModel * const model) const -> std::string
+auto LexCompareGreaterThanOrMaybeEqual::s_exprify(const innards::ProofModel * const model) const -> std::string
 {
     stringstream s;
 
@@ -638,7 +638,7 @@ auto LexCompareGreaterThanOrMaybeEqual::s_exprify(const std::string & name, cons
         _or_equal ? "_equal" : "",
         reif_suffix);
 
-    print(s, "{} {}", name, cmp);
+    print(s, "{} {}", _name, cmp);
 
     auto cond_lit = overloaded{
         [](const reif::MustHold &) -> optional<IntegerVariableCondition> { return nullopt; },

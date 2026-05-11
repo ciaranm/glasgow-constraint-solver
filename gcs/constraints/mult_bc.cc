@@ -1361,11 +1361,11 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
         triggers);
 }
 
-auto MultBC::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
+auto MultBC::s_exprify(const innards::ProofModel * const model) const -> string
 {
     stringstream s;
 
-    print(s, "{} multiply (", name);
+    print(s, "{} multiply (", _name);
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v1));
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v2));
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v3));

@@ -191,7 +191,7 @@ auto ReifiedCompareLessThanOrMaybeEqual::install_propagators(Propagators & propa
     }
 }
 
-auto ReifiedCompareLessThanOrMaybeEqual::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
+auto ReifiedCompareLessThanOrMaybeEqual::s_exprify(const ProofModel * const model) const -> std::string
 {
     stringstream s;
 
@@ -208,12 +208,12 @@ auto ReifiedCompareLessThanOrMaybeEqual::s_exprify(const std::string & name, con
         reif);
 
     if (reif.empty()) {
-        print(s, "{} {} {} {}", name, cmp,
+        print(s, "{} {} {} {}", _name, cmp,
             model->names_and_ids_tracker().s_expr_name_of(_v1),
             model->names_and_ids_tracker().s_expr_name_of(_v2));
     }
     else {
-        print(s, "{} {} {} {} {}", name, cmp,
+        print(s, "{} {} {} {} {}", _name, cmp,
             model->names_and_ids_tracker().s_expr_name_of(_reif_cond),
             model->names_and_ids_tracker().s_expr_name_of(_v1),
             model->names_and_ids_tracker().s_expr_name_of(_v2));

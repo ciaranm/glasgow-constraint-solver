@@ -233,11 +233,11 @@ auto Count::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
-auto Count::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
+auto Count::s_exprify(const ProofModel * const model) const -> std::string
 {
     stringstream s;
 
-    print(s, "{} count (", name);
+    print(s, "{} count (", _name);
     for (const auto & v : _vars) {
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(v));
     }

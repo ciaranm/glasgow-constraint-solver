@@ -81,7 +81,7 @@ namespace gcs::innards::circuit
     public:
         explicit CircuitBase(std::vector<IntegerVariableID> var, bool gac_all_different = false);
         [[nodiscard]] auto clone() const -> std::unique_ptr<Constraint> override = 0;
-        [[nodiscard]] virtual auto s_exprify(const std::string & name, const innards::ProofModel * const) const -> std::string override;
+        [[nodiscard]] virtual auto s_exprify(const innards::ProofModel * const) const -> std::string override;
     };
 }
 

@@ -167,11 +167,11 @@ auto Inverse::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
-auto Inverse::s_exprify(const std::string & name, const innards::ProofModel * const model) const -> std::string
+auto Inverse::s_exprify(const innards::ProofModel * const model) const -> std::string
 {
     stringstream s;
 
-    print(s, "{} inverse\n          (", name);
+    print(s, "{} inverse\n          (", _name);
     for (const auto & x : _x) {
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(x));
     }

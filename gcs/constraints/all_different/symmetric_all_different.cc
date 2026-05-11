@@ -181,11 +181,11 @@ auto SymmetricAllDifferent::install_propagators(Propagators & propagators) -> vo
         triggers);
 }
 
-auto SymmetricAllDifferent::s_exprify(const string & name, const ProofModel * const model) const -> string
+auto SymmetricAllDifferent::s_exprify(const ProofModel * const model) const -> string
 {
     stringstream s;
 
-    print(s, "{} symmetric_all_different (", name);
+    print(s, "{} symmetric_all_different (", _name);
     for (const auto & var : _vars)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
     print(s, ") {}", _start);

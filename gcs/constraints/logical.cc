@@ -255,11 +255,11 @@ auto And::install_propagators(Propagators & propagators) -> void
     install_propagators_logical(propagators, _lits, _full_reif, _reif_state);
 }
 
-auto And::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
+auto And::s_exprify(const innards::ProofModel * const model) const -> string
 {
     stringstream s;
 
-    print(s, "{} and (", name);
+    print(s, "{} and (", _name);
     for (const auto & lit : _lits) {
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(lit));
     }
@@ -322,11 +322,11 @@ auto Or::install_propagators(Propagators & propagators) -> void
     install_propagators_logical(propagators, move(lits), ! _full_reif, _reif_state);
 }
 
-auto Or::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
+auto Or::s_exprify(const innards::ProofModel * const model) const -> string
 {
     stringstream s;
 
-    print(s, "{} or (", name);
+    print(s, "{} or (", _name);
     for (const auto & lit : _lits) {
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(lit));
     }

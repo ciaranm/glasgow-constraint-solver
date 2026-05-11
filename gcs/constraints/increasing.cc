@@ -135,7 +135,7 @@ auto IncreasingChain::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
-auto IncreasingChain::s_exprify(const string & name, const ProofModel * const model) const -> string
+auto IncreasingChain::s_exprify(const ProofModel * const model) const -> string
 {
     stringstream s;
 
@@ -143,7 +143,7 @@ auto IncreasingChain::s_exprify(const string & name, const ProofModel * const mo
         ? (_descending ? "strictly_decreasing" : "strictly_increasing")
         : (_descending ? "decreasing" : "increasing");
 
-    print(s, "{} {}", name, keyword);
+    print(s, "{} {}", _name, keyword);
     for (const auto & v : _vars)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(v));
 

@@ -245,10 +245,13 @@ def assign_snapshots_to_cases(
 def run_one_test(
     test_bin: Path,
     out_root: Path,
+    args: Optional[List[str]] = None,
     timeout_sec: int = 0
 ) -> Tuple[List[CaseEvent], List[Snapshot], int]:
     test_name = test_bin.name
-    test_out = out_root / test_name
+    run_label="_".join(args) if args else None
+    subdir = f"{test_name}_{run_label}" if run_label else test_name
+    test_out = out_root / subdir
     run_dir = test_out / "run"
     snapshots_dir = test_out / "snapshots"
 
@@ -262,7 +265,7 @@ def run_one_test(
     stdout_log = test_out / "stdout.log"
     stderr_log = test_out / "stderr.log"
 
-    cmd = [str(test_bin)]
+    cmd = [str(test_bin)] + (args if args is not None else [])
     proc = subprocess.Popen(
         cmd,
         cwd=run_dir,
@@ -270,7 +273,6 @@ def run_one_test(
         stderr=subprocess.PIPE,
         text=True,
         bufsize=1,
-        universal_newlines=True,
     )
 
     stdout_lines: List[str] = []
@@ -351,6 +353,7 @@ def write_reports(
         "s-expression encoding",
         "expected solutions",
         "proof result",
+        "valid encoding",
     ]
 
     with tsv_min.open("w", newline="", encoding="utf-8") as f:
@@ -374,6 +377,7 @@ def write_reports(
                 "s-expression encoding",
                 "expected solutions",
                 "proof result",
+                "valid encoding",
                 "test_binary",
                 "source_scp_name",
                 "case_index",
@@ -382,6 +386,19 @@ def write_reports(
         )
         for r in rows_debug:
             w.writerow(r)
+
+            
+def is_valid_encoding(enc) -> bool:
+    # Use a stack to check for balanced brackets
+    stack = []
+    for char in enc:
+        if char == '(':
+            stack.append(char)
+        elif char == ')':
+            if not stack:
+                return False
+            stack.pop()
+    return not stack
 
 
 def main() -> int:
@@ -405,35 +422,60 @@ def main() -> int:
 
     for test_bin in test_bins:
         print(f"Running {test_bin.name} ...")
-        case_events, snaps, rc = run_one_test(test_bin, out_dir, timeout_sec=0)
 
-        if rc != 0:
-            failures.append(f"{test_bin.name} exited with {rc}")
+        if "linear_test" in test_bin.name:
+            arg_sets = [["le"], ["eq"], ["ne"], ["ge"]]
+        elif "comparison_test" in test_bin.name:
+            arg_sets = [["lt"], ["lt_if"], ["lt_iff"],
+                        ["le"], ["le_if"], ["le_iff"],
+                        ["ge"], ["ge_if"], ["ge_iff"],
+                        ["gt"], ["gt_if"], ["gt_iff"]]
+        elif "element_test" in test_bin.name:
+            arg_sets = [["var"], ["var2d"], ["const"], ["const2d"]]
+        elif "smart_table_test" in test_bin.name:
+            arg_sets = [["lex_gt"], ["lex_ge"], ["lex_lt"], ["lex_le"], 
+                        ["lex_gt_fixed"], ["lex_ge_fixed"], ["lex_lt_fixed"], ["lex_le_fixed"], 
+                        ["am1_eq"], ["am1_in_set"], ["al1_eq"],["al1_in_set"]]
+        else:
+            arg_sets = [[]]
 
-        pairs, pair_warnings = assign_snapshots_to_cases(case_events, snaps)
-        warnings.extend(f"{test_bin.name}: {w}" for w in pair_warnings)
+        for args in arg_sets:
+            label = f"{test_bin.name}" + (f" [{' '.join(args)}]" if args else "")
+            if args:
+                print(f"  Adding args for {test_bin.name}: {args}")
 
-        for case_event, snap in pairs:
-            c = case_event.row
-            enc = extract_s_expression_encoding(snap.path)
-            rows_minimal.append((
-                c.constraint_type,
-                c.configuration,
-                enc,
-                c.expected_solutions,
-                c.proof_result,
-            ))
-            rows_debug.append((
-                c.constraint_type,
-                c.configuration,
-                enc,
-                c.expected_solutions,
-                c.proof_result,
-                test_bin.name,
-                snap.source_name,
-                case_event.seq,
-                str(snap.path),
-            ))
+            case_events, snaps, rc = run_one_test(test_bin, out_dir, args, timeout_sec=0)
+
+            if rc != 0:
+                failures.append(f"{label} exited with {rc}")
+
+            pairs, pair_warnings = assign_snapshots_to_cases(case_events, snaps)
+            warnings.extend(f"{label}: {w}" for w in pair_warnings)
+
+            for case_event, snap in pairs:
+                c = case_event.row
+                enc = extract_s_expression_encoding(snap.path)
+                valid = is_valid_encoding(enc)
+                rows_minimal.append((
+                    c.constraint_type,
+                    c.configuration,
+                    enc,
+                    c.expected_solutions,
+                    c.proof_result,
+                    valid,
+                ))
+                rows_debug.append((
+                    c.constraint_type,
+                    c.configuration,
+                    enc,
+                    c.expected_solutions,
+                    c.proof_result,
+                    valid,
+                    label,
+                    snap.source_name,
+                    case_event.seq,
+                    str(snap.path),
+                ))
 
     write_reports(out_dir, rows_minimal, rows_debug)
 

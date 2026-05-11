@@ -261,11 +261,11 @@ auto In::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
-auto In::s_exprify(const string & name, const ProofModel * const model) const -> string
+auto In::s_exprify(const ProofModel * const model) const -> string
 {
     stringstream s;
 
-    print(s, "{} in {} (", name, model->names_and_ids_tracker().s_expr_name_of(_var));
+    print(s, "{} in {} (", _name, model->names_and_ids_tracker().s_expr_name_of(_var));
     for (const auto & v : _var_vals)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(v));
     for (const auto & v : _val_vals)
