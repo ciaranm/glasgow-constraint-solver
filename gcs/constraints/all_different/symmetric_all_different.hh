@@ -9,6 +9,8 @@
 
 #include <map>
 #include <memory>
+#include <optional>
+#include <utility>
 #include <vector>
 
 namespace gcs
@@ -35,7 +37,7 @@ namespace gcs
         Integer _start;
         std::shared_ptr<std::map<Integer, innards::ProofLine>> _value_am1s;
         bool _has_duplicate_vars = false;
-        std::map<IntegerVariableID, innards::ProofFlag> _duplicate_selectors;
+        std::optional<std::pair<IntegerVariableID, innards::ProofFlag>> _duplicate_witness;
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &) -> void override;

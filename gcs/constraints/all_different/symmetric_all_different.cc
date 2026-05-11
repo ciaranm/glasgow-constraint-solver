@@ -115,7 +115,7 @@ auto SymmetricAllDifferent::define_proof_model(ProofModel & model) -> void
                     + 1_i * (_vars[i] == Integer(j) + _start) >= 1_i);
         }
 
-    _duplicate_selectors = define_clique_not_equals_encoding(model, _vars);
+    _duplicate_witness = define_clique_not_equals_encoding(model, _vars);
 
     // Per-value am1s for the alldiff hall-set / SCC justifications,
     // built once at the root.
@@ -125,7 +125,7 @@ auto SymmetricAllDifferent::define_proof_model(ProofModel & model) -> void
 auto SymmetricAllDifferent::install_propagators(Propagators & propagators) -> void
 {
     if (_has_duplicate_vars) {
-        install_clique_duplicate_contradiction_initialiser(propagators, move(_duplicate_selectors));
+        install_clique_duplicate_contradiction_initialiser(propagators, move(_duplicate_witness));
         return;
     }
 

@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <iterator>
 #include <map>
+#include <optional>
 #include <sstream>
 #include <string>
 
@@ -134,7 +135,10 @@ auto AllDifferentExcept::install_propagators(Propagators & propagators) -> void
         // !selector simultaneously. Install the shared clique-contradiction
         // initialiser instead of the per-value path below; the propagator
         // also can't run, so we early-return.
-        install_clique_duplicate_contradiction_initialiser(propagators, move(_duplicate_selectors));
+        auto witness = _duplicate_selectors.empty()
+            ? std::nullopt
+            : std::optional{*_duplicate_selectors.begin()};
+        install_clique_duplicate_contradiction_initialiser(propagators, move(witness));
         return;
     }
 
