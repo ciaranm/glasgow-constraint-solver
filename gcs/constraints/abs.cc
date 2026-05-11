@@ -1,6 +1,7 @@
 #include <gcs/constraints/abs.hh>
 #include <gcs/constraints/abs/justify.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/interval_set.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
@@ -10,6 +11,8 @@
 #include <algorithm>
 #include <optional>
 #include <sstream>
+#include <utility>
+#include <vector>
 
 #include <version>
 
@@ -25,6 +28,9 @@ using namespace gcs::innards;
 
 using std::holds_alternative;
 using std::max;
+using std::min;
+using std::pair;
+using std::ranges::sort;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
@@ -39,21 +45,27 @@ using fmt::print;
 
 namespace
 {
-    // PB resolution: sum the operand proof lines and saturate, eliminating
-    // any literals whose coefficients cancel. Emitted via VeriPB's polish-
-    // notation rule, hence "pol ... + s" in the wire format.
-    auto emit_resolution(ProofLogger * const logger, ProofLine a, ProofLine b) -> void
+    // Collect a set of (lower, upper) pieces (possibly unordered and
+    // overlapping) into an IntervalSet via insert_at_end. Linear sort +
+    // merge; small for the dominant single-interval cases.
+    auto pieces_to_set(vector<pair<Integer, Integer>> & pieces) -> IntervalSet<Integer>
     {
-        stringstream pol;
-        pol << "pol " << a << " " << b << " + s ;";
-        logger->emit_proof_line(pol.str(), ProofLevel::Temporary);
-    }
+        IntervalSet<Integer> result;
+        if (pieces.empty())
+            return result;
 
-    auto emit_resolution(ProofLogger * const logger, ProofLine a, ProofLine b, ProofLine c) -> void
-    {
-        stringstream pol;
-        pol << "pol " << a << " " << b << " + " << c << " + s ;";
-        logger->emit_proof_line(pol.str(), ProofLevel::Temporary);
+        sort(pieces);
+        auto cur = pieces.front();
+        for (auto it = pieces.begin() + 1; it != pieces.end(); ++it) {
+            if (it->first <= cur.second + 1_i)
+                cur.second = max(cur.second, it->second);
+            else {
+                result.insert_at_end(cur.first, cur.second);
+                cur = *it;
+            }
+        }
+        result.insert_at_end(cur.first, cur.second);
+        return result;
     }
 }
 
@@ -86,19 +98,17 @@ auto Abs::install_propagators(Propagators & propagators) -> void
 {
     // All four consequence bounds live in a single SimpleDefinition-priority
     // initialiser. The OPB encoding stays free of "Abs" labels for inferences
-    // that aren't definitional; each bound's proof is assembled at search-init
-    // time as PB resolution steps over the encoding's two half-reified halves
-    // and the relevant `v_ge_X` flag definitions.
+    // that aren't definitional; each bound's proof is assembled via the
+    // shared helpers in abs/justify.hh as PB resolution steps over the
+    // encoding's two half-reified halves.
     //
     // VeriPB's RUP alone cannot derive any of these bounds for non-constant
-    // v1, because it can't case-split on `v1 >= 0 \/ v1 < 0`. Each proof
-    // callback supplies the case split explicitly: resolve a constraint that
-    // holds under `v1 >= 0` with one that holds under `v1 < 0`, leaving the
-    // flag literal the bound is about. The final RUP then closes the
+    // v1, because it can't case-split on `v1 >= 0 \/ v1 < 0`. The helpers
+    // supply the case split explicitly; the final RUP then closes the
     // inference. When v1 IS constant the encoding's relevant half is
-    // unreified, so the proof callback emits nothing and plain RUP suffices.
-    // When v2 is constant we bail out entirely — the propagator will discover
-    // any UNSAT via per-value pruning.
+    // unreified, the helpers short-circuit, and plain RUP suffices. When v2
+    // is constant we bail out -- the propagator's per-value loop will
+    // discover any UNSAT.
     propagators.install_initialiser(
         [v1 = _v1, v2 = _v2,
             abs_nonneg_le = _abs_nonneg_lines.first,
@@ -109,131 +119,177 @@ auto Abs::install_propagators(Propagators & propagators) -> void
             if (holds_alternative<ConstantIntegerVariableID>(v2))
                 return;
 
-            auto v1_is_constant = holds_alternative<ConstantIntegerVariableID>(v1);
-
-            // Bound 1: v2 >= 0. One resolution suffices — the v1 < 0 branch
-            // (v2 = -v1 > 0) is short enough for VeriPB to chase through the
-            // encoding once the v1 >= 0 branch is in the database.
-            //   resolve(v1_ge0 part 1, Abs non-negative ≥ half, v2 < 0 part 2)
-            //   → v2_ge0 ∨ ~v1_ge0.
             inference.infer(logger, v2 >= 0_i,
                 JustifyExplicitlyThenRUP{
-                    [logger, v1, v2, v1_is_constant, abs_nonneg_ge](const ReasonFunction &) -> void {
-                        if (v1_is_constant)
-                            return;
-                        auto & ids = logger->names_and_ids_tracker();
-                        auto v1_ge0 = std::get<ProofLine>(ids.need_pol_item_defining_literal(v1 >= 0_i));
-                        auto v2_lt0 = std::get<ProofLine>(ids.need_pol_item_defining_literal(v2 < 0_i));
-                        emit_resolution(logger, v1_ge0, *abs_nonneg_ge, v2_lt0);
+                    [logger, v1, v2, abs_nonneg_ge](const ReasonFunction &) -> void {
+                        justify_abs_v2_ge_zero(*logger, v1, v2, *abs_nonneg_ge);
                     }},
                 ReasonFunction{});
 
             auto v2_ub = state.upper_bound(v2);
 
-            // Bound 2: v1 <= ub(v2). Both case-split halves explicit (wider /
-            // asymmetric domains stretch VeriPB's bit-level RUP). Skip if
-            // ub(v2) < 0 — the v1_ge_(ub(v2)+1) flag would collide with
-            // v1_ge0 / become vacuous; the propagator detects UNSAT directly.
-            //   v1 >= 0: resolve(Abs nonneg ≥, v2 ≤ ub(v2), v1_ge_(ub(v2)+1) part 1)
-            //            → ~v1_ge_(ub(v2)+1) ∨ ~v1_ge0.
-            //   v1 < 0 : resolve(v1_ge_(ub(v2)+1) part 1, v1_ge0 part 2)
-            //            → ~v1_ge_(ub(v2)+1) ∨ v1_ge0. (Trivial.)
+            // Skip when ub(v2) < 0 -- the v1_ge_(ub(v2)+1) flag would
+            // collide with v1_ge0 / become vacuous; the propagator detects
+            // UNSAT directly.
             if (v2_ub >= 0_i) {
                 inference.infer(logger, v1 < v2_ub + 1_i,
                     JustifyExplicitlyThenRUP{
-                        [logger, v1, v2, v2_ub, v1_is_constant, abs_nonneg_ge](const ReasonFunction &) -> void {
-                            if (v1_is_constant)
-                                return;
-                            auto & ids = logger->names_and_ids_tracker();
-                            auto v1_ge_bound_plus_1 = std::get<ProofLine>(
-                                ids.need_pol_item_defining_literal(v1 >= v2_ub + 1_i));
-                            auto v2_upper = logger->emit_rup_proof_line(
-                                WPBSum{} + 1_i * v2 <= v2_ub, ProofLevel::Temporary);
-                            emit_resolution(logger, *abs_nonneg_ge, v2_upper, v1_ge_bound_plus_1);
-
-                            auto v1_lt0 = std::get<ProofLine>(ids.need_pol_item_defining_literal(v1 < 0_i));
-                            emit_resolution(logger, v1_ge_bound_plus_1, v1_lt0);
+                        [logger, v1, v2, v2_ub, abs_nonneg_ge](const ReasonFunction & r) -> void {
+                            justify_abs_v1_le_v2_ub(*logger, v1, v2, v2_ub, *abs_nonneg_ge, r);
                         }},
                     ReasonFunction{});
             }
 
-            // Bound 3: v1 >= -ub(v2). Mirror of bound 2 on the "Abs negative"
-            // side. Skip if ub(v2) <= 0 (same flag-collision concern).
-            //   v1 < 0 : resolve(Abs neg ≥, v2 ≤ ub(v2), v1_ge_(-ub(v2)) part 2)
-            //            → v1_ge_(-ub(v2)) ∨ v1_ge0.
-            //   v1 >= 0: resolve(v1_ge0 part 1, v1_ge_(-ub(v2)) part 2)
-            //            → v1_ge_(-ub(v2)) ∨ ~v1_ge0. (Trivial.)
+            // Symmetric flag-collision concern: skip when ub(v2) <= 0.
             if (v2_ub > 0_i) {
                 inference.infer(logger, v1 >= -v2_ub,
                     JustifyExplicitlyThenRUP{
-                        [logger, v1, v2, v2_ub, v1_is_constant, abs_neg_ge](const ReasonFunction &) -> void {
-                            if (v1_is_constant)
-                                return;
-                            auto & ids = logger->names_and_ids_tracker();
-                            auto v1_lt_neg_bound = std::get<ProofLine>(
-                                ids.need_pol_item_defining_literal(v1 < -v2_ub));
-                            auto v2_upper = logger->emit_rup_proof_line(
-                                WPBSum{} + 1_i * v2 <= v2_ub, ProofLevel::Temporary);
-                            emit_resolution(logger, *abs_neg_ge, v2_upper, v1_lt_neg_bound);
-
-                            auto v1_ge0 = std::get<ProofLine>(ids.need_pol_item_defining_literal(v1 >= 0_i));
-                            emit_resolution(logger, v1_ge0, v1_lt_neg_bound);
+                        [logger, v1, v2, v2_ub, abs_neg_ge](const ReasonFunction & r) -> void {
+                            justify_abs_v1_ge_neg_v2_ub(*logger, v1, v2, v2_ub, *abs_neg_ge, r);
                         }},
                     ReasonFunction{});
             }
 
-            // Bound 4: v2 <= max(ub(v1), -lb(v1)) = M. Mirror of bound 1 on
-            // the "<=" side, needing both case-split halves explicit.
-            //   v1 >= 0: resolve(Abs nonneg ≤, v1 ≤ ub(v1), v2_ge_(M+1) part 1)
-            //            → ~v2_ge_(M+1) ∨ ~v1_ge0.
-            //   v1 < 0 : resolve(Abs neg ≤, -v1 ≤ -lb(v1), v2_ge_(M+1) part 1)
-            //            → ~v2_ge_(M+1) ∨ v1_ge0.
             auto [v1_lb, v1_ub] = state.bounds(v1);
-            auto bound4 = max(v1_ub, -v1_lb);
-            inference.infer(logger, v2 < bound4 + 1_i,
+            auto big_m = max(v1_ub, -v1_lb);
+            inference.infer(logger, v2 < big_m + 1_i,
                 JustifyExplicitlyThenRUP{
-                    [logger, v1, v2, v1_lb, v1_ub, bound4, v1_is_constant, abs_nonneg_le, abs_neg_le](
-                        const ReasonFunction &) -> void {
-                        if (v1_is_constant)
-                            return;
-                        auto & ids = logger->names_and_ids_tracker();
-                        auto v2_ge_M_plus_1 = std::get<ProofLine>(
-                            ids.need_pol_item_defining_literal(v2 >= bound4 + 1_i));
-
-                        auto v1_upper = logger->emit_rup_proof_line(
-                            WPBSum{} + 1_i * v1 <= v1_ub, ProofLevel::Temporary);
-                        emit_resolution(logger, *abs_nonneg_le, v1_upper, v2_ge_M_plus_1);
-
-                        auto v1_lower = logger->emit_rup_proof_line(
-                            WPBSum{} + -1_i * v1 <= -v1_lb, ProofLevel::Temporary);
-                        emit_resolution(logger, *abs_neg_le, v1_lower, v2_ge_M_plus_1);
+                    [logger, v1, v2, v1_lb, v1_ub, big_m, abs_nonneg_le, abs_neg_le](const ReasonFunction & r) -> void {
+                        justify_abs_v2_le_big_m(*logger, v1, v2, v1_lb, v1_ub, big_m, *abs_nonneg_le, *abs_neg_le, r);
                     }},
                 ReasonFunction{});
         },
         InitialiserPriority::SimpleDefinition);
 
-    // _v2 = abs(_v1)
+    // Propagator: v2 = abs(v1). Reasons over v1's image (under abs) and
+    // v2's preimage. Contiguous-domain cases collapse to a handful of bound
+    // updates with O(1) proof lines; interior holes still need per-value
+    // pruning, but the iteration is over gaps, not values.
     Triggers triggers{.on_change = {_v1, _v2}};
-    propagators.install([v1 = _v1, v2 = _v2](
-                            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-        // remove from v1 any value whose absolute value isn't in v2's domain.
-        for (const auto & val : state.each_value_mutable(v1))
-            if (! state.in_domain(v2, abs(val))) {
-                inference.infer_not_equal(logger, v1, val, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{v2 != abs(val)}; }});
+    propagators.install(
+        [v1 = _v1, v2 = _v2,
+            abs_nonneg_le = _abs_nonneg_lines.first,
+            abs_nonneg_ge = _abs_nonneg_lines.second,
+            abs_neg_le = _abs_neg_lines.first,
+            abs_neg_ge = _abs_neg_lines.second](
+            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            auto v1_set = state.copy_of_values(v1);
+            auto v2_set = state.copy_of_values(v2);
+            auto [v1_lb, v1_ub] = state.bounds(v1);
+            auto [v2_lb, v2_ub] = state.bounds(v2);
+            auto v2_is_constant = holds_alternative<ConstantIntegerVariableID>(v2);
+
+            // Direction v1 -> v2: tighten v2 from the image of v1. Skipped
+            // when v2 is constant -- the proof helpers need v2's order-encoding
+            // flags, which don't exist for constants; per-value pruning below
+            // detects any UNSAT directly.
+            //
+            // image_ub = max(|v1_lb|, v1_ub). image_lb = lb(v1) when v1 is
+            // entirely positive, -ub(v1) when entirely negative, and 0
+            // otherwise (already established by the initialiser).
+            if (! v2_is_constant) {
+                auto image_ub = max(-v1_lb, v1_ub);
+                if (image_ub < v2_ub) {
+                    inference.infer_less_than(logger, v2, image_ub + 1_i,
+                        JustifyExplicitlyThenRUP{
+                            [logger, v1, v2, v1_lb, v1_ub, image_ub, abs_nonneg_le, abs_neg_le](const ReasonFunction & r) -> void {
+                                justify_abs_v2_le_big_m(*logger, v1, v2, v1_lb, v1_ub, image_ub, *abs_nonneg_le, *abs_neg_le, r);
+                            }},
+                        ReasonFunction{[v1, v1_lb, v1_ub]() { return Reason{{v1 >= v1_lb, v1 < v1_ub + 1_i}}; }});
+                }
+
+                if (v1_lb >= 1_i && v1_lb > v2_lb) {
+                    inference.infer_greater_than_or_equal(logger, v2, v1_lb,
+                        JustifyExplicitlyThenRUP{
+                            [logger, v1, v2, v1_lb, abs_nonneg_ge](const ReasonFunction & r) -> void {
+                                justify_abs_v2_lb(*logger, v1, v2, AbsLbSide::Nonneg, v1_lb, *abs_nonneg_ge, r);
+                            }},
+                        ReasonFunction{[v1, v1_lb]() { return Reason{v1 >= v1_lb}; }});
+                }
+                else if (v1_ub <= -1_i && -v1_ub > v2_lb) {
+                    inference.infer_greater_than_or_equal(logger, v2, -v1_ub,
+                        JustifyExplicitlyThenRUP{
+                            [logger, v1, v2, v1_ub, abs_neg_ge](const ReasonFunction & r) -> void {
+                                justify_abs_v2_lb(*logger, v1, v2, AbsLbSide::Nonpos, -v1_ub, *abs_neg_ge, r);
+                            }},
+                        ReasonFunction{[v1, v1_ub]() { return Reason{v1 < v1_ub + 1_i}; }});
+                }
             }
 
-        // now remove from v2 any value whose +/-value isn't in v1's domain.
-        for (const auto & val : state.each_value_mutable(v2)) {
-            if (! state.in_domain(v1, val) && ! state.in_domain(v1, -val) && state.in_domain(v2, val)) {
-                auto just = [v1, v2, val, logger](const ReasonFunction & reason) {
-                    justify_abs_hole(*logger, reason, v1, v2, val);
-                };
-                inference.infer_not_equal(logger, v2, val, JustifyExplicitlyThenRUP{just}, ReasonFunction{[=]() { return Reason{{v1 != val, v1 != -val}}; }});
+            // Direction v2 -> v1: tighten v1 from the preimage of v2.
+            if (v2_ub < v1_ub) {
+                inference.infer_less_than(logger, v1, v2_ub + 1_i,
+                    JustifyExplicitlyThenRUP{
+                        [logger, v1, v2, v2_ub, abs_nonneg_ge](const ReasonFunction & r) -> void {
+                            justify_abs_v1_le_v2_ub(*logger, v1, v2, v2_ub, *abs_nonneg_ge, r);
+                        }},
+                    ReasonFunction{[v2, v2_ub]() { return Reason{v2 < v2_ub + 1_i}; }});
             }
-        }
+            if (-v2_ub > v1_lb) {
+                inference.infer_greater_than_or_equal(logger, v1, -v2_ub,
+                    JustifyExplicitlyThenRUP{
+                        [logger, v1, v2, v2_ub, abs_neg_ge](const ReasonFunction & r) -> void {
+                            justify_abs_v1_ge_neg_v2_ub(*logger, v1, v2, v2_ub, *abs_neg_ge, r);
+                        }},
+                    ReasonFunction{[v2, v2_ub]() { return Reason{v2 < v2_ub + 1_i}; }});
+            }
 
-        return PropagatorState::Enable;
-    },
+            // Interior pruning: remove values in v2 with no preimage in v1,
+            // and values in v1 whose abs is not in v2. Walk gaps via
+            // each_interval_minus, then per-value within the now-tightened
+            // bounds.
+
+            vector<pair<Integer, Integer>> image_pieces;
+            for (auto [a, b] : v1_set.each_interval()) {
+                if (a >= 0_i)
+                    image_pieces.emplace_back(a, b);
+                else if (b < 0_i)
+                    image_pieces.emplace_back(-b, -a);
+                else
+                    image_pieces.emplace_back(0_i, max(-a, b));
+            }
+            auto image_set = pieces_to_set(image_pieces);
+
+            auto [post_v2_lb, post_v2_ub] = state.bounds(v2);
+            for (auto [lo, hi] : v2_set.each_interval_minus(image_set)) {
+                auto clipped_lo = max(lo, post_v2_lb);
+                auto clipped_hi = min(hi, post_v2_ub);
+                for (Integer val = clipped_lo; val <= clipped_hi; ++val) {
+                    if (! state.in_domain(v2, val))
+                        continue;
+                    inference.infer_not_equal(logger, v2, val,
+                        JustifyExplicitlyThenRUP{[logger, v1, v2, val](const ReasonFunction & r) {
+                            justify_abs_hole(*logger, r, v1, v2, val);
+                        }},
+                        ReasonFunction{[v1, val]() { return Reason{{v1 != val, v1 != -val}}; }});
+                }
+            }
+
+            vector<pair<Integer, Integer>> preimage_pieces;
+            for (auto [a, b] : v2_set.each_interval()) {
+                if (a == 0_i)
+                    preimage_pieces.emplace_back(-b, b);
+                else {
+                    preimage_pieces.emplace_back(-b, -a);
+                    preimage_pieces.emplace_back(a, b);
+                }
+            }
+            auto preimage_set = pieces_to_set(preimage_pieces);
+
+            auto [post_v1_lb, post_v1_ub] = state.bounds(v1);
+            for (auto [lo, hi] : v1_set.each_interval_minus(preimage_set)) {
+                auto clipped_lo = max(lo, post_v1_lb);
+                auto clipped_hi = min(hi, post_v1_ub);
+                for (Integer val = clipped_lo; val <= clipped_hi; ++val) {
+                    if (! state.in_domain(v1, val))
+                        continue;
+                    inference.infer_not_equal(logger, v1, val, JustifyUsingRUP{},
+                        ReasonFunction{[v2, val]() { return Reason{v2 != abs(val)}; }});
+                }
+            }
+
+            return PropagatorState::Enable;
+        },
         triggers);
 }
 
