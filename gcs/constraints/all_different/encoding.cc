@@ -8,14 +8,16 @@
 
 using std::map;
 using std::move;
+using std::optional;
+using std::pair;
 using std::vector;
 
 using namespace gcs;
 using namespace gcs::innards;
 
-auto gcs::innards::define_clique_not_equals_encoding(ProofModel & model, const vector<gcs::IntegerVariableID> & vars) -> map<IntegerVariableID, ProofFlag>
+auto gcs::innards::define_clique_not_equals_encoding(ProofModel & model, const vector<gcs::IntegerVariableID> & vars) -> optional<pair<IntegerVariableID, ProofFlag>>
 {
-    map<IntegerVariableID, ProofFlag> duplicate_selectors;
+    optional<pair<IntegerVariableID, ProofFlag>> duplicate_witness;
 
     for (unsigned i = 0; i < vars.size(); ++i)
         for (unsigned j = i + 1; j < vars.size(); ++j) {
@@ -23,22 +25,22 @@ auto gcs::innards::define_clique_not_equals_encoding(ProofModel & model, const v
             model.add_constraint("AllDifferent", "not equals because lower", WPBSum{} + 1_i * vars[i] + -1_i * vars[j] <= -1_i, HalfReifyOnConjunctionOf{selector});
             model.add_constraint("AllDifferent", "not equals because higher", WPBSum{} + -1_i * vars[i] + 1_i * vars[j] <= -1_i, HalfReifyOnConjunctionOf{! selector});
 
-            if (vars[i] == vars[j])
-                duplicate_selectors.insert_or_assign(vars[i], selector);
+            if (vars[i] == vars[j] && ! duplicate_witness)
+                duplicate_witness = pair{vars[i], selector};
         }
 
-    return duplicate_selectors;
+    return duplicate_witness;
 }
 
 auto gcs::innards::install_clique_duplicate_contradiction_initialiser(
     Propagators & propagators,
-    map<IntegerVariableID, ProofFlag> duplicate_selectors) -> void
+    optional<pair<IntegerVariableID, ProofFlag>> duplicate_witness) -> void
 {
     propagators.install_initialiser(
-        [duplicate_selectors = move(duplicate_selectors)](
+        [duplicate_witness = move(duplicate_witness)](
             State &, auto & inference, ProofLogger * const logger) -> void {
-            if (logger && ! duplicate_selectors.empty()) {
-                auto & [_, selector] = *duplicate_selectors.begin();
+            if (logger && duplicate_witness) {
+                const auto & selector = duplicate_witness->second;
                 inference.contradiction(logger,
                     JustifyExplicitlyThenRUP{
                         [logger, selector](const ReasonFunction &) -> void {
