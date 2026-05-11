@@ -156,11 +156,11 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state, Proof
 {
     // Can't have negative values
     for (const auto & s : _succ)
-        propagators.trim_lower_bound(initial_state, model, s, 0_i, "Circuit");
+        propagators.define_bound(initial_state, model, s, Bound::Lower, 0_i, "Circuit", "successor index range");
 
     // Can't have too-large values
     for (const auto & s : _succ)
-        propagators.trim_upper_bound(initial_state, model, s, Integer(static_cast<long long>(_succ.size() - 1)), "Circuit");
+        propagators.define_bound(initial_state, model, s, Bound::Upper, Integer(static_cast<long long>(_succ.size() - 1)), "Circuit", "successor index range");
 
     // Define all different, either gac or non-gac
     if (_gac_all_different) {

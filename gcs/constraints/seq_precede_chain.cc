@@ -1,11 +1,8 @@
 #include <gcs/constraints/seq_precede_chain.hh>
 #include <gcs/constraints/value_precede.hh>
-#include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
-#include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
-#include <gcs/innards/reason.hh>
 #include <gcs/innards/state.hh>
 
 #include <version>
@@ -71,26 +68,9 @@ auto SeqPrecedeChain::install(Propagators & propagators, State & initial_state, 
     // bound is justified by the meta-argument that any value v requires
     // v distinct earlier positions to host 1..v-1, so v ≤ n.
     if (max_upper > effective_max) {
-        if (optional_model) {
-            for (const auto & v : _vars) {
-                if (initial_state.upper_bound(v) > effective_max) {
-                    optional_model->add_constraint(
-                        "SeqPrecedeChain", "value bound",
-                        WPBSum{} + 1_i * v <= effective_max);
-                }
-            }
-        }
-
-        propagators.install_initialiser(
-            [vars = _vars, effective_max](
-                const State & state, auto & inference, ProofLogger * const logger) -> void {
-                for (const auto & v : vars) {
-                    if (state.upper_bound(v) > effective_max) {
-                        inference.infer(logger, v < effective_max + 1_i,
-                            JustifyUsingRUP{}, generic_reason(state, vector<IntegerVariableID>{v}));
-                    }
-                }
-            });
+        for (const auto & v : _vars)
+            propagators.define_bound(initial_state, optional_model, v, Bound::Upper, effective_max,
+                "SeqPrecedeChain", "value bound");
     }
 
     if (effective_max < 2_i)

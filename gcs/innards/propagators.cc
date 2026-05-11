@@ -22,7 +22,6 @@ using std::optional;
 using std::pair;
 using std::string;
 using std::swap;
-using std::to_string;
 using std::to_underlying;
 using std::vector;
 using std::visit;
@@ -63,44 +62,30 @@ Propagators::Propagators(Propagators &&) = default;
 
 auto Propagators::operator=(Propagators &&) -> Propagators & = default;
 
-auto Propagators::model_contradiction(const State &, ProofModel * const optional_model, const string & explain_yourself) -> void
+auto Propagators::define_bound(const State & state, ProofModel * const optional_model,
+    IntegerVariableID var, Bound which, Integer val,
+    const StringLiteral & constraint_name, const StringLiteral & sub_rule) -> void
 {
-    if (optional_model)
-        optional_model->add_constraint({});
-
-    install([explain_yourself = explain_yourself](const State &, auto & inference, ProofLogger * const logger) -> PropagatorState {
-        inference.contradiction(logger, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{}; }});
-    },
-        Triggers{});
-}
-
-auto Propagators::trim_lower_bound(const State & state, ProofModel * const optional_model, IntegerVariableID var, Integer val, const string & x) -> void
-{
-    if (state.lower_bound(var) < val) {
-        if (state.upper_bound(var) >= val) {
-            if (optional_model)
-                optional_model->add_constraint({var >= val});
-            install_initialiser([var, val](const State &, auto & inference, ProofLogger * const logger) {
-                inference.infer(logger, var >= val, JustifyUsingRUP{}, ReasonFunction{});
-            });
-        }
-        else
-            model_contradiction(state, optional_model, "Trimmed lower bound of " + debug_string(var) + " due to " + x + " is outside its domain");
-    }
-}
-
-auto Propagators::trim_upper_bound(const State & state, ProofModel * const optional_model, IntegerVariableID var, Integer val, const string & x) -> void
-{
-    if (state.upper_bound(var) > val) {
-        if (state.lower_bound(var) <= val) {
-            if (optional_model)
-                optional_model->add_constraint({var < val + 1_i});
-            install_initialiser([var, val](const State &, auto & inference, ProofLogger * const logger) {
-                inference.infer(logger, var < val + 1_i, JustifyUsingRUP{}, ReasonFunction{});
-            });
-        }
-        else
-            model_contradiction(state, optional_model, "Trimmed upper bound of " + debug_string(var) + " due to " + x + " is outside its domain");
+    switch (which) {
+        using enum Bound;
+    case Lower:
+        if (state.lower_bound(var) >= val)
+            return;
+        if (optional_model)
+            optional_model->add_constraint(constraint_name, sub_rule, WPBSum{} + 1_i * var >= val);
+        install_initialiser([var, val](const State &, auto & inference, ProofLogger * const logger) {
+            inference.infer(logger, var >= val, JustifyUsingRUP{}, ReasonFunction{});
+        });
+        return;
+    case Upper:
+        if (state.upper_bound(var) <= val)
+            return;
+        if (optional_model)
+            optional_model->add_constraint(constraint_name, sub_rule, WPBSum{} + 1_i * var <= val);
+        install_initialiser([var, val](const State &, auto & inference, ProofLogger * const logger) {
+            inference.infer(logger, var < val + 1_i, JustifyUsingRUP{}, ReasonFunction{});
+        });
+        return;
     }
 }
 
@@ -175,9 +160,8 @@ auto Propagators::propagate(const optional<Literal> & lit, State & state, ProofL
     };
 
     if (! lit) {
-        // filthy hack: to make trim_lower_bound etc work, on the first pass, we need to
-        // guarantee that we're running propagators in numerical order, except our queue
-        // runs backwards so we need to put them in backwards.
+        // On the first pass, walk propagators in registration order. Our queue runs
+        // backwards, so push them in reverse.
         _imp->queue.resize(_imp->propagation_functions.size());
         _imp->lookup.resize(_imp->propagation_functions.size());
         unsigned p = 0;
