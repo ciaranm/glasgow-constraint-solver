@@ -159,16 +159,14 @@ auto Problem::create_state_for_new_search(
 auto Problem::post(const Constraint & c) -> void
 {
     auto cloned = c.clone();
-    if (std::holds_alternative<CurrentlyUnnamedConstraint>(cloned->name()))
-        cloned->set_name(NumberedConstraint{++_imp->next_constraint_number});
+    cloned->set_name(NumberedConstraint{++_imp->next_constraint_number});
     _imp->constraints.push_back(std::move(cloned));
 }
 
 auto Problem::post(const Constraint & c, const string & name) -> void
 {
     auto cloned = c.clone();
-    if (std::holds_alternative<CurrentlyUnnamedConstraint>(cloned->name()))
-        cloned->set_name(NamedConstraint{name});
+    cloned->set_name(NamedConstraint{check_name(name)}); 
     _imp->constraints.push_back(std::move(cloned));
 }
 
@@ -177,9 +175,19 @@ auto Problem::post(SumLessThanEqual<Weighted<IntegerVariableID>> expr) -> void
     post(LinearLessThanEqual(move(expr.lhs), expr.rhs));
 }
 
+auto Problem::post(SumLessThanEqual<Weighted<IntegerVariableID>> expr, const string & name) -> void
+{
+    post(LinearLessThanEqual(move(expr.lhs), expr.rhs), name);
+}
+
 auto Problem::post(SumEquals<Weighted<IntegerVariableID>> expr) -> void
 {
     post(LinearEquality(move(expr.lhs), expr.rhs));
+}
+
+auto Problem::post(SumEquals<Weighted<IntegerVariableID>> expr, const string & name) -> void
+{
+    post(LinearEquality(move(expr.lhs), expr.rhs), name);
 }
 
 auto Problem::add_presolver(const Presolver & p) -> void

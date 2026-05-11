@@ -77,13 +77,14 @@ auto main(int argc, char * argv[]) -> int
     auto y = p.create_integer_variable(0_i, 9_i, "y");
 
     vector<IntegerVariableID> vars{s, e, n, d, m, o, r, y};
-    p.post(AllDifferent{vars});
+    p.post(AllDifferent{vars}, "_money_a_d");
 
     // clang-format off
     p.post(WeightedSum{}
             +                 1000_i * s +  100_i * e +  10_i * n +  1_i * d
             +                 1000_i * m +  100_i * o +  10_i * r +  1_i * e
-            + -10000_i * m + -1000_i * o + -100_i * n + -10_i * e + -1_i * y == 0_i);
+            + -10000_i * m + -1000_i * o + -100_i * n + -10_i * e + -1_i * y
+            == 0_i , "_money_sum");
     // clang-format on
 
     auto stats = solve(
