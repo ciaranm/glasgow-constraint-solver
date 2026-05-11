@@ -155,20 +155,23 @@ auto NDimensionalElement<EntryType_, dimensions_>::install(Propagators & propaga
 template <typename EntryType_, unsigned dimensions_>
 auto NDimensionalElement<EntryType_, dimensions_>::prepare(Propagators & propagators, State & initial_state, ProofModel * const optional_model) -> bool
 {
-    // First pass: any zero-sized dimension means the constraint is unsatisfiable; signal
-    // model contradiction without trimming bounds (which could reference variables we're
-    // about to flag inconsistent).
+    // A zero-sized dimension means there is no valid assignment. Record the
+    // flag so define_proof_model emits a trivially-false `0 ≥ 1` constraint,
+    // and install_propagators installs a contradiction initialiser. Skip
+    // the index-range bound definitions for that dimension — they would
+    // produce a `[start, start - 1]` empty interval whose labels would
+    // misleadingly suggest a normal trim.
     for (const auto & [i, _] : enumerate(_index_vars)) {
         if (0_i == Integer(get_dimension_size<dimensions_>(i, *_array))) {
-            propagators.model_contradiction(initial_state, optional_model, "NDimensionalElement constraint with no values");
-            return false;
+            _has_empty_dim = true;
+            return true;
         }
     }
 
     for (const auto & [i, var] : enumerate(_index_vars)) {
         auto s = Integer(get_dimension_size<dimensions_>(i, *_array));
-        propagators.trim_lower_bound(initial_state, optional_model, var, _index_starts.at(i), "NDimensionalElement");
-        propagators.trim_upper_bound(initial_state, optional_model, var, _index_starts.at(i) + s - 1_i, "NDimensionalElement");
+        propagators.define_bound(initial_state, optional_model, var, Bound::Lower, _index_starts.at(i), "NDimensionalElement", "index range");
+        propagators.define_bound(initial_state, optional_model, var, Bound::Upper, _index_starts.at(i) + s - 1_i, "NDimensionalElement", "index range");
     }
 
     _array_has_nonconstants = any_array_variable_is_nonconstant(initial_state, *_array);
@@ -178,6 +181,15 @@ auto NDimensionalElement<EntryType_, dimensions_>::prepare(Propagators & propaga
 template <typename EntryType_, unsigned dimensions_>
 auto NDimensionalElement<EntryType_, dimensions_>::define_proof_model(ProofModel & model) -> void
 {
+    if (_has_empty_dim) {
+        // No valid assignment: emit a trivially-false constraint so the OPB
+        // file remains self-describing. The encoding's recursion over the
+        // empty dimension would have produced no constraints at all, which
+        // wouldn't capture the unsatisfiability.
+        model.add_constraint("NDimensionalElement", "zero-sized dimension", WPBSum{} >= 1_i);
+        return;
+    }
+
     HalfReifyOnConjunctionOf reif;
     vector<size_t> elem;
 
@@ -205,6 +217,12 @@ auto NDimensionalElement<EntryType_, dimensions_>::define_proof_model(ProofModel
 template <typename EntryType_, unsigned dimensions_>
 auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagators & propagators) -> void
 {
+    if (_has_empty_dim) {
+        propagators.install_initial_contradiction("NDimensionalElement constraint with no values",
+            JustifyUsingRUP{});
+        return;
+    }
+
     auto array_has_nonconstants = _array_has_nonconstants;
 
     vector<IntegerVariableID> all_array_vars;

@@ -41,6 +41,7 @@ namespace gcs
         Array * _array;
         bool _bounds_only;
         bool _array_has_nonconstants = false;
+        bool _has_empty_dim = false;
 
     private:
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;

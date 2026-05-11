@@ -69,19 +69,17 @@ auto Inverse::install(Propagators & propagators, State & initial_state, ProofMod
 
 auto Inverse::prepare(Propagators & propagators, State & initial_state, ProofModel * const optional_model) -> bool
 {
-    if (_x.size() != _y.size()) {
-        propagators.model_contradiction(initial_state, optional_model, "Inverse constraint on different sized arrays");
-        return false;
-    }
+    if (_x.size() != _y.size())
+        throw UnexpectedException{"Inverse constraint on different sized arrays"};
 
     for (const auto & [idx, v] : enumerate(_x)) {
-        propagators.trim_lower_bound(initial_state, optional_model, v, 0_i + _y_start, "Inverse");
-        propagators.trim_upper_bound(initial_state, optional_model, v, Integer(_y.size()) + _y_start - 1_i, "Inverse");
+        propagators.define_bound(initial_state, optional_model, v, Bound::Lower, 0_i + _y_start, "Inverse", "x index range");
+        propagators.define_bound(initial_state, optional_model, v, Bound::Upper, Integer(_y.size()) + _y_start - 1_i, "Inverse", "x index range");
     }
 
     for (const auto & [idx, v] : enumerate(_y)) {
-        propagators.trim_lower_bound(initial_state, optional_model, v, 0_i + _x_start, "Inverse");
-        propagators.trim_upper_bound(initial_state, optional_model, v, Integer(_x.size()) + _x_start - 1_i, "Inverse");
+        propagators.define_bound(initial_state, optional_model, v, Bound::Lower, 0_i + _x_start, "Inverse", "y index range");
+        propagators.define_bound(initial_state, optional_model, v, Bound::Upper, Integer(_x.size()) + _x_start - 1_i, "Inverse", "y index range");
     }
 
     return true;

@@ -7,6 +7,7 @@
 #include <gcs/innards/justification.hh>
 #include <gcs/innards/literal.hh>
 #include <gcs/innards/propagators-fwd.hh>
+#include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/reason.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/problem.hh>
@@ -101,6 +102,18 @@ namespace gcs::innards
     constexpr std::size_t number_of_initialiser_priorities = 3;
 
     /**
+     * \brief Which side of a variable's domain a definitional bound restricts.
+     *
+     * \ingroup Innards
+     * \sa Propagators::define_bound
+     */
+    enum class Bound
+    {
+        Lower,
+        Upper
+    };
+
+    /**
      * \brief Tell Propagators when a Constraint's propagators should be triggered.
      *
      * Every propagator will be called at least once, when search starts.
@@ -160,19 +173,22 @@ namespace gcs::innards
         ///@{
 
         /**
-         * Can be called by a Constraint if it is contradictory by definition.
+         * \brief Define a variable's lower or upper bound as part of a Constraint's
+         * proof model.
+         *
+         * Emits a labelled OPB constraint (\c constraint_name + \c sub_rule),
+         * and installs a SimpleDefinition-priority initialiser that RUPs the
+         * bound into the State at search start. If the bound is already
+         * implied by the variable's existing domain, no OPB constraint is
+         * emitted and no initialiser is installed. If the bound would make
+         * the variable's domain empty, the initialiser raises a
+         * contradiction at search start — the labelled OPB constraint
+         * remains, so the proof reader sees a self-describing reason.
          */
-        auto model_contradiction(const State &, innards::ProofModel * const, const std::string & explain_yourself) -> void;
-
-        /**
-         * Called by a Constraint if a variable's lower bound must, by definition, be at least a value.
-         */
-        auto trim_lower_bound(const State &, innards::ProofModel * const, IntegerVariableID var, Integer val, const std::string & explain_yourself) -> void;
-
-        /**
-         * Called by a Constraint if a variable's upper bound must, by definition, be at least a value.
-         */
-        auto trim_upper_bound(const State &, innards::ProofModel * const, IntegerVariableID var, Integer val, const std::string & explain_yourself) -> void;
+        auto define_bound(const State &, innards::ProofModel * const, IntegerVariableID var,
+            Bound which, Integer val,
+            const innards::StringLiteral & constraint_name,
+            const innards::StringLiteral & sub_rule) -> void;
 
         ///@}
 

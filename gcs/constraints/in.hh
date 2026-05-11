@@ -26,6 +26,7 @@ namespace gcs
         std::vector<IntegerVariableID> _var_vals;
         std::vector<Integer> _val_vals;
         std::vector<innards::ProofFlag> _selectors;
+        bool _has_no_values = false;
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &) -> void override;

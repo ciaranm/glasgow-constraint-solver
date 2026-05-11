@@ -85,7 +85,7 @@ auto In::install(Propagators & propagators, State & initial_state, ProofModel * 
     install_propagators(propagators);
 }
 
-auto In::prepare(Propagators & propagators, State & initial_state, ProofModel * const optional_model) -> bool
+auto In::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
 {
     erase_if(_var_vals, [&](const IntegerVariableID & v) -> bool {
         auto const_val = initial_state.optional_single_value(v);
@@ -98,9 +98,11 @@ auto In::prepare(Propagators & propagators, State & initial_state, ProofModel * 
     _val_vals.erase(unique(_val_vals).begin(), _val_vals.end());
 
     if (_var_vals.empty() && _val_vals.empty()) {
-        propagators.model_contradiction(initial_state, optional_model,
-            "No values or variables present for an 'In' constraint");
-        return false;
+        // No sources means the constraint is UNSAT. The encoding naturally
+        // collapses to `WPBSum{} >= 1_i` (i.e. `0 ≥ 1`), so we let
+        // define_proof_model run unchanged and install a contradiction
+        // initialiser instead of the regular propagator.
+        _has_no_values = true;
     }
 
     return true;
@@ -137,6 +139,13 @@ auto In::define_proof_model(ProofModel & model) -> void
 
 auto In::install_propagators(Propagators & propagators) -> void
 {
+    if (_has_no_values) {
+        propagators.install_initial_contradiction(
+            "No values or variables present for an 'In' constraint",
+            JustifyUsingRUP{});
+        return;
+    }
+
     Triggers triggers;
     triggers.on_change.emplace_back(_var);
     for (const auto & V : _var_vals)

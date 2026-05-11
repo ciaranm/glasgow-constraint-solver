@@ -90,8 +90,8 @@ auto SymmetricAllDifferent::prepare(Propagators & propagators, State & initial_s
     }
 
     for (const auto & v : _vars) {
-        propagators.trim_lower_bound(initial_state, optional_model, v, _start, "SymmetricAllDifferent");
-        propagators.trim_upper_bound(initial_state, optional_model, v, _start + Integer(n) - 1_i, "SymmetricAllDifferent");
+        propagators.define_bound(initial_state, optional_model, v, Bound::Lower, _start, "SymmetricAllDifferent", "value range");
+        propagators.define_bound(initial_state, optional_model, v, Bound::Upper, _start + Integer(n) - 1_i, "SymmetricAllDifferent", "value range");
     }
 
     return true;
