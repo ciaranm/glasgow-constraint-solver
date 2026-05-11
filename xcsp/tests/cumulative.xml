@@ -1,0 +1,15 @@
+<instance format="XCSP3" type="CSP">
+    <variables>
+        <var id="s1"> 0..3 </var>
+        <var id="s2"> 0..3 </var>
+        <var id="s3"> 0..3 </var>
+    </variables>
+    <constraints>
+        <cumulative>
+            <origins> s1 s2 s3 </origins>
+            <lengths> 2 2 1 </lengths>
+            <heights> 1 1 1 </heights>
+            <condition> (le, 2) </condition>
+        </cumulative>
+    </constraints>
+</instance>

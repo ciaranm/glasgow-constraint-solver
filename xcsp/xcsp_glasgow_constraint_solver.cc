@@ -496,10 +496,21 @@ namespace
             report_unsupported("noOverlap", "no Disjunctive2D propagator yet (#146)");
         }
 
-        auto buildConstraintCumulative(string, vector<XVariable *> &,
-            vector<int> &, vector<int> &, XCondition &) -> void override
+        auto buildConstraintCumulative(string, vector<XVariable *> & origins,
+            vector<int> & lengths, vector<int> & heights, XCondition & cond) -> void override
         {
-            report_unsupported("cumulative", "no Cumulative propagator yet (#147)");
+            if (cond.op != OrderType::LE)
+                report_unsupported("cumulative", "only `le` condition is supported in this basic case (#147)");
+            if (cond.operandType != OperandType::INTEGER)
+                report_unsupported("cumulative", "only integer-constant capacity is supported in this basic case (#147)");
+
+            auto starts = need_variables(origins);
+            vector<Integer> lengths_i, heights_i;
+            for (auto l : lengths)
+                lengths_i.push_back(Integer{l});
+            for (auto h : heights)
+                heights_i.push_back(Integer{h});
+            _problem.post(Cumulative{starts, lengths_i, heights_i, Integer{cond.val}});
         }
 
         auto buildConstraintCumulative(string, vector<XVariable *> &,
