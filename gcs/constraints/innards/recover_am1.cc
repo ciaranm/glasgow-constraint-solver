@@ -51,7 +51,18 @@ template <typename Literal_>
         }
     }
 
-    auto temporary_proof_level = logger.temporary_proof_level();
+    // pair_ne callbacks typically emit intermediate proof lines at Temporary
+    // level. When the caller wants the result at Top, we push an inner
+    // temporary scope so those intermediates are cleaned up on return,
+    // leaving only the result line. When the caller wants the result at
+    // Temporary or Current, pushing an inner scope would also delete the
+    // result line on forget — so in that case we skip the inner scope and
+    // let the intermediates share the caller's scope (they'll be cleaned
+    // up together when the caller's scope ends).
+    bool use_inner_scope = (level == ProofLevel::Top);
+    int inner_scope = 0;
+    if (use_inner_scope)
+        inner_scope = logger.temporary_proof_level();
 
     stringstream am1;
     for (unsigned i1 = 1; i1 < atoms.size(); ++i1) {
@@ -74,9 +85,15 @@ template <typename Literal_>
     }
     am1 << ';';
     auto result = logger.emit_proof_line(am1.str(), level);
-    logger.forget_proof_level(temporary_proof_level);
+
+    if (use_inner_scope)
+        logger.forget_proof_level(inner_scope);
+
     return result;
 }
 
 template auto gcs::innards::recover_am1<IntegerVariableCondition>(
     ProofLogger &, ProofLevel, const vector<IntegerVariableCondition> &, const function<auto(const IntegerVariableCondition &, const IntegerVariableCondition &)->ProofLine> &) -> ProofLine;
+
+template auto gcs::innards::recover_am1<ProofFlag>(
+    ProofLogger &, ProofLevel, const vector<ProofFlag> &, const function<auto(const ProofFlag &, const ProofFlag &)->ProofLine> &) -> ProofLine;
