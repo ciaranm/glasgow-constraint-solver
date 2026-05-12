@@ -5,7 +5,6 @@
 #include <gcs/innards/propagators-fwd.hh>
 #include <gcs/innards/state-fwd.hh>
 
-#include <format>
 #include <memory>
 #include <string>
 #include <variant>
@@ -92,6 +91,7 @@ namespace gcs
 
 // The following is needed to allow ConstraintName to be used in format strings.
 #if defined(__cpp_lib_format)
+#include <format>
 template <>
 struct std::formatter<gcs::ConstraintName> : std::formatter<std::string>
 {
@@ -101,6 +101,7 @@ struct std::formatter<gcs::ConstraintName> : std::formatter<std::string>
     }
 };
 #else
+#include <fmt/format.h>
 template <>
 struct fmt::formatter<gcs::ConstraintName> : fmt::formatter<std::string>
 {
