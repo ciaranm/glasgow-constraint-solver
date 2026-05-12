@@ -47,7 +47,7 @@ equivalent for that frontend's vocabulary).
 | maximum / minimum (constraint) | `ArrayMax` / `ArrayMin` | ✓ | ✓ (basic with `XCondition`; indexed form pending) | ? |
 | element | `Element` / `Element2D` | ✓ | ✓ (1D vector and constant-list; 2D matrix variable + constant) | ? |
 | channel (inverse) | `Inverse` | ✓ | ✓ (1- and 2-list inverse; one-to-many form `s UNSUPPORTED`) | ? |
-| noOverlap (Disjunctive) | solver gap (#146) | ? | solver gap (#146) | ? |
+| noOverlap (Disjunctive) | `Disjunctive` (basic case)[^disj] | ✓ (basic case) | ✓ (basic case) | ? |
 | cumulative | `Cumulative` (basic case)[^cum] | ✓ (basic case) | ✓ (basic case) | ? |
 | binPacking | solver gap (#148) | ? | solver gap (#148) | ? |
 | knapsack | `Knapsack` | ✓ | ✓ (basic with two `XCondition`s; not yet exercised by a test) | ? |
@@ -77,12 +77,14 @@ addressed.
 
 ## Solver gaps tracked elsewhere
 
-- [#146](https://github.com/ciaranm/glasgow-constraint-solver/issues/146) — `Disjunctive` (covers XCSP3 `noOverlap`, MiniZinc `fzn_disjunctive`)
+- [#146](https://github.com/ciaranm/glasgow-constraint-solver/issues/146) — `Disjunctive`: basic case shipped (variable starts, constant lengths, both strict and non-strict). Variable lengths, 2D / k-D `Disjunctive2D`, and optional-task variants are open follow-ups under the same issue.
 - [#147](https://github.com/ciaranm/glasgow-constraint-solver/issues/147) — `Cumulative`: basic-case shipped (constant lengths, heights, capacity; only the `(le, int)` XCSP3 condition; variable starts only; checker-only propagation). Variable d/r/b, edge-finding, and proof logging for stronger propagation are open follow-ups under the same issue.
 - [#148](https://github.com/ciaranm/glasgow-constraint-solver/issues/148) — `BinPacking`
 - [#149](https://github.com/ciaranm/glasgow-constraint-solver/issues/149) — `MDD`
 
 [^cum]: Stage-1 envelope: variable origins, constant lengths/heights/capacity. Propagator is a pure feasibility checker (fires only when every start is fixed). Outside this envelope: MiniZinc lets the stdlib decomposition apply; XCSP3 raises an unsupported error.
+
+[^disj]: Stage-1 envelope: variable starts, constant lengths, with strict/non-strict zero-length semantics resolved at construction. Time-table propagation specialised to heights=1, capacity=1; fully proof-logged via the declarative pairwise OPB encoding plus a propagator-introduced bridge ([`disjunctive-proof-logging.md`](disjunctive-proof-logging.md)). Outside the envelope (variable lengths, 2D/k-D, optional tasks): MiniZinc errors at flattening via `fix()`; XCSP3 raises an unsupported error.
 
 ## Related documents
 

@@ -49,6 +49,14 @@ library. For an introduction to *using* the solver, start with the top-level
   in `constraints.md`; this doc spells them out for one concrete propagator
   and flags the bits that should carry across to `Disjunctive` and
   `BinPacking`.
+- [Proof logging for `Disjunctive`](disjunctive-proof-logging.md) — companion
+  to the cumulative writeup, focused on the new bridge pattern:
+  keeping the OPB encoding declarative (pairwise non-overlap clauses
+  only) and emitting the time-indexed `before` / `after` / `active`
+  flags as proof scaffolding via `install_initialiser`. Covers the
+  `recover_am1`-based pairwise at-most-one derivation that replaces
+  cumulative's encoded `C_t`, and the third reusable proof-logging
+  idea that comes out of the design.
 
 More documents will be added here as we build up coverage of other parts of
 the codebase.

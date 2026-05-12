@@ -260,6 +260,19 @@ Both ideas are likely to apply to `Disjunctive` (#146) and
 `BinPacking` (#148) when those land — see
 [`frontend-support-matrix.md`](frontend-support-matrix.md).
 
+`Disjunctive` has landed and added a third:
+
+3. **Declarative OPB encoding with a propagator-introduced bridge.**
+   The OPB carries only the constraint's spec-faithful definition;
+   the time-indexed reifications the propagator needs for time-table
+   reasoning are emitted as proof scaffolding by an
+   `install_initialiser` and shared with the propagator via a
+   `shared_ptr` map.
+
+See [`disjunctive-proof-logging.md`](disjunctive-proof-logging.md)
+for the bridge mechanics, the at-most-one derivation, and how the
+three patterns compose in the `h = 1`, `c = 1` specialisation.
+
 ## Open follow-ups
 
 - **Variable lengths / heights / capacity.** Out of scope for stage 1.
