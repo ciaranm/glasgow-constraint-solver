@@ -652,6 +652,13 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
             // task sits strictly inside a fixed positive-length task's open
             // active interval. (Non-strict mode never sees zero-length tasks
             // in active_tasks — they were dropped at prepare() time.)
+            //
+            // The proof is JustifyUsingRUP: at the all-fixed leaf, the
+            // declarative pairwise encoding alone is enough. With s_z and
+            // s_k fixed at vz, vk satisfying vk < vz < vk + l_k,
+            // before_{z,k} = (vz <= vk) UPs to 0 and before_{k,z} =
+            // (vk + l_k <= vz) UPs to 0, contradicting the encoded clause
+            // before_{z,k} + before_{k,z} >= 1.
             for (auto z : active_tasks) {
                 if (lengths[z] > 0_i)
                     continue;
@@ -665,7 +672,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         continue;
                     auto vk = state.lower_bound(starts[k]);
                     if (vk < vz && vz < vk + lengths[k]) {
-                        inference.contradiction(logger, AssertRatherThanJustifying{},
+                        inference.contradiction(logger, JustifyUsingRUP{},
                             generic_reason(state, starts));
                         return PropagatorState::DisableUntilBacktrack;
                     }
