@@ -605,13 +605,46 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                             generic_reason(state, starts));
                     }
 
+                    // ub-push: mirror of lb-push, scanning downward. At each
+                    // chain step pick the SMALLEST blocked t in the window
+                    // [running_bound, running_bound + l_j - 1] so the
+                    // running upper bound drops as far as possible. Each
+                    // step turns a blocked t into the fact s_j < t - l_j + 1
+                    // (equivalently s_j <= t - l_j); emit_chain_step's
+                    // structure handles either push direction once given the
+                    // right ext_lit.
                     auto new_ub = cur_ub;
                     while (new_ub >= cur_lb && ! fits_at(new_ub))
                         --new_ub;
-                    if (new_ub < cur_ub)
+                    if (new_ub < cur_ub) {
+                        vector<ChainStep> chain;
+                        Integer running_bound = cur_ub;
+                        while (running_bound > new_ub) {
+                            bool found = false;
+                            for (Integer t = running_bound; t <= running_bound + lengths[j] - 1_i; ++t)
+                                if (is_blocked_at(t)) {
+                                    chain.push_back(ChainStep{t, blocker_at(t)});
+                                    running_bound = t - lengths[j];
+                                    found = true;
+                                    break;
+                                }
+                            if (! found)
+                                break;
+                        }
+
+                        auto justify = [&, j, chain](const ReasonFunction & reason) -> void {
+                            if (! logger)
+                                return;
+                            for (size_t step = 0; step < chain.size(); ++step)
+                                emit_chain_step(j, chain[step].t, chain[step].k,
+                                    starts[j] < chain[step].t - lengths[j] + 1_i,
+                                    step + 1 < chain.size(), reason);
+                        };
+
                         inference.infer_less_than(logger, starts[j], new_ub + 1_i,
-                            AssertRatherThanJustifying{},
+                            JustifyExplicitlyThenRUP{justify},
                             generic_reason(state, starts));
+                    }
                 }
             }
 
