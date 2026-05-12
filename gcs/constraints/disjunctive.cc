@@ -117,35 +117,123 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
 {
     Triggers triggers;
     for (auto i : _active_tasks)
-        triggers.on_instantiated.emplace_back(_starts[i]);
+        triggers.on_bounds.emplace_back(_starts[i]);
 
     propagators.install(
         [starts = move(_starts), lengths = move(_lengths),
             active_tasks = move(_active_tasks)](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-            // Pure checker: only fire once every participating task is fixed,
-            // then verify pairwise non-overlap. The contradiction RUPs from
-            // the declarative OPB encoding (the reified before flags UP from
-            // the unit start values, and the pairwise clause then unit-fails).
-            for (auto i : active_tasks)
-                if (! state.has_single_value(starts[i]))
-                    return PropagatorState::Enable;
+            // Time-table consistency, specialised to heights = 1 and
+            // capacity = 1. Mandatory part of task i is [lst_i, eet_i)
+            // where lst_i = ub(s_i) and eet_i = lb(s_i) + l_i: the slice it
+            // must occupy regardless of where it starts. Two tasks whose
+            // mandatory parts overlap is infeasible, and any per-task start
+            // that would force a mandatory-part collision is excluded.
+            //
+            // Zero-length tasks contribute nothing to the profile but in
+            // strict mode are still constrained: a zero-length task's
+            // point may not sit strictly inside any other task's open
+            // active interval. The TT pass misses that case; we catch it
+            // below with an all-fixed pairwise check.
+            //
+            // Justifications are stubbed with AssertRatherThanJustifying:
+            // real proof logging arrives once the bridge to time-indexed
+            // before/after/active flags is in place.
+            bool any = false;
+            Integer t_lo = 0_i, t_hi = -1_i;
+            for (auto i : active_tasks) {
+                if (lengths[i] == 0_i)
+                    continue;
+                auto [s_lo, s_hi] = state.bounds(starts[i]);
+                auto lo = s_lo, hi = s_hi + lengths[i] - 1_i;
+                if (! any || lo < t_lo) t_lo = lo;
+                if (! any || hi > t_hi) t_hi = hi;
+                any = true;
+            }
 
-            for (size_t a = 0; a + 1 < active_tasks.size(); ++a) {
-                auto i = active_tasks[a];
-                auto si = state.lower_bound(starts[i]);
-                for (size_t b = a + 1; b < active_tasks.size(); ++b) {
-                    auto j = active_tasks[b];
-                    auto sj = state.lower_bound(starts[j]);
-                    if (si + lengths[i] > sj && sj + lengths[j] > si) {
-                        inference.contradiction(logger, JustifyUsingRUP{},
+            if (any) {
+                auto range = (t_hi - t_lo + 1_i).raw_value;
+                vector<int> mand_load(range, 0);
+
+                for (auto i : active_tasks) {
+                    if (lengths[i] == 0_i)
+                        continue;
+                    auto lst = state.upper_bound(starts[i]);
+                    auto eet = state.lower_bound(starts[i]) + lengths[i];
+                    if (lst < eet)
+                        for (Integer t = lst; t < eet; ++t)
+                            ++mand_load[(t - t_lo).raw_value];
+                }
+
+                for (auto idx = 0; idx < range; ++idx)
+                    if (mand_load[idx] > 1) {
+                        inference.contradiction(logger, AssertRatherThanJustifying{},
+                            generic_reason(state, starts));
+                        return PropagatorState::DisableUntilBacktrack;
+                    }
+
+                for (auto j : active_tasks) {
+                    if (lengths[j] == 0_i)
+                        continue;
+                    auto [cur_lb, cur_ub] = state.bounds(starts[j]);
+                    if (cur_lb == cur_ub)
+                        continue;
+
+                    auto lst_j = cur_ub, eet_j = cur_lb + lengths[j];
+                    auto fits_at = [&](Integer s) -> bool {
+                        for (Integer t = s; t < s + lengths[j]; ++t) {
+                            auto load = mand_load[(t - t_lo).raw_value];
+                            if (lst_j < eet_j && t >= lst_j && t < eet_j)
+                                --load;
+                            if (load >= 1)
+                                return false;
+                        }
+                        return true;
+                    };
+
+                    auto new_lb = cur_lb;
+                    while (new_lb <= cur_ub && ! fits_at(new_lb))
+                        ++new_lb;
+                    if (new_lb > cur_lb)
+                        inference.infer_greater_than_or_equal(logger, starts[j], new_lb,
+                            AssertRatherThanJustifying{},
+                            generic_reason(state, starts));
+
+                    auto new_ub = cur_ub;
+                    while (new_ub >= cur_lb && ! fits_at(new_ub))
+                        --new_ub;
+                    if (new_ub < cur_ub)
+                        inference.infer_less_than(logger, starts[j], new_ub + 1_i,
+                            AssertRatherThanJustifying{},
+                            generic_reason(state, starts));
+                }
+            }
+
+            // Strict-mode zero-length tasks: check that no fixed zero-length
+            // task sits strictly inside a fixed positive-length task's open
+            // active interval. (Non-strict mode never sees zero-length tasks
+            // in active_tasks — they were dropped at prepare() time.)
+            for (auto z : active_tasks) {
+                if (lengths[z] > 0_i)
+                    continue;
+                if (! state.has_single_value(starts[z]))
+                    continue;
+                auto vz = state.lower_bound(starts[z]);
+                for (auto k : active_tasks) {
+                    if (k == z || lengths[k] == 0_i)
+                        continue;
+                    if (! state.has_single_value(starts[k]))
+                        continue;
+                    auto vk = state.lower_bound(starts[k]);
+                    if (vk < vz && vz < vk + lengths[k]) {
+                        inference.contradiction(logger, AssertRatherThanJustifying{},
                             generic_reason(state, starts));
                         return PropagatorState::DisableUntilBacktrack;
                     }
                 }
             }
 
-            return PropagatorState::DisableUntilBacktrack;
+            return PropagatorState::Enable;
         },
         triggers);
 }
