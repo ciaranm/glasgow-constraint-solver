@@ -7,6 +7,8 @@
 #include <gcs/variable_id.hh>
 
 #include <cstddef>
+#include <map>
+#include <utility>
 #include <vector>
 
 namespace gcs
@@ -32,10 +34,11 @@ namespace gcs
      * XCSP3's <code>zeroIgnored = true</code>. Because lengths are constant,
      * the distinction is fully resolved at construction.
      *
-     * Propagation is a pure feasibility check: the propagator fires only when
-     * every start variable is fixed and then verifies that no pair overlaps.
-     * Stronger reasoning (time-table, edge-finding, not-first/not-last) is
-     * left for future work.
+     * Propagation is time-table consistent at heights = 1, capacity = 1:
+     * mandatory parts of distinct tasks may not overlap, and each task's
+     * bounds are pushed away from time points already mandatorily occupied
+     * by another. Stronger reasoning (edge-finding, not-first / not-last)
+     * is left for future work.
      *
      * \ingroup Constraints
      */
@@ -46,6 +49,28 @@ namespace gcs
         std::vector<Integer> _lengths;
         bool _strict;
         std::vector<std::size_t> _active_tasks;
+
+        // Per-task possible-active window computed from initial bounds in
+        // prepare(). Only populated for positive-length active tasks; indexed
+        // by task index into _starts. Used both for sizing the bridge in
+        // install_propagators's initialiser and for indexing into per-(task, t)
+        // bridge flags from the propagator.
+        std::vector<Integer> _per_task_t_lo;
+        std::vector<Integer> _per_task_t_hi;
+
+        // Encoded pairwise reified before-flags. The OPB stays purely
+        // declarative: for each ordered pair (i, j) of active tasks,
+        // before_{i,j} <-> s_i + l_i <= s_j, plus one clause per unordered
+        // pair. Line numbers are stored so the propagator's bridge
+        // derivations can pol them.
+        struct BeforeFlagData
+        {
+            innards::ProofFlag flag;
+            innards::ProofLine forward_line;
+            innards::ProofLine reverse_line;
+        };
+        std::map<std::pair<std::size_t, std::size_t>, BeforeFlagData> _before_flags;
+        std::map<std::pair<std::size_t, std::size_t>, innards::ProofLine> _clause_lines;
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &) -> void override;
