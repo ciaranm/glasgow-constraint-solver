@@ -145,10 +145,10 @@ auto AtMostOne::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
-auto AtMostOne::s_exprify(const string & name, const ProofModel * const model) const -> string
+auto AtMostOne::s_exprify(const ProofModel * const model) const -> string
 {
     stringstream s;
-    print(s, "{} at_most_one (", name);
+    print(s, "{} at_most_one (", _name);
     for (const auto & var : _vars)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
     print(s, ") {}", model->names_and_ids_tracker().s_expr_name_of(_val));
