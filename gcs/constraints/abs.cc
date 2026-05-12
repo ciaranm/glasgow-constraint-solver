@@ -33,7 +33,6 @@ using std::vector;
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::format;
 using std::print;
-using std::println;
 #else
 using fmt::format;
 using fmt::print;

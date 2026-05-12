@@ -18,29 +18,26 @@ namespace gcs
 
     struct CurrentlyUnnamedConstraint final
     {
-        auto as_string() const -> std::string { return "unnamed"; }
+        [[nodiscard]] auto as_string() const -> std::string { return "unnamed"; }
     };
 
     struct NumberedConstraint final
     {
         unsigned long long number;
-
-        // Claude (web) says this is a good idea for comparisons.
-        // Do we need comparisons? (C++20 spaceship operator)
-        auto operator<=>(const NumberedConstraint &) const = default;
-        auto as_string() const -> std::string { return "C" + std::to_string(number); }  // TODO: change "C" to "_" at some point before merge
+        [[nodiscard]] auto operator<=>(const NumberedConstraint &) const = default;
+        [[nodiscard]] auto as_string() const -> std::string { return "_" + std::to_string(number); }
     };
 
     struct NamedConstraint final
     {
         std::string name;
-        auto operator<=>(const NamedConstraint &) const = default;
-        auto as_string() const -> std::string { return name; }
+        [[nodiscard]] auto operator<=>(const NamedConstraint &) const = default;
+        [[nodiscard]] auto as_string() const -> std::string { return name; }
     };
 
     using ConstraintName = std::variant<CurrentlyUnnamedConstraint, NumberedConstraint, NamedConstraint>;
 
-    auto as_string(const ConstraintName &) -> std::string;
+    [[nodiscard]] auto as_string(const ConstraintName &) -> std::string;
 
     /**
      * \brief Subclasses of Constraint give a high level way of defining
@@ -69,7 +66,7 @@ namespace gcs
 
     public:
         virtual ~Constraint() = 0;
-        auto name() const -> const ConstraintName & { return _name; }
+        [[nodiscard]] auto name() const -> const ConstraintName & { return _name; }
         auto set_name(ConstraintName name) -> void { _name = std::move(name); }
         /**
          * Called internally to install the constraint. A Constraint is expected
@@ -94,9 +91,6 @@ namespace gcs
 }
 
 // The following is needed to allow ConstraintName to be used in format strings.
-// We do this quite a lot in s_exprify().  If we didn't do this, we'd have to write
-// `format("{}", as_string(_name))` everywhere instead of just `format("{}", _name)`.
-// It's comfort over clarity.  What's the best option?
 #if defined(__cpp_lib_format)
 template <>
 struct std::formatter<gcs::ConstraintName> : std::formatter<std::string>

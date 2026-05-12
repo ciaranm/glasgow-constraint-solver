@@ -90,7 +90,7 @@ namespace gcs
         /**
          * \brief Add a named clone of this Constraint to the model.
          */
-        auto post(const Constraint &, const std::string &) -> void;
+        auto post_named(const Constraint &, const std::string &) -> void;
 
         /**
          * \brief Post this expression as a LinearLessThanEqual constraint.
@@ -100,7 +100,7 @@ namespace gcs
         /**
          * \brief Post this expression as a named LinearLessThanEqual constraint.
          */
-        auto post(SumLessThanEqual<Weighted<IntegerVariableID>>, const std::string &) -> void;
+        auto post_named(SumLessThanEqual<Weighted<IntegerVariableID>>, const std::string &) -> void;
 
         /**
          * \brief Post this expression as a LinearEquality constraint.
@@ -110,7 +110,7 @@ namespace gcs
         /**
          * \brief Post this expression as a named LinearEquality constraint.
          */
-        auto post(SumEquals<Weighted<IntegerVariableID>>, const std::string &) -> void;
+        auto post_named(SumEquals<Weighted<IntegerVariableID>>, const std::string &) -> void;
 
         /**
          * \brief Add a clone of this Presolver to the model.

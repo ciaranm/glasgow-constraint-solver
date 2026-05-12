@@ -1,4 +1,4 @@
-#include "gcs/constraint.hh"
+#include <gcs/constraint.hh>
 #include <gcs/constraints/in.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
@@ -17,7 +17,6 @@
 #include <regex>
 #include <tuple>
 #include <unordered_set>
-#include <variant>
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -163,7 +162,7 @@ auto Problem::post(const Constraint & c) -> void
     _imp->constraints.push_back(std::move(cloned));
 }
 
-auto Problem::post(const Constraint & c, const string & name) -> void
+auto Problem::post_named(const Constraint & c, const string & name) -> void
 {
     auto cloned = c.clone();
     cloned->set_name(NamedConstraint{check_name(name)}); 
@@ -175,9 +174,9 @@ auto Problem::post(SumLessThanEqual<Weighted<IntegerVariableID>> expr) -> void
     post(LinearLessThanEqual(move(expr.lhs), expr.rhs));
 }
 
-auto Problem::post(SumLessThanEqual<Weighted<IntegerVariableID>> expr, const string & name) -> void
+auto Problem::post_named(SumLessThanEqual<Weighted<IntegerVariableID>> expr, const string & name) -> void
 {
-    post(LinearLessThanEqual(move(expr.lhs), expr.rhs), name);
+    post_named(LinearLessThanEqual(move(expr.lhs), expr.rhs), name);
 }
 
 auto Problem::post(SumEquals<Weighted<IntegerVariableID>> expr) -> void
@@ -185,9 +184,9 @@ auto Problem::post(SumEquals<Weighted<IntegerVariableID>> expr) -> void
     post(LinearEquality(move(expr.lhs), expr.rhs));
 }
 
-auto Problem::post(SumEquals<Weighted<IntegerVariableID>> expr, const string & name) -> void
+auto Problem::post_named(SumEquals<Weighted<IntegerVariableID>> expr, const string & name) -> void
 {
-    post(LinearEquality(move(expr.lhs), expr.rhs), name);
+    post_named(LinearEquality(move(expr.lhs), expr.rhs), name);
 }
 
 auto Problem::add_presolver(const Presolver & p) -> void
