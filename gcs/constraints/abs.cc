@@ -14,6 +14,7 @@
 #include <version>
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <format>
 #include <print>
 #else
 #include <fmt/core.h>
@@ -28,10 +29,8 @@ using std::max;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
-using std::vector;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
-using std::format;
 using std::print;
 #else
 using fmt::format;
