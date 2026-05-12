@@ -621,6 +621,12 @@ auto main(int argc, char * argv[]) -> int
                 auto capacity = Integer{static_cast<long long>(args.at(3))};
                 problem.post(Cumulative{starts, *lengths, *heights, capacity});
             }
+            else if (id == "glasgow_disjunctive" || id == "glasgow_disjunctive_strict") {
+                const auto & starts = arg_as_array_of_var(data, args, 0);
+                auto lengths = arg_as_array_of_integer(data, args, 1);
+                auto strict = (id == "glasgow_disjunctive_strict");
+                problem.post(Disjunctive{starts, *lengths, strict});
+            }
             else if (id == "glasgow_increasing_int" || id == "glasgow_increasing_bool") {
                 const auto & vars = arg_as_array_of_var(data, args, 0);
                 problem.post(Increasing{vars});
