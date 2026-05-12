@@ -383,7 +383,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                             };
 
                             auto atmost1_line = innards::recover_am1<ProofFlag>(
-                                *logger, ProofLevel::Temporary,
+                                *logger, ProofLevel::Top,
                                 vector<ProofFlag>{bf_i.active, bf_j.active},
                                 function<ProofLine(const ProofFlag &, const ProofFlag &)>{pair_ne});
 
@@ -405,6 +405,128 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         return PropagatorState::DisableUntilBacktrack;
                     }
 
+                // One step of an lb/ub-push chain: a blocked time t and the
+                // single blocking task k (whose mandatory part covers t).
+                // For h = 1, c = 1, one blocker is enough to overflow with j.
+                struct ChainStep
+                {
+                    Integer t;
+                    size_t k;
+                };
+
+                // Per-step proof emitter, used for the lb-push chain. Mirrors
+                // cumulative.cc's emit_chain_step, specialised to h = 1 and
+                // c = 1, with the at-most-one supplied by the bridge instead
+                // of an encoded C_t line. `ext_lit` is the running-bound
+                // advance the step is meant to derive; `emit_intermediate`
+                // controls whether ext_lit is then explicitly RUPped under
+                // reason for the next step's preconditions to close.
+                auto emit_chain_step = [logger, &before_flags, &clause_lines, &bridge](
+                                           size_t j, Integer t, size_t k,
+                                           IntegerVariableCondition ext_lit,
+                                           bool emit_intermediate,
+                                           const ReasonFunction & reason) -> void {
+                    auto & bf_k = bridge->at(make_pair(k, t));
+                    auto & bf_j = bridge->at(make_pair(j, t));
+
+                    // (a) Pin A_{k,t} = 1 under reason via before / after / active.
+                    logger->emit_rup_proof_line_under_reason(reason,
+                        WPBSum{} + 1_i * bf_k.before >= 1_i, ProofLevel::Temporary);
+                    logger->emit_rup_proof_line_under_reason(reason,
+                        WPBSum{} + 1_i * bf_k.after >= 1_i, ProofLevel::Temporary);
+                    auto A_k_line = logger->emit_rup_proof_line_under_reason(reason,
+                        WPBSum{} + 1_i * bf_k.active >= 1_i, ProofLevel::Temporary);
+
+                    // (b) Pin A_{j,t} = 1 under extended reason {reason ∪
+                    // ¬ext_lit}. Each line carries ext_lit as an extra
+                    // disjunct, so VeriPB checks the RUP under
+                    // "reason ∧ ¬ext_lit" which is exactly where j is also
+                    // active at t.
+                    logger->emit_rup_proof_line_under_reason(reason,
+                        WPBSum{} + 1_i * bf_j.before + 1_i * ext_lit >= 1_i,
+                        ProofLevel::Temporary);
+                    logger->emit_rup_proof_line_under_reason(reason,
+                        WPBSum{} + 1_i * bf_j.after + 1_i * ext_lit >= 1_i,
+                        ProofLevel::Temporary);
+                    auto A_j_line = logger->emit_rup_proof_line_under_reason(reason,
+                        WPBSum{} + 1_i * bf_j.active + 1_i * ext_lit >= 1_i,
+                        ProofLevel::Temporary);
+
+                    // (c) Pairwise at-most-one between A_{j,t} and A_{k,t} via
+                    // recover_am1 + the same three-step pair_ne pol as the
+                    // contradiction proof.
+                    map<ProofFlag, size_t> flag_to_task;
+                    flag_to_task.emplace(bf_j.active, j);
+                    flag_to_task.emplace(bf_k.active, k);
+                    auto pair_ne = [logger, &before_flags, &clause_lines, &bridge,
+                                       t, &flag_to_task](
+                                       const ProofFlag & a, const ProofFlag & b) -> ProofLine {
+                        auto ti = flag_to_task.at(a);
+                        auto tj = flag_to_task.at(b);
+                        auto & bfi = bridge->at(make_pair(ti, t));
+                        auto & bfj = bridge->at(make_pair(tj, t));
+                        auto & e_ij = before_flags.at(make_pair(ti, tj));
+                        auto & e_ji = before_flags.at(make_pair(tj, ti));
+                        auto clause_line = clause_lines.at(
+                            make_pair(min(ti, tj), max(ti, tj)));
+
+                        stringstream pol1;
+                        pol1 << "pol " << e_ij.forward_line
+                             << " " << bfi.after_fwd << " +"
+                             << " " << bfj.before_fwd << " +"
+                             << " s ;";
+                        auto L1 = logger->emit_proof_line(pol1.str(), ProofLevel::Temporary);
+
+                        stringstream pol2;
+                        pol2 << "pol " << e_ji.forward_line
+                             << " " << bfj.after_fwd << " +"
+                             << " " << bfi.before_fwd << " +"
+                             << " s ;";
+                        auto L2 = logger->emit_proof_line(pol2.str(), ProofLevel::Temporary);
+
+                        stringstream pol3;
+                        pol3 << "pol " << L1
+                             << " " << L2 << " +"
+                             << " " << clause_line << " +"
+                             << " " << bfi.active_fwd << " +"
+                             << " " << bfj.active_fwd << " +"
+                             << " s ;";
+                        return logger->emit_proof_line(pol3.str(), ProofLevel::Temporary);
+                    };
+                    auto atmost1_line = innards::recover_am1<ProofFlag>(
+                        *logger, ProofLevel::Top,
+                        vector<ProofFlag>{bf_j.active, bf_k.active},
+                        function<ProofLine(const ProofFlag &, const ProofFlag &)>{pair_ne});
+
+                    // (d) Pol atmost1 + A_k_line + A_j_line + saturate.
+                    //   AM1:     ¬A_j + ¬A_k >= 1
+                    //   A_k_line: A_k + ¬reason >= 1
+                    //   A_j_line: A_j + ext_lit + ¬reason >= 1
+                    //   Sum:     2 + ext_lit + 2·¬reason >= 3
+                    //          = ext_lit + 2·¬reason >= 1
+                    //   Saturated (RHS = 1):  ext_lit + ¬reason >= 1
+                    // Under reason (¬reason = 0) this gives ext_lit = 1,
+                    // which is the running-bound advance.
+                    stringstream pol;
+                    pol << "pol " << atmost1_line
+                        << " " << A_k_line << " +"
+                        << " " << A_j_line << " +"
+                        << " s ;";
+                    logger->emit_proof_line(pol.str(), ProofLevel::Temporary);
+
+                    // (e) Intermediate chain steps deposit ext_lit as an
+                    // explicit RUP under reason so the next step's
+                    // before/after RUPs can close: each of those needs
+                    // s_j ≥ running_bound as a UP-derivable fact, and the
+                    // pol's residual ¬reason disjuncts don't expose that
+                    // cleanly enough for the next step. The final step
+                    // doesn't need it — the framework's wrapping RUP
+                    // (s_j ≥ new_lb) closes against the last pol directly.
+                    if (emit_intermediate)
+                        logger->emit_rup_proof_line_under_reason(reason,
+                            WPBSum{} + 1_i * ext_lit >= 1_i, ProofLevel::Temporary);
+                };
+
                 for (auto j : active_tasks) {
                     if (lengths[j] == 0_i)
                         continue;
@@ -424,13 +546,64 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         return true;
                     };
 
+                    auto is_blocked_at = [&](Integer t) -> bool {
+                        auto load = mand_load[(t - t_lo).raw_value];
+                        if (lst_j < eet_j && t >= lst_j && t < eet_j)
+                            --load;
+                        return load >= 1;
+                    };
+
+                    auto blocker_at = [&](Integer t) -> size_t {
+                        // First task (≠ j) whose mandatory part covers t.
+                        // One is enough for the h = 1, c = 1 chain step.
+                        for (auto i : active_tasks) {
+                            if (i == j || lengths[i] == 0_i)
+                                continue;
+                            auto lst_i = state.upper_bound(starts[i]);
+                            auto eet_i = state.lower_bound(starts[i]) + lengths[i];
+                            if (lst_i < eet_i && t >= lst_i && t < eet_i)
+                                return i;
+                        }
+                        throw UnexpectedException{
+                            "Disjunctive: is_blocked_at(t) true but no blocker found"};
+                    };
+
+                    // lb-push: scan upward to find the smallest fitting
+                    // start, then chain through blocked times picking the
+                    // LARGEST blocked t per step so the running lower bound
+                    // advances as far as possible.
                     auto new_lb = cur_lb;
                     while (new_lb <= cur_ub && ! fits_at(new_lb))
                         ++new_lb;
-                    if (new_lb > cur_lb)
+                    if (new_lb > cur_lb) {
+                        vector<ChainStep> chain;
+                        Integer running_bound = cur_lb;
+                        while (running_bound < new_lb) {
+                            bool found = false;
+                            for (Integer t = running_bound + lengths[j] - 1_i; t >= running_bound; --t)
+                                if (is_blocked_at(t)) {
+                                    chain.push_back(ChainStep{t, blocker_at(t)});
+                                    running_bound = t + 1_i;
+                                    found = true;
+                                    break;
+                                }
+                            if (! found)
+                                break;
+                        }
+
+                        auto justify = [&, j, chain](const ReasonFunction & reason) -> void {
+                            if (! logger)
+                                return;
+                            for (size_t step = 0; step < chain.size(); ++step)
+                                emit_chain_step(j, chain[step].t, chain[step].k,
+                                    starts[j] >= chain[step].t + 1_i,
+                                    step + 1 < chain.size(), reason);
+                        };
+
                         inference.infer_greater_than_or_equal(logger, starts[j], new_lb,
-                            AssertRatherThanJustifying{},
+                            JustifyExplicitlyThenRUP{justify},
                             generic_reason(state, starts));
+                    }
 
                     auto new_ub = cur_ub;
                     while (new_ub >= cur_lb && ! fits_at(new_ub))
