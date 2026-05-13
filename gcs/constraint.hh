@@ -8,6 +8,7 @@
 #include <memory>
 #include <string>
 #include <variant>
+#include <version>
 
 #if defined(__cpp_lib_format)
 #include <format>
