@@ -2,6 +2,7 @@
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/power.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
+#include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
@@ -232,14 +233,11 @@ namespace
 
     auto add_lines(ProofLogger & logger, ProofLine line1, ProofLine line2, bool saturate = true) -> ProofLine
     {
-        auto stringify = [&](const auto & p) {
-            stringstream s;
-            s << p;
-            return s.str();
-        };
-
-        return logger.emit_proof_line("pol " + stringify(line1) + " " + stringify(line2) + " +" + (saturate ? " s ;" : ";"),
-            ProofLevel::Temporary);
+        PolBuilder b;
+        b.add(line1).add(line2);
+        if (saturate)
+            b.saturate();
+        return b.emit(logger, ProofLevel::Temporary);
     }
 
     SimpleIntegerVariableID require_simple_iv(const PseudoBooleanTerm & var)
