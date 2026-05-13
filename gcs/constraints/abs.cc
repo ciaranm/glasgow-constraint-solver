@@ -28,6 +28,7 @@ using std::max;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
+using std::vector;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::print;

@@ -10,7 +10,7 @@
 #include <variant>
 #include <version>
 
-#if defined(__cpp_lib_format)
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 #include <format>
 #else
 #include <fmt/core.h>
@@ -97,7 +97,7 @@ namespace gcs
 }
 
 // The following is needed to allow ConstraintName to be used in format strings.
-#if defined(__cpp_lib_format)
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 template <>
 struct std::formatter<gcs::ConstraintName> : std::formatter<std::string>
 {
