@@ -2,6 +2,7 @@
 #include <gcs/constraints/innards/recover_am1.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
+#include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
@@ -155,12 +156,11 @@ auto Among::install_propagators(Propagators & propagators) -> void
                 // for any variable that isn't ruled out, show that it can contribute at
                 // most one to the count.
                 if (sum_line.second && ! empty(can_be_either_or_must_vars) && values_of_interest.size() > 1) {
-                    stringstream line;
-                    line << "pol " << *sum_line.second;
+                    PolBuilder b;
+                    b.add(*sum_line.second);
                     for (const auto & var : can_be_either_or_must_vars)
-                        line << " " << am1_lines->at(var) << " +";
-                    line << ';';
-                    logger->emit_proof_line(line.str(), ProofLevel::Temporary);
+                        b.add(am1_lines->at(var));
+                    b.emit(*logger, ProofLevel::Temporary);
                 }
             }},
                 vars_reason);
@@ -201,12 +201,11 @@ auto Among::install_propagators(Propagators & propagators) -> void
                             // for any variable that is forced, show that it can contribute at
                             // most one to the count
                             if (sum_line.second && ! empty(must_match_vars) && values_of_interest.size() > 1) {
-                                stringstream line;
-                                line << "pol " << *sum_line.second;
+                                PolBuilder b;
+                                b.add(*sum_line.second);
                                 for (const auto & var : must_match_vars)
-                                    line << " " << am1_lines->at(var) << " +";
-                                line << ';';
-                                logger->emit_proof_line(line.str(), ProofLevel::Temporary);
+                                    b.add(am1_lines->at(var));
+                                b.emit(*logger, ProofLevel::Temporary);
                             }
                         }},
                             vars_and_bounds_reason);
@@ -248,13 +247,12 @@ auto Among::install_propagators(Propagators & propagators) -> void
 
                                         // now each other variable that may or may not match is contributing at most one to the sum
                                         if (sum_line.second && values_of_interest.size() > 1) {
-                                            stringstream line;
-                                            line << "pol " << *sum_line.second;
+                                            PolBuilder b;
+                                            b.add(*sum_line.second);
                                             for (const auto & other_var : can_be_either_vars)
                                                 if (var != other_var)
-                                                    line << " " << am1_lines->at(other_var) << " +";
-                                            line << ';';
-                                            logger->emit_proof_line(line.str(), ProofLevel::Temporary);
+                                                    b.add(am1_lines->at(other_var));
+                                            b.emit(*logger, ProofLevel::Temporary);
                                         }
                                     }},
                                         vars_and_bounds_reason);
