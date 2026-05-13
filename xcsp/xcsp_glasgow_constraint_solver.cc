@@ -472,16 +472,20 @@ namespace
             report_unsupported("mdd", "no MDD propagator yet (#149)");
         }
 
-        auto buildConstraintNoOverlap(string, vector<XVariable *> &,
-            vector<int> &, bool) -> void override
+        auto buildConstraintNoOverlap(string, vector<XVariable *> & origins,
+            vector<int> & lengths, bool zeroIgnored) -> void override
         {
-            report_unsupported("noOverlap", "no Disjunctive propagator yet (#146)");
+            auto starts = need_variables(origins);
+            vector<Integer> lengths_i;
+            for (auto l : lengths)
+                lengths_i.push_back(Integer{l});
+            _problem.post(Disjunctive{starts, lengths_i, ! zeroIgnored});
         }
 
         auto buildConstraintNoOverlap(string, vector<XVariable *> &,
             vector<XVariable *> &, bool) -> void override
         {
-            report_unsupported("noOverlap", "no Disjunctive propagator yet (#146)");
+            report_unsupported("noOverlap", "variable-length Disjunctive not yet supported (#146)");
         }
 
         auto buildConstraintNoOverlap(string, vector<vector<XVariable *>> &,

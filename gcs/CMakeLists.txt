@@ -28,6 +28,7 @@ add_library(glasgow_constraint_solver
         constraints/comparison.cc
         constraints/count.cc
         constraints/cumulative.cc
+        constraints/disjunctive.cc
         constraints/element.cc
         constraints/equals.cc
         constraints/in.cc
@@ -130,6 +131,7 @@ if(GCS_BUILD_TESTS)
     add_executable(comparison_test constraints/comparison_test.cc)
     add_executable(count_test constraints/count_test.cc)
     add_executable(cumulative_test constraints/cumulative_test.cc)
+    add_executable(disjunctive_test constraints/disjunctive_test.cc)
     add_executable(element_test constraints/element_test.cc)
     add_executable(equals_test constraints/equals_test.cc)
     add_executable(in_test constraints/in_test.cc)
@@ -154,7 +156,7 @@ if(GCS_BUILD_TESTS)
 
     foreach(test_target
             abs_test all_different_test all_different_except_test all_equal_test among_test arithmetic_test at_most_one_test comparison_test
-            count_test cumulative_test element_test equals_test in_test increasing_test inverse_test knapsack_test lex_test linear_test
+            count_test cumulative_test disjunctive_test element_test equals_test in_test increasing_test inverse_test knapsack_test lex_test linear_test
             logical_test min_max_test mult_bc_test n_value_test parity_test
             plus_minus_test regular_test seq_precede_chain_test smart_table_test symmetric_all_different_test
             negative_table_test table_test value_precede_test)
@@ -174,6 +176,10 @@ if(GCS_BUILD_TESTS)
     endforeach()
     add_test(NAME count_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:count_test>)
     add_test(NAME cumulative_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_test>)
+    foreach(mode strict nonstrict)
+        add_test(NAME disjunctive_constraint_${mode}
+            COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:disjunctive_test> ${mode})
+    endforeach()
     foreach(mode const const2d var var2d)
         add_test(NAME element_constraint_${mode}
             COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:element_test> ${mode})

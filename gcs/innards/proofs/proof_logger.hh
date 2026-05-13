@@ -131,23 +131,79 @@ namespace gcs::innards
         auto infer(const Literal & lit, const Justification & why, const ReasonFunction & reason) -> void;
 
         /**
-         * What is our current proof level?
+         * \brief Return the current <em>active proof level</em> &mdash; the
+         * integer depth used to tag proof lines.
+         *
+         * Lines are tagged at one of three depths when emitted:
+         * <ul>
+         *   <li>\c ProofLevel::Top &rarr; depth 0 (always, regardless of
+         *       the active level).</li>
+         *   <li>\c ProofLevel::Current &rarr; the active proof level
+         *       returned by this function.</li>
+         *   <li>\c ProofLevel::Temporary &rarr; one above the active proof
+         *       level (\c active_proof_level + 1).</li>
+         * </ul>
+         *
+         * The active level changes as search descends (via
+         * \c enter_proof_level) and is restored on backtrack. Use this
+         * function to capture and later restore the level in helpers
+         * that need to operate at a different depth temporarily.
          */
         [[nodiscard]] auto proof_level() -> int;
 
         /**
-         * Indicate that we will use a temporary proof level, and return it. Must
-         * be wiped out with forget_proof_level().
+         * \brief Return the depth at which \c ProofLevel::Temporary lines
+         * are currently being tagged &mdash; i.e. <em>active proof level +
+         * 1</em>.
+         *
+         * This does <strong>not</strong> push a new level &mdash; it only
+         * tells you where Temporary lines will land. To actually push,
+         * call \c enter_proof_level(<em>n</em>) with <em>n</em> greater
+         * than the current active level.
+         *
+         * The intended use is the simple emit-then-forget pattern at root:
+         * grab \c t = \c temporary_proof_level(), emit some Temporary
+         * lines, then call \c forget_proof_level(<em>t</em>) to delete
+         * just those. Using this pattern inside a context that itself
+         * uses Temporary lines (e.g. inside a \c JustifyExplicitlyThenRUP
+         * callback) is unsafe because the helper's forget will also
+         * delete the surrounding context's Temporary lines &mdash;
+         * isolate via \c enter_proof_level instead.
          */
         [[nodiscard]] auto temporary_proof_level() -> int;
 
         /**
-         * Log that we are entering this proof level for deletions.
+         * \brief Set the active proof level to the given depth.
+         *
+         * Affects how subsequent emissions are tagged: \c Current lines
+         * go to the new depth, \c Temporary to depth+1, \c Top still to
+         * depth 0. The internal tracking vector is resized to fit if
+         * needed.
+         *
+         * Typical use: temporarily isolate a helper's intermediates from
+         * the surrounding scope. Save \c proof_level(); call
+         * \c enter_proof_level(<em>saved</em>+1) to push one level deeper;
+         * do the work (intermediates record at <em>saved</em>+2 via
+         * Temporary); call \c forget_proof_level(<em>saved</em>+2) to
+         * delete only the helper's intermediates; call
+         * \c enter_proof_level(<em>saved</em>) to restore.
+         *
+         * The state is a single integer rather than a stack &mdash; the
+         * caller is responsible for symmetric restore.
          */
         auto enter_proof_level(int depth) -> void;
 
         /**
-         * Log that we should delete this proof level.
+         * \brief Emit deletion commands for every proof line currently
+         * tagged at the given depth, then clear the tracking for that
+         * depth.
+         *
+         * Constraints deleted this way can no longer be referenced by
+         * later \c pol or \c rup steps &mdash; using a deleted line ID
+         * elsewhere in the proof will fail VeriPB at parse time. Top
+         * (depth 0) lines should never be forgotten; \c Current and
+         * \c Temporary lines are forgotten on backtrack and at the end
+         * of explicit-justification scopes respectively.
          */
         auto forget_proof_level(int depth) -> void;
 

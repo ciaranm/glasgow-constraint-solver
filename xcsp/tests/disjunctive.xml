@@ -1,0 +1,13 @@
+<instance format="XCSP3" type="CSP">
+    <variables>
+        <var id="s1"> 0..3 </var>
+        <var id="s2"> 0..3 </var>
+        <var id="s3"> 0..3 </var>
+    </variables>
+    <constraints>
+        <noOverlap>
+            <origins> s1 s2 s3 </origins>
+            <lengths> 2 2 1 </lengths>
+        </noOverlap>
+    </constraints>
+</instance>
