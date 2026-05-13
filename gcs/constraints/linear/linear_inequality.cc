@@ -222,7 +222,7 @@ auto ReifiedLinearInequality::install_propagators(Propagators & propagators) -> 
         sanitised_cv, sanitised_neg_cv);
 }
 
-auto ReifiedLinearInequality::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
+auto ReifiedLinearInequality::s_exprify(const ProofModel * const model) const -> std::string
 {
     stringstream s;
 
@@ -233,10 +233,11 @@ auto ReifiedLinearInequality::s_exprify(const std::string & name, const ProofMod
         [&](const auto &) { throw UnexpectedException{"Unexpected reification type in s_exprify"}; return make_pair(false, ""); }}
                            .visit(_reif_cond);
 
-    print(s, "{} {}", name, cons);
+    print(s, "{} {}", _name, cons);
     if (rei) {
         print(s, " {} ", model->names_and_ids_tracker().s_expr_name_of(_reif_cond));
     }
+    print(s, "(");
     for (const auto & [c, v] : _coeff_vars.terms) {
         print(s, " {} {}", c, model->names_and_ids_tracker().s_expr_name_of(v));
     }

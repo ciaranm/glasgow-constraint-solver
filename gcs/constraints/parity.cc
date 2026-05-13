@@ -141,11 +141,11 @@ auto ParityOdd::install_propagators(Propagators & propagators) -> void
     },
         triggers);
 }
-auto ParityOdd::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
+auto ParityOdd::s_exprify(const innards::ProofModel * const model) const -> string
 {
     stringstream s;
 
-    print(s, "{} xor (", name);
+    print(s, "{} xor (", _name);
     for (const auto & lit : _lits) {
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(lit));
     }

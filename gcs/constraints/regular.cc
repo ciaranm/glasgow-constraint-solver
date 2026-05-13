@@ -454,11 +454,11 @@ auto Regular::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
-auto Regular::s_exprify(const string & name, const ProofModel * const model) const -> string
+auto Regular::s_exprify(const ProofModel * const model) const -> string
 {
     stringstream s;
 
-    print(s, "{} regular (", name);
+    print(s, "{} regular (", _name);
     for (const auto & var : _vars)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
     print(s, ") {}\n       (", _num_states);

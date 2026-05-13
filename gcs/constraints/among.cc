@@ -273,11 +273,11 @@ auto Among::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
-auto Among::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
+auto Among::s_exprify(const ProofModel * const model) const -> std::string
 {
     stringstream s;
 
-    print(s, "{} among (", name);
+    print(s, "{} among (", _name);
     for (const auto & var : _vars) {
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
     }

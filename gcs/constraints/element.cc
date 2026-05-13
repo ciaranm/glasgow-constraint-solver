@@ -567,7 +567,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::clone() const -> unique_ptr<C
 }
 
 template <typename EntryType_, unsigned dimensions_>
-auto NDimensionalElement<EntryType_, dimensions_>::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
+auto NDimensionalElement<EntryType_, dimensions_>::s_exprify(const ProofModel * const model) const -> std::string
 {
     stringstream s;
 
@@ -604,7 +604,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::s_exprify(const std::string &
         }
     };
 
-    print(s, "{} element (", name);
+    print(s, "{} element (", _name);
 
     print_array(s, *_array, print_array);
 

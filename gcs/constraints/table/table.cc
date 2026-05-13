@@ -205,11 +205,11 @@ auto Table::install_propagators(Propagators & propagators) -> void
         move(_tuples));
 }
 
-auto Table::s_exprify(const string & name, const innards::ProofModel * const model) const -> std::string
+auto Table::s_exprify(const innards::ProofModel * const model) const -> std::string
 {
     stringstream s;
 
-    print(s, "{} table", name);
+    print(s, "{} table", _name);
     println(s, "(");
 
     println(s, "    (");

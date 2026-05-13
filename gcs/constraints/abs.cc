@@ -38,8 +38,8 @@ using std::vector;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::print;
-using std::println;
 #else
+using fmt::format;
 using fmt::print;
 #endif
 
@@ -293,11 +293,11 @@ auto Abs::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
-auto Abs::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
+auto Abs::s_exprify(const innards::ProofModel * const model) const -> string
 {
     stringstream s;
 
-    print(s, "{} abs", name);
+    print(s, "{} abs", _name);
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v1));
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v2));
 

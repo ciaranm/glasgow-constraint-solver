@@ -666,11 +666,11 @@ template auto gcs::innards::propagate_gac_all_different(
     EagerProofLoggingInferenceTracker & inference_tracker,
     ProofLogger * const logger) -> void;
 
-auto GACAllDifferent::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
+auto GACAllDifferent::s_exprify(const innards::ProofModel * const model) const -> string
 {
     stringstream s;
 
-    print(s, "{} all_different (", name);
+    print(s, "{} all_different (", _name);
     for (const auto & var : _vars)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
     print(s, ")");

@@ -7,12 +7,43 @@
 
 #include <memory>
 #include <string>
+#include <variant>
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <format>
+#else
+#include <fmt/core.h>
+#endif
 
 namespace gcs
 {
     /**
      * \defgroup Constraints Constraints
      */
+
+    struct CurrentlyUnnamedConstraint final
+    {
+        [[nodiscard]] auto as_string() const -> std::string { return "unnamed"; }
+    };
+
+    struct NumberedConstraint final
+    {
+        unsigned long long number;
+        [[nodiscard]] auto operator<=>(const NumberedConstraint &) const = default;
+        [[nodiscard]] auto as_string() const -> std::string { return "_" + std::to_string(number); }
+    };
+
+    struct NamedConstraint final
+    {
+        std::string name;
+        [[nodiscard]] auto operator<=>(const NamedConstraint &) const = default;
+        [[nodiscard]] auto as_string() const -> std::string { return name; }
+    };
+
+    using ConstraintName = std::variant<CurrentlyUnnamedConstraint, NumberedConstraint, NamedConstraint>;
+
+    [[nodiscard]] auto as_string(const ConstraintName &) -> std::string;
 
     /**
      * \brief Subclasses of Constraint give a high level way of defining
@@ -29,6 +60,9 @@ namespace gcs
     class [[nodiscard]] Constraint
     {
     protected:
+        ConstraintName _name;
+        Constraint() : _name(CurrentlyUnnamedConstraint{}) {};
+        explicit Constraint(ConstraintName name) : _name(std::move(name)) {};
         virtual auto define_proof_model(innards::ProofModel &) -> void {};
         virtual auto install_propagators(innards::Propagators &) -> void {};
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool
@@ -38,7 +72,8 @@ namespace gcs
 
     public:
         virtual ~Constraint() = 0;
-
+        [[nodiscard]] auto name() const -> const ConstraintName & { return _name; }
+        auto set_name(ConstraintName name) -> void { _name = std::move(name); }
         /**
          * Called internally to install the constraint. A Constraint is expected
          * to define zero or more propagators, and to provide a description of
@@ -57,8 +92,29 @@ namespace gcs
         /**
          * Return an s-expr representation of the constraint. To be used internally.
          */
-        [[nodiscard]] virtual auto s_exprify(const std::string & name, const innards::ProofModel * const) const -> std::string = 0;
+        [[nodiscard]] virtual auto s_exprify(const innards::ProofModel * const) const -> std::string = 0;
     };
 }
+
+// The following is needed to allow ConstraintName to be used in format strings.
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+template <>
+struct std::formatter<gcs::ConstraintName> : std::formatter<std::string>
+{
+    auto format(const gcs::ConstraintName & name, std::format_context & ctx) const
+    {
+        return std::formatter<std::string>::format(gcs::as_string(name), ctx);
+    }
+};
+#else
+template <>
+struct fmt::formatter<gcs::ConstraintName> : fmt::formatter<std::string>
+{
+    auto format(const gcs::ConstraintName & name, fmt::format_context & ctx) const
+    {
+        return fmt::formatter<std::string>::format(gcs::as_string(name), ctx);
+    }
+};
+#endif
 
 #endif

@@ -141,7 +141,7 @@ namespace gcs
         {
             return innards::UnarySetEntry{a, move(b), innards::SmartEntryConstraint::NotIn};
         }
-        [[nodiscard]] virtual auto s_exprify(const std::string & name, const innards::ProofModel * const) const -> std::string override;
+        [[nodiscard]] virtual auto s_exprify(const innards::ProofModel * const) const -> std::string override;
     };
 }
 

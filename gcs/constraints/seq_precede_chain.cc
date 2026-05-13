@@ -83,10 +83,10 @@ auto SeqPrecedeChain::install(Propagators & propagators, State & initial_state, 
     ValuePrecede{move(chain), move(_vars)}.install(propagators, initial_state, optional_model);
 }
 
-auto SeqPrecedeChain::s_exprify(const string & name, const ProofModel * const model) const -> string
+auto SeqPrecedeChain::s_exprify(const ProofModel * const model) const -> string
 {
     stringstream s;
-    print(s, "{} seq_precede_chain (", name);
+    print(s, "{} seq_precede_chain (", _name);
     for (const auto & var : _vars)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
     print(s, ")");

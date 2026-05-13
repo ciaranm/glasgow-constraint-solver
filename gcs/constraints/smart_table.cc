@@ -915,7 +915,7 @@ auto SmartTable::install(Propagators & propagators, State & initial_state, Proof
         triggers);
 }
 
-auto SmartTable::s_exprify(const string & name, const ProofModel * const model) const -> string
+auto SmartTable::s_exprify(const ProofModel * const model) const -> string
 {
     auto to_op = [](SmartEntryConstraint c) {
         switch (c) {
@@ -933,10 +933,9 @@ auto SmartTable::s_exprify(const string & name, const ProofModel * const model) 
 
     stringstream s;
 
-    print(s, "{} smart_table (\n        (", name);
+    print(s, "{} smart_table (\n        (", _name);
 
     for (const auto & tuple : _tuples) {
-        print(s, "(");
         for (const auto & entry : tuple) {
             overloaded{
                 [&](const BinaryEntry & binary_entry) {
@@ -967,6 +966,7 @@ auto SmartTable::s_exprify(const string & name, const ProofModel * const model) 
     for (const auto & var : _vars)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
     print(s, ")\n        )");
+
 
     return s.str();
 }

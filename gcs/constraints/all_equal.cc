@@ -150,10 +150,10 @@ auto AllEqual::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
-auto AllEqual::s_exprify(const string & name, const ProofModel * const model) const -> string
+auto AllEqual::s_exprify(const ProofModel * const model) const -> string
 {
     stringstream s;
-    print(s, "{} all_equal", name);
+    print(s, "{} all_equal", _name);
     for (const auto & v : _vars)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(v));
     return s.str();

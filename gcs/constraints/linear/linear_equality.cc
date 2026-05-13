@@ -401,7 +401,7 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> vo
     }
 }
 
-auto ReifiedLinearEquality::s_exprify(const std::string & name, const ProofModel * const model) const -> std::string
+auto ReifiedLinearEquality::s_exprify(const ProofModel * const model) const -> std::string
 {
     stringstream s;
 
@@ -413,7 +413,7 @@ auto ReifiedLinearEquality::s_exprify(const std::string & name, const ProofModel
         [&](const reif::NotIf &) { return make_pair(true, "lin_not_equals_if"); }}
                            .visit(_reif_cond);
 
-    print(s, "{} {}", name, cons);
+    print(s, "{} {}", _name, cons);
     if (rei) {
         print(s, " {} ", model->names_and_ids_tracker().s_expr_name_of(_reif_cond));
     }

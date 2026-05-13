@@ -73,11 +73,11 @@ auto Minus::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
-auto Minus::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
+auto Minus::s_exprify(const innards::ProofModel * const model) const -> string
 {
     stringstream s;
 
-    print(s, "{} minus (", name);
+    print(s, "{} minus (", _name);
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_a));
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_b));
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_result));

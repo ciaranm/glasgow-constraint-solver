@@ -168,11 +168,11 @@ template auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintState
 template auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle, const State & state,
     EagerProofLoggingInferenceTracker & inference_tracker, ProofLogger * const logger) -> void;
 
-auto VCAllDifferent::s_exprify(const string & name, const innards::ProofModel * const model) const -> string
+auto VCAllDifferent::s_exprify(const innards::ProofModel * const model) const -> string
 {
     stringstream s;
 
-    print(s, "{} all_different (", name);
+    print(s, "{} all_different (", _name);
     for (const auto & var : _vars)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
     print(s, ")");
