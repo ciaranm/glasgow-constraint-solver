@@ -28,6 +28,12 @@ using std::stringstream;
 using std::unique_ptr;
 using std::vector;
 
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::print;
+#else
+using fmt::print;
+#endif
+
 template <ArithmeticOperator op_>
 GACArithmetic<op_>::GACArithmetic(const IntegerVariableID v1, const IntegerVariableID v2, const IntegerVariableID result) :
     _v1(v1),
@@ -116,9 +122,10 @@ auto GACArithmetic<op_>::s_exprify(const innards::ProofModel * const model) cons
     case ArithmeticOperator::Mod: op_str = "mod"; break;
     case ArithmeticOperator::Power: op_str = "power"; break;
     }
-
-    return format("({} {} {} {} {})", as_string(_name), op_str,
+    stringstream s;
+    print(s, "({} {} {} {} {})", _name, op_str,
         model->names_and_ids_tracker().s_expr_name_of(_v1),
         model->names_and_ids_tracker().s_expr_name_of(_v2),
         model->names_and_ids_tracker().s_expr_name_of(_result));
+    return s.str();
 }
