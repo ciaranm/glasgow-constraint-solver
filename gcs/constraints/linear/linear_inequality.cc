@@ -5,6 +5,7 @@
 #include <gcs/constraints/linear/utils.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
+#include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
@@ -56,44 +57,18 @@ namespace
     auto justify_cond(const State & state, const auto & coeff_vars, ProofLogger & logger,
         const pair<optional<ProofLine>, optional<ProofLine>> & proof_lines) -> void
     {
-        vector<pair<Integer, variant<ProofLine, XLiteral>>> terms_to_sum;
-        terms_to_sum.emplace_back(1_i, proof_lines.first.value());
+        PolBuilder pol;
+        pol.add(proof_lines.first.value());
 
         for (const auto & cv : coeff_vars.terms) {
             // the following line of logic is definitely correct until you inevitably
             // discover otherwise
             bool upper = (get_coeff(cv) < 0_i);
-
-            auto literal_defining_proof_line = logger.names_and_ids_tracker().need_pol_item_defining_literal(
-                upper ? get_var(cv) < state.upper_bound(get_var(cv) + 1_i) : get_var(cv) >= state.lower_bound(get_var(cv)));
-
-            terms_to_sum.emplace_back(abs(get_coeff(cv)), literal_defining_proof_line);
+            auto lit = upper ? get_var(cv) < state.upper_bound(get_var(cv) + 1_i) : get_var(cv) >= state.lower_bound(get_var(cv));
+            pol.add_for_literal(logger.names_and_ids_tracker(), lit, abs(get_coeff(cv)));
         }
 
-        stringstream step;
-        step << "pol";
-        bool first = true;
-        for (auto & c_and_l : terms_to_sum) {
-            overloaded{
-                [&](const XLiteral & l) {
-                    if (c_and_l.first == 1_i)
-                        step << " " << logger.names_and_ids_tracker().pb_file_string_for(l);
-                    else
-                        step << " " << logger.names_and_ids_tracker().pb_file_string_for(l) << " " << c_and_l.first << " *";
-                },
-                [&](const ProofLine & l) {
-                    if (c_and_l.first == 1_i)
-                        step << " " << l;
-                    else
-                        step << " " << l << " " << c_and_l.first << " *";
-                }}
-                .visit(c_and_l.second);
-            if (! first)
-                step << " +";
-            first = false;
-        }
-        step << ';';
-        logger.emit_proof_line(step.str(), ProofLevel::Temporary);
+        pol.emit(logger, ProofLevel::Temporary);
     }
 }
 
