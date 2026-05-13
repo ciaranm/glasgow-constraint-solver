@@ -90,24 +90,6 @@ auto PolBuilder::add_for_literal(NamesAndIDsTracker & tracker, const IntegerVari
     return *this;
 }
 
-auto PolBuilder::add_and_saturate(ProofLine line) -> PolBuilder &
-{
-    bool was_empty = _empty;
-    add(line);
-    if (! was_empty)
-        saturate();
-    return *this;
-}
-
-auto PolBuilder::add_and_saturate(const XLiteral & lit, const NamesAndIDsTracker & tracker) -> PolBuilder &
-{
-    bool was_empty = _empty;
-    add(lit, tracker);
-    if (! was_empty)
-        saturate();
-    return *this;
-}
-
 auto PolBuilder::saturate() -> PolBuilder &
 {
     _s << " s";

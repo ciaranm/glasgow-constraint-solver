@@ -65,15 +65,11 @@ TEST_CASE("PolBuilder: coefficient 0 rejected")
     CHECK_THROWS(b.add(ProofLineNumber{1}, 0_i));
 }
 
-TEST_CASE("PolBuilder: running saturate (first push not saturated)")
+TEST_CASE("PolBuilder: saturate after a single push is a no-op semantically but still emits 's'")
 {
     PolBuilder b;
-    // Mirrors circuit_scc.cc::PLine::add_and_saturate: first push is the
-    // base, subsequent pushes get "+ s" each.
-    b.add_and_saturate(ProofLineNumber{1})
-        .add_and_saturate(ProofLineNumber{2})
-        .add_and_saturate(ProofLineNumber{3});
-    CHECK(b.str() == "pol 1 2 + s 3 + s ;");
+    b.add(ProofLineNumber{42}).saturate();
+    CHECK(b.str() == "pol 42 s ;");
 }
 
 TEST_CASE("PolBuilder: multiply_by on top of stack")

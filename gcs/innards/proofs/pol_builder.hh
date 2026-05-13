@@ -26,9 +26,18 @@ namespace gcs::innards
      * `PolBuilder` builds up such a line atom-by-atom. Each `add(...)` pushes one
      * term (and, after the first push, automatically inserts the `+` to combine
      * it with the running stack top). Stack-top modifiers (`saturate`,
-     * `multiply_by`, `divide_by`) and the running-saturate convenience
-     * `add_and_saturate(...)` cover the patterns that the codebase's two private
-     * `PLine` helpers (in `mult_bc.cc` and `circuit_scc.cc`) had to reinvent.
+     * `multiply_by`, `divide_by`) cover the patterns that the codebase's two
+     * private `PLine` helpers (in `mult_bc.cc` and `circuit_scc.cc`) had to
+     * reinvent.
+     *
+     * Saturation: call `saturate()` once at the end (or wherever in the build
+     * is semantically right) rather than after each `add(...)`. The codebase's
+     * existing running-saturate sites all sum clause-shaped reified lines
+     * where saturate-every-step, saturate-once, and don't-saturate yield
+     * equivalent reasoning; an `add_and_saturate(...)` convenience is
+     * deliberately not provided. Saturating *before* combining (`add(L);
+     * saturate(); add(L); saturate();`) is almost always a bug — the running
+     * stack-top gets saturated standalone, which is rarely what you want.
      *
      * Usage:
      * \code
@@ -108,25 +117,6 @@ namespace gcs::innards
          * Same as `add_for_literal` but weighted by `coeff`.
          */
         auto add_for_literal(NamesAndIDsTracker & tracker, const IntegerVariableCondition & lit, Integer coeff) -> PolBuilder &;
-
-        /**
-         * Push a term and, if it isn't the first push, saturate immediately
-         * (i.e. emit `<line> + s`). The first push is just `<line>` with no
-         * trailing `s` — it's a base, not a saturate-of-itself.
-         *
-         * This is the "running saturation" pattern used by the private `PLine`
-         * helpers in `mult_bc.cc` and `circuit_scc.cc`: cap the running sum's
-         * coefficients at 1 after every addition so the magnitude doesn't
-         * grow. Distinct from `add(...)...saturate()` at the end, which is
-         * the "saturate once at the end" pattern used by cumulative /
-         * disjunctive.
-         */
-        auto add_and_saturate(ProofLine line) -> PolBuilder &;
-
-        /**
-         * Push a raw PB literal with running-saturate semantics.
-         */
-        auto add_and_saturate(const XLiteral & lit, const NamesAndIDsTracker & tracker) -> PolBuilder &;
 
         /**
          * Apply `s` to the stack top.
