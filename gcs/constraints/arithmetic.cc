@@ -117,7 +117,7 @@ auto GACArithmetic<op_>::s_exprify(const innards::ProofModel * const model) cons
     case ArithmeticOperator::Power: op_str = "power"; break;
     }
 
-    return format("({} {} {} {} {})", _name, op_str,
+    return format("({} {} {} {} {})", as_string(_name), op_str,
         model->names_and_ids_tracker().s_expr_name_of(_v1),
         model->names_and_ids_tracker().s_expr_name_of(_v2),
         model->names_and_ids_tracker().s_expr_name_of(_result));
