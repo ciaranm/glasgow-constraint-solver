@@ -48,7 +48,7 @@ equivalent for that frontend's vocabulary).
 | element | `Element` / `Element2D` | ✓ | ✓ (1D vector and constant-list; 2D matrix variable + constant) | ? |
 | channel (inverse) | `Inverse` | ✓ | ✓ (1- and 2-list inverse; one-to-many form `s UNSUPPORTED`) | ? |
 | noOverlap (Disjunctive) | solver gap (#146) | ? | solver gap (#146) | ? |
-| cumulative | solver gap (#147) | ? | solver gap (#147) | ? |
+| cumulative | `Cumulative` (basic case)[^cum] | ✓ (basic case) | ✓ (basic case) | ? |
 | binPacking | solver gap (#148) | ? | solver gap (#148) | ? |
 | knapsack | `Knapsack` | ✓ | ✓ (basic with two `XCondition`s; not yet exercised by a test) | ? |
 | circuit | `Circuit` | ✓ | ✓ (basic; sub-circuit with size param `s UNSUPPORTED`); semantics mismatch with XCSP3 spec, see #167 | ? |
@@ -78,9 +78,11 @@ addressed.
 ## Solver gaps tracked elsewhere
 
 - [#146](https://github.com/ciaranm/glasgow-constraint-solver/issues/146) — `Disjunctive` (covers XCSP3 `noOverlap`, MiniZinc `fzn_disjunctive`)
-- [#147](https://github.com/ciaranm/glasgow-constraint-solver/issues/147) — `Cumulative`
+- [#147](https://github.com/ciaranm/glasgow-constraint-solver/issues/147) — `Cumulative`: basic-case shipped (constant lengths, heights, capacity; only the `(le, int)` XCSP3 condition; variable starts only; checker-only propagation). Variable d/r/b, edge-finding, and proof logging for stronger propagation are open follow-ups under the same issue.
 - [#148](https://github.com/ciaranm/glasgow-constraint-solver/issues/148) — `BinPacking`
 - [#149](https://github.com/ciaranm/glasgow-constraint-solver/issues/149) — `MDD`
+
+[^cum]: Stage-1 envelope: variable origins, constant lengths/heights/capacity. Propagator is a pure feasibility checker (fires only when every start is fixed). Outside this envelope: MiniZinc lets the stdlib decomposition apply; XCSP3 raises an unsupported error.
 
 ## Related documents
 

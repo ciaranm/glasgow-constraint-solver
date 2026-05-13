@@ -614,6 +614,13 @@ auto main(int argc, char * argv[]) -> int
                 const auto & varcount = arg_as_var(data, args, 2);
                 problem.post(Count{vars, varmatch, varcount});
             }
+            else if (id == "glasgow_cumulative") {
+                const auto & starts = arg_as_array_of_var(data, args, 0);
+                auto lengths = arg_as_array_of_integer(data, args, 1);
+                auto heights = arg_as_array_of_integer(data, args, 2);
+                auto capacity = Integer{static_cast<long long>(args.at(3))};
+                problem.post(Cumulative{starts, *lengths, *heights, capacity});
+            }
             else if (id == "glasgow_increasing_int" || id == "glasgow_increasing_bool") {
                 const auto & vars = arg_as_array_of_var(data, args, 0);
                 problem.post(Increasing{vars});

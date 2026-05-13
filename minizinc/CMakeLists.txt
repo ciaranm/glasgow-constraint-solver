@@ -40,6 +40,9 @@ set_tests_properties(minizinc-cake PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-count COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ counttest true true)
 set_tests_properties(minizinc-count PROPERTIES SKIP_RETURN_CODE 66)
 
+add_test(NAME minizinc-cumulative COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ cumulativetest false true)
+set_tests_properties(minizinc-cumulative PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-countops COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ countops true true)
 set_tests_properties(minizinc-countops PROPERTIES SKIP_RETURN_CODE 66)
 

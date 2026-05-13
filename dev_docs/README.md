@@ -41,6 +41,14 @@ library. For an introduction to *using* the solver, start with the top-level
   truth for which gcs propagators each frontend (MiniZinc, XCSP3, CPMpy)
   exposes, plus where the solver-side gaps are tracked. Update when adding
   a propagator or a frontend binding.
+- [Proof logging for `Cumulative`](cumulative-proof-logging.md) — concrete
+  walk-through of the three-inference proof for the time-table propagator:
+  the `pol`-over-`active=1`-flags idiom, the "extended-reason pinning"
+  technique for hypothetical literals, and the chain-of-blocked-times
+  structure that proves a bound push. The generic patterns are summarised
+  in `constraints.md`; this doc spells them out for one concrete propagator
+  and flags the bits that should carry across to `Disjunctive` and
+  `BinPacking`.
 
 More documents will be added here as we build up coverage of other parts of
 the codebase.

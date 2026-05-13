@@ -84,6 +84,31 @@ The general recipe (see `gcs/constraints/lex.cc` and the
    Declare your `glasgow_<name>` predicate with the same parameters as
    `fzn_<name>`, then redirect.
 
+   **When your propagator only handles a sub-shape** (e.g., par-int
+   coefficients where fzn allows var-int), declare `glasgow_<name>`
+   with the tighter signature and use `fix(...)` in the redirection:
+
+   ```minizinc
+   predicate glasgow_cumulative(array[int] of var int: s,
+       array[int] of int: d, array[int] of int: r, int: b);
+
+   predicate fzn_cumulative(array[int] of var int: s,
+       array[int] of var int: d, array[int] of var int: r,
+       var int: b) =
+       glasgow_cumulative(s,
+           [fix(d[i]) | i in index_set(d)],
+           [fix(r[i]) | i in index_set(r)],
+           fix(b));
+   ```
+
+   `fix()` evaluates to the variable's single value at flattening time,
+   or errors if the variable isn't yet pinned. So this dispatches to the
+   native propagator when the arguments really are constants and fails
+   informatively otherwise. (If you want graceful fallback to the stdlib
+   decomposition instead of a flattening error, inline the relevant
+   `fzn_cumulative_time` / `_task` body inside an `if is_fixed(...)`
+   guard — at the cost of duplicating the stdlib decomposition.)
+
 3. **Add a C++ dispatch branch** in `fzn_glasgow.cc`. Find the
    `else if (id == "...")` chain in the main loop and add yours
    alphabetically among the `glasgow_*` ids. Use the helpers
