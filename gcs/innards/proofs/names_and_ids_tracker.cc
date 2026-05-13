@@ -1,4 +1,5 @@
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
+#include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_error.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
@@ -511,18 +512,11 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
     auto higher_gevar = next(this_gevar);
 
     auto make_pol_chain_line = [&](IntegerVariableCondition cond1, IntegerVariableCondition cond2) -> string {
-        std::stringstream pol;
-        pol << "pol ";
-        for (const auto & cond : {! cond1, ! cond2}) {
-            auto item = need_pol_item_defining_literal(cond);
-            overloaded{
-                [&](ProofLine & p) -> void { pol << p; },
-                [&](XLiteral & x) -> void { pol << pb_file_string_for(x); }}
-                .visit(item);
-            pol << " ";
-        }
-        pol << " + s ;";
-        return pol.str();
+        PolBuilder b;
+        b.add_for_literal(*this, ! cond1)
+            .add_for_literal(*this, ! cond2)
+            .saturate();
+        return b.str();
     };
 
     // implied by the next highest gevar, if there is one?
