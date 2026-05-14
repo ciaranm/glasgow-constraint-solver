@@ -310,16 +310,25 @@ variables — what feels like a one-step linear deduction is actually
 two reasoning steps for VeriPB. When the proof needs to compute "the
 load already pinned to 1 exceeds the bound", emit the arithmetic
 explicitly as a `pol` (polish-notation reverse-polish-style
-combination of existing constraint IDs):
+combination of existing constraint IDs). Use `PolBuilder` rather than
+hand-rolling the string:
 
 ```cpp
-stringstream pol;
-pol << "pol " << C_t_line;
+PolBuilder pol;
+pol.add(C_t_line);
 for (auto & [line, weight] : scaled_units)
-    pol << " " << line << " " << weight << " * +";
-pol << " ;";
-logger->emit_proof_line(pol.str(), ProofLevel::Temporary);
+    pol.add(line, weight);
+pol.emit(*logger, ProofLevel::Temporary);
 ```
+
+`PolBuilder::add(line)` pushes a line (and inserts the `+` separator
+to combine with the running stack top after the first push);
+`add(line, coeff)` pushes a weighted line; `saturate()`,
+`multiply_by(n)`, and `divide_by(n)` are the stack-top modifiers; and
+`add_for_literal(tracker, lit [, coeff])` dispatches over the
+`variant<ProofLine, XLiteral>` that
+`NamesAndIDsTracker::need_pol_item_defining_literal` returns. See
+`gcs/innards/proofs/pol_builder.hh` for the full API.
 
 After the `pol`, the resulting constraint sits in the proof database;
 a wrapping RUP can then close cleanly because the cross-coefficient
