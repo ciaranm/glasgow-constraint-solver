@@ -94,84 +94,6 @@ namespace
         DerivedPBConstraint upper;
     };
 
-    struct PLine
-    {
-        // Represents a pol line in the proof that we can add terms to.
-        // Maybe this could be generalised (e.g. to other operations) and live in proof.cc?
-        stringstream p_line;
-        bool first_added;
-        int count;
-
-        PLine() :
-            first_added(true),
-            count(0)
-        {
-            p_line << "pol ";
-        }
-
-        auto end()
-        {
-            p_line << " ; ";
-        }
-
-        auto add(ProofLine line_number, bool and_saturate)
-        {
-            count++;
-            p_line << line_number;
-            if (first_added) {
-                p_line << " ";
-                first_added = false;
-            }
-            else {
-                if (and_saturate)
-                    p_line << " + s ";
-                else
-                    p_line << " + ";
-            }
-        }
-
-        auto str() const -> string
-        {
-            return p_line.str();
-        }
-
-        auto clear()
-        {
-            p_line.str("");
-            p_line << "pol ";
-            first_added = true;
-            count = 0;
-        }
-
-        auto divide_by(long div)
-        {
-            if (div > 1 && ! first_added)
-                p_line << " " << div << " d "
-                       << " ";
-        }
-
-        auto multiply_by(long mult)
-        {
-            if (! first_added)
-                p_line << " " << mult << " * "
-                       << " ";
-        }
-
-        auto add_multiplied_by(ProofLine line_number, Integer mult)
-        {
-            count++;
-            p_line << line_number;
-            if (first_added) {
-                p_line << " " << mult << " * ";
-
-                first_added = false;
-            }
-            else {
-                p_line << " " << mult << " * + ";
-            }
-        }
-    };
-
     auto result_of_deriving(ProofLogger & logger, ProofRule rule, const WPBSumLE & ineq,
         const HalfReifyOnConjunctionOf & reif, const ProofLevel & proof_level, const ReasonFunction & reason) -> DerivedPBConstraint
     {
@@ -658,29 +580,27 @@ namespace
         if (lb_1.rhs <= 0_i || lb_2.rhs <= 0_i)
             return result_of_deriving(logger, ImpliesProofRule{}, mag_z_sum >= 0_i, reif, ProofLevel::Temporary, reason);
 
-        PLine outer_sum{};
+        PolBuilder outer_sum;
         auto mag_x = require_simple_or_po_iv(lb_1.sum.terms[0].variable);
 
         for (size_t i = 0; i < bit_products.size(); i++) {
             WPBSum bitsum{};
-            PLine inner_sum{};
+            PolBuilder inner_sum;
             for (size_t j = 0; j < bit_products[i].size(); j++) {
-                inner_sum.add_multiplied_by(bit_products[i][j].reverse_reif, power2(Integer(j)));
+                inner_sum.add(bit_products[i][j].reverse_reif, power2(Integer(j)));
                 bitsum += power2(Integer(j)) * bit_products[i][j].flag;
             }
-            inner_sum.add(lb_2.line, false);
-            inner_sum.end();
-            logger.emit_proof_line(inner_sum.str(), ProofLevel::Temporary);
+            inner_sum.add(lb_2.line);
+            inner_sum.emit(logger, ProofLevel::Temporary);
             auto implied_sum = logger.emit_under_reason(ImpliesProofRule{make_optional<ProofLine>(ProofLineNumber{-1})},
                 logger.reify(bitsum + lb_2.rhs * ProofBitVariable{mag_x, Integer(i), false} >= lb_2.rhs, reif),
                 ProofLevel::Temporary, reason);
-            outer_sum.add_multiplied_by(implied_sum, power2(Integer(i)));
+            outer_sum.add(implied_sum, power2(Integer(i)));
         }
 
-        outer_sum.add_multiplied_by(lb_1.line, lb_2.rhs);
+        outer_sum.add(lb_1.line, lb_2.rhs);
 
-        outer_sum.end();
-        auto bitproducts_bound = logger.emit_proof_line(outer_sum.str(), ProofLevel::Temporary);
+        auto bitproducts_bound = outer_sum.emit(logger, ProofLevel::Temporary);
         add_lines(logger, bitproducts_bound, z_eq_product_lines.first);
 
         return result_of_deriving(logger, ImpliesProofRule{make_optional<ProofLine>(ProofLineNumber{-1})},
@@ -714,7 +634,7 @@ namespace
                 mag_z_sum >= 0_i, reif,
                 ProofLevel::Temporary, reason);
 
-        PLine outer_sum{};
+        PolBuilder outer_sum;
 
         auto mag_x = require_simple_or_po_iv(ub_1.sum.terms[0].variable);
 
@@ -722,8 +642,8 @@ namespace
 
         for (size_t i = 0; i < bit_products.size(); i++) {
             WPBSum bitsum{};
-            PLine inner_sum_1{};
-            PLine inner_sum_2{};
+            PolBuilder inner_sum_1;
+            PolBuilder inner_sum_2;
             for (size_t j = 0; j < bit_products[i].size(); j++) {
                 if (bit_products[i][j].partial_product_1 == nullopt) {
                     bit_products[i][j].partial_product_1 = logger.emit_rup_proof_line(
@@ -734,7 +654,7 @@ namespace
                             1_i,
                         ProofLevel::Top);
                 }
-                inner_sum_1.add_multiplied_by(*bit_products[i][j].partial_product_1, power2(Integer(j)));
+                inner_sum_1.add(*bit_products[i][j].partial_product_1, power2(Integer(j)));
 
                 if (bit_products[i][j].partial_product_2 == nullopt) {
                     bit_products[i][j].partial_product_2 = logger.emit_rup_proof_line(
@@ -744,16 +664,14 @@ namespace
                             1_i,
                         ProofLevel::Top);
                 }
-                inner_sum_2.add_multiplied_by(*bit_products[i][j].partial_product_2, power2(Integer(j)));
+                inner_sum_2.add(*bit_products[i][j].partial_product_2, power2(Integer(j)));
 
                 bitsum += power2(Integer(j)) * ! bit_products[i][j].flag;
             }
-            inner_sum_1.add(ub_2.line, false);
-            inner_sum_1.end();
-            inner_sum_2.end();
+            inner_sum_1.add(ub_2.line);
             // Actually derive the sums
-            auto line1 = logger.emit_proof_line(inner_sum_1.str(), ProofLevel::Temporary);
-            auto line2 = logger.emit_proof_line(inner_sum_2.str(), ProofLevel::Temporary);
+            auto line1 = inner_sum_1.emit(logger, ProofLevel::Temporary);
+            auto line2 = inner_sum_2.emit(logger, ProofLevel::Temporary);
 
             auto rhs = Integer{(1 << bit_products[i].size()) - 1};
             auto desired_sum = bitsum + -(ub_2.rhs) * ProofBitVariable{mag_x, Integer(i), true};
@@ -771,15 +689,11 @@ namespace
             auto resolvent_line = logger.emit_red_proof_line(desired_constraint, {}, ProofLevel::Temporary,
                 subproofs);
 
-            outer_sum.add_multiplied_by(resolvent_line, power2(Integer(i)));
+            outer_sum.add(resolvent_line, power2(Integer(i)));
         }
 
-        // Not sure why this one was here...
-        // logger.emit_proof_line(outer_sum.str(), ProofLevel::Temporary);
-
-        outer_sum.add_multiplied_by(ub_1.line, -ub_2.rhs);
-        outer_sum.end();
-        auto bitproducts_bound = logger.emit_proof_line(outer_sum.str(), ProofLevel::Temporary);
+        outer_sum.add(ub_1.line, -ub_2.rhs);
+        auto bitproducts_bound = outer_sum.emit(logger, ProofLevel::Temporary);
 
         add_lines(logger, bitproducts_bound, z_eq_product_lines.second);
 
