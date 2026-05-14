@@ -3,6 +3,7 @@
 #include <gcs/constraints/circuit/circuit_scc.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
+#include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/propagators.hh>
 #include <util/enumerate.hh>
 
@@ -328,12 +329,14 @@ namespace
                     auto geq_this_val_plus_1 = geq_data.at(node).at(val + 1);
                     auto geq_next_val = geq_data.at(node).at(next_val);
                     auto geq_next_val_plus_1 = geq_data.at(node).at(next_val + 1);
-                    stringstream p_line_1;
-                    p_line_1 << "pol " << geq_this_val.backwards_reif_line << " " << geq_next_val.forwards_reif_line << " + ;";
-                    logger.emit_proof_line(p_line_1.str(), ProofLevel::Temporary);
-                    stringstream p_line_2;
-                    p_line_2 << "pol " << geq_this_val_plus_1.backwards_reif_line << " " << geq_next_val.forwards_reif_line << " + ;";
-                    logger.emit_proof_line(p_line_2.str(), ProofLevel::Temporary);
+                    PolBuilder{}
+                        .add(geq_this_val.backwards_reif_line)
+                        .add(geq_next_val.forwards_reif_line)
+                        .emit(logger, ProofLevel::Temporary);
+                    PolBuilder{}
+                        .add(geq_this_val_plus_1.backwards_reif_line)
+                        .add(geq_next_val.forwards_reif_line)
+                        .emit(logger, ProofLevel::Temporary);
                 }
                 for (auto it = values.begin(); it != values.end(); ++it) {
                     long val = *it;
@@ -660,16 +663,16 @@ namespace
                     ProofLevel::Current);
             }
             else {
-                stringstream p_line;
-                p_line << "pol ";
-                p_line << shifted_pos_geq[node][count - 1].forwards_reif_line << " ";
-                p_line << ctx.pos_var_data.at(node).plus_one_lines.at(next_node).geq_line << " + s;";
-                ctx.logger.emit_proof_line(p_line.str(), ProofLevel::Temporary);
-                p_line.str("");
-                p_line << "pol ";
-                p_line << shifted_pos_geq[node][count].backwards_reif_line << " ";
-                p_line << ctx.pos_var_data.at(node).plus_one_lines.at(next_node).leq_line << " + s;";
-                ctx.logger.emit_proof_line(p_line.str(), ProofLevel::Temporary);
+                PolBuilder{}
+                    .add(shifted_pos_geq[node][count - 1].forwards_reif_line)
+                    .add(ctx.pos_var_data.at(node).plus_one_lines.at(next_node).geq_line)
+                    .saturate()
+                    .emit(ctx.logger, ProofLevel::Temporary);
+                PolBuilder{}
+                    .add(shifted_pos_geq[node][count].backwards_reif_line)
+                    .add(ctx.pos_var_data.at(node).plus_one_lines.at(next_node).leq_line)
+                    .saturate()
+                    .emit(ctx.logger, ProofLevel::Temporary);
 
                 ctx.logger.emit_proof_comment(format("Next implies: succ[{}] = {} and {} = {} => 0 >= 1",
                     node, next_node,
@@ -1046,34 +1049,32 @@ namespace
         auto skipped_subroot_ctx = SCCProofContext(ctx, skipped_subroot);
         prove_reachable_set_too_small(skipped_subroot_ctx, ctx.succ[node] == Integer{next_node}, ordering2);
 
-        stringstream final_contradiction_p_line;
-        final_contradiction_p_line << "pol ";
-        stringstream temp_p_line;
-        temp_p_line << "pol ";
-        temp_p_line << ctx.pos_var_data.at(node).plus_one_lines.at(next_node).geq_line << " ";
-        temp_p_line << root_gt_next.forwards_reif_line << " + ;";
-        ctx.logger.emit_proof_line(temp_p_line.str(), ProofLevel::Temporary);
-        final_contradiction_p_line << ctx.logger.emit_rup_proof_line(
-                                          WPBSum{} + 1_i * (ctx.succ[node] != Integer{next_node}) +
-                                                  1_i * ! root_gt_next.flag + 1_i * ! node_gt_root.flag >=
-                                              1_i,
-                                          ProofLevel::Current)
-                                   << " ";
-        temp_p_line.str("");
-        temp_p_line << "pol ";
-        temp_p_line << ctx.pos_var_data.at(node).plus_one_lines.at(next_node).leq_line << " ";
-        temp_p_line << next_gt_subroot.forwards_reif_line << " + ";
-        temp_p_line << subroot_gt_node.forwards_reif_line << " + ;";
-        ctx.logger.emit_proof_line(temp_p_line.str(), ProofLevel::Temporary);
-        final_contradiction_p_line << ctx.logger.emit_rup_proof_line(
-                                          WPBSum{} + 1_i * (ctx.succ[node] != Integer{next_node}) +
-                                                  1_i * ! next_gt_subroot.flag + 1_i * ! subroot_gt_node.flag >=
-                                              1_i,
-                                          ProofLevel::Current)
-                                   << " + ";
-        final_contradiction_p_line << get<2>(node_then_subroot_then_root) << " + ";
-        final_contradiction_p_line << get<2>(subroot_then_node_then_root) << " + s ;";
-        ctx.logger.emit_proof_line(final_contradiction_p_line.str(), ProofLevel::Current);
+        PolBuilder{}
+            .add(ctx.pos_var_data.at(node).plus_one_lines.at(next_node).geq_line)
+            .add(root_gt_next.forwards_reif_line)
+            .emit(ctx.logger, ProofLevel::Temporary);
+        auto rup1 = ctx.logger.emit_rup_proof_line(
+            WPBSum{} + 1_i * (ctx.succ[node] != Integer{next_node}) +
+                    1_i * ! root_gt_next.flag + 1_i * ! node_gt_root.flag >=
+                1_i,
+            ProofLevel::Current);
+        PolBuilder{}
+            .add(ctx.pos_var_data.at(node).plus_one_lines.at(next_node).leq_line)
+            .add(next_gt_subroot.forwards_reif_line)
+            .add(subroot_gt_node.forwards_reif_line)
+            .emit(ctx.logger, ProofLevel::Temporary);
+        auto rup2 = ctx.logger.emit_rup_proof_line(
+            WPBSum{} + 1_i * (ctx.succ[node] != Integer{next_node}) +
+                    1_i * ! next_gt_subroot.flag + 1_i * ! subroot_gt_node.flag >=
+                1_i,
+            ProofLevel::Current);
+        PolBuilder{}
+            .add(rup1)
+            .add(rup2)
+            .add(get<2>(node_then_subroot_then_root))
+            .add(get<2>(subroot_then_node_then_root))
+            .saturate()
+            .emit(ctx.logger, ProofLevel::Current);
 
         ctx.logger.emit_rup_proof_line_under_reason(ctx.reason,
             WPBSum{} + 1_i * (ctx.succ[node] != Integer{next_node}) >= 1_i, ProofLevel::Current);
