@@ -178,6 +178,40 @@ auto NDimensionalElement<EntryType_, dimensions_>::prepare(Propagators & propaga
     return true;
 }
 
+// OPB-ENCODING-BEGIN: element_Dd (D-dimensional family; D in {1, 2, 3})
+//   s-expr (D=1):  element_1d (a_0 a_1 ... a_{n_0-1}) (idx_0, start_0) result
+//   s-expr (D=2):  element_2d ((a_{00} ... a_{0,n_1-1}) ...)
+//                              (idx_0, start_0) (idx_1, start_1) result
+//   s-expr (D=3):  element_3d (nested arrays) (idx_d, start_d) x 3 result
+//
+//   For dimension D and array of shape (n_0, ..., n_{D-1}):
+//
+//   Bounds (for each d in 0..D-1):
+//     ("NDimensionalElement", "index range")
+//         idx_d in [start_d, start_d + n_d - 1]
+//
+//   Clauses (for every combination (i_0, ..., i_{D-1}) with 0 <= i_d < n_d):
+//     ("NDimensionalElement", "equality")
+//         1*result + -1*a[i_0]..[i_{D-1}] == 0
+//         half-reified on
+//             { idx_0 == start_0 + i_0, ..., idx_{D-1} == start_{D-1} + i_{D-1} }
+//
+//   Special case (any n_d == 0):
+//     ("NDimensionalElement", "zero-sized dimension")
+//         0 >= 1            (trivially false; signals UNSAT)
+//
+//   CP literals referenced (for each d, each i in 0..n_d-1):
+//     idx_d == start_d + i
+//
+//   Auxiliary PB flags:     (none)
+//
+//   Notes:
+//     The encoding enumerates the full cartesian product of index values,
+//     emitting one half-reified equality per array cell. Array entries
+//     may be either integer variables or fixed constants; in the constant
+//     case `a[...]` is just an integer literal and the equality reduces
+//     to `result == <constant>`.
+// OPB-ENCODING-END
 template <typename EntryType_, unsigned dimensions_>
 auto NDimensionalElement<EntryType_, dimensions_>::define_proof_model(ProofModel & model) -> void
 {
@@ -604,7 +638,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::s_exprify(const ProofModel * 
         }
     };
 
-    print(s, "{} element (", _name);
+    print(s, "{} element_{}d (", _name, dimensions_);
 
     print_array(s, *_array, print_array);
 
