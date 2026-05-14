@@ -3,6 +3,7 @@
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
+#include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
@@ -352,34 +353,34 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                 // L1: E_ij_fwd + F_i_fwd + B_j_fwd + saturate.
                                 // (s_j - s_i) + s_i + (-s_j) = 0, RHS = 1.
                                 // Result: ¬E_ij + ¬F_i + ¬B_j >= 1.
-                                stringstream pol1;
-                                pol1 << "pol " << e_ij.forward_line
-                                     << " " << bfi.after_fwd << " +"
-                                     << " " << bfj.before_fwd << " +"
-                                     << " s ;";
-                                auto L1 = logger->emit_proof_line(pol1.str(), ProofLevel::Temporary);
+                                auto L1 = PolBuilder{}
+                                              .add(e_ij.forward_line)
+                                              .add(bfi.after_fwd)
+                                              .add(bfj.before_fwd)
+                                              .saturate()
+                                              .emit(*logger, ProofLevel::Temporary);
 
                                 // L2: symmetric, swapping roles of i and j.
-                                stringstream pol2;
-                                pol2 << "pol " << e_ji.forward_line
-                                     << " " << bfj.after_fwd << " +"
-                                     << " " << bfi.before_fwd << " +"
-                                     << " s ;";
-                                auto L2 = logger->emit_proof_line(pol2.str(), ProofLevel::Temporary);
+                                auto L2 = PolBuilder{}
+                                              .add(e_ji.forward_line)
+                                              .add(bfj.after_fwd)
+                                              .add(bfi.before_fwd)
+                                              .saturate()
+                                              .emit(*logger, ProofLevel::Temporary);
 
                                 // AM1: L1 + L2 + clause + A_i_fwd + A_j_fwd +
                                 // saturate. The B/F terms cancel against the
                                 // active flags' AND-gate forward reifs, and
                                 // the clause supplies the E_ij + E_ji >= 1
                                 // that closes the case split.
-                                stringstream pol3;
-                                pol3 << "pol " << L1
-                                     << " " << L2 << " +"
-                                     << " " << clause_line << " +"
-                                     << " " << bfi.active_fwd << " +"
-                                     << " " << bfj.active_fwd << " +"
-                                     << " s ;";
-                                return logger->emit_proof_line(pol3.str(), ProofLevel::Temporary);
+                                return PolBuilder{}
+                                    .add(L1)
+                                    .add(L2)
+                                    .add(clause_line)
+                                    .add(bfi.active_fwd)
+                                    .add(bfj.active_fwd)
+                                    .saturate()
+                                    .emit(*logger, ProofLevel::Temporary);
                             };
 
                             auto atmost1_line = innards::recover_am1<ProofFlag>(
@@ -391,12 +392,11 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                             // resulting constraint is infeasible under the
                             // bounds reason, and the framework's wrapping RUP
                             // step closes the contradiction.
-                            stringstream final_pol;
-                            final_pol << "pol " << atmost1_line
-                                      << " " << A_i_line << " +"
-                                      << " " << A_j_line << " +"
-                                      << " ;";
-                            logger->emit_proof_line(final_pol.str(), ProofLevel::Temporary);
+                            PolBuilder{}
+                                .add(atmost1_line)
+                                .add(A_i_line)
+                                .add(A_j_line)
+                                .emit(*logger, ProofLevel::Temporary);
                         };
 
                         inference.contradiction(logger,
@@ -470,28 +470,28 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         auto clause_line = clause_lines.at(
                             make_pair(min(ti, tj), max(ti, tj)));
 
-                        stringstream pol1;
-                        pol1 << "pol " << e_ij.forward_line
-                             << " " << bfi.after_fwd << " +"
-                             << " " << bfj.before_fwd << " +"
-                             << " s ;";
-                        auto L1 = logger->emit_proof_line(pol1.str(), ProofLevel::Temporary);
+                        auto L1 = PolBuilder{}
+                                      .add(e_ij.forward_line)
+                                      .add(bfi.after_fwd)
+                                      .add(bfj.before_fwd)
+                                      .saturate()
+                                      .emit(*logger, ProofLevel::Temporary);
 
-                        stringstream pol2;
-                        pol2 << "pol " << e_ji.forward_line
-                             << " " << bfj.after_fwd << " +"
-                             << " " << bfi.before_fwd << " +"
-                             << " s ;";
-                        auto L2 = logger->emit_proof_line(pol2.str(), ProofLevel::Temporary);
+                        auto L2 = PolBuilder{}
+                                      .add(e_ji.forward_line)
+                                      .add(bfj.after_fwd)
+                                      .add(bfi.before_fwd)
+                                      .saturate()
+                                      .emit(*logger, ProofLevel::Temporary);
 
-                        stringstream pol3;
-                        pol3 << "pol " << L1
-                             << " " << L2 << " +"
-                             << " " << clause_line << " +"
-                             << " " << bfi.active_fwd << " +"
-                             << " " << bfj.active_fwd << " +"
-                             << " s ;";
-                        return logger->emit_proof_line(pol3.str(), ProofLevel::Temporary);
+                        return PolBuilder{}
+                            .add(L1)
+                            .add(L2)
+                            .add(clause_line)
+                            .add(bfi.active_fwd)
+                            .add(bfj.active_fwd)
+                            .saturate()
+                            .emit(*logger, ProofLevel::Temporary);
                     };
                     auto atmost1_line = innards::recover_am1<ProofFlag>(
                         *logger, ProofLevel::Top,
@@ -507,12 +507,12 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                     //   Saturated (RHS = 1):  ext_lit + ¬reason >= 1
                     // Under reason (¬reason = 0) this gives ext_lit = 1,
                     // which is the running-bound advance.
-                    stringstream pol;
-                    pol << "pol " << atmost1_line
-                        << " " << A_k_line << " +"
-                        << " " << A_j_line << " +"
-                        << " s ;";
-                    logger->emit_proof_line(pol.str(), ProofLevel::Temporary);
+                    PolBuilder{}
+                        .add(atmost1_line)
+                        .add(A_k_line)
+                        .add(A_j_line)
+                        .saturate()
+                        .emit(*logger, ProofLevel::Temporary);
 
                     // (e) Intermediate chain steps deposit ext_lit as an
                     // explicit RUP under reason so the next step's
