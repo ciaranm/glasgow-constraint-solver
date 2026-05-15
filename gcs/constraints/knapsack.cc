@@ -37,14 +37,14 @@ using std::move;
 using std::nullopt;
 using std::optional;
 using std::pair;
-using std::ranges::minmax_element;
-using std::ranges::none_of;
 using std::set;
 using std::size_t;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
 using std::vector;
+using std::ranges::minmax_element;
+using std::ranges::none_of;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::print;
@@ -88,7 +88,7 @@ namespace
         overloaded{
             [&](const SimpleIntegerVariableID & v) {
                 builder.add_for_literal(logger->names_and_ids_tracker(),
-                    upper ? v < state.upper_bound(v) + 1_i : v >= state.lower_bound(v));
+                    upper ? v <= state.upper_bound(v) : v >= state.lower_bound(v));
             },
             [&](const ConstantIntegerVariableID &) { throw UnimplementedException{}; },
             [&](const ViewOfIntegerVariableID &) { throw UnimplementedException{}; }}
@@ -484,7 +484,7 @@ namespace
                             .add(data->les.at(x).forward_reif_line)
                             .emit(*logger, ProofLevel::Temporary);
                         logger->emit_rup_proof_line_under_reason(generic_reason(state, reason_variables),
-                            no_support_le + 1_i * (totals.at(x) < 1_i + committed.at(x) + highest) >= 1_i,
+                            no_support_le + 1_i * (totals.at(x) <= committed.at(x) + highest) >= 1_i,
                             ProofLevel::Temporary);
                     }
 
@@ -493,7 +493,7 @@ namespace
                         WPBSum{} + 1_i * (totals.at(x) >= committed.at(x) + lowest) >= 1_i,
                         ProofLevel::Temporary);
                     logger->emit_rup_proof_line_under_reason(generic_reason(state, reason_variables),
-                        WPBSum{} + 1_i * (totals.at(x) < 1_i + committed.at(x) + highest) >= 1_i,
+                        WPBSum{} + 1_i * (totals.at(x) <= committed.at(x) + highest) >= 1_i,
                         ProofLevel::Temporary);
                 }
             }

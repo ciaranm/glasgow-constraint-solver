@@ -30,11 +30,11 @@ using std::holds_alternative;
 using std::max;
 using std::min;
 using std::pair;
-using std::ranges::sort;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
 using std::vector;
+using std::ranges::sort;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::print;
@@ -132,7 +132,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
             // collide with v1_ge0 / become vacuous; the propagator detects
             // UNSAT directly.
             if (v2_ub >= 0_i) {
-                inference.infer(logger, v1 < v2_ub + 1_i,
+                inference.infer(logger, v1 <= v2_ub,
                     JustifyExplicitlyThenRUP{
                         [logger, v1, v2, v2_ub, abs_nonneg_ge](const ReasonFunction & r) -> void {
                             justify_abs_v1_le_v2_ub(*logger, v1, v2, v2_ub, *abs_nonneg_ge, r);
@@ -152,7 +152,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
 
             auto [v1_lb, v1_ub] = state.bounds(v1);
             auto big_m = max(v1_ub, -v1_lb);
-            inference.infer(logger, v2 < big_m + 1_i,
+            inference.infer(logger, v2 <= big_m,
                 JustifyExplicitlyThenRUP{
                     [logger, v1, v2, v1_lb, v1_ub, big_m, abs_nonneg_le, abs_neg_le](const ReasonFunction & r) -> void {
                         justify_abs_v2_le_big_m(*logger, v1, v2, v1_lb, v1_ub, big_m, *abs_nonneg_le, *abs_neg_le, r);
@@ -195,7 +195,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                             [logger, v1, v2, v1_lb, v1_ub, image_ub, abs_nonneg_le, abs_neg_le](const ReasonFunction & r) -> void {
                                 justify_abs_v2_le_big_m(*logger, v1, v2, v1_lb, v1_ub, image_ub, *abs_nonneg_le, *abs_neg_le, r);
                             }},
-                        ReasonFunction{[v1, v1_lb, v1_ub]() { return Reason{{v1 >= v1_lb, v1 < v1_ub + 1_i}}; }});
+                        ReasonFunction{[v1, v1_lb, v1_ub]() { return Reason{{v1 >= v1_lb, v1 <= v1_ub}}; }});
                 }
 
                 if (v1_lb >= 1_i && v1_lb > v2_lb) {
@@ -212,7 +212,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                             [logger, v1, v2, v1_ub, abs_neg_ge](const ReasonFunction & r) -> void {
                                 justify_abs_v2_lb(*logger, v1, v2, AbsLbSide::Nonpos, -v1_ub, *abs_neg_ge, r);
                             }},
-                        ReasonFunction{[v1, v1_ub]() { return Reason{v1 < v1_ub + 1_i}; }});
+                        ReasonFunction{[v1, v1_ub]() { return Reason{v1 <= v1_ub}; }});
                 }
             }
 
@@ -223,7 +223,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                         [logger, v1, v2, v2_ub, abs_nonneg_ge](const ReasonFunction & r) -> void {
                             justify_abs_v1_le_v2_ub(*logger, v1, v2, v2_ub, *abs_nonneg_ge, r);
                         }},
-                    ReasonFunction{[v2, v2_ub]() { return Reason{v2 < v2_ub + 1_i}; }});
+                    ReasonFunction{[v2, v2_ub]() { return Reason{v2 <= v2_ub}; }});
             }
             if (-v2_ub > v1_lb) {
                 inference.infer_greater_than_or_equal(logger, v1, -v2_ub,
@@ -231,7 +231,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                         [logger, v1, v2, v2_ub, abs_neg_ge](const ReasonFunction & r) -> void {
                             justify_abs_v1_ge_neg_v2_ub(*logger, v1, v2, v2_ub, *abs_neg_ge, r);
                         }},
-                    ReasonFunction{[v2, v2_ub]() { return Reason{v2 < v2_ub + 1_i}; }});
+                    ReasonFunction{[v2, v2_ub]() { return Reason{v2 <= v2_ub}; }});
             }
 
             // Interior pruning: remove values in v2 with no preimage in v1,

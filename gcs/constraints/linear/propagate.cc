@@ -62,7 +62,7 @@ namespace
         for (const auto & [idx, cv] : enumerate(coeff_vars.terms)) {
             if (var && get_var(cv) != *var) {
                 if ((get_coeff(cv) < 0_i) != invert) {
-                    reason.emplace_back(get_var(cv) < bounds[idx].second + 1_i);
+                    reason.emplace_back(get_var(cv) <= bounds[idx].second);
                 }
                 else {
                     reason.emplace_back(get_var(cv) >= bounds[idx].first);

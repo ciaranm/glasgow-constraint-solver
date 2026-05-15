@@ -142,7 +142,7 @@ auto ReifiedCompareLessThanOrMaybeEqual::install_propagators(Propagators & propa
                                                 const Literal & cond) -> PropagatorState {
             auto v1_bounds = state.bounds(v1), v2_bounds = state.bounds(v2);
             inference.infer_less_than(logger, v1, v2_bounds.second + (or_equal ? 1_i : 0_i), JustifyUsingRUP{},
-                ReasonFunction{[=]() { return Reason{{cond, v2 < v2_bounds.second + 1_i}}; }});
+                ReasonFunction{[=]() { return Reason{{cond, v2 <= v2_bounds.second}}; }});
             inference.infer_greater_than_or_equal(logger, v2, v1_bounds.first + (or_equal ? 0_i : 1_i), JustifyUsingRUP{},
                 ReasonFunction{[=]() { return Reason{{cond, v1 >= v1_bounds.first}}; }});
             return v1_bounds.second < (v2_bounds.first + (or_equal ? 1_i : 0_i))
@@ -155,7 +155,7 @@ auto ReifiedCompareLessThanOrMaybeEqual::install_propagators(Propagators & propa
                                                     const Literal & cond) -> PropagatorState {
             auto v1_bounds = state.bounds(v1), v2_bounds = state.bounds(v2);
             inference.infer_less_than(logger, v2, v1_bounds.second + (! or_equal ? 1_i : 0_i), JustifyUsingRUP{},
-                ReasonFunction{[=]() { return Reason{{cond, v1 < v1_bounds.second + 1_i}}; }});
+                ReasonFunction{[=]() { return Reason{{cond, v1 <= v1_bounds.second}}; }});
             inference.infer_greater_than_or_equal(logger, v1, v2_bounds.first + (! or_equal ? 0_i : 1_i), JustifyUsingRUP{},
                 ReasonFunction{[=]() { return Reason{{cond, v2 >= v2_bounds.first}}; }});
             return v2_bounds.second < (v1_bounds.first + (! or_equal ? 1_i : 0_i))
@@ -171,13 +171,13 @@ auto ReifiedCompareLessThanOrMaybeEqual::install_propagators(Propagators & propa
                 // v1 has to be less than (or equal): constraint must hold.
                 return reification_verdict::MustHold{
                     .justification = JustifyUsingRUP{},
-                    .reason = ReasonFunction{[=]() { return Reason{{v1 < v1_bounds.second + 1_i, v2 >= v2_bounds.first}}; }}};
+                    .reason = ReasonFunction{[=]() { return Reason{{v1 <= v1_bounds.second, v2 >= v2_bounds.first}}; }}};
             }
             else if (or_equal ? (v1_bounds.first > v2_bounds.second) : (v1_bounds.first >= v2_bounds.second)) {
                 // v1 has to be greater than (or equal): constraint cannot hold.
                 return reification_verdict::MustNotHold{
                     .justification = JustifyUsingRUP{},
-                    .reason = ReasonFunction{[=]() { return Reason{{v1 >= v1_bounds.first, v2 < v2_bounds.second + 1_i}}; }}};
+                    .reason = ReasonFunction{[=]() { return Reason{{v1 >= v1_bounds.first, v2 <= v2_bounds.second}}; }}};
             }
             else
                 return reification_verdict::StillUndecided{};

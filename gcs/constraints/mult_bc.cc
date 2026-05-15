@@ -134,11 +134,11 @@ namespace
                         switch (cond->op) {
                         case VariableConditionOperator::Equal:
                             rup_hints.emplace_back(*get_def_line_for_lit(logger, cond->var >= cond->value));
-                            rup_hints.emplace_back(*get_def_line_for_lit(logger, cond->var < cond->value + 1_i));
+                            rup_hints.emplace_back(*get_def_line_for_lit(logger, cond->var <= cond->value));
                             break;
                         case VariableConditionOperator::NotEqual:
                             rup_hints.emplace_back(*get_def_line_for_lit(logger, cond->var < cond->value));
-                            rup_hints.emplace_back(*get_def_line_for_lit(logger, cond->var >= cond->value + 1_i));
+                            rup_hints.emplace_back(*get_def_line_for_lit(logger, cond->var > cond->value));
                             break;
                         case VariableConditionOperator::GreaterEqual:
                         case VariableConditionOperator::Less:
@@ -725,7 +725,7 @@ namespace
             auto rup_lower = result_of_deriving(logger,
                 ImpliesProofRule{lower_def_line}, var_sum >= lower, {}, ProofLevel::Temporary, reason);
 
-            auto upper_def_line = get_def_line_for_lit(logger, var < upper + 1_i);
+            auto upper_def_line = get_def_line_for_lit(logger, var <= upper);
             auto rup_upper = result_of_deriving(logger, ImpliesProofRule{upper_def_line}, neg_var_sum >= -upper, {}, ProofLevel::Temporary, reason);
 
             rup_bounds.insert({var, DerivedBounds{rup_lower, rup_upper}});
@@ -844,13 +844,13 @@ namespace
         auto max_x = Integer{x_has_neg ? (power2(x_bits - 1_i)) : power2(x_bits)} - 1_i;
 
         // logger.emit_proof_comment("X bounds for quotient");
-        auto upper_x_lit = assume_upper ? x < smallest_quotient : x >= largest_quotient + 1_i;
+        auto upper_x_lit = assume_upper ? x < smallest_quotient : x > largest_quotient;
         auto upper_x_lit_def_line = get_def_line_for_lit(logger, upper_x_lit);
         const auto rup_x_upper = result_of_deriving(logger, ImpliesProofRule{upper_x_lit_def_line},
             WPBSum{} + -1_i * x >= -(! assume_upper ? max_x : smallest_quotient - 1_i),
             HalfReifyOnConjunctionOf{upper_x_lit}, ProofLevel::Temporary, reason);
 
-        auto lower_x_lit = (! assume_upper) ? x >= largest_quotient + 1_i : x < smallest_quotient;
+        auto lower_x_lit = (! assume_upper) ? x > largest_quotient : x < smallest_quotient;
         auto lower_x_lit_def_line = get_def_line_for_lit(logger, lower_x_lit);
         const auto rup_x_lower = result_of_deriving(logger, ImpliesProofRule{lower_x_lit_def_line},
             WPBSum{} + 1_i * x >= (assume_upper ? min_x : largest_quotient + 1_i),
@@ -867,7 +867,7 @@ namespace
         auto lower_y_lit_def_line = get_def_line_for_lit(logger, y >= y_lower);
         auto rup_y_lower = result_of_deriving(logger, ImpliesProofRule{lower_y_lit_def_line}, var_sum >= y_lower, {}, ProofLevel::Temporary, reason);
 
-        auto upper_y_lit_def_line = get_def_line_for_lit(logger, y < y_upper + 1_i);
+        auto upper_y_lit_def_line = get_def_line_for_lit(logger, y <= y_upper);
         auto rup_y_upper = result_of_deriving(logger, ImpliesProofRule{upper_y_lit_def_line}, neg_var_sum >= -y_upper, {}, ProofLevel::Temporary, reason);
 
         rup_bounds.insert({y, DerivedBounds{rup_y_lower, rup_y_upper}});
@@ -912,7 +912,7 @@ namespace
 
         auto lower_z_def_line = get_def_line_for_lit(logger, z >= z_lower);
         auto rup_z_lower = result_of_deriving(logger, ImpliesProofRule{lower_z_def_line}, z_sum >= z_lower, {}, ProofLevel::Temporary, reason);
-        auto upper_z_def_line = get_def_line_for_lit(logger, z < z_upper + 1_i);
+        auto upper_z_def_line = get_def_line_for_lit(logger, z <= z_upper);
         auto rup_z_upper = result_of_deriving(logger, ImpliesProofRule{upper_z_def_line}, neg_z_sum >= -z_upper, {}, ProofLevel::Temporary, reason);
 
         // Derive upper and lower bounds on z, conditioned on sign bits for x and y
@@ -1036,12 +1036,12 @@ namespace
                     smallest_possible_quotient, largest_possible_quotient,
                     channelling_constraints, mag_var, z_eq_product_lines, x_is_first, false, sign_lines);
                 logger->emit_rup_proof_line_under_reason(reason,
-                    WPBSum{} + 1_i * (x_var < largest_possible_quotient + 1_i) >= 1_i, ProofLevel::Current);
+                    WPBSum{} + 1_i * (x_var <= largest_possible_quotient) >= 1_i, ProofLevel::Current);
             };
 
-            inference.infer(logger, x_var < largest_possible_quotient + 1_i,
+            inference.infer(logger, x_var <= largest_possible_quotient,
                 JustifyExplicitlyOnly{lower_justf},
-                [lits = Reason{z_var >= var_bounds.at(z_var).first, z_var < var_bounds.at(z_var).second + 1_i, y_var >= var_bounds.at(y_var).first, y_var < var_bounds.at(y_var).second + 1_i}]() { return lits; });
+                [lits = Reason{z_var >= var_bounds.at(z_var).first, z_var <= var_bounds.at(z_var).second, y_var >= var_bounds.at(y_var).first, y_var <= var_bounds.at(y_var).second}]() { return lits; });
 
             var_bounds.at(x_var).first = min(var_bounds.at(x_var).first, largest_possible_quotient);
             auto upper_justf = [&](const ReasonFunction & reason) {
@@ -1054,7 +1054,7 @@ namespace
 
             inference.infer(logger, x_var >= smallest_possible_quotient,
                 JustifyExplicitlyOnly{upper_justf},
-                [lits = Reason{z_var >= var_bounds.at(z_var).first, z_var < var_bounds.at(z_var).second + 1_i, y_var >= var_bounds.at(y_var).first, y_var < var_bounds.at(y_var).second + 1_i}]() { return lits; });
+                [lits = Reason{z_var >= var_bounds.at(z_var).first, z_var <= var_bounds.at(z_var).second, y_var >= var_bounds.at(y_var).first, y_var <= var_bounds.at(y_var).second}]() { return lits; });
         }
         else if (y_min == 0_i && y_max != 0_i && (z_min > 0_i || z_max < 0_i)) {
             // y is either 0 or strictly positive and z has either all positive or all negative values
@@ -1076,7 +1076,7 @@ namespace
                     smallest_possible_quotient, largest_possible_quotient,
                     channelling_constraints, mag_var, z_eq_product_lines, x_is_first, false, sign_lines);
                 logger->emit_rup_proof_line_under_reason(reason,
-                    WPBSum{} + 1_i * (x_var < largest_possible_quotient + 1_i) >= 1_i, ProofLevel::Current);
+                    WPBSum{} + 1_i * (x_var <= largest_possible_quotient) >= 1_i, ProofLevel::Current);
             };
 
             auto lower_justf = [&](const ReasonFunction & reason) {
@@ -1094,18 +1094,18 @@ namespace
 
             if (smallest_possible_quotient > largest_possible_quotient) {
                 inference.infer(logger, FalseLiteral{}, JustifyExplicitlyOnly{both_justf},
-                    [lits = Reason{z_var >= var_bounds.at(z_var).first, z_var < var_bounds.at(z_var).second + 1_i,
-                         y_var >= var_bounds.at(y_var).first, y_var < var_bounds.at(y_var).second + 1_i}]() { return lits; });
+                    [lits = Reason{z_var >= var_bounds.at(z_var).first, z_var <= var_bounds.at(z_var).second,
+                         y_var >= var_bounds.at(y_var).first, y_var <= var_bounds.at(y_var).second}]() { return lits; });
             }
             else {
-                inference.infer(logger, x_var < largest_possible_quotient + 1_i,
+                inference.infer(logger, x_var <= largest_possible_quotient,
                     JustifyExplicitlyOnly{upper_justf},
-                    [lits = Reason{z_var >= var_bounds.at(z_var).first, z_var < var_bounds.at(z_var).second + 1_i,
-                         y_var >= var_bounds.at(y_var).first, y_var < var_bounds.at(y_var).second + 1_i}]() { return lits; });
+                    [lits = Reason{z_var >= var_bounds.at(z_var).first, z_var <= var_bounds.at(z_var).second,
+                         y_var >= var_bounds.at(y_var).first, y_var <= var_bounds.at(y_var).second}]() { return lits; });
                 inference.infer(logger, x_var >= smallest_possible_quotient,
                     JustifyExplicitlyOnly{lower_justf},
-                    [lits = Reason{z_var >= var_bounds.at(z_var).first, z_var < var_bounds.at(z_var).second + 1_i,
-                         y_var >= var_bounds.at(y_var).first, y_var < var_bounds.at(y_var).second + 1_i}]() { return lits; });
+                    [lits = Reason{z_var >= var_bounds.at(z_var).first, z_var <= var_bounds.at(z_var).second,
+                         y_var >= var_bounds.at(y_var).first, y_var <= var_bounds.at(y_var).second}]() { return lits; });
             }
         }
         else {
@@ -1249,15 +1249,15 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
                 prove_product_bounds(reason, *logger, bit_products, v1, v2, v3, var_bounds,
                     smallest_product, largest_product, channelling_constraints, mag_var, v3_eq_product_lines, sign_lines);
                 logger->emit_rup_proof_line_under_reason(reason,
-                    WPBSum{} + 1_i * (v3 < largest_product + 1_i) >= 1_i, ProofLevel::Current);
+                    WPBSum{} + 1_i * (v3 <= largest_product) >= 1_i, ProofLevel::Current);
                 logger->emit_rup_proof_line_under_reason(reason,
                     WPBSum{} + 1_i * (v3 >= smallest_product) >= 1_i, ProofLevel::Current);
             };
 
-            inference.infer_all(logger, {v3 < largest_product + 1_i, v3 >= smallest_product},
+            inference.infer_all(logger, {v3 <= largest_product, v3 >= smallest_product},
                 JustifyExplicitlyOnly{justf},
-                [lits = Reason{v1 >= var_bounds.at(v1).first, v1 < var_bounds.at(v1).second + 1_i,
-                     v2 >= var_bounds.at(v2).first, v2 < var_bounds.at(v2).second + 1_i}]() { return lits; });
+                [lits = Reason{v1 >= var_bounds.at(v1).first, v1 <= var_bounds.at(v1).second,
+                     v2 >= var_bounds.at(v2).first, v2 <= var_bounds.at(v2).second}]() { return lits; });
 
             auto bounds3 = state.bounds(v3);
             filter_quotient(v1, v2, v3, bounds3.first, bounds3.second, bounds2.first, bounds2.second, all_vars, state, inference,

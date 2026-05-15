@@ -1,5 +1,5 @@
-#include <gcs/constraints/lex.hh>
 #include <gcs/constraints/innards/reified_dispatcher.hh>
+#include <gcs/constraints/lex.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
@@ -149,13 +149,13 @@ namespace
                     WPBSum{} + 1_i * (vars_1[alpha] >= b2_alpha.first) + 1_i * ! *prefix_equal_flags->at(k + 1) >= 1_i,
                     ProofLevel::Temporary);
                 logger->emit_rup_proof_line_under_reason(r,
-                    WPBSum{} + 1_i * (vars_2[alpha] < b1_alpha.second + 1_i) + 1_i * ! *prefix_equal_flags->at(k + 1) >= 1_i,
+                    WPBSum{} + 1_i * (vars_2[alpha] <= b1_alpha.second) + 1_i * ! *prefix_equal_flags->at(k + 1) >= 1_i,
                     ProofLevel::Temporary);
             }
         };
 
         inference.infer_all(logger,
-            {vars_1[alpha] >= b2_alpha.first, vars_2[alpha] < b1_alpha.second + 1_i},
+            {vars_1[alpha] >= b2_alpha.first, vars_2[alpha] <= b1_alpha.second},
             JustifyExplicitlyThenRUP{tighten_proof}, reason);
 
         auto nb1_alpha = state.bounds(vars_1[alpha]);
@@ -214,7 +214,7 @@ namespace
                 };
 
                 inference.infer_all(logger,
-                    {vars_1[alpha] >= nb2_alpha.first + 1_i,
+                    {vars_1[alpha] > nb2_alpha.first,
                         vars_2[alpha] < nb1_alpha.second},
                     JustifyExplicitlyThenRUP{force_strict_proof}, reason);
 

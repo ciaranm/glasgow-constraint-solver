@@ -23,11 +23,11 @@ using namespace gcs::innards;
 
 using std::make_unique;
 using std::move;
-using std::ranges::reverse;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
 using std::vector;
+using std::ranges::reverse;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::print;
@@ -114,7 +114,7 @@ auto IncreasingChain::install_propagators(Propagators & propagators) -> void
                 auto reason_ub = prev_ub;
                 inference.infer_less_than(logger, vars[i], needed + 1_i,
                     JustifyUsingRUP{},
-                    ReasonFunction{[v = vars[i + 1], reason_ub]() { return Reason{{v < reason_ub + 1_i}}; }});
+                    ReasonFunction{[v = vars[i + 1], reason_ub]() { return Reason{{v <= reason_ub}}; }});
                 prev_ub = needed;
             }
             else {

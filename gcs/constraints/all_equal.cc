@@ -103,7 +103,7 @@ auto AllEqual::install_propagators(Propagators & propagators) -> void
             if (state.upper_bound(vars[i]) > hi)
                 inference.infer_less_than(logger, vars[i], hi + 1_i,
                     JustifyUsingRUP{},
-                    ReasonFunction{[w = argmin_hi, hi = hi]() { return Reason{{w < hi + 1_i}}; }});
+                    ReasonFunction{[w = argmin_hi, hi = hi]() { return Reason{{w <= hi}}; }});
         }
 
         // If any domain has holes, prune every var to the intersection of

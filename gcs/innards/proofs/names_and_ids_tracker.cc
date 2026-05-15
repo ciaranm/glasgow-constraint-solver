@@ -443,7 +443,7 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
         if (_imp->logger)
             visit([&](const auto & id) {
                 auto [_f_line, _r_line] = _imp->logger->emit_red_proof_lines_reifying(
-                    WPBSum{} + (1_i * (id >= v)) + (1_i * ! (id >= (v + 1_i))) >= 2_i,
+                    WPBSum{} + (1_i * (id >= v)) + (1_i * ! (id > v)) >= 2_i,
                     id == v, ProofLevel::Top);
                 forwards_line = _f_line;
                 reverse_line = _r_line;
@@ -451,8 +451,8 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
                 id);
         else {
             visit([&](const auto & id) {
-                forwards_line = *_imp->model->add_constraint(WPBSum{} + 1_i * (id >= v) + 1_i * ! (id >= v + 1_i) >= 2_i, {{id == v}});
-                reverse_line = *_imp->model->add_constraint(WPBSum{} + 1_i * ! (id >= v) + 1_i * (id >= v + 1_i) >= 1_i, {{id != v}});
+                forwards_line = *_imp->model->add_constraint(WPBSum{} + 1_i * (id >= v) + 1_i * ! (id > v) >= 2_i, {{id == v}});
+                reverse_line = *_imp->model->add_constraint(WPBSum{} + 1_i * ! (id >= v) + 1_i * (id > v) >= 1_i, {{id != v}});
             },
                 id);
             ++_imp->model_variables;

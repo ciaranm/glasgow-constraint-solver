@@ -14,7 +14,7 @@ auto gcs::innards::generic_reason(const State & state, const std::vector<Integer
             reason.push_back(var == bounds.first);
         else {
             reason.push_back(var >= bounds.first);
-            reason.push_back(var < bounds.second + 1_i);
+            reason.push_back(var <= bounds.second);
             if (state.domain_has_holes(var)) {
                 for (auto v = bounds.first + 1_i; v < bounds.second; ++v)
                     if (! state.in_domain(var, v))
@@ -38,7 +38,7 @@ auto gcs::innards::bounds_reason(const State & state, const std::vector<IntegerV
             reason.push_back(var == bounds.first);
         else {
             reason.push_back(var >= bounds.first);
-            reason.push_back(var < bounds.second + 1_i);
+            reason.push_back(var <= bounds.second);
         }
     }
     if (extra_lit)

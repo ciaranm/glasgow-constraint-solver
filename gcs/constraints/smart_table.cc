@@ -686,13 +686,13 @@ namespace
         case LessThan:
             return var < value;
         case LessThanEqual:
-            return var < value + 1_i;
+            return var <= value;
         case Equal:
             return var == value;
         case NotEqual:
             return var != value;
         case GreaterThan:
-            return var >= value + 1_i;
+            return var > value;
         case GreaterThanEqual:
             return var >= value;
         case In:
@@ -966,7 +966,6 @@ auto SmartTable::s_exprify(const ProofModel * const model) const -> string
     for (const auto & var : _vars)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
     print(s, ")\n        )");
-
 
     return s.str();
 }

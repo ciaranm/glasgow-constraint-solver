@@ -256,8 +256,11 @@ inference.contradiction(logger, justification, reason);
 ```
 
 `lit` is an `IntegerVariableCondition` (e.g. `v != 3_i`, `v < 7_i`,
-`v == 5_i`). If the inference makes the domain empty, the framework
-raises a contradiction automatically — you don't need to check first.
+`v == 5_i`, `v <= 7_i`, `v > 3_i`). The `<=` and `>` overloads desugar to
+`v < val + 1_i` and `v >= val + 1_i` respectively — internally only `Less`
+and `GreaterEqual` exist. If the inference makes the domain empty, the
+framework raises a contradiction automatically — you don't need to check
+first.
 
 ### Reasons
 

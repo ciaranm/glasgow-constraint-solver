@@ -569,7 +569,7 @@ auto main(int argc, char * argv[]) -> int
 
                 // reif -> var is inside the range as a whole
                 problem.post(Or{{reif != 1_i, var >= set.lower()}, TrueLiteral{}});
-                problem.post(Or{{reif != 1_i, var < set.upper() + 1_i}, TrueLiteral{}});
+                problem.post(Or{{reif != 1_i, var <= set.upper()}, TrueLiteral{}});
 
                 // reif -> var isn't inside any of the gaps between ranges
                 for (auto [l, u] : set.each_gap_interval())
@@ -577,7 +577,7 @@ auto main(int argc, char * argv[]) -> int
 
                 // ! reif -> var isn't inside this range
                 for (auto [l, u] : set.each_interval())
-                    problem.post(Or{{reif == 1_i, var < l, var >= u + 1_i}, TrueLiteral{}});
+                    problem.post(Or{{reif == 1_i, var<l, var> u}, TrueLiteral{}});
             }
             else if (id == "glasgow_alldifferent") {
                 const auto & vars = arg_as_array_of_var(data, args, 0);

@@ -64,7 +64,7 @@ namespace
             // the following line of logic is definitely correct until you inevitably
             // discover otherwise
             bool upper = (get_coeff(cv) < 0_i);
-            auto lit = upper ? get_var(cv) < state.upper_bound(get_var(cv) + 1_i) : get_var(cv) >= state.lower_bound(get_var(cv));
+            auto lit = upper ? get_var(cv) <= state.upper_bound(get_var(cv)) : get_var(cv) >= state.lower_bound(get_var(cv));
             pol.add_for_literal(logger.names_and_ids_tracker(), lit, abs(get_coeff(cv)));
         }
 

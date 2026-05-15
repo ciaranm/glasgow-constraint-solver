@@ -83,7 +83,7 @@ auto Propagators::define_bound(const State & state, ProofModel * const optional_
         if (optional_model)
             optional_model->add_constraint(constraint_name, sub_rule, WPBSum{} + 1_i * var <= val);
         install_initialiser([var, val](const State &, auto & inference, ProofLogger * const logger) {
-            inference.infer(logger, var < val + 1_i, JustifyUsingRUP{}, ReasonFunction{});
+            inference.infer(logger, var <= val, JustifyUsingRUP{}, ReasonFunction{});
         });
         return;
     }
