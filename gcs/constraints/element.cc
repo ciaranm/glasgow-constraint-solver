@@ -56,14 +56,14 @@ namespace
     auto check_array_dimensions(const vector<T_> & v, size_t expected) -> void
     {
         if (v.size() != expected)
-            throw UnexpectedException{"didn't get a regularly sized array for element constraint"};
+            throw InvalidProblemDefinitionException{"didn't get a regularly sized array for element constraint"};
     }
 
     template <typename T_>
     auto check_array_dimensions(const vector<vector<T_>> & v, size_t expected) -> void
     {
         if (v.size() != expected)
-            throw UnexpectedException{"didn't get a regularly sized array for element constraint"};
+            throw InvalidProblemDefinitionException{"didn't get a regularly sized array for element constraint"};
 
         for (const auto & vv : v) {
             check_array_dimensions(vv, v.at(0).size());

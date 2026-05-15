@@ -107,7 +107,7 @@ auto Problem::create_integer_variable(Integer lower, Integer upper,
     const optional<string> & name) -> SimpleIntegerVariableID
 {
     if (lower > upper)
-        throw UnexpectedException{"variable has lower bound > upper bound"};
+        throw InvalidProblemDefinitionException{"variable has lower bound > upper bound"};
 
     auto result = _imp->initial_state.allocate_integer_variable_with_state(lower, upper);
     _imp->integer_variables.emplace_back(result, lower, upper, name ? check_name(*name) : "_" + to_string(++_imp->next_anon_variable));
@@ -118,7 +118,7 @@ auto Problem::create_integer_variable(Integer lower, Integer upper,
 auto Problem::create_integer_variable(const vector<Integer> & domain, const optional<string> & name) -> SimpleIntegerVariableID
 {
     if (domain.empty())
-        throw UnexpectedException{"variable has empty domain"};
+        throw InvalidProblemDefinitionException{"variable has empty domain"};
 
     auto [min, max] = minmax_element(domain);
 

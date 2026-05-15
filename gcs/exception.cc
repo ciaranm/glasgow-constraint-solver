@@ -27,6 +27,16 @@ auto UnexpectedException::what() const noexcept -> const char *
     return _wat.c_str();
 }
 
+InvalidProblemDefinitionException::InvalidProblemDefinitionException(const string & w) :
+    _wat("invalid problem definition: " + w)
+{
+}
+
+auto InvalidProblemDefinitionException::what() const noexcept -> const char *
+{
+    return _wat.c_str();
+}
+
 #if __has_include(<source_location>) && __cpp_lib_source_location
 
 namespace

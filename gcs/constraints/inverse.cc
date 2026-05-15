@@ -70,7 +70,7 @@ auto Inverse::install(Propagators & propagators, State & initial_state, ProofMod
 auto Inverse::prepare(Propagators & propagators, State & initial_state, ProofModel * const optional_model) -> bool
 {
     if (_x.size() != _y.size())
-        throw UnexpectedException{"Inverse constraint on different sized arrays"};
+        throw InvalidProblemDefinitionException{"Inverse constraint on different sized arrays"};
 
     for (const auto & [idx, v] : enumerate(_x)) {
         propagators.define_bound(initial_state, optional_model, v, Bound::Lower, 0_i + _y_start, "Inverse", "x index range");

@@ -70,7 +70,7 @@ auto ArrayMinMax::install(Propagators & propagators, State & initial_state, Proo
 auto ArrayMinMax::prepare(Propagators &, State &, ProofModel * const) -> bool
 {
     if (_vars.empty())
-        throw UnexpectedException{"not sure how min and max are defined over an empty array"};
+        throw InvalidProblemDefinitionException{"not sure how min and max are defined over an empty array"};
     return true;
 }
 

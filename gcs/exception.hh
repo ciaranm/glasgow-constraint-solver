@@ -29,6 +29,25 @@ namespace gcs
     };
 
     /**
+     * \brief Thrown when a problem definition is semantically invalid: a
+     * constraint constructor given mismatched array sizes or negative
+     * durations, a variable created with lower bound greater than upper bound,
+     * etc. This indicates a bug in the caller, not the solver.
+     *
+     * \ingroup Core
+     */
+    class InvalidProblemDefinitionException : public std::exception
+    {
+    private:
+        std::string _wat;
+
+    public:
+        explicit InvalidProblemDefinitionException(const std::string &);
+
+        virtual auto what() const noexcept -> const char * override;
+    };
+
+    /**
      * \brief Thrown if a switch statement is missing a case entry. This usually
      * indicates a bug in the solver.
      *
