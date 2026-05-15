@@ -5,6 +5,7 @@
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
+#include <gcs/innards/reason.hh>
 #include <gcs/innards/state.hh>
 
 #include <util/enumerate.hh>
@@ -143,40 +144,95 @@ auto BinPacking::install_propagators(Propagators & propagators) -> void
     if (_have_loads)
         triggers.on_bounds.insert(triggers.on_bounds.end(), _loads.begin(), _loads.end());
 
-    // Stage 1 checker: fire only once every item is assigned. Pin each bin's
-    // load (variable-load form) or assert the capacity (constant-cap form)
-    // via RUP against the per-bin OPB equations. Stronger reasoning is
-    // deferred to later stages — see dev_docs/bin-packing.md.
+    // Stage 2 per-bin bounds reasoning. For each bin b, walk items once and
+    // partition into forced-into-b, possibly-in-b, and forced-out-of-b
+    // buckets. The floor (sum of forced-in sizes) bounds loads[b] from
+    // below; the ceiling (floor + sum of possibly-in sizes) bounds it from
+    // above. Symmetrically, an item that would push the floor above the
+    // ceiling is pruned out of b, and an item whose exclusion would drop
+    // the ceiling below the floor is forced into b. Constant-cap form
+    // contradicts when the floor exceeds the capacity, and prunes items
+    // that would push the floor over.
+    //
+    // Every inference is RUP-justified against the Stage 1 per-bin OPB
+    // equation alone (no extra scaffolding). Each reason captures only the
+    // item literals the RUP step needs, plus the relevant loads[b] bound
+    // for the load-driven prunes. Subsumes the Stage 1 all-fixed checker:
+    // when every item is single-valued, floor == ceiling == exact bin sum
+    // and the bounds collapse to the same equality.
+    //
+    // bounds_only is captured but unused: with no Stage 3 in place yet,
+    // bounds_only=true and bounds_only=false produce the same propagator.
     propagators.install(
         [items = _items, sizes = _sizes, loads = _loads, capacities = _capacities, have_loads = _have_loads](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-            vector<Integer> single_values;
-            single_values.reserve(items.size());
-            for (auto & item : items) {
-                auto v = state.optional_single_value(item);
-                if (! v)
-                    return PropagatorState::Enable;
-                single_values.push_back(*v);
-            }
-
             auto num_bins = have_loads ? loads.size() : capacities.size();
-            vector<Integer> bin_sums(num_bins, 0_i);
-            for (size_t i = 0; i < items.size(); ++i)
-                bin_sums[single_values[i].raw_value] += sizes[i];
-
-            auto reason = generic_reason(state, items);
-
             for (size_t b = 0; b < num_bins; ++b) {
-                if (have_loads) {
-                    inference.infer_equal(logger, loads[b], bin_sums[b], JustifyUsingRUP{}, reason);
+                auto bin_idx = Integer(static_cast<long long>(b));
+
+                Reason forced_reason, excluded_reason;
+                Integer floor = 0_i, ceiling = 0_i;
+                vector<size_t> still_possible;
+                for (size_t i = 0; i < items.size(); ++i) {
+                    auto v = state.optional_single_value(items[i]);
+                    if (v && *v == bin_idx) {
+                        floor += sizes[i];
+                        ceiling += sizes[i];
+                        forced_reason.emplace_back(items[i] == bin_idx);
+                    }
+                    else if (! state.in_domain(items[i], bin_idx)) {
+                        excluded_reason.emplace_back(items[i] != bin_idx);
+                    }
+                    else {
+                        still_possible.push_back(i);
+                        ceiling += sizes[i];
+                    }
                 }
-                else if (bin_sums[b] > capacities[b]) {
-                    inference.contradiction(logger, JustifyUsingRUP{}, reason);
-                    return PropagatorState::DisableUntilBacktrack;
+
+                if (have_loads) {
+                    auto load_lo = state.lower_bound(loads[b]);
+                    auto load_hi = state.upper_bound(loads[b]);
+
+                    if (floor > load_lo) {
+                        inference.infer_greater_than_or_equal(logger, loads[b], floor,
+                            JustifyUsingRUP{}, [r = forced_reason]() { return r; });
+                        load_lo = floor;
+                    }
+                    if (ceiling < load_hi) {
+                        inference.infer_less_than(logger, loads[b], ceiling + 1_i,
+                            JustifyUsingRUP{}, [r = excluded_reason]() { return r; });
+                        load_hi = ceiling;
+                    }
+
+                    for (auto i : still_possible) {
+                        if (floor + sizes[i] > load_hi) {
+                            Reason r = forced_reason;
+                            r.emplace_back(loads[b] < load_hi + 1_i);
+                            inference.infer_not_equal(logger, items[i], bin_idx,
+                                JustifyUsingRUP{}, [r = move(r)]() { return r; });
+                        }
+                        else if (ceiling - sizes[i] < load_lo) {
+                            Reason r = excluded_reason;
+                            r.emplace_back(loads[b] >= load_lo);
+                            inference.infer_equal(logger, items[i], bin_idx,
+                                JustifyUsingRUP{}, [r = move(r)]() { return r; });
+                        }
+                    }
+                }
+                else {
+                    if (floor > capacities[b]) {
+                        inference.contradiction(logger, JustifyUsingRUP{},
+                            [r = forced_reason]() { return r; });
+                    }
+                    for (auto i : still_possible) {
+                        if (floor + sizes[i] > capacities[b]) {
+                            inference.infer_not_equal(logger, items[i], bin_idx,
+                                JustifyUsingRUP{}, [r = forced_reason]() { return r; });
+                        }
+                    }
                 }
             }
-
-            return PropagatorState::DisableUntilBacktrack;
+            return PropagatorState::Enable;
         },
         triggers);
 }

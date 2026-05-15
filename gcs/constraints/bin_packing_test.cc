@@ -153,6 +153,13 @@ auto main(int, char *[]) -> int
         {{{0, 1}, {0, 1}}, {3, 1}, {2, 2}},
         // Restricted item domain: item 0 can only go in bin 1.
         {{{1, 1}, {0, 1}}, {2, 2}, {2, 3}},
+        // Stage 2: capacity-tight prune. Items 1 + 2 together would exceed
+        // capacity, so wherever item 0 (size 3) is pinned, items 1 and 2
+        // must split.
+        {{{0, 1}, {0, 1}, {0, 1}}, {3, 2, 1}, {3, 3}},
+        // Stage 2: floor-overflow contradiction reachable by partial
+        // assignment alone (two size-2 items pre-pinned to bin 0, capacity 3).
+        {{{0, 0}, {0, 0}, {0, 1}}, {2, 2, 1}, {3, 3}},
     };
 
     // Each load case: { item_ranges, sizes, load_ranges }.
@@ -167,6 +174,18 @@ auto main(int, char *[]) -> int
         {{{0, 2}, {0, 2}, {0, 2}}, {1, 2, 3}, {{0, 6}, {0, 6}, {0, 6}}},
         // Size 0 items don't affect loads.
         {{{0, 1}, {0, 1}}, {0, 1}, {{0, 1}, {0, 1}}},
+        // Stage 2: load floor lifts loads[b] lower bound. Item 0 is
+        // pinned to bin 0, so loads[0] must reach 3.
+        {{{0, 0}, {0, 1}, {0, 1}}, {3, 1, 1}, {{0, 10}, {0, 10}}},
+        // Stage 2: load ceiling drops loads[b] upper bound. With only
+        // two items possibly in bin 0, total possible mass in bin 0 is 4.
+        {{{0, 1}, {0, 1}, {1, 1}}, {2, 2, 2}, {{0, 10}, {0, 10}}},
+        // Stage 2: force-in via load lower bound. loads[0] >= 5 and the
+        // only way to reach it is to include the size-3 + size-2 items.
+        {{{0, 1}, {0, 1}, {0, 1}}, {3, 2, 1}, {{5, 10}, {0, 10}}},
+        // Stage 2: force-out via load upper bound. loads[0] <= 2 prunes
+        // the size-3 item out of bin 0.
+        {{{0, 1}, {0, 1}, {0, 1}}, {3, 2, 1}, {{0, 2}, {0, 10}}},
     };
 
     for (bool proofs : {false, true}) {
