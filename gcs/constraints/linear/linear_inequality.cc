@@ -121,18 +121,51 @@ auto ReifiedLinearInequality::define_proof_model(ProofModel & model) -> void
         terms += c * v;
 
     overloaded{
+        // OPB-ENCODING-BEGIN: lin_less_than_equal
+        //   s-expr:  lin_less_than_equal ( c_1 v_1 c_2 v_2 ... c_n v_n ) value
+        //   Clauses:
+        //     ("ReifiedLinearInequality", "unconditional less than")
+        //         c_1*v_1 + c_2*v_2 + ... + c_n*v_n <= value
+        //   Bounds:                 (none)
+        //   CP literals referenced: (none)
+        //   Auxiliary PB flags:     (none)
+        // OPB-ENCODING-END
         [&](const reif::MustHold &) {
             _proof_lines = pair{*model.add_constraint("ReifiedLinearInequality", "unconditional less than", terms <= _value, nullopt), nullopt};
         },
         [&](const reif::MustNotHold &) {
             _proof_lines = pair{*model.add_constraint("ReifiedLinearInequality", "unconditional greater than", terms >= _value + 1_i, nullopt), nullopt};
         },
+        // OPB-ENCODING-BEGIN: lin_less_than_equal_if
+        //   s-expr:  lin_less_than_equal_if cond ( c_1 v_1 ... c_n v_n ) value
+        //   Clauses:
+        //     ("ReifiedLinearInequality", "less than option")
+        //         c_1*v_1 + ... + c_n*v_n <= value         half-reified on { cond }
+        //   Bounds:                 (none)
+        //   CP literals referenced: cond  (passed through, in canonical form)
+        //   Auxiliary PB flags:     (none)
+        // OPB-ENCODING-END
         [&](const reif::If & cond) {
             _proof_lines = pair{*model.add_constraint("ReifiedLinearInequality", "less than option", terms <= _value, HalfReifyOnConjunctionOf{cond.cond}), nullopt};
         },
         [&](const reif::NotIf & cond) {
             _proof_lines = pair{*model.add_constraint("ReifiedLinearInequality", "greater than option", terms <= _value, HalfReifyOnConjunctionOf{cond.cond}), nullopt};
         },
+        // OPB-ENCODING-BEGIN: lin_less_than_equal_iff
+        //   s-expr:  lin_less_than_equal_iff cond ( c_1 v_1 ... c_n v_n ) value
+        //   Clauses:
+        //     ("ReifiedLinearInequality", "less than option")
+        //         c_1*v_1 + ... + c_n*v_n <= value         half-reified on { cond }
+        //     ("ReifiedLinearInequality", "greater than option")
+        //         c_1*v_1 + ... + c_n*v_n >= value + 1     half-reified on { !cond }
+        //   Bounds:                 (none)
+        //   CP literals referenced: cond  (passed through, in canonical form)
+        //   Auxiliary PB flags:     (none)
+        //   Notes:
+        //     Total order: when cond holds, the sum is <= value; when cond
+        //     is false, the sum is >= value + 1. The two halves together
+        //     pin cond to the truth value of (sum <= value).
+        // OPB-ENCODING-END
         [&](const reif::Iff & cond) {
             _proof_lines = pair{
                 *model.add_constraint("ReifiedLinearInequality", "less than option", terms <= _value, HalfReifyOnConjunctionOf{cond.cond}),

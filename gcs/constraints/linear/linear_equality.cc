@@ -172,25 +172,119 @@ auto ReifiedLinearEquality::define_proof_model(ProofModel & model) -> void
         terms += c * v;
 
     overloaded{
+        // OPB-ENCODING-BEGIN: lin_equals
+        //   s-expr:  lin_equals ( c_1 v_1 c_2 v_2 ... c_n v_n ) value
+        //   Clauses:
+        //     ("ReifiedLinearEquality", "unconditional sum")
+        //         c_1*v_1 + c_2*v_2 + ... + c_n*v_n == value
+        //   Bounds:                 (none)
+        //   CP literals referenced: (none)
+        //   Auxiliary PB flags:     (none)
+        // OPB-ENCODING-END
         [&](const reif::MustHold &) {
             // condition is definitely true, it's just an inequality
             _proof_line = model.add_constraint("ReifiedLinearEquality", "unconditional sum", terms == _value, nullopt);
         },
+        // OPB-ENCODING-BEGIN: lin_not_equals
+        //   s-expr:  lin_not_equals ( c_1 v_1 ... c_n v_n ) value
+        //   Clauses:
+        //     ("ReifiedLinearEquality", "greater option")
+        //         c_1*v_1 + ... + c_n*v_n >= value + 1     half-reified on { linne }
+        //     ("ReifiedLinearEquality", "less than option")
+        //         c_1*v_1 + ... + c_n*v_n <= value - 1     half-reified on { !linne }
+        //   Bounds:                 (none)
+        //   CP literals referenced: (none)
+        //   Auxiliary PB flags introduced:
+        //     linne -- fresh PB variable; case-split guard for the disequality.
+        //   Notes:
+        //     PB cannot express disequality directly. The two clauses
+        //     case-split on linne: linne forces the sum strictly greater
+        //     than value, !linne forces it strictly less. Together they
+        //     exclude equality with value.
+        // OPB-ENCODING-END
         [&](const reif::MustNotHold &) {
             // condition is definitely false, the flag implies either greater or less
             auto neflag = model.create_proof_flag("linne");
             model.add_constraint("ReifiedLinearEquality", "greater option", terms >= _value + 1_i, HalfReifyOnConjunctionOf{{neflag}});
             model.add_constraint("ReifiedLinearEquality", "less than option", terms <= _value - 1_i, HalfReifyOnConjunctionOf{{! neflag}});
         },
+        // OPB-ENCODING-BEGIN: lin_equals_if
+        //   s-expr:  lin_equals_if cond ( c_1 v_1 ... c_n v_n ) value
+        //   Clauses:
+        //     ("ReifiedLinearEquality", "unconditional sum")
+        //         c_1*v_1 + ... + c_n*v_n == value         half-reified on { cond }
+        //   Bounds:                 (none)
+        //   CP literals referenced: cond  (passed through, in canonical form)
+        //   Auxiliary PB flags:     (none)
+        // OPB-ENCODING-END
         [&](const reif::If & cond) {
             _proof_line = model.add_constraint("ReifiedLinearEquality", "unconditional sum", terms == _value, HalfReifyOnConjunctionOf{{cond.cond}});
         },
+        // OPB-ENCODING-BEGIN: lin_not_equals_if
+        //   s-expr:  lin_not_equals_if cond ( c_1 v_1 ... c_n v_n ) value
+        //   Clauses:
+        //     ("ReifiedLinearEquality", "greater option")
+        //         c_1*v_1 + ... + c_n*v_n >= value + 1     half-reified on { cond, linne }
+        //     ("ReifiedLinearEquality", "less than option")
+        //         c_1*v_1 + ... + c_n*v_n <= value - 1     half-reified on { cond, !linne }
+        //   Bounds:                 (none)
+        //   CP literals referenced: cond  (passed through, in canonical form)
+        //   Auxiliary PB flags introduced:
+        //     linne -- fresh PB variable; case-split guard.
+        //   Notes:
+        //     As `lin_not_equals`, but each clause is additionally guarded
+        //     by cond. When cond is false neither clause fires, so the sum
+        //     is permitted to equal value.
+        // OPB-ENCODING-END
         [&](const reif::NotIf & cond) {
             // condition is definitely false, the flag implies either greater or less
             auto neflag = model.create_proof_flag("linne");
             model.add_constraint("ReifiedLinearEquality", "greater option", terms >= _value + 1_i, HalfReifyOnConjunctionOf{{cond.cond, neflag}});
             model.add_constraint("ReifiedLinearEquality", "less than option", terms <= _value - 1_i, HalfReifyOnConjunctionOf{{cond.cond, ! neflag}});
         },
+        // OPB-ENCODING-BEGIN: lin_equals_iff
+        //   s-expr:  lin_equals_iff cond ( c_1 v_1 ... c_n v_n ) value
+        //   Clauses:
+        //     ("ReifiedLinearEquality", "equals option")
+        //         c_1*v_1 + ... + c_n*v_n == value         half-reified on { cond }
+        //     ("ReifiedLinearEquality", "greater option")
+        //         c_1*v_1 + ... + c_n*v_n >= value + 1     half-reified on { lineqgt }
+        //     ("ReifiedLinearEquality", "less than option")
+        //         c_1*v_1 + ... + c_n*v_n <= value - 1     half-reified on { lineqlt }
+        //     ("ReifiedLinearEquality", "one of less than, equals, greater than")
+        //         1*lineqlt + 1*lineqgt + 1*cond >= 1
+        //   Bounds:                 (none)
+        //   CP literals referenced: cond  (passed through, in canonical form)
+        //   Auxiliary PB flags introduced:
+        //     lineqgt -- fresh PB variable; "sum > value" guard.
+        //     lineqlt -- fresh PB variable; "sum < value" guard.
+        //   Notes:
+        //     Trichotomy: at least one of lineqlt, lineqgt, cond must hold.
+        //     When cond holds, the equals clause forces sum == value;
+        //     when cond is false, lineqgt or lineqlt must hold, each
+        //     excluding equality with value.
+        // OPB-ENCODING-END
+        // OPB-ENCODING-BEGIN: lin_not_equals_iff
+        //   s-expr:  lin_not_equals_iff cond ( c_1 v_1 ... c_n v_n ) value
+        //   Clauses:
+        //     ("ReifiedLinearEquality", "equals option")
+        //         c_1*v_1 + ... + c_n*v_n == value         half-reified on { !cond }
+        //     ("ReifiedLinearEquality", "greater option")
+        //         c_1*v_1 + ... + c_n*v_n >= value + 1     half-reified on { lineqgt }
+        //     ("ReifiedLinearEquality", "less than option")
+        //         c_1*v_1 + ... + c_n*v_n <= value - 1     half-reified on { lineqlt }
+        //     ("ReifiedLinearEquality", "one of less than, equals, greater than")
+        //         1*lineqlt + 1*lineqgt + 1*!cond >= 1
+        //   Bounds:                 (none)
+        //   CP literals referenced: cond  (negated; encoder handles negation)
+        //   Auxiliary PB flags introduced:
+        //     lineqgt -- fresh PB variable; "sum > value" guard.
+        //     lineqlt -- fresh PB variable; "sum < value" guard.
+        //   Notes:
+        //     Same shape as `lin_equals_iff` with cond replaced by !cond
+        //     throughout. Implemented in C++ by passing reif::Iff{!cond}
+        //     into the same arm.
+        // OPB-ENCODING-END
         [&](const reif::Iff & cond) {
             // condition unknown, the condition implies it is neither greater nor less
             _proof_line = model.add_constraint("ReifiedLinearEquality", "equals option", terms == _value, HalfReifyOnConjunctionOf{{cond.cond}});
