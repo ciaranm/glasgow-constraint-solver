@@ -32,6 +32,7 @@ endfunction()
 
 add_xcsp_test(all_different_matrix)
 add_xcsp_test(all_equal)
+add_xcsp_test(bin_packing)
 add_xcsp_test(cardinality)
 add_xcsp_test(channel_self)
 add_xcsp_test(channel_two)

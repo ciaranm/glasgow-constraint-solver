@@ -49,7 +49,7 @@ equivalent for that frontend's vocabulary).
 | channel (inverse) | `Inverse` | ✓ | ✓ (1- and 2-list inverse; one-to-many form `s UNSUPPORTED`) | ? |
 | noOverlap (Disjunctive) | `Disjunctive` (basic case)[^disj] | ✓ (basic case) | ✓ (basic case) | ? |
 | cumulative | `Cumulative` (basic case)[^cum] | ✓ (basic case) | ✓ (basic case) | ? |
-| binPacking | solver gap (#148) | ? | solver gap (#148) | ? |
+| binPacking | `BinPacking` (checker-only)[^bp] | ✓ (`fzn_bin_packing` / `_capa` / `_load`) | ✓ (signatures 1/2/3; per-bin condition list `s UNSUPPORTED`) | ? |
 | knapsack | `Knapsack` | ✓ | ✓ (basic with two `XCondition`s; not yet exercised by a test) | ? |
 | circuit | `Circuit` | ✓ | ✓ (basic; sub-circuit with size param `s UNSUPPORTED`); semantics mismatch with XCSP3 spec, see #167 | ? |
 | instantiation | `Equals` to constant | ✓ | ✓ | ? |
@@ -79,13 +79,15 @@ addressed.
 
 - [#146](https://github.com/ciaranm/glasgow-constraint-solver/issues/146) — `Disjunctive`: basic case shipped (variable starts, constant lengths, both strict and non-strict). Variable lengths, 2D / k-D `Disjunctive2D`, and optional-task variants are open follow-ups under the same issue.
 - [#147](https://github.com/ciaranm/glasgow-constraint-solver/issues/147) — `Cumulative`: basic-case shipped (constant lengths, heights, capacity; only the `(le, int)` XCSP3 condition; variable starts only; checker-only propagation). Variable d/r/b, edge-finding, and proof logging for stronger propagation are open follow-ups under the same issue.
-- [#148](https://github.com/ciaranm/glasgow-constraint-solver/issues/148) — `BinPacking`
+- [#148](https://github.com/ciaranm/glasgow-constraint-solver/issues/148) — `BinPacking`: Stage 1 (checker-only) shipped; Stage 2 (per-bin bounds) and Stage 3 (per-bin DAG GAC) are open follow-ups under the same issue. See `bin-packing.md`.
 
 [^cum]: Stage-1 envelope: variable origins, constant lengths/heights/capacity. Propagator is a pure feasibility checker (fires only when every start is fixed). Outside this envelope: MiniZinc lets the stdlib decomposition apply; XCSP3 raises an unsupported error.
 
 [^disj]: Stage-1 envelope: variable starts, constant lengths, with strict/non-strict zero-length semantics resolved at construction. Time-table propagation specialised to heights=1, capacity=1; fully proof-logged via the declarative pairwise OPB encoding plus a propagator-introduced bridge ([`disjunctive-proof-logging.md`](disjunctive-proof-logging.md)). Outside the envelope (variable lengths, 2D/k-D, optional tasks): MiniZinc errors at flattening via `fix()`; XCSP3 raises an unsupported error.
 
 [^mdd]: MiniZinc's `fzn_mdd` is bound to the gcs `MDD` propagator; `mdd_nondet` (where multiple edges from a node may share label values) and `cost_mdd` (with totalcost) fall through to the MiniZinc stdlib's default decomposition. Tracked alongside the unified path-DAG framework (#200).
+
+[^bp]: Stage-1 envelope: per-bin natural-definition OPB (sum equations) and a propagator that fires only when every item is fixed (checker semantics, like `Cumulative`). Variable-load form pins each `loads[b]` via RUP; constant-cap form contradicts on overflow. `bounds_only` constructor flag is reserved but currently has no effect. Outside the envelope (variable capacities under XCSP3 `<limits>`, per-bin `<conditions>` list): XCSP3 raises an unsupported error.
 
 ## Related documents
 

@@ -1,0 +1,12 @@
+<instance format="XCSP3" type="CSP">
+    <variables>
+        <array id="x" size="[4]"> 0..2 </array>
+    </variables>
+    <constraints>
+        <binPacking>
+            <list> x[] </list>
+            <sizes> 3 2 2 1 </sizes>
+            <limits> 4 4 4 </limits>
+        </binPacking>
+    </constraints>
+</instance>

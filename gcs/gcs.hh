@@ -20,6 +20,7 @@
 #include <gcs/constraints/all_equal.hh>
 #include <gcs/constraints/among.hh>
 #include <gcs/constraints/arithmetic.hh>
+#include <gcs/constraints/bin_packing.hh>
 #include <gcs/constraints/circuit.hh>
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/count.hh>
