@@ -34,7 +34,7 @@ equivalent for that frontend's vocabulary).
 | intension (algebraic exprs) | various via tree walk | ✓ | frontend gap (#150) | ? |
 | extension (table) | `Table` / `NegativeTable` | ✓ | ✓ | ? |
 | regular | `Regular` | ✓ | ✓ (DFA with named states + transitions) | ? |
-| mdd | `MDD` | ? | ✓ | ? |
+| mdd | `MDD` | ✓ (deterministic only)[^mdd] | ✓ | ? |
 | allDifferent | `AllDifferent` | ✓ | ✓ | ? |
 | allDifferent-list / -matrix | various decompositions | ? | matrix ✓ (rows + columns `AllDifferent`); list `s UNSUPPORTED` | ? |
 | allEqual | `AllEqual` | ✓ | ✓ | ? |
@@ -84,6 +84,8 @@ addressed.
 [^cum]: Stage-1 envelope: variable origins, constant lengths/heights/capacity. Propagator is a pure feasibility checker (fires only when every start is fixed). Outside this envelope: MiniZinc lets the stdlib decomposition apply; XCSP3 raises an unsupported error.
 
 [^disj]: Stage-1 envelope: variable starts, constant lengths, with strict/non-strict zero-length semantics resolved at construction. Time-table propagation specialised to heights=1, capacity=1; fully proof-logged via the declarative pairwise OPB encoding plus a propagator-introduced bridge ([`disjunctive-proof-logging.md`](disjunctive-proof-logging.md)). Outside the envelope (variable lengths, 2D/k-D, optional tasks): MiniZinc errors at flattening via `fix()`; XCSP3 raises an unsupported error.
+
+[^mdd]: MiniZinc's `fzn_mdd` is bound to the gcs `MDD` propagator; `mdd_nondet` (where multiple edges from a node may share label values) and `cost_mdd` (with totalcost) fall through to the MiniZinc stdlib's default decomposition. Tracked alongside the unified path-DAG framework (#200).
 
 ## Related documents
 

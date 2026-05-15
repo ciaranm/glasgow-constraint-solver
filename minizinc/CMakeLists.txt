@@ -106,6 +106,9 @@ set_tests_properties(minizinc-lexltunequal PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-lexreif COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ lexreif true true)
 set_tests_properties(minizinc-lexreif PROPERTIES SKIP_RETURN_CODE 66)
 
+add_test(NAME minizinc-mdd COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ mddtest true true)
+set_tests_properties(minizinc-mdd PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-allequal COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ allequaltest true true)
 set_tests_properties(minizinc-allequal PROPERTIES SKIP_RETURN_CODE 66)
 
