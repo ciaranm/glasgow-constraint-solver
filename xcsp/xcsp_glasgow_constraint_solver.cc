@@ -620,28 +620,99 @@ namespace
             report_unsupported("cumulative", "no Cumulative propagator yet (#147)");
         }
 
-        auto buildConstraintBinPacking(string, vector<XVariable *> &, vector<int> &,
-            XCondition &) -> void override
+        // Helpers: infer the bin index range from item-variable bounds, and
+        // build a load-vars vector with the given per-bin upper bound.
+        auto bin_packing_num_bins(const vector<XVariable *> & x_vars, const string & ctx) -> size_t
         {
-            report_unsupported("binPacking", "no BinPacking propagator yet (#148)");
+            long long num_bins = 0;
+            for (auto * x : x_vars) {
+                auto & mv = find_variable(x->id);
+                if (mv.lower < 0_i)
+                    report_unsupported(ctx, "item bin index must be non-negative");
+                num_bins = max(num_bins, mv.upper.raw_value + 1);
+            }
+            return static_cast<size_t>(num_bins);
         }
 
-        auto buildConstraintBinPacking(string, vector<XVariable *> &, vector<int> &,
-            vector<int> &, bool) -> void override
+        auto bin_packing_total_size(const vector<int> & sizes) -> Integer
         {
-            report_unsupported("binPacking", "no BinPacking propagator yet (#148)");
+            long long total = 0;
+            for (auto s : sizes)
+                total += s;
+            return Integer{total};
         }
 
-        auto buildConstraintBinPacking(string, vector<XVariable *> &, vector<int> &,
-            vector<XVariable *> &, bool) -> void override
+        auto buildConstraintBinPacking(string, vector<XVariable *> & x_vars, vector<int> & sizes,
+            XCondition & cond) -> void override
         {
-            report_unsupported("binPacking", "no BinPacking propagator yet (#148)");
+            // Single shared XCondition over every bin's load. We materialise
+            // per-bin load variables (bounded by total size) and apply the
+            // condition uniformly. Bin indices are inferred from item bounds.
+            auto items = need_variables(x_vars);
+            auto num_bins = bin_packing_num_bins(x_vars, "binPacking");
+            auto total = bin_packing_total_size(sizes);
+
+            vector<Integer> sizes_i;
+            sizes_i.reserve(sizes.size());
+            for (auto s : sizes)
+                sizes_i.emplace_back(Integer{s});
+
+            vector<IntegerVariableID> loads;
+            loads.reserve(num_bins);
+            for (size_t b = 0; b < num_bins; ++b)
+                loads.push_back(_problem.create_integer_variable(0_i, total, "binpack_load"));
+
+            _problem.post(BinPacking{items, std::move(sizes_i), loads});
+
+            for (auto & l : loads)
+                apply_count_condition(l, cond, "binPacking");
+        }
+
+        auto buildConstraintBinPacking(string, vector<XVariable *> & x_vars, vector<int> & sizes,
+            vector<int> & capacities_or_loads, bool load) -> void override
+        {
+            auto items = need_variables(x_vars);
+            vector<Integer> sizes_i;
+            sizes_i.reserve(sizes.size());
+            for (auto s : sizes)
+                sizes_i.emplace_back(Integer{s});
+
+            if (load) {
+                vector<IntegerVariableID> loads;
+                loads.reserve(capacities_or_loads.size());
+                for (auto v : capacities_or_loads)
+                    loads.push_back(constant_variable(Integer{v}));
+                _problem.post(BinPacking{items, std::move(sizes_i), loads});
+            }
+            else {
+                vector<Integer> caps;
+                caps.reserve(capacities_or_loads.size());
+                for (auto c : capacities_or_loads)
+                    caps.emplace_back(Integer{c});
+                _problem.post(BinPacking{items, std::move(sizes_i), std::move(caps)});
+            }
+        }
+
+        auto buildConstraintBinPacking(string, vector<XVariable *> & x_vars, vector<int> & sizes,
+            vector<XVariable *> & capacities_or_loads, bool load) -> void override
+        {
+            if (! load)
+                report_unsupported("binPacking", "variable capacities (load=false) not yet supported");
+
+            auto items = need_variables(x_vars);
+            vector<Integer> sizes_i;
+            sizes_i.reserve(sizes.size());
+            for (auto s : sizes)
+                sizes_i.emplace_back(Integer{s});
+
+            auto loads = need_variables(capacities_or_loads);
+            _problem.post(BinPacking{items, std::move(sizes_i), loads});
         }
 
         auto buildConstraintBinPacking(string, vector<XVariable *> &, vector<int> &,
             vector<XCondition> &, int) -> void override
         {
-            report_unsupported("binPacking", "no BinPacking propagator yet (#148)");
+            report_unsupported("binPacking", "per-bin XCondition list not yet supported");
         }
 
         auto buildConstraintCircuit(string, vector<XVariable *> & x_vars,
