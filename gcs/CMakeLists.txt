@@ -246,6 +246,10 @@ if(GCS_BUILD_TESTS)
     target_link_libraries(integer_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME integer_test COMMAND $<TARGET_FILE:integer_test>)
 
+    add_executable(exception_test exception_test.cc)
+    target_link_libraries(exception_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
+    add_test(NAME exception_test COMMAND $<TARGET_FILE:exception_test>)
+
     add_executable(state_test innards/state_test.cc)
     target_link_libraries(state_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME state_test COMMAND $<TARGET_FILE:state_test>)

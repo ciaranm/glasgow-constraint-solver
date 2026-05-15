@@ -146,7 +146,7 @@ auto NegativeTable::prepare(Propagators &, State &, ProofModel * const) -> bool
     visit([&](auto & tuples) {
         for (auto & tuple : depointinate(tuples))
             if (tuple.size() != _vars.size())
-                throw UnexpectedException{"table size mismatch"};
+                throw InvalidProblemDefinitionException{"table size mismatch"};
     },
         _tuples);
     return true;

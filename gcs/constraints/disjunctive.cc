@@ -55,10 +55,10 @@ Disjunctive::Disjunctive(vector<IntegerVariableID> starts, vector<Integer> lengt
     _strict(strict)
 {
     if (_starts.size() != _lengths.size())
-        throw UnexpectedException{"Disjunctive: starts and lengths must have the same size"};
+        throw InvalidProblemDefinitionException{"Disjunctive: starts and lengths must have the same size"};
     for (auto & l : _lengths)
         if (l < 0_i)
-            throw UnexpectedException{"Disjunctive: lengths must be non-negative"};
+            throw InvalidProblemDefinitionException{"Disjunctive: lengths must be non-negative"};
 }
 
 auto Disjunctive::clone() const -> unique_ptr<Constraint>

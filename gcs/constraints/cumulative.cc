@@ -44,15 +44,15 @@ Cumulative::Cumulative(vector<IntegerVariableID> starts, vector<Integer> lengths
     _capacity(capacity)
 {
     if (_starts.size() != _lengths.size() || _starts.size() != _heights.size())
-        throw UnexpectedException{"Cumulative: starts, lengths, heights must have the same size"};
+        throw InvalidProblemDefinitionException{"Cumulative: starts, lengths, heights must have the same size"};
     if (_capacity < 0_i)
-        throw UnexpectedException{"Cumulative: capacity must be non-negative"};
+        throw InvalidProblemDefinitionException{"Cumulative: capacity must be non-negative"};
     for (auto & l : _lengths)
         if (l < 0_i)
-            throw UnexpectedException{"Cumulative: lengths must be non-negative"};
+            throw InvalidProblemDefinitionException{"Cumulative: lengths must be non-negative"};
     for (auto & h : _heights)
         if (h < 0_i)
-            throw UnexpectedException{"Cumulative: heights must be non-negative"};
+            throw InvalidProblemDefinitionException{"Cumulative: heights must be non-negative"};
 }
 
 auto Cumulative::clone() const -> unique_ptr<Constraint>

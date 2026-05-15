@@ -140,7 +140,7 @@ auto Table::prepare(Propagators &, State & initial_state, ProofModel * const) ->
         }
         for (auto & tuple : depointinate(tuples))
             if (tuple.size() != _vars.size())
-                throw UnexpectedException{"table size mismatch"};
+                throw InvalidProblemDefinitionException{"table size mismatch"};
         _selector = initial_state.allocate_integer_variable_with_state(0_i, Integer(depointinate(tuples).size() - 1));
     },
         _tuples);

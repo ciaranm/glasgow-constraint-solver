@@ -608,28 +608,28 @@ auto Knapsack::install(Propagators & propagators, State & initial_state, ProofMo
 auto Knapsack::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
 {
     if (_coeffs.size() != _totals.size())
-        throw UnexpectedException{"mismatch between coefficients and totals sizes for knapsack"};
+        throw InvalidProblemDefinitionException{"mismatch between coefficients and totals sizes for knapsack"};
 
     if (_coeffs.empty())
-        throw UnexpectedException{"empty knapsack coefficients"};
+        throw InvalidProblemDefinitionException{"empty knapsack coefficients"};
     unsigned n_vars = _coeffs.begin()->size();
 
     for (auto & c : _coeffs)
         if (c.size() != n_vars)
-            throw UnexpectedException{"not sure what to do about different coefficient array sizes for knapsack"};
+            throw InvalidProblemDefinitionException{"not sure what to do about different coefficient array sizes for knapsack"};
 
     for (auto & cc : _coeffs)
         for (auto & c : cc)
             if (c < 0_i)
-                throw UnexpectedException{"not sure what to do about negative coefficients for knapsack"};
+                throw InvalidProblemDefinitionException{"not sure what to do about negative coefficients for knapsack"};
 
     for (auto & v : _vars)
         if (initial_state.lower_bound(v) < 0_i)
-            throw UnexpectedException{"can only support non-negative variables for knapsack"};
+            throw InvalidProblemDefinitionException{"can only support non-negative variables for knapsack"};
 
     for (auto & t : _totals)
         if (initial_state.lower_bound(t) < 0_i)
-            throw UnexpectedException{"not sure what to do about negative permitted totals for knapsack"};
+            throw InvalidProblemDefinitionException{"not sure what to do about negative permitted totals for knapsack"};
 
     return true;
 }

@@ -130,7 +130,7 @@ auto State::clone() const -> State
 auto State::allocate_integer_variable_with_state(Integer lower, Integer upper) -> SimpleIntegerVariableID
 {
     if (lower > upper)
-        throw UnexpectedException{"variable created with lower bound greater than upper bound"};
+        throw InvalidProblemDefinitionException{"variable created with lower bound greater than upper bound"};
     _imp->integer_variable_states.back().emplace_back(lower, upper);
     return SimpleIntegerVariableID{_imp->integer_variable_states.back().size() - 1};
 }
