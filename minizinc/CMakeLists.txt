@@ -31,6 +31,9 @@ set_tests_properties(minizinc-arrayvar PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-aust COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ aust true true)
 set_tests_properties(minizinc-aust PROPERTIES SKIP_RETURN_CODE 66)
 
+add_test(NAME minizinc-binpacking COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ binpackingtest true true)
+set_tests_properties(minizinc-binpacking PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-boolxor COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ boolxor true true)
 set_tests_properties(minizinc-boolxor PROPERTIES SKIP_RETURN_CODE 66)
 

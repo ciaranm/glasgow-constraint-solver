@@ -686,6 +686,18 @@ auto main(int argc, char * argv[]) -> int
                 // 1-based index set.
                 problem.post(ArgSort{x, p, 1_i});
             }
+            else if (id == "glasgow_bin_packing_capa") {
+                auto capacities = arg_as_array_of_integer(data, args, 0);
+                const auto & items = arg_as_array_of_var(data, args, 1);
+                auto sizes = arg_as_array_of_integer(data, args, 2);
+                problem.post(BinPacking{items, *sizes, *capacities});
+            }
+            else if (id == "glasgow_bin_packing_load") {
+                const auto & loads = arg_as_array_of_var(data, args, 0);
+                const auto & items = arg_as_array_of_var(data, args, 1);
+                auto sizes = arg_as_array_of_integer(data, args, 2);
+                problem.post(BinPacking{items, *sizes, loads});
+            }
             else if (id == "glasgow_circuit") {
                 // The mznlib redefinition has already shifted successors to be
                 // 0-based (Circuit expects a length-n array valued in 0..n-1).
