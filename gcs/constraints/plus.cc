@@ -1,6 +1,7 @@
 #include <gcs/constraints/plus.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
+#include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
@@ -110,8 +111,8 @@ auto gcs::innards::propagate_plus(IntegerVariableID a, IntegerVariableID b, Inte
                 if (! sum_line_value)
                     return;
 
-                stringstream pol;
-                pol << "pol " << *sum_line_value;
+                PolBuilder b;
+                b.add(*sum_line_value);
 
                 // Constants in WPBSum are baked into the OPB sum_line directly
                 // (see emit_inequality_to.cc:58–60), so a reason literal whose
@@ -123,14 +124,10 @@ auto gcs::innards::propagate_plus(IntegerVariableID a, IntegerVariableID b, Inte
                     auto lit = get<IntegerVariableCondition>(get<Literal>(get<ProofLiteral>(reason().at(i))));
                     if (holds_alternative<ConstantIntegerVariableID>(lit.var))
                         continue;
-                    overloaded{
-                        [&](const XLiteral & x) { pol << " " << logger->names_and_ids_tracker().pb_file_string_for(x) << " +"; },
-                        [&](const ProofLine & x) { pol << " " << x << " +"; }}
-                        .visit(logger->names_and_ids_tracker().need_pol_item_defining_literal(lit));
+                    b.add_for_literal(logger->names_and_ids_tracker(), lit);
                 }
-                pol << ";";
 
-                logger->emit_proof_line(pol.str(), ProofLevel::Temporary);
+                b.emit(*logger, ProofLevel::Temporary);
             }};
     };
 

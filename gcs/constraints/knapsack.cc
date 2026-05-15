@@ -2,6 +2,7 @@
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
+#include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
@@ -82,21 +83,15 @@ namespace
         return s.str();
     }
 
-    auto prepare_and_get_bound_p_term(const State & state, ProofLogger * const logger, IntegerVariableID var, bool upper) -> string
+    auto add_bound_p_term_to(PolBuilder & builder, const State & state, ProofLogger * const logger, IntegerVariableID var, bool upper) -> void
     {
-        return overloaded{
-            [&](const SimpleIntegerVariableID & var) -> string {
-                return overloaded{
-                    [&](const ProofLine & line) { return visit([&](const auto & l) { std::stringstream s; s << l; return s.str(); }, line); },
-                    [&](const XLiteral & s) { return logger->names_and_ids_tracker().pb_file_string_for(s); }}
-                    .visit(logger->names_and_ids_tracker().need_pol_item_defining_literal(upper ? var < state.upper_bound(var) + 1_i : var >= state.lower_bound(var)));
+        overloaded{
+            [&](const SimpleIntegerVariableID & v) {
+                builder.add_for_literal(logger->names_and_ids_tracker(),
+                    upper ? v < state.upper_bound(v) + 1_i : v >= state.lower_bound(v));
             },
-            [&](const ConstantIntegerVariableID &) -> string {
-                throw UnimplementedException{};
-            },
-            [&](const ViewOfIntegerVariableID &) -> string {
-                throw UnimplementedException{};
-            }}
+            [&](const ConstantIntegerVariableID &) { throw UnimplementedException{}; },
+            [&](const ViewOfIntegerVariableID &) { throw UnimplementedException{}; }}
             .visit(var);
     }
 
@@ -250,10 +245,10 @@ namespace
                         for (const auto & [x, _] : enumerate(totals)) {
                             // current choices and branch -> partial sum >= value
                             if (completed_node_data)
-                                logger->emit_proof_line("pol " +
-                                        stringify(ge_datas.at(x)->second.reverse_reif_line) + " " +
-                                        stringify(completed_node_data->ges.at(x).forward_reif_line) + " +;",
-                                    ProofLevel::Temporary);
+                                PolBuilder{}
+                                    .add(ge_datas.at(x)->second.reverse_reif_line)
+                                    .add(completed_node_data->ges.at(x).forward_reif_line)
+                                    .emit(*logger, ProofLevel::Temporary);
                             logger->emit_rup_proof_line_under_reason(generic_reason(state, reason_variables),
                                 WPBSum{} + 1_i * not_in_ge_states.at(x) + 1_i * not_choice + 1_i * ge_datas.at(x)->second.reif_flag >= 1_i,
                                 ProofLevel::Temporary);
@@ -263,10 +258,10 @@ namespace
 
                             // current choices and branch -> partial sum <= value
                             if (completed_node_data)
-                                logger->emit_proof_line("pol " +
-                                        stringify(le_datas.at(x)->second.reverse_reif_line) + " " +
-                                        stringify(completed_node_data->les.at(x).forward_reif_line) + " +;",
-                                    ProofLevel::Temporary);
+                                PolBuilder{}
+                                    .add(le_datas.at(x)->second.reverse_reif_line)
+                                    .add(completed_node_data->les.at(x).forward_reif_line)
+                                    .emit(*logger, ProofLevel::Temporary);
                             logger->emit_rup_proof_line_under_reason(generic_reason(state, reason_variables),
                                 WPBSum{} + 1_i * not_in_le_states.at(x) + 1_i * not_choice + 1_i * le_datas.at(x)->second.reif_flag >= 1_i,
                                 ProofLevel::Temporary);
@@ -285,10 +280,11 @@ namespace
                         bool eliminated = false;
                         for (const auto & [x, _] : enumerate(totals)) {
                             if (committed.at(x) + new_sums.at(x) > bounds.at(x).second) {
-                                auto weight_var_str = prepare_and_get_bound_p_term(state, logger, totals.at(x), true);
-                                logger->emit_proof_line("pol " + stringify(ge_datas.at(x)->second.forward_reif_line) + " " +
-                                        stringify(opb_lines->at(x).first) + " + " + weight_var_str + " +;",
-                                    ProofLevel::Temporary);
+                                PolBuilder b;
+                                b.add(ge_datas.at(x)->second.forward_reif_line)
+                                    .add(opb_lines->at(x).first);
+                                add_bound_p_term_to(b, state, logger, totals.at(x), true);
+                                b.emit(*logger, ProofLevel::Temporary);
                                 logger->emit_rup_proof_line_under_reason(generic_reason(state, reason_variables),
                                     WPBSum{} + 1_i * not_in_ge_states.at(x) + 1_i * not_choice >= 1_i,
                                     ProofLevel::Temporary);
@@ -383,10 +379,11 @@ namespace
             for (const auto & [x, _] : enumerate(totals)) {
                 if (committed.at(x) + final_states_iter->first.at(x) < bounds.at(x).first) {
                     if constexpr (doing_proof_) {
-                        auto weight_var_str = prepare_and_get_bound_p_term(state, logger, totals.at(x), false);
-                        logger->emit_proof_line("pol " + stringify(final_states_iter->second->les.at(x).forward_reif_line) +
-                                " " + stringify(opb_lines->at(x).second) + " + " + weight_var_str + " +;",
-                            ProofLevel::Temporary);
+                        PolBuilder b;
+                        b.add(final_states_iter->second->les.at(x).forward_reif_line)
+                            .add(opb_lines->at(x).second);
+                        add_bound_p_term_to(b, state, logger, totals.at(x), false);
+                        b.emit(*logger, ProofLevel::Temporary);
                         logger->emit_rup_proof_line_under_reason(generic_reason(state, reason_variables),
                             WPBSum{} + 1_i * ! final_states_iter->second->les.at(x).reif_flag >= 1_i,
                             ProofLevel::Temporary);
@@ -411,12 +408,14 @@ namespace
                 auto val = committed.at(x) + final_states_iter->first.at(x);
                 if (! state.in_domain(totals.at(x), val)) {
                     if constexpr (doing_proof_) {
-                        logger->emit_proof_line("pol " + stringify(final_states_iter->second->les.at(x).forward_reif_line) +
-                                " " + stringify(opb_lines->at(x).second) + " +;",
-                            ProofLevel::Temporary);
-                        logger->emit_proof_line("pol " + stringify(final_states_iter->second->ges.at(x).forward_reif_line) +
-                                " " + stringify(opb_lines->at(x).first) + " +;",
-                            ProofLevel::Temporary);
+                        PolBuilder{}
+                            .add(final_states_iter->second->les.at(x).forward_reif_line)
+                            .add(opb_lines->at(x).second)
+                            .emit(*logger, ProofLevel::Temporary);
+                        PolBuilder{}
+                            .add(final_states_iter->second->ges.at(x).forward_reif_line)
+                            .add(opb_lines->at(x).first)
+                            .emit(*logger, ProofLevel::Temporary);
                         logger->emit_rup_proof_line_under_reason(generic_reason(state, reason_variables),
                             WPBSum{} + 1_i * ! *final_states_iter->second->reif_flag + 1_i * (totals.at(x) == val) >= 1_i,
                             ProofLevel::Temporary);
@@ -471,15 +470,19 @@ namespace
                             continue;
 
                         auto no_support_ge = WPBSum{} + 1_i * ! data->ges.at(x).reif_flag;
-                        logger->emit_proof_line("pol " + stringify(opb_lines->at(x).first) + " " + stringify(data->ges.at(x).forward_reif_line) + " +;",
-                            ProofLevel::Temporary);
+                        PolBuilder{}
+                            .add(opb_lines->at(x).first)
+                            .add(data->ges.at(x).forward_reif_line)
+                            .emit(*logger, ProofLevel::Temporary);
                         logger->emit_rup_proof_line_under_reason(generic_reason(state, reason_variables),
                             no_support_ge + 1_i * (totals.at(x) >= committed.at(x) + lowest) >= 1_i,
                             ProofLevel::Temporary);
 
                         auto no_support_le = WPBSum{} + 1_i * ! data->les.at(x).reif_flag;
-                        logger->emit_proof_line("pol " + stringify(opb_lines->at(x).second) + " " + stringify(data->les.at(x).forward_reif_line) + " +;",
-                            ProofLevel::Temporary);
+                        PolBuilder{}
+                            .add(opb_lines->at(x).second)
+                            .add(data->les.at(x).forward_reif_line)
+                            .emit(*logger, ProofLevel::Temporary);
                         logger->emit_rup_proof_line_under_reason(generic_reason(state, reason_variables),
                             no_support_le + 1_i * (totals.at(x) < 1_i + committed.at(x) + highest) >= 1_i,
                             ProofLevel::Temporary);

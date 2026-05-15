@@ -67,6 +67,7 @@ add_library(glasgow_constraint_solver
         innards/proofs/bits_encoding.cc
         innards/proofs/emit_inequality_to.cc
         innards/proofs/names_and_ids_tracker.cc
+        innards/proofs/pol_builder.cc
         innards/proofs/proof_error.cc
         innards/proofs/proof_logger.cc
         innards/proofs/proof_model.cc
@@ -257,4 +258,9 @@ if(GCS_BUILD_TESTS)
     target_link_libraries(bits_encoding_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     target_compile_definitions(bits_encoding_test PRIVATE CATCH_CONFIG_ENABLE_ALL_STRINGMAKERS=1)
     add_test(NAME bits_encoding_test COMMAND $<TARGET_FILE:bits_encoding_test>)
+
+    add_executable(pol_builder_test innards/proofs/pol_builder_test.cc)
+    target_link_libraries(pol_builder_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
+    target_compile_definitions(pol_builder_test PRIVATE CATCH_CONFIG_ENABLE_ALL_STRINGMAKERS=1)
+    add_test(NAME pol_builder_test COMMAND $<TARGET_FILE:pol_builder_test>)
 endif()

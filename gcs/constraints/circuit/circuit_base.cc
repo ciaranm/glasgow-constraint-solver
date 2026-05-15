@@ -3,6 +3,7 @@
 #include <gcs/constraints/circuit/circuit_base.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
+#include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
 
@@ -68,10 +69,8 @@ auto gcs::innards::circuit::output_cycle_to_proof(const vector<IntegerVariableID
     if (*current_val < 0_i)
         throw UnimplementedException("Successor encoding for circuit can't have negative values");
 
-    stringstream proof_step;
-
-    proof_step << "pol ";
-    proof_step << pos_var_data.at(start).plus_one_lines.at(current_val->as_index()).geq_line << " ";
+    PolBuilder pol;
+    pol.add(pos_var_data.at(start).plus_one_lines.at(current_val->as_index()).geq_line);
     long cycle_length = 1;
     while (cmp_not_equal(current_val->raw_value, start)) {
         auto last_val = current_val;
@@ -80,22 +79,19 @@ auto gcs::innards::circuit::output_cycle_to_proof(const vector<IntegerVariableID
 
         if (current_val == nullopt || cycle_length == length) break;
 
-        proof_step << pos_var_data.at(last_val->as_index()).plus_one_lines.at(current_val->as_index()).geq_line
-                   << " + ";
+        pol.add(pos_var_data.at(last_val->as_index()).plus_one_lines.at(current_val->as_index()).geq_line);
         cycle_length++;
     }
 
     if (prevent_idx.has_value()) {
         logger.emit_proof_comment(format("Preventing sub-cycle for succ[{}] = {}", *prevent_idx, *prevent_value));
-        proof_step << pos_var_data.at(prevent_idx->as_index()).plus_one_lines.at(prevent_value->as_index()).geq_line
-                   << " + ";
+        pol.add(pos_var_data.at(prevent_idx->as_index()).plus_one_lines.at(prevent_value->as_index()).geq_line);
     }
     else {
         logger.emit_proof_comment("Contradicting sub-cycle");
     }
 
-    proof_step << ';';
-    logger.emit_proof_line(proof_step.str(), ProofLevel::Current);
+    pol.emit(logger, ProofLevel::Current);
 }
 
 auto gcs::innards::circuit::prevent_small_cycles(

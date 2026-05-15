@@ -1,5 +1,6 @@
 #include <gcs/constraints/all_different/justify.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
+#include <gcs/innards/proofs/pol_builder.hh>
 
 #include <util/enumerate.hh>
 
@@ -56,25 +57,11 @@ auto gcs::innards::justify_all_different_hall_set_or_violator(
 
     // each variable in the violator has to take at least one value that is
     // left in its domain, and each value in the component can only be used
-    // once. Both kinds of summand share a single `first` flag — the leading
-    // "+" is omitted only on the very first push, since the `+` operator
-    // requires two stack elements. If at_least_one_constraints is empty
-    // (every Hall variable filtered out as a constant) the first AM1 line
-    // becomes the initial push.
-    stringstream proof_step;
-    proof_step << "pol";
-    bool first = true;
-    auto add = [&](ProofLine line) {
-        proof_step << " " << line;
-        if (! first)
-            proof_step << " +";
-        first = false;
-    };
+    // once.
+    PolBuilder pol;
     for (auto & c : at_least_one_constraints)
-        add(c);
+        pol.add(c);
     for (const auto & val : hall_values)
-        add(value_am1_constraint_numbers.at(val));
-
-    proof_step << ';';
-    logger.emit_proof_line(proof_step.str(), ProofLevel::Current);
+        pol.add(value_am1_constraint_numbers.at(val));
+    pol.emit(logger, ProofLevel::Current);
 }

@@ -2,6 +2,7 @@
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
+#include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
@@ -235,12 +236,11 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                                 ProofLevel::Temporary);
                             active_lines.push_back(line);
                         }
-                        stringstream pol;
-                        pol << "pol " << capacity_lines.at(violating_t);
+                        PolBuilder pol;
+                        pol.add(capacity_lines.at(violating_t));
                         for (size_t k = 0; k < contributing.size(); ++k)
-                            pol << " " << active_lines[k] << " " << heights[contributing[k]].raw_value << " * +";
-                        pol << " ;";
-                        logger->emit_proof_line(pol.str(), ProofLevel::Temporary);
+                            pol.add(active_lines[k], heights[contributing[k]]);
+                        pol.emit(*logger, ProofLevel::Temporary);
                     };
 
                     inference.contradiction(logger, JustifyExplicitlyThenRUP{justify},
@@ -301,13 +301,12 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                     ProofLevel::Temporary);
 
                 // (c) pol C_t + sum of scaled active=1 lines, including j's.
-                stringstream pol;
-                pol << "pol " << capacity_lines.at(t);
+                PolBuilder pol;
+                pol.add(capacity_lines.at(t));
                 for (size_t k = 0; k < contributing.size(); ++k)
-                    pol << " " << active_lines[k] << " " << heights[contributing[k]].raw_value << " * +";
-                pol << " " << j_active_line << " " << heights[j_idx].raw_value << " * +";
-                pol << " ;";
-                logger->emit_proof_line(pol.str(), ProofLevel::Temporary);
+                    pol.add(active_lines[k], heights[contributing[k]]);
+                pol.add(j_active_line, heights[j_idx]);
+                pol.emit(*logger, ProofLevel::Temporary);
 
                 // (d) Deposit the running-bound advance as a fact under
                 // reason for the next chain step's UP.

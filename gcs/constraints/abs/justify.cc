@@ -1,32 +1,25 @@
 #include <gcs/constraints/abs/justify.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
-
-#include <sstream>
+#include <gcs/innards/proofs/pol_builder.hh>
 
 using namespace gcs;
 using namespace gcs::innards;
 
 using std::get;
 using std::holds_alternative;
-using std::stringstream;
 
 namespace
 {
     // PB resolution: sum the operand proof lines and saturate, eliminating
-    // any literals whose coefficients cancel. Emitted via VeriPB's polish-
-    // notation rule, hence "pol ... + s" in the wire format.
+    // any literals whose coefficients cancel.
     auto emit_resolution(ProofLogger & logger, ProofLine a, ProofLine b) -> void
     {
-        stringstream pol;
-        pol << "pol " << a << " " << b << " + s ;";
-        logger.emit_proof_line(pol.str(), ProofLevel::Temporary);
+        PolBuilder{}.add(a).add(b).saturate().emit(logger, ProofLevel::Temporary);
     }
 
     auto emit_resolution(ProofLogger & logger, ProofLine a, ProofLine b, ProofLine c) -> void
     {
-        stringstream pol;
-        pol << "pol " << a << " " << b << " + " << c << " + s ;";
-        logger.emit_proof_line(pol.str(), ProofLevel::Temporary);
+        PolBuilder{}.add(a).add(b).add(c).saturate().emit(logger, ProofLevel::Temporary);
     }
 }
 
