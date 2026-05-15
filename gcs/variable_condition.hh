@@ -152,6 +152,42 @@ namespace gcs
     }
 
     /**
+     * \brief Create an IntegerVariableCondition that the specified IntegerVariableID is less than
+     * or equal to the specified Value.
+     *
+     * Sugar for `var < val + 1_i`: the internal representation uses
+     * VariableConditionOperator::Less with `val + 1_i`. Throws via Integer's
+     * overflow check if `val == Integer::max_value()`.
+     *
+     * \ingroup Literals
+     * \see IntegerVariableCondition
+     */
+    template <typename VariableType_>
+        requires(enable_conditional_variable_operators<VariableType_>())
+    [[nodiscard]] constexpr inline auto operator<=(const VariableType_ & var, const Integer val) -> VariableConditionFrom<VariableType_>
+    {
+        return VariableConditionFrom<VariableType_>{var, VariableConditionOperator::Less, val + 1_i};
+    }
+
+    /**
+     * \brief Create an IntegerVariableCondition that the specified IntegerVariableID is greater
+     * than the specified Value.
+     *
+     * Sugar for `var >= val + 1_i`: the internal representation uses
+     * VariableConditionOperator::GreaterEqual with `val + 1_i`. Throws via
+     * Integer's overflow check if `val == Integer::max_value()`.
+     *
+     * \ingroup Literals
+     * \see IntegerVariableCondition
+     */
+    template <typename VariableType_>
+        requires(enable_conditional_variable_operators<VariableType_>())
+    [[nodiscard]] constexpr inline auto operator>(const VariableType_ & var, const Integer val) -> VariableConditionFrom<VariableType_>
+    {
+        return VariableConditionFrom<VariableType_>{var, VariableConditionOperator::GreaterEqual, val + 1_i};
+    }
+
+    /**
      * \brief Negate an IntegerVariableCondition or other variable condition.
      *
      * Gives the literal with the opposite meaning, for example equals becomes
