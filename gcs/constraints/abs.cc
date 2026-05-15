@@ -88,6 +88,22 @@ auto Abs::install(Propagators & propagators, State &, ProofModel * const optiona
     install_propagators(propagators);
 }
 
+// OPB-ENCODING-BEGIN: abs
+//   s-expr:  abs v1 v2
+//   Clauses:
+//     ("Abs", "non-negative")
+//         1*v2 + -1*v1 == 0            half-reified on { v1 >= 0 }
+//     ("Abs", "negative")
+//         1*v2 + 1*v1 == 0             half-reified on { v1 < 0 }
+//   Bounds:                 (none)
+//   CP literals referenced: v1 >= 0  (v1 < 0 is its negation, handled
+//                                     syntactically by the encoder)
+//   Auxiliary PB flags:     (none)
+//   Notes:
+//     Textbook abs definition: v2 = |v1| means (v1 >= 0 => v2 = v1) and
+//     (v1 < 0 => v2 = -v1). v2's non-negativity is a consequence, not
+//     part of the encoding -- it's derived inside the proof.
+// OPB-ENCODING-END
 auto Abs::define_proof_model(ProofModel & model) -> void
 {
     _abs_nonneg_lines = model.add_constraint("Abs", "non-negative", WPBSum{} + 1_i * _v2 + -1_i * _v1 == 0_i, HalfReifyOnConjunctionOf{_v1 >= 0_i});
