@@ -414,14 +414,14 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
             collect_supported_bounds(0);
 
             auto infer_bound = [&](Integer relevant_bound, bool ge) {
-                auto lit_to_infer = ge ? (result_var >= relevant_bound) : (result_var < relevant_bound + 1_i);
+                auto lit_to_infer = ge ? (result_var >= relevant_bound) : (result_var <= relevant_bound);
                 Reason reason;
                 auto idx_reason = generic_reason(state, index_vars)();
                 reason.insert(reason.end(), idx_reason.begin(), idx_reason.end());
                 for (const auto & var : considered_vars)
-                    reason.push_back(ge ? (var >= relevant_bound) : (var < relevant_bound + 1_i));
+                    reason.push_back(ge ? (var >= relevant_bound) : (var <= relevant_bound));
                 reason.push_back(result_var >= current_bounds.first);
-                reason.push_back(result_var < current_bounds.second + 1_i);
+                reason.push_back(result_var <= current_bounds.second);
                 inference.infer(logger, lit_to_infer, JustifyExplicitlyThenRUP{[&](const ReasonFunction & reason) {
                     // show that it doesn't work for any feasible choice of indices
                     WPBSum sum_so_far;

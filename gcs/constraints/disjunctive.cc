@@ -596,7 +596,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                 return;
                             for (size_t step = 0; step < chain.size(); ++step)
                                 emit_chain_step(j, chain[step].t, chain[step].k,
-                                    starts[j] >= chain[step].t + 1_i,
+                                    starts[j] > chain[step].t,
                                     step + 1 < chain.size(), reason);
                         };
 

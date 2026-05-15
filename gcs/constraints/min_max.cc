@@ -108,7 +108,7 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
         for (auto & var : vars) {
             auto var_bounds = state.bounds(var);
             if (min)
-                inference.infer_less_than(logger, result, var_bounds.second + 1_i, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{var < var_bounds.second + 1_i}}; }});
+                inference.infer_less_than(logger, result, var_bounds.second + 1_i, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{var <= var_bounds.second}}; }});
             else
                 inference.infer_greater_than_or_equal(logger, result, var_bounds.first, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{var >= var_bounds.first}}; }});
         }
@@ -119,7 +119,7 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
             if (min)
                 inference.infer_greater_than_or_equal(logger, var, result_bounds.first, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{result >= result_bounds.first}}; }});
             else
-                inference.infer_less_than(logger, var, state.upper_bound(result) + 1_i, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{result < result_bounds.second + 1_i}}; }});
+                inference.infer_less_than(logger, var, state.upper_bound(result) + 1_i, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{result <= result_bounds.second}}; }});
         }
 
         // result in union(vars)

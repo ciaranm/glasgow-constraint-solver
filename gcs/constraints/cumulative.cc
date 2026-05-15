@@ -376,7 +376,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                         if (! logger) return;
                         for (size_t step = 0; step < chain.size(); ++step)
                             emit_chain_step(j, chain[step].t, chain[step].contributing,
-                                starts[j] >= chain[step].t + 1_i,
+                                starts[j] > chain[step].t,
                                 step + 1 < chain.size(), reason);
                     };
 

@@ -33,7 +33,7 @@ auto gcs::innards::justify_linear_bounds(
         // the following line of logic is definitely correct until you inevitably
         // discover otherwise
         bool upper = (get_coeff(cv) < 0_i) != second_constraint_for_equality;
-        auto lit = upper ? get_var(cv) < bounds[idx].second + 1_i : get_var(cv) >= bounds[idx].first;
+        auto lit = upper ? get_var(cv) <= bounds[idx].second : get_var(cv) >= bounds[idx].first;
         pol.add_for_literal(logger.names_and_ids_tracker(), lit, abs(get_coeff(cv)));
     }
 

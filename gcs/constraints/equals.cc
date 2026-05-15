@@ -77,8 +77,8 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
         if (bounds1 != bounds2) {
             inference.infer_greater_than_or_equal(logger, v2, bounds1.first, JustifyUsingRUP{}, ReasonFunction{[=, reason = reason]() mutable { reason.emplace_back(v1 >= bounds1.first); return reason; }});
             inference.infer_greater_than_or_equal(logger, v1, bounds2.first, JustifyUsingRUP{}, ReasonFunction{[=, reason = reason]() mutable { reason.emplace_back(v2 >= bounds2.first); return reason; }});
-            inference.infer_less_than(logger, v2, bounds1.second + 1_i, JustifyUsingRUP{}, ReasonFunction{[=, reason = reason]() mutable { reason.emplace_back(v1 < bounds1.second + 1_i); return reason; }});
-            inference.infer_less_than(logger, v1, bounds2.second + 1_i, JustifyUsingRUP{}, ReasonFunction{[=, reason = reason]() mutable { reason.emplace_back(v2 < bounds2.second + 1_i); return reason; }});
+            inference.infer_less_than(logger, v2, bounds1.second + 1_i, JustifyUsingRUP{}, ReasonFunction{[=, reason = reason]() mutable { reason.emplace_back(v1 <= bounds1.second); return reason; }});
+            inference.infer_less_than(logger, v1, bounds2.second + 1_i, JustifyUsingRUP{}, ReasonFunction{[=, reason = reason]() mutable { reason.emplace_back(v2 <= bounds2.second); return reason; }});
         }
     }
 
@@ -91,7 +91,7 @@ namespace
         IntegerVariableID v1, IntegerVariableID v2, Literal cond) -> pair<JustifyExplicitlyThenRUP, ReasonFunction>
     {
         auto v1_bounds = state.bounds(v1);
-        Reason reason{{v1 >= v1_bounds.first, v1 < v1_bounds.second + 1_i}};
+        Reason reason{{v1 >= v1_bounds.first, v1 <= v1_bounds.second}};
 
         for (Integer val = v1_bounds.first; val <= v1_bounds.second; ++val)
             if (state.in_domain(v1, val))

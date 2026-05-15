@@ -116,7 +116,7 @@ auto NValue::install_propagators(Propagators & propagators) -> void
                 all_possible_values.insert(v);
         }
 
-        inference.infer(logger, n_values < Integer(all_possible_values.size()) + 1_i, JustifyUsingRUP{},
+        inference.infer(logger, n_values <= Integer(all_possible_values.size()), JustifyUsingRUP{},
             generic_reason(state, all_vars));
 
         set<Integer> all_definite_values;

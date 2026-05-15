@@ -172,7 +172,7 @@ auto Among::install_propagators(Propagators & propagators) -> void
             auto vars_and_bounds_reason = [&vars_reason, how_many, at_least_how_many, at_most_how_many]() {
                 auto result = vars_reason();
                 result.push_back(how_many >= at_least_how_many);
-                result.push_back(how_many < at_most_how_many + 1_i);
+                result.push_back(how_many <= at_most_how_many);
                 return result;
             };
 

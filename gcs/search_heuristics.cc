@@ -9,10 +9,10 @@ using std::mt19937;
 using std::nullopt;
 using std::optional;
 using std::random_device;
-using std::ranges::shuffle;
 using std::tuple;
 using std::uniform_int_distribution;
 using std::vector;
+using std::ranges::shuffle;
 
 using namespace gcs;
 
@@ -220,8 +220,8 @@ auto gcs::value_order::split_smallest_first() -> BranchValueGenerator
         return [](const CurrentState & s, IntegerVariableID var) -> generator<IntegerVariableCondition> {
             auto mid = s.domain_size(var) / 2_i;
             auto v = *(s.each_value(var) | std::ranges::views::drop((mid - 1_i).as_index())).begin();
-            co_yield var < v + 1_i;
-            co_yield var >= v + 1_i;
+            co_yield var <= v;
+            co_yield var > v;
         }(s, var);
     };
 }
@@ -232,8 +232,8 @@ auto gcs::value_order::split_largest_first() -> BranchValueGenerator
         return [](const CurrentState & s, IntegerVariableID var) -> generator<IntegerVariableCondition> {
             auto mid = s.domain_size(var) / 2_i;
             auto v = *(s.each_value(var) | std::ranges::views::drop((mid - 1_i).as_index())).begin();
-            co_yield var >= v + 1_i;
-            co_yield var < v + 1_i;
+            co_yield var > v;
+            co_yield var <= v;
         }(s, var);
     };
 }
@@ -247,12 +247,12 @@ auto gcs::value_order::split_random() -> BranchValueGenerator
             mt19937 r(rand_dev());
             auto v = *(s.each_value(var) | std::ranges::views::drop((mid - 1_i).as_index())).begin();
             if (uniform_int_distribution(0, 1)(r) == 0) {
-                co_yield var >= v + 1_i;
-                co_yield var < v + 1_i;
+                co_yield var > v;
+                co_yield var <= v;
             }
             else {
-                co_yield var >= v + 1_i;
-                co_yield var < v + 1_i;
+                co_yield var > v;
+                co_yield var <= v;
             }
         }(s, var);
     };

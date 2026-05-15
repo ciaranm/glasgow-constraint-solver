@@ -137,29 +137,29 @@ auto gcs::innards::propagate_plus(IntegerVariableID a, IntegerVariableID b, Inte
         [=]() { return Reason{a >= a_vals.first, b >= b_vals.first}; });
 
     // max(result) = max(a) + max(b);
-    inference.infer(logger, result < 1_i + a_vals.second + b_vals.second,
+    inference.infer(logger, result <= a_vals.second + b_vals.second,
         justify(Conclude::GE),
-        [=]() { return Reason{a < a_vals.second + 1_i, b < b_vals.second + 1_i}; });
+        [=]() { return Reason{a <= a_vals.second, b <= b_vals.second}; });
 
     // min(a) = min(result) - max(b);
     inference.infer(logger, a >= result_vals.first - b_vals.second,
         justify(Conclude::GE),
-        [=]() { return Reason{result >= result_vals.first, b < b_vals.second + 1_i}; });
+        [=]() { return Reason{result >= result_vals.first, b <= b_vals.second}; });
 
     // max(a) = max(result) - min(b);
-    inference.infer(logger, a < 1_i + result_vals.second - b_vals.first,
+    inference.infer(logger, a <= result_vals.second - b_vals.first,
         justify(Conclude::LE),
-        [=]() { return Reason{result < result_vals.second + 1_i, b >= b_vals.first}; });
+        [=]() { return Reason{result <= result_vals.second, b >= b_vals.first}; });
 
     // min(b) = min(result) - max(a);
     inference.infer(logger, b >= result_vals.first - a_vals.second,
         justify(Conclude::GE),
-        [=]() { return Reason{result >= result_vals.first, a < a_vals.second + 1_i}; });
+        [=]() { return Reason{result >= result_vals.first, a <= a_vals.second}; });
 
     // max(b) = max(result) - min(a);
-    inference.infer(logger, b < 1_i + result_vals.second - a_vals.first,
+    inference.infer(logger, b <= result_vals.second - a_vals.first,
         justify(Conclude::LE),
-        [=]() { return Reason{result < result_vals.second + 1_i, a >= a_vals.first}; });
+        [=]() { return Reason{result <= result_vals.second, a >= a_vals.first}; });
 
     return PropagatorState::Enable;
 }
