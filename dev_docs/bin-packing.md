@@ -22,8 +22,8 @@ ranges) shift to 0-based at the binding so the gcs class always sees
 items in `0..num_bins − 1`.
 
 A `bounds_only` flag is reserved on every constructor; it currently has
-no effect (Stage 1 propagates as a checker) and selects the cheaper
-strategy once stronger reasoning lands.
+no effect (Stages 1 and 2 are both bounds-only by construction) and
+will skip the Stage 3 GAC DAG once that lands.
 
 ## OPB encoding: spec-faithful, propagator-agnostic
 
@@ -44,9 +44,10 @@ equations.
 
 ## Staging
 
-Stage 1 is the only thing shipped today.
+Stages 1 and 2 are shipped. Stage 1 is documented for completeness;
+Stage 2 strictly subsumes it.
 
-### Stage 1 — checker
+### Stage 1 — checker (superseded)
 
 - OPB as above.
 - Propagator fires only when every `items[i]` is single-valued.
@@ -55,19 +56,52 @@ Stage 1 is the only thing shipped today.
 - Constant-cap form: contradict if any `computed_sum_b > capacities[b]`,
   RUP-closed by the corresponding `≤` line.
 
-Stage 1's `bounds_only` flag is documented but ignored. Sufficient
-for end-to-end correctness; search does most of the work.
-
 ### Stage 2 — per-bin bounds
 
-Per-bin bounds reasoning: maintain `load_min_b / load_max_b` from
-currently-fixed items (lower) and currently-possibly-assigned items
-(upper). Variable-load form prunes `loads[b]` bounds; constant-cap form
-prunes `items[i]` values that would force a bin over its cap.
+For each bin `b`, partition items into three buckets in one pass:
+forced-into-`b` (single-valued at bin `b`), excluded-from-`b` (bin `b`
+no longer in the item's domain), and still-possibly-in-`b`. Then:
 
-All inferences RUP-closable from the Stage 1 OPB encoding alone — no
-new proof scaffolding required. `bounds_only=true` selects this as the
-terminal strength.
+- `floor_b = Σ sizes[i]` over forced-into-`b`.
+- `ceiling_b = floor_b + Σ sizes[i]` over still-possibly-in-`b`.
+
+Inferences (variable-load form):
+
+- Lift `loads[b]` lower bound to `floor_b` when above. RUP from the
+  per-bin OPB equation plus the forced-into-`b` `items[i] == b`
+  literals.
+- Drop `loads[b]` upper bound to `ceiling_b` when below. RUP from the
+  per-bin equation plus the excluded-from-`b` `items[i] != b` literals.
+- For each still-possibly-in-`b` item `i`: if `floor_b + sizes[i] >
+  upper(loads[b])`, prune `items[i] != b` (else assigning forces a
+  load overflow). Reason: forced-into-`b` literals + the `loads[b]`
+  upper bound.
+- For each still-possibly-in-`b` item `i`: if `ceiling_b - sizes[i] <
+  lower(loads[b])`, force `items[i] = b` (else excluding drops the
+  ceiling below the floor). Reason: excluded-from-`b` literals + the
+  `loads[b]` lower bound.
+
+Inferences (constant-cap form):
+
+- Contradict when `floor_b > capacities[b]`. Reason: forced-into-`b`
+  literals.
+- For each still-possibly-in-`b` item `i`: if `floor_b + sizes[i] >
+  capacities[b]`, prune `items[i] != b`. Reason: forced-into-`b`
+  literals.
+
+All inferences RUP-close from the Stage 1 OPB encoding alone — no new
+proof scaffolding needed. The Stage 1 all-fixed check is structurally
+subsumed: when every item is single-valued, `floor_b == ceiling_b ==`
+the exact bin sum and the load-bound inferences collapse to the same
+equality.
+
+Each propagation call sweeps every bin once. Inferences inside one
+bin's sweep don't update its own `floor_b` / `ceiling_b` mid-sweep;
+the framework re-fires the propagator on any domain change and the
+next call catches anything missed.
+
+`bounds_only=true` is captured but currently identical to the default —
+nothing stronger exists yet to skip.
 
 ### Stage 3 — per-bin partial-load DAG, GAC
 
