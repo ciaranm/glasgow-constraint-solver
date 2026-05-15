@@ -643,6 +643,18 @@ auto main(int argc, char * argv[]) -> int
                 const auto & varmatch = arg_as_array_of_integer(data, args, 2);
                 problem.post(Among{vars, *varmatch, varcount});
             }
+            else if (id == "glasgow_bin_packing_capa") {
+                auto capacities = arg_as_array_of_integer(data, args, 0);
+                const auto & items = arg_as_array_of_var(data, args, 1);
+                auto sizes = arg_as_array_of_integer(data, args, 2);
+                problem.post(BinPacking{items, *sizes, *capacities});
+            }
+            else if (id == "glasgow_bin_packing_load") {
+                const auto & loads = arg_as_array_of_var(data, args, 0);
+                const auto & items = arg_as_array_of_var(data, args, 1);
+                auto sizes = arg_as_array_of_integer(data, args, 2);
+                problem.post(BinPacking{items, *sizes, loads});
+            }
             else if (id == "glasgow_circuit") {
                 const auto & vars = arg_as_array_of_var(data, args, 0);
                 vector<IntegerVariableID> vars_shifted;
