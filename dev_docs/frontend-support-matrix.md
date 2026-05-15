@@ -34,7 +34,7 @@ equivalent for that frontend's vocabulary).
 | intension (algebraic exprs) | various via tree walk | ✓ | frontend gap (#150) | ? |
 | extension (table) | `Table` / `NegativeTable` | ✓ | ✓ | ? |
 | regular | `Regular` | ✓ | ✓ (DFA with named states + transitions) | ? |
-| mdd | `MDD` | ? | ? | ? |
+| mdd | `MDD` | ? | ✓ | ? |
 | allDifferent | `AllDifferent` | ✓ | ✓ | ? |
 | allDifferent-list / -matrix | various decompositions | ? | matrix ✓ (rows + columns `AllDifferent`); list `s UNSUPPORTED` | ? |
 | allEqual | `AllEqual` | ✓ | ✓ | ? |
