@@ -12,6 +12,7 @@
 #include <condition_variable>
 #include <csignal>
 #include <cstdlib>
+#include <deque>
 #include <iostream>
 #include <map>
 #include <memory>
@@ -48,6 +49,7 @@ using std::cerr;
 using std::condition_variable;
 using std::cout;
 using std::cv_status;
+using std::deque;
 using std::endl;
 using std::make_optional;
 using std::make_shared;
@@ -461,15 +463,104 @@ namespace
             _problem.post(Regular{vars, num_states, std::move(trans_table), std::move(finals)});
         }
 
-        // Solver gaps: each XCSP3 constraint family below maps to a missing
-        // gcs propagator. Override the parser's default (which throws an
-        // uncaught runtime_error) with our standard report_unsupported so
-        // main() emits a clean s UNSUPPORTED.
-
-        auto buildConstraintMDD(string, vector<XVariable *> &,
-            vector<XTransition> &) -> void override
+        auto buildConstraintMDD(string, vector<XVariable *> & x_vars,
+            vector<XTransition> & transitions) -> void override
         {
-            report_unsupported("mdd", "no MDD propagator yet (#149)");
+            auto vars = need_variables(x_vars);
+            auto num_vars = vars.size();
+
+            // BFS from the implicit root (the source of the first transition listed)
+            // to assign each named node a layer index. XCSP3 MDDs are layered: every
+            // node sits at a fixed depth from the root, equal to its variable index.
+            if (transitions.empty())
+                report_unsupported("mdd", "empty transition set");
+
+            // Group transitions by source node name and collect every named node.
+            map<string, vector<XTransition *>> out_by_from;
+            set<string> incoming_targets;
+            for (auto & t : transitions) {
+                out_by_from[t.from].push_back(&t);
+                incoming_targets.insert(t.to);
+            }
+
+            // The root is the unique source that never appears as a target.
+            string root_name;
+            for (const auto & [from, _] : out_by_from) {
+                if (! incoming_targets.contains(from)) {
+                    if (! root_name.empty())
+                        report_unsupported("mdd", "MDD has multiple roots (sources with no incoming edges)");
+                    root_name = from;
+                }
+            }
+            if (root_name.empty())
+                report_unsupported("mdd", "MDD has no root (every node has an incoming edge)");
+
+            // BFS to assign a layer to every reachable node; reject any node that
+            // shows up at more than one depth.
+            map<string, long> layer_of;
+            layer_of[root_name] = 0;
+            deque<string> bfs{root_name};
+            while (! bfs.empty()) {
+                auto node = bfs.front();
+                bfs.pop_front();
+                auto depth = layer_of[node];
+                auto it = out_by_from.find(node);
+                if (it == out_by_from.end())
+                    continue;
+                for (auto * t : it->second) {
+                    auto inserted = layer_of.emplace(t->to, depth + 1);
+                    if (! inserted.second) {
+                        if (inserted.first->second != depth + 1)
+                            report_unsupported("mdd", "MDD is not layered (a node appears at multiple depths)");
+                    }
+                    else
+                        bfs.push_back(t->to);
+                }
+            }
+
+            // Within each layer, assign per-layer node indices (root is layer 0, node 0).
+            vector<vector<string>> nodes_in_layer(num_vars + 1);
+            map<string, long> index_in_layer;
+            for (const auto & [name, layer] : layer_of) {
+                if (layer < 0 || static_cast<size_t>(layer) > num_vars)
+                    report_unsupported("mdd", "MDD has a node at a depth different from any variable index");
+                index_in_layer[name] = static_cast<long>(nodes_in_layer[layer].size());
+                nodes_in_layer[layer].push_back(name);
+            }
+            // Force the root to be index 0 in layer 0.
+            if (nodes_in_layer[0].size() != 1 || nodes_in_layer[0][0] != root_name)
+                report_unsupported("mdd", "MDD root not unique in layer 0");
+
+            vector<long> nodes_per_layer(num_vars + 1);
+            for (size_t i = 0; i <= num_vars; ++i)
+                nodes_per_layer[i] = static_cast<long>(nodes_in_layer[i].size());
+            if (nodes_per_layer[num_vars] == 0)
+                report_unsupported("mdd", "MDD has no terminal layer nodes");
+
+            vector<vector<unordered_map<Integer, long>>> layer_transitions(num_vars);
+            for (size_t i = 0; i < num_vars; ++i)
+                layer_transitions[i].assign(nodes_per_layer[i], {});
+
+            for (const auto & t : transitions) {
+                auto from_layer = layer_of[t.from];
+                if (from_layer < 0 || static_cast<size_t>(from_layer) >= num_vars)
+                    report_unsupported("mdd", "MDD transition out of a terminal-layer node");
+                if (layer_of[t.to] != from_layer + 1)
+                    report_unsupported("mdd", "MDD transition does not advance exactly one layer");
+                auto from_idx = index_in_layer[t.from];
+                auto to_idx = index_in_layer[t.to];
+                auto [_, inserted] = layer_transitions[from_layer][from_idx].emplace(Integer{t.val}, to_idx);
+                if (! inserted)
+                    report_unsupported("mdd", "MDD has multiple transitions from the same node on the same value");
+            }
+
+            // Every node in the terminal layer is accepting.
+            vector<long> accepting_terminals(nodes_per_layer[num_vars]);
+            for (long q = 0; q < nodes_per_layer[num_vars]; ++q)
+                accepting_terminals[q] = q;
+
+            _problem.post(MDD{vars, std::move(layer_transitions), std::move(nodes_per_layer),
+                std::move(accepting_terminals)});
         }
 
         auto buildConstraintNoOverlap(string, vector<XVariable *> & origins,

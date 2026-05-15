@@ -101,6 +101,7 @@ namespace
     {
         unordered_map<string, pair<IntegerVariableID, bool>> integer_variables;
         unordered_map<string, vector<Integer>> constant_arrays;
+        unordered_map<string, vector<vector<Integer>>> constant_set_arrays;
         unordered_map<string, pair<vector<IntegerVariableID>, bool>> variable_arrays;
         list<vector<Integer>> unnamed_constant_arrays;
         list<vector<IntegerVariableID>> arrays_to_keep;
@@ -146,6 +147,29 @@ namespace
         IntervalSet<Integer> result;
         for (const auto & range : a)
             result.insert_at_end(Integer{static_cast<long long>(range[0])}, Integer{static_cast<long long>(range[1])});
+        return result;
+    }
+
+    auto arg_as_array_of_set_of_integer(ExtractedData & data, const auto & args, int idx) -> vector<vector<Integer>>
+    {
+        auto a = args.at(idx);
+        if (a.is_string()) {
+            string name = a;
+            auto iter = data.constant_set_arrays.find(name);
+            if (iter == data.constant_set_arrays.end())
+                throw FlatZincInterfaceError{format("Can't find constant set-array named {}", name)};
+            return iter->second;
+        }
+        if (! a.is_array())
+            throw FlatZincInterfaceError{format("Expected array of sets of integers at argument {}", idx)};
+        vector<vector<Integer>> result;
+        for (const auto & set_obj : a) {
+            vector<Integer> values;
+            for (const auto & range : set_obj["set"])
+                for (auto v = range[0].template get<long long>(); v <= range[1].template get<long long>(); ++v)
+                    values.push_back(Integer{v});
+            result.push_back(move(values));
+        }
         return result;
     }
 
@@ -318,6 +342,24 @@ auto main(int argc, char * argv[]) -> int
         for (auto a = fzn["arrays"].begin(), a_end = fzn["arrays"].end(); a != a_end; ++a) {
             auto name = a.key();
             auto arraydata = a.value();
+
+            // Set-of-int arrays (e.g. the `label` argument to `mdd`) need their own
+            // storage shape; treat them separately rather than threading them through
+            // the int/variable handling below.
+            if (! arraydata["a"].empty() && arraydata["a"].front().is_object() &&
+                arraydata["a"].front().contains("set")) {
+                vector<vector<Integer>> set_values;
+                for (const auto & set_obj : arraydata["a"]) {
+                    vector<Integer> values;
+                    for (const auto & range : set_obj["set"])
+                        for (auto v = range[0].template get<long long>();
+                             v <= range[1].template get<long long>(); ++v)
+                            values.push_back(Integer{v});
+                    set_values.push_back(move(values));
+                }
+                data.constant_set_arrays.emplace(name, move(set_values));
+                continue;
+            }
 
             vector<Integer> values;
             vector<IntegerVariableID> variables;
@@ -665,6 +707,74 @@ auto main(int argc, char * argv[]) -> int
                 const auto & vars2 = arg_as_array_of_var(data, args, 1);
                 const auto & reif = arg_as_var(data, args, 2);
                 problem.post(LexLessThanEqualIff{vars1, vars2, reif == 1_i});
+            }
+            else if (id == "glasgow_mdd") {
+                auto vars = arg_as_array_of_var(data, args, 0);
+                auto N = static_cast<long long>(args.at(1));
+                auto level = arg_as_array_of_integer(data, args, 2);
+                auto E = static_cast<long long>(args.at(3));
+                auto from = arg_as_array_of_integer(data, args, 4);
+                auto label = arg_as_array_of_set_of_integer(data, args, 5);
+                auto to = arg_as_array_of_integer(data, args, 6);
+
+                auto L = static_cast<long>(vars.size());
+
+                // MiniZinc's mdd: nodes 1..N are user-supplied; node 0 is the
+                // implicit "true" terminal T, at level L+1. level[n] gives the
+                // 1-based layer of node n; root is node 1 at level 1.
+                vector<long> layer_of(N + 1);
+                layer_of[0] = L;
+                for (long n = 1; n <= N; ++n) {
+                    auto lvl = static_cast<long>((*level)[n - 1].raw_value);
+                    if (lvl < 1 || lvl > L + 1)
+                        throw FlatZincInterfaceError{format("glasgow_mdd: node {} has level {} outside 1..{}", n, lvl, L + 1)};
+                    layer_of[n] = lvl - 1;
+                }
+                if (layer_of[1] != 0)
+                    throw FlatZincInterfaceError{"glasgow_mdd: node 1 (root) must be at level 1"};
+
+                // Assign per-layer indices to every node, with the root pinned at index 0
+                // in layer 0 (gcs::MDD requires that).
+                vector<vector<long>> nodes_in_layer(L + 1);
+                vector<long> idx_in_layer(N + 1, -1);
+                nodes_in_layer[0].push_back(1);
+                idx_in_layer[1] = 0;
+                for (long n = 2; n <= N; ++n) {
+                    idx_in_layer[n] = static_cast<long>(nodes_in_layer[layer_of[n]].size());
+                    nodes_in_layer[layer_of[n]].push_back(n);
+                }
+                idx_in_layer[0] = static_cast<long>(nodes_in_layer[L].size());
+                nodes_in_layer[L].push_back(0);
+
+                vector<long> nodes_per_layer(L + 1);
+                for (long i = 0; i <= L; ++i)
+                    nodes_per_layer[i] = static_cast<long>(nodes_in_layer[i].size());
+
+                vector<vector<unordered_map<Integer, long>>> layer_transitions(L);
+                for (long i = 0; i < L; ++i)
+                    layer_transitions[i].assign(nodes_per_layer[i], {});
+
+                for (long e = 0; e < E; ++e) {
+                    auto mzn_from = static_cast<long>((*from)[e].raw_value);
+                    auto mzn_to = static_cast<long>((*to)[e].raw_value);
+                    if (mzn_from < 1 || mzn_from > N || mzn_to < 0 || mzn_to > N)
+                        throw FlatZincInterfaceError{format("glasgow_mdd: edge {} references node out of range", e + 1)};
+                    auto layer = layer_of[mzn_from];
+                    if (layer_of[mzn_to] != layer + 1)
+                        throw FlatZincInterfaceError{format(
+                            "glasgow_mdd: edge {} does not advance exactly one layer", e + 1)};
+                    auto from_idx = idx_in_layer[mzn_from];
+                    auto to_idx = idx_in_layer[mzn_to];
+                    for (const auto & v : label[e]) {
+                        auto [_, inserted] = layer_transitions[layer][from_idx].emplace(v, to_idx);
+                        if (! inserted)
+                            throw FlatZincInterfaceError{format(
+                                "glasgow_mdd: edge {} introduces a non-deterministic transition (use mdd_nondet)", e + 1)};
+                    }
+                }
+
+                problem.post(MDD{vars, move(layer_transitions), move(nodes_per_layer),
+                    vector<long>{idx_in_layer[0]}});
             }
             else if (id == "glasgow_member_int" || id == "glasgow_member_bool") {
                 const auto & vars = arg_as_array_of_var(data, args, 0);
