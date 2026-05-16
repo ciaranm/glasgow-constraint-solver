@@ -83,6 +83,12 @@ namespace
         p.post(BinPacking{items, sizes_i, caps_i});
 
         auto proof_name = proofs ? make_optional("bin_packing_test") : nullopt;
+        // Enumeration only — Stage 3 achieves per-bin GAC, not joint GAC
+        // (joint GAC for BinPacking is NP-hard, classic subset-sum). For the
+        // constant-cap form per-bin GAC is structurally identical to Stage
+        // 2's floor check, so Stage 3 strengthens only the variable-load
+        // form's load-pruning side. A per-bin-GAC reference checker can be
+        // added later if regressions appear.
         solve_for_tests(p, proof_name, actual, tuple{items});
 
         check_results(proof_name, expected, actual);
@@ -129,6 +135,8 @@ namespace
         p.post(BinPacking{items, sizes_i, loads});
 
         auto proof_name = proofs ? make_optional("bin_packing_test") : nullopt;
+        // Enumeration only; see capa runner for why per-bin GAC isn't
+        // checked here.
         solve_for_tests(p, proof_name, actual, tuple{items, loads});
 
         check_results(proof_name, expected, actual);
@@ -186,6 +194,14 @@ auto main(int, char *[]) -> int
         // Stage 2: force-out via load upper bound. loads[0] <= 2 prunes
         // the size-3 item out of bin 0.
         {{{0, 1}, {0, 1}, {0, 1}}, {3, 2, 1}, {{0, 2}, {0, 10}}},
+        // Stage 3 subset-sum case strictly stronger than Stage 2: bin 0 must
+        // sum to exactly 8 with item 0 (size 1) forced in. The only
+        // remaining-items subset of {3,5,7} summing to 7 is {7}. Stage 2
+        // sees floor=1, ceiling=16 and load=8 ∈ [1,16] with no individual
+        // item making a forced contribution — no prunes. Stage 3 walks the
+        // DAG and prunes items[1]!=0 and items[2]!=0 from bin 0 (no path
+        // through their "in bin 0" edges hits the unique accepting w=8).
+        {{{0, 0}, {0, 1}, {0, 1}, {0, 1}}, {1, 3, 5, 7}, {{8, 8}, {0, 20}}},
     };
 
     for (bool proofs : {false, true}) {

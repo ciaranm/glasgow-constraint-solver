@@ -49,7 +49,7 @@ equivalent for that frontend's vocabulary).
 | channel (inverse) | `Inverse` | ✓ | ✓ (1- and 2-list inverse; one-to-many form `s UNSUPPORTED`) | ? |
 | noOverlap (Disjunctive) | `Disjunctive` (basic case)[^disj] | ✓ (basic case) | ✓ (basic case) | ? |
 | cumulative | `Cumulative` (basic case)[^cum] | ✓ (basic case) | ✓ (basic case) | ? |
-| binPacking | `BinPacking` (per-bin bounds)[^bp] | ✓ (`fzn_bin_packing` / `_capa` / `_load`) | ✓ (signatures 1/2/3; per-bin condition list `s UNSUPPORTED`) | ? |
+| binPacking | `BinPacking` (per-bin GAC)[^bp] | ✓ (`fzn_bin_packing` / `_capa` / `_load`) | ✓ (signatures 1/2/3; per-bin condition list `s UNSUPPORTED`) | ? |
 | knapsack | `Knapsack` | ✓ | ✓ (basic with two `XCondition`s; not yet exercised by a test) | ? |
 | circuit | `Circuit` | ✓ | ✓ (basic; sub-circuit with size param `s UNSUPPORTED`); semantics mismatch with XCSP3 spec, see #167 | ? |
 | instantiation | `Equals` to constant | ✓ | ✓ | ? |
@@ -79,7 +79,7 @@ addressed.
 
 - [#146](https://github.com/ciaranm/glasgow-constraint-solver/issues/146) — `Disjunctive`: basic case shipped (variable starts, constant lengths, both strict and non-strict). Variable lengths, 2D / k-D `Disjunctive2D`, and optional-task variants are open follow-ups under the same issue.
 - [#147](https://github.com/ciaranm/glasgow-constraint-solver/issues/147) — `Cumulative`: basic-case shipped (constant lengths, heights, capacity; only the `(le, int)` XCSP3 condition; variable starts only; checker-only propagation). Variable d/r/b, edge-finding, and proof logging for stronger propagation are open follow-ups under the same issue.
-- [#148](https://github.com/ciaranm/glasgow-constraint-solver/issues/148) — `BinPacking`: Stage 1 (checker) and Stage 2 (per-bin bounds) shipped; Stage 3 (per-bin DAG GAC) is the only open follow-up under the same issue. See `bin-packing.md`.
+- [#148](https://github.com/ciaranm/glasgow-constraint-solver/issues/148) — `BinPacking`: Stage 1 (checker), Stage 2 (per-bin bounds), and Stage 3 (per-bin partial-load DAG, per-bin GAC) all shipped. Open follow-ups: Shaw-style cardinality reasoning to push beyond per-bin towards (still-not-joint) joint GAC ([#209](https://github.com/ciaranm/glasgow-constraint-solver/issues/209)), and unification with `MDD` / `Knapsack` under #200. See `bin-packing.md`.
 
 [^cum]: Stage-1 envelope: variable origins, constant lengths/heights/capacity. Propagator is a pure feasibility checker (fires only when every start is fixed). Outside this envelope: MiniZinc lets the stdlib decomposition apply; XCSP3 raises an unsupported error.
 
@@ -87,7 +87,7 @@ addressed.
 
 [^mdd]: MiniZinc's `fzn_mdd` is bound to the gcs `MDD` propagator; `mdd_nondet` (where multiple edges from a node may share label values) and `cost_mdd` (with totalcost) fall through to the MiniZinc stdlib's default decomposition. Tracked alongside the unified path-DAG framework (#200).
 
-[^bp]: Stage-2 envelope: per-bin natural-definition OPB (sum equations) plus a propagator that maintains `floor_b` / `ceiling_b` from the forced-into and possibly-in items per bin. Variable-load form lifts `loads[b]` floor, drops the ceiling, prunes items that would overflow, and forces items whose absence would underflow. Constant-cap form contradicts on a forced overflow and prunes items that would push the floor over capacity. `bounds_only` is reserved for Stage 3 (per-bin DAG GAC) and currently has no effect. Outside the envelope (variable capacities under XCSP3 `<limits>`, per-bin `<conditions>` list): XCSP3 raises an unsupported error.
+[^bp]: Stage-3 envelope: per-bin natural-definition OPB (sum equations) plus a Stage 2 bounds pass and a Stage 3 per-bin partial-load DAG sweep that achieves per-bin GAC on items (and load values, for the variable-load form). The DAG flags live at `ProofLevel::Top` as inequality reifications + a conjunction main state, emitted by an `install_initialiser` (the "third reusable idea" of `disjunctive-proof-logging.md`). `bounds_only=true` skips Stage 3 and runs Stage 2 alone — use this when the per-bin capacity is much larger than the number of items and the DAG flag count would balloon. Joint (cross-bin) GAC is not attempted; it is NP-hard for BinPacking. Outside the envelope (variable capacities under XCSP3 `<limits>`, per-bin `<conditions>` list): XCSP3 raises an unsupported error.
 
 ## Related documents
 
