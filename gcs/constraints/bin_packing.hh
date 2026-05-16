@@ -3,9 +3,12 @@
 
 #include <gcs/constraint.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
+#include <gcs/innards/state.hh>
 #include <gcs/integer.hh>
 #include <gcs/variable_id.hh>
 
+#include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -29,23 +32,30 @@ namespace gcs
      *   must not exceed `capacities[b]`. The bin range is
      *   `0..capacities.size() - 1`.
      *
-     * Item sizes must be non-negative. The `bounds_only` flag is reserved
-     * for selecting a weaker (and cheaper) propagation strategy once the
-     * stronger DAG-based propagator lands; in the current implementation
-     * the constraint installs only an all-items-fixed feasibility checker
-     * and the flag has no effect on behaviour. See `dev_docs/bin-packing.md`.
+     * Item sizes must be non-negative. By default the propagator runs the
+     * per-bin Stage 2 bounds pass followed by a Stage 3 partial-load DAG
+     * sweep that achieves *per-bin* GAC on the item variables (joint GAC
+     * is NP-hard for BinPacking, so we settle for per-bin). Pass
+     * `bounds_only = true` to skip the DAG and use the bounds pass alone
+     * — cheaper, recommended when the per-bin capacity is much larger
+     * than the number of items. See `dev_docs/bin-packing.md`.
      *
      * \ingroup Constraints
      */
     class BinPacking : public Constraint
     {
     private:
+        struct DagBridge;
+
         std::vector<IntegerVariableID> _items;
         std::vector<Integer> _sizes;
         std::vector<IntegerVariableID> _loads;
         std::vector<Integer> _capacities;
         const bool _have_loads;
         const bool _bounds_only;
+
+        std::shared_ptr<DagBridge> _bridge;
+        std::optional<innards::ConstraintStateHandle> _graph_idx;
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &) -> void override;
