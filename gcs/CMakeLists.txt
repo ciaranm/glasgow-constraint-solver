@@ -54,6 +54,7 @@ add_library(glasgow_constraint_solver
         constraints/innards/triggers.cc
         constraints/inverse/inverse.cc
         constraints/knapsack/knapsack.cc
+        constraints/knapsack/knapsack_legacy.cc
         constraints/lex/lex.cc
         constraints/lex/lex_smart_table.cc
         constraints/linear/justify.cc
@@ -205,6 +206,7 @@ if(GCS_BUILD_TESTS)
     add_executable(increasing_test constraints/increasing/increasing_test.cc)
     add_executable(inverse_test constraints/inverse/inverse_test.cc)
     add_executable(knapsack_test constraints/knapsack/knapsack_test.cc)
+    add_executable(knapsack_legacy_test constraints/knapsack/knapsack_legacy_test.cc)
     add_executable(lex_test constraints/lex/lex_test.cc)
     add_executable(linear_test constraints/linear/linear_test.cc)
     add_executable(linear_constant_test constraints/linear/linear_constant_test.cc)
@@ -236,7 +238,7 @@ if(GCS_BUILD_TESTS)
 
     foreach(test_target
             abs_test all_different_test all_different_except_test all_equal_test among_test at_most_one_test bin_packing_test comparison_test
-            count_test cumulative_test disjunctive_test disjunctive_2d_test divide_modulus_test element_test equals_test bounds_global_cardinality_test gac_global_cardinality_test in_test increasing_test inverse_test knapsack_test lex_test linear_test linear_constant_test
+            count_test cumulative_test disjunctive_test disjunctive_2d_test divide_modulus_test element_test equals_test bounds_global_cardinality_test gac_global_cardinality_test in_test increasing_test inverse_test knapsack_test knapsack_legacy_test lex_test linear_test linear_constant_test
             logical_test mdd_test min_max_test multiply_test n_value_test parity_test
             plus_minus_test power_test product_bounds_test product_justify_test regular_test regular_bacchus_test regular_legacy_test seq_precede_chain_test smart_table_test sort_test arg_sort_test symmetric_all_different_test
             negative_table_test table_test tabulation_test value_precede_test)
@@ -365,6 +367,7 @@ if(GCS_BUILD_TESTS)
     add_test(NAME increasing_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:increasing_test>)
     add_test(NAME inverse_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:inverse_test>)
     add_test(NAME knapsack_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:knapsack_test>)
+    add_test(NAME knapsack_legacy_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:knapsack_legacy_test>)
     add_test(NAME lex_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:lex_test>)
     # Run every linear test in both propagation modes: incremental (threshold 0) and
     # stateless (a huge threshold). The threshold env is appended below (after the cap
