@@ -17,6 +17,17 @@ namespace gcs::innards::hints
         ConstraintID originator;
         static constexpr std::string_view hint_name = "knapsack";
     };
+
+    /**
+     * \brief KnapsackLegacy's assertion hint: just the owning constraint.
+     *
+     * \ingroup Innards
+     */
+    struct KnapsackLegacy
+    {
+        ConstraintID originator;
+        static constexpr std::string_view hint_name = "knapsack_legacy";
+    };
 }
 
 #endif
