@@ -21,9 +21,10 @@ Item sizes are non-negative. Frontends with non-zero-based bin indices
 ranges) shift to 0-based at the binding so the gcs class always sees
 items in `0..num_bins − 1`.
 
-A `bounds_only` flag is reserved on every constructor; it currently has
-no effect (Stages 1 and 2 are both bounds-only by construction) and
-will skip the Stage 3 GAC DAG once that lands.
+A `bounds_only` flag on every constructor selects the cheaper
+propagation strategy: when set, only the Stage 2 bounds pass runs;
+when clear (the default), Stage 2 is followed by the Stage 3
+per-bin DAG sweep.
 
 ## OPB encoding: spec-faithful, propagator-agnostic
 
@@ -44,8 +45,9 @@ equations.
 
 ## Staging
 
-Stages 1 and 2 are shipped. Stage 1 is documented for completeness;
-Stage 2 strictly subsumes it.
+Stages 1, 2 and 3 are shipped. Stage 1 is documented for completeness;
+Stage 2 strictly subsumes it. Stage 3 sits on top of Stage 2 as a
+GAC-strength (per bin, not joint) pass.
 
 ### Stage 1 — checker (superseded)
 
@@ -100,33 +102,74 @@ bin's sweep don't update its own `floor_b` / `ceiling_b` mid-sweep;
 the framework re-fires the propagator on any domain change and the
 next call catches anything missed.
 
-`bounds_only=true` is captured but currently identical to the default —
-nothing stronger exists yet to skip.
+`bounds_only=true` runs only Stage 2 (no Stage 3 DAG); leave it clear
+(the default) to add Stage 3 on top.
 
-### Stage 3 — per-bin partial-load DAG, GAC
+### Stage 3 — per-bin partial-load DAG, per-bin GAC
 
 For each bin `b` a layered DAG: layer `i` corresponds to item `i`,
 nodes are partial-load values `w ∈ {0..C_b}`, edges are
 "`items[i] == b`" (load `+= sizes[i]`) or "`items[i] ≠ b`" (load
 unchanged), terminals are layer-`n` nodes whose load lies in
-`loads[b]`'s domain (or `≤ capacities[b]`).
+`loads[b]`'s domain (or `≤ capacities[b]`). `C_b` is
+`min(upper(loads[b]) [or caps[b]], Σ_i sizes[i])`.
 
-State flag per (bin, layer, node) and the transition clauses are
-introduced via `Propagators::install_initialiser` at `ProofLevel::Top`,
-*once* before search, derived from the per-bin OPB sum equation. The
-bridge map (`shared_ptr<BridgeMap>` or similar) is captured by both the
-initialiser and the propagator. The propagator runs the standard
-forward / backward sweeps, infers `items[i] ≠ b` when no surviving DAG
-path supports a value, and RUP-justifies against the Top-level
-scaffolding. Mirrors `MDD::propagate_mdd` structurally; specialises
-`disjunctive-proof-logging.md`'s "third reusable idea" with the path-
-DAG vocabulary instead of the time-table one.
+**Scaffolding shape (paper-style inequality reifications + conjunction
+main state).** For each statically-reduced `(b, i, w)`, three reified
+flags at `ProofLevel::Top` via `create_proof_flag_reifying`:
 
-State-flag footprint is `O(n × Σ_b C_b)`; for capacities much larger
-than `n` the GAC DAG is impractical. `bounds_only=true` is the user-
-visible escape hatch (set the flag at construction time and Stage 3 is
-skipped entirely). A heuristic auto-select threshold is a future
-project.
+- `g_up_{b,i,w}` ⇔ `Σ_{j<i} sizes[j]·(items[j]==b) ≥ w`
+- `g_dn_{b,i,w}` ⇔ `Σ_{j<i} sizes[j]·(items[j]==b) ≤ w`
+- `S_{b,i,w}` ⇔ `g_up_{b,i,w} + g_dn_{b,i,w} ≥ 2`  (sum exactly w)
+
+The conjunction-of-sub-states pattern is from Demirović et al., CP
+2024 §4 ("Knapsack as a Constraint"; PDF at
+`ciaranm.github.io/papers/cp2024-dp.pdf`), specialised to one
+partial-sum dimension. For Knapsack the conjunction adds further
+sub-states (`P_↑/↓` over profit) — same shape, more legs.
+
+Both the initialiser and the propagator capture a
+`shared_ptr<BridgeMap>`; the initialiser writes flag handles, the
+propagator reads them inside justification callbacks. This is exactly
+the "third reusable idea" of `disjunctive-proof-logging.md` (declarative
+OPB + propagator-introduced bridge), with the bridge vocabulary being
+partial sums instead of time-table actives.
+
+**Static reduction.** Performed in `prepare()` against initial item
+domains: forward reachability from `(0,0)` intersected with backward
+reachability from accepting terminals. Only surviving `(b, i, w)`
+gets flag handles emitted at Top, and only surviving nodes are walked
+by the runtime sweep.
+
+**Per-call sweep.** Adapted from `MDD::propagate_mdd`: forward then
+backward reachability against the *current* item domains; the per-bin
+`alive` set is the intersection. For each `(item i, bin b)` candidate,
+`items[i] = b` is supported iff there exists alive `(i, w)` with alive
+`(i+1, w + sizes[i])`. Otherwise infer `items[i] ≠ b` via
+`JustifyUsingRUP`. VeriPB chains through the reification axioms +
+natural OPB + current reason to close the proof — no explicit dead-node
+emission chain has proved necessary in practice (the bridge flags +
+natural OPB equation give enough unit-propagation reach on the cases
+tested so far).
+
+**Per-bin GAC, not joint GAC.** Each bin's DAG sees only its own
+constraint; cross-bin interactions that route an item elsewhere are
+invisible. Worked example:
+`items=[(0,1),(0,1),(0,1)] sizes=[1,2,2] caps=[3,2]` has 2 solutions
+both with `items[0] = 0`, but Stage 3 doesn't prune `items[0] = 1` —
+each bin alone admits it (bin 0 via "item 0 just leaves", bin 1 via
+"item 0 takes its one unit while items 1, 2 sit out"). Joint GAC for
+BinPacking reduces to subset-sum and is NP-hard. Shaw 2004-style
+cardinality reasoning is a natural Stage 4-equivalent strengthening
+within the per-bin envelope; tracked as a follow-up.
+
+**Footprint.** Per bin: ~`3 × surviving_nodes` flags, each with two
+reification axioms. For `n=20`, `C_b=20`, 5 bins, ~6 000 flags +
+~12 000 axiom lines after static reduction — workable. For `n=50`,
+`C_b=100`, 10 bins it can climb into the high tens of thousands;
+`bounds_only=true` is the user-visible escape hatch. There is no
+general "warn when a constraint's OPB footprint gets large" mechanism
+in the solver yet; documented here as a known sharp edge.
 
 ## Frontends
 
