@@ -160,8 +160,9 @@ both with `items[0] = 0`, but Stage 3 doesn't prune `items[0] = 1` —
 each bin alone admits it (bin 0 via "item 0 just leaves", bin 1 via
 "item 0 takes its one unit while items 1, 2 sit out"). Joint GAC for
 BinPacking reduces to subset-sum and is NP-hard. Shaw 2004-style
-cardinality reasoning is a natural Stage 4-equivalent strengthening
-within the per-bin envelope; tracked as a follow-up.
+cardinality reasoning (the L2 Martello-Toth lower bound + shaving) is
+a natural Stage 4-equivalent strengthening within the per-bin
+envelope; tracked under #209.
 
 **Footprint.** Per bin: ~`3 × surviving_nodes` flags, each with two
 reification axioms. For `n=20`, `C_b=20`, 5 bins, ~6 000 flags +

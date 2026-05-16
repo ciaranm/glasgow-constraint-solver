@@ -79,7 +79,7 @@ addressed.
 
 - [#146](https://github.com/ciaranm/glasgow-constraint-solver/issues/146) — `Disjunctive`: basic case shipped (variable starts, constant lengths, both strict and non-strict). Variable lengths, 2D / k-D `Disjunctive2D`, and optional-task variants are open follow-ups under the same issue.
 - [#147](https://github.com/ciaranm/glasgow-constraint-solver/issues/147) — `Cumulative`: basic-case shipped (constant lengths, heights, capacity; only the `(le, int)` XCSP3 condition; variable starts only; checker-only propagation). Variable d/r/b, edge-finding, and proof logging for stronger propagation are open follow-ups under the same issue.
-- [#148](https://github.com/ciaranm/glasgow-constraint-solver/issues/148) — `BinPacking`: Stage 1 (checker), Stage 2 (per-bin bounds), and Stage 3 (per-bin partial-load DAG, per-bin GAC) all shipped. Open follow-ups: Shaw-style cardinality reasoning to push beyond per-bin towards (still-not-joint) joint GAC, and unification with `MDD` / `Knapsack` under #200. See `bin-packing.md`.
+- [#148](https://github.com/ciaranm/glasgow-constraint-solver/issues/148) — `BinPacking`: Stage 1 (checker), Stage 2 (per-bin bounds), and Stage 3 (per-bin partial-load DAG, per-bin GAC) all shipped. Open follow-ups: Shaw-style cardinality reasoning to push beyond per-bin towards (still-not-joint) joint GAC ([#209](https://github.com/ciaranm/glasgow-constraint-solver/issues/209)), and unification with `MDD` / `Knapsack` under #200. See `bin-packing.md`.
 
 [^cum]: Stage-1 envelope: variable origins, constant lengths/heights/capacity. Propagator is a pure feasibility checker (fires only when every start is fixed). Outside this envelope: MiniZinc lets the stdlib decomposition apply; XCSP3 raises an unsupported error.
 
