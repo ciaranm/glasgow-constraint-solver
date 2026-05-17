@@ -1,4 +1,5 @@
 add_subdirectory(auto_table)
+add_subdirectory(bin_packing)
 add_subdirectory(cake)
 add_subdirectory(colour)
 add_subdirectory(circuit_small)

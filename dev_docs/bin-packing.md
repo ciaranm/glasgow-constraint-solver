@@ -111,11 +111,14 @@ For each bin `b` a layered DAG: layer `i` corresponds to item `i`,
 nodes are partial-load values `w ∈ {0..C_b}`, edges are
 "`items[i] == b`" (load `+= sizes[i]`) or "`items[i] ≠ b`" (load
 unchanged), terminals are layer-`n` nodes whose load lies in
-`loads[b]`'s domain (or `≤ capacities[b]`). `C_b` is
-`min(upper(loads[b]) [or caps[b]], Σ_i sizes[i])`.
+`loads[b]`'s domain (or `≤ capacities[b]`). `C_b = Σ_i sizes[i]` —
+matching Knapsack, no intersection with `loads[b]`'s initial upper or
+`caps[b]` (Knapsack's "Static reduction" rationale carries over: the
+per-call cap-exceeded path needs a Top flag for the over-bound
+successor to chain against).
 
 **Scaffolding shape (paper-style inequality reifications + conjunction
-main state).** For each statically-reduced `(b, i, w)`, three reified
+main state).** For each forward-reachable `(b, i, w)`, three reified
 flags at `ProofLevel::Top` via `create_proof_flag_reifying`:
 
 - `g_up_{b,i,w}` ⇔ `Σ_{j<i} sizes[j]·(items[j]==b) ≥ w`
@@ -128,29 +131,71 @@ The conjunction-of-sub-states pattern is from Demirović et al., CP
 partial-sum dimension. For Knapsack the conjunction adds further
 sub-states (`P_↑/↓` over profit) — same shape, more legs.
 
-Both the initialiser and the propagator capture a
-`shared_ptr<BridgeMap>`; the initialiser writes flag handles, the
-propagator reads them inside justification callbacks. This is exactly
-the "third reusable idea" of `disjunctive-proof-logging.md` (declarative
-OPB + propagator-introduced bridge), with the bridge vocabulary being
-partial sums instead of time-table actives.
+On top of these reifications the initialiser emits (all at `Top`):
 
-**Static reduction.** Performed in `prepare()` against initial item
-domains: forward reachability from `(0,0)` intersected with backward
-reachability from accepting terminals. Only surviving `(b, i, w)`
-gets flag handles emitted at Top, and only surviving nodes are walked
-by the runtime sweep.
+1. **Phantom flags** for non-DAG backward parents that backward chains
+   reference. For `k = 1` every phantom is per-coord-phantom and
+   closes via a pair-wise `pol` against `DAG[i]`'s feasible projection
+   plus a closing `~S_phantom ≥ 1` RUP.
+2. **Per-coord and joint forward chains** for every `(parent, branch,
+   succ)` edge: `pol succ.g_up.rev + parent.g_up.fwd ; saturate` then
+   the RUP twin, same for `g_dn`, then `~parent.S + branch-lit +
+   succ.S ≥ 1`.
+3. **Layer-0 ALO** `S_{b,0,0} ≥ 1`, plus per-layer ALOs and per-state
+   implications by induction.
+4. **Joint backward chains** for every `(succ, branch)` with succ in
+   `DAG[i+1] ∪ phantoms[i+1]`. Three flavours: negative-coord
+   (`include` with `w' < sizes[i]`, direct RUP), DAG parent (per-coord
+   + joint chain), phantom parent (same shape, phantom flag).
+5. **Phantom closure** as above.
 
-**Per-call sweep.** Adapted from `MDD::propagate_mdd`: forward then
-backward reachability against the *current* item domains; the per-bin
-`alive` set is the intersection. For each `(item i, bin b)` candidate,
-`items[i] = b` is supported iff there exists alive `(i, w)` with alive
-`(i+1, w + sizes[i])`. Otherwise infer `items[i] ≠ b` via
-`JustifyUsingRUP`. VeriPB chains through the reification axioms +
-natural OPB + current reason to close the proof — no explicit dead-node
-emission chain has proved necessary in practice (the bridge flags +
-natural OPB equation give enough unit-propagation reach on the cases
-tested so far).
+This is the k=1 specialisation of Knapsack's `emit_scaffolding`; the
+two implementations duplicate substantially. Folding both into a shared
+layered-DAG scaffolder is tracked under #200.
+
+**Per-call sweep.** Structural port of Knapsack's `propagate` to
+`k = 1`. Forward walk under current item domains restricted to the
+static DAG (with `LiveNode` predecessor tracking); for each
+`w ∈ DAG[i+1] \ growing` either a cap-exceeded `pol` step against the
+LE half of the per-bin OPB line (plus current load upper for
+variable-load) followed by `~S` RUP at `Current`, or a pure
+forward-unreachable `~S` RUP. Variable-load form additionally filters
+layer `n` by current `loads[b]` lower bound (`~g_dn` + `~S` cached) and
+interior holes; terminal `loads[b] ≥ lo` / `≤ hi` inferences emit
+per-state `pol` chains and aggregating RUPs. Backward pass over the
+predecessor map emits `~S` for dead intermediates and infers
+`items[i] ≠ b` for unsupported bin candidates. Empty layer-`n` →
+empty RUP + `inference.contradiction`.
+
+All per-call dead-state lines are gated on a backtrack-restored
+`DeadCache` so they're emitted at most once per `(b, i, w)` per
+subtree. Statically-dead `~S` lines are NOT pre-emitted at Top because
+the natural pol-based derivations for the wider load-bound cases
+(single-valued loads, interior holes) need the same per-call pol+RUP
+machinery and the cache prevents redundant emission anyway.
+
+**Benchmarks vs the pre-#200 BinPacking (which emitted nothing per
+call, relying on VeriPB's UP through the reifications + natural OPB).**
+`examples/bin_packing_bench` instances:
+
+| inst | layout | old proof | new proof | old veripb | new veripb | old solve | new solve |
+|------|--------|----------:|----------:|-----------:|-----------:|----------:|----------:|
+| 1 | 10it 3bin capa | 2.6 MB | 22 MB | 1.8s | 14.6s | 0.25s | 0.31s |
+| 2 | 10it 3bin load | 14 MB | 296 MB | 10.3s | 102s | 2.34s | 2.54s |
+| 5 | 8it 2bin tight capa | 155 KB | 1.1 MB | <0.01s | 0.10s | 0.006s | 0.01s |
+| 6 | 8it 2bin wide-sizes | 177 KB | 1.2 MB | <0.01s | 0.14s | 0.008s | 0.01s |
+
+Proof size grows 7–21×, VeriPB verify time grows 8–14×, solver wall
+time grows 1.1–1.5×. This is a **regression** on every measured axis,
+the opposite of the Knapsack result (3× solve, 3–6× proof shrink).
+Reason: pre-#200 BinPacking emitted essentially nothing per call and
+leaned on VeriPB UP to do the lookup against the reified flags. The
+new design replaces that implicit work with explicit chains —
+principled and aligned with the #200 unified framework path, but on
+these benchmarks strictly more verbose. The trade-off is robustness
+(no more "if RUP can't close, copy the MDD template" fragility) for
+size. Worth revisiting if any of these axes becomes a measured pain
+point.
 
 **Per-bin GAC, not joint GAC.** Each bin's DAG sees only its own
 constraint; cross-bin interactions that route an item elsewhere are
