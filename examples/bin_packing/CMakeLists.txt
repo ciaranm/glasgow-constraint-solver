@@ -1,0 +1,2 @@
+add_executable(bin_packing_bench bin_packing_bench.cc)
+target_link_libraries(bin_packing_bench PRIVATE glasgow_constraint_solver cxxopts)

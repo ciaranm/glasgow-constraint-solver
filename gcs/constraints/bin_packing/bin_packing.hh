@@ -54,7 +54,7 @@ namespace gcs
         const bool _bounds_only;
 
         std::shared_ptr<DagBridge> _bridge;
-        std::optional<innards::ConstraintStateHandle> _graph_idx;
+        std::optional<innards::ConstraintStateHandle> _dead_cache_idx;
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &) -> void override;
