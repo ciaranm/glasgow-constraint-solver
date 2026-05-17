@@ -57,6 +57,12 @@ library. For an introduction to *using* the solver, start with the top-level
   `recover_am1`-based pairwise at-most-one derivation that replaces
   cumulative's encoded `C_t`, and the third reusable proof-logging
   idea that comes out of the design.
+- [`Knapsack`](knapsack.md) — design and staging note for the
+  upfront-DAG `Knapsack` propagator (#200), the *k*-coordinate
+  generalisation of `BinPacking` Stage 3. Covers the
+  `define_proof_model` / `install_initialiser` split, the paper-style
+  reified scaffolding, the per-call proof chain, and why the legacy
+  per-call-DAG implementation (`KnapsackLegacy`) is kept alongside.
 
 More documents will be added here as we build up coverage of other parts of
 the codebase.
