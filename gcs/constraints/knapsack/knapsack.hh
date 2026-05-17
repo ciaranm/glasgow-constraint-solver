@@ -3,9 +3,11 @@
 
 #include <gcs/constraint.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
+#include <gcs/innards/state.hh>
 #include <gcs/variable_id.hh>
 
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -17,30 +19,38 @@ namespace gcs
      * each <code>x</code>. Coefficients and item domains must be
      * non-negative.
      *
-     * This is the new (upfront-DAG) implementation following the same
-     * pattern as BinPacking and MDD: <code>prepare()</code> builds
-     * static structures from initial domains, <code>install_initialiser</code>
-     * emits one-shot proof scaffolding at <code>ProofLevel::Top</code>,
-     * and the per-call propagator reads both via a shared
-     * <code>shared_ptr</code> bridge.
+     * Follows the same upfront-DAG pattern as BinPacking and MDD:
+     * <code>prepare()</code> builds the statically-reduced layered DAG
+     * once from the initial domains (forward reach from
+     * <code>(0,...,0)</code> intersected with backward reach from
+     * layer-n states whose every coordinate lies in
+     * <code>initial dom(totals[x])</code>);
+     * <code>install_initialiser</code> emits one-shot proof scaffolding
+     * — per-coordinate <code>g_up</code> / <code>g_dn</code> reified
+     * inequality flags and per-state conjunction flags — at
+     * <code>ProofLevel::Top</code>; the per-call propagator does
+     * forward+backward reachability against the current item and total
+     * domains restricted to the static DAG and prunes items / total
+     * bounds via <code>JustifyUsingRUP</code>. RUP closes through the
+     * bridge reifications plus the natural per-equation OPB constraints.
      *
-     * \note Stage 1: only the all-fixed checker is implemented. When
-     * every item variable is single-valued, each <code>totals[x]</code>
-     * is fixed to the computed sum (RUP from the natural OPB equation
-     * plus the assigned-item literals). No mid-search pruning yet;
-     * Stage 2 will add the static DAG and per-call GAC.
+     * See <code>dev_docs/knapsack.md</code> for the staged design.
      *
-     * For benchmarking against the previous implementation, see
-     * KnapsackLegacy.
+     * For benchmarking against the original (per-call DP) implementation,
+     * see KnapsackLegacy.
      *
      * \ingroup Constraints
      */
     class Knapsack : public Constraint
     {
     private:
+        struct DagBridge;
+
         std::vector<std::vector<Integer>> _coeffs;
         std::vector<IntegerVariableID> _vars;
         std::vector<IntegerVariableID> _totals;
+        std::shared_ptr<DagBridge> _bridge;
+        std::optional<innards::ConstraintStateHandle> _dead_cache_handle;
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &) -> void override;
