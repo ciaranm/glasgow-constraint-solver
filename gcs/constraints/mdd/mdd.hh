@@ -5,6 +5,8 @@
 #include <gcs/innards/proofs/proof_only_variables.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/variable_id.hh>
+
+#include <memory>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -29,17 +31,28 @@ namespace gcs
      * This is a strict generalisation of `Regular`: a DFA is an MDD whose
      * layers all share the same node set and transition function.
      *
+     * Proof scaffolding mirrors the upfront pattern used by Knapsack and
+     * BinPacking Stage 3: the OPB encoding is the natural per-(node, val)
+     * forward chains plus per-layer exactly-one, and a one-shot Top-level
+     * initialiser derives per-val backward chains and statically-dead-node
+     * lines. The per-call propagator's `~state[i][q]` derivations then
+     * RUP-close through that scaffolding instead of re-emitting the
+     * intermediate aggregations on every propagation call.
+     *
      * \ingroup Constraints
      */
     class MDD : public Constraint
     {
     private:
+        struct Bridge;
+
         const std::vector<IntegerVariableID> _vars;
         const std::vector<std::vector<std::unordered_map<Integer, long>>> _layer_transitions;
         const std::vector<long> _nodes_per_layer;
         const std::vector<long> _accepting_terminals;
-        std::vector<std::vector<innards::ProofFlag>> _state_at_pos_flags;
+        std::shared_ptr<Bridge> _bridge;
         innards::ConstraintStateHandle _graph_idx;
+        innards::ConstraintStateHandle _dead_cache_idx;
         std::vector<std::set<Integer>> _opb_alphabet;
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
