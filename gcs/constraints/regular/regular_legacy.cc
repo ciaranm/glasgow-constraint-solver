@@ -1,4 +1,4 @@
-#include <gcs/constraints/regular.hh>
+#include <gcs/constraints/regular/regular_legacy.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -329,7 +329,7 @@ namespace
     }
 }
 
-Regular::Regular(vector<IntegerVariableID> v, long n, vector<unordered_map<Integer, long>> t, vector<long> f, bool sr) :
+RegularLegacy::RegularLegacy(vector<IntegerVariableID> v, long n, vector<unordered_map<Integer, long>> t, vector<long> f, bool sr) :
     _vars(move(v)),
     _num_states(n),
     _transitions(move(t)),
@@ -343,7 +343,7 @@ Regular::Regular(vector<IntegerVariableID> v, long n, vector<unordered_map<Integ
     _symbols.assign(sym_set.begin(), sym_set.end());
 }
 
-Regular::Regular(vector<IntegerVariableID> v, long n, vector<vector<long>> transitions, vector<long> f, bool sr) :
+RegularLegacy::RegularLegacy(vector<IntegerVariableID> v, long n, vector<vector<long>> transitions, vector<long> f, bool sr) :
     _vars(move(v)),
     _num_states(n),
     _transitions(vector<unordered_map<Integer, long>>(n, unordered_map<Integer, long>{})),
@@ -361,17 +361,17 @@ Regular::Regular(vector<IntegerVariableID> v, long n, vector<vector<long>> trans
     _symbols.assign(sym_set.begin(), sym_set.end());
 }
 
-auto Regular::symbols() const -> const vector<Integer> &
+auto RegularLegacy::symbols() const -> const vector<Integer> &
 {
     return _symbols;
 }
 
-auto Regular::clone() const -> unique_ptr<Constraint>
+auto RegularLegacy::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<Regular>(_vars, _num_states, _transitions, _final_states, _short_reasons);
+    return make_unique<RegularLegacy>(_vars, _num_states, _transitions, _final_states, _short_reasons);
 }
 
-auto Regular::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
+auto RegularLegacy::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
     if (! prepare(propagators, initial_state, optional_model))
         return;
@@ -382,7 +382,7 @@ auto Regular::install(Propagators & propagators, State & initial_state, ProofMod
     install_propagators(propagators);
 }
 
-auto Regular::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
+auto RegularLegacy::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
 {
     _graph_idx = initial_state.add_constraint_state(RegularGraph(_vars.size(), _num_states));
 
@@ -398,7 +398,7 @@ auto Regular::prepare(Propagators &, State & initial_state, ProofModel * const) 
     return true;
 }
 
-auto Regular::define_proof_model(ProofModel & model) -> void
+auto RegularLegacy::define_proof_model(ProofModel & model) -> void
 {
     // Make 2D array of flags: state_at_pos_flags[i][q] means the DFA is in state q when it receives the
     // input value from vars[i], with an extra row of flags for the state after the last transition.
@@ -441,7 +441,7 @@ auto Regular::define_proof_model(ProofModel & model) -> void
     }
 }
 
-auto Regular::install_propagators(Propagators & propagators) -> void
+auto RegularLegacy::install_propagators(Propagators & propagators) -> void
 {
     Triggers triggers;
     triggers.on_change = {_vars.begin(), _vars.end()};
@@ -454,11 +454,11 @@ auto Regular::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
-auto Regular::s_exprify(const ProofModel * const model) const -> string
+auto RegularLegacy::s_exprify(const ProofModel * const model) const -> string
 {
     stringstream s;
 
-    print(s, "{} regular (", _name);
+    print(s, "{} regular_legacy (", _name);
     for (const auto & var : _vars)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
     print(s, ") {}\n       (", _num_states);
