@@ -198,10 +198,6 @@ handles, cached line numbers) goes on the class as private members.
 `all_equal/all_equal.cc`, `count/count.cc`, and
 `cumulative/cumulative.cc` are good references.
 
-Older constraints (e.g. `Knapsack`) still inline everything in
-`install()`; new code shouldn't follow that — the split form is the
-target everything is moving toward.
-
 The lambda runs once at the root and again whenever any of its triggers
 fire. It returns `PropagatorState::Enable` to stay registered, or
 `PropagatorState::DisableUntilBacktrack` once the constraint is
