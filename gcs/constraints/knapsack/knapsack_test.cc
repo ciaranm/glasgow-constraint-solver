@@ -1,6 +1,7 @@
 #include <gcs/constraints/innards/constraints_test_utils.hh>
 #include <gcs/constraints/knapsack.hh>
 #include <gcs/problem.hh>
+#include <gcs/search_heuristics.hh>
 #include <gcs/solve.hh>
 
 #include <util/enumerate.hh>
@@ -8,6 +9,7 @@
 #include <cstdlib>
 #include <functional>
 #include <iostream>
+#include <random>
 #include <set>
 #include <tuple>
 #include <utility>
@@ -26,11 +28,15 @@
 using std::cerr;
 using std::flush;
 using std::make_optional;
+using std::max;
+using std::mt19937;
 using std::nullopt;
 using std::pair;
+using std::random_device;
 using std::set;
 using std::string;
 using std::tuple;
+using std::uniform_int_distribution;
 using std::vector;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
@@ -43,13 +49,6 @@ using fmt::println;
 
 using namespace gcs;
 using namespace gcs::test_innards;
-
-// Stage 1 of the new Knapsack implementation is an all-fixed checker:
-// no mid-search pruning. solve_for_tests (no GAC check) plus a trimmed
-// data set keeps runtimes tractable. KnapsackLegacy retains the full
-// data set and GAC verification — see knapsack_legacy_test.cc. Stage 2
-// will restore wider coverage and switch back to
-// solve_for_tests_checking_gac.
 
 auto run_knapsack_test(bool proofs, pair<int, int> valrange, const vector<vector<int>> & coeffs, const vector<pair<int, int>> & bounds) -> void
 {
@@ -109,7 +108,7 @@ auto run_knapsack_test(bool proofs, pair<int, int> valrange, const vector<vector
     p.post(Knapsack{coeffs_integers, vs, bs});
 
     auto proof_name = proofs ? make_optional("knapsack_test") : nullopt;
-    solve_for_tests(p, proof_name, actual, tuple{vs, bs});
+    solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{vs, bs});
 
     check_results(proof_name, expected, actual);
 }
@@ -169,14 +168,87 @@ auto run_dup_knapsack_test(bool proofs, const string & label, pair<int, int> val
     (void)valrange;
 }
 
+// Regression-test driver with deterministic branching. The random
+// branching used by run_knapsack_test sometimes avoids the search
+// paths where the per-call dead-state RUPs need their hardest closure
+// work, so this path forces the bench-style dom_then_deg +
+// smallest_first ordering and lets us pin known failing cases.
+auto run_knapsack_regression(pair<int, int> valrange, const vector<vector<int>> & coeffs, const vector<pair<int, int>> & bounds) -> void
+{
+    print(cerr, "knapsack-deterministic {} {} {}:", valrange, coeffs, bounds);
+    cerr << flush;
+
+    set<tuple<vector<int>, vector<int>>> expected;
+    auto is_satisfying = [&](const vector<int> & taken, const vector<int> & profits) {
+        vector<int> sums(coeffs.size(), 0);
+        for (const auto & [x, s] : enumerate(taken))
+            for (unsigned i = 0; i < coeffs.size(); ++i)
+                sums[i] += coeffs[i][x] * s;
+
+        for (unsigned i = 0; i < coeffs.size(); ++i)
+            if (! (sums[i] >= bounds[i].first && sums[i] <= bounds[i].second))
+                return false;
+
+        return sums == profits;
+    };
+    test_innards::build_expected(expected, is_satisfying, vector{coeffs[0].size(), valrange}, bounds);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    auto items = p.create_integer_variable_vector(coeffs[0].size(), Integer(valrange.first), Integer(valrange.second), "item");
+    vector<IntegerVariableID> totals;
+    totals.reserve(coeffs.size());
+    for (unsigned i = 0; i < coeffs.size(); ++i)
+        totals.push_back(p.create_integer_variable(Integer(bounds[i].first), Integer(bounds[i].second), "t" + std::to_string(i)));
+    vector<vector<Integer>> coeffs_integers(coeffs.size());
+    for (unsigned i = 0; i < coeffs.size(); ++i)
+        for (const auto & w : coeffs[i])
+            coeffs_integers[i].push_back(Integer(w));
+
+    p.post(Knapsack{coeffs_integers, items, totals});
+
+    set<tuple<vector<int>, vector<int>>> actual;
+    auto record_solution = [&](const CurrentState & s) -> bool {
+        vector<int> taken, profits;
+        for (auto & v : items)
+            taken.push_back(s(v).raw_value);
+        for (auto & v : totals)
+            profits.push_back(s(v).raw_value);
+        actual.emplace(taken, profits);
+        return true;
+    };
+
+    auto proof_name = std::string{"knapsack_test"};
+    solve_with(p,
+        SolveCallbacks{.solution = record_solution, .branch = branch_with(variable_order::dom_then_deg(items), value_order::smallest_first())},
+        make_optional<ProofOptions>(proof_name));
+
+    test_innards::check_results(make_optional(proof_name), expected, actual);
+}
+
 auto main(int, char *[]) -> int
 {
-    // Cases trimmed to ones that complete quickly under an all-fixed
-    // checker: 0/1 variables with tight total bounds, the (18,19)/(3,8)
-    // corner case, and the degenerate cases. Wider-total and >2-equation
-    // cases are covered by knapsack_legacy_test.
-    vector<tuple<pair<int, int>, vector<vector<int>>, vector<pair<int, int>>>> data = {{{0, 1}, {{2, 3, 4}, {2, 3, 4}}, {{0, 8}, {3, 5}}}, //
-        {{0, 1}, {{7, 4, 4, 7}, {1, 2, 1, 0}}, {{18, 19}, {3, 8}}},                                                                        //
+    // Deterministic regressions first, so we know fast if the worst-case
+    // search paths are broken even though the random tests below would
+    // sometimes mask it. Minimal repro for the per-call dead-state RUP
+    // failure: 5 items 0/1, k=2 totals.
+    if (test_innards::can_run_veripb())
+        run_knapsack_regression({0, 1}, {{1, 2, 3, 4, 2}, {2, 1, 4, 3, 1}}, {{5, 8}, {5, 8}});
+
+    vector<tuple<pair<int, int>, vector<vector<int>>, vector<pair<int, int>>>> data = {{{0, 1}, {{2, 3, 4}, {2, 3, 4}}, {{0, 8}, {3, 1000}}}, //
+        {{0, 1}, {{2, 3, 4}, {2, 3, 4}}, {{3, 8}, {3, 1000}}},                                                                                //
+        {{0, 1}, {{2, 3, 4}, {2, 3, 4}}, {{0, 8}, {3, 5}}},                                                                                   //
+        {{0, 1}, {{1, 3, 4}, {2, 0, 8}}, {{0, 8}, {3, 1000}}},                                                                                //
+        {{0, 1}, {{2, 0, 8}, {1, 3, 4}}, {{0, 8}, {3, 1000}}},                                                                                //
+        {{0, 1}, {{2, 0, 8}, {2, 0, 8}}, {{0, 8}, {3, 1000}}},                                                                                //
+        {{0, 1}, {{2, 2, 2, 2, 2}, {2, 2, 2, 2, 2}}, {{0, 5}, {5, 1000}}},                                                                    //
+        {{0, 1}, {{3, 3, 2, 3}, {2, 5, 6, 8}}, {{0, 7}, {4, 1000}}},                                                                          //
+        {{0, 1}, {{8, 2, 4, 3}, {6, 5, 5, 6}}, {{0, 4}, {13, 1000}}},                                                                         //
+        {{0, 1}, {{5, 4, 8, 7}, {2, 5, 1, 5}}, {{0, 12}, {5, 1000}}},                                                                         //
+        {{0, 1}, {{8, 7, 4, 8}, {4, 3, 4, 4}}, {{0, 18}, {10, 1000}}},                                                                        //
+        {{0, 1}, {{7, 4, 4, 7}, {1, 2, 1, 0}}, {{18, 19}, {3, 8}}},                                                                           //
+        {{2, 4}, {{4, 1, 2, 3}, {4, 6, 3, 8}, {5, 3, 1, 6}}, {{0, 64}, {0, 48}, {0, 41}}},                                                    //
+        {{1, 4}, {{1, 8, 3, 1}}, {{3, 42}}},                                                                                                  //
         // Degenerate cases (issue #254).
         // Empty item list (zero columns): every weighted sum is 0, so the
         // totals must admit 0.
@@ -189,6 +261,22 @@ auto main(int, char *[]) -> int
         {{0, 0}, {{2, 3}}, {{5, 5}}},  // all taken 0: sum 0 != total 5 (contradiction)
         {{1, 1}, {{2, 3}}, {{5, 5}}},  // all taken 1: sum 5 == total (tautology)
         {{1, 1}, {{2, 3}}, {{4, 4}}}}; // all taken 1: sum 5 != total 4 (contradiction)
+
+    random_device rand_dev;
+    mt19937 rand(rand_dev());
+    for (int x = 0; x < 10; ++x) {
+        uniform_int_distribution n_coeffs_dist(1, 4), size_dist(1, 4), item_dist(0, 8), bound_dist(0, 40), delta_dist(0, 30);
+        auto size = size_dist(rand);
+        auto n_coeffs = n_coeffs_dist(rand);
+
+        vector<pair<int, int>> boundses;
+        for (int k = 0; k < n_coeffs; ++k) {
+            auto wb = bound_dist(rand) + 20;
+            boundses.emplace_back(max(0, wb - (25 + delta_dist(rand))), wb);
+        }
+
+        generate_random_data(rand, data, random_bounds(0, 2, 1, 3), vector(n_coeffs, vector(size, item_dist)), boundses);
+    }
 
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
