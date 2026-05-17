@@ -68,6 +68,12 @@ namespace gcs::innards
 
         /**
          * Add a pair of pseudo-Boolean constraints representing an equality to a Proof model.
+         *
+         * Returns `{LE-half, GE-half}` — i.e. `{ line for lhs <= rhs,
+         * line for lhs >= rhs }`. Callers binding the result with
+         * structured bindings should mirror that order; getting it wrong
+         * has previously led to per-call `pol` steps referencing the
+         * wrong half of the equation.
          */
         auto add_constraint(
             const WPBSumEq & eq,
@@ -90,6 +96,9 @@ namespace gcs::innards
 
         /**
          * Add a pair of pseudo-Boolean constraints representing an equality to a Proof model.
+         *
+         * Returns `{LE-half, GE-half}` — see the no-name overload above
+         * for the rationale.
          */
         auto add_constraint(
             const StringLiteral & constraint_name,
