@@ -1,4 +1,4 @@
-#include <gcs/constraints/knapsack.hh>
+#include <gcs/constraints/knapsack/knapsack_legacy.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -52,7 +52,7 @@ using std::print;
 using fmt::print;
 #endif
 
-Knapsack::Knapsack(vector<Integer> weights, vector<Integer> profits,
+KnapsackLegacy::KnapsackLegacy(vector<Integer> weights, vector<Integer> profits,
     vector<IntegerVariableID> vars, IntegerVariableID weight, IntegerVariableID profit) :
     _coeffs({move(weights), move(profits)}),
     _vars(move(vars)),
@@ -60,7 +60,7 @@ Knapsack::Knapsack(vector<Integer> weights, vector<Integer> profits,
 {
 }
 
-Knapsack::Knapsack(vector<vector<Integer>> coefficients,
+KnapsackLegacy::KnapsackLegacy(vector<vector<Integer>> coefficients,
     vector<IntegerVariableID> vars,
     vector<IntegerVariableID> totals) :
     _coeffs(move(coefficients)),
@@ -69,9 +69,9 @@ Knapsack::Knapsack(vector<vector<Integer>> coefficients,
 {
 }
 
-auto Knapsack::clone() const -> unique_ptr<Constraint>
+auto KnapsackLegacy::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<Knapsack>(_coeffs, _vars, _totals);
+    return make_unique<KnapsackLegacy>(_coeffs, _vars, _totals);
 }
 
 namespace
@@ -594,7 +594,7 @@ namespace
     }
 }
 
-auto Knapsack::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
+auto KnapsackLegacy::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
     if (! prepare(propagators, initial_state, optional_model))
         return;
@@ -605,7 +605,7 @@ auto Knapsack::install(Propagators & propagators, State & initial_state, ProofMo
     install_propagators(propagators);
 }
 
-auto Knapsack::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
+auto KnapsackLegacy::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
 {
     if (_coeffs.size() != _totals.size())
         throw InvalidProblemDefinitionException{"mismatch between coefficients and totals sizes for knapsack"};
@@ -634,7 +634,7 @@ auto Knapsack::prepare(Propagators &, State & initial_state, ProofModel * const)
     return true;
 }
 
-auto Knapsack::define_proof_model(ProofModel & model) -> void
+auto KnapsackLegacy::define_proof_model(ProofModel & model) -> void
 {
     for (const auto & [cc_idx, cc] : enumerate(_coeffs)) {
         WPBSum sum_eq;
@@ -645,7 +645,7 @@ auto Knapsack::define_proof_model(ProofModel & model) -> void
     }
 }
 
-auto Knapsack::install_propagators(Propagators & propagators) -> void
+auto KnapsackLegacy::install_propagators(Propagators & propagators) -> void
 {
     Triggers triggers;
     triggers.on_change = {_vars.begin(), _vars.end()};
@@ -659,11 +659,11 @@ auto Knapsack::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
-auto Knapsack::s_exprify(const innards::ProofModel * const model) const -> string
+auto KnapsackLegacy::s_exprify(const innards::ProofModel * const model) const -> string
 {
     stringstream s;
 
-    print(s, "{} knapsack\n            (", _name);
+    print(s, "{} knapsack_legacy\n            (", _name);
     for (const auto & cs : _coeffs) {
         print(s, "\n                (");
         for (const auto & c : cs)

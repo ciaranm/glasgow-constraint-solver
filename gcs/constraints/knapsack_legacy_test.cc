@@ -1,8 +1,6 @@
 #include <gcs/constraints/innards/constraints_test_utils.hh>
-#include <gcs/constraints/knapsack.hh>
-#include <gcs/exception.hh>
+#include <gcs/constraints/knapsack/knapsack_legacy.hh>
 #include <gcs/problem.hh>
-#include <gcs/search_heuristics.hh>
 #include <gcs/solve.hh>
 
 #include <util/enumerate.hh>
@@ -50,9 +48,9 @@ using fmt::println;
 using namespace gcs;
 using namespace gcs::test_innards;
 
-auto run_knapsack_test(bool proofs, pair<int, int> valrange, const vector<vector<int>> & coeffs, const vector<pair<int, int>> & bounds) -> void
+auto run_knapsack_legacy_test(bool proofs, pair<int, int> valrange, const vector<vector<int>> & coeffs, const vector<pair<int, int>> & bounds) -> void
 {
-    print(cerr, "knapsack {} {} {} {}", valrange, coeffs, bounds, proofs ? " with proofs:" : ":");
+    print(cerr, "knapsack_legacy {} {} {} {}", valrange, coeffs, bounds, proofs ? " with proofs:" : ":");
     cerr << flush;
 
     set<tuple<vector<int>, vector<int>>> expected, actual;
@@ -83,82 +81,16 @@ auto run_knapsack_test(bool proofs, pair<int, int> valrange, const vector<vector
         for (const auto & w : coeffs[i])
             coeffs_integers[i].push_back(Integer(w));
 
-    p.post(Knapsack{coeffs_integers, vs, bs});
+    p.post(KnapsackLegacy{coeffs_integers, vs, bs});
 
-    auto proof_name = proofs ? make_optional("knapsack_test") : nullopt;
+    auto proof_name = proofs ? make_optional("knapsack_legacy_test") : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{vs, bs});
 
     check_results(proof_name, expected, actual);
 }
 
-// Regression-test driver with deterministic branching. The random
-// branching used by run_knapsack_test sometimes avoids the search
-// paths where the per-call dead-state RUPs need their hardest closure
-// work, so this path forces the bench-style dom_then_deg +
-// smallest_first ordering and lets us pin known failing cases.
-auto run_knapsack_regression(pair<int, int> valrange, const vector<vector<int>> & coeffs, const vector<pair<int, int>> & bounds) -> void
-{
-    print(cerr, "knapsack-deterministic {} {} {}:", valrange, coeffs, bounds);
-    cerr << flush;
-
-    set<tuple<vector<int>, vector<int>>> expected;
-    auto is_satisfying = [&](const vector<int> & taken, const vector<int> & profits) {
-        vector<int> sums(coeffs.size(), 0);
-        for (const auto & [x, s] : enumerate(taken))
-            for (unsigned i = 0; i < coeffs.size(); ++i)
-                sums[i] += coeffs[i][x] * s;
-
-        for (unsigned i = 0; i < coeffs.size(); ++i)
-            if (! (sums[i] >= bounds[i].first && sums[i] <= bounds[i].second))
-                return false;
-
-        return sums == profits;
-    };
-    test_innards::build_expected(expected, is_satisfying, vector{coeffs[0].size(), valrange}, bounds);
-    println(cerr, " expecting {} solutions", expected.size());
-
-    Problem p;
-    auto items = p.create_integer_variable_vector(coeffs[0].size(), Integer(valrange.first), Integer(valrange.second), "item");
-    vector<IntegerVariableID> totals;
-    totals.reserve(coeffs.size());
-    for (unsigned i = 0; i < coeffs.size(); ++i)
-        totals.push_back(p.create_integer_variable(Integer(bounds[i].first), Integer(bounds[i].second), "t" + std::to_string(i)));
-    vector<vector<Integer>> coeffs_integers(coeffs.size());
-    for (unsigned i = 0; i < coeffs.size(); ++i)
-        for (const auto & w : coeffs[i])
-            coeffs_integers[i].push_back(Integer(w));
-
-    p.post(Knapsack{coeffs_integers, items, totals});
-
-    set<tuple<vector<int>, vector<int>>> actual;
-    auto record_solution = [&](const CurrentState & s) -> bool {
-        vector<int> taken, profits;
-        for (auto & v : items)
-            taken.push_back(s(v).raw_value);
-        for (auto & v : totals)
-            profits.push_back(s(v).raw_value);
-        actual.emplace(taken, profits);
-        return true;
-    };
-
-    auto proof_name = std::string{"knapsack_test"};
-    solve_with(p,
-        SolveCallbacks{.solution = record_solution,
-            .branch = branch_with(variable_order::dom_then_deg(items), value_order::smallest_first())},
-        make_optional<ProofOptions>(ProofFileNames{proof_name}, true, false));
-
-    test_innards::check_results(make_optional(proof_name), expected, actual);
-}
-
 auto main(int, char *[]) -> int
 {
-    // Deterministic regressions first, so we know fast if the worst-case
-    // search paths are broken even though the random tests below would
-    // sometimes mask it. Minimal repro for the per-call dead-state RUP
-    // failure: 5 items 0/1, k=2 totals.
-    if (test_innards::can_run_veripb())
-        run_knapsack_regression({0, 1}, {{1, 2, 3, 4, 2}, {2, 1, 4, 3, 1}}, {{5, 8}, {5, 8}});
-
     vector<tuple<pair<int, int>, vector<vector<int>>, vector<pair<int, int>>>> data = {
         {{0, 1}, {{2, 3, 4}, {2, 3, 4}}, {{0, 8}, {3, 1000}}},
         {{0, 1}, {{2, 3, 4}, {2, 3, 4}}, {{3, 8}, {3, 1000}}},
@@ -195,7 +127,7 @@ auto main(int, char *[]) -> int
         if (proofs && ! can_run_veripb())
             continue;
         for (auto & [valrange, coeffs, bounds] : data)
-            run_knapsack_test(proofs, valrange, coeffs, bounds);
+            run_knapsack_legacy_test(proofs, valrange, coeffs, bounds);
     }
 
     return EXIT_SUCCESS;

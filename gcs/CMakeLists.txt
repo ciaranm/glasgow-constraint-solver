@@ -22,6 +22,7 @@ add_library(glasgow_constraint_solver
         constraints/among.cc
         constraints/arithmetic.cc
         constraints/at_most_one.cc
+        constraints/bin_packing.cc
         constraints/circuit/circuit_base.cc
         constraints/circuit/circuit_prevent.cc
         constraints/circuit/circuit_scc.cc
@@ -37,7 +38,8 @@ add_library(glasgow_constraint_solver
         constraints/innards/reified_state.cc
         constraints/innards/triggers.cc
         constraints/inverse.cc
-        constraints/knapsack.cc
+        constraints/knapsack/knapsack.cc
+        constraints/knapsack/knapsack_legacy.cc
         constraints/lex.cc
         constraints/lex_smart_table.cc
         constraints/linear/justify.cc
@@ -48,6 +50,7 @@ add_library(glasgow_constraint_solver
         constraints/linear/propagate.cc
         constraints/linear/utils.cc
         constraints/logical.cc
+        constraints/mdd.cc
         constraints/min_max.cc
         constraints/minus.cc
         constraints/mult_bc.cc
@@ -129,6 +132,7 @@ if(GCS_BUILD_TESTS)
     add_executable(among_test constraints/among_test.cc)
     add_executable(arithmetic_test constraints/arithmetic_test.cc)
     add_executable(at_most_one_test constraints/at_most_one_test.cc)
+    add_executable(bin_packing_test constraints/bin_packing_test.cc)
     add_executable(comparison_test constraints/comparison_test.cc)
     add_executable(count_test constraints/count_test.cc)
     add_executable(cumulative_test constraints/cumulative_test.cc)
@@ -139,9 +143,11 @@ if(GCS_BUILD_TESTS)
     add_executable(increasing_test constraints/increasing_test.cc)
     add_executable(inverse_test constraints/inverse_test.cc)
     add_executable(knapsack_test constraints/knapsack_test.cc)
+    add_executable(knapsack_legacy_test constraints/knapsack_legacy_test.cc)
     add_executable(lex_test constraints/lex_test.cc)
     add_executable(linear_test constraints/linear/linear_test.cc)
     add_executable(logical_test constraints/logical_test.cc)
+    add_executable(mdd_test constraints/mdd_test.cc)
     add_executable(min_max_test constraints/min_max_test.cc)
     add_executable(mult_bc_test constraints/mult_bc_test.cc)
     add_executable(n_value_test constraints/n_value_test.cc)
@@ -156,9 +162,9 @@ if(GCS_BUILD_TESTS)
     add_executable(value_precede_test constraints/value_precede_test.cc)
 
     foreach(test_target
-            abs_test all_different_test all_different_except_test all_equal_test among_test arithmetic_test at_most_one_test comparison_test
-            count_test cumulative_test disjunctive_test element_test equals_test in_test increasing_test inverse_test knapsack_test lex_test linear_test
-            logical_test min_max_test mult_bc_test n_value_test parity_test
+            abs_test all_different_test all_different_except_test all_equal_test among_test arithmetic_test at_most_one_test bin_packing_test comparison_test
+            count_test cumulative_test disjunctive_test element_test equals_test in_test increasing_test inverse_test knapsack_test knapsack_legacy_test lex_test linear_test
+            logical_test mdd_test min_max_test mult_bc_test n_value_test parity_test
             plus_minus_test regular_test seq_precede_chain_test smart_table_test symmetric_all_different_test
             negative_table_test table_test value_precede_test)
         target_link_libraries(${test_target} PRIVATE glasgow_constraint_solver)
@@ -171,6 +177,7 @@ if(GCS_BUILD_TESTS)
     add_test(NAME among_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:among_test>)
     add_test(NAME arithmetic_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:arithmetic_test>)
     add_test(NAME at_most_one_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:at_most_one_test>)
+    add_test(NAME bin_packing_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:bin_packing_test>)
     foreach(mode ge ge_if ge_iff gt gt_if gt_iff le le_if le_iff lt lt_if lt_iff)
         add_test(NAME comparison_constraint_${mode}
             COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:comparison_test> ${mode})
@@ -190,12 +197,14 @@ if(GCS_BUILD_TESTS)
     add_test(NAME increasing_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:increasing_test>)
     add_test(NAME inverse_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:inverse_test>)
     add_test(NAME knapsack_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:knapsack_test>)
+    add_test(NAME knapsack_legacy_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:knapsack_legacy_test>)
     add_test(NAME lex_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:lex_test>)
     foreach(mode eq eq_if eq_iff ge ge_if ge_iff le le_if le_iff ne ne_if ne_iff)
         add_test(NAME linear_constraint_${mode}
             COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:linear_test> ${mode})
     endforeach()
     add_test(NAME logical_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:logical_test>)
+    add_test(NAME mdd_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:mdd_test>)
     add_test(NAME min_max_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:min_max_test>)
     add_test(NAME mult_bc_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:mult_bc_test>)
     add_test(NAME n_value_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:n_value_test>)
