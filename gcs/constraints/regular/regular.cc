@@ -192,6 +192,14 @@ namespace
     {
         graph.out_deg[i][k]--;
         if (graph.out_deg[i][k] == 0 && i > 0) {
+            // Emit before recursing to parents at i-1: ~state[i-1][l]'s RUP
+            // (when l's out_deg also hits 0 in the recursion) consumes the
+            // forward chain `state[i-1][l] ∧ x[i-1]=val → state[i][T(l,val)]`
+            // together with ~state[i][T(l,val)], so all dead children at
+            // layer i must be in the proof DB before any layer-(i-1) parent
+            // is derived. emit_dead_state is cache-gated, so the recursion
+            // can still reach this node without re-emission.
+            emit_dead_state(logger, cache, state_at_pos_flags, i, k, reason);
             for (const auto & edge : graph.in_edges[i][k]) {
                 auto l = edge.first;
                 graph.out_edges[i - 1][l].erase(k);
@@ -201,7 +209,6 @@ namespace
                 }
             }
             graph.in_edges[i][k] = {};
-            emit_dead_state(logger, cache, state_at_pos_flags, i, k, reason);
         }
     }
 
