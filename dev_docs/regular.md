@@ -197,47 +197,64 @@ line is written per call.
 
 `regular_random --legacy [--short-reasons]` and `--bacchus` expose the
 three variants from one binary; the default runs `Regular`. Sampled at
-the seeds in `examples/regular_random/CMakeLists.txt` and a few
-additional ad-hoc seeds at each size:
+the seeded ctest baseline plus four ad-hoc seeds at each size. `rec` is
+the `recursions` count and `props₀` is the first integer of the
+`propagations:` line from `--stats` (identical across variants since
+they make the same propagator decisions; included so the reader can
+gauge how much of the work is search vs initialisation).
 
-| n  | seed         | variant     | solve   | verify | opb    | pbp    |
-|---:|-------------:|-------------|--------:|-------:|-------:|-------:|
-| 10 |  1           | Regular     | 0.00s   | 0.01s  |   24 KB |  167 KB |
-| 10 |  1           | Bacchus     | 0.00s   | 0.06s  |  184 KB |  508 KB |
-| 14 |  1           | Regular     | 0.01s   | 0.04s  |   ~     |  443 KB |
-| 14 |  1           | Bacchus     | 0.02s   | 0.31s  |  462 KB | 1366 KB |
-| 18 |  1           | Regular     | 0.02s   | 0.14s  |   ~     |  953 KB |
-| 18 |  1           | Bacchus     | 0.06s   | 1.18s  |  970 KB | 2974 KB |
-| 22 |  1           | Regular     | 0.06s   | 0.32s  |   ~     | 1761 KB |
-| 22 |  1           | Bacchus     | 0.12s   | 4.61s  | 1744 KB | 5635 KB |
-| 22 | -1115540197  | Regular     | 0.02s   | 0.12s  |   ~     |  843 KB |
-| 22 | -1115540197  | Bacchus     | 0.05s   | 1.01s  |  909 KB | 2526 KB |
+| n  | seed         | rec | props₀ | variant | solve | verify | opb     | pbp     |
+|---:|-------------:|----:|-------:|---------|------:|-------:|--------:|--------:|
+| 10 |  1           |  11 |     17 | Regular | 0.00s | 0.01s  |  ~      |  167 KB |
+| 10 |  1           |  11 |     17 | Bacchus | 0.00s | 0.06s  |  184 KB |  508 KB |
+| 10 | -1115540197  |  11 |     21 | Regular | 0.00s | 0.00s  |  ~      |   86 KB |
+| 10 | -1115540197  |  11 |     21 | Bacchus | 0.00s | 0.02s  |  104 KB |  218 KB |
+| 14 |  1           |  15 |     23 | Regular | 0.01s | 0.04s  |  ~      |  443 KB |
+| 14 |  1           |  15 |     23 | Bacchus | 0.02s | 0.31s  |  462 KB | 1366 KB |
+| 14 | -1115540197  |  15 |     25 | Regular | 0.00s | 0.02s  |  ~      |  230 KB |
+| 14 | -1115540197  |  15 |     25 | Bacchus | 0.01s | 0.11s  |  257 KB |  625 KB |
+| 18 |  1           |  19 |     30 | Regular | 0.02s | 0.14s  |  ~      |  953 KB |
+| 18 |  1           |  19 |     30 | Bacchus | 0.06s | 1.18s  |  970 KB | 2974 KB |
+| 18 | -1115540197  |  18 |     36 | Regular | 0.01s | 0.05s  |  ~      |  490 KB |
+| 18 | -1115540197  |  18 |     36 | Bacchus | 0.02s | 0.35s  |  524 KB | 1390 KB |
+| 22 |  1           |  23 |     34 | Regular | 0.06s | 0.32s  |  ~      | 1761 KB |
+| 22 |  1           |  23 |     34 | Bacchus | 0.12s | 4.61s  | 1744 KB | 5635 KB |
+| 22 | -1115540197  |  23 |     45 | Regular | 0.02s | 0.12s  |  ~      |  843 KB |
+| 22 | -1115540197  |  23 |     45 | Bacchus | 0.05s | 1.01s  |  909 KB | 2526 KB |
 
-`RegularBacchus` produces proofs that are 2–3× larger than `Regular`'s
-and VeriPB verifies them 5–20× slower at the sampled sizes. The
-Bacchus encoding is wider — `O(n · |Q| · |Σ|)` extension variables and
-AL1 RUP lines, vs `Regular`'s `O(n · |Q| · |Σ|)` per-val backward chains
-and per-layer static-dead lines — and the per-(q, v) pol intermediate
-that unlocks the AL1 RUPs costs another `O(n · |Q| · |Σ|)` lines.
-Whereas `Regular`'s upfront scaffolding amortises across a per-call
-sweep that emits at most one cache-gated line per state-death,
-`RegularBacchus`'s upfront scaffolding pays the cost of strong-UP
-propagation per branch regardless of how much per-call work the
-propagator saves — and in `regular_random`'s search shape the saved
-per-call lines don't make up the difference.
+Caveat: `regular_random`'s instances do almost no search — `recursions`
+is ~`n + 1` and `propagations` stays in the tens — so the whole bench
+is dominated by initialisation work, which is the regime where
+`Regular`'s lean per-call sweep needs the fewest lines and Bacchus's
+upfront scaffolding pays its highest fixed cost. The numbers below
+should be read as "on shallow / no-search instances, Bacchus loses by
+the size of its scaffolding". A problem with substantially more search
+might pay off the scaffolding via the all-NoJustNeeded per-call shape,
+but `regular_random` does not exercise that regime — see the "open
+question" note below.
+
+At these sizes `RegularBacchus`'s PBP is 2–3× larger than `Regular`'s
+and VeriPB verifies it 5–20× slower. The Bacchus encoding is wider
+(`O(n · |Q| · |Σ|)` extension variables, AL1 RUPs, and per-`(q, v)`
+pol intermediates), and on instances this shallow `Regular`'s per-call
+sweep barely fires at all (at most ~30 propagations across the whole
+search tree), so there's almost no per-call cost to compress away.
 
 This matches the [BinPacking/Knapsack pattern
 regression](https://github.com/ciaranm/glasgow-constraint-solver/issues/212):
 the upfront-only approach beats the per-call-intermediates approach
-only when per-call work is the dominant cost. `Regular`'s per-call
-propagator is already lean (one line per state-death, cache-gated),
-so further compressing it via UP closure leaves less to gain than the
-Bacchus encoding's scaffolding costs to set up.
+only when per-call work is the dominant cost.
+
+Open question for future work: measure `RegularBacchus` on
+deep-search instances (e.g. wrap a regular constraint in an
+optimisation problem, or use a regular automaton inside something like
+a scheduling model). If the all-NoJustNeeded per-call shape compounds
+at search depth, it could flip the verdict.
 
 `RegularBacchus` is kept on the branch for issue #200 / the unified
 layered-DAG follow-up: the t-flag definitions and AL1 derivations are
 useful primitives even if the all-NoJustNeeded shape doesn't win
-standalone.
+standalone on `regular_random`.
 
 ## #200 follow-up
 
