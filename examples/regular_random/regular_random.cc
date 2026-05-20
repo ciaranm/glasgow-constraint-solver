@@ -104,7 +104,8 @@ auto main(int argc, char * argv[]) -> int
             ("proof-files-basename", "Alternative path and name for the proof", cxxopts::value<string>()->default_value("regular_random")) //
             ("short-reasons", "Use short reasons method (RegularLegacy only)")                                                             //
             ("legacy", "Post RegularLegacy instead of the new Regular")                                                                    //
-            ("bacchus", "Post RegularBacchus instead of the new Regular");
+            ("bacchus", "Post RegularBacchus instead of the new Regular")                                                                  //
+            ("all", "Enumerate all solutions instead of stopping at the first");
 
         options_vars = options.parse(argc, argv);
     }
@@ -128,6 +129,7 @@ auto main(int argc, char * argv[]) -> int
     auto short_reasons = options_vars.contains("short-reasons");
     auto legacy = options_vars.contains("legacy");
     auto bacchus = options_vars.contains("bacchus");
+    auto all_solutions = options_vars.contains("all");
     auto proof_prefix = options_vars["proof-files-basename"].as<string>();
 
     if (legacy && bacchus) {
@@ -144,8 +146,8 @@ auto main(int argc, char * argv[]) -> int
     auto p = Problem{};
     post_random_regular(p, n, rng, short_reasons, legacy, bacchus);
 
-    auto stats = solve_with(p,                                                           //
-        SolveCallbacks{.solution = [&](const CurrentState &) -> bool { return false; }}, //
+    auto stats = solve_with(p,                                                                   //
+        SolveCallbacks{.solution = [&](const CurrentState &) -> bool { return all_solutions; }}, //
         prove ? make_optional(ProofOptions{proof_prefix}) : nullopt);
 
     if (print_stats) {
