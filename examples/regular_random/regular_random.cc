@@ -36,7 +36,7 @@ auto index_of(const IntegerVariableID & val, const vector<IntegerVariableID> & v
     return (int)pos;
 }
 
-auto post_random_regular(Problem & p, const int & n, mt19937 & rng, bool short_reasons, bool legacy)
+auto post_random_regular(Problem & p, const int & n, mt19937 & rng, bool short_reasons, bool legacy, bool bacchus)
 {
     stringstream string_rep;
 
@@ -82,6 +82,8 @@ auto post_random_regular(Problem & p, const int & n, mt19937 & rng, bool short_r
     if (legacy)
         p.post(RegularLegacy{x, num_states, transitions, final_states} //
                 .with_short_reasons(short_reasons));
+    else if (bacchus)
+        p.post(RegularBacchus{x, num_states, transitions, final_states, short_reasons});
     else
         p.post(Regular{x, num_states, transitions, final_states} //
                 .with_short_reasons(short_reasons));
@@ -101,7 +103,8 @@ auto main(int argc, char * argv[]) -> int
             ("stats", "Print stats, including solve time")                                                                                 //
             ("proof-files-basename", "Alternative path and name for the proof", cxxopts::value<string>()->default_value("regular_random")) //
             ("short-reasons", "Use short reasons method (RegularLegacy only)")                                                             //
-            ("legacy", "Post RegularLegacy instead of the new Regular");
+            ("legacy", "Post RegularLegacy instead of the new Regular")                                                                    //
+            ("bacchus", "Post RegularBacchus instead of the new Regular");
 
         options_vars = options.parse(argc, argv);
     }
@@ -124,7 +127,13 @@ auto main(int argc, char * argv[]) -> int
     auto print_stats = options_vars.contains("stats");
     auto short_reasons = options_vars.contains("short-reasons");
     auto legacy = options_vars.contains("legacy");
+    auto bacchus = options_vars.contains("bacchus");
     auto proof_prefix = options_vars["proof-files-basename"].as<string>();
+
+    if (legacy && bacchus) {
+        cerr << "Error: --legacy and --bacchus are mutually exclusive" << endl;
+        return EXIT_FAILURE;
+    }
 
     if (seed == -1) {
         random_device rand_dev;
@@ -133,7 +142,7 @@ auto main(int argc, char * argv[]) -> int
 
     std::mt19937 rng(seed);
     auto p = Problem{};
-    post_random_regular(p, n, rng, short_reasons, legacy);
+    post_random_regular(p, n, rng, short_reasons, legacy, bacchus);
 
     auto stats = solve_with(p,                                                           //
         SolveCallbacks{.solution = [&](const CurrentState &) -> bool { return false; }}, //
