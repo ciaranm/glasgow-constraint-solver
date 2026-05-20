@@ -139,6 +139,87 @@ dominated by `n_queens_88` (~30 minutes alone).
   external wall is much larger than `solve time`, the difference is setup
   / proof I/O / output, which is usually outside the change being measured.
 
+## Benchmarking proof-shape changes
+
+The set above is for *solver* performance. Proof-logging work — a new
+constraint variant, a refactor of how a propagator emits scaffolding,
+moving from per-call to upfront derivation — is a different kind of
+performance change with different signals and different traps.
+
+### What to capture
+
+- **`solve` time** — usually goes up modestly (more proof I/O), but
+  it's not the headline.
+- **`.pbp` file size** (`stat -c %s …`) — primary signal for proof
+  shape. Bigger proof = more lines emitted; smaller is generally better
+  but isn't the whole story.
+- **VeriPB verify time** (`/usr/bin/time -f %e veripb foo.opb
+  foo.pbp`) — primary signal for proof checkability. Slow verify
+  matters even when the proof is small (wider proof DB makes each RUP
+  more expensive).
+- **`recursions` and `propagations`** — must be reported alongside the
+  above. They tell the reader how much of the proof reflects search vs
+  initialisation. Two propagator variants making identical decisions
+  will have identical `recursions` and `propagations[0]`; that's the
+  property to sanity-check, and the property that lets the reader
+  judge whether the change actually exercised per-call cost.
+
+### The default-mode trap
+
+Most example binaries in `examples/` stop at the first solution by
+default. For some constraints and instance generators (e.g.
+`regular_random`) that means the search tree is essentially `n+1`
+recursions and a few tens of propagations — the bench reflects
+initialisation cost only. A proof-shape change that *only* affects
+per-call emission cost will be invisible.
+
+Before drawing a conclusion, look at `recursions` and `propagations[0]`
+from `--stats`. If they're in the tens, you have a no-search bench.
+
+The fix is to use `--all`, which makes the solution callback return
+`true` and enumerates every solution. Some example binaries already
+have it (`langford`, `n_queens`, `ortho_latin`, `regular_random` since
+issue #215). For binaries without it, adding the flag is a one-line
+change to the solution callback.
+
+`--all` typically forces a much smaller `n` to stay under a few
+minutes of wall time: solution counts grow exponentially, and each
+solution adds proof lines. For the `RegularBacchus` work in PR #216,
+the no-`--all` bench at `n=22` produced shallow-search numbers that
+mislead about Bacchus's per-call value; the `--all` bench at `n=4..6`
+showed the per-call shape clearly (and reversed the proof-size verdict).
+
+### What size to pick
+
+For `--all` mode, scale `n` down until a single trial finishes in
+under a minute. The relationship between `n` and recursion count is
+combinatorial — `n=10` for `regular_random --all` runs for many
+minutes; `n=6` takes ~0.5 s. Useful sizes for proof-shape comparison
+sit in the 10³–10⁵ recursion range, which is large enough that the
+per-call shape difference between variants is the dominant signal but
+small enough that VeriPB finishes verifying both proofs in reasonable
+time.
+
+### Cross-variant invariants
+
+When comparing two implementations of the same constraint that should
+make identical propagator decisions:
+
+- `recursions` and the first integer of `propagations:` must match
+  exactly between the variants on every instance. A divergence
+  means the propagator decisions diverged, and the proof-size /
+  verify-time difference is no longer measuring just proof shape.
+- The number of solutions must match on `--all` runs (sanity check).
+- VeriPB must accept both proofs (`s VERIFIED *`). A proof shape
+  that's faster but unverifiable is not faster.
+
+### Case study
+
+`dev_docs/regular.md` has both shallow-search and `--all` tables for
+the three-way `Regular` / `RegularBacchus` / `RegularLegacy`
+comparison, plus a discussion of when each pattern wins. It's a useful
+template for similar three-variant proof-logging work.
+
 ## Reproducibility caveats
 
 - Pin CPU governor to `performance` if available; thermal throttling on
