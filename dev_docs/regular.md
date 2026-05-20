@@ -222,39 +222,63 @@ gauge how much of the work is search vs initialisation).
 | 22 | -1115540197  |  23 |     45 | Regular | 0.02s | 0.12s  |  ~      |  843 KB |
 | 22 | -1115540197  |  23 |     45 | Bacchus | 0.05s | 1.01s  |  909 KB | 2526 KB |
 
-Caveat: `regular_random`'s instances do almost no search — `recursions`
-is ~`n + 1` and `propagations` stays in the tens — so the whole bench
-is dominated by initialisation work, which is the regime where
-`Regular`'s lean per-call sweep needs the fewest lines and Bacchus's
-upfront scaffolding pays its highest fixed cost. The numbers below
-should be read as "on shallow / no-search instances, Bacchus loses by
-the size of its scaffolding". A problem with substantially more search
-might pay off the scaffolding via the all-NoJustNeeded per-call shape,
-but `regular_random` does not exercise that regime — see the "open
-question" note below.
+Caveat: `regular_random`'s instances above do almost no search —
+`recursions` is ~`n + 1` and `propagations` stays in the tens — so
+the table is dominated by initialisation work, which is the regime
+where `Regular`'s lean per-call sweep needs the fewest lines and
+Bacchus's upfront scaffolding pays its highest fixed cost. On these
+shallow / no-search instances Bacchus's PBP is 2–3× larger than
+`Regular`'s and VeriPB verifies it 5–20× slower.
 
-At these sizes `RegularBacchus`'s PBP is 2–3× larger than `Regular`'s
-and VeriPB verifies it 5–20× slower. The Bacchus encoding is wider
-(`O(n · |Q| · |Σ|)` extension variables, AL1 RUPs, and per-`(q, v)`
-pol intermediates), and on instances this shallow `Regular`'s per-call
-sweep barely fires at all (at most ~30 propagations across the whole
-search tree), so there's almost no per-call cost to compress away.
+### Search-intensive: `regular_random --all`
+
+`--all` enumerates every accepting string instead of stopping at the
+first solution, which forces real search at much smaller `n`. The
+picture flips on PBP size:
+
+| n | seed         | rec    | props₀ | sols   | variant | solve | verify | pbp      |
+|--:|-------------:|-------:|-------:|-------:|---------|------:|-------:|---------:|
+| 4 |  1           |    238 |    293 |    165 | Regular | 0.00s | 0.10s  |   74 KB  |
+| 4 |  1           |    238 |    293 |    165 | Bacchus | 0.00s | 0.10s  |   69 KB  |
+| 5 |  1           |   2260 |   2484 |   1746 | Regular | 0.02s | 0.20s  |  730 KB  |
+| 5 |  1           |   2260 |   2484 |   1746 | Bacchus | 0.02s | 0.20s  |  461 KB  |
+| 5 | 42           |   1877 |   2259 |   1364 | Regular | 0.02s | 0.10s  |  660 KB  |
+| 5 | 42           |   1877 |   2259 |   1364 | Bacchus | 0.01s | 0.20s  |  376 KB  |
+| 6 |  1           |  40654 |  43763 |  32985 | Regular | 0.50s | 18.71s | 14394 KB |
+| 6 |  1           |  40654 |  43763 |  32985 | Bacchus | 0.40s | 22.62s |  8578 KB |
+| 6 | 42           |  17597 |  21336 |  13785 | Regular | 0.21s |  3.60s |  6572 KB |
+| 6 | 42           |  17597 |  21336 |  13785 | Bacchus | 0.17s |  4.80s |  3690 KB |
+| 6 | -1115540197  |   3620 |   4473 |   2600 | Regular | 0.04s | 0.30s  |  1838 KB |
+| 6 | -1115540197  |   3620 |   4473 |   2600 | Bacchus | 0.02s | 0.30s  |  753 KB  |
+
+With real search Bacchus's PBP is 40–60% **smaller** than `Regular`'s
+— the all-NoJustNeeded per-call shape is paying its way: every node
+in the search tree that `Regular` would emit a cache-gated
+`~state[i][q]` line for, `RegularBacchus` writes nothing, and the
+upfront scaffolding absorbs the closure work for all of them. The
+catch is that VeriPB still spends ~20–30% more wall-clock time
+verifying the smaller proof, because each backtrack RUP now has to UP
+through a wider proof DB (the t-flag defs + per-`(q, v)` pol lines +
+three families of AL1s).
+
+So the headline result is shape-dependent:
+- **Decision / shallow search** (no `--all`): Bacchus loses on every
+  axis — bigger PBP, slower verify.
+- **All-solutions / deep search** (`--all`): Bacchus's PBP shrinks by
+  ~half but verify is still ~20–30% slower per byte.
 
 This matches the [BinPacking/Knapsack pattern
 regression](https://github.com/ciaranm/glasgow-constraint-solver/issues/212):
-the upfront-only approach beats the per-call-intermediates approach
-only when per-call work is the dominant cost.
-
-Open question for future work: measure `RegularBacchus` on
-deep-search instances (e.g. wrap a regular constraint in an
-optimisation problem, or use a regular automaton inside something like
-a scheduling model). If the all-NoJustNeeded per-call shape compounds
-at search depth, it could flip the verdict.
+the upfront-only approach beats per-call-intermediates only when
+per-call work is the dominant cost. `regular_random --all` is that
+regime for proof size; whether it is ever that regime for verify time
+depends on problem structure not measured here.
 
 `RegularBacchus` is kept on the branch for issue #200 / the unified
-layered-DAG follow-up: the t-flag definitions and AL1 derivations are
-useful primitives even if the all-NoJustNeeded shape doesn't win
-standalone on `regular_random`.
+layered-DAG follow-up: the t-flag definitions, per-`(q, v)` pol
+intermediates, and AL1 derivations are useful primitives whose value
+shows up clearly in the all-solutions regime even if shallow-search
+benchmarks alone would not predict it.
 
 ## #200 follow-up
 
