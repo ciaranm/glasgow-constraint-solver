@@ -257,6 +257,12 @@ namespace gcs::innards
         auto track_bounds(const SimpleOrProofOnlyIntegerVariableID & id, Integer, Integer) -> void;
 
         /**
+         * Look up the definition-time bounds for a variable, as recorded by
+         * track_bounds. Throws if the variable hasn't been tracked.
+         */
+        [[nodiscard]] auto bounds_for(const SimpleOrProofOnlyIntegerVariableID & id) const -> std::pair<Integer, Integer>;
+
+        /**
          * Create a proof flag with a new identifier.
          */
         [[nodiscard]] auto create_proof_flag(const std::string &) -> ProofFlag;
@@ -265,6 +271,40 @@ namespace gcs::innards
          * Reify a PB constraint on a conjunction of ProofFlags or ProofLiterals
          */
         [[nodiscard]] auto reify(const WPBSumLE &, const HalfReifyOnConjunctionOf &) -> WPBSumLE;
+
+        /**
+         * \brief Look up the OPB line numbers of the definitional pair for a
+         * view's extension. Returns nullopt if the view has no extension yet.
+         */
+        [[nodiscard]] auto extension_def_lines_for(const ViewOfIntegerVariableID & view) const
+            -> std::optional<std::pair<std::optional<ProofLine>, std::optional<ProofLine>>>;
+
+        /**
+         * \brief Schedule a raw pol/proof line to be emitted at the start of
+         * the proof file (after OPB but before propagator-driven proof steps).
+         * Used by view-extension bridge emission to make the underlying-form
+         * of a constraint available for propagators that reference underlying
+         * flags.
+         */
+        auto schedule_pol_line_at_proof_start(const std::string & raw_line) -> void;
+
+        /**
+         * \brief Return the proof-only "extension" variable that represents
+         * the *visible* value of a view, allocating it on first call.
+         *
+         * Extensions are how the proof refers to a view's value as a
+         * first-class bit-encoded variable. On first request for a given
+         * view, the extension is allocated, its domain bounds are written
+         * to the OPB, and its definitional constraint linking it to the
+         * underlying (`e == (negate_first ? -actual : actual) + then_add`)
+         * is emitted as two halves. Subsequent calls return the cached
+         * extension.
+         *
+         * Must be called while a `ProofModel` is active (during OPB
+         * writing). The cached extension remains visible during proof
+         * logging.
+         */
+        [[nodiscard]] auto extension_for(const ViewOfIntegerVariableID & view) -> ProofOnlySimpleIntegerVariableID;
 
         /*
          * Allocate an XLiteral with the given semantic meaning.

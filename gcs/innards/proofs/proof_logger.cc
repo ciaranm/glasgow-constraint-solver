@@ -72,7 +72,7 @@ namespace
                     [&]<typename T_>(const VariableConditionFrom<T_> & var) -> string {
                         return names_and_ids_tracker.pb_file_string_for(var);
                     }}
-                    .visit(simplify_literal(lit));
+                    .visit(simplify_literal(names_and_ids_tracker, lit));
             },
             [&](const ProofFlag & flag) {
                 return names_and_ids_tracker.pb_file_string_for(flag);
@@ -253,7 +253,7 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
             [&](const TrueLiteral &) {},
             [&](const FalseLiteral &) {},
             [&]<typename T_>(const VariableConditionFrom<T_> & cond) { names_and_ids_tracker().need_proof_name(cond); }}
-            .visit(simplify_literal(lit));
+            .visit(simplify_literal(names_and_ids_tracker(), lit));
     };
 
     overloaded{

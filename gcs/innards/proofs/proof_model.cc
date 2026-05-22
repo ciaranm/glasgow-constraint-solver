@@ -96,6 +96,118 @@ auto ProofModel::advance_constraint_counter() -> ProofLineNumber
     return ProofLineNumber{++_imp->number_of_constraints.number};
 }
 
+namespace
+{
+    // Build a pol line that, starting from the extension-form constraint at
+    // `ext_line`, adds e-def lines to cancel each view operand's `e` term
+    // and recover the underlying-form constraint.
+    //
+    // `which_half` is which half (LE or GE) of the just-emitted equality the
+    // ext_line corresponds to. For each view operand with weight w:
+    //  - LE half OPB coef on e is -w; cancel by adding e-def with +w on e
+    //    (e-def-GE for w > 0, e-def-LE for w < 0).
+    //  - GE half OPB coef on e is +w; cancel using the opposite e-def.
+    //
+    // Only ±1 weights are handled here; chains across multiple views in one
+    // constraint are emitted as a single pol with successive additions.
+    enum class ConstraintHalf
+    {
+        LE,
+        GE
+    };
+
+    auto emit_view_bridge_pol_lines(NamesAndIDsTracker & tracker,
+        const WPBSum & original_lhs, optional<ProofLine> ext_line, ConstraintHalf which_half) -> void
+    {
+        if (! ext_line)
+            return;
+
+        std::vector<ProofLine> defs_to_add;
+        bool any_view = false;
+        for (const auto & [w, term] : original_lhs.terms) {
+            if (! std::holds_alternative<IntegerVariableID>(term))
+                continue;
+            const auto & var_id = std::get<IntegerVariableID>(term);
+            if (! std::holds_alternative<ViewOfIntegerVariableID>(var_id))
+                continue;
+            const auto & view = std::get<ViewOfIntegerVariableID>(var_id);
+            auto def_lines = tracker.extension_def_lines_for(view);
+            if (! def_lines || ! def_lines->first || ! def_lines->second)
+                continue;
+            if (w != 1_i && w != -1_i)
+                continue; // multi-coef bridges not handled yet
+            any_view = true;
+
+            ProofLine line_to_add;
+            if (which_half == ConstraintHalf::LE)
+                line_to_add = (w > 0_i) ? *def_lines->second : *def_lines->first;
+            else
+                line_to_add = (w > 0_i) ? *def_lines->first : *def_lines->second;
+            defs_to_add.push_back(line_to_add);
+        }
+
+        if (! any_view)
+            return;
+
+        std::stringstream pol_str;
+        pol_str << "pol " << *ext_line;
+        for (const auto & d : defs_to_add)
+            pol_str << " " << d << " +";
+        pol_str << " s ;";
+        tracker.schedule_pol_line_at_proof_start(pol_str.str());
+    }
+
+    // Substitute every ViewOfIntegerVariableID inside a PseudoBooleanTerm with
+    // its extension. Other variants are passed through unchanged.
+    auto substitute_views_in_term(const PseudoBooleanTerm & term, NamesAndIDsTracker & tracker) -> PseudoBooleanTerm
+    {
+        return overloaded{
+            [&](const IntegerVariableID & var) -> PseudoBooleanTerm {
+                return overloaded{
+                    [&](const SimpleIntegerVariableID &) -> PseudoBooleanTerm { return var; },
+                    [&](const ConstantIntegerVariableID &) -> PseudoBooleanTerm { return var; },
+                    [&](const ViewOfIntegerVariableID & view) -> PseudoBooleanTerm {
+                        return tracker.extension_for(view);
+                    }}
+                    .visit(var);
+            },
+            [&](const ProofLiteral & lit) -> PseudoBooleanTerm {
+                return overloaded{
+                    [&](const Literal & l) -> PseudoBooleanTerm {
+                        return overloaded{
+                            [&](const TrueLiteral &) -> PseudoBooleanTerm { return lit; },
+                            [&](const FalseLiteral &) -> PseudoBooleanTerm { return lit; },
+                            [&](const IntegerVariableCondition & cond) -> PseudoBooleanTerm {
+                                return overloaded{
+                                    [&](const SimpleIntegerVariableID &) -> PseudoBooleanTerm { return lit; },
+                                    [&](const ConstantIntegerVariableID &) -> PseudoBooleanTerm { return lit; },
+                                    [&](const ViewOfIntegerVariableID & view) -> PseudoBooleanTerm {
+                                        auto ext = tracker.extension_for(view);
+                                        return ProofLiteral{ProofVariableCondition{ext, cond.op, cond.value}};
+                                    }}
+                                    .visit(cond.var);
+                            }}
+                            .visit(l);
+                    },
+                    [&](const ProofVariableCondition &) -> PseudoBooleanTerm { return lit; }}
+                    .visit(lit);
+            },
+            [&](const ProofFlag &) -> PseudoBooleanTerm { return term; },
+            [&](const ProofOnlySimpleIntegerVariableID &) -> PseudoBooleanTerm { return term; },
+            [&](const ProofBitVariable &) -> PseudoBooleanTerm { return term; }}
+            .visit(term);
+    }
+
+    template <typename Sum_>
+    auto substitute_views(const Sum_ & sum, NamesAndIDsTracker & tracker) -> Sum_
+    {
+        Sum_ result = sum;
+        for (auto & [w, term] : result.lhs.terms)
+            term = substitute_views_in_term(term, tracker);
+        return result;
+    }
+}
+
 auto ProofModel::add_constraint(const StringLiteral & constraint_name, const StringLiteral & rule, const Literals & lits) -> std::optional<ProofLine>
 {
     WPBSum sum;
@@ -108,7 +220,7 @@ auto ProofModel::add_constraint(const StringLiteral & constraint_name, const Str
                     sum += 1_i * cond;
                     return false;
                 }}
-                .visit(simplify_literal(lit)))
+                .visit(simplify_literal(names_and_ids_tracker(), lit)))
             return nullopt;
     }
 
@@ -129,14 +241,22 @@ auto ProofModel::add_constraint(const Literals & lits) -> std::optional<ProofLin
 auto ProofModel::add_constraint(const StringLiteral & constraint_name, const StringLiteral & rule,
     const WPBSumLE & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> optional<ProofLine>
 {
-    names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
+    // Substitute views with their extension variables before the rest of the
+    // pipeline sees the constraint. This keeps emit_inequality_to / reify
+    // working on bit-clean (view-free) sums.
+    auto substituted = substitute_views(ineq, names_and_ids_tracker());
+
+    names_and_ids_tracker().need_all_proof_names_in(substituted.lhs);
     if (half_reif)
         names_and_ids_tracker().need_all_proof_names_in(*half_reif);
 
     _imp->opb << "* constraint " << constraint_name.value << ' ' << rule.value << '\n';
-    emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(ineq, *half_reif) : ineq, _imp->opb);
+    emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(substituted, *half_reif) : substituted, _imp->opb);
     _imp->opb << ";\n";
-    return advance_constraint_counter();
+    auto ext_line = advance_constraint_counter();
+    if (! half_reif)
+        emit_view_bridge_pol_lines(names_and_ids_tracker(), ineq.lhs, ext_line, ConstraintHalf::LE);
+    return ext_line;
 }
 
 auto ProofModel::add_constraint(const WPBSumLE & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> optional<ProofLine>
@@ -148,18 +268,25 @@ auto ProofModel::add_constraint(const StringLiteral & constraint_name, const Str
     const WPBSumEq & eq, const optional<HalfReifyOnConjunctionOf> & half_reif)
     -> pair<optional<ProofLine>, optional<ProofLine>>
 {
-    names_and_ids_tracker().need_all_proof_names_in(eq.lhs);
+    auto substituted = substitute_views(eq, names_and_ids_tracker());
+
+    names_and_ids_tracker().need_all_proof_names_in(substituted.lhs);
     if (half_reif)
         names_and_ids_tracker().need_all_proof_names_in(*half_reif);
 
     _imp->opb << "* constraint " << constraint_name.value << ' ' << rule.value << '\n';
-    emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(eq.lhs <= eq.rhs, *half_reif) : eq.lhs <= eq.rhs, _imp->opb);
+    emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(substituted.lhs <= substituted.rhs, *half_reif) : substituted.lhs <= substituted.rhs, _imp->opb);
     _imp->opb << ";\n";
     auto first = advance_constraint_counter();
 
-    emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(eq.lhs >= eq.rhs, *half_reif) : eq.lhs >= eq.rhs, _imp->opb);
+    emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(substituted.lhs >= substituted.rhs, *half_reif) : substituted.lhs >= substituted.rhs, _imp->opb);
     _imp->opb << ";\n";
     auto second = advance_constraint_counter();
+
+    if (! half_reif) {
+        emit_view_bridge_pol_lines(names_and_ids_tracker(), eq.lhs, first, ConstraintHalf::LE);
+        emit_view_bridge_pol_lines(names_and_ids_tracker(), eq.lhs, second, ConstraintHalf::GE);
+    }
 
     return pair{first, second};
 }
@@ -194,6 +321,32 @@ auto ProofModel::names_and_ids_tracker() -> NamesAndIDsTracker &
 auto ProofModel::names_and_ids_tracker() const -> const NamesAndIDsTracker &
 {
     return _imp->tracker;
+}
+
+auto ProofModel::allocate_extension_for_view(const ViewOfIntegerVariableID & view)
+    -> std::tuple<ProofOnlySimpleIntegerVariableID, optional<ProofLine>, optional<ProofLine>>
+{
+    // Visible domain of the view, derived from the underlying's definition
+    // bounds. Negation swaps the endpoint roles.
+    auto [actual_lo, actual_hi] = names_and_ids_tracker().bounds_for(view.actual_variable);
+    Integer visible_lo = view.negate_first ? (-actual_hi + view.then_add) : (actual_lo + view.then_add);
+    Integer visible_hi = view.negate_first ? (-actual_lo + view.then_add) : (actual_hi + view.then_add);
+
+    auto name = "extension_v" + std::to_string(_imp->proof_only_integer_variable_nr) + (view.negate_first ? "_neg" : "")
+        + (view.then_add == 0_i ? "" : ("_p" + std::to_string(view.then_add.raw_value)));
+
+    auto ext_id = create_proof_only_integer_variable(visible_lo, visible_hi, name, IntegerVariableProofRepresentation::Bits);
+
+    // Definitional: e == (negate_first ? -actual : actual) + then_add, emitted
+    // as two halves. The constraint's LHS terms reference the extension
+    // (ProofOnlySimpleIntegerVariableID) and the underlying (SimpleIntegerVariableID
+    // wrapped in IntegerVariableID); neither is a view, so the recursive call
+    // to add_constraint won't trigger another extension lookup.
+    auto actual_coeff = view.negate_first ? 1_i : -1_i;
+    auto [le_line, ge_line] = add_constraint("ViewExtension", "definitional",
+        WPBSum{} + 1_i * ext_id + actual_coeff * IntegerVariableID{view.actual_variable} == view.then_add);
+
+    return {ext_id, le_line, ge_line};
 }
 
 auto ProofModel::create_proof_only_integer_variable(Integer lower, Integer upper, const string & name,

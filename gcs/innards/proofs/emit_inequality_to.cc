@@ -32,7 +32,7 @@ auto gcs::innards::emit_inequality_to(
                     [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
                         stream << -w << " " << names_and_ids_tracker.pb_file_string_for(cond) << " ";
                     }}
-                    .visit(simplify_literal(lit));
+                    .visit(simplify_literal(names_and_ids_tracker, lit));
             },
             [&, w = w](const ProofFlag & flag) {
                 stream << -w << " " << names_and_ids_tracker.pb_file_string_for(flag) << " ";
@@ -44,16 +44,13 @@ auto gcs::innards::emit_inequality_to(
                             stream << -w * bit_value << " " << names_and_ids_tracker.pb_file_string_for(bit_lit) << " ";
                     },
                     [&](const ViewOfIntegerVariableID & view) {
-                        if (! view.negate_first) {
-                            for (const auto & [bit_value, bit_lit] : names_and_ids_tracker.each_bit(view.actual_variable))
-                                stream << -w * bit_value << " " << names_and_ids_tracker.pb_file_string_for(bit_lit) << " ";
-                            rhs += w * view.then_add;
-                        }
-                        else {
-                            for (const auto & [bit_value, bit_lit] : names_and_ids_tracker.each_bit(view.actual_variable))
-                                stream << w * bit_value << " " << names_and_ids_tracker.pb_file_string_for(bit_lit) << " ";
-                            rhs += w * view.then_add;
-                        }
+                        // Route through the view's extension: emit the
+                        // extension's bits directly. The +/- and then_add
+                        // adjustments are absorbed by the extension's
+                        // encoding (it represents the view's visible value).
+                        auto ext = names_and_ids_tracker.extension_for(view);
+                        for (const auto & [bit_value, bit_lit] : names_and_ids_tracker.each_bit(ext))
+                            stream << -w * bit_value << " " << names_and_ids_tracker.pb_file_string_for(bit_lit) << " ";
                     },
                     [&](const ConstantIntegerVariableID & cvar) {
                         rhs += w * cvar.const_value;

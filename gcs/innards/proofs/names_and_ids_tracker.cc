@@ -73,6 +73,18 @@ struct NamesAndIDsTracker::Imp
     map<SimpleOrProofOnlyIntegerVariableID, map<Integer, pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>>>> gevars_that_exist;
     map<SimpleOrProofOnlyIntegerVariableID, map<Integer, pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>>>> eqvars_that_exist;
 
+    // Cache of extension variables introduced for views. The optional<ProofLine>s
+    // are the OPB line numbers of the two halves of the definitional
+    // `e == (negate_first ? -actual : actual) + then_add`; pol-bridge
+    // emission needs them to cite the definitional.
+    struct ExtensionInfo
+    {
+        ProofOnlySimpleIntegerVariableID id;
+        optional<ProofLine> def_le_line;
+        optional<ProofLine> def_ge_line;
+    };
+    map<ViewOfIntegerVariableID, ExtensionInfo> view_extensions;
+
     map<ProofFlag, XLiteral> flags;
 
     map<SimpleOrProofOnlyIntegerVariableID, string> id_names;
@@ -276,7 +288,7 @@ auto NamesAndIDsTracker::need_all_proof_names_in(const SumOf<Weighted<PseudoBool
                     [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
                         need_proof_name(cond);
                     }}
-                    .visit(simplify_literal(lit));
+                    .visit(simplify_literal(*this, lit));
             },
             [&](const ProofFlag &) {},
             [&](const IntegerVariableID &) {},
@@ -294,7 +306,7 @@ auto NamesAndIDsTracker::need_all_proof_names_in(const Literals & lits) -> void
             [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
                 need_proof_name(cond);
             }}
-            .visit(simplify_literal(lit));
+            .visit(simplify_literal(*this, lit));
 }
 
 auto NamesAndIDsTracker::need_all_proof_names_in(const HalfReifyOnConjunctionOf & h) -> void
@@ -308,7 +320,7 @@ auto NamesAndIDsTracker::need_all_proof_names_in(const HalfReifyOnConjunctionOf 
                     [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
                         need_proof_name(cond);
                     }}
-                    .visit(simplify_literal(lit));
+                    .visit(simplify_literal(*this, lit));
             },
             [&](const ProofFlag &) {},
             [&](const ProofBitVariable &) {}}
@@ -546,6 +558,14 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
             }}
             .visit(id);
     }
+}
+
+auto NamesAndIDsTracker::bounds_for(const SimpleOrProofOnlyIntegerVariableID & id) const -> pair<Integer, Integer>
+{
+    auto it = _imp->integer_variable_definition_bounds.find(id);
+    if (it == _imp->integer_variable_definition_bounds.end())
+        throw ProofError{"bounds_for called for a variable that hasn't been tracked"};
+    return it->second;
 }
 
 auto NamesAndIDsTracker::track_bounds(const SimpleOrProofOnlyIntegerVariableID & id, Integer lower, Integer upper) -> void
@@ -840,7 +860,7 @@ auto NamesAndIDsTracker::s_expr_name_of(Literal lit) const -> string
         [](const VariableConditionFrom<ProofOnlySimpleIntegerVariableID> &) -> string {
             throw UnimplementedException{};
         }}
-        .visit(simplify_literal(lit));
+        .visit(simplify_literal(const_cast<NamesAndIDsTracker &>(*this), lit));
 }
 
 auto NamesAndIDsTracker::s_expr_name_of(ReificationCondition cond) const -> string
@@ -867,6 +887,35 @@ auto NamesAndIDsTracker::s_expr_name_of(VariableConditionOperator op) const -> s
     }
 
     throw NonExhaustiveSwitch{};
+}
+
+auto NamesAndIDsTracker::schedule_pol_line_at_proof_start(const string & raw_line) -> void
+{
+    emit_proof_line_now_or_at_start([raw_line](ProofLogger * const logger) {
+        logger->emit_proof_line(raw_line, ProofLevel::Top);
+    });
+}
+
+auto NamesAndIDsTracker::extension_def_lines_for(const ViewOfIntegerVariableID & view) const
+    -> optional<pair<optional<ProofLine>, optional<ProofLine>>>
+{
+    auto it = _imp->view_extensions.find(view);
+    if (it == _imp->view_extensions.end())
+        return std::nullopt;
+    return std::make_pair(it->second.def_le_line, it->second.def_ge_line);
+}
+
+auto NamesAndIDsTracker::extension_for(const ViewOfIntegerVariableID & view) -> ProofOnlySimpleIntegerVariableID
+{
+    if (auto cached = _imp->view_extensions.find(view); cached != _imp->view_extensions.end())
+        return cached->second.id;
+
+    if (! _imp->model)
+        throw ProofError{"extension_for called for a view that hasn't been seen before, but no ProofModel is active"};
+
+    auto [ext_id, def_le_line, def_ge_line] = _imp->model->allocate_extension_for_view(view);
+    _imp->view_extensions.emplace(view, Imp::ExtensionInfo{ext_id, def_le_line, def_ge_line});
+    return ext_id;
 }
 
 auto NamesAndIDsTracker::reify(const WPBSumLE & ineq, const HalfReifyOnConjunctionOf & half_reif) -> WPBSumLE

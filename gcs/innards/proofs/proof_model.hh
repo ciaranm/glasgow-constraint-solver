@@ -153,6 +153,19 @@ namespace gcs::innards
         [[nodiscard]] auto create_proof_only_integer_variable(Integer, Integer, const std::string &,
             const IntegerVariableProofRepresentation enc) -> ProofOnlySimpleIntegerVariableID;
 
+        /**
+         * \brief Allocate the proof-only "extension" variable for a view.
+         *
+         * Allocates a fresh `ProofOnlySimpleIntegerVariableID` whose bits
+         * represent the view's *visible* value range, emits its domain
+         * bounds, and emits the definitional pair
+         * `e == (negate_first ? -actual : actual) + then_add`. Intended to
+         * be called from `NamesAndIDsTracker::extension_for`, which caches
+         * the result; user code should reach for `extension_for` instead.
+         */
+        [[nodiscard]] auto allocate_extension_for_view(const ViewOfIntegerVariableID & view)
+            -> std::tuple<ProofOnlySimpleIntegerVariableID, std::optional<ProofLine>, std::optional<ProofLine>>;
+
         [[nodiscard]] auto create_proof_flag(const std::string &) -> ProofFlag;
 
         /**

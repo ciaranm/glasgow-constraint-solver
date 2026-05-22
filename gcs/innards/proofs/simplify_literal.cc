@@ -1,3 +1,4 @@
+#include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/simplify_literal.hh>
 
 #include <util/overloaded.hh>
@@ -24,7 +25,7 @@ namespace
     }
 }
 
-auto gcs::innards::simplify_literal(const ProofLiteral & lit) -> SimpleLiteral
+auto gcs::innards::simplify_literal(NamesAndIDsTracker & tracker, const ProofLiteral & lit) -> SimpleLiteral
 {
     return overloaded{
         [&](const TrueLiteral & t) -> SimpleLiteral { return t; },
@@ -35,33 +36,11 @@ auto gcs::innards::simplify_literal(const ProofLiteral & lit) -> SimpleLiteral
                     return VariableConditionFrom<SimpleIntegerVariableID>{var, lit.op, lit.value};
                 },
                 [&](const ViewOfIntegerVariableID & view) -> SimpleLiteral {
-                    switch (lit.op) {
-                    case VariableConditionOperator::NotEqual:
-                        return VariableConditionFrom<SimpleIntegerVariableID>{view.actual_variable, VariableConditionOperator::NotEqual,
-                            (view.negate_first ? -lit.value + view.then_add : lit.value - view.then_add)};
-                        break;
-                    case VariableConditionOperator::Equal:
-                        return VariableConditionFrom<SimpleIntegerVariableID>{view.actual_variable, VariableConditionOperator::Equal,
-                            view.negate_first ? -lit.value + view.then_add : lit.value - view.then_add};
-                        break;
-                    case VariableConditionOperator::Less:
-                        if (view.negate_first)
-                            return VariableConditionFrom<SimpleIntegerVariableID>{view.actual_variable, VariableConditionOperator::GreaterEqual,
-                                -lit.value + view.then_add + 1_i};
-                        else
-                            return VariableConditionFrom<SimpleIntegerVariableID>{view.actual_variable, VariableConditionOperator::Less,
-                                (lit.value - view.then_add)};
-                        break;
-                    case VariableConditionOperator::GreaterEqual:
-                        if (view.negate_first)
-                            return VariableConditionFrom<SimpleIntegerVariableID>{view.actual_variable, VariableConditionOperator::Less,
-                                -lit.value + view.then_add + 1_i};
-                        else
-                            return VariableConditionFrom<SimpleIntegerVariableID>{view.actual_variable, VariableConditionOperator::GreaterEqual,
-                                lit.value - view.then_add};
-                        break;
-                    }
-                    throw NonExhaustiveSwitch{};
+                    // Route through the extension: the literal `view op value`
+                    // becomes `extension(view) op value` with no value adjustment,
+                    // because the extension's value IS the view's value.
+                    auto ext = tracker.extension_for(view);
+                    return ProofVariableCondition{ext, lit.op, lit.value};
                 },
                 [&](const ConstantIntegerVariableID & cvar) -> SimpleLiteral {
                     switch (lit.op) {
