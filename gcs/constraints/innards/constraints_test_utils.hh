@@ -575,6 +575,183 @@ namespace gcs::test_innards
     {
         return ConstantIntegerVariableID{Integer(value)};
     }
+
+    /**
+     * \brief Describes how to wrap a test variable as a view.
+     *
+     * A test variable can be presented to the constraint under test in one of
+     * three shapes:
+     *  - as a bare SimpleIntegerVariableID (no view machinery exercised),
+     *  - as a ViewOfIntegerVariableID with negate_first = false,
+     *  - as a ViewOfIntegerVariableID with negate_first = true.
+     *
+     * The wrap is applied to the IntegerVariableID returned to the test, while
+     * the underlying SimpleIntegerVariableID is created with an adjusted
+     * domain so that the view's values match the domain spec the test asked
+     * for. This keeps the test's is_satisfying predicate and expected-results
+     * set unchanged — only the constraint-side encoding differs.
+     *
+     * Use the factory helpers (view_none, view_offset, view_neg,
+     * view_neg_offset) rather than constructing this struct directly.
+     */
+    struct ViewWrap
+    {
+        bool bare;   ///< if true, use a bare variable and ignore negate/offset
+        bool negate; ///< negate_first for the resulting ViewOfIntegerVariableID
+        int offset;  ///< then_add for the resulting ViewOfIntegerVariableID
+
+        [[nodiscard]] constexpr auto operator<=>(const ViewWrap &) const = default;
+    };
+
+    /// No wrap: hand the test a bare SimpleIntegerVariableID.
+    [[nodiscard]] constexpr inline auto view_none() -> ViewWrap { return {true, false, 0}; }
+
+    /// Wrap as `var + k`. With k = 0 this still constructs a
+    /// ViewOfIntegerVariableID, exercising the view layer transparently.
+    [[nodiscard]] constexpr inline auto view_offset(int k) -> ViewWrap { return {false, false, k}; }
+
+    /// Wrap as `-var`.
+    [[nodiscard]] constexpr inline auto view_neg() -> ViewWrap { return {false, true, 0}; }
+
+    /// Wrap as `-var + k`.
+    [[nodiscard]] constexpr inline auto view_neg_offset(int k) -> ViewWrap { return {false, true, k}; }
+
+    /**
+     * \brief The canonical sweep over view forms for the proof-view audit.
+     *
+     * Covers:
+     *  - bare variable (no view at all);
+     *  - identity view (negate = false, offset = 0) — exercises the view
+     *    layer while remaining semantically equivalent to bare;
+     *  - offset-only views with magnitudes {1, 5, 6, 17}, both signs;
+     *  - negation alone, and negation combined with the same offset spread.
+     *
+     * Magnitudes 5/6 bracket the suspected boundary where small-constant
+     * special-cases stop coinciding with correct behaviour; 17 is a generic
+     * "definitely large" value; 1 catches off-by-one mistakes.
+     *
+     * Total: 19 wraps. Per-test sweep policy is chosen by the caller; the
+     * intended Phase 2 policy is:
+     *  - "single-position": run the test N times for an N-arg constraint,
+     *    wrapping one argument at a time and leaving the rest bare (19*N
+     *    configurations);
+     *  - "uniform": run the test once with every argument wrapped the same
+     *    way (19 configurations).
+     * The full cross-product is intentionally avoided.
+     */
+    inline auto all_view_wraps() -> std::vector<ViewWrap>
+    {
+        return {
+            view_none(),
+            view_offset(0),
+            view_offset(1), view_offset(-1),
+            view_offset(5), view_offset(-5),
+            view_offset(6), view_offset(-6),
+            view_offset(17), view_offset(-17),
+            view_neg(),
+            view_neg_offset(1), view_neg_offset(-1),
+            view_neg_offset(5), view_neg_offset(-5),
+            view_neg_offset(6), view_neg_offset(-6),
+            view_neg_offset(17), view_neg_offset(-17),
+        };
+    }
+
+    /**
+     * \brief Inverse of a view's transformation.
+     *
+     * Given a value the test expects to observe (a view value) and the wrap
+     * that produced the view, returns the value the underlying
+     * SimpleIntegerVariableID must take. View value v = (negate ? -x : x) +
+     * offset, so x = negate ? offset - v : v - offset.
+     */
+    [[nodiscard]] inline auto invert_view(ViewWrap wrap, int value) -> int
+    {
+        return wrap.negate ? wrap.offset - value : value - wrap.offset;
+    }
+
+    /**
+     * \brief Bounds-domain variant: wrap-aware variable creation.
+     *
+     * For a ViewWrap that isn't `view_none()`, creates the underlying
+     * SimpleIntegerVariableID with domain [invert(lo), invert(hi)] (swapped if
+     * needed for negation), then applies the view operators to land back on
+     * the requested visible domain.
+     */
+    auto create_integer_variable_or_constant_with_view(Problem & problem, std::pair<int, int> bounds, ViewWrap wrap) -> IntegerVariableID
+    {
+        if (wrap.bare)
+            return create_integer_variable_or_constant(problem, bounds);
+
+        auto u_lo = invert_view(wrap, bounds.first);
+        auto u_hi = invert_view(wrap, bounds.second);
+        if (u_lo > u_hi)
+            std::swap(u_lo, u_hi);
+
+        IntegerVariableID v = problem.create_integer_variable(Integer(u_lo), Integer(u_hi));
+        if (wrap.negate)
+            v = -v;
+        if (wrap.offset != 0)
+            v = v + Integer(wrap.offset);
+        else if (! wrap.negate)
+            v = v + Integer(0); // force a ViewOfIntegerVariableID for the identity-view case
+        return v;
+    }
+
+    /**
+     * \brief Enumerated-value-list variant: wrap-aware variable creation.
+     *
+     * Each value is inverted through the wrap so that, once the view applies
+     * its transformation, the visible value set matches the input.
+     */
+    auto create_integer_variable_or_constant_with_view(Problem & problem, std::vector<int> values, ViewWrap wrap) -> IntegerVariableID
+    {
+        if (wrap.bare)
+            return create_integer_variable_or_constant(problem, values);
+
+        std::vector<Integer> vs;
+        for (auto value : values)
+            vs.push_back(Integer(invert_view(wrap, value)));
+
+        IntegerVariableID v = problem.create_integer_variable(vs);
+        if (wrap.negate)
+            v = -v;
+        if (wrap.offset != 0)
+            v = v + Integer(wrap.offset);
+        else if (! wrap.negate)
+            v = v + Integer(0);
+        return v;
+    }
+
+    /**
+     * \brief Constant variant: wraps are a no-op.
+     *
+     * Wrapping a constant collapses to an equivalent constant by the
+     * semantics in variable_id.cc, exercising no view machinery. Provided so
+     * that callers iterating over mixed var/const argument lists can apply a
+     * wrap uniformly.
+     */
+    auto create_integer_variable_or_constant_with_view(Problem & problem, int value, ViewWrap) -> IntegerVariableID
+    {
+        return create_integer_variable_or_constant(problem, value);
+    }
+
+    /**
+     * \brief Vector variant: per-element wrap-aware variable creation.
+     *
+     * `specs` and `wraps` must have equal size. Each element is dispatched to
+     * the appropriate scalar overload of create_integer_variable_or_constant_with_view.
+     */
+    template <typename Spec_>
+    auto create_integer_variable_or_constant_vector_with_views(Problem & problem, const std::vector<Spec_> & specs, const std::vector<ViewWrap> & wraps) -> std::vector<IntegerVariableID>
+    {
+        if (specs.size() != wraps.size())
+            throw UnexpectedException{"create_integer_variable_or_constant_vector_with_views: spec / wrap size mismatch"};
+        std::vector<IntegerVariableID> result;
+        result.reserve(specs.size());
+        for (std::size_t i = 0; i < specs.size(); ++i)
+            result.push_back(create_integer_variable_or_constant_with_view(problem, specs.at(i), wraps.at(i)));
+        return result;
+    }
 }
 
 #endif
