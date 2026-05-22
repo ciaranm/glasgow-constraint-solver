@@ -45,9 +45,11 @@ using fmt::println;
 using namespace gcs;
 using namespace gcs::test_innards;
 
-auto run_abs_test(bool proofs, variant<int, pair<int, int>> v1_range, variant<int, pair<int, int>> v2_range) -> void
+auto run_abs_test(bool proofs, const ViewWrapConfig & view_cfg,
+    variant<int, pair<int, int>> v1_range, variant<int, pair<int, int>> v2_range) -> void
 {
-    visit([&](auto v1, auto v2) { print(cerr, "abs {} {} {}", v1, v2, proofs ? " with proofs:" : ":"); }, v1_range, v2_range);
+    auto wraps = wraps_for_positions(view_cfg, 2);
+    visit([&](auto v1, auto v2) { print(cerr, "abs [{}] {} {} {}", view_wrap_config_label(view_cfg), v1, v2, proofs ? " with proofs:" : ":"); }, v1_range, v2_range);
     cerr << flush;
 
     auto is_satisfying = [](int a, int b) { return b == abs(a); };
@@ -57,11 +59,11 @@ auto run_abs_test(bool proofs, variant<int, pair<int, int>> v1_range, variant<in
     println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;
-    auto v1 = visit([&](auto b) { return create_integer_variable_or_constant(p, b); }, v1_range);
-    auto v2 = visit([&](auto b) { return create_integer_variable_or_constant(p, b); }, v2_range);
+    auto v1 = visit([&](auto b) { return create_integer_variable_or_constant_with_view(p, b, wraps.at(0)); }, v1_range);
+    auto v2 = visit([&](auto b) { return create_integer_variable_or_constant_with_view(p, b, wraps.at(1)); }, v2_range);
     p.post(Abs{v1, v2});
 
-    auto proof_name = proofs ? make_optional("abs_test") : nullopt;
+    auto proof_name = proofs ? make_optional("abs_test_" + view_wrap_config_label(view_cfg)) : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{v1, v2});
 
     check_results(proof_name, expected, actual);
@@ -86,8 +88,22 @@ auto run_abs_initialiser_test(const string & label, pair<int, int> v1_range, pai
     check_initialisation_only_for_tests(p, "abs_initialiser_" + label);
 }
 
-auto main(int, char *[]) -> int
+auto main(int argc, char * argv[]) -> int
 {
+    auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
+
+    constexpr int n_positions = 2;
+    if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
+        println(cerr, "abs view sweep: position {} out of range for n_positions = {}; skipping",
+            *view_cfg.single_position, n_positions);
+        return EXIT_SUCCESS;
+    }
+
+    // Initialiser tests use fixed labels and bounds keyed to specific
+    // consequence-bound proofs; they're independent of the view sweep and
+    // only run on the baseline.
+    bool run_initialisers = view_wrap_config_is_effectively_bare(view_cfg, n_positions);
+
     vector<pair<variant<int, pair<int, int>>, variant<int, pair<int, int>>>> data = {
         {pair{2, 5}, pair{1, 6}},
         {pair{1, 6}, pair{2, 5}},
@@ -109,7 +125,7 @@ auto main(int, char *[]) -> int
     for (int x = 0; x < 10; ++x)
         generate_random_data(rand, data, random_bounds(-10, 10, 5, 15), random_constant(-10, 10));
 
-    if (can_run_veripb()) {
+    if (run_initialisers && can_run_veripb()) {
         // Each case isolates one of Abs::prepare's four consequence bounds.
         // The first failure aborts; comment out earlier cases as each one's
         // proof gets fixed. Run before the rest of the proof suite so the
@@ -144,7 +160,7 @@ auto main(int, char *[]) -> int
         if (proofs && ! can_run_veripb())
             continue;
         for (auto & [r1, r2] : data)
-            run_abs_test(proofs, r1, r2);
+            run_abs_test(proofs, view_cfg, r1, r2);
     }
 
     return EXIT_SUCCESS;
