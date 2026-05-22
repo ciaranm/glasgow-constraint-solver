@@ -51,9 +51,14 @@ using fmt::println;
 using namespace gcs;
 using namespace gcs::test_innards;
 
-auto run_among_test(bool proofs, variant<int, pair<int, int>> result_range, const vector<int> & voi, const vector<variant<int, pair<int, int>>> & array_range) -> void
+auto run_among_test(bool proofs, const ViewWrapConfig & view_cfg,
+    variant<int, pair<int, int>> result_range, const vector<int> & voi, const vector<variant<int, pair<int, int>>> & array_range) -> void
 {
-    visit([&](auto result) { print(cerr, "among {} {} {} {}", result, voi, array_range, proofs ? " with proofs:" : ":"); }, result_range);
+    // Position 0 = result, 1..N = array entries. voi is a value set, not
+    // variables, so it stays as-is.
+    int n_positions = 1 + static_cast<int>(array_range.size());
+    auto wraps = wraps_for_positions(view_cfg, n_positions);
+    visit([&](auto result) { print(cerr, "among [{}] {} {} {} {}", view_wrap_config_label(view_cfg), result, voi, array_range, proofs ? " with proofs:" : ":"); }, result_range);
     cerr << flush;
 
     auto is_satisfying = [&](int n, const vector<int> & a) {
@@ -65,23 +70,32 @@ auto run_among_test(bool proofs, variant<int, pair<int, int>> result_range, cons
     println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;
-    auto result = visit([&](auto r) { return create_integer_variable_or_constant(p, r); }, result_range);
+    auto result = visit([&](auto r) { return create_integer_variable_or_constant_with_view(p, r, wraps.at(0)); }, result_range);
     vector<IntegerVariableID> array;
-    for (const auto & a : array_range)
-        array.push_back(visit([&](auto a) { return create_integer_variable_or_constant(p, a); }, a));
+    for (std::size_t i = 0; i < array_range.size(); ++i)
+        array.push_back(visit([&](auto a) { return create_integer_variable_or_constant_with_view(p, a, wraps.at(i + 1)); }, array_range[i]));
     vector<Integer> voi_i;
     for (const auto & v : voi)
         voi_i.push_back(Integer(v));
     p.post(Among{array, voi_i, result});
 
-    auto proof_name = proofs ? make_optional("among_test") : nullopt;
+    auto proof_name = proofs ? make_optional("among_test_" + view_wrap_config_label(view_cfg)) : nullopt;
     solve_for_tests_checking_consistency(p, proof_name, expected, actual, tuple{pair{result, CheckConsistency::GAC}, pair{array, CheckConsistency::GAC}});
 
     check_results(proof_name, expected, actual);
 }
 
-auto main(int, char *[]) -> int
+auto main(int argc, char * argv[]) -> int
 {
+    auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
+
+    constexpr int n_positions = 5;
+    if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
+        println(cerr, "among view sweep: position {} out of range for n_positions = {}; skipping",
+            *view_cfg.single_position, n_positions);
+        return EXIT_SUCCESS;
+    }
+
     vector<tuple<
         variant<int, pair<int, int>>,
         vector<int>,
@@ -111,7 +125,7 @@ auto main(int, char *[]) -> int
         if (proofs && ! can_run_veripb())
             continue;
         for (auto & [r1, r2, r3] : data)
-            run_among_test(proofs, r1, r2, r3);
+            run_among_test(proofs, view_cfg, r1, r2, r3);
     }
 
     return EXIT_SUCCESS;
