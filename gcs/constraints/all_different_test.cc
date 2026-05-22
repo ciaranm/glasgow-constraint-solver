@@ -46,12 +46,14 @@ using fmt::println;
 using namespace gcs;
 using namespace gcs::test_innards;
 
-auto run_all_different_test(bool proofs, variant<int, pair<int, int>> v1_range, variant<int, pair<int, int>> v2_range, variant<int, pair<int, int>> v3_range,
+auto run_all_different_test(bool proofs, const ViewWrapConfig & view_cfg,
+    variant<int, pair<int, int>> v1_range, variant<int, pair<int, int>> v2_range, variant<int, pair<int, int>> v3_range,
     variant<int, pair<int, int>> v4_range, variant<int, pair<int, int>> v5_range, variant<int, pair<int, int>> v6_range) -> void
 {
+    auto wraps = wraps_for_positions(view_cfg, 6);
     // if this crashes your compiler, implement print for variant instead...
     visit([&](auto v1, auto v2, auto v3, auto v4, auto v5, auto v6) {
-        print(cerr, "all_different {} {} {} {} {} {} {}", v1, v2, v3, v4, v5, v6, proofs ? " with proofs:" : ":");
+        print(cerr, "all_different [{}] {} {} {} {} {} {} {}", view_wrap_config_label(view_cfg), v1, v2, v3, v4, v5, v6, proofs ? " with proofs:" : ":");
     },
         v1_range, v2_range, v3_range, v4_range, v5_range, v6_range);
     cerr << flush;
@@ -65,15 +67,15 @@ auto run_all_different_test(bool proofs, variant<int, pair<int, int>> v1_range, 
     println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;
-    auto v1 = visit([&](auto b) { return create_integer_variable_or_constant(p, b); }, v1_range);
-    auto v2 = visit([&](auto b) { return create_integer_variable_or_constant(p, b); }, v2_range);
-    auto v3 = visit([&](auto b) { return create_integer_variable_or_constant(p, b); }, v3_range);
-    auto v4 = visit([&](auto b) { return create_integer_variable_or_constant(p, b); }, v4_range);
-    auto v5 = visit([&](auto b) { return create_integer_variable_or_constant(p, b); }, v5_range);
-    auto v6 = visit([&](auto b) { return create_integer_variable_or_constant(p, b); }, v6_range);
+    auto v1 = visit([&](auto b) { return create_integer_variable_or_constant_with_view(p, b, wraps.at(0)); }, v1_range);
+    auto v2 = visit([&](auto b) { return create_integer_variable_or_constant_with_view(p, b, wraps.at(1)); }, v2_range);
+    auto v3 = visit([&](auto b) { return create_integer_variable_or_constant_with_view(p, b, wraps.at(2)); }, v3_range);
+    auto v4 = visit([&](auto b) { return create_integer_variable_or_constant_with_view(p, b, wraps.at(3)); }, v4_range);
+    auto v5 = visit([&](auto b) { return create_integer_variable_or_constant_with_view(p, b, wraps.at(4)); }, v5_range);
+    auto v6 = visit([&](auto b) { return create_integer_variable_or_constant_with_view(p, b, wraps.at(5)); }, v6_range);
     p.post(AllDifferent{vector<IntegerVariableID>{v1, v2, v3, v4, v5, v6}});
 
-    auto proof_name = proofs ? make_optional("all_different_test") : nullopt;
+    auto proof_name = proofs ? make_optional("all_different_test_" + view_wrap_config_label(view_cfg)) : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{v1, v2, v3, v4, v5, v6});
 
     check_results(proof_name, expected, actual);
@@ -114,8 +116,19 @@ auto run_alldiff_dup_test(bool proofs, const vector<vector<int>> & unique_domain
     check_results(proof_name, expected, actual);
 }
 
-auto main(int, char *[]) -> int
+auto main(int argc, char * argv[]) -> int
 {
+    auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
+
+    constexpr int n_positions = 6;
+    if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
+        println(cerr, "all_different view sweep: position {} out of range for n_positions = {}; skipping",
+            *view_cfg.single_position, n_positions);
+        return EXIT_SUCCESS;
+    }
+
+    bool run_dup = view_wrap_config_is_effectively_bare(view_cfg, n_positions);
+
     vector<tuple<variant<int, pair<int, int>>, variant<int, pair<int, int>>, variant<int, pair<int, int>>,
         variant<int, pair<int, int>>, variant<int, pair<int, int>>, variant<int, pair<int, int>>>>
         data = {
@@ -148,16 +161,18 @@ auto main(int, char *[]) -> int
         if (proofs && ! can_run_veripb())
             continue;
         for (auto & [r1, r2, r3, r4, r5, r6] : data)
-            run_all_different_test(proofs, r1, r2, r3, r4, r5, r6);
+            run_all_different_test(proofs, view_cfg, r1, r2, r3, r4, r5, r6);
 
         // Duplicate-variable cases for both flavours: smallest non-trivial
         // pair, a duplicate among more variables, and two duplicate runs.
-        for (auto & [unique_domains, positions] : vector<pair<vector<vector<int>>, vector<int>>>{
-                 {{{0, 1}}, {0, 0}},
-                 {{{0, 3}, {0, 3}}, {0, 0, 1}},
-                 {{{0, 3}, {0, 3}}, {0, 0, 1, 1}}}) {
-            run_alldiff_dup_test<GACAllDifferent>(proofs, unique_domains, positions, "gac");
-            run_alldiff_dup_test<VCAllDifferent>(proofs, unique_domains, positions, "vc");
+        if (run_dup) {
+            for (auto & [unique_domains, positions] : vector<pair<vector<vector<int>>, vector<int>>>{
+                     {{{0, 1}}, {0, 0}},
+                     {{{0, 3}, {0, 3}}, {0, 0, 1}},
+                     {{{0, 3}, {0, 3}}, {0, 0, 1, 1}}}) {
+                run_alldiff_dup_test<GACAllDifferent>(proofs, unique_domains, positions, "gac");
+                run_alldiff_dup_test<VCAllDifferent>(proofs, unique_domains, positions, "vc");
+            }
         }
     }
 
