@@ -752,6 +752,108 @@ namespace gcs::test_innards
             result.push_back(create_integer_variable_or_constant_with_view(problem, specs.at(i), wraps.at(i)));
         return result;
     }
+
+    /**
+     * \brief A specific (wrap, position) configuration to apply during one
+     * test run.
+     *
+     * `wrap_index` indexes into all_view_wraps(). When `single_position` is
+     * set, only that variable position takes the chosen wrap and the rest
+     * stay bare; when unset, every position takes the wrap (uniform sweep).
+     * Default-constructed: wrap_index = 0 (view_none), uniform — matches the
+     * pre-sweep test behaviour.
+     */
+    struct ViewWrapConfig
+    {
+        int wrap_index = 0;
+        std::optional<int> single_position{};
+    };
+
+    /**
+     * \brief Parse view-sweep flags out of argv, leaving other args alone.
+     *
+     * Recognised flags:
+     *  - `--view-wrap=N`         : integer index into all_view_wraps()
+     *  - `--view-position=all`   : uniform sweep across all positions
+     *  - `--view-position=K`     : single-position sweep, position K
+     *
+     * Returns the default ViewWrapConfig (no wrapping) if neither flag is
+     * present. Unknown args are ignored so existing mode-style argv (e.g. the
+     * comparison_test "ge" / "ge_if" / ... selectors) keeps working.
+     */
+    inline auto parse_view_wrap_config_from_argv(int argc, char * argv[]) -> ViewWrapConfig
+    {
+        ViewWrapConfig cfg;
+        for (int i = 1; i < argc; ++i) {
+            std::string arg = argv[i];
+            if (arg.starts_with("--view-wrap="))
+                cfg.wrap_index = std::stoi(arg.substr(std::string{"--view-wrap="}.size()));
+            else if (arg.starts_with("--view-position=")) {
+                auto val = arg.substr(std::string{"--view-position="}.size());
+                if (val == "all" || val == "uniform")
+                    cfg.single_position = std::nullopt;
+                else
+                    cfg.single_position = std::stoi(val);
+            }
+        }
+        return cfg;
+    }
+
+    /**
+     * \brief Realise a ViewWrapConfig into a per-position wrap list.
+     *
+     * - Uniform sweep (single_position unset): every entry is wraps[wrap_index].
+     * - Single-position sweep: position `*single_position` gets
+     *   wraps[wrap_index], the rest get view_none(). Out-of-range positions
+     *   are silently clamped (so a config that names a position higher than
+     *   the constraint has degrades to "all bare", which the test can detect
+     *   and skip rather than producing duplicated bare-sweep coverage).
+     */
+    inline auto wraps_for_positions(ViewWrapConfig cfg, int n_positions) -> std::vector<ViewWrap>
+    {
+        auto wraps = all_view_wraps();
+        auto chosen = wraps.at(static_cast<std::size_t>(cfg.wrap_index));
+        std::vector<ViewWrap> result(static_cast<std::size_t>(n_positions), view_none());
+        if (cfg.single_position) {
+            if (*cfg.single_position >= 0 && *cfg.single_position < n_positions)
+                result.at(static_cast<std::size_t>(*cfg.single_position)) = chosen;
+        }
+        else {
+            std::fill(result.begin(), result.end(), chosen);
+        }
+        return result;
+    }
+
+    /**
+     * \brief Stable, filename-safe label for a ViewWrapConfig.
+     *
+     * Used to disambiguate proof output filenames when the same test binary
+     * runs many times in the same working directory. Examples: "w0_pall",
+     * "w5_p2", "w12_pall".
+     */
+    inline auto view_wrap_config_label(const ViewWrapConfig & cfg) -> std::string
+    {
+        std::string s = "w" + std::to_string(cfg.wrap_index) + "_p";
+        s += cfg.single_position ? std::to_string(*cfg.single_position) : "all";
+        return s;
+    }
+
+    /**
+     * \brief Whether this config would produce no actual wrapping.
+     *
+     * True when wrap_index = 0 (view_none) or when single_position is set but
+     * out of range. The redundant-coverage cases that CMake's sweep would
+     * generate are detected here so the test can skip them and ctest sees
+     * "skipped" rather than a duplicate bare run.
+     */
+    inline auto view_wrap_config_is_effectively_bare(const ViewWrapConfig & cfg, int n_positions) -> bool
+    {
+        if (cfg.wrap_index == 0)
+            return true;
+        if (cfg.single_position && (*cfg.single_position < 0 || *cfg.single_position >= n_positions))
+            return true;
+        return false;
+    }
 }
 
 #endif
