@@ -45,9 +45,10 @@ using fmt::println;
 using namespace gcs;
 using namespace gcs::test_innards;
 
-auto run_in_integer_vals_test(bool proofs, pair<int, int> var_range, vector<int> allowed) -> void
+auto run_in_integer_vals_test(bool proofs, const ViewWrapConfig & view_cfg, pair<int, int> var_range, vector<int> allowed) -> void
 {
-    print(cerr, "in integer vals [{},{}] {} {}", var_range.first, var_range.second, allowed, proofs ? " with proofs:" : ":");
+    auto wraps = wraps_for_positions(view_cfg, 1);
+    print(cerr, "in integer vals [{}] [{},{}] {} {}", view_wrap_config_label(view_cfg), var_range.first, var_range.second, allowed, proofs ? " with proofs:" : ":");
     cerr << flush;
 
     set<tuple<int>> expected, actual;
@@ -55,20 +56,21 @@ auto run_in_integer_vals_test(bool proofs, pair<int, int> var_range, vector<int>
     println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;
-    auto var = p.create_integer_variable(Integer(var_range.first), Integer(var_range.second));
+    auto var = create_integer_variable_or_constant_with_view(p, var_range, wraps.at(0));
     vector<Integer> vals;
     for (int v : allowed)
         vals.push_back(Integer(v));
     p.post(In{var, vals});
 
-    auto proof_name = proofs ? make_optional("in_test") : nullopt;
+    auto proof_name = proofs ? make_optional("in_test_" + view_wrap_config_label(view_cfg)) : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{var});
     check_results(proof_name, expected, actual);
 }
 
-auto run_in_const_vars_test(bool proofs, pair<int, int> var_range, vector<int> allowed) -> void
+auto run_in_const_vars_test(bool proofs, const ViewWrapConfig & view_cfg, pair<int, int> var_range, vector<int> allowed) -> void
 {
-    print(cerr, "in const vars [{},{}] {} {}", var_range.first, var_range.second, allowed, proofs ? " with proofs:" : ":");
+    auto wraps = wraps_for_positions(view_cfg, 1);
+    print(cerr, "in const vars [{}] [{},{}] {} {}", view_wrap_config_label(view_cfg), var_range.first, var_range.second, allowed, proofs ? " with proofs:" : ":");
     cerr << flush;
 
     set<tuple<int>> expected, actual;
@@ -76,23 +78,24 @@ auto run_in_const_vars_test(bool proofs, pair<int, int> var_range, vector<int> a
     println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;
-    auto var = p.create_integer_variable(Integer(var_range.first), Integer(var_range.second));
+    auto var = create_integer_variable_or_constant_with_view(p, var_range, wraps.at(0));
     vector<IntegerVariableID> const_vars;
     for (int v : allowed)
         const_vars.push_back(ConstantIntegerVariableID{Integer(v)});
     p.post(In{var, const_vars});
 
-    auto proof_name = proofs ? make_optional("in_test") : nullopt;
+    auto proof_name = proofs ? make_optional("in_test_" + view_wrap_config_label(view_cfg)) : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{var});
     check_results(proof_name, expected, actual);
 }
 
-auto run_in_mixed_test(bool proofs, pair<int, int> var_range, vector<int> const_var_vals, vector<int> int_vals) -> void
+auto run_in_mixed_test(bool proofs, const ViewWrapConfig & view_cfg, pair<int, int> var_range, vector<int> const_var_vals, vector<int> int_vals) -> void
 {
+    auto wraps = wraps_for_positions(view_cfg, 1);
     vector<int> all_allowed = const_var_vals;
     all_allowed.insert(all_allowed.end(), int_vals.begin(), int_vals.end());
 
-    print(cerr, "in mixed [{},{}] const={} ints={} {}", var_range.first, var_range.second, const_var_vals, int_vals, proofs ? " with proofs:" : ":");
+    print(cerr, "in mixed [{}] [{},{}] const={} ints={} {}", view_wrap_config_label(view_cfg), var_range.first, var_range.second, const_var_vals, int_vals, proofs ? " with proofs:" : ":");
     cerr << flush;
 
     set<tuple<int>> expected, actual;
@@ -100,7 +103,7 @@ auto run_in_mixed_test(bool proofs, pair<int, int> var_range, vector<int> const_
     println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;
-    auto var = p.create_integer_variable(Integer(var_range.first), Integer(var_range.second));
+    auto var = create_integer_variable_or_constant_with_view(p, var_range, wraps.at(0));
     vector<IntegerVariableID> const_vars;
     for (int v : const_var_vals)
         const_vars.push_back(ConstantIntegerVariableID{Integer(v)});
@@ -109,14 +112,15 @@ auto run_in_mixed_test(bool proofs, pair<int, int> var_range, vector<int> const_
         vals.push_back(Integer(v));
     p.post(In{var, const_vars, vals});
 
-    auto proof_name = proofs ? make_optional("in_test") : nullopt;
+    auto proof_name = proofs ? make_optional("in_test_" + view_wrap_config_label(view_cfg)) : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{var});
     check_results(proof_name, expected, actual);
 }
 
-auto run_in_var_list_test(bool proofs, pair<int, int> var_range, const vector<pair<int, int>> & vars_ranges) -> void
+auto run_in_var_list_test(bool proofs, const ViewWrapConfig & view_cfg, pair<int, int> var_range, const vector<pair<int, int>> & vars_ranges) -> void
 {
-    print(cerr, "in var list [{},{}] {} {}", var_range.first, var_range.second, vars_ranges, proofs ? " with proofs:" : ":");
+    auto wraps = wraps_for_positions(view_cfg, 1);
+    print(cerr, "in var list [{}] [{},{}] {} {}", view_wrap_config_label(view_cfg), var_range.first, var_range.second, vars_ranges, proofs ? " with proofs:" : ":");
     cerr << flush;
 
     set<tuple<int, vector<int>>> expected, actual;
@@ -128,21 +132,22 @@ auto run_in_var_list_test(bool proofs, pair<int, int> var_range, const vector<pa
     println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;
-    auto var = p.create_integer_variable(Integer(var_range.first), Integer(var_range.second));
+    auto var = create_integer_variable_or_constant_with_view(p, var_range, wraps.at(0));
     vector<IntegerVariableID> vars;
     for (const auto & [l, u] : vars_ranges)
         vars.push_back(p.create_integer_variable(Integer(l), Integer(u)));
     p.post(In{var, vars});
 
-    auto proof_name = proofs ? make_optional("in_test") : nullopt;
+    auto proof_name = proofs ? make_optional("in_test_" + view_wrap_config_label(view_cfg)) : nullopt;
     solve_for_tests_checking_consistency(p, proof_name, expected, actual,
         tuple{pair{var, CheckConsistency::GAC}, pair{vars, CheckConsistency::GAC}});
     check_results(proof_name, expected, actual);
 }
 
-auto run_in_var_list_mixed_test(bool proofs, pair<int, int> var_range, const vector<pair<int, int>> & vars_ranges, vector<int> int_vals) -> void
+auto run_in_var_list_mixed_test(bool proofs, const ViewWrapConfig & view_cfg, pair<int, int> var_range, const vector<pair<int, int>> & vars_ranges, vector<int> int_vals) -> void
 {
-    print(cerr, "in mixed var list [{},{}] {} ints={} {}", var_range.first, var_range.second, vars_ranges, int_vals, proofs ? " with proofs:" : ":");
+    auto wraps = wraps_for_positions(view_cfg, 1);
+    print(cerr, "in mixed var list [{}] [{},{}] {} ints={} {}", view_wrap_config_label(view_cfg), var_range.first, var_range.second, vars_ranges, int_vals, proofs ? " with proofs:" : ":");
     cerr << flush;
 
     set<tuple<int, vector<int>>> expected, actual;
@@ -157,7 +162,7 @@ auto run_in_var_list_mixed_test(bool proofs, pair<int, int> var_range, const vec
     println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;
-    auto var = p.create_integer_variable(Integer(var_range.first), Integer(var_range.second));
+    auto var = create_integer_variable_or_constant_with_view(p, var_range, wraps.at(0));
     vector<IntegerVariableID> vars;
     for (const auto & [l, u] : vars_ranges)
         vars.push_back(p.create_integer_variable(Integer(l), Integer(u)));
@@ -166,15 +171,16 @@ auto run_in_var_list_mixed_test(bool proofs, pair<int, int> var_range, const vec
         vals.push_back(Integer(v));
     p.post(In{var, vars, vals});
 
-    auto proof_name = proofs ? make_optional("in_test") : nullopt;
+    auto proof_name = proofs ? make_optional("in_test_" + view_wrap_config_label(view_cfg)) : nullopt;
     solve_for_tests_checking_consistency(p, proof_name, expected, actual,
         tuple{pair{var, CheckConsistency::GAC}, pair{vars, CheckConsistency::GAC}});
     check_results(proof_name, expected, actual);
 }
 
-auto run_in_self_reference_test(bool proofs, pair<int, int> var_range) -> void
+auto run_in_self_reference_test(bool proofs, const ViewWrapConfig & view_cfg, pair<int, int> var_range) -> void
 {
-    print(cerr, "in self [{},{}] {}", var_range.first, var_range.second, proofs ? " with proofs:" : ":");
+    auto wraps = wraps_for_positions(view_cfg, 1);
+    print(cerr, "in self [{}] [{},{}] {}", view_wrap_config_label(view_cfg), var_range.first, var_range.second, proofs ? " with proofs:" : ":");
     cerr << flush;
 
     set<tuple<int>> expected, actual;
@@ -182,57 +188,57 @@ auto run_in_self_reference_test(bool proofs, pair<int, int> var_range) -> void
     println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;
-    auto var = p.create_integer_variable(Integer(var_range.first), Integer(var_range.second));
+    auto var = create_integer_variable_or_constant_with_view(p, var_range, wraps.at(0));
     p.post(In{var, vector<IntegerVariableID>{var}});
 
-    auto proof_name = proofs ? make_optional("in_test") : nullopt;
+    auto proof_name = proofs ? make_optional("in_test_" + view_wrap_config_label(view_cfg)) : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{var});
     check_results(proof_name, expected, actual);
 }
 
-auto run_all_tests(bool proofs) -> void
+auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
 {
     // In with integer values
-    run_in_integer_vals_test(proofs, {1, 5}, {1, 3, 5});       // alternate values
-    run_in_integer_vals_test(proofs, {1, 5}, {2, 4});          // even values only
-    run_in_integer_vals_test(proofs, {1, 5}, {1, 2, 3, 4, 5}); // all values: no filtering
-    run_in_integer_vals_test(proofs, {1, 5}, {3});             // single value
-    run_in_integer_vals_test(proofs, {1, 5}, {7, 8, 9});       // all outside domain: unsat
-    run_in_integer_vals_test(proofs, {1, 5}, {2, 5, 8});       // some outside domain: filtered
-    run_in_integer_vals_test(proofs, {-3, 3}, {-2, 0, 2});     // negative values
-    run_in_integer_vals_test(proofs, {1, 5}, {1, 1, 3, 3});    // duplicates in allowed list
+    run_in_integer_vals_test(proofs, view_cfg, {1, 5}, {1, 3, 5});       // alternate values
+    run_in_integer_vals_test(proofs, view_cfg, {1, 5}, {2, 4});          // even values only
+    run_in_integer_vals_test(proofs, view_cfg, {1, 5}, {1, 2, 3, 4, 5}); // all values: no filtering
+    run_in_integer_vals_test(proofs, view_cfg, {1, 5}, {3});             // single value
+    run_in_integer_vals_test(proofs, view_cfg, {1, 5}, {7, 8, 9});       // all outside domain: unsat
+    run_in_integer_vals_test(proofs, view_cfg, {1, 5}, {2, 5, 8});       // some outside domain: filtered
+    run_in_integer_vals_test(proofs, view_cfg, {-3, 3}, {-2, 0, 2});     // negative values
+    run_in_integer_vals_test(proofs, view_cfg, {1, 5}, {1, 1, 3, 3});    // duplicates in allowed list
 
     // In with constant IntegerVariableIDs: same semantics as integer values
-    run_in_const_vars_test(proofs, {1, 5}, {1, 3, 5});
-    run_in_const_vars_test(proofs, {1, 5}, {7, 8, 9}); // all outside domain: unsat
-    run_in_const_vars_test(proofs, {-3, 3}, {-2, 0, 2});
+    run_in_const_vars_test(proofs, view_cfg, {1, 5}, {1, 3, 5});
+    run_in_const_vars_test(proofs, view_cfg, {1, 5}, {7, 8, 9}); // all outside domain: unsat
+    run_in_const_vars_test(proofs, view_cfg, {-3, 3}, {-2, 0, 2});
 
     // In with mixed constant vars and integer values
-    run_in_mixed_test(proofs, {1, 6}, {1, 3}, {5}); // {1,3} from vars, {5} from vals
-    run_in_mixed_test(proofs, {1, 6}, {2, 4}, {6});
+    run_in_mixed_test(proofs, view_cfg, {1, 6}, {1, 3}, {5}); // {1,3} from vars, {5} from vals
+    run_in_mixed_test(proofs, view_cfg, {1, 6}, {2, 4}, {6});
 
     // In with non-constant variable lists (the case the old implementation didn't handle)
-    run_in_var_list_test(proofs, {1, 5}, {{1, 3}, {3, 5}});         // overlapping
-    run_in_var_list_test(proofs, {1, 5}, {{2, 2}, {4, 4}});         // singletons (= constants)
-    run_in_var_list_test(proofs, {1, 5}, {{1, 5}});                 // single supporter, var = V_0
-    run_in_var_list_test(proofs, {1, 4}, {{1, 4}, {1, 4}, {1, 4}}); // all alike
-    run_in_var_list_test(proofs, {2, 5}, {{1, 3}, {4, 6}});         // disjoint vars covering var range
-    run_in_var_list_test(proofs, {1, 6}, {{1, 2}, {5, 6}});         // disjoint vars, var has middle gap forced
-    run_in_var_list_test(proofs, {-2, 2}, {{-1, 0}, {0, 1}});       // negatives + zero overlap
+    run_in_var_list_test(proofs, view_cfg, {1, 5}, {{1, 3}, {3, 5}});         // overlapping
+    run_in_var_list_test(proofs, view_cfg, {1, 5}, {{2, 2}, {4, 4}});         // singletons (= constants)
+    run_in_var_list_test(proofs, view_cfg, {1, 5}, {{1, 5}});                 // single supporter, var = V_0
+    run_in_var_list_test(proofs, view_cfg, {1, 4}, {{1, 4}, {1, 4}, {1, 4}}); // all alike
+    run_in_var_list_test(proofs, view_cfg, {2, 5}, {{1, 3}, {4, 6}});         // disjoint vars covering var range
+    run_in_var_list_test(proofs, view_cfg, {1, 6}, {{1, 2}, {5, 6}});         // disjoint vars, var has middle gap forced
+    run_in_var_list_test(proofs, view_cfg, {-2, 2}, {{-1, 0}, {0, 1}});       // negatives + zero overlap
 
     // Single supporter case (forces filtering of V_i to dom(var))
-    run_in_var_list_test(proofs, {2, 4}, {{1, 5}, {7, 9}}); // only V_0 overlaps; V_0 gets pruned to {2,3,4}
+    run_in_var_list_test(proofs, view_cfg, {2, 4}, {{1, 5}, {7, 9}}); // only V_0 overlaps; V_0 gets pruned to {2,3,4}
 
     // Mixed with non-constant vars + constants
-    run_in_var_list_mixed_test(proofs, {1, 5}, {{2, 3}}, {5}); // V_0 in {2,3}, plus 5
-    run_in_var_list_mixed_test(proofs, {1, 5}, {{1, 5}}, {});  // empty constants
+    run_in_var_list_mixed_test(proofs, view_cfg, {1, 5}, {{2, 3}}, {5}); // V_0 in {2,3}, plus 5
+    run_in_var_list_mixed_test(proofs, view_cfg, {1, 5}, {{1, 5}}, {});  // empty constants
 
     // Self-reference: trivially satisfied
-    run_in_self_reference_test(proofs, {1, 5});
-    run_in_self_reference_test(proofs, {-2, 2});
+    run_in_self_reference_test(proofs, view_cfg, {1, 5});
+    run_in_self_reference_test(proofs, view_cfg, {-2, 2});
 }
 
-auto run_random_tests(bool proofs, mt19937 & rand) -> void
+auto run_random_tests(bool proofs, const ViewWrapConfig & view_cfg, mt19937 & rand) -> void
 {
     // Small random sweep. Each shape gets 5 instances. Brute-force cost is
     // O(|dom(var)| * prod(|dom(V_i)|)) per case; on these bounds (var up to
@@ -256,17 +262,17 @@ auto run_random_tests(bool proofs, mt19937 & rand) -> void
     };
 
     for (int x = 0; x < 5; ++x)
-        run_in_integer_vals_test(proofs, random_pair(), random_vals(count_dist(rand)));
+        run_in_integer_vals_test(proofs, view_cfg, random_pair(), random_vals(count_dist(rand)));
 
     for (int x = 0; x < 5; ++x)
-        run_in_const_vars_test(proofs, random_pair(), random_vals(count_dist(rand)));
+        run_in_const_vars_test(proofs, view_cfg, random_pair(), random_vals(count_dist(rand)));
 
     for (int x = 0; x < 5; ++x) {
         vector<pair<int, int>> ranges;
         int n = n_vars_dist(rand);
         for (int i = 0; i < n; ++i)
             ranges.push_back(random_pair());
-        run_in_var_list_test(proofs, random_pair(), ranges);
+        run_in_var_list_test(proofs, view_cfg, random_pair(), ranges);
     }
 
     for (int x = 0; x < 5; ++x) {
@@ -274,20 +280,31 @@ auto run_random_tests(bool proofs, mt19937 & rand) -> void
         int n = n_vars_dist(rand);
         for (int i = 0; i < n; ++i)
             ranges.push_back(random_pair());
-        run_in_var_list_mixed_test(proofs, random_pair(), ranges, random_vals(count_dist(rand)));
+        run_in_var_list_mixed_test(proofs, view_cfg, random_pair(), ranges, random_vals(count_dist(rand)));
     }
 }
 
-auto main(int, char *[]) -> int
+auto main(int argc, char * argv[]) -> int
 {
+    auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
+
+    // Only the primary `var` of each In variant is wrapped; the inner
+    // vars vector of run_in_var_list_test is not in the sweep.
+    constexpr int n_positions = 1;
+    if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
+        println(cerr, "in view sweep: position {} out of range for n_positions = {}; skipping",
+            *view_cfg.single_position, n_positions);
+        return EXIT_SUCCESS;
+    }
+
     random_device rand_dev;
     mt19937 rand(rand_dev());
 
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
             continue;
-        run_all_tests(proofs);
-        run_random_tests(proofs, rand);
+        run_all_tests(proofs, view_cfg);
+        run_random_tests(proofs, view_cfg, rand);
     }
 
     return EXIT_SUCCESS;
