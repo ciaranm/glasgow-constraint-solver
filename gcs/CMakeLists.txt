@@ -196,15 +196,19 @@ if(GCS_BUILD_TESTS)
     # is skipped here. n_positions = the number of variable arguments the test
     # wraps; per-position single-variable sweeps land between 0 and n-1.
     function(add_view_wrap_sweep test_name target n_positions)
+        # Extra positional args (e.g. the "mode" argv for comparison_test,
+        # linear_test, ...) are forwarded into the binary before the view
+        # flags, so the existing per-mode positional argv keeps working.
+        set(extra_args ${ARGN})
         math(EXPR last_position "${n_positions} - 1")
         foreach(wrap RANGE 1 18)
             add_test(NAME ${test_name}_view_w${wrap}_pall
                 COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:${target}>
-                --view-wrap=${wrap} --view-position=all)
+                ${extra_args} --view-wrap=${wrap} --view-position=all)
             foreach(pos RANGE 0 ${last_position})
                 add_test(NAME ${test_name}_view_w${wrap}_p${pos}
                     COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:${target}>
-                    --view-wrap=${wrap} --view-position=${pos})
+                    ${extra_args} --view-wrap=${wrap} --view-position=${pos})
             endforeach()
         endforeach()
     endfunction()
@@ -212,6 +216,9 @@ if(GCS_BUILD_TESTS)
     add_view_wrap_sweep(equals_constraint equals_test 2)
     add_view_wrap_sweep(abs_constraint abs_test 2)
     add_view_wrap_sweep(plus_minus_constraint plus_minus_test 3)
+    foreach(mode ge ge_if ge_iff gt gt_if gt_iff le le_if le_iff lt lt_if lt_iff)
+        add_view_wrap_sweep(comparison_constraint_${mode} comparison_test 2 ${mode})
+    endforeach()
     add_test(NAME in_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:in_test>)
     add_test(NAME increasing_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:increasing_test>)
     add_test(NAME inverse_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:inverse_test>)
