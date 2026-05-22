@@ -909,16 +909,20 @@ auto NamesAndIDsTracker::reify(const WPBSumLE & ineq, const HalfReifyOnConjuncti
                             max_contribution_from_positive_terms += max(0_i, w * bit_value);
                     },
                     [&](const ViewOfIntegerVariableID & view) {
+                        // The term is w * view = w * ((negate_first ? -actual : actual) + then_add).
+                        // The variable part w * (negate_first ? -actual : actual) has per-bit max
+                        // contribution max(0, ±w * bit_value), with the sign flip depending on
+                        // negate_first. The constant part w * then_add applies regardless and is
+                        // not affected by negate_first.
                         if (! view.negate_first) {
                             for (const auto & [bit_value, bit_lit] : each_bit(view.actual_variable))
                                 max_contribution_from_positive_terms += max(0_i, w * bit_value);
-                            max_contribution_from_positive_terms += max(0_i, w * view.then_add);
                         }
                         else {
                             for (const auto & [bit_value, bit_lit] : each_bit(view.actual_variable))
                                 max_contribution_from_positive_terms += max(0_i, -w * bit_value);
-                            max_contribution_from_positive_terms += max(0_i, -w * view.then_add);
                         }
+                        max_contribution_from_positive_terms += max(0_i, w * view.then_add);
                     },
                     [&](const ConstantIntegerVariableID & cvar) {
                         max_contribution_from_positive_terms += max(0_i, w * cvar.const_value);
