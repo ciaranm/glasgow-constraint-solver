@@ -211,6 +211,7 @@ if(GCS_BUILD_TESTS)
 
     add_view_wrap_sweep(equals_constraint equals_test 2)
     add_view_wrap_sweep(abs_constraint abs_test 2)
+    add_view_wrap_sweep(plus_minus_constraint plus_minus_test 3)
     add_test(NAME in_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:in_test>)
     add_test(NAME increasing_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:increasing_test>)
     add_test(NAME inverse_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:inverse_test>)

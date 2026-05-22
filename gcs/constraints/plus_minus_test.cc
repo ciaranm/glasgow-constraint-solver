@@ -67,10 +67,12 @@ namespace
 }
 
 template <typename Constraint_, typename V1_, typename V2_, typename V3_>
-auto run_plus_minus_test(bool proofs, V1_ v1_range, V2_ v2_range, V3_ v3_range, const function<auto(int, int, int)->bool> & is_satisfying) -> void
+auto run_plus_minus_test(bool proofs, const ViewWrapConfig & view_cfg,
+    V1_ v1_range, V2_ v2_range, V3_ v3_range, const function<auto(int, int, int)->bool> & is_satisfying) -> void
 {
+    auto wraps = wraps_for_positions(view_cfg, 3);
     visit([&](const auto & v1, const auto & v2, const auto & v3) {
-        print(cerr, "{} {} {} {} {}", NameOf<Constraint_>::name, v1, v2, v3, proofs ? " with proofs:" : ":");
+        print(cerr, "{} [{}] {} {} {} {}", NameOf<Constraint_>::name, view_wrap_config_label(view_cfg), v1, v2, v3, proofs ? " with proofs:" : ":");
     },
         v1_range, v2_range, v3_range);
     cerr << flush;
@@ -83,19 +85,28 @@ auto run_plus_minus_test(bool proofs, V1_ v1_range, V2_ v2_range, V3_ v3_range, 
     println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;
-    auto v1 = visit([&](const auto & r) { return create_integer_variable_or_constant(p, r); }, v1_range);
-    auto v2 = visit([&](const auto & r) { return create_integer_variable_or_constant(p, r); }, v2_range);
-    auto v3 = visit([&](const auto & r) { return create_integer_variable_or_constant(p, r); }, v3_range);
+    auto v1 = visit([&](const auto & r) { return create_integer_variable_or_constant_with_view(p, r, wraps.at(0)); }, v1_range);
+    auto v2 = visit([&](const auto & r) { return create_integer_variable_or_constant_with_view(p, r, wraps.at(1)); }, v2_range);
+    auto v3 = visit([&](const auto & r) { return create_integer_variable_or_constant_with_view(p, r, wraps.at(2)); }, v3_range);
     p.post(Constraint_{v1, v2, v3});
 
-    auto proof_name = proofs ? make_optional("plus_minus_test") : nullopt;
+    auto proof_name = proofs ? make_optional("plus_minus_test_" + view_wrap_config_label(view_cfg)) : nullopt;
     solve_for_tests_checking_consistency(p, proof_name, expected, actual, tuple{pair{v1, CheckConsistency::None}, pair{v2, CheckConsistency::None}, pair{v3, CheckConsistency::None}});
 
     check_results(proof_name, expected, actual);
 }
 
-auto main(int, char *[]) -> int
+auto main(int argc, char * argv[]) -> int
 {
+    auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
+
+    constexpr int n_positions = 3;
+    if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
+        println(cerr, "plus_minus view sweep: position {} out of range for n_positions = {}; skipping",
+            *view_cfg.single_position, n_positions);
+        return EXIT_SUCCESS;
+    }
+
     using V12 = variant<int, pair<int, int>, vector<int>>;
     using V3 = variant<int, pair<int, int>>;
     vector<tuple<V12, V12, V3>> data = {
@@ -137,8 +148,8 @@ auto main(int, char *[]) -> int
         if (proofs && ! can_run_veripb())
             continue;
         for (auto & [r1, r2, r3] : data) {
-            run_plus_minus_test<Plus>(proofs, r1, r2, r3, [](int a, int b, int c) { return a + b == c; });
-            run_plus_minus_test<Minus>(proofs, r1, r2, r3, [](int a, int b, int c) { return a - b == c; });
+            run_plus_minus_test<Plus>(proofs, view_cfg, r1, r2, r3, [](int a, int b, int c) { return a + b == c; });
+            run_plus_minus_test<Minus>(proofs, view_cfg, r1, r2, r3, [](int a, int b, int c) { return a - b == c; });
         }
     }
 
