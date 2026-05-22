@@ -70,10 +70,11 @@ namespace
     }
 }
 
-auto run_test(bool proofs, const vector<variant<int, pair<int, int>>> & domains) -> void
+auto run_test(bool proofs, const ViewWrapConfig & view_cfg, const vector<variant<int, pair<int, int>>> & domains) -> void
 {
-    print(cerr, "seq_precede_chain domains={}{}",
-        domains, proofs ? " with proofs:" : ":");
+    auto wraps = wraps_for_positions(view_cfg, static_cast<int>(domains.size()));
+    print(cerr, "seq_precede_chain [{}] domains={}{}",
+        view_wrap_config_label(view_cfg), domains, proofs ? " with proofs:" : ":");
     cerr << flush;
 
     set<tuple<vector<int>>> expected, actual;
@@ -84,11 +85,11 @@ auto run_test(bool proofs, const vector<variant<int, pair<int, int>>> & domains)
 
     Problem p;
     vector<IntegerVariableID> vars;
-    for (const auto & entry : domains)
-        vars.push_back(visit([&](auto e) { return create_integer_variable_or_constant(p, e); }, entry));
+    for (std::size_t i = 0; i < domains.size(); ++i)
+        vars.push_back(visit([&](auto e) { return create_integer_variable_or_constant_with_view(p, e, wraps.at(i)); }, domains[i]));
     p.post(SeqPrecedeChain{vars});
 
-    auto proof_name = proofs ? make_optional("seq_precede_chain_test") : nullopt;
+    auto proof_name = proofs ? make_optional("seq_precede_chain_test_" + view_wrap_config_label(view_cfg)) : nullopt;
     solve_for_tests(p, proof_name, actual, tuple{vars});
     check_results(proof_name, expected, actual);
 }
@@ -126,49 +127,64 @@ auto run_scale_test(bool proofs) -> void
     }
 }
 
-auto run_all_tests(bool proofs) -> void
+auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
 {
     // Length-2: smallest meaningful chain.
-    run_test(proofs, {pair{1, 2}, pair{1, 2}});
-    run_test(proofs, {pair{1, 5}, pair{1, 5}});
+    run_test(proofs, view_cfg, {pair{1, 2}, pair{1, 2}});
+    run_test(proofs, view_cfg, {pair{1, 5}, pair{1, 5}});
 
     // Length-3 with domain == array length, no truncation needed.
-    run_test(proofs, {pair{1, 3}, pair{1, 3}, pair{1, 3}});
+    run_test(proofs, view_cfg, {pair{1, 3}, pair{1, 3}, pair{1, 3}});
 
     // Length-3 with domain > array length, exercises truncation.
-    run_test(proofs, {pair{1, 6}, pair{1, 6}, pair{1, 6}});
+    run_test(proofs, view_cfg, {pair{1, 6}, pair{1, 6}, pair{1, 6}});
 
     // Length-5 with domain 2x array length: the headline case scaled
     // down enough for build_expected.
-    run_test(proofs, {pair{1, 10}, pair{1, 10}, pair{1, 10}, pair{1, 10}, pair{1, 10}});
+    run_test(proofs, view_cfg, {pair{1, 10}, pair{1, 10}, pair{1, 10}, pair{1, 10}, pair{1, 10}});
 
     // Negative and zero values: unconstrained by the chain.
-    run_test(proofs, {pair{-2, 3}, pair{-2, 3}, pair{-2, 3}});
+    run_test(proofs, view_cfg, {pair{-2, 3}, pair{-2, 3}, pair{-2, 3}});
 
     // Non-uniform domains, one var with a wildly larger upper bound.
     // Catches any "compute max from initial_state" bug.
-    run_test(proofs, {pair{1, 4}, pair{1, 4}, pair{1, 100}, pair{1, 4}});
+    run_test(proofs, view_cfg, {pair{1, 4}, pair{1, 4}, pair{1, 100}, pair{1, 4}});
 
     // Empty array: trivially satisfied.
-    run_test(proofs, {});
+    run_test(proofs, view_cfg, {});
 
     // Constant entries pinning specific positions in the chain.
-    run_test(proofs, {1, pair{1, 4}, 2, pair{1, 4}});
-    run_test(proofs, {pair{1, 4}, 1, pair{1, 4}, 2});
+    run_test(proofs, view_cfg, {1, pair{1, 4}, 2, pair{1, 4}});
+    run_test(proofs, view_cfg, {pair{1, 4}, 1, pair{1, 4}, 2});
     // Constant zero / negative entries are unconstrained by the chain.
-    run_test(proofs, {0, pair{1, 3}, -1, pair{1, 3}});
+    run_test(proofs, view_cfg, {0, pair{1, 3}, -1, pair{1, 3}});
 }
 
-auto main(int, char *[]) -> int
+auto main(int argc, char * argv[]) -> int
 {
+    auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
+
+    constexpr int n_positions = 5;
+    if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
+        println(cerr, "seq_precede_chain view sweep: position {} out of range for n_positions = {}; skipping",
+            *view_cfg.single_position, n_positions);
+        return EXIT_SUCCESS;
+    }
+
+    // The scale test uses a fixed bare configuration with domain 1..1000;
+    // its expected solution count and proof filename are pinned. Skip it
+    // under non-baseline view configs.
+    bool run_scale = view_wrap_config_is_effectively_bare(view_cfg, n_positions);
+
     random_device rand_dev;
     mt19937 rand(rand_dev());
 
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
             continue;
-        run_all_tests(proofs);
-        run_scale_test(proofs);
+        run_all_tests(proofs, view_cfg);
+        if (run_scale)
+            run_scale_test(proofs);
 
         // Random sweep: length 2..5 with domains 1..5. SeqPrecedeChain on
         // length n with values 1..n yields B(n) (Bell number) solutions
@@ -181,7 +197,7 @@ auto main(int, char *[]) -> int
             vector<variant<int, pair<int, int>>> doms;
             for (int i = 0; i < n; ++i)
                 doms.emplace_back(generate_random_data_item(rand, random_bounds_or_constant(0, 3, 1, 3)));
-            run_test(proofs, doms);
+            run_test(proofs, view_cfg, doms);
         }
     }
 

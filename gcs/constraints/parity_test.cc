@@ -48,9 +48,10 @@ using fmt::println;
 using namespace gcs;
 using namespace gcs::test_innards;
 
-auto run_parity_test(bool proofs, const vector<variant<int, pair<int, int>>> & array_range) -> void
+auto run_parity_test(bool proofs, const ViewWrapConfig & view_cfg, const vector<variant<int, pair<int, int>>> & array_range) -> void
 {
-    print(cerr, "parity odd {} {}", array_range, proofs ? " with proofs:" : ":");
+    auto wraps = wraps_for_positions(view_cfg, static_cast<int>(array_range.size()));
+    print(cerr, "parity odd [{}] {} {}", view_wrap_config_label(view_cfg), array_range, proofs ? " with proofs:" : ":");
     cerr << flush;
 
     auto is_satisfying = [](const vector<int> & a) {
@@ -63,18 +64,27 @@ auto run_parity_test(bool proofs, const vector<variant<int, pair<int, int>>> & a
 
     Problem p;
     vector<IntegerVariableID> array;
-    for (const auto & entry : array_range)
-        array.push_back(visit([&](const auto & e) { return create_integer_variable_or_constant(p, e); }, entry));
+    for (std::size_t i = 0; i < array_range.size(); ++i)
+        array.push_back(visit([&](const auto & e) { return create_integer_variable_or_constant_with_view(p, e, wraps.at(i)); }, array_range[i]));
     p.post(ParityOdd{array});
 
-    auto proof_name = proofs ? make_optional("parity_test") : nullopt;
+    auto proof_name = proofs ? make_optional("parity_test_" + view_wrap_config_label(view_cfg)) : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{array});
 
     check_results(proof_name, expected, actual);
 }
 
-auto main(int, char *[]) -> int
+auto main(int argc, char * argv[]) -> int
 {
+    auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
+
+    constexpr int n_positions = 4;
+    if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
+        println(cerr, "parity view sweep: position {} out of range for n_positions = {}; skipping",
+            *view_cfg.single_position, n_positions);
+        return EXIT_SUCCESS;
+    }
+
     using Entry = variant<int, pair<int, int>>;
     vector<vector<Entry>> data = {
         // Boundary: empty array — UNSAT (0 is even, not odd).
@@ -117,7 +127,7 @@ auto main(int, char *[]) -> int
         if (proofs && ! can_run_veripb())
             continue;
         for (auto & v : data)
-            run_parity_test(proofs, v);
+            run_parity_test(proofs, view_cfg, v);
     }
 
     return EXIT_SUCCESS;
