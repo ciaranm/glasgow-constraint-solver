@@ -98,15 +98,38 @@ auto ProofModel::advance_constraint_counter() -> ProofLineNumber
 
 namespace
 {
-    // Build a pol line that, starting from the extension-form constraint at
-    // `ext_line`, adds e-def lines to cancel each view operand's `e` term
-    // and recover the underlying-form constraint.
+    // Walk a WPBSum's terms and pre-allocate the extension variable for
+    // every ViewOfIntegerVariableID operand. Necessary because the
+    // allocation path writes the extension's domain bounds and definitional
+    // constraint to the OPB stream — if that happens *during*
+    // emit_inequality_to for the host constraint, the host constraint's
+    // OPB line gets sliced in half by the extension's emission.
+    auto preallocate_extensions_for_views_in(NamesAndIDsTracker & tracker, const WPBSum & sum) -> void
+    {
+        for (const auto & [w, term] : sum.terms) {
+            if (! std::holds_alternative<IntegerVariableID>(term))
+                continue;
+            const auto & var_id = std::get<IntegerVariableID>(term);
+            if (! std::holds_alternative<ViewOfIntegerVariableID>(var_id))
+                continue;
+            (void) tracker.extension_for(std::get<ViewOfIntegerVariableID>(var_id));
+        }
+    }
+
+    // Build a pol line that, starting from the underlying-form constraint
+    // at `underlying_line`, adds e-def lines so the `_actual` terms cancel
+    // and the corresponding extension `e` terms appear, materialising the
+    // extension-form of the same constraint half.
     //
-    // `which_half` is which half (LE or GE) of the just-emitted equality the
-    // ext_line corresponds to. For each view operand with weight w:
-    //  - LE half OPB coef on e is -w; cancel by adding e-def with +w on e
-    //    (e-def-GE for w > 0, e-def-LE for w < 0).
-    //  - GE half OPB coef on e is +w; cancel using the opposite e-def.
+    // For an operand v = (negate_first ? -actual : actual) + then_add with
+    // weight w in the original WPBSum and the LE half (coef on actual in
+    // OPB-GE form is -w for !negate_first, +w for negate_first):
+    //  - Add e-def-LE (`-e ± actual >= -then_add`) to cancel _actual and
+    //    introduce -e. For the GE half, add e-def-GE.
+    //
+    // Same-named halves (LE with LE, GE with GE) pair up regardless of
+    // negate_first, since the coefficient on `actual` in the e-def matches
+    // the coefficient on `actual` in the underlying-form constraint.
     //
     // Only ±1 weights are handled here; chains across multiple views in one
     // constraint are emitted as a single pol with successive additions.
@@ -117,9 +140,9 @@ namespace
     };
 
     auto emit_view_bridge_pol_lines(NamesAndIDsTracker & tracker,
-        const WPBSum & original_lhs, optional<ProofLine> ext_line, ConstraintHalf which_half) -> void
+        const WPBSum & original_lhs, optional<ProofLine> underlying_line, ConstraintHalf which_half) -> void
     {
-        if (! ext_line)
+        if (! underlying_line)
             return;
 
         std::vector<ProofLine> defs_to_add;
@@ -138,11 +161,10 @@ namespace
                 continue; // multi-coef bridges not handled yet
             any_view = true;
 
-            ProofLine line_to_add;
-            if (which_half == ConstraintHalf::LE)
-                line_to_add = (w > 0_i) ? *def_lines->second : *def_lines->first;
-            else
-                line_to_add = (w > 0_i) ? *def_lines->first : *def_lines->second;
+            // Same-named half (LE with LE, GE with GE) — see comment above.
+            ProofLine line_to_add = (which_half == ConstraintHalf::LE)
+                ? *def_lines->first
+                : *def_lines->second;
             defs_to_add.push_back(line_to_add);
         }
 
@@ -150,61 +172,11 @@ namespace
             return;
 
         std::stringstream pol_str;
-        pol_str << "pol " << *ext_line;
+        pol_str << "pol " << *underlying_line;
         for (const auto & d : defs_to_add)
             pol_str << " " << d << " +";
         pol_str << " s ;";
         tracker.schedule_pol_line_at_proof_start(pol_str.str());
-    }
-
-    // Substitute every ViewOfIntegerVariableID inside a PseudoBooleanTerm with
-    // its extension. Other variants are passed through unchanged.
-    auto substitute_views_in_term(const PseudoBooleanTerm & term, NamesAndIDsTracker & tracker) -> PseudoBooleanTerm
-    {
-        return overloaded{
-            [&](const IntegerVariableID & var) -> PseudoBooleanTerm {
-                return overloaded{
-                    [&](const SimpleIntegerVariableID &) -> PseudoBooleanTerm { return var; },
-                    [&](const ConstantIntegerVariableID &) -> PseudoBooleanTerm { return var; },
-                    [&](const ViewOfIntegerVariableID & view) -> PseudoBooleanTerm {
-                        return tracker.extension_for(view);
-                    }}
-                    .visit(var);
-            },
-            [&](const ProofLiteral & lit) -> PseudoBooleanTerm {
-                return overloaded{
-                    [&](const Literal & l) -> PseudoBooleanTerm {
-                        return overloaded{
-                            [&](const TrueLiteral &) -> PseudoBooleanTerm { return lit; },
-                            [&](const FalseLiteral &) -> PseudoBooleanTerm { return lit; },
-                            [&](const IntegerVariableCondition & cond) -> PseudoBooleanTerm {
-                                return overloaded{
-                                    [&](const SimpleIntegerVariableID &) -> PseudoBooleanTerm { return lit; },
-                                    [&](const ConstantIntegerVariableID &) -> PseudoBooleanTerm { return lit; },
-                                    [&](const ViewOfIntegerVariableID & view) -> PseudoBooleanTerm {
-                                        auto ext = tracker.extension_for(view);
-                                        return ProofLiteral{ProofVariableCondition{ext, cond.op, cond.value}};
-                                    }}
-                                    .visit(cond.var);
-                            }}
-                            .visit(l);
-                    },
-                    [&](const ProofVariableCondition &) -> PseudoBooleanTerm { return lit; }}
-                    .visit(lit);
-            },
-            [&](const ProofFlag &) -> PseudoBooleanTerm { return term; },
-            [&](const ProofOnlySimpleIntegerVariableID &) -> PseudoBooleanTerm { return term; },
-            [&](const ProofBitVariable &) -> PseudoBooleanTerm { return term; }}
-            .visit(term);
-    }
-
-    template <typename Sum_>
-    auto substitute_views(const Sum_ & sum, NamesAndIDsTracker & tracker) -> Sum_
-    {
-        Sum_ result = sum;
-        for (auto & [w, term] : result.lhs.terms)
-            term = substitute_views_in_term(term, tracker);
-        return result;
     }
 }
 
@@ -241,22 +213,18 @@ auto ProofModel::add_constraint(const Literals & lits) -> std::optional<ProofLin
 auto ProofModel::add_constraint(const StringLiteral & constraint_name, const StringLiteral & rule,
     const WPBSumLE & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> optional<ProofLine>
 {
-    // Substitute views with their extension variables before the rest of the
-    // pipeline sees the constraint. This keeps emit_inequality_to / reify
-    // working on bit-clean (view-free) sums.
-    auto substituted = substitute_views(ineq, names_and_ids_tracker());
-
-    names_and_ids_tracker().need_all_proof_names_in(substituted.lhs);
+    preallocate_extensions_for_views_in(names_and_ids_tracker(), ineq.lhs);
+    names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
     if (half_reif)
         names_and_ids_tracker().need_all_proof_names_in(*half_reif);
 
     _imp->opb << "* constraint " << constraint_name.value << ' ' << rule.value << '\n';
-    emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(substituted, *half_reif) : substituted, _imp->opb);
+    emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(ineq, *half_reif) : ineq, _imp->opb);
     _imp->opb << ";\n";
-    auto ext_line = advance_constraint_counter();
+    auto underlying_line = advance_constraint_counter();
     if (! half_reif)
-        emit_view_bridge_pol_lines(names_and_ids_tracker(), ineq.lhs, ext_line, ConstraintHalf::LE);
-    return ext_line;
+        emit_view_bridge_pol_lines(names_and_ids_tracker(), ineq.lhs, underlying_line, ConstraintHalf::LE);
+    return underlying_line;
 }
 
 auto ProofModel::add_constraint(const WPBSumLE & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> optional<ProofLine>
@@ -268,18 +236,17 @@ auto ProofModel::add_constraint(const StringLiteral & constraint_name, const Str
     const WPBSumEq & eq, const optional<HalfReifyOnConjunctionOf> & half_reif)
     -> pair<optional<ProofLine>, optional<ProofLine>>
 {
-    auto substituted = substitute_views(eq, names_and_ids_tracker());
-
-    names_and_ids_tracker().need_all_proof_names_in(substituted.lhs);
+    preallocate_extensions_for_views_in(names_and_ids_tracker(), eq.lhs);
+    names_and_ids_tracker().need_all_proof_names_in(eq.lhs);
     if (half_reif)
         names_and_ids_tracker().need_all_proof_names_in(*half_reif);
 
     _imp->opb << "* constraint " << constraint_name.value << ' ' << rule.value << '\n';
-    emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(substituted.lhs <= substituted.rhs, *half_reif) : substituted.lhs <= substituted.rhs, _imp->opb);
+    emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(eq.lhs <= eq.rhs, *half_reif) : eq.lhs <= eq.rhs, _imp->opb);
     _imp->opb << ";\n";
     auto first = advance_constraint_counter();
 
-    emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(substituted.lhs >= substituted.rhs, *half_reif) : substituted.lhs >= substituted.rhs, _imp->opb);
+    emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(eq.lhs >= eq.rhs, *half_reif) : eq.lhs >= eq.rhs, _imp->opb);
     _imp->opb << ";\n";
     auto second = advance_constraint_counter();
 
