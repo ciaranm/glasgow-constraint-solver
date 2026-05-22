@@ -138,6 +138,7 @@ auto run_no_overlap_equals_test(bool proofs) -> void
 
 auto main(int argc, char * argv[]) -> int
 {
+    set_seed_from_argv(argc, argv);
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
 
     // Single-position config that names a position the constraint doesn't
@@ -163,7 +164,7 @@ auto main(int argc, char * argv[]) -> int
         {pair{-7, 3}, pair{-10, 5}}};
 
     random_device rand_dev;
-    mt19937 rand(rand_dev());
+    mt19937 rand(get_seed().value_or(rand_dev()));
     for (int x = 0; x < 10; ++x)
         generate_random_data(rand, data, random_bounds(-10, 10, 5, 15), random_bounds(-10, 10, 5, 15));
     for (int x = 0; x < 10; ++x)

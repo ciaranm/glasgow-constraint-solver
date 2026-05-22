@@ -241,11 +241,59 @@ namespace gcs::test_innards
                 throw UnexpectedException{"veripb verification failed"};
     }
 
+    /**
+     * Singleton holding the --seed argv value, if one was passed.
+     *
+     * Test main()s call set_seed_from_argv(argc, argv) once at startup; the
+     * seed then drives both the test's data RNG (callers read it via
+     * get_seed()) and the harness's branching heuristic
+     * (random_branch_with_optional_seed below). When unset, behaviour is
+     * the historical random_device-based randomness.
+     */
+    inline auto seed_storage() -> std::optional<std::uint_fast32_t> &
+    {
+        static std::optional<std::uint_fast32_t> seed;
+        return seed;
+    }
+
+    inline auto get_seed() -> std::optional<std::uint_fast32_t>
+    {
+        return seed_storage();
+    }
+
+    /**
+     * Scan argv for `--seed=N`, storing the value if present.
+     *
+     * Unknown args are ignored so this composes with existing per-test argv
+     * (the mode selector of comparison_test / linear_test, the --view-wrap
+     * flags, etc.).
+     */
+    inline auto set_seed_from_argv(int argc, char * argv[]) -> void
+    {
+        const std::string prefix = "--seed=";
+        for (int i = 1; i < argc; ++i) {
+            std::string arg = argv[i];
+            if (arg.starts_with(prefix)) {
+                seed_storage() = static_cast<std::uint_fast32_t>(std::stoul(arg.substr(prefix.size())));
+                return;
+            }
+        }
+        seed_storage() = std::nullopt;
+    }
+
+    /// Build the random branching pair, honouring --seed if set.
+    inline auto random_branch_with_optional_seed(const Problem & p)
+    {
+        if (auto seed = get_seed())
+            return branch_with(variable_order::random(p, *seed), value_order::random_out(*seed + 1));
+        return branch_with(variable_order::random(p), value_order::random_out());
+    }
+
     template <typename SolutionCallback_, typename TraceCallback_>
     auto solve_for_tests_with_callbacks(Problem & p, const std::optional<std::string> & proof_name, const SolutionCallback_ & f, const TraceCallback_ & t) -> void
     {
         solve_with(p,
-            SolveCallbacks{.solution = f, .trace = t, .branch = branch_with(variable_order::random(p), value_order::random_out())},
+            SolveCallbacks{.solution = f, .trace = t, .branch = random_branch_with_optional_seed(p)},
             proof_name ? std::make_optional<ProofOptions>(ProofFileNames{*proof_name}, true, false) : std::nullopt);
     }
 
@@ -261,7 +309,7 @@ namespace gcs::test_innards
         solve_with(p,
             SolveCallbacks{
                 .trace = [](const CurrentState &) -> bool { return false; },
-                .branch = branch_with(variable_order::random(p), value_order::random_out())},
+                .branch = random_branch_with_optional_seed(p)},
             std::make_optional<ProofOptions>(ProofFileNames{proof_name}, true, false));
 
         if (! run_veripb(proof_name + ".opb", proof_name + ".pbp"))
