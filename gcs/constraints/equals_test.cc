@@ -41,9 +41,15 @@ using namespace gcs;
 using namespace gcs::test_innards;
 
 template <typename Constraint_>
-auto run_equals_test(const string & which, bool proofs, variant<int, pair<int, int>> v1_range, variant<int, pair<int, int>> v2_range, const function<auto(int, int, int)->bool> & is_satisfying) -> void
+auto run_equals_test(const string & which, bool proofs, const ViewWrapConfig & view_cfg,
+    variant<int, pair<int, int>> v1_range, variant<int, pair<int, int>> v2_range,
+    const function<auto(int, int, int)->bool> & is_satisfying) -> void
 {
-    visit([&](auto v1, auto v2) { print(cerr, "equals {} {} {} {}", which, v1, v2, proofs ? " with proofs:" : ":"); }, v1_range, v2_range);
+    auto wraps = wraps_for_positions(view_cfg, 2);
+    visit([&](auto v1, auto v2) {
+        print(cerr, "equals {} [{}] {} {} {}", which, view_wrap_config_label(view_cfg), v1, v2, proofs ? " with proofs:" : ":");
+    },
+        v1_range, v2_range);
     cerr << flush;
 
     pair<int, int> v3_range{0, 1};
@@ -52,8 +58,8 @@ auto run_equals_test(const string & which, bool proofs, variant<int, pair<int, i
     println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;
-    auto v1 = visit([&](auto b) { return create_integer_variable_or_constant(p, b); }, v1_range);
-    auto v2 = visit([&](auto b) { return create_integer_variable_or_constant(p, b); }, v2_range);
+    auto v1 = visit([&](auto b) { return create_integer_variable_or_constant_with_view(p, b, wraps.at(0)); }, v1_range);
+    auto v2 = visit([&](auto b) { return create_integer_variable_or_constant_with_view(p, b, wraps.at(1)); }, v2_range);
     auto v3 = p.create_integer_variable(0_i, 1_i);
     if constexpr (is_same_v<Constraint_, Equals>) {
         p.post(Constraint_{v1, v2});
@@ -65,7 +71,7 @@ auto run_equals_test(const string & which, bool proofs, variant<int, pair<int, i
         p.post(Constraint_{v1, v2, v3 == 1_i});
     }
 
-    auto proof_name = proofs ? make_optional("equals_test") : nullopt;
+    auto proof_name = proofs ? make_optional("equals_test_" + view_wrap_config_label(view_cfg)) : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{v1, v2, v3});
 
     check_results(proof_name, expected, actual);
@@ -130,8 +136,20 @@ auto run_no_overlap_equals_test(bool proofs) -> void
     check_results(proof_name, expected, actual);
 }
 
-auto main(int, char *[]) -> int
+auto main(int argc, char * argv[]) -> int
 {
+    auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
+
+    // Single-position config that names a position the constraint doesn't
+    // have collapses to "all bare", which the baseline (no flags) already
+    // covers. Skip with a success exit so ctest sees it as benign.
+    constexpr int n_positions = 2;
+    if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
+        println(cerr, "equals view sweep: position {} out of range for n_positions = {}; skipping",
+            *view_cfg.single_position, n_positions);
+        return EXIT_SUCCESS;
+    }
+
     vector<pair<variant<int, pair<int, int>>, variant<int, pair<int, int>>>> data = {
         {pair{2, 5}, pair{1, 6}},
         {pair{1, 6}, pair{2, 5}},
@@ -153,17 +171,22 @@ auto main(int, char *[]) -> int
     for (int x = 0; x < 10; ++x)
         generate_random_data(rand, data, random_bounds(-10, 10, 5, 15), random_constant(-10, 10));
 
+    // no_overlap_equals_test fixes its own variable construction and isn't
+    // currently part of the view sweep, so only run it for the baseline.
+    bool run_no_overlap = view_wrap_config_is_effectively_bare(view_cfg, n_positions);
+
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
             continue;
-        run_no_overlap_equals_test(proofs);
+        if (run_no_overlap)
+            run_no_overlap_equals_test(proofs);
         for (auto & [r1, r2] : data) {
-            run_equals_test<Equals>("equals", proofs, r1, r2, [](int a, int b, int) { return a == b; });
-            run_equals_test<EqualsIf>("equals if", proofs, r1, r2, [](int a, int b, int f) { return (! f) || (a == b); });
-            run_equals_test<EqualsIff>("equals iff", proofs, r1, r2, [](int a, int b, int f) { return (a == b) == f; });
-            run_equals_test<NotEquals>("not equals", proofs, r1, r2, [](int a, int b, int) { return a != b; });
-            run_equals_test<NotEqualsIf>("not equals if", proofs, r1, r2, [](int a, int b, int f) { return (! f) || (a != b); });
-            run_equals_test<NotEqualsIff>("not equals iff", proofs, r1, r2, [](int a, int b, int f) { return (a != b) == f; });
+            run_equals_test<Equals>("equals", proofs, view_cfg, r1, r2, [](int a, int b, int) { return a == b; });
+            run_equals_test<EqualsIf>("equals if", proofs, view_cfg, r1, r2, [](int a, int b, int f) { return (! f) || (a == b); });
+            run_equals_test<EqualsIff>("equals iff", proofs, view_cfg, r1, r2, [](int a, int b, int f) { return (a == b) == f; });
+            run_equals_test<NotEquals>("not equals", proofs, view_cfg, r1, r2, [](int a, int b, int) { return a != b; });
+            run_equals_test<NotEqualsIf>("not equals if", proofs, view_cfg, r1, r2, [](int a, int b, int f) { return (! f) || (a != b); });
+            run_equals_test<NotEqualsIff>("not equals iff", proofs, view_cfg, r1, r2, [](int a, int b, int f) { return (a != b) == f; });
         }
     }
 

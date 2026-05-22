@@ -186,6 +186,30 @@ if(GCS_BUILD_TESTS)
             COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:element_test> ${mode})
     endforeach()
     add_test(NAME equals_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:equals_test>)
+
+    # View-wrap sweep: feeds the constraint each variable as a ViewOfIntegerVariableID
+    # (offset / negation / both) instead of a bare SimpleIntegerVariableID. The
+    # underlying domain is inverted through the wrap so the visible value set
+    # (and hence the test's predicate / expected set) is unchanged — only the
+    # constraint-side encoding differs. Wrap indices are positions in
+    # all_view_wraps(); index 0 is the bare baseline already covered above and
+    # is skipped here. n_positions = the number of variable arguments the test
+    # wraps; per-position single-variable sweeps land between 0 and n-1.
+    function(add_view_wrap_sweep test_name target n_positions)
+        math(EXPR last_position "${n_positions} - 1")
+        foreach(wrap RANGE 1 18)
+            add_test(NAME ${test_name}_view_w${wrap}_pall
+                COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:${target}>
+                --view-wrap=${wrap} --view-position=all)
+            foreach(pos RANGE 0 ${last_position})
+                add_test(NAME ${test_name}_view_w${wrap}_p${pos}
+                    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:${target}>
+                    --view-wrap=${wrap} --view-position=${pos})
+            endforeach()
+        endforeach()
+    endfunction()
+
+    add_view_wrap_sweep(equals_constraint equals_test 2)
     add_test(NAME in_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:in_test>)
     add_test(NAME increasing_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:increasing_test>)
     add_test(NAME inverse_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:inverse_test>)
