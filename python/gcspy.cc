@@ -28,6 +28,7 @@ using std::cv_status;
 using std::endl;
 using std::exception;
 using std::function;
+using std::move;
 using std::mutex;
 using std::nullopt;
 using std::optional;

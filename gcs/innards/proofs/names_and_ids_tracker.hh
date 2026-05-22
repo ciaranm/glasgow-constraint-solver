@@ -11,6 +11,7 @@
 #include <gcs/reification.hh>
 #include <gcs/variable_condition.hh>
 #include <gcs/variable_id.hh>
+#include <gcs/variant.hh>
 
 #include <memory>
 #include <string>
@@ -133,7 +134,7 @@ namespace gcs::innards
          * representation. Will emit the reification, if it does not already exist. If this
          * is a zero-one variable, returns an actual literal.
          */
-        [[nodiscard]] auto need_pol_item_defining_literal(const IntegerVariableCondition &) -> std::variant<ProofLine, XLiteral>;
+        [[nodiscard]] auto need_pol_item_defining_literal(const IntegerVariableCondition &) -> gcs::variant<ProofLine, XLiteral>;
 
         /**
          * Set things up internally as if the specified variable was a real
@@ -232,14 +233,14 @@ namespace gcs::innards
          * and associated defining constraints.
          */
         auto track_eqvar(SimpleIntegerVariableID, Integer,
-            const std::pair<std::variant<ProofLine, XLiteral>, std::variant<ProofLine, XLiteral>> &) -> void;
+            const std::pair<gcs::variant<ProofLine, XLiteral>, gcs::variant<ProofLine, XLiteral>> &) -> void;
 
         /**
          * Track that a given greater-or-equal variable exists, and has a string name
          * and associated defining constraints.
          */
         auto track_gevar(SimpleIntegerVariableID, Integer,
-            const std::pair<std::variant<ProofLine, XLiteral>, std::variant<ProofLine, XLiteral>> &) -> void;
+            const std::pair<gcs::variant<ProofLine, XLiteral>, gcs::variant<ProofLine, XLiteral>> &) -> void;
 
         /**
          * Track that an at-least-one constraint exists for a given variable.

@@ -28,6 +28,8 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::make_unique;
+using std::move;
 using std::nullopt;
 using std::optional;
 using std::string;

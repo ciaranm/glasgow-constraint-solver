@@ -8,8 +8,8 @@
 using std::move;
 using std::string;
 using std::stringstream;
-using std::variant;
-using std::visit;
+using gcs::variant;
+using gcs::visit;
 
 using namespace gcs;
 using namespace gcs::innards;

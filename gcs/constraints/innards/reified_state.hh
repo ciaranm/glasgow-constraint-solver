@@ -6,6 +6,7 @@
 #include <gcs/innards/state-fwd.hh>
 #include <gcs/reification.hh>
 #include <gcs/variable_condition.hh>
+#include <gcs/variant.hh>
 
 #include <optional>
 #include <variant>
@@ -82,7 +83,7 @@ namespace gcs::innards
         };
     }
 
-    using EvaluatedReificationCondition = std::variant<
+    using EvaluatedReificationCondition = gcs::variant<
         evaluated_reif::MustHold,
         evaluated_reif::MustNotHold,
         evaluated_reif::Undecided,

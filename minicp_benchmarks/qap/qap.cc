@@ -21,6 +21,7 @@ using std::cout;
 using std::endl;
 using std::ifstream;
 using std::make_optional;
+using std::move;
 using std::nullopt;
 using std::to_string;
 using std::vector;

@@ -1,5 +1,6 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INNARDS_PROOFS_PROOF_LINE_FWD_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INNARDS_PROOFS_PROOF_LINE_FWD_HH
+#include <gcs/variant.hh>
 
 #include <variant>
 
@@ -14,7 +15,7 @@ namespace gcs::innards
      *
      * \ingroup Innards
      */
-    using ProofLine = std::variant<ProofLineNumber, ProofLineLabel>;
+    using ProofLine = gcs::variant<ProofLineNumber, ProofLineLabel>;
 }
 
 #endif

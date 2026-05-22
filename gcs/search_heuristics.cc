@@ -5,6 +5,7 @@
 #include <random>
 
 using std::generator;
+using std::move;
 using std::mt19937;
 using std::nullopt;
 using std::optional;

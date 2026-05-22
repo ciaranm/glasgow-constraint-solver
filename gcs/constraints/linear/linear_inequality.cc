@@ -25,13 +25,15 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::make_pair;
+using std::make_unique;
+using std::move;
 using std::nullopt;
 using std::optional;
 using std::pair;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
-using std::variant;
+using gcs::variant;
 using std::vector;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)

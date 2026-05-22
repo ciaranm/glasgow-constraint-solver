@@ -21,6 +21,7 @@
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 #include <format>
 using std::format;
+using std::make_unique;
 #else
 #include <fmt/core.h>
 using fmt::format;

@@ -23,6 +23,7 @@
 using std::cmp_less;
 using std::get;
 using std::make_optional;
+using std::make_unique;
 using std::move;
 using std::string;
 using std::stringstream;

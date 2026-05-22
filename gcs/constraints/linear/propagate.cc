@@ -19,7 +19,7 @@ using std::optional;
 using std::pair;
 using std::string;
 using std::stringstream;
-using std::variant;
+using gcs::variant;
 using std::vector;
 
 using namespace gcs;

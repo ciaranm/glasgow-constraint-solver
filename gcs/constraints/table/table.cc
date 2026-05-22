@@ -26,14 +26,16 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::make_unique;
+using std::move;
 using std::optional;
 using std::string;
 using std::stringstream;
 using std::to_string;
 using std::unique_ptr;
-using std::variant;
+using gcs::variant;
 using std::vector;
-using std::visit;
+using gcs::visit;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::print;

@@ -34,7 +34,7 @@ using std::random_device;
 using std::set;
 using std::tuple;
 using std::uniform_int_distribution;
-using std::variant;
+using gcs::variant;
 using std::vector;
 using std::chrono::duration;
 using std::chrono::steady_clock;

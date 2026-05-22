@@ -27,7 +27,9 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::make_shared;
+using std::make_unique;
 using std::map;
+using std::move;
 using std::optional;
 using std::pair;
 using std::shared_ptr;

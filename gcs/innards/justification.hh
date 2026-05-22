@@ -4,6 +4,7 @@
 #include <gcs/innards/literal.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/reason.hh>
+#include <gcs/variant.hh>
 
 #include <functional>
 #include <variant>
@@ -95,7 +96,7 @@ namespace gcs::innards
      *
      * \ingroup Innards
      */
-    using Justification = std::variant<JustifyUsingRUP, JustifyExplicitlyOnly, JustifyExplicitlyThenRUP, AssertRatherThanJustifying, NoJustificationNeeded>;
+    using Justification = gcs::variant<JustifyUsingRUP, JustifyExplicitlyOnly, JustifyExplicitlyThenRUP, AssertRatherThanJustifying, NoJustificationNeeded>;
 }
 
 #endif

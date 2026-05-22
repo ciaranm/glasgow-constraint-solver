@@ -25,13 +25,14 @@ using std::fstream;
 using std::ios;
 using std::ios_base;
 using std::map;
+using std::move;
 using std::optional;
 using std::ostream;
 using std::pair;
 using std::string;
 using std::stringstream;
 using std::tuple;
-using std::variant;
+using gcs::variant;
 using std::vector;
 
 using namespace gcs;

@@ -6,7 +6,7 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::get;
-using std::holds_alternative;
+using gcs::holds_alternative;
 
 namespace
 {

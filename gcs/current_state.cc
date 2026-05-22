@@ -6,6 +6,7 @@ using namespace gcs::innards;
 
 using std::generator;
 using std::make_optional;
+using std::make_unique;
 using std::move;
 using std::optional;
 using std::string;

@@ -24,7 +24,7 @@ using std::set;
 using std::string;
 using std::tuple;
 using std::uniform_int_distribution;
-using std::variant;
+using gcs::variant;
 using std::vector;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)

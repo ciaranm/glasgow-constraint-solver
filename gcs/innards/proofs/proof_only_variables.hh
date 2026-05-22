@@ -5,6 +5,7 @@
 #include <gcs/innards/proofs/proof_only_variables-fwd.hh>
 #include <gcs/variable_condition.hh>
 #include <gcs/variable_id.hh>
+#include <gcs/variant.hh>
 
 #include <string>
 #include <variant>
@@ -50,9 +51,9 @@ namespace gcs::innards
 
     using ProofVariableCondition = VariableConditionFrom<ProofOnlySimpleIntegerVariableID>;
 
-    using ProofLiteral = std::variant<Literal, ProofVariableCondition>;
+    using ProofLiteral = gcs::variant<Literal, ProofVariableCondition>;
 
-    using ProofLiteralOrFlag = std::variant<ProofLiteral, ProofFlag, ProofBitVariable>;
+    using ProofLiteralOrFlag = gcs::variant<ProofLiteral, ProofFlag, ProofBitVariable>;
 
     /**
      * \brief A Boolean flag that is used inside proofs like a variable, but

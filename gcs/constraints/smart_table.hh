@@ -4,6 +4,9 @@
 #include <gcs/constraint.hh>
 #include <gcs/extensional.hh>
 #include <gcs/variable_id.hh>
+#include <gcs/variant.hh>
+
+using std::move;
 
 namespace gcs
 {
@@ -46,7 +49,7 @@ namespace gcs
         };
     }
 
-    using SmartEntry = std::variant<innards::BinaryEntry, innards::UnaryValueEntry, innards::UnarySetEntry>;
+    using SmartEntry = gcs::variant<innards::BinaryEntry, innards::UnaryValueEntry, innards::UnarySetEntry>;
 
     using SmartTuples = std::vector<std::vector<SmartEntry>>;
 

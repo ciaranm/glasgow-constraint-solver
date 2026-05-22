@@ -3,6 +3,7 @@
 
 #include <gcs/integer.hh>
 #include <gcs/variable_id-fwd.hh>
+#include <gcs/variant.hh>
 
 #include <functional>
 #include <variant>
@@ -86,7 +87,7 @@ namespace gcs
      *
      * \ingroup Core
      */
-    using IntegerVariableID = std::variant<SimpleIntegerVariableID, ViewOfIntegerVariableID, ConstantIntegerVariableID>;
+    using IntegerVariableID = gcs::variant<SimpleIntegerVariableID, ViewOfIntegerVariableID, ConstantIntegerVariableID>;
 
     /**
      * \brief Returns true if the given IntegerVariableID is a constant rather
@@ -101,7 +102,7 @@ namespace gcs
      */
     [[nodiscard]] constexpr inline auto is_constant_variable(const IntegerVariableID & v) -> bool
     {
-        return std::holds_alternative<ConstantIntegerVariableID>(v);
+        return gcs::holds_alternative<ConstantIntegerVariableID>(v);
     }
 
     /**

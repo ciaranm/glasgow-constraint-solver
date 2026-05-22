@@ -11,6 +11,7 @@
 #include <gcs/innards/reason.hh>
 #include <gcs/innards/state-fwd.hh>
 #include <gcs/proof.hh>
+#include <gcs/variant.hh>
 
 #include <map>
 #include <memory>
@@ -34,13 +35,13 @@ namespace gcs::innards
         std::optional<ProofLine> line;
     };
 
-    using ProofRule = std::variant<RUPProofRule, AssertProofRule, ImpliesProofRule>;
+    using ProofRule = gcs::variant<RUPProofRule, AssertProofRule, ImpliesProofRule>;
 
-    using ProofGoal = std::variant<ProofLine, std::string>;
+    using ProofGoal = gcs::variant<ProofLine, std::string>;
 
     inline auto operator<<(std::ostream & s, const ProofGoal & l) -> std::ostream &
     {
-        return std::visit([&](const auto & l) -> std::ostream & { return s << l; }, l);
+        return gcs::visit([&](const auto & l) -> std::ostream & { return s << l; }, l);
     }
 
     class ProofLogger

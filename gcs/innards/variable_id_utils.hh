@@ -2,6 +2,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INNARDS_VARIABLE_ID_UTILS_HH
 
 #include <gcs/variable_id.hh>
+#include <gcs/variant.hh>
 
 #include <concepts>
 #include <string>
@@ -22,7 +23,7 @@ namespace gcs::innards
      *
      * \ingroup Innards
      */
-    using DirectIntegerVariableID = std::variant<SimpleIntegerVariableID, ConstantIntegerVariableID>;
+    using DirectIntegerVariableID = gcs::variant<SimpleIntegerVariableID, ConstantIntegerVariableID>;
 
     /**
      * \brief Either a DirectIntegerVariableID, or one of its more specific types.

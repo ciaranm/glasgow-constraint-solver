@@ -9,6 +9,7 @@
 #include <gcs/innards/reason.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/reification.hh>
+#include <gcs/variant.hh>
 
 #include <util/overloaded.hh>
 
@@ -57,7 +58,7 @@ namespace gcs::innards
      * the cond inference, and the dispatcher decides whether and which
      * literal to infer).
      */
-    using ReificationVerdict = std::variant<
+    using ReificationVerdict = gcs::variant<
         reification_verdict::StillUndecided,
         reification_verdict::MustHold,
         reification_verdict::MustNotHold>;
@@ -109,10 +110,10 @@ namespace gcs::innards
         EnforceMustNotHold_ enforce_constraint_must_not_hold,
         InferCondWhenUndecided_ infer_cond_when_undecided) -> void
     {
-        if (std::holds_alternative<evaluated_reif::Deactivated>(initial_evaluated))
+        if (gcs::holds_alternative<evaluated_reif::Deactivated>(initial_evaluated))
             return;
-        if (std::holds_alternative<evaluated_reif::Undecided>(initial_evaluated)) {
-            const auto & undecided = std::get<evaluated_reif::Undecided>(initial_evaluated);
+        if (gcs::holds_alternative<evaluated_reif::Undecided>(initial_evaluated)) {
+            const auto & undecided = gcs::get<evaluated_reif::Undecided>(initial_evaluated);
             add_trigger_for(triggers, undecided.cond);
         }
 

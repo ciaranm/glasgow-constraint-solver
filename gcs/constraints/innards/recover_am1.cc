@@ -12,7 +12,7 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::function;
-using std::holds_alternative;
+using gcs::holds_alternative;
 using std::is_same_v;
 using std::stringstream;
 using std::vector;

@@ -4,12 +4,13 @@
 #include <gcs/innards/literal.hh>
 #include <gcs/innards/proofs/proof_only_variables.hh>
 #include <gcs/variable_condition.hh>
+#include <gcs/variant.hh>
 
 #include <variant>
 
 namespace gcs::innards
 {
-    using SimpleLiteral = std::variant<VariableConditionFrom<SimpleIntegerVariableID>,
+    using SimpleLiteral = gcs::variant<VariableConditionFrom<SimpleIntegerVariableID>,
         ProofVariableCondition, TrueLiteral, FalseLiteral>;
 
     /**

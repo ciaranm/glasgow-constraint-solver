@@ -3,6 +3,7 @@
 
 #include <gcs/expression.hh>
 #include <gcs/innards/proofs/proof_only_variables.hh>
+#include <gcs/variant.hh>
 
 namespace gcs::innards
 {
@@ -13,7 +14,7 @@ namespace gcs::innards
      *
      * \ingroup Innards
      */
-    using PseudoBooleanTerm = std::variant<ProofLiteral, ProofFlag, IntegerVariableID, ProofOnlySimpleIntegerVariableID, ProofBitVariable>;
+    using PseudoBooleanTerm = gcs::variant<ProofLiteral, ProofFlag, IntegerVariableID, ProofOnlySimpleIntegerVariableID, ProofBitVariable>;
 
     using WPBSum = SumOf<Weighted<PseudoBooleanTerm>>;
 

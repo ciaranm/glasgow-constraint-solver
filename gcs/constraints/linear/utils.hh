@@ -2,6 +2,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_LINEAR_UTILS_HH
 
 #include <gcs/expression.hh>
+#include <gcs/variant.hh>
 #include <ostream>
 
 namespace gcs::innards
@@ -39,7 +40,7 @@ namespace gcs::innards
      *
      * \ingroup Innards
      */
-    using TidiedUpLinear = std::variant<
+    using TidiedUpLinear = gcs::variant<
         SumOf<SimpleIntegerVariableID>,
         SumOf<PositiveOrNegative<SimpleIntegerVariableID>>,
         SumOf<Weighted<SimpleIntegerVariableID>>>;

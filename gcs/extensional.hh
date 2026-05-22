@@ -2,6 +2,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_EXTENSIONAL_HH
 
 #include <gcs/integer.hh>
+#include <gcs/variant.hh>
 
 #include <memory>
 #include <variant>
@@ -54,7 +55,7 @@ namespace gcs
      * \sa gcs::Table
      * \ingroup Extensional
      */
-    using IntegerOrWildcard = std::variant<Integer, Wildcard>;
+    using IntegerOrWildcard = gcs::variant<Integer, Wildcard>;
 
     /**
      * \brief Tuples that can contain wildcards.
@@ -83,7 +84,7 @@ namespace gcs
      * \sa gcs::Table
      * \ingroup Extensional
      */
-    using ExtensionalTuples = std::variant<SimpleTuples, SharedSimpleTuples,
+    using ExtensionalTuples = gcs::variant<SimpleTuples, SharedSimpleTuples,
         WildcardTuples, SharedWildcardTuples>;
 }
 

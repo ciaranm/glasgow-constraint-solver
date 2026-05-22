@@ -2,7 +2,7 @@
 
 #include <util/overloaded.hh>
 
-using std::variant;
+using gcs::variant;
 
 using namespace gcs;
 using namespace gcs::innards;

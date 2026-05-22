@@ -21,7 +21,8 @@
 using namespace gcs;
 using namespace gcs::innards;
 
-using std::holds_alternative;
+using gcs::holds_alternative;
+using std::make_unique;
 using std::optional;
 using std::pair;
 using std::string;

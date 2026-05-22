@@ -4,6 +4,7 @@
 #include <gcs/integer.hh>
 #include <gcs/variable_condition.hh>
 #include <gcs/variable_id.hh>
+#include <gcs/variant.hh>
 
 #include <gch/small_vector.hpp>
 
@@ -50,7 +51,7 @@ namespace gcs::innards
      *
      * \ingroup Literals
      */
-    using Literal = std::variant<IntegerVariableCondition, TrueLiteral, FalseLiteral>;
+    using Literal = gcs::variant<IntegerVariableCondition, TrueLiteral, FalseLiteral>;
 
     [[nodiscard]] auto operator!(const TrueLiteral &) -> FalseLiteral;
 

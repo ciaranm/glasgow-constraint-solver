@@ -14,7 +14,7 @@ struct overloaded : Ts_...
     template <typename... Args_>
     auto visit(Args_ &&... a) -> decltype(auto)
     {
-        return std::visit(*this, std::forward<Args_>(a)...);
+        return gcs::visit(*this, std::forward<Args_>(a)...);
     }
 };
 

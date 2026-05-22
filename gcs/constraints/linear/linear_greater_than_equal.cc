@@ -3,6 +3,8 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::move;
+
 namespace
 {
     auto negate(WeightedSum & coeff_vars) -> WeightedSum &

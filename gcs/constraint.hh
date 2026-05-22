@@ -4,6 +4,7 @@
 #include <gcs/innards/proofs/proof_model-fwd.hh>
 #include <gcs/innards/propagators-fwd.hh>
 #include <gcs/innards/state-fwd.hh>
+#include <gcs/variant.hh>
 
 #include <memory>
 #include <string>
@@ -41,7 +42,7 @@ namespace gcs
         [[nodiscard]] auto as_string() const -> std::string { return name; }
     };
 
-    using ConstraintName = std::variant<CurrentlyUnnamedConstraint, NumberedConstraint, NamedConstraint>;
+    using ConstraintName = gcs::variant<CurrentlyUnnamedConstraint, NumberedConstraint, NamedConstraint>;
 
     [[nodiscard]] auto as_string(const ConstraintName &) -> std::string;
 
