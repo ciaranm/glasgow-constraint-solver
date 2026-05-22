@@ -4,6 +4,7 @@
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
+#include <cstdint>
 #include <functional>
 
 namespace gcs
@@ -164,7 +165,7 @@ namespace gcs
         [[nodiscard]] auto with_largest_value(std::vector<IntegerVariableID>) -> BranchVariableSelector;
 
         /**
-         * Branch on a random non-assigned variable.
+         * Branch on a random non-assigned variable, seeded non-deterministically.
          *
          * \ingroup SearchHeuristics
          * \sa gcs::branch_with()
@@ -172,12 +173,30 @@ namespace gcs
         [[nodiscard]] auto random(const Problem &) -> BranchVariableSelector;
 
         /**
-         * Branch on a random non-assigned variable.
+         * Branch on a random non-assigned variable, seeded non-deterministically.
          *
          * \ingroup SearchHeuristics
          * \sa gcs::branch_with()
          */
         [[nodiscard]] auto random(std::vector<IntegerVariableID>) -> BranchVariableSelector;
+
+        /**
+         * Branch on a random non-assigned variable, with an explicit seed for
+         * reproducible debugging.
+         *
+         * \ingroup SearchHeuristics
+         * \sa gcs::branch_with()
+         */
+        [[nodiscard]] auto random(const Problem &, std::uint_fast32_t seed) -> BranchVariableSelector;
+
+        /**
+         * Branch on a random non-assigned variable, with an explicit seed for
+         * reproducible debugging.
+         *
+         * \ingroup SearchHeuristics
+         * \sa gcs::branch_with()
+         */
+        [[nodiscard]] auto random(std::vector<IntegerVariableID>, std::uint_fast32_t seed) -> BranchVariableSelector;
     }
 
     /**
@@ -251,11 +270,27 @@ namespace gcs
         [[nodiscard]] auto split_random() -> BranchValueGenerator;
 
         /**
+         * Split domains in half, taking a random half first, with an explicit
+         * seed for reproducible debugging.
+         *
+         * \ingroup SearchHeuristics
+         */
+        [[nodiscard]] auto split_random(std::uint_fast32_t seed) -> BranchValueGenerator;
+
+        /**
          * Iterate over values in a random order.
          *
          * \ingroup SearchHeuristics
          */
         [[nodiscard]] auto random() -> BranchValueGenerator;
+
+        /**
+         * Iterate over values in a random order, with an explicit seed for
+         * reproducible debugging.
+         *
+         * \ingroup SearchHeuristics
+         */
+        [[nodiscard]] auto random(std::uint_fast32_t seed) -> BranchValueGenerator;
 
         /**
          * Reject a random value, then accept it. This is a silly heuristic for solving
@@ -264,6 +299,14 @@ namespace gcs
          * \ingroup SearchHeuristics
          */
         [[nodiscard]] auto random_out() -> BranchValueGenerator;
+
+        /**
+         * Reject a random value, then accept it, with an explicit seed for
+         * reproducible debugging.
+         *
+         * \ingroup SearchHeuristics
+         */
+        [[nodiscard]] auto random_out(std::uint_fast32_t seed) -> BranchValueGenerator;
 
         /**
          * Accept then reject the median value in the domain.

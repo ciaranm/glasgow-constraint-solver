@@ -2,17 +2,41 @@
 #include <gcs/search_heuristics.hh>
 
 #include <algorithm>
+#include <memory>
 #include <random>
 
 using std::generator;
+using std::make_shared;
 using std::mt19937;
 using std::nullopt;
 using std::optional;
 using std::random_device;
+using std::shared_ptr;
 using std::tuple;
+using std::uint_fast32_t;
 using std::uniform_int_distribution;
 using std::vector;
 using std::ranges::shuffle;
+
+namespace
+{
+    // Random heuristics share their mt19937 across branching steps via a
+    // shared_ptr captured into the closure: the closure is held by-value in
+    // a std::function and may be copied, so the shared_ptr is the only way
+    // to keep all copies pointing at the same RNG state. The unseeded
+    // variants below pull a single seed from random_device once at
+    // construction; the seeded variants take the seed from the caller.
+    auto make_shared_rng(uint_fast32_t seed) -> shared_ptr<mt19937>
+    {
+        return make_shared<mt19937>(seed);
+    }
+
+    auto make_shared_rng() -> shared_ptr<mt19937>
+    {
+        random_device rd;
+        return make_shared_rng(rd());
+    }
+}
 
 using namespace gcs;
 
@@ -50,6 +74,26 @@ auto gcs::branch_sequence(BranchCallback a, BranchCallback b) -> BranchCallback
     };
 }
 
+namespace
+{
+    auto random_variable_selector(vector<IntegerVariableID> vars, shared_ptr<mt19937> rand) -> BranchVariableSelector
+    {
+        return [vars = move(vars), rand = move(rand)](const CurrentState & state,
+                   const innards::Propagators &) -> optional<IntegerVariableID> {
+            vector<IntegerVariableID> feasible;
+            for (auto & var : vars)
+                if (state.domain_size(var) >= 2_i)
+                    feasible.push_back(var);
+            if (feasible.empty())
+                return nullopt;
+            else {
+                uniform_int_distribution<size_t> dist(0, feasible.size() - 1);
+                return feasible[dist(*rand)];
+            }
+        };
+    }
+}
+
 auto gcs::variable_order::random(const Problem & problem) -> BranchVariableSelector
 {
     return variable_order::random(problem.all_normal_variables());
@@ -57,21 +101,17 @@ auto gcs::variable_order::random(const Problem & problem) -> BranchVariableSelec
 
 auto gcs::variable_order::random(vector<IntegerVariableID> vars) -> BranchVariableSelector
 {
-    random_device rand_dev;
-    mt19937 r(rand_dev());
-    return [vars = move(vars), rand = move(r)](const CurrentState & state,
-               const innards::Propagators &) mutable -> optional<IntegerVariableID> {
-        vector<IntegerVariableID> feasible;
-        for (auto & var : vars)
-            if (state.domain_size(var) >= 2_i)
-                feasible.push_back(var);
-        if (feasible.empty())
-            return nullopt;
-        else {
-            uniform_int_distribution<size_t> dist(0, feasible.size() - 1);
-            return feasible[dist(rand)];
-        }
-    };
+    return random_variable_selector(move(vars), make_shared_rng());
+}
+
+auto gcs::variable_order::random(const Problem & problem, uint_fast32_t seed) -> BranchVariableSelector
+{
+    return variable_order::random(problem.all_normal_variables(), seed);
+}
+
+auto gcs::variable_order::random(vector<IntegerVariableID> vars, uint_fast32_t seed) -> BranchVariableSelector
+{
+    return random_variable_selector(move(vars), make_shared_rng(seed));
 }
 
 auto gcs::variable_order::in_order_of(const Problem & problem, VariableComparator comp) -> BranchVariableSelector
@@ -145,41 +185,56 @@ auto gcs::variable_order::with_smallest_value(vector<IntegerVariableID> vars) ->
     });
 }
 
+namespace
+{
+    auto random_value_generator(shared_ptr<mt19937> rand) -> BranchValueGenerator
+    {
+        return [rand = move(rand)](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {
+            return [](shared_ptr<mt19937> rand, const CurrentState & s, IntegerVariableID var) -> generator<IntegerVariableCondition> {
+                vector<Integer> values;
+                for (auto v : s.each_value(var))
+                    values.push_back(v);
+                shuffle(values, *rand);
+                for (auto v : values)
+                    co_yield var == v;
+            }(rand, s, var);
+        };
+    }
+
+    auto random_out_value_generator(shared_ptr<mt19937> rand) -> BranchValueGenerator
+    {
+        return [rand = move(rand)](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {
+            return [](shared_ptr<mt19937> rand, const CurrentState & s, IntegerVariableID var) -> generator<IntegerVariableCondition> {
+                vector<Integer> values;
+                for (auto v : s.each_value(var))
+                    values.push_back(v);
+                uniform_int_distribution<size_t> dist(0, values.size() - 1);
+                auto val = values.at(dist(*rand));
+                co_yield var != val;
+                co_yield var == val;
+            }(rand, s, var);
+        };
+    }
+}
+
 auto gcs::value_order::random() -> BranchValueGenerator
 {
-    return [](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {
-        return [](const CurrentState & s, IntegerVariableID var) -> generator<IntegerVariableCondition> {
-            vector<Integer> values;
-            for (auto v : s.each_value(var))
-                values.push_back(v);
+    return random_value_generator(make_shared_rng());
+}
 
-            random_device rand_dev;
-            mt19937 r(rand_dev());
-            shuffle(values, r);
-
-            for (auto v : values)
-                co_yield var == v;
-        }(s, var);
-    };
+auto gcs::value_order::random(uint_fast32_t seed) -> BranchValueGenerator
+{
+    return random_value_generator(make_shared_rng(seed));
 }
 
 auto gcs::value_order::random_out() -> BranchValueGenerator
 {
-    return [](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {
-        return [](const CurrentState & s, IntegerVariableID var) -> generator<IntegerVariableCondition> {
-            vector<Integer> values;
-            for (auto v : s.each_value(var))
-                values.push_back(v);
+    return random_out_value_generator(make_shared_rng());
+}
 
-            random_device rand_dev;
-            mt19937 r(rand_dev());
-            uniform_int_distribution<size_t> dist(0, values.size() - 1);
-            auto val = values.at(dist(r));
-
-            co_yield var != val;
-            co_yield var == val;
-        }(s, var);
-    };
+auto gcs::value_order::random_out(uint_fast32_t seed) -> BranchValueGenerator
+{
+    return random_out_value_generator(make_shared_rng(seed));
 }
 
 auto gcs::value_order::smallest_in() -> BranchValueGenerator
@@ -238,24 +293,35 @@ auto gcs::value_order::split_largest_first() -> BranchValueGenerator
     };
 }
 
+namespace
+{
+    auto split_random_value_generator(shared_ptr<mt19937> rand) -> BranchValueGenerator
+    {
+        return [rand = move(rand)](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {
+            return [](shared_ptr<mt19937> rand, const CurrentState & s, IntegerVariableID var) -> generator<IntegerVariableCondition> {
+                auto mid = s.domain_size(var) / 2_i;
+                auto v = *(s.each_value(var) | std::ranges::views::drop((mid - 1_i).as_index())).begin();
+                if (uniform_int_distribution(0, 1)(*rand) == 0) {
+                    co_yield var > v;
+                    co_yield var <= v;
+                }
+                else {
+                    co_yield var > v;
+                    co_yield var <= v;
+                }
+            }(rand, s, var);
+        };
+    }
+}
+
 auto gcs::value_order::split_random() -> BranchValueGenerator
 {
-    return [](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {
-        return [](const CurrentState & s, IntegerVariableID var) -> generator<IntegerVariableCondition> {
-            auto mid = s.domain_size(var) / 2_i;
-            random_device rand_dev;
-            mt19937 r(rand_dev());
-            auto v = *(s.each_value(var) | std::ranges::views::drop((mid - 1_i).as_index())).begin();
-            if (uniform_int_distribution(0, 1)(r) == 0) {
-                co_yield var > v;
-                co_yield var <= v;
-            }
-            else {
-                co_yield var > v;
-                co_yield var <= v;
-            }
-        }(s, var);
-    };
+    return split_random_value_generator(make_shared_rng());
+}
+
+auto gcs::value_order::split_random(uint_fast32_t seed) -> BranchValueGenerator
+{
+    return split_random_value_generator(make_shared_rng(seed));
 }
 
 auto gcs::value_order::largest_in() -> BranchValueGenerator
