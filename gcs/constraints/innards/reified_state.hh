@@ -8,7 +8,7 @@
 #include <gcs/variable_condition.hh>
 
 #include <optional>
-#include <variant>
+#include <boost/variant2/variant.hpp>
 
 namespace gcs::innards
 {
@@ -82,7 +82,7 @@ namespace gcs::innards
         };
     }
 
-    using EvaluatedReificationCondition = std::variant<
+    using EvaluatedReificationCondition = boost::variant2::variant<
         evaluated_reif::MustHold,
         evaluated_reif::MustNotHold,
         evaluated_reif::Undecided,

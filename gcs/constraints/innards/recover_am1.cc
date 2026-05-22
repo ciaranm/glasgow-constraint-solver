@@ -12,7 +12,7 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::function;
-using std::holds_alternative;
+using boost::variant2::holds_alternative;
 using std::is_same_v;
 using std::stringstream;
 using std::vector;

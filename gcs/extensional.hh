@@ -4,7 +4,7 @@
 #include <gcs/integer.hh>
 
 #include <memory>
-#include <variant>
+#include <boost/variant2/variant.hpp>
 #include <vector>
 
 namespace gcs
@@ -54,7 +54,7 @@ namespace gcs
      * \sa gcs::Table
      * \ingroup Extensional
      */
-    using IntegerOrWildcard = std::variant<Integer, Wildcard>;
+    using IntegerOrWildcard = boost::variant2::variant<Integer, Wildcard>;
 
     /**
      * \brief Tuples that can contain wildcards.
@@ -83,7 +83,7 @@ namespace gcs
      * \sa gcs::Table
      * \ingroup Extensional
      */
-    using ExtensionalTuples = std::variant<SimpleTuples, SharedSimpleTuples,
+    using ExtensionalTuples = boost::variant2::variant<SimpleTuples, SharedSimpleTuples,
         WildcardTuples, SharedWildcardTuples>;
 }
 

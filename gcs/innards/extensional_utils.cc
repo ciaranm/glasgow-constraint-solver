@@ -4,7 +4,7 @@
 #include <gcs/innards/state.hh>
 
 using std::vector;
-using std::visit;
+using boost::variant2::visit;
 
 using namespace gcs;
 using namespace gcs::innards;

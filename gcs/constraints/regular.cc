@@ -31,6 +31,7 @@ using namespace gcs::innards;
 using std::any_cast;
 using std::cmp_less;
 using std::ios;
+using std::make_unique;
 using std::move;
 using std::set;
 using std::string;

@@ -34,7 +34,7 @@ namespace gcs::innards
 
     inline auto operator<<(std::ostream & s, const ProofLine & l) -> std::ostream &
     {
-        return std::visit([&](const auto & l) -> std::ostream & { return s << l; }, l);
+        return boost::variant2::visit([&](const auto & l) -> std::ostream & { return s << l; }, l);
     }
 }
 

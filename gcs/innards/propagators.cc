@@ -24,7 +24,7 @@ using std::string;
 using std::swap;
 using std::to_underlying;
 using std::vector;
-using std::visit;
+using boost::variant2::visit;
 
 namespace
 {

@@ -16,6 +16,7 @@
 #include <fmt/ostream.h>
 #endif
 
+using std::make_unique;
 using std::min;
 using std::move;
 using std::string;

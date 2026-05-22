@@ -49,9 +49,9 @@ using std::pair;
 using std::string;
 using std::stringstream;
 using std::to_string;
-using std::variant;
+using boost::variant2::variant;
 using std::vector;
-using std::visit;
+using boost::variant2::visit;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::format;

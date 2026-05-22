@@ -7,7 +7,7 @@
 
 #include <memory>
 #include <string>
-#include <variant>
+#include <boost/variant2/variant.hpp>
 #include <version>
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
@@ -41,7 +41,7 @@ namespace gcs
         [[nodiscard]] auto as_string() const -> std::string { return name; }
     };
 
-    using ConstraintName = std::variant<CurrentlyUnnamedConstraint, NumberedConstraint, NamedConstraint>;
+    using ConstraintName = boost::variant2::variant<CurrentlyUnnamedConstraint, NumberedConstraint, NamedConstraint>;
 
     [[nodiscard]] auto as_string(const ConstraintName &) -> std::string;
 

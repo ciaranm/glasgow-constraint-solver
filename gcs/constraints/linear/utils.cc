@@ -23,7 +23,7 @@ using std::ranges::all_of;
 using std::ranges::sort;
 using std::string;
 using std::stringstream;
-using std::variant;
+using boost::variant2::variant;
 
 auto gcs::innards::tidy_up_linear(const WeightedSum & coeff_vars) -> pair<TidiedUpLinear, Integer>
 {

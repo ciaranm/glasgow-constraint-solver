@@ -6,7 +6,7 @@
 #include <gcs/innards/reason.hh>
 
 #include <functional>
-#include <variant>
+#include <boost/variant2/variant.hpp>
 
 namespace gcs::innards
 {
@@ -95,7 +95,7 @@ namespace gcs::innards
      *
      * \ingroup Innards
      */
-    using Justification = std::variant<JustifyUsingRUP, JustifyExplicitlyOnly, JustifyExplicitlyThenRUP, AssertRatherThanJustifying, NoJustificationNeeded>;
+    using Justification = boost::variant2::variant<JustifyUsingRUP, JustifyExplicitlyOnly, JustifyExplicitlyThenRUP, AssertRatherThanJustifying, NoJustificationNeeded>;
 }
 
 #endif

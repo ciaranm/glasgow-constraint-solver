@@ -35,6 +35,7 @@ using namespace gcs::innards;
 using std::function;
 using std::max;
 using std::min;
+using std::move;
 using std::optional;
 using std::string;
 using std::stringstream;

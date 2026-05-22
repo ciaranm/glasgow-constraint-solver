@@ -3,7 +3,7 @@
 
 #include <gcs/variable_condition.hh>
 
-#include <variant>
+#include <boost/variant2/variant.hpp>
 
 namespace gcs
 {
@@ -33,7 +33,7 @@ namespace gcs
         };
     }
 
-    using ReificationCondition = std::variant<
+    using ReificationCondition = boost::variant2::variant<
         reif::MustHold,
         reif::MustNotHold,
         reif::If,

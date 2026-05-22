@@ -3,13 +3,13 @@
 
 #include <gcs/variable_id-fwd.hh>
 
-#include <variant>
+#include <boost/variant2/variant.hpp>
 
 namespace gcs::innards
 {
     struct ProofOnlySimpleIntegerVariableID;
 
-    using SimpleOrProofOnlyIntegerVariableID = std::variant<SimpleIntegerVariableID, ProofOnlySimpleIntegerVariableID>;
+    using SimpleOrProofOnlyIntegerVariableID = boost::variant2::variant<SimpleIntegerVariableID, ProofOnlySimpleIntegerVariableID>;
 
     struct ProofFlag;
 }

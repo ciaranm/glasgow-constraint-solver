@@ -15,6 +15,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <boost/variant2/variant.hpp>
 
 namespace gcs::innards
 {
@@ -34,13 +35,13 @@ namespace gcs::innards
         std::optional<ProofLine> line;
     };
 
-    using ProofRule = std::variant<RUPProofRule, AssertProofRule, ImpliesProofRule>;
+    using ProofRule = boost::variant2::variant<RUPProofRule, AssertProofRule, ImpliesProofRule>;
 
-    using ProofGoal = std::variant<ProofLine, std::string>;
+    using ProofGoal = boost::variant2::variant<ProofLine, std::string>;
 
     inline auto operator<<(std::ostream & s, const ProofGoal & l) -> std::ostream &
     {
-        return std::visit([&](const auto & l) -> std::ostream & { return s << l; }, l);
+        return boost::variant2::visit([&](const auto & l) -> std::ostream & { return s << l; }, l);
     }
 
     class ProofLogger

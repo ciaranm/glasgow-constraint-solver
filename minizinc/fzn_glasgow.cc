@@ -48,6 +48,7 @@ using std::flush;
 using std::function;
 using std::ifstream;
 using std::list;
+using std::move;
 using std::mutex;
 using std::nullopt;
 using std::optional;

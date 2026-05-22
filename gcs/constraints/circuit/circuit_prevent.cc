@@ -17,6 +17,7 @@ using namespace gcs::innards::circuit;
 
 using std::cmp_less;
 using std::list;
+using std::make_unique;
 using std::map;
 using std::size_t;
 using std::stringstream;

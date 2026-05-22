@@ -15,7 +15,7 @@
 #include <optional>
 #include <sstream>
 #include <utility>
-#include <variant>
+#include <boost/variant2/variant.hpp>
 #include <version>
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
@@ -29,6 +29,8 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::make_shared;
+using std::make_unique;
+using std::move;
 using std::nullopt;
 using std::optional;
 using std::pair;
@@ -37,9 +39,9 @@ using std::size_t;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
-using std::variant;
+using boost::variant2::variant;
 using std::vector;
-using std::visit;
+using boost::variant2::visit;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::print;

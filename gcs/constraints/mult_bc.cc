@@ -128,9 +128,9 @@ namespace
     {
         auto rup_hints = vector<ProofLine>{};
         for (const auto & lit : lits) {
-            if (const auto * p_lit = std::get_if<ProofLiteral>(&lit)) {
-                if (const auto * l_lit = std::get_if<Literal>(p_lit)) {
-                    if (const auto * cond = std::get_if<IntegerVariableCondition>(l_lit)) {
+            if (const auto * p_lit = boost::variant2::get_if<ProofLiteral>(&lit)) {
+                if (const auto * l_lit = boost::variant2::get_if<Literal>(p_lit)) {
+                    if (const auto * cond = boost::variant2::get_if<IntegerVariableCondition>(l_lit)) {
                         switch (cond->op) {
                         case VariableConditionOperator::Equal:
                             rup_hints.emplace_back(*get_def_line_for_lit(logger, cond->var >= cond->value));
@@ -164,8 +164,8 @@ namespace
 
     SimpleIntegerVariableID require_simple_iv(const PseudoBooleanTerm & var)
     {
-        if (auto iv = std::get_if<IntegerVariableID>(&var)) {
-            if (auto siv = std::get_if<SimpleIntegerVariableID>(iv)) {
+        if (auto iv = boost::variant2::get_if<IntegerVariableID>(&var)) {
+            if (auto siv = boost::variant2::get_if<SimpleIntegerVariableID>(iv)) {
                 return *siv;
             }
             else
@@ -177,11 +177,11 @@ namespace
 
     SimpleOrProofOnlyIntegerVariableID require_simple_or_po_iv(const PseudoBooleanTerm & var)
     {
-        if (auto iv1 = std::get_if<ProofOnlySimpleIntegerVariableID>(&var)) {
+        if (auto iv1 = boost::variant2::get_if<ProofOnlySimpleIntegerVariableID>(&var)) {
             return *iv1;
         }
-        else if (auto iv2 = std::get_if<IntegerVariableID>(&var)) {
-            if (auto siv = std::get_if<SimpleIntegerVariableID>(iv2)) {
+        else if (auto iv2 = boost::variant2::get_if<IntegerVariableID>(&var)) {
+            if (auto siv = boost::variant2::get_if<SimpleIntegerVariableID>(iv2)) {
                 return *siv;
             }
             else

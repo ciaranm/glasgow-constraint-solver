@@ -25,14 +25,14 @@
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 #include <print>
-#include <variant>
+#include <boost/variant2/variant.hpp>
 
 template <typename... Ts_>
-struct std::formatter<std::variant<Ts_...>> : std::formatter<std::string> {
+struct std::formatter<boost::variant2::variant<Ts_...>> : std::formatter<std::string> {
     template <typename FormatContext_>
-    auto format(const std::variant<Ts_...> & v, FormatContext_ & ctx) const
+    auto format(const boost::variant2::variant<Ts_...> & v, FormatContext_ & ctx) const
     {
-        return std::visit(
+        return boost::variant2::visit(
             [&](const auto & val) {
                 return std::formatter<std::string>::format(std::format("{}", val), ctx);
             },
@@ -93,11 +93,11 @@ namespace gcs::test_innards
 
     template <typename ResultsSet_, typename IsSatisfying_, typename... Accumulated_, typename... RestOfArgs_>
     auto generate_expected(ResultsSet_ & expected, IsSatisfying_ is_satisfying, const std::tuple<Accumulated_...> & acc,
-        std::variant<int, std::pair<int, int>> range_or_const_arg, RestOfArgs_... rest_of_args) -> void;
+        boost::variant2::variant<int, std::pair<int, int>> range_or_const_arg, RestOfArgs_... rest_of_args) -> void;
 
     template <typename ResultsSet_, typename IsSatisfying_, typename... Accumulated_, typename... RestOfArgs_>
     auto generate_expected(ResultsSet_ & expected, IsSatisfying_ is_satisfying, const std::tuple<Accumulated_...> & acc,
-        const std::vector<std::variant<int, std::pair<int, int>>> & range_arg_vec, RestOfArgs_... rest_of_args) -> void;
+        const std::vector<boost::variant2::variant<int, std::pair<int, int>>> & range_arg_vec, RestOfArgs_... rest_of_args) -> void;
 
     template <typename ResultsSet_, typename IsSatisfying_, typename... Accumulated_, typename... RestOfArgs_>
     auto generate_expected(ResultsSet_ & expected, IsSatisfying_ is_satisfying, const std::tuple<Accumulated_...> & acc,
@@ -124,9 +124,9 @@ namespace gcs::test_innards
 
     template <typename ResultsSet_, typename IsSatisfying_, typename... Accumulated_, typename... RestOfArgs_>
     auto generate_expected(ResultsSet_ & expected, IsSatisfying_ is_satisfying, const std::tuple<Accumulated_...> & acc,
-        std::variant<int, std::pair<int, int>> range_or_const_arg, RestOfArgs_... rest_of_args) -> void
+        boost::variant2::variant<int, std::pair<int, int>> range_or_const_arg, RestOfArgs_... rest_of_args) -> void
     {
-        std::visit([&](auto arg) { generate_expected(expected, is_satisfying, acc, arg, rest_of_args...); }, range_or_const_arg);
+        boost::variant2::visit([&](auto arg) { generate_expected(expected, is_satisfying, acc, arg, rest_of_args...); }, range_or_const_arg);
     }
 
     template <typename ResultsSet_, typename IsSatisfying_, typename... Accumulated_, typename... RestOfArgs_>
@@ -179,7 +179,7 @@ namespace gcs::test_innards
 
     template <typename ResultsSet_, typename IsSatisfying_, typename... Accumulated_, typename... RestOfArgs_>
     auto generate_expected(ResultsSet_ & expected, IsSatisfying_ is_satisfying, const std::tuple<Accumulated_...> & acc,
-        const std::vector<std::variant<int, std::pair<int, int>>> & range_arg_vec, RestOfArgs_... rest_of_args) -> void
+        const std::vector<boost::variant2::variant<int, std::pair<int, int>>> & range_arg_vec, RestOfArgs_... rest_of_args) -> void
     {
         std::function<auto(std::size_t, std::vector<int>)->void> build = [&](std::size_t pos, std::vector<int> sol) -> void {
             if (pos == range_arg_vec.size()) {
@@ -521,12 +521,12 @@ namespace gcs::test_innards
         std::uniform_int_distribution<int> choice{0, 2};
         if (choice(rand) == 0) {
             std::uniform_int_distribution<int> const_dist{bounds.lower_min, bounds.lower_max + bounds.add_max};
-            return std::variant<int, std::pair<int, int>>{const_dist(rand)};
+            return boost::variant2::variant<int, std::pair<int, int>>{const_dist(rand)};
         }
         std::uniform_int_distribution<int> lower_dist{bounds.lower_min, bounds.lower_max}, add_dist{bounds.add_min, bounds.add_max};
         auto lower = lower_dist(rand);
         auto upper = lower + add_dist(rand);
-        return std::variant<int, std::pair<int, int>>{std::pair{lower, upper}};
+        return boost::variant2::variant<int, std::pair<int, int>>{std::pair{lower, upper}};
     }
 
     template <typename Random_, typename Item1_, typename Item2_>

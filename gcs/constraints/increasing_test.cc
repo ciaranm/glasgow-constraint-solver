@@ -9,7 +9,7 @@
 #include <set>
 #include <tuple>
 #include <utility>
-#include <variant>
+#include <boost/variant2/variant.hpp>
 #include <vector>
 #include <version>
 
@@ -31,7 +31,7 @@ using std::random_device;
 using std::set;
 using std::tuple;
 using std::uniform_int_distribution;
-using std::variant;
+using boost::variant2::variant;
 using std::vector;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)

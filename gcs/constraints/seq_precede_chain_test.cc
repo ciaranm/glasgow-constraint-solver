@@ -12,7 +12,7 @@
 #include <set>
 #include <tuple>
 #include <utility>
-#include <variant>
+#include <boost/variant2/variant.hpp>
 #include <vector>
 #include <version>
 
@@ -34,7 +34,7 @@ using std::random_device;
 using std::set;
 using std::tuple;
 using std::uniform_int_distribution;
-using std::variant;
+using boost::variant2::variant;
 using std::vector;
 using std::chrono::duration;
 using std::chrono::steady_clock;

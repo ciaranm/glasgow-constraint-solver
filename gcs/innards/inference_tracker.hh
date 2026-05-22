@@ -100,8 +100,8 @@ namespace gcs::innards
             // shared scaffolding. Without this, each infer() would enter and exit
             // its own temporary level, wiping the scaffolding before subsequent
             // inferences can use it.
-            if (logger && std::holds_alternative<JustifyExplicitlyThenRUP>(why)) {
-                const auto & j = std::get<JustifyExplicitlyThenRUP>(why);
+            if (logger && boost::variant2::holds_alternative<JustifyExplicitlyThenRUP>(why)) {
+                const auto & j = boost::variant2::get<JustifyExplicitlyThenRUP>(why);
                 auto t = logger->temporary_proof_level();
                 j.add_proof_steps(reason);
                 for (const auto & lit : lits)

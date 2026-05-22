@@ -137,6 +137,33 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(gch_small_vector)
 
+# Pilot branch dependency: Boost.Variant2 replaces std::variant for benchmarking
+# the never-valueless / dispatch overhead win. Boost.Variant2 is header-only and
+# transitively needs Boost.Config, Boost.Assert and Boost.Mp11 (also header-only).
+# Each lives in its own repo on github.com/boostorg; declare deps before variant2
+# so the Boost:: alias targets exist by the time variant2's CMakeLists references them.
+FetchContent_Declare(
+        boost_config
+        GIT_REPOSITORY https://github.com/boostorg/config.git
+        GIT_TAG boost-1.91.0
+)
+FetchContent_Declare(
+        boost_assert
+        GIT_REPOSITORY https://github.com/boostorg/assert.git
+        GIT_TAG boost-1.91.0
+)
+FetchContent_Declare(
+        boost_mp11
+        GIT_REPOSITORY https://github.com/boostorg/mp11.git
+        GIT_TAG boost-1.91.0
+)
+FetchContent_Declare(
+        boost_variant2
+        GIT_REPOSITORY https://github.com/boostorg/variant2.git
+        GIT_TAG boost-1.91.0
+)
+FetchContent_MakeAvailable(boost_config boost_assert boost_mp11 boost_variant2)
+
 add_library(gcs_fmt INTERFACE)
 
 try_compile(GCS_COMPILER_HAS_FORMAT ${CMAKE_CURRENT_BINARY_DIR}/cmake_compile_tests ${CMAKE_CURRENT_SOURCE_DIR}/cmake_compile_tests/has_format.cc)

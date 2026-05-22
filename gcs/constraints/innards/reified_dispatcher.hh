@@ -14,7 +14,7 @@
 
 #include <string>
 #include <utility>
-#include <variant>
+#include <boost/variant2/variant.hpp>
 
 namespace gcs::innards
 {
@@ -57,7 +57,7 @@ namespace gcs::innards
      * the cond inference, and the dispatcher decides whether and which
      * literal to infer).
      */
-    using ReificationVerdict = std::variant<
+    using ReificationVerdict = boost::variant2::variant<
         reification_verdict::StillUndecided,
         reification_verdict::MustHold,
         reification_verdict::MustNotHold>;
@@ -109,10 +109,10 @@ namespace gcs::innards
         EnforceMustNotHold_ enforce_constraint_must_not_hold,
         InferCondWhenUndecided_ infer_cond_when_undecided) -> void
     {
-        if (std::holds_alternative<evaluated_reif::Deactivated>(initial_evaluated))
+        if (boost::variant2::holds_alternative<evaluated_reif::Deactivated>(initial_evaluated))
             return;
-        if (std::holds_alternative<evaluated_reif::Undecided>(initial_evaluated)) {
-            const auto & undecided = std::get<evaluated_reif::Undecided>(initial_evaluated);
+        if (boost::variant2::holds_alternative<evaluated_reif::Undecided>(initial_evaluated)) {
+            const auto & undecided = boost::variant2::get<evaluated_reif::Undecided>(initial_evaluated);
             add_trigger_for(triggers, undecided.cond);
         }
 

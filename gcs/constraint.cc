@@ -2,7 +2,7 @@
 #include <gcs/exception.hh>
 
 using std::string;
-using std::variant;
+using boost::variant2::variant;
 
 using namespace gcs;
 

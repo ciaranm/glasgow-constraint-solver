@@ -37,6 +37,7 @@ using std::function;
 using std::is_same_v;
 using std::make_pair;
 using std::make_shared;
+using std::make_unique;
 using std::move;
 using std::nullopt;
 using std::optional;

@@ -32,6 +32,7 @@ using namespace gcs;
 using std::cerr;
 using std::cout;
 using std::make_optional;
+using std::move;
 using std::nullopt;
 using std::optional;
 using std::string;

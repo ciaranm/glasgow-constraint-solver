@@ -102,6 +102,16 @@ endif()
 
 target_link_libraries(glasgow_constraint_solver PUBLIC gcs_fmt)
 
+# Boost.Variant2 is header-only and reaches several public gcs headers; we pull
+# in the include path directly rather than linking the Boost::variant2 target,
+# because the target isn't part of our install export set (it lives under FetchContent).
+# Same approach as for nlohmann_json elsewhere in this file.
+target_include_directories(glasgow_constraint_solver PUBLIC
+        $<BUILD_INTERFACE:${boost_variant2_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${boost_mp11_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${boost_config_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${boost_assert_SOURCE_DIR}/include>)
+
 # gch::small_vector is used in interval_set.hh which is transitively reached
 # through state.hh, so the include directories must propagate to consumers.
 target_link_libraries(glasgow_constraint_solver PUBLIC gch::small_vector)

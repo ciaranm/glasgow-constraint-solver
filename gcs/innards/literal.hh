@@ -9,7 +9,7 @@
 
 #include <optional>
 #include <string>
-#include <variant>
+#include <boost/variant2/variant.hpp>
 #include <vector>
 
 namespace gcs::innards
@@ -50,7 +50,7 @@ namespace gcs::innards
      *
      * \ingroup Literals
      */
-    using Literal = std::variant<IntegerVariableCondition, TrueLiteral, FalseLiteral>;
+    using Literal = boost::variant2::variant<IntegerVariableCondition, TrueLiteral, FalseLiteral>;
 
     [[nodiscard]] auto operator!(const TrueLiteral &) -> FalseLiteral;
 

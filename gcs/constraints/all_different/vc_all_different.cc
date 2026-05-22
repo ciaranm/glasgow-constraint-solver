@@ -22,7 +22,7 @@
 #include <sstream>
 #include <type_traits>
 #include <utility>
-#include <variant>
+#include <boost/variant2/variant.hpp>
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -31,11 +31,13 @@ using std::decay_t;
 using std::function;
 using std::is_same_v;
 using std::list;
+using std::make_unique;
+using std::move;
 using std::pair;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
-using std::variant;
+using boost::variant2::variant;
 using std::vector;
 using std::ranges::adjacent_find;
 using std::ranges::sort;

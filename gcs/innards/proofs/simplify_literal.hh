@@ -5,11 +5,11 @@
 #include <gcs/innards/proofs/proof_only_variables.hh>
 #include <gcs/variable_condition.hh>
 
-#include <variant>
+#include <boost/variant2/variant.hpp>
 
 namespace gcs::innards
 {
-    using SimpleLiteral = std::variant<VariableConditionFrom<SimpleIntegerVariableID>,
+    using SimpleLiteral = boost::variant2::variant<VariableConditionFrom<SimpleIntegerVariableID>,
         ProofVariableCondition, TrueLiteral, FalseLiteral>;
 
     /**

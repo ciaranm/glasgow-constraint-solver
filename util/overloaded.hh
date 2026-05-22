@@ -2,7 +2,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_UTIL_OVERLOADED_HH
 
 #include <utility>
-#include <variant>
+#include <boost/variant2/variant.hpp>
 
 template <class... Ts_>
 struct overloaded : Ts_...
@@ -14,7 +14,7 @@ struct overloaded : Ts_...
     template <typename... Args_>
     auto visit(Args_ &&... a) -> decltype(auto)
     {
-        return std::visit(*this, std::forward<Args_>(a)...);
+        return boost::variant2::visit(*this, std::forward<Args_>(a)...);
     }
 };
 

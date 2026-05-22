@@ -20,6 +20,7 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::make_unique;
 using std::optional;
 using std::pair;
 using std::string;

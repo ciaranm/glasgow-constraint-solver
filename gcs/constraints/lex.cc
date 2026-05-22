@@ -16,7 +16,7 @@
 #include <optional>
 #include <sstream>
 #include <utility>
-#include <variant>
+#include <boost/variant2/variant.hpp>
 #include <version>
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
@@ -29,6 +29,7 @@
 using std::any_cast;
 using std::get;
 using std::make_shared;
+using std::make_unique;
 using std::min;
 using std::move;
 using std::nullopt;
@@ -39,7 +40,7 @@ using std::string;
 using std::stringstream;
 using std::unique_ptr;
 using std::vector;
-using std::visit;
+using boost::variant2::visit;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::format;

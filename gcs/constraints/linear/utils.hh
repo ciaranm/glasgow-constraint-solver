@@ -3,6 +3,7 @@
 
 #include <gcs/expression.hh>
 #include <ostream>
+#include <boost/variant2/variant.hpp>
 
 namespace gcs::innards
 {
@@ -39,7 +40,7 @@ namespace gcs::innards
      *
      * \ingroup Innards
      */
-    using TidiedUpLinear = std::variant<
+    using TidiedUpLinear = boost::variant2::variant<
         SumOf<SimpleIntegerVariableID>,
         SumOf<PositiveOrNegative<SimpleIntegerVariableID>>,
         SumOf<Weighted<SimpleIntegerVariableID>>>;

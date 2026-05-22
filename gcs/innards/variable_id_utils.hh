@@ -6,6 +6,7 @@
 #include <concepts>
 #include <string>
 #include <utility>
+#include <boost/variant2/variant.hpp>
 
 namespace gcs::innards
 {
@@ -22,7 +23,7 @@ namespace gcs::innards
      *
      * \ingroup Innards
      */
-    using DirectIntegerVariableID = std::variant<SimpleIntegerVariableID, ConstantIntegerVariableID>;
+    using DirectIntegerVariableID = boost::variant2::variant<SimpleIntegerVariableID, ConstantIntegerVariableID>;
 
     /**
      * \brief Either a DirectIntegerVariableID, or one of its more specific types.

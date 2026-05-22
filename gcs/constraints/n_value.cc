@@ -23,8 +23,10 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::list;
+using std::make_unique;
 using std::map;
 using std::max;
+using std::move;
 using std::set;
 using std::string;
 using std::stringstream;

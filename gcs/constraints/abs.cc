@@ -26,7 +26,8 @@
 using namespace gcs;
 using namespace gcs::innards;
 
-using std::holds_alternative;
+using boost::variant2::holds_alternative;
+using std::make_unique;
 using std::max;
 using std::min;
 using std::pair;
