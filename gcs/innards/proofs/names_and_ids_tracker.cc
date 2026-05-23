@@ -73,17 +73,24 @@ struct NamesAndIDsTracker::Imp
     map<SimpleOrProofOnlyIntegerVariableID, map<Integer, pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>>>> gevars_that_exist;
     map<SimpleOrProofOnlyIntegerVariableID, map<Integer, pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>>>> eqvars_that_exist;
 
-    // Cache of extension variables introduced for views. The optional<ProofLine>s
-    // are the OPB line numbers of the two halves of the definitional
-    // `e == (negate_first ? -actual : actual) + then_add`; pol-bridge
-    // emission needs them to cite the definitional.
+    // Cache of extension variables introduced for views. The extension's
+    // value is defined to equal the view's value via a pair of PB
+    // constraints emitted at allocation time; we remember the OPB line
+    // numbers of those two halves so that the bridge pol derivations
+    // (emitted lazily by need_gevar/need_direct_encoding_for) can cite
+    // them.
     struct ExtensionInfo
     {
         ProofOnlySimpleIntegerVariableID id;
-        optional<ProofLine> def_le_line;
-        optional<ProofLine> def_ge_line;
+        ProofLine def_le_line;
+        ProofLine def_ge_line;
     };
     map<ViewOfIntegerVariableID, ExtensionInfo> view_extensions;
+    // Reverse lookup: which view does a proof-only variable represent?
+    // Populated alongside view_extensions. Used in need_gevar to recognise
+    // that a gevar is being introduced for an extension and emit the
+    // bridge to the underlying variable's corresponding atomic literal.
+    map<ProofOnlySimpleIntegerVariableID, ViewOfIntegerVariableID> view_extension_origins;
 
     map<ProofFlag, XLiteral> flags;
 
@@ -472,6 +479,36 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
     }
 
     _imp->eqvars_that_exist[id].emplace(v, pair{forwards_line, reverse_line});
+
+    // If `id` is a view-extension, emit the Inv1'-style eq-bridges to
+    // the underlying variable's corresponding eq literal. The ge-bridges
+    // alone aren't enough: from a propagator that emits a RUP citing
+    // `i[X][eq_k]` directly, the underlying-side eq literal won't
+    // unit-propagate to the extension-side eq literal without an
+    // explicit clause.
+    visit(overloaded{
+        [&](const SimpleIntegerVariableID &) {},
+        [&](const ProofOnlySimpleIntegerVariableID & ext_id) {
+            auto view_it = _imp->view_extension_origins.find(ext_id);
+            if (view_it == _imp->view_extension_origins.end())
+                return;
+            const auto & view = view_it->second;
+            // e = view = X + then_add (not negate_first):  e=v iff X = v - then_add.
+            // e = view = -X + then_add (negate_first):     e=v iff X = then_add - v.
+            Integer translated_v = view.negate_first ? (view.then_add - v) : (v - view.then_add);
+            need_direct_encoding_for(view.actual_variable, translated_v);
+            IntegerVariableCondition underlying_cond{IntegerVariableID{view.actual_variable},
+                VariableConditionOperator::Equal, translated_v};
+            auto forward = WPBSum{} + 1_i * ! (ext_id == v) + 1_i * underlying_cond;
+            auto reverse = WPBSum{} + 1_i * (ext_id == v) + 1_i * ! underlying_cond;
+            emit_proof_line_now_or_at_start([f = forward >= 1_i](ProofLogger * const logger) {
+                logger->emit_rup_proof_line(f, ProofLevel::Top);
+            });
+            emit_proof_line_now_or_at_start([r = reverse >= 1_i](ProofLogger * const logger) {
+                logger->emit_rup_proof_line(r, ProofLevel::Top);
+            });
+        }},
+        id);
 }
 
 auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> void
@@ -558,6 +595,81 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
             }}
             .visit(id);
     }
+
+    // If `id` is a view-extension, emit the Inv1' ge-bridges between
+    // this gevar and the corresponding gevar on the underlying variable,
+    // so unit propagation can chain between extension-side atomic
+    // literals (used by propagator-emitted RUPs) and underlying-side
+    // atomic literals (used by search-time backtracking RUPs). Bridges
+    // are derived via pol from the bit-level definitional pair and the
+    // two reified-literal halves on each side. (RUP would suffice for
+    // some encoding regimes but not others; pol is uniform and faster
+    // to check.)
+    visit(overloaded{
+        [&](const SimpleIntegerVariableID &) {},
+        [&](const ProofOnlySimpleIntegerVariableID & ext_id) {
+            auto view_it = _imp->view_extension_origins.find(ext_id);
+            if (view_it == _imp->view_extension_origins.end())
+                return;
+            const auto & view = view_it->second;
+            const auto & ext_info = _imp->view_extensions.at(view);
+            // For e = X + then_add (not negate_first): e>=v iff X>=v-then_add.
+            // For e = -X + then_add (negate_first): e>=v iff !(X >= then_add - v + 1).
+            Integer translated_v = view.negate_first ? (view.then_add - v + 1_i) : (v - view.then_add);
+            need_gevar(view.actual_variable, translated_v);
+            auto underlying = view.actual_variable;
+            // See exp_bridge_tc derivations: pol bit-half + e-half + X-half + saturate.
+            //   !negate_first:
+            //     forward (~e_ge_v + X_ge_m >= 1) = bit_def_GE + e_ge_v_fwd + X_ge_m_rev + s
+            //     reverse (e_ge_v + ~X_ge_m >= 1) = bit_def_LE + e_ge_v_rev + X_ge_m_fwd + s
+            //   negate_first:
+            //     forward (~e_ge_v + ~X_ge_m >= 1) = bit_def_GE + e_ge_v_fwd + X_ge_m_fwd + s
+            //     reverse (e_ge_v + X_ge_m >= 1) = bit_def_LE + e_ge_v_rev + X_ge_m_rev + s
+            // The extension side isn't an IntegerVariableID, so we can't
+            // use PolBuilder::add_for_literal for it. Hand-pull the
+            // corresponding gevar/eqvar entry instead.
+            auto add_pol_for_ext = [&](PolBuilder & b, EqualsOrGreaterEqual op, Integer val, bool reverse) {
+                auto & entry = (op == EqualsOrGreaterEqual::Equals)
+                    ? _imp->eqvars_that_exist.at(ext_id).at(val)
+                    : _imp->gevars_that_exist.at(ext_id).at(val);
+                auto & item = reverse ? entry.second : entry.first;
+                visit(overloaded{
+                          [&](const ProofLine & l) { b.add(l); },
+                          [&](const XLiteral & x) { b.add(x, *this); }},
+                    item);
+            };
+
+            // Forward bridge: e_ge_v -> (negate_first ? !X_ge_m : X_ge_m).
+            // pol parts: bit_def_GE + e_ge_v_fwd (line for e_ge_v's forward half) + X_ge_m_(rev if !nf, fwd if nf).
+            {
+                PolBuilder b;
+                b.add(ext_info.def_ge_line);
+                add_pol_for_ext(b, EqualsOrGreaterEqual::GreaterEqual, v, /*reverse*/ false);
+                IntegerVariableCondition x_cond{IntegerVariableID{underlying},
+                    view.negate_first ? VariableConditionOperator::GreaterEqual : VariableConditionOperator::Less,
+                    translated_v};
+                b.add_for_literal(*this, x_cond);
+                b.saturate();
+                emit_proof_line_now_or_at_start([s = b.str()](ProofLogger * const logger) {
+                    logger->emit_proof_line(s, ProofLevel::Top);
+                });
+            }
+            // Reverse bridge: (negate_first ? !X_ge_m : X_ge_m) -> e_ge_v.
+            {
+                PolBuilder b;
+                b.add(ext_info.def_le_line);
+                add_pol_for_ext(b, EqualsOrGreaterEqual::GreaterEqual, v, /*reverse*/ true);
+                IntegerVariableCondition x_cond{IntegerVariableID{underlying},
+                    view.negate_first ? VariableConditionOperator::Less : VariableConditionOperator::GreaterEqual,
+                    translated_v};
+                b.add_for_literal(*this, x_cond);
+                b.saturate();
+                emit_proof_line_now_or_at_start([s = b.str()](ProofLogger * const logger) {
+                    logger->emit_proof_line(s, ProofLevel::Top);
+                });
+            }
+        }},
+        id);
 }
 
 auto NamesAndIDsTracker::bounds_for(const SimpleOrProofOnlyIntegerVariableID & id) const -> pair<Integer, Integer>
@@ -897,7 +1009,7 @@ auto NamesAndIDsTracker::schedule_pol_line_at_proof_start(const string & raw_lin
 }
 
 auto NamesAndIDsTracker::extension_def_lines_for(const ViewOfIntegerVariableID & view) const
-    -> optional<pair<optional<ProofLine>, optional<ProofLine>>>
+    -> optional<pair<ProofLine, ProofLine>>
 {
     auto it = _imp->view_extensions.find(view);
     if (it == _imp->view_extensions.end())
@@ -915,6 +1027,7 @@ auto NamesAndIDsTracker::extension_for(const ViewOfIntegerVariableID & view) -> 
 
     auto [ext_id, def_le_line, def_ge_line] = _imp->model->allocate_extension_for_view(view);
     _imp->view_extensions.emplace(view, Imp::ExtensionInfo{ext_id, def_le_line, def_ge_line});
+    _imp->view_extension_origins.emplace(ext_id, view);
     return ext_id;
 }
 

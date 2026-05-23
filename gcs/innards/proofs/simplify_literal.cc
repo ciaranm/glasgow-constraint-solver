@@ -36,15 +36,16 @@ auto gcs::innards::simplify_literal(NamesAndIDsTracker & tracker, const ProofLit
                     return VariableConditionFrom<SimpleIntegerVariableID>{var, lit.op, lit.value};
                 },
                 [&](const ViewOfIntegerVariableID & view) -> SimpleLiteral {
-                    // De-view to the underlying SimpleIntegerVariableID: this
-                    // is the historical behaviour, which keeps propagator-
-                    // emitted RUPs consistent with the rest of the proof
-                    // (solution writeback, chain-pol-driven eq flag defs)
-                    // which all reference underlying flags. The view's
-                    // extension exists (allocated by ProofModel when the
-                    // view appears in a constraint) but is reached only
-                    // through the eagerly-emitted pol bridges, not through
-                    // literal simplification.
+                    // De-view to the underlying SimpleIntegerVariableID.
+                    // The host constraint OPB is also in underlying-form
+                    // (see emit_inequality_to), so this keeps propagator-
+                    // emitted RUPs and search-time RUPs in the same
+                    // namespace as the host constraint. The view's
+                    // extension is allocated and tied to the underlying
+                    // via bit-level definitional + per-literal Inv1'
+                    // bridges (see need_gevar / need_direct_encoding_for),
+                    // so propagators that emit extension-side RUPs still
+                    // chain through to the underlying-side host.
                     (void) tracker;
                     switch (lit.op) {
                     case VariableConditionOperator::NotEqual:

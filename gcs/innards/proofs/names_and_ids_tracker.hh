@@ -273,18 +273,20 @@ namespace gcs::innards
         [[nodiscard]] auto reify(const WPBSumLE &, const HalfReifyOnConjunctionOf &) -> WPBSumLE;
 
         /**
-         * \brief Look up the OPB line numbers of the definitional pair for a
-         * view's extension. Returns nullopt if the view has no extension yet.
+         * \brief Look up the OPB line numbers of the bit-level definitional
+         * pair (LE/GE halves) for a view's extension. Returns nullopt if
+         * the view has no extension yet. Used by host-constraint bridge
+         * emission in ProofModel to materialise the extension-form of a
+         * host constraint via pol.
          */
         [[nodiscard]] auto extension_def_lines_for(const ViewOfIntegerVariableID & view) const
-            -> std::optional<std::pair<std::optional<ProofLine>, std::optional<ProofLine>>>;
+            -> std::optional<std::pair<ProofLine, ProofLine>>;
 
         /**
          * \brief Schedule a raw pol/proof line to be emitted at the start of
          * the proof file (after OPB but before propagator-driven proof steps).
-         * Used by view-extension bridge emission to make the underlying-form
-         * of a constraint available for propagators that reference underlying
-         * flags.
+         * Used by view-extension host-bridge emission to materialise the
+         * extension-form copies of host constraints.
          */
         auto schedule_pol_line_at_proof_start(const std::string & raw_line) -> void;
 
@@ -299,6 +301,11 @@ namespace gcs::innards
          * underlying (`e == (negate_first ? -actual : actual) + then_add`)
          * is emitted as two halves. Subsequent calls return the cached
          * extension.
+         *
+         * Bridges between the extension's atomic literals and the
+         * underlying variable's corresponding atomic literals are emitted
+         * lazily by `need_gevar` when an extension-side gevar is first
+         * requested.
          *
          * Must be called while a `ProofModel` is active (during OPB
          * writing). The cached extension remains visible during proof

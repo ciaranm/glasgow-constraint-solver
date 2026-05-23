@@ -159,12 +159,15 @@ namespace gcs::innards
          * Allocates a fresh `ProofOnlySimpleIntegerVariableID` whose bits
          * represent the view's *visible* value range, emits its domain
          * bounds, and emits the definitional pair
-         * `e == (negate_first ? -actual : actual) + then_add`. Intended to
-         * be called from `NamesAndIDsTracker::extension_for`, which caches
-         * the result; user code should reach for `extension_for` instead.
+         * `e == (negate_first ? -actual : actual) + then_add`. Returns the
+         * fresh extension id plus the OPB line numbers of the two halves
+         * of the definitional, which the bridge-pol derivations need.
+         * Intended to be called from `NamesAndIDsTracker::extension_for`,
+         * which caches the result; user code should reach for
+         * `extension_for` instead.
          */
         [[nodiscard]] auto allocate_extension_for_view(const ViewOfIntegerVariableID & view)
-            -> std::tuple<ProofOnlySimpleIntegerVariableID, std::optional<ProofLine>, std::optional<ProofLine>>;
+            -> std::tuple<ProofOnlySimpleIntegerVariableID, ProofLine, ProofLine>;
 
         [[nodiscard]] auto create_proof_flag(const std::string &) -> ProofFlag;
 

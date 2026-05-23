@@ -23,11 +23,12 @@ namespace gcs::innards
      * `v >= k` becomes `extension(v) >= k` without any value adjustment,
      * because the extension's value equals the view's value. This keeps the
      * resulting proof literal bit-clean against the constraint's
-     * extension-form encoding.
+     * extension-form encoding. Bridges that tie the extension's atomic
+     * literals to the underlying variable's atomic literals are emitted
+     * lazily at gevar-introduction time (see `NamesAndIDsTracker::need_gevar`).
      *
-     * The extension must already exist by the time this function is called,
-     * either because the OPB-writing phase saw the view in a constraint or
-     * because the caller explicitly pre-allocated it.
+     * Calling this function on a view will allocate the extension if it
+     * doesn't already exist, which requires a `ProofModel` to be active.
      *
      * \ingroup Innards
      */

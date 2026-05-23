@@ -116,23 +116,18 @@ namespace
         }
     }
 
-    // Build a pol line that, starting from the underlying-form constraint
-    // at `underlying_line`, adds e-def lines so the `_actual` terms cancel
-    // and the corresponding extension `e` terms appear, materialising the
-    // extension-form of the same constraint half.
+    // Emit a pol line at proof-start that, starting from the underlying-form
+    // OPB constraint at `underlying_line`, adds the extension's definitional
+    // pair to materialise the same constraint in extension-form. This is a
+    // host-level analogue of the atomic-literal Inv1' bridges: it makes the
+    // extension-form copy of the host constraint available in the proof
+    // database, which lets downstream pol/RUP steps mix and match
+    // underlying- and extension-form references.
     //
-    // For an operand v = (negate_first ? -actual : actual) + then_add with
-    // weight w in the original WPBSum and the LE half (coef on actual in
-    // OPB-GE form is -w for !negate_first, +w for negate_first):
-    //  - Add e-def-LE (`-e ± actual >= -then_add`) to cancel _actual and
-    //    introduce -e. For the GE half, add e-def-GE.
-    //
-    // Same-named halves (LE with LE, GE with GE) pair up regardless of
-    // negate_first, since the coefficient on `actual` in the e-def matches
-    // the coefficient on `actual` in the underlying-form constraint.
-    //
-    // Only ±1 weights are handled here; chains across multiple views in one
-    // constraint are emitted as a single pol with successive additions.
+    // Same-named half pairing (LE with LE, GE with GE) is correct regardless
+    // of `negate_first`, since the coefficient on `actual` in the bit-level
+    // definitional matches the coefficient on `actual` in the underlying-form
+    // host constraint.
     enum class ConstraintHalf
     {
         LE,
@@ -155,16 +150,15 @@ namespace
                 continue;
             const auto & view = std::get<ViewOfIntegerVariableID>(var_id);
             auto def_lines = tracker.extension_def_lines_for(view);
-            if (! def_lines || ! def_lines->first || ! def_lines->second)
+            if (! def_lines)
                 continue;
             if (w != 1_i && w != -1_i)
                 continue; // multi-coef bridges not handled yet
             any_view = true;
 
-            // Same-named half (LE with LE, GE with GE) — see comment above.
             ProofLine line_to_add = (which_half == ConstraintHalf::LE)
-                ? *def_lines->first
-                : *def_lines->second;
+                ? def_lines->first
+                : def_lines->second;
             defs_to_add.push_back(line_to_add);
         }
 
@@ -291,7 +285,7 @@ auto ProofModel::names_and_ids_tracker() const -> const NamesAndIDsTracker &
 }
 
 auto ProofModel::allocate_extension_for_view(const ViewOfIntegerVariableID & view)
-    -> std::tuple<ProofOnlySimpleIntegerVariableID, optional<ProofLine>, optional<ProofLine>>
+    -> std::tuple<ProofOnlySimpleIntegerVariableID, ProofLine, ProofLine>
 {
     // Visible domain of the view, derived from the underlying's definition
     // bounds. Negation swaps the endpoint roles.
@@ -310,10 +304,10 @@ auto ProofModel::allocate_extension_for_view(const ViewOfIntegerVariableID & vie
     // wrapped in IntegerVariableID); neither is a view, so the recursive call
     // to add_constraint won't trigger another extension lookup.
     auto actual_coeff = view.negate_first ? 1_i : -1_i;
-    auto [le_line, ge_line] = add_constraint("ViewExtension", "definitional",
+    auto [def_le_line, def_ge_line] = add_constraint("ViewExtension", "definitional",
         WPBSum{} + 1_i * ext_id + actual_coeff * IntegerVariableID{view.actual_variable} == view.then_add);
 
-    return {ext_id, le_line, ge_line};
+    return {ext_id, *def_le_line, *def_ge_line};
 }
 
 auto ProofModel::create_proof_only_integer_variable(Integer lower, Integer upper, const string & name,
