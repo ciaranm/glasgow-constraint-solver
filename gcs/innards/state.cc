@@ -149,6 +149,11 @@ auto State::state_of(const SimpleIntegerVariableID & v) const -> const IntervalS
     return _imp->integer_variable_states.back().at(v.index);
 }
 
+auto State::state_of_for_iteration(const SimpleIntegerVariableID & v) const -> const IntervalSet<Integer> &
+{
+    return _imp->integer_variable_states.back().at(v.index);
+}
+
 auto State::change_state_for_equal(const SimpleIntegerVariableID & var, Integer value) -> Inference
 {
     auto & set = state_of(var);
