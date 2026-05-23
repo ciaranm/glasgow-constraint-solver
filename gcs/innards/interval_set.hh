@@ -6,6 +6,7 @@
 #include <gch/small_vector.hpp>
 
 #include <cstdlib>
+#include <type_traits>
 #include <utility>
 #include <version>
 
@@ -423,7 +424,7 @@ namespace gcs::innards
          * The generator borrows this set, which must outlive it and must not be
          * modified while iterating; see the class documentation.
          *
-         * \sa each_reversed(), each_interval()
+         * \sa each_reversed(), each_interval(), for_each()
          */
         [[nodiscard]] auto each() const -> std::generator<Int_>
         {
@@ -432,6 +433,35 @@ namespace gcs::innards
                     for (Int_ i = l; i <= u; ++i)
                         co_yield i;
             }(intervals);
+        }
+
+        /**
+         * \brief Calls \p f(value) for each value in the set in ascending order.
+         *
+         * Non-coroutine alternative to each(): no heap-allocated generator
+         * frame, the iteration inlines into the caller. Prefer this over
+         * each() in hot loops where the caller doesn't need the iterator
+         * protocol.
+         *
+         * If \p f returns \c bool, returning \c false stops iteration early.
+         * If \p f returns \c void, iteration always runs to completion.
+         *
+         * \sa each(), each_interval()
+         */
+        template <typename F_>
+        auto for_each(F_ && f) const -> void
+        {
+            if constexpr (std::is_void_v<std::invoke_result_t<F_ &, Int_>>) {
+                for (const auto & [l, u] : intervals)
+                    for (Int_ i = l; i <= u; ++i)
+                        f(i);
+            }
+            else {
+                for (const auto & [l, u] : intervals)
+                    for (Int_ i = l; i <= u; ++i)
+                        if (! f(i))
+                            return;
+            }
         }
 
         /**
