@@ -49,11 +49,12 @@ enum class Variant
     SmartTable
 };
 
-auto run_at_most_one_test(Variant variant, bool proofs,
+auto run_at_most_one_test(Variant variant, bool proofs, const ViewWrapConfig & view_cfg,
     const vector<pair<int, int>> & ranges, pair<int, int> val_range) -> void
 {
+    auto wraps = wraps_for_positions(view_cfg, static_cast<int>(ranges.size()));
     auto label = (variant == Variant::Native) ? "at_most_one" : "at_most_one_smart_table";
-    print(cerr, "{} {} val={}{}", label, ranges, val_range, proofs ? " with proofs:" : ":");
+    print(cerr, "{} [{}] {} val={}{}", label, view_wrap_config_label(view_cfg), ranges, val_range, proofs ? " with proofs:" : ":");
     cerr << flush;
 
     set<tuple<vector<int>, int>> expected, actual;
@@ -66,55 +67,64 @@ auto run_at_most_one_test(Variant variant, bool proofs,
 
     Problem p;
     vector<IntegerVariableID> vars;
-    for (const auto & [l, u] : ranges)
-        vars.push_back(p.create_integer_variable(Integer(l), Integer(u)));
+    for (std::size_t i = 0; i < ranges.size(); ++i)
+        vars.push_back(create_integer_variable_or_constant_with_view(p, ranges[i], wraps.at(i)));
     auto val = p.create_integer_variable(Integer(val_range.first), Integer(val_range.second));
     if (variant == Variant::Native)
         p.post(AtMostOne{vars, val});
     else
         p.post(AtMostOneSmartTable{vars, val});
 
-    auto proof_name = proofs ? make_optional("at_most_one_test") : nullopt;
+    auto proof_name = proofs ? make_optional("at_most_one_test_" + view_wrap_config_label(view_cfg)) : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{vars, val});
     check_results(proof_name, expected, actual);
 }
 
-auto run_all_tests(Variant variant, bool proofs) -> void
+auto run_all_tests(Variant variant, bool proofs, const ViewWrapConfig & view_cfg) -> void
 {
     // Boundary: empty / singleton — both vacuously true.
-    run_at_most_one_test(variant, proofs, {}, {1, 3});
-    run_at_most_one_test(variant, proofs, {{1, 3}}, {1, 3});
+    run_at_most_one_test(variant, proofs, view_cfg, {}, {1, 3});
+    run_at_most_one_test(variant, proofs, view_cfg, {{1, 3}}, {1, 3});
 
     // Two vars: smallest meaningful case.
-    run_at_most_one_test(variant, proofs, {{1, 3}, {1, 3}}, {2, 2});
-    run_at_most_one_test(variant, proofs, {{1, 3}, {1, 3}}, {1, 3});
+    run_at_most_one_test(variant, proofs, view_cfg, {{1, 3}, {1, 3}}, {2, 2});
+    run_at_most_one_test(variant, proofs, view_cfg, {{1, 3}, {1, 3}}, {1, 3});
 
     // 3-variable tests, fixed val (single-point range)
-    run_at_most_one_test(variant, proofs, {{1, 3}, {1, 3}, {1, 3}}, {2, 2});    // basic, val=2
-    run_at_most_one_test(variant, proofs, {{1, 3}, {1, 3}, {1, 3}}, {5, 5});    // val outside all domains
-    run_at_most_one_test(variant, proofs, {{1, 3}, {1, 3}, {1, 3}}, {1, 1});    // val at domain boundary
-    run_at_most_one_test(variant, proofs, {{-2, 2}, {-2, 2}, {-2, 2}}, {0, 0}); // negative domain, val=0
+    run_at_most_one_test(variant, proofs, view_cfg, {{1, 3}, {1, 3}, {1, 3}}, {2, 2});    // basic, val=2
+    run_at_most_one_test(variant, proofs, view_cfg, {{1, 3}, {1, 3}, {1, 3}}, {5, 5});    // val outside all domains
+    run_at_most_one_test(variant, proofs, view_cfg, {{1, 3}, {1, 3}, {1, 3}}, {1, 1});    // val at domain boundary
+    run_at_most_one_test(variant, proofs, view_cfg, {{-2, 2}, {-2, 2}, {-2, 2}}, {0, 0}); // negative domain, val=0
 
     // 3-variable tests, variable val
-    run_at_most_one_test(variant, proofs, {{1, 3}, {1, 3}, {1, 3}}, {1, 3});
-    run_at_most_one_test(variant, proofs, {{1, 3}, {1, 3}, {1, 3}}, {2, 4});
+    run_at_most_one_test(variant, proofs, view_cfg, {{1, 3}, {1, 3}, {1, 3}}, {1, 3});
+    run_at_most_one_test(variant, proofs, view_cfg, {{1, 3}, {1, 3}, {1, 3}}, {2, 4});
 
     // Propagation: one var forced to equal val, others must differ
-    run_at_most_one_test(variant, proofs, {{2, 2}, {1, 3}, {1, 3}}, {2, 2});
-    run_at_most_one_test(variant, proofs, {{2, 2}, {2, 2}, {1, 3}}, {1, 3});
+    run_at_most_one_test(variant, proofs, view_cfg, {{2, 2}, {1, 3}, {1, 3}}, {2, 2});
+    run_at_most_one_test(variant, proofs, view_cfg, {{2, 2}, {2, 2}, {1, 3}}, {1, 3});
 
     // Unsatisfiable: two vars forced to equal a fixed val
-    run_at_most_one_test(variant, proofs, {{2, 2}, {2, 2}, {1, 3}}, {2, 2});
+    run_at_most_one_test(variant, proofs, view_cfg, {{2, 2}, {2, 2}, {1, 3}}, {2, 2});
 
     // 4-variable tests
-    run_at_most_one_test(variant, proofs, {{1, 3}, {1, 3}, {1, 3}, {1, 3}}, {2, 2});
-    run_at_most_one_test(variant, proofs, {{2, 2}, {1, 3}, {1, 3}, {1, 3}}, {2, 2});
-    run_at_most_one_test(variant, proofs, {{1, 3}, {1, 3}, {1, 3}, {1, 3}}, {1, 3});
-    run_at_most_one_test(variant, proofs, {{2, 2}, {2, 2}, {1, 3}, {1, 3}}, {1, 3});
+    run_at_most_one_test(variant, proofs, view_cfg, {{1, 3}, {1, 3}, {1, 3}, {1, 3}}, {2, 2});
+    run_at_most_one_test(variant, proofs, view_cfg, {{2, 2}, {1, 3}, {1, 3}, {1, 3}}, {2, 2});
+    run_at_most_one_test(variant, proofs, view_cfg, {{1, 3}, {1, 3}, {1, 3}, {1, 3}}, {1, 3});
+    run_at_most_one_test(variant, proofs, view_cfg, {{2, 2}, {2, 2}, {1, 3}, {1, 3}}, {1, 3});
 }
 
-auto main(int, char *[]) -> int
+auto main(int argc, char * argv[]) -> int
 {
+    auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
+
+    constexpr int n_positions = 5;
+    if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
+        println(cerr, "at_most_one view sweep: position {} out of range for n_positions = {}; skipping",
+            *view_cfg.single_position, n_positions);
+        return EXIT_SUCCESS;
+    }
+
     random_device rand_dev;
     mt19937 rand(rand_dev());
 
@@ -122,7 +132,7 @@ auto main(int, char *[]) -> int
         for (bool proofs : {false, true}) {
             if (proofs && ! can_run_veripb())
                 continue;
-            run_all_tests(variant, proofs);
+            run_all_tests(variant, proofs, view_cfg);
 
             // Small random sweep: 2..5 vars, modest domains so the solution
             // space stays small. Solution count is O(|val| * prod(|vars|))
@@ -139,7 +149,7 @@ auto main(int, char *[]) -> int
                     ranges.emplace_back(lo, lo + width_dist(rand));
                 }
                 int v_lo = lo_dist(rand);
-                run_at_most_one_test(variant, proofs, ranges, {v_lo, v_lo + width_dist(rand)});
+                run_at_most_one_test(variant, proofs, view_cfg, ranges, {v_lo, v_lo + width_dist(rand)});
             }
         }
     }

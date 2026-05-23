@@ -47,6 +47,7 @@ option(GCS_ENABLE_XCSP "Support for the XCSP modelling language" ${PROJECT_IS_TO
 option(GCS_ENABLE_MINIZINC "Support for the MiniZinc modelling language" ${PROJECT_IS_TOP_LEVEL})
 option(GCS_ENABLE_EXAMPLES "Build examples" ${PROJECT_IS_TOP_LEVEL})
 option(GCS_BUILD_TESTS "Build GCS tests" ${PROJECT_IS_TOP_LEVEL})
+option(GCS_ENABLE_VIEW_WRAP_SWEEP "Register the view-wrap proof-verification sweep (many tests, most failing today; opt in when working on view proof logging)" OFF)
 
 # Compiler flag checks always run so results are available for target-specific use.
 include(CheckCXXCompilerFlag)

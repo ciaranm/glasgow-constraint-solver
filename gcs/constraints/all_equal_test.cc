@@ -44,10 +44,11 @@ using fmt::println;
 using namespace gcs;
 using namespace gcs::test_innards;
 
-auto run_test(bool proofs, const vector<pair<int, int>> & domains) -> void
+auto run_test(bool proofs, const ViewWrapConfig & view_cfg, const vector<pair<int, int>> & domains) -> void
 {
-    print(cerr, "all_equal domains={}{}",
-        domains, proofs ? " with proofs:" : ":");
+    auto wraps = wraps_for_positions(view_cfg, static_cast<int>(domains.size()));
+    print(cerr, "all_equal [{}] domains={}{}",
+        view_wrap_config_label(view_cfg), domains, proofs ? " with proofs:" : ":");
     cerr << flush;
 
     set<tuple<vector<int>>> expected, actual;
@@ -62,11 +63,11 @@ auto run_test(bool proofs, const vector<pair<int, int>> & domains) -> void
 
     Problem p;
     vector<IntegerVariableID> vars;
-    for (const auto & d : domains)
-        vars.push_back(p.create_integer_variable(Integer(d.first), Integer(d.second)));
+    for (std::size_t i = 0; i < domains.size(); ++i)
+        vars.push_back(create_integer_variable_or_constant_with_view(p, domains[i], wraps.at(i)));
     p.post(AllEqual{vars});
 
-    auto proof_name = proofs ? make_optional("all_equal_test") : nullopt;
+    auto proof_name = proofs ? make_optional("all_equal_test_" + view_wrap_config_label(view_cfg)) : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{vars});
     check_results(proof_name, expected, actual);
 }
@@ -117,8 +118,22 @@ auto run_holes_test(bool proofs) -> void
     check_results(proof_name, expected, actual);
 }
 
-auto main(int, char *[]) -> int
+auto main(int argc, char * argv[]) -> int
 {
+    auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
+
+    // Max vector length across the data is 4; CMake registers up through
+    // position 3. Out-of-range single positions degrade to all-bare via the
+    // helper, which we detect and skip.
+    constexpr int n_positions = 4;
+    if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
+        println(cerr, "all_equal view sweep: position {} out of range for n_positions = {}; skipping",
+            *view_cfg.single_position, n_positions);
+        return EXIT_SUCCESS;
+    }
+
+    bool run_holes = view_wrap_config_is_effectively_bare(view_cfg, n_positions);
+
     vector<vector<pair<int, int>>> data = {
         {{1, 5}, {3, 8}},
         {{1, 3}, {5, 8}},
@@ -148,8 +163,9 @@ auto main(int, char *[]) -> int
         if (proofs && ! can_run_veripb())
             continue;
         for (const auto & doms : data)
-            run_test(proofs, doms);
-        run_holes_test(proofs);
+            run_test(proofs, view_cfg, doms);
+        if (run_holes)
+            run_holes_test(proofs);
     }
 
     return EXIT_SUCCESS;

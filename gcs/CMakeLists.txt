@@ -186,6 +186,64 @@ if(GCS_BUILD_TESTS)
             COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:element_test> ${mode})
     endforeach()
     add_test(NAME equals_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:equals_test>)
+
+    # View-wrap sweep: feeds the constraint each variable as a ViewOfIntegerVariableID
+    # (offset / negation / both) instead of a bare SimpleIntegerVariableID. The
+    # underlying domain is inverted through the wrap so the visible value set
+    # (and hence the test's predicate / expected set) is unchanged — only the
+    # constraint-side encoding differs. Wrap indices are positions in
+    # all_view_wraps(); index 0 is the bare baseline already covered above and
+    # is skipped here. n_positions = the number of variable arguments the test
+    # wraps; per-position single-variable sweeps land between 0 and n-1.
+    function(add_view_wrap_sweep test_name target n_positions)
+        # Extra positional args (e.g. the "mode" argv for comparison_test,
+        # linear_test, ...) are forwarded into the binary before the view
+        # flags, so the existing per-mode positional argv keeps working.
+        set(extra_args ${ARGN})
+        math(EXPR last_position "${n_positions} - 1")
+        foreach(wrap RANGE 1 18)
+            add_test(NAME ${test_name}_view_w${wrap}_pall
+                COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:${target}>
+                ${extra_args} --view-wrap=${wrap} --view-position=all)
+            foreach(pos RANGE 0 ${last_position})
+                add_test(NAME ${test_name}_view_w${wrap}_p${pos}
+                    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:${target}>
+                    ${extra_args} --view-wrap=${wrap} --view-position=${pos})
+            endforeach()
+        endforeach()
+    endfunction()
+
+    # Sweep registrations are gated: most fail today (proof logging through
+    # views is the open work item that issue #217 / PR #218 track). The
+    # harness, argv flags, and add_view_wrap_sweep function are always
+    # available so individual sweeps can be run by hand or via ctest with
+    # GCS_ENABLE_VIEW_WRAP_SWEEP=ON.
+    if(GCS_ENABLE_VIEW_WRAP_SWEEP)
+        add_view_wrap_sweep(equals_constraint equals_test 2)
+        add_view_wrap_sweep(abs_constraint abs_test 2)
+        add_view_wrap_sweep(plus_minus_constraint plus_minus_test 3)
+        foreach(mode ge ge_if ge_iff gt gt_if gt_iff le le_if le_iff lt lt_if lt_iff)
+            add_view_wrap_sweep(comparison_constraint_${mode} comparison_test 2 ${mode})
+        endforeach()
+        add_view_wrap_sweep(all_different_constraint all_different_test 6)
+        add_view_wrap_sweep(all_equal_constraint all_equal_test 4)
+        add_view_wrap_sweep(increasing_constraint increasing_test 5)
+        add_view_wrap_sweep(min_max_constraint min_max_test 6)
+        add_view_wrap_sweep(at_most_one_constraint at_most_one_test 5)
+        add_view_wrap_sweep(parity_constraint parity_test 4)
+        add_view_wrap_sweep(n_value_constraint n_value_test 6)
+        add_view_wrap_sweep(seq_precede_chain_constraint seq_precede_chain_test 5)
+        add_view_wrap_sweep(count_constraint count_test 6)
+        add_view_wrap_sweep(among_constraint among_test 5)
+        add_view_wrap_sweep(all_different_except_constraint all_different_except_test 4)
+        add_view_wrap_sweep(value_precede_constraint value_precede_test 5)
+        foreach(mode eq eq_if eq_iff ge ge_if ge_iff le le_if le_iff ne ne_if ne_iff)
+            add_view_wrap_sweep(linear_constraint_${mode} linear_test 3 ${mode})
+        endforeach()
+        add_view_wrap_sweep(table_constraint table_test 3)
+        add_view_wrap_sweep(negative_table_constraint negative_table_test 3)
+        add_view_wrap_sweep(in_constraint in_test 1)
+    endif()
     add_test(NAME in_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:in_test>)
     add_test(NAME increasing_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:increasing_test>)
     add_test(NAME inverse_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:inverse_test>)

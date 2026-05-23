@@ -48,9 +48,13 @@ using fmt::println;
 using namespace gcs;
 using namespace gcs::test_innards;
 
-auto run_min_max_test(bool proofs, bool min, variant<int, pair<int, int>> result_range, const vector<variant<int, pair<int, int>>> & array_range) -> void
+auto run_min_max_test(bool proofs, const ViewWrapConfig & view_cfg, bool min,
+    variant<int, pair<int, int>> result_range, const vector<variant<int, pair<int, int>>> & array_range) -> void
 {
-    visit([&](auto r) { print(cerr, "{} {} {} {}", min ? "min" : "max", r, array_range, proofs ? " with proofs:" : ":"); }, result_range);
+    // Position 0 = result; positions 1..N = array elements.
+    int n_positions = 1 + static_cast<int>(array_range.size());
+    auto wraps = wraps_for_positions(view_cfg, n_positions);
+    visit([&](auto r) { print(cerr, "{} [{}] {} {} {}", min ? "min" : "max", view_wrap_config_label(view_cfg), r, array_range, proofs ? " with proofs:" : ":"); }, result_range);
     cerr << flush;
 
     auto is_satisfying = [&](int r, const vector<int> & a) {
@@ -62,23 +66,33 @@ auto run_min_max_test(bool proofs, bool min, variant<int, pair<int, int>> result
     println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;
-    auto result = visit([&](auto r) { return create_integer_variable_or_constant(p, r); }, result_range);
+    auto result = visit([&](auto r) { return create_integer_variable_or_constant_with_view(p, r, wraps.at(0)); }, result_range);
     vector<IntegerVariableID> array;
-    for (const auto & entry : array_range)
-        array.push_back(visit([&](auto e) { return create_integer_variable_or_constant(p, e); }, entry));
+    for (std::size_t i = 0; i < array_range.size(); ++i)
+        array.push_back(visit([&](auto e) { return create_integer_variable_or_constant_with_view(p, e, wraps.at(i + 1)); }, array_range[i]));
     if (min)
         p.post(ArrayMin{array, result});
     else
         p.post(ArrayMax{array, result});
 
-    auto proof_name = proofs ? make_optional("min_max_test") : nullopt;
+    auto proof_name = proofs ? make_optional("min_max_test_" + view_wrap_config_label(view_cfg)) : nullopt;
     solve_for_tests_checking_consistency(p, proof_name, expected, actual, tuple{pair{result, CheckConsistency::GAC}, pair{array, CheckConsistency::GAC}});
 
     check_results(proof_name, expected, actual);
 }
 
-auto main(int, char *[]) -> int
+auto main(int argc, char * argv[]) -> int
 {
+    auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
+
+    // Position 0 = result; positions 1..5 = up to 5 array entries.
+    constexpr int n_positions = 6;
+    if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
+        println(cerr, "min_max view sweep: position {} out of range for n_positions = {}; skipping",
+            *view_cfg.single_position, n_positions);
+        return EXIT_SUCCESS;
+    }
+
     using ArrayEntry = variant<int, pair<int, int>>;
     vector<tuple<variant<int, pair<int, int>>, vector<ArrayEntry>>> data = {
         // Singleton: result must equal the sole element.
@@ -117,8 +131,8 @@ auto main(int, char *[]) -> int
         if (proofs && ! can_run_veripb())
             continue;
         for (auto & [r1, r2] : data) {
-            run_min_max_test(proofs, false, r1, r2);
-            run_min_max_test(proofs, true, r1, r2);
+            run_min_max_test(proofs, view_cfg, false, r1, r2);
+            run_min_max_test(proofs, view_cfg, true, r1, r2);
         }
     }
 

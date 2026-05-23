@@ -41,11 +41,13 @@ using namespace gcs;
 using namespace gcs::test_innards;
 
 template <typename Constraint_>
-auto run_linear_test(bool proofs, const string & mode, pair<int, int> v1_range, pair<int, int> v2_range,
+auto run_linear_test(bool proofs, const string & mode, const ViewWrapConfig & view_cfg,
+    pair<int, int> v1_range, pair<int, int> v2_range,
     pair<int, int> v3_range, const vector<pair<vector<int>, int>> & ineqs,
     const std::function<auto(int, int)->bool> & compare) -> void
 {
-    print(cerr, "linear {} {} {} {} {} {}", mode, v1_range, v2_range, v3_range, ineqs, proofs ? " with proofs:" : ":");
+    auto wraps = wraps_for_positions(view_cfg, 3);
+    print(cerr, "linear [{}] {} {} {} {} {} {}", view_wrap_config_label(view_cfg), mode, v1_range, v2_range, v3_range, ineqs, proofs ? " with proofs:" : ":");
     cerr << flush;
 
     auto is_satisfying = [&](int a, int b, int c) {
@@ -60,10 +62,10 @@ auto run_linear_test(bool proofs, const string & mode, pair<int, int> v1_range, 
     println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;
-    auto v1 = p.create_integer_variable(Integer(v1_range.first), Integer(v1_range.second), "v1");
-    auto v2 = p.create_integer_variable(Integer(v2_range.first), Integer(v2_range.second), "v2");
-    auto v3 = p.create_integer_variable(Integer(v3_range.first), Integer(v3_range.second), "v3");
-    auto vs = vector{v1, v2, v3};
+    auto v1 = create_integer_variable_or_constant_with_view(p, v1_range, wraps.at(0));
+    auto v2 = create_integer_variable_or_constant_with_view(p, v2_range, wraps.at(1));
+    auto v3 = create_integer_variable_or_constant_with_view(p, v3_range, wraps.at(2));
+    auto vs = vector<IntegerVariableID>{v1, v2, v3};
     for (auto & [linear, value] : ineqs) {
         WeightedSum c;
         for (const auto & [idx, coeff] : enumerate(linear))
@@ -72,7 +74,7 @@ auto run_linear_test(bool proofs, const string & mode, pair<int, int> v1_range, 
         p.post(Constraint_{c, Integer{value}});
     }
 
-    auto proof_name = proofs ? make_optional("linear_equality_test_" + mode) : nullopt;
+    auto proof_name = proofs ? make_optional("linear_equality_test_" + mode + "_" + view_wrap_config_label(view_cfg)) : nullopt;
 
     if ((! is_same_v<Constraint_, LinearEquality>) && 1 == ineqs.size())
         solve_for_tests_checking_consistency(p, proof_name, expected, actual, tuple{pair{v1, CheckConsistency::BC}, pair{v2, CheckConsistency::BC}, pair{v3, CheckConsistency::BC}});
@@ -83,11 +85,13 @@ auto run_linear_test(bool proofs, const string & mode, pair<int, int> v1_range, 
 }
 
 template <typename Constraint_>
-auto run_linear_test_gac(bool proofs, const string & mode, pair<int, int> v1_range, pair<int, int> v2_range,
+auto run_linear_test_gac(bool proofs, const string & mode, const ViewWrapConfig & view_cfg,
+    pair<int, int> v1_range, pair<int, int> v2_range,
     pair<int, int> v3_range, const vector<pair<vector<int>, int>> & ineqs,
     const std::function<auto(int, int)->bool> & compare) -> void
 {
-    print(cerr, "linear gac {} {} {} {} {} {}", mode, v1_range, v2_range, v3_range, ineqs, proofs ? " with proofs:" : ":");
+    auto wraps = wraps_for_positions(view_cfg, 3);
+    print(cerr, "linear gac [{}] {} {} {} {} {} {}", view_wrap_config_label(view_cfg), mode, v1_range, v2_range, v3_range, ineqs, proofs ? " with proofs:" : ":");
     cerr << flush;
 
     auto is_satisfying = [&](int a, int b, int c) {
@@ -102,10 +106,10 @@ auto run_linear_test_gac(bool proofs, const string & mode, pair<int, int> v1_ran
     println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;
-    auto v1 = p.create_integer_variable(Integer(v1_range.first), Integer(v1_range.second), "v1");
-    auto v2 = p.create_integer_variable(Integer(v2_range.first), Integer(v2_range.second), "v2");
-    auto v3 = p.create_integer_variable(Integer(v3_range.first), Integer(v3_range.second), "v3");
-    auto vs = vector{v1, v2, v3};
+    auto v1 = create_integer_variable_or_constant_with_view(p, v1_range, wraps.at(0));
+    auto v2 = create_integer_variable_or_constant_with_view(p, v2_range, wraps.at(1));
+    auto v3 = create_integer_variable_or_constant_with_view(p, v3_range, wraps.at(2));
+    auto vs = vector<IntegerVariableID>{v1, v2, v3};
     for (auto & [linear, value] : ineqs) {
         WeightedSum c;
         for (const auto & [idx, coeff] : enumerate(linear))
@@ -114,7 +118,7 @@ auto run_linear_test_gac(bool proofs, const string & mode, pair<int, int> v1_ran
         p.post(Constraint_{c, Integer{value}, true});
     }
 
-    auto proof_name = proofs ? make_optional("linear_equality_test_" + mode) : nullopt;
+    auto proof_name = proofs ? make_optional("linear_equality_test_" + mode + "_" + view_wrap_config_label(view_cfg)) : nullopt;
 
     if (1 == ineqs.size())
         solve_for_tests_checking_consistency(p, proof_name, expected, actual, tuple{pair{v1, CheckConsistency::GAC}, pair{v2, CheckConsistency::GAC}, pair{v3, CheckConsistency::GAC}});
@@ -125,12 +129,14 @@ auto run_linear_test_gac(bool proofs, const string & mode, pair<int, int> v1_ran
 }
 
 template <typename Constraint_>
-auto run_linear_reif_test(bool full_reif, bool proofs, const string & mode, pair<int, int> v1_range, pair<int, int> v2_range,
+auto run_linear_reif_test(bool full_reif, bool proofs, const string & mode, const ViewWrapConfig & view_cfg,
+    pair<int, int> v1_range, pair<int, int> v2_range,
     pair<int, int> v3_range, const vector<pair<vector<int>, int>> & ineqs,
     const std::function<auto(int, int)->bool> & compare) -> void
 {
+    auto wraps = wraps_for_positions(view_cfg, 3);
     for (const auto & v4_range : vector<pair<int, int>>{{0, 0}, {1, 1}, {0, 1}}) {
-        print(cerr, "linear {} {} {} {} {} {} {} {}", mode, full_reif ? "full_reif" : "half_reif",
+        print(cerr, "linear [{}] {} {} {} {} {} {} {} {}", view_wrap_config_label(view_cfg), mode, full_reif ? "full_reif" : "half_reif",
             v1_range, v2_range, v3_range, v4_range, ineqs, proofs ? " with proofs:" : ":");
         cerr << flush;
 
@@ -152,11 +158,11 @@ auto run_linear_reif_test(bool full_reif, bool proofs, const string & mode, pair
         println(cerr, " expecting {} solutions", expected.size());
 
         Problem p;
-        auto v1 = p.create_integer_variable(Integer(v1_range.first), Integer(v1_range.second), "v1");
-        auto v2 = p.create_integer_variable(Integer(v2_range.first), Integer(v2_range.second), "v2");
-        auto v3 = p.create_integer_variable(Integer(v3_range.first), Integer(v3_range.second), "v3");
+        auto v1 = create_integer_variable_or_constant_with_view(p, v1_range, wraps.at(0));
+        auto v2 = create_integer_variable_or_constant_with_view(p, v2_range, wraps.at(1));
+        auto v3 = create_integer_variable_or_constant_with_view(p, v3_range, wraps.at(2));
         auto v4 = p.create_integer_variable(Integer(v4_range.first), Integer(v4_range.second), "c");
-        auto vs = vector{v1, v2, v3};
+        auto vs = vector<IntegerVariableID>{v1, v2, v3};
         for (auto & [linear, value] : ineqs) {
             WeightedSum c;
             for (const auto & [idx, coeff] : enumerate(linear))
@@ -165,7 +171,7 @@ auto run_linear_reif_test(bool full_reif, bool proofs, const string & mode, pair
             p.post(Constraint_{c, Integer{value}, v4 == 1_i});
         }
 
-        auto proof_name = proofs ? make_optional("linear_equality_test_" + mode) : nullopt;
+        auto proof_name = proofs ? make_optional("linear_equality_test_" + mode + "_" + view_wrap_config_label(view_cfg)) : nullopt;
 
         if ((! is_same_v<Constraint_, LinearEqualityIff>) && (! is_same_v<Constraint_, LinearEqualityIf>) && (! is_same_v<Constraint_, LinearNotEqualsIf>) && (! is_same_v<Constraint_, LinearNotEqualsIff>) && 1 == ineqs.size())
             solve_for_tests_checking_consistency(p, proof_name, expected, actual, tuple{pair{v1, CheckConsistency::BC}, pair{v2, CheckConsistency::BC}, pair{v3, CheckConsistency::BC}, pair{v4, CheckConsistency::GAC}});
@@ -178,8 +184,25 @@ auto run_linear_reif_test(bool full_reif, bool proofs, const string & mode, pair
 
 auto main(int argc, char * argv[]) -> int
 {
-    if (argc != 2)
+    string mode;
+    for (int i = 1; i < argc; ++i) {
+        std::string a = argv[i];
+        if (! a.starts_with("--")) {
+            mode = a;
+            break;
+        }
+    }
+    if (mode.empty())
         throw UnimplementedException{};
+
+    auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
+
+    constexpr int n_positions = 3;
+    if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
+        println(cerr, "linear view sweep: position {} out of range for n_positions = {}; skipping",
+            *view_cfg.single_position, n_positions);
+        return EXIT_SUCCESS;
+    }
 
     vector<tuple<pair<int, int>, pair<int, int>, pair<int, int>, vector<pair<vector<int>, int>>>> data;
 
@@ -263,49 +286,47 @@ auto main(int argc, char * argv[]) -> int
         generate_random_data(rand, data, random_bounds(-10, 10, 5, 15), random_bounds(-10, 10, 5, 15),
             random_bounds(-10, 10, 5, 15), vector(nc_dist(rand), pair{vector(3, uniform_int_distribution(-10, 10)), uniform_int_distribution(-200, 200)}));
 
-    string mode{argv[1]};
-
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
             continue;
         for (auto & [r1, r2, r3, constraints] : data) {
             if (mode == "eq") {
-                run_linear_test<LinearEquality>(proofs, mode, r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
-                run_linear_test_gac<LinearEquality>(proofs, mode, r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
+                run_linear_test<LinearEquality>(proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
+                run_linear_test_gac<LinearEquality>(proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
             }
             else if (mode == "eq_if") {
-                run_linear_reif_test<LinearEqualityIf>(false, proofs, mode, r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
+                run_linear_reif_test<LinearEqualityIf>(false, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
             }
             else if (mode == "eq_iff") {
-                run_linear_reif_test<LinearEqualityIff>(true, proofs, mode, r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
+                run_linear_reif_test<LinearEqualityIff>(true, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
             }
             else if (mode == "ne") {
-                run_linear_test<LinearNotEquals>(proofs, mode, r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
-                run_linear_test_gac<LinearNotEquals>(proofs, mode, r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
+                run_linear_test<LinearNotEquals>(proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
+                run_linear_test_gac<LinearNotEquals>(proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
             }
             else if (mode == "ne_if") {
-                run_linear_reif_test<LinearNotEqualsIf>(false, proofs, mode, r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
+                run_linear_reif_test<LinearNotEqualsIf>(false, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
             }
             else if (mode == "ne_iff") {
-                run_linear_reif_test<LinearNotEqualsIff>(true, proofs, mode, r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
+                run_linear_reif_test<LinearNotEqualsIff>(true, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
             }
             else if (mode == "le") {
-                run_linear_test<LinearLessThanEqual>(proofs, mode, r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
+                run_linear_test<LinearLessThanEqual>(proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
             }
             else if (mode == "le_if") {
-                run_linear_reif_test<LinearLessThanEqualIf>(false, proofs, mode, r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
+                run_linear_reif_test<LinearLessThanEqualIf>(false, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
             }
             else if (mode == "le_iff") {
-                run_linear_reif_test<LinearLessThanEqualIff>(true, proofs, mode, r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
+                run_linear_reif_test<LinearLessThanEqualIff>(true, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
             }
             else if (mode == "ge") {
-                run_linear_test<LinearGreaterThanEqual>(proofs, mode, r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
+                run_linear_test<LinearGreaterThanEqual>(proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
             }
             else if (mode == "ge_if") {
-                run_linear_reif_test<LinearGreaterThanEqualIf>(false, proofs, mode, r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
+                run_linear_reif_test<LinearGreaterThanEqualIf>(false, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
             }
             else if (mode == "ge_iff") {
-                run_linear_reif_test<LinearGreaterThanEqualIff>(true, proofs, mode, r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
+                run_linear_reif_test<LinearGreaterThanEqualIff>(true, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
             }
             else
                 throw UnimplementedException{};

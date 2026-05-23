@@ -241,11 +241,59 @@ namespace gcs::test_innards
                 throw UnexpectedException{"veripb verification failed"};
     }
 
+    /**
+     * Singleton holding the --seed argv value, if one was passed.
+     *
+     * Test main()s call set_seed_from_argv(argc, argv) once at startup; the
+     * seed then drives both the test's data RNG (callers read it via
+     * get_seed()) and the harness's branching heuristic
+     * (random_branch_with_optional_seed below). When unset, behaviour is
+     * the historical random_device-based randomness.
+     */
+    inline auto seed_storage() -> std::optional<std::uint_fast32_t> &
+    {
+        static std::optional<std::uint_fast32_t> seed;
+        return seed;
+    }
+
+    inline auto get_seed() -> std::optional<std::uint_fast32_t>
+    {
+        return seed_storage();
+    }
+
+    /**
+     * Scan argv for `--seed=N`, storing the value if present.
+     *
+     * Unknown args are ignored so this composes with existing per-test argv
+     * (the mode selector of comparison_test / linear_test, the --view-wrap
+     * flags, etc.).
+     */
+    inline auto set_seed_from_argv(int argc, char * argv[]) -> void
+    {
+        const std::string prefix = "--seed=";
+        for (int i = 1; i < argc; ++i) {
+            std::string arg = argv[i];
+            if (arg.starts_with(prefix)) {
+                seed_storage() = static_cast<std::uint_fast32_t>(std::stoul(arg.substr(prefix.size())));
+                return;
+            }
+        }
+        seed_storage() = std::nullopt;
+    }
+
+    /// Build the random branching pair, honouring --seed if set.
+    inline auto random_branch_with_optional_seed(const Problem & p)
+    {
+        if (auto seed = get_seed())
+            return branch_with(variable_order::random(p, *seed), value_order::random_out(*seed + 1));
+        return branch_with(variable_order::random(p), value_order::random_out());
+    }
+
     template <typename SolutionCallback_, typename TraceCallback_>
     auto solve_for_tests_with_callbacks(Problem & p, const std::optional<std::string> & proof_name, const SolutionCallback_ & f, const TraceCallback_ & t) -> void
     {
         solve_with(p,
-            SolveCallbacks{.solution = f, .trace = t, .branch = branch_with(variable_order::random(p), value_order::random_out())},
+            SolveCallbacks{.solution = f, .trace = t, .branch = random_branch_with_optional_seed(p)},
             proof_name ? std::make_optional<ProofOptions>(ProofFileNames{*proof_name}, true, false) : std::nullopt);
     }
 
@@ -261,7 +309,7 @@ namespace gcs::test_innards
         solve_with(p,
             SolveCallbacks{
                 .trace = [](const CurrentState &) -> bool { return false; },
-                .branch = branch_with(variable_order::random(p), value_order::random_out())},
+                .branch = random_branch_with_optional_seed(p)},
             std::make_optional<ProofOptions>(ProofFileNames{proof_name}, true, false));
 
         if (! run_veripb(proof_name + ".opb", proof_name + ".pbp"))
@@ -574,6 +622,285 @@ namespace gcs::test_innards
     auto create_integer_variable_or_constant(Problem &, int value) -> IntegerVariableID
     {
         return ConstantIntegerVariableID{Integer(value)};
+    }
+
+    /**
+     * \brief Describes how to wrap a test variable as a view.
+     *
+     * A test variable can be presented to the constraint under test in one of
+     * three shapes:
+     *  - as a bare SimpleIntegerVariableID (no view machinery exercised),
+     *  - as a ViewOfIntegerVariableID with negate_first = false,
+     *  - as a ViewOfIntegerVariableID with negate_first = true.
+     *
+     * The wrap is applied to the IntegerVariableID returned to the test, while
+     * the underlying SimpleIntegerVariableID is created with an adjusted
+     * domain so that the view's values match the domain spec the test asked
+     * for. This keeps the test's is_satisfying predicate and expected-results
+     * set unchanged — only the constraint-side encoding differs.
+     *
+     * Use the factory helpers (view_none, view_offset, view_neg,
+     * view_neg_offset) rather than constructing this struct directly.
+     */
+    struct ViewWrap
+    {
+        bool bare;   ///< if true, use a bare variable and ignore negate/offset
+        bool negate; ///< negate_first for the resulting ViewOfIntegerVariableID
+        int offset;  ///< then_add for the resulting ViewOfIntegerVariableID
+
+        [[nodiscard]] constexpr auto operator<=>(const ViewWrap &) const = default;
+    };
+
+    /// No wrap: hand the test a bare SimpleIntegerVariableID.
+    [[nodiscard]] constexpr inline auto view_none() -> ViewWrap { return {true, false, 0}; }
+
+    /// Wrap as `var + k`. With k = 0 this still constructs a
+    /// ViewOfIntegerVariableID, exercising the view layer transparently.
+    [[nodiscard]] constexpr inline auto view_offset(int k) -> ViewWrap { return {false, false, k}; }
+
+    /// Wrap as `-var`.
+    [[nodiscard]] constexpr inline auto view_neg() -> ViewWrap { return {false, true, 0}; }
+
+    /// Wrap as `-var + k`.
+    [[nodiscard]] constexpr inline auto view_neg_offset(int k) -> ViewWrap { return {false, true, k}; }
+
+    /**
+     * \brief The canonical sweep over view forms for the proof-view audit.
+     *
+     * Covers:
+     *  - bare variable (no view at all);
+     *  - identity view (negate = false, offset = 0) — exercises the view
+     *    layer while remaining semantically equivalent to bare;
+     *  - offset-only views with magnitudes {1, 5, 6, 17}, both signs;
+     *  - negation alone, and negation combined with the same offset spread.
+     *
+     * Magnitudes 5/6 bracket the suspected boundary where small-constant
+     * special-cases stop coinciding with correct behaviour; 17 is a generic
+     * "definitely large" value; 1 catches off-by-one mistakes.
+     *
+     * Total: 19 wraps. Per-test sweep policy is chosen by the caller; the
+     * intended Phase 2 policy is:
+     *  - "single-position": run the test N times for an N-arg constraint,
+     *    wrapping one argument at a time and leaving the rest bare (19*N
+     *    configurations);
+     *  - "uniform": run the test once with every argument wrapped the same
+     *    way (19 configurations).
+     * The full cross-product is intentionally avoided.
+     */
+    inline auto all_view_wraps() -> std::vector<ViewWrap>
+    {
+        return {
+            view_none(),
+            view_offset(0),
+            view_offset(1), view_offset(-1),
+            view_offset(5), view_offset(-5),
+            view_offset(6), view_offset(-6),
+            view_offset(17), view_offset(-17),
+            view_neg(),
+            view_neg_offset(1), view_neg_offset(-1),
+            view_neg_offset(5), view_neg_offset(-5),
+            view_neg_offset(6), view_neg_offset(-6),
+            view_neg_offset(17), view_neg_offset(-17),
+        };
+    }
+
+    /**
+     * \brief Inverse of a view's transformation.
+     *
+     * Given a value the test expects to observe (a view value) and the wrap
+     * that produced the view, returns the value the underlying
+     * SimpleIntegerVariableID must take. View value v = (negate ? -x : x) +
+     * offset, so x = negate ? offset - v : v - offset.
+     */
+    [[nodiscard]] inline auto invert_view(ViewWrap wrap, int value) -> int
+    {
+        return wrap.negate ? wrap.offset - value : value - wrap.offset;
+    }
+
+    /**
+     * \brief Bounds-domain variant: wrap-aware variable creation.
+     *
+     * For a ViewWrap that isn't `view_none()`, creates the underlying
+     * SimpleIntegerVariableID with domain [invert(lo), invert(hi)] (swapped if
+     * needed for negation), then applies the view operators to land back on
+     * the requested visible domain.
+     */
+    auto create_integer_variable_or_constant_with_view(Problem & problem, std::pair<int, int> bounds, ViewWrap wrap) -> IntegerVariableID
+    {
+        if (wrap.bare)
+            return create_integer_variable_or_constant(problem, bounds);
+
+        auto u_lo = invert_view(wrap, bounds.first);
+        auto u_hi = invert_view(wrap, bounds.second);
+        if (u_lo > u_hi)
+            std::swap(u_lo, u_hi);
+
+        IntegerVariableID v = problem.create_integer_variable(Integer(u_lo), Integer(u_hi));
+        if (wrap.negate)
+            v = -v;
+        if (wrap.offset != 0)
+            v = v + Integer(wrap.offset);
+        else if (! wrap.negate)
+            v = v + Integer(0); // force a ViewOfIntegerVariableID for the identity-view case
+        return v;
+    }
+
+    /**
+     * \brief Enumerated-value-list variant: wrap-aware variable creation.
+     *
+     * Each value is inverted through the wrap so that, once the view applies
+     * its transformation, the visible value set matches the input.
+     */
+    auto create_integer_variable_or_constant_with_view(Problem & problem, std::vector<int> values, ViewWrap wrap) -> IntegerVariableID
+    {
+        if (wrap.bare)
+            return create_integer_variable_or_constant(problem, values);
+
+        std::vector<Integer> vs;
+        for (auto value : values)
+            vs.push_back(Integer(invert_view(wrap, value)));
+
+        IntegerVariableID v = problem.create_integer_variable(vs);
+        if (wrap.negate)
+            v = -v;
+        if (wrap.offset != 0)
+            v = v + Integer(wrap.offset);
+        else if (! wrap.negate)
+            v = v + Integer(0);
+        return v;
+    }
+
+    /**
+     * \brief Constant variant: wraps are a no-op.
+     *
+     * Wrapping a constant collapses to an equivalent constant by the
+     * semantics in variable_id.cc, exercising no view machinery. Provided so
+     * that callers iterating over mixed var/const argument lists can apply a
+     * wrap uniformly.
+     */
+    auto create_integer_variable_or_constant_with_view(Problem & problem, int value, ViewWrap) -> IntegerVariableID
+    {
+        return create_integer_variable_or_constant(problem, value);
+    }
+
+    /**
+     * \brief Vector variant: per-element wrap-aware variable creation.
+     *
+     * `specs` and `wraps` must have equal size. Each element is dispatched to
+     * the appropriate scalar overload of create_integer_variable_or_constant_with_view.
+     */
+    template <typename Spec_>
+    auto create_integer_variable_or_constant_vector_with_views(Problem & problem, const std::vector<Spec_> & specs, const std::vector<ViewWrap> & wraps) -> std::vector<IntegerVariableID>
+    {
+        if (specs.size() != wraps.size())
+            throw UnexpectedException{"create_integer_variable_or_constant_vector_with_views: spec / wrap size mismatch"};
+        std::vector<IntegerVariableID> result;
+        result.reserve(specs.size());
+        for (std::size_t i = 0; i < specs.size(); ++i)
+            result.push_back(create_integer_variable_or_constant_with_view(problem, specs.at(i), wraps.at(i)));
+        return result;
+    }
+
+    /**
+     * \brief A specific (wrap, position) configuration to apply during one
+     * test run.
+     *
+     * `wrap_index` indexes into all_view_wraps(). When `single_position` is
+     * set, only that variable position takes the chosen wrap and the rest
+     * stay bare; when unset, every position takes the wrap (uniform sweep).
+     * Default-constructed: wrap_index = 0 (view_none), uniform — matches the
+     * pre-sweep test behaviour.
+     */
+    struct ViewWrapConfig
+    {
+        int wrap_index = 0;
+        std::optional<int> single_position{};
+    };
+
+    /**
+     * \brief Parse view-sweep flags out of argv, leaving other args alone.
+     *
+     * Recognised flags:
+     *  - `--view-wrap=N`         : integer index into all_view_wraps()
+     *  - `--view-position=all`   : uniform sweep across all positions
+     *  - `--view-position=K`     : single-position sweep, position K
+     *
+     * Returns the default ViewWrapConfig (no wrapping) if neither flag is
+     * present. Unknown args are ignored so existing mode-style argv (e.g. the
+     * comparison_test "ge" / "ge_if" / ... selectors) keeps working.
+     */
+    inline auto parse_view_wrap_config_from_argv(int argc, char * argv[]) -> ViewWrapConfig
+    {
+        ViewWrapConfig cfg;
+        for (int i = 1; i < argc; ++i) {
+            std::string arg = argv[i];
+            if (arg.starts_with("--view-wrap="))
+                cfg.wrap_index = std::stoi(arg.substr(std::string{"--view-wrap="}.size()));
+            else if (arg.starts_with("--view-position=")) {
+                auto val = arg.substr(std::string{"--view-position="}.size());
+                if (val == "all" || val == "uniform")
+                    cfg.single_position = std::nullopt;
+                else
+                    cfg.single_position = std::stoi(val);
+            }
+        }
+        return cfg;
+    }
+
+    /**
+     * \brief Realise a ViewWrapConfig into a per-position wrap list.
+     *
+     * - Uniform sweep (single_position unset): every entry is wraps[wrap_index].
+     * - Single-position sweep: position `*single_position` gets
+     *   wraps[wrap_index], the rest get view_none(). Out-of-range positions
+     *   are silently clamped (so a config that names a position higher than
+     *   the constraint has degrades to "all bare", which the test can detect
+     *   and skip rather than producing duplicated bare-sweep coverage).
+     */
+    inline auto wraps_for_positions(ViewWrapConfig cfg, int n_positions) -> std::vector<ViewWrap>
+    {
+        auto wraps = all_view_wraps();
+        auto chosen = wraps.at(static_cast<std::size_t>(cfg.wrap_index));
+        std::vector<ViewWrap> result(static_cast<std::size_t>(n_positions), view_none());
+        if (cfg.single_position) {
+            if (*cfg.single_position >= 0 && *cfg.single_position < n_positions)
+                result.at(static_cast<std::size_t>(*cfg.single_position)) = chosen;
+        }
+        else {
+            std::fill(result.begin(), result.end(), chosen);
+        }
+        return result;
+    }
+
+    /**
+     * \brief Stable, filename-safe label for a ViewWrapConfig.
+     *
+     * Used to disambiguate proof output filenames when the same test binary
+     * runs many times in the same working directory. Examples: "w0_pall",
+     * "w5_p2", "w12_pall".
+     */
+    inline auto view_wrap_config_label(const ViewWrapConfig & cfg) -> std::string
+    {
+        std::string s = "w" + std::to_string(cfg.wrap_index) + "_p";
+        s += cfg.single_position ? std::to_string(*cfg.single_position) : "all";
+        return s;
+    }
+
+    /**
+     * \brief Whether this config would produce no actual wrapping.
+     *
+     * True when wrap_index = 0 (view_none) or when single_position is set but
+     * out of range. The redundant-coverage cases that CMake's sweep would
+     * generate are detected here so the test can skip them and ctest sees
+     * "skipped" rather than a duplicate bare run.
+     */
+    inline auto view_wrap_config_is_effectively_bare(const ViewWrapConfig & cfg, int n_positions) -> bool
+    {
+        if (cfg.wrap_index == 0)
+            return true;
+        if (cfg.single_position && (*cfg.single_position < 0 || *cfg.single_position >= n_positions))
+            return true;
+        return false;
     }
 }
 

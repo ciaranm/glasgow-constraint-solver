@@ -46,6 +46,14 @@ Disable XCSP or MiniZinc support to reduce dependencies:
 cmake -S . -B build -DGCS_ENABLE_XCSP=OFF -DGCS_ENABLE_MINIZINC=OFF
 ```
 
+Enable the view-wrap proof-verification sweep (~3000 extra tests, most
+fail today; opt in when working on view proof logging):
+```shell
+cmake -S . -B build -DGCS_ENABLE_VIEW_WRAP_SWEEP=ON
+```
+The harness and `--view-wrap=N` / `--view-position=K` argv flags on each
+test are always built; only the ctest registrations are gated.
+
 Format code with clang-format (all source is formatted this way).
 
 ## Compiler and Standard Library Support

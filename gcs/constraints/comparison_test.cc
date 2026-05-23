@@ -119,9 +119,11 @@ namespace
 }
 
 template <typename Constraint_>
-auto run_binary_comparison_test(bool proofs, const string & mode, variant<int, pair<int, int>> v1_range, variant<int, pair<int, int>> v2_range, const function<auto(int, int)->bool> & is_satisfying) -> void
+auto run_binary_comparison_test(bool proofs, const string & mode, const ViewWrapConfig & view_cfg,
+    variant<int, pair<int, int>> v1_range, variant<int, pair<int, int>> v2_range, const function<auto(int, int)->bool> & is_satisfying) -> void
 {
-    visit([&](auto v1, auto v2) { print(cerr, "comparison {} {} {} {}", NameOf<Constraint_>::name, v1, v2, proofs ? " with proofs:" : ":"); }, v1_range, v2_range);
+    auto wraps = wraps_for_positions(view_cfg, 2);
+    visit([&](auto v1, auto v2) { print(cerr, "comparison [{}] {} {} {} {}", view_wrap_config_label(view_cfg), NameOf<Constraint_>::name, v1, v2, proofs ? " with proofs:" : ":"); }, v1_range, v2_range);
     cerr << flush;
     set<pair<int, int>> expected, actual;
 
@@ -129,22 +131,24 @@ auto run_binary_comparison_test(bool proofs, const string & mode, variant<int, p
     println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;
-    auto v1 = visit([&](auto b) { return create_integer_variable_or_constant(p, b); }, v1_range);
-    auto v2 = visit([&](auto b) { return create_integer_variable_or_constant(p, b); }, v2_range);
+    auto v1 = visit([&](auto b) { return create_integer_variable_or_constant_with_view(p, b, wraps.at(0)); }, v1_range);
+    auto v2 = visit([&](auto b) { return create_integer_variable_or_constant_with_view(p, b, wraps.at(1)); }, v2_range);
     p.post(Constraint_{v1, v2});
 
-    auto proof_name = proofs ? make_optional("comparison_test_" + mode) : nullopt;
+    auto proof_name = proofs ? make_optional("comparison_test_" + mode + "_" + view_wrap_config_label(view_cfg)) : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{v1, v2});
 
     check_results(proof_name, expected, actual);
 }
 
 template <typename Constraint_>
-auto run_reif_binary_comparison_test(bool proofs, const string & mode, variant<int, pair<int, int>> v1_range, variant<int, pair<int, int>> v2_range, const function<auto(int, int)->bool> & is_satisfying, bool full) -> void
+auto run_reif_binary_comparison_test(bool proofs, const string & mode, const ViewWrapConfig & view_cfg,
+    variant<int, pair<int, int>> v1_range, variant<int, pair<int, int>> v2_range, const function<auto(int, int)->bool> & is_satisfying, bool full) -> void
 {
+    auto wraps = wraps_for_positions(view_cfg, 2);
     for (const auto & v3_range : vector<pair<int, int>>{{0, 0}, {1, 1}, {0, 1}}) {
-        visit([&](auto v1, auto v2) { print(cerr, "{} comparison {} {} {} {} {}", full ? "full reif" : "reif",
-                                          NameOf<Constraint_>::name, v1, v2, v3_range, proofs ? " with proofs:" : ":"); }, v1_range, v2_range);
+        visit([&](auto v1, auto v2) { print(cerr, "{} comparison [{}] {} {} {} {} {}", full ? "full reif" : "reif",
+                                          view_wrap_config_label(view_cfg), NameOf<Constraint_>::name, v1, v2, v3_range, proofs ? " with proofs:" : ":"); }, v1_range, v2_range);
         cerr << flush;
         set<tuple<int, int, int>> expected, actual;
 
@@ -156,12 +160,12 @@ auto run_reif_binary_comparison_test(bool proofs, const string & mode, variant<i
         println(cerr, " expecting {} solutions", expected.size());
 
         Problem p;
-        auto v1 = visit([&](auto b) { return create_integer_variable_or_constant(p, b); }, v1_range);
-        auto v2 = visit([&](auto b) { return create_integer_variable_or_constant(p, b); }, v2_range);
+        auto v1 = visit([&](auto b) { return create_integer_variable_or_constant_with_view(p, b, wraps.at(0)); }, v1_range);
+        auto v2 = visit([&](auto b) { return create_integer_variable_or_constant_with_view(p, b, wraps.at(1)); }, v2_range);
         auto v3 = p.create_integer_variable(Integer(v3_range.first), Integer(v3_range.second), "c");
         p.post(Constraint_{v1, v2, v3 == 1_i});
 
-        auto proof_name = proofs ? make_optional("comparison_test_" + mode) : nullopt;
+        auto proof_name = proofs ? make_optional("comparison_test_" + mode + "_" + view_wrap_config_label(view_cfg)) : nullopt;
         solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{v1, v2, v3});
 
         check_results(proof_name, expected, actual);
@@ -170,8 +174,26 @@ auto run_reif_binary_comparison_test(bool proofs, const string & mode, variant<i
 
 auto main(int argc, char * argv[]) -> int
 {
-    if (argc != 2)
+    // Mode is the first non-flag positional; --view-* flags may follow.
+    string mode;
+    for (int i = 1; i < argc; ++i) {
+        std::string a = argv[i];
+        if (! a.starts_with("--")) {
+            mode = a;
+            break;
+        }
+    }
+    if (mode.empty())
         throw UnimplementedException{};
+
+    auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
+
+    constexpr int n_positions = 2;
+    if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
+        println(cerr, "comparison view sweep: position {} out of range for n_positions = {}; skipping",
+            *view_cfg.single_position, n_positions);
+        return EXIT_SUCCESS;
+    }
 
     vector<pair<variant<int, pair<int, int>>, variant<int, pair<int, int>>>> data = {
         {pair{2, 5}, pair{1, 6}},
@@ -197,47 +219,45 @@ auto main(int argc, char * argv[]) -> int
     for (int x = 0; x < 10; ++x)
         generate_random_data(rand, data, random_bounds(-10, 10, 5, 15), random_constant(-10, 10));
 
-    string mode{argv[1]};
-
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
             continue;
         for (auto & [r1, r2] : data) {
             if (mode == "lt") {
-                run_binary_comparison_test<LessThan>(proofs, mode, r1, r2, [](int a, int b) { return a < b; });
+                run_binary_comparison_test<LessThan>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a < b; });
             }
             else if (mode == "lt_if") {
-                run_reif_binary_comparison_test<LessThanIf>(proofs, mode, r1, r2, [](int a, int b) { return a < b; }, false);
+                run_reif_binary_comparison_test<LessThanIf>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a < b; }, false);
             }
             else if (mode == "lt_iff") {
-                run_reif_binary_comparison_test<LessThanIff>(proofs, mode, r1, r2, [](int a, int b) { return a < b; }, true);
+                run_reif_binary_comparison_test<LessThanIff>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a < b; }, true);
             }
             else if (mode == "le") {
-                run_binary_comparison_test<LessThanEqual>(proofs, mode, r1, r2, [](int a, int b) { return a <= b; });
+                run_binary_comparison_test<LessThanEqual>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a <= b; });
             }
             else if (mode == "le_if") {
-                run_reif_binary_comparison_test<LessThanEqualIf>(proofs, mode, r1, r2, [](int a, int b) { return a <= b; }, false);
+                run_reif_binary_comparison_test<LessThanEqualIf>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a <= b; }, false);
             }
             else if (mode == "le_iff") {
-                run_reif_binary_comparison_test<LessThanEqualIff>(proofs, mode, r1, r2, [](int a, int b) { return a <= b; }, true);
+                run_reif_binary_comparison_test<LessThanEqualIff>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a <= b; }, true);
             }
             else if (mode == "gt") {
-                run_binary_comparison_test<GreaterThan>(proofs, mode, r1, r2, [](int a, int b) { return a > b; });
+                run_binary_comparison_test<GreaterThan>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a > b; });
             }
             else if (mode == "gt_if") {
-                run_reif_binary_comparison_test<GreaterThanIf>(proofs, mode, r1, r2, [](int a, int b) { return a > b; }, false);
+                run_reif_binary_comparison_test<GreaterThanIf>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a > b; }, false);
             }
             else if (mode == "gt_iff") {
-                run_reif_binary_comparison_test<GreaterThanIff>(proofs, mode, r1, r2, [](int a, int b) { return a > b; }, true);
+                run_reif_binary_comparison_test<GreaterThanIff>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a > b; }, true);
             }
             else if (mode == "ge") {
-                run_binary_comparison_test<GreaterThanEqual>(proofs, mode, r1, r2, [](int a, int b) { return a >= b; });
+                run_binary_comparison_test<GreaterThanEqual>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a >= b; });
             }
             else if (mode == "ge_if") {
-                run_reif_binary_comparison_test<GreaterThanEqualIf>(proofs, mode, r1, r2, [](int a, int b) { return a >= b; }, false);
+                run_reif_binary_comparison_test<GreaterThanEqualIf>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a >= b; }, false);
             }
             else if (mode == "ge_iff") {
-                run_reif_binary_comparison_test<GreaterThanEqualIff>(proofs, mode, r1, r2, [](int a, int b) { return a >= b; }, true);
+                run_reif_binary_comparison_test<GreaterThanEqualIff>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a >= b; }, true);
             }
             else
                 throw UnimplementedException{};

@@ -47,9 +47,14 @@ using fmt::println;
 using namespace gcs;
 using namespace gcs::test_innards;
 
-auto run_count_test(bool proofs, variant<int, pair<int, int>> result_range, variant<int, pair<int, int>> voi_range, const vector<variant<int, pair<int, int>>> & array_range) -> void
+auto run_count_test(bool proofs, const ViewWrapConfig & view_cfg,
+    variant<int, pair<int, int>> result_range, variant<int, pair<int, int>> voi_range,
+    const vector<variant<int, pair<int, int>>> & array_range) -> void
 {
-    visit([&](auto result, auto voi) { print(cerr, "count {} {} {} {}", result, voi, array_range, proofs ? " with proofs:" : ":"); }, result_range, voi_range);
+    // Position 0 = result, 1 = voi, 2..N+1 = array entries.
+    int n_positions = 2 + static_cast<int>(array_range.size());
+    auto wraps = wraps_for_positions(view_cfg, n_positions);
+    visit([&](auto result, auto voi) { print(cerr, "count [{}] {} {} {} {}", view_wrap_config_label(view_cfg), result, voi, array_range, proofs ? " with proofs:" : ":"); }, result_range, voi_range);
     cerr << flush;
 
     auto is_satisfying = [](int v, int n, const vector<int> & a) {
@@ -61,21 +66,30 @@ auto run_count_test(bool proofs, variant<int, pair<int, int>> result_range, vari
     println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;
-    auto result = visit([&](auto r) { return create_integer_variable_or_constant(p, r); }, result_range);
-    auto voi = visit([&](auto v) { return create_integer_variable_or_constant(p, v); }, voi_range);
+    auto result = visit([&](auto r) { return create_integer_variable_or_constant_with_view(p, r, wraps.at(0)); }, result_range);
+    auto voi = visit([&](auto v) { return create_integer_variable_or_constant_with_view(p, v, wraps.at(1)); }, voi_range);
     vector<IntegerVariableID> array;
-    for (const auto & entry : array_range)
-        array.push_back(visit([&](auto e) { return create_integer_variable_or_constant(p, e); }, entry));
+    for (std::size_t i = 0; i < array_range.size(); ++i)
+        array.push_back(visit([&](auto e) { return create_integer_variable_or_constant_with_view(p, e, wraps.at(i + 2)); }, array_range[i]));
     p.post(Count{array, voi, result});
 
-    auto proof_name = proofs ? make_optional("count_test") : nullopt;
+    auto proof_name = proofs ? make_optional("count_test_" + view_wrap_config_label(view_cfg)) : nullopt;
     solve_for_tests_checking_consistency(p, proof_name, expected, actual, tuple{pair{voi, CheckConsistency::GAC}, pair{result, CheckConsistency::GAC}, pair{array, CheckConsistency::None}});
 
     check_results(proof_name, expected, actual);
 }
 
-auto main(int, char *[]) -> int
+auto main(int argc, char * argv[]) -> int
 {
+    auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
+
+    constexpr int n_positions = 6;
+    if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
+        println(cerr, "count view sweep: position {} out of range for n_positions = {}; skipping",
+            *view_cfg.single_position, n_positions);
+        return EXIT_SUCCESS;
+    }
+
     using ArrayEntry = variant<int, pair<int, int>>;
     vector<tuple<variant<int, pair<int, int>>, variant<int, pair<int, int>>, vector<ArrayEntry>>> data = {
         {pair{1, 2}, pair{1, 2}, {pair{1, 2}, pair{1, 2}}},
@@ -121,7 +135,7 @@ auto main(int, char *[]) -> int
         if (proofs && ! can_run_veripb())
             continue;
         for (auto & [r1, r2, r3] : data)
-            run_count_test(proofs, r1, r2, r3);
+            run_count_test(proofs, view_cfg, r1, r2, r3);
     }
 
     return EXIT_SUCCESS;
