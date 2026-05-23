@@ -7,11 +7,13 @@
 #include <gcs/innards/state-fwd.hh>
 #include <gcs/innards/variable_id_utils.hh>
 #include <gcs/integer.hh>
+#include <util/overloaded.hh>
 
 #include <any>
 #include <functional>
 #include <memory>
 #include <optional>
+#include <tuple>
 #include <version>
 
 #ifdef __cpp_lib_generator
@@ -67,6 +69,68 @@ namespace gcs::innards
         unsigned long index;
     };
 
+    namespace state_detail
+    {
+        // Helpers for decomposing variable IDs into a (direct-or-simple,
+        // view-flags) representation. Kept in the header so member function
+        // templates of State can use them without paying for std::generator,
+        // std::function or copies in the common iteration paths.
+
+        inline auto deview(const SimpleIntegerVariableID & var) -> std::tuple<SimpleIntegerVariableID, bool, Integer>
+        {
+            return std::tuple{var, false, 0_i};
+        }
+
+        inline auto deview(const ViewOfIntegerVariableID & var) -> std::tuple<SimpleIntegerVariableID, bool, Integer>
+        {
+            return std::tuple{var.actual_variable, var.negate_first, var.then_add};
+        }
+
+        inline auto deview(const ConstantIntegerVariableID & var) -> std::tuple<ConstantIntegerVariableID, bool, Integer>
+        {
+            return std::tuple{var, false, 0_i};
+        }
+
+        inline auto deview(const IntegerVariableID & var) -> std::tuple<DirectIntegerVariableID, bool, Integer>
+        {
+            return overloaded{
+                [&](const SimpleIntegerVariableID & v) {
+                    return std::tuple{DirectIntegerVariableID{v}, false, 0_i};
+                },
+                [&](const ConstantIntegerVariableID & v) {
+                    return std::tuple{DirectIntegerVariableID{v}, false, 0_i};
+                },
+                [&](const ViewOfIntegerVariableID & v) {
+                    return std::tuple{DirectIntegerVariableID{v.actual_variable}, v.negate_first, v.then_add};
+                },
+            }
+                .visit(var);
+        }
+
+        inline auto apply_view(Integer v, bool negate_first, Integer then_add) -> Integer
+        {
+            return (negate_first ? -v : v) + then_add;
+        }
+
+        template <typename SimpleFn_, typename ConstantFn_>
+        auto visit_actual(const SimpleIntegerVariableID & v, SimpleFn_ && sf, ConstantFn_ &&) -> decltype(sf(v))
+        {
+            return sf(v);
+        }
+
+        template <typename SimpleFn_, typename ConstantFn_>
+        auto visit_actual(const ConstantIntegerVariableID & v, SimpleFn_ &&, ConstantFn_ && cf) -> decltype(cf(v))
+        {
+            return cf(v);
+        }
+
+        template <typename SimpleFn_, typename ConstantFn_>
+        auto visit_actual(const DirectIntegerVariableID & v, SimpleFn_ && sf, ConstantFn_ && cf)
+        {
+            return overloaded{sf, cf}.visit(v);
+        }
+    }
+
     /**
      * \brief Keeps track of the current state, at a point inside search.
      *
@@ -101,6 +165,15 @@ namespace gcs::innards
 
         [[nodiscard]] inline auto state_of(const SimpleIntegerVariableID &) -> IntervalSet<Integer> &;
         [[nodiscard]] inline auto state_of(const SimpleIntegerVariableID &) const -> const IntervalSet<Integer> &;
+
+        // Non-inline sibling of state_of() for use from member function templates
+        // defined in this header. The for_each_value_* templates need the IntervalSet
+        // by const reference from a header-visible context; state_of() is `inline` only
+        // in the C++ sense (its body lives in state.cc), so calling it from a header
+        // template fails to link. This helper is defined out-of-line in state.cc.
+        // Internal state.cc paths keep using state_of() unchanged so the compiler
+        // retains its previous freedom to inline that call.
+        [[nodiscard]] auto state_of_for_iteration(const SimpleIntegerVariableID &) const -> const IntervalSet<Integer> &;
 
     public:
         /**
@@ -318,7 +391,7 @@ namespace gcs::innards
          * variable's domain must not be modified whilst the generator is alive. Call using
          * either IntegerVariableID or one of its more specific types.
          *
-         * \sa State::each_value_mutable()
+         * \sa State::each_value_mutable(), State::for_each_value_immutable()
          */
         template <IntegerVariableIDLike VarType_>
         auto each_value_immutable(const VarType_ &) const -> std::generator<Integer>;
@@ -329,10 +402,62 @@ namespace gcs::innards
          * will run over the values pre-modification. Call using either IntegerVariableID or
          * one of its more specific types.
          *
-         * \sa State::each_value_immutable()
+         * \sa State::each_value_immutable(), State::for_each_value_mutable()
          */
         template <IntegerVariableIDLike VarType_>
         auto each_value_mutable(const VarType_ &) const -> std::generator<Integer>;
+
+        /**
+         * Non-coroutine alternative to each_value_immutable(). Calls \p cb(value)
+         * for each value in the variable's domain, in ascending order. Avoids the
+         * std::generator frame allocation, the std::function the view-application
+         * needs in the generator version, and copying the underlying IntervalSet.
+         *
+         * The variable's domain must not be modified during the callback. If \p cb
+         * returns \c bool, returning \c false stops iteration early.
+         *
+         * \sa State::each_value_immutable(), State::for_each_value_mutable()
+         */
+        template <IntegerVariableIDLike VarType_, typename Callback_>
+        auto for_each_value_immutable(const VarType_ & var, Callback_ && cb) const -> void
+        {
+            auto [actual_var, negate_first, then_add] = state_detail::deview(var);
+            state_detail::visit_actual(
+                actual_var,
+                [&, negate_first = negate_first, then_add = then_add](const SimpleIntegerVariableID & v) {
+                    state_of_for_iteration(v).for_each([&](Integer i) {
+                        return cb(state_detail::apply_view(i, negate_first, then_add));
+                    });
+                },
+                [&, negate_first = negate_first, then_add = then_add](const ConstantIntegerVariableID & v) {
+                    cb(state_detail::apply_view(v.const_value, negate_first, then_add));
+                });
+        }
+
+        /**
+         * Non-coroutine alternative to each_value_mutable(). The variable's
+         * domain may be modified by \p cb; iteration walks a snapshot of the
+         * pre-modification domain. If \p cb returns \c bool, returning \c false
+         * stops iteration early.
+         *
+         * \sa State::each_value_mutable(), State::for_each_value_immutable()
+         */
+        template <IntegerVariableIDLike VarType_, typename Callback_>
+        auto for_each_value_mutable(const VarType_ & var, Callback_ && cb) const -> void
+        {
+            auto [actual_var, negate_first, then_add] = state_detail::deview(var);
+            state_detail::visit_actual(
+                actual_var,
+                [&, negate_first = negate_first, then_add = then_add](const SimpleIntegerVariableID & v) {
+                    auto snapshot = state_of_for_iteration(v);
+                    snapshot.for_each([&](Integer i) {
+                        return cb(state_detail::apply_view(i, negate_first, then_add));
+                    });
+                },
+                [&, negate_first = negate_first, then_add = then_add](const ConstantIntegerVariableID & v) {
+                    cb(state_detail::apply_view(v.const_value, negate_first, then_add));
+                });
+        }
 
         /**
          * Return the contents of the domain.
