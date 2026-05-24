@@ -74,6 +74,44 @@ auto run_parity_test(bool proofs, const ViewWrapConfig & view_cfg, const vector<
     check_results(proof_name, expected, actual);
 }
 
+// Dup-variable test: post ParityOdd with the same handle in several
+// positions. Duplicate literals XOR-cancel: ParityOdd({x, x, y}) ≡
+// ParityOdd({y}). Consistency isn't checked on dup runs; see
+// tmp/duplicate_var_audit.md.
+auto run_dup_parity_test(bool proofs, const vector<pair<int, int>> & unique_domains,
+    const vector<int> & positions) -> void
+{
+    print(cerr, "parity odd dup domains {} positions {}{}",
+        unique_domains, positions, proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    // Reference predicate: post-cancellation, the parity is the parity
+    // of the count of unique-var occurrences with odd multiplicity.
+    set<tuple<vector<int>>> expected, actual;
+    build_expected(
+        expected, [&](const vector<int> & vals) -> bool {
+            int trues = 0;
+            for (auto pos : positions)
+                if (vals.at(pos) != 0) ++trues;
+            return trues % 2 == 1;
+        },
+        unique_domains);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    vector<IntegerVariableID> unique_vars;
+    for (const auto & d : unique_domains)
+        unique_vars.push_back(p.create_integer_variable(Integer(d.first), Integer(d.second)));
+    vector<IntegerVariableID> posted;
+    for (auto pos : positions)
+        posted.push_back(unique_vars.at(pos));
+    p.post(ParityOdd{posted});
+
+    auto proof_name = proofs ? make_optional("parity_test_dup") : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{unique_vars});
+    check_results(proof_name, expected, actual);
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
@@ -123,11 +161,27 @@ auto main(int argc, char * argv[]) -> int
         generate_random_data(rand, data, vector{size_t(n_values), random_bounds_or_constant(-1, 2, 1, 4)});
     }
 
+    // Dup-variable cases. Skipped under the view-wrap sweep.
+    bool run_dup = view_wrap_config_is_effectively_bare(view_cfg, n_positions);
+
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
             continue;
         for (auto & v : data)
             run_parity_test(proofs, view_cfg, v);
+
+        if (run_dup) {
+            // {x, x} — dups cancel; over {0,1} the empty parity is even ⇒ UNSAT.
+            run_dup_parity_test(proofs, {{0, 1}}, {0, 0});
+            // {x, x, y} — dups cancel; reduces to ParityOdd({y}).
+            run_dup_parity_test(proofs, {{0, 1}, {0, 1}}, {0, 0, 1});
+            // {x, y, x} — order shouldn't matter.
+            run_dup_parity_test(proofs, {{0, 1}, {0, 1}}, {0, 1, 0});
+            // {x, x, x, y} — three xs is odd-multiplicity ⇒ same as ParityOdd({x,y}).
+            run_dup_parity_test(proofs, {{0, 1}, {0, 1}}, {0, 0, 0, 1});
+            // Wider domains: non-zero values still count as "true" for parity.
+            run_dup_parity_test(proofs, {{-2, 2}, {0, 3}}, {0, 0, 1});
+        }
     }
 
     return EXIT_SUCCESS;

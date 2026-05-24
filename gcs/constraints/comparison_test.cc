@@ -172,6 +172,52 @@ auto run_reif_binary_comparison_test(bool proofs, const string & mode, const Vie
     }
 }
 
+// Dup-variable test: post a binary comparison with the same handle in
+// both slots. Consistency isn't checked on dup runs; see
+// tmp/duplicate_var_audit.md.
+template <typename Constraint_>
+auto run_dup_binary_comparison_test(bool proofs, const string & mode, pair<int, int> x_range,
+    const function<auto(int) -> bool> & is_satisfying) -> void
+{
+    print(cerr, "comparison dup {} {} {}", NameOf<Constraint_>::name, x_range, proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    set<tuple<int>> expected, actual;
+    build_expected(expected, is_satisfying, x_range);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    auto x = p.create_integer_variable(Integer(x_range.first), Integer(x_range.second));
+    p.post(Constraint_{x, x});
+
+    auto proof_name = proofs ? make_optional("comparison_test_" + mode + "_dup") : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{x});
+
+    check_results(proof_name, expected, actual);
+}
+
+template <typename Constraint_>
+auto run_dup_reif_binary_comparison_test(bool proofs, const string & mode, pair<int, int> x_range,
+    const function<auto(int, int) -> bool> & is_satisfying) -> void
+{
+    print(cerr, "comparison dup reif {} {} {}", NameOf<Constraint_>::name, x_range, proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    set<tuple<int, int>> expected, actual;
+    build_expected(expected, is_satisfying, x_range, pair{0, 1});
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    auto x = p.create_integer_variable(Integer(x_range.first), Integer(x_range.second));
+    auto c = p.create_integer_variable(0_i, 1_i, "c");
+    p.post(Constraint_{x, x, c == 1_i});
+
+    auto proof_name = proofs ? make_optional("comparison_test_" + mode + "_dup") : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{x, c});
+
+    check_results(proof_name, expected, actual);
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     // Mode is the first non-flag positional; --view-* flags may follow.
@@ -261,6 +307,39 @@ auto main(int argc, char * argv[]) -> int
             }
             else
                 throw UnimplementedException{};
+        }
+
+        // Dup-variable cases. Only the audit's OK variants are exercised here;
+        // lt, gt, lt_if, gt_if are skipped (Bucket A throw / Bucket B fix).
+        if (view_wrap_config_is_effectively_bare(view_cfg, n_positions)) {
+            vector<pair<int, int>> dup_data = {{0, 0}, {0, 5}, {-3, 3}, {2, 5}};
+            for (auto & xr : dup_data) {
+                if (mode == "le")
+                    run_dup_binary_comparison_test<LessThanEqual>(proofs, mode, xr,
+                        [](int) { return true; });
+                else if (mode == "ge")
+                    run_dup_binary_comparison_test<GreaterThanEqual>(proofs, mode, xr,
+                        [](int) { return true; });
+                else if (mode == "le_if")
+                    run_dup_reif_binary_comparison_test<LessThanEqualIf>(proofs, mode, xr,
+                        [](int, int) { return true; });
+                else if (mode == "ge_if")
+                    run_dup_reif_binary_comparison_test<GreaterThanEqualIf>(proofs, mode, xr,
+                        [](int, int) { return true; });
+                else if (mode == "lt_iff")
+                    run_dup_reif_binary_comparison_test<LessThanIff>(proofs, mode, xr,
+                        [](int, int c) { return c == 0; });
+                else if (mode == "le_iff")
+                    run_dup_reif_binary_comparison_test<LessThanEqualIff>(proofs, mode, xr,
+                        [](int, int c) { return c == 1; });
+                else if (mode == "gt_iff")
+                    run_dup_reif_binary_comparison_test<GreaterThanIff>(proofs, mode, xr,
+                        [](int, int c) { return c == 0; });
+                else if (mode == "ge_iff")
+                    run_dup_reif_binary_comparison_test<GreaterThanEqualIff>(proofs, mode, xr,
+                        [](int, int c) { return c == 1; });
+                // else: lt, gt, lt_if, gt_if — Bucket A/B, no dup test
+            }
         }
     }
 
