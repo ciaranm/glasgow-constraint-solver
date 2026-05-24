@@ -125,6 +125,48 @@ auto run_negative_wildcard_table_test(bool proofs, const ViewWrapConfig & view_c
     check_results(proof_name, expected, actual);
 }
 
+// Dup-variable test: NegativeTable with the same handle in several
+// positions. Forbidden tuples whose dup positions disagree are
+// vacuously satisfied (the underlying assignment is impossible).
+// Consistency isn't checked on dup runs; see tmp/duplicate_var_audit.md.
+auto run_dup_negative_table_test(bool proofs, const vector<pair<int, int>> & unique_domains,
+    const vector<int> & positions, SimpleTuples forbidden) -> void
+{
+    print(cerr, "negative table dup unique_doms={} positions={} {} tuples{}",
+        unique_domains, positions, forbidden.size(), proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    set<tuple<vector<int>>> expected, actual;
+    build_expected(
+        expected, [&](const vector<int> & unique_vals) -> bool {
+            for (const auto & t : forbidden) {
+                bool match = true;
+                for (size_t i = 0; i < positions.size(); ++i)
+                    if (t.at(i).raw_value != unique_vals.at(positions.at(i))) {
+                        match = false;
+                        break;
+                    }
+                if (match) return false;
+            }
+            return true;
+        },
+        unique_domains);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    vector<IntegerVariableID> unique_vars;
+    for (const auto & d : unique_domains)
+        unique_vars.push_back(p.create_integer_variable(Integer(d.first), Integer(d.second)));
+    vector<IntegerVariableID> vars;
+    for (auto pos : positions)
+        vars.push_back(unique_vars.at(pos));
+    p.post(NegativeTable{vars, forbidden});
+
+    auto proof_name = proofs ? make_optional("negative_table_test_dup") : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{unique_vars});
+    check_results(proof_name, expected, actual);
+}
+
 auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
 {
     // Two-variable cases.
@@ -180,10 +222,21 @@ auto main(int argc, char * argv[]) -> int
         return EXIT_SUCCESS;
     }
 
+    bool run_dup = view_wrap_config_is_effectively_bare(view_cfg, n_positions);
+
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
             continue;
         run_all_tests(proofs, view_cfg);
+        if (run_dup) {
+            // {x, y, x} — a forbidden tuple (1, 2, 1) forbids x=1,y=2; tuple
+            // (1, 2, 3) is vacuously satisfied (x can't be both 1 and 3).
+            run_dup_negative_table_test(proofs, {{1, 3}, {1, 3}}, {0, 1, 0},
+                {{1_i, 2_i, 1_i}, {1_i, 2_i, 3_i}, {2_i, 3_i, 2_i}});
+            // {x, x} — only diagonal tuples actually forbid anything.
+            run_dup_negative_table_test(proofs, {{1, 3}}, {0, 0},
+                {{1_i, 1_i}, {2_i, 3_i}});
+        }
     }
 
     return EXIT_SUCCESS;

@@ -182,6 +182,45 @@ auto run_linear_reif_test(bool full_reif, bool proofs, const string & mode, cons
     }
 }
 
+// Dup-variable test: Linear with the same handle in two terms. The
+// audit predicts the propagator coalesces via tidy_up_linear and the
+// PB encoding sums coefficients in normal form. Consistency isn't
+// checked on dup runs; see tmp/duplicate_var_audit.md.
+template <typename Constraint_>
+auto run_dup_linear_test(bool proofs, const string & mode,
+    pair<int, int> a_range, pair<int, int> b_range,
+    const vector<int> & coeffs_a_then_b, int rhs,
+    const std::function<auto(int, int)->bool> & compare) -> void
+{
+    // coeffs_a_then_b has 3 entries; positions 0 and 1 use variable a,
+    // position 2 uses variable b. Effective sum: (c0+c1)*a + c2*b.
+    print(cerr, "linear dup {} a={} b={} coeffs={} rhs={}{}",
+        mode, a_range, b_range, coeffs_a_then_b, rhs, proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    auto is_satisfying = [&](int av, int bv) {
+        int sum = coeffs_a_then_b.at(0) * av + coeffs_a_then_b.at(1) * av + coeffs_a_then_b.at(2) * bv;
+        return compare(sum, rhs);
+    };
+
+    set<tuple<int, int>> expected, actual;
+    build_expected(expected, is_satisfying, a_range, b_range);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    auto a = p.create_integer_variable(Integer(a_range.first), Integer(a_range.second));
+    auto b = p.create_integer_variable(Integer(b_range.first), Integer(b_range.second));
+    WeightedSum c;
+    c += Integer{coeffs_a_then_b.at(0)} * a;
+    c += Integer{coeffs_a_then_b.at(1)} * a;
+    c += Integer{coeffs_a_then_b.at(2)} * b;
+    p.post(Constraint_{c, Integer{rhs}});
+
+    auto proof_name = proofs ? make_optional("linear_equality_test_" + mode + "_dup") : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{a, b});
+    check_results(proof_name, expected, actual);
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     string mode;
@@ -330,6 +369,29 @@ auto main(int argc, char * argv[]) -> int
             }
             else
                 throw UnimplementedException{};
+        }
+
+        // Dup-variable cases. Cover the non-reified Linear variants;
+        // reified forms share the same coalescing infrastructure.
+        if (view_wrap_config_is_effectively_bare(view_cfg, n_positions)) {
+            // 2*a + 3*a + 1*b coalesces to 5*a + 1*b.
+            if (mode == "eq")
+                run_dup_linear_test<LinearEquality>(proofs, mode, {0, 5}, {-5, 5},
+                    {2, 3, 1}, 10, [](int a, int b) { return a == b; });
+            else if (mode == "ne")
+                run_dup_linear_test<LinearNotEquals>(proofs, mode, {0, 5}, {-5, 5},
+                    {2, 3, 1}, 10, [](int a, int b) { return a != b; });
+            else if (mode == "le")
+                run_dup_linear_test<LinearLessThanEqual>(proofs, mode, {0, 5}, {-5, 5},
+                    {2, 3, 1}, 10, [](int a, int b) { return a <= b; });
+            else if (mode == "ge")
+                run_dup_linear_test<LinearGreaterThanEqual>(proofs, mode, {0, 5}, {-5, 5},
+                    {2, 3, 1}, 10, [](int a, int b) { return a >= b; });
+            // 1*a + (-1)*a + 2*b coalesces to 0*a + 2*b = 2*b — exercises
+            // the zero-coefficient-after-coalescing path.
+            if (mode == "eq")
+                run_dup_linear_test<LinearEquality>(proofs, mode, {0, 5}, {0, 5},
+                    {1, -1, 2}, 4, [](int a, int b) { return a == b; });
         }
     }
 
