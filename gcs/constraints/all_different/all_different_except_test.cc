@@ -164,6 +164,36 @@ auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg, bool run_dup) -
 
         // Two duplicate runs in the same constraint.
         run_alldiffexcept_dup_test(proofs, {{0, 3}, {0, 3}}, {0, 0, 1, 1}, {0, 1});
+
+        // AllDifferentExceptZero is a thin wrapper over AllDifferentExcept
+        // with excluded={0}. Exercise it by name once on a dup posting to
+        // catch any regression in the wrapper forwarding.
+        {
+            print(cerr, "all_different_except_zero dup{}", proofs ? " with proofs:" : ":");
+            cerr << flush;
+            Problem p;
+            auto x = p.create_integer_variable(0_i, 3_i);
+            auto y = p.create_integer_variable(0_i, 3_i);
+            p.post(AllDifferentExceptZero{vector<IntegerVariableID>{x, x, y}});
+            set<tuple<int, int>> expected, actual;
+            // Posted array is {x, x, y}; check every pair.
+            for (int xv = 0; xv <= 3; ++xv) {
+                for (int yv = 0; yv <= 3; ++yv) {
+                    vector<int> v{xv, xv, yv};
+                    bool ok = true;
+                    for (size_t i = 0; i < v.size() && ok; ++i)
+                        for (size_t j = i + 1; j < v.size() && ok; ++j)
+                            if (v[i] == v[j] && v[i] != 0)
+                                ok = false;
+                    if (ok)
+                        expected.emplace(xv, yv);
+                }
+            }
+            println(cerr, " expecting {} solutions", expected.size());
+            auto proof_name = proofs ? make_optional<std::string>("all_different_except_zero_test_dup") : nullopt;
+            solve_for_tests(p, proof_name, actual, tuple{x, y});
+            check_results(proof_name, expected, actual);
+        }
     }
 }
 
