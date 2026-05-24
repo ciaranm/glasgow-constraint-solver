@@ -85,6 +85,76 @@ auto run_among_test(bool proofs, const ViewWrapConfig & view_cfg,
     check_results(proof_name, expected, actual);
 }
 
+// Dup-variable test: Among with the same handle appearing in several
+// array positions. Each occurrence is counted independently (so a fixed
+// duplicated variable contributes its membership multiple times). See
+// tmp/duplicate_var_audit.md.
+auto run_dup_among_test(bool proofs, const vector<pair<int, int>> & unique_domains,
+    const vector<int> & positions, const vector<int> & voi, pair<int, int> result_range) -> void
+{
+    print(cerr, "among dup domains={} positions={} voi={} result={}{}",
+        unique_domains, positions, voi, result_range, proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    set<tuple<int, vector<int>>> expected, actual;
+    build_expected(
+        expected, [&](int r, const vector<int> & vals) -> bool {
+            int counted = 0;
+            for (auto pos : positions)
+                if (0 != count(voi.begin(), voi.end(), vals.at(pos))) ++counted;
+            return r == counted;
+        },
+        result_range, unique_domains);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    auto result = p.create_integer_variable(Integer(result_range.first), Integer(result_range.second));
+    vector<IntegerVariableID> unique_vars;
+    for (const auto & d : unique_domains)
+        unique_vars.push_back(p.create_integer_variable(Integer(d.first), Integer(d.second)));
+    vector<IntegerVariableID> array;
+    for (auto pos : positions)
+        array.push_back(unique_vars.at(pos));
+    vector<Integer> voi_i;
+    for (auto v : voi)
+        voi_i.push_back(Integer(v));
+    p.post(Among{array, voi_i, result});
+
+    auto proof_name = proofs ? make_optional("among_test_dup") : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{result, unique_vars});
+    check_results(proof_name, expected, actual);
+}
+
+// Self-reference: the result variable also appears in the array.
+auto run_self_ref_among_test(bool proofs, pair<int, int> shared_range, const vector<int> & voi) -> void
+{
+    print(cerr, "among self-ref shared={} voi={}{}", shared_range, voi, proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    // Array is [shared, shared] and count is shared too — count = how many
+    // occurrences of shared's value are in voi, times 2; plus shared itself
+    // must equal that count.
+    set<tuple<int>> expected, actual;
+    build_expected(
+        expected, [&](int s) -> bool {
+            int hits = (0 != count(voi.begin(), voi.end(), s)) ? 2 : 0;
+            return s == hits;
+        },
+        shared_range);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    auto shared = p.create_integer_variable(Integer(shared_range.first), Integer(shared_range.second));
+    vector<Integer> voi_i;
+    for (auto v : voi)
+        voi_i.push_back(Integer(v));
+    p.post(Among{vector<IntegerVariableID>{shared, shared}, voi_i, shared});
+
+    auto proof_name = proofs ? make_optional("among_test_selfref") : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{shared});
+    check_results(proof_name, expected, actual);
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
@@ -121,11 +191,24 @@ auto main(int argc, char * argv[]) -> int
             vector{size_t(n_values_2), random_bounds_or_constant(-5, 8, 3, 8)});
     }
 
+    bool run_dup = view_wrap_config_is_effectively_bare(view_cfg, n_positions);
+
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
             continue;
         for (auto & [r1, r2, r3] : data)
             run_among_test(proofs, view_cfg, r1, r2, r3);
+        if (run_dup) {
+            // {x, x, y} — x's match counts twice.
+            run_dup_among_test(proofs, {{1, 4}, {1, 4}}, {0, 0, 1}, {2, 3}, {0, 3});
+            // {x, y, x} — order shouldn't matter.
+            run_dup_among_test(proofs, {{1, 4}, {1, 4}}, {0, 1, 0}, {2, 3}, {0, 3});
+            // {x, x} — count must be 0 or 2.
+            run_dup_among_test(proofs, {{0, 5}}, {0, 0}, {1, 3, 5}, {0, 2});
+            // Self-reference: result var also in array.
+            run_self_ref_among_test(proofs, {0, 4}, {2});
+            run_self_ref_among_test(proofs, {0, 3}, {0, 2});
+        }
     }
 
     return EXIT_SUCCESS;

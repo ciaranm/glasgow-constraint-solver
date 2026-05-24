@@ -24,6 +24,7 @@ using std::make_optional;
 using std::nullopt;
 using std::pair;
 using std::set;
+using std::string;
 using std::tie;
 using std::tuple;
 using std::vector;
@@ -460,6 +461,70 @@ auto run_variant_tests(bool proofs) -> void
     run_lex_test_unequal<V>(proofs, {{1, 3}, {1, 3}, {1, 3}}, {{1, 3}});
 }
 
+// Dup-variable test: Lex with the same handle appearing across the two
+// arrays. LexLess(xs, xs) is UNSAT; LexLessEqual(xs, xs) is tautology;
+// {x, y} <=lex {x, z} reduces to y <= z. Consistency isn't checked on
+// dup runs; see tmp/duplicate_var_audit.md.
+template <LexVariant V>
+auto run_dup_lex_test(bool proofs, const string & label,
+    const vector<pair<int, int>> & unique_domains,
+    const vector<int> & left_positions, const vector<int> & right_positions) -> void
+{
+    print(cerr, "lex dup {} {} domains={} left={} right={}{}", variant_name<V>(),
+        label, unique_domains, left_positions, right_positions, proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    set<tuple<vector<int>>> expected, actual;
+    build_expected(
+        expected, [&](const vector<int> & vals) -> bool {
+            vector<int> l, r;
+            for (auto pos : left_positions) l.push_back(vals.at(pos));
+            for (auto pos : right_positions) r.push_back(vals.at(pos));
+            return cmp_lex<V>(l, r);
+        },
+        unique_domains);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    vector<IntegerVariableID> unique_vars;
+    for (const auto & d : unique_domains)
+        unique_vars.push_back(p.create_integer_variable(Integer(d.first), Integer(d.second)));
+    vector<IntegerVariableID> left, right;
+    for (auto pos : left_positions) left.push_back(unique_vars.at(pos));
+    for (auto pos : right_positions) right.push_back(unique_vars.at(pos));
+    post_lex<V>(p, left, right);
+
+    auto proof_name = proofs ? make_optional("lex_test_dup_" + label) : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{unique_vars});
+    check_results(proof_name, expected, actual);
+}
+
+auto run_all_dup_tests(bool proofs) -> void
+{
+    // LexCompare(xs, xs) — strict UNSAT, non-strict tautology.
+    // Use distinct unique vars for the two-element xs.
+    run_dup_lex_test<LexVariant::LessThan>(proofs, "lt_same", {{0, 2}, {0, 2}}, {0, 1}, {0, 1});
+    run_dup_lex_test<LexVariant::LessThanEqual>(proofs, "le_same", {{0, 2}, {0, 2}}, {0, 1}, {0, 1});
+    run_dup_lex_test<LexVariant::GreaterThan>(proofs, "gt_same", {{0, 2}, {0, 2}}, {0, 1}, {0, 1});
+    run_dup_lex_test<LexVariant::GreaterEqual>(proofs, "ge_same", {{0, 2}, {0, 2}}, {0, 1}, {0, 1});
+
+    // {x, y} <=lex {x, z} — first positions equal → y <=lex z.
+    run_dup_lex_test<LexVariant::LessThanEqual>(proofs, "le_share0",
+        {{0, 2}, {0, 2}, {0, 2}}, {0, 1}, {0, 2});
+
+    // {x, y} <lex {x, z} — first positions equal → y < z.
+    run_dup_lex_test<LexVariant::LessThan>(proofs, "lt_share0",
+        {{0, 2}, {0, 2}, {0, 2}}, {0, 1}, {0, 2});
+
+    // Within-left dup: {x, x} <=lex {a, b}.
+    run_dup_lex_test<LexVariant::LessThanEqual>(proofs, "le_dupleft",
+        {{1, 3}, {1, 3}, {1, 3}}, {0, 0}, {1, 2});
+
+    // Within-right dup: {a, b} <lex {x, x}.
+    run_dup_lex_test<LexVariant::LessThan>(proofs, "lt_dupright",
+        {{1, 3}, {1, 3}, {1, 3}}, {0, 1}, {2, 2});
+}
+
 auto run_all_tests(bool proofs) -> void
 {
     run_variant_tests<LexVariant::GreaterThan>(proofs);
@@ -483,6 +548,7 @@ auto main(int, char *[]) -> int
         if (proofs && ! can_run_veripb())
             continue;
         run_all_tests(proofs);
+        run_all_dup_tests(proofs);
     }
 
     return EXIT_SUCCESS;

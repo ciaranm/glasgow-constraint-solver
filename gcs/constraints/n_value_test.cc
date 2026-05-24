@@ -68,6 +68,43 @@ auto run_n_value_test(bool proofs, const ViewWrapConfig & view_cfg,
     check_results(proof_name, expected, actual);
 }
 
+// Dup-variable test: NValue with the same handle in several array
+// positions. Distinct-value count is unaffected by duplicates (set
+// semantics). Consistency isn't checked on dup runs; see
+// tmp/duplicate_var_audit.md.
+auto run_dup_n_value_test(bool proofs, const vector<pair<int, int>> & unique_domains,
+    const vector<int> & positions, pair<int, int> result_range) -> void
+{
+    print(cerr, "nvalue dup domains={} positions={} result={}{}",
+        unique_domains, positions, result_range, proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    set<tuple<int, vector<int>>> expected, actual;
+    build_expected(
+        expected, [&](int r, const vector<int> & vals) -> bool {
+            set<int> distinct;
+            for (auto pos : positions)
+                distinct.insert(vals.at(pos));
+            return cmp_equal(r, distinct.size());
+        },
+        result_range, unique_domains);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    auto result = p.create_integer_variable(Integer(result_range.first), Integer(result_range.second));
+    vector<IntegerVariableID> unique_vars;
+    for (const auto & d : unique_domains)
+        unique_vars.push_back(p.create_integer_variable(Integer(d.first), Integer(d.second)));
+    vector<IntegerVariableID> array;
+    for (auto pos : positions)
+        array.push_back(unique_vars.at(pos));
+    p.post(NValue{result, array});
+
+    auto proof_name = proofs ? make_optional("n_value_test_dup") : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{result, unique_vars});
+    check_results(proof_name, expected, actual);
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
@@ -112,11 +149,23 @@ auto main(int argc, char * argv[]) -> int
         generate_random_data(rand, data, random_constant(-5, 5), vector(n_values, random_bounds_or_constant(-5, 5, 2, 7)));
     }
 
+    bool run_dup = view_wrap_config_is_effectively_bare(view_cfg, n_positions);
+
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
             continue;
         for (auto & [r1, r2] : data)
             run_n_value_test(proofs, view_cfg, r1, r2);
+        if (run_dup) {
+            // {x, x} — distinct count is always 1.
+            run_dup_n_value_test(proofs, {{1, 4}}, {0, 0}, {0, 3});
+            // {x, x, y} — distinct count is 1 (when x==y) or 2.
+            run_dup_n_value_test(proofs, {{1, 3}, {1, 3}}, {0, 0, 1}, {0, 3});
+            // {x, y, x} — same as above with reordering.
+            run_dup_n_value_test(proofs, {{1, 3}, {1, 3}}, {0, 1, 0}, {0, 3});
+            // {x, x, y, y} — distinct count is 1 or 2.
+            run_dup_n_value_test(proofs, {{1, 3}, {1, 3}}, {0, 0, 1, 1}, {0, 3});
+        }
     }
 
     return EXIT_SUCCESS;

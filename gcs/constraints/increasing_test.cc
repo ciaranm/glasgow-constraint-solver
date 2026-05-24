@@ -146,6 +146,44 @@ auto run_all_for_variant(bool proofs, const ViewWrapConfig & view_cfg) -> void
     run_inc_test<V>(proofs, view_cfg, {2, pair{0, 5}, 4});
 }
 
+// Dup-variable test: Increasing/Decreasing variants with the same
+// handle in two adjacent positions. Non-strict variants are tautological
+// at the dup point (x <= x / x >= x); strict variants are UNSAT
+// (x < x / x > x). Consistency isn't checked on dup runs; see
+// tmp/duplicate_var_audit.md.
+template <IncVariant V>
+auto run_dup_inc_test(bool proofs, const vector<pair<int, int>> & unique_domains,
+    const vector<int> & positions) -> void
+{
+    print(cerr, "{} dup domains={} positions={}{}", variant_name<V>(),
+        unique_domains, positions, proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    set<tuple<vector<int>>> expected, actual;
+    build_expected(
+        expected, [&](const vector<int> & vals) -> bool {
+            vector<int> v;
+            for (auto pos : positions)
+                v.push_back(vals.at(pos));
+            return satisfied<V>(v);
+        },
+        unique_domains);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    vector<IntegerVariableID> unique_vars;
+    for (const auto & d : unique_domains)
+        unique_vars.push_back(p.create_integer_variable(Integer(d.first), Integer(d.second)));
+    vector<IntegerVariableID> array;
+    for (auto pos : positions)
+        array.push_back(unique_vars.at(pos));
+    post_inc<V>(p, array);
+
+    auto proof_name = proofs ? make_optional("increasing_test_dup") : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{unique_vars});
+    check_results(proof_name, expected, actual);
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
@@ -185,6 +223,20 @@ auto main(int argc, char * argv[]) -> int
             random_run.template operator()<IncVariant::StrictlyIncreasing>(proofs);
             random_run.template operator()<IncVariant::Decreasing>(proofs);
             random_run.template operator()<IncVariant::StrictlyDecreasing>(proofs);
+        }
+
+        if (view_wrap_config_is_effectively_bare(view_cfg, n_positions)) {
+            // {x, x} — non-strict tautology, strict UNSAT.
+            run_dup_inc_test<IncVariant::Increasing>(proofs, {{1, 5}}, {0, 0});
+            run_dup_inc_test<IncVariant::StrictlyIncreasing>(proofs, {{1, 5}}, {0, 0});
+            run_dup_inc_test<IncVariant::Decreasing>(proofs, {{1, 5}}, {0, 0});
+            run_dup_inc_test<IncVariant::StrictlyDecreasing>(proofs, {{1, 5}}, {0, 0});
+            // {x, x, y} — non-strict: x <= y for any x; strict: UNSAT.
+            run_dup_inc_test<IncVariant::Increasing>(proofs, {{1, 5}, {1, 5}}, {0, 0, 1});
+            run_dup_inc_test<IncVariant::StrictlyIncreasing>(proofs, {{1, 5}, {1, 5}}, {0, 0, 1});
+            // {x, y, x} — interesting: forces y == x in non-strict, UNSAT in strict.
+            run_dup_inc_test<IncVariant::Increasing>(proofs, {{1, 4}, {1, 4}}, {0, 1, 0});
+            run_dup_inc_test<IncVariant::StrictlyIncreasing>(proofs, {{1, 4}, {1, 4}}, {0, 1, 0});
         }
     }
     return EXIT_SUCCESS;

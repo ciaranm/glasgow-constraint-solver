@@ -79,6 +79,68 @@ auto run_count_test(bool proofs, const ViewWrapConfig & view_cfg,
     check_results(proof_name, expected, actual);
 }
 
+// Dup-variable test: Count with the same handle appearing in several
+// array positions. Each occurrence is counted independently. Consistency
+// isn't checked on dup runs; see tmp/duplicate_var_audit.md.
+auto run_dup_count_test(bool proofs, const vector<pair<int, int>> & unique_domains,
+    const vector<int> & positions, int voi_const, pair<int, int> result_range) -> void
+{
+    print(cerr, "count dup domains={} positions={} voi={} result={}{}",
+        unique_domains, positions, voi_const, result_range, proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    set<tuple<int, vector<int>>> expected, actual;
+    build_expected(
+        expected, [&](int r, const vector<int> & vals) -> bool {
+            int counted = 0;
+            for (auto pos : positions)
+                if (vals.at(pos) == voi_const) ++counted;
+            return r == counted;
+        },
+        result_range, unique_domains);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    auto result = p.create_integer_variable(Integer(result_range.first), Integer(result_range.second));
+    vector<IntegerVariableID> unique_vars;
+    for (const auto & d : unique_domains)
+        unique_vars.push_back(p.create_integer_variable(Integer(d.first), Integer(d.second)));
+    vector<IntegerVariableID> array;
+    for (auto pos : positions)
+        array.push_back(unique_vars.at(pos));
+    p.post(Count{array, ConstantIntegerVariableID{Integer(voi_const)}, result});
+
+    auto proof_name = proofs ? make_optional("count_test_dup") : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{result, unique_vars});
+    check_results(proof_name, expected, actual);
+}
+
+// result variable also appears in the array.
+auto run_count_result_in_array_test(bool proofs, pair<int, int> shared_range, int voi_const) -> void
+{
+    print(cerr, "count result-in-array shared={} voi={}{}", shared_range, voi_const, proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    // Array is [shared] with result = shared: result = [shared == voi_const],
+    // since the array has one entry and we count matches against voi_const.
+    set<tuple<int>> expected, actual;
+    build_expected(
+        expected, [&](int s) -> bool {
+            int hits = (s == voi_const) ? 1 : 0;
+            return s == hits;
+        },
+        shared_range);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    auto shared = p.create_integer_variable(Integer(shared_range.first), Integer(shared_range.second));
+    p.post(Count{vector<IntegerVariableID>{shared}, ConstantIntegerVariableID{Integer(voi_const)}, shared});
+
+    auto proof_name = proofs ? make_optional("count_test_resin") : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{shared});
+    check_results(proof_name, expected, actual);
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
@@ -131,11 +193,26 @@ auto main(int argc, char * argv[]) -> int
             vector{size_t(n_values), random_bounds_or_constant(-5, 8, 3, 8)});
     }
 
+    bool run_dup = view_wrap_config_is_effectively_bare(view_cfg, n_positions);
+
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
             continue;
         for (auto & [r1, r2, r3] : data)
             run_count_test(proofs, view_cfg, r1, r2, r3);
+        if (run_dup) {
+            // {x, x, y} — x's match counts twice.
+            run_dup_count_test(proofs, {{1, 4}, {1, 4}}, {0, 0, 1}, 2, {0, 3});
+            // {x, y, x} — non-adjacent dup (exercises the SmartTable hazard
+            // pattern; Count's encoding shouldn't be affected, audit predicted OK).
+            run_dup_count_test(proofs, {{1, 4}, {1, 4}}, {0, 1, 0}, 2, {0, 3});
+            // {x, x} — count must be 0 or 2.
+            run_dup_count_test(proofs, {{0, 3}}, {0, 0}, 2, {0, 2});
+
+            // result variable also in array.
+            run_count_result_in_array_test(proofs, {0, 2}, 0);
+            run_count_result_in_array_test(proofs, {0, 2}, 1);
+        }
     }
 
     return EXIT_SUCCESS;

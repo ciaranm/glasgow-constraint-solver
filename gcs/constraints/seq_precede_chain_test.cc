@@ -160,6 +160,42 @@ auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
     run_test(proofs, view_cfg, {0, pair{1, 3}, -1, pair{1, 3}});
 }
 
+// Dup-variable test: SeqPrecedeChain with the same handle in several
+// array positions. A duplicated occurrence still must satisfy the chain;
+// taking the same value at two positions just means "earliest v" lands
+// at the first. See tmp/duplicate_var_audit.md.
+auto run_dup_seq_precede_chain_test(bool proofs, const vector<pair<int, int>> & unique_domains,
+    const vector<int> & positions) -> void
+{
+    print(cerr, "seq_precede_chain dup domains={} positions={}{}",
+        unique_domains, positions, proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    set<tuple<vector<int>>> expected, actual;
+    build_expected(
+        expected, [&](const vector<int> & vals) -> bool {
+            vector<int> v;
+            for (auto pos : positions)
+                v.push_back(vals.at(pos));
+            return satisfies_seq_precede_chain(v);
+        },
+        unique_domains);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    vector<IntegerVariableID> unique_vars;
+    for (const auto & d : unique_domains)
+        unique_vars.push_back(p.create_integer_variable(Integer(d.first), Integer(d.second)));
+    vector<IntegerVariableID> array;
+    for (auto pos : positions)
+        array.push_back(unique_vars.at(pos));
+    p.post(SeqPrecedeChain{array});
+
+    auto proof_name = proofs ? make_optional("seq_precede_chain_test_dup") : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{unique_vars});
+    check_results(proof_name, expected, actual);
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
@@ -198,6 +234,15 @@ auto main(int argc, char * argv[]) -> int
             for (int i = 0; i < n; ++i)
                 doms.emplace_back(generate_random_data_item(rand, random_bounds_or_constant(0, 3, 1, 3)));
             run_test(proofs, view_cfg, doms);
+        }
+
+        if (view_wrap_config_is_effectively_bare(view_cfg, n_positions)) {
+            // {x, x} — single distinct value; both positions take it.
+            run_dup_seq_precede_chain_test(proofs, {{1, 3}}, {0, 0});
+            // {x, x, y} — duplicate then a new value.
+            run_dup_seq_precede_chain_test(proofs, {{1, 3}, {1, 3}}, {0, 0, 1});
+            // {x, y, x} — y between duplicates.
+            run_dup_seq_precede_chain_test(proofs, {{1, 3}, {1, 3}}, {0, 1, 0});
         }
     }
 
