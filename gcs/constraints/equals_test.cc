@@ -77,6 +77,39 @@ auto run_equals_test(const string & which, bool proofs, const ViewWrapConfig & v
     check_results(proof_name, expected, actual);
 }
 
+// Dup-variable test: post a constraint with the same handle in both
+// variable slots. Consistency is intentionally not checked: a GAC
+// algorithm for distinct variables doesn't generally yield GAC under
+// aliasing, and fixing it varies in difficulty per constraint. We
+// verify the solution set and the proof only.
+template <typename Constraint_>
+auto run_dup_equals_test(const string & filename_tag, bool proofs, pair<int, int> x_range,
+    const function<auto(int, int) -> bool> & is_satisfying) -> void
+{
+    print(cerr, "equals dup {} {} {}", filename_tag, x_range, proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    pair<int, int> c_range{0, 1};
+    set<tuple<int, int>> expected, actual;
+    build_expected(expected, is_satisfying, x_range, c_range);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    auto x = p.create_integer_variable(Integer(x_range.first), Integer(x_range.second));
+    auto c = p.create_integer_variable(0_i, 1_i);
+    if constexpr (is_same_v<Constraint_, Equals> || is_same_v<Constraint_, NotEquals>) {
+        p.post(Constraint_{x, x});
+    }
+    else {
+        p.post(Constraint_{x, x, c == 1_i});
+    }
+
+    auto proof_name = proofs ? make_optional("equals_test_dup_" + filename_tag) : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{x, c});
+
+    check_results(proof_name, expected, actual);
+}
+
 auto run_no_overlap_equals_test(bool proofs) -> void
 {
     print(cerr, "no overlap equals {}", proofs ? " with proofs:" : ":");
@@ -176,6 +209,11 @@ auto main(int argc, char * argv[]) -> int
     // currently part of the view sweep, so only run it for the baseline.
     bool run_no_overlap = view_wrap_config_is_effectively_bare(view_cfg, n_positions);
 
+    // Bare-handle dup ranges. Skipped under the view-wrap sweep (which
+    // mutates positional view-wraps in ways that aren't aliasing-aware).
+    vector<pair<int, int>> dup_data = {
+        {0, 0}, {0, 1}, {0, 5}, {-3, 3}, {2, 5}};
+
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
             continue;
@@ -189,6 +227,17 @@ auto main(int argc, char * argv[]) -> int
             run_equals_test<NotEqualsIf>("not equals if", proofs, view_cfg, r1, r2, [](int a, int b, int f) { return (! f) || (a != b); });
             run_equals_test<NotEqualsIff>("not equals iff", proofs, view_cfg, r1, r2, [](int a, int b, int f) { return (a != b) == f; });
         }
+        if (view_wrap_config_is_effectively_bare(view_cfg, n_positions))
+            for (auto & x_range : dup_data) {
+                run_dup_equals_test<Equals>("equals", proofs, x_range,
+                    [](int, int) { return true; });
+                run_dup_equals_test<EqualsIf>("equals_if", proofs, x_range,
+                    [](int, int) { return true; });
+                run_dup_equals_test<EqualsIff>("equals_iff", proofs, x_range,
+                    [](int, int c) { return c == 1; });
+                run_dup_equals_test<NotEqualsIff>("notequals_iff", proofs, x_range,
+                    [](int, int c) { return c == 0; });
+            }
     }
 
     return EXIT_SUCCESS;
