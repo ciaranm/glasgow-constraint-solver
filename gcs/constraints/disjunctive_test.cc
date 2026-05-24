@@ -50,6 +50,59 @@ using namespace gcs::test_innards;
 
 namespace
 {
+    // Dup-variable test: Disjunctive with the same start handle for two
+    // tasks. Two positive-length tasks sharing a start ⇒ UNSAT (they
+    // overlap by construction). Consistency isn't checked on dup runs;
+    // see tmp/duplicate_var_audit.md.
+    auto run_dup_disjunctive_test(bool proofs, const string & mode, bool strict,
+        const vector<pair<int, int>> & unique_start_ranges,
+        const vector<int> & positions, const vector<int> & lengths) -> void
+    {
+        print(cerr, "disjunctive{} dup unique_starts={} positions={} lens={}{}",
+            strict ? "_strict" : "", unique_start_ranges, positions, lengths,
+            proofs ? " with proofs:" : ":");
+        cerr << flush;
+
+        auto n = positions.size();
+
+        auto is_satisfying = [&](const vector<int> & unique_starts) {
+            for (size_t i = 0; i < n; ++i)
+                for (size_t j = i + 1; j < n; ++j) {
+                    if (! strict && (lengths[i] == 0 || lengths[j] == 0))
+                        continue;
+                    int si = unique_starts.at(positions.at(i));
+                    int sj = unique_starts.at(positions.at(j));
+                    bool i_before_j = si + lengths[i] <= sj;
+                    bool j_before_i = sj + lengths[j] <= si;
+                    if (! i_before_j && ! j_before_i)
+                        return false;
+                }
+            return true;
+        };
+
+        set<vector<int>> expected, actual;
+        build_expected(expected, is_satisfying, unique_start_ranges);
+        println(cerr, " expecting {} solutions", expected.size());
+
+        Problem p;
+        vector<IntegerVariableID> unique_starts;
+        for (auto & [lo, hi] : unique_start_ranges)
+            unique_starts.push_back(p.create_integer_variable(Integer{lo}, Integer{hi}));
+        vector<IntegerVariableID> starts;
+        for (auto pos : positions)
+            starts.push_back(unique_starts.at(pos));
+
+        vector<Integer> lengths_i;
+        for (auto l : lengths)
+            lengths_i.push_back(Integer{l});
+
+        p.post(Disjunctive{starts, lengths_i, strict});
+
+        auto proof_name = proofs ? make_optional("disjunctive_test_" + mode + "_dup") : nullopt;
+        solve_for_tests(p, proof_name, actual, tuple{unique_starts});
+        check_results(proof_name, expected, actual);
+    }
+
     auto run_disjunctive_test(bool proofs, const string & mode, bool strict,
         const vector<pair<int, int>> & start_ranges, const vector<int> & lengths) -> void
     {
@@ -166,6 +219,15 @@ auto main(int argc, char * argv[]) -> int
             continue;
         for (auto & [sr, lens] : data)
             run_disjunctive_test(proofs, mode, strict, sr, lens);
+
+        // Two tasks sharing a start var: positive lengths ⇒ UNSAT,
+        // zero lengths ⇒ depends on strict.
+        run_dup_disjunctive_test(proofs, mode, strict, {{0, 3}}, {0, 0}, {2, 2});
+        // {x, x, y} — first two share, third independent.
+        run_dup_disjunctive_test(proofs, mode, strict, {{0, 3}, {0, 3}}, {0, 0, 1},
+            {1, 1, 2});
+        // Zero-length dup pair — non-strict OK, strict edge case.
+        run_dup_disjunctive_test(proofs, mode, strict, {{0, 2}}, {0, 0}, {0, 0});
     }
 
     return EXIT_SUCCESS;

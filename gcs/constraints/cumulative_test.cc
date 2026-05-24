@@ -101,6 +101,72 @@ namespace
     }
 }
 
+namespace
+{
+    // Dup-variable test: Cumulative with the same start handle for two
+    // tasks. The two tasks share a start time, so their heights add at
+    // every time point inside their (possibly different) durations.
+    // Consistency isn't checked on dup runs; see tmp/duplicate_var_audit.md.
+    auto run_dup_cumulative_test(bool proofs,
+        const vector<pair<int, int>> & unique_start_ranges,
+        const vector<int> & positions,
+        const vector<int> & lengths, const vector<int> & heights, int capacity) -> void
+    {
+        print(cerr, "cumulative dup unique_starts={} positions={} lens={} hts={} c={}{}",
+            unique_start_ranges, positions, lengths, heights, capacity,
+            proofs ? " with proofs:" : ":");
+        cerr << flush;
+
+        auto n = positions.size();
+
+        auto is_satisfying = [&](const vector<int> & unique_starts) {
+            int t_lo = INT_MAX, t_hi = INT_MIN;
+            for (size_t i = 0; i < n; ++i) {
+                if (lengths[i] == 0 || heights[i] == 0)
+                    continue;
+                int s = unique_starts.at(positions.at(i));
+                t_lo = min(t_lo, s);
+                t_hi = max(t_hi, s + lengths[i] - 1);
+            }
+            for (int t = t_lo; t <= t_hi; ++t) {
+                int load = 0;
+                for (size_t i = 0; i < n; ++i) {
+                    int s = unique_starts.at(positions.at(i));
+                    if (s <= t && t < s + lengths[i])
+                        load += heights[i];
+                }
+                if (load > capacity)
+                    return false;
+            }
+            return true;
+        };
+
+        set<vector<int>> expected, actual;
+        build_expected(expected, is_satisfying, unique_start_ranges);
+        println(cerr, " expecting {} solutions", expected.size());
+
+        Problem p;
+        vector<IntegerVariableID> unique_starts;
+        for (auto & [lo, hi] : unique_start_ranges)
+            unique_starts.push_back(p.create_integer_variable(Integer{lo}, Integer{hi}));
+        vector<IntegerVariableID> starts;
+        for (auto pos : positions)
+            starts.push_back(unique_starts.at(pos));
+
+        vector<Integer> lengths_i, heights_i;
+        for (auto l : lengths)
+            lengths_i.push_back(Integer{l});
+        for (auto h : heights)
+            heights_i.push_back(Integer{h});
+
+        p.post(Cumulative{starts, lengths_i, heights_i, Integer{capacity}});
+
+        auto proof_name = proofs ? make_optional("cumulative_test_dup") : nullopt;
+        solve_for_tests(p, proof_name, actual, tuple{unique_starts});
+        check_results(proof_name, expected, actual);
+    }
+}
+
 auto main(int, char *[]) -> int
 {
     // Each test: { start_ranges, lengths, heights, capacity }
@@ -172,6 +238,17 @@ auto main(int, char *[]) -> int
             continue;
         for (auto & [sr, lens, hts, cap] : data)
             run_cumulative_test(proofs, sr, lens, hts, cap);
+
+        // Two tasks sharing a start variable: their heights add at every
+        // time point in their (intersecting) durations.
+        // Capacity 2, two unit-height tasks: must fit (sum = 2). OK.
+        run_dup_cumulative_test(proofs, {{0, 3}}, {0, 0}, {2, 2}, {1, 1}, 2);
+        // Capacity 1, two unit-height tasks sharing a start: load=2 > cap=1
+        // → UNSAT.
+        run_dup_cumulative_test(proofs, {{0, 3}}, {0, 0}, {2, 2}, {1, 1}, 1);
+        // Three tasks, two of which share a start. Third has its own start.
+        run_dup_cumulative_test(proofs, {{0, 3}, {0, 3}}, {0, 0, 1},
+            {2, 2, 1}, {1, 1, 1}, 2);
     }
 
     return EXIT_SUCCESS;
