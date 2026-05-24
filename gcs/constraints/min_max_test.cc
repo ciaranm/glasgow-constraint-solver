@@ -81,6 +81,57 @@ auto run_min_max_test(bool proofs, const ViewWrapConfig & view_cfg, bool min,
     check_results(proof_name, expected, actual);
 }
 
+// Dup-variable test: Min/Max with the same handle in several array
+// positions, or the result var aliasing an array entry. Consistency
+// isn't checked on dup runs; see tmp/duplicate_var_audit.md.
+auto run_dup_min_max_test(bool proofs, bool min, const string & label,
+    const vector<pair<int, int>> & unique_domains,
+    const vector<int> & array_positions,
+    int result_position_in_unique,
+    pair<int, int> result_range) -> void
+{
+    print(cerr, "{} dup {} unique_doms={} positions={} result_pos={}{}",
+        min ? "min" : "max", label, unique_domains, array_positions, result_position_in_unique,
+        proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    set<tuple<vector<int>, int>> expected, actual;
+    build_expected(
+        expected, [&](const vector<int> & unique_vals, int r) -> bool {
+            vector<int> array_vals;
+            for (auto pos : array_positions)
+                array_vals.push_back(unique_vals.at(pos));
+            if (array_vals.empty()) return false;
+            int expected_r = min ? *min_element(array_vals.begin(), array_vals.end())
+                                 : *max_element(array_vals.begin(), array_vals.end());
+            if (r != expected_r) return false;
+            if (result_position_in_unique >= 0)
+                return unique_vals.at(result_position_in_unique) == r;
+            return true;
+        },
+        unique_domains, result_range);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    vector<IntegerVariableID> unique_vars;
+    for (const auto & d : unique_domains)
+        unique_vars.push_back(p.create_integer_variable(Integer(d.first), Integer(d.second)));
+    vector<IntegerVariableID> array;
+    for (auto pos : array_positions)
+        array.push_back(unique_vars.at(pos));
+    IntegerVariableID result = (result_position_in_unique >= 0)
+        ? unique_vars.at(result_position_in_unique)
+        : p.create_integer_variable(Integer(result_range.first), Integer(result_range.second));
+    if (min)
+        p.post(ArrayMin{array, result});
+    else
+        p.post(ArrayMax{array, result});
+
+    auto proof_name = proofs ? make_optional((min ? string{"min_max_test_min_dup_"} : string{"min_max_test_max_dup_"}) + label) : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{unique_vars, result});
+    check_results(proof_name, expected, actual);
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
@@ -127,12 +178,26 @@ auto main(int argc, char * argv[]) -> int
         generate_random_data(rand, data, random_constant(-5, 5), vector(n_values, random_bounds_or_constant(-5, 5, 3, 8)));
     }
 
+    bool run_dup = view_wrap_config_is_effectively_bare(view_cfg, n_positions);
+
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
             continue;
         for (auto & [r1, r2] : data) {
             run_min_max_test(proofs, view_cfg, false, r1, r2);
             run_min_max_test(proofs, view_cfg, true, r1, r2);
+        }
+        if (run_dup) {
+            for (bool m : {true, false}) {
+                // {x, x, y} — duplicates in array.
+                run_dup_min_max_test(proofs, m, "xxy", {{1, 5}, {1, 5}}, {0, 0, 1}, -1, {0, 6});
+                // {x, y, x} — non-adjacent dup.
+                run_dup_min_max_test(proofs, m, "xyx", {{1, 5}, {1, 5}}, {0, 1, 0}, -1, {0, 6});
+                // {x, y} with result = x — Min: x <= y; Max: x >= y.
+                run_dup_min_max_test(proofs, m, "xy_resx", {{1, 5}, {1, 5}}, {0, 1}, 0, {0, 6});
+                // {x, y, z} with result = y — forces y == min/max(x,y,z).
+                run_dup_min_max_test(proofs, m, "xyz_resy", {{1, 4}, {1, 4}, {1, 4}}, {0, 1, 2}, 1, {0, 5});
+            }
         }
     }
 
