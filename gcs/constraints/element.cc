@@ -280,7 +280,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                 vector<size_t> elem;
                 vector<IntegerVariableID> explored_vars;
                 explored_vars.push_back(result_var);
-                auto look_for_support = [&](this auto && self, unsigned d) -> bool {
+                auto look_for_support = [&](auto && self, unsigned d) -> bool {
                     // we're iterating over every dimension recursively, except for the one where
                     // we're checking support for the fixed test_val.
                     auto do_it_with = [&](Integer x) {
@@ -300,7 +300,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                             }
                         }
                         else {
-                            if (self(d + 1))
+                            if (self(self, d + 1))
                                 return true;
                         }
                         elem.pop_back();
@@ -323,13 +323,13 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                     }
                 };
 
-                if (! look_for_support(0)) {
+                if (! look_for_support(look_for_support, 0)) {
                     inference.infer_not_equal(logger, index_vars.at(fixed_dim), test_val, JustifyExplicitlyThenRUP{[&](const ReasonFunction & reason) {
                         // show there's no overlap between array_var and result, for any way the other
                         // index vars are assigned
                         vector<size_t> elem;
                         WPBSum sum_so_far;
-                        auto show_no_support = [&](this auto && self, unsigned d) -> void {
+                        auto show_no_support = [&](auto && self, unsigned d) -> void {
                             // again, we're iterating over every dimension recursively, except for the one where
                             // we're checking support for the fixed test_val.
                             auto do_it_with = [&](Integer x) {
@@ -348,7 +348,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                                     }
                                 }
                                 else
-                                    self(d + 1);
+                                    self(self, d + 1);
 
                                 elem.pop_back();
                             };
@@ -368,7 +368,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                             }
                         };
 
-                        show_no_support(0);
+                        show_no_support(show_no_support, 0);
                     }},
                         generic_reason(state, explored_vars));
                 }
@@ -394,7 +394,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
             optional<Integer> lowest_found, highest_found;
             auto current_bounds = state.bounds(result_var);
             vector<IntegerVariableID> considered_vars;
-            auto collect_supported_bounds = [&](this auto && self, unsigned d) -> void {
+            auto collect_supported_bounds = [&](auto && self, unsigned d) -> void {
                 state.for_each_value_immutable(index_vars.at(d), [&](Integer x) {
                     if (lowest_found && *lowest_found <= current_bounds.first && highest_found && *highest_found >= current_bounds.second)
                         return false;
@@ -411,13 +411,13 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                         }
                     }
                     else {
-                        self(d + 1);
+                        self(self, d + 1);
                     }
                     elem.pop_back();
                     return true;
                 });
             };
-            collect_supported_bounds(0);
+            collect_supported_bounds(collect_supported_bounds, 0);
 
             auto infer_bound = [&](Integer relevant_bound, bool ge) {
                 auto lit_to_infer = ge ? (result_var >= relevant_bound) : (result_var <= relevant_bound);
@@ -431,7 +431,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                 inference.infer(logger, lit_to_infer, JustifyExplicitlyThenRUP{[&](const ReasonFunction & reason) {
                     // show that it doesn't work for any feasible choice of indices
                     WPBSum sum_so_far;
-                    auto rule_out = [&](this auto && self, unsigned d) -> void {
+                    auto rule_out = [&](auto && self, unsigned d) -> void {
                         state.for_each_value_immutable(index_vars.at(d), [&](Integer v) {
                             if (d + 1 == dimensions_)
                                 logger->emit_rup_proof_line_under_reason(reason,
@@ -440,7 +440,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                             else {
                                 auto save_sum_so_far = sum_so_far;
                                 sum_so_far += 1_i * (index_vars.at(d) != v);
-                                self(d + 1);
+                                self(self, d + 1);
                                 sum_so_far = save_sum_so_far;
                             }
                         });
@@ -450,7 +450,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                                 ProofLevel::Temporary);
                         }
                     };
-                    rule_out(0);
+                    rule_out(rule_out, 0);
                 }},
                     ReasonFunction{[=]() { return reason; }});
             };
@@ -477,7 +477,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
             vector<size_t> elem;
             IntervalSet<Integer> still_to_find_support_for = state.copy_of_values(result_var);
             vector<IntegerVariableID> considered_vars;
-            auto collect_supported_values = [&](this auto && self, unsigned d) -> void {
+            auto collect_supported_values = [&](auto && self, unsigned d) -> void {
                 state.for_each_value_immutable(index_vars.at(d), [&](Integer x) {
                     if (still_to_find_support_for.empty())
                         return false;
@@ -492,13 +492,13 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                         });
                     }
                     else {
-                        self(d + 1);
+                        self(self, d + 1);
                     }
                     elem.pop_back();
                     return true;
                 });
             };
-            collect_supported_values(0);
+            collect_supported_values(collect_supported_values, 0);
 
             for (auto value : still_to_find_support_for.each()) {
                 Reason reason = generic_reason(state, index_vars)();
@@ -507,7 +507,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                 inference.infer_not_equal(logger, result_var, value, JustifyExplicitlyThenRUP{[&](const ReasonFunction & reason) {
                     // show that it doesn't work for any feasible choice of indices
                     WPBSum sum_so_far;
-                    auto rule_out = [&](this auto && self, unsigned d) -> void {
+                    auto rule_out = [&](auto && self, unsigned d) -> void {
                         state.for_each_value_immutable(index_vars.at(d), [&](Integer v) {
                             if (d + 1 == dimensions_)
                                 logger->emit_rup_proof_line_under_reason(reason,
@@ -516,7 +516,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                             else {
                                 auto save_sum_so_far = sum_so_far;
                                 sum_so_far += 1_i * (index_vars.at(d) != v);
-                                self(d + 1);
+                                self(self, d + 1);
                                 sum_so_far = save_sum_so_far;
                             }
                         });
@@ -526,7 +526,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                                 ProofLevel::Temporary);
                         }
                     };
-                    rule_out(0);
+                    rule_out(rule_out, 0);
                 }},
                     ReasonFunction{[=]() { return reason; }});
             }
