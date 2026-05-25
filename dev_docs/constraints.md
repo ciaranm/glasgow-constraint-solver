@@ -645,9 +645,54 @@ correctness work wants the full enumeration check.
 4. Add the `.cc` to the library and the test target to
    `gcs/CMakeLists.txt` (alphabetically), plus an `add_test` entry.
 5. Add the header to `gcs/gcs.hh` (alphabetically).
-6. Build and run under `--preset sanitize` and `--preset release`. Run
+6. Decide explicitly how the constraint behaves when the caller passes
+   the same `IntegerVariableID` (or a view that resolves to the same
+   underlying variable) in two argument slots, or twice within an
+   array argument. Pick one of three patterns and cover it with a test
+   case in the constraint's `*_test.cc`:
+    - **Handle correctly** — the propagator and OPB both produce the
+      right result on alias. Add a dup test case (mirror the existing
+      `run_dup_*_test` helpers in e.g. `equals_test.cc`,
+      `linear/linear_test.cc`, `cumulative_test.cc`). Use
+      `solve_for_tests` (not `solve_for_tests_checking_gac`) on the
+      dup leg: a GAC algorithm for distinct vars is generally not GAC
+      under aliasing, and trying to recover consistency is usually a
+      separate, harder problem.
+    - **Detect and contradict at root** — when an alias makes the
+      constraint trivially unsat but the user's intent is still well-
+      formed (e.g. `BinaryEntry`-style table rows). The
+      `AllDifferent` family is the precedent: `prepare()` sorts the
+      array, runs `adjacent_find`, and routes to a one-shot
+      contradiction initialiser (see
+      `gac_all_different.cc:602-634` and
+      `install_clique_duplicate_contradiction_initialiser` in
+      `all_different/encoding.cc`).
+    - **Throw `InvalidProblemDefinitionException`** at construction
+      when alias has no meaningful semantics, the propagator path is
+      unsafe, or the proof encoding can't tolerate it. The Bucket A
+      family — `NotEquals`, `LessThan`, `GreaterThan`, `Circuit*`,
+      `Inverse`, `MultBC`, `SmartTable` `BinaryEntry` — uses this.
+      By convention the check is gated on
+      `! is_constant_variable(...)` so two slots pinned to the same
+      constant remain a well-formed (if often trivially infeasible)
+      model. Test with a `try { ... } catch (const
+      InvalidProblemDefinitionException &) { ... }` block (see
+      `circuit/circuit_dup_test.cc`,
+      `smart_table_dup_test.cc` for the small-binary pattern).
+
+   The threshold for "alias" depends on the constraint. For most
+   constraints, the structural variant `operator==` is the right
+   check — it matches the `AllDifferent` precedent and reflects what
+   the user actually typed. For constraints that key on a deviewed
+   form (e.g. `SmartTable`'s `build_forests` uses the underlying
+   `SimpleIntegerVariableID`), the check needs to match that — see
+   `smart_table.cc`'s `deview_for_alias_check` helper.
+
+   The discipline above was retro-fitted across the existing
+   constraints in PRs #223–#234.
+7. Build and run under `--preset sanitize` and `--preset release`. Run
    the wider test suite to confirm no regressions.
-7. If the constraint should be exposed to MiniZinc, follow
+8. If the constraint should be exposed to MiniZinc, follow
    [minizinc.md](minizinc.md) — separate commit.
 
 ## See also
