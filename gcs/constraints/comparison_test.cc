@@ -1,5 +1,6 @@
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/innards/constraints_test_utils.hh>
+#include <gcs/exception.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
@@ -338,7 +339,24 @@ auto main(int argc, char * argv[]) -> int
                 else if (mode == "ge_iff")
                     run_dup_reif_binary_comparison_test<GreaterThanEqualIff>(proofs, mode, xr,
                         [](int, int c) { return c == 1; });
-                // else: lt, gt, lt_if, gt_if — Bucket A/B, no dup test
+                // else: lt_if, gt_if — Bucket B (propagator fix), no dup test
+            }
+
+            // lt, gt on aliased operands are trivially unsat: reject at
+            // construction. Only check once per binary, not per view-cfg.
+            if (mode == "lt" || mode == "gt") {
+                Problem ep;
+                auto x = ep.create_integer_variable(Integer{0}, Integer{3});
+                try {
+                    if (mode == "lt")
+                        ep.post(LessThan{x, x});
+                    else
+                        ep.post(GreaterThan{x, x});
+                    cerr << "expected " << mode << "(x,x) to throw InvalidProblemDefinitionException" << '\n';
+                    return EXIT_FAILURE;
+                }
+                catch (const InvalidProblemDefinitionException &) {
+                }
             }
         }
     }

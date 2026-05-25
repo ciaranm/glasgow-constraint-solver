@@ -1,6 +1,7 @@
 #include <gcs/constraints/all_different.hh>
 #include <gcs/constraints/all_different/vc_all_different.hh>
 #include <gcs/constraints/circuit/circuit_base.hh>
+#include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/pol_builder.hh>
@@ -51,6 +52,15 @@ CircuitBase::CircuitBase(vector<IntegerVariableID> v, const bool g) :
     _gac_all_different(g),
     _succ(std::move(v))
 {
+    // Two slots pinned to the same constant are a valid (if trivially
+    // infeasible) model; only reject true variable aliasing.
+    for (size_t i = 0; i < _succ.size(); ++i) {
+        if (is_constant_variable(_succ[i]))
+            continue;
+        for (size_t j = i + 1; j < _succ.size(); ++j)
+            if (_succ[i] == _succ[j])
+                throw InvalidProblemDefinitionException{"Circuit: successor array contains the same variable handle twice"};
+    }
 }
 
 auto gcs::innards::circuit::output_cycle_to_proof(const vector<IntegerVariableID> & succ,

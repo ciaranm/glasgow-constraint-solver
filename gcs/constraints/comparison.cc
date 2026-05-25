@@ -50,6 +50,22 @@ ReifiedCompareLessThanOrMaybeEqual::ReifiedCompareLessThanOrMaybeEqual(const Int
 {
 }
 
+LessThan::LessThan(const IntegerVariableID v1, const IntegerVariableID v2) :
+    ReifiedCompareLessThanOrMaybeEqual(v1, v2, reif::MustHold{}, false)
+{
+    // Two constants that happen to be equal is a valid (if trivially
+    // infeasible) model; only reject true variable aliasing.
+    if (v1 == v2 && ! is_constant_variable(v1))
+        throw InvalidProblemDefinitionException{"LessThan: both operands are the same variable handle"};
+}
+
+GreaterThan::GreaterThan(const IntegerVariableID v1, const IntegerVariableID v2) :
+    ReifiedCompareLessThanOrMaybeEqual(v2, v1, reif::MustHold{}, false, true)
+{
+    if (v1 == v2 && ! is_constant_variable(v1))
+        throw InvalidProblemDefinitionException{"GreaterThan: both operands are the same variable handle"};
+}
+
 auto ReifiedCompareLessThanOrMaybeEqual::clone() const -> unique_ptr<Constraint>
 {
     return make_unique<ReifiedCompareLessThanOrMaybeEqual>(_v1, _v2, _reif_cond, _or_equal, _vars_swapped);

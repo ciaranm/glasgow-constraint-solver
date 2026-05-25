@@ -1,5 +1,6 @@
 #include <gcs/constraints/innards/constraints_test_utils.hh>
 #include <gcs/constraints/inverse.hh>
+#include <gcs/exception.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
@@ -165,6 +166,34 @@ auto main(int argc, char * argv[]) -> int
             continue;
         for (auto & [x, y] : var_data)
             run_inverse_test(proofs, view_cfg, x, y);
+    }
+
+    {
+        // Intra-array duplicates make Inverse trivially infeasible: reject
+        // at construction. Cross-array aliasing (e.g. Inverse(x, x) for
+        // involutions) is legitimate and stays accepted.
+        auto expect_throw = [](auto build) {
+            try {
+                build();
+            }
+            catch (const InvalidProblemDefinitionException &) {
+                return true;
+            }
+            return false;
+        };
+
+        Problem p;
+        auto x = p.create_integer_variable_vector(3, 0_i, 2_i);
+        auto y = p.create_integer_variable_vector(3, 0_i, 2_i);
+
+        if (! expect_throw([&] { p.post(Inverse{{x[0], x[1], x[0]}, y}); })) {
+            cerr << "expected Inverse with duplicate in first array to throw\n";
+            return EXIT_FAILURE;
+        }
+        if (! expect_throw([&] { p.post(Inverse{x, {y[0], y[2], y[2]}}); })) {
+            cerr << "expected Inverse with duplicate in second array to throw\n";
+            return EXIT_FAILURE;
+        }
     }
 
     return EXIT_SUCCESS;
