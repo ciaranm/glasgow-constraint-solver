@@ -1,4 +1,5 @@
 #include <gcs/constraints/mult_bc.hh>
+#include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/power.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -1118,6 +1119,15 @@ namespace
 MultBC::MultBC(const SimpleIntegerVariableID v1, const SimpleIntegerVariableID v2, const SimpleIntegerVariableID v3) :
     _v1(v1), _v2(v2), _v3(v3)
 {
+    // Aliased slots are well-defined semantically (squaring, fixed
+    // points) but the bit-product proof encoding doesn't tolerate
+    // them: make_magnitude_representation, prove_product_bounds, and
+    // the sign_lines accounting all assume distinct underlying
+    // variables. See GitHub issue for the deeper fix; until then
+    // surface as an InvalidProblemDefinitionException so users get
+    // an actionable error instead of a proof-verification failure.
+    if (v1 == v2 || v1 == v3 || v2 == v3)
+        throw InvalidProblemDefinitionException{"MultBC: operands must be three distinct variable handles"};
 }
 
 auto MultBC::clone() const -> unique_ptr<Constraint>

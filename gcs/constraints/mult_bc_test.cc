@@ -1,5 +1,7 @@
 #include <gcs/constraints/innards/constraints_test_utils.hh>
 #include <gcs/constraints/mult_bc.hh>
+#include <gcs/exception.hh>
+#include <gcs/problem.hh>
 
 #include <cstdlib>
 #include <version>
@@ -64,6 +66,25 @@ auto run_mult_test(bool proofs, pair<int, int> v1_range, pair<int, int> v2_range
     check_results(proof_name, expected, actual);
 }
 
+// MultBC's bit-product proof encoding doesn't tolerate aliased
+// operands. Construction throws InvalidProblemDefinitionException
+// rather than failing later under VeriPB.
+auto expect_mult_alias_throws(const char * tag, int v1_pos, int v2_pos, int v3_pos) -> bool
+{
+    Problem p;
+    auto a = p.create_integer_variable(-3_i, 3_i, "a");
+    auto b = p.create_integer_variable(-3_i, 3_i, "b");
+    auto pick = [&](int pos) { return pos == 0 ? a : b; };
+    try {
+        p.post(MultBC{pick(v1_pos), pick(v2_pos), pick(v3_pos)});
+    }
+    catch (const InvalidProblemDefinitionException &) {
+        return true;
+    }
+    println(cerr, "MultBC dup {} expected InvalidProblemDefinitionException", tag);
+    return false;
+}
+
 auto main(int, char *[]) -> int
 {
     vector<tuple<pair<int, int>, pair<int, int>, pair<int, int>>> data = {
@@ -94,7 +115,27 @@ auto main(int, char *[]) -> int
         for (auto & [r1, r2, r3] : data) {
             run_mult_test(proofs, r1, r2, r3, [](int a, int b, int c) { return a * b == c; });
         }
+
     }
 
-    return EXIT_SUCCESS;
+    // Aliased operands throw at construction. Don't tie these to the
+    // proofs axis — the throw happens before any proof artifact is
+    // emitted.
+    bool ok = true;
+    ok &= expect_mult_alias_throws("v1==v2", 0, 0, 1);
+    ok &= expect_mult_alias_throws("v1==v3", 0, 1, 0);
+    ok &= expect_mult_alias_throws("v2==v3", 1, 0, 0);
+    {
+        Problem p;
+        auto x = p.create_integer_variable(-3_i, 3_i, "x");
+        try {
+            p.post(MultBC{x, x, x});
+            println(cerr, "MultBC(x, x, x) expected InvalidProblemDefinitionException");
+            ok = false;
+        }
+        catch (const InvalidProblemDefinitionException &) {
+        }
+    }
+
+    return ok ? EXIT_SUCCESS : EXIT_FAILURE;
 }
