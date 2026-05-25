@@ -59,8 +59,7 @@ namespace gcs
     class LessThan : public ReifiedCompareLessThanOrMaybeEqual
     {
     public:
-        inline explicit LessThan(const IntegerVariableID v1, const IntegerVariableID v2) :
-            ReifiedCompareLessThanOrMaybeEqual(v1, v2, reif::MustHold{}, false) {};
+        explicit LessThan(const IntegerVariableID v1, const IntegerVariableID v2);
     };
 
     /**
@@ -95,8 +94,7 @@ namespace gcs
     class GreaterThan : public ReifiedCompareLessThanOrMaybeEqual
     {
     public:
-        inline explicit GreaterThan(const IntegerVariableID v1, const IntegerVariableID v2) :
-            ReifiedCompareLessThanOrMaybeEqual(v2, v1, reif::MustHold{}, false, true) {};
+        explicit GreaterThan(const IntegerVariableID v1, const IntegerVariableID v2);
     };
 
     /**

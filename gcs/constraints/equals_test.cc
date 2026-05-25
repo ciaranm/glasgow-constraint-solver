@@ -1,5 +1,6 @@
 #include <gcs/constraints/equals.hh>
 #include <gcs/constraints/innards/constraints_test_utils.hh>
+#include <gcs/exception.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
@@ -238,6 +239,20 @@ auto main(int argc, char * argv[]) -> int
                 run_dup_equals_test<NotEqualsIff>("notequals_iff", proofs, x_range,
                     [](int, int c) { return c == 0; });
             }
+    }
+
+    {
+        // NotEquals on aliased operands is trivially unsat; reject at
+        // construction rather than discovering after search.
+        Problem p;
+        auto x = p.create_integer_variable(Integer{0}, Integer{3});
+        try {
+            p.post(NotEquals{x, x});
+            cerr << "expected NotEquals(x,x) to throw InvalidProblemDefinitionException" << '\n';
+            return EXIT_FAILURE;
+        }
+        catch (const InvalidProblemDefinitionException &) {
+        }
     }
 
     return EXIT_SUCCESS;

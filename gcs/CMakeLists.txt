@@ -331,6 +331,10 @@ if(GCS_BUILD_TESTS)
     add_test(NAME circuit_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:circuit_test>)
     add_view_tests(circuit_constraint circuit_test 5)
 
+    add_executable(circuit_dup_test constraints/circuit/circuit_dup_test.cc)
+    target_link_libraries(circuit_dup_test PRIVATE glasgow_constraint_solver)
+    add_test(NAME circuit_dup COMMAND $<TARGET_FILE:circuit_dup_test>)
+
     add_executable(reification_test innards/proofs/reification_test.cc)
     target_link_libraries(reification_test PRIVATE glasgow_constraint_solver)
     add_test(NAME reification_test COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:reification_test>)

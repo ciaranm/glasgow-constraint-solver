@@ -277,6 +277,10 @@ EqualsIff::EqualsIff(const IntegerVariableID v1, const IntegerVariableID v2, Int
 NotEquals::NotEquals(const IntegerVariableID v1, const IntegerVariableID v2) :
     ReifiedEquals(v1, v2, reif::MustNotHold{}, true)
 {
+    // Two constants that happen to be equal is a valid (if trivially
+    // infeasible) model; only reject true variable aliasing.
+    if (v1 == v2 && ! is_constant_variable(v1))
+        throw InvalidProblemDefinitionException{"NotEquals: both operands are the same variable handle"};
 }
 
 NotEqualsIf::NotEqualsIf(const IntegerVariableID v1, const IntegerVariableID v2, IntegerVariableCondition cond) :

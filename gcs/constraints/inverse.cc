@@ -49,6 +49,25 @@ Inverse::Inverse(vector<IntegerVariableID> x, vector<IntegerVariableID> y, Integ
     _y_start(y_start)
 
 {
+    // Intra-array aliasing is always infeasible: if x[i] and x[j] share a
+    // handle then any value v they take demands y[v] = i and y[v] = j at
+    // once. Cross-array aliasing (e.g. inverse(x, x) for involutions) is
+    // legitimate, so only check within each array. Repeated constants are
+    // permitted: they aren't a single variable, they're two slots pinned
+    // to the same value, which is a meaningful (and possibly infeasible)
+    // model — see the #171 regression case in inverse_test.
+    auto throw_if_dup = [](const vector<IntegerVariableID> & arr, const char * which) {
+        for (size_t i = 0; i < arr.size(); ++i) {
+            if (is_constant_variable(arr[i]))
+                continue;
+            for (size_t j = i + 1; j < arr.size(); ++j)
+                if (arr[i] == arr[j])
+                    throw InvalidProblemDefinitionException{string{"Inverse: "} + which +
+                        " array contains the same variable handle twice"};
+        }
+    };
+    throw_if_dup(_x, "first");
+    throw_if_dup(_y, "second");
 }
 
 auto Inverse::clone() const -> unique_ptr<Constraint>
