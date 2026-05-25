@@ -78,6 +78,57 @@ auto run_regular_test(bool proofs, const string & desc,
     check_results(proof_name, expected, actual);
 }
 
+// Dup-variable test: Regular with the same handle at several positions.
+// Each position is processed independently by the DFA; aliasing forces
+// those positions to take the same letter. Consistency isn't checked
+// on dup runs; see tmp/duplicate_var_audit.md.
+auto run_dup_regular_test(bool proofs, const string & label,
+    const vector<pair<int, int>> & unique_domains,
+    const vector<int> & positions,
+    long num_states,
+    vector<unordered_map<Integer, long>> transitions,
+    vector<long> final_states) -> void
+{
+    print(cerr, "regular dup {} unique_doms={} positions={}{}",
+        label, unique_domains, positions, proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    auto dfa_accepts = [&](const vector<int> & seq) -> bool {
+        long state = 0;
+        for (int val : seq) {
+            auto it = transitions[state].find(Integer(val));
+            if (it == transitions[state].end() || it->second == -1L)
+                return false;
+            state = it->second;
+        }
+        return find(final_states, state) != final_states.end();
+    };
+
+    set<tuple<vector<int>>> expected, actual;
+    build_expected(
+        expected, [&](const vector<int> & unique_vals) -> bool {
+            vector<int> seq;
+            for (auto pos : positions)
+                seq.push_back(unique_vals.at(pos));
+            return dfa_accepts(seq);
+        },
+        unique_domains);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    vector<IntegerVariableID> unique_vars;
+    for (const auto & [lo, hi] : unique_domains)
+        unique_vars.push_back(p.create_integer_variable(Integer(lo), Integer(hi)));
+    vector<IntegerVariableID> vars;
+    for (auto pos : positions)
+        vars.push_back(unique_vars.at(pos));
+    p.post(Regular{vars, num_states, transitions, final_states});
+
+    auto proof_name = proofs ? make_optional("regular_test_dup_" + label) : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{unique_vars});
+    check_results(proof_name, expected, actual);
+}
+
 auto run_all_tests(bool proofs) -> void
 {
     // DFA: even number of 0s, binary alphabet {0,1}
@@ -140,6 +191,35 @@ auto run_all_tests(bool proofs) -> void
         2,
         {{{0_i, 0}, {1_i, 0}, {2_i, 1}}, {{0_i, 1}, {1_i, 1}, {2_i, 1}}},
         {1});
+
+    // Dup-variable cases: "even zeros" DFA with positions[0] reused.
+    // {x, x, y} — two equal letters then y; "even zeros" wants total zeros
+    // to be even, so two-of-the-same plus y leaves parity determined by y
+    // when x=1, or determined by !y when x=0.
+    run_dup_regular_test(proofs, "xxy_even_zeros",
+        {{0, 1}, {0, 1}}, {0, 0, 1},
+        2,
+        {{{0_i, 1}, {1_i, 0}}, {{0_i, 0}, {1_i, 1}}},
+        {0});
+    // {x, y, x} — non-adjacent dup.
+    run_dup_regular_test(proofs, "xyx_even_zeros",
+        {{0, 1}, {0, 1}}, {0, 1, 0},
+        2,
+        {{{0_i, 1}, {1_i, 0}}, {{0_i, 0}, {1_i, 1}}},
+        {0});
+    // {x, x} with "all same" DFA: same handle at two positions ⇒ trivially
+    // all-same; this just checks the DFA accepts.
+    run_dup_regular_test(proofs, "xx_all_same",
+        {{0, 1}}, {0, 0},
+        4,
+        {{{0_i, 1}, {1_i, 2}}, {{0_i, 1}}, {{1_i, 2}}, {}},
+        {1, 2});
+    // {x, x, y, y} with "all same": requires x == y so the sequence is constant.
+    run_dup_regular_test(proofs, "xxyy_all_same",
+        {{0, 1}, {0, 1}}, {0, 0, 1, 1},
+        4,
+        {{{0_i, 1}, {1_i, 2}}, {{0_i, 1}}, {{1_i, 2}}, {}},
+        {1, 2});
 }
 
 auto main(int, char *[]) -> int

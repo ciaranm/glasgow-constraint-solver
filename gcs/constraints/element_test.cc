@@ -171,6 +171,57 @@ auto run_element2d_constant_test(bool proofs, const string & mode, pair<int, int
     check_results(proof_name, expected, actual);
 }
 
+// Dup-variable test: Element with the same handle in several array
+// positions, or the result var aliasing an array entry. Consistency
+// isn't checked on dup runs; see tmp/duplicate_var_audit.md.
+auto run_dup_element_test(bool proofs, const string & label,
+    const vector<pair<int, int>> & unique_array_domains,
+    const vector<int> & array_positions,
+    pair<int, int> idx_range,
+    int result_position_in_unique) -> void
+{
+    // result_position_in_unique == -1 means: create result as a fresh
+    // variable. Otherwise the result variable IS unique_vars[result_position_in_unique].
+    print(cerr, "element dup {} unique_doms={} positions={} idx={} result_pos={}{}",
+        label, unique_array_domains, array_positions, idx_range, result_position_in_unique,
+        proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    // Expected: pick values for each unique var, then evaluate the array
+    // by indexing through array_positions and check Element semantics.
+    set<tuple<vector<int>, int, int>> expected, actual;
+    build_expected(
+        expected, [&](const vector<int> & unique_vals, int idx_val, int result_val) -> bool {
+            if (idx_val < 0 || cmp_less(static_cast<int>(array_positions.size()), idx_val + 1))
+                return false;
+            int chosen = unique_vals.at(array_positions.at(idx_val));
+            if (result_val != chosen)
+                return false;
+            if (result_position_in_unique >= 0)
+                return unique_vals.at(result_position_in_unique) == result_val;
+            return true;
+        },
+        unique_array_domains, idx_range, pair{-10, 10});
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    vector<IntegerVariableID> unique_vars;
+    for (const auto & d : unique_array_domains)
+        unique_vars.push_back(p.create_integer_variable(Integer(d.first), Integer(d.second)));
+    vector<IntegerVariableID> array;
+    for (auto pos : array_positions)
+        array.push_back(unique_vars.at(pos));
+    auto idx = p.create_integer_variable(Integer(idx_range.first), Integer(idx_range.second), "idx");
+    IntegerVariableID var = (result_position_in_unique >= 0)
+        ? unique_vars.at(result_position_in_unique)
+        : p.create_integer_variable(Integer{-10}, Integer{10}, "var");
+    p.post(Element{var, idx, &array});
+
+    auto proof_name = proofs ? make_optional("element_test_dup_" + label) : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{unique_vars, idx, var});
+    check_results(proof_name, expected, actual);
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     if (argc != 2)
@@ -245,6 +296,17 @@ auto main(int argc, char * argv[]) -> int
         if (mode == "var") {
             for (auto & [r1, r2, r3] : var_data)
                 run_element_test(proofs, mode, r1, r2, r3);
+
+            // Dup-variable cases.
+            // [x, y, x] — same handle at non-adjacent positions.
+            run_dup_element_test(proofs, "xyx", {{1, 3}, {1, 3}}, {0, 1, 0}, {0, 2}, -1);
+            // [x, x] — same handle at adjacent positions.
+            run_dup_element_test(proofs, "xx", {{1, 3}}, {0, 0}, {0, 1}, -1);
+            // [x, y, x] but result is x — forces idx-selected value = x.
+            run_dup_element_test(proofs, "xyx_resx", {{1, 3}, {1, 3}}, {0, 1, 0}, {0, 2}, 0);
+            // [x, y] with result = x — forces array[idx] = x, i.e. either
+            // idx=0 (trivial) or idx=1 and y = x.
+            run_dup_element_test(proofs, "xy_resx", {{1, 3}, {1, 3}}, {0, 1}, {0, 1}, 0);
         }
         else if (mode == "const") {
             for (auto & [r1, r2, r3] : const_data)
