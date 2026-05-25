@@ -72,9 +72,9 @@ auto run_logical_test(const string & which, bool proofs, const ViewWrapConfig & 
 }
 
 // Dup-variable test: And/Or with the same handle in several lit
-// positions, but full_reif is a distinct variable (skipping the
-// full_reif-aliases-a-lit Bucket B case which is currently broken
-// — see tmp/duplicate_var_audit.md). Duplicate lits are redundant.
+// positions, with full_reif as a distinct variable. Duplicate lits
+// are redundant. See run_alias_reif_logical_test below for the
+// full_reif-aliases-a-lit case.
 template <typename Logical_>
 auto run_dup_logical_test(const string & which, bool proofs,
     const vector<pair<int, int>> & unique_domains,
@@ -112,6 +112,47 @@ auto run_dup_logical_test(const string & which, bool proofs,
 
     auto proof_name = proofs ? make_optional("logical_test_dup") : nullopt;
     solve_for_tests(p, proof_name, actual, tuple{unique_vars, r});
+    check_results(proof_name, expected, actual);
+}
+
+// full_reif aliases one of the lits. For And the constraint reduces
+// to a one-sided implication full_reif → ⋀(other lits) (the ↔ direction
+// folds to a tautology because full_reif is on both sides). For Or the
+// dual: ⋁(other lits) → full_reif.
+template <typename Logical_>
+auto run_alias_reif_logical_test(const string & which, bool proofs,
+    const vector<pair<int, int>> & unique_domains,
+    const vector<int> & positions, int reif_position,
+    const function<auto(const vector<int> &, int)->bool> & is_satisfying) -> void
+{
+    print(cerr, "logical alias-reif {} unique_doms={} positions={} reif_pos={}{}",
+        which, unique_domains, positions, reif_position, proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    set<vector<int>> expected, actual;
+    build_expected(
+        expected, [&](const vector<int> & unique_vals) -> bool {
+            vector<int> lits;
+            for (auto pos : positions)
+                lits.push_back(unique_vals.at(pos));
+            return is_satisfying(lits, unique_vals.at(reif_position));
+        },
+        unique_domains);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    vector<IntegerVariableID> unique_vars;
+    for (const auto & [l, u] : unique_domains)
+        unique_vars.emplace_back(p.create_integer_variable(Integer(l), Integer(u)));
+    vector<IntegerVariableID> vs;
+    for (auto pos : positions)
+        vs.push_back(unique_vars.at(pos));
+    auto r = unique_vars.at(reif_position);
+
+    p.post(Logical_{vs, r});
+
+    auto proof_name = proofs ? make_optional("logical_test_alias_reif") : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{unique_vars});
     check_results(proof_name, expected, actual);
 }
 
@@ -176,8 +217,7 @@ auto main(int argc, char * argv[]) -> int
             });
         }
 
-        // Dup-variable cases: full_reif is a separate variable (the
-        // full_reif-aliases-a-lit case is Bucket B "fix" — skip).
+        // Dup-variable cases: full_reif is a separate variable.
         auto and_sat = [](const vector<int> & v, int r) {
             bool result = true;
             for (auto & i : v)
@@ -203,6 +243,49 @@ auto main(int argc, char * argv[]) -> int
             // {x, x} alone — And/Or both reduce to x.
             run_dup_logical_test<And>("and", proofs, {{0, 1}}, {0, 0}, {0, 1}, and_sat);
             run_dup_logical_test<Or>("or", proofs, {{0, 1}}, {0, 0}, {0, 1}, or_sat);
+
+            // full_reif aliases a lit. And({x, y, fr}, fr) ≡ fr → x∧y;
+            // dually Or({x, y, fr}, fr) ≡ x∨y → fr. The reverse direction
+            // of the ↔ collapses to a tautology when fr is on both sides,
+            // so the constraint is intrinsically one-sided here.
+            auto and_alias_sat = [](const vector<int> & v, int r) {
+                // r ↔ AND(v including r) ≡ r → AND(others)
+                if (r == 0)
+                    return true;
+                for (auto i : v)
+                    if (i == 0)
+                        return false;
+                return true;
+            };
+            auto or_alias_sat = [](const vector<int> & v, int r) {
+                // r ↔ OR(v including r) ≡ OR(others) → r
+                if (r == 1)
+                    return true;
+                for (auto i : v)
+                    if (i != 0)
+                        return false;
+                return true;
+            };
+            // 3-lit: {x, y, fr} with fr at position 2 (the third lit).
+            run_alias_reif_logical_test<And>("and", proofs, {{0, 1}, {0, 1}, {0, 1}},
+                {0, 1, 2}, 2, and_alias_sat);
+            run_alias_reif_logical_test<Or>("or", proofs, {{0, 1}, {0, 1}, {0, 1}},
+                {0, 1, 2}, 2, or_alias_sat);
+            // Alias at a non-final position: {fr, y, x} with fr at lit 0.
+            run_alias_reif_logical_test<And>("and", proofs, {{0, 1}, {0, 1}, {0, 1}},
+                {0, 1, 2}, 0, and_alias_sat);
+            run_alias_reif_logical_test<Or>("or", proofs, {{0, 1}, {0, 1}, {0, 1}},
+                {0, 1, 2}, 0, or_alias_sat);
+            // Edge: {fr} alone — constraint is fr ↔ fr, always true.
+            run_alias_reif_logical_test<And>("and", proofs, {{0, 1}},
+                {0}, 0, and_alias_sat);
+            run_alias_reif_logical_test<Or>("or", proofs, {{0, 1}},
+                {0}, 0, or_alias_sat);
+            // Edge: {fr, fr} — two aliased lits both = fr.
+            run_alias_reif_logical_test<And>("and", proofs, {{0, 1}},
+                {0, 0}, 0, and_alias_sat);
+            run_alias_reif_logical_test<Or>("or", proofs, {{0, 1}},
+                {0, 0}, 0, or_alias_sat);
         }
     }
 
