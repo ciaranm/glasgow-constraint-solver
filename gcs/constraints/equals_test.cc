@@ -238,6 +238,11 @@ auto main(int argc, char * argv[]) -> int
                     [](int, int c) { return c == 1; });
                 run_dup_equals_test<NotEqualsIff>("notequals_iff", proofs, x_range,
                     [](int, int c) { return c == 0; });
+                // NotEqualsIf(x, x, c) ≡ c → x ≠ x ≡ ¬c. Was Bucket B
+                // (propagator silent on alias) — fixed by alias check in
+                // ReifiedEquals' infer_cond_when_undecided.
+                run_dup_equals_test<NotEqualsIf>("notequals_if", proofs, x_range,
+                    [](int, int c) { return c == 0; });
             }
     }
 

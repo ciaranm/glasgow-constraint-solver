@@ -310,8 +310,10 @@ auto main(int argc, char * argv[]) -> int
                 throw UnimplementedException{};
         }
 
-        // Dup-variable cases. Only the audit's OK variants are exercised here;
-        // lt, gt, lt_if, gt_if are skipped (Bucket A throw / Bucket B fix).
+        // Dup-variable cases. lt/gt themselves throw (Bucket A — covered
+        // separately); lt_if/gt_if were Bucket B (propagator weak on alias)
+        // and are now fixed via the alias check in
+        // ReifiedCompareLessThanOrMaybeEqual's infer_cond_when_undecided.
         if (view_wrap_config_is_effectively_bare(view_cfg, n_positions)) {
             vector<pair<int, int>> dup_data = {{0, 0}, {0, 5}, {-3, 3}, {2, 5}};
             for (auto & xr : dup_data) {
@@ -327,6 +329,14 @@ auto main(int argc, char * argv[]) -> int
                 else if (mode == "ge_if")
                     run_dup_reif_binary_comparison_test<GreaterThanEqualIf>(proofs, mode, xr,
                         [](int, int) { return true; });
+                else if (mode == "lt_if")
+                    // LessThanIf(x, x, c) ≡ c → x<x ≡ ¬c.
+                    run_dup_reif_binary_comparison_test<LessThanIf>(proofs, mode, xr,
+                        [](int, int c) { return c == 0; });
+                else if (mode == "gt_if")
+                    // GreaterThanIf(x, x, c) ≡ c → x>x ≡ ¬c.
+                    run_dup_reif_binary_comparison_test<GreaterThanIf>(proofs, mode, xr,
+                        [](int, int c) { return c == 0; });
                 else if (mode == "lt_iff")
                     run_dup_reif_binary_comparison_test<LessThanIff>(proofs, mode, xr,
                         [](int, int c) { return c == 0; });
@@ -339,7 +349,7 @@ auto main(int argc, char * argv[]) -> int
                 else if (mode == "ge_iff")
                     run_dup_reif_binary_comparison_test<GreaterThanEqualIff>(proofs, mode, xr,
                         [](int, int c) { return c == 1; });
-                // else: lt_if, gt_if — Bucket B (propagator fix), no dup test
+                // else: lt, gt — Bucket A throw, no dup test
             }
 
             // lt, gt on aliased operands are trivially unsat: reject at

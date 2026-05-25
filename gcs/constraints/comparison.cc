@@ -182,6 +182,20 @@ auto ReifiedCompareLessThanOrMaybeEqual::install_propagators(Propagators & propa
         auto infer_cond_when_undecided = [v1 = _v1, v2 = _v2, or_equal = _or_equal](
                                              const State & state, auto &, ProofLogger * const,
                                              const IntegerVariableCondition &) -> ReificationVerdict {
+            // Aliased non-constant operands: v1<v2 never (when strict),
+            // v1≤v2 always. Returning the resolved verdict here lets the
+            // dispatcher pin cond at root instead of relying on bounds
+            // shrinking to expose the contradiction.
+            if (v1 == v2 && ! is_constant_variable(v1)) {
+                if (or_equal)
+                    return reification_verdict::MustHold{
+                        .justification = JustifyUsingRUP{},
+                        .reason = ReasonFunction{}};
+                else
+                    return reification_verdict::MustNotHold{
+                        .justification = JustifyUsingRUP{},
+                        .reason = ReasonFunction{}};
+            }
             auto v1_bounds = state.bounds(v1), v2_bounds = state.bounds(v2);
             if (or_equal ? (v1_bounds.second <= v2_bounds.first) : (v1_bounds.second < v2_bounds.first)) {
                 // v1 has to be less than (or equal): constraint must hold.

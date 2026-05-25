@@ -218,6 +218,14 @@ auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
     auto infer_cond_when_undecided = [v1 = _v1, v2 = _v2](
                                          const State & state, auto &, ProofLogger * const logger,
                                          const IntegerVariableCondition & cond) -> ReificationVerdict {
+        // Aliased non-constant operands: equality definitely holds regardless of
+        // domain. Returning MustHold here lets the dispatcher pin the cond
+        // immediately at root, instead of waiting until search fixes v1 to a
+        // value and the singleton check below fires.
+        if (v1 == v2 && ! is_constant_variable(v1))
+            return reification_verdict::MustHold{
+                .justification = JustifyUsingRUP{},
+                .reason = ReasonFunction{}};
         auto value1 = state.optional_single_value(v1);
         auto value2 = state.optional_single_value(v2);
         if (value1 && value2) {
