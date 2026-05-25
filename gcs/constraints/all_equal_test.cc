@@ -118,6 +118,45 @@ auto run_holes_test(bool proofs) -> void
     check_results(proof_name, expected, actual);
 }
 
+// Dup-variable test: AllEqual with the same handle in several positions.
+// Duplicates are idempotent (x = x is vacuous); the constraint reduces to
+// AllEqual over the unique vars. Consistency isn't checked on dup runs;
+// see tmp/duplicate_var_audit.md.
+auto run_dup_all_equal_test(bool proofs, const vector<pair<int, int>> & unique_domains,
+    const vector<int> & positions) -> void
+{
+    print(cerr, "all_equal dup domains={} positions={}{}",
+        unique_domains, positions, proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    set<tuple<vector<int>>> expected, actual;
+    build_expected(
+        expected, [&](const vector<int> & vals) -> bool {
+            // After dup-collapse, AllEqual still requires all referenced
+            // values to be equal: every position's variable's value must
+            // match position 0's.
+            int v0 = vals.at(positions.at(0));
+            for (auto pos : positions)
+                if (vals.at(pos) != v0) return false;
+            return true;
+        },
+        unique_domains);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    vector<IntegerVariableID> unique_vars;
+    for (const auto & d : unique_domains)
+        unique_vars.push_back(p.create_integer_variable(Integer(d.first), Integer(d.second)));
+    vector<IntegerVariableID> posted;
+    for (auto pos : positions)
+        posted.push_back(unique_vars.at(pos));
+    p.post(AllEqual{posted});
+
+    auto proof_name = proofs ? make_optional("all_equal_test_dup") : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{unique_vars});
+    check_results(proof_name, expected, actual);
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
@@ -159,6 +198,8 @@ auto main(int argc, char * argv[]) -> int
     for (int i = 0; i < 5; ++i) random_run(3);
     for (int i = 0; i < 3; ++i) random_run(4);
 
+    bool run_dup = view_wrap_config_is_effectively_bare(view_cfg, n_positions);
+
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
             continue;
@@ -166,6 +207,18 @@ auto main(int argc, char * argv[]) -> int
             run_test(proofs, view_cfg, doms);
         if (run_holes)
             run_holes_test(proofs);
+        if (run_dup) {
+            // {x, x} — tautology, every value of x.
+            run_dup_all_equal_test(proofs, {{1, 5}}, {0, 0});
+            // {x, x, y} — reduces to AllEqual({x, y}); intersection of domains.
+            run_dup_all_equal_test(proofs, {{1, 5}, {3, 7}}, {0, 0, 1});
+            // {x, y, x} — same as above with reordering.
+            run_dup_all_equal_test(proofs, {{1, 5}, {3, 7}}, {0, 1, 0});
+            // {x, y, x, y} — reduces to AllEqual({x, y}).
+            run_dup_all_equal_test(proofs, {{2, 6}, {1, 4}}, {0, 1, 0, 1});
+            // Disjoint domains via dup — UNSAT.
+            run_dup_all_equal_test(proofs, {{1, 3}, {5, 7}}, {0, 1, 0});
+        }
     }
 
     return EXIT_SUCCESS;

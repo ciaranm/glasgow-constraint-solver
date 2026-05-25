@@ -148,6 +148,44 @@ auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
     run_value_precede_test(proofs, view_cfg, {1, 2, 3}, {1, pair{1, 3}, 2, pair{1, 3}});
 }
 
+// Dup-variable test: ValuePrecede with the same handle in several array
+// positions. Duplicate occurrences are independent positions; the chain
+// just gates which values can appear where. See tmp/duplicate_var_audit.md.
+auto run_dup_value_precede_test(bool proofs, const vector<int> & chain,
+    const vector<pair<int, int>> & unique_domains, const vector<int> & positions) -> void
+{
+    print(cerr, "value_precede dup chain={} domains={} positions={}{}",
+        chain, unique_domains, positions, proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    set<tuple<vector<int>>> expected, actual;
+    build_expected(
+        expected, [&](const vector<int> & vals) -> bool {
+            vector<int> v;
+            for (auto pos : positions)
+                v.push_back(vals.at(pos));
+            return satisfies_value_precede(chain, v);
+        },
+        unique_domains);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    vector<IntegerVariableID> unique_vars;
+    for (const auto & d : unique_domains)
+        unique_vars.push_back(p.create_integer_variable(Integer(d.first), Integer(d.second)));
+    vector<IntegerVariableID> array;
+    for (auto pos : positions)
+        array.push_back(unique_vars.at(pos));
+    vector<Integer> chain_i;
+    for (const auto & v : chain)
+        chain_i.push_back(Integer(v));
+    p.post(ValuePrecede{chain_i, array});
+
+    auto proof_name = proofs ? make_optional("value_precede_test_dup") : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{unique_vars});
+    check_results(proof_name, expected, actual);
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
@@ -183,6 +221,15 @@ auto main(int argc, char * argv[]) -> int
             for (int i = 0; i < n_vars; ++i)
                 doms.emplace_back(generate_random_data_item(rand, random_bounds_or_constant(1, 2, 1, 2)));
             run_value_precede_test(proofs, view_cfg, chain, doms);
+        }
+
+        if (view_wrap_config_is_effectively_bare(view_cfg, n_positions)) {
+            // {x, x, y} — x takes one value twice; y separate.
+            run_dup_value_precede_test(proofs, {1, 2}, {{1, 3}, {1, 3}}, {0, 0, 1});
+            // {x, y, x} — y between dups.
+            run_dup_value_precede_test(proofs, {1, 2}, {{1, 3}, {1, 3}}, {0, 1, 0});
+            // {x, x} — only one distinct value can appear.
+            run_dup_value_precede_test(proofs, {1, 2}, {{1, 3}}, {0, 0});
         }
     }
 

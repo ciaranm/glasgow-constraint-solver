@@ -28,6 +28,7 @@ using std::nullopt;
 using std::pair;
 using std::random_device;
 using std::set;
+using std::string;
 using std::tuple;
 using std::uniform_int_distribution;
 using std::vector;
@@ -80,6 +81,48 @@ auto run_at_most_one_test(Variant variant, bool proofs, const ViewWrapConfig & v
     check_results(proof_name, expected, actual);
 }
 
+// Dup-variable test: AtMostOne with the same handle in several array
+// positions. {x, x, ...} forces x != val (otherwise two occurrences
+// equal val). Consistency isn't checked on dup runs; see
+// tmp/duplicate_var_audit.md.
+auto run_dup_at_most_one_test(Variant variant, bool proofs,
+    const vector<pair<int, int>> & unique_domains, const vector<int> & positions,
+    pair<int, int> val_range) -> void
+{
+    auto label = (variant == Variant::Native) ? "at_most_one" : "at_most_one_smart_table";
+    print(cerr, "{} dup domains={} positions={} val={}{}",
+        label, unique_domains, positions, val_range, proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    set<tuple<vector<int>, int>> expected, actual;
+    build_expected(
+        expected, [&](const vector<int> & vals, int v) -> bool {
+            int matches = 0;
+            for (auto pos : positions)
+                if (vals.at(pos) == v) ++matches;
+            return matches <= 1;
+        },
+        unique_domains, val_range);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    vector<IntegerVariableID> unique_vars;
+    for (const auto & d : unique_domains)
+        unique_vars.push_back(p.create_integer_variable(Integer(d.first), Integer(d.second)));
+    vector<IntegerVariableID> array;
+    for (auto pos : positions)
+        array.push_back(unique_vars.at(pos));
+    auto val = p.create_integer_variable(Integer(val_range.first), Integer(val_range.second));
+    if (variant == Variant::Native)
+        p.post(AtMostOne{array, val});
+    else
+        p.post(AtMostOneSmartTable{array, val});
+
+    auto proof_name = proofs ? make_optional(string{label} + "_test_dup") : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{unique_vars, val});
+    check_results(proof_name, expected, actual);
+}
+
 auto run_all_tests(Variant variant, bool proofs, const ViewWrapConfig & view_cfg) -> void
 {
     // Boundary: empty / singleton — both vacuously true.
@@ -128,6 +171,8 @@ auto main(int argc, char * argv[]) -> int
     random_device rand_dev;
     mt19937 rand(rand_dev());
 
+    bool run_dup = view_wrap_config_is_effectively_bare(view_cfg, n_positions);
+
     for (auto variant : {Variant::Native, Variant::SmartTable}) {
         for (bool proofs : {false, true}) {
             if (proofs && ! can_run_veripb())
@@ -151,6 +196,20 @@ auto main(int argc, char * argv[]) -> int
                 int v_lo = lo_dist(rand);
                 run_at_most_one_test(variant, proofs, view_cfg, ranges, {v_lo, v_lo + width_dist(rand)});
             }
+
+            if (run_dup && variant == Variant::Native) {
+                // {x, x} — forces x != val.
+                run_dup_at_most_one_test(variant, proofs, {{1, 3}}, {0, 0}, {1, 3});
+                // {x, x, y} — x != val; y unconstrained by it.
+                run_dup_at_most_one_test(variant, proofs, {{1, 3}, {1, 3}}, {0, 0, 1}, {2, 2});
+                // {x, y, x} — same as above with reordering.
+                run_dup_at_most_one_test(variant, proofs, {{1, 3}, {1, 3}}, {0, 1, 0}, {1, 3});
+            }
+            // FIXME: AtMostOneSmartTable dup with non-adjacent duplicate
+            // positions (e.g. {x, y, x}) returns wrong solutions — the
+            // SmartTable encoding accepts tuples where both x positions
+            // equal val. Tracked in tmp/duplicate_var_tier1_findings.md.
+            // Re-enable once the encoding handles aliased positions.
         }
     }
 
