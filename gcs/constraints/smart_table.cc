@@ -1,4 +1,5 @@
 #include <gcs/constraints/smart_table.hh>
+#include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
@@ -57,11 +58,43 @@ using fmt::println;
 using namespace gcs;
 using namespace gcs::innards;
 
+namespace
+{
+    // Strip view info down to the underlying variable handle. Mirrors
+    // smart_table's runtime `deview` (defined further down in this
+    // file) so the construction-time alias check uses the same key the
+    // build_forests / build_tree pipeline does.
+    auto deview_for_alias_check(const IntegerVariableID & v) -> IntegerVariableID
+    {
+        return overloaded{
+            [](const SimpleIntegerVariableID & s) -> IntegerVariableID { return s; },
+            [](const ViewOfIntegerVariableID & view) -> IntegerVariableID { return view.actual_variable; },
+            [](const ConstantIntegerVariableID & c) -> IntegerVariableID { return c; }}
+            .visit(v);
+    }
+}
+
 SmartTable::SmartTable(vector<IntegerVariableID> v, SmartTuples t, bool s) :
     _vars(move(v)),
     _tuples(move(t)),
     _short_reasons(s)
 {
+    // Aliased BinaryEntry endpoints break build_forests: both ends
+    // hash to the same `deview` key, so adjacent_edges holds the entry
+    // under one key with two copies, build_tree sees the second
+    // endpoint as already visited (the root), and the edge silently
+    // drops out of the tree — leaving the OPB encoding and propagator
+    // at odds (silent wrong answer without --prove; rejection with).
+    // Reject at construction. The check matches smart_table's own
+    // deview (strips view info to the underlying variable), so
+    // BinaryEntry{X, X+1, ...} is rejected too — both sides hash to
+    // the same underlying var.
+    for (const auto & tuple : _tuples)
+        for (const auto & entry : tuple)
+            if (auto * be = std::get_if<BinaryEntry>(&entry))
+                if (deview_for_alias_check(be->var_1) == deview_for_alias_check(be->var_2))
+                    throw InvalidProblemDefinitionException{
+                        "SmartTable: BinaryEntry with aliased endpoints (both sides share the same underlying variable handle)"};
 }
 
 namespace
