@@ -25,6 +25,7 @@
 using std::cerr;
 using std::flush;
 using std::function;
+using std::is_same_v;
 using std::make_optional;
 using std::mt19937;
 using std::nullopt;
@@ -170,6 +171,64 @@ auto run_power_pinned_test(bool proofs, Integer base, Integer exp, pair<long lon
             throw UnexpectedException{"veripb verification failed"};
 }
 
+// Dup-variable tests: post a GACArithmetic constraint with the same handle
+// in two (or all three) slots. The GAC algorithm operates over a tuple
+// table that doesn't know two slots alias, so consistency on alias drops
+// to "weak"; we don't check it. See tmp/duplicate_var_audit.md.
+namespace
+{
+    struct AliasV1V2 { };
+    struct AliasV1V3 { };
+    struct AliasV2V3 { };
+    struct AliasAll { };
+}
+
+template <typename Arithmetic_, typename AliasPattern_>
+auto run_dup_arithmetic_test(bool proofs, AliasPattern_, const string & tag,
+    pair<int, int> a_range, pair<int, int> b_range,
+    const function<auto(int, int, int)->bool> & is_satisfying) -> void
+{
+    print(cerr, "arithmetic {} dup {} {} {} {}", NameOf<Arithmetic_>::name, tag, a_range, b_range, proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    Problem p;
+    auto proof_name = proofs ? make_optional(string{"arithmetic_test_"} + NameOf<Arithmetic_>::name + "_dup_" + tag) : nullopt;
+
+    if constexpr (is_same_v<AliasPattern_, AliasAll>) {
+        set<tuple<int>> expected, actual;
+        build_expected(expected, [&](int a) { return is_satisfying(a, a, a); }, a_range);
+        println(cerr, " expecting {} solutions", expected.size());
+
+        auto a = p.create_integer_variable(Integer(a_range.first), Integer(a_range.second));
+        p.post(Arithmetic_{a, a, a});
+
+        solve_for_tests(p, proof_name, actual, tuple{a});
+        check_results(proof_name, expected, actual);
+    }
+    else {
+        set<tuple<int, int>> expected, actual;
+        if constexpr (is_same_v<AliasPattern_, AliasV1V2>)
+            build_expected(expected, [&](int a, int b) { return is_satisfying(a, a, b); }, a_range, b_range);
+        else if constexpr (is_same_v<AliasPattern_, AliasV1V3>)
+            build_expected(expected, [&](int a, int b) { return is_satisfying(a, b, a); }, a_range, b_range);
+        else
+            build_expected(expected, [&](int a, int b) { return is_satisfying(a, b, b); }, a_range, b_range);
+        println(cerr, " expecting {} solutions", expected.size());
+
+        auto a = p.create_integer_variable(Integer(a_range.first), Integer(a_range.second));
+        auto b = p.create_integer_variable(Integer(b_range.first), Integer(b_range.second));
+        if constexpr (is_same_v<AliasPattern_, AliasV1V2>)
+            p.post(Arithmetic_{a, a, b});
+        else if constexpr (is_same_v<AliasPattern_, AliasV1V3>)
+            p.post(Arithmetic_{a, b, a});
+        else
+            p.post(Arithmetic_{a, b, b});
+
+        solve_for_tests(p, proof_name, actual, tuple{a, b});
+        check_results(proof_name, expected, actual);
+    }
+}
+
 auto main(int, char *[]) -> int
 {
     vector<tuple<pair<int, int>, pair<int, int>, pair<int, int>>> data = {
@@ -226,6 +285,51 @@ auto main(int, char *[]) -> int
 
         // 0^0 = 1 by convention.
         run_power_pinned_test(proofs, 0_i, 0_i, {-2, 2}, make_optional(1_i));
+
+        // Dup-variable cases for the GAC-via-Table specialisations. Domains
+        // are kept small because the underlying tuple table is materialised.
+        // Div/Mod need divisors to avoid zero; the lambdas already guard.
+        vector<pair<pair<int, int>, pair<int, int>>> dup_data = {
+            {{-3, 3}, {-9, 9}},
+            {{1, 4}, {-5, 5}}};
+        auto plus_sat = [](int a, int b, int c) { return a + b == c; };
+        auto minus_sat = [](int a, int b, int c) { return a - b == c; };
+        auto times_sat = [](int a, int b, int c) { return a * b == c; };
+        auto div_sat = [](int a, int b, int c) { return 0 != b && a / b == c; };
+        auto mod_sat = [](int a, int b, int c) { return 0 != b && a % b == c; };
+        for (auto & [ar, br] : dup_data) {
+            run_dup_arithmetic_test<PlusGAC>(proofs, AliasV1V2{}, "v1v2", ar, br, plus_sat);
+            run_dup_arithmetic_test<PlusGAC>(proofs, AliasV1V3{}, "v1v3", ar, br, plus_sat);
+            run_dup_arithmetic_test<PlusGAC>(proofs, AliasV2V3{}, "v2v3", ar, br, plus_sat);
+            run_dup_arithmetic_test<PlusGAC>(proofs, AliasAll{}, "all", ar, br, plus_sat);
+            run_dup_arithmetic_test<MinusGAC>(proofs, AliasV1V2{}, "v1v2", ar, br, minus_sat);
+            run_dup_arithmetic_test<MinusGAC>(proofs, AliasV1V3{}, "v1v3", ar, br, minus_sat);
+            run_dup_arithmetic_test<MinusGAC>(proofs, AliasV2V3{}, "v2v3", ar, br, minus_sat);
+            run_dup_arithmetic_test<MinusGAC>(proofs, AliasAll{}, "all", ar, br, minus_sat);
+            run_dup_arithmetic_test<Times>(proofs, AliasV1V2{}, "v1v2", ar, br, times_sat);
+            run_dup_arithmetic_test<Times>(proofs, AliasV1V3{}, "v1v3", ar, br, times_sat);
+            run_dup_arithmetic_test<Times>(proofs, AliasV2V3{}, "v2v3", ar, br, times_sat);
+            run_dup_arithmetic_test<Times>(proofs, AliasAll{}, "all", ar, br, times_sat);
+            run_dup_arithmetic_test<Div>(proofs, AliasV1V2{}, "v1v2", ar, br, div_sat);
+            run_dup_arithmetic_test<Div>(proofs, AliasV1V3{}, "v1v3", ar, br, div_sat);
+            run_dup_arithmetic_test<Div>(proofs, AliasV2V3{}, "v2v3", ar, br, div_sat);
+            run_dup_arithmetic_test<Div>(proofs, AliasAll{}, "all", ar, br, div_sat);
+            run_dup_arithmetic_test<Mod>(proofs, AliasV1V2{}, "v1v2", ar, br, mod_sat);
+            run_dup_arithmetic_test<Mod>(proofs, AliasV1V3{}, "v1v3", ar, br, mod_sat);
+            run_dup_arithmetic_test<Mod>(proofs, AliasV2V3{}, "v2v3", ar, br, mod_sat);
+            run_dup_arithmetic_test<Mod>(proofs, AliasAll{}, "all", ar, br, mod_sat);
+        }
+
+        // Power dup: kept very small since result range can blow up quickly.
+        vector<pair<pair<int, int>, pair<int, int>>> power_dup_data = {
+            {{0, 3}, {0, 10}},
+            {{-2, 2}, {-5, 5}}};
+        for (auto & [ar, br] : power_dup_data) {
+            run_dup_arithmetic_test<Power>(proofs, AliasV1V2{}, "v1v2", ar, br, power_is_satisfying);
+            run_dup_arithmetic_test<Power>(proofs, AliasV1V3{}, "v1v3", ar, br, power_is_satisfying);
+            run_dup_arithmetic_test<Power>(proofs, AliasV2V3{}, "v2v3", ar, br, power_is_satisfying);
+            run_dup_arithmetic_test<Power>(proofs, AliasAll{}, "all", ar, br, power_is_satisfying);
+        }
     }
 
     return EXIT_SUCCESS;

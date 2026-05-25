@@ -69,6 +69,27 @@ auto run_abs_test(bool proofs, const ViewWrapConfig & view_cfg,
     check_results(proof_name, expected, actual);
 }
 
+// Dup-variable test: Abs(x, x) forces x = abs(x), i.e. x >= 0.
+// Consistency isn't checked on dup runs; see tmp/duplicate_var_audit.md.
+auto run_dup_abs_test(bool proofs, pair<int, int> x_range) -> void
+{
+    print(cerr, "abs dup {} {}", x_range, proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    set<tuple<int>> expected, actual;
+    build_expected(expected, [](int a) { return a == abs(a); }, x_range);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    auto x = p.create_integer_variable(Integer{x_range.first}, Integer{x_range.second});
+    p.post(Abs{x, x});
+
+    auto proof_name = proofs ? make_optional("abs_test_dup") : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{x});
+
+    check_results(proof_name, expected, actual);
+}
+
 // Targeted tests for the proofs Abs::prepare emits for its four consequence
 // bounds. Domains are picked so that one specific bound is non-trivial, so a
 // proof failure points unambiguously at that bound. Uses
@@ -156,11 +177,18 @@ auto main(int argc, char * argv[]) -> int
         run_abs_initialiser_test("wide_asym_ub_dominant", {-5, 50}, {0, 80});
     }
 
+    // Bare-handle dup ranges. Skipped under the view-wrap sweep.
+    vector<pair<int, int>> dup_data = {
+        {-3, 3}, {-5, 0}, {0, 5}, {-1, 1}, {2, 5}};
+
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
             continue;
         for (auto & [r1, r2] : data)
             run_abs_test(proofs, view_cfg, r1, r2);
+        if (view_wrap_config_is_effectively_bare(view_cfg, n_positions))
+            for (auto & x_range : dup_data)
+                run_dup_abs_test(proofs, x_range);
     }
 
     return EXIT_SUCCESS;
