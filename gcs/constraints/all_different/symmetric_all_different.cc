@@ -185,7 +185,7 @@ auto SymmetricAllDifferent::s_exprify(const ProofModel * const model) const -> s
 {
     stringstream s;
 
-    print(s, "{} symmetric_all_different (", _name);
+    print(s, "{} symmetric_all_different (", _constraint_id);
     for (const auto & var : _vars)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
     print(s, ") {}", _start);

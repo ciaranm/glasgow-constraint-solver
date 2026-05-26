@@ -206,7 +206,7 @@ auto AllDifferentExcept::s_exprify(const ProofModel * const model) const -> stri
 {
     stringstream s;
 
-    print(s, "{} all_different_except (", _name);
+    print(s, "{} all_different_except (", _constraint_id);
     for (const auto & var : _vars)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
     print(s, ") (");

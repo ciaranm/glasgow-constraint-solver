@@ -158,14 +158,14 @@ auto Problem::create_state_for_new_search(
 auto Problem::post(const Constraint & c) -> void
 {
     auto cloned = c.clone();
-    cloned->set_name(NumberedConstraint{++_imp->next_constraint_number});
+    cloned->set_constraint_id(NumberedConstraint{++_imp->next_constraint_number});
     _imp->constraints.push_back(std::move(cloned));
 }
 
 auto Problem::post_named(const Constraint & c, const string & name) -> void
 {
     auto cloned = c.clone();
-    cloned->set_name(NamedConstraint{check_name(name)}); 
+    cloned->set_constraint_id(NamedConstraint{check_name(name)}); 
     _imp->constraints.push_back(std::move(cloned));
 }
 
@@ -198,7 +198,9 @@ auto Problem::create_propagators(State & state, ProofModel * const optional_proo
 {
     Propagators result;
     for (auto & c : _imp->constraints) {
+        auto cid = c->get_constraint_id();
         auto cc = c->clone();
+        cc->set_constraint_id(cid);
         move(*cc).install(result, state, optional_proof_model);
     }
 

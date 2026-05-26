@@ -933,7 +933,7 @@ auto SmartTable::s_exprify(const ProofModel * const model) const -> string
 
     stringstream s;
 
-    print(s, "{} smart_table (\n        (", _name);
+    print(s, "{} smart_table (\n        (", _constraint_id);
 
     for (const auto & tuple : _tuples) {
         for (const auto & entry : tuple) {

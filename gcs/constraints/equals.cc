@@ -302,7 +302,7 @@ auto ReifiedEquals::s_exprify(const innards::ProofModel * const model) const -> 
             return _neq ? "not_equals_iff" : "equals_iff";
         }}.visit(_cond);
 
-    print(s, "{} {}", _name, constraint_type);
+    print(s, "{} {}", _constraint_id, constraint_type);
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_cond));
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v1));
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v2));

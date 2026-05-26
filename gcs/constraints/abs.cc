@@ -90,8 +90,10 @@ auto Abs::install(Propagators & propagators, State &, ProofModel * const optiona
 
 auto Abs::define_proof_model(ProofModel & model) -> void
 {
-    _abs_nonneg_lines = model.add_constraint("Abs", "non-negative", WPBSum{} + 1_i * _v2 + -1_i * _v1 == 0_i, HalfReifyOnConjunctionOf{_v1 >= 0_i});
-    _abs_neg_lines = model.add_constraint("Abs", "negative", WPBSum{} + 1_i * _v2 + 1_i * _v1 == 0_i, HalfReifyOnConjunctionOf{_v1 < 0_i});
+    // _abs_nonneg_lines = model.add_constraint("Abs", "non-negative", WPBSum{} + 1_i * _v2 + -1_i * _v1 == 0_i, HalfReifyOnConjunctionOf{_v1 >= 0_i});
+    // _abs_neg_lines = model.add_constraint("Abs", "negative", WPBSum{} + 1_i * _v2 + 1_i * _v1 == 0_i, HalfReifyOnConjunctionOf{_v1 < 0_i});
+    _abs_nonneg_lines = model.add_labelled_constraint(_constraint_id, "posge", "posle", "Abs", "non-negative", WPBSum{} + 1_i * _v2 + -1_i * _v1 == 0_i, HalfReifyOnConjunctionOf{_v1 >= 0_i});
+    _abs_neg_lines = model.add_labelled_constraint(_constraint_id, "negle", "negge", "Abs", "negative", WPBSum{} + 1_i * _v2 + 1_i * _v1 == 0_i, HalfReifyOnConjunctionOf{_v1 < 0_i});
 }
 
 auto Abs::install_propagators(Propagators & propagators) -> void
@@ -297,7 +299,7 @@ auto Abs::s_exprify(const innards::ProofModel * const model) const -> string
 {
     stringstream s;
 
-    print(s, "{} abs", _name);
+    print(s, "{} abs", _constraint_id);
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v1));
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v2));
 

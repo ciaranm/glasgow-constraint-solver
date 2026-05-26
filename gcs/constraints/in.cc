@@ -265,7 +265,7 @@ auto In::s_exprify(const ProofModel * const model) const -> string
 {
     stringstream s;
 
-    print(s, "{} in {} (", _name, model->names_and_ids_tracker().s_expr_name_of(_var));
+    print(s, "{} in {} (", _constraint_id, model->names_and_ids_tracker().s_expr_name_of(_var));
     for (const auto & v : _var_vals)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(v));
     for (const auto & v : _val_vals)

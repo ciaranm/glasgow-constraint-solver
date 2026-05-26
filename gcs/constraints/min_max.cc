@@ -205,7 +205,7 @@ auto ArrayMinMax::s_exprify(const innards::ProofModel * const model) const -> st
 {
     stringstream s;
 
-    print(s, "{} {} (", _name, _min ? "min" : "max");
+    print(s, "{} {} (", _constraint_id, _min ? "min" : "max");
     for (const auto & v : _vars) {
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(v));
     }

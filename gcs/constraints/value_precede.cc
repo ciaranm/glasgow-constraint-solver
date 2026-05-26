@@ -209,7 +209,7 @@ auto ValuePrecede::s_exprify(const ProofModel * const model) const -> string
 {
     stringstream s;
 
-    print(s, "{} value_precede (", _name);
+    print(s, "{} value_precede (", _constraint_id);
     for (const auto & val : _chain)
         print(s, " {}", val);
     print(s, ") (");

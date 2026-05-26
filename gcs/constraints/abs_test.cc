@@ -59,9 +59,9 @@ auto run_abs_test(bool proofs, variant<int, pair<int, int>> v1_range, variant<in
     Problem p;
     auto v1 = visit([&](auto b) { return create_integer_variable_or_constant(p, b); }, v1_range);
     auto v2 = visit([&](auto b) { return create_integer_variable_or_constant(p, b); }, v2_range);
-    p.post(Abs{v1, v2});
+    p.post_named(Abs{v1, v2}, "abstest");
 
-    auto proof_name = proofs ? make_optional("abs_test") : nullopt;
+    auto proof_name = proofs ? make_optional("abstest") : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{v1, v2});
 
     check_results(proof_name, expected, actual);
@@ -81,7 +81,7 @@ auto run_abs_initialiser_test(const string & label, pair<int, int> v1_range, pai
     Problem p;
     auto v1 = p.create_integer_variable(Integer{v1_range.first}, Integer{v1_range.second});
     auto v2 = p.create_integer_variable(Integer{v2_range.first}, Integer{v2_range.second});
-    p.post(Abs{v1, v2});
+    p.post_named(Abs{v1, v2}, "absinit");
 
     check_initialisation_only_for_tests(p, "abs_initialiser_" + label);
 }

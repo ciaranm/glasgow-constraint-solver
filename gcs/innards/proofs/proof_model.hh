@@ -1,6 +1,7 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROOFS_PROOF_MODEL_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROOFS_PROOF_MODEL_HH
 
+#include <gcs/constraint.hh>
 #include <gcs/expression.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker-fwd.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
@@ -26,7 +27,6 @@ namespace gcs::innards
 
         char const * value;
     };
-
     class ProofModel
     {
     private:
@@ -38,6 +38,12 @@ namespace gcs::innards
         auto set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::string &) -> void;
 
         auto set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::string &) -> void;
+
+        /**
+         * Emit a constraint label for the specified label and proof line number.
+         * Constraint labels are emitted in the OPB file, and can be referred to in proof rules.
+         */
+        auto emit_constraint_label(const ConstraintID &, const std::string &, const ProofLineNumber & ) -> ProofLine;
 
     public:
         /**
@@ -113,6 +119,19 @@ namespace gcs::innards
             const StringLiteral & constraint_name,
             const StringLiteral & rule,
             const Literals & lits) -> std::optional<ProofLine>;
+
+        /**
+         * \brief Add a constraint with a label.  Constraint labels are emitted in the OPB file,
+          * and can be referred to in proof rules. The label must be unique among all constraints
+          * and not break any formatting rules.
+         */
+        auto add_labelled_constraint(
+            const ConstraintID & constraint_id,
+            const std::string & role_fwd, const std::string & role_back,
+            const StringLiteral & constraint_name, const StringLiteral & rule,
+            const WPBSumEq & eq, const std::optional<HalfReifyOnConjunctionOf> & half_reif)
+            -> std::pair<std::optional<ProofLine>, std::optional<ProofLine>>;
+
 
         /**
          * \brief Encode `flag ⇔ ineq` in OPB by emitting both halves of the equivalence:

@@ -208,12 +208,12 @@ auto ReifiedCompareLessThanOrMaybeEqual::s_exprify(const ProofModel * const mode
         reif);
 
     if (reif.empty()) {
-        print(s, "{} {} {} {}", _name, cmp,
+        print(s, "{} {} {} {}", _constraint_id, cmp,
             model->names_and_ids_tracker().s_expr_name_of(_v1),
             model->names_and_ids_tracker().s_expr_name_of(_v2));
     }
     else {
-        print(s, "{} {} {} {} {}", _name, cmp,
+        print(s, "{} {} {} {} {}", _constraint_id, cmp,
             model->names_and_ids_tracker().s_expr_name_of(_reif_cond),
             model->names_and_ids_tracker().s_expr_name_of(_v1),
             model->names_and_ids_tracker().s_expr_name_of(_v2));

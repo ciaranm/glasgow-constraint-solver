@@ -77,7 +77,7 @@ auto Minus::s_exprify(const innards::ProofModel * const model) const -> string
 {
     stringstream s;
 
-    print(s, "{} minus (", _name);
+    print(s, "{} minus (", _constraint_id);
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_a));
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_b));
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_result));
