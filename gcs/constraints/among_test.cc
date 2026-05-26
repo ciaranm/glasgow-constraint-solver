@@ -72,7 +72,7 @@ auto run_among_test(bool proofs, variant<int, pair<int, int>> result_range, cons
     vector<Integer> voi_i;
     for (const auto & v : voi)
         voi_i.push_back(Integer(v));
-    p.post(Among{array, voi_i, result});
+    p.post_named(Among{array, voi_i, result}, "among_test");
 
     auto proof_name = proofs ? make_optional("among_test") : nullopt;
     solve_for_tests_checking_consistency(p, proof_name, expected, actual, tuple{pair{result, CheckConsistency::GAC}, pair{array, CheckConsistency::GAC}});
