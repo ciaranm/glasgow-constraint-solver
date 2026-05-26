@@ -129,9 +129,15 @@ namespace gcs::innards
             const ConstraintID & constraint_id,
             const std::string & role_fwd, const std::string & role_back,
             const StringLiteral & constraint_name, const StringLiteral & rule,
-            const WPBSumEq & eq, const std::optional<HalfReifyOnConjunctionOf> & half_reif)
+            const WPBSumEq & eq, const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt)
             -> std::pair<std::optional<ProofLine>, std::optional<ProofLine>>;
 
+        auto add_labelled_constraint(
+            const ConstraintID & constraint_id,
+            const std::string & role_fwd, const std::string & role_back,
+            const StringLiteral & constraint_name, const StringLiteral & rule,
+            const WPBSumLE & eq, const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt)
+            -> std::pair<std::optional<ProofLine>, std::optional<ProofLine>>;
 
         /**
          * \brief Encode `flag ⇔ ineq` in OPB by emitting both halves of the equivalence:

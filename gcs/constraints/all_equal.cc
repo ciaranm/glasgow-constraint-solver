@@ -7,6 +7,7 @@
 #include <gcs/innards/reason.hh>
 #include <gcs/innards/state.hh>
 
+#include <iostream>
 #include <memory>
 #include <sstream>
 #include <utility>
@@ -25,6 +26,7 @@ using std::make_unique;
 using std::move;
 using std::string;
 using std::stringstream;
+using std::to_string;
 using std::unique_ptr;
 using std::vector;
 
@@ -63,7 +65,8 @@ auto AllEqual::prepare(Propagators &, State &, ProofModel * const) -> bool
 auto AllEqual::define_proof_model(ProofModel & model) -> void
 {
     for (size_t i = 0; i + 1 < _vars.size(); ++i)
-        model.add_constraint("AllEqual", "chain step",
+        model.add_labelled_constraint(_constraint_id,
+            "fwd_" + to_string(i), "back_" + to_string(i), "AllEqual", "chain step",
             WPBSum{} + 1_i * _vars[i] + -1_i * _vars[i + 1] == 0_i);
 }
 

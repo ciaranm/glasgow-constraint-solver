@@ -64,7 +64,7 @@ auto run_test(bool proofs, const vector<pair<int, int>> & domains) -> void
     vector<IntegerVariableID> vars;
     for (const auto & d : domains)
         vars.push_back(p.create_integer_variable(Integer(d.first), Integer(d.second)));
-    p.post(AllEqual{vars});
+    p.post_named(AllEqual{vars}, "all_eq_test");
 
     auto proof_name = proofs ? make_optional("all_equal_test") : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{vars});
@@ -110,7 +110,7 @@ auto run_holes_test(bool proofs) -> void
     p.post(In{x, to_integers(dx)});
     p.post(In{y, to_integers(dy)});
     p.post(In{z, to_integers(dz)});
-    p.post(AllEqual{vector<IntegerVariableID>{x, y, z}});
+    p.post_named(AllEqual{vector<IntegerVariableID>{x, y, z}}, "all_equal_test_holes");
 
     auto proof_name = proofs ? make_optional("all_equal_test_holes") : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{x, y, z});

@@ -188,6 +188,32 @@ auto ProofModel::add_constraint(const StringLiteral & constraint_name, const Str
     return pair{first, second};
 }
 
+auto ProofModel::add_labelled_constraint(
+    const ConstraintID & constraint_id,
+    const string & role_fwd, const string & role_back,
+    const StringLiteral & constraint_name, const StringLiteral & rule,
+    const WPBSumLE & eq, const optional<HalfReifyOnConjunctionOf> & half_reif)
+    -> pair<optional<ProofLine>, optional<ProofLine>>
+{
+    names_and_ids_tracker().need_all_proof_names_in(eq.lhs);
+    if (half_reif)
+        names_and_ids_tracker().need_all_proof_names_in(*half_reif);
+
+    _imp->opb << "* constraint " << constraint_name.value << ' ' << rule.value << '\n';
+
+    auto first = emit_constraint_label(constraint_id, role_fwd, advance_constraint_counter());
+    _imp->opb << first << " ";
+    emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(eq.lhs <= eq.rhs, *half_reif) : eq.lhs <= eq.rhs, _imp->opb);
+    _imp->opb << ";\n";
+
+    auto second = emit_constraint_label(constraint_id, role_back, advance_constraint_counter());
+    _imp->opb << second << " ";
+    emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(eq.lhs >= eq.rhs, *half_reif) : eq.lhs >= eq.rhs, _imp->opb);
+    _imp->opb << ";\n";
+
+    return pair{first, second};
+}
+
 auto ProofModel::add_constraint(const WPBSumEq & eq, const optional<HalfReifyOnConjunctionOf> & half_reif)
     -> pair<optional<ProofLine>, optional<ProofLine>>
 {
