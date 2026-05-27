@@ -26,6 +26,7 @@ using std::make_optional;
 using std::move;
 using std::string;
 using std::stringstream;
+using std::to_string;
 using std::tuple;
 using std::unique_ptr;
 using std::vector;
@@ -68,16 +69,23 @@ auto AtMostOne::install(Propagators & propagators, State & initial_state, ProofM
 
 auto AtMostOne::define_proof_model(ProofModel & model) -> void
 {
+    // I'm using a counter to ensure labels are unique.  I don't see any
+    // mention of this in the semantics paper, so almost certainly wrong.
+    auto counter = 0;
+    
     // For each var_i: define flag_i ⇔ (var_i = _val) via a Count-style
     // gt/lt/eq triple, then post sum_i flag_i ≤ 1.
     for (auto & var : _vars) {
-        auto var_minus_val_gt_0 = model.create_proof_flag_fully_reifying("am1g",
+        auto var_minus_val_gt_0 = model.create_labelled_proof_flag_fully_reifying(
+            _constraint_id, to_string(++counter) + "][gt", "am1g",
             "AtMostOne", "var greater", WPBSum{} + 1_i * var + -1_i * _val >= 1_i);
 
-        auto var_minus_val_lt_0 = model.create_proof_flag_fully_reifying("am1l",
+        auto var_minus_val_lt_0 = model.create_labelled_proof_flag_fully_reifying(
+            _constraint_id, to_string(counter) + "][lt", "am1l",
             "AtMostOne", "var less", WPBSum{} + 1_i * var + -1_i * _val <= -1_i);
 
-        auto eq = model.create_proof_flag_fully_reifying("am1eq",
+        auto eq = model.create_labelled_proof_flag_fully_reifying(
+            _constraint_id, to_string(counter) + "][eq", "am1eq",
             "AtMostOne", "var equal val", WPBSum{} + 1_i * ! var_minus_val_gt_0 + 1_i * ! var_minus_val_lt_0 >= 2_i);
 
         _flags.emplace_back(eq, var_minus_val_gt_0, var_minus_val_lt_0);
@@ -86,7 +94,7 @@ auto AtMostOne::define_proof_model(ProofModel & model) -> void
     WPBSum sum;
     for (auto & [flag, _gt, _lt] : _flags)
         sum += 1_i * flag;
-    model.add_constraint("AtMostOne", "at most one match", sum <= 1_i);
+    model.add_labelled_constraint(_constraint_id, "sum", "AtMostOne", "at most one match", sum <= 1_i);
 }
 
 auto AtMostOne::install_propagators(Propagators & propagators) -> void

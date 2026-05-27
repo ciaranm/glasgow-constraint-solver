@@ -70,9 +70,9 @@ auto run_at_most_one_test(Variant variant, bool proofs,
         vars.push_back(p.create_integer_variable(Integer(l), Integer(u)));
     auto val = p.create_integer_variable(Integer(val_range.first), Integer(val_range.second));
     if (variant == Variant::Native)
-        p.post(AtMostOne{vars, val});
+        p.post_named(AtMostOne{vars, val}, "at_most_one_test");
     else
-        p.post(AtMostOneSmartTable{vars, val});
+        p.post_named(AtMostOneSmartTable{vars, val}, "at_most_one_test_smart_table");
 
     auto proof_name = proofs ? make_optional("at_most_one_test") : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{vars, val});
@@ -118,7 +118,7 @@ auto main(int, char *[]) -> int
     random_device rand_dev;
     mt19937 rand(rand_dev());
 
-    for (auto variant : {Variant::Native, Variant::SmartTable}) {
+    for (auto variant : {Variant::SmartTable, Variant::Native}) {
         for (bool proofs : {false, true}) {
             if (proofs && ! can_run_veripb())
                 continue;

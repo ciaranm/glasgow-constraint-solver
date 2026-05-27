@@ -138,6 +138,12 @@ namespace gcs::innards
             const StringLiteral & constraint_name, const StringLiteral & rule,
             const WPBSumLE & eq, const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt)
             -> std::pair<std::optional<ProofLine>, std::optional<ProofLine>>;
+        
+        auto add_labelled_constraint(
+            const ConstraintID & constraint_id, const std::string & role,
+            const StringLiteral & constraint_name, const StringLiteral & rule,
+            const WPBSumLE & ineq, const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt)
+            -> std::optional<ProofLine>;
 
         /**
          * \brief Encode `flag ⇔ ineq` in OPB by emitting both halves of the equivalence:
@@ -164,6 +170,17 @@ namespace gcs::innards
             const StringLiteral & constraint_name,
             const StringLiteral & rule,
             const WPBSumLE & ineq) -> ProofFlag;
+        
+        auto add_labelled_two_way_reified_constraint(
+            const ConstraintID & constraint_id,
+            const std::string & role,
+            const StringLiteral & constraint_name, const StringLiteral & rule,
+            const WPBSumLE & ineq, const ProofFlag & flag) -> std::pair<std::optional<ProofLine>, std::optional<ProofLine>>;
+
+        [[nodiscard]] auto create_labelled_proof_flag_fully_reifying(
+            const ConstraintID & constraint_id, const std::string & role,
+            const std::string & flag_name, const StringLiteral & constraint_name, 
+            const StringLiteral & rule, const WPBSumLE & ineq) -> ProofFlag;
 
         ///@}
 
