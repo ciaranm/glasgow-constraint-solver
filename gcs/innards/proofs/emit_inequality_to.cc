@@ -32,7 +32,7 @@ auto gcs::innards::emit_inequality_to(
                     [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
                         stream << -w << " " << names_and_ids_tracker.pb_file_string_for(cond) << " ";
                     }}
-                    .visit(simplify_literal(lit));
+                    .visit(simplify_literal(names_and_ids_tracker, lit));
             },
             [&, w = w](const ProofFlag & flag) {
                 stream << -w << " " << names_and_ids_tracker.pb_file_string_for(flag) << " ";
@@ -44,6 +44,14 @@ auto gcs::innards::emit_inequality_to(
                             stream << -w * bit_value << " " << names_and_ids_tracker.pb_file_string_for(bit_lit) << " ";
                     },
                     [&](const ViewOfIntegerVariableID & view) {
+                        // Emit underlying-form bits with sign flip (for
+                        // negate_first views) and RHS adjustment for the
+                        // constant offset. The view's extension exists in
+                        // the model (see preallocate_extensions_for_views_in)
+                        // and the bridges in need_gevar / need_direct_encoding_for
+                        // tie its atomic literals to the underlying's, but
+                        // host-level constraints stay in underlying-form for
+                        // verifier-side simplicity.
                         if (! view.negate_first) {
                             for (const auto & [bit_value, bit_lit] : names_and_ids_tracker.each_bit(view.actual_variable))
                                 stream << -w * bit_value << " " << names_and_ids_tracker.pb_file_string_for(bit_lit) << " ";

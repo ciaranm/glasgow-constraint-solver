@@ -96,6 +96,84 @@ auto ProofModel::advance_constraint_counter() -> ProofLineNumber
     return ProofLineNumber{++_imp->number_of_constraints.number};
 }
 
+namespace
+{
+    // Walk a WPBSum's terms and pre-allocate the extension variable for
+    // every ViewOfIntegerVariableID operand. Necessary because the
+    // allocation path writes the extension's domain bounds and definitional
+    // constraint to the OPB stream — if that happens *during*
+    // emit_inequality_to for the host constraint, the host constraint's
+    // OPB line gets sliced in half by the extension's emission.
+    auto preallocate_extensions_for_views_in(NamesAndIDsTracker & tracker, const WPBSum & sum) -> void
+    {
+        for (const auto & [w, term] : sum.terms) {
+            if (! std::holds_alternative<IntegerVariableID>(term))
+                continue;
+            const auto & var_id = std::get<IntegerVariableID>(term);
+            if (! std::holds_alternative<ViewOfIntegerVariableID>(var_id))
+                continue;
+            (void) tracker.extension_for(std::get<ViewOfIntegerVariableID>(var_id));
+        }
+    }
+
+    // Emit a pol line at proof-start that, starting from the underlying-form
+    // OPB constraint at `underlying_line`, adds the extension's definitional
+    // pair to materialise the same constraint in extension-form. This is a
+    // host-level analogue of the atomic-literal Inv1' bridges: it makes the
+    // extension-form copy of the host constraint available in the proof
+    // database, which lets downstream pol/RUP steps mix and match
+    // underlying- and extension-form references.
+    //
+    // Same-named half pairing (LE with LE, GE with GE) is correct regardless
+    // of `negate_first`, since the coefficient on `actual` in the bit-level
+    // definitional matches the coefficient on `actual` in the underlying-form
+    // host constraint.
+    enum class ConstraintHalf
+    {
+        LE,
+        GE
+    };
+
+    auto emit_view_bridge_pol_lines(NamesAndIDsTracker & tracker,
+        const WPBSum & original_lhs, optional<ProofLine> underlying_line, ConstraintHalf which_half) -> void
+    {
+        if (! underlying_line)
+            return;
+
+        std::vector<ProofLine> defs_to_add;
+        bool any_view = false;
+        for (const auto & [w, term] : original_lhs.terms) {
+            if (! std::holds_alternative<IntegerVariableID>(term))
+                continue;
+            const auto & var_id = std::get<IntegerVariableID>(term);
+            if (! std::holds_alternative<ViewOfIntegerVariableID>(var_id))
+                continue;
+            const auto & view = std::get<ViewOfIntegerVariableID>(var_id);
+            auto def_lines = tracker.extension_def_lines_for(view);
+            if (! def_lines)
+                continue;
+            if (w != 1_i && w != -1_i)
+                continue; // multi-coef bridges not handled yet
+            any_view = true;
+
+            ProofLine line_to_add = (which_half == ConstraintHalf::LE)
+                ? def_lines->first
+                : def_lines->second;
+            defs_to_add.push_back(line_to_add);
+        }
+
+        if (! any_view)
+            return;
+
+        std::stringstream pol_str;
+        pol_str << "pol " << *underlying_line;
+        for (const auto & d : defs_to_add)
+            pol_str << " " << d << " +";
+        pol_str << " s ;";
+        tracker.schedule_pol_line_at_proof_start(pol_str.str());
+    }
+}
+
 auto ProofModel::add_constraint(const StringLiteral & constraint_name, const StringLiteral & rule, const Literals & lits) -> std::optional<ProofLine>
 {
     WPBSum sum;
@@ -108,7 +186,7 @@ auto ProofModel::add_constraint(const StringLiteral & constraint_name, const Str
                     sum += 1_i * cond;
                     return false;
                 }}
-                .visit(simplify_literal(lit)))
+                .visit(simplify_literal(names_and_ids_tracker(), lit)))
             return nullopt;
     }
 
@@ -129,6 +207,7 @@ auto ProofModel::add_constraint(const Literals & lits) -> std::optional<ProofLin
 auto ProofModel::add_constraint(const StringLiteral & constraint_name, const StringLiteral & rule,
     const WPBSumLE & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> optional<ProofLine>
 {
+    preallocate_extensions_for_views_in(names_and_ids_tracker(), ineq.lhs);
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
     if (half_reif)
         names_and_ids_tracker().need_all_proof_names_in(*half_reif);
@@ -136,7 +215,10 @@ auto ProofModel::add_constraint(const StringLiteral & constraint_name, const Str
     _imp->opb << "* constraint " << constraint_name.value << ' ' << rule.value << '\n';
     emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(ineq, *half_reif) : ineq, _imp->opb);
     _imp->opb << ";\n";
-    return advance_constraint_counter();
+    auto underlying_line = advance_constraint_counter();
+    if (! half_reif)
+        emit_view_bridge_pol_lines(names_and_ids_tracker(), ineq.lhs, underlying_line, ConstraintHalf::LE);
+    return underlying_line;
 }
 
 auto ProofModel::add_constraint(const WPBSumLE & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> optional<ProofLine>
@@ -148,6 +230,7 @@ auto ProofModel::add_constraint(const StringLiteral & constraint_name, const Str
     const WPBSumEq & eq, const optional<HalfReifyOnConjunctionOf> & half_reif)
     -> pair<optional<ProofLine>, optional<ProofLine>>
 {
+    preallocate_extensions_for_views_in(names_and_ids_tracker(), eq.lhs);
     names_and_ids_tracker().need_all_proof_names_in(eq.lhs);
     if (half_reif)
         names_and_ids_tracker().need_all_proof_names_in(*half_reif);
@@ -160,6 +243,11 @@ auto ProofModel::add_constraint(const StringLiteral & constraint_name, const Str
     emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(eq.lhs >= eq.rhs, *half_reif) : eq.lhs >= eq.rhs, _imp->opb);
     _imp->opb << ";\n";
     auto second = advance_constraint_counter();
+
+    if (! half_reif) {
+        emit_view_bridge_pol_lines(names_and_ids_tracker(), eq.lhs, first, ConstraintHalf::LE);
+        emit_view_bridge_pol_lines(names_and_ids_tracker(), eq.lhs, second, ConstraintHalf::GE);
+    }
 
     return pair{first, second};
 }
@@ -194,6 +282,32 @@ auto ProofModel::names_and_ids_tracker() -> NamesAndIDsTracker &
 auto ProofModel::names_and_ids_tracker() const -> const NamesAndIDsTracker &
 {
     return _imp->tracker;
+}
+
+auto ProofModel::allocate_extension_for_view(const ViewOfIntegerVariableID & view)
+    -> std::tuple<ProofOnlySimpleIntegerVariableID, ProofLine, ProofLine>
+{
+    // Visible domain of the view, derived from the underlying's definition
+    // bounds. Negation swaps the endpoint roles.
+    auto [actual_lo, actual_hi] = names_and_ids_tracker().bounds_for(view.actual_variable);
+    Integer visible_lo = view.negate_first ? (-actual_hi + view.then_add) : (actual_lo + view.then_add);
+    Integer visible_hi = view.negate_first ? (-actual_lo + view.then_add) : (actual_hi + view.then_add);
+
+    auto name = "extension_v" + std::to_string(_imp->proof_only_integer_variable_nr) + (view.negate_first ? "_neg" : "")
+        + (view.then_add == 0_i ? "" : ("_p" + std::to_string(view.then_add.raw_value)));
+
+    auto ext_id = create_proof_only_integer_variable(visible_lo, visible_hi, name, IntegerVariableProofRepresentation::Bits);
+
+    // Definitional: e == (negate_first ? -actual : actual) + then_add, emitted
+    // as two halves. The constraint's LHS terms reference the extension
+    // (ProofOnlySimpleIntegerVariableID) and the underlying (SimpleIntegerVariableID
+    // wrapped in IntegerVariableID); neither is a view, so the recursive call
+    // to add_constraint won't trigger another extension lookup.
+    auto actual_coeff = view.negate_first ? 1_i : -1_i;
+    auto [def_le_line, def_ge_line] = add_constraint("ViewExtension", "definitional",
+        WPBSum{} + 1_i * ext_id + actual_coeff * IntegerVariableID{view.actual_variable} == view.then_add);
+
+    return {ext_id, *def_le_line, *def_ge_line};
 }
 
 auto ProofModel::create_proof_only_integer_variable(Integer lower, Integer upper, const string & name,
