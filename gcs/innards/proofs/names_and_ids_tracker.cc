@@ -593,6 +593,13 @@ auto NamesAndIDsTracker::need_view(const ViewOfIntegerVariableID & view) -> Proo
     return v_id;
 }
 
+auto NamesAndIDsTracker::find_view(const ViewOfIntegerVariableID & view) const -> optional<ProofOnlySimpleIntegerVariableID>
+{
+    if (auto it = _imp->view_proof_only_vars.find(view); it != _imp->view_proof_only_vars.end())
+        return it->second;
+    return std::nullopt;
+}
+
 auto NamesAndIDsTracker::track_bounds(const SimpleOrProofOnlyIntegerVariableID & id, Integer lower, Integer upper) -> void
 {
     _imp->integer_variable_definition_bounds.emplace(id, pair{lower, upper});

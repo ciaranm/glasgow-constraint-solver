@@ -44,7 +44,18 @@ auto gcs::innards::emit_inequality_to(
                             stream << -w * bit_value << " " << names_and_ids_tracker.pb_file_string_for(bit_lit) << " ";
                     },
                     [&](const ViewOfIntegerVariableID & view) {
-                        if (! view.negate_first) {
+                        // Stage 2: emit V's own bits when the view is
+                        // registered (the typical case — views in
+                        // constraint bodies are registered during model
+                        // writing via need_all_proof_names_in). Falls back
+                        // to deviewing through the underlying for views
+                        // first seen during proof logging, which the
+                        // registry doesn't yet support.
+                        if (auto v_id = names_and_ids_tracker.find_view(view)) {
+                            for (const auto & [bit_value, bit_lit] : names_and_ids_tracker.each_bit(*v_id))
+                                stream << -w * bit_value << " " << names_and_ids_tracker.pb_file_string_for(bit_lit) << " ";
+                        }
+                        else if (! view.negate_first) {
                             for (const auto & [bit_value, bit_lit] : names_and_ids_tracker.each_bit(view.actual_variable))
                                 stream << -w * bit_value << " " << names_and_ids_tracker.pb_file_string_for(bit_lit) << " ";
                             rhs += w * view.then_add;

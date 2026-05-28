@@ -13,6 +13,7 @@
 #include <gcs/variable_id.hh>
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <variant>
@@ -121,20 +122,30 @@ namespace gcs::innards
          * Ensure a proof-only binary-encoded variable exists for a given view.
          *
          * Returns the `ProofOnlySimpleIntegerVariableID` representing
-         * `BinEnc(view)`. The intent (rolled out across staged work for the
-         * view-as-own-pb-var proof-logging design) is that, on first reference
-         * to a view, this allocates a fresh proof-only integer variable sized
-         * to the view's visible domain, emits its bound axioms, and emits the
+         * `BinEnc(view)`. On first reference to a view during model writing,
+         * this allocates a fresh proof-only integer variable sized to the
+         * view's visible domain, emits its bound axioms, and emits the
          * linking constraint `BinEnc(view) = s*BinEnc(view.actual_variable) + c`
          * tying it back to the underlying. Repeated calls with the same view
          * return the same id (canonicalised on the `(actual_variable,
          * negate_first, then_add)` triple).
          *
-         * Stage 0 is a skeleton only: the registry storage is in place but
-         * the method throws `UnimplementedException` if called. No call sites
-         * use it yet.
+         * Throws `UnimplementedException` if called during the proof-logging
+         * phase for a view that wasn't registered during model writing; this
+         * case is left for a future stage if empirical failures show it
+         * needed.
          */
         [[nodiscard]] auto need_view(const ViewOfIntegerVariableID & view) -> ProofOnlySimpleIntegerVariableID;
+
+        /**
+         * Look up an already-registered view's proof-only variable, or return
+         * `std::nullopt` if no entry exists. Never triggers introduction;
+         * never throws. Used by `emit_inequality_to` to decide whether to
+         * emit in V's bits (registered) or fall back to deviewing through
+         * the underlying (not registered — only happens for views first seen
+         * during proof logging, which `need_view` doesn't yet support).
+         */
+        [[nodiscard]] auto find_view(const ViewOfIntegerVariableID & view) const -> std::optional<ProofOnlySimpleIntegerVariableID>;
 
         /**
          * Say that we will need the diect encoding to exist for a given variable.

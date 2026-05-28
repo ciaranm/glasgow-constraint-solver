@@ -363,9 +363,19 @@ auto ProofModel::finalise() -> void
                     throw UnimplementedException{};
                 },
                 [&](const ViewOfIntegerVariableID & v) {
-                    // the "then add" bit is irrelevant for the objective function
-                    for (const auto & [bit_value, bit_name] : names_and_ids_tracker().each_bit(v.actual_variable))
-                        full_opb << (v.negate_first ? -bit_value : bit_value) << " " << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
+                    // Stage 2: if the view's been registered (used in a
+                    // constraint body during model writing), emit V's own
+                    // bits. Otherwise fall back to deviewing through the
+                    // underlying (objective constant offset still doesn't
+                    // matter for optimisation order).
+                    if (auto v_id = names_and_ids_tracker().find_view(v)) {
+                        for (const auto & [bit_value, bit_name] : names_and_ids_tracker().each_bit(*v_id))
+                            full_opb << bit_value << " " << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
+                    }
+                    else {
+                        for (const auto & [bit_value, bit_name] : names_and_ids_tracker().each_bit(v.actual_variable))
+                            full_opb << (v.negate_first ? -bit_value : bit_value) << " " << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
+                    }
                 }}
                 .visit(*_imp->optional_minimise_variable);
 
