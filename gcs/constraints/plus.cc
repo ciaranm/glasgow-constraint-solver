@@ -34,6 +34,85 @@ using std::print;
 using fmt::print;
 #endif
 
+namespace
+{
+    auto propagate_plus(IntegerVariableID a, IntegerVariableID b, IntegerVariableID result,
+        const State & state,
+        auto & inference,
+        ProofLogger * const logger,
+        const pair<optional<ProofLine>, optional<ProofLine>> & sum_line) -> PropagatorState
+    {
+        auto a_vals = state.bounds(a);
+        auto b_vals = state.bounds(b);
+        auto result_vals = state.bounds(result);
+
+        enum class Conclude
+        {
+            GE,
+            LE
+        };
+
+        auto justify = [&](Conclude c) -> JustifyExplicitlyThenRUP {
+            return JustifyExplicitlyThenRUP{
+                [c, sum_line, logger](const ReasonFunction & reason) {
+                    auto sum_line_value = (c == Conclude::LE ? sum_line.first : sum_line.second);
+                    if (! sum_line_value)
+                        return;
+
+                    PolBuilder b;
+                    b.add(*sum_line_value);
+
+                    // Constants in WPBSum are baked into the OPB sum_line directly
+                    // (see emit_inequality_to.cc:58–60), so a reason literal whose
+                    // variable is a ConstantIntegerVariableID already contributes
+                    // to sum_line and doesn't need (or have) a pol-side defining
+                    // line — need_pol_item_defining_literal would throw on it.
+                    // Issue #166.
+                    for (size_t i = 0; i < 2; ++i) {
+                        auto lit = get<IntegerVariableCondition>(get<Literal>(get<ProofLiteral>(reason().at(i))));
+                        if (holds_alternative<ConstantIntegerVariableID>(lit.var))
+                            continue;
+                        b.add_for_literal(logger->names_and_ids_tracker(), lit);
+                    }
+
+                    b.emit(*logger, ProofLevel::Temporary);
+                }};
+        };
+
+        // min(result) = min(a) + min(b);
+        inference.infer(logger, result >= a_vals.first + b_vals.first,
+            justify(Conclude::LE),
+            [=]() { return Reason{a >= a_vals.first, b >= b_vals.first}; });
+
+        // max(result) = max(a) + max(b);
+        inference.infer(logger, result <= a_vals.second + b_vals.second,
+            justify(Conclude::GE),
+            [=]() { return Reason{a <= a_vals.second, b <= b_vals.second}; });
+
+        // min(a) = min(result) - max(b);
+        inference.infer(logger, a >= result_vals.first - b_vals.second,
+            justify(Conclude::GE),
+            [=]() { return Reason{result >= result_vals.first, b <= b_vals.second}; });
+
+        // max(a) = max(result) - min(b);
+        inference.infer(logger, a <= result_vals.second - b_vals.first,
+            justify(Conclude::LE),
+            [=]() { return Reason{result <= result_vals.second, b >= b_vals.first}; });
+
+        // min(b) = min(result) - max(a);
+        inference.infer(logger, b >= result_vals.first - a_vals.second,
+            justify(Conclude::GE),
+            [=]() { return Reason{result >= result_vals.first, a <= a_vals.second}; });
+
+        // max(b) = max(result) - min(a);
+        inference.infer(logger, b <= result_vals.second - a_vals.first,
+            justify(Conclude::LE),
+            [=]() { return Reason{result <= result_vals.second, a >= a_vals.first}; });
+
+        return PropagatorState::Enable;
+    }
+}
+
 Plus::Plus(IntegerVariableID a, IntegerVariableID b, IntegerVariableID result) :
     _a(a),
     _b(b),
@@ -88,90 +167,3 @@ auto Plus::s_exprify(const innards::ProofModel * const model) const -> string
     return s.str();
 }
 
-auto gcs::innards::propagate_plus(IntegerVariableID a, IntegerVariableID b, IntegerVariableID result,
-    const State & state,
-    auto & inference,
-    ProofLogger * const logger,
-    const std::pair<std::optional<ProofLine>, std::optional<ProofLine>> & sum_line) -> PropagatorState
-{
-    auto a_vals = state.bounds(a);
-    auto b_vals = state.bounds(b);
-    auto result_vals = state.bounds(result);
-
-    enum class Conclude
-    {
-        GE,
-        LE
-    };
-
-    auto justify = [&](Conclude c) -> JustifyExplicitlyThenRUP {
-        return JustifyExplicitlyThenRUP{
-            [c, sum_line, logger](const ReasonFunction & reason) {
-                auto sum_line_value = (c == Conclude::LE ? sum_line.first : sum_line.second);
-                if (! sum_line_value)
-                    return;
-
-                PolBuilder b;
-                b.add(*sum_line_value);
-
-                // Constants in WPBSum are baked into the OPB sum_line directly
-                // (see emit_inequality_to.cc:58–60), so a reason literal whose
-                // variable is a ConstantIntegerVariableID already contributes
-                // to sum_line and doesn't need (or have) a pol-side defining
-                // line — need_pol_item_defining_literal would throw on it.
-                // Issue #166.
-                for (size_t i = 0; i < 2; ++i) {
-                    auto lit = get<IntegerVariableCondition>(get<Literal>(get<ProofLiteral>(reason().at(i))));
-                    if (holds_alternative<ConstantIntegerVariableID>(lit.var))
-                        continue;
-                    b.add_for_literal(logger->names_and_ids_tracker(), lit);
-                }
-
-                b.emit(*logger, ProofLevel::Temporary);
-            }};
-    };
-
-    // min(result) = min(a) + min(b);
-    inference.infer(logger, result >= a_vals.first + b_vals.first,
-        justify(Conclude::LE),
-        [=]() { return Reason{a >= a_vals.first, b >= b_vals.first}; });
-
-    // max(result) = max(a) + max(b);
-    inference.infer(logger, result <= a_vals.second + b_vals.second,
-        justify(Conclude::GE),
-        [=]() { return Reason{a <= a_vals.second, b <= b_vals.second}; });
-
-    // min(a) = min(result) - max(b);
-    inference.infer(logger, a >= result_vals.first - b_vals.second,
-        justify(Conclude::GE),
-        [=]() { return Reason{result >= result_vals.first, b <= b_vals.second}; });
-
-    // max(a) = max(result) - min(b);
-    inference.infer(logger, a <= result_vals.second - b_vals.first,
-        justify(Conclude::LE),
-        [=]() { return Reason{result <= result_vals.second, b >= b_vals.first}; });
-
-    // min(b) = min(result) - max(a);
-    inference.infer(logger, b >= result_vals.first - a_vals.second,
-        justify(Conclude::GE),
-        [=]() { return Reason{result >= result_vals.first, a <= a_vals.second}; });
-
-    // max(b) = max(result) - min(a);
-    inference.infer(logger, b <= result_vals.second - a_vals.first,
-        justify(Conclude::LE),
-        [=]() { return Reason{result <= result_vals.second, a >= a_vals.first}; });
-
-    return PropagatorState::Enable;
-}
-
-template auto gcs::innards::propagate_plus(IntegerVariableID a, IntegerVariableID b, IntegerVariableID result,
-    const State & state,
-    EagerProofLoggingInferenceTracker & inference,
-    ProofLogger * const logger,
-    const std::pair<std::optional<ProofLine>, std::optional<ProofLine>> & sum_line) -> PropagatorState;
-
-template auto gcs::innards::propagate_plus(IntegerVariableID a, IntegerVariableID b, IntegerVariableID result,
-    const State & state,
-    SimpleInferenceTracker & inference,
-    ProofLogger * const logger,
-    const std::pair<std::optional<ProofLine>, std::optional<ProofLine>> & sum_line) -> PropagatorState;

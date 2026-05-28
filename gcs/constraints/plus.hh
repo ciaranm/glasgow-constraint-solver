@@ -33,15 +33,6 @@ namespace gcs
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
         [[nodiscard]] virtual auto s_exprify(const innards::ProofModel * const) const -> std::string override;
     };
-
-    namespace innards
-    {
-        [[nodiscard]] auto propagate_plus(IntegerVariableID a, IntegerVariableID b, IntegerVariableID result,
-            const State &,
-            auto & inference,
-            ProofLogger * const,
-            const std::pair<std::optional<ProofLine>, std::optional<ProofLine>> &) -> PropagatorState;
-    }
 }
 
 #endif
