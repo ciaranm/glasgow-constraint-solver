@@ -77,13 +77,13 @@ template <IncVariant V>
 auto post_inc(Problem & p, vector<IntegerVariableID> vars) -> void
 {
     if constexpr (V == IncVariant::Increasing)
-        p.post(Increasing{std::move(vars)});
+        p.post_named(Increasing{std::move(vars)}, "inc");
     else if constexpr (V == IncVariant::StrictlyIncreasing)
-        p.post(StrictlyIncreasing{std::move(vars)});
+        p.post_named(StrictlyIncreasing{std::move(vars)}, "str_inc");
     else if constexpr (V == IncVariant::Decreasing)
-        p.post(Decreasing{std::move(vars)});
+        p.post_named(Decreasing{std::move(vars)}, "dec");
     else
-        p.post(StrictlyDecreasing{std::move(vars)});
+        p.post_named(StrictlyDecreasing{std::move(vars)}, "str_dec");
 }
 
 template <IncVariant V>

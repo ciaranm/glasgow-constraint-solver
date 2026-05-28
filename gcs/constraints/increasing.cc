@@ -9,8 +9,10 @@
 #include <version>
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <format>
 #include <print>
 #else
+#include <fmt/core.h>
 #include <fmt/ostream.h>
 #endif
 
@@ -30,8 +32,10 @@ using std::vector;
 using std::ranges::reverse;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::format;
 using std::print;
 #else
+using fmt::format;
 using fmt::print;
 #endif
 
@@ -72,7 +76,9 @@ auto IncreasingChain::define_proof_model(ProofModel & model) -> void
 {
     auto offset = _strict ? -1_i : 0_i;
     for (size_t i = 0; i + 1 < _ordered_vars.size(); ++i)
-        model.add_constraint("IncreasingChain", "chain step",
+        model.add_labelled_constraint(
+            _constraint_id, format("step_{}", i),
+            "IncreasingChain", "chain step",
             WPBSum{} + 1_i * _ordered_vars[i] + -1_i * _ordered_vars[i + 1] <= offset);
 }
 
