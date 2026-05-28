@@ -66,7 +66,7 @@ auto run_count_test(bool proofs, variant<int, pair<int, int>> result_range, vari
     vector<IntegerVariableID> array;
     for (const auto & entry : array_range)
         array.push_back(visit([&](auto e) { return create_integer_variable_or_constant(p, e); }, entry));
-    p.post(Count{array, voi, result});
+    p.post_named(Count{array, voi, result}, "count_test");
 
     auto proof_name = proofs ? make_optional("count_test") : nullopt;
     solve_for_tests_checking_consistency(p, proof_name, expected, actual, tuple{pair{voi, CheckConsistency::GAC}, pair{result, CheckConsistency::GAC}, pair{array, CheckConsistency::None}});

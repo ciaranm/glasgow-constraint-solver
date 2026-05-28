@@ -27,6 +27,7 @@ using namespace gcs::innards;
 using std::optional;
 using std::string;
 using std::stringstream;
+using std::to_string;
 using std::tuple;
 using std::unique_ptr;
 using std::vector;
@@ -62,17 +63,18 @@ auto Count::install(Propagators & propagators, State & initial_state, ProofModel
 
 auto Count::define_proof_model(ProofModel & model) -> void
 {
+    auto count = 0;
     for (auto & var : _vars) {
         // var_minus_val_gt_0 ⇔ var > val
-        auto var_minus_val_gt_0 = model.create_proof_flag_fully_reifying("countg",
+        auto var_minus_val_gt_0 = model.create_labelled_proof_flag_fully_reifying(_constraint_id, to_string(++count) + "][ge", "countg",
             "Count", "var greater", WPBSum{} + 1_i * var + -1_i * _value_of_interest >= 1_i);
 
         // var_minus_val_lt_0 ⇔ var < val
-        auto var_minus_val_lt_0 = model.create_proof_flag_fully_reifying("countl",
+        auto var_minus_val_lt_0 = model.create_labelled_proof_flag_fully_reifying(_constraint_id, to_string(count) + "][le", "countl",
             "Count", "var less", WPBSum{} + 1_i * var + -1_i * _value_of_interest <= -1_i);
 
         // flag ⇔ var = val (encoded as ¬gt ∧ ¬lt)
-        auto flag = model.create_proof_flag_fully_reifying("count",
+        auto flag = model.create_labelled_proof_flag_fully_reifying(_constraint_id, to_string(count) + "][eq", "counteq",
             "Count", "var equal", WPBSum{} + 1_i * ! var_minus_val_gt_0 + 1_i * ! var_minus_val_lt_0 >= 2_i);
 
         _flags.emplace_back(flag, var_minus_val_gt_0, var_minus_val_lt_0);
@@ -84,7 +86,7 @@ auto Count::define_proof_model(ProofModel & model) -> void
         how_many_sum += 1_i * flag;
     how_many_sum += -1_i * _how_many;
 
-    model.add_constraint("Count", "sum of flags", how_many_sum == 0_i);
+    model.add_labelled_constraint(_constraint_id, "ge", "le", "Count", "sum of flags", how_many_sum == 0_i);
 }
 
 auto Count::install_propagators(Propagators & propagators) -> void
