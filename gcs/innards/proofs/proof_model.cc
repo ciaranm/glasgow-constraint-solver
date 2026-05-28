@@ -108,7 +108,7 @@ auto ProofModel::add_constraint(const StringLiteral & constraint_name, const Str
                     sum += 1_i * cond;
                     return false;
                 }}
-                .visit(simplify_literal(lit)))
+                .visit(simplify_literal(names_and_ids_tracker(), lit)))
             return nullopt;
     }
 

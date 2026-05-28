@@ -44,7 +44,7 @@ template <typename Literal_>
         // infeasible. Issue #171.
         unsigned n_false = 0;
         for (const auto & atom : atoms) {
-            if (holds_alternative<FalseLiteral>(simplify_literal(atom))) {
+            if (holds_alternative<FalseLiteral>(simplify_literal(logger.names_and_ids_tracker(), atom))) {
                 if (++n_false >= 2)
                     return logger.emit(RUPProofRule{}, WPBSum{} >= 1_i, level);
             }
