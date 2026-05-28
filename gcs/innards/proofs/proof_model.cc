@@ -14,6 +14,7 @@
 #include <exception>
 #include <fstream>
 #include <iterator>
+#include <set>
 #include <sstream>
 
 #include <version>
@@ -383,20 +384,26 @@ auto ProofModel::finalise() -> void
         }
 
         if (_imp->preserved_variables) {
+            // Stage 4: the projection set for solx/soli only includes the
+            // underlying's bits. View bits (allocated by need_view at
+            // stage 1) are deliberately omitted; VeriPB UP-extends them
+            // from the underlying via the bit-vector link emitted in
+            // need_view by Theorem 2.8 (equality of two binary sums
+            // propagates from one side fixed to the other). Dedup so that
+            // X and a view of X (or two views of the same X) in the
+            // preserve list don't emit X's bits twice.
             full_opb << "preserved: ";
+            std::set<SimpleIntegerVariableID> already_emitted;
+            auto emit_underlying = [&](const SimpleIntegerVariableID & v) {
+                if (already_emitted.insert(v).second)
+                    for (const auto & [bit_value, bit_name] : names_and_ids_tracker().each_bit(v))
+                        full_opb << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
+            };
             for (const auto & var : *_imp->preserved_variables) {
                 overloaded{
-                    [&](const SimpleIntegerVariableID & v) {
-                        for (const auto & [bit_value, bit_name] : names_and_ids_tracker().each_bit(v))
-                            full_opb << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
-                    },
-                    [&](const ConstantIntegerVariableID &) {
-                    },
-                    [&](const ViewOfIntegerVariableID & v) {
-                        // the "then add" bit is irrelevant for the objective function
-                        for (const auto & [bit_value, bit_name] : names_and_ids_tracker().each_bit(v.actual_variable))
-                            full_opb << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
-                    }}
+                    [&](const SimpleIntegerVariableID & v) { emit_underlying(v); },
+                    [&](const ConstantIntegerVariableID &) {},
+                    [&](const ViewOfIntegerVariableID & v) { emit_underlying(v.actual_variable); }}
                     .visit(var);
             }
 
