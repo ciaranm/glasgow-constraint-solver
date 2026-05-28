@@ -146,41 +146,41 @@ auto ReifiedEquals::define_proof_model(ProofModel & model) -> void
 {
     overloaded{
         [&](const reif::MustHold &) {
-            model.add_constraint("ReifiedEquals", "equals option",
+            model.add_labelled_constraint(_constraint_id, "eq_fwd", "eq_back", "ReifiedEquals", "equals option",
                 WPBSum{} + (1_i * _v1) + (-1_i * _v2) == 0_i);
         },
         [&](const reif::MustNotHold &) {
             auto gtflag = model.create_proof_flag("gt");
-            model.add_constraint("ReifiedEquals", "greater option",
+            model.add_labelled_constraint(_constraint_id, "gt", "ReifiedEquals", "greater option",
                 WPBSum{} + (1_i * _v1) + (-1_i * _v2) >= 1_i, HalfReifyOnConjunctionOf{{gtflag}});
-            model.add_constraint("ReifiedEquals", "less option",
+            model.add_labelled_constraint(_constraint_id, "lt", "ReifiedEquals", "less option",
                 WPBSum{} + (1_i * _v1) + (-1_i * _v2) <= -1_i, HalfReifyOnConjunctionOf{{! gtflag}});
         },
         [&](const reif::If & reif) {
-            model.add_constraint("ReifiedEquals", "equals option",
+            model.add_labelled_constraint(_constraint_id, "eq_fwd", "eq_back", "ReifiedEquals", "equals option",
                 WPBSum{} + (1_i * _v1) + (-1_i * _v2) == 0_i, HalfReifyOnConjunctionOf{{reif.cond}});
         },
         [&](const reif::NotIf & reif) {
             auto gtflag = model.create_proof_flag("gt");
-            model.add_constraint("ReifiedEquals", "greater option",
+            model.add_labelled_constraint(_constraint_id, "gt", "ReifiedEquals", "greater option",
                 WPBSum{} + (1_i * _v1) + (-1_i * _v2) >= 1_i, HalfReifyOnConjunctionOf{{reif.cond, gtflag}});
-            model.add_constraint("ReifiedEquals", "less option",
+            model.add_labelled_constraint(_constraint_id, "lt", "ReifiedEquals", "less option",
                 WPBSum{} + (1_i * _v1) + (-1_i * _v2) <= -1_i, HalfReifyOnConjunctionOf{{reif.cond, ! gtflag}});
         },
         [&](const reif::Iff & reif) {
             // condition unknown, the condition implies it is neither greater nor less
-            model.add_constraint("ReifiedEquals", "equals option",
+            model.add_labelled_constraint(_constraint_id, "eq_fwd", "eq_back", "ReifiedEquals", "equals option",
                 WPBSum{} + (1_i * _v1) + (-1_i * _v2) == 0_i, HalfReifyOnConjunctionOf{{reif.cond}});
 
             auto gtflag = model.create_proof_flag("gt");
-            model.add_constraint("ReifiedEquals", "greater option",
+            model.add_labelled_constraint(_constraint_id, "gt", "ReifiedEquals", "greater option",
                 WPBSum{} + (1_i * _v1) + (-1_i * _v2) >= 1_i, HalfReifyOnConjunctionOf{{gtflag}});
             auto ltflag = model.create_proof_flag("lt");
-            model.add_constraint("ReifiedEquals", "less option",
+            model.add_labelled_constraint(_constraint_id, "lt", "ReifiedEquals", "less option",
                 WPBSum{} + (1_i * _v1) + (-1_i * _v2) <= -1_i, HalfReifyOnConjunctionOf{{ltflag}});
 
             // lt + eq + gt >= 1
-            model.add_constraint("ReifiedEquals", "one of less than, equals, greater than",
+            model.add_labelled_constraint(_constraint_id, "al1", "ReifiedEquals", "one of less than, equals, greater than",
                 WPBSum{} + 1_i * ltflag + 1_i * gtflag + 1_i * reif.cond >= 1_i);
         }}
         .visit(_cond);

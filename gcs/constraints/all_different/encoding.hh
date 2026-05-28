@@ -31,6 +31,11 @@ namespace gcs
         auto define_clique_not_equals_encoding(ProofModel & model,
             const std::vector<IntegerVariableID> & vars) -> std::optional<std::pair<IntegerVariableID, ProofFlag>>;
 
+        auto define_labelled_clique_not_equals_encoding(
+            ConstraintID constraint_id,
+            ProofModel & model, const std::vector<IntegerVariableID> & vars) 
+            -> std::optional<std::pair<IntegerVariableID, ProofFlag>>;
+
         // Emits the AllDifferentExcept clique encoding. Where the same variable
         // appears more than once in `vars`, the resulting pair-of-half-reified
         // constraints implies that variable must take a value in `excluded`;

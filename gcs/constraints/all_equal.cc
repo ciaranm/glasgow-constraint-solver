@@ -66,7 +66,7 @@ auto AllEqual::define_proof_model(ProofModel & model) -> void
 {
     for (size_t i = 0; i + 1 < _vars.size(); ++i)
         model.add_labelled_constraint(_constraint_id,
-            "fwd_" + to_string(i), "back_" + to_string(i), "AllEqual", "chain step",
+            "fwd[" + to_string(i+1) + "]", "back[" + to_string(i+1) + "]", "AllEqual", "chain step",
             WPBSum{} + 1_i * _vars[i] + -1_i * _vars[i + 1] == 0_i);
 }
 

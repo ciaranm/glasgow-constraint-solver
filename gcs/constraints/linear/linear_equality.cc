@@ -174,34 +174,34 @@ auto ReifiedLinearEquality::define_proof_model(ProofModel & model) -> void
     overloaded{
         [&](const reif::MustHold &) {
             // condition is definitely true, it's just an inequality
-            _proof_line = model.add_constraint("ReifiedLinearEquality", "unconditional sum", terms == _value, nullopt);
+            _proof_line = model.add_labelled_constraint(_constraint_id, "neq_fwd", "neq_back", "ReifiedLinearEquality", "unconditional sum", terms == _value, nullopt);
         },
         [&](const reif::MustNotHold &) {
             // condition is definitely false, the flag implies either greater or less
             auto neflag = model.create_proof_flag("linne");
-            model.add_constraint("ReifiedLinearEquality", "greater option", terms >= _value + 1_i, HalfReifyOnConjunctionOf{{neflag}});
-            model.add_constraint("ReifiedLinearEquality", "less than option", terms <= _value - 1_i, HalfReifyOnConjunctionOf{{! neflag}});
+            model.add_labelled_constraint(_constraint_id, "gt", "ReifiedLinearEquality", "greater option", terms >= _value + 1_i, HalfReifyOnConjunctionOf{{neflag}});
+            model.add_labelled_constraint(_constraint_id, "lt", "ReifiedLinearEquality", "less than option", terms <= _value - 1_i, HalfReifyOnConjunctionOf{{! neflag}});
         },
         [&](const reif::If & cond) {
-            _proof_line = model.add_constraint("ReifiedLinearEquality", "unconditional sum", terms == _value, HalfReifyOnConjunctionOf{{cond.cond}});
+            _proof_line = model.add_labelled_constraint(_constraint_id, "neq_fwd", "neq_back", "ReifiedLinearEquality", "unconditional sum", terms == _value, HalfReifyOnConjunctionOf{{cond.cond}});
         },
         [&](const reif::NotIf & cond) {
             // condition is definitely false, the flag implies either greater or less
             auto neflag = model.create_proof_flag("linne");
-            model.add_constraint("ReifiedLinearEquality", "greater option", terms >= _value + 1_i, HalfReifyOnConjunctionOf{{cond.cond, neflag}});
-            model.add_constraint("ReifiedLinearEquality", "less than option", terms <= _value - 1_i, HalfReifyOnConjunctionOf{{cond.cond, ! neflag}});
+            model.add_labelled_constraint(_constraint_id, "gt", "ReifiedLinearEquality", "greater option", terms >= _value + 1_i, HalfReifyOnConjunctionOf{{cond.cond, neflag}});
+            model.add_labelled_constraint(_constraint_id, "lt", "ReifiedLinearEquality", "less than option", terms <= _value - 1_i, HalfReifyOnConjunctionOf{{cond.cond, ! neflag}});
         },
         [&](const reif::Iff & cond) {
             // condition unknown, the condition implies it is neither greater nor less
-            _proof_line = model.add_constraint("ReifiedLinearEquality", "equals option", terms == _value, HalfReifyOnConjunctionOf{{cond.cond}});
+            _proof_line = model.add_labelled_constraint(_constraint_id, "eq_fwd", "eq_back", "ReifiedLinearEquality", "equals option", terms == _value, HalfReifyOnConjunctionOf{{cond.cond}});
 
             auto gtflag = model.create_proof_flag("lineqgt");
-            model.add_constraint("ReifiedLinearEquality", "greater option", terms >= _value + 1_i, HalfReifyOnConjunctionOf{{gtflag}});
+            model.add_labelled_constraint(_constraint_id, "gt", "ReifiedLinearEquality", "greater option", terms >= _value + 1_i, HalfReifyOnConjunctionOf{{gtflag}});
             auto ltflag = model.create_proof_flag("lineqlt");
-            model.add_constraint("ReifiedLinearEquality", "less than option", terms <= _value - 1_i, HalfReifyOnConjunctionOf{{ltflag}});
+            model.add_labelled_constraint(_constraint_id, "lt", "ReifiedLinearEquality", "less than option", terms <= _value - 1_i, HalfReifyOnConjunctionOf{{ltflag}});
 
             // lt + eq + gt >= 1
-            model.add_constraint("ReifiedLinearEquality", "one of less than, equals, greater than", WPBSum{} + 1_i * ltflag + 1_i * gtflag + 1_i * cond.cond >= 1_i);
+            model.add_labelled_constraint(_constraint_id, "al1", "ReifiedLinearEquality", "one of less than, equals, greater than", WPBSum{} + 1_i * ltflag + 1_i * gtflag + 1_i * cond.cond >= 1_i);
         }}
         .visit(_reif_cond);
 }
