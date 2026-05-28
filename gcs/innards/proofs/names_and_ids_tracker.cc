@@ -281,7 +281,15 @@ auto NamesAndIDsTracker::need_all_proof_names_in(const SumOf<Weighted<PseudoBool
                     .visit(simplify_literal(lit));
             },
             [&](const ProofFlag &) {},
-            [&](const IntegerVariableID &) {},
+            [&](const IntegerVariableID & var) {
+                // Stage 1: opportunistically register view bit vectors during
+                // model writing only. The proof-logging phase doesn't yet know
+                // how to introduce a view via ext/red lines; later stages may
+                // extend this.
+                if (_imp->model)
+                    if (auto view = std::get_if<ViewOfIntegerVariableID>(&var))
+                        static_cast<void>(need_view(*view));
+            },
             [&](const ProofOnlySimpleIntegerVariableID &) {},
             [&](const ProofBitVariable &) {}}
             .visit(v);
@@ -550,13 +558,39 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
     }
 }
 
-auto NamesAndIDsTracker::need_view(const ViewOfIntegerVariableID &) -> ProofOnlySimpleIntegerVariableID
+auto NamesAndIDsTracker::need_view(const ViewOfIntegerVariableID & view) -> ProofOnlySimpleIntegerVariableID
 {
-    // Stage 0: skeleton. Storage is in place in Imp::view_proof_only_vars but
-    // nothing calls this yet. Stage 1 will replace this with real lazy
-    // allocation via ProofModel::create_proof_only_integer_variable, plus
-    // emission of the link constraint BinEnc(view) = s*BinEnc(actual) + c.
-    throw UnimplementedException{};
+    if (auto it = _imp->view_proof_only_vars.find(view); it != _imp->view_proof_only_vars.end())
+        return it->second;
+
+    if (! _imp->model)
+        throw UnimplementedException{
+            "need_view: view introduction during proof-logging phase is not yet supported"};
+
+    auto bounds_it = _imp->integer_variable_definition_bounds.find(view.actual_variable);
+    if (bounds_it == _imp->integer_variable_definition_bounds.end())
+        throw ProofError{"need_view: underlying variable's bounds are not registered"};
+    auto [x_lo, x_hi] = bounds_it->second;
+
+    auto [v_lo, v_hi] = view.negate_first
+        ? pair{-x_hi + view.then_add, -x_lo + view.then_add}
+        : pair{x_lo + view.then_add, x_hi + view.then_add};
+
+    string name = "view_of_" + name_of(view.actual_variable);
+    if (view.negate_first)
+        name = "neg_" + name;
+    if (view.then_add != 0_i)
+        name += "_plus_" + to_string(view.then_add.raw_value);
+
+    auto v_id = _imp->model->create_proof_only_integer_variable(
+        v_lo, v_hi, name, IntegerVariableProofRepresentation::Bits);
+
+    Integer s_coeff = view.negate_first ? -1_i : 1_i;
+    _imp->model->add_constraint(StringLiteral{"view link"}, StringLiteral{"definitional"},
+        WPBSum{} + 1_i * v_id + (-s_coeff) * view.actual_variable == view.then_add);
+
+    _imp->view_proof_only_vars.emplace(view, v_id);
+    return v_id;
 }
 
 auto NamesAndIDsTracker::track_bounds(const SimpleOrProofOnlyIntegerVariableID & id, Integer lower, Integer upper) -> void
