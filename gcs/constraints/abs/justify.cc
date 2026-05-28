@@ -31,11 +31,11 @@ auto gcs::innards::justify_abs_hole(
     Integer val) -> void
 {
     // (v2 == val /\ v1 >= 0) -> v1 == val
-    logger.emit_rup_proof_line_under_reason(reason,
+    logger.emit_rup_proof_line_under_reason_then_deview(reason,
         WPBSum{} + 1_i * (v1 < 0_i) + 1_i * (v1 == val) + 1_i * (v2 != val) >= 1_i, ProofLevel::Temporary);
 
     // (v2 == val /\ v1 < 0) -> v1 == -val
-    logger.emit_rup_proof_line_under_reason(reason,
+    logger.emit_rup_proof_line_under_reason_then_deview(reason,
         WPBSum{} + 1_i * (v1 >= 0_i) + 1_i * (v1 != -val) + 1_i * (v2 != val) >= 1_i, ProofLevel::Temporary);
 
     // rest follows by RUP
@@ -77,9 +77,9 @@ auto gcs::innards::justify_abs_v2_lb(
     // v1 bound and v2 < v2_lb leaves a single side; the v1 sign branch
     // not taken is closed by RUP from the reason.
     auto v1_bound_line = (side == AbsLbSide::Nonneg)
-        ? logger.emit_rup_proof_line_under_reason(reason,
+        ? logger.emit_rup_proof_line_under_reason_then_deview(reason,
               WPBSum{} + -1_i * v1 <= -v2_lb, ProofLevel::Temporary)
-        : logger.emit_rup_proof_line_under_reason(reason,
+        : logger.emit_rup_proof_line_under_reason_then_deview(reason,
               WPBSum{} + 1_i * v1 <= -v2_lb, ProofLevel::Temporary);
 
     emit_resolution(logger, abs_ge, v1_bound_line, v2_lt_lb);
@@ -99,7 +99,7 @@ auto gcs::innards::justify_abs_v1_le_v2_ub(
     auto & ids = logger.names_and_ids_tracker();
     auto v1_ge_bound_plus_1 = get<ProofLine>(
         ids.need_pol_item_defining_literal(v1 > v2_ub));
-    auto v2_upper = logger.emit_rup_proof_line_under_reason(reason,
+    auto v2_upper = logger.emit_rup_proof_line_under_reason_then_deview(reason,
         WPBSum{} + 1_i * v2 <= v2_ub, ProofLevel::Temporary);
     emit_resolution(logger, abs_nonneg_ge, v2_upper, v1_ge_bound_plus_1);
 
@@ -121,7 +121,7 @@ auto gcs::innards::justify_abs_v1_ge_neg_v2_ub(
     auto & ids = logger.names_and_ids_tracker();
     auto v1_lt_neg_bound = get<ProofLine>(
         ids.need_pol_item_defining_literal(v1 < -v2_ub));
-    auto v2_upper = logger.emit_rup_proof_line_under_reason(reason,
+    auto v2_upper = logger.emit_rup_proof_line_under_reason_then_deview(reason,
         WPBSum{} + 1_i * v2 <= v2_ub, ProofLevel::Temporary);
     emit_resolution(logger, abs_neg_ge, v2_upper, v1_lt_neg_bound);
 
@@ -147,11 +147,11 @@ auto gcs::innards::justify_abs_v2_le_big_m(
     auto v2_ge_M_plus_1 = get<ProofLine>(
         ids.need_pol_item_defining_literal(v2 > big_m));
 
-    auto v1_upper = logger.emit_rup_proof_line_under_reason(reason,
+    auto v1_upper = logger.emit_rup_proof_line_under_reason_then_deview(reason,
         WPBSum{} + 1_i * v1 <= v1_ub, ProofLevel::Temporary);
     emit_resolution(logger, abs_nonneg_le, v1_upper, v2_ge_M_plus_1);
 
-    auto v1_lower = logger.emit_rup_proof_line_under_reason(reason,
+    auto v1_lower = logger.emit_rup_proof_line_under_reason_then_deview(reason,
         WPBSum{} + -1_i * v1 <= -v1_lb, ProofLevel::Temporary);
     emit_resolution(logger, abs_neg_le, v1_lower, v2_ge_M_plus_1);
 }
