@@ -59,7 +59,7 @@ auto run_in_integer_vals_test(bool proofs, pair<int, int> var_range, vector<int>
     vector<Integer> vals;
     for (int v : allowed)
         vals.push_back(Integer(v));
-    p.post(In{var, vals});
+    p.post_named(In{var, vals}, "in_test");
 
     auto proof_name = proofs ? make_optional("in_test") : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{var});
@@ -80,7 +80,7 @@ auto run_in_const_vars_test(bool proofs, pair<int, int> var_range, vector<int> a
     vector<IntegerVariableID> const_vars;
     for (int v : allowed)
         const_vars.push_back(ConstantIntegerVariableID{Integer(v)});
-    p.post(In{var, const_vars});
+    p.post_named(In{var, const_vars}, "in_test");
 
     auto proof_name = proofs ? make_optional("in_test") : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{var});
@@ -107,7 +107,7 @@ auto run_in_mixed_test(bool proofs, pair<int, int> var_range, vector<int> const_
     vector<Integer> vals;
     for (int v : int_vals)
         vals.push_back(Integer(v));
-    p.post(In{var, const_vars, vals});
+    p.post_named(In{var, const_vars, vals}, "in_test");
 
     auto proof_name = proofs ? make_optional("in_test") : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{var});
@@ -132,7 +132,7 @@ auto run_in_var_list_test(bool proofs, pair<int, int> var_range, const vector<pa
     vector<IntegerVariableID> vars;
     for (const auto & [l, u] : vars_ranges)
         vars.push_back(p.create_integer_variable(Integer(l), Integer(u)));
-    p.post(In{var, vars});
+    p.post_named(In{var, vars}, "in_test");
 
     auto proof_name = proofs ? make_optional("in_test") : nullopt;
     solve_for_tests_checking_consistency(p, proof_name, expected, actual,
@@ -164,7 +164,7 @@ auto run_in_var_list_mixed_test(bool proofs, pair<int, int> var_range, const vec
     vector<Integer> vals;
     for (int v : int_vals)
         vals.push_back(Integer(v));
-    p.post(In{var, vars, vals});
+    p.post_named(In{var, vars, vals}, "in_test");
 
     auto proof_name = proofs ? make_optional("in_test") : nullopt;
     solve_for_tests_checking_consistency(p, proof_name, expected, actual,
@@ -183,7 +183,7 @@ auto run_in_self_reference_test(bool proofs, pair<int, int> var_range) -> void
 
     Problem p;
     auto var = p.create_integer_variable(Integer(var_range.first), Integer(var_range.second));
-    p.post(In{var, vector<IntegerVariableID>{var}});
+    p.post_named(In{var, vector<IntegerVariableID>{var}}, "in_test");
 
     auto proof_name = proofs ? make_optional("in_test") : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{var});

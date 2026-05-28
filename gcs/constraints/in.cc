@@ -123,18 +123,21 @@ auto In::define_proof_model(ProofModel & model) -> void
     // Mirrors the encoding used by Count. Full reification of every
     // proof flag is the project rule for new OPB encodings.
     for (const auto & [idx, V] : enumerate(_var_vals)) {
-        auto lt = model.create_proof_flag_fully_reifying(format("inlt{}", idx),
+        auto lt = model.create_labelled_proof_flag_fully_reifying(
+            _constraint_id, format("lt_{}", idx), format("inlt{}", idx),
             "In", "var less than", WPBSum{} + 1_i * _var + -1_i * V <= -1_i);
-        auto gt = model.create_proof_flag_fully_reifying(format("ingt{}", idx),
+        auto gt = model.create_labelled_proof_flag_fully_reifying(
+            _constraint_id, format("gt_{}", idx), format("ingt{}", idx),
             "In", "var greater than", WPBSum{} + 1_i * _var + -1_i * V >= 1_i);
-        auto sel = model.create_proof_flag_fully_reifying(format("in{}", idx),
+        auto sel = model.create_labelled_proof_flag_fully_reifying(
+            _constraint_id, format("sel_{}", idx), format("in{}", idx),
             "In", "var equal", WPBSum{} + 1_i * ! lt + 1_i * ! gt >= 2_i);
         _selectors.push_back(sel);
 
         sum += 1_i * sel;
     }
 
-    model.add_constraint("In", "var is one of these", sum >= 1_i);
+    model.add_labelled_constraint(_constraint_id, "al1", "In", "var is one of these", sum >= 1_i);
 }
 
 auto In::install_propagators(Propagators & propagators) -> void
