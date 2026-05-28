@@ -137,7 +137,11 @@ auto ProofModel::add_constraint(const StringLiteral & constraint_name, const Str
     _imp->opb << "* constraint " << constraint_name.value << ' ' << rule.value << '\n';
     emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(ineq, *half_reif) : ineq, _imp->opb);
     _imp->opb << ";\n";
-    return advance_constraint_counter();
+    auto line = advance_constraint_counter();
+    names_and_ids_tracker().register_constraint_content(line, ineq.lhs);
+    // emit_inequality_to negates the LE inequality to land in PB >= form.
+    names_and_ids_tracker().derive_deviewed_form_for(line, ineq.lhs, /*le_half=*/true);
+    return line;
 }
 
 auto ProofModel::add_constraint(const WPBSumLE & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> optional<ProofLine>
@@ -157,10 +161,18 @@ auto ProofModel::add_constraint(const StringLiteral & constraint_name, const Str
     emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(eq.lhs <= eq.rhs, *half_reif) : eq.lhs <= eq.rhs, _imp->opb);
     _imp->opb << ";\n";
     auto first = advance_constraint_counter();
+    names_and_ids_tracker().register_constraint_content(first, eq.lhs);
+    // LE half: emit_inequality_to negates coefficients on emit.
+    names_and_ids_tracker().derive_deviewed_form_for(first, eq.lhs, /*le_half=*/true);
 
     emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(eq.lhs >= eq.rhs, *half_reif) : eq.lhs >= eq.rhs, _imp->opb);
     _imp->opb << ";\n";
     auto second = advance_constraint_counter();
+    names_and_ids_tracker().register_constraint_content(second, eq.lhs);
+    // GE half: the >= operator in expression.hh negates the sum once before
+    // emit_inequality_to negates it again, so OPB-form coefficients match
+    // the input WPBSum.
+    names_and_ids_tracker().derive_deviewed_form_for(second, eq.lhs, /*le_half=*/false);
 
     return pair{first, second};
 }

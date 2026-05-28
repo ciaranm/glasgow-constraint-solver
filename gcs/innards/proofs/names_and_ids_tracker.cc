@@ -82,6 +82,16 @@ struct NamesAndIDsTracker::Imp
     // X-atom.
     map<ProofOnlySimpleIntegerVariableID, pair<ProofLine, ProofLine>> view_link_ids;
 
+    // Constraint-content registry: WPBSum that produced a given proof line.
+    // Populated by ProofModel::add_constraint and the proof-phase emitters.
+    // Used by the deview-form derivation in ProofModel and by PolBuilder
+    // in deview mode.
+    map<ProofLine, SumOf<Weighted<PseudoBooleanTerm>>> constraint_content_by_line;
+
+    // For each V-form proof line that has a derived deview-form, the
+    // corresponding deview-form line. Lookup via deviewed_line_for.
+    map<ProofLine, ProofLine> deviewed_line_by_v_form;
+
     map<ProofFlag, XLiteral> flags;
 
     map<SimpleOrProofOnlyIntegerVariableID, string> id_names;
@@ -718,6 +728,111 @@ auto NamesAndIDsTracker::find_view(const ViewOfIntegerVariableID & view) const -
     if (auto it = _imp->view_proof_only_vars.find(view); it != _imp->view_proof_only_vars.end())
         return it->second;
     return std::nullopt;
+}
+
+auto NamesAndIDsTracker::register_constraint_content(const ProofLine & line, SumOf<Weighted<PseudoBooleanTerm>> content) -> void
+{
+    _imp->constraint_content_by_line.emplace(line, std::move(content));
+}
+
+auto NamesAndIDsTracker::register_deviewed_line(const ProofLine & v_form_line, const ProofLine & deviewed_line) -> void
+{
+    _imp->deviewed_line_by_v_form.emplace(v_form_line, deviewed_line);
+}
+
+auto NamesAndIDsTracker::deviewed_line_for(const ProofLine & line) const -> ProofLine
+{
+    if (auto it = _imp->deviewed_line_by_v_form.find(line); it != _imp->deviewed_line_by_v_form.end())
+        return it->second;
+    return line;
+}
+
+auto NamesAndIDsTracker::constraint_content_for(const ProofLine & line) const -> const SumOf<Weighted<PseudoBooleanTerm>> &
+{
+    auto it = _imp->constraint_content_by_line.find(line);
+    if (it == _imp->constraint_content_by_line.end())
+        throw ProofError{"constraint_content_for: no content registered for the requested line"};
+    return it->second;
+}
+
+auto NamesAndIDsTracker::view_link_lines_for(const ProofOnlySimpleIntegerVariableID & view_proof_id) const -> pair<ProofLine, ProofLine>
+{
+    auto it = _imp->view_link_ids.find(view_proof_id);
+    if (it == _imp->view_link_ids.end())
+        throw ProofError{"view_link_lines_for: no link recorded for this proof-only var"};
+    return it->second;
+}
+
+auto NamesAndIDsTracker::derive_deviewed_form_for(const ProofLine & v_form_line,
+    const SumOf<Weighted<PseudoBooleanTerm>> & lhs,
+    bool le_half) -> void
+{
+    // Walk the lhs terms and collect, for each view appearance, the
+    // (opb_form_coefficient, view_proof_id) pair. opb_form_coefficient is
+    // the WPBSum coefficient with sign flipped if le_half is true (since
+    // emit_inequality_to negates the LE half on emission to land in
+    // PB >= normal form).
+    struct ViewContribution
+    {
+        ProofOnlySimpleIntegerVariableID view_proof_id;
+        Integer opb_form_coefficient;
+    };
+    vector<ViewContribution> view_contributions;
+
+    for (const auto & [w, v] : lhs.terms) {
+        if (0_i == w)
+            continue;
+        if (auto var = std::get_if<IntegerVariableID>(&v)) {
+            // Path 1: propagator-passed `IntegerVariableID` holding a view.
+            if (auto view = std::get_if<ViewOfIntegerVariableID>(var)) {
+                if (auto v_proof_id = find_view(*view)) {
+                    Integer opb_coeff = le_half ? -w : w;
+                    view_contributions.push_back({*v_proof_id, opb_coeff});
+                }
+            }
+        }
+        else if (auto proof_only = std::get_if<ProofOnlySimpleIntegerVariableID>(&v)) {
+            // Path 2: framework-emitted constraint over a view's proof-only
+            // var (e.g. Def(v>=k) in `need_gevar`). Treat the proof-only var
+            // term the same way as a view-bearing term so propagators that
+            // reference Def lines via `need_pol_item_defining_literal` get a
+            // deview-form that puts the Def in X-form.
+            if (_imp->view_proof_only_to_view.contains(*proof_only)) {
+                Integer opb_coeff = le_half ? -w : w;
+                view_contributions.push_back({*proof_only, opb_coeff});
+            }
+        }
+    }
+
+    if (view_contributions.empty())
+        return;
+
+    // Build the pol expression as a string. For each view contribution:
+    //   opb_form_coefficient > 0 (positive V in OPB):  add `|coeff| * link_le`.
+    //   opb_form_coefficient < 0 (negative V in OPB):  add `|coeff| * link_ge`.
+    // Reasoning: link_le contributes `-BinEnc(V) + ...` so it cancels
+    // positive V; link_ge contributes `+BinEnc(V) + ...` so it cancels
+    // negative V.
+    stringstream pol;
+    pol << "pol ";
+    visit([&](const auto & l) { pol << l; }, v_form_line);
+    for (const auto & vc : view_contributions) {
+        auto [link_le, link_ge] = view_link_lines_for(vc.view_proof_id);
+        Integer mult = vc.opb_form_coefficient > 0_i ? vc.opb_form_coefficient : -vc.opb_form_coefficient;
+        const ProofLine & link_to_use = vc.opb_form_coefficient > 0_i ? link_le : link_ge;
+        pol << " ";
+        visit([&](const auto & l) { pol << l; }, link_to_use);
+        if (mult != 1_i)
+            pol << " " << mult << " *";
+        pol << " +";
+    }
+    pol << " s ;";
+    auto pol_str = pol.str();
+
+    emit_proof_line_now_or_at_start([this, v_form_line, pol_str](ProofLogger * const logger) {
+        auto deview_line = logger->emit_proof_line(pol_str, ProofLevel::Top);
+        register_deviewed_line(v_form_line, deview_line);
+    });
 }
 
 auto NamesAndIDsTracker::track_bounds(const SimpleOrProofOnlyIntegerVariableID & id, Integer lower, Integer upper) -> void
