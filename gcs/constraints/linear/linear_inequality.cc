@@ -57,7 +57,8 @@ namespace
     auto justify_cond(const State & state, const auto & coeff_vars, ProofLogger & logger,
         const pair<optional<ProofLine>, optional<ProofLine>> & proof_lines) -> void
     {
-        PolBuilder pol;
+        // Deview mode: see justify_linear_bounds for the rationale.
+        PolBuilder pol{logger.names_and_ids_tracker()};
         pol.add(proof_lines.first.value());
 
         for (const auto & cv : coeff_vars.terms) {

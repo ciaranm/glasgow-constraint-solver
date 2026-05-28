@@ -20,7 +20,12 @@ auto gcs::innards::justify_linear_bounds(
     bool second_constraint_for_equality,
     pair<optional<ProofLine>, optional<ProofLine>> proof_lines) -> void
 {
-    PolBuilder pol;
+    // Deview mode: the propagator's coeff_vars list is the tidy_up_linear-sanitised
+    // form (bare SimpleIntegerVariableIDs), but the OPB sum_line is emitted in the
+    // user's views' bits. Deview mode substitutes the framework's deview-form line
+    // (in X-bits) for proof_lines, matching the reason reifs that add_for_literal
+    // pushes for bare SimpleIntegerVariableIDs.
+    PolBuilder pol{logger.names_and_ids_tracker()};
     pol.add(second_constraint_for_equality ? proof_lines.second.value() : proof_lines.first.value());
 
     Integer change_var_coeff = 0_i;
