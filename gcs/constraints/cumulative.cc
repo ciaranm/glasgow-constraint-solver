@@ -32,8 +32,10 @@ using std::vector;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::print;
+using std::format;
 #else
 using fmt::print;
+using fmt::format;
 #endif
 
 Cumulative::Cumulative(vector<IntegerVariableID> starts, vector<Integer> lengths,
@@ -114,13 +116,16 @@ auto Cumulative::define_proof_model(ProofModel & model) -> void
         if (first || t_hi > global_hi) global_hi = t_hi;
         first = false;
         for (Integer t = t_lo; t <= t_hi; ++t) {
-            auto before = model.create_proof_flag_fully_reifying(
+            auto before = model.create_labelled_proof_flag_fully_reifying(
+                _constraint_id, format("before_{{{}_{}}}", i+1, t),
                 "cumbefore", "Cumulative", "starts at or before time",
                 WPBSum{} + 1_i * _starts[i] <= t);
-            auto after = model.create_proof_flag_fully_reifying(
+            auto after = model.create_labelled_proof_flag_fully_reifying(
+                _constraint_id, format("after_{{{}_{}}}", i+1, t),
                 "cumafter", "Cumulative", "not yet finished at time",
                 WPBSum{} + 1_i * _starts[i] >= t - _lengths[i] + 1_i);
-            auto active = model.create_proof_flag_fully_reifying(
+            auto active = model.create_labelled_proof_flag_fully_reifying(
+                _constraint_id, format("active_{{{}_{}}}", i+1, t),
                 "cumactive", "Cumulative", "task active at time",
                 WPBSum{} + 1_i * before + 1_i * after >= 2_i);
             _before_flags[i].push_back(before);
@@ -140,7 +145,9 @@ auto Cumulative::define_proof_model(ProofModel & model) -> void
             any = true;
         }
         if (any) {
-            auto line = model.add_constraint("Cumulative", "load at time",
+            auto line = model.add_labelled_constraint(
+                _constraint_id, format("cap_{}", t), 
+                "Cumulative", "load at time",
                 load <= _capacity);
             if (line)
                 _capacity_lines.emplace(t, *line);

@@ -92,7 +92,7 @@ namespace
         for (auto h : heights)
             heights_i.push_back(Integer{h});
 
-        p.post(Cumulative{starts, lengths_i, heights_i, Integer{capacity}});
+        p.post_named(Cumulative{starts, lengths_i, heights_i, Integer{capacity}}, "ct");
 
         auto proof_name = proofs ? make_optional("cumulative_test") : nullopt;
         solve_for_tests(p, proof_name, actual, tuple{starts});
