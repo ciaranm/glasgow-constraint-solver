@@ -118,6 +118,25 @@ namespace gcs::innards
         auto need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> void;
 
         /**
+         * Ensure a proof-only binary-encoded variable exists for a given view.
+         *
+         * Returns the `ProofOnlySimpleIntegerVariableID` representing
+         * `BinEnc(view)`. The intent (rolled out across staged work for the
+         * view-as-own-pb-var proof-logging design) is that, on first reference
+         * to a view, this allocates a fresh proof-only integer variable sized
+         * to the view's visible domain, emits its bound axioms, and emits the
+         * linking constraint `BinEnc(view) = s*BinEnc(view.actual_variable) + c`
+         * tying it back to the underlying. Repeated calls with the same view
+         * return the same id (canonicalised on the `(actual_variable,
+         * negate_first, then_add)` triple).
+         *
+         * Stage 0 is a skeleton only: the registry storage is in place but
+         * the method throws `UnimplementedException` if called. No call sites
+         * use it yet.
+         */
+        [[nodiscard]] auto need_view(const ViewOfIntegerVariableID & view) -> ProofOnlySimpleIntegerVariableID;
+
+        /**
          * Say that we will need the diect encoding to exist for a given variable.
          */
         auto need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID, Integer) -> void;

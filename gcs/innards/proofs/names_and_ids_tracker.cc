@@ -73,6 +73,8 @@ struct NamesAndIDsTracker::Imp
     map<SimpleOrProofOnlyIntegerVariableID, map<Integer, pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>>>> gevars_that_exist;
     map<SimpleOrProofOnlyIntegerVariableID, map<Integer, pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>>>> eqvars_that_exist;
 
+    map<ViewOfIntegerVariableID, ProofOnlySimpleIntegerVariableID> view_proof_only_vars;
+
     map<ProofFlag, XLiteral> flags;
 
     map<SimpleOrProofOnlyIntegerVariableID, string> id_names;
@@ -546,6 +548,15 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
             }}
             .visit(id);
     }
+}
+
+auto NamesAndIDsTracker::need_view(const ViewOfIntegerVariableID &) -> ProofOnlySimpleIntegerVariableID
+{
+    // Stage 0: skeleton. Storage is in place in Imp::view_proof_only_vars but
+    // nothing calls this yet. Stage 1 will replace this with real lazy
+    // allocation via ProofModel::create_proof_only_integer_variable, plus
+    // emission of the link constraint BinEnc(view) = s*BinEnc(actual) + c.
+    throw UnimplementedException{};
 }
 
 auto NamesAndIDsTracker::track_bounds(const SimpleOrProofOnlyIntegerVariableID & id, Integer lower, Integer upper) -> void
