@@ -500,6 +500,41 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
     }
 
     _imp->eqvars_that_exist[id].emplace(v, pair{forwards_line, reverse_line});
+
+    // Stage 3: if `id` is a view's proof-only var, eagerly emit the
+    // eq-atom-level link `V=v <=> X=k_x` as two RUP lines. The GE-atom
+    // links + the V- and X-side eq Defs are already in F at this point
+    // (need_gevar(V,v), need_gevar(V,v+1), and need_direct_encoding_for(X,k_x)
+    // are all called by this point), so each direction is UP-closable:
+    //
+    //   ~V=v OR X=k_x:  V=v UP-derives V>=v and ~V>=v+1 (eq fwd),
+    //     then x_cond and ~x_cond+1 via GE links, then X=k_x by Def(X=k_x)
+    //     reverse fed with both sides forced -- conflict with assumed ~X=k_x.
+    //   ~X=k_x OR V=v:  symmetric.
+    //
+    // Without these eq-atom links, propagator-derived V<->Y lemmas combined
+    // with X-atom guesses from search couldn't UP-chain V=v <-> X=k_x, and
+    // backtrack-from-guess Bt verifications stalled with several remaining
+    // values for Y.
+    if (auto pid_ptr = std::get_if<ProofOnlySimpleIntegerVariableID>(&id)) {
+        auto view_it = _imp->view_proof_only_to_view.find(*pid_ptr);
+        if (view_it != _imp->view_proof_only_to_view.end()) {
+            const auto & view = view_it->second;
+            // V := s*X + c, V=v <=> X = (v-c)/s.
+            //   s=+1: X = v - c.
+            //   s=-1: X = c - v.
+            Integer x_threshold = view.negate_first ? view.then_add - v : v - view.then_add;
+            need_direct_encoding_for(view.actual_variable, x_threshold);
+
+            ProofVariableCondition v_cond{*pid_ptr, VariableConditionOperator::Equal, v};
+            IntegerVariableID x_var{view.actual_variable};
+            auto x_cond = (x_var == x_threshold);
+            emit_proof_line_now_or_at_start([v_cond, x_cond](ProofLogger * const logger) {
+                logger->emit_rup_proof_line(WPBSum{} + 1_i * ! v_cond + 1_i * x_cond >= 1_i, ProofLevel::Top);
+                logger->emit_rup_proof_line(WPBSum{} + 1_i * ! x_cond + 1_i * v_cond >= 1_i, ProofLevel::Top);
+            });
+        }
+    }
 }
 
 auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> void
