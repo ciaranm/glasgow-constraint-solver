@@ -404,7 +404,11 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<P
         [&](const AssertProofRule &) { rule_line << ";"; }}
         .visit(rule);
 
-    return emit_proof_line(rule_line.str(), level);
+    auto line = emit_proof_line(rule_line.str(), level);
+    names_and_ids_tracker().register_constraint_content(line, ineq.lhs);
+    // emit_inequality_to negates the LE inequality to land in PB >= form.
+    names_and_ids_tracker().derive_deviewed_form_for(line, ineq.lhs, /*le_half=*/true);
+    return line;
 }
 
 auto ProofLogger::emit_under_reason(
@@ -454,7 +458,14 @@ auto ProofLogger::emit_under_reason(
         [&](const AssertProofRule &) { rule_line << ";"; }}
         .visit(rule);
 
-    return emit_proof_line(rule_line.str(), level);
+    auto line = emit_proof_line(rule_line.str(), level);
+    names_and_ids_tracker().register_constraint_content(line, ineq.lhs);
+    // emit_inequality_to negates the LE inequality to land in PB >= form.
+    // We register the original `ineq.lhs` (without the reason-reification
+    // terms) because that's what the propagator wrote pol against; the
+    // reason terms are framework bookkeeping.
+    names_and_ids_tracker().derive_deviewed_form_for(line, ineq.lhs, /*le_half=*/true);
+    return line;
 }
 
 auto ProofLogger::emit_rup_proof_line(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level) -> ProofLine

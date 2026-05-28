@@ -148,6 +148,61 @@ namespace gcs::innards
         [[nodiscard]] auto find_view(const ViewOfIntegerVariableID & view) const -> std::optional<ProofOnlySimpleIntegerVariableID>;
 
         /**
+         * Register the WPBSum content that produced a given proof line.
+         * Constraint emitters call this after they've allocated a line so
+         * pol-using code can reconstruct the constraint's coefficient vector
+         * later (in particular, to detect view-bit terms when deriving a
+         * deview-form).
+         */
+        auto register_constraint_content(const ProofLine & line, SumOf<Weighted<PseudoBooleanTerm>> content) -> void;
+
+        /**
+         * Record that `deviewed_line` is the deview-form of `v_form_line`.
+         * Lookup is via `deviewed_line_for`.
+         */
+        auto register_deviewed_line(const ProofLine & v_form_line, const ProofLine & deviewed_line) -> void;
+
+        /**
+         * Return the deview-form line for `line` if one has been registered,
+         * otherwise `line` itself. Non-view-using constraints always return
+         * the input unchanged. Used by `PolBuilder` in deview mode.
+         */
+        [[nodiscard]] auto deviewed_line_for(const ProofLine & line) const -> ProofLine;
+
+        /**
+         * Read-only access to the WPBSum content that produced a given proof
+         * line (registered via `register_constraint_content`). Throws if no
+         * content has been registered.
+         */
+        [[nodiscard]] auto constraint_content_for(const ProofLine & line) const -> const SumOf<Weighted<PseudoBooleanTerm>> &;
+
+        /**
+         * The (LE-half, GE-half) proof-line IDs of the bit-vector link for a
+         * registered view (allocated in `need_view`). Used by the
+         * deview-derivation helper.
+         */
+        [[nodiscard]] auto view_link_lines_for(const ProofOnlySimpleIntegerVariableID & view_proof_id) const -> std::pair<ProofLine, ProofLine>;
+
+        /**
+         * Derive and register a deview-form for the constraint at
+         * `v_form_line`. Walks the WPBSum's lhs for view terms; if any are
+         * found, queues a `pol` line that substitutes each `BinEnc(V)` term
+         * for `s*BinEnc(X) + c` (using the appropriate link half), emits at
+         * the top of the proof, and records the line in the deviewed-form
+         * registry so `deviewed_line_for(v_form_line)` returns it. No-op
+         * if the constraint has no view terms.
+         *
+         * `le_half` indicates whether the OPB-form coefficients are
+         * sign-flipped from the WPBSum's `lhs` (true for the LE half of an
+         * equality, or any `<=` constraint that emit_inequality_to flips to
+         * a `>=`). This is needed to pick the right link half for the
+         * cancellation.
+         */
+        auto derive_deviewed_form_for(const ProofLine & v_form_line,
+            const SumOf<Weighted<PseudoBooleanTerm>> & lhs,
+            bool le_half) -> void;
+
+        /**
          * Say that we will need the diect encoding to exist for a given variable.
          */
         auto need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID, Integer) -> void;

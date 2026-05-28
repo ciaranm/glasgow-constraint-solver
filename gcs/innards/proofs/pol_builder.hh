@@ -67,11 +67,33 @@ namespace gcs::innards
     private:
         std::stringstream _s;
         bool _empty;
+        const NamesAndIDsTracker * _deview_tracker = nullptr;
 
         auto separator_if_not_first() -> void;
 
     public:
         PolBuilder();
+
+        /**
+         * Construct a `PolBuilder` in deview mode: every `add(ProofLine)`
+         * looks up `tracker.deviewed_line_for(line)` and pushes the
+         * deview-form line instead of the raw V-form line. Use this when
+         * a propagator's pol arithmetic was written assuming the constraints
+         * referenced are in deview-form (i.e. assuming views had been
+         * substituted by their underlying values).
+         *
+         * Non-view-using constraints have no deview-form registered, and
+         * `deviewed_line_for(line)` returns the input unchanged for them,
+         * so deview-mode builders behave identically to the default builder
+         * for constraints with no view operands.
+         *
+         * The tracker reference must outlive the builder. `add(ProofLine, ...)`
+         * calls perform the lookup; `add(XLiteral, ...)` and
+         * `add_for_literal` are unaffected (they push raw literals, not
+         * constraint references).
+         */
+        explicit PolBuilder(const NamesAndIDsTracker & tracker);
+
         ~PolBuilder();
 
         PolBuilder(const PolBuilder &) = delete;

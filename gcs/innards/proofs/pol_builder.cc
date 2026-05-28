@@ -20,6 +20,13 @@ PolBuilder::PolBuilder() :
     _s << "pol";
 }
 
+PolBuilder::PolBuilder(const NamesAndIDsTracker & tracker) :
+    _empty(true),
+    _deview_tracker(&tracker)
+{
+    _s << "pol";
+}
+
 PolBuilder::~PolBuilder() = default;
 
 PolBuilder::PolBuilder(PolBuilder &&) noexcept = default;
@@ -34,7 +41,8 @@ auto PolBuilder::separator_if_not_first() -> void
 
 auto PolBuilder::add(ProofLine line) -> PolBuilder &
 {
-    _s << " " << line;
+    ProofLine resolved = _deview_tracker ? _deview_tracker->deviewed_line_for(line) : line;
+    _s << " " << resolved;
     separator_if_not_first();
     _empty = false;
     return *this;
@@ -44,7 +52,8 @@ auto PolBuilder::add(ProofLine line, Integer coeff) -> PolBuilder &
 {
     if (coeff == 0_i)
         throw UnexpectedException{"PolBuilder::add called with zero coefficient"};
-    _s << " " << line;
+    ProofLine resolved = _deview_tracker ? _deview_tracker->deviewed_line_for(line) : line;
+    _s << " " << resolved;
     if (coeff != 1_i)
         _s << " " << coeff.raw_value << " *";
     separator_if_not_first();
