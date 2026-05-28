@@ -74,6 +74,13 @@ struct NamesAndIDsTracker::Imp
     map<SimpleOrProofOnlyIntegerVariableID, map<Integer, pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>>>> eqvars_that_exist;
 
     map<ViewOfIntegerVariableID, ProofOnlySimpleIntegerVariableID> view_proof_only_vars;
+    map<ProofOnlySimpleIntegerVariableID, ViewOfIntegerVariableID> view_proof_only_to_view;
+    // For each registered view, the (LE-half, GE-half) ProofLine IDs of the
+    // bit-vector link constraint emitted in need_view. The LE half is
+    // `BinEnc(V) - s*BinEnc(X) <= c`, the GE half is `>= c`. Used by need_gevar
+    // to pol-derive atom-level links from each V-atom to the corresponding
+    // X-atom.
+    map<ProofOnlySimpleIntegerVariableID, pair<ProofLine, ProofLine>> view_link_ids;
 
     map<ProofFlag, XLiteral> flags;
 
@@ -221,6 +228,29 @@ auto NamesAndIDsTracker::need_pol_item_defining_literal(const IntegerVariableCon
             throw NonExhaustiveSwitch{};
         },
         [&](const ViewOfIntegerVariableID & var) -> variant<ProofLine, XLiteral> {
+            // Stage 3: if the view's been registered, V's atoms have proper
+            // Defs over BinEnc(V) and the pol-item path looks just like a
+            // simple variable's. The previous Equal/NotEqual throws are gone
+            // for the registered case; remaining throws only fire on the
+            // deview fallback for views first seen during proof logging.
+            if (auto v_id = find_view(var)) {
+                switch (cond.op) {
+                    using enum VariableConditionOperator;
+                case GreaterEqual:
+                    need_gevar(*v_id, cond.value);
+                    return _imp->gevars_that_exist.at(*v_id).at(cond.value).first;
+                case Less:
+                    need_gevar(*v_id, cond.value);
+                    return _imp->gevars_that_exist.at(*v_id).at(cond.value).second;
+                case Equal:
+                    need_direct_encoding_for(*v_id, cond.value);
+                    return _imp->eqvars_that_exist.at(*v_id).at(cond.value).first;
+                case NotEqual:
+                    need_direct_encoding_for(*v_id, cond.value);
+                    return _imp->eqvars_that_exist.at(*v_id).at(cond.value).second;
+                }
+                throw NonExhaustiveSwitch{};
+            }
             switch (cond.op) {
                 using enum VariableConditionOperator;
             case GreaterEqual:
@@ -278,7 +308,7 @@ auto NamesAndIDsTracker::need_all_proof_names_in(const SumOf<Weighted<PseudoBool
                     [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
                         need_proof_name(cond);
                     }}
-                    .visit(simplify_literal(lit));
+                    .visit(simplify_literal(*this, lit));
             },
             [&](const ProofFlag &) {},
             [&](const IntegerVariableID & var) {
@@ -304,7 +334,7 @@ auto NamesAndIDsTracker::need_all_proof_names_in(const Literals & lits) -> void
             [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
                 need_proof_name(cond);
             }}
-            .visit(simplify_literal(lit));
+            .visit(simplify_literal(*this, lit));
 }
 
 auto NamesAndIDsTracker::need_all_proof_names_in(const HalfReifyOnConjunctionOf & h) -> void
@@ -318,7 +348,7 @@ auto NamesAndIDsTracker::need_all_proof_names_in(const HalfReifyOnConjunctionOf 
                     [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
                         need_proof_name(cond);
                     }}
-                    .visit(simplify_literal(lit));
+                    .visit(simplify_literal(*this, lit));
             },
             [&](const ProofFlag &) {},
             [&](const ProofBitVariable &) {}}
@@ -556,6 +586,59 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
             }}
             .visit(id);
     }
+
+    // Stage 3: if `id` is a view's proof-only var, eagerly pol-derive the
+    // atom-level link to the corresponding X-atom so propagator inferences
+    // that mix V-atoms (from view literals via simplify_literal) and X-atoms
+    // (from search guesses or other propagator inferences) can UP across
+    // them without needing to case-split through the bit-vector link
+    // alone. Two pol lines per V-atom — one for each direction of the iff:
+    //
+    //   D1: ~v>=k OR x_cond >= 1   = (v>=k -> x_cond)
+    //   D2: ~x_cond OR v>=k >= 1   = (x_cond -> v>=k)
+    //
+    // where x_cond = (X >= v-c) for s=+1 and x_cond = ~(X >= c-v+1) for s=-1.
+    //
+    // Both directions sum three constraints whose BinEnc terms cancel
+    // exactly, leaving an at-least-one over the two atom literals after
+    // saturation. The choice of fwd vs rev for the X-atom Def flips with s:
+    //   s=+1: D1 uses Def(v) fwd + LE + Def(x) rev; D2 uses rev + GE + fwd.
+    //   s=-1: D1 uses Def(v) fwd + LE + Def(x) fwd; D2 uses rev + GE + rev.
+    //
+    // Both lines queued via emit_proof_line_now_or_at_start so they land at
+    // the top of the proof, alongside the standard order-encoding chain
+    // links, rather than as extra OPB axioms.
+    if (auto pid_ptr = std::get_if<ProofOnlySimpleIntegerVariableID>(&id)) {
+        auto view_it = _imp->view_proof_only_to_view.find(*pid_ptr);
+        if (view_it != _imp->view_proof_only_to_view.end()) {
+            const auto & view = view_it->second;
+            Integer x_threshold = view.negate_first ? view.then_add - v + 1_i : v - view.then_add;
+            need_gevar(view.actual_variable, x_threshold);
+
+            auto v_defs = _imp->gevars_that_exist[id].at(v);
+            auto x_defs = _imp->gevars_that_exist[SimpleOrProofOnlyIntegerVariableID{view.actual_variable}].at(x_threshold);
+            auto link = _imp->view_link_ids.at(*pid_ptr);
+            auto * v_fwd_line = std::get_if<ProofLine>(&v_defs.first);
+            auto * v_rev_line = std::get_if<ProofLine>(&v_defs.second);
+            auto * x_fwd_line = std::get_if<ProofLine>(&x_defs.first);
+            auto * x_rev_line = std::get_if<ProofLine>(&x_defs.second);
+            if (v_fwd_line && v_rev_line && x_fwd_line && x_rev_line) {
+                bool neg = view.negate_first;
+                ProofLine d1_x = neg ? *x_fwd_line : *x_rev_line;
+                ProofLine d2_x = neg ? *x_rev_line : *x_fwd_line;
+                PolBuilder b1;
+                b1.add(*v_fwd_line).add(link.first).add(d1_x).saturate();
+                PolBuilder b2;
+                b2.add(*v_rev_line).add(link.second).add(d2_x).saturate();
+                auto pol1 = b1.str();
+                auto pol2 = b2.str();
+                emit_proof_line_now_or_at_start([pol1, pol2](ProofLogger * const logger) {
+                    logger->emit_proof_line(pol1, ProofLevel::Top);
+                    logger->emit_proof_line(pol2, ProofLevel::Top);
+                });
+            }
+        }
+    }
 }
 
 auto NamesAndIDsTracker::need_view(const ViewOfIntegerVariableID & view) -> ProofOnlySimpleIntegerVariableID
@@ -586,10 +669,12 @@ auto NamesAndIDsTracker::need_view(const ViewOfIntegerVariableID & view) -> Proo
         v_lo, v_hi, name, IntegerVariableProofRepresentation::Bits);
 
     Integer s_coeff = view.negate_first ? -1_i : 1_i;
-    _imp->model->add_constraint(StringLiteral{"view link"}, StringLiteral{"definitional"},
+    auto [link_le, link_ge] = _imp->model->add_constraint(StringLiteral{"view link"}, StringLiteral{"definitional"},
         WPBSum{} + 1_i * v_id + (-s_coeff) * view.actual_variable == view.then_add);
 
     _imp->view_proof_only_vars.emplace(view, v_id);
+    _imp->view_proof_only_to_view.emplace(v_id, view);
+    _imp->view_link_ids.emplace(v_id, pair{link_le.value(), link_ge.value()});
     return v_id;
 }
 
@@ -892,7 +977,7 @@ auto NamesAndIDsTracker::s_expr_name_of(Literal lit) const -> string
         [](const VariableConditionFrom<ProofOnlySimpleIntegerVariableID> &) -> string {
             throw UnimplementedException{};
         }}
-        .visit(simplify_literal(lit));
+        .visit(simplify_literal(*this, lit));
 }
 
 auto NamesAndIDsTracker::s_expr_name_of(ReificationCondition cond) const -> string

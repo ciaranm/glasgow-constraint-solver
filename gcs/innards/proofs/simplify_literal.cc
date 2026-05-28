@@ -1,3 +1,4 @@
+#include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/simplify_literal.hh>
 
 #include <util/overloaded.hh>
@@ -24,7 +25,7 @@ namespace
     }
 }
 
-auto gcs::innards::simplify_literal(const ProofLiteral & lit) -> SimpleLiteral
+auto gcs::innards::simplify_literal(const NamesAndIDsTracker & tracker, const ProofLiteral & lit) -> SimpleLiteral
 {
     return overloaded{
         [&](const TrueLiteral & t) -> SimpleLiteral { return t; },
@@ -35,6 +36,14 @@ auto gcs::innards::simplify_literal(const ProofLiteral & lit) -> SimpleLiteral
                     return VariableConditionFrom<SimpleIntegerVariableID>{var, lit.op, lit.value};
                 },
                 [&](const ViewOfIntegerVariableID & view) -> SimpleLiteral {
+                    // Stage 3: if the view's proof-only variable is
+                    // registered, emit the literal over V's own bits with
+                    // op and value preserved verbatim - V represents the
+                    // visible view value directly. Falls back to deviewing
+                    // through the underlying when the view isn't in the
+                    // registry (proof-logging-only path).
+                    if (auto v_id = tracker.find_view(view))
+                        return ProofVariableCondition{*v_id, lit.op, lit.value};
                     switch (lit.op) {
                     case VariableConditionOperator::NotEqual:
                         return VariableConditionFrom<SimpleIntegerVariableID>{view.actual_variable, VariableConditionOperator::NotEqual,

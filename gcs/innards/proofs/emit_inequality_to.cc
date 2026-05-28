@@ -32,7 +32,7 @@ auto gcs::innards::emit_inequality_to(
                     [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
                         stream << -w << " " << names_and_ids_tracker.pb_file_string_for(cond) << " ";
                     }}
-                    .visit(simplify_literal(lit));
+                    .visit(simplify_literal(names_and_ids_tracker, lit));
             },
             [&, w = w](const ProofFlag & flag) {
                 stream << -w << " " << names_and_ids_tracker.pb_file_string_for(flag) << " ";
