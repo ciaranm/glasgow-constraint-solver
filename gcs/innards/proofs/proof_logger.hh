@@ -262,6 +262,24 @@ namespace gcs::innards
         auto emit_rup_proof_line_under_reason(const ReasonFunction &, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level) -> ProofLine;
 
         /**
+         * Like `emit_rup_proof_line_under_reason`, but returns the deview-form
+         * line of the just-emitted RUP rather than the V-form line itself.
+         *
+         * When the input WPBSum has no view operands, the V-form and
+         * deview-form coincide, and this is equivalent to the non-deview
+         * variant.
+         *
+         * Use this when a propagator wants to RUP a constraint that
+         * mentions a view, and then immediately use that constraint as a
+         * pol-side operand. The propagator's pol coefficients were chosen
+         * assuming the operand is in deview / "as if the view had been
+         * substituted by its underlying" form; without the rewrite, the
+         * V-form constraint emitted by the RUP step doesn't match those
+         * coefficients and the pol cancellation fails.
+         */
+        auto emit_rup_proof_line_under_reason_then_deview(const ReasonFunction &, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level) -> ProofLine;
+
+        /**
          * Emit a RED proof step for the specified expression.
          */
         auto emit_red_proof_line(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &,
