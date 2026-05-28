@@ -406,8 +406,12 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<P
 
     auto line = emit_proof_line(rule_line.str(), level);
     names_and_ids_tracker().register_constraint_content(line, ineq.lhs);
-    // emit_inequality_to negates the LE inequality to land in PB >= form.
-    names_and_ids_tracker().derive_deviewed_form_for(line, ineq.lhs, /*le_half=*/true);
+    // Note: no automatic deview-derivation here. Runtime RUP/red emissions
+    // happen many times per propagator inference and per-call deview
+    // derivation explodes proof size on tests with many view-using
+    // constraints. Callers that need the deview-form of a runtime-emitted
+    // constraint use the explicit `*_then_deview` variant (see
+    // `emit_rup_proof_line_under_reason_then_deview`).
     return line;
 }
 
@@ -460,11 +464,7 @@ auto ProofLogger::emit_under_reason(
 
     auto line = emit_proof_line(rule_line.str(), level);
     names_and_ids_tracker().register_constraint_content(line, ineq.lhs);
-    // emit_inequality_to negates the LE inequality to land in PB >= form.
-    // We register the original `ineq.lhs` (without the reason-reification
-    // terms) because that's what the propagator wrote pol against; the
-    // reason terms are framework bookkeeping.
-    names_and_ids_tracker().derive_deviewed_form_for(line, ineq.lhs, /*le_half=*/true);
+    // Note: see comment in `emit()` about why no auto-deview-derivation.
     return line;
 }
 
@@ -477,6 +477,15 @@ auto ProofLogger::emit_rup_proof_line_under_reason(const ReasonFunction & reason
     ProofLevel level) -> ProofLine
 {
     return emit_under_reason(RUPProofRule{}, ineq, level, reason);
+}
+
+auto ProofLogger::emit_rup_proof_line_under_reason_then_deview(const ReasonFunction & reason,
+    const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level) -> ProofLine
+{
+    auto v_form_line = emit_rup_proof_line_under_reason(reason, ineq, level);
+    // emit_inequality_to negates the LE inequality to land in PB >= form.
+    names_and_ids_tracker().derive_deviewed_form_for(v_form_line, ineq.lhs, /*le_half=*/true);
+    return names_and_ids_tracker().deviewed_line_for(v_form_line);
 }
 
 auto ProofLogger::proof_level() -> int
