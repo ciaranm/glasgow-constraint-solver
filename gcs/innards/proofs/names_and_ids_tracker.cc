@@ -874,6 +874,14 @@ auto NamesAndIDsTracker::derive_deviewed_form_for(const ProofLine & v_form_line,
     // Reasoning: link_le contributes `-BinEnc(V) + ...` so it cancels
     // positive V; link_ge contributes `+BinEnc(V) + ...` so it cancels
     // negative V.
+    //
+    // We deliberately do NOT saturate. Downstream consumers (PolBuilder in
+    // deview mode) use this line as the starting constraint in their own
+    // pol + divide chains. Saturating here would clip bit-level coefficients
+    // on wide-range variables (those encoded with a sign bit + magnitude bits),
+    // which then leaks an uncancelled residual into the consumer's pol when
+    // it adds a reif on the same variable. The unsaturated form has the full
+    // bit-level coefficient mass needed for clean cancellation.
     stringstream pol;
     pol << "pol ";
     visit([&](const auto & l) { pol << l; }, v_form_line);
@@ -887,7 +895,7 @@ auto NamesAndIDsTracker::derive_deviewed_form_for(const ProofLine & v_form_line,
             pol << " " << mult << " *";
         pol << " +";
     }
-    pol << " s ;";
+    pol << " ;";
     auto pol_str = pol.str();
 
     emit_proof_line_now_or_at_start([this, v_form_line, pol_str](ProofLogger * const logger) {
