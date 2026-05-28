@@ -70,6 +70,17 @@ reification and two RUP clauses linking them in both directions:
 This means UP can propagate either way across the V↔X equality boundary
 without having to chain through the bit vector.
 
+The emission is **symmetric in introduction order**: whichever atom
+appears first triggers the work. When `need_direct_encoding_for(V, v)`
+fires, it recursively introduces `X_eq_k` and emits the link clauses.
+When `need_direct_encoding_for(X, k)` fires for a bare variable, the
+function iterates `views_of_variable[X]` and recursively calls
+`need_direct_encoding_for(V, v_value)` for each registered view, which
+runs the V-side branch and emits the link. The "view registered
+afterwards" case is handled by `need_view` itself: when a new view is
+registered, it backfills by iterating `eqvars_that_exist[X]` and calling
+`need_direct_encoding_for(V, ...)` for each pre-existing X atom.
+
 ### 3. Atom-level ge-links V≥v ⇔ X-condition
 
 Every time `need_gevar` reifies a new `V_ge_v` atom on a view's
@@ -87,6 +98,14 @@ bit-form terms cancel, leaving the atom-level clause after saturation.
 The X-side atom is introduced first via a recursive `need_gevar`
 on the underlying, so its reif is already in F. See lines 656–686 of
 `names_and_ids_tracker.cc`.
+
+Like the eq-links, ge-link emission is **symmetric in introduction
+order**: `need_gevar(X, k)` on a bare variable iterates
+`views_of_variable[X]` and recursively triggers `need_gevar(V, v_value)`
+for each registered view, which runs the V-side block above and emits
+the link. `need_view` backfills by iterating `gevars_that_exist[X]`
+for any X atoms that already existed at the point the view was
+registered.
 
 The eq-link and ge-link emissions are queued through
 `emit_proof_line_now_or_at_start` so they land alongside the standard

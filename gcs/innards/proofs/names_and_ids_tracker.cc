@@ -82,6 +82,14 @@ struct NamesAndIDsTracker::Imp
     // X-atom.
     map<ProofOnlySimpleIntegerVariableID, pair<ProofLine, ProofLine>> view_link_ids;
 
+    // Reverse index: for each underlying variable, the proof-only IDs of
+    // all views currently registered over it. Lets need_gevar /
+    // need_direct_encoding_for on the X side back-emit the V-side atoms
+    // (and thereby the V<->X link) when an X atom is introduced after a
+    // view has been registered. When views are registered AFTER an X atom
+    // already exists, need_view itself backfills via this map's setup.
+    std::map<SimpleIntegerVariableID, std::vector<ProofOnlySimpleIntegerVariableID>> views_of_variable;
+
     // Constraint-content registry: WPBSum that produced a given proof line.
     // Populated by ProofModel::add_constraint and the proof-phase emitters.
     // Used by the deview-form derivation in ProofModel and by PolBuilder
@@ -545,6 +553,18 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
             });
         }
     }
+
+    // Reverse direction: see the matching block in need_gevar above.
+    if (auto sid_ptr = std::get_if<SimpleIntegerVariableID>(&id)) {
+        if (auto it = _imp->views_of_variable.find(*sid_ptr); it != _imp->views_of_variable.end()) {
+            auto views_copy = it->second;
+            for (const auto & view_pid : views_copy) {
+                const auto & view = _imp->view_proof_only_to_view.at(view_pid);
+                Integer v_value = view.negate_first ? view.then_add - v : v + view.then_add;
+                need_direct_encoding_for(view_pid, v_value);
+            }
+        }
+    }
 }
 
 auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> void
@@ -684,6 +704,22 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
             }
         }
     }
+
+    // Reverse direction: if `id` is a bare underlying variable that has
+    // views registered over it, recursively trigger the matching V_ge
+    // atom for each view. The V-side need_gevar then runs the link
+    // emission above. Without this, an X atom introduced before any V
+    // atom of the same value would never get a link in F.
+    if (auto sid_ptr = std::get_if<SimpleIntegerVariableID>(&id)) {
+        if (auto it = _imp->views_of_variable.find(*sid_ptr); it != _imp->views_of_variable.end()) {
+            auto views_copy = it->second;
+            for (const auto & view_pid : views_copy) {
+                const auto & view = _imp->view_proof_only_to_view.at(view_pid);
+                Integer v_value = view.negate_first ? view.then_add - v + 1_i : v + view.then_add;
+                need_gevar(view_pid, v_value);
+            }
+        }
+    }
 }
 
 auto NamesAndIDsTracker::need_view(const ViewOfIntegerVariableID & view) -> ProofOnlySimpleIntegerVariableID
@@ -720,6 +756,31 @@ auto NamesAndIDsTracker::need_view(const ViewOfIntegerVariableID & view) -> Proo
     _imp->view_proof_only_vars.emplace(view, v_id);
     _imp->view_proof_only_to_view.emplace(v_id, view);
     _imp->view_link_ids.emplace(v_id, pair{link_le.value(), link_ge.value()});
+    _imp->views_of_variable[view.actual_variable].push_back(v_id);
+
+    // Backfill: if X atoms already exist when this view is registered,
+    // trigger the matching V atoms now so the V<->X link is emitted for
+    // them. (Atoms introduced later go via the X-side hook in need_gevar /
+    // need_direct_encoding_for.) Copy the X-side maps before iterating
+    // because the V-side need_* calls add entries to other maps and may
+    // recurse back through need_gevar(X, ...), which is a no-op for
+    // already-existing atoms but would invalidate iterators if it weren't.
+    SimpleOrProofOnlyIntegerVariableID x_key{view.actual_variable};
+    if (auto it = _imp->gevars_that_exist.find(x_key); it != _imp->gevars_that_exist.end()) {
+        auto x_atoms = it->second;
+        for (const auto & [k, _] : x_atoms) {
+            Integer v_value = view.negate_first ? view.then_add - k + 1_i : k + view.then_add;
+            need_gevar(v_id, v_value);
+        }
+    }
+    if (auto it = _imp->eqvars_that_exist.find(x_key); it != _imp->eqvars_that_exist.end()) {
+        auto x_atoms = it->second;
+        for (const auto & [k, _] : x_atoms) {
+            Integer v_value = view.negate_first ? view.then_add - k : k + view.then_add;
+            need_direct_encoding_for(v_id, v_value);
+        }
+    }
+
     return v_id;
 }
 
