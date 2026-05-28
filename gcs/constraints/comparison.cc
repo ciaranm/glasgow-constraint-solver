@@ -76,26 +76,26 @@ auto ReifiedCompareLessThanOrMaybeEqual::prepare(Propagators &, State & initial_
 
 auto ReifiedCompareLessThanOrMaybeEqual::define_proof_model(ProofModel & model) -> void
 {
-    auto do_less = [&](IntegerVariableID v1, IntegerVariableID v2, optional<HalfReifyOnConjunctionOf> cond, bool or_equal, const StringLiteral & rule) {
-        model.add_constraint("ReifiedCompareLessThanOrMaybeEqual", rule, WPBSum{} + 1_i * v1 + -1_i * v2 <= (or_equal ? 0_i : -1_i), cond);
+    auto do_less = [&](IntegerVariableID v1, IntegerVariableID v2, optional<HalfReifyOnConjunctionOf> cond, bool or_equal, const StringLiteral & rule, const string & role) {
+        model.add_labelled_constraint(_constraint_id, role, "ReifiedCompareLessThanOrMaybeEqual", rule, WPBSum{} + 1_i * v1 + -1_i * v2 <= (or_equal ? 0_i : -1_i), cond);
     };
 
     overloaded{
         [&](const reif::MustHold &) {
-            do_less(_v1, _v2, nullopt, _or_equal, "condition true");
+            do_less(_v1, _v2, nullopt, _or_equal, "condition true", "");
         },
         [&](const reif::MustNotHold &) {
-            do_less(_v2, _v1, nullopt, ! _or_equal, "condition false");
+            do_less(_v2, _v1, nullopt, ! _or_equal, "condition false", "");
         },
         [&](const reif::If & cond) {
-            do_less(_v1, _v2, HalfReifyOnConjunctionOf{{cond.cond}}, _or_equal, "if condition");
+            do_less(_v1, _v2, HalfReifyOnConjunctionOf{{cond.cond}}, _or_equal, "if condition", "");
         },
         [&](const reif::NotIf & cond) {
-            do_less(_v2, _v1, HalfReifyOnConjunctionOf{{cond.cond}}, ! _or_equal, "if condition");
+            do_less(_v2, _v1, HalfReifyOnConjunctionOf{{cond.cond}}, ! _or_equal, "if condition", "");
         },
         [&](const reif::Iff & cond) {
-            do_less(_v1, _v2, HalfReifyOnConjunctionOf{{cond.cond}}, _or_equal, "if condition");
-            do_less(_v2, _v1, HalfReifyOnConjunctionOf{{! cond.cond}}, ! _or_equal, "if not condition");
+            do_less(_v1, _v2, HalfReifyOnConjunctionOf{{cond.cond}}, _or_equal, "if condition", "if");
+            do_less(_v2, _v1, HalfReifyOnConjunctionOf{{! cond.cond}}, ! _or_equal, "if not condition", "not_if");
         }}
         .visit(_reif_cond);
 }

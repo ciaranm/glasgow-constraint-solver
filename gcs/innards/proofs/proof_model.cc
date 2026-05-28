@@ -510,5 +510,5 @@ auto ProofModel::emit_constraint_label(
     const ProofLineNumber &) -> ProofLine
 {
     // The leading @ is added elsewhere?
-    return ProofLineLabel("c[" + as_string(constraint_id) + "][" + role + "]");
+    return ProofLineLabel("c[" + as_string(constraint_id) + "]" + (role == "" ? "" : "[" + role + "]"));
 }

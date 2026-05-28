@@ -159,7 +159,7 @@ auto run_reif_binary_comparison_test(bool proofs, const string & mode, variant<i
         auto v1 = visit([&](auto b) { return create_integer_variable_or_constant(p, b); }, v1_range);
         auto v2 = visit([&](auto b) { return create_integer_variable_or_constant(p, b); }, v2_range);
         auto v3 = p.create_integer_variable(Integer(v3_range.first), Integer(v3_range.second), "c");
-        p.post(Constraint_{v1, v2, v3 == 1_i});
+        p.post_named(Constraint_{v1, v2, v3 == 1_i}, "comparison_test");
 
         auto proof_name = proofs ? make_optional("comparison_test_" + mode) : nullopt;
         solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{v1, v2, v3});
