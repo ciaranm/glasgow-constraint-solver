@@ -4,13 +4,10 @@
 
 #include <util/enumerate.hh>
 
-#include <sstream>
-
 using namespace gcs;
 using namespace gcs::innards;
 
 using std::map;
-using std::stringstream;
 using std::vector;
 
 auto gcs::innards::justify_all_different_hall_set_or_violator(
@@ -26,28 +23,22 @@ auto gcs::innards::justify_all_different_hall_set_or_violator(
             continue;
 
         // at most one variable can take this value
-        stringstream step;
-        step << "pol";
-        bool first = true;
+        PolBuilder am1;
         int layer = 0;
         for (unsigned i = 1; i < all_variables.size(); ++i) {
             if (++layer >= 2)
-                step << " " << layer << " *";
+                am1.multiply_by(Integer{layer});
 
             for (unsigned j = 0; j < i; ++j) {
                 auto ne = logger.emit_rup_proof_line(WPBSum{} + 1_i * ! (all_variables[i] == val) + 1_i * ! (all_variables[j] == val) >= 1_i, ProofLevel::Temporary);
-                step << " " << ne;
-                if (! first)
-                    step << " +";
-                first = false;
+                am1.add(ne);
             }
 
-            step << " " << (layer + 1) << " d";
+            am1.divide_by(Integer{layer + 1});
         }
-        step << ';';
 
-        if (layer != 0)
-            value_am1_constraint_numbers.emplace(val, logger.emit_proof_line(step.str(), ProofLevel::Top));
+        if (! am1.empty())
+            value_am1_constraint_numbers.emplace(val, am1.emit(logger, ProofLevel::Top));
     }
 
     // we are going to need the at least one value variables
