@@ -15,8 +15,10 @@
 #include <version>
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <format>
 #include <print>
 #else
+#include <fmt/core.h>
 #include <fmt/ostream.h>
 #endif
 
@@ -38,12 +40,15 @@ using std::min;
 using std::optional;
 using std::string;
 using std::stringstream;
+using std::to_string;
 using std::unique_ptr;
 using std::vector;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::format;
 using std::print;
 #else
+using fmt::format;
 using fmt::print;
 #endif
 
@@ -186,7 +191,9 @@ auto NDimensionalElement<EntryType_, dimensions_>::define_proof_model(ProofModel
         // file remains self-describing. The encoding's recursion over the
         // empty dimension would have produced no constraints at all, which
         // wouldn't capture the unsatisfiability.
-        model.add_constraint("NDimensionalElement", "zero-sized dimension", WPBSum{} >= 1_i);
+        model.add_labelled_constraint(
+            _constraint_id, "empty",
+            "NDimensionalElement", "zero-sized dimension", WPBSum{} >= 1_i);
         return;
     }
 
@@ -201,7 +208,17 @@ auto NDimensionalElement<EntryType_, dimensions_>::define_proof_model(ProofModel
             if (elem.size() == dimensions_) {
                 // this still works out fine if the variable is actually a constant
                 auto array_var = get_array_var<dimensions_>(elem, *_array);
-                model.add_constraint("NDimensionalElement", "equality",
+                auto idx = [&]() {
+                    string s;
+                    for (auto e : elem) {
+                        if (! s.empty()) s += "_";
+                        s += to_string(e);  // Zero-indexed
+                    }
+                    return s;
+                }();
+                model.add_labelled_constraint(
+                    _constraint_id, format("ge_{{{}}}", idx), format("le_{{{}}}", idx),
+                    "NDimensionalElement", "equality",
                     WPBSum{} + (1_i * _result_var) + (-1_i * array_var) == 0_i, reif);
             }
             else {

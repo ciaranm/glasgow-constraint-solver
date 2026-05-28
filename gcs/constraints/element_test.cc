@@ -69,7 +69,7 @@ auto run_element_test(bool proofs, const string & mode, pair<int, int> var_range
     vector<IntegerVariableID> array;
     for (const auto & [l, u] : array_range)
         array.push_back(p.create_integer_variable(Integer(l), Integer(u)));
-    p.post(Element{var, idx, &array});
+    p.post_named(Element{var, idx, &array}, "el");
 
     auto proof_name = proofs ? make_optional("element_test_" + mode) : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{var, idx, array});
@@ -97,7 +97,7 @@ auto run_element_constant_test(bool proofs, const string & mode, pair<int, int> 
     vector<Integer> a;
     for (const auto & v : array)
         a.push_back(Integer(v));
-    p.post(ElementConstantArray{var, idx, &a});
+    p.post_named(ElementConstantArray{var, idx, &a}, "eca");
 
     auto proof_name = proofs ? make_optional("element_test_" + mode) : nullopt;
     solve_for_tests_checking_consistency(p, proof_name, expected, actual,
@@ -130,7 +130,7 @@ auto run_element2d_test(bool proofs, const string & mode, pair<int, int> var_ran
         for (const auto & [l, u] : v)
             a.back().push_back(p.create_integer_variable(Integer(l), Integer(u)));
     }
-    p.post(Element2D{var, idx1, idx2, &a});
+    p.post_named(Element2D{var, idx1, idx2, &a}, "el2d");
 
     auto proof_name = proofs ? make_optional("element_test_" + mode) : nullopt;
     solve_for_tests(p, proof_name, actual, tuple{var, idx1, idx2, a});
@@ -162,7 +162,7 @@ auto run_element2d_constant_test(bool proofs, const string & mode, pair<int, int
         for (const auto & vv : v)
             a.back().push_back(Integer(vv));
     }
-    p.post(Element2DConstantArray{var, idx1, idx2, &a});
+    p.post_named(Element2DConstantArray{var, idx1, idx2, &a}, "el2dc");
 
     auto proof_name = proofs ? make_optional("element_test_" + mode) : nullopt;
     solve_for_tests_checking_consistency(p, proof_name, expected, actual,
