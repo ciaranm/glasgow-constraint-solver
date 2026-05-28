@@ -436,6 +436,8 @@ def main() -> int:
             arg_sets = [["lex_gt"], ["lex_ge"], ["lex_lt"], ["lex_le"], 
                         ["lex_gt_fixed"], ["lex_ge_fixed"], ["lex_lt_fixed"], ["lex_le_fixed"], 
                         ["am1_eq"], ["am1_in_set"], ["al1_eq"],["al1_in_set"]]
+        elif "disjunctive_test" in test_bin.name:
+            arg_sets = [["strict"], ["nonstrict"]]
         else:
             arg_sets = [[]]
 

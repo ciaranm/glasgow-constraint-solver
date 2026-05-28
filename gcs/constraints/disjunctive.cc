@@ -19,8 +19,10 @@
 #include <version>
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <format>
 #include <print>
 #else
+#include <fmt/core.h>
 #include <fmt/ostream.h>
 #endif
 
@@ -44,8 +46,10 @@ using std::unique_ptr;
 using std::vector;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::format;
 using std::print;
 #else
+using fmt::format;
 using fmt::print;
 #endif
 
@@ -129,7 +133,8 @@ auto Disjunctive::define_proof_model(ProofModel & model) -> void
     // bridge-derived at-most-one lemmas during justifications.
     auto emit_before = [&](size_t i, size_t j) -> BeforeFlagData {
         auto flag = model.create_proof_flag("disjbefore");
-        auto [fwd, rev] = model.add_two_way_reified_constraint(
+        auto [fwd, rev] = model.add_labelled_two_way_reified_constraint(
+            _constraint_id, format("before_{{{}_{}}}", i+1, j+1), 
             "Disjunctive", "first task finishes before second starts",
             WPBSum{} + 1_i * _starts[i] + -1_i * _starts[j] <= -_lengths[i],
             flag);
@@ -143,7 +148,9 @@ auto Disjunctive::define_proof_model(ProofModel & model) -> void
             auto j = _active_tasks[b];
             auto data_ij = emit_before(i, j);
             auto data_ji = emit_before(j, i);
-            auto clause = model.add_constraint("Disjunctive", "one task must finish first",
+            auto clause = model.add_labelled_constraint(
+                _constraint_id, format("pair_{{{}_{}}}", i+1, j+1),
+                "Disjunctive", "one task must finish first",
                 WPBSum{} + 1_i * data_ij.flag + 1_i * data_ji.flag >= 1_i);
             if (! clause)
                 throw UnexpectedException{"Disjunctive: pairwise clause missing"};

@@ -86,7 +86,7 @@ namespace
         for (auto l : lengths)
             lengths_i.push_back(Integer{l});
 
-        p.post(Disjunctive{starts, lengths_i, strict});
+        p.post_named(Disjunctive{starts, lengths_i, strict}, "dis");
 
         auto proof_name = proofs ? make_optional("disjunctive_test_" + mode) : nullopt;
         solve_for_tests(p, proof_name, actual, tuple{starts});
