@@ -1,0 +1,67 @@
+name: CPMpy backend
+
+# Builds gcspy from this checkout, installs CPMpy, and runs CPMpy's
+# upstream test suite filtered to the gcs solver. Catches regressions
+# in the gcspy bindings and in the gcs propagators that CPMpy reaches
+# through them.
+#
+# CPMpy is pinned to a specific commit so the test suite shape is
+# reproducible; bump CPMPY_REF when the gcs backend in CPMpy changes.
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  cpmpy:
+    name: CPMpy backend (ubuntu-24.04)
+    runs-on: ubuntu-24.04
+
+    env:
+      # Pin to a known-good CPMpy revision. Update when CPMpy's gcs
+      # backend or test framework changes in a way we want to follow.
+      CPMPY_REF: master
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Install system packages
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y python3-dev
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Build and install gcspy from this checkout
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install ./python
+
+    - name: Install pytest and CPMpy at pinned ref
+      run: |
+        # setuptools<81 keeps pkg_resources available — CPMpy's gurobi
+        # backend imports it during eager solver discovery.
+        python -m pip install pytest "setuptools<81"
+        python -m pip install "git+https://github.com/CPMpy/cpmpy.git@${CPMPY_REF}"
+
+    - name: Clone CPMpy tests at the same ref
+      run: |
+        git clone --depth 1 --branch "${CPMPY_REF}" https://github.com/CPMpy/cpmpy.git /tmp/cpmpy-tests
+
+    - name: Run CPMpy test suite against gcs
+      working-directory: /tmp/cpmpy-tests
+      run: |
+        python -m pytest \
+          tests/test_constraints.py \
+          tests/test_globalconstraints.py \
+          tests/test_solveAll.py \
+          tests/test_flatten.py \
+          tests/test_solverinterface.py \
+          --solver gcs \
+          --tb=short -q
