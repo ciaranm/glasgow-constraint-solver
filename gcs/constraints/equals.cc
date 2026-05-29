@@ -150,11 +150,11 @@ auto ReifiedEquals::define_proof_model(ProofModel & model) -> void
                 WPBSum{} + (1_i * _v1) + (-1_i * _v2) == 0_i);
         },
         [&](const reif::MustNotHold &) {
-            auto gtflag = model.create_proof_flag("gt");
+            auto neflag = model.create_proof_flag("ne");
             model.add_labelled_constraint(_constraint_id, "gt", "ReifiedEquals", "greater option",
-                WPBSum{} + (1_i * _v1) + (-1_i * _v2) >= 1_i, HalfReifyOnConjunctionOf{{gtflag}});
+                WPBSum{} + (1_i * _v1) + (-1_i * _v2) >= 1_i, HalfReifyOnConjunctionOf{{neflag}});
             model.add_labelled_constraint(_constraint_id, "lt", "ReifiedEquals", "less option",
-                WPBSum{} + (1_i * _v1) + (-1_i * _v2) <= -1_i, HalfReifyOnConjunctionOf{{! gtflag}});
+                WPBSum{} + (1_i * _v1) + (-1_i * _v2) <= -1_i, HalfReifyOnConjunctionOf{{! neflag}});
         },
         [&](const reif::If & reif) {
             model.add_labelled_constraint(_constraint_id, "eq_fwd", "eq_back", "ReifiedEquals", "equals option",

@@ -174,7 +174,7 @@ auto ReifiedLinearEquality::define_proof_model(ProofModel & model) -> void
     overloaded{
         [&](const reif::MustHold &) {
             // condition is definitely true, it's just an inequality
-            _proof_line = model.add_labelled_constraint(_constraint_id, "neq_fwd", "neq_back", "ReifiedLinearEquality", "unconditional sum", terms == _value, nullopt);
+            _proof_line = model.add_labelled_constraint(_constraint_id, "le", "ge", "ReifiedLinearEquality", "unconditional sum", terms == _value, nullopt);
         },
         [&](const reif::MustNotHold &) {
             // condition is definitely false, the flag implies either greater or less
@@ -183,7 +183,7 @@ auto ReifiedLinearEquality::define_proof_model(ProofModel & model) -> void
             model.add_labelled_constraint(_constraint_id, "lt", "ReifiedLinearEquality", "less than option", terms <= _value - 1_i, HalfReifyOnConjunctionOf{{! neflag}});
         },
         [&](const reif::If & cond) {
-            _proof_line = model.add_labelled_constraint(_constraint_id, "neq_fwd", "neq_back", "ReifiedLinearEquality", "unconditional sum", terms == _value, HalfReifyOnConjunctionOf{{cond.cond}});
+            _proof_line = model.add_labelled_constraint(_constraint_id, "le", "ge", "ReifiedLinearEquality", "unconditional sum", terms == _value, HalfReifyOnConjunctionOf{{cond.cond}});
         },
         [&](const reif::NotIf & cond) {
             // condition is definitely false, the flag implies either greater or less
@@ -193,7 +193,7 @@ auto ReifiedLinearEquality::define_proof_model(ProofModel & model) -> void
         },
         [&](const reif::Iff & cond) {
             // condition unknown, the condition implies it is neither greater nor less
-            _proof_line = model.add_labelled_constraint(_constraint_id, "eq_fwd", "eq_back", "ReifiedLinearEquality", "equals option", terms == _value, HalfReifyOnConjunctionOf{{cond.cond}});
+            _proof_line = model.add_labelled_constraint(_constraint_id, "le", "ge", "ReifiedLinearEquality", "equals option", terms == _value, HalfReifyOnConjunctionOf{{cond.cond}});
 
             auto gtflag = model.create_proof_flag("lineqgt");
             model.add_labelled_constraint(_constraint_id, "gt", "ReifiedLinearEquality", "greater option", terms >= _value + 1_i, HalfReifyOnConjunctionOf{{gtflag}});

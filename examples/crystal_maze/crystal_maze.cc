@@ -90,15 +90,15 @@ auto main(int argc, char * argv[]) -> int
         diffs.emplace_back(p.create_integer_variable(-7_i, 7_i, "diff" + to_string(x1) + "_" + to_string(x2)));
         if (options_vars.contains("abs")) {
             abs_diffs.emplace_back(p.create_integer_variable(2_i, 7_i, "absdiff" + to_string(x1) + "_" + to_string(x2)));
-            p.post_named(Abs{diffs.back(), abs_diffs.back()}, "cmabs[" + to_string(x1) + "][" + to_string(x2) + "]");
+            p.post_named(Abs{diffs.back(), abs_diffs.back()}, "cmabs_" + to_string(x1) + "_" + to_string(x2));
         }
         else {
-            p.post_named(NotEquals{diffs.back(), 0_c}, "cmneq[0][" + to_string(x1) + "][" + to_string(x2) + "]");
-            p.post_named(NotEquals{diffs.back(), 1_c}, "cmneq[1][" + to_string(x1) + "][" + to_string(x2) + "]");
-            p.post_named(NotEquals{diffs.back(), -1_c}, "cmneq[-1][" + to_string(x1) + "][" + to_string(x2) + "]");
+            p.post_named(NotEquals{diffs.back(), 0_c}, "cmneq_p0_" + to_string(x1) + "_" + to_string(x2));
+            p.post_named(NotEquals{diffs.back(), 1_c}, "cmneq_p1_" + to_string(x1) + "_" + to_string(x2));
+            p.post_named(NotEquals{diffs.back(), -1_c}, "cmneq_m1_" + to_string(x1) + "_" + to_string(x2));
         }
 
-        p.post_named(LinearEquality{WeightedSum{} + 1_i * xs[x1] + -1_i * xs[x2] + -1_i * diffs.back(), 0_i, options_vars.contains("gac")}, "cmleq[" + to_string(x1) + "][" + to_string(x2) + "]");
+        p.post_named(LinearEquality{WeightedSum{} + 1_i * xs[x1] + -1_i * xs[x2] + -1_i * diffs.back(), 0_i, options_vars.contains("gac")}, "cmleq_" + to_string(x1) + "_" + to_string(x2));
     }
 
     auto stats = solve_with(p,

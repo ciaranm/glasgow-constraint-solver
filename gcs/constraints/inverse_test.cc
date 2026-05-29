@@ -87,7 +87,7 @@ auto run_inverse_test(bool proofs, const vector<variant<int, pair<int, int>>> & 
         x.push_back(visit([&](auto e) { return create_integer_variable_or_constant(p, e); }, entry));
     for (const auto & entry : y_range)
         y.push_back(visit([&](auto e) { return create_integer_variable_or_constant(p, e); }, entry));
-    p.post(Inverse{x, y});
+    p.post_named(Inverse{x, y}, "inverse_test");
 
     auto proof_name = proofs ? make_optional("inverse_test") : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{x, y});

@@ -86,7 +86,7 @@ auto Count::define_proof_model(ProofModel & model) -> void
         how_many_sum += 1_i * flag;
     how_many_sum += -1_i * _how_many;
 
-    model.add_labelled_constraint(_constraint_id, "ge", "le", "Count", "sum of flags", how_many_sum == 0_i);
+    model.add_labelled_constraint(_constraint_id, "le", "ge", "Count", "sum of flags", how_many_sum == 0_i);
 }
 
 auto Count::install_propagators(Propagators & propagators) -> void

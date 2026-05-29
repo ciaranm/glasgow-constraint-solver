@@ -15,8 +15,10 @@
 #include <version>
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <format>
 #include <print>
 #else
+#include <fmt/core.h>
 #include <fmt/ostream.h>
 #endif
 
@@ -37,8 +39,10 @@ using std::unique_ptr;
 using std::vector;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::format;
 using std::print;
 #else
+using fmt::format;
 using fmt::print;
 #endif
 
@@ -90,9 +94,15 @@ auto Inverse::define_proof_model(ProofModel & model) -> void
     for (const auto & [i, x_i] : enumerate(_x))
         for (const auto & [j, y_j] : enumerate(_y)) {
             // x[i] = j -> y[j] = i
-            model.add_constraint("Inverse", "x_i = j -> y[j] = i", WPBSum{} + 1_i * (x_i != Integer(j) + _y_start) + 1_i * (y_j == Integer(i) + _x_start) >= 1_i);
+            model.add_labelled_constraint(
+                _constraint_id, format("ge_{}_{}", i, j),
+                "Inverse", "x_i = j -> y[j] = i", 
+                WPBSum{} + 1_i * (x_i != Integer(j) + _y_start) + 1_i * (y_j == Integer(i) + _x_start) >= 1_i);
             // y[j] = i -> x[i] = j
-            model.add_constraint("Inverse", "y_j = i -> x[i] = j", WPBSum{} + 1_i * (y_j != Integer(i) + _x_start) + 1_i * (x_i == Integer(j) + _y_start) >= 1_i);
+            model.add_labelled_constraint(
+                _constraint_id, format("le_{}_{}", i, j),
+                "Inverse", "y_j = i -> x[i] = j", 
+                WPBSum{} + 1_i * (y_j != Integer(i) + _x_start) + 1_i * (x_i == Integer(j) + _y_start) >= 1_i);
         }
 
     // Set up the AM1 map only when proof logging is on; the propagator captures it

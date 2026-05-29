@@ -217,7 +217,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::define_proof_model(ProofModel
                     return s;
                 }();
                 model.add_labelled_constraint(
-                    _constraint_id, format("ge_{{{}}}", idx), format("le_{{{}}}", idx),
+                    _constraint_id, format("le_{}", idx), format("ge_{}", idx),
                     "NDimensionalElement", "equality",
                     WPBSum{} + (1_i * _result_var) + (-1_i * array_var) == 0_i, reif);
             }
