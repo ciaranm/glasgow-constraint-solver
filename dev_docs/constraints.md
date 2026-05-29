@@ -581,6 +581,58 @@ This was the failure mode we hit twice when first splitting
 `comparison_test` and `linear_test`. Always verify the split with
 `ctest -j N` (not just running each entry solo) before committing.
 
+### Runtime caps for pathological random instances
+
+Splitting helps when *one constraint* is uniformly slow, but the
+data-driven tests have a second, nastier failure mode: the random data
+and random search order occasionally conspire to produce a single
+instance with a huge number of solutions or a huge search tree. Since
+every inference is proof-logged and checked by VeriPB, the proof for
+that instance balloons and VeriPB dominates the whole parallel suite —
+and because the data is unseeded, it happens only "every now and again".
+
+Two optional per-solve caps in the harness bound this, read from the
+environment so they apply suite-wide without editing each test:
+
+- `GCS_TEST_MAX_SOLUTIONS=N` — stop a solve after collecting `N` solutions;
+- `GCS_TEST_MAX_RECURSIONS=N` — stop a solve after visiting `N` internal
+  search nodes.
+
+When a cap fires, the solve stops early. The solver emits a partial but
+still VeriPB-checkable proof (`conclusion SAT` if a solution was seen,
+else `NONE` — the same mechanism `check_initialisation_only_for_tests`
+uses), and `check_results` automatically weakens its check: instead of
+`expected == actual` it verifies only that every solution the solver
+*did* produce is genuinely satisfying (`actual ⊆ expected`), then runs
+VeriPB on the partial proof. With neither variable set the behaviour is
+exactly the historical full-enumeration check.
+
+CMake bakes generous defaults into every registered test's environment
+(`GCS_TEST_CAP_DEFAULTS=ON`, with `GCS_TEST_MAX_SOLUTIONS`/
+`GCS_TEST_MAX_RECURSIONS` cache variables), chosen so the worst case
+stays well under a minute of parallel wall time. The Ubuntu release CI
+lane configures with `-DGCS_TEST_CAP_DEFAULTS=OFF` so it keeps doing full
+completeness checking.
+
+**When working on a propagator, build and test with the caps off.** A
+capped run only checks *soundness* (no spurious solutions) and the
+partial proof — it can no longer catch a propagator that *misses*
+solutions or *over-prunes*, which is exactly the class of bug you are
+most likely to introduce. Configure with:
+
+```shell
+cmake -S . -B build -DGCS_TEST_CAP_DEFAULTS=OFF
+```
+
+or, without reconfiguring, clear the variables for a single run:
+
+```shell
+GCS_TEST_MAX_SOLUTIONS= GCS_TEST_MAX_RECURSIONS= ./build/foo_test
+```
+
+The capped defaults are for keeping the *routine* parallel suite fast;
+correctness work wants the full enumeration check.
+
 ## Adding a new constraint: checklist
 
 1. Header file with class declaration, Doxygen comments, the standard

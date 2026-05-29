@@ -54,6 +54,17 @@ cmake -S . -B build -DGCS_ENABLE_VIEW_WRAP_SWEEP=ON
 The harness and `--view-wrap=N` / `--view-position=K` argv flags on each
 test are always built; only the ctest registrations are gated.
 
+By default the data-driven constraint tests run with generous per-solve
+solution/recursion caps (`GCS_TEST_CAP_DEFAULTS=ON`) so a pathological
+random instance can't dominate the parallel suite. A capped run checks
+soundness and the partial proof only, **not** completeness — so when
+working on a propagator, turn the caps off to get full enumeration
+checking:
+```shell
+cmake -S . -B build -DGCS_TEST_CAP_DEFAULTS=OFF
+```
+See `dev_docs/constraints.md` (Testing) for details.
+
 Format code with clang-format (all source is formatted this way).
 
 ## Compiler and Standard Library Support
