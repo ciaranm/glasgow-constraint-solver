@@ -295,25 +295,34 @@ if(GCS_BUILD_TESTS)
     add_test(NAME table_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:table_test>)
     add_test(NAME value_precede_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:value_precede_test>)
 
+    # The circuit scenario tests self-verify (they call veripb internally on a
+    # view-label-suffixed proof file), so they register with run_test_only.bash
+    # and plug into add_view_tests like the data-driven tests. The plain
+    # registration is the bare (no-view) config.
     add_executable(circuit_disconnected_test constraints/circuit/circuit_disconnected_test.cc)
     target_link_libraries(circuit_disconnected_test PRIVATE glasgow_constraint_solver)
-    add_test(NAME circuit_disconnected COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:circuit_disconnected_test>)
+    add_test(NAME circuit_disconnected COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:circuit_disconnected_test>)
+    add_view_tests(circuit_disconnected circuit_disconnected_test 8)
 
     add_executable(circuit_multiple_sccs_test constraints/circuit/circuit_multiple_sccs_test.cc)
     target_link_libraries(circuit_multiple_sccs_test PRIVATE glasgow_constraint_solver)
-    add_test(NAME circuit_multiple_sccs COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:circuit_multiple_sccs_test>)
+    add_test(NAME circuit_multiple_sccs COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:circuit_multiple_sccs_test>)
+    add_view_tests(circuit_multiple_sccs circuit_multiple_sccs_test 9)
 
     add_executable(circuit_no_backedges_test constraints/circuit/circuit_no_backedges_test.cc)
     target_link_libraries(circuit_no_backedges_test PRIVATE glasgow_constraint_solver)
-    add_test(NAME circuit_no_backedges COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:circuit_no_backedges_test>)
+    add_test(NAME circuit_no_backedges COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:circuit_no_backedges_test>)
+    add_view_tests(circuit_no_backedges circuit_no_backedges_test 8)
 
     add_executable(circuit_prune_root_test constraints/circuit/circuit_prune_root_test.cc)
     target_link_libraries(circuit_prune_root_test PRIVATE glasgow_constraint_solver)
-    add_test(NAME circuit_prune_root COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:circuit_prune_root_test>)
+    add_test(NAME circuit_prune_root COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:circuit_prune_root_test>)
+    add_view_tests(circuit_prune_root circuit_prune_root_test 6)
 
     add_executable(circuit_prune_skip_test constraints/circuit/circuit_prune_skip_test.cc)
     target_link_libraries(circuit_prune_skip_test PRIVATE glasgow_constraint_solver)
-    add_test(NAME circuit_prune_skip COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:circuit_prune_skip_test>)
+    add_test(NAME circuit_prune_skip COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:circuit_prune_skip_test>)
+    add_view_tests(circuit_prune_skip circuit_prune_skip_test 7)
 
     add_executable(reification_test innards/proofs/reification_test.cc)
     target_link_libraries(reification_test PRIVATE glasgow_constraint_solver)

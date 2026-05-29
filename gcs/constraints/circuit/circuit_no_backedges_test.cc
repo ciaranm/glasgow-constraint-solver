@@ -1,18 +1,24 @@
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
+#include <cstdlib>
 #include <iostream>
+#include <optional>
+#include <utility>
+#include <vector>
 
 #include <gcs/constraints/circuit.hh>
 #include <gcs/constraints/in.hh>
+#include <gcs/constraints/innards/constraints_test_utils.hh>
 
 using namespace gcs;
+using namespace gcs::test_innards;
 
 using std::cmp_less;
 using std::cout;
 using std::endl;
 using std::make_optional;
-using std::string;
+using std::nullopt;
 using std::vector;
 
 auto post_constraints(Problem & p, vector<IntegerVariableID> & nodes)
@@ -37,10 +43,22 @@ auto post_constraints(Problem & p, vector<IntegerVariableID> & nodes)
     }
 }
 
-auto main(int, char *[]) -> int
+auto main(int argc, char * argv[]) -> int
 {
+    auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
+
+    constexpr int n_positions = 8;
+    if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
+        cout << "circuit_no_backedges view sweep: position " << *view_cfg.single_position
+             << " out of range for n_positions = " << n_positions << "; skipping" << endl;
+        return EXIT_SUCCESS;
+    }
+    auto wraps = wraps_for_positions(view_cfg, n_positions);
+
     Problem p;
-    auto nodes = p.create_integer_variable_vector(8, 0_i, 7_i);
+    vector<IntegerVariableID> nodes;
+    for (int i = 0; i < n_positions; ++i)
+        nodes.push_back(create_integer_variable_or_constant_with_view(p, std::pair{0, n_positions - 1}, wraps.at(i)));
 
     post_constraints(p, nodes);
 
@@ -51,6 +69,8 @@ auto main(int, char *[]) -> int
     scc_options.prune_skip = false;
     p.post(CircuitSCC{nodes, false, scc_options});
 
+    bool proofs = can_run_veripb();
+    auto proof_name = proofs ? make_optional("circuit_no_backedges_test_" + view_wrap_config_label(view_cfg)) : nullopt;
     auto stats = solve_with(
         p,
         SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
@@ -68,9 +88,13 @@ auto main(int, char *[]) -> int
             cout << "\n\n";
             return true;
         }},
-        make_optional<ProofOptions>("circuit_no_backedges_test"));
+        proof_name ? make_optional<ProofOptions>(*proof_name) : nullopt);
 
     cout << stats;
+
+    if (proof_name)
+        if (! run_veripb(*proof_name + ".opb", *proof_name + ".pbp"))
+            return EXIT_FAILURE;
 
     return EXIT_SUCCESS;
 }
