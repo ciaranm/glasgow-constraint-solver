@@ -405,7 +405,6 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<P
         .visit(rule);
 
     auto line = emit_proof_line(rule_line.str(), level);
-    names_and_ids_tracker().register_constraint_content(line, ineq.lhs);
     // Note: no automatic deview-derivation here. Runtime RUP/red emissions
     // happen many times per propagator inference and per-call deview
     // derivation explodes proof size on tests with many view-using
@@ -463,7 +462,6 @@ auto ProofLogger::emit_under_reason(
         .visit(rule);
 
     auto line = emit_proof_line(rule_line.str(), level);
-    names_and_ids_tracker().register_constraint_content(line, ineq.lhs);
     // Note: see comment in `emit()` about why no auto-deview-derivation.
     return line;
 }

@@ -74,26 +74,6 @@ namespace gcs::innards
     public:
         PolBuilder();
 
-        /**
-         * Construct a `PolBuilder` in deview mode: every `add(ProofLine)`
-         * looks up `tracker.deviewed_line_for(line)` and pushes the
-         * deview-form line instead of the raw V-form line. Use this when
-         * a propagator's pol arithmetic was written assuming the constraints
-         * referenced are in deview-form (i.e. assuming views had been
-         * substituted by their underlying values).
-         *
-         * Non-view-using constraints have no deview-form registered, and
-         * `deviewed_line_for(line)` returns the input unchanged for them,
-         * so deview-mode builders behave identically to the default builder
-         * for constraints with no view operands.
-         *
-         * The tracker reference must outlive the builder. `add(ProofLine, ...)`
-         * calls perform the lookup; `add(XLiteral, ...)` and
-         * `add_for_literal` are unaffected (they push raw literals, not
-         * constraint references).
-         */
-        explicit PolBuilder(const NamesAndIDsTracker & tracker);
-
         ~PolBuilder();
 
         PolBuilder(const PolBuilder &) = delete;
@@ -101,6 +81,27 @@ namespace gcs::innards
 
         PolBuilder(PolBuilder &&) noexcept;
         auto operator=(PolBuilder &&) noexcept -> PolBuilder &;
+
+        /**
+         * Turn on deview mode: from now on every `add(ProofLine)` looks up
+         * `tracker.deviewed_line_for(line)` and pushes the deview-form line
+         * instead of the raw V-form line. Use this when a propagator's pol
+         * arithmetic was written assuming the constraints referenced are in
+         * deview-form (i.e. assuming views had been substituted by their
+         * underlying values).
+         *
+         * Non-view-using constraints have no deview-form registered, and
+         * `deviewed_line_for(line)` returns the input unchanged for them, so
+         * a deview-mode builder behaves identically to the default builder
+         * for constraints with no view operands.
+         *
+         * The tracker reference must outlive the builder. Only
+         * `add(ProofLine, ...)` performs the lookup; `add(XLiteral, ...)` and
+         * `add_for_literal` are unaffected (they push raw literals, not
+         * constraint references). Returns `*this` so it can be chained off
+         * construction. Call before any `add(...)`.
+         */
+        auto enable_deview_mode(const NamesAndIDsTracker & tracker) -> PolBuilder &;
 
         /**
          * Push a constraint line (coefficient 1).

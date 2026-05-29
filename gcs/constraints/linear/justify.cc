@@ -25,7 +25,8 @@ auto gcs::innards::justify_linear_bounds(
     // user's views' bits. Deview mode substitutes the framework's deview-form line
     // (in X-bits) for proof_lines, matching the reason reifs that add_for_literal
     // pushes for bare SimpleIntegerVariableIDs.
-    PolBuilder pol{logger.names_and_ids_tracker()};
+    PolBuilder pol;
+    pol.enable_deview_mode(logger.names_and_ids_tracker());
     pol.add(second_constraint_for_equality ? proof_lines.second.value() : proof_lines.first.value());
 
     Integer change_var_coeff = 0_i;

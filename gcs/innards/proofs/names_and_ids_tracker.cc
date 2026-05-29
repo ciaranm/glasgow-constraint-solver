@@ -90,12 +90,6 @@ struct NamesAndIDsTracker::Imp
     // already exists, need_view itself backfills via this map's setup.
     std::map<SimpleIntegerVariableID, std::vector<ProofOnlySimpleIntegerVariableID>> views_of_variable;
 
-    // Constraint-content registry: WPBSum that produced a given proof line.
-    // Populated by ProofModel::add_constraint and the proof-phase emitters.
-    // Used by the deview-form derivation in ProofModel and by PolBuilder
-    // in deview mode.
-    map<ProofLine, SumOf<Weighted<PseudoBooleanTerm>>> constraint_content_by_line;
-
     // For each V-form proof line that has a derived deview-form, the
     // corresponding deview-form line. Lookup via deviewed_line_for.
     map<ProofLine, ProofLine> deviewed_line_by_v_form;
@@ -267,10 +261,9 @@ auto NamesAndIDsTracker::need_pol_item_defining_literal(const IntegerVariableCon
             throw NonExhaustiveSwitch{};
         },
         [&](const ViewOfIntegerVariableID & var) -> variant<ProofLine, XLiteral> {
-            // Stage 3: if the view's been registered, V's atoms have proper
-            // Defs over BinEnc(V) and the pol-item path looks just like a
-            // simple variable's. The previous Equal/NotEqual throws are gone
-            // for the registered case; remaining throws only fire on the
+            // If the view's been registered, V's atoms have proper Defs over
+            // BinEnc(V) and the pol-item path looks just like a simple
+            // variable's. The Equal/NotEqual throws below only fire on the
             // deview fallback for views first seen during proof logging.
             if (auto v_id = find_view(var)) {
                 switch (cond.op) {
@@ -351,10 +344,10 @@ auto NamesAndIDsTracker::need_all_proof_names_in(const SumOf<Weighted<PseudoBool
             },
             [&](const ProofFlag &) {},
             [&](const IntegerVariableID & var) {
-                // Stage 1: opportunistically register view bit vectors during
-                // model writing only. The proof-logging phase doesn't yet know
-                // how to introduce a view via ext/red lines; later stages may
-                // extend this.
+                // Opportunistically register view bit vectors during model
+                // writing. need_view can only introduce a view while the
+                // model is being written (it throws during the proof-logging
+                // phase), so this is gated on _imp->model.
                 if (_imp->model)
                     if (auto view = std::get_if<ViewOfIntegerVariableID>(&var))
                         static_cast<void>(need_view(*view));
@@ -540,7 +533,7 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
 
     _imp->eqvars_that_exist[id].emplace(v, pair{forwards_line, reverse_line});
 
-    // Stage 3: if `id` is a view's proof-only var, eagerly emit the
+    // If `id` is a view's proof-only var, eagerly emit the
     // eq-atom-level link `V=v <=> X=k_x` as two RUP lines. The GE-atom
     // links + the V- and X-side eq Defs are already in F at this point
     // (need_gevar(V,v), need_gevar(V,v+1), and need_direct_encoding_for(X,k_x)
@@ -673,7 +666,7 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
             .visit(id);
     }
 
-    // Stage 3: if `id` is a view's proof-only var, eagerly pol-derive the
+    // If `id` is a view's proof-only var, eagerly pol-derive the
     // atom-level link to the corresponding X-atom so propagator inferences
     // that mix V-atoms (from view literals via simplify_literal) and X-atoms
     // (from search guesses or other propagator inferences) can UP across
@@ -812,11 +805,6 @@ auto NamesAndIDsTracker::find_view(const ViewOfIntegerVariableID & view) const -
     return std::nullopt;
 }
 
-auto NamesAndIDsTracker::register_constraint_content(const ProofLine & line, SumOf<Weighted<PseudoBooleanTerm>> content) -> void
-{
-    _imp->constraint_content_by_line.emplace(line, std::move(content));
-}
-
 auto NamesAndIDsTracker::register_deviewed_line(const ProofLine & v_form_line, const ProofLine & deviewed_line) -> void
 {
     _imp->deviewed_line_by_v_form.emplace(v_form_line, deviewed_line);
@@ -827,14 +815,6 @@ auto NamesAndIDsTracker::deviewed_line_for(const ProofLine & line) const -> Proo
     if (auto it = _imp->deviewed_line_by_v_form.find(line); it != _imp->deviewed_line_by_v_form.end())
         return it->second;
     return line;
-}
-
-auto NamesAndIDsTracker::constraint_content_for(const ProofLine & line) const -> const SumOf<Weighted<PseudoBooleanTerm>> &
-{
-    auto it = _imp->constraint_content_by_line.find(line);
-    if (it == _imp->constraint_content_by_line.end())
-        throw ProofError{"constraint_content_for: no content registered for the requested line"};
-    return it->second;
 }
 
 auto NamesAndIDsTracker::view_link_lines_for(const ProofOnlySimpleIntegerVariableID & view_proof_id) const -> pair<ProofLine, ProofLine>
@@ -889,12 +869,18 @@ auto NamesAndIDsTracker::derive_deviewed_form_for(const ProofLine & v_form_line,
     if (view_contributions.empty())
         return;
 
-    // Build the pol expression as a string. For each view contribution:
+    // Build the pol expression. For each view contribution:
     //   opb_form_coefficient > 0 (positive V in OPB):  add `|coeff| * link_le`.
     //   opb_form_coefficient < 0 (negative V in OPB):  add `|coeff| * link_ge`.
     // Reasoning: link_le contributes `-BinEnc(V) + ...` so it cancels
     // positive V; link_ge contributes `+BinEnc(V) + ...` so it cancels
     // negative V.
+    //
+    // This is a plain PolBuilder, NOT a deview-mode one: it pushes the raw
+    // V-form `v_form_line` and link lines. A deview-mode builder would call
+    // back into `deviewed_line_for(v_form_line)` while we are mid-way through
+    // deriving that very line, so plain mode is both correct and avoids that
+    // self-reference.
     //
     // We deliberately do NOT saturate. Downstream consumers (PolBuilder in
     // deview mode) use this line as the starting constraint in their own
@@ -903,20 +889,14 @@ auto NamesAndIDsTracker::derive_deviewed_form_for(const ProofLine & v_form_line,
     // which then leaks an uncancelled residual into the consumer's pol when
     // it adds a reif on the same variable. The unsaturated form has the full
     // bit-level coefficient mass needed for clean cancellation.
-    stringstream pol;
-    pol << "pol ";
-    visit([&](const auto & l) { pol << l; }, v_form_line);
+    PolBuilder pol;
+    pol.add(v_form_line);
     for (const auto & vc : view_contributions) {
         auto [link_le, link_ge] = view_link_lines_for(vc.view_proof_id);
         Integer mult = vc.opb_form_coefficient > 0_i ? vc.opb_form_coefficient : -vc.opb_form_coefficient;
         const ProofLine & link_to_use = vc.opb_form_coefficient > 0_i ? link_le : link_ge;
-        pol << " ";
-        visit([&](const auto & l) { pol << l; }, link_to_use);
-        if (mult != 1_i)
-            pol << " " << mult << " *";
-        pol << " +";
+        pol.add(link_to_use, mult);
     }
-    pol << " ;";
     auto pol_str = pol.str();
 
     emit_proof_line_now_or_at_start([this, v_form_line, pol_str](ProofLogger * const logger) {
