@@ -49,11 +49,12 @@ using namespace gcs::test_innards;
 
 namespace
 {
-    auto run_cumulative_test(bool proofs, const vector<pair<int, int>> & start_ranges,
+    auto run_cumulative_test(bool proofs, const ViewWrapConfig & view_cfg, const vector<pair<int, int>> & start_ranges,
         const vector<int> & lengths, const vector<int> & heights, int capacity) -> void
     {
-        print(cerr, "cumulative {} {} {} c={}{}", start_ranges, lengths, heights, capacity,
-            proofs ? " with proofs:" : ":");
+        auto wraps = wraps_for_positions(view_cfg, static_cast<int>(start_ranges.size()));
+        print(cerr, "cumulative [{}] {} {} {} c={}{}", view_wrap_config_label(view_cfg),
+            start_ranges, lengths, heights, capacity, proofs ? " with proofs:" : ":");
         cerr << flush;
 
         auto n = start_ranges.size();
@@ -83,8 +84,8 @@ namespace
 
         Problem p;
         vector<IntegerVariableID> starts;
-        for (auto & [lo, hi] : start_ranges)
-            starts.push_back(p.create_integer_variable(Integer{lo}, Integer{hi}));
+        for (size_t i = 0; i < start_ranges.size(); ++i)
+            starts.push_back(create_integer_variable_or_constant_with_view(p, start_ranges.at(i), wraps.at(i)));
 
         vector<Integer> lengths_i, heights_i;
         for (auto l : lengths)
@@ -94,7 +95,7 @@ namespace
 
         p.post(Cumulative{starts, lengths_i, heights_i, Integer{capacity}});
 
-        auto proof_name = proofs ? make_optional("cumulative_test") : nullopt;
+        auto proof_name = proofs ? make_optional("cumulative_test_" + view_wrap_config_label(view_cfg)) : nullopt;
         solve_for_tests(p, proof_name, actual, tuple{starts});
 
         check_results(proof_name, expected, actual);
@@ -167,8 +168,23 @@ namespace
     }
 }
 
-auto main(int, char *[]) -> int
+auto main(int argc, char * argv[]) -> int
 {
+    auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
+
+    // Start-variable positions wrapped by the single-position sweep. The
+    // fixed and random data top out at 4 tasks, so a single-position index
+    // beyond this would wrap nothing on any test; detect and skip rather
+    // than emit a duplicate bare run. mixed/uniform wrap every position.
+    constexpr int n_positions = 4;
+    if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
+        println(cerr, "cumulative view sweep: position {} out of range for n_positions = {}; skipping",
+            *view_cfg.single_position, n_positions);
+        return EXIT_SUCCESS;
+    }
+
+    bool run_dup = view_wrap_config_is_effectively_bare(view_cfg, n_positions);
+
     // Each test: { start_ranges, lengths, heights, capacity }
     // Kept small because stage-1 propagation is a pure checker: the solver
     // brute-forces through every assignment.
@@ -237,18 +253,23 @@ auto main(int, char *[]) -> int
         if (proofs && ! can_run_veripb())
             continue;
         for (auto & [sr, lens, hts, cap] : data)
-            run_cumulative_test(proofs, sr, lens, hts, cap);
+            run_cumulative_test(proofs, view_cfg, sr, lens, hts, cap);
 
-        // Two tasks sharing a start variable: their heights add at every
-        // time point in their (intersecting) durations.
-        // Capacity 2, two unit-height tasks: must fit (sum = 2). OK.
-        run_dup_cumulative_test(proofs, {{0, 3}}, {0, 0}, {2, 2}, {1, 1}, 2);
-        // Capacity 1, two unit-height tasks sharing a start: load=2 > cap=1
-        // → UNSAT.
-        run_dup_cumulative_test(proofs, {{0, 3}}, {0, 0}, {2, 2}, {1, 1}, 1);
-        // Three tasks, two of which share a start. Third has its own start.
-        run_dup_cumulative_test(proofs, {{0, 3}, {0, 3}}, {0, 0, 1},
-            {2, 2, 1}, {1, 1, 1}, 2);
+        // Dup tests use bare variables (the harness duplicates a handle into
+        // several task positions); only run them when no wrapping is in
+        // effect, to avoid duplicating the bare coverage under every wrap.
+        if (run_dup) {
+            // Two tasks sharing a start variable: their heights add at every
+            // time point in their (intersecting) durations.
+            // Capacity 2, two unit-height tasks: must fit (sum = 2). OK.
+            run_dup_cumulative_test(proofs, {{0, 3}}, {0, 0}, {2, 2}, {1, 1}, 2);
+            // Capacity 1, two unit-height tasks sharing a start: load=2 > cap=1
+            // → UNSAT.
+            run_dup_cumulative_test(proofs, {{0, 3}}, {0, 0}, {2, 2}, {1, 1}, 1);
+            // Three tasks, two of which share a start. Third has its own start.
+            run_dup_cumulative_test(proofs, {{0, 3}, {0, 3}}, {0, 0, 1},
+                {2, 2, 1}, {1, 1, 1}, 2);
+        }
     }
 
     return EXIT_SUCCESS;
