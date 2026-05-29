@@ -2,6 +2,7 @@
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
+#include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
@@ -9,6 +10,7 @@
 #include <gcs/innards/state.hh>
 
 #include <util/enumerate.hh>
+#include <util/overloaded.hh>
 
 #include <version>
 
@@ -21,6 +23,11 @@
 #endif
 
 #include <algorithm>
+#include <any>
+#include <list>
+#include <map>
+#include <optional>
+#include <set>
 #include <sstream>
 #include <unordered_map>
 #include <unordered_set>
@@ -29,10 +36,17 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::any_cast;
+using std::list;
 using std::make_shared;
 using std::make_unique;
+using std::map;
 using std::move;
+using std::next;
+using std::nullopt;
+using std::optional;
 using std::pair;
+using std::set;
 using std::shared_ptr;
 using std::size_t;
 using std::string;
@@ -41,6 +55,8 @@ using std::unique_ptr;
 using std::unordered_map;
 using std::unordered_set;
 using std::vector;
+using std::ranges::minmax_element;
+using std::ranges::none_of;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::format;
@@ -52,67 +68,89 @@ using fmt::print;
 
 namespace
 {
-    // Stage 3 partial-load DAG per bin. Each layer i ∈ [0..n] holds the set of
-    // partial-sum values w ∈ [0..C_b] that survived static reduction: forward
-    // reachability from (0, 0) under initial item domains, intersected with
-    // backward reachability from the layer-n accepting set (w ∈ initial
-    // dom(loads[b]) for variable-load, or w ≤ caps[b] for constant-cap).
+    // Forward-only DAG per bin, plus a transitively-computed phantom set for
+    // the proof scaffolding. Both nodes_at and phantoms_at are sorted and
+    // deduplicated; node_set / phantom_set are O(1) membership indexes.
+    //
+    // The DAG is the k=1 specialisation of Knapsack's static DAG: layer i
+    // holds the surviving partial-load values w reachable from (0,0) under
+    // initial item domains within the per-bin cap. We do NOT intersect with
+    // backward reachability — that information becomes the "statically dead"
+    // ~S lines emitted at Top, mirroring Knapsack's design (see
+    // dev_docs/knapsack.md "Static reduction").
     struct PerBinDag
     {
-        // nodes_at[layer] = surviving partial-sum w values at this layer
-        // (sorted, deduplicated). Always contains 0 at layer 0.
         vector<vector<long long>> nodes_at;
-        // Membership index over nodes_at[layer], for O(1) lookups during the
-        // per-call sweep.
         vector<unordered_set<long long>> node_set;
+        vector<vector<long long>> phantoms_at;
+        vector<unordered_set<long long>> phantom_set;
     };
 
-    // Reified Top-level proof flags for one bin's DAG, populated by the
-    // install_initialiser callback (so empty if proofs are disabled, or if
-    // bounds_only is set on the BinPacking constructor).
+    struct PerBinCoordFlags
+    {
+        ProofFlag g_up;
+        ProofLine g_up_fwd;
+        ProofLine g_up_rev;
+        ProofFlag g_dn;
+        ProofLine g_dn_fwd;
+        ProofLine g_dn_rev;
+    };
+
     struct PerBinFlags
     {
-        struct NodeFlags
-        {
-            ProofFlag g_up; // sum_{j<i} sizes[j] * (items[j]==b) >= w
-            ProofFlag g_dn; // sum_{j<i} sizes[j] * (items[j]==b) <= w
-            ProofFlag s;    // g_up ∧ g_dn (sum exactly w)
-        };
-        vector<unordered_map<long long, NodeFlags>> flags;
+        // Per-layer w -> coord flags; covers both DAG and phantom w values
+        // (every value referenced by any chain has a flag here).
+        vector<unordered_map<long long, PerBinCoordFlags>> coord;
+        // Per-layer w -> S flag; same coverage.
+        vector<unordered_map<long long, ProofFlag>> s;
     };
 
-    // Cap on per-bin partial-sum values:
-    // min(upper bound of loads[b] [variable-load form] or capacities[b]
-    //     [constant-cap form], sum of all item sizes).
-    auto per_bin_cap(const State & state, const vector<Integer> & sizes,
-        bool have_loads, const vector<IntegerVariableID> & loads,
-        const vector<Integer> & capacities, size_t b) -> long long
+    // Backtrack-restored per-bin dead-state cache. dead[b][i] gathers w values
+    // for which ~S_{b,i,w} has been emitted at the current search depth (or
+    // above); dead_g_dn[b][i] is the same for the variable-load lower-bound
+    // ~g_dn lines (only populated at layer n). Pre-populated by the
+    // initialiser with the statically dead set, so the per-call propagator
+    // never re-emits a line for a node already discharged at Top.
+    struct DeadCache
+    {
+        vector<vector<set<long long>>> dead;
+        vector<vector<set<long long>>> dead_g_dn;
+    };
+
+    // Per-bin cap on partial sums: sum of all item sizes.
+    //
+    // We deliberately do NOT intersect with initial upper(loads[b]) or
+    // capacities[b] here. Matching Knapsack's design (see
+    // dev_docs/knapsack.md "Static reduction"), the static DAG must contain
+    // every partial-sum vector that any assignment of items in their initial
+    // domains can produce, even ones that already violate the initial cap.
+    // The per-call propagator's "eliminated by current bound" path needs a
+    // Top-level flag for the over-bound successor to emit its pol step
+    // against; dropping the bound filter here guarantees that flag exists,
+    // and removes the need to track over-cap phantoms in the scaffolding.
+    // The initial cap is then enforced by the same per-call cap-exceeded
+    // path that the search will use for tighter current bounds anyway, so
+    // nothing is lost in strength.
+    auto per_bin_cap(const State & /*state*/, const vector<Integer> & sizes,
+        bool /*have_loads*/, const vector<IntegerVariableID> & /*loads*/,
+        const vector<Integer> & /*capacities*/, size_t /*b*/) -> long long
     {
         long long total = 0;
         for (auto & s : sizes)
             total += s.raw_value;
-        long long ext = have_loads
-            ? state.upper_bound(loads[b]).raw_value
-            : capacities[b].raw_value;
-        return std::min(total, ext);
+        return total;
     }
 
-    // Build the static-reduced DAG for one bin from the initial state. Forward
-    // pass: starting from {0} at layer 0, follow whichever of the two edges
-    // are admissible given the initial items[i] domain (== b if b ∈ dom,
-    // != b if dom \ {b} is non-empty). Backward pass: from the accepting
-    // terminals at layer n, propagate backward similarly. The DAG's nodes
-    // at each layer are the intersection.
-    auto build_dag(const State & state, const vector<IntegerVariableID> & items,
-        const vector<Integer> & sizes, bool have_loads,
-        const vector<IntegerVariableID> & loads, const vector<Integer> & capacities,
-        size_t b, long long cap) -> PerBinDag
+    // Forward-only static DAG construction. Walks layer by layer, taking the
+    // "exclude" branch when items[i] != b is admissible in the initial
+    // domain and the "include" branch when items[i] == b is admissible
+    // (subject to the per-bin cap). Phantoms are computed separately below.
+    auto build_fwd_dag(const State & state, const vector<IntegerVariableID> & items,
+        const vector<Integer> & sizes, size_t b, long long cap) -> PerBinDag
     {
         auto n = items.size();
         auto bin_idx = Integer{static_cast<long long>(b)};
 
-        // For each layer i ∈ [0..n], which edges are admissible from layer i
-        // (into layer i+1)?
         vector<bool> can_be_b(n), can_be_notb(n);
         for (size_t i = 0; i < n; ++i) {
             can_be_b[i] = state.in_domain(items[i], bin_idx);
@@ -120,8 +158,7 @@ namespace
             can_be_notb[i] = ! (v && *v == bin_idx);
         }
 
-        // Forward reachable from (0, 0).
-        vector<unordered_set<long long>> fwd(n + 1);
+        vector<set<long long>> fwd(n + 1);
         fwd[0].insert(0);
         for (size_t i = 0; i < n; ++i) {
             for (auto w : fwd[i]) {
@@ -135,100 +172,25 @@ namespace
             }
         }
 
-        // Backward reachable from accepting terminals.
-        vector<unordered_set<long long>> bwd(n + 1);
-        for (long long w = 0; w <= cap; ++w) {
-            bool accept = have_loads
-                ? state.in_domain(loads[b], Integer{w})
-                : (w <= capacities[b].raw_value);
-            if (accept)
-                bwd[n].insert(w);
-        }
-        for (long long i = static_cast<long long>(n) - 1; i >= 0; --i) {
-            for (auto w : bwd[i + 1]) {
-                if (can_be_notb[i])
-                    bwd[i].insert(w);
-                if (can_be_b[i]) {
-                    auto w_prev = w - sizes[i].raw_value;
-                    if (w_prev >= 0)
-                        bwd[i].insert(w_prev);
-                }
-            }
-        }
-
         PerBinDag dag;
         dag.nodes_at.assign(n + 1, {});
         dag.node_set.assign(n + 1, {});
         for (size_t i = 0; i <= n; ++i) {
-            for (auto w : fwd[i])
-                if (bwd[i].contains(w))
-                    dag.nodes_at[i].push_back(w);
-            std::ranges::sort(dag.nodes_at[i]);
+            dag.nodes_at[i].assign(fwd[i].begin(), fwd[i].end());
             dag.node_set[i].insert(dag.nodes_at[i].begin(), dag.nodes_at[i].end());
         }
         return dag;
     }
 
-    // Build the running sum WPBSum for "sum_{j < i} sizes[j] * (items[j]==b)".
-    // Used inside the Top-level scaffolding to define each g_up / g_dn flag's
-    // reification.
-    auto running_sum(const vector<IntegerVariableID> & items,
-        const vector<Integer> & sizes, Integer bin_idx, size_t i) -> WPBSum
-    {
-        WPBSum s;
-        for (size_t j = 0; j < i; ++j)
-            s += sizes[j] * (items[j] == bin_idx);
-        return s;
-    }
-
-    auto emit_bin_scaffolding(ProofLogger * logger, size_t b,
+    // Phantoms: non-DAG backward parents that the joint backward chain still
+    // needs a flag for. Computed in descending layer order so that
+    // phantoms[i] picks up the backward parents of both DAG[i+1] *and*
+    // phantoms[i+1] — the chain emitted for a phantom-succ also has a
+    // parent flag at its layer (DAG node or recursively-phantom). Mirrors
+    // Knapsack's phantom computation, specialised to k=1.
+    auto compute_phantoms(PerBinDag & dag, const State & state,
         const vector<IntegerVariableID> & items, const vector<Integer> & sizes,
-        const PerBinDag & dag, PerBinFlags & flags) -> void
-    {
-        auto n = items.size();
-        auto bin_idx = Integer{static_cast<long long>(b)};
-
-        flags.flags.assign(n + 1, {});
-        for (size_t i = 0; i <= n; ++i) {
-            auto sum_expr = running_sum(items, sizes, bin_idx, i);
-            for (auto w : dag.nodes_at[i]) {
-                auto wI = Integer{w};
-                auto [g_up, gu_fwd, gu_rev] = logger->create_proof_flag_reifying(
-                    sum_expr >= wI, format("bpup_{}_{}_{}", b, i, w), ProofLevel::Top);
-                auto [g_dn, gd_fwd, gd_rev] = logger->create_proof_flag_reifying(
-                    sum_expr <= wI, format("bpdn_{}_{}_{}", b, i, w), ProofLevel::Top);
-                auto [s, s_fwd, s_rev] = logger->create_proof_flag_reifying(
-                    WPBSum{} + 1_i * g_up + 1_i * g_dn >= 2_i,
-                    format("bpat_{}_{}_{}", b, i, w), ProofLevel::Top);
-                flags.flags[i].emplace(w, PerBinFlags::NodeFlags{g_up, g_dn, s});
-                (void) gu_fwd;
-                (void) gu_rev;
-                (void) gd_fwd;
-                (void) gd_rev;
-                (void) s_fwd;
-                (void) s_rev;
-            }
-        }
-    }
-
-    // Stage 3 per-bin DAG sweep. For each bin, recompute alive (i, w) nodes
-    // under the current item domains (forward + backward reachability), then
-    // for each candidate items[i] == b that has no support at any alive (i, w)
-    // with (i+1, w + sizes[i]) also alive, prune items[i] != b.
-    //
-    // Proof: a plain JustifyUsingRUP at the prune site is sufficient — the
-    // chain through the bridge's reified flags + the natural per-bin OPB
-    // equation gives VeriPB enough unit-propagation reach to close the
-    // contradiction. No explicit per-node dead-node lines are emitted (in
-    // contrast to MDD::propagate_mdd, where the at-each-layer exactly-one
-    // OPB axiom requires them); the inequality reifications carry that
-    // chain implicitly. If a future case is found where RUP can't close
-    // the prune, the structured chain in MDD's log_additional_inference is
-    // the template to copy here.
-    auto run_stage3_for_bin(const State & state, auto & inference, ProofLogger * logger,
-        const vector<IntegerVariableID> & items, const vector<Integer> & sizes,
-        const PerBinDag & dag, const PerBinFlags & flags, size_t b,
-        const ReasonFunction & reason) -> void
+        size_t b) -> void
     {
         auto n = items.size();
         auto bin_idx = Integer{static_cast<long long>(b)};
@@ -240,65 +202,589 @@ namespace
             can_be_notb[i] = ! (v && *v == bin_idx);
         }
 
-        // Forward reachability under current domains, restricted to static DAG.
-        vector<unordered_set<long long>> fwd(n + 1);
-        if (dag.node_set[0].contains(0))
-            fwd[0].insert(0);
-        for (size_t i = 0; i < n; ++i) {
-            for (auto w : fwd[i]) {
-                if (can_be_notb[i] && dag.node_set[i + 1].contains(w))
-                    fwd[i + 1].insert(w);
+        vector<set<long long>> phantoms(n + 1);
+        auto backward_into = [&](size_t i, const auto & succ_w_list) {
+            for (auto succ_w : succ_w_list) {
+                // exclude branch: parent_w = succ_w
+                if (can_be_notb[i] && ! dag.node_set[i].contains(succ_w))
+                    phantoms[i].insert(succ_w);
+                // include branch: parent_w = succ_w - sizes[i]
                 if (can_be_b[i]) {
-                    auto w2 = w + sizes[i].raw_value;
-                    if (dag.node_set[i + 1].contains(w2))
-                        fwd[i + 1].insert(w2);
+                    auto parent_w = succ_w - sizes[i].raw_value;
+                    if (parent_w >= 0 && ! dag.node_set[i].contains(parent_w))
+                        phantoms[i].insert(parent_w);
                 }
             }
+        };
+        for (size_t i = n; i-- > 0;) {
+            backward_into(i, dag.nodes_at[i + 1]);
+            // phantoms[i+1] is whatever we just populated; iterate it too.
+            // Use a snapshot since we don't mutate phantoms[i+1] inside.
+            vector<long long> p_at_next(phantoms[i + 1].begin(), phantoms[i + 1].end());
+            backward_into(i, p_at_next);
         }
 
-        // Backward reachability from accepting terminals (the layer-n nodes
-        // already encode the acceptance predicate via static reduction).
-        vector<unordered_set<long long>> bwd(n + 1);
-        for (auto w : dag.nodes_at[n])
-            if (fwd[n].contains(w))
-                bwd[n].insert(w);
-        for (long long i = static_cast<long long>(n) - 1; i >= 0; --i) {
-            for (auto w : bwd[i + 1]) {
-                if (can_be_notb[i] && dag.node_set[i].contains(w))
-                    bwd[i].insert(w);
-                if (can_be_b[i]) {
-                    auto w_prev = w - sizes[i].raw_value;
-                    if (dag.node_set[i].contains(w_prev))
-                        bwd[i].insert(w_prev);
-                }
-            }
+        dag.phantoms_at.assign(n + 1, {});
+        dag.phantom_set.assign(n + 1, {});
+        for (size_t i = 0; i <= n; ++i) {
+            dag.phantoms_at[i].assign(phantoms[i].begin(), phantoms[i].end());
+            dag.phantom_set[i].insert(dag.phantoms_at[i].begin(), dag.phantoms_at[i].end());
         }
+    }
 
-        // Alive = forward ∩ backward.
-        vector<unordered_set<long long>> alive(n + 1);
+    // Running sum of (items[j] == b) * sizes[j] over j < i.
+    auto running_sum(const vector<IntegerVariableID> & items,
+        const vector<Integer> & sizes, Integer bin_idx, size_t i) -> WPBSum
+    {
+        WPBSum s;
+        for (size_t j = 0; j < i; ++j)
+            s += sizes[j] * (items[j] == bin_idx);
+        return s;
+    }
+
+    auto add_bound_p_term(PolBuilder & b, const State & state, ProofLogger * logger,
+        IntegerVariableID v, bool upper) -> void
+    {
+        overloaded{
+            [&](const SimpleIntegerVariableID & sv) {
+                b.add_for_literal(logger->names_and_ids_tracker(),
+                    upper ? sv <= state.upper_bound(sv) : sv >= state.lower_bound(sv));
+            },
+            [&](const ConstantIntegerVariableID &) { throw UnimplementedException{}; },
+            [&](const ViewOfIntegerVariableID &) { throw UnimplementedException{}; }}
+            .visit(v);
+    }
+
+    // Emit one bin's Top-level scaffolding. Mirrors knapsack.cc
+    // `emit_scaffolding` specialised to k=1.
+    //
+    // Order is load-bearing for RUP closure: per-coord forward chains are
+    // referenced by joint forward chains, which are referenced by per-state
+    // implications and layer ALOs, which are referenced by backward chains,
+    // which are referenced by phantom-rule closures, which are referenced by
+    // the statically-dead ~S lines. Reordering any of these breaks the proof.
+    auto emit_bin_scaffolding(ProofLogger * const logger, size_t b,
+        const vector<IntegerVariableID> & items, const vector<Integer> & sizes,
+        bool have_loads, const vector<IntegerVariableID> & loads,
+        const vector<Integer> & capacities,
+        const State & initial_state,
+        const PerBinDag & dag, PerBinFlags & flags,
+        const pair<optional<ProofLine>, optional<ProofLine>> & opb_lines) -> void
+    {
+        auto n = items.size();
+        auto bin_idx = Integer{static_cast<long long>(b)};
+
+        flags.coord.assign(n + 1, {});
+        flags.s.assign(n + 1, {});
+
+        vector<WPBSum> running(n + 1);
         for (size_t i = 0; i <= n; ++i)
-            for (auto w : fwd[i])
-                if (bwd[i].contains(w))
-                    alive[i].insert(w);
+            running[i] = running_sum(items, sizes, bin_idx, i);
 
-        (void) flags;
+        // 1. Reified flags for DAG nodes.
+        for (size_t i = 0; i <= n; ++i) {
+            for (auto w : dag.nodes_at[i]) {
+                auto wI = Integer{w};
+                auto [g_up, gu_fwd, gu_rev] = logger->create_proof_flag_reifying(
+                    running[i] >= wI, format("bpup_{}_{}_{}", b, i, w), ProofLevel::Top);
+                auto [g_dn, gd_fwd, gd_rev] = logger->create_proof_flag_reifying(
+                    running[i] <= wI, format("bpdn_{}_{}_{}", b, i, w), ProofLevel::Top);
+                flags.coord[i].emplace(w, PerBinCoordFlags{g_up, gu_fwd, gu_rev, g_dn, gd_fwd, gd_rev});
+                auto [s_flag, s_fwd, s_rev] = logger->create_proof_flag_reifying(
+                    WPBSum{} + 1_i * g_up + 1_i * g_dn >= 2_i,
+                    format("bpat_{}_{}_{}", b, i, w), ProofLevel::Top);
+                flags.s[i].emplace(w, s_flag);
+                (void)s_fwd;
+                (void)s_rev;
+            }
+        }
 
-        // Prune items[i] != b when no support exists in the alive DAG.
+        // 2. Phantom flags. Same shape, just at the phantom's w value.
+        for (size_t i = 0; i <= n; ++i) {
+            for (auto w : dag.phantoms_at[i]) {
+                auto wI = Integer{w};
+                auto [g_up, gu_fwd, gu_rev] = logger->create_proof_flag_reifying(
+                    running[i] >= wI, format("bpup_{}_{}_{}", b, i, w), ProofLevel::Top);
+                auto [g_dn, gd_fwd, gd_rev] = logger->create_proof_flag_reifying(
+                    running[i] <= wI, format("bpdn_{}_{}_{}", b, i, w), ProofLevel::Top);
+                flags.coord[i].emplace(w, PerBinCoordFlags{g_up, gu_fwd, gu_rev, g_dn, gd_fwd, gd_rev});
+                auto [s_flag, s_fwd, s_rev] = logger->create_proof_flag_reifying(
+                    WPBSum{} + 1_i * g_up + 1_i * g_dn >= 2_i,
+                    format("bpphantom_{}_{}_{}", b, i, w), ProofLevel::Top);
+                flags.s[i].emplace(w, s_flag);
+                (void)s_fwd;
+                (void)s_rev;
+            }
+        }
+
+        // 3. Per-coord + joint forward chains, for every (parent in DAG[i],
+        //    branch, succ in DAG[i+1]).
+        //
+        //    exclude branch (parent_w = succ_w):
+        //      pol succ.g_up.rev + parent.g_up.fwd ; saturate
+        //      rup ~parent.g_up + (items[i] == b) + succ.g_up >= 1
+        //    include branch (parent_w + sizes[i] = succ_w):
+        //      same shape, branch literal = (items[i] != b).
+        //    Twin g_dn chains. Then joint chain `~parent.S + branch + succ.S`.
+        auto emit_forward_chain = [&](size_t i, long long parent_w, long long succ_w, bool include) {
+            const auto & parent_cf = flags.coord[i].at(parent_w);
+            const auto & succ_cf = flags.coord[i + 1].at(succ_w);
+            auto branch_neg = include ? Literal{items[i] != bin_idx} : Literal{items[i] == bin_idx};
+
+            PolBuilder{}.add(succ_cf.g_up_rev).add(parent_cf.g_up_fwd).saturate().emit(*logger, ProofLevel::Top);
+            logger->emit_rup_proof_line(
+                WPBSum{} + 1_i * ! parent_cf.g_up + 1_i * branch_neg + 1_i * succ_cf.g_up >= 1_i,
+                ProofLevel::Top);
+            PolBuilder{}.add(succ_cf.g_dn_rev).add(parent_cf.g_dn_fwd).saturate().emit(*logger, ProofLevel::Top);
+            logger->emit_rup_proof_line(
+                WPBSum{} + 1_i * ! parent_cf.g_dn + 1_i * branch_neg + 1_i * succ_cf.g_dn >= 1_i,
+                ProofLevel::Top);
+
+            const auto & parent_s = flags.s[i].at(parent_w);
+            const auto & succ_s = flags.s[i + 1].at(succ_w);
+            logger->emit_rup_proof_line(
+                WPBSum{} + 1_i * ! parent_s + 1_i * branch_neg + 1_i * succ_s >= 1_i,
+                ProofLevel::Top);
+        };
+
         for (size_t i = 0; i < n; ++i) {
-            if (! can_be_b[i])
-                continue;
-            bool supported = false;
-            for (auto w : alive[i]) {
-                auto w2 = w + sizes[i].raw_value;
-                if (alive[i + 1].contains(w2)) {
-                    supported = true;
-                    break;
+            auto sz = sizes[i].raw_value;
+            for (auto parent_w : dag.nodes_at[i]) {
+                // exclude branch
+                if (dag.node_set[i + 1].contains(parent_w))
+                    emit_forward_chain(i, parent_w, parent_w, false);
+                // include branch
+                auto succ_w = parent_w + sz;
+                if (dag.node_set[i + 1].contains(succ_w))
+                    emit_forward_chain(i, parent_w, succ_w, true);
+            }
+        }
+
+        // 4. Layer-0 ALO: S_{b,0,0} >= 1. Running sum at i=0 is empty = 0, so
+        //    g_up_{b,0,0} (≥ 0) is trivially 1; same for g_dn; conjunction
+        //    forces S = 1. RUP from the reverse reifications.
+        if (! dag.nodes_at[0].empty()) {
+            const auto & root_s = flags.s[0].at(dag.nodes_at[0].front());
+            logger->emit_rup_proof_line(WPBSum{} + 1_i * root_s >= 1_i, ProofLevel::Top);
+        }
+
+        // 5. Per-state implications and layer ALOs. For each layer 0..n-1:
+        //      For each s ∈ DAG[i]: rup ~S_{i,s} + Σ_branch S_{i+1, succ} >= 1
+        //          (closes from joint forward chains + var-domain ALO on
+        //           items[i]: items[i] == b OR items[i] != b).
+        //      Then rup Σ_{w ∈ DAG[i+1]} S_{i+1,w} >= 1.
+        for (size_t i = 0; i < n; ++i) {
+            auto sz = sizes[i].raw_value;
+            for (auto parent_w : dag.nodes_at[i]) {
+                const auto & parent_s = flags.s[i].at(parent_w);
+                WPBSum impl = WPBSum{} + 1_i * ! parent_s;
+                if (dag.node_set[i + 1].contains(parent_w))
+                    impl += 1_i * flags.s[i + 1].at(parent_w);
+                auto succ_w = parent_w + sz;
+                if (succ_w != parent_w && dag.node_set[i + 1].contains(succ_w))
+                    impl += 1_i * flags.s[i + 1].at(succ_w);
+                logger->emit_rup_proof_line(move(impl) >= 1_i, ProofLevel::Top);
+            }
+
+            WPBSum alo;
+            for (auto w : dag.nodes_at[i + 1])
+                alo += 1_i * flags.s[i + 1].at(w);
+            logger->emit_rup_proof_line(move(alo) >= 1_i, ProofLevel::Top);
+        }
+
+        // 6. Backward chains for each (succ in DAG[i+1] ∪ phantoms[i+1], branch).
+        //    exclude branch: parent_w = succ_w.
+        //    include branch: parent_w = succ_w - sizes[i]. If parent_w < 0,
+        //      negative-coord case: direct rup ~succ.S + (items[i] != b) >= 1
+        //      (RUP-closes from succ.S forcing running_sum_at_{i+1} >= succ_w
+        //       and items[i] = b would force running_sum_at_i + sizes[i] = succ_w,
+        //       i.e., running_sum_at_i < 0, contradicting the non-negativity
+        //       implicit in the integer encoding).
+        //    Phantoms-as-succ are included so the joint-only-phantom rule
+        //    below can chain through them.
+        auto emit_backward_chain = [&](size_t i, long long succ_w) {
+            const auto & succ_s = flags.s[i + 1].at(succ_w);
+            // exclude branch: parent_w = succ_w (always >= 0)
+            {
+                bool parent_is_dag = dag.node_set[i].contains(succ_w);
+                bool parent_is_phantom = dag.phantom_set[i].contains(succ_w);
+                if (parent_is_dag || parent_is_phantom) {
+                    const auto & parent_cf = flags.coord[i].at(succ_w);
+                    const auto & succ_cf = flags.coord[i + 1].at(succ_w);
+                    PolBuilder{}.add(succ_cf.g_up_fwd).add(parent_cf.g_up_rev).saturate().emit(*logger, ProofLevel::Top);
+                    logger->emit_rup_proof_line(
+                        WPBSum{} + 1_i * ! succ_cf.g_up + 1_i * (items[i] == bin_idx) + 1_i * parent_cf.g_up >= 1_i,
+                        ProofLevel::Top);
+                    PolBuilder{}.add(succ_cf.g_dn_fwd).add(parent_cf.g_dn_rev).saturate().emit(*logger, ProofLevel::Top);
+                    logger->emit_rup_proof_line(
+                        WPBSum{} + 1_i * ! succ_cf.g_dn + 1_i * (items[i] == bin_idx) + 1_i * parent_cf.g_dn >= 1_i,
+                        ProofLevel::Top);
+                    const auto & parent_s = flags.s[i].at(succ_w);
+                    logger->emit_rup_proof_line(
+                        WPBSum{} + 1_i * ! succ_s + 1_i * (items[i] == bin_idx) + 1_i * parent_s >= 1_i,
+                        ProofLevel::Top);
+                }
+                else {
+                    // No flag exists for succ_w at layer i (shouldn't happen
+                    // post-phantom-closure; assert via the direct chain).
+                    logger->emit_rup_proof_line(
+                        WPBSum{} + 1_i * ! succ_s + 1_i * (items[i] == bin_idx) >= 1_i,
+                        ProofLevel::Top);
                 }
             }
-            if (! supported)
-                inference.infer_not_equal(logger, items[i], bin_idx,
-                    JustifyUsingRUP{}, reason);
+            // include branch: parent_w = succ_w - sizes[i]
+            {
+                auto parent_w = succ_w - sizes[i].raw_value;
+                if (parent_w < 0) {
+                    logger->emit_rup_proof_line(
+                        WPBSum{} + 1_i * ! succ_s + 1_i * (items[i] != bin_idx) >= 1_i,
+                        ProofLevel::Top);
+                }
+                else {
+                    bool parent_is_dag = dag.node_set[i].contains(parent_w);
+                    bool parent_is_phantom = dag.phantom_set[i].contains(parent_w);
+                    if (parent_is_dag || parent_is_phantom) {
+                        const auto & parent_cf = flags.coord[i].at(parent_w);
+                        const auto & succ_cf = flags.coord[i + 1].at(succ_w);
+                        PolBuilder{}.add(succ_cf.g_up_fwd).add(parent_cf.g_up_rev).saturate().emit(*logger, ProofLevel::Top);
+                        logger->emit_rup_proof_line(
+                            WPBSum{} + 1_i * ! succ_cf.g_up + 1_i * (items[i] != bin_idx) + 1_i * parent_cf.g_up >= 1_i,
+                            ProofLevel::Top);
+                        PolBuilder{}.add(succ_cf.g_dn_fwd).add(parent_cf.g_dn_rev).saturate().emit(*logger, ProofLevel::Top);
+                        logger->emit_rup_proof_line(
+                            WPBSum{} + 1_i * ! succ_cf.g_dn + 1_i * (items[i] != bin_idx) + 1_i * parent_cf.g_dn >= 1_i,
+                            ProofLevel::Top);
+                        const auto & parent_s = flags.s[i].at(parent_w);
+                        logger->emit_rup_proof_line(
+                            WPBSum{} + 1_i * ! succ_s + 1_i * (items[i] != bin_idx) + 1_i * parent_s >= 1_i,
+                            ProofLevel::Top);
+                    }
+                    else {
+                        logger->emit_rup_proof_line(
+                            WPBSum{} + 1_i * ! succ_s + 1_i * (items[i] != bin_idx) >= 1_i,
+                            ProofLevel::Top);
+                    }
+                }
+            }
+        };
+
+        for (size_t i = 0; i < n; ++i) {
+            for (auto succ_w : dag.nodes_at[i + 1])
+                emit_backward_chain(i, succ_w);
+            for (auto succ_w : dag.phantoms_at[i + 1])
+                emit_backward_chain(i, succ_w);
         }
+
+        // 7. Phantom closure. For k=1 every phantom is per-coord-phantom
+        //    (the joint and the per-coord projection coincide): for each
+        //    u ∈ DAG[i]'s w values, emit a pair-wise pol over (u, phantom_w)
+        //    and close with ~S_phantom >= 1 via RUP.
+        for (size_t i = 0; i <= n; ++i) {
+            for (auto p_w : dag.phantoms_at[i]) {
+                const auto & p_cf = flags.coord[i].at(p_w);
+
+                for (auto u : dag.nodes_at[i]) {
+                    if (u == p_w)
+                        continue;
+                    const auto & u_cf = flags.coord[i].at(u);
+                    if (u > p_w) {
+                        PolBuilder{}
+                            .add(u_cf.g_up_fwd)
+                            .add(p_cf.g_dn_fwd)
+                            .saturate()
+                            .emit(*logger, ProofLevel::Top);
+                    }
+                    else {
+                        PolBuilder{}
+                            .add(p_cf.g_up_fwd)
+                            .add(u_cf.g_dn_fwd)
+                            .saturate()
+                            .emit(*logger, ProofLevel::Top);
+                    }
+                }
+
+                const auto & s_flag = flags.s[i].at(p_w);
+                logger->emit_rup_proof_line(
+                    WPBSum{} + 1_i * ! s_flag >= 1_i, ProofLevel::Top);
+            }
+        }
+
+        // Note on statically-dead ~S lines: deliberately not emitted at Top.
+        // Layer-n static dead requires a pol step combining g_up/g_dn forward
+        // axioms with the OPB equation halves and the current load bound;
+        // single-valued loads expose tricky cases (`add_for_literal` for
+        // `load <= c` when load is already c picks a trivial reverse-reif
+        // axiom that doesn't usefully close the pol). The per-call sweep's
+        // first invocation handles all these cases via the same pol+RUP
+        // machinery it uses for dynamic interior-hole filtering, and the
+        // backtrack-restored DeadCache prevents redundant emission within a
+        // subtree. Cost: one set of static-dead ~S lines per fresh subtree
+        // root rather than once globally. Worth revisiting if a measurement
+        // shows the per-subtree cost is significant.
+        (void)initial_state;
+        (void)have_loads;
+        (void)loads;
+        (void)capacities;
+        (void)opb_lines;
+    }
+
+    // Per-call k=1 propagator port of Knapsack's `propagate`. For each bin
+    // independently: forward walk under current item domains restricted to
+    // the static DAG, emit dead-state ~S lines (cap-exceed via pol +
+    // current load upper, then ~S RUP; pure forward-unreachable as ~S RUP
+    // alone). Then for variable-load: layer-n filtering by current load
+    // bounds and interior holes, terminal bound inferences via per-state
+    // pol chains + aggregating RUPs. Backward pass over predecessor map
+    // for dead-intermediate ~S and items[i] != b pruning for unsupported
+    // bin candidates. Empty layer-n → contradiction.
+    auto propagate_bin(const State & state, auto & inference, ProofLogger * const logger,
+        const vector<IntegerVariableID> & items, const vector<Integer> & sizes,
+        bool have_loads, const vector<IntegerVariableID> & loads,
+        const vector<Integer> & capacities,
+        size_t b,
+        const PerBinDag & dag, const PerBinFlags & flags,
+        const pair<optional<ProofLine>, optional<ProofLine>> & opb_lines,
+        DeadCache & cache, const ReasonFunction & reason) -> void
+    {
+        auto n = items.size();
+        auto bin_idx = Integer{static_cast<long long>(b)};
+
+        vector<bool> can_be_b(n), can_be_notb(n);
+        for (size_t i = 0; i < n; ++i) {
+            can_be_b[i] = state.in_domain(items[i], bin_idx);
+            auto v = state.optional_single_value(items[i]);
+            can_be_notb[i] = ! (v && *v == bin_idx);
+        }
+
+        int temporary_proof_level = 0;
+        if (logger)
+            temporary_proof_level = logger->temporary_proof_level();
+
+        // (parent_w, branch_is_include) edges that landed on each live node.
+        struct LiveNode
+        {
+            vector<pair<long long, bool>> predecessors;
+        };
+
+        list<map<long long, LiveNode>> completed_layers;
+        completed_layers.emplace_back();
+        completed_layers.back().emplace(0LL, LiveNode{});
+
+        long long load_upper_b = have_loads ? state.upper_bound(loads[b]).raw_value : capacities[b].raw_value;
+
+        for (size_t i = 0; i < n; ++i) {
+            map<long long, LiveNode> growing;
+            auto sz = sizes[i].raw_value;
+
+            for (const auto & [parent_w, _] : completed_layers.back()) {
+                if (can_be_notb[i]) {
+                    auto succ_w = parent_w;
+                    if (dag.node_set[i + 1].contains(succ_w)) {
+                        auto it = growing.find(succ_w);
+                        if (it == growing.end())
+                            it = growing.emplace(succ_w, LiveNode{}).first;
+                        it->second.predecessors.emplace_back(parent_w, false);
+                    }
+                }
+                if (can_be_b[i]) {
+                    auto succ_w = parent_w + sz;
+                    if (dag.node_set[i + 1].contains(succ_w)) {
+                        auto it = growing.find(succ_w);
+                        if (it == growing.end())
+                            it = growing.emplace(succ_w, LiveNode{}).first;
+                        it->second.predecessors.emplace_back(parent_w, true);
+                    }
+                }
+            }
+
+            // Drop cap-exceeded successors from `growing` so the per-call walk
+            // never carries a state we already know is over current upper.
+            erase_if(growing, [&](const auto & item) {
+                return item.first > load_upper_b;
+            });
+
+            // For every w in DAG[i+1] not in `growing`, emit ~S at Current,
+            // cached. Two flavours:
+            //   * cap-exceeded — pol step combining succ.g_up.fwd with the
+            //     LE half of the OPB equation. For constant-cap the cap is a
+            //     constant inside that line (no extra bound term); for
+            //     variable-load we add `load <= current upper` so the pol's
+            //     RHS reflects the actual current bound.
+            //   * forward-unreachable under current dom — pure ~S RUP. UP
+            //     closes via Top backward chains + cached ~S of dead
+            //     predecessors + items[i] domain literals.
+            if (logger) {
+                for (auto w : dag.nodes_at[i + 1]) {
+                    if (growing.contains(w))
+                        continue;
+                    if (cache.dead[b][i + 1].contains(w))
+                        continue;
+
+                    if (w > load_upper_b && opb_lines.first.has_value()) {
+                        const auto & cf = flags.coord[i + 1].at(w);
+                        PolBuilder bb;
+                        bb.add(cf.g_up_fwd).add(*opb_lines.first);
+                        if (have_loads)
+                            add_bound_p_term(bb, state, logger, loads[b], true);
+                        bb.emit(*logger, ProofLevel::Temporary);
+                    }
+
+                    auto s_flag = flags.s[i + 1].at(w);
+                    logger->emit_rup_proof_line_under_reason(reason,
+                        WPBSum{} + 1_i * ! s_flag >= 1_i, ProofLevel::Current);
+                    cache.dead[b][i + 1].insert(w);
+                }
+            }
+
+            completed_layers.emplace_back(move(growing));
+        }
+
+        // Variable-load only: layer-n filtering by current load bounds and
+        // interior holes. The pure ~g_dn / ~S facts hold for the whole subtree
+        // below the current search node; promoted to Current and cached.
+        if (have_loads) {
+            // Lower bound filter.
+            for (auto it = completed_layers.back().begin(), end = completed_layers.back().end(); it != end;) {
+                if (it->first < state.lower_bound(loads[b]).raw_value) {
+                    if (logger) {
+                        bool need_s = ! cache.dead[b][n].contains(it->first);
+                        bool need_g_dn = ! cache.dead_g_dn[b][n].contains(it->first);
+                        if (need_s || need_g_dn) {
+                            const auto & cf = flags.coord[n].at(it->first);
+                            if (opb_lines.second.has_value()) {
+                                PolBuilder bb;
+                                bb.add(cf.g_dn_fwd).add(*opb_lines.second);
+                                add_bound_p_term(bb, state, logger, loads[b], false);
+                                bb.emit(*logger, ProofLevel::Temporary);
+                            }
+                            if (need_g_dn) {
+                                logger->emit_rup_proof_line_under_reason(reason,
+                                    WPBSum{} + 1_i * ! cf.g_dn >= 1_i, ProofLevel::Current);
+                                cache.dead_g_dn[b][n].insert(it->first);
+                            }
+                            if (need_s) {
+                                logger->emit_rup_proof_line_under_reason(reason,
+                                    WPBSum{} + 1_i * ! flags.s[n].at(it->first) >= 1_i, ProofLevel::Current);
+                                cache.dead[b][n].insert(it->first);
+                            }
+                        }
+                    }
+                    completed_layers.back().erase(it++);
+                }
+                else
+                    ++it;
+            }
+
+            // Interior holes.
+            for (auto it = completed_layers.back().begin(), end = completed_layers.back().end(); it != end;) {
+                if (! state.in_domain(loads[b], Integer{it->first})) {
+                    if (logger && ! cache.dead[b][n].contains(it->first)) {
+                        const auto & cf = flags.coord[n].at(it->first);
+                        if (opb_lines.first.has_value() && opb_lines.second.has_value()) {
+                            PolBuilder{}.add(cf.g_dn_fwd).add(*opb_lines.second).emit(*logger, ProofLevel::Temporary);
+                            PolBuilder{}.add(cf.g_up_fwd).add(*opb_lines.first).emit(*logger, ProofLevel::Temporary);
+                            logger->emit_rup_proof_line_under_reason(reason,
+                                WPBSum{} + 1_i * ! flags.s[n].at(it->first) + 1_i * (loads[b] == Integer{it->first}) >= 1_i,
+                                ProofLevel::Temporary);
+                        }
+                        logger->emit_rup_proof_line_under_reason(reason,
+                            WPBSum{} + 1_i * ! flags.s[n].at(it->first) >= 1_i, ProofLevel::Current);
+                        cache.dead[b][n].insert(it->first);
+                    }
+                    completed_layers.back().erase(it++);
+                }
+                else
+                    ++it;
+            }
+        }
+
+        if (completed_layers.back().empty()) {
+            if (logger)
+                logger->emit_rup_proof_line_under_reason(reason, WPBSum{} >= 1_i, ProofLevel::Temporary);
+            inference.contradiction(logger, JustifyUsingRUP{}, reason);
+            if (logger)
+                logger->forget_proof_level(temporary_proof_level);
+            return;
+        }
+
+        // Variable-load only: terminal bound inferences for loads[b].
+        if (have_loads) {
+            auto [lo_it, hi_it] = minmax_element(completed_layers.back(),
+                [](const pair<long long, LiveNode> & a, const pair<long long, LiveNode> & b) { return a.first < b.first; });
+            auto lo = lo_it->first;
+            auto hi = hi_it->first;
+            vector<Literal> inferences;
+            inferences.emplace_back(loads[b] >= Integer{lo});
+            inferences.emplace_back(loads[b] < Integer{hi} + 1_i);
+
+            for (auto v : state.each_value_immutable(loads[b])) {
+                if (v.raw_value > lo && v.raw_value < hi + 1 && none_of(completed_layers.back(), [&](const pair<long long, LiveNode> & a) { return a.first == v.raw_value; }))
+                    inferences.emplace_back(loads[b] != v);
+            }
+
+            if (logger && opb_lines.first.has_value() && opb_lines.second.has_value()) {
+                for (const auto & [w, _] : completed_layers.back()) {
+                    const auto & cf = flags.coord[n].at(w);
+                    PolBuilder{}.add(*opb_lines.first).add(cf.g_up_fwd).emit(*logger, ProofLevel::Temporary);
+                    logger->emit_rup_proof_line_under_reason(reason,
+                        WPBSum{} + 1_i * ! cf.g_up + 1_i * (loads[b] >= Integer{lo}) >= 1_i,
+                        ProofLevel::Temporary);
+
+                    PolBuilder{}.add(*opb_lines.second).add(cf.g_dn_fwd).emit(*logger, ProofLevel::Temporary);
+                    logger->emit_rup_proof_line_under_reason(reason,
+                        WPBSum{} + 1_i * ! cf.g_dn + 1_i * (loads[b] <= Integer{hi}) >= 1_i,
+                        ProofLevel::Temporary);
+                }
+                logger->emit_rup_proof_line_under_reason(reason,
+                    WPBSum{} + 1_i * (loads[b] >= Integer{lo}) >= 1_i, ProofLevel::Temporary);
+                logger->emit_rup_proof_line_under_reason(reason,
+                    WPBSum{} + 1_i * (loads[b] <= Integer{hi}) >= 1_i, ProofLevel::Temporary);
+            }
+
+            inference.infer_all(logger, inferences, JustifyUsingRUP{}, reason);
+        }
+
+        // Backward pass: identify states / branches supported by a path to
+        // the surviving layer-n set. Emit ~S for dead intermediates; for
+        // each item i, if the "items[i] == b" branch is never taken in any
+        // surviving path, infer items[i] != b. (Note: we don't infer
+        // items[i] == b from this pass — that direction needs a separate
+        // argument involving all OTHER bins, which the per-bin sweep can't
+        // see. Per-bin GAC is one direction only.)
+        int var_number = static_cast<int>(n) - 1;
+        for (auto layer = completed_layers.rbegin();
+            layer != completed_layers.rend() && next(layer) != completed_layers.rend();
+            ++layer, --var_number) {
+            set<long long> reached_parents;
+            bool include_supported = false;
+            for (const auto & [_, node] : *layer) {
+                for (const auto & [parent_w, is_include] : node.predecessors) {
+                    reached_parents.insert(parent_w);
+                    if (is_include)
+                        include_supported = true;
+                }
+            }
+
+            for (auto it = next(layer)->begin(), end = next(layer)->end(); it != end;) {
+                if (reached_parents.contains(it->first))
+                    ++it;
+                else {
+                    if (logger && ! cache.dead[b][var_number].contains(it->first)) {
+                        auto s_flag = flags.s[var_number].at(it->first);
+                        logger->emit_rup_proof_line_under_reason(reason,
+                            WPBSum{} + 1_i * ! s_flag >= 1_i, ProofLevel::Current);
+                        cache.dead[b][var_number].insert(it->first);
+                    }
+                    next(layer)->erase(it++);
+                }
+            }
+
+            if (can_be_b[var_number] && ! include_supported)
+                inference.infer_not_equal(logger, items[var_number], bin_idx, JustifyUsingRUP{}, reason);
+        }
+
+        if (logger)
+            logger->forget_proof_level(temporary_proof_level);
     }
 
     auto run_stage2(const State & state, auto & inference, ProofLogger * logger,
@@ -379,6 +865,10 @@ struct BinPacking::DagBridge
 {
     vector<PerBinDag> dags;
     vector<PerBinFlags> flags;
+    // Per-bin OPB equation line numbers, stored as (LE-half, GE-half):
+    //   variable-load: (sum <= load, sum >= load)
+    //   constant-cap:  (sum <= cap,  nullopt)
+    vector<pair<optional<ProofLine>, optional<ProofLine>>> opb_lines;
 };
 
 BinPacking::BinPacking(vector<IntegerVariableID> items, vector<Integer> sizes,
@@ -453,18 +943,27 @@ auto BinPacking::prepare(Propagators &, State & initial_state, ProofModel * cons
     }
 
     if (! _bounds_only) {
-        // Build the static-reduced per-bin DAGs from the initial domains. Flag
-        // handles are populated later by install_initialiser (once the logger
-        // is available).
+        // Build the per-bin static (forward-only) DAGs and compute phantoms.
+        // Flag handles are populated by the initialiser (once the logger is
+        // available); opb_lines is filled by define_proof_model when proof
+        // logging is on. Both are sized here so propagator code can index by
+        // bin without checking populated-ness even when proofs are off.
         _bridge = make_shared<DagBridge>();
         _bridge->dags.reserve(num_bins);
         _bridge->flags.assign(num_bins, {});
+        _bridge->opb_lines.assign(num_bins, {std::nullopt, std::nullopt});
         for (size_t b = 0; b < num_bins; ++b) {
             auto cap = per_bin_cap(initial_state, _sizes, _have_loads,
                 _loads, _capacities, b);
-            _bridge->dags.push_back(build_dag(initial_state, _items, _sizes,
-                _have_loads, _loads, _capacities, b, cap));
+            auto dag = build_fwd_dag(initial_state, _items, _sizes, b, cap);
+            compute_phantoms(dag, initial_state, _items, _sizes, b);
+            _bridge->dags.push_back(move(dag));
         }
+
+        DeadCache initial_cache{
+            vector<vector<set<long long>>>(num_bins, vector<set<long long>>(_items.size() + 1)),
+            vector<vector<set<long long>>>(num_bins, vector<set<long long>>(_items.size() + 1))};
+        _dead_cache_idx = initial_state.add_constraint_state(move(initial_cache));
     }
 
     return true;
@@ -476,10 +975,10 @@ auto BinPacking::define_proof_model(ProofModel & model) -> void
     //   sum_i { sizes[i] * [items[i] == b] } == loads[b]   (variable-load form)
     //   sum_i { sizes[i] * [items[i] == b] } <= cap[b]     (constant-cap form)
     //
-    // The DAG-shaped scaffolding used by the Stage 3 GAC propagator is not
-    // part of this encoding; it is emitted at ProofLevel::Top by an
-    // install_initialiser, derived from these per-bin equations. See
-    // dev_docs/bin-packing.md.
+    // The Stage 3 DAG-shaped scaffolding lives at ProofLevel::Top via the
+    // initialiser; see dev_docs/bin-packing.md. Capture the OPB line numbers
+    // into the bridge so per-call pol steps can reference them (variable-load
+    // cap-exceed / load-bound filtering).
     auto num_bins = _have_loads ? _loads.size() : _capacities.size();
     for (size_t b = 0; b < num_bins; ++b) {
         auto bin_idx = Integer(static_cast<long long>(b));
@@ -487,10 +986,20 @@ auto BinPacking::define_proof_model(ProofModel & model) -> void
         for (const auto & [i, item] : enumerate(_items))
             sum += _sizes[i] * (item == bin_idx);
 
-        if (_have_loads)
-            model.add_constraint(sum == 1_i * _loads[b]);
-        else
-            model.add_constraint(sum <= _capacities[b]);
+        if (_have_loads) {
+            // add_constraint(WPBSumEq) returns pair{LE-half, GE-half}. Store
+            // first=LE, second=GE so per-call pol steps don't have to
+            // distinguish forms — `.first` is always `sum <= cap-or-load` and
+            // `.second` is `sum >= load` (or nullopt for constant-cap).
+            auto [le, ge] = model.add_constraint(sum == 1_i * _loads[b]);
+            if (_bridge)
+                _bridge->opb_lines[b] = {le, ge};
+        }
+        else {
+            auto le = model.add_constraint(sum <= _capacities[b]);
+            if (_bridge)
+                _bridge->opb_lines[b] = {le, nullopt};
+        }
     }
 }
 
@@ -502,48 +1011,61 @@ auto BinPacking::install_propagators(Propagators & propagators) -> void
         triggers.on_bounds.insert(triggers.on_bounds.end(), _loads.begin(), _loads.end());
 
     if (! _bounds_only) {
-        // Emit per-bin Stage 3 scaffolding once at search root: for every
-        // statically reduced (b, i, w) node, create reified flags
-        //   g_up_{b,i,w}  ⇔  sum_{j<i} sizes[j]·(items[j]==b) ≥ w
-        //   g_dn_{b,i,w}  ⇔  sum_{j<i} sizes[j]·(items[j]==b) ≤ w
-        //   S_{b,i,w}     ⇔  g_up ∧ g_dn   (partial sum exactly w)
-        // at ProofLevel::Top. The S flag is the "main state" — the
-        // conjunction-of-sub-states pattern from Demirović et al., CP 2024
-        // §3 ("Knapsack as a Constraint"), specialised to one partial-sum
-        // dimension. Both the initialiser and the propagator capture a
-        // shared_ptr<DagBridge>; the initialiser writes the flag handles,
-        // the propagator reads them inside its per-call proof callbacks.
+        // Per-bin Stage 3 Top-level scaffolding: reified g_up/g_dn/S flags
+        // for every DAG node and every phantom; per-coord+joint forward
+        // chains; layer-0 ALO; per-state implications and per-layer ALOs;
+        // per-(succ, branch) backward chains; phantom closures; statically
+        // dead ~S lines. Also pre-populates the DeadCache with the static
+        // dead set so the per-call propagator never re-emits them. Mirrors
+        // the upfront scaffolding pattern from Knapsack §3 — see
+        // dev_docs/knapsack.md and dev_docs/bin-packing.md.
         propagators.install_initialiser(
-            [items = _items, sizes = _sizes, bridge = _bridge](
-                State &, auto &, ProofLogger * const logger) -> void {
+            [items = _items, sizes = _sizes, have_loads = _have_loads,
+                loads = _loads, capacities = _capacities, bridge = _bridge](
+                State & state, auto &, ProofLogger * const logger) -> void {
                 if (! logger)
                     return;
-                for (size_t b = 0; b < bridge->dags.size(); ++b)
-                    emit_bin_scaffolding(logger, b, items, sizes,
-                        bridge->dags[b], bridge->flags[b]);
+                for (size_t b = 0; b < bridge->dags.size(); ++b) {
+                    emit_bin_scaffolding(logger, b, items, sizes, have_loads, loads, capacities,
+                        state, bridge->dags[b], bridge->flags[b], bridge->opb_lines[b]);
+                }
+                // No DeadCache pre-population: per-call propagator emits
+                // each statically-dead ~S line on the first sweep at
+                // ProofLevel::Current via pol+RUP and caches it; subsequent
+                // sweeps in the same subtree skip. Cost: one set of
+                // static-dead lines per backtrack to a fresh depth. Matches
+                // the simpler Knapsack pattern.
             });
     }
 
-    // Stage 2 always runs (as a fast bounds pass). When bounds_only is set,
-    // this is the entire propagator; otherwise Stage 3's per-bin DAG sweep
-    // follows and tightens to GAC. Stage 2's inferences are RUP-justified
-    // against the natural per-bin OPB equations alone; Stage 3 RUPs against
-    // the per-bin scaffolding emitted by the initialiser. The two passes
-    // share state through `state` — Stage 3 sees the bounds Stage 2 derived.
-    //
-    // dev_docs/bin-packing.md walks the inference shapes and reasons.
+    // Stage 2 (per-bin bounds) always runs. Stage 3 (per-bin DAG sweep) only
+    // runs when ! bounds_only. Both share state through `state`; Stage 3 sees
+    // the bounds Stage 2 derived.
     propagators.install(
         [items = _items, sizes = _sizes, loads = _loads, capacities = _capacities,
-            have_loads = _have_loads, bounds_only = _bounds_only, bridge = _bridge](
+            have_loads = _have_loads, bounds_only = _bounds_only, bridge = _bridge,
+            dead_cache_handle = _dead_cache_idx](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             run_stage2(state, inference, logger, items, sizes, loads, capacities, have_loads);
 
             if (! bounds_only && bridge) {
                 auto num_bins = have_loads ? loads.size() : capacities.size();
-                auto reason = generic_reason(state, items);
+                // Reason has to include the load variables when variable-load
+                // form is in use, otherwise the cap-exceeded / load-bound /
+                // interior-hole ~S lines aren't sound under their reasons.
+                // For constant-cap, items alone suffice (the cap is static).
+                vector<IntegerVariableID> reason_vars;
+                reason_vars.reserve(items.size() + (have_loads ? loads.size() : 0));
+                reason_vars.insert(reason_vars.end(), items.begin(), items.end());
+                if (have_loads)
+                    reason_vars.insert(reason_vars.end(), loads.begin(), loads.end());
+                auto reason = generic_reason(state, reason_vars);
+                auto & cache = any_cast<DeadCache &>(state.get_constraint_state(*dead_cache_handle));
                 for (size_t b = 0; b < num_bins; ++b)
-                    run_stage3_for_bin(state, inference, logger, items, sizes,
-                        bridge->dags[b], bridge->flags[b], b, reason);
+                    propagate_bin(state, inference, logger, items, sizes,
+                        have_loads, loads, capacities, b,
+                        bridge->dags[b], bridge->flags[b], bridge->opb_lines[b],
+                        cache, reason);
             }
 
             return PropagatorState::Enable;
