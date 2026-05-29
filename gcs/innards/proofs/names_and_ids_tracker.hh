@@ -132,8 +132,7 @@ namespace gcs::innards
          *
          * Throws `UnimplementedException` if called during the proof-logging
          * phase for a view that wasn't registered during model writing; this
-         * case is left for a future stage if empirical failures show it
-         * needed.
+         * case is left unimplemented until empirical failures show it needed.
          */
         [[nodiscard]] auto need_view(const ViewOfIntegerVariableID & view) -> ProofOnlySimpleIntegerVariableID;
 
@@ -148,15 +147,6 @@ namespace gcs::innards
         [[nodiscard]] auto find_view(const ViewOfIntegerVariableID & view) const -> std::optional<ProofOnlySimpleIntegerVariableID>;
 
         /**
-         * Register the WPBSum content that produced a given proof line.
-         * Constraint emitters call this after they've allocated a line so
-         * pol-using code can reconstruct the constraint's coefficient vector
-         * later (in particular, to detect view-bit terms when deriving a
-         * deview-form).
-         */
-        auto register_constraint_content(const ProofLine & line, SumOf<Weighted<PseudoBooleanTerm>> content) -> void;
-
-        /**
          * Record that `deviewed_line` is the deview-form of `v_form_line`.
          * Lookup is via `deviewed_line_for`.
          */
@@ -168,13 +158,6 @@ namespace gcs::innards
          * the input unchanged. Used by `PolBuilder` in deview mode.
          */
         [[nodiscard]] auto deviewed_line_for(const ProofLine & line) const -> ProofLine;
-
-        /**
-         * Read-only access to the WPBSum content that produced a given proof
-         * line (registered via `register_constraint_content`). Throws if no
-         * content has been registered.
-         */
-        [[nodiscard]] auto constraint_content_for(const ProofLine & line) const -> const SumOf<Weighted<PseudoBooleanTerm>> &;
 
         /**
          * The (LE-half, GE-half) proof-line IDs of the bit-vector link for a

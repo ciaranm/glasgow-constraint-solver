@@ -138,7 +138,6 @@ auto ProofModel::add_constraint(const StringLiteral & constraint_name, const Str
     emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(ineq, *half_reif) : ineq, _imp->opb);
     _imp->opb << ";\n";
     auto line = advance_constraint_counter();
-    names_and_ids_tracker().register_constraint_content(line, ineq.lhs);
     // emit_inequality_to negates the LE inequality to land in PB >= form.
     names_and_ids_tracker().derive_deviewed_form_for(line, ineq.lhs, /*le_half=*/true);
     return line;
@@ -161,14 +160,12 @@ auto ProofModel::add_constraint(const StringLiteral & constraint_name, const Str
     emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(eq.lhs <= eq.rhs, *half_reif) : eq.lhs <= eq.rhs, _imp->opb);
     _imp->opb << ";\n";
     auto first = advance_constraint_counter();
-    names_and_ids_tracker().register_constraint_content(first, eq.lhs);
     // LE half: emit_inequality_to negates coefficients on emit.
     names_and_ids_tracker().derive_deviewed_form_for(first, eq.lhs, /*le_half=*/true);
 
     emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(eq.lhs >= eq.rhs, *half_reif) : eq.lhs >= eq.rhs, _imp->opb);
     _imp->opb << ";\n";
     auto second = advance_constraint_counter();
-    names_and_ids_tracker().register_constraint_content(second, eq.lhs);
     // GE half: the >= operator in expression.hh negates the sum once before
     // emit_inequality_to negates it again, so OPB-form coefficients match
     // the input WPBSum.
@@ -376,11 +373,11 @@ auto ProofModel::finalise() -> void
                     throw UnimplementedException{};
                 },
                 [&](const ViewOfIntegerVariableID & v) {
-                    // Stage 2: if the view's been registered (used in a
-                    // constraint body during model writing), emit V's own
-                    // bits. Otherwise fall back to deviewing through the
-                    // underlying (objective constant offset still doesn't
-                    // matter for optimisation order).
+                    // If the view's been registered (used in a constraint
+                    // body during model writing), emit V's own bits.
+                    // Otherwise fall back to deviewing through the underlying
+                    // (objective constant offset still doesn't matter for
+                    // optimisation order).
                     if (auto v_id = names_and_ids_tracker().find_view(v)) {
                         for (const auto & [bit_value, bit_name] : names_and_ids_tracker().each_bit(*v_id))
                             full_opb << bit_value << " " << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
@@ -396,14 +393,14 @@ auto ProofModel::finalise() -> void
         }
 
         if (_imp->preserved_variables) {
-            // Stage 4: the projection set for solx/soli only includes the
-            // underlying's bits. View bits (allocated by need_view at
-            // stage 1) are deliberately omitted; VeriPB UP-extends them
-            // from the underlying via the bit-vector link emitted in
-            // need_view by Theorem 2.8 (equality of two binary sums
-            // propagates from one side fixed to the other). Dedup so that
-            // X and a view of X (or two views of the same X) in the
-            // preserve list don't emit X's bits twice.
+            // The projection set for solx/soli only includes the
+            // underlying's bits. View bits (allocated by need_view) are
+            // deliberately omitted; VeriPB UP-extends them from the
+            // underlying via the bit-vector link emitted in need_view by
+            // Theorem 2.8 (equality of two binary sums propagates from one
+            // side fixed to the other). Dedup so that X and a view of X (or
+            // two views of the same X) in the preserve list don't emit X's
+            // bits twice.
             full_opb << "preserved: ";
             std::set<SimpleIntegerVariableID> already_emitted;
             auto emit_underlying = [&](const SimpleIntegerVariableID & v) {

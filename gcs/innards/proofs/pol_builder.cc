@@ -20,18 +20,17 @@ PolBuilder::PolBuilder() :
     _s << "pol";
 }
 
-PolBuilder::PolBuilder(const NamesAndIDsTracker & tracker) :
-    _empty(true),
-    _deview_tracker(&tracker)
-{
-    _s << "pol";
-}
-
 PolBuilder::~PolBuilder() = default;
 
 PolBuilder::PolBuilder(PolBuilder &&) noexcept = default;
 
 auto PolBuilder::operator=(PolBuilder &&) noexcept -> PolBuilder & = default;
+
+auto PolBuilder::enable_deview_mode(const NamesAndIDsTracker & tracker) -> PolBuilder &
+{
+    _deview_tracker = &tracker;
+    return *this;
+}
 
 auto PolBuilder::separator_if_not_first() -> void
 {
