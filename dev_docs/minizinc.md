@@ -113,8 +113,20 @@ The general recipe (see `gcs/constraints/lex.cc` and the
    `else if (id == "...")` chain in the main loop and add yours
    alphabetically among the `glasgow_*` ids. Use the helpers
    `arg_as_var`, `arg_as_array_of_var`, `arg_as_array_of_integer`,
-   and `arg_as_set_of_integer` to extract typed arguments from the
-   JSON.
+   `arg_as_set_of_integer`, and `arg_as_array_of_set_of_integer` to
+   extract typed arguments from the JSON. Each helper accepts both
+   the inline JSON form and a named reference into the corresponding
+   `ExtractedData` map (`constant_arrays`, `constant_set_arrays`,
+   etc.).
+
+   **If you need a new argument shape** (a `var float`, an array of
+   tuples, …) the parsing happens in two places. The top-level
+   `arrays` loop in `fzn_glasgow.cc` walks each named array literal
+   and dispatches by inspecting its first element's JSON shape — for
+   example, `arraydata["a"].front().is_object() &&
+   arraydata["a"].front().contains("set")` detects an
+   `array[int] of set of int`. Add a new `ExtractedData` member to
+   store the parsed values and a matching `arg_as_*` helper.
 
 4. **Add small test instances** in `minizinc/tests/<name>.mzn`. Each
    should call the user-facing predicate (`lex_less`, not
