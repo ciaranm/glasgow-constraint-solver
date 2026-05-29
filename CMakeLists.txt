@@ -49,6 +49,20 @@ option(GCS_ENABLE_EXAMPLES "Build examples" ${PROJECT_IS_TOP_LEVEL})
 option(GCS_BUILD_TESTS "Build GCS tests" ${PROJECT_IS_TOP_LEVEL})
 option(GCS_ENABLE_VIEW_WRAP_SWEEP "Register the view-wrap proof-verification sweep (many tests, most failing today; opt in when working on view proof logging)" OFF)
 
+# Runtime caps for data-driven constraint tests. When enabled, each registered
+# test gets generous per-solve solution/recursion caps in its environment so
+# that the occasional pathological random instance (huge solution count or
+# search tree, and hence huge proof) cannot dominate the suite runtime. A
+# capped solve verifies a partial proof and checks soundness only. Turn the
+# defaults OFF (e.g. on a CI lane) for full-enumeration completeness checking.
+option(GCS_TEST_CAP_DEFAULTS "Apply default solution/recursion caps to constraint tests to bound pathological runtimes" ON)
+# Defaults chosen empirically so the worst-case data-driven test (linear_ne)
+# stays well under ~1 minute of wall time when the suite runs fully parallel on
+# a 32-core machine; every other test is far below that. Raising them recovers
+# more completeness checking at the cost of a longer tail.
+set(GCS_TEST_MAX_SOLUTIONS "300" CACHE STRING "Default per-solve solution cap for data-driven constraint tests (when GCS_TEST_CAP_DEFAULTS)")
+set(GCS_TEST_MAX_RECURSIONS "1500" CACHE STRING "Default per-solve search-node cap for data-driven constraint tests (when GCS_TEST_CAP_DEFAULTS)")
+
 # Compiler flag checks always run so results are available for target-specific use.
 include(CheckCXXCompilerFlag)
 unset(COMPILER_SUPPORTS_MARCH_NATIVE CACHE)

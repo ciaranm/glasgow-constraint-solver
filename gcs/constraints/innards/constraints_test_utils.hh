@@ -69,6 +69,47 @@ namespace gcs::test_innards
         return run_veripb("--help", ">/dev/null");
     }
 
+    /**
+     * \name Runtime caps for pathological random test cases
+     *
+     * Some data-driven constraint tests occasionally generate an instance with
+     * a very large number of solutions or a very large search tree. Because the
+     * proof is logged and verified by VeriPB, these cases produce huge proofs
+     * and dominate the (parallel) test suite runtime.
+     *
+     * Two optional caps bound this, read from the environment so they can be
+     * applied suite-wide without editing each test:
+     *  - \c GCS_TEST_MAX_SOLUTIONS : stop a solve once this many solutions have
+     *    been collected;
+     *  - \c GCS_TEST_MAX_RECURSIONS : stop a solve once this many internal
+     *    search nodes (trace callbacks) have been visited.
+     *
+     * When a cap fires the solve stops early. The solver then emits a partial
+     * but still VeriPB-checkable proof (conclusion SAT or NONE — the same path
+     * used by check_initialisation_only_for_tests), and check_results() weakens
+     * its comparison to a soundness-only subset check (see last_run_truncated).
+     *
+     * An unset or empty variable means "no cap"; the default behaviour with
+     * neither variable set is exactly the historical full-enumeration check.
+     * @{
+     */
+    inline auto env_cap(const char * name) -> std::optional<unsigned long long>
+    {
+        if (auto v = std::getenv(name); v && *v)
+            return std::strtoull(v, nullptr, 10);
+        return std::nullopt;
+    }
+
+    /// Whether the most recent solve_for_tests*() call stopped early because a
+    /// cap fired. Set by solve_for_tests_with_callbacks(), read by
+    /// check_results(); single-threaded, one solve per check by construction.
+    inline auto last_run_truncated() -> bool &
+    {
+        static bool truncated = false;
+        return truncated;
+    }
+    /// @}
+
     template <typename ResultsSet_, typename IsSatisfying_, typename... Accumulated_>
     auto generate_expected(ResultsSet_ & expected, IsSatisfying_ is_satisfying, const std::tuple<Accumulated_...> & acc) -> void
     {
@@ -223,6 +264,26 @@ namespace gcs::test_innards
 #endif
         using std::cerr;
 
+        if (last_run_truncated()) {
+            // The solve was stopped early by a runtime cap, so `actual` holds
+            // only a subset of the solutions. Completeness is no longer
+            // checkable; verify soundness instead — every solution the solver
+            // produced must be genuinely satisfying (present in `expected`,
+            // which is built independently by the test's own oracle). The
+            // partial proof is still verified by VeriPB below.
+            for (const auto & item : actual)
+                if (! expected.contains(item)) {
+                    println(cerr, "truncated test run produced a spurious solution");
+                    println(cerr, "spurious: {}", item);
+                    throw UnexpectedException{"Truncated test run produced a solution not in expected"};
+                }
+            println(cerr, "[truncated run: {} of <= {} solutions checked sound]", actual.size(), expected.size());
+            if (proof_name)
+                if (! run_veripb(*proof_name + ".opb", *proof_name + ".pbp"))
+                    throw UnexpectedException{"veripb verification failed"};
+            return;
+        }
+
         if (expected != actual) {
             println(cerr, "test did not produce expected results");
             println(cerr, "expected: {}", expected);
@@ -293,8 +354,34 @@ namespace gcs::test_innards
     template <typename SolutionCallback_, typename TraceCallback_>
     auto solve_for_tests_with_callbacks(Problem & p, const std::optional<std::string> & proof_name, const SolutionCallback_ & f, const TraceCallback_ & t) -> void
     {
+        // Apply the optional runtime caps (see env_cap). The wrappers count
+        // solutions / internal search nodes and return false to stop the solve
+        // once a cap is reached; `f` and `t` and these counters all outlive the
+        // synchronous solve_with() call below, so capture by reference is safe.
+        const auto max_solutions = env_cap("GCS_TEST_MAX_SOLUTIONS");
+        const auto max_recursions = env_cap("GCS_TEST_MAX_RECURSIONS");
+        last_run_truncated() = false;
+        unsigned long long solution_count = 0, node_count = 0;
+
+        auto capped_solution = [&](const CurrentState & s) -> bool {
+            if (max_solutions && solution_count >= *max_solutions) {
+                last_run_truncated() = true;
+                return false;
+            }
+            ++solution_count;
+            return f(s);
+        };
+        auto capped_trace = [&](const CurrentState & s) -> bool {
+            if (max_recursions && node_count >= *max_recursions) {
+                last_run_truncated() = true;
+                return false;
+            }
+            ++node_count;
+            return t(s);
+        };
+
         solve_with(p,
-            SolveCallbacks{.solution = f, .trace = t, .branch = random_branch_with_optional_seed(p)},
+            SolveCallbacks{.solution = capped_solution, .trace = capped_trace, .branch = random_branch_with_optional_seed(p)},
             proof_name ? std::make_optional<ProofOptions>(ProofFileNames{*proof_name}, true, false) : std::nullopt);
     }
 
