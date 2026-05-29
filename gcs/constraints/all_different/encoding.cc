@@ -15,6 +15,26 @@ using std::vector;
 using namespace gcs;
 using namespace gcs::innards;
 
+// OPB-ENCODING-BEGIN: all_different
+//   s-expr:  all_different (x_0, x_1, ..., x_{n-1})
+//   Clauses (for each pair (i, j) with 0 <= i < j < n):
+//     ("AllDifferent", "not equals because lower")
+//         1*x_i + -1*x_j <= -1         half-reified on { notequals_{i,j} }
+//     ("AllDifferent", "not equals because higher")
+//         -1*x_i + 1*x_j <= -1         half-reified on { !notequals_{i,j} }
+//   Bounds:                 (none)
+//   CP literals referenced: (none)
+//   Auxiliary PB flags introduced (one per pair):
+//     notequals_{i,j} -- fresh PB variable; case-split guard for
+//                        x_i != x_j. Source allocates each as
+//                        create_proof_flag("notequals"); a per-pair
+//                        distinguishing protocol is TBD.
+//   Notes:
+//     Standard pairwise disequality clique. Each pair gets its own fresh
+//     "notequals" flag and the same two-clause case-split used by the
+//     scalar `not_equals` encoding: notequals_{i,j} forces x_i < x_j,
+//     its negation forces x_i > x_j, together excluding x_i = x_j.
+// OPB-ENCODING-END
 auto gcs::innards::define_clique_not_equals_encoding(ProofModel & model, const vector<gcs::IntegerVariableID> & vars) -> optional<pair<IntegerVariableID, ProofFlag>>
 {
     optional<pair<IntegerVariableID, ProofFlag>> duplicate_witness;

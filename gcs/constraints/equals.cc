@@ -145,10 +145,35 @@ auto ReifiedEquals::prepare(Propagators &, State & initial_state, ProofModel * c
 auto ReifiedEquals::define_proof_model(ProofModel & model) -> void
 {
     overloaded{
+        // OPB-ENCODING-BEGIN: equals
+        //   s-expr:  equals v1 v2
+        //   Clauses:
+        //     ("ReifiedEquals", "equals option")
+        //         1*v1 + -1*v2 == 0
+        //   Bounds:                 (none)
+        //   CP literals referenced: (none)
+        //   Auxiliary PB flags:     (none)
+        // OPB-ENCODING-END
         [&](const reif::MustHold &) {
             model.add_constraint("ReifiedEquals", "equals option",
                 WPBSum{} + (1_i * _v1) + (-1_i * _v2) == 0_i);
         },
+        // OPB-ENCODING-BEGIN: not_equals
+        //   s-expr:  not_equals v1 v2
+        //   Clauses:
+        //     ("ReifiedEquals", "greater option")
+        //         1*v1 + -1*v2 >= 1            half-reified on { gt }
+        //     ("ReifiedEquals", "less option")
+        //         1*v1 + -1*v2 <= -1           half-reified on { !gt }
+        //   Bounds:                 (none)
+        //   CP literals referenced: (none)
+        //   Auxiliary PB flags introduced:
+        //     gt -- fresh PB variable; case-split guard.
+        //   Notes:
+        //     PB cannot express disequality directly. The two clauses
+        //     case-split on gt: gt forces v1 > v2, !gt forces v1 < v2.
+        //     Together they exclude v1 = v2.
+        // OPB-ENCODING-END
         [&](const reif::MustNotHold &) {
             auto gtflag = model.create_proof_flag("gt");
             model.add_constraint("ReifiedEquals", "greater option",
@@ -156,10 +181,35 @@ auto ReifiedEquals::define_proof_model(ProofModel & model) -> void
             model.add_constraint("ReifiedEquals", "less option",
                 WPBSum{} + (1_i * _v1) + (-1_i * _v2) <= -1_i, HalfReifyOnConjunctionOf{{! gtflag}});
         },
+        // OPB-ENCODING-BEGIN: equals_if
+        //   s-expr:  equals_if cond v1 v2
+        //   Clauses:
+        //     ("ReifiedEquals", "equals option")
+        //         1*v1 + -1*v2 == 0            half-reified on { cond }
+        //   Bounds:                 (none)
+        //   CP literals referenced: cond  (passed through, in canonical form)
+        //   Auxiliary PB flags:     (none)
+        // OPB-ENCODING-END
         [&](const reif::If & reif) {
             model.add_constraint("ReifiedEquals", "equals option",
                 WPBSum{} + (1_i * _v1) + (-1_i * _v2) == 0_i, HalfReifyOnConjunctionOf{{reif.cond}});
         },
+        // OPB-ENCODING-BEGIN: not_equals_if
+        //   s-expr:  not_equals_if cond v1 v2
+        //   Clauses:
+        //     ("ReifiedEquals", "greater option")
+        //         1*v1 + -1*v2 >= 1            half-reified on { cond, gt }
+        //     ("ReifiedEquals", "less option")
+        //         1*v1 + -1*v2 <= -1           half-reified on { cond, !gt }
+        //   Bounds:                 (none)
+        //   CP literals referenced: cond  (passed through, in canonical form)
+        //   Auxiliary PB flags introduced:
+        //     gt -- fresh PB variable; case-split guard.
+        //   Notes:
+        //     As `not_equals`, but each clause is additionally guarded by
+        //     cond. When cond is false neither clause fires, so v1 = v2
+        //     is permitted.
+        // OPB-ENCODING-END
         [&](const reif::NotIf & reif) {
             auto gtflag = model.create_proof_flag("gt");
             model.add_constraint("ReifiedEquals", "greater option",
@@ -167,6 +217,48 @@ auto ReifiedEquals::define_proof_model(ProofModel & model) -> void
             model.add_constraint("ReifiedEquals", "less option",
                 WPBSum{} + (1_i * _v1) + (-1_i * _v2) <= -1_i, HalfReifyOnConjunctionOf{{reif.cond, ! gtflag}});
         },
+        // OPB-ENCODING-BEGIN: equals_iff
+        //   s-expr:  equals_iff cond v1 v2
+        //   Clauses:
+        //     ("ReifiedEquals", "equals option")
+        //         1*v1 + -1*v2 == 0            half-reified on { cond }
+        //     ("ReifiedEquals", "greater option")
+        //         1*v1 + -1*v2 >= 1            half-reified on { gt }
+        //     ("ReifiedEquals", "less option")
+        //         1*v1 + -1*v2 <= -1           half-reified on { lt }
+        //     ("ReifiedEquals", "one of less than, equals, greater than")
+        //         1*lt + 1*gt + 1*cond >= 1
+        //   Bounds:                 (none)
+        //   CP literals referenced: cond  (passed through, in canonical form)
+        //   Auxiliary PB flags introduced:
+        //     gt -- fresh PB variable; "v1 > v2" guard.
+        //     lt -- fresh PB variable; "v1 < v2" guard.
+        //   Notes:
+        //     Trichotomy: at least one of lt, gt, cond must hold. When
+        //     cond holds, the equals clause forces v1 = v2; when cond is
+        //     false, gt or lt must hold, each excluding v1 = v2.
+        // OPB-ENCODING-END
+        // OPB-ENCODING-BEGIN: not_equals_iff
+        //   s-expr:  not_equals_iff cond v1 v2
+        //   Clauses:
+        //     ("ReifiedEquals", "equals option")
+        //         1*v1 + -1*v2 == 0            half-reified on { !cond }
+        //     ("ReifiedEquals", "greater option")
+        //         1*v1 + -1*v2 >= 1            half-reified on { gt }
+        //     ("ReifiedEquals", "less option")
+        //         1*v1 + -1*v2 <= -1           half-reified on { lt }
+        //     ("ReifiedEquals", "one of less than, equals, greater than")
+        //         1*lt + 1*gt + 1*!cond >= 1
+        //   Bounds:                 (none)
+        //   CP literals referenced: cond  (negated; encoder handles negation)
+        //   Auxiliary PB flags introduced:
+        //     gt -- fresh PB variable; "v1 > v2" guard.
+        //     lt -- fresh PB variable; "v1 < v2" guard.
+        //   Notes:
+        //     Same shape as `equals_iff` with cond replaced by !cond
+        //     throughout. Implemented in C++ by passing reif::Iff{!cond}
+        //     into the same arm.
+        // OPB-ENCODING-END
         [&](const reif::Iff & reif) {
             // condition unknown, the condition implies it is neither greater nor less
             model.add_constraint("ReifiedEquals", "equals option",
