@@ -324,6 +324,13 @@ if(GCS_BUILD_TESTS)
     add_test(NAME circuit_prune_skip COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:circuit_prune_skip_test>)
     add_view_tests(circuit_prune_skip circuit_prune_skip_test 7)
 
+    # Data-driven enumerating harness (small full-domain instances), matching
+    # the shape of the other constraints' *_test.cc; self-verifies via veripb.
+    add_executable(circuit_test constraints/circuit/circuit_test.cc)
+    target_link_libraries(circuit_test PRIVATE glasgow_constraint_solver)
+    add_test(NAME circuit_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:circuit_test>)
+    add_view_tests(circuit_constraint circuit_test 5)
+
     add_executable(reification_test innards/proofs/reification_test.cc)
     target_link_libraries(reification_test PRIVATE glasgow_constraint_solver)
     add_test(NAME reification_test COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:reification_test>)

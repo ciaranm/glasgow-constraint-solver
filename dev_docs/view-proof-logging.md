@@ -250,10 +250,20 @@ veripb lex_mixed.opb lex_mixed.pbp
 
 All constraints registered in the sweep verify under all wraps, including
 Abs and AllDifferent (closed once the representation-consistency and big-M
-invariants above were enforced). `SmartTable` is deliberately *not* in the
-sweep: it over-prunes under views, tracked in issue #238. A number of
-constraints do not yet have view tests registered (e.g. `circuit`); read
-`gcs/CMakeLists.txt` for the current list. Bringing one in (an
-`add_view_tests(...)` line, once its test threads a `ViewWrapConfig`) is the
-natural way to extend coverage — given the framework above, many should
-verify with no constraint-side change.
+invariants above were enforced). Coverage now spans the whole constraint
+catalogue — the value-indexed family (element, inverse, regular, circuit),
+the scheduling constraints (disjunctive, cumulative), the logical/lex/ordering
+constraints, and the arithmetic/counting core. Only the Abs/AllDifferent
+framework work required any constraint-side change; everything brought in
+afterwards verified untouched, including circuit's 1200-line hand-rolled
+SCC proof. `SmartTable` is the one deliberate exception: it over-prunes
+under views, tracked in issue #238.
+
+`gcs/CMakeLists.txt` is the source of truth for which tests participate.
+Circuit is wired two ways: its five bespoke scenario tests (disconnected,
+multiple_sccs, no_backedges, prune_root, prune_skip) were converted to
+self-verify and thread a `ViewWrapConfig`, and a data-driven `circuit_test`
+enumerates small full-domain instances — both under `add_view_tests`. Any
+new constraint should follow the same recipe (thread a `ViewWrapConfig`
+through the test, add an `add_view_tests(...)` line); given the framework
+above, expect it to verify with no constraint-side change.
