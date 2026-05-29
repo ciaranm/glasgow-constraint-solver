@@ -364,4 +364,15 @@ if(GCS_BUILD_TESTS)
     target_link_libraries(pol_builder_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     target_compile_definitions(pol_builder_test PRIVATE CATCH_CONFIG_ENABLE_ALL_STRINGMAKERS=1)
     add_test(NAME pol_builder_test COMMAND $<TARGET_FILE:pol_builder_test>)
+
+    # Apply the default runtime caps (see GCS_TEST_CAP_DEFAULTS) to every test
+    # registered above by setting them in each test's environment. Only the
+    # data-driven constraint tests read these variables; the rest ignore them
+    # harmlessly. Turning the option off (e.g. the Ubuntu release CI lane)
+    # leaves the environment untouched, giving full-enumeration checking.
+    if(GCS_TEST_CAP_DEFAULTS)
+        get_property(gcs_registered_tests DIRECTORY PROPERTY TESTS)
+        set_tests_properties(${gcs_registered_tests} PROPERTIES ENVIRONMENT
+            "GCS_TEST_MAX_SOLUTIONS=${GCS_TEST_MAX_SOLUTIONS};GCS_TEST_MAX_RECURSIONS=${GCS_TEST_MAX_RECURSIONS}")
+    endif()
 endif()

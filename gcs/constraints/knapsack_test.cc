@@ -6,6 +6,7 @@
 #include <util/enumerate.hh>
 
 #include <cstdlib>
+#include <functional>
 #include <iostream>
 #include <random>
 #include <set>
@@ -67,7 +68,29 @@ auto run_knapsack_test(bool proofs, pair<int, int> valrange, const vector<vector
 
         return sums == profits;
     };
-    build_expected(expected, is_satisfying, vector{coeffs[0].size(), valrange}, bounds);
+    // Enumerate only the `taken` assignments. The total/profit variables are
+    // functionally determined (the constraint forces each total to equal its
+    // weighted sum), so compute them rather than enumerating their ranges and
+    // filtering with `sums == profits`. The latter made build_expected the
+    // dominant cost on this test, since totals range up to ~1000.
+    auto n_items = coeffs[0].size();
+    std::vector<int> taken(n_items);
+    std::function<auto(std::size_t)->void> enumerate_taken = [&](std::size_t pos) -> void {
+        if (pos == n_items) {
+            std::vector<int> sums(coeffs.size(), 0);
+            for (std::size_t i = 0; i < coeffs.size(); ++i)
+                for (std::size_t k = 0; k < n_items; ++k)
+                    sums[i] += coeffs[i][k] * taken[k];
+            if (is_satisfying(taken, sums))
+                expected.emplace(taken, sums);
+            return;
+        }
+        for (int v = valrange.first; v <= valrange.second; ++v) {
+            taken[pos] = v;
+            enumerate_taken(pos + 1);
+        }
+    };
+    enumerate_taken(0);
 
     println(cerr, " expecting {} solutions", expected.size());
 
