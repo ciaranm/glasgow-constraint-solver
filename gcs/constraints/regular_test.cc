@@ -3,6 +3,7 @@
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
+#include <cstddef>
 #include <cstdlib>
 #include <iostream>
 #include <set>
@@ -43,13 +44,14 @@ using fmt::println;
 using namespace gcs;
 using namespace gcs::test_innards;
 
-auto run_regular_test(bool proofs, const string & desc,
+auto run_regular_test(bool proofs, const ViewWrapConfig & view_cfg, const string & desc,
     vector<pair<int, int>> var_ranges,
     long num_states,
     vector<unordered_map<Integer, long>> transitions,
     vector<long> final_states) -> void
 {
-    print(cerr, "regular {} {} vars{}", desc, var_ranges.size(), proofs ? " with proofs:" : ":");
+    auto wraps = wraps_for_positions(view_cfg, static_cast<int>(var_ranges.size()));
+    print(cerr, "regular [{}] {} {} vars{}", view_wrap_config_label(view_cfg), desc, var_ranges.size(), proofs ? " with proofs:" : ":");
     cerr << flush;
 
     auto dfa_accepts = [&](const vector<int> & seq) -> bool {
@@ -69,11 +71,11 @@ auto run_regular_test(bool proofs, const string & desc,
 
     Problem p;
     vector<IntegerVariableID> vars;
-    for (const auto & [lo, hi] : var_ranges)
-        vars.push_back(p.create_integer_variable(Integer(lo), Integer(hi)));
+    for (std::size_t i = 0; i < var_ranges.size(); ++i)
+        vars.push_back(create_integer_variable_or_constant_with_view(p, var_ranges.at(i), wraps.at(i)));
     p.post(Regular{vars, num_states, transitions, final_states});
 
-    auto proof_name = proofs ? make_optional("regular_test") : nullopt;
+    auto proof_name = proofs ? make_optional("regular_test_" + view_wrap_config_label(view_cfg)) : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{vars});
     check_results(proof_name, expected, actual);
 }
@@ -129,12 +131,12 @@ auto run_dup_regular_test(bool proofs, const string & label,
     check_results(proof_name, expected, actual);
 }
 
-auto run_all_tests(bool proofs) -> void
+auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg, bool run_dup) -> void
 {
     // DFA: even number of 0s, binary alphabet {0,1}
     // State 0 (initial, final): 0->1, 1->0
     // State 1: 0->0, 1->1
-    run_regular_test(proofs, "even zeros",
+    run_regular_test(proofs, view_cfg, "even zeros",
         {{0, 1}, {0, 1}, {0, 1}},
         2,
         {{{0_i, 1}, {1_i, 0}}, {{0_i, 0}, {1_i, 1}}},
@@ -143,7 +145,7 @@ auto run_all_tests(bool proofs) -> void
     // DFA: no two consecutive 0s, binary alphabet {0,1}
     // State 0 (initial, final): 0->1, 1->0
     // State 1 (final, last was 0): 0->dead (absent), 1->0
-    run_regular_test(proofs, "no consecutive 0s",
+    run_regular_test(proofs, view_cfg, "no consecutive 0s",
         {{0, 1}, {0, 1}, {0, 1}, {0, 1}},
         2,
         {{{0_i, 1}, {1_i, 0}}, {{1_i, 0}}},
@@ -152,7 +154,7 @@ auto run_all_tests(bool proofs) -> void
     // DFA: sequence contains at least one 2, ternary alphabet {0,1,2}
     // State 0: 0->0, 1->0, 2->1
     // State 1 (final): all symbols -> 1
-    run_regular_test(proofs, "contains 2",
+    run_regular_test(proofs, view_cfg, "contains 2",
         {{0, 2}, {0, 2}, {0, 2}},
         2,
         {{{0_i, 0}, {1_i, 0}, {2_i, 1}}, {{0_i, 1}, {1_i, 1}, {2_i, 1}}},
@@ -161,7 +163,7 @@ auto run_all_tests(bool proofs) -> void
     // Same DFA: first two variables restricted to {0,1}, last to {0,1,2}.
     // GAC must prune the last variable's domain to {2} at the root, since
     // no accepting path exists unless some variable carries the value 2.
-    run_regular_test(proofs, "contains 2, last forced to 2",
+    run_regular_test(proofs, view_cfg, "contains 2, last forced to 2",
         {{0, 1}, {0, 1}, {0, 2}},
         2,
         {{{0_i, 0}, {1_i, 0}, {2_i, 1}}, {{0_i, 1}, {1_i, 1}, {2_i, 1}}},
@@ -171,14 +173,14 @@ auto run_all_tests(bool proofs) -> void
     // State 0 (initial): 0->1, 1->2
     // State 1 (all 0s so far, final): 0->1, 1->dead (absent)
     // State 2 (all 1s so far, final): 0->dead (absent), 1->2
-    run_regular_test(proofs, "all same",
+    run_regular_test(proofs, view_cfg, "all same",
         {{0, 1}, {0, 1}, {0, 1}, {0, 1}},
         4,
         {{{0_i, 1}, {1_i, 2}}, {{0_i, 1}}, {{1_i, 2}}, {}},
         {1, 2});
 
     // Unsatisfiable: no final states
-    run_regular_test(proofs, "no final states",
+    run_regular_test(proofs, view_cfg, "no final states",
         {{0, 1}, {0, 1}, {0, 1}},
         2,
         {{{0_i, 1}, {1_i, 0}}, {{0_i, 0}, {1_i, 1}}},
@@ -186,11 +188,17 @@ auto run_all_tests(bool proofs) -> void
 
     // Unsatisfiable: variable domains exclude all accepting paths.
     // "Contains 2" DFA with all variables restricted to {0,1} — 2 is never reachable.
-    run_regular_test(proofs, "domain excludes accepting paths",
+    run_regular_test(proofs, view_cfg, "domain excludes accepting paths",
         {{0, 1}, {0, 1}, {0, 1}},
         2,
         {{{0_i, 0}, {1_i, 0}, {2_i, 1}}, {{0_i, 1}, {1_i, 1}, {2_i, 1}}},
         {1});
+
+    // Dup tests use bare variables (the harness duplicates a handle into
+    // several positions); only run them when no wrapping is in effect, to
+    // avoid duplicating the bare coverage under every wrap.
+    if (! run_dup)
+        return;
 
     // Dup-variable cases: "even zeros" DFA with positions[0] reused.
     // {x, x, y} — two equal letters then y; "even zeros" wants total zeros
@@ -222,12 +230,27 @@ auto run_all_tests(bool proofs) -> void
         {1, 2});
 }
 
-auto main(int, char *[]) -> int
+auto main(int argc, char * argv[]) -> int
 {
+    auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
+
+    // Sequence positions wrapped by the single-position sweep. The fixed
+    // data tops out at 4 vars, so a single-position index beyond this would
+    // wrap nothing on any test; detect and skip rather than emit a duplicate
+    // bare run. mixed/uniform wrap every position.
+    constexpr int n_positions = 4;
+    if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
+        println(cerr, "regular view sweep: position {} out of range for n_positions = {}; skipping",
+            *view_cfg.single_position, n_positions);
+        return EXIT_SUCCESS;
+    }
+
+    bool run_dup = view_wrap_config_is_effectively_bare(view_cfg, n_positions);
+
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
             continue;
-        run_all_tests(proofs);
+        run_all_tests(proofs, view_cfg, run_dup);
     }
 
     return EXIT_SUCCESS;
