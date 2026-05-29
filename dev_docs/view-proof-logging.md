@@ -209,25 +209,41 @@ choice lives in the per-constraint `justify_*` helpers.
 
 ## Testing
 
-Opt into the sweep when working on view proof-logging:
+There are three view policies, selected by `--view-position`:
+
+- **uniform** (`=all`): every operand position takes the same wrap.
+- **single** (`=K`): position `K` takes the wrap, the rest stay bare.
+- **mixed** (`=mixed`): each position takes a *different* wrap from a fixed
+  cycle (distinct large offsets, mixed signs). This is the only policy that
+  puts two *different* views in one constraint at once — uniform and single
+  never do — so it's the one that exercises cross-view cancellation and
+  lines spanning two view bit-vectors of different widths.
+
+`add_view_tests(name target n [mode])` in `gcs/CMakeLists.txt` registers
+them, and is the source of truth for which constraints participate. It has
+two tiers:
+
+- the **mixed** test is registered **unconditionally** — it's a single cheap
+  run per constraint and the most likely to catch a cross-view regression,
+  so it's part of the ordinary `ctest` suite;
+- the **full per-wrap sweep** (every wrap in `all_view_wraps()` × every
+  position; ~18·(n+1) tests per constraint) is large and only registered
+  under `-DGCS_ENABLE_VIEW_WRAP_SWEEP=ON`:
 
 ```shell
 cmake -S . -B build -DGCS_ENABLE_VIEW_WRAP_SWEEP=ON
 ```
 
-It wraps each operand position with the 19 view forms in `all_view_wraps()`
-— identity, offsets and negations of magnitudes chosen to bracket
-bit-width boundaries — under both single-position and uniform policies. The
-harness and the `--view-wrap=N` / `--view-position=K` flags are always
-built; only the ctest registrations are gated. A new constraint joins the
-sweep with an `add_view_wrap_sweep(...)` line in `gcs/CMakeLists.txt`; that
-file is the source of truth for which constraints currently participate.
+The harness and the `--view-wrap=N` / `--view-position=...` flags are always
+built; only the per-wrap ctest registrations are gated.
 
 Single manual run:
 
 ```shell
-./build/equals_test --view-wrap=11 --view-position=pall --prove eq_w11
+./build/equals_test --view-wrap=11 --view-position=all --prove eq_w11
 veripb eq_w11.opb eq_w11.pbp
+./build/lex_test --view-position=mixed --prove lex_mixed   # heterogeneous views
+veripb lex_mixed.opb lex_mixed.pbp
 ```
 
 ## Status
@@ -236,8 +252,9 @@ All constraints registered in the sweep verify under all wraps, including
 Abs and AllDifferent (closed once the representation-consistency and big-M
 invariants above were enforced). `SmartTable` is deliberately *not* in the
 sweep: it over-prunes under views, tracked in issue #238. A number of
-constraints do not yet have a sweep registered (e.g. `circuit`, `element`,
-`lex`, `logical`, `inverse`, `cumulative`, `disjunctive`, `regular`); read
-`gcs/CMakeLists.txt` for the current list. Bringing one under the sweep is
-the natural way to extend coverage — given the framework above, many should
+constraints do not yet have view tests registered (e.g. `circuit`,
+`element`, `logical`, `inverse`, `cumulative`, `disjunctive`, `regular`);
+read `gcs/CMakeLists.txt` for the current list. Bringing one in (an
+`add_view_tests(...)` line, once its test threads a `ViewWrapConfig`) is the
+natural way to extend coverage — given the framework above, many should
 verify with no constraint-side change.
