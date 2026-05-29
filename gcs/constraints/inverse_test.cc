@@ -5,6 +5,7 @@
 
 #include <util/enumerate.hh>
 
+#include <cstddef>
 #include <cstdlib>
 #include <iostream>
 #include <optional>
@@ -51,9 +52,11 @@ using fmt::println;
 using namespace gcs;
 using namespace gcs::test_innards;
 
-auto run_inverse_test(bool proofs, const vector<variant<int, pair<int, int>>> & x_range, const vector<variant<int, pair<int, int>>> & y_range) -> void
+auto run_inverse_test(bool proofs, const ViewWrapConfig & view_cfg,
+    const vector<variant<int, pair<int, int>>> & x_range, const vector<variant<int, pair<int, int>>> & y_range) -> void
 {
-    print(cerr, "inverse {} {} {}", x_range, y_range, proofs ? " with proofs:" : ":");
+    auto wraps = wraps_for_positions(view_cfg, static_cast<int>(x_range.size() + y_range.size()));
+    print(cerr, "inverse [{}] {} {} {}", view_wrap_config_label(view_cfg), x_range, y_range, proofs ? " with proofs:" : ":");
     cerr << flush;
 
     set<tuple<vector<int>, vector<int>>> expected, actual;
@@ -83,20 +86,39 @@ auto run_inverse_test(bool proofs, const vector<variant<int, pair<int, int>>> & 
 
     Problem p;
     vector<IntegerVariableID> x, y;
-    for (const auto & entry : x_range)
-        x.push_back(visit([&](auto e) { return create_integer_variable_or_constant(p, e); }, entry));
-    for (const auto & entry : y_range)
-        y.push_back(visit([&](auto e) { return create_integer_variable_or_constant(p, e); }, entry));
+    std::size_t pos = 0;
+    for (const auto & entry : x_range) {
+        auto w = wraps.at(pos++);
+        x.push_back(visit([&](auto e) { return create_integer_variable_or_constant_with_view(p, e, w); }, entry));
+    }
+    for (const auto & entry : y_range) {
+        auto w = wraps.at(pos++);
+        y.push_back(visit([&](auto e) { return create_integer_variable_or_constant_with_view(p, e, w); }, entry));
+    }
     p.post(Inverse{x, y});
 
-    auto proof_name = proofs ? make_optional("inverse_test") : nullopt;
+    auto proof_name = proofs ? make_optional("inverse_test_" + view_wrap_config_label(view_cfg)) : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{x, y});
 
     check_results(proof_name, expected, actual);
 }
 
-auto main(int, char *[]) -> int
+auto main(int argc, char * argv[]) -> int
 {
+    auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
+
+    // Combined x|y operand positions wrapped by the single-position sweep.
+    // The fixed and random data have several arrays whose combined length
+    // reaches into this range; a single-position index beyond it would wrap
+    // nothing on any test, so detect and skip rather than emit a duplicate
+    // bare run. The mixed/uniform policies wrap every position regardless.
+    constexpr int n_positions = 6;
+    if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
+        println(cerr, "inverse view sweep: position {} out of range for n_positions = {}; skipping",
+            *view_cfg.single_position, n_positions);
+        return EXIT_SUCCESS;
+    }
+
     using Entry = variant<int, pair<int, int>>;
     vector<tuple<vector<Entry>, vector<Entry>>> var_data = {
         // Boundary: empty arrays — vacuously satisfied.
@@ -142,7 +164,7 @@ auto main(int, char *[]) -> int
         if (proofs && ! can_run_veripb())
             continue;
         for (auto & [x, y] : var_data)
-            run_inverse_test(proofs, x, y);
+            run_inverse_test(proofs, view_cfg, x, y);
     }
 
     return EXIT_SUCCESS;
