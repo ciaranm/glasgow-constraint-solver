@@ -1286,20 +1286,33 @@ auto NamesAndIDsTracker::reify(const WPBSumLE & ineq, const HalfReifyOnConjuncti
                             max_contribution_from_positive_terms += max(0_i, w * bit_value);
                     },
                     [&](const ViewOfIntegerVariableID & view) {
+                        // A registered view is *emitted* over its own proof-only
+                        // bit-vector (BinEnc(V) directly encodes the view value),
+                        // so the reification constant must be sized from those
+                        // bits too. Sizing it from the underlying variable's bits
+                        // + then_add (the X representation) instead gives a span
+                        // matching the view's value range but smaller than its
+                        // bit-vector's, leaving the reified line valid only modulo
+                        // V's domain bound -- which RUP can't fold in.
+                        if (auto v_proof_id = find_view(view)) {
+                            for (const auto & [bit_value, bit_lit] : each_bit(*v_proof_id))
+                                max_contribution_from_positive_terms += max(0_i, w * bit_value);
+                        }
                         // The term is w * view = w * ((negate_first ? -actual : actual) + then_add).
                         // The variable part w * (negate_first ? -actual : actual) has per-bit max
                         // contribution max(0, ±w * bit_value), with the sign flip depending on
                         // negate_first. The constant part w * then_add applies regardless and is
                         // not affected by negate_first.
-                        if (! view.negate_first) {
+                        else if (! view.negate_first) {
                             for (const auto & [bit_value, bit_lit] : each_bit(view.actual_variable))
                                 max_contribution_from_positive_terms += max(0_i, w * bit_value);
+                            max_contribution_from_positive_terms += max(0_i, w * view.then_add);
                         }
                         else {
                             for (const auto & [bit_value, bit_lit] : each_bit(view.actual_variable))
                                 max_contribution_from_positive_terms += max(0_i, -w * bit_value);
+                            max_contribution_from_positive_terms += max(0_i, w * view.then_add);
                         }
-                        max_contribution_from_positive_terms += max(0_i, w * view.then_add);
                     },
                     [&](const ConstantIntegerVariableID & cvar) {
                         max_contribution_from_positive_terms += max(0_i, w * cvar.const_value);
