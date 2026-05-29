@@ -12,6 +12,7 @@
 #include <util/enumerate.hh>
 #include <util/overloaded.hh>
 
+#include <array>
 #include <cstdlib>
 #include <functional>
 #include <iostream>
@@ -810,12 +811,34 @@ namespace gcs::test_innards
      * stay bare; when unset, every position takes the wrap (uniform sweep).
      * Default-constructed: wrap_index = 0 (view_none), uniform — matches the
      * pre-sweep test behaviour.
+     *
+     * When `mixed` is set, `wrap_index` and `single_position` are ignored and
+     * each position takes a *different* wrap from a fixed cycle (see
+     * `mixed_view_cycle`): distinct large offsets and a mix of negated and
+     * non-negated. This is the one configuration that exercises two different
+     * views in the same constraint at once — the cross-view interactions the
+     * uniform and single-position policies can't reach — and is cheap enough
+     * to run on every constraint test, not just under the full sweep.
      */
     struct ViewWrapConfig
     {
         int wrap_index = 0;
         std::optional<int> single_position{};
+        bool mixed = false;
     };
+
+    /**
+     * \brief The per-position wrap cycle used by the `mixed` policy.
+     *
+     * Chosen so that any constraint with at least two positions gets at least
+     * one positive large-offset view and at least one negated large-offset
+     * view, with *different* offsets, so cross-view cancellation and
+     * differing bit-vector widths are genuinely exercised.
+     */
+    inline auto mixed_view_cycle() -> std::array<ViewWrap, 4>
+    {
+        return {view_offset(17), view_neg_offset(13), view_offset(-11), view_neg_offset(-7)};
+    }
 
     /**
      * \brief Parse view-sweep flags out of argv, leaving other args alone.
@@ -840,6 +863,8 @@ namespace gcs::test_innards
                 auto val = arg.substr(std::string{"--view-position="}.size());
                 if (val == "all" || val == "uniform")
                     cfg.single_position = std::nullopt;
+                else if (val == "mixed")
+                    cfg.mixed = true;
                 else
                     cfg.single_position = std::stoi(val);
             }
@@ -859,9 +884,15 @@ namespace gcs::test_innards
      */
     inline auto wraps_for_positions(ViewWrapConfig cfg, int n_positions) -> std::vector<ViewWrap>
     {
+        std::vector<ViewWrap> result(static_cast<std::size_t>(n_positions), view_none());
+        if (cfg.mixed) {
+            auto cycle = mixed_view_cycle();
+            for (std::size_t i = 0; i < result.size(); ++i)
+                result[i] = cycle[i % cycle.size()];
+            return result;
+        }
         auto wraps = all_view_wraps();
         auto chosen = wraps.at(static_cast<std::size_t>(cfg.wrap_index));
-        std::vector<ViewWrap> result(static_cast<std::size_t>(n_positions), view_none());
         if (cfg.single_position) {
             if (*cfg.single_position >= 0 && *cfg.single_position < n_positions)
                 result.at(static_cast<std::size_t>(*cfg.single_position)) = chosen;
@@ -881,6 +912,8 @@ namespace gcs::test_innards
      */
     inline auto view_wrap_config_label(const ViewWrapConfig & cfg) -> std::string
     {
+        if (cfg.mixed)
+            return "mixed";
         std::string s = "w" + std::to_string(cfg.wrap_index) + "_p";
         s += cfg.single_position ? std::to_string(*cfg.single_position) : "all";
         return s;
@@ -896,6 +929,8 @@ namespace gcs::test_innards
      */
     inline auto view_wrap_config_is_effectively_bare(const ViewWrapConfig & cfg, int n_positions) -> bool
     {
+        if (cfg.mixed)
+            return n_positions == 0;
         if (cfg.wrap_index == 0)
             return true;
         if (cfg.single_position && (*cfg.single_position < 0 || *cfg.single_position >= n_positions))
