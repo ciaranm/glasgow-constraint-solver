@@ -1,197 +1,243 @@
 # View proof-logging support
 
-This document describes the proof-logging machinery that makes
-`ViewOfIntegerVariableID` operands work as constraint arguments.
+`ViewOfIntegerVariableID` is a lightweight affine wrapper `±X + c` over an
+underlying `SimpleIntegerVariableID`. Constraints accept a view wherever
+they accept a bare variable, so the same `X` can reach several constraints
+through several different wrappers. This document explains how proof
+logging copes with that: first the idea (no code), then what you actually
+need to keep in mind when writing propagators or touching the view
+machinery.
 
-Background: `ViewOfIntegerVariableID` is a lightweight affine wrapper
-(`±X + c`) over an underlying `SimpleIntegerVariableID`. Constraints
-accept views interchangeably with the bare variable, which is convenient
-in user code but historically created a gap in proof logging: VeriPB
-needed to see the view's domain, atom-level axioms, and link to the
-underlying variable, before any propagator-emitted constraint that
-mentioned the view could be checked.
+The short version: every constraint currently registered in the view-wrap
+sweep verifies under every wrap. Abs and AllDifferent — historically the
+hard cases — are now in that set.
 
-The framework now bridges that gap for constraints whose proof obligations
-fit the "stage 0–4" envelope below. Constraints that need more (Abs,
-AllDifferent's interior pruning) remain outside.
+## Part 1 — The idea, on top of the thesis
 
-## What works today
+This assumes you know the proof-logging foundations from chapter 3 of
+Matthew's thesis. Recapping only what we build on:
 
-The view-wrap sweep registers `add_view_wrap_sweep` entries in
-`gcs/CMakeLists.txt` for each constraint that participates. Constraints
-whose proof obligations stay within the "four ingredients" envelope
-described below currently verify under all wraps. The two known
-exceptions — Abs and AllDifferent's interior pruning — are tracked under
-[Known gaps](#known-gaps).
+- Each integer variable is represented in the pseudo-Boolean model by a
+  **bit-vector** `BinEnc(X)` (magnitude bits, plus a sign bit / offset for
+  variables that can go negative).
+- On top of the bits sit **order atoms** `[X ≥ v]` and **equality atoms**
+  `[X = v]`, each *defined* by a reified constraint against the bits
+  (`[X ≥ v] ⇔ BinEnc(X) ≥ v`), together with the order-consistency chain
+  (`[X ≥ v] → [X ≥ v-1]`).
+- The OPB file states the constraints over these atoms/bits. The proof
+  derives new facts with **RUP** (unit propagation to contradiction),
+  **`pol`** (cutting-planes: add/multiply/saturate existing lines), and
+  **`red`** (redundance-based introduction of fresh atoms).
+- A propagator inference "literal `ℓ` follows from reason `R`" is logged
+  as the clause `¬R ∨ ℓ` and discharged either by RUP or by an explicit
+  derivation.
 
-To opt into the sweep when working on view proof-logging:
+### The problem a view poses
+
+A view `V = sX + c` (`s = ±1`, `c` an integer) is just an affine image of
+`X`. The tempting move is to write every constraint over `V` by
+substituting `sX + c` and reasoning in `X`'s atoms. That breaks down
+because constraints are posted generically over "an operand", and one `X`
+may be wrapped by several views at once. Rewriting into `X`-space makes the
+atoms that appear in the OPB depend on *which* wrapper a constraint was
+given, so the generic constraint-logging code can no longer treat every
+operand identically.
+
+### What we do instead
+
+We give the view its **own encoded variable**. `V` gets its own bit-vector
+`BinEnc(V)`, its own order and equality atoms, all defined by reification
+exactly as chapter 3 defines them for any integer variable. From the
+proof's point of view `V` is indistinguishable from a bare variable, and
+*every* constraint body and propagator inference that mentions the operand
+is logged purely in `V`'s atoms and bits. The generic machinery never has
+to know it handed out a view.
+
+The only thing tying `V` to `X` is a single **definitional link** axiom:
+
+```
+V − sX = c
+```
+
+emitted as a `≥`/`≤` pair over the two bit-vectors. This is the one and
+only place the two encodings meet.
+
+### Why that works
+
+- **Everything from chapter 3 transfers for free.** `V` has the identical
+  structure to a bare variable, so any fact the chapter-3 machinery can
+  prove about a variable, it can prove about `V`. A constraint that is
+  stated and propagated entirely in `V`-space verifies with zero awareness
+  that `X` exists.
+- **The link is only needed when an inference crosses representations** —
+  e.g. two constraints share `X` through different views, or a
+  propagator's reason is naturally about `X` but its consequence is about
+  `V`. To move a fact from `V`-space to `X`-space you *add* the `V`-form
+  line to the link: the `BinEnc(V)` terms cancel and an `X`-form line
+  drops out (and symmetrically the other way).
+- **But unit propagation cannot do that crossing by itself.** Combining a
+  `V`-fact with the link is a *linear addition of two constraints*, and UP
+  (hence RUP) only ever derives forced literals from individual
+  constraints — it never adds two together. So a crossing must either be
+  an explicit `pol` step, or be pre-supplied in a form UP *can* consume.
+- **So we pre-derive the boundary as atom-level clauses.** For each atom
+  actually used, the framework derives the biconditionals
+  `[V ≥ v] ⇔ [X ≥ k]` and `[V = v] ⇔ [X = k]` as small clauses. Then any
+  time a proof needs to carry a *single atom* across the `V`/`X` boundary,
+  UP does it in one step — no bit-chasing, no `pol`. These are emitted
+  lazily, only for atoms that appear, so the cost tracks the proof rather
+  than the domain size.
+
+### The three invariants that make it sound
+
+The design is simple, but it is easy to emit something *almost* right.
+Three invariants are load-bearing; both historical Abs/AllDifferent
+failures were violations of the first two.
+
+1. **Representation consistency for cancellation.** When you combine lines
+   with `pol` to cancel a variable, both lines must express that variable
+   in the *same* representation. Constraint bodies in the OPB are in
+   `V`-form for a registered view, so a propagator operand you resolve
+   against them must also be in `V`-form. Devieweing the operand to
+   `X`-form first means `BinEnc(V)` and `BinEnc(X)` never meet — they are
+   different variables, related only by the link axiom — so nothing
+   cancels and the derivation strands.
+
+2. **Big-M is sized to the bit-vector, not the value domain.** A
+   conditional line "`reason → (bound on V)`" carries a big-M coefficient
+   on the reason literals, large enough to make the line vacuous when the
+   reason is false. That M must cover the full range of `BinEnc(V)` *as a
+   bit-vector*, which can be **wider than `V`'s value domain**: a view of
+   `[1,8]` needs a 4-bit vector spanning `0..15`. Size M from the value
+   domain instead and the line is only valid *given* `V`'s domain-bound
+   constraint — and folding that bound in is an addition, not a unit
+   propagation, so RUP can never recover it and the line fails to verify.
+
+3. **RUP cannot compose across constraints.** The general form of the
+   above: any step that needs a linear combination — translating across
+   the link, or combining an inference candidate with a domain bound —
+   must be an explicit `pol`/`red`. If you find yourself hoping RUP will
+   "put two constraints together", it won't.
+
+## Part 2 — Working with views in the solver
+
+### If you are writing a propagator
+
+Almost always: **do nothing special.** Post over the operand and infer
+over it exactly as if it were a bare variable. The framework introduces
+the view's encoded variable, its atoms, and the links on demand, and
+literals you place in reasons or justifications are logged in the view's
+atoms automatically. A justification that only uses RUP and stays within a
+single variable's atoms just works under views.
+
+You only need to think about views when your justification emits **explicit
+`pol`**:
+
+- **Resolve `V`-form operands against `V`-form constraints.** The
+  definitional/encoding lines the framework hands you for a registered
+  view — half-reified constraint bodies, and the reification `Def` lines
+  you fetch via `need_pol_item_defining_literal` — are in `V`-form. Emit
+  the operand bounds you intend to cancel in `V`-form too. Concretely:
+  emit them with `emit_rup_proof_line_under_reason` (which stays in
+  `V`-form), **not** `..._then_deview` (which hands back the `X`-form
+  line). This was the Abs `justify_abs_v2_le_big_m` fix. Empirically it was
+  the *only* one of Abs's consequence-bound helpers that needed it — it
+  resolves the operand out of *both* half-reified sign branches to get an
+  unconditional bound, so both resolutions must cancel cleanly. The others
+  verified either way (a single resolution plus RUP-from-reason closes via
+  the atom-level link). The safe default is still: keep any operand you
+  intend to cancel in `V`-form.
+- **Cross to `X` only when you actually need it.** If a downstream consumer
+  genuinely needs the `X`-form of a line, opt in with
+  `emit_rup_proof_line_under_reason_then_deview`, or compose with a
+  `PolBuilder` in deview-mode (it substitutes the deviewed line ID at each
+  `add`). This is opt-in because unconditional deview derivation blew a
+  single `element` test up to a 230 MB / 2.4 M-line proof.
+- **Don't ask RUP to fold in a bound or the link.** If your inference
+  needs the view's domain bound, or needs to move across the link, write
+  the `pol` step explicitly (invariant 3).
+
+Reasons over a view (e.g. `{v ≥ lb, v ≤ ub}`) are fine: they are logged in
+the view's atoms and UP crosses to `X` through the eq/ge links if the rest
+of the proof needs it.
+
+### If you are touching the view machinery itself
+
+- **Measure spans against the emitted representation.** Any code that
+  computes a coefficient bound, big-M, or range over a term that *might* be
+  a view must measure against the variable that actually appears in the
+  emitted line. For a registered view that is `V`'s own bit-vector — use
+  its bits — not the underlying `X`'s bits plus the offset, even though the
+  latter has the same *value* range. `NamesAndIDsTracker::reify` is the
+  worked example (and was invariant 2's bug): it now sizes the reification
+  constant from the registered view's own bits.
+- **Keep atom introduction symmetric.** Introducing an atom on `X`
+  backfills the matching `V` atoms for every registered view, and
+  introducing an atom on `V` introduces the matching `X` atom; registering
+  a view backfills atoms that already existed on `X`. If you add a new path
+  that introduces atoms, preserve that symmetry or links go missing for
+  whichever side appeared first.
+- **The link is the only bridge.** Keep it strictly definitional. Never
+  write code that assumes `V` and `X` share bits or atoms; they share
+  nothing but the link axiom.
+
+### How the machinery is laid out
+
+Four pieces implement the above, each emitted lazily so cost tracks atoms
+actually exercised:
+
+1. **View bit-vector + definitional link** — `NamesAndIDsTracker::need_view`
+   creates `V`'s proof-only variable and emits the `V − sX = c` pair
+   (`s` from `negate_first`, `c` from `then_add`), storing the line IDs in
+   `view_link_ids`.
+2. **Eq-links `[V=v] ⇔ [X=k]`** — `need_direct_encoding_for` emits the
+   matching `X=k` reification and the two linking RUP clauses, in whichever
+   order the atoms first appear.
+3. **Ge-links `[V≥v] ⇔ X-cond`** — `need_gevar` `pol`-derives the
+   biconditional from the relevant reification halves and the link, again
+   symmetric in introduction order. These and the eq-links are queued via
+   `emit_proof_line_now_or_at_start` so they land with the order-encoding
+   chain at the top of the proof.
+4. **Deview-form derivation** — `ProofModel::add_constraint` records the
+   `V`-form body and queues a `pol` that materialises the `X`-form via the
+   link (`derive_deviewed_form_for`). Runtime emissions do *not*
+   auto-derive the `X`-form (size); callers opt in with
+   `_then_deview` / `PolBuilder` deview-mode.
+
+The reification big-M lives in `NamesAndIDsTracker::reify`; the operand-form
+choice lives in the per-constraint `justify_*` helpers.
+
+## Testing
+
+Opt into the sweep when working on view proof-logging:
 
 ```shell
 cmake -S . -B build -DGCS_ENABLE_VIEW_WRAP_SWEEP=ON
 ```
 
-The harness and the `--view-wrap=N` / `--view-position=K` CLI flags are
-always built; only the ctest registrations are gated. To run a single
-sweep manually, invoke the test binary with the flag, e.g.
-`./build/equals_test --view-wrap=11 --view-position=pall --prove eq_w11`
-and verify with `veripb eq_w11.opb eq_w11.pbp`. The exact list of
-registered sweeps is the source of truth — read it from
-`gcs/CMakeLists.txt` rather than from memory.
+It wraps each operand position with the 19 view forms in `all_view_wraps()`
+— identity, offsets and negations of magnitudes chosen to bracket
+bit-width boundaries — under both single-position and uniform policies. The
+harness and the `--view-wrap=N` / `--view-position=K` flags are always
+built; only the ctest registrations are gated. A new constraint joins the
+sweep with an `add_view_wrap_sweep(...)` line in `gcs/CMakeLists.txt`; that
+file is the source of truth for which constraints currently participate.
 
-## The four ingredients
+Single manual run:
 
-The framework supplies four pieces, each lazily emitted at the right
-moment so the cost is proportional to atoms actually exercised:
-
-### 1. The view's bit vector and definitional link
-
-When a view is first referenced (`need_view`), the framework creates a
-proof-only integer variable `V` for it and emits a definitional link
-constraint between `V` and the underlying `X`:
-
-```
-V - s·X = c        (encoded as a >=/<= pair on bit-form sums)
+```shell
+./build/equals_test --view-wrap=11 --view-position=pall --prove eq_w11
+veripb eq_w11.opb eq_w11.pbp
 ```
 
-where `s = ±1` from `negate_first` and `c = then_add`. The pair's line
-IDs are stored in `view_link_ids`. See `NamesAndIDsTracker::need_view`.
+## Status
 
-### 2. Atom-level eq-links V=v ⇔ X=k
-
-Every time the framework introduces a new `V_eq_v` atom (via
-`need_direct_encoding_for`), it also emits the matching `X=k`
-reification and two RUP clauses linking them in both directions:
-
-```
-~V_eq_v ∨ X_eq_k        ≥ 1
-~X_eq_k ∨ V_eq_v        ≥ 1
-```
-
-This means UP can propagate either way across the V↔X equality boundary
-without having to chain through the bit vector.
-
-The emission is **symmetric in introduction order**: whichever atom
-appears first triggers the work. When `need_direct_encoding_for(V, v)`
-fires, it recursively introduces `X_eq_k` and emits the link clauses.
-When `need_direct_encoding_for(X, k)` fires for a bare variable, the
-function iterates `views_of_variable[X]` and recursively calls
-`need_direct_encoding_for(V, v_value)` for each registered view, which
-runs the V-side branch and emits the link. The "view registered
-afterwards" case is handled by `need_view` itself: when a new view is
-registered, it backfills by iterating `eqvars_that_exist[X]` and calling
-`need_direct_encoding_for(V, ...)` for each pre-existing X atom.
-
-### 3. Atom-level ge-links V≥v ⇔ X-condition
-
-Every time `need_gevar` reifies a new `V_ge_v` atom on a view's
-proof-only variable, it pol-derives the biconditional V↔X order-encoding
-link via three operands:
-
-```
-D1: ~V_ge_v ∨ X-cond              (V≥v → X-cond)
-D2: V_ge_v ∨ ~X-cond              (X-cond → V≥v)
-```
-
-The components combined for D1 are `(V_ge_v reif fwd)`, the LE half of
-the view link, and `(X-atom rev)`; D2 uses the symmetric three. The
-bit-form terms cancel, leaving the atom-level clause after saturation.
-The X-side atom is introduced first via a recursive `need_gevar`
-on the underlying, so its reif is already in F. See lines 656–686 of
-`names_and_ids_tracker.cc`.
-
-Like the eq-links, ge-link emission is **symmetric in introduction
-order**: `need_gevar(X, k)` on a bare variable iterates
-`views_of_variable[X]` and recursively triggers `need_gevar(V, v_value)`
-for each registered view, which runs the V-side block above and emits
-the link. `need_view` backfills by iterating `gevars_that_exist[X]`
-for any X atoms that already existed at the point the view was
-registered.
-
-The eq-link and ge-link emissions are queued through
-`emit_proof_line_now_or_at_start` so they land alongside the standard
-order-encoding chain links at the top of the proof (or as the very next
-line, if the proof is already past the start), not as extra OPB axioms.
-
-### 4. Deview-form derivation for emitted constraints
-
-When the model writer adds a constraint whose body mentions view operands,
-`ProofModel::add_constraint` records the V-form line and queues a
-deview-form pol derivation that materialises the same constraint in
-X-form. The X-form is obtained by replacing each view term using the
-appropriate view-link half (`s = +1` uses `link.first` for LE, `link.second`
-for GE; `s = -1` flips). See `NamesAndIDsTracker::derive_deviewed_form_for`.
-
-For runtime propagator emissions we do not auto-derive the deview-form
-unconditionally — it produced 230 MB / 2.4 M-line proofs on
-`element_test_var2d`. Callers that *need* the X-form opt in via
-`emit_rup_proof_line_under_reason_then_deview`, which emits the V-form
-RUP and then triggers the deview-form pol on its line content.
-
-The opt-in pattern is exercised by `justify_abs_hole` and the other
-`justify_abs_*` helpers in `gcs/constraints/abs/justify.cc`; consumers
-that compose pol over the result use `PolBuilder` in deview-mode, which
-substitutes a deviewed line ID at each `add(ProofLine)`. See
-`PolBuilder(const NamesAndIDsTracker &)`.
-
-## What gets emitted, and when
-
-The lifecycle for a typical "view mentioned in a propagator inference"
-goes:
-
-1. Model phase: `need_view(V)` creates V's proof-only variable and emits
-   the definitional link (two OPB constraints, IDs stored in
-   `view_link_ids`).
-2. Model phase: `add_constraint(body)` registers the V-form line and
-   queues the deview-form pol; the auto-derive lands at the top of the
-   proof file when the proof-logging phase opens.
-3. Proof phase: the propagator infers a literal touching a V-atom. The
-   framework's `need_proof_name` triggers `need_gevar(V, k)`, which:
-   - Emits the V_ge_k reification (red pair).
-   - Recursively triggers `need_gevar(X, k')` on the underlying.
-   - Emits chain links from V_ge_k to its higher/lower neighbours.
-   - Pol-derives D1 and D2 (the V↔X ge-link halves).
-4. Proof phase: the same path for V_eq atoms goes through
-   `need_direct_encoding_for`, which emits the matching X_eq reif plus
-   the two eq-link RUPs.
-5. Proof phase: the propagator emits its explicit pol/rup steps; any RUP
-   that mentions a view operand and is consumed by downstream pol can
-   use `_then_deview` to get the deviewed X-form line published as well.
-
-## Known gaps
-
-The framework as it stands does *not* close the proof for two
-constraints under views, even with all four ingredients in place:
-
-- **Abs.** The propagator's value-pruning RUPs (from
-  `justify_abs_v1_le_v2_ub`, `justify_abs_v2_le_big_m`,
-  `justify_abs_v1_ge_neg_v2_ub`, and the interior-hole step) leave behind
-  shapes that the `JustifyExplicitlyThenRUP` auto-RUP cannot close by UP
-  alone. The bridge it needs is a cross-constraint polynomial composition
-  that UP doesn't do: typically combining the value-pruning candidate
-  with the V's bit-domain bound, then chasing through the half-reified
-  body. The eq-link and ge-link emissions are correctly in F by the time
-  the auto-RUP runs — what's missing is a per-call pol step that
-  materialises the inferred literal directly.
-- **AllDifferent.** Same root cause for the Hall-set-style backtracking
-  RUPs: UP can't enumerate.
-
-A speculative partial mitigation (emitting an extra
-`emit_resolution(r1, r2)` from each two-branch `justify_abs_*`) shifted
-the first failure point deeper into the proof on most wraps without
-fixing any of them end-to-end. The remaining failures after that
-mitigation are still UP-uncomposable. We reverted the mitigation; see
-the conversation history.
-
-## Pointers for future work
-
-If you want to close the Abs gap, the auditable path is to migrate the
-non-hole `justify_abs_*` to `JustifyExplicitlyOnly` and let each function
-emit a tailored pol chain that materialises its inferred literal as a
-direct unit clause (so the closing RUP — if any — is trivial). This is
-more code per justify function but gives explicit control over what UP
-needs to see.
-
-If the eager V↔X ge-link emission ever becomes a bottleneck for very
-wide domains, the limit is bounded by atoms exercised (not domain size),
-because the emission piggy-backs on `need_gevar`. The trade-off lives in
-`names_and_ids_tracker.cc:656–686`.
+All constraints registered in the sweep verify under all wraps, including
+Abs and AllDifferent (closed once the representation-consistency and big-M
+invariants above were enforced). `SmartTable` is deliberately *not* in the
+sweep: it over-prunes under views, tracked in issue #238. A number of
+constraints do not yet have a sweep registered (e.g. `circuit`, `element`,
+`lex`, `logical`, `inverse`, `cumulative`, `disjunctive`, `regular`); read
+`gcs/CMakeLists.txt` for the current list. Bringing one under the sweep is
+the natural way to extend coverage — given the framework above, many should
+verify with no constraint-side change.
