@@ -216,6 +216,27 @@ auto NamesAndIDsTracker::need_constraint_saying_variable_takes_at_least_one_valu
             return result->second;
         },
         [&](const ViewOfIntegerVariableID & var) -> ProofLine {
+            // For a registered view, emit AL1 in V-form so it cancels
+            // cleanly against AM1s that already reference V-form atoms
+            // (those go through need_pol_item_defining_literal, which
+            // returns the V's eqvar when the view is registered). Falling
+            // back to the X-form AL1 here used to leave Hall-set proofs in
+            // gac_all_different unable to RUP their conclusion: the AL1
+            // contributed `+x[eq w]` terms while AM1s contributed
+            // `-p_view[eq W]` terms, with no shared atoms to cancel.
+            if (auto v_id = find_view(var)) {
+                auto result = _imp->variable_at_least_one_constraints.find(*v_id);
+                if (result == _imp->variable_at_least_one_constraints.end()) {
+                    WPBSum al1s;
+                    auto [lower, upper] = _imp->integer_variable_definition_bounds.at(*v_id);
+                    for (Integer v = lower; v <= upper; ++v)
+                        al1s += 1_i * (*v_id == v);
+
+                    auto line = _imp->logger->emit_rup_proof_line(al1s >= 1_i, ProofLevel::Top);
+                    result = _imp->variable_at_least_one_constraints.emplace(*v_id, line).first;
+                }
+                return result->second;
+            }
             return need_constraint_saying_variable_takes_at_least_one_value(var.actual_variable);
         }}
         .visit(var);
