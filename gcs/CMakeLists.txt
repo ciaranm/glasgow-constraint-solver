@@ -195,56 +195,67 @@ if(GCS_BUILD_TESTS)
     # all_view_wraps(); index 0 is the bare baseline already covered above and
     # is skipped here. n_positions = the number of variable arguments the test
     # wraps; per-position single-variable sweeps land between 0 and n-1.
-    function(add_view_wrap_sweep test_name target n_positions)
-        # Extra positional args (e.g. the "mode" argv for comparison_test,
-        # linear_test, ...) are forwarded into the binary before the view
-        # flags, so the existing per-mode positional argv keeps working.
+    # Registers the view-based tests for a constraint whose test threads a
+    # ViewWrapConfig. Two tiers:
+    #   * the `mixed` policy (distinct per-position wraps: different large
+    #     offsets, mixed signs) is ALWAYS registered. It is the only policy
+    #     that puts two *different* views in one constraint at once, it is
+    #     cheap (a single run), and it is the most likely to surface a
+    #     cross-view bug -- so it runs as part of the ordinary test suite.
+    #   * the full per-wrap sweep (every wrap x every position; index 0 is the
+    #     bare baseline covered elsewhere and skipped) is large and only
+    #     registered when GCS_ENABLE_VIEW_WRAP_SWEEP is on.
+    # n_positions = the number of variable arguments the test wraps; per-
+    # position single-variable sweeps land between 0 and n-1. Extra positional
+    # args (e.g. the "mode" argv for comparison_test / linear_test) are
+    # forwarded into the binary before the view flags.
+    function(add_view_tests test_name target n_positions)
         set(extra_args ${ARGN})
-        math(EXPR last_position "${n_positions} - 1")
-        foreach(wrap RANGE 1 18)
-            add_test(NAME ${test_name}_view_w${wrap}_pall
-                COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:${target}>
-                ${extra_args} --view-wrap=${wrap} --view-position=all)
-            foreach(pos RANGE 0 ${last_position})
-                add_test(NAME ${test_name}_view_w${wrap}_p${pos}
+        add_test(NAME ${test_name}_view_mixed
+            COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:${target}>
+            ${extra_args} --view-position=mixed)
+        if(GCS_ENABLE_VIEW_WRAP_SWEEP)
+            math(EXPR last_position "${n_positions} - 1")
+            foreach(wrap RANGE 1 18)
+                add_test(NAME ${test_name}_view_w${wrap}_pall
                     COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:${target}>
-                    ${extra_args} --view-wrap=${wrap} --view-position=${pos})
+                    ${extra_args} --view-wrap=${wrap} --view-position=all)
+                foreach(pos RANGE 0 ${last_position})
+                    add_test(NAME ${test_name}_view_w${wrap}_p${pos}
+                        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:${target}>
+                        ${extra_args} --view-wrap=${wrap} --view-position=${pos})
+                endforeach()
             endforeach()
-        endforeach()
+        endif()
     endfunction()
 
-    # Sweep registrations are gated: most fail today (proof logging through
-    # views is the open work item that issue #217 / PR #218 track). The
-    # harness, argv flags, and add_view_wrap_sweep function are always
-    # available so individual sweeps can be run by hand or via ctest with
-    # GCS_ENABLE_VIEW_WRAP_SWEEP=ON.
-    if(GCS_ENABLE_VIEW_WRAP_SWEEP)
-        add_view_wrap_sweep(equals_constraint equals_test 2)
-        add_view_wrap_sweep(abs_constraint abs_test 2)
-        add_view_wrap_sweep(plus_minus_constraint plus_minus_test 3)
-        foreach(mode ge ge_if ge_iff gt gt_if gt_iff le le_if le_iff lt lt_if lt_iff)
-            add_view_wrap_sweep(comparison_constraint_${mode} comparison_test 2 ${mode})
-        endforeach()
-        add_view_wrap_sweep(all_different_constraint all_different_test 6)
-        add_view_wrap_sweep(all_equal_constraint all_equal_test 4)
-        add_view_wrap_sweep(increasing_constraint increasing_test 5)
-        add_view_wrap_sweep(min_max_constraint min_max_test 6)
-        add_view_wrap_sweep(at_most_one_constraint at_most_one_test 5)
-        add_view_wrap_sweep(parity_constraint parity_test 4)
-        add_view_wrap_sweep(n_value_constraint n_value_test 6)
-        add_view_wrap_sweep(seq_precede_chain_constraint seq_precede_chain_test 5)
-        add_view_wrap_sweep(count_constraint count_test 6)
-        add_view_wrap_sweep(among_constraint among_test 5)
-        add_view_wrap_sweep(all_different_except_constraint all_different_except_test 4)
-        add_view_wrap_sweep(value_precede_constraint value_precede_test 5)
-        foreach(mode eq eq_if eq_iff ge ge_if ge_iff le le_if le_iff ne ne_if ne_iff)
-            add_view_wrap_sweep(linear_constraint_${mode} linear_test 3 ${mode})
-        endforeach()
-        add_view_wrap_sweep(table_constraint table_test 3)
-        add_view_wrap_sweep(negative_table_constraint negative_table_test 3)
-        add_view_wrap_sweep(in_constraint in_test 1)
-        add_view_wrap_sweep(lex_constraint lex_test 6)
-    endif()
+    # Called unconditionally: the function self-gates the heavy sweep, so the
+    # always-on `_view_mixed` test is registered either way.
+    add_view_tests(equals_constraint equals_test 2)
+    add_view_tests(abs_constraint abs_test 2)
+    add_view_tests(plus_minus_constraint plus_minus_test 3)
+    foreach(mode ge ge_if ge_iff gt gt_if gt_iff le le_if le_iff lt lt_if lt_iff)
+        add_view_tests(comparison_constraint_${mode} comparison_test 2 ${mode})
+    endforeach()
+    add_view_tests(all_different_constraint all_different_test 6)
+    add_view_tests(all_equal_constraint all_equal_test 4)
+    add_view_tests(increasing_constraint increasing_test 5)
+    add_view_tests(min_max_constraint min_max_test 6)
+    add_view_tests(at_most_one_constraint at_most_one_test 5)
+    add_view_tests(parity_constraint parity_test 4)
+    add_view_tests(n_value_constraint n_value_test 6)
+    add_view_tests(seq_precede_chain_constraint seq_precede_chain_test 5)
+    add_view_tests(count_constraint count_test 6)
+    add_view_tests(among_constraint among_test 5)
+    add_view_tests(all_different_except_constraint all_different_except_test 4)
+    add_view_tests(value_precede_constraint value_precede_test 5)
+    foreach(mode eq eq_if eq_iff ge ge_if ge_iff le le_if le_iff ne ne_if ne_iff)
+        add_view_tests(linear_constraint_${mode} linear_test 3 ${mode})
+    endforeach()
+    add_view_tests(table_constraint table_test 3)
+    add_view_tests(negative_table_constraint negative_table_test 3)
+    add_view_tests(in_constraint in_test 1)
+    add_view_tests(lex_constraint lex_test 6)
     add_test(NAME in_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:in_test>)
     add_test(NAME increasing_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:increasing_test>)
     add_test(NAME inverse_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:inverse_test>)
