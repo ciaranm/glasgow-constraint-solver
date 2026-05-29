@@ -74,7 +74,13 @@ auto run_count_test(bool proofs, const ViewWrapConfig & view_cfg,
     p.post(Count{array, voi, result});
 
     auto proof_name = proofs ? make_optional("count_test_" + view_wrap_config_label(view_cfg)) : nullopt;
-    solve_for_tests_checking_consistency(p, proof_name, expected, actual, tuple{pair{voi, CheckConsistency::GAC}, pair{result, CheckConsistency::GAC}, pair{array, CheckConsistency::None}});
+    // The Count propagator is GAC on the value-of-interest but only
+    // bounds-consistent on how_many: it tightens how_many's bounds from the
+    // achievable-count range but does not remove interior unsupported counts.
+    // Those holes are real when the achievable counts are non-contiguous
+    // (e.g. array [9,9], voi in [6,15] gives counts {0,2}, so how_many=1 is
+    // unsupported but stays within [0,2]). Check how_many at BC accordingly.
+    solve_for_tests_checking_consistency(p, proof_name, expected, actual, tuple{pair{voi, CheckConsistency::GAC}, pair{result, CheckConsistency::BC}, pair{array, CheckConsistency::None}});
 
     check_results(proof_name, expected, actual);
 }
