@@ -188,6 +188,10 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
                     println(s_expr, "        ({})", c.s_exprify(optional_proof->model()));
                 }
                 println(s_expr, "    )");
+                if (problem.optional_minimise_variable())
+                    println(s_expr, ""); // TODO: "(minimise {})"
+                else
+                    println(s_expr, "    (enumerate)");  // TODO: HACK! We are assuming either minimisation or enumeration
                 println(s_expr, ")");
             } catch (const ios_base::failure &) {
                 throw ProofError{"Error writing proof s-expr file to '" + *fn + "'"};
