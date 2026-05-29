@@ -147,11 +147,20 @@ auto gcs::innards::justify_abs_v2_le_big_m(
     auto v2_ge_M_plus_1 = get<ProofLine>(
         ids.need_pol_item_defining_literal(v2 > big_m));
 
-    auto v1_upper = logger.emit_rup_proof_line_under_reason_then_deview(reason,
+    // The v1 bounds are emitted in VIEW form (no deview): abs_nonneg_le /
+    // abs_neg_le carry v1 in its view encoding (the OPB holds the view form
+    // post-#237), so the resolution only cancels v1's terms if the operand
+    // bound is in that same encoding. A deviewed (underlying-variable) bound
+    // wouldn't cancel against the view-form halves, leaving v1 terms behind
+    // and stranding the closing RUP. Unlike the other consequence-bound
+    // helpers -- whose final inference is on the *other* variable, so the
+    // auto-RUP closes via the view link regardless -- this bound is on v2 and
+    // needs both sign halves to resolve to a clean v2 bound.
+    auto v1_upper = logger.emit_rup_proof_line_under_reason(reason,
         WPBSum{} + 1_i * v1 <= v1_ub, ProofLevel::Temporary);
     emit_resolution(logger, abs_nonneg_le, v1_upper, v2_ge_M_plus_1);
 
-    auto v1_lower = logger.emit_rup_proof_line_under_reason_then_deview(reason,
+    auto v1_lower = logger.emit_rup_proof_line_under_reason(reason,
         WPBSum{} + -1_i * v1 <= -v1_lb, ProofLevel::Temporary);
     emit_resolution(logger, abs_neg_le, v1_lower, v2_ge_M_plus_1);
 }
