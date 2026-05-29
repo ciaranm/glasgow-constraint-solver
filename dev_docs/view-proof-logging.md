@@ -253,7 +253,7 @@ Abs and AllDifferent (closed once the representation-consistency and big-M
 invariants above were enforced). `SmartTable` is deliberately *not* in the
 sweep: it over-prunes under views, tracked in issue #238. A number of
 constraints do not yet have view tests registered (e.g. `circuit`,
-`inverse`, `cumulative`, `disjunctive`, `regular`); read
+`cumulative`, `disjunctive`, `regular`); read
 `gcs/CMakeLists.txt` for the current list. Bringing one in (an
 `add_view_tests(...)` line, once its test threads a `ViewWrapConfig`) is the
 natural way to extend coverage — given the framework above, many should
