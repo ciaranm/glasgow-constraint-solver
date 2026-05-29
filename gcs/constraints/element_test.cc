@@ -49,9 +49,10 @@ using fmt::println;
 using namespace gcs;
 using namespace gcs::test_innards;
 
-auto run_element_test(bool proofs, const string & mode, pair<int, int> var_range, pair<int, int> idx_range, const vector<pair<int, int>> & array_range) -> void
+auto run_element_test(bool proofs, const string & mode, const ViewWrapConfig & view_cfg, pair<int, int> var_range, pair<int, int> idx_range, const vector<pair<int, int>> & array_range) -> void
 {
-    print(cerr, "element {} {} {} {}", var_range, idx_range, array_range, proofs ? " with proofs:" : ":");
+    auto wraps = wraps_for_positions(view_cfg, 2 + static_cast<int>(array_range.size()));
+    print(cerr, "element [{}] {} {} {} {}", view_wrap_config_label(view_cfg), var_range, idx_range, array_range, proofs ? " with proofs:" : ":");
     cerr << flush;
 
     set<tuple<int, int, vector<int>>> expected, actual;
@@ -64,22 +65,23 @@ auto run_element_test(bool proofs, const string & mode, pair<int, int> var_range
     println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;
-    auto var = p.create_integer_variable(Integer(var_range.first), Integer(var_range.second), "var");
-    auto idx = p.create_integer_variable(Integer(idx_range.first), Integer(idx_range.second), "idx");
+    auto var = create_integer_variable_or_constant_with_view(p, var_range, wraps.at(0));
+    auto idx = create_integer_variable_or_constant_with_view(p, idx_range, wraps.at(1));
     vector<IntegerVariableID> array;
-    for (const auto & [l, u] : array_range)
-        array.push_back(p.create_integer_variable(Integer(l), Integer(u)));
+    for (const auto & r : array_range)
+        array.push_back(create_integer_variable_or_constant_with_view(p, r, wraps.at(array.size() + 2)));
     p.post(Element{var, idx, &array});
 
-    auto proof_name = proofs ? make_optional("element_test_" + mode) : nullopt;
+    auto proof_name = proofs ? make_optional("element_test_" + mode + "_" + view_wrap_config_label(view_cfg)) : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{var, idx, array});
 
     check_results(proof_name, expected, actual);
 }
 
-auto run_element_constant_test(bool proofs, const string & mode, pair<int, int> var_range, pair<int, int> idx_range, const vector<int> & array) -> void
+auto run_element_constant_test(bool proofs, const string & mode, const ViewWrapConfig & view_cfg, pair<int, int> var_range, pair<int, int> idx_range, const vector<int> & array) -> void
 {
-    print(cerr, "element constant {} {} {} {}", var_range, idx_range, array, proofs ? " with proofs:" : ":");
+    auto wraps = wraps_for_positions(view_cfg, 2);
+    print(cerr, "element constant [{}] {} {} {} {}", view_wrap_config_label(view_cfg), var_range, idx_range, array, proofs ? " with proofs:" : ":");
     cerr << flush;
 
     set<tuple<int, int>> expected, actual;
@@ -92,23 +94,27 @@ auto run_element_constant_test(bool proofs, const string & mode, pair<int, int> 
     println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;
-    auto var = p.create_integer_variable(Integer(var_range.first), Integer(var_range.second), "var");
-    auto idx = p.create_integer_variable(Integer(idx_range.first), Integer(idx_range.second), "idx");
+    auto var = create_integer_variable_or_constant_with_view(p, var_range, wraps.at(0));
+    auto idx = create_integer_variable_or_constant_with_view(p, idx_range, wraps.at(1));
     vector<Integer> a;
     for (const auto & v : array)
         a.push_back(Integer(v));
     p.post(ElementConstantArray{var, idx, &a});
 
-    auto proof_name = proofs ? make_optional("element_test_" + mode) : nullopt;
+    auto proof_name = proofs ? make_optional("element_test_" + mode + "_" + view_wrap_config_label(view_cfg)) : nullopt;
     solve_for_tests_checking_consistency(p, proof_name, expected, actual,
         tuple{pair{var, CheckConsistency::BC}, pair{idx, CheckConsistency::GAC}});
 
     check_results(proof_name, expected, actual);
 }
 
-auto run_element2d_test(bool proofs, const string & mode, pair<int, int> var_range, pair<int, int> idx1_range, pair<int, int> idx2_range, const vector<vector<pair<int, int>>> & array_range) -> void
+auto run_element2d_test(bool proofs, const string & mode, const ViewWrapConfig & view_cfg, pair<int, int> var_range, pair<int, int> idx1_range, pair<int, int> idx2_range, const vector<vector<pair<int, int>>> & array_range) -> void
 {
-    print(cerr, "element2d {} {} {} {} {}", var_range, idx1_range, idx2_range, array_range, proofs ? " with proofs:" : ":");
+    int n_array = 0;
+    for (const auto & row : array_range)
+        n_array += static_cast<int>(row.size());
+    auto wraps = wraps_for_positions(view_cfg, 3 + n_array);
+    print(cerr, "element2d [{}] {} {} {} {} {}", view_wrap_config_label(view_cfg), var_range, idx1_range, idx2_range, array_range, proofs ? " with proofs:" : ":");
     cerr << flush;
 
     set<tuple<int, int, int, vector<vector<int>>>> expected, actual;
@@ -121,26 +127,28 @@ auto run_element2d_test(bool proofs, const string & mode, pair<int, int> var_ran
     println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;
-    auto var = p.create_integer_variable(Integer(var_range.first), Integer(var_range.second), "var");
-    auto idx1 = p.create_integer_variable(Integer(idx1_range.first), Integer(idx1_range.second), "idx1");
-    auto idx2 = p.create_integer_variable(Integer(idx2_range.first), Integer(idx2_range.second), "idx2");
+    auto var = create_integer_variable_or_constant_with_view(p, var_range, wraps.at(0));
+    auto idx1 = create_integer_variable_or_constant_with_view(p, idx1_range, wraps.at(1));
+    auto idx2 = create_integer_variable_or_constant_with_view(p, idx2_range, wraps.at(2));
     vector<vector<IntegerVariableID>> a;
+    std::size_t pos = 3;
     for (const auto & v : array_range) {
         a.emplace_back();
-        for (const auto & [l, u] : v)
-            a.back().push_back(p.create_integer_variable(Integer(l), Integer(u)));
+        for (const auto & r : v)
+            a.back().push_back(create_integer_variable_or_constant_with_view(p, r, wraps.at(pos++)));
     }
     p.post(Element2D{var, idx1, idx2, &a});
 
-    auto proof_name = proofs ? make_optional("element_test_" + mode) : nullopt;
+    auto proof_name = proofs ? make_optional("element_test_" + mode + "_" + view_wrap_config_label(view_cfg)) : nullopt;
     solve_for_tests(p, proof_name, actual, tuple{var, idx1, idx2, a});
 
     check_results(proof_name, expected, actual);
 }
 
-auto run_element2d_constant_test(bool proofs, const string & mode, pair<int, int> var_range, pair<int, int> idx1_range, pair<int, int> idx2_range, const vector<vector<int>> & array) -> void
+auto run_element2d_constant_test(bool proofs, const string & mode, const ViewWrapConfig & view_cfg, pair<int, int> var_range, pair<int, int> idx1_range, pair<int, int> idx2_range, const vector<vector<int>> & array) -> void
 {
-    print(cerr, "element 2d constant {} {} {} {} {}", var_range, idx1_range, idx2_range, array, proofs ? " with proofs:" : ":");
+    auto wraps = wraps_for_positions(view_cfg, 3);
+    print(cerr, "element 2d constant [{}] {} {} {} {} {}", view_wrap_config_label(view_cfg), var_range, idx1_range, idx2_range, array, proofs ? " with proofs:" : ":");
     cerr << flush;
 
     set<tuple<int, int, int>> expected, actual;
@@ -153,9 +161,9 @@ auto run_element2d_constant_test(bool proofs, const string & mode, pair<int, int
     println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;
-    auto var = p.create_integer_variable(Integer(var_range.first), Integer(var_range.second), "var");
-    auto idx1 = p.create_integer_variable(Integer(idx1_range.first), Integer(idx1_range.second), "idx1");
-    auto idx2 = p.create_integer_variable(Integer(idx2_range.first), Integer(idx2_range.second), "idx2");
+    auto var = create_integer_variable_or_constant_with_view(p, var_range, wraps.at(0));
+    auto idx1 = create_integer_variable_or_constant_with_view(p, idx1_range, wraps.at(1));
+    auto idx2 = create_integer_variable_or_constant_with_view(p, idx2_range, wraps.at(2));
     vector<vector<Integer>> a;
     for (const auto & v : array) {
         a.emplace_back();
@@ -164,7 +172,7 @@ auto run_element2d_constant_test(bool proofs, const string & mode, pair<int, int
     }
     p.post(Element2DConstantArray{var, idx1, idx2, &a});
 
-    auto proof_name = proofs ? make_optional("element_test_" + mode) : nullopt;
+    auto proof_name = proofs ? make_optional("element_test_" + mode + "_" + view_wrap_config_label(view_cfg)) : nullopt;
     solve_for_tests_checking_consistency(p, proof_name, expected, actual,
         tuple{pair{var, CheckConsistency::BC}, pair{idx1, CheckConsistency::GAC}, pair{idx2, CheckConsistency::GAC}});
 
@@ -224,10 +232,22 @@ auto run_dup_element_test(bool proofs, const string & label,
 
 auto main(int argc, char * argv[]) -> int
 {
-    if (argc != 2)
+    if (argc < 2)
         throw UnimplementedException{};
 
     string mode{argv[1]};
+    auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
+
+    // Position layout per mode: var, then the index variable(s), then the
+    // array entries (only when the array is itself made of variables). The
+    // skip bound matches the registered n_positions for each mode.
+    int n_positions = (mode == "const") ? 2 : (mode == "const2d") ? 3 : (mode == "var2d") ? 5 : 6;
+    if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
+        println(cerr, "element view sweep: position {} out of range for n_positions = {}; skipping",
+            *view_cfg.single_position, n_positions);
+        return EXIT_SUCCESS;
+    }
+    bool run_dup = view_wrap_config_is_effectively_bare(view_cfg, n_positions);
 
     vector<tuple<pair<int, int>, pair<int, int>, vector<pair<int, int>>>> var_data = {
         {{1, 2}, {0, 1}, {{1, 2}, {1, 2}}},
@@ -295,30 +315,32 @@ auto main(int argc, char * argv[]) -> int
             continue;
         if (mode == "var") {
             for (auto & [r1, r2, r3] : var_data)
-                run_element_test(proofs, mode, r1, r2, r3);
+                run_element_test(proofs, mode, view_cfg, r1, r2, r3);
 
-            // Dup-variable cases.
-            // [x, y, x] — same handle at non-adjacent positions.
-            run_dup_element_test(proofs, "xyx", {{1, 3}, {1, 3}}, {0, 1, 0}, {0, 2}, -1);
-            // [x, x] — same handle at adjacent positions.
-            run_dup_element_test(proofs, "xx", {{1, 3}}, {0, 0}, {0, 1}, -1);
-            // [x, y, x] but result is x — forces idx-selected value = x.
-            run_dup_element_test(proofs, "xyx_resx", {{1, 3}, {1, 3}}, {0, 1, 0}, {0, 2}, 0);
-            // [x, y] with result = x — forces array[idx] = x, i.e. either
-            // idx=0 (trivial) or idx=1 and y = x.
-            run_dup_element_test(proofs, "xy_resx", {{1, 3}, {1, 3}}, {0, 1}, {0, 1}, 0);
+            if (run_dup) {
+                // Dup-variable cases.
+                // [x, y, x] — same handle at non-adjacent positions.
+                run_dup_element_test(proofs, "xyx", {{1, 3}, {1, 3}}, {0, 1, 0}, {0, 2}, -1);
+                // [x, x] — same handle at adjacent positions.
+                run_dup_element_test(proofs, "xx", {{1, 3}}, {0, 0}, {0, 1}, -1);
+                // [x, y, x] but result is x — forces idx-selected value = x.
+                run_dup_element_test(proofs, "xyx_resx", {{1, 3}, {1, 3}}, {0, 1, 0}, {0, 2}, 0);
+                // [x, y] with result = x — forces array[idx] = x, i.e. either
+                // idx=0 (trivial) or idx=1 and y = x.
+                run_dup_element_test(proofs, "xy_resx", {{1, 3}, {1, 3}}, {0, 1}, {0, 1}, 0);
+            }
         }
         else if (mode == "const") {
             for (auto & [r1, r2, r3] : const_data)
-                run_element_constant_test(proofs, mode, r1, r2, r3);
+                run_element_constant_test(proofs, mode, view_cfg, r1, r2, r3);
         }
         else if (mode == "const2d") {
             for (auto & [r1, r2, r3, r4] : const2d_data)
-                run_element2d_constant_test(proofs, mode, r1, r2, r3, r4);
+                run_element2d_constant_test(proofs, mode, view_cfg, r1, r2, r3, r4);
         }
         else if (mode == "var2d") {
             for (auto & [r1, r2, r3, r4] : var2d_data)
-                run_element2d_test(proofs, mode, r1, r2, r3, r4);
+                run_element2d_test(proofs, mode, view_cfg, r1, r2, r3, r4);
         }
         else
             throw UnimplementedException{};
