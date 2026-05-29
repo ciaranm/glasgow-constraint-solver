@@ -103,11 +103,12 @@ namespace
         check_results(proof_name, expected, actual);
     }
 
-    auto run_disjunctive_test(bool proofs, const string & mode, bool strict,
+    auto run_disjunctive_test(bool proofs, const string & mode, bool strict, const ViewWrapConfig & view_cfg,
         const vector<pair<int, int>> & start_ranges, const vector<int> & lengths) -> void
     {
-        print(cerr, "disjunctive{} {} {}{}", strict ? "_strict" : "",
-            start_ranges, lengths, proofs ? " with proofs:" : ":");
+        auto wraps = wraps_for_positions(view_cfg, static_cast<int>(start_ranges.size()));
+        print(cerr, "disjunctive{} [{}] {} {}{}", strict ? "_strict" : "",
+            view_wrap_config_label(view_cfg), start_ranges, lengths, proofs ? " with proofs:" : ":");
         cerr << flush;
 
         auto n = start_ranges.size();
@@ -132,8 +133,8 @@ namespace
 
         Problem p;
         vector<IntegerVariableID> starts;
-        for (auto & [lo, hi] : start_ranges)
-            starts.push_back(p.create_integer_variable(Integer{lo}, Integer{hi}));
+        for (size_t i = 0; i < start_ranges.size(); ++i)
+            starts.push_back(create_integer_variable_or_constant_with_view(p, start_ranges.at(i), wraps.at(i)));
 
         vector<Integer> lengths_i;
         for (auto l : lengths)
@@ -141,7 +142,7 @@ namespace
 
         p.post(Disjunctive{starts, lengths_i, strict});
 
-        auto proof_name = proofs ? make_optional("disjunctive_test_" + mode) : nullopt;
+        auto proof_name = proofs ? make_optional("disjunctive_test_" + mode + "_" + view_wrap_config_label(view_cfg)) : nullopt;
         solve_for_tests(p, proof_name, actual, tuple{starts});
 
         check_results(proof_name, expected, actual);
@@ -150,7 +151,7 @@ namespace
 
 auto main(int argc, char * argv[]) -> int
 {
-    if (argc != 2)
+    if (argc < 2)
         throw UnimplementedException{};
 
     string mode{argv[1]};
@@ -161,6 +162,21 @@ auto main(int argc, char * argv[]) -> int
         strict = false;
     else
         throw UnimplementedException{};
+
+    auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
+
+    // Start-variable positions wrapped by the single-position sweep. The
+    // fixed and random data top out at 4 tasks, so a single-position index
+    // beyond this would wrap nothing on any test; detect and skip rather
+    // than emit a duplicate bare run. mixed/uniform wrap every position.
+    constexpr int n_positions = 4;
+    if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
+        println(cerr, "disjunctive view sweep: position {} out of range for n_positions = {}; skipping",
+            *view_cfg.single_position, n_positions);
+        return EXIT_SUCCESS;
+    }
+
+    bool run_dup = view_wrap_config_is_effectively_bare(view_cfg, n_positions);
 
     // Each test: { start_ranges, lengths }
     // Kept small because stage-1 propagation is a pure checker: the solver
@@ -218,16 +234,21 @@ auto main(int argc, char * argv[]) -> int
         if (proofs && ! can_run_veripb())
             continue;
         for (auto & [sr, lens] : data)
-            run_disjunctive_test(proofs, mode, strict, sr, lens);
+            run_disjunctive_test(proofs, mode, strict, view_cfg, sr, lens);
 
-        // Two tasks sharing a start var: positive lengths ⇒ UNSAT,
-        // zero lengths ⇒ depends on strict.
-        run_dup_disjunctive_test(proofs, mode, strict, {{0, 3}}, {0, 0}, {2, 2});
-        // {x, x, y} — first two share, third independent.
-        run_dup_disjunctive_test(proofs, mode, strict, {{0, 3}, {0, 3}}, {0, 0, 1},
-            {1, 1, 2});
-        // Zero-length dup pair — non-strict OK, strict edge case.
-        run_dup_disjunctive_test(proofs, mode, strict, {{0, 2}}, {0, 0}, {0, 0});
+        // Dup tests use bare variables (the harness duplicates a handle into
+        // several task positions); only run them when no wrapping is in
+        // effect, to avoid duplicating the bare coverage under every wrap.
+        if (run_dup) {
+            // Two tasks sharing a start var: positive lengths ⇒ UNSAT,
+            // zero lengths ⇒ depends on strict.
+            run_dup_disjunctive_test(proofs, mode, strict, {{0, 3}}, {0, 0}, {2, 2});
+            // {x, x, y} — first two share, third independent.
+            run_dup_disjunctive_test(proofs, mode, strict, {{0, 3}, {0, 3}}, {0, 0, 1},
+                {1, 1, 2});
+            // Zero-length dup pair — non-strict OK, strict edge case.
+            run_dup_disjunctive_test(proofs, mode, strict, {{0, 2}}, {0, 0}, {0, 0});
+        }
     }
 
     return EXIT_SUCCESS;
