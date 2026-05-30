@@ -6,7 +6,7 @@
     "mznlib": "mznlib",
     "executable": "minizinc/../build/fzn-glasgow",
     "tags": ["cp", "int"],
-    "stdFlags": ["-a", "-n", "-s", "-t"],
+    "stdFlags": ["-a", "-f", "-i", "-n", "-p", "-r", "-s", "-t", "-v"],
     "extraFlags": [["--prove", "Write a proof to this file (suffix .opb and .pbp will be added)", "string", ""]],
     "inputType": "JSON"
 }

@@ -19,6 +19,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <csignal>
+#include <cstdint>
 #include <cstdlib>
 #include <exception>
 #include <fstream>
@@ -205,6 +206,13 @@ auto main(int argc, char * argv[]) -> int
     try {
         options.add_options()("help", "Display help information")                                      //
             ("all-solutions,a", "Print all solutions, or solve an optimisation problem to optimality") //
+            ("intermediate,i", "Print intermediate solutions of an optimisation problem")              //
+            ("free-search,f", "Ignore the model's search annotations")                                 //
+            ("parallel,p", "Number of parallel threads (accepted but ignored; search is sequential)",  //
+                cxxopts::value<unsigned long long>())                                                  //
+            ("random-seed,r", "Random seed for randomised search heuristics",                          //
+                cxxopts::value<unsigned long long>())                                                  //
+            ("verbose,v", "Verbose output (accepted but ignored)")                                     //
             ("n-solutions,n", "Stop after this many solutions", cxxopts::value<unsigned long long>())  //
             ("statistics,s", "Print statistics")                                                       //
             ("timeout,t", "Timeout in ms", cxxopts::value<unsigned long long>())                       //
@@ -228,6 +236,11 @@ auto main(int argc, char * argv[]) -> int
     }
 
     bool all_solutions = options_vars.contains("all-solutions");
+    bool free_search = options_vars.contains("free-search");
+
+    optional<std::uint_fast32_t> random_seed;
+    if (options_vars.contains("random-seed"))
+        random_seed = static_cast<std::uint_fast32_t>(options_vars["random-seed"].as<unsigned long long>());
 
     optional<unsigned long long> solution_limit;
     if (options_vars.contains("n-solutions"))
@@ -759,13 +772,16 @@ auto main(int argc, char * argv[]) -> int
         }
 
         auto solve_method = fzn["solve"]["method"];
+        bool optimisation = false;
         if (solve_method == "satisfy") {
         }
         else if (solve_method == "minimize") {
             problem.minimise(data.integer_variables.at(fzn["solve"]["objective"]).first);
+            optimisation = true;
         }
         else if (solve_method == "maximize") {
             problem.maximise(data.integer_variables.at(fzn["solve"]["objective"]).first);
+            optimisation = true;
         }
         else
             throw FlatZincInterfaceError{format("Unknown solve method {} in {}", string{solve_method}, fznname)};
@@ -774,9 +790,9 @@ auto main(int argc, char * argv[]) -> int
             branch_with(variable_order::dom_then_deg(data.branch_variables), value_order::smallest_first()),
             branch_with(variable_order::dom_then_deg(data.all_variables), value_order::smallest_first()));
 
-        if (fzn["solve"].contains("ann")) {
+        if ((! free_search) && fzn["solve"].contains("ann")) {
             function<optional<BranchCallback>(const nlohmann::json &)> parse_search;
-            parse_search = [&data, &parse_search](const nlohmann::json & ann) -> optional<BranchCallback> {
+            parse_search = [&data, &parse_search, &random_seed](const nlohmann::json & ann) -> optional<BranchCallback> {
                 if (ann["id"] == "bool_search" || ann["id"] == "int_search") {
                     auto args = ann["args"];
                     vector<IntegerVariableID> vars = arg_as_array_of_var(data, args, 0);
@@ -816,7 +832,9 @@ auto main(int argc, char * argv[]) -> int
                     else if (val_heuristic == "indomain_split")
                         val = value_order::split_smallest_first();
                     else if (val_heuristic == "indomain_split_random")
-                        val = value_order::split_random();
+                        val = random_seed ? value_order::split_random(*random_seed) : value_order::split_random();
+                    else if (val_heuristic == "indomain_random")
+                        val = random_seed ? value_order::random(*random_seed) : value_order::random();
                     else {
                         println(cerr, "Warning: treating unknown int_search value heuristic {} as indomain instead", val_heuristic);
                         val = value_order::smallest_first();
@@ -868,10 +886,11 @@ auto main(int argc, char * argv[]) -> int
             proof_options.emplace(basename);
         }
 
-        bool completed = false;
+        bool completed = false, any_solution = false;
         auto stats = solve_with(problem,
             SolveCallbacks{
                 .solution = [&](const CurrentState & s) -> bool {
+                    any_solution = true;
                     for (const string name : fzn["output"]) {
                         if (data.integer_variables.contains(name)) {
                             auto vardata = data.integer_variables.at(name);
@@ -908,9 +927,12 @@ auto main(int argc, char * argv[]) -> int
                         if (--*solution_limit == 0)
                             return false;
                     }
-                    else if (! all_solutions)
+                    else if ((! all_solutions) && (! optimisation))
                         return false;
 
+                    // For optimisation, keep searching: each subsequent solution
+                    // strictly improves the objective, until the search is complete
+                    // (optimality proven) or aborted (timeout / signal).
                     return true;
                 },
                 .branch = brancher,
@@ -927,7 +949,19 @@ auto main(int argc, char * argv[]) -> int
         }
 
         if (completed) {
-            println(cout, "==========");
+            // Search space fully explored. With at least one solution this means
+            // all solutions enumerated (satisfaction) or optimality proven
+            // (optimisation); with none it means the problem is unsatisfiable.
+            if (any_solution)
+                println(cout, "==========");
+            else
+                println(cout, "=====UNSATISFIABLE=====");
+            cout << flush;
+        }
+        else if (! any_solution) {
+            // Search was aborted (timeout / signal) before finding any solution
+            // and before proving unsatisfiability.
+            println(cout, "=====UNKNOWN=====");
             cout << flush;
         }
 
