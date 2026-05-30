@@ -57,6 +57,14 @@ library. For an introduction to *using* the solver, start with the top-level
   `recover_am1`-based pairwise at-most-one derivation that replaces
   cumulative's encoded `C_t`, and the third reusable proof-logging
   idea that comes out of the design.
+- [Range-literal proof logging](range-literal-proof-logging.md) — **design
+  note, not implemented.** Whether a whole-interval domain removal
+  (`X ∉ [a,b]`) can be logged as one compact proof object instead of one RUP
+  line per value: why the naive single-Boolean breaks the chapter-3
+  backtracking invariant, the fully-reified-range + lazy per-value-link
+  encoding that fixes it, the VeriPB experiments (and ablation) that show it is
+  sound at the checker level, and the metatheory still owed. The proof half of
+  issue #144 (`infer_not_in_range`).
 
 More documents will be added here as we build up coverage of other parts of
 the codebase.
