@@ -159,19 +159,18 @@ namespace
     // y = sort(x). Achieves bounds(Z) on both x and y (Thiel's thesis, ch. 3;
     // Mehlhorn & Thiel, CP 2000). See dev_docs/sortedness.md.
     //
-    // PROOF LOGGING IS BEING MADE HONEST IN STAGES (see dev_docs/sortedness.md).
-    // Done (honest): the y-upper and y-lower bounds (normalization +
-    // order-statistic cases), surjectivity via the root permutation lines
-    // (totality, antisymmetry, transitivity, rank gaps, recover_am1
-    // injectivity), the x-bounds' intersection case (the rank lies in
-    // [lo_i, hi_i)), and the no-matching contradiction (both the pure y-window
-    // sortedness case and the matching/Hall-violator case via a pigeonhole over
-    // ranks). Still asserted (development-only AssertRatherThanJustifying /
-    // AssertProofRule): the Hall sub-cases of the three bounds (the y-counts and
-    // the SCC-tightened x-bounds) -- the conditional/banded version of the same
-    // Hall pigeonhole, under the negated-goal assumption. This file must not be
-    // merged while any assert remains; tests verify "subject to cheating
-    // assertions" until then.
+    // PROOF LOGGING IS FULLY HONEST (see dev_docs/sortedness.md) -- no asserts.
+    // Every inference is certified: the y-upper/y-lower bounds (normalization,
+    // order-statistic and Hall cases), the x-bounds (intersection and Hall
+    // cases), and the no-matching contradiction (pure y-window and matching/Hall
+    // cases). The backbone is the root permutation (totality, antisymmetry,
+    // transitivity, rank gaps, recover_am1 injectivity, surjectivity) plus a
+    // single Hall pigeonhole over the rank line (find_band), applied
+    // unconditionally for the contradiction and under the negated-goal
+    // assumption for the bounds. find_band is an invariant: whenever the
+    // propagator makes an inference there must be a violator, so a missing one
+    // throws UnexpectedException (never triggered over the full test suite +
+    // a 200-seed random sweep) rather than silently weakening the proof.
     template <typename Inference_>
     auto propagate_sortedness(const vector<IntegerVariableID> & x, const vector<IntegerVariableID> & y,
         const vector<vector<ProofFlag>> & before, const vector<ProofOnlySimpleIntegerVariableID> & pos,
@@ -276,7 +275,7 @@ namespace
         auto fail_hall = [&]() -> void {
             auto [S, fa, fb] = find_band(lo_i, hi_i);
             if (S.empty())
-                inference.contradiction(logger, AssertRatherThanJustifying{}, reason); // shouldn't happen
+                throw UnexpectedException{"Sort: no Hall violator for an infeasible matching"};
 
             inference.contradiction(logger,
                 JustifyExplicitlyThenRUP{[&, S, fa, fb](const ReasonFunction & reason_fn) -> void {
@@ -507,9 +506,8 @@ namespace
                         reason);
                 }
                 else if (forced_above >= n - j) {
-                    bool count_is_honest = true;
                     inference.infer_greater_than_or_equal(logger, y[j], Integer{L},
-                        JustifyExplicitlyThenRUP{[&x, &y, &before, &pos, &rank_le_lines, &anti_lines, &inj_lines, &al1_lines, n, j, L, count_is_honest, logger](const ReasonFunction & reason_fn) -> void {
+                        JustifyExplicitlyThenRUP{[&x, &y, &before, &pos, &rank_le_lines, &anti_lines, &inj_lines, &al1_lines, n, j, L, logger](const ReasonFunction & reason_fn) -> void {
                             // PIVOT' (mirror): (x_i >= L) v (x_m < L) v before[i][m],
                             // RUP from before[i][m]'s reverse half and the constant
                             // threshold L (x_i < L <= x_m forces i before m).
@@ -537,16 +535,14 @@ namespace
                                 rankub[i] = pol.emit(*logger, ProofLevel::Temporary);
                             }
                             // count_L : at most j of the x's are < L (i.e. >= n-j
-                            // are >= L). ORDER STATISTIC (honest): RUP under the
-                            // reason -- the >= n-j indices with lb(x_k) >= L have
-                            // (x_k >= L) forced by their lower bound. HALL: asserted.
+                            // are >= L), RUP under the reason -- the >= n-j indices
+                            // with lb(x_k) >= L have (x_k >= L) forced by their
+                            // lower bound.
                             WPBSum xcount;
                             for (size_t k = 0; k < n; ++k)
                                 xcount += 1_i * (x[k] < Integer{L});
-                            auto xcount_ineq = move(xcount) <= Integer{static_cast<long long>(j)};
-                            auto xcount_line = count_is_honest
-                                ? logger->emit_rup_proof_line_under_reason(reason_fn, xcount_ineq, ProofLevel::Temporary)
-                                : logger->emit(AssertProofRule{}, xcount_ineq, ProofLevel::Temporary);
+                            auto xcount_line = logger->emit_rup_proof_line_under_reason(reason_fn,
+                                move(xcount) <= Integer{static_cast<long long>(j)}, ProofLevel::Temporary);
                             // RANKUB2_i : pos[i] <= n[x_i>=L] + j-1 (fold count_L in,
                             // cross-constraint sum so a pol not RUP).
                             for (size_t i = 0; i < n; ++i)
@@ -582,7 +578,7 @@ namespace
                         lop[i] = (lx[i] >= L) ? std::max(lo_i[i], static_cast<size_t>(j) + 1) : lo_i[i];
                     auto [S, fa, fb] = find_band(lop, hi_i);
                     if (S.empty())
-                        inference.infer_greater_than_or_equal(logger, y[j], Integer{L}, AssertRatherThanJustifying{}, reason);
+                        throw UnexpectedException{"Sort: no Hall band for a valid lb(y) tightening"};
                     else
                         inference.infer_greater_than_or_equal(logger, y[j], Integer{L},
                             JustifyExplicitlyThenRUP{[&x, &y, &pos, &lo_i, &hi_i, &ly, &uy, &inj_lines, S, fa, fb, n, j, L, logger](const ReasonFunction & reason_fn) -> void {
@@ -670,9 +666,8 @@ namespace
                     // per-position extended-reason lines, and (via the root
                     // permutation lines) surjectivity give y[j] <= U; the count
                     // line "count_U >= j+1" is plain RUP under the reason.
-                    bool count_is_honest = true;
                     inference.infer_less_than(logger, y[j], Integer{U + 1},
-                        JustifyExplicitlyThenRUP{[&x, &y, &before, &pos, &rank_lines, &inj_lines, &al1_lines, n, j, U, count_is_honest, logger](const ReasonFunction & reason_fn) -> void {
+                        JustifyExplicitlyThenRUP{[&x, &y, &before, &pos, &rank_lines, &inj_lines, &al1_lines, n, j, U, logger](const ReasonFunction & reason_fn) -> void {
                             // PIVOT BRIDGE (honest, transitivity-free). For each i, m the
                             // clause (x_m > U) v (x_i <= U) v before[m][i] is RUP from
                             // before[m][i]'s reverse half and the bound on the constant
@@ -699,22 +694,16 @@ namespace
                                         pol.add(clause_line[i][m]);
                                 ranklb[i] = pol.emit(*logger, ProofLevel::Temporary);
                             }
-                            // count_U >= j+1: at least j+1 of the x's are <= U.
-                            // ORDER STATISTIC (honest): RUP under the reason --
-                            // each of the >= j+1 indices with ub(x_k) <= U has
-                            // (x_k <= U) forced by its upper bound (in the
-                            // reason), so the sum is >= j+1; no cross-constraint
-                            // step, single-shot RUP. HALL (still asserted): fewer
-                            // than j+1 x's are individually forced <= U, so the
-                            // fact rests on the matching/y-domains -- not yet
-                            // certified.
+                            // count_U >= j+1: at least j+1 of the x's are <= U,
+                            // RUP under the reason -- each of the >= j+1 indices
+                            // with ub(x_k) <= U has (x_k <= U) forced by its upper
+                            // bound (in the reason), so the sum is >= j+1; no
+                            // cross-constraint step, single-shot RUP.
                             WPBSum xcount;
                             for (size_t k = 0; k < n; ++k)
                                 xcount += 1_i * (x[k] < Integer{U + 1});
-                            auto xcount_ineq = move(xcount) >= Integer{static_cast<long long>(j) + 1};
-                            auto xcount_line = count_is_honest
-                                ? logger->emit_rup_proof_line_under_reason(reason_fn, xcount_ineq, ProofLevel::Temporary)
-                                : logger->emit(AssertProofRule{}, xcount_ineq, ProofLevel::Temporary);
+                            auto xcount_line = logger->emit_rup_proof_line_under_reason(reason_fn,
+                                move(xcount) >= Integer{static_cast<long long>(j) + 1}, ProofLevel::Temporary);
                             // RANKLB2_i : pos[i] + n*[x_i<=U] >= j+1, folding count_U away
                             // with the x-count (cross-constraint sum, hence a pol not RUP).
                             std::vector<ProofLine> ranklb2(n);
@@ -770,7 +759,7 @@ namespace
                         hip[i] = (ux[i] <= U) ? std::min(hi_i[i], static_cast<size_t>(j)) : hi_i[i];
                     auto [S, fa, fb] = find_band(lo_i, hip);
                     if (S.empty())
-                        inference.infer_less_than(logger, y[j], Integer{U + 1}, AssertRatherThanJustifying{}, reason);
+                        throw UnexpectedException{"Sort: no Hall band for a valid ub(y) tightening"};
                     else
                         inference.infer_less_than(logger, y[j], Integer{U + 1},
                             JustifyExplicitlyThenRUP{[&x, &y, &pos, &lo_i, &hi_i, &ly, &uy, &inj_lines, S, fa, fb, n, j, U, logger](const ReasonFunction & reason_fn) -> void {
@@ -845,8 +834,57 @@ namespace
                                     ProofLevel::Temporary);
                         }},
                         reason);
-                else
-                    inference.infer_greater_than_or_equal(logger, x[i], Integer{L}, AssertRatherThanJustifying{}, reason);
+                else {
+                    // HALL: lb(x[i]) = ly[jl] with jl = jl_in[i] > lo_i (the SCC
+                    // pushes x[i]'s rank strictly above the intersection floor).
+                    // Refute x[i] <= L-1: then x[i] = y_{pos[i]} < L <= ly[k] for
+                    // k >= jl, so x[i] is confined to ranks < jl (hi'[i] = jl).
+                    // find_band over (lo_i, hi') gives a Hall violator containing
+                    // i; only i's clauses carry the goal literal (x[i] >= L).
+                    auto jl = jl_in[i];
+                    vector<size_t> hip = hi_i;
+                    hip[i] = jl;
+                    auto [S, fa, fb] = find_band(lo_i, hip);
+                    if (S.empty() || std::find(S.begin(), S.end(), i) == S.end())
+                        throw UnexpectedException{"Sort: no Hall band for a valid lb(x) tightening"};
+                    else
+                        inference.infer_greater_than_or_equal(logger, x[i], Integer{L},
+                            JustifyExplicitlyThenRUP{[&x, &y, &pos, &lo_i, &hi_i, &ly, &uy, &inj_lines, S, fa, fb, i, n, L, logger](const ReasonFunction & reason_fn) -> void {
+                                for (size_t k = n; k-- > 0;)
+                                    logger->emit_rup_proof_line_under_reason(reason_fn, WPBSum{} + 1_i * y[k] <= Integer{uy[k]}, ProofLevel::Temporary);
+                                for (size_t k = 0; k < n; ++k)
+                                    logger->emit_rup_proof_line_under_reason(reason_fn, WPBSum{} + 1_i * y[k] >= Integer{ly[k]}, ProofLevel::Temporary);
+                                std::vector<ProofLine> restricted(S.size());
+                                for (const auto & [idx, m] : enumerate(S)) {
+                                    for (long long k = 0; k < static_cast<long long>(n); ++k) {
+                                        if (k >= fa && k <= fb)
+                                            continue;
+                                        // i excluded from ranks > fb (>= jl) needs the
+                                        // assumption (NLY: y_k >= ly[k] >= L); all other
+                                        // exclusions are unconditional.
+                                        if (m == i && k > fb)
+                                            logger->emit_rup_proof_line_under_reason(reason_fn,
+                                                WPBSum{} + 1_i * (x[i] >= Integer{L}) + 1_i * (pos[m] != Integer{k}) >= 1_i, ProofLevel::Temporary);
+                                        else
+                                            logger->emit_rup_proof_line_under_reason(reason_fn,
+                                                WPBSum{} + 1_i * (pos[m] != Integer{k}) >= 1_i, ProofLevel::Temporary);
+                                    }
+                                    WPBSum in_band;
+                                    if (m == i)
+                                        in_band += 1_i * (x[i] >= Integer{L});
+                                    for (long long k = fa; k <= fb; ++k)
+                                        in_band += 1_i * (pos[m] == Integer{k});
+                                    restricted[idx] = logger->emit_rup_proof_line_under_reason(reason_fn, move(in_band) >= 1_i, ProofLevel::Temporary);
+                                }
+                                PolBuilder pol;
+                                for (auto l : restricted)
+                                    pol.add(l);
+                                for (long long k = fa; k <= fb; ++k)
+                                    pol.add(inj_lines[static_cast<size_t>(k)]);
+                                pol.emit(*logger, ProofLevel::Temporary);
+                            }},
+                            reason);
+                }
             }
             if (nux[i] < oux[i]) {
                 auto U = nux[i];
@@ -861,8 +899,53 @@ namespace
                                     ProofLevel::Temporary);
                         }},
                         reason);
-                else
-                    inference.infer_less_than(logger, x[i], Integer{U + 1}, AssertRatherThanJustifying{}, reason);
+                else {
+                    // HALL mirror: ub(x[i]) = uy[jh] with jh = jh_in[i] < hi_i-1.
+                    // Refute x[i] >= U+1: then x[i] = y_{pos[i]} > U >= uy[k] for
+                    // k <= jh, so x[i] is confined to ranks > jh (lo'[i] = jh+1).
+                    auto jh = jh_in[i];
+                    vector<size_t> lop = lo_i;
+                    lop[i] = jh + 1;
+                    auto [S, fa, fb] = find_band(lop, hi_i);
+                    if (S.empty() || std::find(S.begin(), S.end(), i) == S.end())
+                        throw UnexpectedException{"Sort: no Hall band for a valid ub(x) tightening"};
+                    else
+                        inference.infer_less_than(logger, x[i], Integer{U + 1},
+                            JustifyExplicitlyThenRUP{[&x, &y, &pos, &lo_i, &hi_i, &ly, &uy, &inj_lines, S, fa, fb, i, n, U, logger](const ReasonFunction & reason_fn) -> void {
+                                for (size_t k = n; k-- > 0;)
+                                    logger->emit_rup_proof_line_under_reason(reason_fn, WPBSum{} + 1_i * y[k] <= Integer{uy[k]}, ProofLevel::Temporary);
+                                for (size_t k = 0; k < n; ++k)
+                                    logger->emit_rup_proof_line_under_reason(reason_fn, WPBSum{} + 1_i * y[k] >= Integer{ly[k]}, ProofLevel::Temporary);
+                                std::vector<ProofLine> restricted(S.size());
+                                for (const auto & [idx, m] : enumerate(S)) {
+                                    for (long long k = 0; k < static_cast<long long>(n); ++k) {
+                                        if (k >= fa && k <= fb)
+                                            continue;
+                                        // i excluded from ranks < fa (<= jh) needs the
+                                        // assumption (NUY: y_k <= uy[k] <= U).
+                                        if (m == i && k < fa)
+                                            logger->emit_rup_proof_line_under_reason(reason_fn,
+                                                WPBSum{} + 1_i * (x[i] < Integer{U + 1}) + 1_i * (pos[m] != Integer{k}) >= 1_i, ProofLevel::Temporary);
+                                        else
+                                            logger->emit_rup_proof_line_under_reason(reason_fn,
+                                                WPBSum{} + 1_i * (pos[m] != Integer{k}) >= 1_i, ProofLevel::Temporary);
+                                    }
+                                    WPBSum in_band;
+                                    if (m == i)
+                                        in_band += 1_i * (x[i] < Integer{U + 1});
+                                    for (long long k = fa; k <= fb; ++k)
+                                        in_band += 1_i * (pos[m] == Integer{k});
+                                    restricted[idx] = logger->emit_rup_proof_line_under_reason(reason_fn, move(in_band) >= 1_i, ProofLevel::Temporary);
+                                }
+                                PolBuilder pol;
+                                for (auto l : restricted)
+                                    pol.add(l);
+                                for (long long k = fa; k <= fb; ++k)
+                                    pol.add(inj_lines[static_cast<size_t>(k)]);
+                                pol.emit(*logger, ProofLevel::Temporary);
+                            }},
+                            reason);
+                }
             }
         }
     }
