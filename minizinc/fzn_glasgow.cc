@@ -161,11 +161,16 @@ namespace
         }
         else if (a.is_array()) {
             vector<IntegerVariableID> result;
-            for (const auto & v : a)
+            for (const auto & v : a) {
                 if (v.is_string())
                     result.push_back(data.integer_variables.at(v).first);
+                else if (v.is_number())
+                    result.push_back(ConstantIntegerVariableID{Integer{static_cast<long long>(v)}});
+                else if (v.is_boolean())
+                    result.push_back(ConstantIntegerVariableID{static_cast<bool>(v) ? 1_i : 0_i});
                 else
                     throw FlatZincInterfaceError{format("Don't know how to parse entry {} in array of variables", v.dump())};
+            }
             return result;
         }
         else {
@@ -414,13 +419,21 @@ auto main(int argc, char * argv[]) -> int
             else if (id == "int_lin_eq" || id == "int_lin_le" || id == "int_lin_ne" || id == "bool_lin_eq" || id == "bool_lin_le") {
                 auto coeffs = arg_as_array_of_integer(data, args, 0);
                 const auto & vars = arg_as_array_of_var(data, args, 1);
-                Integer total{static_cast<long long>(args.at(2))};
                 if (coeffs->size() != vars.size())
                     throw FlatZincInterfaceError{format("Array length mismatch in {} in {}", id, fznname)};
 
                 SumOf<Weighted<IntegerVariableID>> terms;
                 for (size_t c = 0; c < coeffs->size(); ++c)
                     terms += (*coeffs)[c] * vars[c];
+
+                // The right-hand side is a constant in most linear constraints, but some
+                // (notably bool_lin_eq, whose sum is a var int) pass a variable. Move a
+                // variable rhs onto the left with coefficient -1 and compare against 0.
+                Integer total{0_i};
+                if (args.at(2).is_number())
+                    total = Integer{static_cast<long long>(args.at(2))};
+                else
+                    terms += -1_i * arg_as_var(data, args, 2);
 
                 if (id.ends_with("_eq"))
                     problem.post(LinearEquality{terms, total});
