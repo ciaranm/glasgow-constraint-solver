@@ -266,9 +266,10 @@ namespace
         // matching iff x_i and y_j share an SCC; Regin's characterization). Node
         // i = x_i, node n+j = y_j. Edges: x_i -> y_j for every intersecting pair
         // (neighbours of x_i are the contiguous y-index interval [lo_i, hi_i]),
-        // and y_j -> x_phi[j] for the matching. Plain recursive Tarjan; the
-        // implicit interval adjacency keeps the first cut simple (not yet the
-        // linear-time Algorithm 3.2 from the thesis).
+        // and y_j -> x_phi[j] for the matching. Plain recursive Tarjan over the
+        // implicit interval adjacency: this computes the correct SCCs (and hence
+        // full bounds consistency on x, see step below) in O(n^2), not yet the
+        // linear-time Algorithm 3.2 from the thesis.
         vector<size_t> lo_i(n), hi_i(n);
         for (size_t i = 0; i < n; ++i) {
             // smallest j with uy[j] >= lx[i]; largest j with ly[j] <= ux[i].
