@@ -254,10 +254,31 @@ true, and the case split says when.
   rank range past the intersection extremes (`jl > lo_i`), it is a genuine Hall
   argument and stays asserted.
 
-So every bound now has the same honesty status: **fully honest except its Hall
-sub-case** (and the no-matching contradiction). The remaining work is the
-**Hall witness** — a single 2-sided matching-infeasibility certificate that the
-three Hall sub-cases and the contradiction would share.
+### The Hall witness (the band)
+
+The shared certificate is a pigeonhole **on the rank line**: a rank interval
+`[a,b]` and a set `S` of x's whose feasible-rank intervals `[lo_i,hi_i)` are all
+`⊆ [a,b]`, with `|S| > b−a+1`. The slots are ranks; capacity 1 per rank is the
+root injectivity (`inj_lines`); membership "pos[i] ∈ [a,b]" comes from excluding
+every outside rank via the channel and a normalized y-bound. Concretely
+(`fail_hall` in `sort.cc`):
+
+- emit `NUY[k]: y_k ≤ uy[k]` (top-down) and `NLY[k]: y_k ≥ ly[k]` (bottom-up) as
+  single-step RUP chains, so each exclusion `(pos[i] ≠ k)` is one-step RUP
+  (`k<a`: `y_k ≤ uy[k] < lx_i`; `k>b`: `y_k ≥ ly[k] > ux_i`);
+- per `i∈S`, the restricted at-least-one `Σ_{k∈[a,b]}[pos[i]=k] ≥ 1` from the
+  root `al1[i]` minus the exclusions;
+- pol the restricted-al1s against `inj_k` for `k∈[a,b]` ⟹ `|S| ≤ b−a+1`,
+  contradiction. (Empty band `b=a−1` ⟹ a single x with no feasible rank; its
+  restricted-al1 is already `0 ≥ 1`.)
+
+**The no-matching contradiction is done this way** (both the pure y-window
+sortedness case and the matching/Hall case). The three bound Hall sub-cases are
+the *same* pigeonhole **under the negated-goal assumption** (route a / Cor 2.1):
+bump `ly'=max(ly,U+1)` on ranks `≥ j` (resp. `uy'` for the lower bound), OR the
+goal literal `(y_j ≤ U)` into every clause, and the closing RUP discharges it.
+The one extra ingredient there is a sortedness chain anchoring the bumped bound
+to the assumption (`y_j ≤ y_k` for `k ≥ j`). That is the remaining work.
 
 ## References
 
