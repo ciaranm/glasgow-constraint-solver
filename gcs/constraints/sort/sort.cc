@@ -25,6 +25,7 @@
 #include <queue>
 #include <sstream>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -255,21 +256,25 @@ namespace
         // violator is pinned to a rank in [a,b] (exclude every outside rank k via
         // the channel + a normalized y-bound), and the root injectivity lines
         // cap [a,b] at b-a+1 occupants -- contradiction.
-        auto fail_hall = [&]() -> void {
-            long long fa = 0, fb = -1;
-            vector<size_t> S;
-            for (long long a = 0; a <= static_cast<long long>(n) && S.empty(); ++a)
-                for (long long b = a - 1; b < static_cast<long long>(n) && S.empty(); ++b) {
+        // Scan for a Hall violator on the rank line given effective feasible-rank
+        // intervals [lo[i], hi[i]): a tightest interval [a,b] with > b-a+1 x's
+        // wholly contained. Returns (S, a, b); S empty if none.
+        auto find_band = [n](const vector<size_t> & lo, const vector<size_t> & hi)
+            -> std::tuple<vector<size_t>, long long, long long> {
+            for (long long a = 0; a <= static_cast<long long>(n); ++a)
+                for (long long b = a - 1; b < static_cast<long long>(n); ++b) {
                     vector<size_t> cand;
                     for (size_t i = 0; i < n; ++i)
-                        if (static_cast<long long>(lo_i[i]) >= a && static_cast<long long>(hi_i[i]) <= b + 1)
+                        if (static_cast<long long>(lo[i]) >= a && static_cast<long long>(hi[i]) <= b + 1)
                             cand.push_back(i);
-                    if (static_cast<long long>(cand.size()) > b - a + 1) {
-                        S = move(cand);
-                        fa = a;
-                        fb = b;
-                    }
+                    if (static_cast<long long>(cand.size()) > b - a + 1)
+                        return {move(cand), a, b};
                 }
+            return {{}, 0, -1};
+        };
+
+        auto fail_hall = [&]() -> void {
+            auto [S, fa, fb] = find_band(lo_i, hi_i);
             if (S.empty())
                 inference.contradiction(logger, AssertRatherThanJustifying{}, reason); // shouldn't happen
 
@@ -602,17 +607,13 @@ namespace
                         }},
                         reason);
                 }
-                else {
-                    // ORDER STATISTIC or HALL: ub(y[j]) = ux[phi[j]]. The whole
-                    // bridge below is shared and honest -- pivot clauses, the
-                    // rank lower bounds, the per-position extended-reason lines,
-                    // and (via the root permutation lines) surjectivity. The ONLY
-                    // difference is the count line "count_U >= j+1": when >= j+1
-                    // x's are unconditionally forced <= U (order statistic) it is
-                    // honest RUP; otherwise (Hall) it genuinely needs the
-                    // y-domains and is still asserted (the last cheat in the
-                    // y-upper bound -- see dev_docs/sortedness.md).
-                    bool count_is_honest = forced_below >= j + 1;
+                else if (forced_below >= j + 1) {
+                    // ORDER STATISTIC: ub(y[j]) = ux[phi[j]] and at least j+1 x's
+                    // are unconditionally forced <= U. The rank lower bounds, the
+                    // per-position extended-reason lines, and (via the root
+                    // permutation lines) surjectivity give y[j] <= U; the count
+                    // line "count_U >= j+1" is plain RUP under the reason.
+                    bool count_is_honest = true;
                     inference.infer_less_than(logger, y[j], Integer{U + 1},
                         JustifyExplicitlyThenRUP{[&x, &y, &before, &pos, &rank_lines, &inj_lines, &al1_lines, n, j, U, count_is_honest, logger](const ReasonFunction & reason_fn) -> void {
                             // PIVOT BRIDGE (honest, transitivity-free). For each i, m the
@@ -697,6 +698,74 @@ namespace
                             surj.emit(*logger, ProofLevel::Temporary);
                         }},
                         reason);
+                }
+                else {
+                    // HALL: ub(y[j]) = ux[phi[j]] but fewer than j+1 x's are
+                    // individually forced <= U. Refute the negated goal y[j] >=
+                    // U+1 with the shared Hall pigeonhole, under that assumption:
+                    // bumping every rank >= j to value >= U+1 confines each x
+                    // with ux <= U to ranks < j (hi'[i] = min(hi_i, j)), so a
+                    // Hall violator [a,b] over the rank line exists. The goal
+                    // literal (y[j] <= U) is ORed into each assumption-dependent
+                    // clause and discharged by the closing RUP.
+                    vector<size_t> hip(n);
+                    for (size_t i = 0; i < n; ++i)
+                        hip[i] = (ux[i] <= U) ? std::min(hi_i[i], static_cast<size_t>(j)) : hi_i[i];
+                    auto [S, fa, fb] = find_band(lo_i, hip);
+                    if (S.empty())
+                        inference.infer_less_than(logger, y[j], Integer{U + 1}, AssertRatherThanJustifying{}, reason);
+                    else
+                        inference.infer_less_than(logger, y[j], Integer{U + 1},
+                            JustifyExplicitlyThenRUP{[&x, &y, &pos, &lo_i, &hi_i, &ly, &uy, &inj_lines, S, fa, fb, n, j, U, logger](const ReasonFunction & reason_fn) -> void {
+                                // Normalized y-bounds for the unconditional rank
+                                // exclusions (k < lo_i: y_k <= uy[k] < lx_i;
+                                // k >= hi_i: y_k >= ly[k] > ux_i).
+                                for (size_t k = n; k-- > 0;)
+                                    logger->emit_rup_proof_line_under_reason(reason_fn,
+                                        WPBSum{} + 1_i * y[k] <= Integer{uy[k]}, ProofLevel::Temporary);
+                                for (size_t k = 0; k < n; ++k)
+                                    logger->emit_rup_proof_line_under_reason(reason_fn,
+                                        WPBSum{} + 1_i * y[k] >= Integer{ly[k]}, ProofLevel::Temporary);
+                                // BNLY[k], k >= j : (y[j] <= U) v (y[k] >= U+1),
+                                // a chain up from j (each RUP from sortedness and
+                                // the previous). Makes the assumption-dependent
+                                // exclusions (ranks in [j, hi_i)) one-step RUPs.
+                                for (size_t k = j; k < n; ++k)
+                                    logger->emit(RUPProofRule{},
+                                        WPBSum{} + 1_i * (y[j] < Integer{U + 1}) + 1_i * (y[k] >= Integer{U + 1}) >= 1_i,
+                                        ProofLevel::Temporary);
+                                // Per i in S: pin pos[i] into [fa,fb].
+                                std::vector<ProofLine> restricted(S.size());
+                                for (const auto & [idx, i] : enumerate(S)) {
+                                    for (long long k = 0; k < static_cast<long long>(n); ++k) {
+                                        if (k >= fa && k <= fb)
+                                            continue;
+                                        if (static_cast<size_t>(k) < lo_i[i] || static_cast<size_t>(k) >= hi_i[i])
+                                            logger->emit_rup_proof_line_under_reason(reason_fn,
+                                                WPBSum{} + 1_i * (pos[i] != Integer{k}) >= 1_i, ProofLevel::Temporary);
+                                        else
+                                            logger->emit_rup_proof_line_under_reason(reason_fn,
+                                                WPBSum{} + 1_i * (y[j] < Integer{U + 1}) + 1_i * (pos[i] != Integer{k}) >= 1_i, ProofLevel::Temporary);
+                                    }
+                                    WPBSum in_band;
+                                    in_band += 1_i * (y[j] < Integer{U + 1});
+                                    for (long long k = fa; k <= fb; ++k)
+                                        in_band += 1_i * (pos[i] == Integer{k});
+                                    restricted[idx] = logger->emit_rup_proof_line_under_reason(reason_fn,
+                                        move(in_band) >= 1_i, ProofLevel::Temporary);
+                                }
+                                // Pigeonhole: the |S| restricted-at-least-ones
+                                // against inj_k for k in [fa,fb] force the goal
+                                // (the contradiction core conflicts with the
+                                // negated goal in the closing RUP).
+                                PolBuilder pol;
+                                for (auto l : restricted)
+                                    pol.add(l);
+                                for (long long k = fa; k <= fb; ++k)
+                                    pol.add(inj_lines[static_cast<size_t>(k)]);
+                                pol.emit(*logger, ProofLevel::Temporary);
+                            }},
+                            reason);
                 }
             }
         }
