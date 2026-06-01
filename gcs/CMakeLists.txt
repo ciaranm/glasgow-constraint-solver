@@ -141,6 +141,7 @@ if(GCS_BUILD_TESTS)
     add_executable(knapsack_test constraints/knapsack_test.cc)
     add_executable(lex_test constraints/lex_test.cc)
     add_executable(linear_test constraints/linear/linear_test.cc)
+    add_executable(linear_constant_test constraints/linear/linear_constant_test.cc)
     add_executable(logical_test constraints/logical_test.cc)
     add_executable(min_max_test constraints/min_max_test.cc)
     add_executable(mult_bc_test constraints/mult_bc_test.cc)
@@ -160,7 +161,7 @@ if(GCS_BUILD_TESTS)
 
     foreach(test_target
             abs_test all_different_test all_different_except_test all_equal_test among_test arithmetic_test at_most_one_test comparison_test
-            count_test cumulative_test disjunctive_test element_test equals_test in_test increasing_test inverse_test knapsack_test lex_test linear_test
+            count_test cumulative_test disjunctive_test element_test equals_test in_test increasing_test inverse_test knapsack_test lex_test linear_test linear_constant_test
             logical_test min_max_test mult_bc_test n_value_test parity_test
             plus_minus_test regular_test seq_precede_chain_test smart_table_test symmetric_all_different_test
             negative_table_test table_test value_precede_test)
@@ -189,6 +190,7 @@ if(GCS_BUILD_TESTS)
             COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:element_test> ${mode})
     endforeach()
     add_test(NAME equals_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:equals_test>)
+    add_test(NAME linear_constant_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:linear_constant_test>)
 
     # View-wrap sweep: feeds the constraint each variable as a ViewOfIntegerVariableID
     # (offset / negation / both) instead of a bare SimpleIntegerVariableID. The
