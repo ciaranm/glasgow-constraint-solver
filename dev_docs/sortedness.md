@@ -146,8 +146,10 @@ are exactly four bound tightenings (`lb(y)` up, `ub(y)` down, `lb(x)` up,
 
 ## Proof logging plan
 
-No certifying sortedness propagator exists, so the proofs are designed from
-scratch. The staged approach:
+No certifying sortedness propagator existed, so the proofs were designed from
+scratch. **This is now complete: every inference is certified and the suite
+verifies with no assertions** (see "The Hall witness" below for the final
+shape). The staged approach that got us there:
 
 1. **Implement the propagator with `AssertRatherThanJustifying` for every
    inference** (a development-only "trust me" step — never merged). Get strong
@@ -157,7 +159,9 @@ scratch. The staged approach:
 2. **Then take each inference-producing site in turn** and ask: *precisely what
    is the general nature of what is being inferred here, and why is it true?*
    Often the answer dictates the proof directly; when it doesn't, it states a
-   sharp question to work on.
+   sharp question to work on. (The crux turned out to be the permutation/
+   surjectivity of the stable rank, then a single Hall pigeonhole over the rank
+   line shared by every bound and the contradiction.)
 
 The expected shape (to be confirmed site-by-site): each bound tightening is a
 **Hall-interval witness** — the set of `x` (or `y`) variables whose
@@ -272,13 +276,19 @@ every outside rank via the channel and a normalized y-bound. Concretely
   contradiction. (Empty band `b=a−1` ⟹ a single x with no feasible rank; its
   restricted-al1 is already `0 ≥ 1`.)
 
-**The no-matching contradiction is done this way** (both the pure y-window
-sortedness case and the matching/Hall case). The three bound Hall sub-cases are
-the *same* pigeonhole **under the negated-goal assumption** (route a / Cor 2.1):
-bump `ly'=max(ly,U+1)` on ranks `≥ j` (resp. `uy'` for the lower bound), OR the
-goal literal `(y_j ≤ U)` into every clause, and the closing RUP discharges it.
-The one extra ingredient there is a sortedness chain anchoring the bumped bound
-to the assumption (`y_j ≤ y_k` for `k ≥ j`). That is the remaining work.
+**This certifies every inference.** The no-matching contradiction uses the
+pigeonhole directly (pure y-window case: a sortedness chain; matching case: the
+band). The bound Hall sub-cases are the *same* pigeonhole **under the
+negated-goal assumption** (route a / Cor 2.1): the assumption shifts one
+endpoint of each feasible-rank interval (e.g. `ub(y_j)`: every `x` with
+`ux ≤ U` gets `hi'[i] = min(hi_i, j)`; `lb(x_i)`: `hi'[i] = jl`), `find_band`
+finds the violator, the goal literal (`y_j ≤ U`, `x_i ≥ L`, …) is ORed into the
+assumption-dependent clauses (anchored by a `BNLY`/`BNUY` sortedness chain), and
+the closing RUP discharges it. The whole `sort_test` suite, the n=20 probe, and
+a 200-seed random sweep verify `s VERIFIED` with **no assertions**; the
+Mehlhorn–Thiel propagator is fully VeriPB-certified. `find_band` returning a
+violator is an invariant whenever an inference fired, so a miss throws
+`UnexpectedException` rather than weakening the proof.
 
 ## References
 
