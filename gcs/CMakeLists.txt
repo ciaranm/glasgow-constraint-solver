@@ -57,6 +57,8 @@ add_library(glasgow_constraint_solver
         constraints/regular.cc
         constraints/seq_precede_chain.cc
         constraints/smart_table.cc
+        constraints/sort/arg_sort.cc
+        constraints/sort/sort.cc
         constraints/table/negative_table.cc
         constraints/table/table.cc
         constraints/value_precede.cc
@@ -154,6 +156,8 @@ if(GCS_BUILD_TESTS)
     add_executable(smart_table_dup_test constraints/smart_table_dup_test.cc)
     target_link_libraries(smart_table_dup_test PRIVATE glasgow_constraint_solver)
     add_test(NAME smart_table_dup COMMAND $<TARGET_FILE:smart_table_dup_test>)
+    add_executable(sort_test constraints/sort/sort_test.cc)
+    add_executable(arg_sort_test constraints/sort/arg_sort_test.cc)
     add_executable(negative_table_test constraints/table/negative_table_test.cc)
     add_executable(symmetric_all_different_test constraints/all_different/symmetric_all_different_test.cc)
     add_executable(table_test constraints/table_test.cc)
@@ -163,7 +167,7 @@ if(GCS_BUILD_TESTS)
             abs_test all_different_test all_different_except_test all_equal_test among_test arithmetic_test at_most_one_test comparison_test
             count_test cumulative_test disjunctive_test element_test equals_test in_test increasing_test inverse_test knapsack_test lex_test linear_test linear_constant_test
             logical_test min_max_test mult_bc_test n_value_test parity_test
-            plus_minus_test regular_test seq_precede_chain_test smart_table_test symmetric_all_different_test
+            plus_minus_test regular_test seq_precede_chain_test smart_table_test sort_test arg_sort_test symmetric_all_different_test
             negative_table_test table_test value_precede_test)
         target_link_libraries(${test_target} PRIVATE glasgow_constraint_solver)
     endforeach()
@@ -191,6 +195,8 @@ if(GCS_BUILD_TESTS)
     endforeach()
     add_test(NAME equals_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:equals_test>)
     add_test(NAME linear_constant_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:linear_constant_test>)
+    add_test(NAME sort_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:sort_test>)
+    add_test(NAME arg_sort_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:arg_sort_test>)
 
     # View-wrap sweep: feeds the constraint each variable as a ViewOfIntegerVariableID
     # (offset / negation / both) instead of a bare SimpleIntegerVariableID. The
