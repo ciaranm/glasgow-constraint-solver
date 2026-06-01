@@ -169,8 +169,9 @@ namespace
     template <typename Inference_>
     auto propagate_sortedness(const vector<IntegerVariableID> & x, const vector<IntegerVariableID> & y,
         const vector<vector<ProofFlag>> & before, const vector<ProofOnlySimpleIntegerVariableID> & pos,
-        const vector<ProofLine> & rank_lines,
+        const vector<ProofLine> & rank_lines, const vector<ProofLine> & rank_le_lines,
         const vector<ProofLine> & inj_lines, const vector<ProofLine> & al1_lines,
+        const vector<vector<ProofLine>> & anti_lines,
         const State & state, Inference_ & inference, ProofLogger * const logger) -> void
     {
         auto n = x.size();
@@ -352,23 +353,94 @@ namespace
         for (size_t j = 0; j < n; ++j) {
             if (nly[j] > oly[j]) {
                 auto L = nly[j];
-                inference.infer_greater_than_or_equal(logger, y[j], Integer{L},
-                    JustifyExplicitlyThenRUP{[&y, n, j, L, logger](const ReasonFunction &) -> void {
-                        // ASSERTED (P2/P3, cheated): at least n-j of the y's are >= L.
-                        WPBSum count;
-                        for (size_t k = 0; k < n; ++k)
-                            count += 1_i * (y[k] >= Integer{L});
-                        logger->emit(AssertProofRule{}, move(count) >= Integer{static_cast<long long>(n - j)}, ProofLevel::Temporary);
-                        // HONEST (P1): monotonicity (y[k-1] >= L) <- (y[k] >= L),
-                        // each RUP from the single sortedness constraint y[k-1] <= y[k].
-                        // Lets the closing RUP propagate (y[k] >= L) = 0 down from
-                        // the negated goal for all k <= j.
-                        for (size_t k = 1; k <= j; ++k)
-                            logger->emit(RUPProofRule{},
-                                WPBSum{} + 1_i * (y[k] >= Integer{L}) + 1_i * (y[k - 1] < Integer{L}) >= 1_i,
-                                ProofLevel::Temporary);
-                    }},
-                    reason);
+                // The mirror image of the ub(y[j]) proof. (a) NORMALIZATION: the
+                // bound is the normalised ly[j] (left-to-right max of step 1,
+                // >= lx[phi2[j]]), so y[j] >= L is pure y-sortedness from an
+                // earlier y's lower bound. (b) ORDER STATISTIC: >= n-j of the x's
+                // are forced >= L (lx_i >= L), so the (j+1)-th smallest is >= L.
+                // (c) HALL: still asserted (the count line only).
+                bool from_normalization = (ly[j] > oly[j]) && (ly[j] >= lx[phi2[j]]);
+                size_t forced_above = 0;
+                for (size_t i = 0; i < n; ++i)
+                    if (olx[i] >= L)
+                        ++forced_above;
+                if (from_normalization) {
+                    // y[j] >= L from an earlier position's lower bound: emit the
+                    // monotonicity clauses (y[k] >= L) v (y[k-1] < L), each RUP
+                    // from the sortedness constraint y[k-1] <= y[k]; the closing
+                    // RUP walks the chain down to the witnessing earlier position.
+                    inference.infer_greater_than_or_equal(logger, y[j], Integer{L},
+                        JustifyExplicitlyThenRUP{[&y, j, L, logger](const ReasonFunction &) -> void {
+                            for (size_t k = 1; k <= j; ++k)
+                                logger->emit(RUPProofRule{},
+                                    WPBSum{} + 1_i * (y[k] >= Integer{L}) + 1_i * (y[k - 1] < Integer{L}) >= 1_i,
+                                    ProofLevel::Temporary);
+                        }},
+                        reason);
+                }
+                else {
+                    bool count_is_honest = forced_above >= n - j;
+                    inference.infer_greater_than_or_equal(logger, y[j], Integer{L},
+                        JustifyExplicitlyThenRUP{[&x, &y, &before, &pos, &rank_le_lines, &anti_lines, &inj_lines, &al1_lines, n, j, L, count_is_honest, logger](const ReasonFunction & reason_fn) -> void {
+                            // PIVOT' (mirror): (x_i >= L) v (x_m < L) v before[i][m],
+                            // RUP from before[i][m]'s reverse half and the constant
+                            // threshold L (x_i < L <= x_m forces i before m).
+                            std::vector<std::vector<ProofLine>> pivot(n, std::vector<ProofLine>(n));
+                            for (size_t i = 0; i < n; ++i)
+                                for (size_t m = 0; m < n; ++m) {
+                                    if (m == i)
+                                        continue;
+                                    pivot[i][m] = logger->emit(RUPProofRule{},
+                                        WPBSum{} + 1_i * (x[i] >= Integer{L}) + 1_i * (x[m] < Integer{L}) + 1_i * before[i][m] >= 1_i,
+                                        ProofLevel::Temporary);
+                                }
+                            // BND[i][m] : before[m][i] <= [x_i>=L] + [x_m<L], from
+                            // pivot'[i][m] + antisymmetry (flip the "out" flag
+                            // before[i][m] to the "in" flag before[m][i]).
+                            // RANKUB_i = rank_le[i] + sum_m BND[i][m] :
+                            //   pos[i] <= (n-1)[x_i>=L] + sum_{m!=i}[x_m<L].
+                            std::vector<ProofLine> rankub(n);
+                            for (size_t i = 0; i < n; ++i) {
+                                PolBuilder pol;
+                                pol.add(rank_le_lines[i]);
+                                for (size_t m = 0; m < n; ++m)
+                                    if (m != i)
+                                        pol.add(PolBuilder{}.add(pivot[i][m]).add(anti_lines[i][m]).emit(*logger, ProofLevel::Temporary));
+                                rankub[i] = pol.emit(*logger, ProofLevel::Temporary);
+                            }
+                            // count_L : at most j of the x's are < L (i.e. >= n-j
+                            // are >= L). ORDER STATISTIC (honest): RUP under the
+                            // reason -- the >= n-j indices with lb(x_k) >= L have
+                            // (x_k >= L) forced by their lower bound. HALL: asserted.
+                            WPBSum xcount;
+                            for (size_t k = 0; k < n; ++k)
+                                xcount += 1_i * (x[k] < Integer{L});
+                            auto xcount_ineq = move(xcount) <= Integer{static_cast<long long>(j)};
+                            auto xcount_line = count_is_honest
+                                ? logger->emit_rup_proof_line_under_reason(reason_fn, xcount_ineq, ProofLevel::Temporary)
+                                : logger->emit(AssertProofRule{}, xcount_ineq, ProofLevel::Temporary);
+                            // RANKUB2_i : pos[i] <= n[x_i>=L] + j-1 (fold count_L in,
+                            // cross-constraint sum so a pol not RUP).
+                            for (size_t i = 0; i < n; ++i)
+                                PolBuilder{}.add(rankub[i]).add(xcount_line).emit(*logger, ProofLevel::Temporary);
+                            // per i : (pos[i] != j) v (y[j] >= L). RUP under reason
+                            // from RANKUB2_i + channel: pos[i]=j forces [x_i>=L]=1,
+                            // and the channel gives y[j] = x_i >= L.
+                            for (size_t i = 0; i < n; ++i)
+                                logger->emit_rup_proof_line_under_reason(reason_fn,
+                                    WPBSum{} + 1_i * (pos[i] != Integer(j)) + 1_i * (y[j] >= Integer{L}) >= 1_i,
+                                    ProofLevel::Temporary);
+                            // surjectivity (same counting pol as the upper bound).
+                            PolBuilder surj;
+                            for (size_t i = 0; i < n; ++i)
+                                surj.add(al1_lines[i]);
+                            for (size_t k = 0; k < n; ++k)
+                                if (k != j)
+                                    surj.add(inj_lines[k]);
+                            surj.emit(*logger, ProofLevel::Temporary);
+                        }},
+                        reason);
+                }
             }
             if (nuy[j] < ouy[j]) {
                 auto U = nuy[j];
@@ -519,6 +591,7 @@ auto Sort::install_propagators(Propagators & propagators) -> void
     auto n = _x.size();
     _inj_lines = std::make_shared<vector<ProofLine>>();
     _al1_lines = std::make_shared<vector<ProofLine>>();
+    _anti_lines = std::make_shared<vector<vector<ProofLine>>>(n, vector<ProofLine>(n));
 
     // Derive the permutation facts once at the proof root, at ProofLevel::Top so
     // they persist across the whole search, and reuse them in every bound
@@ -532,7 +605,7 @@ auto Sort::install_propagators(Propagators & propagators) -> void
     propagators.install_initialiser(
         [n, before = _before, before_fwd = _before_fwd, before_rev = _before_rev,
             rank_ge = _rank_ge, rank_le = _rank_le, pos = _pos,
-            inj_lines = _inj_lines, al1_lines = _al1_lines](
+            inj_lines = _inj_lines, al1_lines = _al1_lines, anti_lines = _anti_lines](
             State &, auto &, ProofLogger * const logger) -> void {
             if (! logger)
                 return;
@@ -549,11 +622,11 @@ auto Sort::install_propagators(Propagators & propagators) -> void
                                                 .add(before_rev[b][a])
                                                 .saturate()
                                                 .emit(*logger, ProofLevel::Top);
-                    PolBuilder{}
-                        .add(before_fwd[a][b])
-                        .add(before_fwd[b][a])
-                        .saturate()
-                        .emit(*logger, ProofLevel::Top);
+                    (*anti_lines)[a][b] = (*anti_lines)[b][a] = PolBuilder{}
+                                                                    .add(before_fwd[a][b])
+                                                                    .add(before_fwd[b][a])
+                                                                    .saturate()
+                                                                    .emit(*logger, ProofLevel::Top);
                 }
 
             // Rank-gap lines. For each ordered pair (i, i'):
@@ -642,9 +715,11 @@ auto Sort::install_propagators(Propagators & propagators) -> void
     triggers.on_bounds.insert(triggers.on_bounds.end(), _y.begin(), _y.end());
 
     propagators.install([x = _x, y = _y, before = _before, pos = _pos, rank_lines = _rank_ge,
-                            inj_lines = _inj_lines, al1_lines = _al1_lines](
+                            rank_le_lines = _rank_le, inj_lines = _inj_lines, al1_lines = _al1_lines,
+                            anti_lines = _anti_lines](
                             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-        propagate_sortedness(x, y, before, pos, rank_lines, *inj_lines, *al1_lines, state, inference, logger);
+        propagate_sortedness(x, y, before, pos, rank_lines, rank_le_lines, *inj_lines, *al1_lines, *anti_lines,
+            state, inference, logger);
         return PropagatorState::Enable;
     },
         triggers);
