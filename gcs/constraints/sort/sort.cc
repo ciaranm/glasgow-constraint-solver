@@ -323,18 +323,28 @@ namespace
             if (index[v] == -1)
                 strong_connect(v);
 
-        // Per-component y-index span.
-        vector<size_t> comp_min_y(static_cast<size_t>(next_comp), n), comp_max_y(static_cast<size_t>(next_comp), 0);
-        for (size_t j = 0; j < n; ++j) {
-            auto c = static_cast<size_t>(comp[n + j]);
-            comp_min_y[c] = std::min(comp_min_y[c], j);
-            comp_max_y[c] = std::max(comp_max_y[c], j);
-        }
-
+        // x-bounds in the *reduced* intersection graph: an edge {x_i, y_j} lies
+        // in some perfect matching iff x_i and y_j share an SCC. For x_i, the
+        // tightened range is governed by its smallest/largest neighbour *within
+        // its own SCC* -- NOT the SCC's whole y-span. (Using the whole span is
+        // wrong: a y-node can be in the SCC via other nodes while not being a
+        // neighbour of x_i, e.g. x_i = [2,4] and y = [1,1] do not intersect yet
+        // both sit in one SCC; counting y would loosen lb(x_i) spuriously.)
+        // x_i's neighbours are the contiguous y-index interval [lo_i, hi_i); the
+        // matched edge guarantees at least one of them is in x_i's SCC.
         vector<long long> nlx(n), nux(n);
         for (size_t i = 0; i < n; ++i) {
-            auto c = static_cast<size_t>(comp[i]);
-            auto jl = comp_min_y[c], jh = comp_max_y[c];
+            auto c = comp[i];
+            size_t jl = n, jh = 0;
+            bool found = false;
+            for (size_t j = lo_i[i]; j < hi_i[i]; ++j)
+                if (comp[n + j] == c) {
+                    if (! found) {
+                        jl = j;
+                        found = true;
+                    }
+                    jh = j;
+                }
             nlx[i] = std::max(lx[i], ly[jl]);
             nux[i] = std::min(ux[i], uy[jh]);
         }
