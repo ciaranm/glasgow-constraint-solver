@@ -159,13 +159,15 @@ namespace
     // Mehlhorn & Thiel, CP 2000). See dev_docs/sortedness.md.
     //
     // PROOF LOGGING IS BEING MADE HONEST IN STAGES (see dev_docs/sortedness.md).
-    // Done: the y-upper bound -- normalization and order-statistic cases fully
-    // honest, surjectivity discharged via the root permutation lines (totality,
-    // antisymmetry, transitivity, rank gaps, recover_am1 injectivity). Still
-    // asserted (development-only AssertRatherThanJustifying / AssertProofRule):
-    // the Hall sub-case's count line, the y-lower bound, the x bounds, and the
-    // no-matching contradiction. This file must not be merged while any assert
-    // remains; tests verify "subject to cheating assertions" until then.
+    // Done (honest): the y-upper and y-lower bounds (normalization +
+    // order-statistic cases), surjectivity via the root permutation lines
+    // (totality, antisymmetry, transitivity, rank gaps, recover_am1
+    // injectivity), and the x-bounds' intersection case (the rank lies in
+    // [lo_i, hi_i)). Still asserted (development-only AssertRatherThanJustifying
+    // / AssertProofRule): the Hall sub-cases of all three bounds (the y-counts
+    // and the SCC-tightened x-bounds, which need a matching/Hall witness) and
+    // the no-matching contradiction. This file must not be merged while any
+    // assert remains; tests verify "subject to cheating assertions" until then.
     template <typename Inference_>
     auto propagate_sortedness(const vector<IntegerVariableID> & x, const vector<IntegerVariableID> & y,
         const vector<vector<ProofFlag>> & before, const vector<ProofOnlySimpleIntegerVariableID> & pos,
@@ -334,6 +336,12 @@ namespace
         // x_i's neighbours are the contiguous y-index interval [lo_i, hi_i); the
         // matched edge guarantees at least one of them is in x_i's SCC.
         vector<long long> nlx(n), nux(n);
+        // jl_in[i] / jh_in[i] are x_i's smallest / largest neighbour within its
+        // SCC. The proof of the x-bounds is honest exactly when these coincide
+        // with the *intersection* extremes lo_i / hi_i-1 (the bound is then the
+        // plain "x_i can't sit below/above this position" fact); when the SCC
+        // strictly tightens them, it is a Hall argument, still asserted.
+        vector<size_t> jl_in(n), jh_in(n);
         for (size_t i = 0; i < n; ++i) {
             auto c = comp[i];
             size_t jl = n, jh = 0;
@@ -346,6 +354,8 @@ namespace
                     }
                     jh = j;
                 }
+            jl_in[i] = jl;
+            jh_in[i] = jh;
             nlx[i] = std::max(lx[i], ly[jl]);
             nux[i] = std::min(ux[i], uy[jh]);
         }
@@ -589,10 +599,43 @@ namespace
             }
         }
         for (size_t i = 0; i < n; ++i) {
-            if (nlx[i] > olx[i])
-                inference.infer_greater_than_or_equal(logger, x[i], Integer{nlx[i]}, AssertRatherThanJustifying{}, reason);
-            if (nux[i] < oux[i])
-                inference.infer_less_than(logger, x[i], Integer{nux[i] + 1}, AssertRatherThanJustifying{}, reason);
+            if (nlx[i] > olx[i]) {
+                auto L = nlx[i];
+                // x[i] >= L. Honest when L is the intersection bound ly[lo_i]
+                // (jl_in[i] == lo_i[i]): for every rank k, (pos[i] != k) v
+                // (x_i >= L) is RUP under the reason -- k < lo_i is impossible
+                // (y_k <= uy[k] < lx[i] <= x_i, so pos[i]=k would force y_k=x_i
+                // above its own upper bound), and k >= lo_i gives x_i = y_k >=
+                // ly[k] >= ly[lo_i] = L via the channel. The at-least-one line
+                // for pos[i] then closes it. HALL (jl_in > lo_i): asserted.
+                if (jl_in[i] == lo_i[i])
+                    inference.infer_greater_than_or_equal(logger, x[i], Integer{L},
+                        JustifyExplicitlyThenRUP{[&x, &pos, n, i, L, logger](const ReasonFunction & reason_fn) -> void {
+                            for (size_t k = 0; k < n; ++k)
+                                logger->emit_rup_proof_line_under_reason(reason_fn,
+                                    WPBSum{} + 1_i * (pos[i] != Integer(k)) + 1_i * (x[i] >= Integer{L}) >= 1_i,
+                                    ProofLevel::Temporary);
+                        }},
+                        reason);
+                else
+                    inference.infer_greater_than_or_equal(logger, x[i], Integer{L}, AssertRatherThanJustifying{}, reason);
+            }
+            if (nux[i] < oux[i]) {
+                auto U = nux[i];
+                // Mirror: x[i] <= U, honest when U is the intersection bound
+                // uy[hi_i-1] (jh_in[i] == hi_i[i]-1).
+                if (jh_in[i] + 1 == hi_i[i])
+                    inference.infer_less_than(logger, x[i], Integer{U + 1},
+                        JustifyExplicitlyThenRUP{[&x, &pos, n, i, U, logger](const ReasonFunction & reason_fn) -> void {
+                            for (size_t k = 0; k < n; ++k)
+                                logger->emit_rup_proof_line_under_reason(reason_fn,
+                                    WPBSum{} + 1_i * (pos[i] != Integer(k)) + 1_i * (x[i] < Integer{U + 1}) >= 1_i,
+                                    ProofLevel::Temporary);
+                        }},
+                        reason);
+                else
+                    inference.infer_less_than(logger, x[i], Integer{U + 1}, AssertRatherThanJustifying{}, reason);
+            }
         }
     }
 }
