@@ -506,8 +506,8 @@ namespace
                         }},
                         reason);
                 }
-                else {
-                    bool count_is_honest = forced_above >= n - j;
+                else if (forced_above >= n - j) {
+                    bool count_is_honest = true;
                     inference.infer_greater_than_or_equal(logger, y[j], Integer{L},
                         JustifyExplicitlyThenRUP{[&x, &y, &before, &pos, &rank_le_lines, &anti_lines, &inj_lines, &al1_lines, n, j, L, count_is_honest, logger](const ReasonFunction & reason_fn) -> void {
                             // PIVOT' (mirror): (x_i >= L) v (x_m < L) v before[i][m],
@@ -568,6 +568,63 @@ namespace
                             surj.emit(*logger, ProofLevel::Temporary);
                         }},
                         reason);
+                }
+                else {
+                    // HALL (mirror of the ub case): lb(y[j]) = lx[phi2[j]] but
+                    // fewer than n-j x's are individually forced >= L. Refute
+                    // y[j] <= L-1: every rank <= j then needs value <= L-1, so
+                    // each x with lx >= L is confined to ranks > j (lo'[i] =
+                    // max(lo_i, j+1)); find_band over (lo', hi_i) yields a Hall
+                    // violator. The goal literal (y[j] >= L) is ORed into each
+                    // assumption-dependent clause.
+                    vector<size_t> lop(n);
+                    for (size_t i = 0; i < n; ++i)
+                        lop[i] = (lx[i] >= L) ? std::max(lo_i[i], static_cast<size_t>(j) + 1) : lo_i[i];
+                    auto [S, fa, fb] = find_band(lop, hi_i);
+                    if (S.empty())
+                        inference.infer_greater_than_or_equal(logger, y[j], Integer{L}, AssertRatherThanJustifying{}, reason);
+                    else
+                        inference.infer_greater_than_or_equal(logger, y[j], Integer{L},
+                            JustifyExplicitlyThenRUP{[&x, &y, &pos, &lo_i, &hi_i, &ly, &uy, &inj_lines, S, fa, fb, n, j, L, logger](const ReasonFunction & reason_fn) -> void {
+                                for (size_t k = n; k-- > 0;)
+                                    logger->emit_rup_proof_line_under_reason(reason_fn,
+                                        WPBSum{} + 1_i * y[k] <= Integer{uy[k]}, ProofLevel::Temporary);
+                                for (size_t k = 0; k < n; ++k)
+                                    logger->emit_rup_proof_line_under_reason(reason_fn,
+                                        WPBSum{} + 1_i * y[k] >= Integer{ly[k]}, ProofLevel::Temporary);
+                                // BNUY[k], k <= j : (y[j] >= L) v (y[k] <= L-1),
+                                // chain down from j (RUP from sortedness + prev).
+                                for (size_t k = j + 1; k-- > 0;)
+                                    logger->emit(RUPProofRule{},
+                                        WPBSum{} + 1_i * (y[j] >= Integer{L}) + 1_i * (y[k] < Integer{L}) >= 1_i,
+                                        ProofLevel::Temporary);
+                                std::vector<ProofLine> restricted(S.size());
+                                for (const auto & [idx, i] : enumerate(S)) {
+                                    for (long long k = 0; k < static_cast<long long>(n); ++k) {
+                                        if (k >= fa && k <= fb)
+                                            continue;
+                                        if (static_cast<size_t>(k) < lo_i[i] || static_cast<size_t>(k) >= hi_i[i])
+                                            logger->emit_rup_proof_line_under_reason(reason_fn,
+                                                WPBSum{} + 1_i * (pos[i] != Integer{k}) >= 1_i, ProofLevel::Temporary);
+                                        else
+                                            logger->emit_rup_proof_line_under_reason(reason_fn,
+                                                WPBSum{} + 1_i * (y[j] >= Integer{L}) + 1_i * (pos[i] != Integer{k}) >= 1_i, ProofLevel::Temporary);
+                                    }
+                                    WPBSum in_band;
+                                    in_band += 1_i * (y[j] >= Integer{L});
+                                    for (long long k = fa; k <= fb; ++k)
+                                        in_band += 1_i * (pos[i] == Integer{k});
+                                    restricted[idx] = logger->emit_rup_proof_line_under_reason(reason_fn,
+                                        move(in_band) >= 1_i, ProofLevel::Temporary);
+                                }
+                                PolBuilder pol;
+                                for (auto l : restricted)
+                                    pol.add(l);
+                                for (long long k = fa; k <= fb; ++k)
+                                    pol.add(inj_lines[static_cast<size_t>(k)]);
+                                pol.emit(*logger, ProofLevel::Temporary);
+                            }},
+                            reason);
                 }
             }
             if (nuy[j] < ouy[j]) {
