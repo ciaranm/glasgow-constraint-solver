@@ -170,6 +170,39 @@ two need not line up, so whether MT's bound prunings are cleanly derivable
 (RUP + Hall-style `pol`) from the stable-rank encoding is the thing to settle
 as we go.
 
+### Where the y-upper-bound proof stands (worked out site-by-site)
+
+Certifying `ub(y[j]) = U` splits into **three cases**, distinguished cheaply in
+the propagator from `uy[j]`, `ux[phi[j]]` and the count of x's forced `<= U`:
+
+1. **Normalization** (`U = uy[j] <= ux[phi[j]]`, and `uy[j] < ouy[j]`): the
+   bound came from a *later* `y`'s upper bound via the step-1 right-to-left min,
+   so it is pure `y`-sortedness. **Honest:** emit the monotonicity clauses
+   `(y[k] <= U) v (y[k+1] > U)` for `k = j..n-2` (each RUP from the single
+   sortedness constraint `y[k] <= y[k+1]`); the closing RUP walks the chain up
+   to the witnessing position.
+2. **Order statistic** (`U = ux[phi[j]]` and `>= j+1` of the x's are
+   *unconditionally* forced `<= U`, i.e. `ux[i] <= U`): the `(j+1)`-th smallest
+   value is `<= U`. **Honest modulo surjectivity:** the count line
+   `Σ_k [x_k <= U] >= j+1` is *plain RUP under the reason* (each of the `>= j+1`
+   forced terms is independently entailed by its own upper bound — no
+   cross-constraint step). Fold it through the pivot bridge (`RANKLB`,
+   `RANKLB2`) and the per-`i` extended-reason lines `(pos[i] != j) v (y[j] <=
+   U)` — all RUP under the reason. The *only* remaining assert here is
+   **surjectivity** `Σ_i [pos[i] = j] >= 1`.
+3. **Hall** (`U = ux[phi[j]]` but `< j+1` x's forced `<= U`): the tightening is
+   a genuine matching argument — the `y`-domains commit some x to a lower
+   position, freeing the matched x for `j` — so the simple count is *false* and
+   must not be claimed. **Still asserted.** This is the case the
+   `recover_am1`/Hall machinery is for, and a correct Hall witness here would
+   subsume the surjectivity assert of case 2 as well.
+
+So the count (the feared "P3") turned out *not* to be the hard part — it is RUP
+whenever it is true, and the case split is exactly what tells us when. The real
+remaining work is the **Hall witness** (case 3 + surjectivity). The `lb(y)`,
+`lb(x)`/`ub(x)` and no-matching-contradiction inferences are still fully
+asserted and will mirror this structure.
+
 ## References
 
 Papers are in `~/claude/papers/` (the user has institutional publisher logins
