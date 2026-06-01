@@ -204,8 +204,35 @@ namespace
         for (size_t j = n - 1; j-- > 0;)
             uy[j] = std::min(uy[j], uy[j + 1]);
         for (size_t j = 0; j < n; ++j)
-            if (ly[j] > uy[j])
-                fail();
+            if (ly[j] > uy[j]) {
+                // The y-windows alone are infeasible: some k1 <= j has
+                // oly[k1] = ly[j] and some k2 >= j has ouy[k2] = uy[j], with
+                // oly[k1] > ouy[k2]. Then y[k1] >= oly[k1] > ouy[k2] >= y[k2],
+                // yet k1 <= k2 forces y[k1] <= y[k2] -- a pure sortedness
+                // contradiction (no x, no permutation). Emit the down-chain of
+                // monotonicity clauses (y[m] <= V) v (y[m+1] > V) at V = ouy[k2]
+                // (each RUP from y[m] <= y[m+1]); the closing RUP walks y[k2] <= V
+                // down to y[k1] <= V, contradicting y[k1] >= oly[k1] > V.
+                size_t k1 = 0, k2 = j;
+                for (size_t k = 0; k <= j; ++k)
+                    if (oly[k] == ly[j]) {
+                        k1 = k;
+                        break;
+                    }
+                for (size_t k = j; k < n; ++k)
+                    if (ouy[k] == uy[j]) {
+                        k2 = k;
+                        break;
+                    }
+                inference.contradiction(logger,
+                    JustifyExplicitlyThenRUP{[&y, k1, k2, V = uy[j], logger](const ReasonFunction &) -> void {
+                        for (size_t m = k1; m < k2; ++m)
+                            logger->emit(RUPProofRule{},
+                                WPBSum{} + 1_i * (y[m] < Integer{V + 1}) + 1_i * (y[m + 1] >= Integer{V + 1}) >= 1_i,
+                                ProofLevel::Temporary);
+                    }},
+                    reason);
+            }
 
         // (2) Down-sweep: Glover matching of y_j to the available x with the
         // smallest upper bound (gives feasibility and the y upper bounds).
