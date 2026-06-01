@@ -358,67 +358,119 @@ namespace
             }
             if (nuy[j] < ouy[j]) {
                 auto U = nuy[j];
-                inference.infer_less_than(logger, y[j], Integer{U + 1},
-                    JustifyExplicitlyThenRUP{[&x, &y, &before, &pos, &rank_lines, n, j, U, logger](const ReasonFunction &) -> void {
-                        // PIVOT BRIDGE (honest, transitivity-free). For each i, m the
-                        // clause (x_m > U) v (x_i <= U) v before[m][i] is RUP from
-                        // before[m][i]'s reverse half and the bound on the constant
-                        // threshold U -- comparisons go through U, never a middle
-                        // variable, so it is O(1) per pair (no transitivity).
-                        std::vector<std::vector<ProofLine>> clause_line(n, std::vector<ProofLine>(n));
-                        for (size_t i = 0; i < n; ++i)
-                            for (size_t m = 0; m < n; ++m) {
-                                if (m == i)
-                                    continue;
-                                clause_line[i][m] = logger->emit(RUPProofRule{},
-                                    WPBSum{} + 1_i * before[m][i] + 1_i * (x[m] >= Integer{U + 1}) + 1_i * (x[i] < Integer{U + 1}) >= 1_i,
+                // Three reasons can bind ub(y[j]) = U; the honest proof differs.
+                // (a) NORMALIZATION: the bound is the normalised y-side value
+                //     uy[j] (the right-to-left min of step 1, <= ux[phi[j]]), so
+                //     y[j] <= U follows from y-sortedness and a later y's upper
+                //     bound alone. (b) ORDER STATISTIC: the bound is the matched
+                //     x's upper bound ux[phi[j]], and at least j+1 of the x's are
+                //     *unconditionally* forced <= U (their own upper bound is
+                //     <= U); then the (j+1)-th smallest value is <= U. (c) HALL:
+                //     the bound is ux[phi[j]] but fewer than j+1 x's are forced
+                //     <= U -- the tightening is a genuine matching/Hall argument
+                //     (some x is committed to a lower position by the y-domains),
+                //     not yet certified. (a) and (b) are honest below; (c) is
+                //     still asserted (see dev_docs/sortedness.md).
+                bool from_normalization = (uy[j] < ouy[j]) && (uy[j] <= ux[phi[j]]);
+                size_t forced_below = 0;
+                for (size_t i = 0; i < n; ++i)
+                    if (oux[i] <= U)
+                        ++forced_below;
+                if (from_normalization) {
+                    // NORMALIZATION: ub(y[j]) = U = uy[j] was forced by a later y's
+                    // upper bound through sortedness (the step-1 right-to-left min).
+                    // Emit the monotonicity clauses (y[k] <= U) v (y[k+1] > U), each
+                    // RUP from the single sortedness constraint y[k] <= y[k+1]. The
+                    // closing RUP negates the goal (y[j] > U) and walks the chain up
+                    // to the witnessing later position (whose ub <= U is in the
+                    // reason), reaching a contradiction.
+                    inference.infer_less_than(logger, y[j], Integer{U + 1},
+                        JustifyExplicitlyThenRUP{[&y, n, j, U, logger](const ReasonFunction &) -> void {
+                            for (size_t k = j; k + 1 < n; ++k)
+                                logger->emit(RUPProofRule{},
+                                    WPBSum{} + 1_i * (y[k] < Integer{U + 1}) + 1_i * (y[k + 1] >= Integer{U + 1}) >= 1_i,
                                     ProofLevel::Temporary);
+                        }},
+                        reason);
+                }
+                else if (forced_below >= j + 1) {
+                    inference.infer_less_than(logger, y[j], Integer{U + 1},
+                        JustifyExplicitlyThenRUP{[&x, &y, &before, &pos, &rank_lines, n, j, U, logger](const ReasonFunction & reason_fn) -> void {
+                            // PIVOT BRIDGE (honest, transitivity-free). For each i, m the
+                            // clause (x_m > U) v (x_i <= U) v before[m][i] is RUP from
+                            // before[m][i]'s reverse half and the bound on the constant
+                            // threshold U -- comparisons go through U, never a middle
+                            // variable, so it is O(1) per pair (no transitivity).
+                            std::vector<std::vector<ProofLine>> clause_line(n, std::vector<ProofLine>(n));
+                            for (size_t i = 0; i < n; ++i)
+                                for (size_t m = 0; m < n; ++m) {
+                                    if (m == i)
+                                        continue;
+                                    clause_line[i][m] = logger->emit(RUPProofRule{},
+                                        WPBSum{} + 1_i * before[m][i] + 1_i * (x[m] >= Integer{U + 1}) + 1_i * (x[i] < Integer{U + 1}) >= 1_i,
+                                        ProofLevel::Temporary);
+                                }
+                            // RANKLB_i : pos[i] + n*[x_i<=U] - count_U >= 0, i.e.
+                            // "x_i > U  =>  pos[i] >= count_U" (the rank line folded with
+                            // the n-1 clauses).
+                            std::vector<ProofLine> ranklb(n);
+                            for (size_t i = 0; i < n; ++i) {
+                                PolBuilder pol;
+                                pol.add(rank_lines[i]);
+                                for (size_t m = 0; m < n; ++m)
+                                    if (m != i)
+                                        pol.add(clause_line[i][m]);
+                                ranklb[i] = pol.emit(*logger, ProofLevel::Temporary);
                             }
-                        // RANKLB_i : pos[i] + n*[x_i<=U] - count_U >= 0, i.e.
-                        // "x_i > U  =>  pos[i] >= count_U" (the rank line folded with
-                        // the n-1 clauses).
-                        std::vector<ProofLine> ranklb(n);
-                        for (size_t i = 0; i < n; ++i) {
-                            PolBuilder pol;
-                            pol.add(rank_lines[i]);
-                            for (size_t m = 0; m < n; ++m)
-                                if (m != i)
-                                    pol.add(clause_line[i][m]);
-                            ranklb[i] = pol.emit(*logger, ProofLevel::Temporary);
-                        }
-                        // ASSERTED (P3, still cheated): at least j+1 of the x's are <= U.
-                        WPBSum xcount;
-                        for (size_t k = 0; k < n; ++k)
-                            xcount += 1_i * (x[k] < Integer{U + 1});
-                        auto xcount_line = logger->emit(AssertProofRule{}, move(xcount) >= Integer{static_cast<long long>(j) + 1}, ProofLevel::Temporary);
-                        // RANKLB2_i : pos[i] + n*[x_i<=U] >= j+1, folding count_U away
-                        // with the x-count (cross-constraint sum, hence a pol not RUP).
-                        std::vector<ProofLine> ranklb2(n);
-                        for (size_t i = 0; i < n; ++i) {
-                            PolBuilder pol;
-                            pol.add(ranklb[i]);
-                            pol.add(xcount_line);
-                            ranklb2[i] = pol.emit(*logger, ProofLevel::Temporary);
-                        }
-                        (void) ranklb2;
-                        // HONEST (extended reason): per i, (pos[i] != j) v (y[j] <= U).
-                        // RUP from RANKLB2_i + channel: negate -> pos[i]=j and
-                        // y[j] >= U+1; channel gives x_i = y[j] >= U+1 so [x_i<=U]=0,
-                        // and then RANKLB2_i forces pos[i] >= j+1, contradicting
-                        // pos[i]=j.
-                        for (size_t i = 0; i < n; ++i)
-                            logger->emit(RUPProofRule{},
-                                WPBSum{} + 1_i * (pos[i] != Integer(j)) + 1_i * (y[j] < Integer{U + 1}) >= 1_i,
-                                ProofLevel::Temporary);
-                        // ASSERTED (Stage 2b, surjectivity): rank j is occupied. With
-                        // the per-i lines above, the closing RUP then closes: under
-                        // y[j] >= U+1 each gives pos[i] != j, contradicting this.
-                        WPBSum surj;
-                        for (size_t i = 0; i < n; ++i)
-                            surj += 1_i * (pos[i] == Integer(j));
-                        logger->emit(AssertProofRule{}, move(surj) >= 1_i, ProofLevel::Temporary);
-                    }},
-                    reason);
+                            // HONEST (P3): at least j+1 of the x's are <= U. RUP under the
+                            // reason: each of the >= j+1 indices with ub(x_k) <= U has
+                            // (x_k <= U) forced by its upper bound (which is in the
+                            // reason), so the sum is >= j+1. No cross-constraint step --
+                            // each term is independently forced -- so single-shot RUP.
+                            WPBSum xcount;
+                            for (size_t k = 0; k < n; ++k)
+                                xcount += 1_i * (x[k] < Integer{U + 1});
+                            auto xcount_line = logger->emit_rup_proof_line_under_reason(reason_fn,
+                                move(xcount) >= Integer{static_cast<long long>(j) + 1}, ProofLevel::Temporary);
+                            // RANKLB2_i : pos[i] + n*[x_i<=U] >= j+1, folding count_U away
+                            // with the x-count (cross-constraint sum, hence a pol not RUP).
+                            std::vector<ProofLine> ranklb2(n);
+                            for (size_t i = 0; i < n; ++i) {
+                                PolBuilder pol;
+                                pol.add(ranklb[i]);
+                                pol.add(xcount_line);
+                                ranklb2[i] = pol.emit(*logger, ProofLevel::Temporary);
+                            }
+                            (void) ranklb2;
+                            // HONEST (extended reason): per i, (pos[i] != j) v (y[j] <= U).
+                            // RUP from RANKLB2_i + channel: negate -> pos[i]=j and
+                            // y[j] >= U+1; channel gives x_i = y[j] >= U+1 so [x_i<=U]=0,
+                            // and then RANKLB2_i forces pos[i] >= j+1, contradicting
+                            // pos[i]=j. Emitted under the reason: RANKLB2_i carries the
+                            // reason literals (it was pol'd with the reason-conditional
+                            // count line), so the per-i RUP check must assume the reason
+                            // true to activate it.
+                            for (size_t i = 0; i < n; ++i)
+                                logger->emit_rup_proof_line_under_reason(reason_fn,
+                                    WPBSum{} + 1_i * (pos[i] != Integer(j)) + 1_i * (y[j] < Integer{U + 1}) >= 1_i,
+                                    ProofLevel::Temporary);
+                            // ASSERTED (surjectivity): rank j is occupied. With the per-i
+                            // lines above, the closing RUP then closes: under y[j] >= U+1
+                            // each gives pos[i] != j, contradicting this.
+                            WPBSum surj;
+                            for (size_t i = 0; i < n; ++i)
+                                surj += 1_i * (pos[i] == Integer(j));
+                            logger->emit(AssertProofRule{}, move(surj) >= 1_i, ProofLevel::Temporary);
+                        }},
+                        reason);
+                }
+                else {
+                    // HALL: ub(y[j]) = ux[phi[j]] but fewer than j+1 x's are forced
+                    // <= U, so the tightening rests on a matching/Hall argument
+                    // (the y-domains commit some x to a lower position, freeing the
+                    // matched x for j). Not yet certified -- asserted for now.
+                    inference.infer_less_than(logger, y[j], Integer{U + 1}, AssertRatherThanJustifying{}, reason);
+                }
             }
         }
         for (size_t i = 0; i < n; ++i) {
