@@ -169,6 +169,11 @@ auto main(int argc, char * argv[]) -> int
         run_sort_test(proofs, {{0, 6}, {1, 2}, {1, 2}, {3, 4}, {0, 6}},
             {{0, 0}, {1, 2}, {1, 2}, {3, 4}, {5, 6}});
 
+        // Infeasible y-windows: y[0] in [5,6] but y[1] in [0,1] can't be sorted
+        // (exercises the pure-sortedness no-matching contradiction at the root).
+        run_sort_test(proofs, {{0, 9}, {0, 9}}, {{5, 6}, {0, 1}});
+        run_sort_test(proofs, {{0, 9}, {0, 9}, {0, 9}}, {{0, 1}, {5, 6}, {2, 3}});
+
         // Aliasing within x: x = (a, a), y = (b, c).
         run_sort_dup_test(proofs, {{0, 2}, {0, 2}, {0, 2}}, {0, 0}, {1, 2});
 
