@@ -171,6 +171,12 @@ auto main(int argc, char * argv[]) -> int
 
         // Aliasing within x: x = (a, a), y = (b, c).
         run_sort_dup_test(proofs, {{0, 2}, {0, 2}, {0, 2}}, {0, 0}, {1, 2});
+
+        // NB: the large-count order-statistic case (verifying that the count
+        // line stays RUP at high degree, over non-fixed x with upper bounds
+        // strictly below the threshold) is NOT here -- the enumerate-and-compare
+        // harness can't take wide domains. It lives as a standalone proof-only
+        // probe: examples/sort_count_probe.
     }
 
     // Seeded randomized batch: sizes up to 5, a mix of wide y-windows (exercising

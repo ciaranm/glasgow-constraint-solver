@@ -186,7 +186,12 @@ the propagator from `uy[j]`, `ux[phi[j]]` and the count of x's forced `<= U`:
    value is `<= U`. **Honest modulo surjectivity:** the count line
    `Σ_k [x_k <= U] >= j+1` is *plain RUP under the reason* (each of the `>= j+1`
    forced terms is independently entailed by its own upper bound — no
-   cross-constraint step). Fold it through the pivot bridge (`RANKLB`,
+   cross-constraint step). This is genuinely RUP at any count, not a
+   small-numbers artefact: `examples/sort_count_probe` drives the root
+   order statistic over 20 *non-fixed* x's whose upper bounds sit strictly
+   below the threshold, and VeriPB checks the resulting degree-20 count line
+   (the literals stay variable — nothing is constant-folded). Fold it through
+   the pivot bridge (`RANKLB`,
    `RANKLB2`) and the per-`i` extended-reason lines `(pos[i] != j) v (y[j] <=
    U)` — all RUP under the reason. The *only* remaining assert here is
    **surjectivity** `Σ_i [pos[i] = j] >= 1`.
