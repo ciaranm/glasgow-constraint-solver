@@ -173,6 +173,12 @@ auto main(int argc, char * argv[]) -> int
         // (exercises the pure-sortedness no-matching contradiction at the root).
         run_sort_test(proofs, {{0, 9}, {0, 9}}, {{5, 6}, {0, 1}});
         run_sort_test(proofs, {{0, 9}, {0, 9}, {0, 9}}, {{0, 1}, {5, 6}, {2, 3}});
+        // Matching infeasibility (Hall violator on the rank line): three x's all
+        // pinned to value 0 can't supply the distinct sorted values 0,1,2.
+        run_sort_test(proofs, {{0, 0}, {0, 0}, {0, 0}}, {{0, 0}, {1, 1}, {2, 2}});
+        // A non-trivial band: three x's confined to ranks {0,1} (values <= 2)
+        // can't cover the third sorted value 3 -- the pigeonhole spans two ranks.
+        run_sort_test(proofs, {{1, 2}, {1, 2}, {1, 2}}, {{1, 1}, {2, 2}, {3, 3}});
 
         // Aliasing within x: x = (a, a), y = (b, c).
         run_sort_dup_test(proofs, {{0, 2}, {0, 2}, {0, 2}}, {0, 0}, {1, 2});
