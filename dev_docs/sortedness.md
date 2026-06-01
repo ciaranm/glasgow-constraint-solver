@@ -183,7 +183,7 @@ the propagator from `uy[j]`, `ux[phi[j]]` and the count of x's forced `<= U`:
    to the witnessing position.
 2. **Order statistic** (`U = ux[phi[j]]` and `>= j+1` of the x's are
    *unconditionally* forced `<= U`, i.e. `ux[i] <= U`): the `(j+1)`-th smallest
-   value is `<= U`. **Honest modulo surjectivity:** the count line
+   value is `<= U`. **Fully honest.** The count line
    `Σ_k [x_k <= U] >= j+1` is *plain RUP under the reason* (each of the `>= j+1`
    forced terms is independently entailed by its own upper bound — no
    cross-constraint step). This is genuinely RUP at any count, not a
@@ -193,20 +193,52 @@ the propagator from `uy[j]`, `ux[phi[j]]` and the count of x's forced `<= U`:
    (the literals stay variable — nothing is constant-folded). Fold it through
    the pivot bridge (`RANKLB`,
    `RANKLB2`) and the per-`i` extended-reason lines `(pos[i] != j) v (y[j] <=
-   U)` — all RUP under the reason. The *only* remaining assert here is
-   **surjectivity** `Σ_i [pos[i] = j] >= 1`.
+   U)` — all RUP under the reason. **Surjectivity** `Σ_i [pos[i] = j] >= 1` is
+   now honest too (see below), so this case is fully certified.
 3. **Hall** (`U = ux[phi[j]]` but `< j+1` x's forced `<= U`): the tightening is
    a genuine matching argument — the `y`-domains commit some x to a lower
    position, freeing the matched x for `j` — so the simple count is *false* and
-   must not be claimed. **Still asserted.** This is the case the
-   `recover_am1`/Hall machinery is for, and a correct Hall witness here would
-   subsume the surjectivity assert of case 2 as well.
+   must not be claimed. The whole bridge (pivot, rank bounds, per-position
+   lines, surjectivity) is shared with case 2 and honest; **the only remaining
+   assert is the count line `count_U >= j+1` itself**, which needs a Hall
+   witness drawing on the `y`-domains.
 
-So the count (the feared "P3") turned out *not* to be the hard part — it is RUP
-whenever it is true, and the case split is exactly what tells us when. The real
-remaining work is the **Hall witness** (case 3 + surjectivity). The `lb(y)`,
-`lb(x)`/`ub(x)` and no-matching-contradiction inferences are still fully
-asserted and will mirror this structure.
+### Surjectivity (the permutation), once at the root
+
+`Σ_i [pos[i] = j] >= 1` — rank `j` is occupied — needs `pos` to be a
+permutation, which needs the order to be total and transitive. An
+`install_initialiser` derives this once at `ProofLevel::Top` and every bound
+justification reuses it (the Cumulative/Disjunctive bridge pattern). The chain,
+all over the `before` flags (whose two reification halves are captured in
+`define_proof_model`):
+
+- **totality** `before[a][b] + before[b][a] >= 1` = `rev(a,b) + rev(b,a)`,
+  saturated (the `x` terms cancel);
+- **antisymmetry** `¬before[a][b] + ¬before[b][a] >= 1` = `fwd(a,b) + fwd(b,a)`,
+  saturated;
+- **transitivity** `¬before[k][i] + ¬before[i][i'] + before[k][i'] >= 1`: sum
+  `fwd(k,i) + fwd(i,i') + rev(k,i')` (the `x` terms cancel, leaving a flags-only
+  `>= s+1` where the lex tiebreak slack `s >= 0` varies), then take the clause
+  as a **RUP from that sum** — magnitude-independent, unlike saturate-then-
+  divide which depends on the reif big-M exceeding `s`;
+- **rank gap** `GAP[i][i'] : pos[i'] - pos[i] + n·before[i'][i] >= 1` (i.e.
+  `before[i][i'] => pos[i'] >= pos[i]+1`) = `rank_ge[i'] + rank_le[i] +
+  Σ_{k≠i,i'} T[k] + (n-1)·TOT[i][i']` — an *exact* pol (no saturate);
+- **injectivity** `Σ_i [pos[i]=k] <= 1` via the `recover_am1` fold (inlined
+  because `pos` is proof-only), whose pairwise `¬[pos[i]=k] + ¬[pos[i']=k] >= 1`
+  is RUP from the two `GAP`s + antisymmetry.
+
+Then per bound, surjectivity of rank `j` is the counting pol
+`Σ_i al1_i + Σ_{k≠j} inj_k` (the `n(n-1)` constants cancel, leaving
+`Σ_i [pos[i]=j] >= 1`), where `al1_i = Σ_k [pos[i]=k] >= 1` is a `Top` RUP. This
+is `O(n^3)` at the root (the transitivity clauses) but paid once. With it,
+`examples/sort_count_probe` (n = 20, all order-statistic) verifies `s VERIFIED`
+with **no assertions**.
+
+So the count (the feared "P3") was *not* the hard part — it is RUP whenever
+true, and the case split says when. The remaining work is the **Hall count**
+(case 3), then the `lb(y)`, `lb(x)`/`ub(x)` and no-matching-contradiction
+inferences, which will mirror this structure.
 
 ## References
 
