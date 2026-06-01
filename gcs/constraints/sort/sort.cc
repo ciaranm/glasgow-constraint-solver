@@ -162,12 +162,15 @@ namespace
     // Done (honest): the y-upper and y-lower bounds (normalization +
     // order-statistic cases), surjectivity via the root permutation lines
     // (totality, antisymmetry, transitivity, rank gaps, recover_am1
-    // injectivity), and the x-bounds' intersection case (the rank lies in
-    // [lo_i, hi_i)). Still asserted (development-only AssertRatherThanJustifying
-    // / AssertProofRule): the Hall sub-cases of all three bounds (the y-counts
-    // and the SCC-tightened x-bounds, which need a matching/Hall witness) and
-    // the no-matching contradiction. This file must not be merged while any
-    // assert remains; tests verify "subject to cheating assertions" until then.
+    // injectivity), the x-bounds' intersection case (the rank lies in
+    // [lo_i, hi_i)), and the no-matching contradiction (both the pure y-window
+    // sortedness case and the matching/Hall-violator case via a pigeonhole over
+    // ranks). Still asserted (development-only AssertRatherThanJustifying /
+    // AssertProofRule): the Hall sub-cases of the three bounds (the y-counts and
+    // the SCC-tightened x-bounds) -- the conditional/banded version of the same
+    // Hall pigeonhole, under the negated-goal assumption. This file must not be
+    // merged while any assert remains; tests verify "subject to cheating
+    // assertions" until then.
     template <typename Inference_>
     auto propagate_sortedness(const vector<IntegerVariableID> & x, const vector<IntegerVariableID> & y,
         const vector<vector<ProofFlag>> & before, const vector<ProofOnlySimpleIntegerVariableID> & pos,
@@ -195,7 +198,6 @@ namespace
         vector<IntegerVariableID> all_vars = x;
         all_vars.insert(all_vars.end(), y.begin(), y.end());
         auto reason = bounds_reason(state, all_vars);
-        auto fail = [&]() { inference.contradiction(logger, AssertRatherThanJustifying{}, reason); };
 
         // (1) Normalize the y-ranges: they index the sorted output, so the lower
         // bounds are non-decreasing and the upper bounds non-decreasing.
@@ -234,6 +236,86 @@ namespace
                     reason);
             }
 
+        // Feasible-rank interval [lo_i, hi_i) of each x_i: ranks whose y-window
+        // (after normalization) its value-interval can meet. lo_i = smallest j
+        // with uy[j] >= lx[i]; hi_i = smallest j with ly[j] > ux[i] (exclusive).
+        // Computed here (not just in step 5) because the no-matching
+        // contradiction below needs them.
+        vector<size_t> lo_i(n), hi_i(n);
+        for (size_t i = 0; i < n; ++i) {
+            lo_i[i] = static_cast<size_t>(std::lower_bound(uy.begin(), uy.end(), lx[i]) - uy.begin());
+            hi_i[i] = static_cast<size_t>(std::upper_bound(ly.begin(), ly.end(), ux[i]) - ly.begin());
+        }
+
+        // No perfect matching => a Hall violator on the rank line: an interval
+        // [a,b] of ranks containing > b-a+1 x's whose whole feasible-rank
+        // interval [lo_i,hi_i) sits inside [a,b]. By interval convexity such a
+        // tight set exists whenever the matching fails. The certificate is the
+        // all_different-style pigeonhole, with ranks as the slots: each i in the
+        // violator is pinned to a rank in [a,b] (exclude every outside rank k via
+        // the channel + a normalized y-bound), and the root injectivity lines
+        // cap [a,b] at b-a+1 occupants -- contradiction.
+        auto fail_hall = [&]() -> void {
+            long long fa = 0, fb = -1;
+            vector<size_t> S;
+            for (long long a = 0; a <= static_cast<long long>(n) && S.empty(); ++a)
+                for (long long b = a - 1; b < static_cast<long long>(n) && S.empty(); ++b) {
+                    vector<size_t> cand;
+                    for (size_t i = 0; i < n; ++i)
+                        if (static_cast<long long>(lo_i[i]) >= a && static_cast<long long>(hi_i[i]) <= b + 1)
+                            cand.push_back(i);
+                    if (static_cast<long long>(cand.size()) > b - a + 1) {
+                        S = move(cand);
+                        fa = a;
+                        fb = b;
+                    }
+                }
+            if (S.empty())
+                inference.contradiction(logger, AssertRatherThanJustifying{}, reason); // shouldn't happen
+
+            inference.contradiction(logger,
+                JustifyExplicitlyThenRUP{[&, S, fa, fb](const ReasonFunction & reason_fn) -> void {
+                    // Normalized y-bound lemmas as RUP chains: NUY[k] : y_k <= uy[k]
+                    // (top-down, from y_k <= y_{k+1} <= uy[k+1] and y_k <= ouy[k]);
+                    // NLY[k] : y_k >= ly[k] (bottom-up). These let each rank
+                    // exclusion be a single-step RUP.
+                    for (size_t k = n; k-- > 0;)
+                        logger->emit_rup_proof_line_under_reason(reason_fn,
+                            WPBSum{} + 1_i * y[k] <= Integer{uy[k]}, ProofLevel::Temporary);
+                    for (size_t k = 0; k < n; ++k)
+                        logger->emit_rup_proof_line_under_reason(reason_fn,
+                            WPBSum{} + 1_i * y[k] >= Integer{ly[k]}, ProofLevel::Temporary);
+                    // Per i in S: pin pos[i] into [fa,fb] by excluding every
+                    // outside rank k (k < fa <= lo_i: y_k <= uy[k] < lx[i] breaks
+                    // the channel; k > fb >= hi_i-1: y_k >= ly[k] > ux[i]). The
+                    // restricted at-least-one then follows from the root al1[i].
+                    vector<ProofLine> restricted(S.size());
+                    for (const auto & [idx, i] : enumerate(S)) {
+                        for (long long k = 0; k < static_cast<long long>(n); ++k)
+                            if (k < fa || k > fb)
+                                logger->emit_rup_proof_line_under_reason(reason_fn,
+                                    WPBSum{} + 1_i * (pos[i] != Integer{k}) >= 1_i, ProofLevel::Temporary);
+                        WPBSum in_band;
+                        for (long long k = fa; k <= fb; ++k)
+                            in_band += 1_i * (pos[i] == Integer{k});
+                        restricted[idx] = logger->emit_rup_proof_line_under_reason(reason_fn,
+                            move(in_band) >= 1_i, ProofLevel::Temporary);
+                    }
+                    // Pigeonhole: |S| pins into [fa,fb] but injectivity caps it at
+                    // fb-fa+1 < |S|. (For an empty band the restricted lines are
+                    // already 0 >= 1 and the closing RUP suffices.)
+                    if (fb >= fa) {
+                        PolBuilder pol;
+                        for (auto l : restricted)
+                            pol.add(l);
+                        for (long long k = fa; k <= fb; ++k)
+                            pol.add(inj_lines[static_cast<size_t>(k)]);
+                        pol.emit(*logger, ProofLevel::Temporary);
+                    }
+                }},
+                reason);
+        };
+
         // (2) Down-sweep: Glover matching of y_j to the available x with the
         // smallest upper bound (gives feasibility and the y upper bounds).
         vector<size_t> by_lx(n);
@@ -249,11 +331,11 @@ namespace
                     ++s;
                 }
                 if (pq.empty())
-                    fail();
+                    fail_hall();
                 auto [ub_i, i] = pq.top();
                 pq.pop();
                 if (ub_i < ly[j])
-                    fail();
+                    fail_hall();
                 phi[j] = i;
             }
         }
@@ -274,11 +356,11 @@ namespace
                     ++s;
                 }
                 if (pq.empty())
-                    fail();
+                    fail_hall();
                 auto [lb_i, i] = pq.top();
                 pq.pop();
                 if (lb_i > uy[j])
-                    fail();
+                    fail_hall();
                 phi2[j] = i;
             }
         }
@@ -298,15 +380,8 @@ namespace
         // and y_j -> x_phi[j] for the matching. Plain recursive Tarjan over the
         // implicit interval adjacency: this computes the correct SCCs (and hence
         // full bounds consistency on x, see step below) in O(n^2), not yet the
-        // linear-time Algorithm 3.2 from the thesis.
-        vector<size_t> lo_i(n), hi_i(n);
-        for (size_t i = 0; i < n; ++i) {
-            // smallest j with uy[j] >= lx[i]; largest j with ly[j] <= ux[i].
-            size_t lo = static_cast<size_t>(std::lower_bound(uy.begin(), uy.end(), lx[i]) - uy.begin());
-            size_t hi = static_cast<size_t>(std::upper_bound(ly.begin(), ly.end(), ux[i]) - ly.begin());
-            lo_i[i] = lo;
-            hi_i[i] = hi; // exclusive upper; neighbours are j in [lo, hi)
-        }
+        // linear-time Algorithm 3.2 from the thesis. (lo_i / hi_i were computed
+        // after normalization, above.)
 
         auto N = 2 * n;
         vector<long long> index(N, -1), lowlink(N, 0);
