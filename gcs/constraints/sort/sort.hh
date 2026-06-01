@@ -43,9 +43,13 @@ namespace gcs
         // and reused by every bound justification. _inj_lines[k] is the
         // injectivity `sum_i [pos[i] = k] <= 1`; _al1_lines[i] is the
         // at-least-one `sum_k [pos[i] = k] >= 1`. Together they give surjectivity
-        // of any rank by a counting pol. Shared so the captured propagator
-        // closure and the initialiser closure see the same vectors.
+        // of any rank by a counting pol. _anti_lines[a][b] is the antisymmetry
+        // clause `!before[a][b] + !before[b][a] >= 1` (symmetric), used by the
+        // lower-bound proof to flip "out" flags to "in" flags. Shared so the
+        // captured propagator closure and the initialiser closure see the same
+        // vectors.
         std::shared_ptr<std::vector<innards::ProofLine>> _inj_lines, _al1_lines;
+        std::shared_ptr<std::vector<std::vector<innards::ProofLine>>> _anti_lines;
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &) -> void override;
