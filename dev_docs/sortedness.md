@@ -236,9 +236,28 @@ is `O(n^3)` at the root (the transitivity clauses) but paid once. With it,
 with **no assertions**.
 
 So the count (the feared "P3") was *not* the hard part — it is RUP whenever
-true, and the case split says when. The remaining work is the **Hall count**
-(case 3), then the `lb(y)`, `lb(x)`/`ub(x)` and no-matching-contradiction
-inferences, which will mirror this structure.
+true, and the case split says when.
+
+### The other inferences (same shape)
+
+- **`lb(y[j])`** mirrors `ub(y[j])` exactly: it uses the "out" flag
+  `before[j'][m]` + antisymmetry to *upper*-bound `pos[i]`
+  (`x_i < L ⇒ pos[i] ≤ j-1`), with the same per-position lines and the *same*
+  surjectivity pol. Normalization and order-statistic cases honest; only the
+  Hall count asserted.
+- **`lb(x[i]) ≥ ly[jl]` / `ub(x[i]) ≤ uy[jh]`** reduce to a rank bound on `x_i`
+  plus the channel. The **intersection** case (`jl = lo_i`, resp.
+  `jh = hi_i-1`) is honest: for every rank `k`, `(pos[i] ≠ k) ∨ (x_i ≥ L)` is
+  RUP under the reason — `k < lo_i` is impossible (`y_k ≤ uy[k] < lx[i] ≤ x_i`
+  would break the channel), and `k ≥ lo_i` gives `x_i = y_k ≥ ly[k] ≥ L`; the
+  at-least-one line for `pos[i]` closes it. When the SCC strictly tightens the
+  rank range past the intersection extremes (`jl > lo_i`), it is a genuine Hall
+  argument and stays asserted.
+
+So every bound now has the same honesty status: **fully honest except its Hall
+sub-case** (and the no-matching contradiction). The remaining work is the
+**Hall witness** — a single 2-sided matching-infeasibility certificate that the
+three Hall sub-cases and the contradiction would share.
 
 ## References
 
