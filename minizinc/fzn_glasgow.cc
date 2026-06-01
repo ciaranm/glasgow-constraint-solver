@@ -628,10 +628,9 @@ auto main(int argc, char * argv[]) -> int
                 problem.post(Among{vars, *varmatch, varcount});
             }
             else if (id == "glasgow_circuit") {
+                // The mznlib redefinition has already shifted successors to be
+                // 0-based (Circuit expects a length-n array valued in 0..n-1).
                 const auto & vars = arg_as_array_of_var(data, args, 0);
-                vector<IntegerVariableID> vars_shifted;
-                for (const auto & v : vars)
-                    vars_shifted.push_back(v - 1_i);
                 problem.post(Circuit{vars});
             }
             else if (id == "glasgow_count_eq") {
