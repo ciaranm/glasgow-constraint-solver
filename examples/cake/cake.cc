@@ -72,14 +72,14 @@ auto main(int argc, char * argv[]) -> int
     // https://www.minizinc.org/doc-2.5.5/en/modelling.html#an-arithmetic-optimisation-example
     auto banana = p.create_integer_variable(0_i, 100_i, "banana");
     auto chocolate = p.create_integer_variable(0_i, 100_i, "chocolate");
-    p.post(WeightedSum{} + 250_i * banana + 200_i * chocolate <= 4000_i);
-    p.post(WeightedSum{} + 2_i * banana <= 6_i);
-    p.post(WeightedSum{} + 75_i * banana + 150_i * chocolate <= 2000_i);
-    p.post(WeightedSum{} + 100_i * banana + 150_i * chocolate <= 500_i);
-    p.post(WeightedSum{} + 75_i * chocolate <= 500_i);
+    p.post_named(WeightedSum{} + 250_i * banana + 200_i * chocolate <= 4000_i, "flour");
+    p.post_named(WeightedSum{} + 2_i * banana <= 6_i, "bananas");
+    p.post_named(WeightedSum{} + 75_i * banana + 150_i * chocolate <= 2000_i, "sugar");
+    p.post_named(WeightedSum{} + 100_i * banana + 150_i * chocolate <= 500_i, "butter");
+    p.post_named(WeightedSum{} + 75_i * chocolate <= 500_i, "cocoa");
 
     auto profit = p.create_integer_variable(0_i, 107500_i, "profit");
-    p.post(WeightedSum{} + 400_i * banana + 450_i * chocolate == 1_i * profit);
+    p.post_named(WeightedSum{} + 400_i * banana + 450_i * chocolate == 1_i * profit, "cakes");
 
     p.maximise(profit);
     auto stats = solve_with(p,

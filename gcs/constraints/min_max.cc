@@ -77,8 +77,11 @@ auto ArrayMinMax::prepare(Propagators &, State &, ProofModel * const) -> bool
 auto ArrayMinMax::define_proof_model(ProofModel & model) -> void
 {
     // (for min) each var >= result, i.e. var - result >= 0
-    for (const auto & v : _vars) {
-        model.add_constraint("ArrayMinMax", "result compared to value", WPBSum{} + (_min ? 1_i : -1_i) * v + (_min ? -1_i : 1_i) * _result >= 0_i, nullopt);
+    for (const auto & [id, v] : enumerate(_vars)) {
+        model.add_labelled_constraint(
+            _constraint_id, format("{}", id),
+            "ArrayMinMax", "result compared to value",
+            WPBSum{} + (_min ? 1_i : -1_i) * v + (_min ? -1_i : 1_i) * _result >= 0_i, nullopt);
     }
 
     WPBSum al1_selector;
@@ -87,13 +90,22 @@ auto ArrayMinMax::define_proof_model(ProofModel & model) -> void
     for (const auto & [id, var] : enumerate(_vars)) {
         auto selector = model.create_proof_flag(format("arrayminmax{}", id));
         _selectors.push_back(selector);
-        model.add_constraint("ArrayMinMax", "result is this value", WPBSum{} + (_min ? 1_i : -1_i) * var + (_min ? -1_i : 1_i) * _result <= 0_i, {{selector}});
-        model.add_constraint("ArrayMinMax", "result is this value", WPBSum{} + (_min ? 1_i : -1_i) * var + (_min ? -1_i : 1_i) * _result >= 1_i, {{! selector}});
+        model.add_labelled_constraint(
+            _constraint_id, format("{}le", id),
+            "ArrayMinMax", "result is this value",
+            WPBSum{} + (_min ? 1_i : -1_i) * var + (_min ? -1_i : 1_i) * _result <= 0_i, {{selector}});
+        model.add_labelled_constraint(
+            _constraint_id, format("{}ge", id),
+            "ArrayMinMax", "result is this value",
+            WPBSum{} + (_min ? 1_i : -1_i) * var + (_min ? -1_i : 1_i) * _result >= 1_i, {{! selector}});
         al1_selector += 1_i * selector;
     }
 
     // sum f_i >= 1
-    model.add_constraint("ArrayMinMax", "result is one of the values", al1_selector >= 1_i);
+    model.add_labelled_constraint(
+        _constraint_id, "al1",
+        "ArrayMinMax", "result is one of the values",
+        al1_selector >= 1_i);
 }
 
 auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
@@ -205,7 +217,7 @@ auto ArrayMinMax::s_exprify(const innards::ProofModel * const model) const -> st
 {
     stringstream s;
 
-    print(s, "{} {} (", _constraint_id, _min ? "min" : "max");
+    print(s, "{} {} (", _constraint_id, _min ? "array_min" : "array_max");
     for (const auto & v : _vars) {
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(v));
     }

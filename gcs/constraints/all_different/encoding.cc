@@ -44,10 +44,10 @@ auto gcs::innards::define_labelled_clique_not_equals_encoding(
     for (unsigned i = 0; i < vars.size(); ++i)
         for (unsigned j = i + 1; j < vars.size(); ++j) {
             auto selector = model.create_proof_flag("notequals");
-            auto role_gt = "[" + to_string(i+1) + "]gt[" + to_string(j+1) + "]";
-            auto role_lt = "[" + to_string(i+1) + "]lt[" + to_string(j+1) + "]";
-            model.add_labelled_constraint(constraint_id, role_gt, "AllDifferent", "not equals because lower", WPBSum{} + 1_i * vars[i] + -1_i * vars[j] <= -1_i, HalfReifyOnConjunctionOf{selector});
-            model.add_labelled_constraint(constraint_id, role_lt, "AllDifferent", "not equals because higher", WPBSum{} + -1_i * vars[i] + 1_i * vars[j] <= -1_i, HalfReifyOnConjunctionOf{! selector});
+            auto role_gt = to_string(i+1) + "gt" + to_string(j+1);
+            auto role_lt = to_string(i+1) + "lt" + to_string(j+1);
+            model.add_labelled_constraint(constraint_id, role_lt, "AllDifferent", "not equals because lower", WPBSum{} + 1_i * vars[i] + -1_i * vars[j] <= -1_i, HalfReifyOnConjunctionOf{selector});
+            model.add_labelled_constraint(constraint_id, role_gt, "AllDifferent", "not equals because higher", WPBSum{} + -1_i * vars[i] + 1_i * vars[j] <= -1_i, HalfReifyOnConjunctionOf{! selector});
 
             if (vars[i] == vars[j] && ! duplicate_witness)
                 duplicate_witness = pair{vars[i], selector};

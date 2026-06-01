@@ -188,10 +188,13 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
                     println(s_expr, "        ({})", c.s_exprify(optional_proof->model()));
                 }
                 println(s_expr, "    )");
+                // TODO: What about a simple solve?  We are still assuming either optimisation or enumeration.
                 if (problem.optional_minimise_variable())
-                    println(s_expr, ""); // TODO: "(minimise {})"
+                    println(s_expr, "    {}",
+                        optional_proof->model()->names_and_ids_tracker()
+                            .s_expr_render_of(*problem.optional_minimise_variable()));
                 else
-                    println(s_expr, "    (enumerate)");  // TODO: HACK! We are assuming either minimisation or enumeration
+                    println(s_expr, "    (enumerate)");
                 println(s_expr, ")");
             } catch (const ios_base::failure &) {
                 throw ProofError{"Error writing proof s-expr file to '" + *fn + "'"};

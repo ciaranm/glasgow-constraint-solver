@@ -97,21 +97,39 @@ auto ReifiedLinearInequality::define_proof_model(ProofModel & model) -> void
 
     overloaded{
         [&](const reif::MustHold &) {
-            _proof_lines = pair{*model.add_constraint("ReifiedLinearInequality", "unconditional less than", terms <= _value, nullopt), nullopt};
+            _proof_lines = pair{*model.add_labelled_constraint(
+                _constraint_id, "",
+                "ReifiedLinearInequality", "unconditional less than",
+                terms <= _value, nullopt), nullopt};
         },
         [&](const reif::MustNotHold &) {
-            _proof_lines = pair{*model.add_constraint("ReifiedLinearInequality", "unconditional greater than", terms >= _value + 1_i, nullopt), nullopt};
+            _proof_lines = pair{*model.add_labelled_constraint(
+                _constraint_id, "",
+                "ReifiedLinearInequality", "unconditional greater than",
+                terms >= _value + 1_i, nullopt), nullopt};
         },
         [&](const reif::If & cond) {
-            _proof_lines = pair{*model.add_constraint("ReifiedLinearInequality", "less than option", terms <= _value, HalfReifyOnConjunctionOf{cond.cond}), nullopt};
+            _proof_lines = pair{*model.add_labelled_constraint(
+                _constraint_id, "lt",
+                "ReifiedLinearInequality", "less than option",
+                terms <= _value, HalfReifyOnConjunctionOf{cond.cond}), nullopt};
         },
         [&](const reif::NotIf & cond) {
-            _proof_lines = pair{*model.add_constraint("ReifiedLinearInequality", "greater than option", terms <= _value, HalfReifyOnConjunctionOf{cond.cond}), nullopt};
+            _proof_lines = pair{*model.add_labelled_constraint(
+                _constraint_id, "gt",
+                "ReifiedLinearInequality", "greater than option",
+                terms <= _value, HalfReifyOnConjunctionOf{cond.cond}), nullopt};
         },
         [&](const reif::Iff & cond) {
             _proof_lines = pair{
-                *model.add_constraint("ReifiedLinearInequality", "less than option", terms <= _value, HalfReifyOnConjunctionOf{cond.cond}),
-                model.add_constraint("ReifiedLinearInequality", "greater than option", terms >= _value + 1_i, HalfReifyOnConjunctionOf{! cond.cond})};
+                *model.add_labelled_constraint(
+                    _constraint_id, "lt",
+                    "ReifiedLinearInequality", "less than option",
+                    terms <= _value, HalfReifyOnConjunctionOf{cond.cond}),
+                *model.add_labelled_constraint(
+                    _constraint_id, "gt",
+                    "ReifiedLinearInequality", "greater than option", 
+                    terms >= _value + 1_i, HalfReifyOnConjunctionOf{! cond.cond})};
         }}
         .visit(_reif_cond);
 }
@@ -202,17 +220,18 @@ auto ReifiedLinearInequality::s_exprify(const ProofModel * const model) const ->
     stringstream s;
 
     auto [rei, cons] = overloaded{
-        [&](const reif::MustHold &) { return make_pair(false, "lin_less_than_equal"); },
-        [&](const reif::If &) { return make_pair(true, "lin_less_than_equal_if"); },
-        [&](const reif::Iff &) { return make_pair(true, "lin_less_than_equal_iff"); },
-        [&](const auto &) { throw UnexpectedException{"Unexpected reification type in s_exprify"}; return make_pair(false, ""); }}
-                           .visit(_reif_cond);
+        [&](const reif::MustHold &)    { return make_pair(false, "lin_less_equal"); },
+        [&](const reif::MustNotHold &) { return make_pair(false, "lin_greater_than"); },
+        [&](const reif::If &)          { return make_pair(true,  "lin_less_equal_if"); },
+        [&](const reif::NotIf &)       { return make_pair(true,  "lin_greater_than_if"); },
+        [&](const reif::Iff &)         { return make_pair(true,  "lin_less_equal_iff"); },
+    }.visit(_reif_cond);
 
     print(s, "{} {}", _constraint_id, cons);
     if (rei) {
         print(s, " {} ", model->names_and_ids_tracker().s_expr_name_of(_reif_cond));
     }
-    print(s, "(");
+    print(s, " (");
     for (const auto & [c, v] : _coeff_vars.terms) {
         print(s, " {} {}", c, model->names_and_ids_tracker().s_expr_name_of(v));
     }

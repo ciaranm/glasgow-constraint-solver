@@ -55,19 +55,19 @@ Stats run_circuit_problem(int n, const vector<vector<long>> & distances, SCCOpti
     for (int loc1 = 0; loc1 < n; loc1++) {
         for (int loc2 = 0; loc2 < n; loc2++) {
             if (distances[loc1][loc2] < 0) {
-                p.post(NotEquals{x[loc1], ConstantIntegerVariableID{Integer{loc2}}});
+                p.post_named(NotEquals{x[loc1], ConstantIntegerVariableID{Integer{loc2}}}, "cir_neq_" + std::to_string(loc1) + "_" + std::to_string(loc2));
             }
         }
     }
     auto use_gac_all_different = false;
-    p.post(Circuit{x, use_gac_all_different, options});
+    p.post_named(Circuit{x, use_gac_all_different, options}, "cir_ad");
 
     // Minimise the distance between any two stops
     auto max_leg = p.create_integer_variable(0_i, 100_i, "max_leg");
     for (int loc1 = 0; loc1 < n; loc1++) {
         for (int loc2 = 0; loc2 < n; loc2++) {
-            p.post(LessThanIf{ConstantIntegerVariableID{Integer{distances[loc1][loc2]}}, max_leg,
-                x[loc1] == Integer{loc2}});
+            p.post_named(LessThanIf{ConstantIntegerVariableID{Integer{distances[loc1][loc2]}}, max_leg,
+                x[loc1] == Integer{loc2}}, "cir_dist_" + std::to_string(loc1) + "_" + std::to_string(loc2));
         }
     }
 

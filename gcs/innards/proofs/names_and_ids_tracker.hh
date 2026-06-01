@@ -302,6 +302,11 @@ namespace gcs::innards
         [[nodiscard]] auto s_expr_name_of(IntegerVariableID id) const -> std::string;
 
         /**
+         * Get the s-expression rendering of a literal.
+         */
+        [[nodiscard]] auto s_expr_render_of(IntegerVariableID id) const -> std::string;
+
+        /**
          * Get the human-readable / s-expr name for a literal. Currently not sure about VariableConditionFrom<IntegerVariableID>
          */
         [[nodiscard]] auto s_expr_name_of(Literal lit) const -> std::string;

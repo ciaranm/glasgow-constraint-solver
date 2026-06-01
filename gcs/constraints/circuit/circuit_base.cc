@@ -166,7 +166,7 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state, Proof
     else {
         // Still need to define the all different encoding.
         if (model)
-            define_clique_not_equals_encoding(*model, _succ);
+            define_labelled_clique_not_equals_encoding(_constraint_id, *model, _succ);
     }
 
     // Define encoding to eliminate sub-cycles
@@ -181,7 +181,9 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state, Proof
             PosVarData{"p[0]", model->create_proof_only_integer_variable(0_i, Integer{n - 1}, "pos0", IntegerVariableProofRepresentation::Bits), map<long, PosVarLineData>{}});
         model->add_constraint(WPBSum{} + 1_i * pos_var_data.at(0).var <= 0_i);
         // Hence we can only have succ[0] = 0 (self cycle) if there is only one node i.e. n - 1 = 0
-        auto [leq_line, geq_line] = model->add_constraint(
+        auto [leq_line, geq_line] = model->add_labelled_constraint(
+            _constraint_id, "le_0_0", "ge_0_0",
+            "Circuit", "sub-cycle prevention",
             WPBSum{} == Integer{n - 1},
             HalfReifyOnConjunctionOf{{_succ[0] == 0_i}});
 
@@ -190,27 +192,33 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state, Proof
         for (unsigned int idx = 1; idx < _succ.size(); ++idx) {
             pos_var_data.emplace(idx,
                 PosVarData{format("p[{}]", idx),
-                    model->create_proof_only_integer_variable(0_i, Integer{n - 1}, "pos0",
+                    model->create_proof_only_integer_variable(0_i, Integer{n - 1}, format("pos{}", idx),
                         IntegerVariableProofRepresentation::Bits),
                     map<long, PosVarLineData>{}});
         }
 
         for (unsigned int idx = 1; idx < _succ.size(); ++idx) {
             // (succ[0] = i) -> pos[i] - pos[0] = 1
-            tie(leq_line, geq_line) = model->add_constraint(
+            tie(leq_line, geq_line) = model->add_labelled_constraint(
+                _constraint_id, format("le_0_{}", idx), format("ge_0_{}", idx),
+                "Circuit", "sub-cycle prevention",
                 WPBSum{} + 1_i * pos_var_data.at(idx).var + -1_i * 1_c == 0_i,
                 HalfReifyOnConjunctionOf{{_succ[0] == Integer{idx}}});
             pos_var_data.at(0).plus_one_lines.emplace(idx, PosVarLineData{leq_line.value(), geq_line.value()});
 
             // (succ[i] = 0) -> pos[0] - pos[i] = 1-n
-            tie(leq_line, geq_line) = model->add_constraint(
+            tie(leq_line, geq_line) = model->add_labelled_constraint(
+                _constraint_id, format("le_{}_0", idx), format("ge_{}_0", idx),
+                "Circuit", "sub-cycle prevention",
                 WPBSum{} + 1_i * pos_var_data.at(0).var + -1_i * pos_var_data.at(idx).var == Integer{1 - n},
                 HalfReifyOnConjunctionOf{{_succ[idx] == 0_i}});
             pos_var_data.at(idx).plus_one_lines.emplace(0, PosVarLineData{leq_line.value(), geq_line.value()});
 
             // (succ[i] = j) -> pos[j] = pos[i] + 1
             for (unsigned int jdx = 1; jdx < _succ.size(); ++jdx) {
-                tie(leq_line, geq_line) = model->add_constraint(
+                tie(leq_line, geq_line) = model->add_labelled_constraint(
+                    _constraint_id, format("le_{}_{}", idx, jdx), format("ge_{}_{}", idx, jdx),
+                    "Circuit", "sub-cycle prevention",
                     WPBSum{} + 1_i * pos_var_data.at(jdx).var + -1_i * pos_var_data.at(idx).var == 1_i,
                     HalfReifyOnConjunctionOf{{_succ[idx] == Integer{jdx}}});
                 pos_var_data.at(idx).plus_one_lines.emplace(jdx, PosVarLineData{leq_line.value(), geq_line.value()});

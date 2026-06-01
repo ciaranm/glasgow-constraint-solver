@@ -829,6 +829,21 @@ auto NamesAndIDsTracker::s_expr_name_of(IntegerVariableID id) const -> string
         .visit(id);
 }
 
+auto NamesAndIDsTracker::s_expr_render_of(IntegerVariableID id) const -> string
+{
+    return overloaded{
+        [&](const ConstantIntegerVariableID & c) -> string { return "(maximize " + c.const_value.to_string() + ")"; },
+        [&](const SimpleIntegerVariableID & v) -> string { return "(maximize " + name_of(v) + ")"; },
+        [&](const ViewOfIntegerVariableID & vv) -> string {
+            stringstream name;
+            name << "(";
+            name << (vv.negate_first ? "maximize" : "minimize") << " ";
+            name << name_of(vv.actual_variable) << ")";
+            return name.str();
+        }}
+        .visit(id);
+}
+
 auto NamesAndIDsTracker::s_expr_name_of(Literal lit) const -> string
 {
     return overloaded{
