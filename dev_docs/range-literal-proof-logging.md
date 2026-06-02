@@ -238,26 +238,81 @@ Under heavy overlap you are pushed back toward the cross-product. Not fatal, but
 the clean cost depends on the range family's shape — worth measuring before
 preferring ranges to per-value lines at a given propagator.
 
+### The reverse direction: not-equals must propagate `¬r`
+
+Everything above is the **forward** link `r ∨ [X≠v]`. Note that *both*
+introduction paths in "What the closure actually costs" emit the *same* clause —
+that is symmetry of *when we add it*, not of *which way it propagates*. The
+forward link gives `¬r ⇒ [X≠v]`; it does **not** give the converse, and a set of
+not-equals literals that empties the range does **not** propagate `¬r`. (Matthew
+caught this on PR #240; the first write-up conflated introduction-time symmetry
+with propagation-direction symmetry.)
+
+His example. A propagator gives `R ⇒ [X≠10], …, [X≠20]` (every interior value
+excluded), and a separate constraint is justified by `¬[X∈[10,20]] ⇒ 0 ≥ 1` (it
+needs the range non-empty). Backtracking with `[guesses] ⇒ 0 ≥ 1` then fails:
+`[guesses]` propagates `R`, `R` propagates all the `[X≠v]`, **but nothing
+propagates `¬r`**, so the `¬r ⇒ ⊥` constraint never fires and there is no
+conflict. This is still Theorem 3.3 — `¬r` is a *defined literal implied by D* —
+but with the range literal as the *consequent*, which the forward links
+structurally cannot reach.
+
+The missing clause is the **covering clause**
+
+```
+r ∨ [X=a] ∨ [X=a+1] ∨ … ∨ [X=b]        ( {[X≠v] : v∈[a,b]} ⇒ ¬r )
+```
+
+valid (`x∉{a..b} ⇒ x∉[a,b] ⇒ ¬r`) and RUP (under the negation `r` itself
+supplies `[X≥a]`, then the equality–bound chain marches `[X≥a]→…→[X≥b+1]` against
+`r ⇒ ¬[X≥b+1]`). As always, RUP-derivable ≠ forward-propagating: the clause has
+to be **present** for UP to fire `¬r` once every `[X=v]` is false. Three things
+make this harder than the forward direction:
+
+1. **Bound-driven emptying is already handled.** The forward reif clauses give
+   `¬[X≥a] ⇒ ¬r` and `[X≥b+1] ⇒ ¬r`, so a range emptied by a bound crossing
+   already propagates `¬r`. The covering clause is needed *only* for the
+   value-by-value case — the range emptied while `X`'s bounds stay outside it.
+2. **It is width `b−a+2` and references every interior equality literal.** A
+   constant-width decomposition exists, dual to the forward containment chain:
+   nest sub-range literals `r_k = [X∈[a,k]]` and post `¬r_k ∨ r_{k-1} ∨ [X=k]`,
+   so UP composes `¬[X=a] → ¬r_a → … → ¬r_b = ¬r`. It pays for the narrow
+   clauses with `O(width)` auxiliary sub-range literals.
+3. **The win is directional.** `¬r ⇒` {many not-equals} (forward) is cheap and
+   is the use case. {many not-equals} `⇒ ¬r` (reverse) is inherently `Ω(width)`
+   — in clause width or in chain length — because reconstituting `¬r` from
+   scattered exclusions has to read all of them. So the reverse links cost the
+   same order as the per-value lines we were avoiding, and they only arise when
+   *something else* excluded the values one at a time, i.e. exactly when the
+   range literal was not earning its keep. The invariant for *when* a range
+   literal coexists with all its interior equality literals (and so needs the
+   reverse clause) is the subtle, still-unresolved part.
+
 ## What is still owed before implementing
 
 1. **Theorem 3.3 (propagation completeness) for the extended vocabulary — the
    central deliverable.** Prove that, with the link closure maintained, unit
    propagation of any literal set propagates *every defined* bound / equality /
-   range literal implied by the resulting domain. This is the subtle,
-   bookkeeping-driven induction the forward-propagation example turns on, and
-   the one most prone to a plausible-but-wrong paper proof — a good candidate
-   for the proof-assistant formalisation we have been discussing separately.
+   range literal implied by the resulting domain — in **both** directions: a
+   range as antecedent (`¬r ⇒ [X≠v]`, forward links) and a range as consequent
+   ({not-equals} `⇒ ¬r`, the reverse covering clause / sub-range chain). This is
+   the subtle, bookkeeping-driven induction both failure examples turn on, and
+   the one most prone to a plausible-but-wrong paper proof — a good candidate for
+   the proof-assistant formalisation we have been discussing separately.
 2. **Inv3 for the whole block** via the hole-aware `domL` (covers untouched
    values).
 3. **Lemma 3.4 (valid reason) re-proved** admitting range literals into the
    reason vocabulary. The mixed-vocabulary conflict sweep above essentially is
    this argument; it needs writing up against the thesis definitions.
-4. **Inv1′ + the introduction-path wiring.** Maintain the link closure
-   (`r ∨ [X≠v]`, and range–range links, in containment-chain form where the
-   family nests) on *both* atom-introduction paths — new range and new equality.
-   It is globally valid and never retracted, so no epoch bookkeeping, but the
-   introduction hooks must fire at atom-definition time, symmetric with how
-   order/equality atoms are introduced today.
+4. **Inv1′ + the introduction-path wiring.** Maintain the link closure on *both*
+   atom-introduction paths — new range and new equality. Forward: `r ∨ [X≠v]`
+   plus range–range links, in containment-chain form where the family nests.
+   Reverse: the covering clause `r ∨ ⋁ [X=v]` (or its sub-range chain) whenever a
+   range coexists with all its interior equality literals. All are globally valid
+   and never retracted, so no epoch bookkeeping, but the introduction hooks must
+   fire at atom-definition time, symmetric with how order/equality atoms are
+   introduced today. **The reverse trigger condition is the open question** — see
+   "The reverse direction" above.
 
 ## Practical takeaways for when this is built
 
@@ -278,8 +333,29 @@ preferring ranges to per-value lines at a given propagator.
   O(#defined literals) only when the ranges nest or are disjoint (containment
   chain). Heavy overlap degrades it back toward the cross-product. Measure the
   range family's shape before preferring ranges to per-value lines.
+- **The reverse direction is `Ω(width)` and only the forward direction is a
+  win.** Using `¬r` as a *source* of value-exclusions (forward) is the cheap,
+  intended case. Reconstituting `¬r` from scattered not-equals (reverse) costs as
+  much as the per-value lines either way; if a propagator only ever empties a
+  range value by value, a range literal is the wrong tool there.
 - **Never half-reify a range literal.** The ablation shows the backward clause
   is the load-bearing one; emit the full `red`-introduced biconditional.
+
+## An alternative worth weighing: range literals via views
+
+Matthew raised (PR #240) encoding a range literal as a **bound literal on a
+view**, reusing view soundness instead of the bespoke linking above. The
+attraction is real: a bound literal `[V ≤ c]` is a genuine atom, so it inherits
+Theorem 3.3 in **both** directions from the order-encoding / Inv1 machinery —
+no disjunctive trap, no separate forward/reverse bookkeeping. The catch is that a
+*two-sided* interval `X ∈ [a,b]` is **not** a single bound on an *affine* view of
+`X` (`V = X + k` gives a half-line). Two-sided membership needs a non-monotone,
+abs-like view (`[|X−c| ≤ r] ⇔ X ∈ [a,b]`), which lands squarely in the known weak
+spot of view proof logging (the `Abs` bit-composition gap; see
+[`view-proof-logging.md`](view-proof-logging.md)). So views do not remove the
+work — they relocate it into abs-view proof logging — but that may be the cleaner
+*home* for it, and it would subsume both directions at once. Tracked as an open
+option, not a decision.
 
 ## Related
 
