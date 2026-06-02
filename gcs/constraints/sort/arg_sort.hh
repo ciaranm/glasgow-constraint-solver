@@ -26,6 +26,11 @@ namespace gcs
     {
     private:
         std::vector<IntegerVariableID> _x, _p;
+        // Internal real "sorted value" variables y[j] = x[p[j]]. They are not
+        // exposed to the user; ArgSort installs an inner Sort{x, y} on them to
+        // reuse its Mehlhorn-Thiel bounds(Z) propagator and certified proof, and
+        // channels them to p. Allocated in prepare().
+        std::vector<SimpleIntegerVariableID> _y;
         Integer _offset;
         Integer _lowest_x{0_i}, _highest_x{0_i};
 
