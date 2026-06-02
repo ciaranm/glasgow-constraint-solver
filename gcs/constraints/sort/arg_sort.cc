@@ -185,8 +185,8 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
     //       so intersect their bounds.
     // The inner Sort already keeps x and y bounds(Z)-consistent; this pass turns
     // those tightened bounds into permutation prunings (and back). The
-    // rank-interval propagator below strengthens it further; together they reach
-    // the polynomial frontier (full GAC on p is NP-hard).
+    // achievable-rank-set propagator below brings p all the way to bounds(Z)
+    // consistency (full GAC on p is NP-hard).
     Triggers channel_triggers;
     channel_triggers.on_bounds.insert(channel_triggers.on_bounds.end(), _x.begin(), _x.end());
     channel_triggers.on_bounds.insert(channel_triggers.on_bounds.end(), y_ids.begin(), y_ids.end());
@@ -236,12 +236,13 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
     },
         channel_triggers);
 
-    // Rank-interval propagator: element k's stable rank pos[k] is the number of
-    // elements before it, which lies in [a_k, b_k] where a_k counts the elements
-    // that MUST precede k and b_k those that CAN (under the stable order: i<k
-    // ties to i, i>k ties to k). Since p[j]=offset+k <-> pos[k]=j, position j can
-    // hold element k only if j in [a_k, b_k]; prune otherwise. This is the
-    // order-statistic / stability strengthening of the plain channel pass above.
+    // Achievable-rank-set propagator: gives bounds(Z) consistency on p. Element
+    // k's stable rank pos[k] (the number of elements before it) lies in
+    // [a_k, b_k] (must-precede .. can-precede counts), but ties among the other
+    // elements can leave HOLES in that interval. We compute k's exact reachable
+    // rank set and, since p[j]=offset+k <-> pos[k]=j, prune p[j] != offset+k for
+    // every unreachable position j. (If j is reachable, some x-assignment puts k
+    // at rank j and is a full solution, so this is exactly BC on p.)
     Triggers rank_triggers;
     rank_triggers.on_bounds.insert(rank_triggers.on_bounds.end(), _x.begin(), _x.end());
     rank_triggers.on_change.insert(rank_triggers.on_change.end(), _p.begin(), _p.end());
@@ -269,42 +270,153 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
                     ++b_k;
             }
 
-            // Element k cannot sit at positions outside [a_k, b_k]; prune p[j].
+            // The achievable rank SET of element k can be a strict subset of the
+            // interval [a_k, b_k]: ties among the other elements make the "number
+            // below k" jump as x[k] crosses their values, leaving holes. For each
+            // candidate value vk of x[k], the count of elements before k can be
+            // any integer in [#forced(vk), #possible(vk)]; the union over vk (it
+            // suffices to sample the O(n) regime breakpoints) is the reachable
+            // set. Position j can hold element k only if j is reachable.
+            vector<bool> reachable(n, false);
+            {
+                vector<long long> cands{lk.raw_value, uk.raw_value};
+                for (size_t i = 0; i < n; ++i) {
+                    if (i == k)
+                        continue;
+                    auto [li, ui] = state.bounds(x[i]);
+                    for (long long t : {li.raw_value, ui.raw_value, li.raw_value + 1, ui.raw_value + 1,
+                             li.raw_value - 1, ui.raw_value - 1})
+                        if (t >= lk.raw_value && t <= uk.raw_value)
+                            cands.push_back(t);
+                }
+                for (long long vk : cands) {
+                    long long forced = 0, possible = 0;
+                    for (size_t i = 0; i < n; ++i) {
+                        if (i == k)
+                            continue;
+                        auto [li, ui] = state.bounds(x[i]);
+                        bool f = (i < k) ? (ui.raw_value <= vk) : (ui.raw_value < vk);
+                        bool c = (i < k) ? (li.raw_value <= vk) : (li.raw_value < vk);
+                        if (f)
+                            ++forced;
+                        if (c)
+                            ++possible;
+                    }
+                    for (long long r = forced; r <= possible; ++r)
+                        if (r >= 0 && r < static_cast<long long>(n))
+                            reachable[r] = true;
+                }
+            }
+
             for (size_t j = 0; j < n; ++j) {
-                bool below = static_cast<long long>(j) < a_k;
-                bool above = static_cast<long long>(j) > b_k;
-                if (! below && ! above)
+                if (reachable[j])
                     continue;
                 auto pv = offset + Integer(static_cast<long long>(k));
                 if (! state.in_domain(p[j], pv))
                     continue;
 
-                // The cross-variable rank deduction is not plain RUP, so derive
-                // the rank bound by an explicit pol, mirroring the Sort
-                // propagator. below: pos[k] >= a_k via rank_ge[k] + the forced
-                // "before[i][k] >= 1" lines; above: pos[k] <= b_k via rank_le[k]
-                // + the forced "!before[i][k]" lines. The inverse channel
-                // (p[j]=offset+k -> pos[k]=j) then makes p[j] != offset+k RUP.
-                inference.infer_not_equal(logger, p[j], pv,
-                    JustifyExplicitlyThenRUP{[&, k, j, below](const ReasonFunction & reason_fn) -> void {
-                        PolBuilder pol;
-                        if (below) {
-                            pol.add(witness.rank_ge[k]);
-                            for (size_t i = 0; i < n; ++i)
-                                if (i != k && must_precede[i])
-                                    pol.add(logger->emit_rup_proof_line_under_reason(reason_fn,
-                                        WPBSum{} + 1_i * witness.before[i][k] >= 1_i, ProofLevel::Temporary));
+                bool below = static_cast<long long>(j) < a_k;
+                bool above = static_cast<long long>(j) > b_k;
+                if (below || above) {
+                    // Outside the rank interval: the cross-variable rank deduction
+                    // is not plain RUP, so derive the rank bound by an explicit
+                    // pol, mirroring the Sort propagator. below: pos[k] >= a_k via
+                    // rank_ge[k] + the forced "before[i][k] >= 1" lines; above:
+                    // pos[k] <= b_k via rank_le[k] + the forced "!before[i][k]"
+                    // lines. The inverse channel (p[j]=offset+k -> pos[k]=j) then
+                    // makes p[j] != offset+k RUP.
+                    inference.infer_not_equal(logger, p[j], pv,
+                        JustifyExplicitlyThenRUP{[&, k, j, below](const ReasonFunction & reason_fn) -> void {
+                            PolBuilder pol;
+                            if (below) {
+                                pol.add(witness.rank_ge[k]);
+                                for (size_t i = 0; i < n; ++i)
+                                    if (i != k && must_precede[i])
+                                        pol.add(logger->emit_rup_proof_line_under_reason(reason_fn,
+                                            WPBSum{} + 1_i * witness.before[i][k] >= 1_i, ProofLevel::Temporary));
+                            }
+                            else {
+                                pol.add(witness.rank_le[k]);
+                                for (size_t i = 0; i < n; ++i)
+                                    if (i != k && ! can_precede[i])
+                                        pol.add(logger->emit_rup_proof_line_under_reason(reason_fn,
+                                            WPBSum{} + 1_i * ! witness.before[i][k] >= 1_i, ProofLevel::Temporary));
+                            }
+                            pol.emit(*logger, ProofLevel::Temporary);
+                        }},
+                        bounds_reason(state, x));
+                }
+                else {
+                    // Hole inside [a_k, b_k]: rank j is unreachable because of a
+                    // tie-jump in the "number below k". There is a threshold value
+                    // U with #possible(U) <= j-1 and #forced(U+1) >= j+1, so
+                    //   x[k] <= U   => pos[k] <= #possible(U) <= j-1, and
+                    //   x[k] >= U+1 => pos[k] >= #forced(U+1) >= j+1,
+                    // both excluding pos[k] = j. Prove each side by a pol (mirror
+                    // of the interval case, but pivoting on the constant U instead
+                    // of x[k]'s own bound), then the inverse channel makes
+                    // p[j] != offset+k RUP via the case split on [x[k] >= U+1].
+                    auto possible_at = [&](long long v) {
+                        long long c = 0;
+                        for (size_t i = 0; i < n; ++i) {
+                            if (i == k)
+                                continue;
+                            auto [li, ui] = state.bounds(x[i]);
+                            if ((i < k) ? (li.raw_value <= v) : (li.raw_value < v))
+                                ++c;
                         }
-                        else {
-                            pol.add(witness.rank_le[k]);
-                            for (size_t i = 0; i < n; ++i)
-                                if (i != k && ! can_precede[i])
-                                    pol.add(logger->emit_rup_proof_line_under_reason(reason_fn,
-                                        WPBSum{} + 1_i * ! witness.before[i][k] >= 1_i, ProofLevel::Temporary));
-                        }
-                        pol.emit(*logger, ProofLevel::Temporary);
-                    }},
-                    bounds_reason(state, x));
+                        return c;
+                    };
+                    // U = largest value with #possible(U) <= j-1 (exists: a hole
+                    // has #possible(lk) <= j-1 and #possible(uk) = b_k >= j).
+                    long long U = lk.raw_value;
+                    for (long long v = lk.raw_value; v < uk.raw_value; ++v) {
+                        if (possible_at(v + 1) <= static_cast<long long>(j) - 1)
+                            U = v + 1;
+                        else
+                            break;
+                    }
+
+                    inference.infer_not_equal(logger, p[j], pv,
+                        JustifyExplicitlyThenRUP{[&, k, j, U](const ReasonFunction & reason_fn) -> void {
+                            // Line A: x[k] <= U => pos[k] <= #possible(U).
+                            // For each i that cannot precede k at x[k]=U, the clause
+                            // (x[k] >= U+1) v !before[i][k] is RUP from before_fwd +
+                            // the bound on x[i]; rank_le[k] folds them in.
+                            PolBuilder polA;
+                            polA.add(witness.rank_le[k]);
+                            for (size_t i = 0; i < n; ++i) {
+                                if (i == k)
+                                    continue;
+                                auto [li, ui] = state.bounds(x[i]);
+                                bool cannot = (i < k) ? (li.raw_value > U) : (li.raw_value >= U);
+                                if (cannot)
+                                    polA.add(logger->emit_rup_proof_line_under_reason(reason_fn,
+                                        WPBSum{} + 1_i * (x[k] >= Integer{U + 1}) + 1_i * ! witness.before[i][k] >= 1_i,
+                                        ProofLevel::Temporary));
+                            }
+                            polA.emit(*logger, ProofLevel::Temporary);
+
+                            // Line B: x[k] >= U+1 => pos[k] >= #forced(U+1).
+                            // For each i forced to precede k at x[k]=U+1, the clause
+                            // (x[k] <= U) v before[i][k] is RUP from before_rev +
+                            // the bound on x[i]; rank_ge[k] folds them in.
+                            PolBuilder polB;
+                            polB.add(witness.rank_ge[k]);
+                            for (size_t i = 0; i < n; ++i) {
+                                if (i == k)
+                                    continue;
+                                auto [li, ui] = state.bounds(x[i]);
+                                bool forced = (i < k) ? (ui.raw_value <= U + 1) : (ui.raw_value <= U);
+                                if (forced)
+                                    polB.add(logger->emit_rup_proof_line_under_reason(reason_fn,
+                                        WPBSum{} + 1_i * (x[k] < Integer{U + 1}) + 1_i * witness.before[i][k] >= 1_i,
+                                        ProofLevel::Temporary));
+                            }
+                            polB.emit(*logger, ProofLevel::Temporary);
+                        }},
+                        bounds_reason(state, x));
+                }
             }
         }
 

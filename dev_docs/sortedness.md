@@ -108,25 +108,36 @@ the returned `SortednessWitness` (the `before` flags, `pos`, and the `rank_ge`/
   the reified channel reduces the cross-variable step to a single-variable bound
   contradiction.
 - the **inverse channel** `p[j] = offset + k  <->  pos[k] = j` (definitional:
-  position `j` holds element `k` exactly when `k`'s stable rank is `j`), plus a
-  **rank-interval propagator**. Element `k` must precede the elements ranked
-  after it and can precede those ranked before, so `pos[k] in [a_k, b_k]` where
-  `a_k = #{i : i must precede k}` and `b_k = #{i : i can precede k}` (stable
-  order: `i<k` ties to `i`, `i>k` to `k`). Hence `p[j] != offset + k` for
-  `j` outside `[a_k, b_k]`. This is *not* plain RUP — like Sort's own bound
-  proofs it needs an explicit pol: `below` derives `pos[k] >= a_k` from
-  `rank_ge[k]` plus the forced `before[i][k] >= 1` lines, `above` derives
-  `pos[k] <= b_k` from `rank_le[k]` plus the forced `!before[i][k]` lines; the
-  inverse channel then closes the goal by RUP.
+  position `j` holds element `k` exactly when `k`'s stable rank is `j`), plus an
+  **achievable-rank-set propagator**. For a fixed value `vk` of `x[k]`, the
+  number of elements below `k` can be any integer in `[#forced(vk),
+  #possible(vk)]`; the union of these intervals over `vk in [lk, uk]` is `k`'s
+  exact reachable rank set (it suffices to sample the `O(n)` breakpoints). This
+  set can have **holes**: ties among the other elements make the count jump (e.g.
+  `x[i]=x[i']=0` forces `before[i][k]` and `before[i'][k]` to move together), so
+  the reachable set is generally *not* the whole interval `[a_k, b_k]`. Position
+  `j` can hold element `k` only if `j` is reachable.
 
-**Consistency achieved.** `bounds(Z)` on `x` and `y` (Mehlhorn-Thiel) plus GAC
-`all_different`, channel, and order-statistic rank-interval pruning on `p`.
-Empirically (exhaustive small-instance scan) this removes **every polynomially
-removable** infeasible `(position, element)` pair — the only `p` values left
-that lack a full solution are the genuinely NP-hard ones (rank-feasible but
-integer-infeasible). Full GAC on `p` is NP-hard, so that residual is the
-frontier; the remaining missing strength is Hall-band *set* reasoning over the
-rank intervals (a future increment), not the per-element intervals done here.
+  - **Outside the interval** (`j < a_k` or `j > b_k`): explicit pol on the
+    element's own bound — `below` derives `pos[k] >= a_k` from `rank_ge[k]` plus
+    the forced `before[i][k] >= 1` lines, `above` derives `pos[k] <= b_k` from
+    `rank_le[k]` plus the forced `!before[i][k]` lines.
+  - **Hole inside the interval**: there is a threshold value `U` with
+    `#possible(U) <= j-1` and `#forced(U+1) >= j+1`, so `x[k] <= U => pos[k] <=
+    j-1` and `x[k] >= U+1 => pos[k] >= j+1`. The proof pivots on the *constant*
+    `U` (mirroring Sort's pivot-bridge): line A folds `rank_le[k]` with the
+    `(x[k] >= U+1) v !before[i][k]` clauses, line B folds `rank_ge[k]` with the
+    `(x[k] <= U) v before[i][k]` clauses; the inverse channel then closes
+    `p[j] != offset+k` by RUP via the case split on `[x[k] >= U+1]`.
+
+**Consistency achieved.** `bounds(Z)` on `x`, `y`, **and `p`**, fully certified.
+The achievable-rank-set propagator gives bounds consistency on `p`: if rank `j`
+is reachable for element `k`, then some `x`-assignment places `k` at rank `j`,
+and that assignment is itself a complete solution with `p[j] = offset + k` — so
+the exact reachable set *is* the BC-supported set. This matches the strength of
+Gecode's `sorted` with permutation variables (Thiel's algorithm), but certified.
+Full GAC on `p` remains NP-hard (rank-feasible but integer-infeasible values can
+survive); that residual is the frontier and is deliberately not pursued.
 
 The asymmetry with Sort's witness is deliberate: a proof-only permutation (Sort)
 *forces* the stable-rank construction; a real permutation (ArgSort) channels
