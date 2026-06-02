@@ -353,9 +353,10 @@ no disjunctive trap, no separate forward/reverse bookkeeping. The catch is that 
 abs-like view (`[|X−c| ≤ r] ⇔ X ∈ [a,b]`), which lands squarely in the known weak
 spot of view proof logging (the `Abs` bit-composition gap; see
 [`view-proof-logging.md`](view-proof-logging.md)). So views do not remove the
-work — they relocate it into abs-view proof logging — but that may be the cleaner
-*home* for it, and it would subsume both directions at once. Tracked as an open
-option, not a decision.
+work — they relocate it into abs-view proof logging, and on current evidence that
+is **not** obviously a gain: a sound two-sided (non-monotone) view is the same
+difficulty wearing different clothes, so it trades one open problem for another
+rather than dissolving it. Noted as a possibility, not a recommendation.
 
 ## Related
 
