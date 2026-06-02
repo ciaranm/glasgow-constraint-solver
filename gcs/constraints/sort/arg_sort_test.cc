@@ -89,12 +89,12 @@ namespace
         prob.post(ArgSort{x, p, Integer(offset)});
 
         auto proof_name = proofs ? make_optional("arg_sort_test") : nullopt;
-        // x is kept bounds(Z)-consistent by the reused Mehlhorn-Thiel propagator.
-        // p gets channel + rank-interval (order-statistic) pruning, which reaches
-        // the polynomial frontier but not full GAC (GAC for arg_sort is NP-hard),
-        // so it is not checked for a consistency level.
+        // Both x and p are kept bounds(Z)-consistent: x by the reused
+        // Mehlhorn-Thiel propagator, p by the achievable-rank-set propagator plus
+        // GAC all_different. (Full GAC on p is NP-hard, but bounds consistency is
+        // achieved and certified.)
         solve_for_tests_checking_consistency(prob, proof_name, expected, actual,
-            tuple{std::make_pair(x, CheckConsistency::BC), std::make_pair(p, CheckConsistency::None)});
+            tuple{std::make_pair(x, CheckConsistency::BC), std::make_pair(p, CheckConsistency::BC)});
         check_results(proof_name, expected, actual);
     }
 }
@@ -130,6 +130,15 @@ auto main(int argc, char * argv[]) -> int
         // RUP justification.
         run_arg_sort_test(proofs, 0, {{4, 5}, {0, 1}, {2, 3}});
         run_arg_sort_test(proofs, 1, {{4, 5}, {0, 1}, {2, 3}});
+
+        // Tie-induced rank HOLES: with x[0] = x[1] = 0 the "number below x[2]"
+        // jumps from 0 to 2 as x[2] crosses 0, so x[2]'s reachable ranks are
+        // {0, 2} (never 1). The achievable-rank-set propagator must prune p[1]=2,
+        // exercising the threshold-pivot hole proof (not the plain interval pol).
+        run_arg_sort_test(proofs, 0, {{0, 0}, {0, 0}, {-1, 1}});
+        run_arg_sort_test(proofs, 1, {{0, 0}, {0, 0}, {-1, 1}});
+        // A wider hole: x[2] in [-2,0] reaches ranks {0, 3} only (holes at 1, 2).
+        run_arg_sort_test(proofs, 0, {{0, 0}, {0, 0}, {-2, 0}, {-1, -1}, {3, 5}});
     }
 
     // Seeded randomized batch: small instances with a mix of overlapping and
