@@ -90,8 +90,9 @@ namespace
 
         auto proof_name = proofs ? make_optional("arg_sort_test") : nullopt;
         // x is kept bounds(Z)-consistent by the reused Mehlhorn-Thiel propagator.
-        // p is only channel-consistent (full bounds(Z) on p is the costly pass we
-        // deliberately do not run), so it is not checked for a consistency level.
+        // p gets channel + rank-interval (order-statistic) pruning, which reaches
+        // the polynomial frontier but not full GAC (GAC for arg_sort is NP-hard),
+        // so it is not checked for a consistency level.
         solve_for_tests_checking_consistency(prob, proof_name, expected, actual,
             tuple{std::make_pair(x, CheckConsistency::BC), std::make_pair(p, CheckConsistency::None)});
         check_results(proof_name, expected, actual);

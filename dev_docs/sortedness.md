@@ -82,11 +82,14 @@ every solution — determined for free, no canonicalisation needed.
 
 **Reuse of Sort.** Rather than re-deriving the sorted values, `ArgSort`
 allocates `n` internal real variables `y[j]` (spanning the `x` value range) and
-installs an inner `Sort{x, y}` on them. This reuses Sort's entire certified
-apparatus verbatim — the stable-rank `pos` witness, the root permutation pol,
-and the Mehlhorn-Thiel propagator — so `x` and `y` are kept `bounds(Z)`-
-consistent with no new proof obligations. The `y[j]` are set up in the proof
-(`set_up_integer_variable`) but never branched on; they are an internal witness.
+runs the shared sortedness helpers (`define_sortedness_proof_model` /
+`install_sortedness_propagator`, factored out of Sort) on `{x, y}`. This reuses
+Sort's entire certified apparatus — the stable-rank `pos` witness, the root
+permutation pol, and the Mehlhorn-Thiel propagator — so `x` and `y` are kept
+`bounds(Z)`-consistent with no new proof obligations. Crucially `ArgSort` keeps
+the returned `SortednessWitness` (the `before` flags, `pos`, and the `rank_ge`/
+`rank_le` lines) so it can channel `p` to `pos` and prove rank prunings. The
+`y[j]` are set up in the proof (`set_up_integer_variable`) but never branched on.
 
 **Channel to `p`.** On top of that, `ArgSort` adds:
 
@@ -99,18 +102,31 @@ consistent with no new proof obligations. The `y[j]` are set up in the proof
   literals, and a fully-reified equality flag per consecutive pair driving the
   stability tie-break `eq_j -> p[j] < p[j+1]` (the inner Sort already gives
   `y[j] <= y[j+1]`, so the flag captures exactly the ties).
-- a **channel-consistency propagator**: (1) if `dom(x[k])` and `dom(y[j])` are
-  disjoint then `p[j] != offset + k`; (2) once `p[j] = offset + k` is fixed,
-  `x[k]` and `y[j]` hold equal values, so their bounds are intersected. Each
-  pruning is justified by plain RUP from the channel line and the two bounds —
+- a **channel propagator**: (1) if `dom(x[k])` and `dom(y[j])` are disjoint then
+  `p[j] != offset + k`; (2) once `p[j] = offset + k` is fixed, `x[k]` and `y[j]`
+  hold equal values, so their bounds are intersected. Each pruning is plain RUP —
   the reified channel reduces the cross-variable step to a single-variable bound
-  contradiction, which VeriPB's RUP handles.
+  contradiction.
+- the **inverse channel** `p[j] = offset + k  <->  pos[k] = j` (definitional:
+  position `j` holds element `k` exactly when `k`'s stable rank is `j`), plus a
+  **rank-interval propagator**. Element `k` must precede the elements ranked
+  after it and can precede those ranked before, so `pos[k] in [a_k, b_k]` where
+  `a_k = #{i : i must precede k}` and `b_k = #{i : i can precede k}` (stable
+  order: `i<k` ties to `i`, `i>k` to `k`). Hence `p[j] != offset + k` for
+  `j` outside `[a_k, b_k]`. This is *not* plain RUP — like Sort's own bound
+  proofs it needs an explicit pol: `below` derives `pos[k] >= a_k` from
+  `rank_ge[k]` plus the forced `before[i][k] >= 1` lines, `above` derives
+  `pos[k] <= b_k` from `rank_le[k]` plus the forced `!before[i][k]` lines; the
+  inverse channel then closes the goal by RUP.
 
 **Consistency achieved.** `bounds(Z)` on `x` and `y` (Mehlhorn-Thiel) plus GAC
-`all_different` and channel-consistency on `p`. This is deliberately **weaker
-than full `bounds(Z)` on `p`**, which is the costly NP-hard-adjacent pass (cf.
-Gecode making its `Perm=true` permutation inferences a separate, optional pass);
-that pass is future work.
+`all_different`, channel, and order-statistic rank-interval pruning on `p`.
+Empirically (exhaustive small-instance scan) this removes **every polynomially
+removable** infeasible `(position, element)` pair — the only `p` values left
+that lack a full solution are the genuinely NP-hard ones (rank-feasible but
+integer-infeasible). Full GAC on `p` is NP-hard, so that residual is the
+frontier; the remaining missing strength is Hall-band *set* reasoning over the
+rank intervals (a future increment), not the per-element intervals done here.
 
 The asymmetry with Sort's witness is deliberate: a proof-only permutation (Sort)
 *forces* the stable-rank construction; a real permutation (ArgSort) channels

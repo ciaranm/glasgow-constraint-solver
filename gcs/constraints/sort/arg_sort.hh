@@ -2,6 +2,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_SORT_ARG_SORT_HH
 
 #include <gcs/constraint.hh>
+#include <gcs/constraints/sort/sortedness.hh>
 #include <gcs/integer.hh>
 #include <gcs/variable_id.hh>
 
@@ -27,10 +28,14 @@ namespace gcs
     private:
         std::vector<IntegerVariableID> _x, _p;
         // Internal real "sorted value" variables y[j] = x[p[j]]. They are not
-        // exposed to the user; ArgSort installs an inner Sort{x, y} on them to
-        // reuse its Mehlhorn-Thiel bounds(Z) propagator and certified proof, and
-        // channels them to p. Allocated in prepare().
+        // exposed to the user; ArgSort runs the shared sortedness helpers on
+        // {x, y} to reuse the Mehlhorn-Thiel bounds(Z) propagator and certified
+        // proof, and channels them to p. Allocated in prepare().
         std::vector<SimpleIntegerVariableID> _y;
+        // The sortedness witness from define_sortedness_proof_model, kept so the
+        // ArgSort proof model can channel its permutation p to the stable rank
+        // pos[k], and the rank-interval propagator can justify p prunings.
+        innards::SortednessWitness _witness;
         Integer _offset;
         Integer _lowest_x{0_i}, _highest_x{0_i};
 
