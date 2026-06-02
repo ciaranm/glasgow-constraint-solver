@@ -79,9 +79,11 @@ auto Sort::prepare(Propagators &, State &, ProofModel * const) -> bool
     return ! _x.empty();
 }
 
-auto Sort::define_proof_model(ProofModel & model) -> void
+auto gcs::innards::define_sortedness_proof_model(ProofModel & model,
+    const vector<IntegerVariableID> & x, const vector<IntegerVariableID> & y) -> SortednessWitness
 {
-    auto n = _x.size();
+    auto n = x.size();
+    SortednessWitness w;
 
     // Compact, domain-width-independent encoding. The witness is a proof-only
     // permutation pos[i] giving the position x[i] is sent to in y, with the
@@ -93,18 +95,18 @@ auto Sort::define_proof_model(ProofModel & model) -> void
 
     // y is sorted into non-decreasing order (the defining property; also
     // implied by the channel once pos is pinned).
-    for (size_t i = 0; i + 1 < _y.size(); ++i)
+    for (size_t i = 0; i + 1 < y.size(); ++i)
         model.add_constraint("Sort", "y non-decreasing",
-            WPBSum{} + 1_i * _y[i] + -1_i * _y[i + 1] <= 0_i);
+            WPBSum{} + 1_i * y[i] + -1_i * y[i + 1] <= 0_i);
 
     // before[ip][i] : x[ip] comes before x[i] under the total order (value,
     // then original index). For a fixed pair the index tie-break is constant,
     // so each flag is a plain comparison of two x values:
     //   ip < i : ties go to ip, so "before" iff x[ip] <= x[i];
     //   ip > i : ties go to i,  so "before" iff x[ip] <  x[i].
-    _before.assign(n, std::vector<ProofFlag>(n));
-    _before_fwd.assign(n, std::vector<ProofLine>(n));
-    _before_rev.assign(n, std::vector<ProofLine>(n));
+    w.before.assign(n, std::vector<ProofFlag>(n));
+    w.before_fwd.assign(n, std::vector<ProofLine>(n));
+    w.before_rev.assign(n, std::vector<ProofLine>(n));
     for (size_t i = 0; i < n; ++i)
         for (size_t ip = 0; ip < n; ++ip) {
             if (ip == i)
@@ -115,42 +117,46 @@ auto Sort::define_proof_model(ProofModel & model) -> void
             // reverse `!before -> x[ip] - x[i] >= bound + 1`. The proof's
             // totality and transitivity pols sum these (the x terms cancel).
             auto [fwd, rev] = model.add_two_way_reified_constraint("Sort", "stable before",
-                WPBSum{} + 1_i * _x[ip] + -1_i * _x[i] <= bound, flag);
-            _before[ip][i] = flag;
-            _before_fwd[ip][i] = fwd.value();
-            _before_rev[ip][i] = rev.value();
+                WPBSum{} + 1_i * x[ip] + -1_i * x[i] <= bound, flag);
+            w.before[ip][i] = flag;
+            w.before_fwd[ip][i] = fwd.value();
+            w.before_rev[ip][i] = rev.value();
         }
 
     // pos[i] is the stable rank of x[i]: the number of elements before it.
-    _pos.clear();
     for (size_t i = 0; i < n; ++i)
-        _pos.push_back(model.create_proof_only_integer_variable(
+        w.pos.push_back(model.create_proof_only_integer_variable(
             0_i, Integer(n) - 1_i, "sort_pos_" + std::to_string(i),
             IntegerVariableProofRepresentation::Bits));
 
-    // pos[i] = sum of "before" flags. Keep both halves: _rank_ge[i] is
-    // pos[i] - sum >= 0 (pos[i] >= rank), _rank_le[i] is sum - pos[i] >= 0
+    // pos[i] = sum of "before" flags. Keep both halves: rank_ge[i] is
+    // pos[i] - sum >= 0 (pos[i] >= rank), rank_le[i] is sum - pos[i] >= 0
     // (pos[i] <= rank). The bound proofs pol against ge; the permutation proof
     // needs both directions.
-    _rank_ge.clear();
-    _rank_le.clear();
     for (size_t i = 0; i < n; ++i) {
         WPBSum rank;
-        rank += 1_i * _pos[i];
+        rank += 1_i * w.pos[i];
         for (size_t ip = 0; ip < n; ++ip)
             if (ip != i)
-                rank += -1_i * _before[ip][i];
+                rank += -1_i * w.before[ip][i];
         auto [le, ge] = model.add_constraint("Sort", "pos is stable rank", move(rank) == 0_i);
-        _rank_ge.push_back(ge.value());
-        _rank_le.push_back(le.value());
+        w.rank_ge.push_back(ge.value());
+        w.rank_le.push_back(le.value());
     }
 
     // Channel: x[i] is placed at position pos[i] of y.
     for (size_t i = 0; i < n; ++i)
         for (size_t j = 0; j < n; ++j)
             model.add_constraint("Sort", "position channel",
-                WPBSum{} + 1_i * _y[j] + -1_i * _x[i] == 0_i,
-                HalfReifyOnConjunctionOf{{_pos[i] == Integer(j)}});
+                WPBSum{} + 1_i * y[j] + -1_i * x[i] == 0_i,
+                HalfReifyOnConjunctionOf{{w.pos[i] == Integer(j)}});
+
+    return w;
+}
+
+auto Sort::define_proof_model(ProofModel & model) -> void
+{
+    _witness = define_sortedness_proof_model(model, _x, _y);
 }
 
 namespace
@@ -951,12 +957,14 @@ namespace
     }
 }
 
-auto Sort::install_propagators(Propagators & propagators) -> void
+auto gcs::innards::install_sortedness_propagator(Propagators & propagators,
+    const vector<IntegerVariableID> & x, const vector<IntegerVariableID> & y,
+    const SortednessWitness & witness) -> void
 {
-    auto n = _x.size();
-    _inj_lines = std::make_shared<vector<ProofLine>>();
-    _al1_lines = std::make_shared<vector<ProofLine>>();
-    _anti_lines = std::make_shared<vector<vector<ProofLine>>>(n, vector<ProofLine>(n));
+    auto n = x.size();
+    auto inj_lines = std::make_shared<vector<ProofLine>>();
+    auto al1_lines = std::make_shared<vector<ProofLine>>();
+    auto anti_lines = std::make_shared<vector<vector<ProofLine>>>(n, vector<ProofLine>(n));
 
     // Derive the permutation facts once at the proof root, at ProofLevel::Top so
     // they persist across the whole search, and reuse them in every bound
@@ -968,9 +976,9 @@ auto Sort::install_propagators(Propagators & propagators) -> void
     // The gap lines make the pairwise rank-distinctness clauses RUP, which
     // recover_am1 folds into per-value injectivity (built in the next step).
     propagators.install_initialiser(
-        [n, before = _before, before_fwd = _before_fwd, before_rev = _before_rev,
-            rank_ge = _rank_ge, rank_le = _rank_le, pos = _pos,
-            inj_lines = _inj_lines, al1_lines = _al1_lines, anti_lines = _anti_lines](
+        [n, before = witness.before, before_fwd = witness.before_fwd, before_rev = witness.before_rev,
+            rank_ge = witness.rank_ge, rank_le = witness.rank_le, pos = witness.pos,
+            inj_lines, al1_lines, anti_lines](
             State &, auto &, ProofLogger * const logger) -> void {
             if (! logger)
                 return;
@@ -1076,18 +1084,22 @@ auto Sort::install_propagators(Propagators & propagators) -> void
         });
 
     Triggers triggers;
-    triggers.on_bounds.insert(triggers.on_bounds.end(), _x.begin(), _x.end());
-    triggers.on_bounds.insert(triggers.on_bounds.end(), _y.begin(), _y.end());
+    triggers.on_bounds.insert(triggers.on_bounds.end(), x.begin(), x.end());
+    triggers.on_bounds.insert(triggers.on_bounds.end(), y.begin(), y.end());
 
-    propagators.install([x = _x, y = _y, before = _before, pos = _pos, rank_lines = _rank_ge,
-                            rank_le_lines = _rank_le, inj_lines = _inj_lines, al1_lines = _al1_lines,
-                            anti_lines = _anti_lines](
+    propagators.install([x, y, before = witness.before, pos = witness.pos, rank_lines = witness.rank_ge,
+                            rank_le_lines = witness.rank_le, inj_lines, al1_lines, anti_lines](
                             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
         propagate_sortedness(x, y, before, pos, rank_lines, rank_le_lines, *inj_lines, *al1_lines, *anti_lines,
             state, inference, logger);
         return PropagatorState::Enable;
     },
         triggers);
+}
+
+auto Sort::install_propagators(Propagators & propagators) -> void
+{
+    install_sortedness_propagator(propagators, _x, _y, _witness);
 }
 
 auto Sort::s_exprify(const ProofModel * const model) const -> string

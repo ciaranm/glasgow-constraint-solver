@@ -1,9 +1,11 @@
 #include <gcs/constraints/all_different/gac_all_different.hh>
 #include <gcs/constraints/sort/arg_sort.hh>
-#include <gcs/constraints/sort/sort.hh>
+#include <gcs/constraints/sort/sortedness.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/justification.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
+#include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
@@ -63,17 +65,19 @@ auto ArgSort::install(Propagators & propagators, State & initial_state, ProofMod
     if (! prepare(propagators, initial_state, optional_model))
         return;
 
-    // Set up the internal sorted-value variables in the proof, then install an
-    // inner Sort{x, y} to reuse its Mehlhorn-Thiel bounds(Z) propagator and its
-    // fully-certified proof of y = sort(x). ArgSort then only has to channel y
-    // to the permutation p and break ties stably.
-    if (optional_model)
+    // Set up the internal sorted-value variables in the proof, then run the
+    // shared sortedness helpers on {x, y} to reuse the Mehlhorn-Thiel bounds(Z)
+    // propagator and its fully-certified proof of y = sort(x). Keeping the
+    // witness lets ArgSort channel its permutation p to the stable rank pos.
+    vector<IntegerVariableID> y_ids{_y.begin(), _y.end()};
+    if (optional_model) {
         for (size_t j = 0; j < _y.size(); ++j)
             optional_model->set_up_integer_variable(_y[j], _lowest_x, _highest_x,
                 "argsort_y_" + std::to_string(j), IntegerVariableProofRepresentation::Bits);
+        _witness = define_sortedness_proof_model(*optional_model, _x, y_ids);
+    }
 
-    vector<IntegerVariableID> y_ids{_y.begin(), _y.end()};
-    Sort{_x, y_ids}.install(propagators, initial_state, optional_model);
+    install_sortedness_propagator(propagators, _x, y_ids, _witness);
 
     if (optional_model)
         define_proof_model(*optional_model);
@@ -143,6 +147,17 @@ auto ArgSort::define_proof_model(ProofModel & model) -> void
                 WPBSum{} + 1_i * _y[j] + -1_i * _x[k] == 0_i,
                 HalfReifyOnConjunctionOf{{_p[j] == _offset + Integer(k)}});
 
+    // Inverse channel to the stable rank: position j holds element k exactly
+    // when element k's stable rank pos[k] is j. This is definitionally true
+    // (p[j] = offset + k <-> pos[k] = j) and lets the rank-interval propagator
+    // turn pos[k]'s provable bounds (from the inner Sort's "before" counting)
+    // into prunings of p.
+    for (size_t j = 0; j < n; ++j)
+        for (size_t k = 0; k < n; ++k)
+            model.add_constraint("ArgSort", "rank channel",
+                WPBSum{} + 1_i * _witness.pos[k] == Integer(static_cast<long long>(j)),
+                HalfReifyOnConjunctionOf{{_p[j] == _offset + Integer(k)}});
+
     // Stable tie-break. The inner Sort already constrains y[j] <= y[j+1], so an
     // eq flag fully reifying y[j] >= y[j+1] captures exactly the ties:
     //   eq_j <-> y[j] >= y[j+1]   (given y non-decreasing, this means equality)
@@ -169,8 +184,9 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
     //   (2) once p[j] = offset + k is fixed, x[k] and y[j] hold equal values,
     //       so intersect their bounds.
     // The inner Sort already keeps x and y bounds(Z)-consistent; this pass turns
-    // those tightened bounds into permutation prunings (and back). It is weaker
-    // than full bounds(Z) on p, which is the costly NP-hard-adjacent pass.
+    // those tightened bounds into permutation prunings (and back). The
+    // rank-interval propagator below strengthens it further; together they reach
+    // the polynomial frontier (full GAC on p is NP-hard).
     Triggers channel_triggers;
     channel_triggers.on_bounds.insert(channel_triggers.on_bounds.end(), _x.begin(), _x.end());
     channel_triggers.on_bounds.insert(channel_triggers.on_bounds.end(), y_ids.begin(), y_ids.end());
@@ -219,6 +235,82 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
         return PropagatorState::Enable;
     },
         channel_triggers);
+
+    // Rank-interval propagator: element k's stable rank pos[k] is the number of
+    // elements before it, which lies in [a_k, b_k] where a_k counts the elements
+    // that MUST precede k and b_k those that CAN (under the stable order: i<k
+    // ties to i, i>k ties to k). Since p[j]=offset+k <-> pos[k]=j, position j can
+    // hold element k only if j in [a_k, b_k]; prune otherwise. This is the
+    // order-statistic / stability strengthening of the plain channel pass above.
+    Triggers rank_triggers;
+    rank_triggers.on_bounds.insert(rank_triggers.on_bounds.end(), _x.begin(), _x.end());
+    rank_triggers.on_change.insert(rank_triggers.on_change.end(), _p.begin(), _p.end());
+
+    propagators.install([x = _x, p = _p, offset = _offset, n, witness = _witness](
+                            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+        for (size_t k = 0; k < n; ++k) {
+            auto [lk, uk] = state.bounds(x[k]);
+
+            // must_precede[i]: i comes before k in EVERY assignment; can_precede:
+            // in SOME assignment. Stable order: i<k ties to i (use <=), i>k ties
+            // to k (use <). a_k = #must, b_k = #can; pos[k] (the stable rank of k)
+            // lies in [a_k, b_k].
+            vector<bool> must_precede(n, false), can_precede(n, false);
+            long long a_k = 0, b_k = 0;
+            for (size_t i = 0; i < n; ++i) {
+                if (i == k)
+                    continue;
+                auto [li, ui] = state.bounds(x[i]);
+                must_precede[i] = (i < k) ? (ui <= lk) : (ui < lk);
+                can_precede[i] = (i < k) ? (li <= uk) : (li < uk);
+                if (must_precede[i])
+                    ++a_k;
+                if (can_precede[i])
+                    ++b_k;
+            }
+
+            // Element k cannot sit at positions outside [a_k, b_k]; prune p[j].
+            for (size_t j = 0; j < n; ++j) {
+                bool below = static_cast<long long>(j) < a_k;
+                bool above = static_cast<long long>(j) > b_k;
+                if (! below && ! above)
+                    continue;
+                auto pv = offset + Integer(static_cast<long long>(k));
+                if (! state.in_domain(p[j], pv))
+                    continue;
+
+                // The cross-variable rank deduction is not plain RUP, so derive
+                // the rank bound by an explicit pol, mirroring the Sort
+                // propagator. below: pos[k] >= a_k via rank_ge[k] + the forced
+                // "before[i][k] >= 1" lines; above: pos[k] <= b_k via rank_le[k]
+                // + the forced "!before[i][k]" lines. The inverse channel
+                // (p[j]=offset+k -> pos[k]=j) then makes p[j] != offset+k RUP.
+                inference.infer_not_equal(logger, p[j], pv,
+                    JustifyExplicitlyThenRUP{[&, k, j, below](const ReasonFunction & reason_fn) -> void {
+                        PolBuilder pol;
+                        if (below) {
+                            pol.add(witness.rank_ge[k]);
+                            for (size_t i = 0; i < n; ++i)
+                                if (i != k && must_precede[i])
+                                    pol.add(logger->emit_rup_proof_line_under_reason(reason_fn,
+                                        WPBSum{} + 1_i * witness.before[i][k] >= 1_i, ProofLevel::Temporary));
+                        }
+                        else {
+                            pol.add(witness.rank_le[k]);
+                            for (size_t i = 0; i < n; ++i)
+                                if (i != k && ! can_precede[i])
+                                    pol.add(logger->emit_rup_proof_line_under_reason(reason_fn,
+                                        WPBSum{} + 1_i * ! witness.before[i][k] >= 1_i, ProofLevel::Temporary));
+                        }
+                        pol.emit(*logger, ProofLevel::Temporary);
+                    }},
+                    bounds_reason(state, x));
+            }
+        }
+
+        return PropagatorState::Enable;
+    },
+        rank_triggers);
 
     // GAC on the all_different aspect of p (it is a permutation of the n
     // positions). Reuses the framework's matching/Hall propagator and its
