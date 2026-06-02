@@ -1,4 +1,6 @@
+#include <gcs/constraints/all_different/gac_all_different.hh>
 #include <gcs/constraints/sort/arg_sort.hh>
+#include <gcs/constraints/sort/sort.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -13,16 +15,15 @@
 #include <version>
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
-#include <format>
 #include <print>
-using std::format;
 #else
 #include <fmt/core.h>
 #include <fmt/ostream.h>
-using fmt::format;
 #endif
 
 #include <algorithm>
+#include <map>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -30,7 +31,9 @@ using fmt::format;
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::make_shared;
 using std::make_unique;
+using std::map;
 using std::move;
 using std::string;
 using std::stringstream;
@@ -60,6 +63,18 @@ auto ArgSort::install(Propagators & propagators, State & initial_state, ProofMod
     if (! prepare(propagators, initial_state, optional_model))
         return;
 
+    // Set up the internal sorted-value variables in the proof, then install an
+    // inner Sort{x, y} to reuse its Mehlhorn-Thiel bounds(Z) propagator and its
+    // fully-certified proof of y = sort(x). ArgSort then only has to channel y
+    // to the permutation p and break ties stably.
+    if (optional_model)
+        for (size_t j = 0; j < _y.size(); ++j)
+            optional_model->set_up_integer_variable(_y[j], _lowest_x, _highest_x,
+                "argsort_y_" + std::to_string(j), IntegerVariableProofRepresentation::Bits);
+
+    vector<IntegerVariableID> y_ids{_y.begin(), _y.end()};
+    Sort{_x, y_ids}.install(propagators, initial_state, optional_model);
+
     if (optional_model)
         define_proof_model(*optional_model);
 
@@ -81,7 +96,8 @@ auto ArgSort::prepare(Propagators & propagators, State & initial_state, ProofMod
         propagators.define_bound(initial_state, optional_model, v, Bound::Upper, _offset + Integer(_x.size()) - 1_i, "ArgSort", "permutation range");
     }
 
-    // Record the value range of x, for the proof-only "sorted value" variables.
+    // Record the value range of x, used as the domain of the sorted-value
+    // variables y.
     bool first = true;
     for (const auto & v : _x) {
         auto [lo, hi] = initial_state.bounds(v);
@@ -95,6 +111,12 @@ auto ArgSort::prepare(Propagators & propagators, State & initial_state, ProofMod
             _highest_x = std::max(_highest_x, hi);
         }
     }
+
+    // Internal sorted-value variables, one per position, spanning the x range.
+    // These carry the y = sort(x) relation (via the inner Sort) and channel to p.
+    _y.clear();
+    for (size_t j = 0; j < _x.size(); ++j)
+        _y.push_back(initial_state.allocate_integer_variable_with_state(_lowest_x, _highest_x));
 
     return true;
 }
@@ -112,30 +134,23 @@ auto ArgSort::define_proof_model(ProofModel & model) -> void
         model.add_constraint("ArgSort", "permutation", move(at_most_one) <= 1_i);
     }
 
-    // xp[j] is the value at sorted position j, i.e. xp[j] = x[p[j] - offset].
-    // Channel it in via the permutation literals.
-    vector<ProofOnlySimpleIntegerVariableID> xp;
-    for (size_t j = 0; j < n; ++j)
-        xp.push_back(model.create_proof_only_integer_variable(
-            _lowest_x, _highest_x, format("argsort_xp_{}", j), IntegerVariableProofRepresentation::Bits));
-
+    // y[j] is the value at sorted position j, i.e. y[j] = x[p[j] - offset].
+    // Channel it in via the permutation literals. (y is the inner Sort's real
+    // sorted-value variable, already constrained to be sort(x).)
     for (size_t j = 0; j < n; ++j)
         for (size_t k = 0; k < n; ++k)
             model.add_constraint("ArgSort", "value channel",
-                WPBSum{} + 1_i * xp[j] + -1_i * _x[k] == 0_i,
+                WPBSum{} + 1_i * _y[j] + -1_i * _x[k] == 0_i,
                 HalfReifyOnConjunctionOf{{_p[j] == _offset + Integer(k)}});
 
-    // Sorted, with a stable tie-break. For each consecutive pair:
-    //   xp[j] <= xp[j+1]                      (non-decreasing)
-    //   eq_j <-> xp[j] >= xp[j+1]             (equality, given the line above)
-    //   eq_j -> p[j] + 1 <= p[j+1]            (ties broken by original index)
+    // Stable tie-break. The inner Sort already constrains y[j] <= y[j+1], so an
+    // eq flag fully reifying y[j] >= y[j+1] captures exactly the ties:
+    //   eq_j <-> y[j] >= y[j+1]   (given y non-decreasing, this means equality)
+    //   eq_j -> p[j] + 1 <= p[j+1]   (ties broken by original index)
     for (size_t j = 0; j + 1 < n; ++j) {
-        model.add_constraint("ArgSort", "non-decreasing",
-            WPBSum{} + 1_i * xp[j] + -1_i * xp[j + 1] <= 0_i);
-
         auto eq = model.create_proof_flag_fully_reifying("argsort_eq",
             "ArgSort", "tie value",
-            WPBSum{} + 1_i * xp[j] + -1_i * xp[j + 1] >= 0_i);
+            WPBSum{} + 1_i * _y[j] + -1_i * _y[j + 1] >= 0_i);
 
         model.add_constraint("ArgSort", "stable tie-break",
             WPBSum{} + 1_i * _p[j] + -1_i * _p[j + 1] <= -1_i,
@@ -145,6 +160,86 @@ auto ArgSort::define_proof_model(ProofModel & model) -> void
 
 auto ArgSort::install_propagators(Propagators & propagators) -> void
 {
+    auto n = _x.size();
+    vector<IntegerVariableID> y_ids{_y.begin(), _y.end()};
+
+    // Channel-consistency propagator linking the permutation p to the source x
+    // and the inner Sort's sorted values y, via y[j] = x[p[j] - offset]:
+    //   (1) if dom(x[k]) and dom(y[j]) are disjoint, then p[j] != offset + k;
+    //   (2) once p[j] = offset + k is fixed, x[k] and y[j] hold equal values,
+    //       so intersect their bounds.
+    // The inner Sort already keeps x and y bounds(Z)-consistent; this pass turns
+    // those tightened bounds into permutation prunings (and back). It is weaker
+    // than full bounds(Z) on p, which is the costly NP-hard-adjacent pass.
+    Triggers channel_triggers;
+    channel_triggers.on_bounds.insert(channel_triggers.on_bounds.end(), _x.begin(), _x.end());
+    channel_triggers.on_bounds.insert(channel_triggers.on_bounds.end(), y_ids.begin(), y_ids.end());
+    channel_triggers.on_change.insert(channel_triggers.on_change.end(), _p.begin(), _p.end());
+
+    propagators.install([x = _x, y = y_ids, p = _p, offset = _offset, n](
+                            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+        for (size_t j = 0; j < n; ++j) {
+            auto [ylo, yhi] = state.bounds(y[j]);
+
+            for (size_t k = 0; k < n; ++k) {
+                auto pv = offset + Integer(static_cast<long long>(k));
+                if (! state.in_domain(p[j], pv))
+                    continue;
+
+                auto [xlo, xhi] = state.bounds(x[k]);
+
+                // (1) Disjoint domains rule out position j taking original index k.
+                if (xhi < ylo || xlo > yhi) {
+                    inference.infer_not_equal(logger, p[j], pv, JustifyUsingRUP{},
+                        bounds_reason(state, {x[k], y[j]}));
+                }
+            }
+
+            // (2) If p[j] is fixed to some index k, x[k] and y[j] are equal:
+            // intersect their bounds in both directions.
+            if (auto pj = state.optional_single_value(p[j])) {
+                auto k = (*pj - offset).as_index();
+                auto [xlo, xhi] = state.bounds(x[k]);
+                auto extra = p[j] == *pj;
+                if (xlo > ylo)
+                    inference.infer_greater_than_or_equal(logger, y[j], xlo, JustifyUsingRUP{},
+                        bounds_reason(state, {x[k]}, extra));
+                if (xhi < yhi)
+                    inference.infer_less_than(logger, y[j], xhi + 1_i, JustifyUsingRUP{},
+                        bounds_reason(state, {x[k]}, extra));
+                if (ylo > xlo)
+                    inference.infer_greater_than_or_equal(logger, x[k], ylo, JustifyUsingRUP{},
+                        bounds_reason(state, {y[j]}, extra));
+                if (yhi < xhi)
+                    inference.infer_less_than(logger, x[k], yhi + 1_i, JustifyUsingRUP{},
+                        bounds_reason(state, {y[j]}, extra));
+            }
+        }
+
+        return PropagatorState::Enable;
+    },
+        channel_triggers);
+
+    // GAC on the all_different aspect of p (it is a permutation of the n
+    // positions). Reuses the framework's matching/Hall propagator and its
+    // certified justifications; the per-value at-most-one lines the proof model
+    // emits make the pairwise not-equals clauses RUP, so the (initially empty)
+    // am1 line cache fills itself lazily.
+    vector<Integer> p_vals;
+    for (Integer v = _offset; v < _offset + Integer(static_cast<long long>(n)); ++v)
+        p_vals.push_back(v);
+    auto am1_lines = make_shared<map<Integer, ProofLine>>();
+
+    Triggers ad_triggers;
+    ad_triggers.on_change.insert(ad_triggers.on_change.end(), _p.begin(), _p.end());
+
+    propagators.install([p = _p, vals = move(p_vals), am1_lines](
+                            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+        propagate_gac_all_different(p, vals, vector<Integer>{}, *am1_lines, state, inference, logger);
+        return PropagatorState::Enable;
+    },
+        ad_triggers);
+
     Triggers triggers;
     triggers.on_instantiated.insert(triggers.on_instantiated.end(), _x.begin(), _x.end());
     triggers.on_instantiated.insert(triggers.on_instantiated.end(), _p.begin(), _p.end());

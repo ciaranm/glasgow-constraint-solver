@@ -38,9 +38,11 @@ permutation and stable variants are NP-hard too. So:
   full bounds consistency on the **source (`x`) and permutation (`p`)** sides
   runs back into the hardness wall and is handled by weaker, costlier passes.
 
-Our checking-only propagator (below) is "complete" only in the sense that
-search enumerates and it rejects bad leaves; it does no inference. The
-bounds-consistent propagator is the real target.
+Both constraints run the Mehlhorn-Thiel bounds-consistent propagator (below),
+achieving `bounds(Z)` on the source `x` and the sorted values. `ArgSort`
+additionally runs a channel pass and GAC `all_different` on the permutation `p`
+(see its section). A checking propagator that rejects bad leaves is kept as a
+cheap backstop, but it is no longer the only inference.
 
 ## The OPB encoding (proof model)
 
@@ -76,16 +78,43 @@ per-value facts recovered lazily) without needing `propagate_gac_all_different`
 ### ArgSort
 
 `ArgSort`'s permutation `p` is a real, branched variable, so it is assigned on
-every solution — determined for free, no canonicalisation needed. The encoding
-is leaner: `all_different(p)` as at-most-one-per-position (`O(n)` constraints,
-positions range over exactly `n` values so this is already width-independent),
-proof-only sorted-values `xp[j] = x[p[j]]` channelled via the `p` literals,
-`xp[j] <= xp[j+1]`, and a fully-reified equality flag per consecutive pair to
-drive the stability tie-break `eq_j -> p[j] < p[j+1]`.
+every solution — determined for free, no canonicalisation needed.
 
-The asymmetry is deliberate: a proof-only permutation (Sort) *forces* the
-stable-rank construction; a real permutation (ArgSort) only needs a stability
-*check*.
+**Reuse of Sort.** Rather than re-deriving the sorted values, `ArgSort`
+allocates `n` internal real variables `y[j]` (spanning the `x` value range) and
+installs an inner `Sort{x, y}` on them. This reuses Sort's entire certified
+apparatus verbatim — the stable-rank `pos` witness, the root permutation pol,
+and the Mehlhorn-Thiel propagator — so `x` and `y` are kept `bounds(Z)`-
+consistent with no new proof obligations. The `y[j]` are set up in the proof
+(`set_up_integer_variable`) but never branched on; they are an internal witness.
+
+**Channel to `p`.** On top of that, `ArgSort` adds:
+
+- `all_different(p)` as at-most-one-per-position (`O(n)` constraints, positions
+  range over exactly `n` values so this is already width-independent). At
+  runtime the framework's GAC `all_different` propagator runs on `p`; the
+  per-value at-most-one lines make its pairwise not-equals clauses RUP, so its
+  am1-line cache fills itself lazily — pure reuse.
+- the value channel `y[j] = x[p[j] - offset]`, half-reified on the `p`
+  literals, and a fully-reified equality flag per consecutive pair driving the
+  stability tie-break `eq_j -> p[j] < p[j+1]` (the inner Sort already gives
+  `y[j] <= y[j+1]`, so the flag captures exactly the ties).
+- a **channel-consistency propagator**: (1) if `dom(x[k])` and `dom(y[j])` are
+  disjoint then `p[j] != offset + k`; (2) once `p[j] = offset + k` is fixed,
+  `x[k]` and `y[j]` hold equal values, so their bounds are intersected. Each
+  pruning is justified by plain RUP from the channel line and the two bounds —
+  the reified channel reduces the cross-variable step to a single-variable bound
+  contradiction, which VeriPB's RUP handles.
+
+**Consistency achieved.** `bounds(Z)` on `x` and `y` (Mehlhorn-Thiel) plus GAC
+`all_different` and channel-consistency on `p`. This is deliberately **weaker
+than full `bounds(Z)` on `p`**, which is the costly NP-hard-adjacent pass (cf.
+Gecode making its `Perm=true` permutation inferences a separate, optional pass);
+that pass is future work.
+
+The asymmetry with Sort's witness is deliberate: a proof-only permutation (Sort)
+*forces* the stable-rank construction; a real permutation (ArgSort) channels
+directly to the reused sorted values.
 
 ## Survey of propagation algorithms
 
