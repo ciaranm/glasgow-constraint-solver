@@ -148,30 +148,116 @@ straight through the `BinEnc` bit layer, and two contradictory bounds on the
 same two's-complement bit-vector already conflict (chapter 3 Lemma 3.2 /
 Theorem 2.7). So for *derivability* the chains are an efficiency aid, not a
 correctness requirement — the bit layer does the linking the chains would.
-(They still matter for keeping the *up-front* order encoding compact and for
-forward propagation; see the next section.)
+**This is a statement about Theorem 3.2 (empty domain → conflict) only.** It
+does *not* transfer to forward propagation: for Theorem 3.3 (next section) the
+per-value links are strictly load-bearing, as the failure example there shows.
+The two theorems have different load-bearing constraint sets; do not read
+"chains are cheap for the conflict" as "linking is cheap in general."
 
-## The one obligation VeriPB cannot witness
+## The central obligation VeriPB cannot witness: forward propagation (Theorem 3.3)
 
-VeriPB only ever checks RUP **derivability**. The remaining hole is about
-forward **unit-propagation**: that `[X≠v]` actually *propagates* from `¬r`
-(so it lands in the propagated set `L`, keeping `domL ⊆ dom_t` and making the
-literal reason-valid per Lemma 3.4). That is exactly what the standing
-per-value link `r ∨ [X≠v]` is *for* — but "this clause causes that forward
-propagation" is a framework property, not a checkable proof step, so it cannot
-be probed here. It has to be argued in the metatheory.
+VeriPB only ever checks RUP **derivability** — that a claimed clause *follows*.
+It says nothing about which literals a solver's unit propagation will *reach*.
+The empty-domain sweep and the ablation above are both about Theorem 3.2 (a set
+of literals defining an empty domain unit-propagates to conflict). The harder
+theorem — and the one that is actually *central* to making `infer_not_in_range`
+usable — is **Theorem 3.3**:
+
+> if a set of literals `L` defines a domain `D`, then unit propagation of `L`
+> propagates **every defined literal implied by `D`**.
+
+This is where a naive `¬r` silently fails *as a reason source for other
+propagators*, even though the `¬r` inference itself is fine. The example is
+Matthew's. A propagator logs `reason_1 ⇒ ¬r` for `r = [X ∈ [10,20]]`, so the
+solver now knows `X ≠ 15`. A *different* propagator — `X = Y`, or `Abs(X,Y)` —
+carries the reason clause
+
+```
+[X ≠ 15] ⇒ [Y ≠ 15]        i.e.   [X=15] ∨ [Y≠15]
+```
+
+and `15` is the last value left for `Y`. We expect to backtrack now with the
+clause `[guesses] ⇒ 0 ≥ 1`. For that to be RUP, unit propagation under
+`[guesses]` must reach the conflict:
+
+- `[guesses]` propagates `reason_1`, which propagates `¬r`. So far so good.
+- But `¬r` is the **inert disjunction** again (`¬[X≥10] ∨ [X≥21]`, two
+  unassigned literals): on its own it propagates **nothing** about `[X=15]`. The
+  reif clauses are all satisfied or dormant under `¬r` (§"Why the naive
+  single-Boolean fails"). So `[X=15] ∨ [Y≠15]` never fires, `[Y≠15]` never
+  propagates, `Y=15` is never refuted — **no conflict, and the backtracking
+  clause is not RUP.**
+
+The fix is exactly ingredient 2, the per-value link `r ∨ [X≠v]`. With
+`r ∨ [X≠15]` present, `¬r` unit-propagates `[X≠15]`, the downstream clause fires,
+`Y=15` conflicts, and the backtracking clause closes. So the per-value link is
+**load-bearing for forward propagation** — in direct contrast to the order
+chains, which the ablation found redundant for the Theorem 3.2 derivation.
+"This clause causes that forward propagation" is a framework property, not a
+checkable RUP step, so it cannot be probed; it has to be argued in the
+metatheory, and that argument *is* Theorem 3.3 for the extended vocabulary.
+
+### What the closure actually costs
+
+Theorem 3.3 ranges over *every* defined literal implied by `D`, so the
+obligation is not "one clause" but a **closure** maintained incrementally on
+*both* atom-introduction paths:
+
+- a new range `r` over `X` ⇒ emit `r ∨ [X≠k]` for every already-defined `[X=k]`
+  with `k ∈ r`;
+- a new equality `[X=k]` ⇒ emit `r ∨ [X≠k]` for every already-defined range
+  `r ∋ k`.
+
+In the worst case that is **O(#defined equalities × #defined ranges)** clauses
+per variable — a cross-product. Better than the O(width) per-value loop we set
+out to avoid, but not the O(1) the order chain gives for bounds. It plausibly
+extends to **range–range** pairs: if `[X ∈ [12,18]]` is itself a defined literal
+then `¬r` for `r = [X∈[10,20]] ⊇ [12,18]` implies `¬[X∈[12,18]]`, so a propagator
+using *that* as a reason needs `r ∨ ¬[X∈[12,18]]` for the same forward-propagation
+reason. The one bound that survives: a link is only ever needed for a literal
+that *exists in the vocabulary*. Nobody can use `[X≠15]` as a reason unless
+`[X=15]` was defined, so the closure is over the lazy/defined set, not the
+domain — for a handful of holes and ranges it is small. It is just not free, and
+the bookkeeping must be correct on every introduction event.
+
+### Recovering near-linear: a containment chain
+
+There is an order-chain analogue that collapses the cross-product back toward
+linear for the common case. Link each defined range to its **tightest enclosing**
+defined range (`r_outer ∨ ¬r_inner`), and link each equality only to its tightest
+enclosing range (`r_tightest ∨ [X≠k]`). Unit propagation then **composes down the
+containment chain**: `¬r_outer → ¬r_inner → [X≠k]`. For range families that
+**nest or are disjoint** — exactly what repeated `infer_not_in_range` on a
+shrinking domain tends to produce — this is O(#defined literals) with
+composition, just as Inv1 collapses the bound pairs.
+
+It degrades under **arbitrary overlaps**: `[10,20]` and `[15,25]` do not nest,
+"tightest enclosing" is not unique, and an equality at `17` (in both) deriving
+from `¬[10,20]` *alone* will not propagate if `17` was linked only to `[15,25]`.
+Under heavy overlap you are pushed back toward the cross-product. Not fatal, but
+the clean cost depends on the range family's shape — worth measuring before
+preferring ranges to per-value lines at a given propagator.
 
 ## What is still owed before implementing
 
-1. **Inv3 for the whole block** via the hole-aware `domL` (covers untouched
+1. **Theorem 3.3 (propagation completeness) for the extended vocabulary — the
+   central deliverable.** Prove that, with the link closure maintained, unit
+   propagation of any literal set propagates *every defined* bound / equality /
+   range literal implied by the resulting domain. This is the subtle,
+   bookkeeping-driven induction the forward-propagation example turns on, and
+   the one most prone to a plausible-but-wrong paper proof — a good candidate
+   for the proof-assistant formalisation we have been discussing separately.
+2. **Inv3 for the whole block** via the hole-aware `domL` (covers untouched
    values).
-2. **Lemma 3.4 (valid reason) re-proved** admitting range literals into the
+3. **Lemma 3.4 (valid reason) re-proved** admitting range literals into the
    reason vocabulary. The mixed-vocabulary conflict sweep above essentially is
    this argument; it needs writing up against the thesis definitions.
-3. **Inv1′:** maintain `r ∨ [X≠v]` whenever `[X=v]` is defined inside a defined
-   range. It is globally valid and never retracted, so no epoch bookkeeping —
-   but the introduction path has to fire at atom-definition time, symmetric with
-   how order/equality atoms are introduced today.
+4. **Inv1′ + the introduction-path wiring.** Maintain the link closure
+   (`r ∨ [X≠v]`, and range–range links, in containment-chain form where the
+   family nests) on *both* atom-introduction paths — new range and new equality.
+   It is globally valid and never retracted, so no epoch bookkeeping, but the
+   introduction hooks must fire at atom-definition time, symmetric with how
+   order/equality atoms are introduced today.
 
 ## Practical takeaways for when this is built
 
@@ -184,10 +270,14 @@ be probed here. It has to be argued in the metatheory.
   ranges. The win is one RUP step per *touched* `(equality atom, containing
   range)` pair — **not** per value in the range — plus the `¬r` inference
   itself.
-- **Cost of overlapping / splitting / merging ranges.** Each range introduces
-  endpoint bound atoms (`[X≥a]`, `[X≥b+1]`) that must be linked into the order
-  chain. With many ranges on one variable the Inv1 bookkeeping goes from O(1) to
-  O(#ranges) per variable; weigh that against the per-value lines saved.
+- **The forward-propagation closure is the real cost, not the bound chain.**
+  Each range introduces endpoint bound atoms (`[X≥a]`, `[X≥b+1]`) linked into the
+  order chain — that part is O(#ranges). The bookkeeping that actually bites is
+  the per-value (and range–range) link closure that Theorem 3.3 needs: worst case
+  O(#defined equalities × #defined ranges) per variable, collapsing to
+  O(#defined literals) only when the ranges nest or are disjoint (containment
+  chain). Heavy overlap degrades it back toward the cross-product. Measure the
+  range family's shape before preferring ranges to per-value lines.
 - **Never half-reify a range literal.** The ablation shows the backward clause
   is the load-bearing one; emit the full `red`-introduced biconditional.
 
