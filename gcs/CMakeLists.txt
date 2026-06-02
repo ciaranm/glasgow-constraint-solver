@@ -55,6 +55,7 @@ add_library(glasgow_constraint_solver
         constraints/parity.cc
         constraints/plus.cc
         constraints/regular.cc
+        constraints/regular_regex.cc
         constraints/seq_precede_chain.cc
         constraints/smart_table.cc
         constraints/sort/arg_sort.cc
@@ -369,6 +370,10 @@ if(GCS_BUILD_TESTS)
     add_executable(linear_utils_test constraints/linear/utils_test.cc)
     target_link_libraries(linear_utils_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME linear_utils_test COMMAND $<TARGET_FILE:linear_utils_test>)
+
+    add_executable(regular_regex_test constraints/regular_regex_test.cc)
+    target_link_libraries(regular_regex_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
+    add_test(NAME regular_regex_test COMMAND $<TARGET_FILE:regular_regex_test>)
 
     add_executable(bits_encoding_test innards/proofs/bits_encoding_test.cc)
     target_link_libraries(bits_encoding_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)

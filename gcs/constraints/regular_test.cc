@@ -1,5 +1,6 @@
 #include <gcs/constraints/innards/constraints_test_utils.hh>
 #include <gcs/constraints/regular.hh>
+#include <gcs/constraints/regular_regex.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
@@ -26,12 +27,12 @@ using std::flush;
 using std::make_optional;
 using std::nullopt;
 using std::pair;
-using std::ranges::find;
 using std::set;
 using std::string;
 using std::tuple;
 using std::unordered_map;
 using std::vector;
+using std::ranges::find;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::print;
@@ -131,6 +132,63 @@ auto run_dup_regular_test(bool proofs, const string & label,
     check_results(proof_name, expected, actual);
 }
 
+// Regex-string form of the constraint. The oracle is the independent reference
+// matcher from regular_regex.hh, given the same contiguous min..max alphabet
+// that Regular::prepare derives from the variable domains.
+auto run_regular_regex_test(bool proofs, const string & label, const string & regex,
+    const vector<pair<int, int>> & var_ranges) -> void
+{
+    print(cerr, "regular regex {} \"{}\" {} vars{}", label, regex, var_ranges.size(), proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    int lo = var_ranges.front().first, hi = var_ranges.front().second;
+    for (const auto & [a, b] : var_ranges) {
+        lo = a < lo ? a : lo;
+        hi = b > hi ? b : hi;
+    }
+    vector<Integer> alphabet;
+    for (int v = lo; v <= hi; ++v)
+        alphabet.push_back(Integer(v));
+
+    auto accepts = [&](const vector<int> & seq) -> bool {
+        vector<Integer> as_integers;
+        for (int v : seq)
+            as_integers.push_back(Integer(v));
+        return gcs::innards::regex_reference_accepts(regex, alphabet, as_integers);
+    };
+
+    set<tuple<vector<int>>> expected, actual;
+    build_expected(expected, [&](vector<int> seq) { return accepts(seq); }, var_ranges);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    vector<IntegerVariableID> vars;
+    for (const auto & [a, b] : var_ranges)
+        vars.push_back(p.create_integer_variable(Integer(a), Integer(b)));
+    p.post(Regular{vars, regex});
+
+    auto proof_name = proofs ? make_optional("regular_regex_test_" + label) : nullopt;
+    solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{vars});
+    check_results(proof_name, expected, actual);
+}
+
+auto run_all_regex_tests(bool proofs) -> void
+{
+    // Deterministic: a fixed sequence.
+    run_regular_regex_test(proofs, "concat", "0 1 0", {{0, 1}, {0, 1}, {0, 1}});
+    // The 0*11*0* language from the Pesant example.
+    run_regular_regex_test(proofs, "star", "0* 1 1* 0*", {{0, 1}, {0, 1}, {0, 1}, {0, 1}});
+    // Genuine non-determinism: after reading a 1 the NFA can be in two states,
+    // exercising the disjunctive transition clause in the proof model.
+    run_regular_regex_test(proofs, "nfa_fanout", "1 2|1 3", {{1, 3}, {1, 3}});
+    // Wildcard expands to the domain's min..max.
+    run_regular_regex_test(proofs, "wildcard", "0 . 0", {{0, 1}, {0, 1}, {0, 1}});
+    // Counted quantifier with a trailing star.
+    run_regular_regex_test(proofs, "counted", "0{1,2} 1*", {{0, 1}, {0, 1}, {0, 1}});
+    // Negated class over an alphabet with a hole at the top of the range.
+    run_regular_regex_test(proofs, "negclass", "[^0] [^0]", {{0, 2}, {0, 2}});
+}
+
 auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg, bool run_dup) -> void
 {
     // DFA: even number of 0s, binary alphabet {0,1}
@@ -194,11 +252,13 @@ auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg, bool run_dup) -
         {{{0_i, 0}, {1_i, 0}, {2_i, 1}}, {{0_i, 1}, {1_i, 1}, {2_i, 1}}},
         {1});
 
-    // Dup tests use bare variables (the harness duplicates a handle into
-    // several positions); only run them when no wrapping is in effect, to
-    // avoid duplicating the bare coverage under every wrap.
+    // Regex-string and dup tests use bare variables; only run them when no
+    // wrapping is in effect, to avoid duplicating the bare coverage under
+    // every wrap.
     if (! run_dup)
         return;
+
+    run_all_regex_tests(proofs);
 
     // Dup-variable cases: "even zeros" DFA with positions[0] reused.
     // {x, x, y} — two equal letters then y; "even zeros" wants total zeros
