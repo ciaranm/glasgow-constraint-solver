@@ -2,6 +2,7 @@
 #include <gcs/constraints/in.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
+#include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
@@ -27,6 +28,7 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::holds_alternative;
 using std::make_unique;
 using std::move;
 using std::optional;
@@ -191,13 +193,15 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
                         return false;
                     };
 
-                    Integer confined_count = 0_i, potential_count = 0_i;
+                    vector<IntegerVariableID> confined;
+                    Integer potential_count = 0_i;
                     for (const auto & var : vars) {
                         if (domain_subset_of_hall(var))
-                            ++confined_count;
+                            confined.push_back(var);
                         if (domain_meets_hall(var))
                             ++potential_count;
                     }
+                    auto confined_count = Integer(confined.size());
 
                     for (std::size_t j = a; j <= b; ++j) {
                         auto [lb_j, ub_j] = state.bounds(counts[j]);
@@ -209,8 +213,46 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
                             inference.infer(logger, counts[j] <= upper, AssertRatherThanJustifying{}, generic_reason(state, all_vars));
                     }
 
+                    // The capacity aggregate: summing the per-value count upper
+                    // lines (Sum_i x_{i=v} <= c_v), the count upper bounds
+                    // (c_v <= ub_v), and an at-least-one over the hall set for
+                    // each confined variable yields
+                    //   Sum_{i not confined, v in H} x_{i=v} <= cap - confined.
+                    // When confined == cap this is <= 0, RUP-closing each removal;
+                    // when confined > cap it is already contradictory.
+                    auto emit_capacity_pol = [&, a = a, b = b]() {
+                        auto & tracker = logger->names_and_ids_tracker();
+                        PolBuilder pb;
+                        for (std::size_t v = a; v <= b; ++v) {
+                            pb.add(*count_lines[v].first);
+                            // A constant count already folds its bound into the
+                            // count line; only a real variable needs c_v <= ub_v.
+                            if (! holds_alternative<ConstantIntegerVariableID>(counts[v]))
+                                pb.add_for_literal(tracker, counts[v] <= state.bounds(counts[v]).second);
+                        }
+                        for (const auto & var : confined)
+                            pb.add(tracker.need_constraint_saying_variable_takes_at_least_one_value(var));
+                        pb.emit(*logger, ProofLevel::Temporary);
+                    };
+
+                    auto capacity_reason = [&, a = a, b = b]() -> Reason {
+                        Reason r;
+                        for (const auto & var : confined) {
+                            auto [v_lo, v_hi] = state.bounds(var);
+                            for (Integer s = v_lo; s <= v_hi; ++s)
+                                if (! hall.contains(s) && ! state.in_domain(var, s))
+                                    r.emplace_back(var != s);
+                            r.emplace_back(var >= v_lo);
+                            r.emplace_back(var <= v_hi);
+                        }
+                        for (std::size_t v = a; v <= b; ++v)
+                            if (! holds_alternative<ConstantIntegerVariableID>(counts[v]))
+                                r.emplace_back(counts[v] <= state.bounds(counts[v]).second);
+                        return r;
+                    };
+
                     if (confined_count > cap) {
-                        inference.contradiction(logger, AssertRatherThanJustifying{}, generic_reason(state, all_vars));
+                        inference.contradiction(logger, JustifyExplicitlyThenRUP{[&](const ReasonFunction &) { emit_capacity_pol(); }}, capacity_reason);
                     }
                     else if (confined_count == cap) {
                         for (const auto & var : vars) {
@@ -218,7 +260,7 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
                                 continue;
                             for (const auto & val : hall)
                                 if (state.in_domain(var, val))
-                                    inference.infer(logger, var != val, AssertRatherThanJustifying{}, generic_reason(state, all_vars));
+                                    inference.infer(logger, var != val, JustifyExplicitlyThenRUP{[&](const ReasonFunction &) { emit_capacity_pol(); }}, capacity_reason);
                         }
                     }
 

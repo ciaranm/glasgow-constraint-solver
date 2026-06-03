@@ -98,6 +98,11 @@ auto run_bgcc_test(bool proofs, const vector<Range> & vars_range, const vector<i
 auto main(int, char *[]) -> int
 {
     vector<tuple<vector<Range>, vector<int>, vector<Range>, bool>> data = {
+        // Upper-capacity Hall isolated: counts pinned and the fourth variable's
+        // escape value (4) is outside the cover, so ONLY the multi-value removal
+        // fires. First three confined to {1,2} with fixed capacity 2+1 force the
+        // fourth off value 1.
+        {{pair{1, 2}, pair{1, 2}, pair{1, 2}, pair{1, 4}}, {1, 2}, {2, 1}, false},
         // Upper-capacity Hall: first three confined to {1,2} with capacity 2+1,
         // so the fourth variable is forced off value 1.
         {{pair{1, 2}, pair{1, 2}, pair{1, 2}, pair{1, 3}}, {1, 2, 3}, {pair{0, 2}, pair{0, 1}, pair{0, 3}}, false},
