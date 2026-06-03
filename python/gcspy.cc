@@ -456,6 +456,16 @@ auto Python::post_count(const vector<string> & var_ids, const string & var_id, c
     p.post(Count(get_vars(var_ids), get_var(var_id), get_var(count_id)));
 }
 
+auto Python::post_global_cardinality(const vector<string> & var_ids, const vector<long long int> & values,
+    const vector<string> & count_ids, bool closed) -> void
+{
+    vector<Integer> int_values;
+    int_values.reserve(values.size());
+    for (auto v : values)
+        int_values.emplace_back(v);
+    p.post(GlobalCardinality(get_vars(var_ids), move(int_values), get_vars(count_ids), closed));
+}
+
 auto Python::post_element(const string & var_id, const string & index_id,
     const vector<string> & var_ids)
     -> void
@@ -841,6 +851,7 @@ PYBIND11_MODULE(gcspy, m)
         .def("post_implies_reif", &Python::post_implies_reif)
 
         .def("post_count", &Python::post_count)
+        .def("post_global_cardinality", &Python::post_global_cardinality)
         .def("post_element", &Python::post_element)
         .def("post_min", &Python::post_min)
         .def("post_max", &Python::post_max)

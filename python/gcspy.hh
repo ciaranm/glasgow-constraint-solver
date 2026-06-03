@@ -107,6 +107,8 @@ public:
     auto post_alldifferent(const vector<string> & var_ids) -> void;
     auto post_circuit(const vector<string> & var_ids) -> void;
     auto post_count(const vector<string> & var_ids, const string & var_id, const string & count_id) -> void;
+    auto post_global_cardinality(const vector<string> & var_ids, const vector<long long int> & values,
+        const vector<string> & count_ids, bool closed) -> void;
     auto post_min(const vector<string> & var_ids, const string & var_id) -> void;
     auto post_max(const vector<string> & var_ids, const string & var_id) -> void;
     auto post_nvalue(const string & var_id, const vector<string> & var_ids) -> void;
