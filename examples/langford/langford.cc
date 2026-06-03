@@ -81,15 +81,15 @@ auto main(int argc, char * argv[]) -> int
         solution.emplace_back(p.create_integer_variable(1_i, Integer{k}));
     }
 
-    p.post(AllDifferent{position});
+    p.post_named(AllDifferent{position}, "positions");
 
     for (int i = 0; i < k; ++i) {
         auto i_var = p.create_integer_variable(Integer{i + 1}, Integer{i + 1});
-        p.post(Element{i_var, position[i], &solution});
-        p.post(Element{i_var, position[i + k], &solution});
+        p.post_named(Element{i_var, position[i], &solution}, "element_i_" + std::to_string(i));
+        p.post_named(Element{i_var, position[i + k], &solution}, "element_k_" + std::to_string(i));
 
         // position[i + k] = position[i] + i + 2
-        p.post(PlusGAC{position[i + k], constant_variable(Integer{i + 2}), position[i]});
+        p.post_named(PlusGAC{position[i + k], constant_variable(Integer{i + 2}), position[i]}, "plus_" + std::to_string(i));
     }
 
     auto stats = solve(

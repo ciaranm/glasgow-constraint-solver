@@ -210,7 +210,7 @@ auto Table::s_exprify(const innards::ProofModel * const model) const -> std::str
     stringstream s;
 
     print(s, "{} table", _constraint_id);
-    println(s, "(");
+    println(s, " (");
 
     println(s, "    (");
     visit([&](const auto & tuples) {

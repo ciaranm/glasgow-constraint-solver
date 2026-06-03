@@ -143,7 +143,7 @@ auto main(int argc, char * argv[]) -> int
     vector<vector<IntegerVariableID>> grid;
 
     for (int r = 0; r < n; ++r)
-        grid.emplace_back(p.create_integer_variable_vector(n, 1_i, Integer{n}, format("grid[{}]", r)));
+        grid.emplace_back(p.create_integer_variable_vector(n, 1_i, Integer{n}, format("grid_{}_", r)));
 
     for (int r = 0; r < n; ++r)
         p.post(AllDifferent{grid[r]});

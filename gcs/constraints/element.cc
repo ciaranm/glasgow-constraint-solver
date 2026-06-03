@@ -217,7 +217,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::define_proof_model(ProofModel
                     return s;
                 }();
                 model.add_labelled_constraint(
-                    _constraint_id, format("le_{}", idx), format("ge_{}", idx),
+                    _constraint_id, format("{}le", idx), format("{}ge", idx),
                     "NDimensionalElement", "equality",
                     WPBSum{} + (1_i * _result_var) + (-1_i * array_var) == 0_i, reif);
             }
@@ -590,10 +590,10 @@ auto NDimensionalElement<EntryType_, dimensions_>::s_exprify(const ProofModel * 
 
     auto print_elem = [&](auto & s, const auto & elem, const auto & index) {
         if constexpr (std::is_same_v<EntryType_, IntegerVariableID>) {
-            print(s, " {},{}", model->names_and_ids_tracker().s_expr_name_of(elem), index);
+            print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(elem));
         }
         else {
-            print(s, " {},{}", elem, index);
+            print(s, " {}", elem);
         }
     };
 
@@ -628,7 +628,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::s_exprify(const ProofModel * 
     print(s, ")");
 
     for (size_t i = 0; i < _index_vars.size(); ++i) {
-        print(s, " ({},{})",
+        print(s, " ({} {})",
             model->names_and_ids_tracker().s_expr_name_of(_index_vars[i]),
             _index_starts[i]);
     }

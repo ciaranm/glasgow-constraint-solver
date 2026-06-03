@@ -203,7 +203,7 @@ auto ReifiedCompareLessThanOrMaybeEqual::s_exprify(const ProofModel * const mode
                     .visit(_reif_cond);
 
     string cmp = format("{}{}{}",
-        _vars_swapped ? "greater_than" : "less_than",
+        _vars_swapped ? "greater" : "less",
         _or_equal ? "_equal" : "",
         reif);
 

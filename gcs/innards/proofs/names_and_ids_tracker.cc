@@ -875,10 +875,10 @@ auto NamesAndIDsTracker::s_expr_name_of(VariableConditionOperator op) const -> s
 {
     switch (op) {
         using enum VariableConditionOperator;
-    case Equal: return "eq";
-    case NotEqual: return "neq";
-    case GreaterEqual: return "geq";
-    case Less: return "lt";
+    case Equal: return "=";
+    case NotEqual: return "!=";
+    case GreaterEqual: return ">=";
+    case Less: return "<";
     }
 
     throw NonExhaustiveSwitch{};
