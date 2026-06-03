@@ -68,7 +68,7 @@ auto gcs::innards::emit_gcc_demand_pol(ProofLogger & logger, const State & state
     const vector<IntegerVariableID> & vars, const vector<Integer> & values,
     const vector<IntegerVariableID> & counts, const GCCCountLines & count_lines,
     const vector<size_t> & cut_values, const vector<IntegerVariableID> & potential,
-    optional<IntegerVariableID> pruned_var, optional<size_t> pruned_value) -> void
+    optional<IntegerVariableID> pruned_var, optional<Integer> pruned_value) -> void
 {
     auto hall = hall_set(values, cut_values);
     PolBuilder pb;
@@ -83,11 +83,16 @@ auto gcs::innards::emit_gcc_demand_pol(ProofLogger & logger, const State & state
         for (const auto & val : hall)
             atoms.push_back(var == val);
         if (pruned_var == optional<IntegerVariableID>{var} && pruned_value)
-            atoms.push_back(var == values[*pruned_value]);
-        pb.add(recover_am1<IntegerVariableCondition>(logger, ProofLevel::Temporary, atoms,
-            [&](const IntegerVariableCondition & p, const IntegerVariableCondition & q) {
-                return logger.emit(RUPProofRule{}, WPBSum{} + 1_i * ! p + 1_i * ! q >= 1_i, ProofLevel::Temporary);
-            }));
+            atoms.push_back(var == *pruned_value);
+        if (atoms.size() >= 2)
+            pb.add(recover_am1<IntegerVariableCondition>(logger, ProofLevel::Temporary, atoms,
+                [&](const IntegerVariableCondition & p, const IntegerVariableCondition & q) {
+                    return logger.emit(RUPProofRule{}, WPBSum{} + 1_i * ! p + 1_i * ! q >= 1_i, ProofLevel::Temporary);
+                }));
+        else if (atoms.size() == 1)
+            // At-most-one over a single atom is the vacuous x <= 1; emit it so
+            // the pol still gets the (1 - x) contribution for this variable.
+            pb.add(logger.emit(RUPProofRule{}, WPBSum{} + 1_i * ! atoms[0] >= 0_i, ProofLevel::Temporary));
     }
     pb.emit(logger, ProofLevel::Temporary);
 }

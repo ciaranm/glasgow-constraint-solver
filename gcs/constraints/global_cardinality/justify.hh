@@ -55,7 +55,7 @@ namespace gcs::innards
         const std::vector<IntegerVariableID> & vars, const std::vector<Integer> & values,
         const std::vector<IntegerVariableID> & counts, const GCCCountLines & count_lines,
         const std::vector<std::size_t> & cut_values, const std::vector<IntegerVariableID> & potential,
-        std::optional<IntegerVariableID> pruned_var, std::optional<std::size_t> pruned_value) -> void;
+        std::optional<IntegerVariableID> pruned_var, std::optional<Integer> pruned_value) -> void;
 
     auto gcc_demand_reason(const State &, const std::vector<IntegerVariableID> & vars,
         const std::vector<Integer> & values, const std::vector<IntegerVariableID> & counts,

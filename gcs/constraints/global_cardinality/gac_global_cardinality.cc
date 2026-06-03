@@ -302,6 +302,11 @@ auto GACGlobalCardinality::install_propagators(Propagators & propagators) -> voi
             auto feasible = (mf.max_flow(SS, TT) == need);
 
             if (! feasible) {
+                // No feasible flow: the constraint is violated. The infeasible
+                // cut from the reduced super-source residual could justify this
+                // (capacity = AllDifferent-style Hall violator, demand =
+                // McIlree's notes section 4), but extracting it robustly for
+                // both directions is still to do, so this is asserted.
                 inference.contradiction(logger, AssertRatherThanJustifying{}, generic_reason(state, all_vars));
                 return PropagatorState::Enable;
             }
@@ -418,26 +423,58 @@ auto GACGlobalCardinality::install_propagators(Propagators & propagators) -> voi
                         for (std::size_t v = 0; v < m; ++v)
                             if (seen[value_node(v)])
                                 cut_values.push_back(v);
+                        // The at-most-ones must cover every variable that can take
+                        // a cut value, matching the reason's exclusions.
                         vector<IntegerVariableID> potential;
-                        for (std::size_t k = 0; k < n; ++k)
-                            if (seen[var_node(k)])
+                        for (std::size_t k = 0; k < n; ++k) {
+                            bool meets = false;
+                            for (auto v : cut_values)
+                                if (state.in_domain(vars[k], values[v])) {
+                                    meets = true;
+                                    break;
+                                }
+                            if (meets)
                                 potential.push_back(vars[k]);
+                        }
                         inference.infer(logger, vars[i] != value,
-                            JustifyExplicitlyThenRUP{[&, cut_values, potential, j = j, i = i](const ReasonFunction &) {
-                                emit_gcc_demand_pol(*logger, state, vars, values, counts, count_lines, cut_values, potential, vars[i], j);
+                            JustifyExplicitlyThenRUP{[&, cut_values, potential, value = value, i = i](const ReasonFunction &) {
+                                emit_gcc_demand_pol(*logger, state, vars, values, counts, count_lines, cut_values, potential, vars[i], value);
                             }},
                             ReasonFunction{[&, cut_values, potential]() { return gcc_demand_reason(state, vars, values, counts, cut_values, potential); }});
                     }
                 }
 
             // Likewise the dummy edge: if a variable cannot route through the
-            // dummy value, it cannot take any non-cover value.
+            // dummy value, it cannot take any non-cover value. This is always a
+            // demand cut (the cover values' lower bounds force the variable in),
+            // so the source is not in the cut reachable from it.
             for (std::size_t i = 0; i < n; ++i) {
                 auto ei = dummy_edge[i];
-                if (ei >= 0 && flow[ei] == 0 && comp[dummy_node] != comp[var_node(i)])
-                    for (const auto & val : state.each_value_mutable(vars[i]))
-                        if (! cover.contains(val))
-                            inference.infer(logger, vars[i] != val, AssertRatherThanJustifying{}, generic_reason(state, all_vars));
+                if (! (ei >= 0 && flow[ei] == 0 && comp[dummy_node] != comp[var_node(i)]))
+                    continue;
+                auto seen = reachable_from(var_node(i));
+                vector<std::size_t> cut_values;
+                for (std::size_t v = 0; v < m; ++v)
+                    if (seen[value_node(v)])
+                        cut_values.push_back(v);
+                vector<IntegerVariableID> potential;
+                for (std::size_t k = 0; k < n; ++k) {
+                    bool meets = false;
+                    for (auto v : cut_values)
+                        if (state.in_domain(vars[k], values[v])) {
+                            meets = true;
+                            break;
+                        }
+                    if (meets)
+                        potential.push_back(vars[k]);
+                }
+                for (const auto & val : state.each_value_mutable(vars[i]))
+                    if (! cover.contains(val))
+                        inference.infer(logger, vars[i] != val,
+                            JustifyExplicitlyThenRUP{[&, cut_values, potential, val = val, i = i](const ReasonFunction &) {
+                                emit_gcc_demand_pol(*logger, state, vars, values, counts, count_lines, cut_values, potential, vars[i], val);
+                            }},
+                            ReasonFunction{[&, cut_values, potential]() { return gcc_demand_reason(state, vars, values, counts, cut_values, potential); }});
             }
 
             return PropagatorState::Enable;

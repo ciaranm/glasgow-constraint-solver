@@ -25,7 +25,10 @@ template <typename Literal_>
     const function<auto(const Literal_ &, const Literal_ &)->ProofLine> & pair_ne) -> ProofLine
 {
     if (atoms.size() < 2)
-        throw UnexpectedException{"recover_am1 requires at least 2 atoms"};
+        // An at-most-one over fewer than two atoms is vacuous; the caller should
+        // handle it directly rather than ask the helper to fold zero pairwise
+        // lines into a pol.
+        throw UnimplementedException{"recover_am1 needs at least two atoms"};
 
     if constexpr (is_same_v<Literal_, IntegerVariableCondition>) {
         // If ≥2 atoms simplify to FalseLiteral (e.g. literals over constants
