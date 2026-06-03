@@ -295,7 +295,7 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
                                 atoms.push_back(var == val);
                             if (kvar == optional<IntegerVariableID>{var})
                                 atoms.push_back(var == kw);
-                            pb.add(recover_am1<IntegerVariableCondition>(*logger, ProofLevel::Top, atoms,
+                            pb.add(recover_am1<IntegerVariableCondition>(*logger, ProofLevel::Temporary, atoms,
                                 [&](const IntegerVariableCondition & p, const IntegerVariableCondition & q) {
                                     return logger->emit(RUPProofRule{}, WPBSum{} + 1_i * ! p + 1_i * ! q >= 1_i, ProofLevel::Temporary);
                                 }));
