@@ -36,6 +36,7 @@ using std::nullopt;
 using std::optional;
 using std::pair;
 using std::set;
+using std::sort;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
@@ -54,6 +55,22 @@ BoundsGlobalCardinality::BoundsGlobalCardinality(vector<IntegerVariableID> vars,
     _counts(move(counts)),
     _closed(closed)
 {
+    // The Hall-interval reasoning ranges over contiguous runs of the cover
+    // values, so they (and their count variables) must be in ascending order.
+    vector<std::size_t> order(_values.size());
+    for (std::size_t i = 0; i < order.size(); ++i)
+        order[i] = i;
+    sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) { return _values[a] < _values[b]; });
+    vector<Integer> sorted_values;
+    vector<IntegerVariableID> sorted_counts;
+    sorted_values.reserve(_values.size());
+    sorted_counts.reserve(_counts.size());
+    for (auto i : order) {
+        sorted_values.push_back(_values[i]);
+        sorted_counts.push_back(_counts[i]);
+    }
+    _values = move(sorted_values);
+    _counts = move(sorted_counts);
 }
 
 auto BoundsGlobalCardinality::clone() const -> unique_ptr<Constraint>

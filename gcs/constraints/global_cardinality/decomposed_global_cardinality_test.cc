@@ -85,7 +85,7 @@ auto run_gcc_test(bool proofs, const vector<Range> & vars_range, const vector<in
     for (auto & v : values)
         int_values.emplace_back(v);
 
-    p.post(GlobalCardinality{vars, int_values, counts, closed});
+    p.post(GlobalCardinalityDecomposition{vars, int_values, counts, closed});
 
     // The decomposition into per-value Among constraints (plus In when closed)
     // is correct but is not GAC on the conjunction, so we only check the full

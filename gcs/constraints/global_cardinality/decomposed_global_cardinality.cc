@@ -1,5 +1,5 @@
 #include <gcs/constraints/among.hh>
-#include <gcs/constraints/global_cardinality/global_cardinality.hh>
+#include <gcs/constraints/global_cardinality/decomposed_global_cardinality.hh>
 #include <gcs/constraints/in.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_model.hh>
@@ -33,7 +33,7 @@ using std::print;
 using fmt::print;
 #endif
 
-GlobalCardinality::GlobalCardinality(vector<IntegerVariableID> vars, vector<Integer> values,
+GlobalCardinalityDecomposition::GlobalCardinalityDecomposition(vector<IntegerVariableID> vars, vector<Integer> values,
     vector<IntegerVariableID> counts, bool closed) :
     _vars(move(vars)),
     _values(move(values)),
@@ -42,12 +42,12 @@ GlobalCardinality::GlobalCardinality(vector<IntegerVariableID> vars, vector<Inte
 {
 }
 
-auto GlobalCardinality::clone() const -> unique_ptr<Constraint>
+auto GlobalCardinalityDecomposition::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<GlobalCardinality>(_vars, _values, _counts, _closed);
+    return make_unique<GlobalCardinalityDecomposition>(_vars, _values, _counts, _closed);
 }
 
-auto GlobalCardinality::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
+auto GlobalCardinalityDecomposition::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
     // Decomposition baseline: link each cover value's occurrence count to its
     // count variable with an Among constraint, and (when closed) confine each
@@ -61,7 +61,7 @@ auto GlobalCardinality::install(Propagators & propagators, State & initial_state
             In{var, _values}.install(propagators, initial_state, optional_model);
 }
 
-auto GlobalCardinality::s_exprify(const ProofModel * const model) const -> string
+auto GlobalCardinalityDecomposition::s_exprify(const ProofModel * const model) const -> string
 {
     stringstream s;
 

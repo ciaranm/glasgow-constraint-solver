@@ -1,5 +1,5 @@
-#ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_GLOBAL_CARDINALITY_GLOBAL_CARDINALITY_HH
-#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_GLOBAL_CARDINALITY_GLOBAL_CARDINALITY_HH
+#ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_GLOBAL_CARDINALITY_DECOMPOSED_GLOBAL_CARDINALITY_HH
+#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_GLOBAL_CARDINALITY_DECOMPOSED_GLOBAL_CARDINALITY_HH
 
 #include <gcs/constraint.hh>
 #include <gcs/integer.hh>
@@ -35,7 +35,7 @@ namespace gcs
      *
      * \ingroup Constraints
      */
-    class GlobalCardinality : public Constraint
+    class GlobalCardinalityDecomposition : public Constraint
     {
     private:
         std::vector<IntegerVariableID> _vars;
@@ -44,7 +44,7 @@ namespace gcs
         bool _closed;
 
     public:
-        explicit GlobalCardinality(std::vector<IntegerVariableID> vars, std::vector<Integer> values,
+        explicit GlobalCardinalityDecomposition(std::vector<IntegerVariableID> vars, std::vector<Integer> values,
             std::vector<IntegerVariableID> counts, bool closed = false);
 
         virtual auto install(innards::Propagators &, innards::State &,
