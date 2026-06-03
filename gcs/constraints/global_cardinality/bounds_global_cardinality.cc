@@ -233,7 +233,7 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
                         pb.emit(*logger, ProofLevel::Temporary);
                     };
 
-                    auto capacity_reason = [&, a = a, b = b]() -> Reason {
+                    auto capacity_reason = [&, a = a, b = b](optional<std::size_t> exclude) -> Reason {
                         Reason r;
                         for (const auto & var : confined) {
                             auto [v_lo, v_hi] = state.bounds(var);
@@ -244,23 +244,93 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
                             r.emplace_back(var <= v_hi);
                         }
                         for (std::size_t v = a; v <= b; ++v)
-                            if (! holds_alternative<ConstantIntegerVariableID>(counts[v]))
+                            if (exclude != optional<std::size_t>{v} && ! holds_alternative<ConstantIntegerVariableID>(counts[v]))
                                 r.emplace_back(counts[v] <= state.bounds(counts[v]).second);
                         return r;
+                    };
+
+                    // The per-value capacity lines Sum_i x_{i=v} <= ub_v and
+                    // Sum_i x_{i=v} >= lb_v. Each is a direct consequence of the
+                    // count line (Sum_i x_{i=v} = c_v) and the count bound, but
+                    // combining them in a pol is blocked because the count line
+                    // carries c_v in its bit encoding while the bound is an
+                    // order-encoding atom (and is vacuous at the bit-width
+                    // boundary). These two true facts are asserted; everything
+                    // built on top of them is real, so the surrounding Hall
+                    // combinatorics is genuinely checked.
+                    auto demand_reason = [&, a = a, b = b](optional<std::size_t> exclude) -> Reason {
+                        Reason r;
+                        for (const auto & var : vars)
+                            if (! domain_meets_hall(var))
+                                for (const auto & val : hall)
+                                    r.emplace_back(var != val);
+                        for (std::size_t v = a; v <= b; ++v)
+                            if (exclude != optional<std::size_t>{v} && ! holds_alternative<ConstantIntegerVariableID>(counts[v]))
+                                r.emplace_back(counts[v] >= state.bounds(counts[v]).first);
+                        return r;
+                    };
+
+                    auto cap_line = [&](std::size_t v, bool upper) -> ProofLine {
+                        WPBSum s;
+                        for (const auto & var : vars)
+                            s += 1_i * (var == values[v]);
+                        auto [lo, hi] = state.bounds(counts[v]);
+                        if (upper)
+                            return logger->emit(AssertProofRule{}, s <= hi, ProofLevel::Temporary);
+                        else
+                            return logger->emit(AssertProofRule{}, WPBSum{s} >= lo, ProofLevel::Temporary);
                     };
 
                     for (std::size_t j = a; j <= b; ++j) {
                         auto [lb_j, ub_j] = state.bounds(counts[j]);
                         auto lower = confined_count - (cap - ub_j);
                         if (lower > lb_j)
-                            inference.infer(logger, counts[j] >= lower, AssertRatherThanJustifying{}, generic_reason(state, all_vars));
+                            // Sum the capacity lines for v != j, an at-least-one
+                            // over H for each confined variable, and the j count
+                            // line LE_j (c_j >= Sum_i x_{i=j}); this yields
+                            // c_j - Sum_{i not confined, v in H} x_{i=v} >= L, and
+                            // the dropped non-negative sum RUP-closes c_j >= L.
+                            inference.infer(logger, counts[j] >= lower,
+                                JustifyExplicitlyThenRUP{[&, a = a, b = b, j = j](const ReasonFunction &) {
+                                    auto & tracker = logger->names_and_ids_tracker();
+                                    PolBuilder pb;
+                                    for (std::size_t v = a; v <= b; ++v)
+                                        if (v != j)
+                                            pb.add(cap_line(v, true));
+                                    for (const auto & var : confined)
+                                        pb.add(tracker.need_constraint_saying_variable_takes_at_least_one_value(var));
+                                    pb.add(*count_lines[j].first);
+                                    pb.emit(*logger, ProofLevel::Temporary);
+                                }},
+                                ReasonFunction{[&, j = j]() { return capacity_reason(j); }});
                         auto upper = potential_count - (demand - lb_j);
                         if (upper < ub_j)
-                            inference.infer(logger, counts[j] <= upper, AssertRatherThanJustifying{}, generic_reason(state, all_vars));
+                            // Dual: at-most-one over H for each potential variable,
+                            // the demand lines for v != j, and the j count line
+                            // GE_j (c_j <= Sum_i x_{i=j}); RUP-closes c_j <= U.
+                            inference.infer(logger, counts[j] <= upper,
+                                JustifyExplicitlyThenRUP{[&, a = a, b = b, j = j](const ReasonFunction &) {
+                                    PolBuilder pb;
+                                    for (const auto & var : potential) {
+                                        vector<IntegerVariableCondition> atoms;
+                                        for (const auto & val : hall)
+                                            atoms.push_back(var == val);
+                                        pb.add(recover_am1<IntegerVariableCondition>(*logger, ProofLevel::Temporary, atoms,
+                                            [&](const IntegerVariableCondition & p, const IntegerVariableCondition & q) {
+                                                return logger->emit(RUPProofRule{}, WPBSum{} + 1_i * ! p + 1_i * ! q >= 1_i, ProofLevel::Temporary);
+                                            }));
+                                    }
+                                    for (std::size_t v = a; v <= b; ++v)
+                                        if (v != j)
+                                            pb.add(cap_line(v, false));
+                                    pb.add(*count_lines[j].second);
+                                    pb.emit(*logger, ProofLevel::Temporary);
+                                }},
+                                ReasonFunction{[&, j = j]() { return demand_reason(j); }});
                     }
 
                     if (confined_count > cap) {
-                        inference.contradiction(logger, JustifyExplicitlyThenRUP{[&](const ReasonFunction &) { emit_capacity_pol(nullopt); }}, capacity_reason);
+                        inference.contradiction(logger, JustifyExplicitlyThenRUP{[&](const ReasonFunction &) { emit_capacity_pol(nullopt); }}, ReasonFunction{[&]() { return capacity_reason(nullopt); }});
                     }
                     else if (confined_count == cap) {
                         for (const auto & var : vars) {
@@ -268,7 +338,7 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
                                 continue;
                             for (const auto & val : hall)
                                 if (state.in_domain(var, val))
-                                    inference.infer(logger, var != val, JustifyExplicitlyThenRUP{[&](const ReasonFunction &) { emit_capacity_pol(nullopt); }}, capacity_reason);
+                                    inference.infer(logger, var != val, JustifyExplicitlyThenRUP{[&](const ReasonFunction &) { emit_capacity_pol(nullopt); }}, ReasonFunction{[&]() { return capacity_reason(nullopt); }});
                         }
                     }
 
@@ -303,26 +373,14 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
                         pb.emit(*logger, ProofLevel::Temporary);
                     };
 
-                    auto demand_reason = [&]() -> Reason {
-                        Reason r;
-                        for (const auto & var : vars)
-                            if (! domain_meets_hall(var))
-                                for (const auto & val : hall)
-                                    r.emplace_back(var != val);
-                        for (std::size_t v = a; v <= b; ++v)
-                            if (! holds_alternative<ConstantIntegerVariableID>(counts[v]))
-                                r.emplace_back(counts[v] >= state.bounds(counts[v]).first);
-                        return r;
-                    };
-
                     if (potential_count < demand) {
-                        inference.contradiction(logger, JustifyExplicitlyThenRUP{[&](const ReasonFunction &) { emit_demand_pol(nullopt, 0_i); }}, demand_reason);
+                        inference.contradiction(logger, JustifyExplicitlyThenRUP{[&](const ReasonFunction &) { emit_demand_pol(nullopt, 0_i); }}, ReasonFunction{[&]() { return demand_reason(nullopt); }});
                     }
                     else if (potential_count == demand) {
                         for (const auto & var : potential)
                             for (const auto & val : state.each_value_mutable(var))
                                 if (! hall.contains(val))
-                                    inference.infer(logger, var != val, JustifyExplicitlyThenRUP{[&, var = var, val = val](const ReasonFunction &) { emit_demand_pol(var, val); }}, demand_reason);
+                                    inference.infer(logger, var != val, JustifyExplicitlyThenRUP{[&, var = var, val = val](const ReasonFunction &) { emit_demand_pol(var, val); }}, ReasonFunction{[&]() { return demand_reason(nullopt); }});
                     }
                 }
             }
