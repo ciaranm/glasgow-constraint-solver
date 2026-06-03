@@ -165,11 +165,9 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
 
             // Part 2: multi-value Hall intervals over contiguous runs of the
             // (sorted, distinct) cover values. This is the genuine cross-value
-            // strengthening beyond per-value reasoning. The variable-domain
-            // prunings (both Hall directions) and the infeasibilities have real
-            // pol justifications; only the count-variable bound tightenings are
-            // still asserted (their derivations keep a bit-encoded count
-            // variable uncancelled, which needs separate handling).
+            // strengthening beyond per-value reasoning: count-variable bound
+            // tightening, variable-domain pruning in both Hall directions, and
+            // infeasibility. All have real pol justifications.
             for (std::size_t a = 0; a < m; ++a) {
                 set<Integer> hall;
                 Integer cap = 0_i, demand = 0_i;
@@ -270,33 +268,29 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
                         return r;
                     };
 
-                    auto cap_line = [&](std::size_t v, bool upper) -> ProofLine {
-                        WPBSum s;
-                        for (const auto & var : vars)
-                            s += 1_i * (var == values[v]);
-                        auto [lo, hi] = state.bounds(counts[v]);
-                        if (upper)
-                            return logger->emit(AssertProofRule{}, s <= hi, ProofLevel::Temporary);
-                        else
-                            return logger->emit(AssertProofRule{}, WPBSum{s} >= lo, ProofLevel::Temporary);
-                    };
-
                     for (std::size_t j = a; j <= b; ++j) {
                         auto [lb_j, ub_j] = state.bounds(counts[j]);
                         auto lower = confined_count - (cap - ub_j);
                         if (lower > lb_j)
-                            // Sum the capacity lines for v != j, an at-least-one
-                            // over H for each confined variable, and the j count
-                            // line LE_j (c_j >= Sum_i x_{i=j}); this yields
-                            // c_j - Sum_{i not confined, v in H} x_{i=v} >= L, and
-                            // the dropped non-negative sum RUP-closes c_j >= L.
+                            // For each v != j sum the count line LE_v with the
+                            // defining implication of c_v <= ub_v (add_for_literal,
+                            // which resolves the order-encoded bound against
+                            // BinEnc(c_v) so the bits cancel, leaving Sum_i x_{i=v}
+                            // <= ub_v reified by the gevar). Add an at-least-one
+                            // over H per confined variable and the j count line
+                            // LE_j; this yields c_j - Sum_{i not confined} x >= L.
+                            // The final RUP closes c_j >= L; its reason supplies
+                            // c_v <= ub_v (v != j), discharging the gevars.
                             inference.infer(logger, counts[j] >= lower,
                                 JustifyExplicitlyThenRUP{[&, a = a, b = b, j = j](const ReasonFunction &) {
                                     auto & tracker = logger->names_and_ids_tracker();
                                     PolBuilder pb;
                                     for (std::size_t v = a; v <= b; ++v)
-                                        if (v != j)
-                                            pb.add(cap_line(v, true));
+                                        if (v != j) {
+                                            pb.add(*count_lines[v].first);
+                                            if (! holds_alternative<ConstantIntegerVariableID>(counts[v]))
+                                                pb.add_for_literal(tracker, counts[v] <= state.bounds(counts[v]).second);
+                                        }
                                     for (const auto & var : confined)
                                         pb.add(tracker.need_constraint_saying_variable_takes_at_least_one_value(var));
                                     pb.add(*count_lines[j].first);
@@ -305,11 +299,13 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
                                 ReasonFunction{[&, j = j]() { return capacity_reason(j); }});
                         auto upper = potential_count - (demand - lb_j);
                         if (upper < ub_j)
-                            // Dual: at-most-one over H for each potential variable,
-                            // the demand lines for v != j, and the j count line
-                            // GE_j (c_j <= Sum_i x_{i=j}); RUP-closes c_j <= U.
+                            // Dual: at-most-one over H per potential variable, the
+                            // count lines GE_v with the defining implication of
+                            // c_v >= lb_v for v != j, and the j count line GE_j;
+                            // RUP-closes c_j <= U, the reason discharging the gevars.
                             inference.infer(logger, counts[j] <= upper,
                                 JustifyExplicitlyThenRUP{[&, a = a, b = b, j = j](const ReasonFunction &) {
+                                    auto & tracker = logger->names_and_ids_tracker();
                                     PolBuilder pb;
                                     for (const auto & var : potential) {
                                         vector<IntegerVariableCondition> atoms;
@@ -321,8 +317,11 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
                                             }));
                                     }
                                     for (std::size_t v = a; v <= b; ++v)
-                                        if (v != j)
-                                            pb.add(cap_line(v, false));
+                                        if (v != j) {
+                                            pb.add(*count_lines[v].second);
+                                            if (! holds_alternative<ConstantIntegerVariableID>(counts[v]))
+                                                pb.add_for_literal(tracker, counts[v] >= state.bounds(counts[v]).first);
+                                        }
                                     pb.add(*count_lines[j].second);
                                     pb.emit(*logger, ProofLevel::Temporary);
                                 }},
