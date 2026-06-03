@@ -5,6 +5,7 @@
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
+#include <gcs/innards/reason.hh>
 #include <gcs/innards/state.hh>
 
 #include <util/enumerate.hh>
@@ -97,13 +98,81 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             auto m = values.size();
 
-            // Hall reasoning over contiguous runs of the (sorted, distinct)
-            // cover values. The singleton intervals reproduce the per-value
-            // must-occur/can-occur count bounds.
+            // Part 1: per-value (singleton Hall) reasoning, with real RUP
+            // justifications. For each cover value this gives the count variable
+            // its must-occur lower bound and can-occur upper bound, removes a
+            // value whose upper capacity is saturated by the variables fixed to
+            // it, and forces the variables into a value whose lower demand can
+            // only just be met.
+            for (const auto & [j, value] : enumerate(values)) {
+                Reason fixed_eq;  // var == value, for variables fixed to value
+                Reason absent_ne; // var != value, for variables without value
+                Integer must = 0_i, can = 0_i;
+                for (const auto & var : vars) {
+                    if (state.in_domain(var, value)) {
+                        ++can;
+                        if (state.has_single_value(var)) {
+                            ++must;
+                            fixed_eq.emplace_back(var == value);
+                        }
+                    }
+                    else
+                        absent_ne.emplace_back(var != value);
+                }
+
+                auto [lb_j, ub_j] = state.bounds(counts[j]);
+
+                // c_j >= must: the fixed variables alone force the count up.
+                if (must > lb_j)
+                    inference.infer(logger, counts[j] >= must, JustifyUsingRUP{},
+                        ReasonFunction{[fixed_eq]() -> Reason { return fixed_eq; }});
+
+                // c_j <= can: only the variables that can still take value may
+                // contribute to the count.
+                if (can < ub_j)
+                    inference.infer(logger, counts[j] <= can, JustifyUsingRUP{},
+                        ReasonFunction{[absent_ne]() -> Reason { return absent_ne; }});
+
+                // Saturated capacity: if as many variables are already fixed to
+                // value as the count's upper bound allows, no other variable may
+                // take it.
+                if (must == ub_j) {
+                    Reason sat = fixed_eq;
+                    sat.emplace_back(counts[j] <= ub_j);
+                    for (const auto & var : vars)
+                        if (state.in_domain(var, value) && ! state.has_single_value(var))
+                            inference.infer(logger, var != value, JustifyUsingRUP{},
+                                ReasonFunction{[sat]() -> Reason { return sat; }});
+                }
+
+                // Just-met demand: if only `can` variables can take value and the
+                // count's lower bound needs all of them, each is forced to value.
+                if (can == lb_j && can > 0_i) {
+                    Reason force = absent_ne;
+                    force.emplace_back(counts[j] >= lb_j);
+                    for (const auto & var : vars)
+                        if (state.in_domain(var, value) && ! state.has_single_value(var))
+                            for (const auto & w : state.each_value_mutable(var))
+                                if (w != value)
+                                    inference.infer(logger, var != w, JustifyUsingRUP{},
+                                        ReasonFunction{[force]() -> Reason { return force; }});
+                }
+            }
+
+            // Part 2: multi-value Hall intervals over contiguous runs of the
+            // (sorted, distinct) cover values. This is the genuine cross-value
+            // strengthening beyond per-value reasoning; its justifications are
+            // still asserted placeholders.
             for (std::size_t a = 0; a < m; ++a) {
                 set<Integer> hall;
                 Integer cap = 0_i, demand = 0_i;
-                for (std::size_t b = a; b < m; ++b) {
+                hall.insert(values[a]);
+                {
+                    auto [c_lo, c_hi] = state.bounds(counts[a]);
+                    cap += c_hi;
+                    demand += c_lo;
+                }
+                for (std::size_t b = a + 1; b < m; ++b) {
                     hall.insert(values[b]);
                     auto [c_lo, c_hi] = state.bounds(counts[b]);
                     cap += c_hi;
@@ -122,24 +191,14 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
                         return false;
                     };
 
-                    vector<IntegerVariableID> confined;
-                    for (const auto & var : vars)
+                    Integer confined_count = 0_i, potential_count = 0_i;
+                    for (const auto & var : vars) {
                         if (domain_subset_of_hall(var))
-                            confined.push_back(var);
-                    auto confined_count = Integer(confined.size());
-
-                    vector<IntegerVariableID> potential;
-                    for (const auto & var : vars)
+                            ++confined_count;
                         if (domain_meets_hall(var))
-                            potential.push_back(var);
-                    auto potential_count = Integer(potential.size());
+                            ++potential_count;
+                    }
 
-                    // Tighten the count variables. At least `confined_count`
-                    // variables take a hall value, so for each hall value j the
-                    // others can absorb at most (cap - ub_j), forcing c_j up; and
-                    // at most `potential_count` variables can take a hall value,
-                    // with the others demanding at least (demand - lb_j), capping
-                    // c_j from above.
                     for (std::size_t j = a; j <= b; ++j) {
                         auto [lb_j, ub_j] = state.bounds(counts[j]);
                         auto lower = confined_count - (cap - ub_j);
@@ -150,8 +209,6 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
                             inference.infer(logger, counts[j] <= upper, AssertRatherThanJustifying{}, generic_reason(state, all_vars));
                     }
 
-                    // Upper-capacity: a saturated hall set forbids its values
-                    // elsewhere.
                     if (confined_count > cap) {
                         inference.contradiction(logger, AssertRatherThanJustifying{}, generic_reason(state, all_vars));
                     }
@@ -165,16 +222,15 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
                         }
                     }
 
-                    // Lower-demand: if only `demand` variables can supply the
-                    // hall set's demand, they all must.
                     if (potential_count < demand) {
                         inference.contradiction(logger, AssertRatherThanJustifying{}, generic_reason(state, all_vars));
                     }
                     else if (potential_count == demand) {
-                        for (const auto & var : potential)
-                            for (const auto & val : state.each_value_mutable(var))
-                                if (! hall.contains(val))
-                                    inference.infer(logger, var != val, AssertRatherThanJustifying{}, generic_reason(state, all_vars));
+                        for (const auto & var : vars)
+                            if (domain_meets_hall(var))
+                                for (const auto & val : state.each_value_mutable(var))
+                                    if (! hall.contains(val))
+                                        inference.infer(logger, var != val, AssertRatherThanJustifying{}, generic_reason(state, all_vars));
                     }
                 }
             }
