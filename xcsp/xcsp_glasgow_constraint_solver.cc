@@ -38,6 +38,7 @@ using XCSP3Core::Tree;
 using XCSP3Core::XCondition;
 using XCSP3Core::XCSP3CoreCallbacks;
 using XCSP3Core::XCSP3CoreParser;
+using XCSP3Core::XInterval;
 using XCSP3Core::XTransition;
 using XCSP3Core::XVariable;
 
@@ -617,31 +618,54 @@ namespace
             apply_count_condition(profit_total, profitCondition, "knapsack profit");
         }
 
+        static auto gcc_cover(const vector<int> & values) -> vector<Integer>
+        {
+            vector<Integer> ivals;
+            ivals.reserve(values.size());
+            for (auto v : values)
+                ivals.emplace_back(Integer{v});
+            return ivals;
+        }
+
+        // Cover values as constants. The occurrences may be given as constants,
+        // variables, or intervals; each maps to a count variable of the native
+        // GlobalCardinality constraint (a singleton domain for a constant, a
+        // lo..hi domain for an interval). The cover-as-variables forms are left
+        // to the base-class default (unsupported).
         auto buildConstraintCardinality(string, vector<XVariable *> & x_vars,
             vector<int> values, vector<int> & occurs, bool closed) -> void override
         {
-            // Decomposition: one Count per (value, occurrence) pair. A
-            // native GCC propagator would be a future improvement (see the
-            // CPMpy globals list in #61).
             if (values.size() != occurs.size())
                 report_unsupported("cardinality", "values/occurs size mismatch");
             auto vars = need_variables(x_vars);
-            for (size_t i = 0; i != values.size(); ++i)
-                _problem.post(Count{vars, constant_variable(Integer{values[i]}),
-                    constant_variable(Integer{occurs[i]})});
-            if (closed) {
-                // Every var must take a value from the given list.
-                vector<Integer> ivals;
-                ivals.reserve(values.size());
-                for (auto v : values)
-                    ivals.emplace_back(Integer{v});
-                vector<vector<Integer>> tuples;
-                tuples.reserve(ivals.size());
-                for (auto v : ivals)
-                    tuples.emplace_back(vector{v});
-                for (auto v : vars)
-                    _problem.post(Table{vector<IntegerVariableID>{v}, tuples});
-            }
+            vector<IntegerVariableID> counts;
+            counts.reserve(occurs.size());
+            for (auto o : occurs)
+                counts.emplace_back(constant_variable(Integer{o}));
+            _problem.post(GlobalCardinality{move(vars), gcc_cover(values), move(counts), closed});
+        }
+
+        auto buildConstraintCardinality(string, vector<XVariable *> & x_vars,
+            vector<int> values, vector<XVariable *> & occurs, bool closed) -> void override
+        {
+            if (values.size() != occurs.size())
+                report_unsupported("cardinality", "values/occurs size mismatch");
+            auto vars = need_variables(x_vars);
+            _problem.post(GlobalCardinality{move(vars), gcc_cover(values), need_variables(occurs), closed});
+        }
+
+        auto buildConstraintCardinality(string, vector<XVariable *> & x_vars,
+            vector<int> values, vector<XInterval> & occurs, bool closed) -> void override
+        {
+            if (values.size() != occurs.size())
+                report_unsupported("cardinality", "values/occurs size mismatch");
+            auto vars = need_variables(x_vars);
+            vector<IntegerVariableID> counts;
+            counts.reserve(occurs.size());
+            for (size_t i = 0; i != occurs.size(); ++i)
+                counts.emplace_back(_problem.create_integer_variable(Integer{occurs[i].min}, Integer{occurs[i].max},
+                    "gccoccurs" + std::to_string(i)));
+            _problem.post(GlobalCardinality{move(vars), gcc_cover(values), move(counts), closed});
         }
 
         auto buildConstraintIntension(string, Tree * tree) -> void override
