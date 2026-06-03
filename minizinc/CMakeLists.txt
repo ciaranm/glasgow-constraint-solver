@@ -70,6 +70,15 @@ set_tests_properties(minizinc-equals PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-equalsreif COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ equalsreif true true)
 set_tests_properties(minizinc-equalsreif PROPERTIES SKIP_RETURN_CODE 66)
 
+add_test(NAME minizinc-globalcardinality COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ globalcardinality true true)
+set_tests_properties(minizinc-globalcardinality PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-globalcardinalityclosed COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ globalcardinalityclosed true true)
+set_tests_properties(minizinc-globalcardinalityclosed PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-globalcardinalitylowup COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ globalcardinalitylowup true true)
+set_tests_properties(minizinc-globalcardinalitylowup PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-increasing COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ increasing true true)
 set_tests_properties(minizinc-increasing PROPERTIES SKIP_RETURN_CODE 66)
 
