@@ -109,6 +109,11 @@ auto main(int, char *[]) -> int
         // Lower-demand Hall: value 1 demanded at least twice, only two vars can
         // supply it, so both are forced to 1.
         {{pair{1, 4}, pair{1, 4}, pair{2, 5}}, {1, 2}, {pair{2, 3}, pair{0, 3}}, false},
+        // Lower-demand Hall isolated: counts pinned to 1+1, two vars range over
+        // 1..5; the demand of 2 over {1,2} exactly matches the two potential
+        // suppliers (no single value forces), so ONLY the multi-value force
+        // fires, removing 3,4,5 from both.
+        {{pair{1, 5}, pair{1, 5}}, {1, 2}, {1, 1}, false},
         // Infeasible by capacity.
         {{pair{1, 2}, pair{1, 2}, pair{1, 2}}, {1, 2}, {pair{0, 1}, pair{0, 1}}, false},
         // Open, exact counts.

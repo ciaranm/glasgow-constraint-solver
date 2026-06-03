@@ -1,5 +1,6 @@
 #include <gcs/constraints/global_cardinality/bounds_global_cardinality.hh>
 #include <gcs/constraints/in.hh>
+#include <gcs/constraints/innards/recover_am1.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/pol_builder.hh>
@@ -31,6 +32,7 @@ using namespace gcs::innards;
 using std::holds_alternative;
 using std::make_unique;
 using std::move;
+using std::nullopt;
 using std::optional;
 using std::pair;
 using std::set;
@@ -163,8 +165,11 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
 
             // Part 2: multi-value Hall intervals over contiguous runs of the
             // (sorted, distinct) cover values. This is the genuine cross-value
-            // strengthening beyond per-value reasoning; its justifications are
-            // still asserted placeholders.
+            // strengthening beyond per-value reasoning. The variable-domain
+            // prunings (both Hall directions) and the infeasibilities have real
+            // pol justifications; only the count-variable bound tightenings are
+            // still asserted (their derivations keep a bit-encoded count
+            // variable uncancelled, which needs separate handling).
             for (std::size_t a = 0; a < m; ++a) {
                 set<Integer> hall;
                 Integer cap = 0_i, demand = 0_i;
@@ -193,25 +198,15 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
                         return false;
                     };
 
-                    vector<IntegerVariableID> confined;
-                    Integer potential_count = 0_i;
+                    vector<IntegerVariableID> confined, potential;
                     for (const auto & var : vars) {
                         if (domain_subset_of_hall(var))
                             confined.push_back(var);
                         if (domain_meets_hall(var))
-                            ++potential_count;
+                            potential.push_back(var);
                     }
                     auto confined_count = Integer(confined.size());
-
-                    for (std::size_t j = a; j <= b; ++j) {
-                        auto [lb_j, ub_j] = state.bounds(counts[j]);
-                        auto lower = confined_count - (cap - ub_j);
-                        if (lower > lb_j)
-                            inference.infer(logger, counts[j] >= lower, AssertRatherThanJustifying{}, generic_reason(state, all_vars));
-                        auto upper = potential_count - (demand - lb_j);
-                        if (upper < ub_j)
-                            inference.infer(logger, counts[j] <= upper, AssertRatherThanJustifying{}, generic_reason(state, all_vars));
-                    }
+                    auto potential_count = Integer(potential.size());
 
                     // The capacity aggregate: summing the per-value count upper
                     // lines (Sum_i x_{i=v} <= c_v), the count upper bounds
@@ -219,15 +214,18 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
                     // each confined variable yields
                     //   Sum_{i not confined, v in H} x_{i=v} <= cap - confined.
                     // When confined == cap this is <= 0, RUP-closing each removal;
-                    // when confined > cap it is already contradictory.
-                    auto emit_capacity_pol = [&, a = a, b = b]() {
+                    // when confined > cap it is already contradictory. Passing a
+                    // `keep` index suppresses that value's c_v <= ub_v step so its
+                    // count variable survives uncancelled, which RUP-closes the
+                    // count lower bound c_keep >= confined - (cap - ub_keep).
+                    auto emit_capacity_pol = [&, a = a, b = b](optional<std::size_t> keep) {
                         auto & tracker = logger->names_and_ids_tracker();
                         PolBuilder pb;
                         for (std::size_t v = a; v <= b; ++v) {
                             pb.add(*count_lines[v].first);
                             // A constant count already folds its bound into the
                             // count line; only a real variable needs c_v <= ub_v.
-                            if (! holds_alternative<ConstantIntegerVariableID>(counts[v]))
+                            if (keep != optional<std::size_t>{v} && ! holds_alternative<ConstantIntegerVariableID>(counts[v]))
                                 pb.add_for_literal(tracker, counts[v] <= state.bounds(counts[v]).second);
                         }
                         for (const auto & var : confined)
@@ -251,8 +249,18 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
                         return r;
                     };
 
+                    for (std::size_t j = a; j <= b; ++j) {
+                        auto [lb_j, ub_j] = state.bounds(counts[j]);
+                        auto lower = confined_count - (cap - ub_j);
+                        if (lower > lb_j)
+                            inference.infer(logger, counts[j] >= lower, AssertRatherThanJustifying{}, generic_reason(state, all_vars));
+                        auto upper = potential_count - (demand - lb_j);
+                        if (upper < ub_j)
+                            inference.infer(logger, counts[j] <= upper, AssertRatherThanJustifying{}, generic_reason(state, all_vars));
+                    }
+
                     if (confined_count > cap) {
-                        inference.contradiction(logger, JustifyExplicitlyThenRUP{[&](const ReasonFunction &) { emit_capacity_pol(); }}, capacity_reason);
+                        inference.contradiction(logger, JustifyExplicitlyThenRUP{[&](const ReasonFunction &) { emit_capacity_pol(nullopt); }}, capacity_reason);
                     }
                     else if (confined_count == cap) {
                         for (const auto & var : vars) {
@@ -260,19 +268,61 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
                                 continue;
                             for (const auto & val : hall)
                                 if (state.in_domain(var, val))
-                                    inference.infer(logger, var != val, JustifyExplicitlyThenRUP{[&](const ReasonFunction &) { emit_capacity_pol(); }}, capacity_reason);
+                                    inference.infer(logger, var != val, JustifyExplicitlyThenRUP{[&](const ReasonFunction &) { emit_capacity_pol(nullopt); }}, capacity_reason);
                         }
                     }
 
+                    // The demand aggregate (dual of the capacity one): summing
+                    // the per-value count lower lines (Sum_i x_{i=v} >= c_v), the
+                    // count lower bounds (c_v >= lb_v), and an at-most-one over
+                    // the hall set for each potential variable yields
+                    //   Sum_{i not potential, v in H} x_{i=v} >= demand - potential.
+                    // When demand > potential this is contradictory; when
+                    // demand == potential, giving one potential variable an
+                    // at-most-one over H u {w} instead RUP-closes its removal of
+                    // the outside value w.
+                    auto emit_demand_pol = [&, a = a, b = b](optional<IntegerVariableID> kvar, Integer kw) {
+                        auto & tracker = logger->names_and_ids_tracker();
+                        PolBuilder pb;
+                        for (std::size_t v = a; v <= b; ++v) {
+                            pb.add(*count_lines[v].second);
+                            if (! holds_alternative<ConstantIntegerVariableID>(counts[v]))
+                                pb.add_for_literal(tracker, counts[v] >= state.bounds(counts[v]).first);
+                        }
+                        for (const auto & var : potential) {
+                            vector<IntegerVariableCondition> atoms;
+                            for (const auto & val : hall)
+                                atoms.push_back(var == val);
+                            if (kvar == optional<IntegerVariableID>{var})
+                                atoms.push_back(var == kw);
+                            pb.add(recover_am1<IntegerVariableCondition>(*logger, ProofLevel::Top, atoms,
+                                [&](const IntegerVariableCondition & p, const IntegerVariableCondition & q) {
+                                    return logger->emit(RUPProofRule{}, WPBSum{} + 1_i * ! p + 1_i * ! q >= 1_i, ProofLevel::Temporary);
+                                }));
+                        }
+                        pb.emit(*logger, ProofLevel::Temporary);
+                    };
+
+                    auto demand_reason = [&]() -> Reason {
+                        Reason r;
+                        for (const auto & var : vars)
+                            if (! domain_meets_hall(var))
+                                for (const auto & val : hall)
+                                    r.emplace_back(var != val);
+                        for (std::size_t v = a; v <= b; ++v)
+                            if (! holds_alternative<ConstantIntegerVariableID>(counts[v]))
+                                r.emplace_back(counts[v] >= state.bounds(counts[v]).first);
+                        return r;
+                    };
+
                     if (potential_count < demand) {
-                        inference.contradiction(logger, AssertRatherThanJustifying{}, generic_reason(state, all_vars));
+                        inference.contradiction(logger, JustifyExplicitlyThenRUP{[&](const ReasonFunction &) { emit_demand_pol(nullopt, 0_i); }}, demand_reason);
                     }
                     else if (potential_count == demand) {
-                        for (const auto & var : vars)
-                            if (domain_meets_hall(var))
-                                for (const auto & val : state.each_value_mutable(var))
-                                    if (! hall.contains(val))
-                                        inference.infer(logger, var != val, AssertRatherThanJustifying{}, generic_reason(state, all_vars));
+                        for (const auto & var : potential)
+                            for (const auto & val : state.each_value_mutable(var))
+                                if (! hall.contains(val))
+                                    inference.infer(logger, var != val, JustifyExplicitlyThenRUP{[&, var = var, val = val](const ReasonFunction &) { emit_demand_pol(var, val); }}, demand_reason);
                     }
                 }
             }
