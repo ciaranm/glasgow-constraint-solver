@@ -3,6 +3,7 @@
 
 #include <gcs/constraints/global_cardinality/bounds_global_cardinality.hh>
 #include <gcs/constraints/global_cardinality/decomposed_global_cardinality.hh>
+#include <gcs/constraints/global_cardinality/gac_global_cardinality.hh>
 
 namespace gcs
 {
