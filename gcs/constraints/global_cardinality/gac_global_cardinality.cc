@@ -449,7 +449,12 @@ auto GACGlobalCardinality::install_propagators(Propagators & propagators) -> voi
                     // than raise an unjustified contradiction here.
                     return PropagatorState::Enable;
                 else
-                    inference.contradiction(logger, AssertRatherThanJustifying{}, generic_reason(state, all_vars));
+                    // An infeasible flow has either an unassignable variable
+                    // (capacity Hall violator) or an under-supplied value (demand
+                    // Hall violator), so one of the branches above should have
+                    // fired. Reaching here means the violator search missed it:
+                    // fail loudly rather than emit an unjustified contradiction.
+                    throw UnexpectedException{"global cardinality: infeasible flow with no Hall violator found"};
                 return PropagatorState::Enable;
             }
 
