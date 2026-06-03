@@ -1,0 +1,6 @@
+#ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_GLOBAL_CARDINALITY_HH
+#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_GLOBAL_CARDINALITY_HH
+
+#include <gcs/constraints/global_cardinality/global_cardinality.hh>
+
+#endif

@@ -27,6 +27,7 @@
 #include <gcs/constraints/disjunctive.hh>
 #include <gcs/constraints/element.hh>
 #include <gcs/constraints/equals.hh>
+#include <gcs/constraints/global_cardinality.hh>
 #include <gcs/constraints/in.hh>
 #include <gcs/constraints/increasing.hh>
 #include <gcs/constraints/inverse.hh>
