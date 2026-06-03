@@ -1,4 +1,5 @@
 #include <gcs/constraints/global_cardinality/gac_global_cardinality.hh>
+#include <gcs/constraints/global_cardinality/justify.hh>
 #include <gcs/constraints/in.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -188,23 +189,35 @@ auto GACGlobalCardinality::install_propagators(Propagators & propagators) -> voi
     all_vars.insert(all_vars.end(), _counts.begin(), _counts.end());
 
     propagators.install(
-        [vars = _vars, values = _values, counts = _counts, closed = _closed, all_vars = move(all_vars)](
+        [vars = _vars, values = _values, counts = _counts, closed = _closed, count_lines = _count_lines, all_vars = move(all_vars)](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             auto m = values.size();
             auto n = vars.size();
 
             // Per-value count bounds: keep the count variables pinned to the
             // must-occur..can-occur range (so they are determined at a leaf).
+            // These are the certified per-value RUP steps from the BC propagator.
             for (const auto & [j, value] : enumerate(values)) {
+                Reason fixed_eq, absent_ne;
                 Integer must = 0_i, can = 0_i;
-                for (const auto & var : vars)
+                for (const auto & var : vars) {
                     if (state.in_domain(var, value)) {
                         ++can;
-                        if (state.has_single_value(var))
+                        if (state.has_single_value(var)) {
                             ++must;
+                            fixed_eq.emplace_back(var == value);
+                        }
                     }
-                inference.infer(logger, counts[j] >= must, AssertRatherThanJustifying{}, generic_reason(state, all_vars));
-                inference.infer(logger, counts[j] <= can, AssertRatherThanJustifying{}, generic_reason(state, all_vars));
+                    else
+                        absent_ne.emplace_back(var != value);
+                }
+                auto [lb_j, ub_j] = state.bounds(counts[j]);
+                if (must > lb_j)
+                    inference.infer(logger, counts[j] >= must, JustifyUsingRUP{},
+                        ReasonFunction{[fixed_eq]() -> Reason { return fixed_eq; }});
+                if (can < ub_j)
+                    inference.infer(logger, counts[j] <= can, JustifyUsingRUP{},
+                        ReasonFunction{[absent_ne]() -> Reason { return absent_ne; }});
             }
 
             // Build Régin's value graph as a flow network and find a feasible
@@ -338,15 +351,83 @@ auto GACGlobalCardinality::install_propagators(Propagators & propagators) -> voi
                 if (index[v] == 0)
                     scc(v);
 
+            // Residual reachability from a node (for extracting the proof cut).
+            auto reachable_from = [&](int start) {
+                vector<std::uint8_t> seen(base_nodes, 0);
+                vector<int> q{start};
+                seen[start] = 1;
+                for (std::size_t h = 0; h < q.size(); ++h)
+                    for (auto w : radj[q[h]])
+                        if (! seen[w]) {
+                            seen[w] = 1;
+                            q.push_back(w);
+                        }
+                return seen;
+            };
+
+            auto value_index = [&](Integer val) -> int {
+                for (std::size_t v = 0; v < m; ++v)
+                    if (values[v] == val)
+                        return static_cast<int>(v);
+                return -1;
+            };
+
             // An assignment edge value j -> var i that carries no flow and
-            // crosses two components has no support: prune it.
+            // crosses two components has no support: prune it, justified by the
+            // cut reachable from the variable. If the source is in that cut the
+            // pruning is capacity-driven (the values *outside* the cut are full);
+            // otherwise it is demand-driven (the values *inside* the cut are at
+            // their lower bound).
             for (const auto & [j, value] : enumerate(values))
                 for (std::size_t i = 0; i < n; ++i) {
                     auto ei = assign_edge[j][i];
                     if (ei < 0)
                         continue;
-                    if (flow[ei] == 0 && comp[value_node(j)] != comp[var_node(i)])
-                        inference.infer(logger, vars[i] != value, AssertRatherThanJustifying{}, generic_reason(state, all_vars));
+                    if (! (flow[ei] == 0 && comp[value_node(j)] != comp[var_node(i)]))
+                        continue;
+
+                    auto seen = reachable_from(var_node(i));
+                    if (seen[S]) {
+                        // Capacity cut: full cover values are those not reachable.
+                        vector<std::size_t> cut_values;
+                        for (std::size_t v = 0; v < m; ++v)
+                            if (! seen[value_node(v)])
+                                cut_values.push_back(v);
+                        vector<IntegerVariableID> confined;
+                        for (std::size_t k = 0; k < n; ++k) {
+                            bool subset = true;
+                            for (const auto & val : state.each_value_immutable(vars[k])) {
+                                auto vi = value_index(val);
+                                if (vi < 0 || seen[value_node(static_cast<std::size_t>(vi))]) {
+                                    subset = false;
+                                    break;
+                                }
+                            }
+                            if (subset)
+                                confined.push_back(vars[k]);
+                        }
+                        inference.infer(logger, vars[i] != value,
+                            JustifyExplicitlyThenRUP{[&, cut_values, confined](const ReasonFunction &) {
+                                emit_gcc_capacity_pol(*logger, state, vars, values, counts, count_lines, cut_values, confined);
+                            }},
+                            ReasonFunction{[&, cut_values, confined]() { return gcc_capacity_reason(state, values, counts, cut_values, confined); }});
+                    }
+                    else {
+                        // Demand cut: cover values inside the cut are at their lower bound.
+                        vector<std::size_t> cut_values;
+                        for (std::size_t v = 0; v < m; ++v)
+                            if (seen[value_node(v)])
+                                cut_values.push_back(v);
+                        vector<IntegerVariableID> potential;
+                        for (std::size_t k = 0; k < n; ++k)
+                            if (seen[var_node(k)])
+                                potential.push_back(vars[k]);
+                        inference.infer(logger, vars[i] != value,
+                            JustifyExplicitlyThenRUP{[&, cut_values, potential, j = j, i = i](const ReasonFunction &) {
+                                emit_gcc_demand_pol(*logger, state, vars, values, counts, count_lines, cut_values, potential, vars[i], j);
+                            }},
+                            ReasonFunction{[&, cut_values, potential]() { return gcc_demand_reason(state, vars, values, counts, cut_values, potential); }});
+                    }
                 }
 
             // Likewise the dummy edge: if a variable cannot route through the
