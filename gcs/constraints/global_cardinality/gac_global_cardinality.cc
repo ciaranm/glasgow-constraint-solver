@@ -301,20 +301,157 @@ auto GACGlobalCardinality::install_propagators(Propagators & propagators) -> voi
 
             auto feasible = (mf.max_flow(SS, TT) == need);
 
-            if (! feasible) {
-                // No feasible flow: the constraint is violated. The infeasible
-                // cut from the reduced super-source residual could justify this
-                // (capacity = AllDifferent-style Hall violator, demand =
-                // McIlree's notes section 4), but extracting it robustly for
-                // both directions is still to do, so this is asserted.
-                inference.contradiction(logger, AssertRatherThanJustifying{}, generic_reason(state, all_vars));
-                return PropagatorState::Enable;
-            }
-
-            // Feasible flow on each original edge, and the residual graph.
+            // Flow on each original edge (the partial flow when infeasible).
             vector<long long> flow(orig.size());
             for (const auto & [idx, e] : enumerate(orig))
                 flow[idx] = e.lo + mf.flow_on(e.u, e.k);
+
+            if (! feasible) {
+                // A variable the flow could not assign (no incoming assignment)
+                // witnesses a capacity-driven Hall violator: grow a set of
+                // variables confined to cover values whose total upper capacity
+                // is too small. (Demand-driven infeasibility -- too much lower
+                // demand for the suppliers -- is still asserted.)
+                int unmatched = -1;
+                for (std::size_t i = 0; i < n && unmatched < 0; ++i) {
+                    long long in = 0;
+                    for (std::size_t j = 0; j < m; ++j)
+                        if (assign_edge[j][i] >= 0)
+                            in += flow[assign_edge[j][i]];
+                    if (dummy_edge[i] >= 0)
+                        in += flow[dummy_edge[i]];
+                    if (in == 0)
+                        unmatched = static_cast<int>(i);
+                }
+
+                vector<std::size_t> cut_values;
+                vector<IntegerVariableID> confined;
+                if (unmatched >= 0) {
+                    vector<std::uint8_t> hv_var(n, 0), hv_val(m, 0);
+                    hv_var[unmatched] = 1;
+                    bool grew = true;
+                    while (grew) {
+                        grew = false;
+                        for (std::size_t j = 0; j < m; ++j) {
+                            if (hv_val[j])
+                                continue;
+                            bool in_neighbourhood = false;
+                            for (std::size_t i = 0; i < n; ++i)
+                                if (hv_var[i] && state.in_domain(vars[i], values[j])) {
+                                    in_neighbourhood = true;
+                                    break;
+                                }
+                            if (! in_neighbourhood)
+                                continue;
+                            hv_val[j] = 1;
+                            grew = true;
+                            for (std::size_t i = 0; i < n; ++i)
+                                if (assign_edge[j][i] >= 0 && flow[assign_edge[j][i]] == 1)
+                                    hv_var[i] = 1;
+                        }
+                    }
+                    for (std::size_t j = 0; j < m; ++j)
+                        if (hv_val[j])
+                            cut_values.push_back(j);
+                    // Confine to the variables that can only take cut values.
+                    std::set<Integer> hall;
+                    for (auto j : cut_values)
+                        hall.insert(values[j]);
+                    Integer cap = 0_i;
+                    for (auto j : cut_values)
+                        cap += state.bounds(counts[j]).second;
+                    for (std::size_t i = 0; i < n; ++i) {
+                        bool subset = true;
+                        for (const auto & val : state.each_value_immutable(vars[i]))
+                            if (! hall.contains(val)) {
+                                subset = false;
+                                break;
+                            }
+                        if (subset)
+                            confined.push_back(vars[i]);
+                    }
+                    if (Integer(confined.size()) <= cap) {
+                        cut_values.clear();
+                        confined.clear();
+                    }
+                }
+
+                // Demand-driven Hall violator (dual of the capacity one): grow
+                // from an under-supplied value a set of cover values whose total
+                // lower demand exceeds the variables that can supply them.
+                vector<std::size_t> demand_cut;
+                vector<IntegerVariableID> suppliers;
+                if (cut_values.empty()) {
+                    int under = -1;
+                    for (std::size_t j = 0; j < m && under < 0; ++j) {
+                        long long assigned = 0;
+                        for (std::size_t i = 0; i < n; ++i)
+                            if (assign_edge[j][i] >= 0)
+                                assigned += flow[assign_edge[j][i]];
+                        if (assigned < state.bounds(counts[j]).first.raw_value)
+                            under = static_cast<int>(j);
+                    }
+                    if (under >= 0) {
+                        vector<std::uint8_t> hv_val(m, 0), hv_var(n, 0);
+                        hv_val[under] = 1;
+                        bool grew = true;
+                        while (grew) {
+                            grew = false;
+                            for (std::size_t i = 0; i < n; ++i) {
+                                if (hv_var[i])
+                                    continue;
+                                bool meets = false;
+                                for (std::size_t j = 0; j < m; ++j)
+                                    if (hv_val[j] && state.in_domain(vars[i], values[j])) {
+                                        meets = true;
+                                        break;
+                                    }
+                                if (! meets)
+                                    continue;
+                                hv_var[i] = 1;
+                                grew = true;
+                                for (std::size_t j = 0; j < m; ++j)
+                                    if (! hv_val[j] && assign_edge[j][i] >= 0 && flow[assign_edge[j][i]] == 1)
+                                        hv_val[j] = 1;
+                            }
+                        }
+                        Integer demand = 0_i;
+                        for (std::size_t j = 0; j < m; ++j)
+                            if (hv_val[j]) {
+                                demand_cut.push_back(j);
+                                demand += state.bounds(counts[j]).first;
+                            }
+                        for (std::size_t i = 0; i < n; ++i)
+                            if (hv_var[i])
+                                suppliers.push_back(vars[i]);
+                        if (Integer(suppliers.size()) >= demand) {
+                            demand_cut.clear();
+                            suppliers.clear();
+                        }
+                    }
+                }
+
+                if (! cut_values.empty())
+                    inference.contradiction(logger,
+                        JustifyExplicitlyThenRUP{[&, cut_values, confined](const ReasonFunction &) {
+                            emit_gcc_capacity_pol(*logger, state, vars, values, counts, count_lines, cut_values, confined);
+                        }},
+                        ReasonFunction{[&, cut_values, confined]() { return gcc_capacity_reason(state, values, counts, cut_values, confined); }});
+                else if (! demand_cut.empty())
+                    inference.contradiction(logger,
+                        JustifyExplicitlyThenRUP{[&, demand_cut, suppliers](const ReasonFunction &) {
+                            emit_gcc_demand_pol(*logger, state, vars, values, counts, count_lines, demand_cut, suppliers, std::nullopt, std::nullopt);
+                        }},
+                        ReasonFunction{[&, demand_cut, suppliers]() { return gcc_demand_reason(state, vars, values, counts, demand_cut, suppliers); }});
+                else if (closed && unmatched >= 0)
+                    // A closed variable with no cover value left: the per-variable
+                    // In constraint certifies this, so leave it to that rather
+                    // than raise an unjustified contradiction here.
+                    return PropagatorState::Enable;
+                else
+                    inference.contradiction(logger, AssertRatherThanJustifying{}, generic_reason(state, all_vars));
+                return PropagatorState::Enable;
+            }
 
             vector<vector<int>> radj(base_nodes);
             for (const auto & [idx, e] : enumerate(orig)) {
