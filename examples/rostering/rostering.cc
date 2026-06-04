@@ -95,7 +95,7 @@ auto main(int argc, char * argv[]) -> int
 
     auto regular = Regular{day, 7, transitions, {0, 1, 2, 3, 4, 5, 6}};
 
-    p.post(regular);
+    p.post_named(regular, "rostering");
 
     auto stats = solve_with(p,
         SolveCallbacks{

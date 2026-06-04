@@ -832,8 +832,8 @@ auto NamesAndIDsTracker::s_expr_name_of(IntegerVariableID id) const -> string
 auto NamesAndIDsTracker::s_expr_render_of(IntegerVariableID id) const -> string
 {
     return overloaded{
-        [&](const ConstantIntegerVariableID & c) -> string { return "(maximize " + c.const_value.to_string() + ")"; },
-        [&](const SimpleIntegerVariableID & v) -> string { return "(maximize " + name_of(v) + ")"; },
+        [&](const ConstantIntegerVariableID & c) -> string { return "(minimize " + c.const_value.to_string() + ")"; },
+        [&](const SimpleIntegerVariableID & v) -> string { return "(minimize " + name_of(v) + ")"; },
         [&](const ViewOfIntegerVariableID & vv) -> string {
             stringstream name;
             name << "(";

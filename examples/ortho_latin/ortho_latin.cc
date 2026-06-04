@@ -89,8 +89,10 @@ auto main(int argc, char * argv[]) -> int
 
     for (int x = 0; x < size; ++x)
         for (int y = 0; y < size; ++y) {
-            p.post(Div{g12[x * size + y], constant_variable(Integer{size}), g1[x][y]});
-            p.post(Mod{g12[x * size + y], constant_variable(Integer{size}), g2[x][y]});
+            p.post_named(Div{g12[x * size + y], constant_variable(Integer{size}), g1[x][y]},
+                "div[" + std::to_string(x) + "][" + std::to_string(y) + "]");
+            p.post_named(Mod{g12[x * size + y], constant_variable(Integer{size}), g2[x][y]},
+                "mod[" + std::to_string(x) + "][" + std::to_string(y) + "]");
         }
 
     for (int x = 0; x < size; ++x) {
@@ -99,8 +101,8 @@ auto main(int argc, char * argv[]) -> int
             box1.emplace_back(g1[x][y]);
             box2.emplace_back(g2[x][y]);
         }
-        p.post(AllDifferent{box1});
-        p.post(AllDifferent{box2});
+        p.post_named(AllDifferent{box1}, "row[1][" + std::to_string(x) + "]");
+        p.post_named(AllDifferent{box2}, "row[2][" + std::to_string(x) + "]");
     }
 
     for (int y = 0; y < size; ++y) {
@@ -109,17 +111,17 @@ auto main(int argc, char * argv[]) -> int
             box1.emplace_back(g1[x][y]);
             box2.emplace_back(g2[x][y]);
         }
-        p.post(AllDifferent{box1});
-        p.post(AllDifferent{box2});
+        p.post_named(AllDifferent{box1}, "col[1][" + std::to_string(y) + "]");
+        p.post_named(AllDifferent{box2}, "col[2][" + std::to_string(y) + "]");
     }
 
-    p.post(AllDifferent{g12});
+    p.post_named(AllDifferent{g12}, "ad_ortho");
 
     // Normal form: first row of each square and first column of first square is 0 1 2 3 ...
     for (int x = 0; x < size; ++x) {
-        p.post(Equals{g1[0][x], constant_variable(Integer{x})});
-        p.post(Equals{g2[0][x], constant_variable(Integer{x})});
-        p.post(Equals{g1[x][0], constant_variable(Integer{x})});
+        p.post_named(Equals{g1[0][x], constant_variable(Integer{x})}, "nf_row[1][" + std::to_string(x) + "]");
+        p.post_named(Equals{g2[0][x], constant_variable(Integer{x})}, "nf_row[2][" + std::to_string(x) + "]");
+        p.post_named(Equals{g1[x][0], constant_variable(Integer{x})}, "nf_col[1][" + std::to_string(x) + "]");
     }
 
     auto stats = solve(

@@ -95,16 +95,20 @@ auto main(int argc, char * argv[]) -> int
     vector<IntegerVariableID> digits(numerators.begin(), numerators.end());
     digits.insert(digits.end(), denominators_first_digit.begin(), denominators_first_digit.end());
     digits.insert(digits.end(), denominators_second_digit.begin(), denominators_second_digit.end());
-    p.post(AllDifferent{digits});
+    p.post_named(AllDifferent{digits}, "ad_nfractions");
 
     vector<SimpleIntegerVariableID> denominators_partial_products{};
     SimpleIntegerVariableID prev_product_var = p.create_integer_variable(1_i, 1_i);
 
     auto max_product_val = 100_i;
     for (unsigned int i = 0; i < denominators.size(); i++) {
-        p.post(WeightedSum{} + 10_i * denominators_first_digit[i] + 1_i * denominators_second_digit[i] + -1_i * denominators[i] == 0_i);
+        p.post_named(
+            WeightedSum{} + 10_i * denominators_first_digit[i] + 1_i * denominators_second_digit[i] + -1_i * denominators[i] == 0_i,
+            "denominator_digits_to_value_" + std::to_string(i));
         denominators_partial_products.emplace_back(p.create_integer_variable(1_i, max_product_val));
-        p.post(MultBC{prev_product_var, denominators[i], denominators_partial_products[i]});
+        p.post_named(
+            MultBC{prev_product_var, denominators[i], denominators_partial_products[i]},
+            "multbc_denominator_" + std::to_string(i));
         prev_product_var = denominators_partial_products[i];
         max_product_val = max_product_val * 100_i;
     }
@@ -116,20 +120,24 @@ auto main(int argc, char * argv[]) -> int
     for (unsigned int i = 0; i < denominators.size(); i++) {
         numerator_multiplier.emplace_back(p.create_integer_variable(1_i, max_product_val / 100_i));
         summands.emplace_back(p.create_integer_variable(1_i, max_product_val / 10_i));
-        p.post(MultBC{numerator_multiplier[i], denominators[i], denominators_product});
-        p.post(MultBC{numerator_multiplier[i], numerators[i], summands[i]});
+        p.post_named(
+            MultBC{numerator_multiplier[i], denominators[i], denominators_product},
+            "multbc_numerator_denominator_" + std::to_string(i));
+        p.post_named(
+            MultBC{numerator_multiplier[i], numerators[i], summands[i]},
+            "multbc_numerator_numerator_" + std::to_string(i));
         frac_sum += 1_i * summands[i];
         // Break symmetries
         if (i > 0)
-            p.post(LessThan{numerators[i - 1], numerators[i]});
+            p.post_named(LessThan{numerators[i - 1], numerators[i]}, "less_than_numerators_" + std::to_string(i));
     }
     frac_sum += -1_i * denominators_product;
-    p.post(frac_sum == 0_i);
+    p.post_named(frac_sum == 0_i, "frac_sum_eq_0");
     if (options_vars.contains("unsat") && n == 2) {
-        p.post(NotEquals(numerators[0], 8_c));
-        p.post(NotEquals(numerators[1], 9_c));
-        p.post(NotEquals(denominators[0], 26_c));
-        p.post(NotEquals(denominators[1], 13_c));
+        p.post_named(NotEquals(numerators[0], 8_c), "unsat_numerator_0");
+        p.post_named(NotEquals(numerators[1], 9_c), "unsat_numerator_1");
+        p.post_named(NotEquals(denominators[0], 26_c), "unsat_denominator_0");
+        p.post_named(NotEquals(denominators[1], 13_c), "unsat_denominator_1");
     }
 
     auto solution_callback = [&](const CurrentState & s) -> bool {

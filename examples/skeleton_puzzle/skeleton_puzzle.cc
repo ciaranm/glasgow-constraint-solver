@@ -43,7 +43,7 @@ auto constrain_digit_sum(Problem & p, vector<SimpleIntegerVariableID> digits, Si
         wsum += Integer{(long)pow(10, i)} * digits[i];
     }
     wsum += -1_i * number;
-    p.post(wsum == 0_i);
+    p.post_named(wsum == 0_i, "digit_sum");
 }
 
 auto main(int argc, char * argv[]) -> int
@@ -91,7 +91,7 @@ auto main(int argc, char * argv[]) -> int
     vector<SimpleIntegerVariableID> a_digits{};
     for (int i = 0; i < a; i++) {
         a_digits.emplace_back(p.create_integer_variable(0_i, 9_i));
-        p.post(NotEquals(a_digits[i], k_var));
+        p.post_named(NotEquals(a_digits[i], k_var), "a_digits[" + std::to_string(i) + "]");
     }
 
     SimpleIntegerVariableID a_var = p.create_integer_variable(0_i, Integer{static_cast<long>(pow(10, a))});
@@ -100,7 +100,7 @@ auto main(int argc, char * argv[]) -> int
     vector<SimpleIntegerVariableID> b_digits{};
     for (int i = 0; i < b; i++) {
         b_digits.emplace_back(p.create_integer_variable(0_i, 9_i));
-        p.post(NotEquals(b_digits[i], k_var));
+        p.post_named(NotEquals(b_digits[i], k_var), "b_digits[" + std::to_string(i) + "]");
     }
 
     vector<vector<SimpleIntegerVariableID>> partial_product_digits{};
@@ -110,23 +110,25 @@ auto main(int argc, char * argv[]) -> int
         partial_product.emplace_back(p.create_integer_variable(0_i, Integer{static_cast<long>(pow(10, a + 1))}));
         for (int j = 0; j < a + 1; j++) {
             partial_product_digits[i].emplace_back(p.create_integer_variable(0_i, 9_i));
+            auto role = "partial_product_digits[" + std::to_string(i) + "][" + std::to_string(j) + "]";
             if (k_vector[i][a - j])
-                p.post(Equals(partial_product_digits[i][j], k_var));
+                p.post_named(Equals(partial_product_digits[i][j], k_var), role);
             else
-                p.post(NotEquals(partial_product_digits[i][j], k_var));
+                p.post_named(NotEquals(partial_product_digits[i][j], k_var), role);
         }
         constrain_digit_sum(p, partial_product_digits[i], partial_product[i]);
-        p.post(MultBC{a_var, b_digits[i], partial_product[i]});
+        p.post_named(MultBC{a_var, b_digits[i], partial_product[i]}, "partial_product[" + std::to_string(i) + "]");
     }
 
     vector<SimpleIntegerVariableID> c_digits{};
     auto c_var = p.create_integer_variable(0_i, Integer{static_cast<long>(pow(10, a + b))});
     for (int i = 0; i < a + b; i++) {
         c_digits.emplace_back(p.create_integer_variable(0_i, 9_i));
+        auto role = "c_digits[" + std::to_string(i) + "]";
         if (k_vector[b][a + b - 1 - i])
-            p.post(Equals(c_digits[i], k_var));
+            p.post_named(Equals(c_digits[i], k_var), role);
         else
-            p.post(NotEquals(c_digits[i], k_var));
+            p.post_named(NotEquals(c_digits[i], k_var), role);
     }
     cout << endl;
 

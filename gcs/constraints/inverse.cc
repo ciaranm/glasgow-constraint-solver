@@ -95,12 +95,12 @@ auto Inverse::define_proof_model(ProofModel & model) -> void
         for (const auto & [j, y_j] : enumerate(_y)) {
             // x[i] = j -> y[j] = i
             model.add_labelled_constraint(
-                _constraint_id, format("ge_{}_{}", i, j),
+                _constraint_id, format("ge[{}][{}]", i, j),
                 "Inverse", "x_i = j -> y[j] = i", 
                 WPBSum{} + 1_i * (x_i != Integer(j) + _y_start) + 1_i * (y_j == Integer(i) + _x_start) >= 1_i);
             // y[j] = i -> x[i] = j
             model.add_labelled_constraint(
-                _constraint_id, format("le_{}_{}", i, j),
+                _constraint_id, format("le[{}][{}]", i, j),
                 "Inverse", "y_j = i -> x[i] = j", 
                 WPBSum{} + 1_i * (y_j != Integer(i) + _x_start) + 1_i * (x_i == Integer(j) + _y_start) >= 1_i);
         }
@@ -181,15 +181,15 @@ auto Inverse::s_exprify(const innards::ProofModel * const model) const -> std::s
 {
     stringstream s;
 
-    print(s, "{} inverse\n          (", _constraint_id);
+    print(s, "{} inverse\n           ((", _constraint_id);
     for (const auto & x : _x) {
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(x));
     }
-    print(s, ")\n          (");
+    print(s, ") {})\n           ((", _x_start);
     for (const auto & y : _y) {
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(y));
     }
-    print(s, ")\n          {} {})", _x_start, _y_start);
+    print(s, ") {})\n        ", _y_start);
 
     return s.str();
 }

@@ -121,6 +121,34 @@ auto ProofModel::add_constraint(const StringLiteral & constraint_name, const Str
     return add_constraint(constraint_name, rule, move(sum) >= 1_i, nullopt);
 }
 
+auto ProofModel::add_labelled_constraint(
+    const ConstraintID & constraint_id, const string & role,
+    const StringLiteral & constraint_name, const StringLiteral & rule, 
+    const Literals & lits) -> std::optional<ProofLine>
+{
+    WPBSum sum;
+
+    for (auto & lit : lits) {
+        if (overloaded{
+                [&](const TrueLiteral &) { return true; },
+                [&](const FalseLiteral &) { return false; },
+                [&]<typename T_>(const VariableConditionFrom<T_> & cond) -> bool {
+                    sum += 1_i * cond;
+                    return false;
+                }}
+                .visit(simplify_literal(lit)))
+            return nullopt;
+    }
+
+    // put these in some kind of order
+    sort(sum.terms);
+
+    // remove duplicates
+    sum.terms.erase(unique(sum.terms).begin(), sum.terms.end());
+
+    return add_labelled_constraint(constraint_id, role, constraint_name, rule, move(sum) >= 1_i, nullopt);
+}
+
 auto ProofModel::add_constraint(const Literals & lits) -> std::optional<ProofLine>
 {
     return add_constraint("?", "?", lits);
@@ -251,8 +279,8 @@ auto ProofModel::add_labelled_two_way_reified_constraint(
     const StringLiteral & constraint_name, const StringLiteral & rule,
     const WPBSumLE & ineq, const ProofFlag & flag) -> pair<optional<ProofLine>, optional<ProofLine>>
 {
-    auto forward = add_labelled_constraint(constraint_id, role + "_fwd", constraint_name, rule, ineq, HalfReifyOnConjunctionOf{{flag}});
-    auto reverse = add_labelled_constraint(constraint_id, role + "_back", constraint_name, rule, negate_inequality(ineq), HalfReifyOnConjunctionOf{{! flag}});
+    auto forward = add_labelled_constraint(constraint_id, role + "[f]", constraint_name, rule, ineq, HalfReifyOnConjunctionOf{{flag}});
+    auto reverse = add_labelled_constraint(constraint_id, role + "[r]", constraint_name, rule, negate_inequality(ineq), HalfReifyOnConjunctionOf{{! flag}});
     return {forward, reverse};
 }
 

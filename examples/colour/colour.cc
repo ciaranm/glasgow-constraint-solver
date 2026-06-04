@@ -121,10 +121,10 @@ auto main(int argc, char * argv[]) -> int
     auto vertices = p.create_integer_variable_vector(size, 0_i, Integer{size - 1}, "vertex");
 
     for (auto & [f, t] : edges)
-        p.post_named(NotEquals{vertices[f], vertices[t]}, "edge_" + std::to_string(f) + "_" + std::to_string(t));
+        p.post_named(NotEquals{vertices[f], vertices[t]}, "edge[" + std::to_string(f) + "][" + std::to_string(t) + "]");
 
     IntegerVariableID colours = p.create_integer_variable(0_i, Integer{size - 1}, "colours");
-    p.post_named(ArrayMax{vertices, colours}, "colours_def");
+    p.post_named(ArrayMax{vertices, colours}, "colours_definition");
 
     p.minimise(colours);
 

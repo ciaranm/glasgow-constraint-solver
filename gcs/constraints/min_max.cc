@@ -91,11 +91,11 @@ auto ArrayMinMax::define_proof_model(ProofModel & model) -> void
         auto selector = model.create_proof_flag(format("arrayminmax{}", id));
         _selectors.push_back(selector);
         model.add_labelled_constraint(
-            _constraint_id, format("{}le", id),
+            _constraint_id, format("le[{}]", id),
             "ArrayMinMax", "result is this value",
             WPBSum{} + (_min ? 1_i : -1_i) * var + (_min ? -1_i : 1_i) * _result <= 0_i, {{selector}});
         model.add_labelled_constraint(
-            _constraint_id, format("{}ge", id),
+            _constraint_id, format("ge[{}]", id),
             "ArrayMinMax", "result is this value",
             WPBSum{} + (_min ? 1_i : -1_i) * var + (_min ? -1_i : 1_i) * _result >= 1_i, {{! selector}});
         al1_selector += 1_i * selector;

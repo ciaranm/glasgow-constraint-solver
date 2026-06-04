@@ -70,11 +70,11 @@ auto main(int argc, char * argv[]) -> int
     auto vb = p.create_integer_variable(1_i, 2_i, "b");
     auto vc = p.create_integer_variable(2_i, 3_i, "c");
     auto vd = p.create_integer_variable(2_i, 3_i, "d");
-    p.post(AllDifferent({va, vb, vc, vd}));
-    p.post(WeightedSum{} + 1_i * va + 1_i * vb + 1_i * vc <= 9_i);
+    p.post_named(AllDifferent({va, vb, vc, vd}), "all_different");
+    p.post_named(WeightedSum{} + 1_i * va + 1_i * vb + 1_i * vc <= 9_i, "sum_constraint");
 
     auto obj = p.create_integer_variable(0_i, 10000_i, "obj");
-    p.post(WeightedSum{} + 2_i * va + 3_i * vd == 1_i * obj);
+    p.post_named(WeightedSum{} + 2_i * va + 3_i * vd == 1_i * obj, "obj_constraint");
 
     p.minimise(obj);
     auto stats = solve_with(p,

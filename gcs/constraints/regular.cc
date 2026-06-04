@@ -411,17 +411,26 @@ auto Regular::define_proof_model(ProofModel & model) -> void
             _state_at_pos_flags[idx].emplace_back(model.create_proof_flag(format("state{}is{}", idx, q)));
             exactly_1_true += 1_i * _state_at_pos_flags[idx][q];
         }
-        model.add_constraint(move(exactly_1_true) == 1_i);
+        model.add_labelled_constraint(
+            _constraint_id, format("le[{}]", idx), format("ge[{}]", idx),
+            "Regular", "exactly one state at each position",
+            move(exactly_1_true) == 1_i);
     }
 
     // State at pos 0 is 0
-    model.add_constraint(WPBSum{} + 1_i * _state_at_pos_flags[0][0] >= 1_i);
+    model.add_labelled_constraint(
+        _constraint_id, "init",
+        "Regular", "state at pos 0 is 0",
+        WPBSum{} + 1_i * _state_at_pos_flags[0][0] >= 1_i);
     // State at pos n is one of the final states
     WPBSum pos_n_states;
     for (const auto & f : _final_states) {
         pos_n_states += 1_i * _state_at_pos_flags[_vars.size()][f];
     }
-    model.add_constraint(move(pos_n_states) >= 1_i);
+    model.add_labelled_constraint(
+        _constraint_id, "final",
+        "Regular", "state at pos n is one of the final states",
+        move(pos_n_states) >= 1_i);
 
     for (size_t idx = 0; idx < _vars.size(); ++idx) {
         for (long q = 0; q < _num_states; ++q) {
@@ -429,11 +438,15 @@ auto Regular::define_proof_model(ProofModel & model) -> void
                 auto new_q = find_transition(_transitions[q], val);
                 if (new_q == -1) {
                     // No transition for q, v, so constrain ~(state_i = q /\ X_i = val)
-                    model.add_constraint(
+                    model.add_labelled_constraint(
+                        _constraint_id, format("nt[{}][{}][{}]", idx, q, val),
+                        "Regular", "no transition for state and value",
                         WPBSum{} + 1_i * (_vars[idx] != val) + (1_i * ! _state_at_pos_flags[idx][q]) >= 1_i);
                 }
                 else {
-                    model.add_constraint(
+                    model.add_labelled_constraint(
+                        _constraint_id, format("t[{}][{}][{}]", idx, q, val),
+                        "Regular", "transition for state and value",
                         WPBSum{} + 1_i * ! _state_at_pos_flags[idx][q] + 1_i * (_vars[idx] != val) + 1_i * _state_at_pos_flags[idx + 1][new_q] >= 1_i);
                 }
             }

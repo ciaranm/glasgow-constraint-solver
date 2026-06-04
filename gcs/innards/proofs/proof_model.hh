@@ -119,6 +119,14 @@ namespace gcs::innards
             const StringLiteral & constraint_name,
             const StringLiteral & rule,
             const Literals & lits) -> std::optional<ProofLine>;
+        
+        /**
+         * Add a labelledCNF definition to a Proof model.
+         */
+        auto add_labelled_constraint(
+            const ConstraintID & constraint_id, const std::string & role,
+            const StringLiteral & constraint_name, const StringLiteral & rule, 
+            const Literals & lits) -> std::optional<ProofLine>;
 
         /**
          * \brief Add a constraint with a label.  Constraint labels are emitted in the OPB file,

@@ -115,14 +115,16 @@ auto main(int argc, char * argv[]) -> int
         for (auto j = 0; j < d; ++j) {
             prod_bounds *= n;
             auto new_prod = p.create_integer_variable(Integer{-prod_bounds}, Integer{prod_bounds});
-            p.post(MultBC{current_prod, indexed.at(j).first, new_prod});
+            p.post_named(
+                MultBC{current_prod, indexed.at(j).first, new_prod},
+                "rp_term[" + std::to_string(i+1) + "][" + std::to_string(j+1) + "]");
             current_prod = new_prod;
             display_str << " * x[" << indexed.at(j).second << "]";
         }
         sum += 1_i * current_prod;
     }
     auto sum_result = p.create_integer_variable(Integer{-n * n}, Integer{n * n}, "result");
-    p.post(sum == 1_i * sum_result);
+    p.post_named(sum == 1_i * sum_result, "rp_sum");
     p.maximise(sum_result);
     if (display_problem) {
         cout << "Max :" << display_str.str() << endl;

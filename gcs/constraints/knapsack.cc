@@ -12,7 +12,9 @@
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 #include <print>
+#include <format>
 #else
+#include <fmt/core.h>
 #include <fmt/ostream.h>
 #endif
 
@@ -47,8 +49,10 @@ using std::ranges::minmax_element;
 using std::ranges::none_of;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::format;
 using std::print;
 #else
+using fmt::format;
 using fmt::print;
 #endif
 
@@ -640,7 +644,10 @@ auto Knapsack::define_proof_model(ProofModel & model) -> void
         WPBSum sum_eq;
         for (const auto & [idx, v] : enumerate(_vars))
             sum_eq += cc.at(idx) * v;
-        auto [eq1, eq2] = model.add_constraint(sum_eq == 1_i * _totals.at(cc_idx));
+        auto [eq1, eq2] = model.add_labelled_constraint(
+                _constraint_id, format("le[{}]", cc_idx), format("ge[{}]", cc_idx),
+                "Knapsack", "resource constraint",
+                sum_eq == 1_i * _totals.at(cc_idx));
         _eqns_lines.emplace_back(eq1.value(), eq2.value());
     }
 }

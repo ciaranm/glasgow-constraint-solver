@@ -116,18 +116,18 @@ auto ReifiedLinearInequality::define_proof_model(ProofModel & model) -> void
         },
         [&](const reif::NotIf & cond) {
             _proof_lines = pair{*model.add_labelled_constraint(
-                _constraint_id, "gt",
+                _constraint_id, "le",
                 "ReifiedLinearInequality", "greater than option",
                 terms <= _value, HalfReifyOnConjunctionOf{cond.cond}), nullopt};
         },
         [&](const reif::Iff & cond) {
             _proof_lines = pair{
                 *model.add_labelled_constraint(
-                    _constraint_id, "lt",
+                    _constraint_id, "le",
                     "ReifiedLinearInequality", "less than option",
                     terms <= _value, HalfReifyOnConjunctionOf{cond.cond}),
                 *model.add_labelled_constraint(
-                    _constraint_id, "gt",
+                    _constraint_id, "ge",
                     "ReifiedLinearInequality", "greater than option", 
                     terms >= _value + 1_i, HalfReifyOnConjunctionOf{! cond.cond})};
         }}

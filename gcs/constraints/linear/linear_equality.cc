@@ -200,10 +200,12 @@ auto ReifiedLinearEquality::define_proof_model(ProofModel & model) -> void
         [&](const reif::NotIf & cond) {
             // condition is definitely false, the flag implies either greater or less
             auto neflag = model.create_proof_flag("linne");
-            model.add_labelled_constraint(_constraint_id, "gt",
+            model.add_labelled_constraint(
+                _constraint_id, "gt",
                 "ReifiedLinearEquality", "greater option",
                 terms >= _value + 1_i, HalfReifyOnConjunctionOf{{cond.cond, neflag}});
-            model.add_labelled_constraint(_constraint_id, "lt",
+            model.add_labelled_constraint(
+                _constraint_id, "lt",
                 "ReifiedLinearEquality", "less than option",
                 terms <= _value - 1_i, HalfReifyOnConjunctionOf{{cond.cond, ! neflag}});
         },

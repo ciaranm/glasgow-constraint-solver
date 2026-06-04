@@ -25,13 +25,13 @@ auto post_constraints(Problem & p, vector<IntegerVariableID> & nodes)
      * There is only one SCC, but multiple subtrees explored below the root in the DFS.
      **/
 
-    p.post(In{nodes[0], {1_i, 4_i, 5_i}});
-    p.post(In{nodes[1], {2_i, 3_i}});
-    p.post(In{nodes[2], {0_i}});
-    p.post(In{nodes[3], {2_i}});
-    p.post(In{nodes[4], {1_i, 3_i}});
-    p.post(In{nodes[5], {0_i, 6_i}});
-    p.post(In{nodes[6], {3_i, 4_i}});
+    p.post_named(In{nodes[0], {1_i, 4_i, 5_i}}, "node0");
+    p.post_named(In{nodes[1], {2_i, 3_i}}, "node1");
+    p.post_named(In{nodes[2], {0_i}}, "node2");
+    p.post_named(In{nodes[3], {2_i}}, "node3");
+    p.post_named(In{nodes[4], {1_i, 3_i}}, "node4");
+    p.post_named(In{nodes[5], {0_i, 6_i}}, "node5");
+    p.post_named(In{nodes[6], {3_i, 4_i}}, "node6");
 }
 auto main(int argc, char * argv[]) -> int
 {
@@ -80,13 +80,13 @@ auto main(int argc, char * argv[]) -> int
     post_constraints(p, nodes);
 
     if (options_vars["propagator"].as<string>() == "prevent") {
-        p.post(CircuitPrevent{nodes});
+        p.post_named(CircuitPrevent{nodes}, "circuit_prevent");
     }
     else if (options_vars["propagator"].as<string>() == "scc") {
-        p.post(CircuitSCC{nodes});
+        p.post_named(CircuitSCC{nodes}, "circuit_scc");
     }
     else {
-        p.post(Circuit{nodes});
+        p.post_named(Circuit{nodes}, "circuit");
     }
 
     auto stats = solve_with(

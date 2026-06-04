@@ -100,36 +100,36 @@ int main(int argc, char * argv[])
                 actorsScenes.back().emplace_back(s);
             }
         }
-        auto actorsSlots = p.create_integer_variable_vector(actorsScenes.size(), 0_i, Integer(numScenes - 1), format("actorsSlots[{}]", a));
+        auto actorsSlots = p.create_integer_variable_vector(actorsScenes.size(), 0_i, Integer(numScenes - 1), format("actorsSlots_{}_", a));
         for (unsigned int s = 0; s < actorsScenes.size(); s++) {
-            p.post(Equals{actorsSlots[s], slot[actorsScenes[a][s]]});
+            p.post_named(Equals{actorsSlots[s], slot[actorsScenes[a][s]]}, format("actor[{}]inScene[{}]", a, actorsScenes[a][s]));
         }
-        p.post(ArrayMin{actorsSlots, firstSlot[a]});
-        p.post(ArrayMax{actorsSlots, lastSlot[a]});
+        p.post_named(ArrayMin{actorsSlots, firstSlot[a]}, format("firstSlot_{}_", a));
+        p.post_named(ArrayMax{actorsSlots, lastSlot[a]}, format("lastSlot_{}_", a));
 
         auto wait_expr = WeightedSum{};
         for (int s = 0; s < numScenes; ++s) {
             auto afterFirst = p.create_integer_variable(0_i, 1_i);
-            p.post(LessThanEqualIff{firstSlot[a], slot[s], afterFirst == 1_i});
+            p.post_named(LessThanEqualIff{firstSlot[a], slot[s], afterFirst == 1_i}, format("afterFirst_{}_{}_", a, s));
             auto beforeLast = p.create_integer_variable(0_i, 1_i);
-            p.post(LessThanEqualIff{slot[s], lastSlot[a], beforeLast == 1_i});
+            p.post_named(LessThanEqualIff{slot[s], lastSlot[a], beforeLast == 1_i}, format("beforeLast_{}_{}_", a, s));
             auto onSet = p.create_integer_variable(0_i, 1_i);
-            p.post(And{{afterFirst, beforeLast}, onSet});
+            p.post_named(And{{afterFirst, beforeLast}, onSet}, format("onSet_{}_{}_", a, s));
 
             if (actorInScene[a][s] == 0) {
                 wait_expr += Integer(sceneDuration[s]) * onSet;
             }
         }
         wait_expr += -1_i * actorWait[a];
-        p.post(wait_expr == 0_i);
+        p.post_named(wait_expr == 0_i, format("wait_{}_", a));
         idle_expr += Integer(actorPay[a]) * actorWait[a];
     }
 
-    p.post(Inverse{scene, slot});
+    p.post_named(Inverse{scene, slot}, "inverse");
 
     IntegerVariableID idleCost = p.create_integer_variable(0_i, Integer(100), "idleCost");
     idle_expr += -1_i * idleCost;
-    p.post(idle_expr == 0_i);
+    p.post_named(idle_expr == 0_i, "idle");
     p.minimise(idleCost);
 
     auto stats = solve_with(p,

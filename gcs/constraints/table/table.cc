@@ -36,9 +36,11 @@ using std::vector;
 using std::visit;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::format;
 using std::print;
 using std::println;
 #else
+using fmt::format;
 using fmt::print;
 using fmt::println;
 #endif
@@ -174,9 +176,15 @@ auto Table::define_proof_model(ProofModel & model) -> void
                     add_lit_unless_immediately_true(lits, var, tuple[var_idx]);
             }
             if (infeasible)
-                model.add_constraint({_selector != Integer(tuple_idx)});
+                model.add_labelled_constraint(
+                    _constraint_id, format("tuple[{}]", tuple_idx),
+                    "Table", "tuple infeasible",
+                    {_selector != Integer(tuple_idx)});
             else
-                model.add_constraint(lits >= Integer(lits.terms.size() - 1));
+                model.add_labelled_constraint(
+                    _constraint_id, format("tuple[{}]", tuple_idx),
+                    "Table", "tuple feasible",
+                    lits >= Integer(lits.terms.size() - 1));
         }
     },
         move(_tuples));
@@ -208,10 +216,7 @@ auto Table::install_propagators(Propagators & propagators) -> void
 auto Table::s_exprify(const innards::ProofModel * const model) const -> std::string
 {
     stringstream s;
-
     print(s, "{} table", _constraint_id);
-    println(s, " (");
-
     println(s, "    (");
     visit([&](const auto & tuples) {
         for (const auto & t : depointinate(tuples)) {
@@ -224,13 +229,9 @@ auto Table::s_exprify(const innards::ProofModel * const model) const -> std::str
     },
         _tuples);
     println(s, "    )");
-
     println(s, "    (");
     for (const auto & var : _vars)
         println(s, "        {}", model->names_and_ids_tracker().s_expr_name_of(var));
     println(s, "    )");
-
-    println(s, ")");
-
     return s.str();
 }

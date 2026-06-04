@@ -169,14 +169,16 @@ namespace
             triggers);
     }
 
-    auto define_proof_model_logical(ProofModel & model, const Literals & lits,
+    auto define_proof_model_logical(ConstraintID & constraint_id, ProofModel & model, const Literals & lits,
         const Literal & full_reif, LiteralIs reif_state) -> void
     {
         using enum LiteralIs;
 
         if (reif_state == DefinitelyTrue) {
             for (auto & l : lits)
-                model.add_constraint("Logical", "cnf", Literals{l});
+                model.add_labelled_constraint(
+                    constraint_id, "Logical",
+                    "Logical", "cnf", Literals{l});
             return;
         }
 
@@ -188,7 +190,7 @@ namespace
                 .visit(l);
 
         if (saw_false) {
-            model.add_constraint("Logical", "saw reif false", Literals{! full_reif});
+            model.add_labelled_constraint(constraint_id, "logical_false", "Logical", "saw reif false", Literals{! full_reif});
             return;
         }
 
@@ -196,14 +198,14 @@ namespace
             WPBSum forward;
             for (auto & l : lits)
                 forward += 1_i * PseudoBooleanTerm{l};
-            model.add_constraint("Logical", "if condition", forward >= Integer(lits.size()), HalfReifyOnConjunctionOf{full_reif});
+            model.add_labelled_constraint(constraint_id, "logical_if_condition", "Logical", "if condition", forward >= Integer(lits.size()), HalfReifyOnConjunctionOf{full_reif});
         }
 
         Literals reverse;
         for (auto & l : lits)
             reverse.push_back(! l);
         reverse.push_back(full_reif);
-        model.add_constraint("Logical", "if not condition", move(reverse));
+        model.add_labelled_constraint(constraint_id, "logical_if_not_condition", "Logical", "if not condition", move(reverse));
     }
 }
 
@@ -247,7 +249,7 @@ auto And::prepare(Propagators &, State & initial_state, ProofModel * const) -> b
 
 auto And::define_proof_model(ProofModel & model) -> void
 {
-    define_proof_model_logical(model, _lits, _full_reif, _reif_state);
+    define_proof_model_logical(_constraint_id, model, _lits, _full_reif, _reif_state);
 }
 
 auto And::install_propagators(Propagators & propagators) -> void
@@ -311,7 +313,7 @@ auto Or::define_proof_model(ProofModel & model) -> void
     Literals lits = _lits;
     for (auto & l : lits)
         l = ! l;
-    define_proof_model_logical(model, move(lits), ! _full_reif, _reif_state);
+    define_proof_model_logical(_constraint_id, model, move(lits), ! _full_reif, _reif_state);
 }
 
 auto Or::install_propagators(Propagators & propagators) -> void

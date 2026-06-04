@@ -1156,13 +1156,21 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
                 for (Integer pos = 0_i; pos < num_bits - 1_i; pos++)
                     bit_sum_without_neg += power2(pos) * ProofBitVariable{v, pos + 1_i, true};
 
-                auto pos_ge = optional_model->add_constraint(
+                auto pos_ge = optional_model->add_labelled_constraint(
+                    _constraint_id, format("{}[pos][ge]", name),
+                    "MultBC", "pos_ge",
                     bit_sum_without_neg + (-1_i * v_magnitude) >= 0_i, HalfReifyOnConjunctionOf{! sign_bit});
-                auto pos_le = optional_model->add_constraint(
+                auto pos_le = optional_model->add_labelled_constraint(
+                    _constraint_id, format("{}[pos][le]", name),
+                    "MultBC", "pos_le",
                     bit_sum_without_neg + (-1_i * v_magnitude) <= 0_i, HalfReifyOnConjunctionOf{! sign_bit});
-                auto neg_ge = optional_model->add_constraint(
+                auto neg_ge = optional_model->add_labelled_constraint(
+                    _constraint_id, format("{}[neg][ge]", name),
+                    "MultBC", "neg_ge",
                     bit_sum_without_neg + (1_i * v_magnitude) >= power2(num_bits - 1_i), HalfReifyOnConjunctionOf{sign_bit});
-                auto neg_le = optional_model->add_constraint(
+                auto neg_le = optional_model->add_labelled_constraint(
+                    _constraint_id, format("{}[neg][le]", name),
+                    "MultBC", "neg_le",
                     bit_sum_without_neg + (1_i * v_magnitude) <= power2(num_bits - 1_i), HalfReifyOnConjunctionOf{sign_bit});
 
                 channelling_constraints.insert({v, ChannellingData{*pos_ge, *pos_le, *neg_ge, *neg_le}});

@@ -143,16 +143,16 @@ auto main(int argc, char * argv[]) -> int
     vector<vector<IntegerVariableID>> grid;
 
     for (int r = 0; r < n; ++r)
-        grid.emplace_back(p.create_integer_variable_vector(n, 1_i, Integer{n}, format("grid_{}_", r)));
+        grid.emplace_back(p.create_integer_variable_vector(n, 1_i, Integer{n}, format("grid_{}_", r))); // I want grid[][], btw.
 
     for (int r = 0; r < n; ++r)
-        p.post(AllDifferent{grid[r]});
+        p.post_named(AllDifferent{grid[r]}, format("ad_row[{}]", r));
 
     for (int c = 0; c < n; ++c) {
         vector<IntegerVariableID> column;
         for (int r = 0; r < n; ++r)
             column.push_back(grid[r][c]);
-        p.post(AllDifferent{column});
+        p.post_named(AllDifferent{column}, format("ad_col[{}]", c));
     }
 
     for (int r = 0; r < size; ++r)
@@ -161,13 +161,15 @@ auto main(int argc, char * argv[]) -> int
             for (int rr = 0; rr < size; ++rr)
                 for (int cc = 0; cc < size; ++cc)
                     box.push_back(grid[r * size + rr][c * size + cc]);
-            p.post(AllDifferent{box});
+            p.post_named(AllDifferent{box}, format("ad_box[{}][{}]", r, c));
         }
 
     for (int r = 0; r < n; ++r)
         for (int c = 0; c < n; ++c)
             if (predef[r][c] != 0)
-                p.post(Equals{grid[r][c], constant_variable(Integer{predef[r][c]})});
+                p.post_named(Equals{grid[r][c], 
+                    constant_variable(Integer{predef[r][c]})}, 
+                    format("predef[{}][{}]", r, c));
 
     if (! vertical_xvs.empty()) {
         for (int c = 0; c < n; ++c)
@@ -176,16 +178,20 @@ auto main(int argc, char * argv[]) -> int
                 case N:
                     break;
                 case V:
-                    p.post(LinearEquality{WeightedSum{} + 1_i * grid[r][c] + 1_i * grid[r + 1][c], 5_i, true});
+                    p.post_named(
+                        LinearEquality{WeightedSum{} + 1_i * grid[r][c] + 1_i * grid[r + 1][c], 5_i, true},
+                        format("eq[V][{}][{}]", r, c));
                     break;
                 case X:
-                    p.post(LinearEquality{WeightedSum{} + 1_i * grid[r][c] + 1_i * grid[r + 1][c], 10_i, true});
+                    p.post_named(LinearEquality{WeightedSum{} + 1_i * grid[r][c] + 1_i * grid[r + 1][c], 10_i, true},
+                        format("eq[X][{}][{}]", r, c));
                     break;
                 case O:
                     auto sum = p.create_integer_variable(0_i, Integer{n * 2});
-                    p.post(NotEquals{sum, 5_c});
-                    p.post(NotEquals{sum, 10_c});
-                    p.post(LinearEquality{WeightedSum{} + 1_i * grid[r][c] + 1_i * grid[r + 1][c] + -1_i * sum, 0_i, true});
+                    p.post_named(NotEquals{sum, 5_c}, format("neq[O][{}][{}]", r, c));
+                    p.post_named(NotEquals{sum, 10_c}, format("neq[O][{}][{}]", r, c));
+                    p.post_named(LinearEquality{WeightedSum{} + 1_i * grid[r][c] + 1_i * grid[r + 1][c] + -1_i * sum, 0_i, true}, 
+                        format("eq[O][{}][{}]", r, c));
                     break;
                 }
 
@@ -195,16 +201,19 @@ auto main(int argc, char * argv[]) -> int
                 case N:
                     break;
                 case V:
-                    p.post(LinearEquality{WeightedSum{} + 1_i * grid[r][c] + 1_i * grid[r][c + 1], 5_i, true});
+                    p.post_named(LinearEquality{WeightedSum{} + 1_i * grid[r][c] + 1_i * grid[r][c + 1], 5_i, true},
+                        format("eq[V][{}][{}]", r, c));
                     break;
                 case X:
-                    p.post(LinearEquality{WeightedSum{} + 1_i * grid[r][c] + 1_i * grid[r][c + 1], 10_i, true});
+                    p.post_named(LinearEquality{WeightedSum{} + 1_i * grid[r][c] + 1_i * grid[r][c + 1], 10_i, true},
+                        format("eq[X][{}][{}]", r, c));
                     break;
                 case O:
                     auto sum = p.create_integer_variable(0_i, Integer{n * 2});
-                    p.post(NotEquals{sum, 5_c});
-                    p.post(NotEquals{sum, 10_c});
-                    p.post(LinearEquality{WeightedSum{} + 1_i * grid[r][c] + 1_i * grid[r][c + 1] + -1_i * sum, 0_i, true});
+                    p.post_named(NotEquals{sum, 5_c}, format("neq[O][{}][{}]", r, c));
+                    p.post_named(NotEquals{sum, 10_c}, format("neq[O][{}][{}]", r, c));
+                    p.post_named(LinearEquality{WeightedSum{} + 1_i * grid[r][c] + 1_i * grid[r][c + 1] + -1_i * sum, 0_i, true}, 
+                        format("eq[O][{}][{}]", r, c));
                     break;
                 }
     }

@@ -8,6 +8,12 @@
 #include <iostream>
 #include <vector>
 
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <format>
+#else
+#include <fmt/core.h>
+#endif
+
 using namespace gcs;
 
 using std::cerr;
@@ -17,6 +23,12 @@ using std::make_optional;
 using std::nullopt;
 using std::string;
 using std::vector;
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::format;
+#else
+using fmt::format;
+#endif
 
 auto main(int argc, char * argv[]) -> int
 {
@@ -98,29 +110,29 @@ auto main(int argc, char * argv[]) -> int
     for (int loc1 = 0; loc1 < n; loc1++) {
         for (int loc2 = 0; loc2 < n; loc2++) {
             if (distance[loc1][loc2] < 0) {
-                p.post(NotEquals{succ[loc1], ConstantIntegerVariableID{Integer{loc2}}});
+                p.post_named(NotEquals{succ[loc1], ConstantIntegerVariableID{Integer{loc2}}}, format("no_edge[{}][{}]", loc1, loc2));
             }
         }
     }
 
     if (options_vars["propagator"].as<string>() == "prevent") {
-        p.post(CircuitPrevent{succ, false});
+        p.post_named(CircuitPrevent{succ, false}, "circuit_prevent");
     }
     else if (options_vars["propagator"].as<string>() == "scc") {
         SCCOptions options{};
         options.enable_comments = false;
-        p.post(CircuitSCC{succ, false, options});
+        p.post_named(CircuitSCC{succ, false, options}, "circuit_scc");
     }
     else {
-        p.post(Circuit{succ, false});
+        p.post_named(Circuit{succ, false}, "circuit");
     }
 
     // Minimise the distance between any two stops
     auto max_leg = p.create_integer_variable(0_i, 100_i, "max_leg");
     for (int loc1 = 0; loc1 < n; loc1++) {
         for (int loc2 = 0; loc2 < n; loc2++) {
-            p.post(LessThanIf{ConstantIntegerVariableID{Integer{distance[loc1][loc2]}}, max_leg,
-                succ[loc1] == Integer{loc2}});
+            p.post_named(LessThanIf{ConstantIntegerVariableID{Integer{distance[loc1][loc2]}}, max_leg,
+                succ[loc1] == Integer{loc2}}, format("max_leg[{}][{}]", loc1, loc2));
         }
     }
 

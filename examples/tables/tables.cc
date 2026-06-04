@@ -74,7 +74,7 @@ auto main(int argc, char * argv[]) -> int
     auto v3 = p.create_integer_variable(1_i, 4_i, "v3");
     auto v4 = p.create_integer_variable(1_i, 4_i, "v4");
 
-    p.post(Table{
+    p.post_named(Table{
         {v1, v2, v3},
         SimpleTuples{
             {1_i, 2_i, 3_i},
@@ -82,17 +82,17 @@ auto main(int argc, char * argv[]) -> int
             {2_i, 1_i, 3_i},
             {2_i, 3_i, 1_i},
             {3_i, 1_i, 2_i},
-            {3_i, 2_i, 1_i}}});
+            {3_i, 2_i, 1_i}}}, "table_test_1");
 
-    p.post(Table{
+    p.post_named(Table{
         {v1, v4},
         WildcardTuples{
             {1_i, Wildcard{}},
             {2_i, 2_i},
             {3_i, 3_i},
-            {4_i, 4_i}}});
+            {4_i, 4_i}}}, "table_test_2");
 
-    p.post(Table{
+    p.post_named(Table{
         {v1, v2, v3, v4},
         WildcardTuples{
             {1_i, 1_i, Wildcard{}, Wildcard{}},
@@ -107,7 +107,7 @@ auto main(int argc, char * argv[]) -> int
             {4_i, 4_i, Wildcard{}, Wildcard{}},
             {Wildcard{}, 4_i, 4_i, Wildcard{}},
             {Wildcard{}, Wildcard{}, 4_i, 4_i},
-        }});
+        }}, "table_test_3");
 
     auto stats = solve_with(p,
         SolveCallbacks{

@@ -67,7 +67,7 @@ auto main(int argc, char * argv[]) -> int
 
     auto regular = Regular{x, 5, transitions, {3, 4}};
 
-    p.post(regular);
+    p.post_named(regular, "regex");
 
     auto stats = solve_with(p,
         SolveCallbacks{

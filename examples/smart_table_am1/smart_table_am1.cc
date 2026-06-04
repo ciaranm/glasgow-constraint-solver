@@ -61,7 +61,7 @@ auto main(int argc, char * argv[]) -> int
     auto vars = p.create_integer_variable_vector(n, 0_i, Integer{n}, "x");
     auto val = p.create_integer_variable(Integer{n}, Integer{n}, "y");
 
-    p.post(AtMostOneSmartTable{vars, val});
+    p.post_named(AtMostOneSmartTable{vars, val}, "am1st");
 
     auto stats = solve_with(p,
         SolveCallbacks{

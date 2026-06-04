@@ -81,11 +81,11 @@ auto main(int argc, char * argv[]) -> int
     Problem p;
     auto starts = p.create_integer_variable_vector(lengths.size(), 0_i, horizon, "s");
 
-    p.post(Cumulative{starts, lengths, heights, capacity});
+    p.post_named(Cumulative{starts, lengths, heights, capacity}, "cumulative");
 
     auto makespan = p.create_integer_variable(0_i, horizon + Integer{static_cast<long long>(lengths.size())}, "makespan");
     for (auto i = 0u; i < lengths.size(); ++i)
-        p.post(LinearGreaterThanEqual{WeightedSum{} + 1_i * makespan + -1_i * starts[i], lengths[i]});
+        p.post_named(LinearGreaterThanEqual{WeightedSum{} + 1_i * makespan + -1_i * starts[i], lengths[i]}, "makespan_" + std::to_string(i));
 
     p.minimise(makespan);
 

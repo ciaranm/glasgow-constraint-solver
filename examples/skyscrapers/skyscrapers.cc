@@ -192,19 +192,20 @@ auto main(int argc, char * argv[]) -> int
     }
 
     for (int r = 0; r < size; ++r)
-        p.post(AllDifferent{grid[r]});
+        p.post_named(AllDifferent{grid[r]}, "ad_row[" + to_string(r) + "]");
 
     for (int c = 0; c < size; ++c) {
         vector<IntegerVariableID> column;
         for (int r = 0; r < size; ++r)
             column.push_back(grid[r][c]);
-        p.post(AllDifferent{column});
+        p.post_named(AllDifferent{column}, "ad_col[" + to_string(c) + "]");
     }
 
     for (int r = 0; r < size; ++r)
         for (int c = 0; c < size; ++c)
             if (predefs[r][c] != 0)
-                p.post(Equals{grid[r][c], constant_variable(Integer{predefs[r][c]})});
+                p.post_named(Equals{grid[r][c], constant_variable(Integer{predefs[r][c]})}, 
+                    "predef[" + to_string(r) + "][" + to_string(c) + "]");
 
     auto build_visible_constraints = [&](const string & name, auto & visible_vars, const auto & target, bool downwards, bool forwards) {
         visible_vars.resize(size);
@@ -218,29 +219,32 @@ auto main(int argc, char * argv[]) -> int
                 how_many_visible += 1_i * *visible_vars[downwards ? r : c][downwards ? c : r];
                 if (r == (forwards ? 0 : size - 1)) {
                     // We're the topmost thing, so we're visible
-                    p.post(Equals{*visible_vars[downwards ? r : c][downwards ? c : r], 1_c});
+                    p.post_named(Equals{*visible_vars[downwards ? r : c][downwards ? c : r], 1_c},
+                        format("{}_topmost_visible[{}][{}]", name, r, c));
                 }
                 else {
                     // How many things above us will hide us? We're visible iff it's zero
                     WeightedSum hiding;
                     for (int rr = (forwards ? 0 : size - 1); forwards ? rr < r : rr > r; forwards ? ++rr : --rr) {
                         hiding += 1_i * p.create_integer_variable(0_i, 1_i, format("{}_hiding_flag[{}][{}][{}]", name, r, c, rr));
-                        p.post(GreaterThanIff{
+                        p.post_named(GreaterThanIff{
                             grid[downwards ? r : c][downwards ? c : r],
                             grid[downwards ? rr : c][downwards ? c : rr],
-                            hiding.terms.back().variable == 0_i});
+                            hiding.terms.back().variable == 0_i},
+                            format("{}_hiding[{}][{}][{}]", name, r, c, rr));
                     }
                     auto how_many_hidden = p.create_integer_variable(0_i, Integer(hiding.terms.size()),
                         format("{}_how_many_hidden[{}][{}]", name, r, c));
                     hiding += -1_i * how_many_hidden;
-                    p.post(move(hiding) == 0_i);
-                    p.post(EqualsIff{
+                    p.post_named(move(hiding) == 0_i, format("{}_hiding_sum[{}][{}]", name, r, c));
+                    p.post_named(EqualsIff{
                         how_many_hidden,
                         constant_variable(0_i),
-                        *visible_vars[downwards ? r : c][downwards ? c : r] == 1_i});
+                        *visible_vars[downwards ? r : c][downwards ? c : r] == 1_i},
+                        format("{}_visible_iff_hidden[{}][{}]", name, r, c));
                 }
             }
-            p.post(LinearEquality{move(how_many_visible), Integer(target[c]), true});
+            p.post_named(LinearEquality{move(how_many_visible), Integer(target[c]), true}, format("{}_how_many_visible[{}]", name, c));
         }
     };
 

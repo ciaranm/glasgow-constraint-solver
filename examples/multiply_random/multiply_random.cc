@@ -83,7 +83,7 @@ auto main(int argc, char * argv[]) -> int
     auto z_upper = z_lower + Integer{add_dist(rng)};
     auto z = p.create_integer_variable(z_lower, z_upper, "z");
 
-    p.post(MultBC{x, y, z});
+    p.post_named(MultBC{x, y, z}, "multbc");
 
     if (display_problem) {
         println(cout, "x in {}..{}", x_lower, x_upper);

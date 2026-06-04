@@ -117,15 +117,15 @@ auto Cumulative::define_proof_model(ProofModel & model) -> void
         first = false;
         for (Integer t = t_lo; t <= t_hi; ++t) {
             auto before = model.create_labelled_proof_flag_fully_reifying(
-                _constraint_id, format("before_{{{}_{}}}", i+1, t),
+                _constraint_id, format("before[{}][{}]", i+1, t),
                 "cumbefore", "Cumulative", "starts at or before time",
                 WPBSum{} + 1_i * _starts[i] <= t);
             auto after = model.create_labelled_proof_flag_fully_reifying(
-                _constraint_id, format("after_{{{}_{}}}", i+1, t),
+                _constraint_id, format("after[{}][{}]", i+1, t),
                 "cumafter", "Cumulative", "not yet finished at time",
                 WPBSum{} + 1_i * _starts[i] >= t - _lengths[i] + 1_i);
             auto active = model.create_labelled_proof_flag_fully_reifying(
-                _constraint_id, format("active_{{{}_{}}}", i+1, t),
+                _constraint_id, format("active[{}][{}]", i+1, t),
                 "cumactive", "Cumulative", "task active at time",
                 WPBSum{} + 1_i * before + 1_i * after >= 2_i);
             _before_flags[i].push_back(before);
@@ -146,7 +146,7 @@ auto Cumulative::define_proof_model(ProofModel & model) -> void
         }
         if (any) {
             auto line = model.add_labelled_constraint(
-                _constraint_id, format("cap_{}", t), 
+                _constraint_id, format("cap[{}]", t), 
                 "Cumulative", "load at time",
                 load <= _capacity);
             if (line)

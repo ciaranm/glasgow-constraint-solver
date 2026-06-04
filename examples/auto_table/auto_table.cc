@@ -72,9 +72,9 @@ auto main(int argc, char * argv[]) -> int
     Problem p;
 
     auto v = p.create_integer_variable_vector(5, 1_i, 5_i, "v");
-    p.post_named(AllDifferent{vector{v[0], v[1], v[2]}}, "at_ad012");
-    p.post_named(AllDifferent{vector{v[2], v[3], v[4]}}, "at_ad234");
-    p.post_named(WeightedSum{} + 1_i * v[0] + 1_i * v[1] + 1_i * v[2] + 1_i * v[3] + 1_i * v[4] == 10_i, "at_sum");
+    p.post_named(AllDifferent{vector{v[0], v[1], v[2]}}, "atad012");
+    p.post_named(AllDifferent{vector{v[2], v[3], v[4]}}, "atad234");
+    p.post_named(WeightedSum{} + 1_i * v[0] + 1_i * v[1] + 1_i * v[2] + 1_i * v[3] + 1_i * v[4] == 10_i, "atsum");
 
     p.add_presolver(AutoTable{vector{v[0], v[1], v[2]}});
 

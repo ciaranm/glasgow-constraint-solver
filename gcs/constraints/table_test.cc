@@ -59,7 +59,7 @@ auto run_table_test_2(bool proofs, pair<int, int> r1, pair<int, int> r2, SimpleT
     Problem p;
     auto v1 = p.create_integer_variable(Integer(r1.first), Integer(r1.second));
     auto v2 = p.create_integer_variable(Integer(r2.first), Integer(r2.second));
-    p.post(Table{{v1, v2}, allowed});
+    p.post_named(Table{{v1, v2}, allowed}, "table_test");
 
     auto proof_name = proofs ? make_optional("table_test") : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{v1, v2});
@@ -85,7 +85,7 @@ auto run_table_test_3(bool proofs, pair<int, int> r1, pair<int, int> r2, pair<in
     auto v1 = p.create_integer_variable(Integer(r1.first), Integer(r1.second));
     auto v2 = p.create_integer_variable(Integer(r2.first), Integer(r2.second));
     auto v3 = p.create_integer_variable(Integer(r3.first), Integer(r3.second));
-    p.post(Table{{v1, v2, v3}, allowed});
+    p.post_named(Table{{v1, v2, v3}, allowed}, "table_test");
 
     auto proof_name = proofs ? make_optional("table_test") : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{v1, v2, v3});
@@ -118,7 +118,7 @@ auto run_wildcard_table_test(bool proofs, pair<int, int> r1, pair<int, int> r2, 
     auto v1 = p.create_integer_variable(Integer(r1.first), Integer(r1.second));
     auto v2 = p.create_integer_variable(Integer(r2.first), Integer(r2.second));
     auto v3 = p.create_integer_variable(Integer(r3.first), Integer(r3.second));
-    p.post(Table{{v1, v2, v3}, allowed});
+    p.post_named(Table{{v1, v2, v3}, allowed}, "table_test");
 
     auto proof_name = proofs ? make_optional("table_test") : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{v1, v2, v3});

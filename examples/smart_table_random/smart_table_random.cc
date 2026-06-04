@@ -287,7 +287,7 @@ auto main(int argc, char * argv[]) -> int
         auto tuple_length = uniform_int_distribution<>(n / 2, n)(rng);
         SmartTuples tuples = random_tuples(tuple_length, vars, rng, display_table, table_as_string);
 
-        p.post(SmartTable{vars, tuples, short_reasons});
+        p.post_named(SmartTable{vars, tuples, short_reasons}, "st_randon");
 
         auto stats = solve_with(p,
             SolveCallbacks{

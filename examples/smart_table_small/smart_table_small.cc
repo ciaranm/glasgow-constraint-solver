@@ -59,7 +59,7 @@ auto main(int argc, char * argv[]) -> int
     auto tuples = SmartTuples{
         {SmartTable::less_than(A, B), SmartTable::in_set(A, {1_i, 2_i}), SmartTable::equals(C, 3_i)},
         {SmartTable::equals(A, B), SmartTable::not_equals(A, 1_i), SmartTable::greater_than_equal(B, C)}};
-    p.post(SmartTable{{A, B, C}, tuples});
+    p.post_named(SmartTable{{A, B, C}, tuples}, "st_small");
 
     auto stats = solve_with(p,
         SolveCallbacks{
