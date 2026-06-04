@@ -8,6 +8,7 @@
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
 
+#include <optional>
 #include <sstream>
 #include <utility>
 #include <vector>
@@ -103,16 +104,14 @@ auto Cumulative::prepare(Propagators &, State & initial_state, ProofModel * cons
 {
     auto n = _starts.size();
 
-    // Variable lengths/heights/capacity are not yet supported (milestones
-    // M1-M3 lift these one at a time); reject them clearly until then.
+    // Variable lengths/heights are not yet supported (milestones M2-M3 lift
+    // these); reject them clearly until then. Variable capacity is supported.
     for (const auto & l : _lengths)
         if (! is_constant_variable(l))
             throw UnimplementedException{"Cumulative: variable lengths not yet supported"};
     for (const auto & h : _heights)
         if (! is_constant_variable(h))
             throw UnimplementedException{"Cumulative: variable heights not yet supported"};
-    if (! is_constant_variable(_capacity))
-        throw UnimplementedException{"Cumulative: variable capacity not yet supported"};
 
     // Resolve constant snapshots used by define_proof_model and the propagator.
     _length_vals.clear();
@@ -123,7 +122,8 @@ auto Cumulative::prepare(Propagators &, State & initial_state, ProofModel * cons
         _length_vals.push_back(const_value_of(l));
     for (const auto & h : _heights)
         _height_vals.push_back(const_value_of(h));
-    _capacity_val = const_value_of(_capacity);
+    if (is_constant_variable(_capacity))
+        _capacity_val = const_value_of(_capacity);
 
     // Tasks with length 0 or height 0 never raise the load profile.
     _active_tasks.reserve(n);
@@ -191,8 +191,16 @@ auto Cumulative::define_proof_model(ProofModel & model) -> void
             any = true;
         }
         if (any) {
-            auto line = model.add_constraint("Cumulative", "load at time",
-                load <= _capacity_val);
+            // Σ heights[i]·active[i,t] ≤ capacity. When the capacity is a
+            // variable, move it to the left as a (−1)·capacity term so the
+            // constraint stays a single linear inequality with RHS 0.
+            std::optional<ProofLine> line;
+            if (is_constant_variable(_capacity))
+                line = model.add_constraint("Cumulative", "load at time",
+                    load <= _capacity_val);
+            else
+                line = model.add_constraint("Cumulative", "load at time",
+                    move(load) + -1_i * _capacity <= 0_i);
             if (line)
                 _capacity_lines.emplace(t, *line);
         }
@@ -204,14 +212,26 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
     Triggers triggers;
     for (auto i : _active_tasks)
         triggers.on_bounds.emplace_back(_starts[i]);
+    // A tightening of the capacity's upper bound can newly overflow the load
+    // profile, so re-fire on it too (constant capacity never changes).
+    if (! is_constant_variable(_capacity))
+        triggers.on_bounds.emplace_back(_capacity);
 
     propagators.install(
         [starts = move(_starts), lengths = move(_length_vals), heights = move(_height_vals),
-            capacity = _capacity_val, active_tasks = move(_active_tasks),
+            capacity_var = _capacity, active_tasks = move(_active_tasks),
             before_flags = move(_before_flags), after_flags = move(_after_flags),
             active_flags = move(_active_flags), capacity_lines = move(_capacity_lines),
             per_task_t_lo = move(_per_task_t_lo)](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            // The capacity may be a variable: the load profile is infeasible
+            // only when it exceeds the *largest* still-allowed capacity, so the
+            // threshold for every overflow/blocked test is ub(capacity). When
+            // capacity is a genuine variable its bound is part of every reason.
+            auto capacity = state.upper_bound(capacity_var);
+            vector<IntegerVariableID> reason_vars = starts;
+            if (! is_constant_variable(capacity_var))
+                reason_vars.push_back(capacity_var);
             // Time-table consistency. The mandatory part of task i is the
             // half-open interval [lst_i, eet_i) where lst_i = ub(s_i) and
             // eet_i = lb(s_i) + l_i. Summing heights over mandatory parts
@@ -295,7 +315,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                     };
 
                     inference.contradiction(logger, JustifyExplicitlyThenRUP{justify},
-                        generic_reason(state, starts));
+                        generic_reason(state, reason_vars));
                     return PropagatorState::DisableUntilBacktrack;
                 }
 
@@ -433,7 +453,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
 
                     inference.infer_greater_than_or_equal(logger, starts[j], new_lb,
                         JustifyExplicitlyThenRUP{justify},
-                        generic_reason(state, starts));
+                        generic_reason(state, reason_vars));
                 }
 
                 // ub-push: mirror image. Pick SMALLEST blocked t in each
@@ -467,7 +487,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
 
                     inference.infer_less_than(logger, starts[j], new_ub + 1_i,
                         JustifyExplicitlyThenRUP{justify},
-                        generic_reason(state, starts));
+                        generic_reason(state, reason_vars));
                 }
             }
 
