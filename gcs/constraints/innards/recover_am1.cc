@@ -27,8 +27,10 @@ template <typename Literal_>
     if (atoms.size() < 2)
         // An at-most-one over fewer than two atoms is vacuous; the caller should
         // handle it directly rather than ask the helper to fold zero pairwise
-        // lines into a pol.
-        throw UnimplementedException{"recover_am1 needs at least two atoms"};
+        // lines into a pol. Needing at least two atoms is part of the helper's
+        // API, not something we expect to relax, so this is unexpected rather
+        // than unimplemented.
+        throw UnexpectedException{"recover_am1 needs at least two atoms"};
 
     if constexpr (is_same_v<Literal_, IntegerVariableCondition>) {
         // If ≥2 atoms simplify to FalseLiteral (e.g. literals over constants

@@ -31,12 +31,16 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::fill;
 using std::function;
 using std::make_unique;
 using std::min;
 using std::move;
+using std::nullopt;
+using std::numeric_limits;
 using std::optional;
 using std::pair;
+using std::set;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
@@ -81,7 +85,7 @@ namespace
 
         auto bfs(int s, int t) -> bool
         {
-            std::fill(level.begin(), level.end(), -1);
+            fill(level.begin(), level.end(), -1);
             vector<int> q;
             q.push_back(s);
             level[s] = 0;
@@ -118,8 +122,8 @@ namespace
         {
             long long flow = 0;
             while (bfs(s, t)) {
-                std::fill(iter.begin(), iter.end(), 0);
-                while (auto f = dfs(s, t, std::numeric_limits<long long>::max()))
+                fill(iter.begin(), iter.end(), 0);
+                while (auto f = dfs(s, t, numeric_limits<long long>::max()))
                     flow += f;
             }
             return flow;
@@ -234,7 +238,7 @@ auto GACGlobalCardinality::install_propagators(Propagators & propagators) -> voi
             auto SS = base_nodes, TT = base_nodes + 1;
             MaxFlow mf(base_nodes + 2);
 
-            std::set<Integer> cover(values.begin(), values.end());
+            set<Integer> cover(values.begin(), values.end());
             long long inf = static_cast<long long>(n) + 1;
 
             // Original edges with lower bounds, recorded so we can recover the
@@ -354,7 +358,7 @@ auto GACGlobalCardinality::install_propagators(Propagators & propagators) -> voi
                         if (hv_val[j])
                             cut_values.push_back(j);
                     // Confine to the variables that can only take cut values.
-                    std::set<Integer> hall;
+                    set<Integer> hall;
                     for (auto j : cut_values)
                         hall.insert(values[j]);
                     Integer cap = 0_i;
@@ -440,7 +444,7 @@ auto GACGlobalCardinality::install_propagators(Propagators & propagators) -> voi
                 else if (! demand_cut.empty())
                     inference.contradiction(logger,
                         JustifyExplicitlyThenRUP{[&, demand_cut, suppliers](const ReasonFunction &) {
-                            emit_gcc_demand_pol(*logger, state, vars, values, counts, count_lines, demand_cut, suppliers, std::nullopt, std::nullopt);
+                            emit_gcc_demand_pol(*logger, state, vars, values, counts, count_lines, demand_cut, suppliers, nullopt, nullopt);
                         }},
                         ReasonFunction{[&, demand_cut, suppliers]() { return gcc_demand_reason(state, vars, values, counts, demand_cut, suppliers); }});
                 else if (closed && unmatched >= 0)

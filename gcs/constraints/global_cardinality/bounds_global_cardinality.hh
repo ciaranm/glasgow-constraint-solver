@@ -20,8 +20,8 @@ namespace gcs
      * variables in `vars` equal to `values[i]` equals the count variable
      * `counts[i]`; if `closed`, every variable must take a cover value.
      *
-     * Unlike the decomposition baseline, this is a single dedicated propagator.
-     * It tightens the count variables from the must-occur/can-occur counts and
+     * This is a single dedicated propagator. It tightens the count variables
+     * from the must-occur/can-occur counts and
      * prunes the assignment variables using generalised Hall sets: an interval
      * of cover values whose total upper capacity is saturated by the variables
      * confined to it forbids those values elsewhere, and an interval whose total
